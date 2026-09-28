@@ -1,7 +1,7 @@
 # v0.1 Marco feature cut
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 01
 Map: [Camino v0.1](../map.md)
 

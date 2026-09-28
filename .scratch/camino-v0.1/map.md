@@ -17,7 +17,7 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
   - XWayland is required in v0.1.
   - Server-side decorations are drawn from Marco/Metacity themes. The level of theme-format support is still open.
   - Configuration is read from the existing `org.mate.Marco.*` gsettings, and Wayland-only keys go in a new `org.mate.Camino` schema.
-  - v0.1 session scope: mate-panel (including the window list and workspace switcher applets), mate-session starting Camino, mate-settings-daemon, and caja's desktop and background.
+  - v0.1 session scope: mate-panel (including the window list and workspace switcher applets), mate-session running in the session (who launches whom is for the Session launch model ticket; the MATE Wayland audit shows mate-session can't launch a compositor), mate-settings-daemon, and caja's desktop and background.
   - It ships as its own session entry, "MATE on Camino", separate from the Wayfire-based MATE Wayland session.
   - Personal project, GPL-2.0-or-later, following MATE conventions where that's cheap.
 
@@ -27,15 +27,16 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 
 - [Smithay capability audit](issues/03-smithay-capability-audit.md): pin Smithay master; it covers the core, but Camino writes foreign-toplevel, ext-workspace and output-management plus its own scene graph and window-management policy.
 - [Marco feature inventory](issues/01-marco-feature-inventory.md): 194 gsettings keys and 103 keybinding actions; the core behaviour carries over as compositor-internal, and what breaks is Marco's X11 conversations with mate-panel, the pager and mate-control-center.
+- [MATE components on Wayland audit](issues/02-mate-wayland-audit.md): MATE needs only wlr/ext protocols (layer-shell, foreign-toplevel, ext-workspace, output-management, data-control), mostly from 2026 git rather than 1.28. mate-session isn't ported and must run as a child of Camino, and msd leaves input settings and media keys to the compositor.
 
 ## Not yet specified
 
 - **Replacing Marco's X11 conversations with MATE programs.** Alt+F1/F2 (`_MATE_PANEL_ACTION`), the pager's grid layout (`_NET_DESKTOP_LAYOUT`), Show Desktop (`_NET_SHOWING_DESKTOP`), and mate-control-center's WM detection and keybinding dialog. Each one needs a Wayland-side channel (D-Bus? a protocol? a patch to the MATE component?). This probably sharpens once the v0.1 protocol and integration set is decided.
 
-- **Screen locking.** mate-screensaver doesn't work on Wayland. The likely route is ext-session-lock plus some locker, but it depends on what the MATE Wayland audit finds.
-- **Display configuration.** mate-display-properties only speaks RandR. We need an output-management story (wlr-output-management? our own dialog? kanshi-style?).
+- **Screen locking.** mate-screensaver is X11-only (confirmed by the MATE audit), and mate-session's idle detection is X11-only too. The likely route is ext-session-lock plus some locker, but it depends on what the MATE Wayland audit finds.
+- **Display configuration.** Per the MATE audit, msd already has a wlr-output-management backend and a Wayland display capplet exists in git, so the question is mostly whether Camino or msd owns and persists the output layout.
 - **XWayland integration details.** How X11 windows get Marco behaviour through Smithay's X11 window manager, XSettings bridging from mate-settings-daemon, and clipboard and DnD edge cases. Smithay's X11 window manager lacks the virtual-desktop, work-area and frame-extents properties (see the Smithay capability audit).
-- **Input configuration.** Mapping MATE's mouse, touchpad and keyboard gsettings to libinput and xkb inside Camino.
+- **Input configuration and media keys.** msd turns off its mouse, keyboard, keybindings and media-keys plugins on Wayland, so Camino must map MATE's mouse, touchpad and keyboard gsettings to libinput and xkb, and handle media keys. The X11-only Mouse and Keyboard capplets are a related gap.
 - **Crate and module architecture.** How Camino's code is split up. It depends on the Smithay audit and on the feature and protocol cuts.
 - **Development and testing loop.** Running nested (winit backend) vs. on a TTY, headless tests, and CI.
 - **HiDPI and fractional scaling, and accessibility** (screen reader, magnifier). Both are in scope eventually; how much goes in v0.1 is unknown.

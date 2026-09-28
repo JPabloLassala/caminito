@@ -1,7 +1,7 @@
 # Metacity/Marco theme format
 
 Type: research
-Status: open
+Status: claimed
 Blocked by:
 Map: [Camino v0.1](../map.md)
 
