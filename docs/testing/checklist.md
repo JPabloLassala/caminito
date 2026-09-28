@@ -63,3 +63,20 @@ nested_env() {
   4. `diff /tmp/env-before /tmp/env-after`
 - **Expected:** no difference.
 - **Debug tool:** `systemctl --user show-environment`.
+
+## Debugging
+
+### The debug interface answers on the nested bus
+
+- **Milestone:** M2
+- **Steps:**
+  1. Run `tools/dev-nested`, and a GTK3 app such as pluma in it
+     (`WAYLAND_DISPLAY=<camino's socket> GDK_BACKEND=wayland pluma`).
+  2. With `DBUS_SESSION_BUS_ADDRESS` from `nested_env`, run
+     `busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug org.mate.Camino.Debug DumpState`.
+  3. Run the same with `ToggleFrameDebug` instead of `DumpState`, then again.
+- **Expected:** the dump lists the app's window as `ssd`, with its frame extents and strip scale.
+  The first toggle answers `true` and outlines the frame's strips in red, its invisible resize
+  border in blue and its title in green, labelled with the strip scale (`×1`). The second answers
+  `false` and the outlines go.
+- **Debug tool:** `busctl`.

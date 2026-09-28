@@ -2,6 +2,8 @@
 
 pub mod backend;
 pub mod cursor;
+pub mod dbus;
+pub mod debug;
 pub mod decoration;
 mod handlers;
 pub mod helpers;
@@ -30,6 +32,9 @@ pub fn run_nested() -> Result<(), Box<dyn std::error::Error>> {
     let socket = state.camino.add_socket()?;
     tracing::info!("listening on WAYLAND_DISPLAY={}", socket.to_string_lossy());
     state.camino.start_palette_helper(&socket);
+    if let Err(err) = state.camino.start_dbus(dbus::Names::WellKnown) {
+        tracing::warn!("can't serve Camino's D-Bus interfaces: {err}");
+    }
 
     event_loop.run(None, &mut state, State::refresh_and_flush_clients)?;
     Ok(())

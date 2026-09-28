@@ -60,6 +60,8 @@ use camino_theme::{PaletteCache, ThemeDirs, Variant};
 
 use crate::backend::Backend;
 use crate::cursor::{CursorSource, Cursors};
+use crate::dbus::Dbus;
+use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
@@ -160,6 +162,10 @@ pub struct Camino {
     /// The settings as last read, and the GLib thread that reads them.
     pub settings: Settings,
     pub settings_thread: SettingsThread,
+
+    /// The connection to the session bus, once `start_dbus` has made it.
+    pub dbus: Option<Dbus>,
+    pub debug: DebugToggles,
 }
 
 /// The palette helper, `camino-gtk-palette` or what `CAMINO_GTK_PALETTE` names, as a
@@ -462,6 +468,8 @@ impl Camino {
             frame_context,
             settings,
             settings_thread,
+            dbus: None,
+            debug: DebugToggles::default(),
         };
         camino.ask_palette_for_theme_colors();
         Ok(camino)

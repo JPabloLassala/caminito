@@ -3,6 +3,7 @@
 mod bindings;
 mod client;
 mod cursors;
+mod debug;
 mod decoration;
 mod fixture;
 mod frames;

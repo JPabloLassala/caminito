@@ -13,7 +13,7 @@ pub mod style;
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use camino_theme::{
     ButtonFunction, ButtonLayout, ButtonStates, Frame, FrameFlags, FrameGeometry, FrameType,
-    PaletteColors, Strip, Theme, ThemeDirs, Title, pango, title_context,
+    PaletteColors, Rect, Strip, Theme, ThemeDirs, Title, pango, title_context,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -296,17 +296,41 @@ impl WindowFrame {
     /// Where a button is drawn, from the window geometry's origin, if the frame shows it.
     pub fn button_rect(&self, function: ButtonFunction) -> Option<Rectangle<i32, Logical>> {
         let geometry = self.geometry.as_ref()?;
-        let rect = geometry.button(function)?.visible;
-        let total = geometry.borders.total;
-        Some(Rectangle::new(
-            (rect.x - total.left, rect.y - total.top).into(),
-            (rect.width, rect.height).into(),
+        Some(from_frame_origin(
+            geometry,
+            geometry.button(function)?.visible,
         ))
+    }
+
+    /// The whole frame, its invisible resize border included, from the window geometry's
+    /// origin, if it's showing.
+    pub fn bounds(&self) -> Option<Rectangle<i32, Logical>> {
+        let geometry = self.geometry.as_ref()?;
+        let rect = Rect {
+            x: 0,
+            y: 0,
+            width: geometry.width,
+            height: geometry.height,
+        };
+        Some(from_frame_origin(geometry, rect))
+    }
+
+    /// Where the title goes, from the window geometry's origin, if the frame is showing and
+    /// the title fits.
+    pub fn title_rect(&self) -> Option<Rectangle<i32, Logical>> {
+        let geometry = self.geometry.as_ref()?;
+        let rect = geometry.title_rect;
+        (rect.width > 0 && rect.height > 0).then(|| from_frame_origin(geometry, rect))
     }
 
     /// Each strip's buffer, and where it goes from the window geometry's origin.
     pub fn strips(&self) -> impl Iterator<Item = (Rectangle<i32, Logical>, &MemoryRenderBuffer)> {
         self.strips.iter().map(|strip| (strip.rect, &strip.buffer))
+    }
+
+    /// The scale the strips were drawn at, while the frame is showing.
+    pub fn drawn_scale(&self) -> Option<i32> {
+        self.drawn.as_ref().map(|(inputs, _, _)| inputs.scale)
     }
 
     /// The scale the strips were last drawn at.
@@ -341,7 +365,6 @@ impl WindowFrame {
             icon: icons.and_then(|icons| icons.full.as_ref()),
             colors,
         };
-        let total = geometry.borders.total;
         Strip::ALL
             .into_iter()
             .filter_map(|strip| {
@@ -356,10 +379,7 @@ impl WindowFrame {
                     })
                     .ok()?;
                 Some(StripBuffer {
-                    rect: Rectangle::new(
-                        (rect.x - total.left, rect.y - total.top).into(),
-                        (rect.width, rect.height).into(),
-                    ),
+                    rect: from_frame_origin(geometry, rect),
                     buffer: memory_buffer(surface, inputs.scale)?,
                 })
             })
@@ -385,6 +405,15 @@ impl WindowFrame {
             full,
         });
     }
+}
+
+/// `rect`, from the frame's top left corner, from the window geometry's origin instead.
+fn from_frame_origin(geometry: &FrameGeometry, rect: Rect) -> Rectangle<i32, Logical> {
+    let total = geometry.borders.total;
+    Rectangle::new(
+        (rect.x - total.left, rect.y - total.top).into(),
+        (rect.width, rect.height).into(),
+    )
 }
 
 /// A window's icon at `size` logical pixels times `scale`, in the order 07 gives.
@@ -479,9 +508,9 @@ fn scaled(surface: &ImageSurface, pixels: i32) -> Result<ImageSurface, cairo::Er
     Ok(target)
 }
 
-/// A strip's pixels as a buffer at `scale`. Cairo's ARGB32 is a native-endian word, which
+/// A cairo surface's pixels, such as a strip's, as a buffer at `scale`. Cairo's ARGB32 is a native-endian word, which
 /// is `Argb8888` on the little-endian machines Camino runs on.
-fn memory_buffer(mut surface: ImageSurface, scale: i32) -> Option<MemoryRenderBuffer> {
+pub(crate) fn memory_buffer(mut surface: ImageSurface, scale: i32) -> Option<MemoryRenderBuffer> {
     let (width, height) = (surface.width(), surface.height());
     let stride = surface.stride() as usize;
     let data = surface.data().ok()?;

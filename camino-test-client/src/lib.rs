@@ -3,7 +3,10 @@
 //! A [`Client`] speaks Wayland over one end of a socket pair and never blocks: the test that
 //! owns it runs the compositor in the same thread, and calls [`Client::dispatch`] between the
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
-//! turn those records into stable text for snapshots.
+//! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
+//! D-Bus names.
+
+pub mod dbus;
 
 use std::fmt;
 use std::fs::File;

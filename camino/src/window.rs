@@ -260,7 +260,7 @@ impl Mapped {
         self.frame.update(frame_context, colors, inputs)
     }
 
-    fn title(&self) -> String {
+    pub fn title(&self) -> String {
         let Some(toplevel) = self.toplevel() else {
             return String::new();
         };

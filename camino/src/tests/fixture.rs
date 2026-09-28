@@ -244,6 +244,24 @@ impl Fixture {
         }
     }
 
+    /// Serves Camino's D-Bus interfaces on the session bus without its well-known names, and
+    /// returns the unique name they're at.
+    pub fn start_dbus(&mut self) -> String {
+        let camino = &mut self.state.camino;
+        camino
+            .start_dbus(crate::dbus::Names::UniqueOnly)
+            .expect("the test binary runs under dbus-run-session (14)");
+        camino.dbus.as_ref().unwrap().unique_name().unwrap()
+    }
+
+    /// Makes a blocking D-Bus call on another thread, dispatching until it returns, since
+    /// Camino answers from its event loop.
+    pub fn dbus_call<T: Send + 'static>(&mut self, call: impl FnOnce() -> T + Send + 'static) -> T {
+        let call = std::thread::spawn(call);
+        self.dispatch_until(|_| call.is_finished());
+        call.join().expect("the D-Bus call succeeds")
+    }
+
     /// Every client sends its requests, the compositor handles them, then every client handles
     /// the compositor's answers.
     pub fn dispatch(&mut self) {

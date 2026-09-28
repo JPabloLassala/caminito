@@ -3,30 +3,41 @@
 //! There's no retained scene graph: each output's elements are rebuilt every frame, and this
 //! is the only code that knows the layer order.
 
+use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
+use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Point, Scale};
+use smithay::utils::{Logical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
 
 use crate::output::output_geometry;
 use crate::state::Camino;
+use crate::window::Mapped;
 
 /// What shows where nothing is drawn.
 pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
+
+/// Frame debug's outline colours (14).
+const STRIP_OUTLINE: Color32F = Color32F::new(1.0, 0.0, 0.0, 1.0);
+const RESIZE_BORDER_OUTLINE: Color32F = Color32F::new(0.0, 0.5, 1.0, 1.0);
+const TITLE_OUTLINE: Color32F = Color32F::new(0.0, 1.0, 0.0, 1.0);
 
 render_elements! {
     pub SceneElement<R> where R: ImportAll + ImportMem;
     /// A client's surface: a window's, or the cursor's.
     Window = WaylandSurfaceRenderElement<R>,
-    /// A frame's strip, or one of Camino's cursors.
+    /// A frame's strip, one of Camino's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
+    /// A side of one of frame debug's outlines.
+    Outline = SolidColorRenderElement,
 }
 
 /// The scene's layers, top to bottom.
@@ -174,6 +185,10 @@ fn window_elements<R>(
         if !policy.is_showing(id) {
             continue;
         }
+        if camino.debug.frame_debug {
+            frame_debug_elements(renderer, camino, mapped, geometry.loc, output, elements);
+        }
+
         let window = mapped.window();
         // The surface's origin sits the window geometry's offset away from where policy
         // placed the geometry. A shaded window's surfaces have left the scene.
@@ -208,5 +223,83 @@ fn window_elements<R>(
                 Err(err) => tracing::warn!("can't draw a frame strip: {err:?}"),
             }
         }
+    }
+}
+
+/// Frame debug's outlines of a frame's strips, invisible resize border and title rect, and
+/// the label of the scale its strips were rendered at, over the window. `origin` is where
+/// the window geometry is, globally.
+fn frame_debug_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    mapped: &Mapped,
+    origin: Point<i32, Logical>,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let frame = mapped.frame();
+    let output_geometry = output_geometry(output);
+    // Everything outlined lies inside the frame's bounds.
+    let Some(bounds) = frame.bounds().filter(|bounds| {
+        Rectangle::new(bounds.loc + origin, bounds.size).overlaps(output_geometry)
+    }) else {
+        return;
+    };
+    let scale = output.current_scale().fractional_scale();
+    let local = |mut rect: Rectangle<i32, Logical>| {
+        rect.loc += origin - output_geometry.loc;
+        rect
+    };
+
+    if let Some(label) = camino.debug.scale_label(frame.scale()) {
+        let location = local(bounds)
+            .loc
+            .to_physical_precise_round::<_, i32>(scale)
+            .to_f64();
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location,
+            &label,
+            None,
+            None,
+            None,
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(element) => elements.push(SceneElement::Frame(element)),
+            Err(err) => tracing::warn!("can't draw a frame debug label: {err:?}"),
+        }
+    }
+    let outlines = frame
+        .title_rect()
+        .map(|rect| (rect, TITLE_OUTLINE))
+        .into_iter()
+        .chain(frame.strips().map(|(rect, _)| (rect, STRIP_OUTLINE)))
+        .chain([(bounds, RESIZE_BORDER_OUTLINE)]);
+    for (rect, color) in outlines {
+        let rect = local(rect).to_physical_precise_round(scale);
+        if rect.is_empty() {
+            continue;
+        }
+        // One physical pixel wide, inside the rect.
+        let (w, h) = (rect.size.w, rect.size.h);
+        let sides = [
+            Rectangle::new(rect.loc, (w, 1).into()),
+            Rectangle::new(rect.loc + Point::from((0, h - 1)), (w, 1).into()),
+            Rectangle::new(rect.loc, (1, h).into()),
+            Rectangle::new(rect.loc + Point::from((w - 1, 0)), (1, h).into()),
+        ];
+        elements.extend(sides.into_iter().map(|side| {
+            SceneElement::Outline(SolidColorRenderElement::new(
+                Id::new(),
+                side,
+                CommitCounter::default(),
+                color,
+                Kind::Unspecified,
+            ))
+        }));
     }
 }

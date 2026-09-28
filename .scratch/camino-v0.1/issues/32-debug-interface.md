@@ -1,7 +1,7 @@
 # Debug interface
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M2
 Blocked by: 30
 Map: [Camino v0.1](../map.md)
@@ -18,6 +18,6 @@ The first D-Bus in Camino ([14](14-development-and-testing-loop.md), [15](15-cra
 
 ## Acceptance criteria
 
-- [ ] An insta snapshot of the state dump for a headless fixture with an SSD and a CSD window on two workspaces.
-- [ ] A headless test that frame debug adds the outline elements and turning it off removes them.
-- [ ] Nested, `busctl --user call` on the nested bus returns the dump, and frame debug shows its outlines on a GTK3 app.
+- [x] An insta snapshot of the state dump for a headless fixture with an SSD and a CSD window on two workspaces.
+- [x] A headless test that frame debug adds the outline elements and turning it off removes them.
+- [x] Nested, `busctl --user call` on the nested bus returns the dump, and frame debug shows its outlines on a GTK3 app.
