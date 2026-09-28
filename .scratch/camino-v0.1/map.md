@@ -26,8 +26,11 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 <!-- one line per closed ticket -->
 
 - [Smithay capability audit](issues/03-smithay-capability-audit.md): pin Smithay master; it covers the core, but Camino writes foreign-toplevel, ext-workspace and output-management plus its own scene graph and window-management policy.
+- [Marco feature inventory](issues/01-marco-feature-inventory.md): 194 gsettings keys and 103 keybinding actions; the core behaviour carries over as compositor-internal, and what breaks is Marco's X11 conversations with mate-panel, the pager and mate-control-center.
 
 ## Not yet specified
+
+- **Replacing Marco's X11 conversations with MATE programs.** Alt+F1/F2 (`_MATE_PANEL_ACTION`), the pager's grid layout (`_NET_DESKTOP_LAYOUT`), Show Desktop (`_NET_SHOWING_DESKTOP`), and mate-control-center's WM detection and keybinding dialog. Each one needs a Wayland-side channel (D-Bus? a protocol? a patch to the MATE component?). This probably sharpens once the v0.1 protocol and integration set is decided.
 
 - **Screen locking.** mate-screensaver doesn't work on Wayland. The likely route is ext-session-lock plus some locker, but it depends on what the MATE Wayland audit finds.
 - **Display configuration.** mate-display-properties only speaks RandR. We need an output-management story (wlr-output-management? our own dialog? kanshi-style?).
