@@ -28,5 +28,5 @@ The packaging and running pieces M1 needs, so the milestone's exit is run on an 
 
 - [x] `makepkg -si` in `packaging/arch/camino-git/` builds and installs `camino`, and `namcap` reports nothing unexplained.
 - [x] `tools/dev-nested` starts the installed `camino` nested, and the host session's systemd environment is the same before and after.
-- [ ] The PKGBUILD job is green in CI.
+- [x] The PKGBUILD job is green in CI.
 - [ ] Closing M1 (after [22](22-xdg-shell-and-input.md)): M1's exit from [17](17-milestone-slicing.md) is met on the installed package, and the checklist results are in a `Close M1 Nested compositor` commit.
