@@ -58,6 +58,12 @@ The remaining fog was charted on 2026-09-28 as tickets 10–17:
 
 All of them are resolved, and 17 closed the map on 2026-09-28. Implementation starts with M1.
 
+## Milestones
+
+The plan is in [17](issues/17-milestone-slicing.md). Each milestone's tickets are written when it starts.
+
+- **M1 Nested compositor** (open): [18 Workspace and CI](issues/18-workspace-and-ci.md), [19 Policy crate core](issues/19-policy-crate.md), [20 Compositor skeleton](issues/20-compositor-skeleton.md), [21 Test fixture and client](issues/21-test-fixture-and-client.md), [22 xdg-shell and input](issues/22-xdg-shell-and-input.md), [23 Packaging and development loop](issues/23-packaging-and-dev-loop.md). 18 is unblocked; 19, 20 and 23 follow it in parallel; 21 needs 20; 22 needs 19 and 21.
+
 ## Out of scope
 
 - Tiling-WM features beyond Marco's own edge snapping.
