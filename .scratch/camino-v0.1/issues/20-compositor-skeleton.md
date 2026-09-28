@@ -27,4 +27,4 @@ Map: [Camino v0.1](../map.md)
 - [x] `cargo run -p camino` opens a winit window, creates a Wayland socket and logs its name, and clears the output every frame.
 - [x] A `cfg(test)` test builds a `State` on the headless backend with two outputs at scales 1.0 and 1.5, and dispatches the loop.
 - [x] The release build has neither the headless backend nor pixman (`cargo tree -e features -p camino --edges normal`).
-- [ ] CI stays green, and the container gains the libraries the winit and pixman builds need.
+- [x] CI stays green, and the container gains the libraries the winit and pixman builds need.
