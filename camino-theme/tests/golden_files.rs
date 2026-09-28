@@ -123,7 +123,12 @@ fn every_case_has_an_image_and_geometry_of_matching_size() {
         missing.join("\n")
     );
 
-    // A case taken out of the list takes its files with it.
+    // A case taken out of the list takes its files with it. The pixel comparison's
+    // failure images aren't goldens, and git ignores them.
+    let failure_image = |file: &Path| {
+        let name = file.file_name().unwrap().to_string_lossy();
+        name.ends_with(".camino.png") || name.ends_with(".diff.png")
+    };
     let mut stray = Vec::new();
     for entry in fs::read_dir(&frames).unwrap() {
         let path = entry.unwrap().path();
@@ -138,7 +143,7 @@ fn every_case_has_an_image_and_geometry_of_matching_size() {
         stray.extend(
             files
                 .into_iter()
-                .filter(|file| !expected.contains(file))
+                .filter(|file| !expected.contains(file) && !failure_image(file))
                 .map(|file| file.display().to_string()),
         );
     }

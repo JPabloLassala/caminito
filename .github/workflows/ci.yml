@@ -31,6 +31,17 @@ jobs:
       - name: Test
         run: cargo test --workspace --exclude camino
 
+      # A golden case that doesn't match writes Camino's image and a diff beside it.
+      - name: Keep golden failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-failures
+          path: |
+            tests/goldens/frames/**/*.camino.png
+            tests/goldens/frames/**/*.diff.png
+          if-no-files-found: ignore
+
       # The headless tier renders with pixman, so it needs no GPU or EGL. camino's tests
       # get a private session bus (14).
       - name: Test camino

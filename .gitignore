@@ -1,1 +1,4 @@
 /target/
+# What the golden comparison writes beside a golden it doesn't match.
+/tests/goldens/frames/**/*.camino.png
+/tests/goldens/frames/**/*.diff.png

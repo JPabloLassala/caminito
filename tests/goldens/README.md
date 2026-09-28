@@ -7,7 +7,11 @@ ADR 0009). `tools/regenerate-goldens` writes everything here except `cases.json`
 added, and commit the result.
 
 `camino-theme/tests/goldens.rs` is the comparison: it runs Camino's theme engine on every
-case with the same pinned inputs, and its geometry has to match Marco's exactly.
+case with the same pinned inputs. Its geometry has to match Marco's exactly, and its
+pixels too, except in the ops Camino approximates, within the tolerances written there.
+A case whose pixels don't match writes Camino's image and a diff beside the golden, as
+`<case>@<scale>x.camino.png` and `<case>@<scale>x.diff.png`. Git ignores them, and CI
+keeps them as an artifact.
 
 ## Inputs
 

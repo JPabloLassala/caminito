@@ -1,12 +1,13 @@
 //! Colour specs, parsed as Marco's `meta_color_spec_new_from_string` does (`theme.c:1389`).
 //!
-//! A spec is kept as a tree. Resolving `gtk:` colours against a [`Palette`] is the drawing
-//! ticket's job (27).
+//! A spec is kept as a tree, and [`ColorSpec::render`] evaluates it against a variant of
+//! the [`Palette`] as `meta_color_spec_render` does against GTK (`theme.c:1823`).
 //!
 //! [`Palette`]: crate::Palette
 
 use crate::color_names::COLOR_NAMES;
 use crate::number::strtod_prefix;
+use crate::palette::PaletteColors;
 
 /// A colour with channels from 0 to 1, as GDK's `GdkRGBA`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -294,6 +295,150 @@ impl ColorSpec {
     }
 }
 
+impl ColorSpec {
+    /// The colour the spec stands for (`meta_color_spec_render`). The palette holds
+    /// what Marco's style context gives for `bg` and `fg`, a transparent background
+    /// already replaced by Marco's fallback.
+    pub fn render(&self, colors: &PaletteColors) -> Rgba {
+        match self {
+            ColorSpec::Basic(color) => *color,
+            ColorSpec::Gtk { component, state } => {
+                let background = colors.background(*state);
+                let text = colors.text(*state);
+                match component {
+                    ColorComponent::Bg | ColorComponent::Base => background,
+                    ColorComponent::Fg | ColorComponent::Text => text,
+                    ColorComponent::TextAa => halfway(text, background),
+                    ColorComponent::Light => shade(background, LIGHTNESS_MULT),
+                    ColorComponent::Dark => shade(background, DARKNESS_MULT),
+                    ColorComponent::Mid => halfway(
+                        shade(background, LIGHTNESS_MULT),
+                        shade(background, DARKNESS_MULT),
+                    ),
+                }
+            }
+            ColorSpec::GtkCustom { name, fallback } => colors
+                .named(name)
+                .unwrap_or_else(|| fallback.render(colors)),
+            ColorSpec::Blend {
+                background,
+                foreground,
+                alpha,
+            } => {
+                // color_composite: the background's alpha is kept.
+                let bg = background.render(colors);
+                let fg = foreground.render(colors);
+                Rgba {
+                    red: bg.red + (fg.red - bg.red) * alpha,
+                    green: bg.green + (fg.green - bg.green) * alpha,
+                    blue: bg.blue + (fg.blue - bg.blue) * alpha,
+                    alpha: bg.alpha,
+                }
+            }
+            ColorSpec::Shade { base, factor } => shade(base.render(colors), *factor),
+        }
+    }
+}
+
+/// GTK2's `set_color`, which Marco's `light` and `dark` copy.
+const LIGHTNESS_MULT: f64 = 1.3;
+const DARKNESS_MULT: f64 = 0.7;
+
+/// The average of two colours' channels, with the first's alpha.
+fn halfway(a: Rgba, b: Rgba) -> Rgba {
+    Rgba {
+        red: (a.red + b.red) / 2.0,
+        green: (a.green + b.green) / 2.0,
+        blue: (a.blue + b.blue) / 2.0,
+        alpha: a.alpha,
+    }
+}
+
+/// GTK2's `gtk_style_shade`, as Marco copies it: lightness and saturation both scaled
+/// by `k` and clamped, alpha kept.
+fn shade(color: Rgba, k: f64) -> Rgba {
+    let (hue, lightness, saturation) = rgb_to_hls(color.red, color.green, color.blue);
+    let (red, green, blue) = hls_to_rgb(
+        hue,
+        (lightness * k).clamp(0.0, 1.0),
+        (saturation * k).clamp(0.0, 1.0),
+    );
+    Rgba {
+        red,
+        green,
+        blue,
+        alpha: color.alpha,
+    }
+}
+
+/// Marco's `rgb_to_hls`: hue in degrees, lightness and saturation from 0 to 1.
+fn rgb_to_hls(red: f64, green: f64, blue: f64) -> (f64, f64, f64) {
+    let (max, min) = if red > green {
+        (
+            if red > blue { red } else { blue },
+            if green < blue { green } else { blue },
+        )
+    } else {
+        (
+            if green > blue { green } else { blue },
+            if red < blue { red } else { blue },
+        )
+    };
+    let lightness = (max + min) / 2.0;
+    if max == min {
+        return (0.0, lightness, 0.0);
+    }
+    let saturation = if lightness <= 0.5 {
+        (max - min) / (max + min)
+    } else {
+        (max - min) / (2.0 - max - min)
+    };
+    let delta = max - min;
+    let mut hue = if red == max {
+        (green - blue) / delta
+    } else if green == max {
+        2.0 + (blue - red) / delta
+    } else {
+        4.0 + (red - green) / delta
+    };
+    hue *= 60.0;
+    if hue < 0.0 {
+        hue += 360.0;
+    }
+    (hue, lightness, saturation)
+}
+
+/// Marco's `hls_to_rgb`.
+fn hls_to_rgb(hue: f64, lightness: f64, saturation: f64) -> (f64, f64, f64) {
+    let m2 = if lightness <= 0.5 {
+        lightness * (1.0 + saturation)
+    } else {
+        lightness + saturation - lightness * saturation
+    };
+    let m1 = 2.0 * lightness - m2;
+    if saturation == 0.0 {
+        return (lightness, lightness, lightness);
+    }
+    let channel = |mut hue: f64| {
+        while hue > 360.0 {
+            hue -= 360.0;
+        }
+        while hue < 0.0 {
+            hue += 360.0;
+        }
+        if hue < 60.0 {
+            m1 + (m2 - m1) * hue / 60.0
+        } else if hue < 180.0 {
+            m2
+        } else if hue < 240.0 {
+            m1 + (m2 - m1) * (240.0 - hue) / 60.0
+        } else {
+            m1
+        }
+    };
+    (channel(hue + 120.0), channel(hue), channel(hue - 120.0))
+}
+
 fn parse_gtk_custom(text: &str, rest: &str) -> Result<ColorSpec, String> {
     let Some(args) = rest.strip_prefix('(') else {
         return Err(format!(
@@ -477,6 +622,104 @@ mod tests {
         assert_eq!(alpha("5e-1"), 0.5);
         assert!(alpha("nan").is_nan());
         assert!(error("blend/white/black/inf").contains("is not between"));
+    }
+
+    mod rendering {
+        use std::collections::BTreeMap;
+
+        use super::*;
+        use crate::palette::{PaletteColors, StateColors};
+
+        fn rgba(red: f64, green: f64, blue: f64, alpha: f64) -> Rgba {
+            Rgba {
+                red,
+                green,
+                blue,
+                alpha,
+            }
+        }
+
+        fn grey(level: f64) -> Rgba {
+            rgba(level, level, level, 1.0)
+        }
+
+        /// Backgrounds a grey of the state's index over 10, text the inverse, and one
+        /// named colour.
+        fn colors() -> PaletteColors {
+            let states = GtkState::ALL.map(|state| StateColors {
+                background: grey(state as usize as f64 / 10.0),
+                text: rgba(1.0, 0.8, 0.6, 0.5),
+            });
+            let named = BTreeMap::from([("wm_bg".to_owned(), rgba(0.1, 0.2, 0.3, 1.0))]);
+            PaletteColors::new(states, named)
+        }
+
+        fn render(text: &str) -> Rgba {
+            parse(text).render(&colors())
+        }
+
+        fn assert_close(actual: Rgba, expected: Rgba) {
+            let channels = |c: Rgba| [c.red, c.green, c.blue, c.alpha];
+            for (a, e) in channels(actual).into_iter().zip(channels(expected)) {
+                assert!((a - e).abs() < 1e-12, "{actual:?} is not {expected:?}");
+            }
+        }
+
+        #[test]
+        fn basic_colours_are_themselves() {
+            assert_eq!(render("#ff8000"), Rgba::from_rgb8(255, 128, 0));
+        }
+
+        #[test]
+        fn bg_and_base_read_the_background_and_fg_and_text_the_text() {
+            assert_eq!(render("gtk:bg[SELECTED]"), grey(0.3));
+            assert_eq!(render("gtk:base[PRELIGHT]"), grey(0.1));
+            assert_eq!(render("gtk:fg[NORMAL]"), rgba(1.0, 0.8, 0.6, 0.5));
+            assert_eq!(render("gtk:text[BACKDROP]"), rgba(1.0, 0.8, 0.6, 0.5));
+        }
+
+        #[test]
+        fn light_dark_and_mid_shade_the_background() {
+            // GTK2's set_color: light is the background shaded by 1.3, dark by 0.7, and
+            // mid halfway between them.
+            assert_close(render("gtk:light[INSENSITIVE]"), grey(0.4 * 1.3));
+            assert_close(render("gtk:dark[INSENSITIVE]"), grey(0.4 * 0.7));
+            assert_close(render("gtk:mid[INSENSITIVE]"), grey(0.4));
+        }
+
+        #[test]
+        fn text_aa_is_halfway_between_text_and_base_with_the_texts_alpha() {
+            assert_close(
+                render("gtk:text_aa[ACTIVE]"),
+                rgba((1.0 + 0.2) / 2.0, (0.8 + 0.2) / 2.0, (0.6 + 0.2) / 2.0, 0.5),
+            );
+        }
+
+        #[test]
+        fn custom_colours_come_from_the_named_table_or_the_fallback() {
+            assert_eq!(
+                render("gtk:custom(wm_bg,#ffffff)"),
+                rgba(0.1, 0.2, 0.3, 1.0)
+            );
+            assert_eq!(render("gtk:custom(wm_title,gtk:bg[SELECTED])"), grey(0.3));
+        }
+
+        #[test]
+        fn blend_mixes_the_colours_and_keeps_the_backgrounds_alpha() {
+            assert_close(
+                render("blend/gtk:fg[NORMAL]/#000000/0.25"),
+                rgba(0.75, 0.6, 0.45, 0.5),
+            );
+        }
+
+        #[test]
+        fn shade_scales_lightness_and_saturation_and_keeps_alpha() {
+            // Red is lightness 0.5 and saturation 1; both halve.
+            assert_close(render("shade/#ff0000/0.5"), rgba(0.375, 0.125, 0.125, 1.0));
+            // Both are clamped to 1.
+            assert_close(render("shade/#ff0000/3"), grey(1.0));
+            assert_close(render("shade/gtk:fg[NORMAL]/1"), rgba(1.0, 0.8, 0.6, 0.5));
+        }
     }
 
     #[test]

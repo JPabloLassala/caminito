@@ -1531,6 +1531,7 @@ impl<'a> Parser<'a> {
             styles: draft.styles,
             style_sets: draft.style_sets,
             window_style_sets: draft.window_style_sets,
+            images: Default::default(),
         })
     }
 

@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::color::{ColorSpec, GtkState};
 use crate::expr::{Constants, Expr};
+use crate::image::ImageCache;
 
 /// A loaded, validated theme.
 #[derive(Debug, Clone)]
@@ -29,6 +30,8 @@ pub struct Theme {
     /// The `<window>` table, indexed by [`FrameType`]. Validation guarantees every type
     /// but `attached` has one.
     pub(crate) window_style_sets: [Option<Arc<FrameStyleSet>>; FrameType::ALL.len()],
+    /// The theme's images, loaded when they're first drawn at a scale.
+    pub(crate) images: Arc<ImageCache>,
 }
 
 impl Theme {
@@ -282,10 +285,7 @@ impl FrameStyle {
     /// single backgrounds to the outer ones, outer backgrounds to the middle one, and
     /// prelight to normal.
     pub fn button(&self, button: ButtonType, state: ButtonState) -> Option<&Arc<DrawOpList>> {
-        if let Some(ops) = self
-            .ancestors()
-            .find_map(|style| style.buttons[button as usize][state as usize].as_ref())
-        {
+        if let Some(ops) = self.own_button(button, state) {
             return Some(ops);
         }
         let fallback = match button {
@@ -306,6 +306,17 @@ impl FrameStyle {
             return self.button(button, ButtonState::Normal);
         }
         None
+    }
+
+    /// A button's draw ops from this style or the nearest parent that has them, with
+    /// none of [`FrameStyle::button`]'s fallbacks.
+    pub(crate) fn own_button(
+        &self,
+        button: ButtonType,
+        state: ButtonState,
+    ) -> Option<&Arc<DrawOpList>> {
+        self.ancestors()
+            .find_map(|style| style.buttons[button as usize][state as usize].as_ref())
     }
 
     fn ancestors(&self) -> impl Iterator<Item = &FrameStyle> {

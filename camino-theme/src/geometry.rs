@@ -175,6 +175,11 @@ pub struct FrameGeometry {
     pub top_titlebar_edge: i32,
     pub bottom_titlebar_edge: i32,
     buttons: [Option<ButtonSpace>; ButtonFunction::ALL.len()],
+    /// How many of each side's buttons are left once those that don't fit are dropped.
+    /// Marco reads the button layout's first that many as the buttons shown, which is
+    /// wrong when a toggle's opposite or a dropped button comes before the last.
+    pub(crate) n_left_buttons: usize,
+    pub(crate) n_right_buttons: usize,
     pub button_backgrounds: ButtonBackgrounds,
     pub corner_radii: CornerRadii,
 }
@@ -421,6 +426,8 @@ impl Theme {
             top_titlebar_edge: title_border.top,
             bottom_titlebar_edge: title_border.bottom,
             buttons,
+            n_left_buttons: left_side.buttons.len(),
+            n_right_buttons: right_side.buttons.len(),
             button_backgrounds: backgrounds,
             corner_radii,
         }

@@ -12,8 +12,10 @@ runs:
       # that dlopen mode reaches camino-test-client too, so the fixture's clients
       # load libwayland-client. dbus: dbus-run-session gives camino's tests a private
       # bus (14). pango: camino-theme lays out titles with it, and pkgconf finds it and
-      # cairo for their -sys crates.
-      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango
+      # cairo for their -sys crates. gdk-pixbuf2: camino-theme loads theme images with it,
+      # through glycin's loaders and librsvg, which it brings; glycin runs them without its
+      # bubblewrap sandbox where the container can't make namespaces.
+      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2
 
     - name: Install Rust toolchain
       shell: bash
