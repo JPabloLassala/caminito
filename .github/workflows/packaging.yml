@@ -38,7 +38,9 @@ jobs:
       - name: namcap PKGBUILD
         working-directory: packaging/arch/camino-git
         # As builder, so git trusts the checkout that source=() reads.
-        run: sudo -u builder namcap PKGBUILD | tee namcap.log && ! grep -q ' E: ' namcap.log
+        run: |
+          sudo -u builder namcap PKGBUILD | tee namcap.log
+          ! grep -q ' E: ' namcap.log
 
       - name: makepkg
         working-directory: packaging/arch/camino-git
@@ -46,4 +48,6 @@ jobs:
 
       - name: namcap package
         working-directory: packaging/arch/camino-git
-        run: namcap ./*.pkg.tar.zst | tee namcap.log && ! grep -q ' E: ' namcap.log
+        run: |
+          namcap ./*.pkg.tar.zst | tee namcap.log
+          ! grep -q ' E: ' namcap.log
