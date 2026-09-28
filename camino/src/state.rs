@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 use std::time::Duration;
 
-use camino_policy::{Config, OutputId, Policy, SeatId};
+use camino_policy::{OutputId, Policy, SeatId};
 use smithay::desktop::PopupManager;
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::backend::input::Keycode;
@@ -13,7 +13,9 @@ use smithay::input::keyboard::XkbConfig;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use smithay::reexports::calloop::{
+    EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, channel,
+};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -58,6 +60,7 @@ use camino_theme::PaletteCache;
 use crate::backend::Backend;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, Unmapped};
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
@@ -139,6 +142,10 @@ pub struct Camino {
 
     /// The GTK colours frames are drawn with.
     pub palette: PaletteSource<State>,
+
+    /// The settings as last read, and the GLib thread that reads them.
+    pub settings: Settings,
+    pub settings_thread: SettingsThread,
 }
 
 /// The palette helper, `camino-gtk-palette` or what `CAMINO_GTK_PALETTE` names, as a
@@ -191,20 +198,24 @@ impl ClientData for ClientState {
 }
 
 impl State {
-    /// Opens a winit window as the one output.
+    /// Opens a winit window as the one output, with the installed settings.
     pub fn new_winit(
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
-    ) -> Result<Self, smithay::backend::winit::Error> {
-        let mut camino = Camino::new(event_loop, display);
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut camino = Camino::new(event_loop, display, settings::Source::System)?;
         let backend = Backend::Winit(Box::new(crate::backend::winit::Winit::new(&mut camino)?));
         Ok(Self { backend, camino })
     }
 
     /// Starts with no outputs; tests add them with `add_headless_output`.
     #[cfg(test)]
-    pub fn new_headless(event_loop: &EventLoop<'static, State>, display: Display<State>) -> Self {
-        let camino = Camino::new(event_loop, display);
+    pub fn new_headless(
+        event_loop: &EventLoop<'static, State>,
+        display: Display<State>,
+        settings: settings::Source,
+    ) -> Self {
+        let camino = Camino::new(event_loop, display, settings).expect("the settings start");
         let backend = Backend::Headless(crate::backend::headless::Headless::default());
         Self { backend, camino }
     }
@@ -303,9 +314,24 @@ impl State {
 }
 
 impl Camino {
-    fn new(event_loop: &EventLoop<'static, State>, display: Display<State>) -> Self {
+    /// Waits for the settings thread's first reading, so the settings are complete before
+    /// any client connects.
+    fn new(
+        event_loop: &EventLoop<'static, State>,
+        display: Display<State>,
+        settings: settings::Source,
+    ) -> Result<Self, settings::Error> {
+        let (settings, settings_thread, changes) = settings::start(settings)?;
         let display_handle = display.handle();
         let loop_handle = event_loop.handle();
+        loop_handle
+            .insert_source(changes, |event, _, state| match event {
+                channel::Event::Msg(settings) => state.camino.settings_changed(settings),
+                channel::Event::Closed => {
+                    tracing::error!("the settings thread stopped; changes are no longer seen")
+                }
+            })
+            .expect("the settings channel joins the event loop");
 
         let source = Generic::new(display, Interest::READ, Mode::Level);
         loop_handle
@@ -328,7 +354,7 @@ impl Camino {
             .expect("the default xkb keymap compiles");
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
 
-        Self {
+        Ok(Self {
             loop_signal: event_loop.get_signal(),
             compositor_state: CompositorState::new::<State>(dh),
             shm_state: ShmState::new::<State>(dh, Vec::new()),
@@ -374,11 +400,26 @@ impl Camino {
             outputs: Vec::new(),
             next_output_id: 0,
             redraws: HashSet::new(),
-            policy: Policy::new(Config::default()),
+            policy: Policy::new(settings.policy.clone()),
             unmapped: Vec::new(),
             next_window_id: 0,
             palette: palette_source(event_loop.handle(), None),
+            settings,
+            settings_thread,
+        })
+    }
+
+    /// New settings from the settings thread: passes on what changed.
+    fn settings_changed(&mut self, settings: Settings) {
+        if settings.policy != self.settings.policy {
+            tracing::debug!(
+                "{} workspaces: {:?}",
+                settings.policy.workspace_count,
+                settings.policy.workspace_names
+            );
+            self.policy.settings_changed(settings.policy.clone());
         }
+        self.settings = settings;
     }
 
     /// Starts `camino-gtk-palette` as a client on the socket `add_socket` opened.

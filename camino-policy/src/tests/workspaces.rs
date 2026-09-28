@@ -92,3 +92,76 @@ fn activating_a_window_switches_to_its_workspace() {
     assert_eq!(policy.active_workspace(), 3);
     assert_eq!(policy.focus(SEAT), Some(id(1)));
 }
+
+fn workspaces(count: usize) -> Config {
+    Config {
+        workspace_count: count,
+        workspace_names: (1..=count).map(|n| format!("Desk {n}")).collect(),
+    }
+}
+
+#[test]
+fn a_larger_workspace_count_adds_empty_workspaces_at_the_end() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.move_to_workspace(id(1), 3);
+
+    policy.settings_changed(workspaces(6));
+
+    assert_eq!(policy.workspace_count(), 6);
+    assert_eq!(policy.stacking(3), [id(1)]);
+    assert_eq!(policy.stacking(5), []);
+    policy.switch_workspace(5);
+    assert_eq!(policy.active_workspace(), 5);
+}
+
+#[test]
+fn a_smaller_workspace_count_moves_windows_to_the_new_last_workspace() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.map_window(TestWindow::new(3, 400, 300), ms(3));
+    policy.move_to_workspace(id(2), 2);
+    policy.move_to_workspace(id(3), 3);
+    policy.move_to_workspace(id(1), 1);
+
+    policy.settings_changed(workspaces(2));
+
+    assert_eq!(policy.workspace_count(), 2);
+    assert_eq!(policy.stacking(1), [id(1), id(2), id(3)]);
+    assert_eq!(policy.workspace_of(id(3)), Some(1));
+    assert_eq!(policy.active_workspace(), 0);
+}
+
+#[test]
+fn the_active_workspace_follows_its_windows_when_it_is_removed() {
+    let mut policy = policy();
+    policy.switch_workspace(3);
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    policy.settings_changed(workspaces(2));
+
+    assert_eq!(policy.active_workspace(), 1);
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(1)][..]));
+}
+
+#[test]
+fn windows_on_a_kept_active_workspace_stay_put_and_focused() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    policy.settings_changed(workspaces(1));
+
+    assert_eq!(policy.active_workspace(), 0);
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn workspace_names_follow_the_settings() {
+    let mut policy = policy();
+
+    policy.settings_changed(workspaces(3));
+
+    assert_eq!(policy.workspace_names(), ["Desk 1", "Desk 2", "Desk 3"]);
+}

@@ -72,6 +72,7 @@ enum Op {
         y: i16,
     },
     EndGrab(u32),
+    SetWorkspaceCount(usize),
 }
 
 fn window_id() -> impl Strategy<Value = u64> {
@@ -152,6 +153,7 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(seat, id, top_left)| Op::BeginResize { seat, id, top_left }),
         1 => (seat(), any::<i16>(), any::<i16>()).prop_map(|(seat, x, y)| Op::GrabMotion { seat, x, y }),
         1 => seat().prop_map(Op::EndGrab),
+        1 => (1..=6usize).prop_map(Op::SetWorkspaceCount),
     ]
 }
 
@@ -213,6 +215,10 @@ impl Op {
             }
             Op::GrabMotion { seat, x, y } => policy.grab_motion(SeatId(seat), pointer(x, y)),
             Op::EndGrab(seat) => policy.end_grab(SeatId(seat)),
+            Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
+                workspace_count,
+                workspace_names: Vec::new(),
+            }),
         }
     }
 }
@@ -224,7 +230,11 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
         .collect();
 
     // Stacking is a permutation of the managed windows, and every window is on exactly one
-    // workspace: the one policy says it's on.
+    // workspace: the one policy says it's on. The active workspace is one of them.
+    assert!(
+        policy.active_workspace() < stacks.len(),
+        "the active workspace exists"
+    );
     let stacked: usize = stacks.iter().map(|s| s.len()).sum();
     assert_eq!(stacked, windows.len(), "stacks hold every window once");
     for &id in &windows {

@@ -1,0 +1,595 @@
+use super::*;
+
+/// A reading of every key at the schema defaults of Marco 1.29.0 and MATE 1.28.
+fn defaults() -> Reading {
+    let mut reading = Reading::default();
+    let mut put =
+        |schema: &str, key: &str, value: Value| reading.insert(schema, key, value.clone(), value);
+    let s = |s: &str| Value::Str(s.into());
+    put(MARCO_GENERAL, "theme", s("Menta"));
+    put(MARCO_GENERAL, "titlebar-font", s("Sans Bold 10"));
+    put(
+        MARCO_GENERAL,
+        "titlebar-uses-system-font",
+        Value::Bool(false),
+    );
+    put(
+        MARCO_GENERAL,
+        "button-layout",
+        s("menu:minimize,maximize,close"),
+    );
+    put(
+        MARCO_GENERAL,
+        "action-double-click-titlebar",
+        s("toggle_maximize"),
+    );
+    put(MARCO_GENERAL, "action-middle-click-titlebar", s("lower"));
+    put(MARCO_GENERAL, "action-right-click-titlebar", s("menu"));
+    put(MARCO_GENERAL, "num-workspaces", Value::Int(4));
+    for n in 1..=36 {
+        put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
+    }
+    put(INTERFACE, "gtk-theme", s("Menta"));
+    put(INTERFACE, "font-name", s("Sans 10"));
+    put(INTERFACE, "icon-theme", s("menta"));
+    put(FONT_RENDERING, "antialiasing", s("rgba"));
+    put(FONT_RENDERING, "hinting", s("slight"));
+    put(FONT_RENDERING, "rgba-order", s("rgb"));
+    put(MOUSE, "cursor-theme", s(""));
+    put(MOUSE, "cursor-size", Value::Int(24));
+    put(MOUSE, "double-click", Value::Int(400));
+    put(MOUSE, "drag-threshold", Value::Int(8));
+    reading
+}
+
+/// The defaults with one key set to `value`.
+fn with(schema: &str, key: &str, value: Value) -> Reading {
+    let mut reading = defaults();
+    let default = reading
+        .get(schema, key)
+        .map_or(value.clone(), |e| e.default.clone());
+    reading.insert(schema, key, value, default);
+    reading
+}
+
+fn string(value: &str) -> Value {
+    Value::Str(value.into())
+}
+
+fn settings(reading: &Reading) -> Settings {
+    let translation = translate(reading);
+    assert_eq!(translation.problems, [], "no problems expected");
+    translation.settings
+}
+
+/// The one problem translating `reading` has.
+fn problem(reading: &Reading) -> (Settings, Problem) {
+    let Translation {
+        settings,
+        mut problems,
+    } = translate(reading);
+    assert_eq!(problems.len(), 1, "one problem expected: {problems:?}");
+    (settings, problems.remove(0))
+}
+
+fn out_of_range(schema: &str, key: &str, value: &str, used: &str) -> Problem {
+    Problem::OutOfRange {
+        schema: schema.into(),
+        key: key.into(),
+        value: value.into(),
+        used: used.into(),
+    }
+}
+
+fn invalid(schema: &str, key: &str, value: &str, used: &str) -> Problem {
+    Problem::Invalid {
+        schema: schema.into(),
+        key: key.into(),
+        value: value.into(),
+        used: used.into(),
+    }
+}
+
+// Workspaces.
+
+#[test]
+fn the_defaults_give_four_workspaces_with_marcos_names() {
+    let config = settings(&defaults()).policy;
+    assert_eq!(config.workspace_count, 4);
+    assert_eq!(
+        config.workspace_names,
+        ["Workspace 1", "Workspace 2", "Workspace 3", "Workspace 4"]
+    );
+}
+
+#[test]
+fn num_workspaces_sets_the_count() {
+    let config = settings(&with(MARCO_GENERAL, "num-workspaces", Value::Int(6))).policy;
+    assert_eq!(config.workspace_count, 6);
+    assert_eq!(config.workspace_names.len(), 6);
+    assert_eq!(config.workspace_names[5], "Workspace 6");
+}
+
+#[test]
+fn num_workspaces_above_36_is_clamped() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "num-workspaces", Value::Int(50)));
+    assert_eq!(settings.policy.workspace_count, 36);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "num-workspaces", "50", "36")
+    );
+}
+
+#[test]
+fn num_workspaces_below_1_is_clamped() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "num-workspaces", Value::Int(0)));
+    assert_eq!(settings.policy.workspace_count, 1);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "num-workspaces", "0", "1")
+    );
+}
+
+#[test]
+fn workspace_names_are_used_when_set() {
+    let reading = with(MARCO_WORKSPACE_NAMES, "name-2", string("Mail"));
+    let names = settings(&reading).policy.workspace_names;
+    assert_eq!(names, ["Workspace 1", "Mail", "Workspace 3", "Workspace 4"]);
+}
+
+#[test]
+fn names_beyond_the_count_are_not_passed_on() {
+    let reading = with(MARCO_WORKSPACE_NAMES, "name-5", string("Spare"));
+    assert_eq!(settings(&reading).policy.workspace_names.len(), 4);
+}
+
+// Frames.
+
+#[test]
+fn the_defaults_give_marcos_frames() {
+    let frames = settings(&defaults()).frames;
+    assert_eq!(
+        frames,
+        Frames {
+            theme: "Menta".into(),
+            titlebar_font: "Sans Bold 10".into(),
+            button_layout: ButtonLayout::parse("menu:minimize,maximize,close"),
+            double_click: TitlebarAction::ToggleMaximize,
+            middle_click: TitlebarAction::Lower,
+            right_click: TitlebarAction::Menu,
+            attach_modal_dialogs: false,
+        }
+    );
+}
+
+#[test]
+fn theme_names_the_marco_theme() {
+    let reading = with(MARCO_GENERAL, "theme", string("ClearlooksRe"));
+    assert_eq!(settings(&reading).frames.theme, "ClearlooksRe");
+}
+
+#[test]
+fn an_empty_theme_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "theme", string("")));
+    assert_eq!(settings.frames.theme, "Menta");
+    assert_eq!(problem, invalid(MARCO_GENERAL, "theme", "''", "'Menta'"));
+}
+
+#[test]
+fn titlebar_font_is_used_without_the_system_font() {
+    let reading = with(MARCO_GENERAL, "titlebar-font", string("Serif Italic 12"));
+    assert_eq!(settings(&reading).frames.titlebar_font, "Serif Italic 12");
+}
+
+#[test]
+fn titlebar_uses_system_font_takes_the_interface_font() {
+    let mut reading = with(
+        MARCO_GENERAL,
+        "titlebar-uses-system-font",
+        Value::Bool(true),
+    );
+    reading.insert(
+        INTERFACE,
+        "font-name",
+        string("Cantarell 11"),
+        string("Sans 10"),
+    );
+    assert_eq!(settings(&reading).frames.titlebar_font, "Cantarell 11");
+}
+
+#[test]
+fn an_empty_titlebar_font_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "titlebar-font", string("")));
+    assert_eq!(settings.frames.titlebar_font, "Sans Bold 10");
+    assert_eq!(
+        problem,
+        invalid(MARCO_GENERAL, "titlebar-font", "''", "'Sans Bold 10'")
+    );
+}
+
+#[test]
+fn button_layout_is_parsed() {
+    let reading = with(MARCO_GENERAL, "button-layout", string("close:minimize"));
+    assert_eq!(
+        settings(&reading).frames.button_layout,
+        ButtonLayout::parse("close:minimize")
+    );
+}
+
+#[test]
+fn titlebar_actions_are_read_by_nick() {
+    let mut reading = with(
+        MARCO_GENERAL,
+        "action-double-click-titlebar",
+        string("toggle_shade"),
+    );
+    let mut set = |key, nick| reading.insert(MARCO_GENERAL, key, string(nick), string("x"));
+    set("action-middle-click-titlebar", "toggle_maximize_vertically");
+    set("action-right-click-titlebar", "none");
+    let frames = settings(&reading).frames;
+    assert_eq!(frames.double_click, TitlebarAction::ToggleShade);
+    assert_eq!(
+        frames.middle_click,
+        TitlebarAction::ToggleMaximizeVertically
+    );
+    assert_eq!(frames.right_click, TitlebarAction::None);
+}
+
+#[test]
+fn every_titlebar_action_nick_is_known() {
+    let nicks = [
+        ("close", TitlebarAction::Close),
+        ("minimize", TitlebarAction::Minimize),
+        ("toggle_maximize", TitlebarAction::ToggleMaximize),
+        (
+            "toggle_maximize_horizontally",
+            TitlebarAction::ToggleMaximizeHorizontally,
+        ),
+        (
+            "toggle_maximize_vertically",
+            TitlebarAction::ToggleMaximizeVertically,
+        ),
+        ("toggle_shade", TitlebarAction::ToggleShade),
+        ("shade", TitlebarAction::Shade),
+        ("unshade", TitlebarAction::Unshade),
+        ("raise", TitlebarAction::Raise),
+        ("lower", TitlebarAction::Lower),
+        ("toggle_stick", TitlebarAction::ToggleStick),
+        ("toggle_above", TitlebarAction::ToggleAbove),
+        ("menu", TitlebarAction::Menu),
+        ("none", TitlebarAction::None),
+    ];
+    for (nick, action) in nicks {
+        let reading = with(MARCO_GENERAL, "action-right-click-titlebar", string(nick));
+        assert_eq!(settings(&reading).frames.right_click, action, "{nick}");
+    }
+}
+
+#[test]
+fn an_unknown_titlebar_action_falls_back_to_the_default() {
+    // `last` is the enum's end marker, not an action.
+    let reading = with(
+        MARCO_GENERAL,
+        "action-middle-click-titlebar",
+        string("last"),
+    );
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.frames.middle_click, TitlebarAction::Lower);
+    assert_eq!(
+        problem,
+        invalid(
+            MARCO_GENERAL,
+            "action-middle-click-titlebar",
+            "'last'",
+            "'lower'"
+        )
+    );
+}
+
+#[test]
+fn attach_modal_dialogs_is_read_when_a_schema_has_it() {
+    let reading = with(MARCO_GENERAL, "attach-modal-dialogs", Value::Bool(true));
+    assert!(settings(&reading).frames.attach_modal_dialogs);
+}
+
+#[test]
+fn a_value_of_the_wrong_type_falls_back_to_the_default() {
+    let reading = with(MARCO_GENERAL, "titlebar-uses-system-font", Value::Int(1));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.frames.titlebar_font, "Sans Bold 10");
+    assert_eq!(
+        problem,
+        invalid(MARCO_GENERAL, "titlebar-uses-system-font", "1", "false")
+    );
+}
+
+// org.mate.interface.
+
+#[test]
+fn the_defaults_give_mates_interface() {
+    assert_eq!(
+        settings(&defaults()).interface,
+        Interface {
+            gtk_theme: "Menta".into(),
+            font_name: "Sans 10".into(),
+            icon_theme: "menta".into(),
+        }
+    );
+}
+
+#[test]
+fn interface_keys_are_read() {
+    let mut reading = with(INTERFACE, "gtk-theme", string("BlackMATE"));
+    reading.insert(
+        INTERFACE,
+        "font-name",
+        string("Cantarell 11"),
+        string("Sans 10"),
+    );
+    reading.insert(INTERFACE, "icon-theme", string("mate"), string("menta"));
+    assert_eq!(
+        settings(&reading).interface,
+        Interface {
+            gtk_theme: "BlackMATE".into(),
+            font_name: "Cantarell 11".into(),
+            icon_theme: "mate".into(),
+        }
+    );
+}
+
+#[test]
+fn an_empty_gtk_theme_or_font_falls_back_to_the_default() {
+    let (theme, theme_problem) = problem(&with(INTERFACE, "gtk-theme", string("")));
+    assert_eq!(theme.interface.gtk_theme, "Menta");
+    assert_eq!(
+        theme_problem,
+        invalid(INTERFACE, "gtk-theme", "''", "'Menta'")
+    );
+
+    let (font, font_problem) = problem(&with(INTERFACE, "font-name", string("")));
+    assert_eq!(font.interface.font_name, "Sans 10");
+    assert_eq!(
+        font_problem,
+        invalid(INTERFACE, "font-name", "''", "'Sans 10'")
+    );
+}
+
+#[test]
+fn an_empty_icon_theme_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(INTERFACE, "icon-theme", string("")));
+    assert_eq!(settings.interface.icon_theme, "menta");
+    assert_eq!(problem, invalid(INTERFACE, "icon-theme", "''", "'menta'"));
+}
+
+// org.mate.font-rendering.
+
+#[test]
+fn the_defaults_give_mates_font_rendering() {
+    assert_eq!(
+        settings(&defaults()).font_rendering,
+        FontRendering {
+            antialiasing: Antialiasing::Rgba,
+            hinting: Hinting::Slight,
+            rgba_order: RgbaOrder::Rgb,
+        }
+    );
+}
+
+#[test]
+fn every_font_rendering_nick_is_known() {
+    for (nick, value) in [
+        ("none", Antialiasing::None),
+        ("grayscale", Antialiasing::Grayscale),
+        ("rgba", Antialiasing::Rgba),
+    ] {
+        let reading = with(FONT_RENDERING, "antialiasing", string(nick));
+        assert_eq!(settings(&reading).font_rendering.antialiasing, value);
+    }
+    for (nick, value) in [
+        ("none", Hinting::None),
+        ("slight", Hinting::Slight),
+        ("medium", Hinting::Medium),
+        ("full", Hinting::Full),
+    ] {
+        let reading = with(FONT_RENDERING, "hinting", string(nick));
+        assert_eq!(settings(&reading).font_rendering.hinting, value);
+    }
+    for (nick, value) in [
+        ("rgb", RgbaOrder::Rgb),
+        ("bgr", RgbaOrder::Bgr),
+        ("vrgb", RgbaOrder::Vrgb),
+        ("vbgr", RgbaOrder::Vbgr),
+    ] {
+        let reading = with(FONT_RENDERING, "rgba-order", string(nick));
+        assert_eq!(settings(&reading).font_rendering.rgba_order, value);
+    }
+}
+
+#[test]
+fn an_unknown_font_rendering_nick_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(FONT_RENDERING, "hinting", string("extreme")));
+    assert_eq!(settings.font_rendering.hinting, Hinting::Slight);
+    assert_eq!(
+        problem,
+        invalid(FONT_RENDERING, "hinting", "'extreme'", "'slight'")
+    );
+}
+
+// org.mate.peripherals-mouse.
+
+#[test]
+fn the_defaults_give_mates_mouse() {
+    assert_eq!(
+        settings(&defaults()).mouse,
+        Mouse {
+            cursor_theme: String::new(),
+            cursor_size: 24,
+            double_click_time: Duration::from_millis(400),
+            drag_threshold: 8,
+        }
+    );
+}
+
+#[test]
+fn mouse_keys_are_read() {
+    let mut reading = with(MOUSE, "cursor-theme", string("mate-black"));
+    reading.insert(MOUSE, "cursor-size", Value::Int(48), Value::Int(24));
+    reading.insert(MOUSE, "double-click", Value::Int(250), Value::Int(400));
+    reading.insert(MOUSE, "drag-threshold", Value::Int(0), Value::Int(8));
+    assert_eq!(
+        settings(&reading).mouse,
+        Mouse {
+            cursor_theme: "mate-black".into(),
+            cursor_size: 48,
+            double_click_time: Duration::from_millis(250),
+            drag_threshold: 0,
+        }
+    );
+}
+
+#[test]
+fn a_cursor_size_below_1_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(MOUSE, "cursor-size", Value::Int(0)));
+    assert_eq!(settings.mouse.cursor_size, 24);
+    assert_eq!(problem, invalid(MOUSE, "cursor-size", "0", "24"));
+}
+
+#[test]
+fn a_double_click_time_below_1_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(MOUSE, "double-click", Value::Int(-5)));
+    assert_eq!(settings.mouse.double_click_time, Duration::from_millis(400));
+    assert_eq!(problem, invalid(MOUSE, "double-click", "-5", "400"));
+}
+
+#[test]
+fn a_negative_drag_threshold_falls_back_to_the_default() {
+    let (settings, problem) = problem(&with(MOUSE, "drag-threshold", Value::Int(-1)));
+    assert_eq!(settings.mouse.drag_threshold, 8);
+    assert_eq!(problem, invalid(MOUSE, "drag-threshold", "-1", "8"));
+}
+
+// Unsupported keys, logging once, and missing schemas.
+
+const TEST_UNSUPPORTED: &[(&str, &str)] = &[(MARCO_GENERAL, "wrap-style")];
+
+fn unsupported_problems(reading: &Reading) -> Vec<Problem> {
+    translate_with(reading, TEST_UNSUPPORTED).problems
+}
+
+#[test]
+fn an_unsupported_key_at_its_default_is_not_reported() {
+    let reading = with(MARCO_GENERAL, "wrap-style", string("no wrap"));
+    assert_eq!(unsupported_problems(&reading), []);
+}
+
+#[test]
+fn an_unsupported_key_set_away_from_its_default_is_reported() {
+    let mut reading = defaults();
+    reading.insert(
+        MARCO_GENERAL,
+        "wrap-style",
+        string("toroidal"),
+        string("no wrap"),
+    );
+    assert_eq!(
+        unsupported_problems(&reading),
+        [Problem::Unsupported {
+            schema: MARCO_GENERAL.into(),
+            key: "wrap-style".into(),
+            value: "'toroidal'".into(),
+        }]
+    );
+}
+
+#[test]
+fn an_unsupported_key_that_isnt_installed_is_not_reported() {
+    assert_eq!(unsupported_problems(&defaults()), []);
+}
+
+#[test]
+fn an_unsupported_key_is_logged_once_whatever_its_values() {
+    let unsupported = |value: &str| Problem::Unsupported {
+        schema: MARCO_GENERAL.into(),
+        key: "wrap-style".into(),
+        value: value.into(),
+    };
+    let mut logged = Logged::default();
+    assert_eq!(
+        logged.first_time(vec![unsupported("'toroidal'")]),
+        [unsupported("'toroidal'")]
+    );
+    assert_eq!(logged.first_time(vec![unsupported("'classic'")]), []);
+}
+
+#[test]
+fn a_bad_value_is_logged_once_and_a_new_bad_value_again() {
+    let mut logged = Logged::default();
+    let fifty = out_of_range(MARCO_GENERAL, "num-workspaces", "50", "36");
+    let sixty = out_of_range(MARCO_GENERAL, "num-workspaces", "60", "36");
+    assert_eq!(
+        logged.first_time(vec![fifty.clone()]),
+        std::slice::from_ref(&fifty)
+    );
+    assert_eq!(logged.first_time(vec![fifty]), []);
+    assert_eq!(logged.first_time(vec![sixty.clone()]), [sixty]);
+}
+
+#[test]
+fn every_unsupported_key_is_in_a_schema_camino_reads() {
+    for (schema, key) in UNSUPPORTED {
+        assert!(
+            SCHEMAS.iter().any(|s| s.id == *schema),
+            "{schema} {key} isn't read"
+        );
+    }
+}
+
+#[test]
+fn a_missing_optional_schema_is_reported_and_its_keys_are_defaults() {
+    let mut reading = Reading::default();
+    for (key, value) in [
+        ("num-workspaces", Value::Int(4)),
+        ("theme", string("Menta")),
+    ] {
+        reading.insert(MARCO_GENERAL, key, value.clone(), value);
+    }
+    reading.set_missing(MOUSE);
+    let Translation { settings, problems } = translate(&reading);
+    assert_eq!(problems, [Problem::MissingSchema(MOUSE.into())]);
+    assert_eq!(settings.mouse.cursor_size, 24);
+}
+
+#[test]
+fn missing_marco_schemas_are_an_error_naming_them() {
+    let installed = |id: &str| id != MARCO_WORKSPACE_NAMES && id != MARCO_GENERAL;
+    let err = check_schemas(installed).unwrap_err();
+    assert_eq!(err.0, [MARCO_GENERAL, MARCO_WORKSPACE_NAMES]);
+    assert_eq!(
+        err.to_string(),
+        "Marco's GSettings schemas org.mate.Marco.general, org.mate.Marco.workspace-names \
+         aren't installed; Camino reads Marco's settings, so install marco"
+    );
+}
+
+#[test]
+fn missing_optional_schemas_are_not_an_error() {
+    let installed = |id: &str| id.starts_with("org.mate.Marco");
+    assert_eq!(check_schemas(installed), Ok(()));
+}
+
+#[test]
+fn a_bad_value_falls_back_to_the_schemas_own_default() {
+    let mut reading = defaults();
+    reading.insert(MOUSE, "cursor-size", Value::Int(0), Value::Int(32));
+    reading.insert(MARCO_GENERAL, "theme", string(""), string("Traditional"));
+    let Translation { settings, problems } = translate(&reading);
+    assert_eq!(settings.mouse.cursor_size, 32);
+    assert_eq!(settings.frames.theme, "Traditional");
+    assert_eq!(
+        problems,
+        [
+            invalid(MARCO_GENERAL, "theme", "''", "'Traditional'"),
+            invalid(MOUSE, "cursor-size", "0", "32"),
+        ]
+    );
+}

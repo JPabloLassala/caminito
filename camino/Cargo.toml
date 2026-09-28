@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 camino-policy = { path = "../camino-policy" }
 camino-theme = { path = "../camino-theme" }
+gio = "0.22.10"
 rustix = { version = "1.1.5", features = ["fs"] }
 signal-hook = "0.4.4"
 smithay = { workspace = true, features = ["backend_winit", "desktop", "wayland_frontend"] }

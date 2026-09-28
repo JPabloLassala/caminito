@@ -27,7 +27,7 @@ The `settings` module from [15](15-crate-and-module-architecture.md), with the k
 
 ## Acceptance criteria
 
-- [ ] Translation unit tests for every key above, including clamping and the unsupported-key rule, written before the code.
-- [ ] Headless tests: a window maps only after the first snapshot; changing `num-workspaces` live adds and removes workspaces with windows moved as Marco does.
-- [ ] The proptest operations include changing the workspace count, and the four invariants still hold.
+- [x] Translation unit tests for every key above, including clamping and the unsupported-key rule, written before the code.
+- [x] Headless tests: a window maps only after the first snapshot; changing `num-workspaces` live adds and removes workspaces with windows moved as Marco does.
+- [x] The proptest operations include changing the workspace count, and the four invariants still hold.
 - [ ] Nested, `gsettings set org.mate.Marco.general num-workspaces 6` gives six workspaces to switch through.

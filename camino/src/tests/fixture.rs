@@ -15,7 +15,27 @@ use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Physical, Size};
 
+use crate::settings::{self, Value};
 use crate::state::{ClientState, State};
+
+/// The vendored schemas under `tests/schemas/` (14), compiled once per test run beside the
+/// test binary.
+fn test_schemas() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let exe = std::env::current_exe().unwrap();
+        let dir = exe.parent().unwrap().join("camino-test-schemas");
+        std::fs::create_dir_all(&dir).unwrap();
+        let sources = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/schemas");
+        let status = std::process::Command::new("glib-compile-schemas")
+            .arg(format!("--targetdir={}", dir.display()))
+            .arg(sources)
+            .status()
+            .expect("glib-compile-schemas runs");
+        assert!(status.success(), "the test schemas compile");
+        dir
+    })
+}
 
 // Linux input event codes.
 pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE};
@@ -48,10 +68,20 @@ pub struct Fixture {
 pub struct ClientId(usize);
 
 impl Fixture {
-    /// Camino with no outputs and no clients.
+    /// Camino with no outputs and no clients, and the settings at their defaults.
     pub fn new() -> Self {
+        Self::with_settings(Vec::new())
+    }
+
+    /// Camino with no outputs and no clients, on settings of its own with `initial` set
+    /// before the first snapshot.
+    pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
         let event_loop = EventLoop::try_new().unwrap();
-        let state = State::new_headless(&event_loop, Display::new().unwrap());
+        let settings = settings::Source::Test {
+            schema_dir: test_schemas().to_owned(),
+            initial,
+        };
+        let state = State::new_headless(&event_loop, Display::new().unwrap(), settings);
         Self {
             event_loop,
             state,
@@ -184,6 +214,34 @@ impl Fixture {
             .dispatch(Duration::ZERO, &mut self.state)
             .unwrap();
         self.state.refresh_and_flush_clients();
+    }
+
+    /// Writes a setting, as `gsettings set` would. It takes effect once the settings thread
+    /// reports it; see `dispatch_until`.
+    pub fn set_setting(&mut self, schema: &'static str, key: &str, value: Value) {
+        self.state.camino.settings_thread.set(schema, key, value);
+    }
+
+    /// Dispatches until `done` holds, waiting for other threads such as the settings
+    /// thread, and fails rather than hangs.
+    pub fn dispatch_until(&mut self, done: impl Fn(&Self) -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !done(self) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the condition didn't hold within 5 s"
+            );
+            for client in &mut self.clients {
+                client.flush();
+            }
+            self.event_loop
+                .dispatch(Duration::from_millis(10), &mut self.state)
+                .unwrap();
+            self.state.refresh_and_flush_clients();
+            for client in &mut self.clients {
+                client.dispatch();
+            }
+        }
     }
 
     /// Every client sends its requests, the compositor handles them, then every client handles

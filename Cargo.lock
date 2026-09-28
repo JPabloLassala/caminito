@@ -173,6 +173,7 @@ dependencies = [
  "camino-policy",
  "camino-test-client",
  "camino-theme",
+ "gio",
  "insta",
  "rustix",
  "signal-hook",

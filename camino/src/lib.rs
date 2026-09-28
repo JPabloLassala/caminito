@@ -8,6 +8,7 @@ pub mod input;
 pub mod logging;
 pub mod output;
 pub mod scene;
+pub mod settings;
 pub mod state;
 pub mod window;
 

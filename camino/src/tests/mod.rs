@@ -9,4 +9,5 @@ mod headless;
 mod input;
 mod palette_helper;
 mod popups;
+mod settings;
 mod xdg_shell;

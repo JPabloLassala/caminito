@@ -50,18 +50,33 @@ struct Grab {
     start: Rectangle<i32, Logical>,
 }
 
-/// Policy's settings.
-#[derive(Debug, Clone)]
+/// Marco's `MAX_REASONABLE_WORKSPACES`, the schema's upper bound on `num-workspaces`.
+pub const MAX_WORKSPACES: usize = 36;
+
+/// Policy's settings, from GSettings (09).
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
-    /// A fixed count, standing in until M2 reads `num-workspaces`.
+    /// `num-workspaces`, which policy keeps within 1 to `MAX_WORKSPACES`.
     pub workspace_count: usize,
+    /// Each workspace's name, from the first. Policy only holds them, for ext-workspace
+    /// and the debug dump; a missing name is Marco's "Workspace N".
+    pub workspace_names: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        // Marco's default `num-workspaces`.
-        Self { workspace_count: 4 }
+        // Marco's default `num-workspaces`, with its default names.
+        let workspace_count = 4;
+        Self {
+            workspace_count,
+            workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
+        }
     }
+}
+
+/// Marco's name for a workspace with none set, numbered from 1.
+pub fn default_workspace_name(number: usize) -> String {
+    format!("Workspace {number}")
 }
 
 /// What policy has last asked of a window, so each request is sent only when it changes.
@@ -143,6 +158,8 @@ pub struct Policy<W: PolicyWindow> {
     /// Each workspace's windows, bottom to top.
     stacks: Vec<Vec<WindowId>>,
     active: usize,
+    /// Each workspace's name, one per stack.
+    workspace_names: Vec<String>,
     outputs: Vec<Output>,
     /// Every seat seen so far.
     seats: BTreeSet<SeatId>,
@@ -159,10 +176,11 @@ pub struct Policy<W: PolicyWindow> {
 
 impl<W: PolicyWindow> Policy<W> {
     pub fn new(config: Config) -> Self {
-        Self {
+        let mut policy = Self {
             windows: BTreeMap::new(),
-            stacks: vec![Vec::new(); config.workspace_count.max(1)],
+            stacks: vec![Vec::new()],
             active: 0,
+            workspace_names: Vec::new(),
             outputs: Vec::new(),
             seats: BTreeSet::new(),
             focus: BTreeMap::new(),
@@ -170,7 +188,9 @@ impl<W: PolicyWindow> Policy<W> {
             last_seat: SeatId(0),
             grabs: BTreeMap::new(),
             mru: Vec::new(),
-        }
+        };
+        policy.settings_changed(config);
+        policy
     }
 
     // Events.
@@ -189,6 +209,34 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn remove_output(&mut self, id: OutputId) {
         self.outputs.retain(|o| o.id != id);
         self.rehome_windows();
+        self.apply();
+    }
+
+    /// The settings changed. A smaller workspace count moves the windows on the removed
+    /// workspaces to the new last one, and the active workspace with them, as Marco's
+    /// `update_num_workspaces` does; a larger one adds empty workspaces at the end.
+    pub fn settings_changed(&mut self, config: Config) {
+        let count = config.workspace_count.clamp(1, MAX_WORKSPACES);
+        let mut names = config.workspace_names;
+        names.truncate(count);
+        names.extend((names.len() + 1..=count).map(default_workspace_name));
+        self.workspace_names = names;
+
+        if count < self.stacks.len() {
+            let last = count - 1;
+            let removed: Vec<WindowId> = self.stacks.drain(count..).flatten().collect();
+            for id in &removed {
+                self.windows.get_mut(id).unwrap().workspace = last;
+            }
+            // Marco keeps one stacking order across workspaces, which moving leaves alone.
+            // With a stack per workspace, the moved windows go above the kept ones, in the
+            // order of the workspaces they came from, which is only close to that.
+            self.stacks[last].extend(removed);
+            self.active = self.active.min(last);
+        } else {
+            self.stacks.resize(count, Vec::new());
+        }
+        // The active workspace may have been removed, so every seat's focus is checked.
         self.apply();
     }
 
@@ -573,6 +621,11 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn workspace_count(&self) -> usize {
         self.stacks.len()
+    }
+
+    /// Each workspace's name, from the first.
+    pub fn workspace_names(&self) -> &[String] {
+        &self.workspace_names
     }
 
     pub fn window_mut(&mut self, id: WindowId) -> Option<&mut W> {
