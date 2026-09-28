@@ -1,7 +1,7 @@
 # Compositor skeleton
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M1
 Blocked by: 18
 Map: [Camino v0.1](../map.md)

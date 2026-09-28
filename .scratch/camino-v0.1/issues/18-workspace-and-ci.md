@@ -1,7 +1,7 @@
 # Workspace and CI
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M1
 Blocked by:
 Map: [Camino v0.1](../map.md)
@@ -31,5 +31,5 @@ The empty shape of the repo, with CI running on it from the first commit.
 
 - [x] `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`, `cargo fmt --check` and `cargo deny check` all pass locally.
 - [x] `camino-policy`'s dependency tree has no `wayland-server`, `wayland-client`, x11rb, GLib or zbus (`cargo tree -p camino-policy`).
-- [ ] The push workflow is green on GitHub.
-- [ ] The weekly workflow has been started by hand once with `workflow_dispatch`, and both jobs run.
+- [x] The push workflow is green on GitHub.
+- [x] The weekly workflow has been started by hand once with `workflow_dispatch`, and both jobs run.
