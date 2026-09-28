@@ -1,3 +1,5 @@
+use smithay::utils::FrameExtents;
+
 use super::*;
 
 fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
@@ -20,6 +22,24 @@ fn maximising_fills_the_work_area_with_the_frame_and_unmaximising_restores() {
         window(&policy, 1).last_geometry(),
         Some((placed, WindowStates::default()))
     );
+}
+
+#[test]
+fn a_maximised_frame_fills_the_work_area_with_its_maximised_borders() {
+    let mut policy = policy();
+    let mut w = TestWindow::new(1, 400, 300).with_frame(5, 5, 25, 5);
+    w.maximized_extents = FrameExtents::new(0, 0, 20, 0);
+    policy.map_window(w, ms(1));
+    let (placed, _) = window(&policy, 1).last_geometry().unwrap();
+
+    policy.set_maximized(id(1), true);
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(0, 20, 1920, 1060));
+
+    // The floating frame is the one to restore.
+    policy.set_maximized(id(1), false);
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, placed);
 }
 
 #[test]

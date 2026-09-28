@@ -7,6 +7,8 @@ mod rendering;
 mod selection;
 mod xdg_shell;
 
+pub(crate) use decoration::kde_server_side;
+
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

@@ -101,6 +101,7 @@ struct Managed<W> {
     hints: SizeHints,
     ssd: bool,
     extents: FrameExtents<i32, Logical>,
+    maximized_extents: FrameExtents<i32, Logical>,
     /// The edges and starting geometry of an interactive resize in progress.
     resize: Option<(ResizeEdges, Rectangle<i32, Logical>)>,
     maximized: bool,
@@ -111,6 +112,14 @@ struct Managed<W> {
     /// The geometry to go back to, while maximised or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
     sent: Sent,
+}
+
+impl<W: PolicyWindow> Managed<W> {
+    fn read_frame(&mut self) {
+        self.ssd = self.window.is_ssd();
+        self.extents = self.window.frame_extents(false);
+        self.maximized_extents = self.window.frame_extents(true);
+    }
 }
 
 impl<W> Managed<W> {
@@ -132,7 +141,11 @@ impl<W> Managed<W> {
     /// The frame's extents, or none when the window has no frame showing.
     fn visible_extents(&self) -> FrameExtents<i32, Logical> {
         if self.ssd && !self.fullscreen {
-            self.extents
+            if self.maximized {
+                self.maximized_extents
+            } else {
+                self.extents
+            }
         } else {
             FrameExtents::default()
         }
@@ -248,7 +261,8 @@ impl<W: PolicyWindow> Policy<W> {
         let window_type = window.window_type();
         let hints = window.size_hints();
         let ssd = window.is_ssd();
-        let extents = window.frame_extents();
+        let extents = window.frame_extents(false);
+        let maximized_extents = window.frame_extents(true);
         let parent = window
             .transient_parent()
             .filter(|p| self.windows.contains_key(p));
@@ -265,6 +279,7 @@ impl<W: PolicyWindow> Policy<W> {
                 hints,
                 ssd,
                 extents,
+                maximized_extents,
                 resize: None,
                 maximized: false,
                 fullscreen: false,
@@ -316,8 +331,7 @@ impl<W: PolicyWindow> Policy<W> {
         };
         managed.window_type = managed.window.window_type();
         managed.hints = managed.window.size_hints();
-        managed.ssd = managed.window.is_ssd();
-        managed.extents = managed.window.frame_extents();
+        managed.read_frame();
         let size = managed.window.size();
         managed.size = size;
         if let Some((edges, start)) = managed.resize {
@@ -345,6 +359,17 @@ impl<W: PolicyWindow> Policy<W> {
                 self.move_tree(id, self.windows[&parent].workspace);
             }
         }
+        self.relayout(id);
+        self.apply();
+    }
+
+    /// The window's frame changed without a commit, such as when the theme or its decoration
+    /// mode did: re-reads it, and lays the window out again.
+    pub fn frame_changed(&mut self, id: WindowId) {
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        managed.read_frame();
         self.relayout(id);
         self.apply();
     }

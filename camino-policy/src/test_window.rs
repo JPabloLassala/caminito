@@ -23,6 +23,8 @@ pub struct TestWindow {
     pub requested_position: Option<Point<i32, Logical>>,
     pub ssd: bool,
     pub extents: FrameExtents<i32, Logical>,
+    /// The frame's extents while maximised.
+    pub maximized_extents: FrameExtents<i32, Logical>,
     pub calls: Vec<Call>,
 }
 
@@ -38,6 +40,7 @@ impl TestWindow {
             requested_position: None,
             ssd: false,
             extents: FrameExtents::default(),
+            maximized_extents: FrameExtents::default(),
             calls: Vec::new(),
         }
     }
@@ -52,10 +55,11 @@ impl TestWindow {
         self
     }
 
-    /// Makes the window SSD with a frame of the given extents.
+    /// Makes the window SSD with a frame of the given extents, maximised or not.
     pub fn with_frame(mut self, left: i32, right: i32, top: i32, bottom: i32) -> Self {
         self.ssd = true;
         self.extents = FrameExtents::new(left, right, top, bottom);
+        self.maximized_extents = self.extents;
         self
     }
 
@@ -136,8 +140,12 @@ impl PolicyWindow for TestWindow {
         self.ssd
     }
 
-    fn frame_extents(&self) -> FrameExtents<i32, Logical> {
-        self.extents
+    fn frame_extents(&self, maximized: bool) -> FrameExtents<i32, Logical> {
+        if maximized {
+            self.maximized_extents
+        } else {
+            self.extents
+        }
     }
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {

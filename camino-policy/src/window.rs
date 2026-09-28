@@ -55,8 +55,9 @@ pub struct WindowStates {
 
 /// A window as policy sees it: facts to read, and requests to apply decisions.
 ///
-/// Policy owns its `W` values. It reads the facts when a window maps and when it commits, and
-/// calls each request only when what it asks for changes.
+/// Policy owns its `W` values. It reads the facts when a window maps, when it commits, and when
+/// the compositor says its frame changed, and calls each request only when what it asks for
+/// changes.
 pub trait PolicyWindow {
     // Facts.
 
@@ -76,9 +77,10 @@ pub trait PolicyWindow {
     fn app_id(&self) -> Option<String>;
     /// Whether Camino draws a frame for this window.
     fn is_ssd(&self) -> bool;
-    /// The frame's size around the window geometry. Policy ignores it when the window isn't
-    /// SSD, and while it's fullscreen.
-    fn frame_extents(&self) -> FrameExtents<i32, Logical>;
+    /// The frame's size around the window geometry, maximised or not, since a theme can draw
+    /// a maximised frame with other borders. Policy ignores it when the window isn't SSD, and
+    /// while it's fullscreen.
+    fn frame_extents(&self, maximized: bool) -> FrameExtents<i32, Logical>;
 
     // Requests.
 

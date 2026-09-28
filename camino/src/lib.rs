@@ -4,6 +4,7 @@ pub mod backend;
 pub mod decoration;
 mod handlers;
 pub mod helpers;
+pub mod icons;
 pub mod input;
 pub mod logging;
 pub mod output;

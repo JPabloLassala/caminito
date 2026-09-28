@@ -69,9 +69,34 @@ impl<D: PaletteState> PaletteSource<D> {
         &self.palette
     }
 
+    pub fn cache(&self) -> Option<&PaletteCache> {
+        self.cache.as_ref()
+    }
+
     /// The GTK theme the palette is for, if it's known.
     pub fn gtk_theme(&self) -> Option<&str> {
         self.gtk_theme.as_deref()
+    }
+
+    /// Uses the cached palette for `gtk_theme`, if there is one, until the helper reports.
+    /// Returns whether it did.
+    pub fn use_cached(&mut self, gtk_theme: &str) -> bool {
+        let Some(cache) = &self.cache else {
+            return false;
+        };
+        let loaded = [Variant::Default, Variant::Dark].map(|variant| {
+            cache
+                .load(gtk_theme, variant)
+                .inspect_err(|err| log_cache_error(cache, gtk_theme, variant, err))
+                .ok()
+                .flatten()
+        });
+        let [Some(default), Some(dark)] = loaded else {
+            return false;
+        };
+        self.gtk_theme = Some(gtk_theme.to_owned());
+        self.palette = Palette { default, dark };
+        true
     }
 
     /// Asks for the `gtk:custom` names the Marco theme uses, now and after every restart.

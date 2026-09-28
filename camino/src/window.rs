@@ -3,9 +3,11 @@
 use std::cell::Cell;
 
 use camino_policy::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
+use camino_theme::PaletteColors;
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -13,7 +15,13 @@ use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
+use smithay::wayland::xdg_toplevel_icon::ToplevelIconCachedState;
+
+use crate::decoration::style::{FrameFacts, frame_style};
+use crate::decoration::{FrameContext, FrameInputs, IconSource, WindowFrame};
+use crate::handlers::kde_server_side;
 
 use crate::output::{output_geometry, output_id};
 use crate::state::Camino;
@@ -52,6 +60,18 @@ pub struct Mapped {
     primary_output: Option<Output>,
     /// The client asked for a state, so it's owed a configure even if nothing changed.
     configure_owed: Cell<bool>,
+    activated: bool,
+    /// The states policy last asked for.
+    states: WindowStates,
+    /// Whether Camino draws a frame, and its extents unmaximised and maximised, as policy
+    /// last read them.
+    ssd: bool,
+    extents: FrameExtents<i32, Logical>,
+    maximized_extents: FrameExtents<i32, Logical>,
+    /// The largest rounded-up scale of the outputs the window is on, which its strips are
+    /// drawn at (13).
+    frame_scale: i32,
+    frame: WindowFrame,
 }
 
 impl Mapped {
@@ -65,6 +85,13 @@ impl Mapped {
             outputs: Vec::new(),
             primary_output: None,
             configure_owed: Cell::new(false),
+            activated: false,
+            states: WindowStates::default(),
+            ssd: false,
+            extents: FrameExtents::default(),
+            maximized_extents: FrameExtents::default(),
+            frame_scale: 1,
+            frame: WindowFrame::default(),
         }
     }
 
@@ -141,6 +168,12 @@ impl Mapped {
         }
 
         self.primary_output = primary.map(|(output, _)| output.clone());
+        self.frame_scale = outputs
+            .iter()
+            .filter(|output| self.outputs.contains(&output_id(output)))
+            .map(|output| output.current_scale().fractional_scale().ceil() as i32)
+            .max()
+            .unwrap_or(1);
         if let Some(output) = &self.primary_output {
             let scale = output.current_scale();
             let transform = output.current_transform();
@@ -156,6 +189,128 @@ impl Mapped {
     fn toplevel(&self) -> Option<&ToplevelSurface> {
         self.window.toplevel()
     }
+
+    pub fn frame(&self) -> &WindowFrame {
+        &self.frame
+    }
+
+    /// Whether the window shows a frame now: SSD, and not fullscreen.
+    pub fn shows_frame(&self) -> bool {
+        self.ssd && !self.states.fullscreen
+    }
+
+    fn frame_facts(&self, maximized: bool) -> FrameFacts {
+        FrameFacts {
+            window_type: self.window_type(),
+            has_parent: self.parent.is_some(),
+            hints: self.size_hints(),
+            activated: self.activated,
+            maximized,
+            fullscreen: self.states.fullscreen,
+        }
+    }
+
+    /// Reads the decoration mode the client last acked, and works out the frame's extents,
+    /// for policy to read next.
+    pub fn update_frame_facts(&mut self, frame_context: &FrameContext) {
+        let attach = frame_context.attach_modal_dialogs();
+        let style = |maximized| frame_style(&self.frame_facts(maximized), attach);
+        let extents = |maximized| {
+            style(maximized)
+                .map(|(frame_type, flags)| frame_context.extents(frame_type, &flags))
+                .unwrap_or_default()
+        };
+        let ssd = self.toplevel().is_some_and(server_side) && style(false).is_some();
+        (self.extents, self.maximized_extents) = (extents(false), extents(true));
+        self.ssd = ssd;
+    }
+
+    /// Draws the frame's strips again if anything they're drawn from changed, or drops them
+    /// if the window shows no frame. Returns whether the strips changed.
+    pub fn refresh_frame(
+        &mut self,
+        frame_context: &mut FrameContext,
+        colors: &PaletteColors,
+    ) -> bool {
+        let style = frame_style(
+            &self.frame_facts(self.states.maximized),
+            frame_context.attach_modal_dialogs(),
+        );
+        let Some((frame_type, flags)) = style.filter(|_| self.shows_frame()) else {
+            return self.frame.clear();
+        };
+        let inputs = FrameInputs {
+            frame_type,
+            flags,
+            size: self.size(),
+            title: self.title(),
+            icon: self.icon_source(),
+            scale: self.frame_scale,
+        };
+        self.frame.update(frame_context, colors, inputs)
+    }
+
+    fn title(&self) -> String {
+        let Some(toplevel) = self.toplevel() else {
+            return String::new();
+        };
+        with_states(toplevel.wl_surface(), |states| {
+            let data = states.data_map.get::<XdgToplevelSurfaceData>()?;
+            data.lock().unwrap().title.clone()
+        })
+        .unwrap_or_default()
+    }
+
+    fn icon_source(&self) -> IconSource {
+        let app_id = self.app_id();
+        let toplevel_icon = self.toplevel().and_then(|toplevel| {
+            with_states(toplevel.wl_surface(), |states| {
+                let mut cached = states.cached_state.get::<ToplevelIconCachedState>();
+                let icon = cached.current();
+                let name = icon.icon_name().map(str::to_owned);
+                let buffers = icon.buffers().to_vec();
+                (name.is_some() || !buffers.is_empty()).then(|| IconSource::Toplevel {
+                    name,
+                    buffers,
+                    app_id: app_id.clone(),
+                })
+            })
+        });
+        toplevel_icon.unwrap_or(IconSource::AppId(app_id))
+    }
+}
+
+/// Whether the toplevel has server-side decorations: the last mode it acked from
+/// xdg-decoration, or KDE server-decoration's.
+fn server_side(toplevel: &ToplevelSurface) -> bool {
+    let xdg = toplevel.with_committed_state(|state| state.and_then(|s| s.decoration_mode));
+    xdg == Some(DecorationMode::ServerSide) || kde_server_side(toplevel.wl_surface())
+}
+
+/// Whether the toplevel is asking for server-side decorations in its next configure.
+fn pending_server_side(toplevel: &ToplevelSurface) -> bool {
+    let xdg = toplevel.with_pending_state(|state| state.decoration_mode);
+    xdg == Some(DecorationMode::ServerSide) || kde_server_side(toplevel.wl_surface())
+}
+
+/// Marco's window type for a toplevel: a modal dialog from xdg-dialog, a dialog if it has a
+/// transient parent, or else normal.
+fn window_type(window: &Window, has_parent: bool) -> WindowType {
+    let modal = window.toplevel().is_some_and(|toplevel| {
+        with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .is_some_and(|data| data.lock().unwrap().dialog_hint == ToplevelDialogHint::Modal)
+        })
+    });
+    if modal {
+        WindowType::ModalDialog
+    } else if has_parent {
+        WindowType::Dialog
+    } else {
+        WindowType::Normal
+    }
 }
 
 impl PolicyWindow for Mapped {
@@ -164,12 +319,7 @@ impl PolicyWindow for Mapped {
     }
 
     fn window_type(&self) -> WindowType {
-        // Marco makes a normal window with a transient parent a dialog.
-        if self.parent.is_some() {
-            WindowType::Dialog
-        } else {
-            WindowType::Normal
-        }
+        window_type(&self.window, self.parent.is_some())
     }
 
     fn transient_parent(&self) -> Option<WindowId> {
@@ -217,15 +367,19 @@ impl PolicyWindow for Mapped {
     }
 
     fn is_ssd(&self) -> bool {
-        // Every window is CSD until frames come in M2 (17).
-        false
+        self.ssd
     }
 
-    fn frame_extents(&self) -> FrameExtents<i32, Logical> {
-        FrameExtents::default()
+    fn frame_extents(&self, maximized: bool) -> FrameExtents<i32, Logical> {
+        if maximized {
+            self.maximized_extents
+        } else {
+            self.extents
+        }
     }
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {
+        self.states = states;
         let Some(toplevel) = self.toplevel() else {
             return;
         };
@@ -247,6 +401,7 @@ impl PolicyWindow for Mapped {
     }
 
     fn set_activated(&mut self, activated: bool) {
+        self.activated = activated;
         self.window.set_activated(activated);
     }
 
@@ -280,6 +435,7 @@ impl Camino {
             .and_then(|credentials| u32::try_from(credentials.pid).ok());
         let mut mapped = Mapped::new(id, window, pid);
         mapped.set_parent(self.transient_parent(mapped.window()));
+        mapped.update_frame_facts(&self.frame_context);
 
         let now = self.now();
         self.policy.map_window(mapped, now);
@@ -294,12 +450,14 @@ impl Camino {
 
     /// Sets an unmapped toplevel's pending configure from the states it has asked for: the
     /// size it'll map at if it's maximised or fullscreen, and the bounds of the output it'll
-    /// likely map on.
+    /// likely map on, both inside the frame it'll have.
     pub fn set_unmapped_pending_state(&self, unmapped: &Unmapped) {
         let Some(toplevel) = unmapped.window.toplevel() else {
             return;
         };
-        let bounds = self.placement_bounds();
+        let output = self.placement_bounds();
+        let (extents, maximized_extents) = self.unmapped_extents(unmapped);
+        let bounds = output.map(|size| inside(size, extents));
         let fullscreen_size = unmapped.fullscreen.map(|output| {
             output
                 .and_then(|id| self.policy.outputs().iter().find(|o| o.id == id))
@@ -311,7 +469,7 @@ impl Camino {
             pending.size = if let Some(size) = fullscreen_size {
                 size
             } else if unmapped.maximized {
-                bounds
+                output.map(|size| inside(size, maximized_extents))
             } else {
                 None
             };
@@ -329,6 +487,34 @@ impl Camino {
                 }
             }
         });
+    }
+
+    /// The extents, unmaximised and maximised, of the frame a toplevel that isn't mapped yet
+    /// will have, if the decoration mode it's being configured with is server side.
+    fn unmapped_extents(
+        &self,
+        unmapped: &Unmapped,
+    ) -> (FrameExtents<i32, Logical>, FrameExtents<i32, Logical>) {
+        let window = &unmapped.window;
+        if !window.toplevel().is_some_and(pending_server_side) {
+            return Default::default();
+        }
+        let has_parent = self.transient_parent(window).is_some();
+        let extents = |maximized| {
+            let facts = FrameFacts {
+                window_type: window_type(window, has_parent),
+                has_parent,
+                hints: SizeHints::default(),
+                // A new window is focused.
+                activated: true,
+                maximized,
+                fullscreen: false,
+            };
+            frame_style(&facts, self.frame_context.attach_modal_dialogs())
+                .map(|(frame_type, flags)| self.frame_context.extents(frame_type, &flags))
+                .unwrap_or_default()
+        };
+        (extents(false), extents(true))
     }
 
     /// Stops managing a window that the client unmapped or destroyed, and hands it back.
@@ -354,4 +540,12 @@ impl Camino {
             .find(|mapped| mapped.wl_surface().as_ref() == Some(surface))
             .map(|mapped| mapped.id())
     }
+}
+
+/// The size inside a frame of `extents` that fills `size`.
+fn inside(size: Size<i32, Logical>, extents: FrameExtents<i32, Logical>) -> Size<i32, Logical> {
+    Size::new(
+        (size.w - extents.left - extents.right).max(1),
+        (size.h - extents.top - extents.bottom).max(1),
+    )
 }

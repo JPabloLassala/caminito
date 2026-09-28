@@ -257,7 +257,9 @@ impl State {
             window.on_commit();
             if has_buffer {
                 let parent = camino.transient_parent(&window);
-                camino.policy.window_mut(id).unwrap().set_parent(parent);
+                let mapped = camino.policy.window_mut(id).unwrap();
+                mapped.set_parent(parent);
+                mapped.update_frame_facts(&camino.frame_context);
                 camino.policy.commit(id);
                 camino.queue_redraw_all();
             } else if let Some(mapped) = camino.unmap_window(id) {

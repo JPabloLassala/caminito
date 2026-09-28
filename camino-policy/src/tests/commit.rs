@@ -79,7 +79,27 @@ fn a_new_frame_keeps_a_maximised_window_in_its_work_area() {
     let w = policy.window_mut(id(1)).unwrap();
     w.ssd = true;
     w.extents = smithay::utils::FrameExtents::new(5, 5, 25, 5);
+    w.maximized_extents = w.extents;
     policy.commit(id(1));
+
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(
+        geometry,
+        Rectangle::new((5, 25).into(), (1910, 1050).into())
+    );
+}
+
+#[test]
+fn a_changed_frame_is_read_without_a_commit() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.set_maximized(id(1), true);
+
+    let w = policy.window_mut(id(1)).unwrap();
+    w.ssd = true;
+    w.extents = smithay::utils::FrameExtents::new(5, 5, 25, 5);
+    w.maximized_extents = w.extents;
+    policy.frame_changed(id(1));
 
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(

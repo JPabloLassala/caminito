@@ -145,6 +145,8 @@ pub struct Window {
     pub output_events: Vec<String>,
     /// Every mode KDE server-decoration has sent for the window, oldest first.
     pub kde_modes: Vec<KdeMode>,
+    xdg_decoration: Option<ZxdgToplevelDecorationV1>,
+    kde_decoration: Option<OrgKdeKwinServerDecoration>,
     subsurfaces: Vec<WlSubsurface>,
     /// The buffers attached so far, kept alive until the window is dropped.
     buffers: Vec<Buffer>,
@@ -316,6 +318,8 @@ impl Client {
             frames_done: 0,
             output_events: Vec::new(),
             kde_modes: Vec::new(),
+            xdg_decoration: None,
+            kde_decoration: None,
             subsurfaces: Vec::new(),
             buffers: Vec::new(),
         });
@@ -606,18 +610,40 @@ impl Client {
         manager.inhibit_shortcuts(&self.window(id).surface, &seat, &self.qh, ());
     }
 
-    /// Asks xdg-decoration for server-side decorations.
-    pub fn request_server_side(&mut self, id: WindowId) {
-        let manager = self.global(|state| &mut state.decoration_manager, 1);
-        let decoration = manager.get_toplevel_decoration(&self.window(id).toplevel, &self.qh, id);
-        decoration.set_mode(DecorationMode::ServerSide);
+    /// Asks xdg-decoration for `mode`, or says it has no preference, making the window's
+    /// decoration object first if it has none.
+    pub fn request_decoration(&mut self, id: WindowId, mode: Option<DecorationMode>) {
+        if self.window(id).xdg_decoration.is_none() {
+            self.create_decoration(id);
+        }
+        let decoration = self.window(id).xdg_decoration.as_ref().unwrap();
+        match mode {
+            Some(mode) => decoration.set_mode(mode),
+            None => decoration.unset_mode(),
+        }
     }
 
-    /// Asks KDE server-decoration for server-side decorations.
-    pub fn kde_request_server_side(&mut self, id: WindowId) {
-        let manager = self.global(|state| &mut state.kde_decoration_manager, 1);
-        let decoration = manager.create(&self.window(id).surface, &self.qh, id);
-        decoration.request_mode(KdeMode::Server);
+    /// Makes the window's xdg-decoration object without asking for a mode.
+    pub fn create_decoration(&mut self, id: WindowId) {
+        let manager = self.global(|state| &mut state.decoration_manager, 1);
+        let decoration = manager.get_toplevel_decoration(&self.window(id).toplevel, &self.qh, id);
+        self.window_mut(id).xdg_decoration = Some(decoration);
+    }
+
+    /// Makes the window's KDE server-decoration object, and asks for `mode` if given.
+    pub fn kde_request_decoration(&mut self, id: WindowId, mode: Option<KdeMode>) {
+        if self.window(id).kde_decoration.is_none() {
+            let manager = self.global(|state| &mut state.kde_decoration_manager, 1);
+            let decoration = manager.create(&self.window(id).surface, &self.qh, id);
+            self.window_mut(id).kde_decoration = Some(decoration);
+        }
+        if let Some(mode) = mode {
+            self.window(id)
+                .kde_decoration
+                .as_ref()
+                .unwrap()
+                .request_mode(mode);
+        }
     }
 
     /// Binds every `wl_output` not yet bound. Roundtrip before reading their names.

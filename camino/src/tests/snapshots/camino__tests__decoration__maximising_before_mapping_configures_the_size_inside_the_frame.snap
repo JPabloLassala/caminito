@@ -1,0 +1,5 @@
+---
+source: camino/src/tests/decoration.rs
+expression: "configures(&mut f, id, window)"
+---
+size: 1920 × 1049, states: [Maximized], bounds: 1918 × 1048, capabilities: [Fullscreen, Maximize, Minimize, WindowMenu], decoration: ServerSide

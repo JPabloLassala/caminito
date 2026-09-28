@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 use std::time::Duration;
 
-use camino_policy::{OutputId, Policy, SeatId};
+use camino_policy::{OutputId, Policy, PolicyWindow, SeatId, WindowId};
 use smithay::desktop::PopupManager;
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::backend::input::Keycode;
@@ -55,9 +55,10 @@ use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xdg_system_bell::XdgSystemBellState;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
 
-use camino_theme::PaletteCache;
+use camino_theme::{PaletteCache, ThemeDirs, Variant};
 
 use crate::backend::Backend;
+use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::settings::{self, Settings, SettingsThread};
@@ -99,7 +100,6 @@ pub struct Camino {
     pub xdg_dialog_state: XdgDialogState,
     pub xdg_toplevel_icon_manager: XdgToplevelIconManager,
     pub xdg_system_bell_state: XdgSystemBellState,
-    /// xdg-decoration and KDE server-decoration answer client side until M2 (17).
     pub xdg_decoration_state: XdgDecorationState,
     pub kde_decoration_state: KdeDecorationState,
     pub popups: PopupManager,
@@ -142,6 +142,8 @@ pub struct Camino {
 
     /// The GTK colours frames are drawn with.
     pub palette: PaletteSource<State>,
+    /// Everything else frames are drawn with.
+    pub frame_context: FrameContext,
 
     /// The settings as last read, and the GLib thread that reads them.
     pub settings: Settings,
@@ -149,11 +151,13 @@ pub struct Camino {
 }
 
 /// The palette helper, `camino-gtk-palette` or what `CAMINO_GTK_PALETTE` names, as a
-/// client on `socket`. The GTK theme isn't known until the helper reports it, so the
-/// palette starts neutral.
+/// client on `socket`. Until it reports, the palette is the one `cache` has for `gtk_theme`,
+/// or neutral.
 fn palette_source(
     handle: LoopHandle<'static, State>,
     socket: Option<&OsStr>,
+    cache: Option<PaletteCache>,
+    gtk_theme: &str,
 ) -> PaletteSource<State> {
     let program = std::env::var_os("CAMINO_GTK_PALETTE").unwrap_or("camino-gtk-palette".into());
     let mut command =
@@ -166,8 +170,8 @@ fn palette_source(
         command,
         RestartPolicy::default(),
         StderrTarget::Prefixed,
-        PaletteCache::from_env(),
-        None,
+        cache,
+        Some(gtk_theme),
     )
 }
 
@@ -184,6 +188,8 @@ impl PaletteState for State {
                 .gtk_theme()
                 .unwrap_or("an unknown GTK theme")
         );
+        self.camino.frame_context.palette_changed();
+        self.camino.queue_redraw_all();
     }
 }
 
@@ -203,19 +209,30 @@ impl State {
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut camino = Camino::new(event_loop, display, settings::Source::System)?;
+        let mut camino = Camino::new(
+            event_loop,
+            display,
+            settings::Source::System,
+            ThemeDirs::from_env(),
+            PaletteCache::from_env(),
+        )?;
         let backend = Backend::Winit(Box::new(crate::backend::winit::Winit::new(&mut camino)?));
         Ok(Self { backend, camino })
     }
 
-    /// Starts with no outputs; tests add them with `add_headless_output`.
+    /// Starts with no outputs; tests add them with `add_headless_output`. Frames use the
+    /// themes vendored for the goldens (14), and no palette cache.
     #[cfg(test)]
     pub fn new_headless(
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
         settings: settings::Source,
     ) -> Self {
-        let camino = Camino::new(event_loop, display, settings).expect("the settings start");
+        let themes = ThemeDirs::new(vec![
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../tests").into(),
+        ]);
+        let camino =
+            Camino::new(event_loop, display, settings, themes, None).expect("the settings start");
         let backend = Backend::Headless(crate::backend::headless::Headless::default());
         Self { backend, camino }
     }
@@ -242,6 +259,7 @@ impl State {
     /// policy, renders the outputs that asked for it, and flushes the clients.
     pub fn refresh_and_flush_clients(&mut self) {
         self.camino.refresh_views();
+        self.camino.refresh_frames();
         self.update_keyboard_focus();
         self.update_pointer_focus();
         self.redraw_queued_outputs();
@@ -320,6 +338,8 @@ impl Camino {
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
         settings: settings::Source,
+        theme_dirs: ThemeDirs,
+        palette_cache: Option<PaletteCache>,
     ) -> Result<Self, settings::Error> {
         let (settings, settings_thread, changes) = settings::start(settings)?;
         let display_handle = display.handle();
@@ -354,7 +374,14 @@ impl Camino {
             .expect("the default xkb keymap compiles");
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
 
-        Ok(Self {
+        let frame_context = FrameContext::new(&settings, theme_dirs);
+        let palette = palette_source(
+            event_loop.handle(),
+            None,
+            palette_cache,
+            &settings.interface.gtk_theme,
+        );
+        let mut camino = Self {
             loop_signal: event_loop.get_signal(),
             compositor_state: CompositorState::new::<State>(dh),
             shm_state: ShmState::new::<State>(dh, Vec::new()),
@@ -371,7 +398,7 @@ impl Camino {
             xdg_toplevel_icon_manager: XdgToplevelIconManager::new::<State>(dh),
             xdg_system_bell_state: XdgSystemBellState::new::<State>(dh),
             xdg_decoration_state: XdgDecorationState::new::<State>(dh),
-            kde_decoration_state: KdeDecorationState::new::<State>(dh, KdeDefaultMode::Client),
+            kde_decoration_state: KdeDecorationState::new::<State>(dh, KdeDefaultMode::Server),
             popups: PopupManager::default(),
 
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
@@ -403,10 +430,19 @@ impl Camino {
             policy: Policy::new(settings.policy.clone()),
             unmapped: Vec::new(),
             next_window_id: 0,
-            palette: palette_source(event_loop.handle(), None),
+            palette,
+            frame_context,
             settings,
             settings_thread,
-        })
+        };
+        camino.ask_palette_for_theme_colors();
+        Ok(camino)
+    }
+
+    /// Asks the palette helper for the `gtk:custom` colours the theme uses.
+    fn ask_palette_for_theme_colors(&mut self) {
+        self.palette
+            .set_names(self.frame_context.theme().custom_color_names());
     }
 
     /// New settings from the settings thread: passes on what changed.
@@ -419,12 +455,70 @@ impl Camino {
             );
             self.policy.settings_changed(settings.policy.clone());
         }
+        if settings.interface.gtk_theme != self.settings.interface.gtk_theme {
+            // The helper reports the new theme's palette; the cached one is used meanwhile.
+            if self.palette.use_cached(&settings.interface.gtk_theme) {
+                self.frame_context.palette_changed();
+                self.queue_redraw_all();
+            }
+        }
+        if self.frame_context.settings_changed(&settings) {
+            self.frames_changed();
+        }
         self.settings = settings;
+    }
+
+    /// Something every frame is drawn with changed: frames may have new extents, which
+    /// policy lays their windows out by, and are drawn again.
+    fn frames_changed(&mut self) {
+        self.ask_palette_for_theme_colors();
+        let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
+        for id in ids {
+            self.update_frame(id);
+        }
+        self.queue_redraw_all();
+    }
+
+    /// Reads a window's frame again, and has policy lay it out by it.
+    fn update_frame(&mut self, id: WindowId) {
+        if let Some(mapped) = self.policy.window_mut(id) {
+            mapped.update_frame_facts(&self.frame_context);
+            self.policy.frame_changed(id);
+        }
+    }
+
+    /// A surface's decoration mode changed without a commit, as KDE server-decoration's
+    /// does.
+    pub fn decoration_changed(&mut self, surface: &WlSurface) {
+        if let Some(id) = self.mapped_for_surface(surface) {
+            self.update_frame(id);
+            self.queue_redraw_all();
+        }
+    }
+
+    /// Draws again the strips of every frame whose inputs changed, and redraws if any did.
+    fn refresh_frames(&mut self) {
+        let colors = self.palette.palette().variant(Variant::Default);
+        let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
+        let mut changed = false;
+        for id in ids {
+            let mapped = self.policy.window_mut(id).unwrap();
+            changed |= mapped.refresh_frame(&mut self.frame_context, colors);
+        }
+        if changed {
+            self.queue_redraw_all();
+        }
     }
 
     /// Starts `camino-gtk-palette` as a client on the socket `add_socket` opened.
     pub fn start_palette_helper(&mut self, socket: &OsStr) {
-        self.palette = palette_source(self.loop_handle.clone(), Some(socket));
+        self.palette = palette_source(
+            self.loop_handle.clone(),
+            Some(socket),
+            self.palette.cache().cloned(),
+            &self.settings.interface.gtk_theme,
+        );
+        self.ask_palette_for_theme_colors();
         self.palette.start();
     }
 

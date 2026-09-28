@@ -3,9 +3,10 @@
 //! There's no retained scene graph: each output's elements are rebuilt every frame, and this
 //! is the only code that knows the layer order.
 
+use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::{AsRenderElements, render_elements};
-use smithay::backend::renderer::{Color32F, ImportAll, Renderer};
+use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
+use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
 use smithay::output::Output;
 use smithay::utils::Scale;
 
@@ -16,8 +17,10 @@ use crate::state::Camino;
 pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
 
 render_elements! {
-    pub SceneElement<R> where R: ImportAll;
+    pub SceneElement<R> where R: ImportAll + ImportMem;
     Window = WaylandSurfaceRenderElement<R>,
+    /// A frame's strip.
+    Frame = MemoryRenderBufferRenderElement<R>,
 }
 
 /// The scene's layers, top to bottom.
@@ -31,7 +34,7 @@ enum SceneLayer {
     OverrideRedirect,
     /// The top layer-shell layer (M5).
     Top,
-    /// The current workspace's windows in policy's stacking order.
+    /// The current workspace's windows in policy's stacking order, each with its frame.
     Windows,
     /// The bottom layer-shell layer (M5).
     Bottom,
@@ -56,8 +59,8 @@ pub fn output_elements<R>(
     output: &Output,
 ) -> Vec<SceneElement<R>>
 where
-    R: Renderer + ImportAll,
-    R::TextureId: Clone + 'static,
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
 {
     let mut elements = Vec::new();
     for layer in LAYERS {
@@ -80,8 +83,8 @@ fn window_elements<R>(
     output: &Output,
     elements: &mut Vec<SceneElement<R>>,
 ) where
-    R: Renderer + ImportAll,
-    R::TextureId: Clone + 'static,
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
 {
     let policy = &camino.policy;
     let output_geometry = output_geometry(output);
@@ -99,11 +102,34 @@ fn window_elements<R>(
         // placed the geometry.
         let mut bbox = window.bbox_with_popups();
         bbox.loc += geometry.loc - window.geometry().loc;
-        if !bbox.overlaps(output_geometry) {
-            continue;
+        if bbox.overlaps(output_geometry) {
+            let location = (geometry.loc - window.geometry().loc - output_geometry.loc)
+                .to_physical_precise_round(scale);
+            elements.extend(window.render_elements(renderer, location, Scale::from(scale), 1.0));
         }
-        let location = (geometry.loc - window.geometry().loc - output_geometry.loc)
-            .to_physical_precise_round(scale);
-        elements.extend(window.render_elements(renderer, location, Scale::from(scale), 1.0));
+
+        // The strips lie around the window geometry, behind the window and its popups.
+        for (mut rect, buffer) in mapped.frame().strips() {
+            rect.loc += geometry.loc;
+            if !rect.overlaps(output_geometry) {
+                continue;
+            }
+            let location = (rect.loc - output_geometry.loc)
+                .to_physical_precise_round::<_, i32>(scale)
+                .to_f64();
+            let element = MemoryRenderBufferRenderElement::from_buffer(
+                renderer,
+                location,
+                buffer,
+                None,
+                None,
+                Some(rect.size),
+                Kind::Unspecified,
+            );
+            match element {
+                Ok(element) => elements.push(SceneElement::Frame(element)),
+                Err(err) => tracing::warn!("can't draw a frame strip: {err:?}"),
+            }
+        }
     }
 }

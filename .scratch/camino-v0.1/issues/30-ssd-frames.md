@@ -25,7 +25,7 @@ Camino draws Marco frames around SSD windows ([07](07-decoration-strategy.md)), 
 
 ## Acceptance criteria
 
-- [ ] Headless tests, written before the code: decoration-mode configure sequences for each kind of client request (replacing M1's client-side snapshots), frame extents in placement and maximise, strips re-rendered only when an input changes, and the strip scale for a window on 1.0, 1.5 and 2.0 outputs and across two of them.
-- [ ] A headless render of a framed window matches `camino-theme`'s strips at the window's position.
+- [x] Headless tests, written before the code: decoration-mode configure sequences for each kind of client request (replacing M1's client-side snapshots), frame extents in placement and maximise, strips re-rendered only when an input changes, and the strip scale for a window on 1.0, 1.5 and 2.0 outputs and across two of them.
+- [x] A headless render of a framed window matches `camino-theme`'s strips at the window's position.
 - [ ] Nested: a GTK3 app gets a Menta frame, and a GTK4 header-bar app stays CSD.
 - [ ] Nested: changing `theme`, `titlebar-font` or `button-layout` with `gsettings` applies live, and setting a broken theme falls back to the built-in one with a single log line.
