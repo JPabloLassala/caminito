@@ -8,13 +8,14 @@ pkgdesc='Wayland compositor for the MATE desktop, the counterpart of Marco'
 arch=(x86_64)
 url='https://github.com/JPabloLassala/camino'
 license=(GPL-2.0-or-later)
-# Only what the binaries link (16). winit dlopens libwayland-client and libEGL, which the
-# desktop a nested run sits inside always has; M4 and M5 add the real dependencies.
-# camino-gtk-palette links gtk3 and glib2 (28).
-depends=(glibc libgcc libxkbcommon gtk3 glib2)
-# camino-theme builds and tests against pango and gdk-pixbuf2, which the binary doesn't
-# link yet (30).
-makedepends=(cargo git meson pango gdk-pixbuf2)
+# Only what the binaries link (16), and what they load at run time. winit dlopens
+# libwayland-client and libEGL, which the desktop a nested run sits inside always has; M4
+# and M5 add the real dependencies. camino draws frames with cairo, pango and gdk-pixbuf2
+# (30), whose loaders need librsvg for SVG theme images; camino-gtk-palette links gtk3 and
+# glib2 (28); camino reads marco's gsettings schemas (09), which marco provides; and
+# mate-themes has Menta, the default theme, which marco doesn't pull in.
+depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 marco mate-themes)
+makedepends=(cargo git meson)
 # camino's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).
 checkdepends=(dbus pixman wayland)

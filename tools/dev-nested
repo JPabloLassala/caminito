@@ -3,15 +3,27 @@
 # scratch XDG_CONFIG_HOME, so neither the host's bus nor its dconf database is touched
 # (14). Extra arguments are passed to camino.
 #
-#   tools/dev-nested [--bin] [camino arguments...]
+#   tools/dev-nested [--bin] [--scale <scale>] [camino arguments...]
 #
 # It runs the installed camino, or with --bin the debug build in this checkout's target/,
-# building it first, with the palette helper built by Meson in target/meson.
+# building it first, with the palette helper built by Meson in target/meson. --scale sets
+# the nested output's scale, 1 by default.
 set -euo pipefail
 
 camino=camino
-if [[ ${1-} == --bin ]]; then
-  shift
+checkout=
+while true; do
+  case ${1-} in
+  --bin) checkout=1; shift ;;
+  --scale)
+    [[ $# -ge 2 ]] || { echo "dev-nested: --scale needs a value" >&2; exit 1; }
+    export CAMINO_WINIT_SCALE=$2; shift 2
+    ;;
+  *) break ;;
+  esac
+done
+
+if [[ -n $checkout ]]; then
   root=$(dirname "$(realpath "$0")")/..
   cargo build --manifest-path "$root/Cargo.toml" -p camino
   camino=${CARGO_TARGET_DIR:-$root/target}/debug/camino

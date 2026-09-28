@@ -22,5 +22,5 @@ M2's code installed through `camino-git` (17: packaging keeps up), its checklist
 ## Acceptance criteria
 
 - [ ] `makepkg -si` in `packaging/arch/camino-git/` installs `camino` and `camino-gtk-palette`, and the packaging job is green in CI.
-- [ ] The two checklist items are written.
+- [x] The two checklist items are written.
 - [ ] Closing M2: every golden case passes for all ten themes at scales 1 and 2, the palette test passes, and M2's nested exit from 17 holds on the installed package, with the checklist results in a `Close M2 Marco frames` commit.

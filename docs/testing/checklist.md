@@ -80,3 +80,46 @@ nested_env() {
   border in blue and its title in green, labelled with the strip scale (`×1`). The second answers
   `false` and the outlines go.
 - **Debug tool:** `busctl`.
+
+## Frames
+
+### Frames at an output scale of 2 in a nested run
+
+- **Milestone:** M2
+- **Steps:**
+  1. Run `tools/dev-nested --scale 2`, and pluma in it as above.
+  2. With `DBUS_SESSION_BUS_ADDRESS` from `nested_env`, run `DumpState` as above, then
+     `ToggleFrameDebug`.
+  3. Hover, press and release each titlebar button, drag the titlebar, and resize from an edge
+     and a corner.
+- **Expected:** the dump lists the output at `scale` 2 and pluma's window as `ssd` with
+  `strip_scale` 2, and the same `frame_extents` as at scale 1. Frame debug labels the frame
+  `×2`, and its outlines sit on the frame's edges. The frame is as sharp as pluma's own content:
+  the title and the button icons aren't blurred or doubled in size. The buttons prelight, press
+  and act, the titlebar moves the window, and the edges resize it, where the outlines say they
+  should.
+- **Debug tool:** frame debug and `busctl`.
+
+### A theme switch while windows are open
+
+- **Milestone:** M2
+- **Steps:**
+  1. Run `tools/dev-nested`, and pluma and gtk3-demo in it. Maximise one of them.
+  2. On the nested bus, switch the theme a few times, then to one that doesn't exist, then back,
+     dumping the state after each switch:
+
+     ```sh
+     for theme in BlackMATE HighContrast TraditionalOk NoSuchTheme Menta; do
+       env $(nested_env) gsettings set org.mate.Marco.general theme "$theme"
+       sleep 2
+       env $(nested_env) busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug \
+         org.mate.Camino.Debug DumpState
+     done
+     ```
+
+- **Expected:** each frame changes to the new theme as soon as it's set, with no app restarted
+  and no window unmapped. The unmaximised window's client area keeps its size, the maximised
+  one and its frame still fill the output, and `frame_extents` follow the theme. `NoSuchTheme` gives the built-in
+  theme and one `can't load the Marco theme NoSuchTheme` line in Camino's log. Back on Menta,
+  the frames are Menta's again, and the buttons still prelight, press and act.
+- **Debug tool:** `busctl` and Camino's stderr.

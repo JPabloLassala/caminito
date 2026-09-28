@@ -1,5 +1,7 @@
 //! The winit backend: Camino as a window inside another desktop, for nested runs (14).
 
+use std::ffi::OsStr;
+
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
@@ -28,12 +30,17 @@ impl Winit {
         // Camino draws its own cursor.
         backend.window().set_cursor_visible(false);
 
+        let scale = winit_output_scale(std::env::var_os("CAMINO_WINIT_SCALE").as_deref())
+            .unwrap_or_else(|err| {
+                tracing::warn!("{err}; using 1");
+                1.0
+            });
         // GLES draws upside down relative to winit's window.
         let output = virtual_output(
             "winit".to_owned(),
             "Winit",
             backend.window_size(),
-            1.0,
+            scale,
             Transform::Flipped180,
         );
         camino.add_output(output.clone());
@@ -119,5 +126,58 @@ fn handle_event(state: &mut State, event: WinitEvent) {
         WinitEvent::Input(event) => state.process_input_event(event),
         WinitEvent::Focus(false) => state.release_pressed_keys(),
         WinitEvent::Focus(true) => {}
+    }
+}
+
+/// The winit output's scale from `CAMINO_WINIT_SCALE`, for checking frames at other scales
+/// in nested runs: 1 when it's unset, or a positive number snapped to fractional-scale-v1's
+/// 1/120 steps. `window-scaling-factor` and the default scale rule take over in M4 (13).
+fn winit_output_scale(var: Option<&OsStr>) -> Result<f64, String> {
+    let Some(var) = var else {
+        return Ok(1.0);
+    };
+    let scale = var
+        .to_str()
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|scale| scale.is_finite())
+        .map(|scale| (scale * 120.0).round() / 120.0)
+        .filter(|&scale| scale > 0.0);
+    scale.ok_or_else(|| {
+        format!(
+            "CAMINO_WINIT_SCALE={} isn't a positive number",
+            var.display()
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scale(value: &str) -> Result<f64, String> {
+        winit_output_scale(Some(value.as_ref()))
+    }
+
+    #[test]
+    fn the_scale_is_1_when_unset() {
+        assert_eq!(winit_output_scale(None), Ok(1.0));
+    }
+
+    #[test]
+    fn integer_and_fractional_scales_are_taken() {
+        assert_eq!(scale("2"), Ok(2.0));
+        assert_eq!(scale("1.5"), Ok(1.5));
+    }
+
+    #[test]
+    fn scales_snap_to_120ths() {
+        assert_eq!(scale("1.333"), Ok(160.0 / 120.0));
+    }
+
+    #[test]
+    fn scales_that_arent_positive_numbers_are_refused() {
+        for value in ["", "two", "0", "-1", "NaN", "inf", "0.001"] {
+            assert!(scale(value).is_err(), "{value:?}");
+        }
     }
 }
