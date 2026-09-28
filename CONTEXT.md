@@ -23,3 +23,20 @@ _Avoid_: fork, upstream patch
 **Layer surface**:
 A shell surface that sits in a fixed layer of an output rather than among ordinary windows: the panel, caja's desktop, the wallpaper, notification bubbles and the screenshot area picker.
 _Avoid_: panel window, dock window
+
+**Frame**:
+The decoration Camino draws around a window from the Marco theme: titlebar, buttons and borders, plus the invisible resize border. The shadow isn't part of the frame.
+_Avoid_: decoration (for Camino's own drawing), border, titlebar (for the whole)
+
+**SSD window**:
+A window that Camino draws a frame for.
+_Avoid_: decorated window
+
+**CSD window**:
+A window that draws its own titlebar and borders, such as a header-bar or libadwaita app. Camino never draws a frame for it.
+_Avoid_: undecorated window (that means a window with no decorations at all)
+
+**Palette**:
+The GTK3 theme's colours that Marco themes refer to: the window background and text colours per state, plus the theme's named colours, for the default and dark variants.
+_Avoid_: colour scheme (that's the portal's light/dark preference)
+

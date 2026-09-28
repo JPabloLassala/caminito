@@ -15,7 +15,7 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 - **Settled while charting** (these are fixed; don't reopen them in tickets):
   - Rust on Smithay: [ADR 0001](../../docs/adr/0001-rust-and-smithay.md).
   - XWayland is required in v0.1.
-  - Server-side decorations are drawn from Marco/Metacity themes. The level of theme-format support is still open.
+  - Server-side decorations are drawn from Marco/Metacity themes. How much of the theme format is supported was settled by [07](issues/07-decoration-strategy.md).
   - Configuration is read from the existing `org.mate.Marco.*` gsettings, and Wayland-only keys go in a new `org.mate.Camino` schema.
   - v0.1 session scope: mate-panel (including the window list and workspace switcher applets), mate-session running in the session (who launches whom is for the Session launch model ticket; the MATE Wayland audit shows mate-session can't launch a compositor), mate-settings-daemon, and caja's desktop and background.
   - It ships as its own session entry, "MATE on Camino", separate from the Wayfire-based MATE Wayland session.
@@ -31,6 +31,7 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 - [Metacity/Marco theme format](issues/04-metacity-theme-format.md): Marco's format goes up to v3.5 and themes need a lenient parser; colours depend on the GTK3 theme's CSS; feature tiers 0–3 sized from 87 real themes; no non-C renderer exists.
 - [v0.1 Marco feature cut](issues/05-v01-marco-feature-cut.md): full Marco parity, meaning every key and action except the X-only and droppable ones; all Marco-to-MATE integrations (Alt+F1/F2, pager layout, shared Show Desktop, both mate-control-center dialogs, window screenshots) are required, via MATE patches carried downstream; Camino identifies itself as Camino.
 - [v0.1 protocol and integration set](issues/06-v01-protocol-and-integration-set.md): Smithay's protocols plus four built ones (wlr-foreign-toplevel, read-only ext-workspace, wlr-output-management, a minimal gtk_shell1). MATE integration goes through a standard protocol, else an environment variable, else D-Bus on `org.mate.Camino` ([ADR 0002](../../docs/adr/0002-mate-integration-channels.md)), with carried patches to mate-panel, mcc, msd and mate-screenshot. Camino owns input settings, idle and the `org.mate.ScreenSaver` shim; msd keeps media keys (grabbing through Camino) and display persistence.
+- [Decoration strategy](issues/07-decoration-strategy.md): Marco's theme engine ported to Rust (cairo/pango, golden-tested against Marco), covering everything Marco draws; GTK colours come from a `camino-gtk-palette` GTK3 helper with an on-disk cache ([ADR 0003](../../docs/adr/0003-rust-theme-engine-and-gtk-palette-helper.md)). KDE `default_mode=Server`, and xdg-decoration grants the client's choice: MATE, plain GTK and Qt apps are SSD, while header-bar and libadwaita apps stay CSD (GTK can't be forced). CSD windows get no Camino shadow and shade stays off for them.
 
 ## Not yet specified
 
@@ -39,7 +40,7 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 - **Input configuration.** 06 settled the owners: Camino applies the peripherals and xkb gsettings, msd keeps media keys through Camino's `GrabAccelerators`, and the capplets run under XWayland. The key-by-key mapping is for 09.
 - **Crate and module architecture.** How Camino's code is split up. It depends on the Smithay audit and on the feature and protocol cuts.
 - **Development and testing loop.** Running nested (winit backend) vs. on a TTY, headless tests, and CI.
-- **HiDPI and fractional scaling, and accessibility** (screen reader, magnifier, and the AccessX keys and typing break that 06 deferred). Both are in scope eventually; how much goes in v0.1 is unknown.
+- **HiDPI and fractional scaling, and accessibility** (screen reader, magnifier, and the AccessX keys and typing break that 06 deferred). Both are in scope eventually; how much goes in v0.1 is unknown. 07 renders frames at the output scale rounded up and hands on exact fractional rendering and mixed-scale windows.
 - **Milestone slicing.** Ordering v0.1 into milestones once the feature, protocol and decoration cuts have landed.
 - **Packaging.** How "MATE on Camino" gets installed (session file, Arch/AUR first?).
 
