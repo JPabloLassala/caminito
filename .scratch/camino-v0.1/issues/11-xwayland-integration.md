@@ -117,7 +117,7 @@ XWayland windows are ordinary Camino windows. The policy is the same as for nati
 ### HiDPI
 
 - **One global X11 scale**, applied through Smithay's `set_client_scale` on the Xwayland client and published through XSETTINGS (`Xft/DPI`, `Gdk/UnscaledDPI`, `Gdk/WindowScalingFactor`, `Gtk/CursorThemeSize`). When it changes, Camino re-sends XSETTINGS, reloads the X cursor, republishes the work area and frame extents, and reconfigures every XWayland window. Per-output X11 scale isn't feasible.
-- **Which value** is 13's decision. The recommendation handed on is cosmic's "largest integer output scale", which lines up with MATE's `window-scaling-factor`.
+- **Which value** is 13's decision. The recommendation handed on is cosmic's "largest integer output scale", [13](13-hidpi-and-accessibility-scope.md) took it, with msd's XSETTINGS DPI formulas. `window-scaling-factor` only affects output scales, and so the X11 scale only indirectly.
 
 ### Upstream Smithay
 
@@ -127,7 +127,7 @@ XWayland windows are ordinary Camino windows. The policy is the same as for nati
 ### Handed on
 
 - **12 Screen locking:** override-redirect windows sit below the lock, and Camino refuses and releases `zwp_xwayland_keyboard_grab_v1` grabs while locked ([#1714](https://github.com/Smithay/smithay/issues/1714)).
-- **13 HiDPI:** the X11 scale value (recommended: largest integer output scale) and its interaction with `window-scaling-factor`. The mechanism is fixed above.
+- **13 HiDPI:** the X11 scale value (recommended: largest integer output scale) and its interaction with `window-scaling-factor`. The mechanism is fixed above. ([13](13-hidpi-and-accessibility-scope.md) took the recommendation.)
 - **14 Development and testing loop:** verify at runtime that `-terminate` doesn't fire while Camino is attached, that X11 clipboard contents survive the app quitting (msd's data-control manager), and exercise the restart path under bare `camino`.
 - **15 Crate and module architecture:** the X11 side is two parts, Smithay's `XwmHandler` policy and Camino's X connection (x11rb), sharing Camino's window state.
 - **16 Packaging:** the carried msd patch grows (skip the XSETTINGS claim under Camino). The patched msd is a hard dependency of the session package: without it, a Camino session loses the GNOME mirror (ADR 0006).

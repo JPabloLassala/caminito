@@ -50,7 +50,7 @@ Completing 09's list:
 | `user-switch-enabled`, and `org.mate.lockdown disable-user-switching` | honoured by `camino-locker`, keeping mate-screensaver's display-manager paths (MDM, GDM, and LightDM over `XDG_SEAT_PATH`, `gs-lock-plug.c:205-260`) |
 | `logout-enabled`, `logout-delay` (minutes), `logout-command` | honoured by `camino-locker`. As in mate-screensaver, the button appears only if the command is set, after the delay (`gs-window-x11.c:1664-1680`). |
 | `org.mate.lockdown disable-lock-screen` | honoured by Camino: locking is refused and logged. Blanking still happens. |
-| `embedded-keyboard-enabled`, `embedded-keyboard-command` | *never*: the keyboard is an XEmbed `GtkSocket` (`gs-window-x11.c:1249-1259`), and a lock surface can't host another client. An on-screen keyboard at the lock screen would need a new mechanism, not these keys; that question goes to 13. |
+| `embedded-keyboard-enabled`, `embedded-keyboard-command` | *never*: the keyboard is an XEmbed `GtkSocket` (`gs-window-x11.c:1249-1259`), and a lock surface can't host another client. An on-screen keyboard at the lock screen would need a new mechanism, not these keys; that question goes to 13 ([13](13-hidpi-and-accessibility-scope.md): later). |
 | `power-management-delay`, `screensaver-arguments` | *never*: blanking and DPMS already come from 09's keys, and screensaver arguments belong to the X11 themes. |
 
 `mode`, `themes` and `cycle-delay` stay *never* (09).
@@ -62,7 +62,7 @@ Completing 09's list:
 - **Who may lock:** 12 adds ext-session-lock to 06's list of privileged globals, so it's offered to every client except sandboxed ones. A `swaylock` started by hand counts as a lock like any other.
 - **Who may take over a lock:** once the session is locked and the lock's client is gone, only a locker Camino itself spawned (matched by the client's pid) may take the lock over. Any other client's `lock` is refused, so killing the locker doesn't let another process take the lock and unlock it.
 - **Over everything:** the lock sits above every layer, including override-redirect windows and `overlay` layer surfaces, and Xwayland keyboard grabs are refused and released while locked (11). The session isn't visible to screen capture while locked: capture sources render the lock background.
-- **Keys while locked:** Camino handles only VT switching and keyboard layout switching. Every other Camino binding, and every accelerator grabbed through `GrabAccelerators` (so msd's media keys), is suppressed, matching X11 where mate-screensaver's keyboard grab blocks msd's passive grabs. The power button is logind's.
+- **Keys while locked:** Camino handles only VT switching and keyboard layout switching. [13](13-hidpi-and-accessibility-scope.md) adds two exceptions: AccessX still applies, and Orca's keyboard monitor keeps working. Every other Camino binding, and every accelerator grabbed through `GrabAccelerators` (so msd's media keys), is suppressed, matching X11 where mate-screensaver's keyboard grab blocks msd's passive grabs. The power button is logind's.
 - **Idle inhibitors don't apply while locked:** no client surface is visible, so blanking and DPMS run on their normal timers.
 
 ### Robustness
@@ -97,7 +97,7 @@ Camino owns `org.mate.ScreenSaver` and `org.freedesktop.ScreenSaver` **before sp
 
 ### Handed on
 
-- **13 HiDPI and accessibility:** an on-screen keyboard at the lock screen (the XEmbed one is gone), and screen-reader access to the dialog (GTK3's AT-SPI works on Wayland, but Orca under Camino is untested).
+- **13 HiDPI and accessibility:** an on-screen keyboard at the lock screen (the XEmbed one is gone), and screen-reader access to the dialog (GTK3's AT-SPI works on Wayland, but Orca under Camino is untested). ([13](13-hidpi-and-accessibility-scope.md): the lock-screen keyboard is later, and Orca's keyboard monitor keeps working while locked.)
 - **14 Development and testing loop:** kill the locker while locked and check it comes back locked; run the give-up path; the suspend race with a slow locker; `loginctl unlock-session` recovery; `locker-command` set to `swaylock` for nested runs.
 - **15 Crate and module architecture:** the lock state machine (blank, pending, locked, locker-lost), the two D-Bus names, logind, and `camino-locker` as a C subproject beside `camino-gtk-palette`.
 - **16 Packaging:** ship `camino-locker` (build dependency gtk-session-lock, runtime libmate-desktop for `MateBG`); runtime dependency on mate-screensaver's data, meaning its PAM file and `lock-dialog-*.ui` (its daemon exits on its own); the `locker-command` key in the `org.mate.Camino` schema.

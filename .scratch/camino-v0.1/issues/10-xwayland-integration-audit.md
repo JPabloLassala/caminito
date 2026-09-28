@@ -33,4 +33,4 @@ Full findings are on branch `research/xwayland-integration-audit` (commit 713f17
 ### Handed on
 
 - **[11](11-xwayland-integration.md):** confirm two connections and the property-ownership rule; the XSETTINGS owner; accepting that an Xwayland crash logs the user out; which Camino-connection rows are in v0.1; the clipboard focus policy; the override-redirect layer; optional upstream Smithay PRs; passing `XCURSOR_*` through `envs`, because `XWayland::spawn` clears the environment.
-- **[13](13-hidpi-and-accessibility-scope.md):** the X11 scale policy, its interaction with MATE's `window-scaling-factor` and the XSETTINGS scale settings, and mixed-DPI limits.
+- **[13](13-hidpi-and-accessibility-scope.md):** the X11 scale policy, its interaction with MATE's `window-scaling-factor` and the XSETTINGS scale settings, and mixed-DPI limits. (Resolved: the largest integer output scale, with msd's DPI formulas.)

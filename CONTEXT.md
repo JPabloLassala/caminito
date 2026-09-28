@@ -71,3 +71,19 @@ _Avoid_: screensaver (Camino only blanks), lock screen (for the program)
 **Screensaver shim**:
 Camino's implementation of `org.mate.ScreenSaver` and `org.freedesktop.ScreenSaver`, which turns MATE's lock, activity and inhibit calls into Camino's idle, blanking and lock state. mate-screensaver's daemon doesn't run under Camino.
 _Avoid_: mate-screensaver (the X11 program)
+
+**Output scale**:
+The factor from logical to physical pixels for one output. It may be fractional. Camino's default comes from KWin's rule, or from `window-scaling-factor` when that is 1 or 2, and msd's saved layout overrides it.
+_Avoid_: DPI (that's the font setting), window scale (GTK's term)
+
+**X11 scale**:
+The single integer scale for every XWayland window: the largest rounded-up output scale. It is also published through XSETTINGS.
+_Avoid_: Xwayland DPI, global scale
+
+**Keyboard monitor**:
+Camino's `org.freedesktop.a11y.KeyboardMonitor` service, through which Orca watches and grabs keys. Only the client that owns `org.gnome.Orca.KeyboardMonitor` may use it.
+_Avoid_: key logger, a11y grab
+
+**AccessX**:
+The keyboard accessibility features from `org.mate.accessibility-keyboard`: sticky, slow, bounce, toggle and mouse keys. On Wayland Camino implements them in its keyboard path. On X11 the X server does.
+_Avoid_: a11y keys, XKB controls (that's the X11 mechanism)

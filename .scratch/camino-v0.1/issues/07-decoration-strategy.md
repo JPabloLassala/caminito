@@ -24,7 +24,7 @@ The two decisions that are hard to reverse, porting the engine and getting colou
   - `menu_icon`, `<fallback>` and `theme:` images are parsed and ignored.
 - **Validation is as strict as Marco's**, so a theme works in Camino exactly when it works in Marco. If the configured theme fails, Camino logs it once and falls back to a **built-in theme compiled into the binary**, so it never runs without frames. Changing the `theme` key reloads live.
 - **Frames become pixels as four strips** (top including the titlebar, left, right, bottom). Each strip is drawn on the CPU with cairo into a `MemoryRenderBuffer`, replaying the draw list clipped to that strip. Strips are re-rendered only when an input changes (size, title, focus, state, button hover/press, theme, palette or scale) and cached per window. The rounded-corner shape from `frames.c` is an alpha mask on the top and bottom strips, and the same shape is used for input.
-- **Scale:** themes render at the output's scale rounded up to an integer, and the renderer downsamples on fractional outputs. Border sizes are in logical pixels. Exact fractional rendering and windows spanning outputs with different scales go to the HiDPI fog.
+- **Scale:** themes render at the output's scale rounded up to an integer, and the renderer downsamples on fractional outputs. Border sizes are in logical pixels. Exact fractional rendering and windows spanning outputs with different scales go to the HiDPI fog ([13](13-hidpi-and-accessibility-scope.md): strips use the largest rounded-up scale among the outputs the window overlaps, and exact fractional frames are later).
 - **Shadows:** Marco's compositor shadow model (Gaussian, with per-window-type and focus parameters from `compositor.c`) is drawn around the visible rect of **SSD frames only**. It follows the corner shape, sits outside the invisible resize border, is cached per size, and is off when `compositing-manager=false`. Toplevel captures leave it out (06).
 - **Title:** the font is `org.mate.Marco.general titlebar-font`, or `org.mate.interface font-name` when `titlebar-uses-system-font` is set. It's scaled by `title_scale`, laid out with pangocairo (with Marco's 30px fade and `ellipsize_width`), and uses the antialiasing and hinting settings from `org.mate.font-rendering`. The text is the xdg-toplevel title, or `_NET_WM_NAME`/`WM_NAME` for X11 windows. All of these apply live.
 - **Window icon** (for the `icon` op and the menu button), in this order:
@@ -72,7 +72,7 @@ GTK3 and GTK4 bind only the KDE protocol and decide once for the whole display: 
 
 ### Handed on
 
-- **HiDPI fog:** exact fractional rendering of frames and windows spanning outputs with different scales.
+- **HiDPI fog:** exact fractional rendering of frames and windows spanning outputs with different scales ([13](13-hidpi-and-accessibility-scope.md): largest rounded-up overlapped scale; exact frames later).
 - **Crate/module architecture fog:** where `camino-theme` and `camino-gtk-palette` sit alongside the rest of the code, and the golden-image harness in CI (development loop fog).
 - **[08](08-session-launch-model.md):** Camino starts and supervises `camino-gtk-palette`. It needs the Wayland socket up and `org.mate.interface` readable.
 - **[09](09-gsettings-mapping.md):** the decoration keys Camino reads (`theme`, `titlebar-font`, `titlebar-uses-system-font`, `button-layout`, `action-*-titlebar`, `org.mate.interface gtk-theme`/`font-name`/`icon-theme`, `org.mate.font-rendering`, the cursor keys), and a later per-app dark-variant key in `org.mate.Camino`.

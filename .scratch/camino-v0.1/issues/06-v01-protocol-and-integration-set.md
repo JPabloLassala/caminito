@@ -68,7 +68,7 @@ Layer-shell, foreign-toplevel, ext-workspace, output management, data-control an
 
 ### Deferred and known gaps
 
-- AccessX (sticky, slow, bounce and mouse keys) and typing break. Both need Camino work, and they move to the accessibility fog.
+- AccessX (sticky, slow, bounce and mouse keys) and typing break. Both need Camino work, and they move to the accessibility fog ([13](13-hidpi-and-accessibility-scope.md): sticky, slow and bounce keys and the toggle-key beeps are in v0.1; mouse keys and typing break are later).
 - Reading msd's `monitors-wayland.xml` at startup to avoid a re-modeset at login.
 - mate-session's idle presence status stays inaccurate, because it's X SYNC over XWayland.
 - mate-notification-daemon's fullscreen and screensaver suppression.

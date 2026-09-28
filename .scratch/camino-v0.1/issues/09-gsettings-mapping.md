@@ -64,7 +64,7 @@ The relevant facts are quoted inline. The one hard-to-reverse part, mirroring MA
   - `theme-name` selects the sound theme for those sounds and the bell.
   
   Marco got both through GTK's canberra integration, so Camino reads them directly.
-- **`org.mate.interface window-scaling-factor`:** unsupported, and handed to the HiDPI fog.
+- **`org.mate.interface window-scaling-factor`:** honoured ([13](13-hidpi-and-accessibility-scope.md)): 1 or 2 forces that scale on outputs with no saved config, and 0 uses Camino's KWin-style rule. `window-scaling-factor-qt-sync` is *never*.
 
 ### Input devices (the 06 handoff)
 
@@ -119,7 +119,7 @@ The relevant facts are quoted inline. The one hard-to-reverse part, mirroring MA
 - **`general group-per-window`** (default true) and **`default-group`:** *unsupported*. v0.1 has one global group. This is the one place where Camino's behaviour differs from a default MATE install, and it's documented rather than logged.
 - **Everything else** in `general`, `indicator` and `preview` is *not Camino's*. It belongs to the matekbd indicator applet.
 
-**`org.mate.accessibility-keyboard`:** *unsupported*. It is logged once when `enable=true`, and handed to the accessibility fog (06).
+**`org.mate.accessibility-keyboard`:** honoured by Camino except `mousekeys-*`, which stay *unsupported* ([13](13-hidpi-and-accessibility-scope.md)).
 
 ### Idle, blanking and locking (the 06 handoff)
 
@@ -193,8 +193,8 @@ It never reads an `org.mate.*` schema. msd's xsettings plugin feeds only XWaylan
 ### Unsupported in v0.1 (the "later" roadmap)
 
 - `org.mate.peripherals-keyboard-xkb.general` `group-per-window` and `default-group`.
-- `org.mate.accessibility-keyboard`, all keys.
-- `org.mate.interface window-scaling-factor`.
+- `org.mate.accessibility-keyboard` `mousekeys-*` (13 honours the rest).
+- `org.mate.typing-break enabled` (13).
 
 These add to 05's "later" list (the XWayland-only hints and session restore), which involves no keys.
 
@@ -206,6 +206,6 @@ These add to 05's "later" list (the XWayland-only hints and session restore), wh
   - the carried msd xsettings-mirror patch;
   - the carried mate-panel pager patch now writes the three `workspace-layout-*` keys.
 - **Screen locking fog:** the locker's keys, and any `org.mate.Camino` key it needs.
-- **HiDPI fog:** `window-scaling-factor`.
-- **Accessibility fog:** `org.mate.accessibility-keyboard`.
+- **HiDPI fog:** `window-scaling-factor` ([13](13-hidpi-and-accessibility-scope.md): honoured).
+- **Accessibility fog:** `org.mate.accessibility-keyboard` ([13](13-hidpi-and-accessibility-scope.md): honoured except mouse keys).
 - **Known gap:** the matekbd layout indicator runs on XWayland, so it sees Xwayland's keymap, not Camino's global group.
