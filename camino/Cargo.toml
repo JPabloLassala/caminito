@@ -14,5 +14,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [dev-dependencies]
+camino-test-client = { path = "../camino-test-client" }
+insta = "1.48.0"
 # The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
 smithay = { workspace = true, features = ["renderer_pixman"] }

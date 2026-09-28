@@ -12,6 +12,8 @@ use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, LoopSignal, M
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::backend::Backend;
@@ -30,6 +32,8 @@ pub struct Camino {
     pub loop_signal: LoopSignal,
 
     pub compositor_state: CompositorState,
+    pub shm_state: ShmState,
+    pub xdg_shell_state: XdgShellState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
 
@@ -123,6 +127,8 @@ impl Camino {
             .expect("the display joins the event loop");
 
         let compositor_state = CompositorState::new::<State>(&display_handle);
+        let shm_state = ShmState::new::<State>(&display_handle, Vec::new());
+        let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
         let mut seat_state = SeatState::new();
         let seat = seat_state.new_wl_seat(&display_handle, "seat0");
 
@@ -131,6 +137,8 @@ impl Camino {
             loop_handle,
             loop_signal: event_loop.get_signal(),
             compositor_state,
+            shm_state,
+            xdg_shell_state,
             seat_state,
             seat,
             outputs: Vec::new(),

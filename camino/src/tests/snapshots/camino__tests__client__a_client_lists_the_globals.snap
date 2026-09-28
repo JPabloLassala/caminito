@@ -1,0 +1,10 @@
+---
+source: camino/src/tests/client.rs
+expression: format_globals(&f.client(id).state.globals)
+---
+wl_compositor v5
+wl_output v4
+wl_seat v9
+wl_shm v2
+wl_subcompositor v1
+xdg_wm_base v7

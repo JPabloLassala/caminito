@@ -17,6 +17,6 @@ The headless integration tier from 14, ready for [22](22-xdg-shell-and-input.md)
 
 ## Acceptance criteria
 
-- [ ] A fixture test connects a client, lists the globals and snapshots the list.
-- [ ] A fixture test creates an xdg toplevel and snapshots its first configure. The snapshot is expected to change when [22](22-xdg-shell-and-input.md) lands.
+- [x] A fixture test connects a client, lists the globals and snapshots the list.
+- [x] A fixture test creates an xdg toplevel and snapshots its first configure. The snapshot is expected to change when [22](22-xdg-shell-and-input.md) lands.
 - [ ] The headless tier runs in CI with no GPU or EGL.

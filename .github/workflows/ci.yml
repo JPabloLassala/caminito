@@ -29,4 +29,9 @@ jobs:
         run: cargo build --workspace
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude camino
+
+      # The headless tier renders with pixman, so it needs no GPU or EGL. camino's tests
+      # get a private session bus (14).
+      - name: Test camino
+        run: dbus-run-session -- cargo test -p camino

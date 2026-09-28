@@ -27,7 +27,9 @@ jobs:
         run: cargo build --workspace
 
       - name: Test
-        run: cargo test --workspace
+        run: |
+          cargo test --workspace --exclude camino
+          dbus-run-session -- cargo test -p camino
 
   smithay-canary-report:
     needs: smithay-canary

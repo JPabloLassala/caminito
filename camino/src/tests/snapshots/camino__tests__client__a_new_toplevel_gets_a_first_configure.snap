@@ -1,0 +1,5 @@
+---
+source: camino/src/tests/client.rs
+expression: format_configures(&f.client(id).window(window).configures)
+---
+size: 0 × 0, states: [], bounds: 0 × 0, capabilities: [Fullscreen, Maximize, Minimize, WindowMenu]

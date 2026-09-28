@@ -1,6 +1,7 @@
 //! Smithay's protocol handlers, implemented for `State`, one file per area (15).
 
 mod compositor;
+mod xdg_shell;
 
 use smithay::input::{SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
