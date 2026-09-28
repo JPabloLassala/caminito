@@ -1,0 +1,16 @@
+name: Arch setup
+description: Install Camino's build dependencies and Rust toolchain in the archlinux container.
+
+runs:
+  using: composite
+  steps:
+    # Only what the build needs so far; later tickets add packages here.
+    - name: Install packages
+      shell: bash
+      run: pacman -Syu --noconfirm --needed gcc rustup cargo-deny libxkbcommon
+
+    - name: Install Rust toolchain
+      shell: bash
+      run: rustup toolchain install
+
+    - uses: Swatinem/rust-cache@v2

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/arch-setup
+
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo-deny
+        run: cargo deny check
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Test
+        run: cargo test --workspace

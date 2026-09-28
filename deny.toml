@@ -1,0 +1,39 @@
+# cargo-deny configuration (14).
+#
+# Camino is GPL-2.0-or-later. Dependencies must be under a licence that is
+# compatible with it, plus Apache-2.0, which makes the combined work
+# distributable under GPLv3. A licence missing from `allow` is rejected, so
+# GPL-3.0-only crates and crates with an unknown licence fail the check.
+
+[licenses]
+allow = [
+    "GPL-2.0-or-later",
+    "LGPL-2.1-or-later",
+    "Apache-2.0",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+    "Unicode-3.0",
+    # Compatible through its secondary-licence clause, which a crate can opt out of.
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+unused-allowed-license = "allow"
+
+[advisories]
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/Smithay/smithay.git"]

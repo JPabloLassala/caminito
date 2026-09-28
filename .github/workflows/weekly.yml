@@ -1,0 +1,68 @@
+name: Weekly
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  smithay-canary:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/arch-setup
+
+      - name: Point Smithay at master
+        run: |
+          sed -i -E '/^smithay = /{s/version = "[^"]+", //;s/rev = "[0-9a-f]+"/branch = "master"/}' Cargo.toml
+          grep '^smithay = .*branch = "master"' Cargo.toml
+          cargo update -p smithay
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Test
+        run: cargo test --workspace
+
+  smithay-canary-report:
+    needs: smithay-canary
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the canary issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Smithay canary failing"
+          body="The weekly build against Smithay master failed: $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
+  proptest:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      PROPTEST_CASES: 200000
+    steps:
+      - name: Install git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/arch-setup
+
+      - name: Property tests
+        run: cargo test --release -p camino-policy
