@@ -35,6 +35,7 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 - [Session launch model](issues/08-session-launch-model.md): the entry runs `camino --session`; Camino starts Xwayland eagerly, exports the environment to D-Bus and systemd, then runs mate-session as its child on XWayland (`GDK_BACKEND=x11`), with a carried patch that unsets `GDK_BACKEND` and drops the `windowmanager` component ([ADR 0004](../../docs/adr/0004-mate-session-as-camino-child-on-xwayland.md)). `XDG_CURRENT_DESKTOP` stays exactly `MATE`. mate-session exiting ends the session. A carried mate-panel patch sends Shut Down through mate-session.
 - [gsettings mapping](issues/09-gsettings-mapping.md): Camino reads MATE's schemas without owning them. Every key is honoured, never implemented, left to another component, or unsupported (logged once, and only when set away from its default). Input keys go to libinput and xkb exactly as msd applies them on X11. Camino owns the idle, blank and DPMS keys. A carried msd patch mirrors MATE's appearance settings into the `org.gnome.*` keys that native GTK reads ([ADR 0005](../../docs/adr/0005-msd-mirrors-mate-settings-into-gnome-schemas.md)). `org.mate.Camino` holds only the three `workspace-layout-*` keys.
 - [XWayland integration audit](issues/10-xwayland-integration-audit.md): Smithay's `X11Wm` covers the per-window ICCCM/EWMH protocol but not desktops, work area, frame extents, struts or the bell, and it exposes no connection, so the recommendation is a second, Camino-owned X connection that never writes Smithay's properties. Smithay's XSETTINGS claim evicts msd's, so Camino should serve XSETTINGS itself. An Xwayland crash ends the session, because mate-session is an X11 client. X11 scaling is one global number (goes to 13), and override-redirect windows get their own scene layer.
+- [XWayland integration](issues/11-xwayland-integration.md): two X connections, with Camino's never writing what Smithay maintains, and all X work Camino-side (upstream PRs optional). Camino serves XSETTINGS and msd's xsettings plugin runs mirror-only ([ADR 0006](../../docs/adr/0006-camino-serves-xsettings.md)). v0.1 publishes the desktop atoms, work area and frame extents before `DISPLAY` is exported, and handles the dropped root messages. An Xwayland crash logs the user out, but Camino restarts X on the same display. XWayland windows follow Marco's type, placement and focus rules, with no activation tokens; override-redirect windows sit above toplevels and the top layer but below overlay and the lock; clipboard access is gated on X11 focus. One global X11 scale; its value goes to 13.
 
 ## Not yet specified
 
@@ -49,7 +50,7 @@ The remaining fog was charted on 2026-09-28 as tickets 10–17:
 - [16 Packaging](issues/16-packaging.md)
 - [17 Milestone slicing](issues/17-milestone-slicing.md)
 
-10 is resolved. 11, 12, 13 and 14 are unblocked now. 17 closes the map.
+10 and 11 are resolved. 12, 13 and 14 are unblocked now. 17 closes the map.
 
 ## Out of scope
 

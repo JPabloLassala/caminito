@@ -1,7 +1,7 @@
 # 5. msd mirrors MATE's appearance settings into the GNOME schemas GTK reads
 
 Date: 2026-09-28
-Status: Accepted
+Status: Accepted. Partly qualified by [ADR 0006](0006-camino-serves-xsettings.md): under Camino, the xsettings plugin runs the mirror only.
 
 ## Context
 

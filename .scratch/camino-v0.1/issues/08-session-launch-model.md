@@ -25,7 +25,7 @@ The hard-to-reverse part, running mate-session as Camino's child on XWayland wit
 ### XWayland
 
 - **Eager:** Xwayland starts before any session child. Camino waits for `-displayfd` before exporting `DISPLAY`. Lazy start would gain nothing, because msd's xsettings plugin connects at once and mate-session itself runs on X11.
-- **On a crash,** Camino restarts Xwayland **on the same display number** with backoff, so `DISPLAY` stays valid. X11 clients die. msd's xsettings already survives X restarts. After repeated failures, Camino logs the failure and carries on without X.
+- **On a crash,** Camino restarts Xwayland **on the same display number** with backoff, so `DISPLAY` stays valid. X11 clients die. msd's xsettings plugin does not reconnect after an X restart; under Camino, Camino serves XSETTINGS instead (corrected by [11](11-xwayland-integration.md)). After repeated failures, Camino logs the failure and carries on without X.
 - **If Xwayland never comes up,** Camino still spawns mate-session, with no `DISPLAY`, and logs loudly rather than refusing to start the session.
 
 ### How mate-session runs
