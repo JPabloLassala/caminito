@@ -28,6 +28,7 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 - [Smithay capability audit](issues/03-smithay-capability-audit.md): pin Smithay master; it covers the core, but Camino writes foreign-toplevel, ext-workspace and output-management plus its own scene graph and window-management policy.
 - [Marco feature inventory](issues/01-marco-feature-inventory.md): 194 gsettings keys and 103 keybinding actions; the core behaviour carries over as compositor-internal, and what breaks is Marco's X11 conversations with mate-panel, the pager and mate-control-center.
 - [MATE components on Wayland audit](issues/02-mate-wayland-audit.md): MATE needs only wlr/ext protocols (layer-shell, foreign-toplevel, ext-workspace, output-management, data-control), mostly from 2026 git rather than 1.28. mate-session isn't ported and must run as a child of Camino, and msd leaves input settings and media keys to the compositor.
+- [Metacity/Marco theme format](issues/04-metacity-theme-format.md): Marco's format goes up to v3.5 and themes need a lenient parser; colours depend on the GTK3 theme's CSS; feature tiers 0–3 sized from 87 real themes; no non-C renderer exists.
 
 ## Not yet specified
 
