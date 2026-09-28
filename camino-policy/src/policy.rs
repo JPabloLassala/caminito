@@ -1,0 +1,1064 @@
+//! `Policy`: Camino's window-management model, driven by events and applied through `W`.
+
+use std::time::Duration;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
+
+use crate::placement::{self, Obstacle};
+use crate::stack::{self, Layer};
+use crate::{
+    Action, Output, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
+};
+
+/// A seat, as the compositor numbers them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SeatId(pub u32);
+
+/// The edges an interactive resize moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ResizeEdges {
+    pub top: bool,
+    pub bottom: bool,
+    pub left: bool,
+    pub right: bool,
+}
+
+impl ResizeEdges {
+    pub const TOP_LEFT: Self = Self {
+        top: true,
+        bottom: false,
+        left: true,
+        right: false,
+    };
+    pub const BOTTOM_RIGHT: Self = Self {
+        top: false,
+        bottom: true,
+        left: false,
+        right: true,
+    };
+}
+
+/// An interactive move or resize a seat is driving.
+struct Grab {
+    window: WindowId,
+    /// The edges being resized, or `None` for a move.
+    resize: Option<ResizeEdges>,
+    start_pointer: Point<f64, Logical>,
+    /// The window geometry when the grab began, at its committed size.
+    start: Rectangle<i32, Logical>,
+}
+
+/// Policy's settings.
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// A fixed count, standing in until M2 reads `num-workspaces`.
+    pub workspace_count: usize,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        // Marco's default `num-workspaces`.
+        Self { workspace_count: 4 }
+    }
+}
+
+/// What policy has last asked of a window, so each request is sent only when it changes.
+#[derive(Default)]
+struct Sent {
+    geometry: Option<(Rectangle<i32, Logical>, WindowStates)>,
+    activated: bool,
+    outputs: Option<Vec<OutputId>>,
+}
+
+/// A window policy manages, with policy's state for it.
+struct Managed<W> {
+    window: W,
+    window_type: WindowType,
+    /// The transient parent, when it's managed and linking to it makes no cycle.
+    parent: Option<WindowId>,
+    workspace: usize,
+    /// `loc` is where the window geometry is placed, `size` the size the client is asked for.
+    geometry: Rectangle<i32, Logical>,
+    /// The size the client last committed.
+    size: Size<i32, Logical>,
+    hints: SizeHints,
+    ssd: bool,
+    extents: FrameExtents<i32, Logical>,
+    /// The edges and starting geometry of an interactive resize in progress.
+    resize: Option<(ResizeEdges, Rectangle<i32, Logical>)>,
+    maximized: bool,
+    fullscreen: bool,
+    /// The output a client asked to be fullscreen on.
+    fullscreen_output: Option<OutputId>,
+    minimized: bool,
+    /// The geometry to go back to, while maximised or fullscreen.
+    floating: Option<Rectangle<i32, Logical>>,
+    sent: Sent,
+}
+
+impl<W> Managed<W> {
+    /// Remembers the floating geometry before the window first leaves it.
+    fn save_floating(&mut self) {
+        if !self.maximized && !self.fullscreen && self.floating.is_none() {
+            self.floating = Some(Rectangle::new(self.geometry.loc, self.size));
+        }
+    }
+
+    fn states(&self) -> WindowStates {
+        WindowStates {
+            maximized: self.maximized,
+            fullscreen: self.fullscreen,
+            resizing: self.resize.is_some(),
+        }
+    }
+
+    /// The frame's extents, or none when the window has no frame showing.
+    fn visible_extents(&self) -> FrameExtents<i32, Logical> {
+        if self.ssd && !self.fullscreen {
+            self.extents
+        } else {
+            FrameExtents::default()
+        }
+    }
+
+    /// The window's outer rectangle: its committed geometry plus the frame, if it has one.
+    fn frame(&self) -> Rectangle<i32, Logical> {
+        let geometry = Rectangle::new(self.geometry.loc, self.size);
+        let e = self.visible_extents();
+        Rectangle::new(
+            (geometry.loc.x - e.left, geometry.loc.y - e.top).into(),
+            (
+                geometry.size.w + e.left + e.right,
+                geometry.size.h + e.top + e.bottom,
+            )
+                .into(),
+        )
+    }
+}
+
+pub struct Policy<W: PolicyWindow> {
+    windows: BTreeMap<WindowId, Managed<W>>,
+    /// Each workspace's windows, bottom to top.
+    stacks: Vec<Vec<WindowId>>,
+    active: usize,
+    outputs: Vec<Output>,
+    /// Every seat seen so far.
+    seats: BTreeSet<SeatId>,
+    focus: BTreeMap<SeatId, WindowId>,
+    /// When each seat's focus last changed on user input, to drop stale focus requests as
+    /// Marco does.
+    focus_time: BTreeMap<SeatId, Duration>,
+    /// The seat that last acted, which a newly mapped window is focused for.
+    last_seat: SeatId,
+    grabs: BTreeMap<SeatId, Grab>,
+    /// Windows by when they last had focus, most recent first, for Alt+Tab.
+    mru: Vec<WindowId>,
+}
+
+impl<W: PolicyWindow> Policy<W> {
+    pub fn new(config: Config) -> Self {
+        Self {
+            windows: BTreeMap::new(),
+            stacks: vec![Vec::new(); config.workspace_count.max(1)],
+            active: 0,
+            outputs: Vec::new(),
+            seats: BTreeSet::new(),
+            focus: BTreeMap::new(),
+            focus_time: BTreeMap::new(),
+            last_seat: SeatId(0),
+            grabs: BTreeMap::new(),
+            mru: Vec::new(),
+        }
+    }
+
+    // Events.
+
+    /// Adds an output, or updates the one with the same id.
+    pub fn add_output(&mut self, output: Output) {
+        match self.outputs.iter_mut().find(|o| o.id == output.id) {
+            Some(existing) => *existing = output,
+            None => self.outputs.push(output),
+        }
+        self.rehome_windows();
+        self.apply();
+    }
+
+    /// Removes an output. Windows left on no output move onto the first remaining one.
+    pub fn remove_output(&mut self, id: OutputId) {
+        self.outputs.retain(|o| o.id != id);
+        self.rehome_windows();
+        self.apply();
+    }
+
+    /// Starts managing a window the client has mapped.
+    pub fn map_window(&mut self, window: W, now: Duration) {
+        let id = window.id();
+        let size = window.size();
+        let geometry = Rectangle::new(Point::default(), size);
+        let window_type = window.window_type();
+        let hints = window.size_hints();
+        let ssd = window.is_ssd();
+        let extents = window.frame_extents();
+        let parent = window
+            .transient_parent()
+            .filter(|p| self.windows.contains_key(p));
+        let workspace = parent.map_or(self.active, |p| self.windows[&p].workspace);
+        self.windows.insert(
+            id,
+            Managed {
+                window,
+                window_type,
+                parent,
+                workspace,
+                geometry,
+                size,
+                hints,
+                ssd,
+                extents,
+                resize: None,
+                maximized: false,
+                fullscreen: false,
+                fullscreen_output: None,
+                minimized: false,
+                floating: None,
+                sent: Sent::default(),
+            },
+        );
+        self.stacks[workspace].push(id);
+        self.place(id);
+        self.maximize_if_too_big(id);
+        self.adopt_transients(id);
+        if !matches!(
+            window_type,
+            WindowType::Desktop | WindowType::Dock | WindowType::Splashscreen
+        ) {
+            self.focus_window(self.last_seat, id, now);
+        }
+        self.apply();
+    }
+
+    /// Stops managing a window the client has unmapped or destroyed, and hands it back.
+    pub fn unmap_window(&mut self, id: WindowId) -> Option<W> {
+        let managed = self.windows.remove(&id)?;
+        self.stacks[managed.workspace].retain(|w| *w != id);
+        self.grabs.retain(|_, grab| grab.window != id);
+        for other in self.windows.values_mut() {
+            if other.parent == Some(id) {
+                other.parent = None;
+            }
+        }
+        // Marco hands focus to a lost transient's parent before the rest of the stack.
+        if let Some(parent) = managed.parent.filter(|p| self.is_showing(*p)) {
+            for focus in self.focus.values_mut() {
+                if *focus == id {
+                    *focus = parent;
+                }
+            }
+        }
+        self.apply();
+        Some(managed.window)
+    }
+
+    /// The client committed new state: re-reads its facts.
+    pub fn commit(&mut self, id: WindowId) {
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        managed.window_type = managed.window.window_type();
+        managed.hints = managed.window.size_hints();
+        managed.ssd = managed.window.is_ssd();
+        managed.extents = managed.window.frame_extents();
+        let size = managed.window.size();
+        managed.size = size;
+        if let Some((edges, start)) = managed.resize {
+            // The client may settle on another size than asked; the far edges stay put.
+            if edges.left {
+                managed.geometry.loc.x = start.loc.x + start.size.w - size.w;
+            }
+            if edges.top {
+                managed.geometry.loc.y = start.loc.y + start.size.h - size.h;
+            }
+        } else if !managed.maximized && !managed.fullscreen {
+            // A floating client picks its own size, and already knows it.
+            managed.geometry.size = size;
+            if let Some((sent, _)) = &mut managed.sent.geometry {
+                sent.size = size;
+            }
+        }
+
+        let requested = managed.window.transient_parent();
+        if requested != managed.parent {
+            let parent =
+                requested.filter(|p| self.windows.contains_key(p) && !self.is_ancestor(id, *p));
+            self.windows.get_mut(&id).unwrap().parent = parent;
+            if let Some(parent) = parent {
+                self.move_tree(id, self.windows[&parent].workspace);
+            }
+        }
+        self.relayout(id);
+        self.apply();
+    }
+
+    /// A button press on a window: click focus, and Marco's raise on click.
+    pub fn click(&mut self, seat: SeatId, id: WindowId, now: Duration) {
+        self.set_last_seat(seat);
+        if self.is_showing(id) && self.focus_window(seat, id, now) {
+            self.raise_family(id);
+        }
+        self.apply();
+    }
+
+    /// A keybinding action on behalf of `seat`.
+    pub fn action(&mut self, seat: SeatId, action: Action, now: Duration) {
+        self.set_last_seat(seat);
+        match action {
+            Action::SwitchToWorkspaceLeft => self.switch_workspace(self.active.saturating_sub(1)),
+            Action::SwitchToWorkspaceRight => {
+                self.switch_workspace((self.active + 1).min(self.stacks.len() - 1))
+            }
+            Action::ToggleMaximized => {
+                if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
+                    self.set_maximized(id, !self.is_maximized(id));
+                }
+            }
+            Action::Close => {
+                // Marco gives the desktop and docks no close or maximise function.
+                if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
+                    self.windows.get_mut(&id).unwrap().window.close();
+                }
+            }
+            Action::SwitchWindows => {
+                let current = self.focus(seat);
+                let next = self.mru.iter().copied().find(|id| {
+                    let managed = &self.windows[id];
+                    Some(*id) != current
+                        && managed.workspace == self.active
+                        && !matches!(managed.window_type, WindowType::Dock | WindowType::Desktop)
+                });
+                if let Some(id) = next {
+                    self.activate(seat, id, now);
+                }
+            }
+        }
+        self.apply();
+    }
+
+    /// Makes `workspace` the active one, and gives every seat its default focus.
+    pub fn switch_workspace(&mut self, workspace: usize) {
+        let workspace = workspace.min(self.stacks.len() - 1);
+        if workspace != self.active {
+            self.active = workspace;
+            self.focus.clear();
+            if let Some(id) = self.default_focus() {
+                for seat in &self.seats {
+                    self.focus.insert(*seat, id);
+                }
+            }
+        }
+        self.apply();
+    }
+
+    /// Moves a window to `workspace`, with every window in its transient tree.
+    pub fn move_to_workspace(&mut self, id: WindowId, workspace: usize) {
+        if !self.windows.contains_key(&id) {
+            return;
+        }
+        let workspace = workspace.min(self.stacks.len() - 1);
+        self.move_tree(self.root(id), workspace);
+        self.apply();
+    }
+
+    /// Brings a window to the user, as the window list or Alt+Tab does: switches to its
+    /// workspace, then focuses and raises it.
+    pub fn activate(&mut self, seat: SeatId, id: WindowId, now: Duration) {
+        let Some(workspace) = self.workspace_of(id) else {
+            return;
+        };
+        self.set_last_seat(seat);
+        self.switch_workspace(workspace);
+        let mut current = Some(id);
+        while let Some(w) = current {
+            let managed = self.windows.get_mut(&w).unwrap();
+            managed.minimized = false;
+            current = managed.parent;
+        }
+        if self.focus_window(seat, id, now) {
+            self.raise_family(id);
+        }
+        self.apply();
+    }
+
+    // Client requests.
+
+    pub fn set_maximized(&mut self, id: WindowId, maximized: bool) {
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        if managed.maximized != maximized {
+            managed.save_floating();
+            managed.maximized = maximized;
+            self.relayout(id);
+        }
+        self.apply();
+    }
+
+    /// Enters fullscreen, on `output` if the client named one, or leaves it.
+    pub fn set_fullscreen(&mut self, id: WindowId, fullscreen: bool, output: Option<OutputId>) {
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        managed.save_floating();
+        managed.fullscreen = fullscreen;
+        managed.fullscreen_output = output.filter(|_| fullscreen);
+        self.relayout(id);
+        self.apply();
+    }
+
+    pub fn minimize(&mut self, id: WindowId) {
+        if let Some(managed) = self.windows.get_mut(&id) {
+            managed.minimized = true;
+        }
+        self.apply();
+    }
+
+    // Interactive move and resize, driven by the caller.
+
+    /// Starts moving a window with `seat`'s pointer. Returns false if the window can't be moved.
+    pub fn begin_move(&mut self, seat: SeatId, id: WindowId, pointer: Point<f64, Logical>) -> bool {
+        self.begin_grab(seat, id, None, pointer)
+    }
+
+    /// Starts resizing a window's `edges` with `seat`'s pointer. Returns false if the window
+    /// can't be resized.
+    pub fn begin_resize(
+        &mut self,
+        seat: SeatId,
+        id: WindowId,
+        edges: ResizeEdges,
+        pointer: Point<f64, Logical>,
+    ) -> bool {
+        self.begin_grab(seat, id, Some(edges), pointer)
+    }
+
+    /// The seat's pointer moved during a grab.
+    pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>) {
+        let Some(grab) = self.grabs.get(&seat) else {
+            return;
+        };
+        let delta = pointer - grab.start_pointer;
+        let start = grab.start;
+        let managed = self.windows.get_mut(&grab.window).unwrap();
+        match grab.resize {
+            None => managed.geometry.loc = (start.loc.to_f64() + delta).to_i32_round(),
+            Some(edges) => {
+                let (dx, dy) = (delta.x.round() as i32, delta.y.round() as i32);
+                let mut size = start.size;
+                if edges.left {
+                    size.w -= dx;
+                } else if edges.right {
+                    size.w += dx;
+                }
+                if edges.top {
+                    size.h -= dy;
+                } else if edges.bottom {
+                    size.h += dy;
+                }
+                let size = managed.hints.clamp(size);
+                let mut loc = start.loc;
+                if edges.left {
+                    loc.x = start.loc.x + start.size.w - size.w;
+                }
+                if edges.top {
+                    loc.y = start.loc.y + start.size.h - size.h;
+                }
+                managed.geometry = Rectangle::new(loc, size);
+            }
+        }
+        self.apply();
+    }
+
+    /// Ends the seat's grab, if it has one.
+    pub fn end_grab(&mut self, seat: SeatId) {
+        if let Some(grab) = self.grabs.remove(&seat)
+            && let Some(managed) = self.windows.get_mut(&grab.window)
+        {
+            managed.resize = None;
+        }
+        self.apply();
+    }
+
+    /// Ends grabs on windows that can no longer be moved: hidden, maximised or fullscreen.
+    fn end_stale_grabs(&mut self) {
+        let stale: Vec<SeatId> = self
+            .grabs
+            .iter()
+            .filter(|(_, g)| {
+                !self.is_showing(g.window)
+                    || self.is_maximized(g.window)
+                    || self.is_fullscreen(g.window)
+            })
+            .map(|(seat, _)| *seat)
+            .collect();
+        for seat in stale {
+            let grab = self.grabs.remove(&seat).unwrap();
+            if let Some(managed) = self.windows.get_mut(&grab.window) {
+                managed.resize = None;
+            }
+        }
+    }
+
+    fn begin_grab(
+        &mut self,
+        seat: SeatId,
+        id: WindowId,
+        resize: Option<ResizeEdges>,
+        pointer: Point<f64, Logical>,
+    ) -> bool {
+        let movable = self.is_showing(id)
+            && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat)
+            && self.windows.get(&id).is_some_and(|m| {
+                !m.maximized
+                    && !m.fullscreen
+                    && !matches!(m.window_type, WindowType::Desktop | WindowType::Dock)
+            });
+        if !movable {
+            return false;
+        }
+        self.set_last_seat(seat);
+        self.end_grab(seat);
+        let managed = self.windows.get_mut(&id).unwrap();
+        let start = Rectangle::new(managed.geometry.loc, managed.size);
+        managed.resize = resize.map(|edges| (edges, start));
+        self.grabs.insert(
+            seat,
+            Grab {
+                window: id,
+                resize,
+                start_pointer: pointer,
+                start,
+            },
+        );
+        self.apply();
+        true
+    }
+
+    // Queries.
+
+    pub fn window(&self, id: WindowId) -> Option<&W> {
+        self.windows.get(&id).map(|m| &m.window)
+    }
+
+    pub fn active_workspace(&self) -> usize {
+        self.active
+    }
+
+    /// A workspace's windows, bottom to top.
+    pub fn stacking(&self, workspace: usize) -> &[WindowId] {
+        &self.stacks[workspace]
+    }
+
+    pub fn focus(&self, seat: SeatId) -> Option<WindowId> {
+        self.focus.get(&seat).copied()
+    }
+
+    pub fn windows(&self) -> impl Iterator<Item = &W> {
+        self.windows.values().map(|m| &m.window)
+    }
+
+    pub fn workspace_count(&self) -> usize {
+        self.stacks.len()
+    }
+
+    pub fn window_mut(&mut self, id: WindowId) -> Option<&mut W> {
+        self.windows.get_mut(&id).map(|m| &mut m.window)
+    }
+
+    /// The window the seat is moving or resizing.
+    pub fn grab(&self, seat: SeatId) -> Option<WindowId> {
+        self.grabs.get(&seat).map(|g| g.window)
+    }
+
+    pub fn is_maximized(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.maximized)
+    }
+
+    pub fn is_fullscreen(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.fullscreen)
+    }
+
+    pub fn is_minimized(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.minimized)
+    }
+
+    pub fn workspace_of(&self, id: WindowId) -> Option<usize> {
+        Some(self.windows.get(&id)?.workspace)
+    }
+
+    /// Where a window's geometry is, at the size the client last committed.
+    pub fn geometry(&self, id: WindowId) -> Option<Rectangle<i32, Logical>> {
+        let managed = self.windows.get(&id)?;
+        Some(Rectangle::new(managed.geometry.loc, managed.size))
+    }
+
+    /// A window's transient parent, as policy resolved it.
+    pub fn parent(&self, id: WindowId) -> Option<WindowId> {
+        self.windows.get(&id)?.parent
+    }
+
+    pub fn layer(&self, id: WindowId) -> Option<Layer> {
+        let managed = self.windows.get(&id)?;
+        let own = match managed.window_type {
+            WindowType::Desktop => Layer::Desktop,
+            WindowType::Dock => Layer::Top,
+            _ if managed.fullscreen && self.focus.values().any(|f| self.is_ancestor(id, *f)) => {
+                Layer::Fullscreen
+            }
+            _ => Layer::Normal,
+        };
+        // Marco promotes a transient into its parent's layer.
+        Some(
+            managed
+                .parent
+                .and_then(|p| self.layer(p))
+                .map_or(own, |p| p.max(own)),
+        )
+    }
+
+    // Transients.
+
+    /// Whether `ancestor` is `id` or one of its transient ancestors.
+    fn is_ancestor(&self, ancestor: WindowId, id: WindowId) -> bool {
+        let mut current = Some(id);
+        while let Some(w) = current {
+            if w == ancestor {
+                return true;
+            }
+            current = self.windows[&w].parent;
+        }
+        false
+    }
+
+    /// Links the windows that are transient for a newly mapped `parent` to it, unless that
+    /// makes a cycle, and moves them to its workspace.
+    fn adopt_transients(&mut self, parent: WindowId) {
+        let orphans: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter(|(_, m)| m.parent.is_none() && m.window.transient_parent() == Some(parent))
+            .map(|(id, _)| *id)
+            .collect();
+        let workspace = self.windows[&parent].workspace;
+        for id in orphans {
+            if !self.is_ancestor(id, parent) {
+                self.windows.get_mut(&id).unwrap().parent = Some(parent);
+                self.move_tree(id, workspace);
+            }
+        }
+    }
+
+    /// A window and all its transient descendants.
+    fn tree(&self, id: WindowId) -> Vec<WindowId> {
+        let mut tree = vec![id];
+        let mut i = 0;
+        while i < tree.len() {
+            let parent = tree[i];
+            tree.extend(
+                self.windows
+                    .iter()
+                    .filter(|(_, m)| m.parent == Some(parent))
+                    .map(|(id, _)| *id),
+            );
+            i += 1;
+        }
+        tree
+    }
+
+    /// Moves a window and its transient descendants to `workspace`, keeping their order.
+    fn move_tree(&mut self, id: WindowId, workspace: usize) {
+        let tree = self.tree(id);
+        for stack in &mut self.stacks {
+            stack.retain(|w| !tree.contains(w));
+        }
+        for w in &tree {
+            self.windows.get_mut(w).unwrap().workspace = workspace;
+        }
+        self.stacks[workspace].extend(&tree);
+    }
+
+    /// The root of a window's transient tree.
+    fn root(&self, id: WindowId) -> WindowId {
+        let mut id = id;
+        while let Some(parent) = self.windows[&id].parent {
+            id = parent;
+        }
+        id
+    }
+
+    // Outputs and placement.
+
+    /// The output a frame is most on, if it's on any.
+    fn output_of(&self, frame: Rectangle<i32, Logical>) -> Option<&Output> {
+        self.outputs
+            .iter()
+            .filter_map(|o| {
+                let overlap = o.geometry.intersection(frame)?;
+                Some((o, i64::from(overlap.size.w) * i64::from(overlap.size.h)))
+            })
+            .max_by_key(|(_, area)| *area)
+            .map(|(o, _)| o)
+    }
+
+    /// The part of an output windows are placed and maximised in. Struts come later.
+    fn work_area(output: &Output) -> Rectangle<i32, Logical> {
+        output.geometry
+    }
+
+    /// Sets the geometry of a maximised or fullscreen window from its output, or restores a
+    /// floating window's.
+    fn relayout(&mut self, id: WindowId) {
+        let managed = &self.windows[&id];
+        if !managed.maximized && !managed.fullscreen {
+            let managed = self.windows.get_mut(&id).unwrap();
+            if let Some(floating) = managed.floating.take() {
+                managed.geometry = floating;
+            }
+            return;
+        }
+        let output = managed
+            .fullscreen_output
+            .and_then(|o| self.outputs.iter().find(|output| output.id == o))
+            .or_else(|| self.output_of(managed.frame()))
+            .or(self.outputs.first());
+        let Some(output) = output else {
+            return;
+        };
+        let geometry = if managed.fullscreen {
+            output.geometry
+        } else {
+            let area = Self::work_area(output);
+            let e = managed.visible_extents();
+            Rectangle::new(
+                (area.loc.x + e.left, area.loc.y + e.top).into(),
+                (
+                    (area.size.w - e.left - e.right).max(1),
+                    (area.size.h - e.top - e.bottom).max(1),
+                )
+                    .into(),
+            )
+        };
+        self.windows.get_mut(&id).unwrap().geometry = geometry;
+    }
+
+    /// After outputs change: moves every window that's on no output onto the first one, and
+    /// lays out maximised and fullscreen windows again.
+    fn rehome_windows(&mut self) {
+        let Some(first) = self.outputs.first() else {
+            return;
+        };
+        let area = Self::work_area(first);
+        let ids: Vec<WindowId> = self.windows.keys().copied().collect();
+        for id in ids {
+            let managed = &self.windows[&id];
+            let frame = managed.frame();
+            if self.output_of(frame).is_none() {
+                let e = managed.visible_extents();
+                let frame_loc = placement::constrain(frame, area);
+                let managed = self.windows.get_mut(&id).unwrap();
+                managed.geometry.loc = Point::new(frame_loc.x + e.left, frame_loc.y + e.top);
+            }
+            // The geometry to restore must land on an output too.
+            let managed = &self.windows[&id];
+            if let Some(floating) = managed.floating {
+                let e = if managed.ssd {
+                    managed.extents
+                } else {
+                    FrameExtents::default()
+                };
+                let frame = Rectangle::new(
+                    (floating.loc.x - e.left, floating.loc.y - e.top).into(),
+                    (
+                        floating.size.w + e.left + e.right,
+                        floating.size.h + e.top + e.bottom,
+                    )
+                        .into(),
+                );
+                if self.output_of(frame).is_none() {
+                    let frame_loc = placement::constrain(frame, area);
+                    let floating = self
+                        .windows
+                        .get_mut(&id)
+                        .unwrap()
+                        .floating
+                        .as_mut()
+                        .unwrap();
+                    floating.loc = Point::new(frame_loc.x + e.left, frame_loc.y + e.top);
+                }
+            }
+            let managed = self.windows.get_mut(&id).unwrap();
+            if managed
+                .fullscreen_output
+                .is_some_and(|o| !self.outputs.iter().any(|output| output.id == o))
+            {
+                managed.fullscreen_output = None;
+            }
+            self.relayout(id);
+        }
+    }
+
+    /// Marco maximises a framed window that's placed at least as big as its work area.
+    fn maximize_if_too_big(&mut self, id: WindowId) {
+        let managed = &self.windows[&id];
+        let frame = managed.frame();
+        let Some(output) = self.output_of(frame).or(self.outputs.first()) else {
+            return;
+        };
+        let area = Self::work_area(output);
+        if managed.ssd && frame.size.w >= area.size.w && frame.size.h >= area.size.h {
+            let managed = self.windows.get_mut(&id).unwrap();
+            managed.save_floating();
+            managed.maximized = true;
+            self.relayout(id);
+        }
+    }
+
+    /// Places a newly mapped window with Marco's automatic placement.
+    fn place(&mut self, id: WindowId) {
+        let managed = &self.windows[&id];
+        let (left, top) = if managed.ssd {
+            (managed.extents.left, managed.extents.top)
+        } else {
+            (0, 0)
+        };
+        let frame_size = managed.frame().size;
+        let size = managed.size;
+
+        let loc = if let Some(requested) = managed.window.requested_position() {
+            // Marco honours USPosition and PPosition with its workarounds on (the default).
+            requested
+        } else if let (WindowType::Dialog | WindowType::ModalDialog, Some(parent)) =
+            (managed.window_type, managed.parent)
+        {
+            // Centred over the parent, leaving twice as much space below as above.
+            let parent_frame = self.windows[&parent].frame();
+            let parent = self.geometry(parent).unwrap();
+            let loc = Point::new(
+                parent.loc.x + parent.size.w / 2 - size.w / 2,
+                parent.loc.y + (parent.size.h - size.h) / 3 + top,
+            );
+            match self.output_of(parent_frame) {
+                Some(output) => {
+                    let frame = Rectangle::new((loc.x - left, loc.y - top).into(), frame_size);
+                    let frame_loc = placement::constrain(frame, Self::work_area(output));
+                    Point::new(frame_loc.x + left, frame_loc.y + top)
+                }
+                None => loc,
+            }
+        } else {
+            let output = self
+                .focus(self.last_seat)
+                .and_then(|f| self.output_of(self.windows[&f].frame()))
+                .or(self.outputs.first());
+            match output {
+                None => Point::new(left, top),
+                Some(output) => self.place_on(id, output, frame_size, (left, top)),
+            }
+        };
+        self.windows.get_mut(&id).unwrap().geometry.loc = loc;
+    }
+
+    /// Places a window without a parent to centre on, on `output`.
+    fn place_on(
+        &self,
+        id: WindowId,
+        output: &Output,
+        frame_size: Size<i32, Logical>,
+        (left, top): (i32, i32),
+    ) -> Point<i32, Logical> {
+        let managed = &self.windows[&id];
+        if matches!(
+            managed.window_type,
+            WindowType::Dialog | WindowType::ModalDialog | WindowType::Splashscreen
+        ) {
+            // Marco centres the window geometry, not the frame, on the output.
+            let area = output.geometry;
+            return Point::new(
+                area.loc.x + (area.size.w - managed.size.w) / 2,
+                area.loc.y + (area.size.h - managed.size.h) / 2,
+            );
+        }
+
+        let area = Self::work_area(output);
+        let others: Vec<Obstacle> = self.stacks[managed.workspace]
+            .iter()
+            .filter(|other| **other != id && self.is_visible_on_workspace(**other))
+            .map(|other| &self.windows[other])
+            .filter(|m| self.output_of(m.frame()).map(|o| o.id) == Some(output.id))
+            .map(|m| Obstacle {
+                frame: m.frame(),
+                client: m.geometry.loc,
+                blocks: matches!(
+                    m.window_type,
+                    WindowType::Normal
+                        | WindowType::Utility
+                        | WindowType::Toolbar
+                        | WindowType::Menu
+                ),
+            })
+            .collect();
+        let frame_loc = placement::first_fit(frame_size, area, &others)
+            .unwrap_or_else(|| placement::cascade(frame_size, (left, top), area, &others));
+        let frame_loc = placement::constrain(Rectangle::new(frame_loc, frame_size), area);
+        Point::new(frame_loc.x + left, frame_loc.y + top)
+    }
+
+    // Focus and stacking.
+
+    fn set_last_seat(&mut self, seat: SeatId) {
+        self.seats.insert(seat);
+        self.last_seat = seat;
+    }
+
+    /// Focuses `id` for `seat` on user input at `now`. Returns false, changing nothing, if the
+    /// request is older than the seat's last focus change.
+    fn focus_window(&mut self, seat: SeatId, id: WindowId, now: Duration) -> bool {
+        if self.focus_time.get(&seat).is_some_and(|last| now < *last) {
+            return false;
+        }
+        self.seats.insert(seat);
+        self.focus_time.insert(seat, now);
+        self.focus.insert(seat, id);
+        true
+    }
+
+    fn is_desktop_or_dock(&self, id: WindowId) -> bool {
+        matches!(
+            self.windows[&id].window_type,
+            WindowType::Desktop | WindowType::Dock
+        )
+    }
+
+    /// Whether a window is on screen: managed, and shown on the active workspace.
+    pub fn is_showing(&self, id: WindowId) -> bool {
+        self.windows
+            .get(&id)
+            .is_some_and(|m| m.workspace == self.active)
+            && self.is_visible_on_workspace(id)
+    }
+
+    /// Whether a window would show if its workspace were active: neither it nor a transient
+    /// ancestor is minimised.
+    fn is_visible_on_workspace(&self, id: WindowId) -> bool {
+        let mut current = Some(id);
+        while let Some(w) = current {
+            let Some(managed) = self.windows.get(&w) else {
+                return false;
+            };
+            if managed.minimized {
+                return false;
+            }
+            current = managed.parent;
+        }
+        true
+    }
+
+    /// The window Marco focuses when the focused one goes away: the topmost showing window in
+    /// the active workspace's stack that isn't a dock, or failing that the desktop.
+    fn default_focus(&self) -> Option<WindowId> {
+        let candidates = || {
+            self.stacks[self.active]
+                .iter()
+                .rev()
+                .copied()
+                .filter(|id| self.is_showing(*id))
+        };
+        let window_type = |id: &WindowId| self.windows[id].window_type;
+        candidates()
+            .find(|id| !matches!(window_type(id), WindowType::Dock | WindowType::Desktop))
+            .or_else(|| candidates().find(|id| window_type(id) == WindowType::Desktop))
+    }
+
+    /// Gives every seat whose focused window is no longer showing the default focus.
+    fn fix_focus(&mut self) {
+        let lost: Vec<SeatId> = self
+            .focus
+            .iter()
+            .filter(|(_, id)| !self.is_showing(**id))
+            .map(|(seat, _)| *seat)
+            .collect();
+        for seat in lost {
+            match self.default_focus() {
+                Some(id) => self.focus.insert(seat, id),
+                None => self.focus.remove(&seat),
+            };
+        }
+    }
+
+    /// Raises a window as Marco does: its transient root first, then the window itself.
+    fn raise_family(&mut self, id: WindowId) {
+        self.raise(self.root(id));
+        self.raise(id);
+    }
+
+    /// Moves a window to the top of its workspace's stack.
+    fn raise(&mut self, id: WindowId) {
+        let stack = &mut self.stacks[self.windows[&id].workspace];
+        stack.retain(|w| *w != id);
+        stack.push(id);
+    }
+
+    // Applying decisions.
+
+    /// Sends each window whatever policy now wants of it that it hasn't been sent.
+    fn apply(&mut self) {
+        self.end_stale_grabs();
+        self.fix_focus();
+        self.mru.retain(|id| self.windows.contains_key(id));
+        if let Some(focused) = self.focus(self.last_seat) {
+            self.mru.retain(|id| *id != focused);
+            self.mru.insert(0, focused);
+        }
+        let mut stacks = std::mem::take(&mut self.stacks);
+        for stack in &mut stacks {
+            stack::restack(stack, |id| self.layer(id).unwrap(), |id| self.parent(id));
+        }
+        self.stacks = stacks;
+
+        let focused: Vec<WindowId> = self.focus.values().copied().collect();
+        let showing: BTreeSet<WindowId> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|id| self.is_showing(*id))
+            .collect();
+        for (id, managed) in &mut self.windows {
+            let outputs: Vec<OutputId> = if showing.contains(id) {
+                let frame = managed.frame();
+                self.outputs
+                    .iter()
+                    .filter(|o| o.geometry.overlaps(frame))
+                    .map(|o| o.id)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            if managed.sent.outputs.as_ref() != Some(&outputs) {
+                managed.window.set_outputs(&outputs);
+                managed.sent.outputs = Some(outputs);
+            }
+
+            let request = (managed.geometry, managed.states());
+            if managed.sent.geometry != Some(request) {
+                managed.window.set_geometry(request.0, request.1);
+                managed.sent.geometry = Some(request);
+            }
+
+            let activated = focused.contains(id);
+            if managed.sent.activated != activated {
+                managed.sent.activated = activated;
+                managed.window.set_activated(activated);
+            }
+        }
+    }
+}

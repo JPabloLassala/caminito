@@ -1,0 +1,284 @@
+//! Random operation sequences, with policy's invariants checked after every operation, in the
+//! shape of niri's `check_ops` and `verify_invariants`.
+
+use proptest::prelude::*;
+
+use super::*;
+use crate::ResizeEdges;
+
+const SEATS: u32 = 2;
+
+#[derive(Debug, Clone)]
+enum Op {
+    AddOutput {
+        id: u64,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+    },
+    RemoveOutput(u64),
+    Map {
+        window: TestWindow,
+    },
+    Unmap(u64),
+    Commit {
+        id: u64,
+        w: i32,
+        h: i32,
+        parent: Option<u64>,
+        window_type: WindowType,
+    },
+    Click {
+        seat: u32,
+        id: u64,
+        stale: bool,
+    },
+    Action {
+        seat: u32,
+        action: Action,
+    },
+    SwitchWorkspace(usize),
+    MoveToWorkspace {
+        id: u64,
+        workspace: usize,
+    },
+    SetMaximized {
+        id: u64,
+        maximized: bool,
+    },
+    SetFullscreen {
+        id: u64,
+        fullscreen: bool,
+        output: Option<u64>,
+    },
+    Minimize(u64),
+    Activate {
+        seat: u32,
+        id: u64,
+    },
+    BeginMove {
+        seat: u32,
+        id: u64,
+    },
+    BeginResize {
+        seat: u32,
+        id: u64,
+        top_left: bool,
+    },
+    GrabMotion {
+        seat: u32,
+        x: i16,
+        y: i16,
+    },
+    EndGrab(u32),
+}
+
+fn window_id() -> impl Strategy<Value = u64> {
+    1..=8u64
+}
+
+fn seat() -> impl Strategy<Value = u32> {
+    0..SEATS
+}
+
+fn window_type() -> impl Strategy<Value = WindowType> {
+    prop_oneof![
+        6 => Just(WindowType::Normal),
+        2 => Just(WindowType::Dialog),
+        1 => Just(WindowType::ModalDialog),
+        1 => Just(WindowType::Utility),
+        1 => Just(WindowType::Dock),
+        1 => Just(WindowType::Desktop),
+        1 => Just(WindowType::Splashscreen),
+    ]
+}
+
+fn test_window() -> impl Strategy<Value = TestWindow> {
+    (
+        window_id(),
+        1..2500i32,
+        1..1500i32,
+        window_type(),
+        proptest::option::of(window_id()),
+        any::<bool>(),
+        proptest::option::of((-500..3500i32, -500..2000i32)),
+    )
+        .prop_map(|(id, w, h, window_type, parent, ssd, requested)| {
+            let mut window = TestWindow::new(id, w, h).with_type(window_type);
+            window.parent = parent.map(WindowId);
+            if ssd {
+                window = window.with_frame(5, 5, 25, 5);
+            }
+            if let Some((x, y)) = requested {
+                window = window.with_requested_position(x, y);
+            }
+            window
+        })
+}
+
+fn action() -> impl Strategy<Value = Action> {
+    prop_oneof![
+        Just(Action::SwitchToWorkspaceLeft),
+        Just(Action::SwitchToWorkspaceRight),
+        Just(Action::Close),
+        Just(Action::ToggleMaximized),
+        Just(Action::SwitchWindows),
+    ]
+}
+
+fn op() -> impl Strategy<Value = Op> {
+    prop_oneof![
+        1 => (1..=3u64, -2000..4000i32, -2000..2000i32, 1..4000i32, 1..3000i32)
+            .prop_map(|(id, x, y, w, h)| Op::AddOutput { id, x, y, w, h }),
+        1 => (1..=3u64).prop_map(Op::RemoveOutput),
+        3 => test_window().prop_map(|window| Op::Map { window }),
+        2 => window_id().prop_map(Op::Unmap),
+        1 => (window_id(), 1..2500i32, 1..1500i32, proptest::option::of(window_id()), window_type())
+            .prop_map(|(id, w, h, parent, window_type)| Op::Commit { id, w, h, parent, window_type }),
+        2 => (seat(), window_id(), any::<bool>())
+            .prop_map(|(seat, id, stale)| Op::Click { seat, id, stale }),
+        1 => (seat(), action()).prop_map(|(seat, action)| Op::Action { seat, action }),
+        1 => (0..6usize).prop_map(Op::SwitchWorkspace),
+        1 => (window_id(), 0..6usize).prop_map(|(id, workspace)| Op::MoveToWorkspace { id, workspace }),
+        1 => (window_id(), any::<bool>())
+            .prop_map(|(id, maximized)| Op::SetMaximized { id, maximized }),
+        1 => (window_id(), any::<bool>(), proptest::option::of(1..=4u64))
+            .prop_map(|(id, fullscreen, output)| Op::SetFullscreen { id, fullscreen, output }),
+        1 => window_id().prop_map(Op::Minimize),
+        1 => (seat(), window_id()).prop_map(|(seat, id)| Op::Activate { seat, id }),
+        1 => (seat(), window_id()).prop_map(|(seat, id)| Op::BeginMove { seat, id }),
+        1 => (seat(), window_id(), any::<bool>())
+            .prop_map(|(seat, id, top_left)| Op::BeginResize { seat, id, top_left }),
+        1 => (seat(), any::<i16>(), any::<i16>()).prop_map(|(seat, x, y)| Op::GrabMotion { seat, x, y }),
+        1 => seat().prop_map(Op::EndGrab),
+    ]
+}
+
+impl Op {
+    fn apply(self, policy: &mut Policy<TestWindow>, step: u64) {
+        let now = ms(1000 + step);
+        let pointer = |x: i16, y: i16| Point::from((f64::from(x), f64::from(y)));
+        match self {
+            Op::AddOutput { id, x, y, w, h } => policy.add_output(output(id, x, y, w, h)),
+            Op::RemoveOutput(id) => policy.remove_output(OutputId(id)),
+            Op::Map { window } => {
+                // The compositor never maps an id twice.
+                if policy.window(window.id).is_none() {
+                    policy.map_window(window, now);
+                }
+            }
+            Op::Unmap(id) => drop(policy.unmap_window(WindowId(id))),
+            Op::Commit {
+                id,
+                w,
+                h,
+                parent,
+                window_type,
+            } => {
+                if let Some(window) = policy.window_mut(WindowId(id)) {
+                    window.size = (w, h).into();
+                    window.parent = parent.map(WindowId);
+                    window.window_type = window_type;
+                    policy.commit(WindowId(id));
+                }
+            }
+            Op::Click { seat, id, stale } => {
+                let now = if stale { ms(step) } else { now };
+                policy.click(SeatId(seat), WindowId(id), now);
+            }
+            Op::Action { seat, action } => policy.action(SeatId(seat), action, now),
+            Op::SwitchWorkspace(workspace) => policy.switch_workspace(workspace),
+            Op::MoveToWorkspace { id, workspace } => {
+                policy.move_to_workspace(WindowId(id), workspace)
+            }
+            Op::SetMaximized { id, maximized } => policy.set_maximized(WindowId(id), maximized),
+            Op::SetFullscreen {
+                id,
+                fullscreen,
+                output,
+            } => policy.set_fullscreen(WindowId(id), fullscreen, output.map(OutputId)),
+            Op::Minimize(id) => policy.minimize(WindowId(id)),
+            Op::Activate { seat, id } => policy.activate(SeatId(seat), WindowId(id), now),
+            Op::BeginMove { seat, id } => {
+                policy.begin_move(SeatId(seat), WindowId(id), pointer(0, 0));
+            }
+            Op::BeginResize { seat, id, top_left } => {
+                let edges = if top_left {
+                    ResizeEdges::TOP_LEFT
+                } else {
+                    ResizeEdges::BOTTOM_RIGHT
+                };
+                policy.begin_resize(SeatId(seat), WindowId(id), edges, pointer(0, 0));
+            }
+            Op::GrabMotion { seat, x, y } => policy.grab_motion(SeatId(seat), pointer(x, y)),
+            Op::EndGrab(seat) => policy.end_grab(SeatId(seat)),
+        }
+    }
+}
+
+fn verify_invariants(policy: &Policy<TestWindow>) {
+    let windows: Vec<WindowId> = policy.windows().map(|w| w.id).collect();
+    let stacks: Vec<&[WindowId]> = (0..policy.workspace_count())
+        .map(|ws| policy.stacking(ws))
+        .collect();
+
+    // Stacking is a permutation of the managed windows, and every window is on exactly one
+    // workspace: the one policy says it's on.
+    let stacked: usize = stacks.iter().map(|s| s.len()).sum();
+    assert_eq!(stacked, windows.len(), "stacks hold every window once");
+    for &id in &windows {
+        let on: Vec<usize> = (0..stacks.len())
+            .filter(|ws| stacks[*ws].contains(&id))
+            .collect();
+        assert_eq!(
+            on,
+            [policy.workspace_of(id).unwrap()],
+            "{id:?} should be on exactly one workspace"
+        );
+    }
+
+    for (ws, stack) in stacks.iter().enumerate() {
+        let position = |id: WindowId| stack.iter().position(|w| *w == id);
+        for &id in *stack {
+            // Transients are above their parents.
+            if let Some(parent) = policy.parent(id) {
+                assert!(
+                    position(parent) < position(id) && position(parent).is_some(),
+                    "{id:?} should be above its parent {parent:?} on workspace {ws}"
+                );
+            }
+        }
+        // Layers never decrease going up.
+        let layers: Vec<Layer> = stack.iter().map(|id| policy.layer(*id).unwrap()).collect();
+        assert!(
+            layers.is_sorted(),
+            "layers are in order on workspace {ws}: {layers:?}"
+        );
+    }
+
+    // At most one focused window per seat, and it is on screen.
+    for seat in 0..SEATS {
+        if let Some(focus) = policy.focus(SeatId(seat)) {
+            assert!(
+                policy.is_showing(focus),
+                "seat {seat} focuses a showing window"
+            );
+        }
+    }
+}
+
+fn check_ops(ops: Vec<Op>) {
+    let mut policy = Policy::new(Config::default());
+    for (step, op) in ops.into_iter().enumerate() {
+        op.apply(&mut policy, step as u64);
+        verify_invariants(&policy);
+    }
+}
+
+proptest! {
+    #[test]
+    fn random_operations_keep_the_invariants(ops in proptest::collection::vec(op(), 1..60)) {
+        check_ops(ops);
+    }
+}

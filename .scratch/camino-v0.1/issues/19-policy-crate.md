@@ -37,6 +37,6 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] Every behaviour above has example tests, written before the code they cover.
+- [x] Every behaviour above has example tests, written before the code they cover.
 - [ ] The proptest invariants pass at the default case count, and at `PROPTEST_CASES=200000` in the weekly job.
-- [ ] Nothing in the crate names a Wayland, X11 or Smithay protocol type, and it builds under 18's dependency check.
+- [x] Nothing in the crate names a Wayland, X11 or Smithay protocol type, and it builds under 18's dependency check.
