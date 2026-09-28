@@ -37,13 +37,18 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 
 ## Not yet specified
 
-- **Screen locking.** 06 settled that Camino owns idle and an `org.mate.ScreenSaver` shim that spawns an ext-session-lock locker. Which locker, and its look, is still open. 09 mapped the idle, blank and DPMS keys and left the locker's own `org.mate.screensaver` keys to this fog.
-- **XWayland integration details.** How X11 windows get Marco behaviour through Smithay's X11 window manager, and clipboard and DnD edge cases. msd already bridges XSettings. 06 decided that Camino keeps its own X connection (for XKB bells and struts), which is the natural place for the virtual-desktop, work-area and frame-extents properties Smithay lacks.
-- **Crate and module architecture.** How Camino's code is split up. It depends on the Smithay audit and on the feature and protocol cuts.
-- **Development and testing loop.** Running nested (winit backend) vs. on a TTY, headless tests, and CI. 08 made bare `camino` (without `--session`) the entry point with no session.
-- **HiDPI and fractional scaling, and accessibility** (screen reader, magnifier, and the AccessX keys and typing break that 06 deferred). Both are in scope eventually; how much goes in v0.1 is unknown. 07 renders frames at the output scale rounded up and hands on exact fractional rendering and mixed-scale windows. 09 left `org.mate.interface window-scaling-factor` and `org.mate.accessibility-keyboard` unsupported, pending these.
-- **Milestone slicing.** Ordering v0.1 into milestones once the feature, protocol and decoration cuts have landed.
-- **Packaging.** How "MATE on Camino" gets installed (Arch/AUR first?). 08 fixed the session file (`mate-camino.desktop`, `Exec=camino --session`) and added carried patches to mate-session and mate-panel.
+The remaining fog was charted on 2026-09-28 as tickets 10–17:
+
+- [10 XWayland integration audit](issues/10-xwayland-integration-audit.md) (research)
+- [11 XWayland integration](issues/11-xwayland-integration.md)
+- [12 Screen locking](issues/12-screen-locking.md)
+- [13 HiDPI and accessibility scope](issues/13-hidpi-and-accessibility-scope.md)
+- [14 Development and testing loop](issues/14-development-and-testing-loop.md)
+- [15 Crate and module architecture](issues/15-crate-and-module-architecture.md)
+- [16 Packaging](issues/16-packaging.md)
+- [17 Milestone slicing](issues/17-milestone-slicing.md)
+
+10, 12, 13 and 14 are unblocked now. 17 closes the map.
 
 ## Out of scope
 
