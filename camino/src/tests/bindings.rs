@@ -33,7 +33,8 @@ fn switching_workspaces_unmaps_and_remaps_their_windows() {
     f.roundtrip(id);
     assert_eq!(f.state.camino.policy.active_workspace(), 1);
     assert!(!is_activated(&mut f, id, window));
-    assert_eq!(f.state.scene_element_count(&output), 0);
+    // Only the cursor.
+    assert_eq!(f.state.scene_element_count(&output), 1);
 
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT]);
     f.roundtrip(id);

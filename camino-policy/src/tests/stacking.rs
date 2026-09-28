@@ -45,3 +45,16 @@ fn a_raised_window_goes_to_the_top_of_its_own_layer() {
 
     assert_eq!(policy.stacking(0), [id(1), id(3), id(2), id(4)]);
 }
+
+#[test]
+fn raising_brings_a_window_up_with_its_family_without_focusing_it() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 200, 100).with_parent(1), ms(2));
+    policy.map_window(TestWindow::new(3, 400, 300), ms(3));
+
+    policy.raise(id(1));
+
+    assert_eq!(policy.stacking(0), [id(3), id(1), id(2)]);
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+}

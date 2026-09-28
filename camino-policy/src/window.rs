@@ -47,8 +47,11 @@ impl SizeHints {
 /// The states policy asks a window to show, alongside its geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WindowStates {
+    /// Maximised both ways. A window maximised one way is only given the size.
     pub maximized: bool,
     pub fullscreen: bool,
+    /// Rolled up into its titlebar: only its frame's titlebar shows (05).
+    pub shaded: bool,
     /// An interactive resize is in progress.
     pub resizing: bool,
 }

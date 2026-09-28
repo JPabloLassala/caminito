@@ -2,6 +2,8 @@ use smithay::utils::FrameExtents;
 
 use super::*;
 
+use crate::ResizeEdges;
+
 fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
     Rectangle::new((x, y).into(), (w, h).into())
 }
@@ -188,4 +190,112 @@ fn maximising_on_an_output_smaller_than_the_frame_keeps_a_positive_size() {
 
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(geometry.size, (1910, 1).into());
+}
+
+#[test]
+fn maximising_horizontally_fills_the_work_areas_width_and_keeps_the_height() {
+    let mut policy = policy();
+    policy.map_window(
+        TestWindow::new(1, 400, 300)
+            .with_frame(5, 5, 25, 5)
+            .with_requested_position(100, 200),
+        ms(1),
+    );
+
+    policy.set_maximized_horizontally(id(1), true);
+    let (geometry, states) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(5, 200, 1910, 300));
+    // Only a window maximised both ways is maximised to the client and the frame.
+    assert!(!states.maximized);
+    assert!(policy.is_maximized_horizontally(id(1)));
+    assert!(!policy.is_maximized(id(1)));
+
+    policy.set_maximized_vertically(id(1), true);
+    let (geometry, states) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(5, 25, 1910, 1050));
+    assert!(states.maximized);
+    assert!(policy.is_maximized(id(1)));
+
+    policy.set_maximized_horizontally(id(1), false);
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(100, 25, 400, 1050));
+
+    policy.set_maximized_vertically(id(1), false);
+    assert_eq!(
+        window(&policy, 1).last_geometry(),
+        Some((rect(100, 200, 400, 300), WindowStates::default()))
+    );
+}
+
+#[test]
+fn a_window_maximised_one_way_is_unmaximised_both_ways() {
+    let mut policy = policy();
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(100, 200),
+        ms(1),
+    );
+    policy.set_maximized_vertically(id(1), true);
+
+    policy.set_maximized(id(1), false);
+
+    assert!(!policy.is_maximized_vertically(id(1)));
+    assert_eq!(
+        window(&policy, 1).last_geometry(),
+        Some((rect(100, 200, 400, 300), WindowStates::default()))
+    );
+}
+
+#[test]
+fn a_window_maximised_one_way_moves_and_resizes_only_the_other_way() {
+    let mut policy = policy();
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(100, 200),
+        ms(1),
+    );
+    policy.set_maximized_horizontally(id(1), true);
+
+    assert!(policy.begin_move(SEAT, id(1), Point::new(500., 210.)));
+    policy.grab_motion(SEAT, Point::new(560., 250.));
+    policy.end_grab(SEAT);
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(0, 240, 1920, 300));
+
+    assert!(policy.begin_resize(SEAT, id(1), ResizeEdges::BOTTOM_RIGHT, Point::new(0., 0.)));
+    policy.grab_motion(SEAT, Point::new(70., 50.));
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(0, 240, 1920, 350));
+    policy.window_mut(id(1)).unwrap().size = (1920, 350).into();
+    policy.commit(id(1));
+    policy.end_grab(SEAT);
+
+    // Unmaximised, it keeps what the move and resize did the other way.
+    policy.set_maximized_horizontally(id(1), false);
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, rect(100, 240, 400, 350));
+}
+
+#[test]
+fn lowering_puts_the_window_at_the_bottom_and_focuses_the_top_one() {
+    let mut policy = policy();
+    for w in 1..=3 {
+        policy.map_window(TestWindow::new(w, 400, 300), ms(w));
+    }
+
+    policy.lower(SEAT, id(3), ms(4));
+
+    assert_eq!(policy.stacking(0), [id(3), id(1), id(2)]);
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
+#[test]
+fn lowering_keeps_transients_above_their_parent() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.map_window(TestWindow::new(3, 200, 100).with_parent(2), ms(3));
+
+    policy.lower(SEAT, id(2), ms(4));
+
+    // Marco lowers only the window; its transient stays where it was, above it.
+    assert_eq!(policy.stacking(0), [id(2), id(1), id(3)]);
 }

@@ -9,6 +9,7 @@ mod xdg_shell;
 
 pub(crate) use decoration::kde_server_side;
 
+use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -25,6 +26,11 @@ impl SeatHandler for State {
 
     fn seat_state(&mut self) -> &mut SeatState<State> {
         &mut self.camino.seat_state
+    }
+
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        self.camino.client_cursor = image;
+        self.camino.queue_redraw_all();
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {

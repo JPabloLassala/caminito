@@ -45,15 +45,21 @@ fn dispatching_renders_each_output_cleared() {
             .expect("output was rendered");
         let size = output.current_mode().unwrap().size;
         assert_eq!(pixels.len(), (size.w * size.h) as usize);
-        assert!(pixels.iter().all(|p| *p == argb8888(CLEAR_COLOR)));
+        // The pointer starts at the first output's top left corner, where the 24-pixel
+        // cursor is.
+        let cleared = pixels.iter().enumerate().all(|(i, p)| {
+            let (x, y) = (i as i32 % size.w, i as i32 / size.w);
+            (*output == a && x < 24 && y < 24) || *p == argb8888(CLEAR_COLOR)
+        });
+        assert!(cleared);
     }
 }
 
 #[test]
-fn an_empty_output_has_no_scene_elements() {
+fn an_empty_output_shows_only_the_cursor() {
     let mut f = Fixture::new();
     let output = f.add_output((64, 48), 1.5);
     f.dispatch();
 
-    assert_eq!(f.state.scene_element_count(&output), 0);
+    assert_eq!(f.state.scene_element_count(&output), 1);
 }

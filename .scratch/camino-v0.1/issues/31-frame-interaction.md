@@ -26,7 +26,7 @@ Using a frame the way Marco's works ([07](07-decoration-strategy.md)): buttons, 
 
 ## Acceptance criteria
 
-- [ ] Headless tests, written before the code: hover, press and release sequences on each button including a cancelled release; resizing from each border and corner; each titlebar action; shade and unshade; no resize border on the output-touching side of a maximised window.
-- [ ] The proptest operations include shade and the two new maximise directions, and the invariants hold.
-- [ ] A unit test of the cursor chosen for each hit-test zone.
+- [x] Headless tests, written before the code: hover, press and release sequences on each button including a cancelled release; resizing from each border and corner; each titlebar action; shade and unshade; no resize border on the output-touching side of a maximised window.
+- [x] The proptest operations include shade and the two new maximise directions, and the invariants hold.
+- [x] A unit test of the cursor chosen for each hit-test zone.
 - [ ] Nested: the Menta frame's buttons, titlebar double-click, drag-to-move and border resize all work on a GTK3 app, and changing `cursor-size` applies live.

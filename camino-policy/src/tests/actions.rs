@@ -78,3 +78,19 @@ fn close_and_maximise_leave_the_desktop_and_docks_alone() {
         assert!(!policy.is_maximized(id(w)));
     }
 }
+
+#[test]
+fn close_asks_a_window_to_close_unless_its_the_desktop_or_a_dock() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(
+        TestWindow::new(2, 1920, 30).with_type(WindowType::Dock),
+        ms(2),
+    );
+
+    policy.close(id(1));
+    policy.close(id(2));
+
+    assert_eq!(window(&policy, 1).calls.last(), Some(&Call::Close));
+    assert!(!window(&policy, 2).calls.contains(&Call::Close));
+}

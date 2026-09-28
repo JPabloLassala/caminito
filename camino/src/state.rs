@@ -10,6 +10,7 @@ use smithay::desktop::PopupManager;
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::backend::input::Keycode;
 use smithay::input::keyboard::XkbConfig;
+use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -58,9 +59,12 @@ use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
 use camino_theme::{PaletteCache, ThemeDirs, Variant};
 
 use crate::backend::Backend;
+use crate::cursor::{CursorSource, Cursors};
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::input::GrabKind;
+use crate::input::frame::FramePointer;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, Unmapped};
 
@@ -128,6 +132,14 @@ pub struct Camino {
     pub pointer_focus: Option<(WlSurface, Point<f64, Logical>)>,
     /// Keys whose press ran a binding, so their release is swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
+    /// Where the pointer is on the frames, and what it's doing with them.
+    pub frame_pointer: FramePointer,
+    /// The interactive move or resize the pointer is doing, if any.
+    pub window_grab: Option<GrabKind>,
+    /// The cursor the client with pointer focus asked for.
+    pub client_cursor: CursorImageStatus,
+    /// Camino's own cursors.
+    pub cursors: Cursors,
 
     /// Every output, in the order they were added.
     pub outputs: Vec<Output>,
@@ -215,13 +227,15 @@ impl State {
             settings::Source::System,
             ThemeDirs::from_env(),
             PaletteCache::from_env(),
+            CursorSource::Xcursor,
         )?;
         let backend = Backend::Winit(Box::new(crate::backend::winit::Winit::new(&mut camino)?));
         Ok(Self { backend, camino })
     }
 
     /// Starts with no outputs; tests add them with `add_headless_output`. Frames use the
-    /// themes vendored for the goldens (14), and no palette cache.
+    /// themes vendored for the goldens (14), no palette cache, and only the built-in
+    /// cursor.
     #[cfg(test)]
     pub fn new_headless(
         event_loop: &EventLoop<'static, State>,
@@ -231,8 +245,15 @@ impl State {
         let themes = ThemeDirs::new(vec![
             concat!(env!("CARGO_MANIFEST_DIR"), "/../tests").into(),
         ]);
-        let camino =
-            Camino::new(event_loop, display, settings, themes, None).expect("the settings start");
+        let camino = Camino::new(
+            event_loop,
+            display,
+            settings,
+            themes,
+            None,
+            CursorSource::BuiltIn,
+        )
+        .expect("the settings start");
         let backend = Backend::Headless(crate::backend::headless::Headless::default());
         Self { backend, camino }
     }
@@ -259,9 +280,10 @@ impl State {
     /// policy, renders the outputs that asked for it, and flushes the clients.
     pub fn refresh_and_flush_clients(&mut self) {
         self.camino.refresh_views();
+        self.update_pointer_focus();
+        self.camino.update_button_states();
         self.camino.refresh_frames();
         self.update_keyboard_focus();
-        self.update_pointer_focus();
         self.redraw_queued_outputs();
         if let Err(err) = self.camino.display_handle.flush_clients() {
             tracing::warn!("error flushing clients: {err}");
@@ -340,6 +362,7 @@ impl Camino {
         settings: settings::Source,
         theme_dirs: ThemeDirs,
         palette_cache: Option<PaletteCache>,
+        cursor_source: CursorSource,
     ) -> Result<Self, settings::Error> {
         let (settings, settings_thread, changes) = settings::start(settings)?;
         let display_handle = display.handle();
@@ -375,6 +398,7 @@ impl Camino {
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
 
         let frame_context = FrameContext::new(&settings, theme_dirs);
+        let cursors = Cursors::new(&settings.mouse, cursor_source);
         let palette = palette_source(
             event_loop.handle(),
             None,
@@ -421,6 +445,10 @@ impl Camino {
 
             pointer_focus: None,
             suppressed_keys: HashSet::new(),
+            frame_pointer: FramePointer::default(),
+            window_grab: None,
+            client_cursor: CursorImageStatus::default_named(),
+            cursors,
             clock,
             display_handle,
             loop_handle,
@@ -464,6 +492,9 @@ impl Camino {
         }
         if self.frame_context.settings_changed(&settings) {
             self.frames_changed();
+        }
+        if self.cursors.settings_changed(&settings.mouse) {
+            self.queue_redraw_all();
         }
         self.settings = settings;
     }

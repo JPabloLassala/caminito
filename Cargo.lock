@@ -181,6 +181,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
+ "xcursor",
 ]
 
 [[package]]

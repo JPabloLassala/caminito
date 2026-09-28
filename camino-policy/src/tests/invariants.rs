@@ -52,6 +52,27 @@ enum Op {
         fullscreen: bool,
         output: Option<u64>,
     },
+    SetMaximizedHorizontally {
+        id: u64,
+        maximized: bool,
+    },
+    SetMaximizedVertically {
+        id: u64,
+        maximized: bool,
+    },
+    SetShaded {
+        id: u64,
+        shaded: bool,
+    },
+    /// The client changes decoration mode.
+    SetSsd {
+        id: u64,
+        ssd: bool,
+    },
+    Lower {
+        seat: u32,
+        id: u64,
+    },
     Minimize(u64),
     Activate {
         seat: u32,
@@ -146,6 +167,13 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(id, maximized)| Op::SetMaximized { id, maximized }),
         1 => (window_id(), any::<bool>(), proptest::option::of(1..=4u64))
             .prop_map(|(id, fullscreen, output)| Op::SetFullscreen { id, fullscreen, output }),
+        1 => (window_id(), any::<bool>())
+            .prop_map(|(id, maximized)| Op::SetMaximizedHorizontally { id, maximized }),
+        1 => (window_id(), any::<bool>())
+            .prop_map(|(id, maximized)| Op::SetMaximizedVertically { id, maximized }),
+        2 => (window_id(), any::<bool>()).prop_map(|(id, shaded)| Op::SetShaded { id, shaded }),
+        1 => (window_id(), any::<bool>()).prop_map(|(id, ssd)| Op::SetSsd { id, ssd }),
+        1 => (seat(), window_id()).prop_map(|(seat, id)| Op::Lower { seat, id }),
         1 => window_id().prop_map(Op::Minimize),
         1 => (seat(), window_id()).prop_map(|(seat, id)| Op::Activate { seat, id }),
         1 => (seat(), window_id()).prop_map(|(seat, id)| Op::BeginMove { seat, id }),
@@ -200,6 +228,20 @@ impl Op {
                 fullscreen,
                 output,
             } => policy.set_fullscreen(WindowId(id), fullscreen, output.map(OutputId)),
+            Op::SetMaximizedHorizontally { id, maximized } => {
+                policy.set_maximized_horizontally(WindowId(id), maximized)
+            }
+            Op::SetMaximizedVertically { id, maximized } => {
+                policy.set_maximized_vertically(WindowId(id), maximized)
+            }
+            Op::SetShaded { id, shaded } => policy.set_shaded(WindowId(id), shaded),
+            Op::SetSsd { id, ssd } => {
+                if let Some(window) = policy.window_mut(WindowId(id)) {
+                    window.ssd = ssd;
+                    policy.frame_changed(WindowId(id));
+                }
+            }
+            Op::Lower { seat, id } => policy.lower(SeatId(seat), WindowId(id), now),
             Op::Minimize(id) => policy.minimize(WindowId(id)),
             Op::Activate { seat, id } => policy.activate(SeatId(seat), WindowId(id), now),
             Op::BeginMove { seat, id } => {
@@ -265,6 +307,23 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
             layers.is_sorted(),
             "layers are in order on workspace {ws}: {layers:?}"
         );
+    }
+
+    for &id in &windows {
+        // Only an SSD window can be shaded, and never while it's fullscreen.
+        if policy.is_shaded(id) {
+            assert!(policy.window(id).unwrap().ssd, "{id:?} is shaded but CSD");
+            assert!(!policy.is_fullscreen(id), "{id:?} is shaded and fullscreen");
+        }
+        // Maximised is maximised both ways, and that's what the window is told.
+        assert_eq!(
+            policy.is_maximized(id),
+            policy.is_maximized_horizontally(id) && policy.is_maximized_vertically(id)
+        );
+        if let Some((_, states)) = policy.window(id).unwrap().last_geometry() {
+            assert_eq!(states.maximized, policy.is_maximized(id), "{id:?}'s states");
+            assert_eq!(states.shaded, policy.is_shaded(id), "{id:?}'s states");
+        }
     }
 
     // At most one focused window per seat, and it is on screen.

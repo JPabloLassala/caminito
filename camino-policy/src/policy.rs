@@ -104,7 +104,10 @@ struct Managed<W> {
     maximized_extents: FrameExtents<i32, Logical>,
     /// The edges and starting geometry of an interactive resize in progress.
     resize: Option<(ResizeEdges, Rectangle<i32, Logical>)>,
-    maximized: bool,
+    maximized_horizontally: bool,
+    maximized_vertically: bool,
+    /// Shaded, which only an SSD window can be.
+    shaded: bool,
     fullscreen: bool,
     /// The output a client asked to be fullscreen on.
     fullscreen_output: Option<OutputId>,
@@ -115,25 +118,59 @@ struct Managed<W> {
 }
 
 impl<W: PolicyWindow> Managed<W> {
+    /// Re-reads the frame. A window that no longer has one can't stay shaded.
     fn read_frame(&mut self) {
         self.ssd = self.window.is_ssd();
         self.extents = self.window.frame_extents(false);
         self.maximized_extents = self.window.frame_extents(true);
+        self.shaded &= self.ssd;
     }
 }
 
 impl<W> Managed<W> {
+    /// Maximised both ways, as Marco's `META_WINDOW_MAXIMIZED` has it.
+    fn maximized(&self) -> bool {
+        self.maximized_horizontally && self.maximized_vertically
+    }
+
+    /// Policy sets the size: maximised either way, or fullscreen.
+    fn constrained(&self) -> bool {
+        self.maximized_horizontally || self.maximized_vertically || self.fullscreen
+    }
+
+    /// Undoes a grab's change to the ways the window is maximised, from its geometry
+    /// `before`, and keeps the change the other way for when it's unmaximised: a window
+    /// maximised one way moves and resizes only the other way, as in Marco.
+    fn pin_maximized_axes(&mut self, before: Rectangle<i32, Logical>) {
+        let geometry = &mut self.geometry;
+        if self.maximized_horizontally {
+            (geometry.loc.x, geometry.size.w) = (before.loc.x, before.size.w);
+        }
+        if self.maximized_vertically {
+            (geometry.loc.y, geometry.size.h) = (before.loc.y, before.size.h);
+        }
+        if let Some(floating) = &mut self.floating {
+            if !self.maximized_horizontally {
+                (floating.loc.x, floating.size.w) = (geometry.loc.x, geometry.size.w);
+            }
+            if !self.maximized_vertically {
+                (floating.loc.y, floating.size.h) = (geometry.loc.y, geometry.size.h);
+            }
+        }
+    }
+
     /// Remembers the floating geometry before the window first leaves it.
     fn save_floating(&mut self) {
-        if !self.maximized && !self.fullscreen && self.floating.is_none() {
+        if !self.constrained() && self.floating.is_none() {
             self.floating = Some(Rectangle::new(self.geometry.loc, self.size));
         }
     }
 
     fn states(&self) -> WindowStates {
         WindowStates {
-            maximized: self.maximized,
+            maximized: self.maximized(),
             fullscreen: self.fullscreen,
+            shaded: self.shaded,
             resizing: self.resize.is_some(),
         }
     }
@@ -141,7 +178,7 @@ impl<W> Managed<W> {
     /// The frame's extents, or none when the window has no frame showing.
     fn visible_extents(&self) -> FrameExtents<i32, Logical> {
         if self.ssd && !self.fullscreen {
-            if self.maximized {
+            if self.maximized() {
                 self.maximized_extents
             } else {
                 self.extents
@@ -152,16 +189,19 @@ impl<W> Managed<W> {
     }
 
     /// The window's outer rectangle: its committed geometry plus the frame, if it has one.
+    /// A shaded window is only its frame's titlebar, which Marco's shaded styles keep the
+    /// height of.
     fn frame(&self) -> Rectangle<i32, Logical> {
         let geometry = Rectangle::new(self.geometry.loc, self.size);
         let e = self.visible_extents();
+        let height = if self.shaded {
+            e.top
+        } else {
+            geometry.size.h + e.top + e.bottom
+        };
         Rectangle::new(
             (geometry.loc.x - e.left, geometry.loc.y - e.top).into(),
-            (
-                geometry.size.w + e.left + e.right,
-                geometry.size.h + e.top + e.bottom,
-            )
-                .into(),
+            (geometry.size.w + e.left + e.right, height).into(),
         )
     }
 }
@@ -281,7 +321,9 @@ impl<W: PolicyWindow> Policy<W> {
                 extents,
                 maximized_extents,
                 resize: None,
-                maximized: false,
+                maximized_horizontally: false,
+                maximized_vertically: false,
+                shaded: false,
                 fullscreen: false,
                 fullscreen_output: None,
                 minimized: false,
@@ -336,13 +378,15 @@ impl<W: PolicyWindow> Policy<W> {
         managed.size = size;
         if let Some((edges, start)) = managed.resize {
             // The client may settle on another size than asked; the far edges stay put.
+            let before = managed.geometry;
             if edges.left {
                 managed.geometry.loc.x = start.loc.x + start.size.w - size.w;
             }
             if edges.top {
                 managed.geometry.loc.y = start.loc.y + start.size.h - size.h;
             }
-        } else if !managed.maximized && !managed.fullscreen {
+            managed.pin_maximized_axes(before);
+        } else if !managed.constrained() {
             // A floating client picks its own size, and already knows it.
             managed.geometry.size = size;
             if let Some((sent, _)) = &mut managed.sent.geometry {
@@ -392,14 +436,14 @@ impl<W: PolicyWindow> Policy<W> {
                 self.switch_workspace((self.active + 1).min(self.stacks.len() - 1))
             }
             Action::ToggleMaximized => {
+                // Marco gives the desktop and docks no maximise function.
                 if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
                     self.set_maximized(id, !self.is_maximized(id));
                 }
             }
             Action::Close => {
-                // Marco gives the desktop and docks no close or maximise function.
-                if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
-                    self.windows.get_mut(&id).unwrap().window.close();
+                if let Some(id) = self.focus(seat) {
+                    self.close(id);
                 }
             }
             Action::SwitchWindows => {
@@ -465,14 +509,51 @@ impl<W: PolicyWindow> Policy<W> {
 
     // Client requests.
 
+    /// Maximises the window both ways, or unmaximises it both ways.
     pub fn set_maximized(&mut self, id: WindowId, maximized: bool) {
+        self.set_maximized_axes(id, Some(maximized), Some(maximized));
+    }
+
+    pub fn set_maximized_horizontally(&mut self, id: WindowId, maximized: bool) {
+        self.set_maximized_axes(id, Some(maximized), None);
+    }
+
+    pub fn set_maximized_vertically(&mut self, id: WindowId, maximized: bool) {
+        self.set_maximized_axes(id, None, Some(maximized));
+    }
+
+    /// Sets the ways the window is maximised, leaving `None`s as they are. Maximising
+    /// vertically unshades, as in Marco's `meta_window_maximize`.
+    fn set_maximized_axes(
+        &mut self,
+        id: WindowId,
+        horizontally: Option<bool>,
+        vertically: Option<bool>,
+    ) {
         let Some(managed) = self.windows.get_mut(&id) else {
             return;
         };
-        if managed.maximized != maximized {
+        let horizontally = horizontally.unwrap_or(managed.maximized_horizontally);
+        let vertically = vertically.unwrap_or(managed.maximized_vertically);
+        if (managed.maximized_horizontally, managed.maximized_vertically)
+            != (horizontally, vertically)
+        {
             managed.save_floating();
-            managed.maximized = maximized;
+            if vertically && !managed.maximized_vertically {
+                managed.shaded = false;
+            }
+            managed.maximized_horizontally = horizontally;
+            managed.maximized_vertically = vertically;
             self.relayout(id);
+        }
+        self.apply();
+    }
+
+    /// Shades or unshades an SSD window. A CSD window can't be shaded: Camino doesn't
+    /// know where its titlebar is (07).
+    pub fn set_shaded(&mut self, id: WindowId, shaded: bool) {
+        if let Some(managed) = self.windows.get_mut(&id) {
+            managed.shaded = shaded && managed.ssd && !managed.fullscreen;
         }
         self.apply();
     }
@@ -484,6 +565,8 @@ impl<W: PolicyWindow> Policy<W> {
         };
         managed.save_floating();
         managed.fullscreen = fullscreen;
+        // Marco unshades a window it makes fullscreen.
+        managed.shaded &= !fullscreen;
         managed.fullscreen_output = output.filter(|_| fullscreen);
         self.relayout(id);
         self.apply();
@@ -492,6 +575,44 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn minimize(&mut self, id: WindowId) {
         if let Some(managed) = self.windows.get_mut(&id) {
             managed.minimized = true;
+        }
+        self.apply();
+    }
+
+    /// Raises a window, as Marco's titlebar `raise` action does, without focusing it.
+    pub fn raise(&mut self, id: WindowId) {
+        if self.windows.contains_key(&id) {
+            self.raise_family(id);
+        }
+        self.apply();
+    }
+
+    /// Asks a window to close. Marco gives the desktop and docks no close function.
+    pub fn close(&mut self, id: WindowId) {
+        if self.windows.contains_key(&id) && !self.is_desktop_or_dock(id) {
+            self.windows.get_mut(&id).unwrap().window.close();
+        }
+    }
+
+    /// Lowers a window to the bottom of its layer, as Marco's titlebar middle-click
+    /// (`meta_core_user_lower_and_unfocus`) does: it goes last in the Alt+Tab order, and
+    /// if the seat focused it, the seat focuses the default window instead.
+    pub fn lower(&mut self, seat: SeatId, id: WindowId, now: Duration) {
+        let Some(workspace) = self.workspace_of(id) else {
+            return;
+        };
+        self.set_last_seat(seat);
+        let stack = &mut self.stacks[workspace];
+        stack.retain(|w| *w != id);
+        stack.insert(0, id);
+        self.mru.retain(|w| *w != id);
+        self.mru.push(id);
+        if self.focus(seat) == Some(id) {
+            // Restacked first, so the default window is the one now on top.
+            self.apply();
+            if let Some(next) = self.default_focus().filter(|next| *next != id) {
+                self.focus_window(seat, next, now);
+            }
         }
         self.apply();
     }
@@ -523,6 +644,7 @@ impl<W: PolicyWindow> Policy<W> {
         let delta = pointer - grab.start_pointer;
         let start = grab.start;
         let managed = self.windows.get_mut(&grab.window).unwrap();
+        let current = managed.geometry;
         match grab.resize {
             None => managed.geometry.loc = (start.loc.to_f64() + delta).to_i32_round(),
             Some(edges) => {
@@ -549,6 +671,7 @@ impl<W: PolicyWindow> Policy<W> {
                 managed.geometry = Rectangle::new(loc, size);
             }
         }
+        managed.pin_maximized_axes(current);
         self.apply();
     }
 
@@ -562,15 +685,18 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Ends grabs on windows that can no longer be moved: hidden, maximised or fullscreen.
+    /// Ends grabs on windows that can no longer be moved or resized: hidden, maximised
+    /// both ways or fullscreen, or shaded during a resize.
     fn end_stale_grabs(&mut self) {
         let stale: Vec<SeatId> = self
             .grabs
             .iter()
             .filter(|(_, g)| {
+                let managed = &self.windows[&g.window];
                 !self.is_showing(g.window)
-                    || self.is_maximized(g.window)
-                    || self.is_fullscreen(g.window)
+                    || managed.maximized()
+                    || managed.fullscreen
+                    || (managed.shaded && g.resize.is_some())
             })
             .map(|(seat, _)| *seat)
             .collect();
@@ -592,8 +718,9 @@ impl<W: PolicyWindow> Policy<W> {
         let movable = self.is_showing(id)
             && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat)
             && self.windows.get(&id).is_some_and(|m| {
-                !m.maximized
+                !m.maximized()
                     && !m.fullscreen
+                    && !(m.shaded && resize.is_some())
                     && !matches!(m.window_type, WindowType::Desktop | WindowType::Dock)
             });
         if !movable {
@@ -662,8 +789,25 @@ impl<W: PolicyWindow> Policy<W> {
         self.grabs.get(&seat).map(|g| g.window)
     }
 
+    /// Whether the window is maximised both ways.
     pub fn is_maximized(&self, id: WindowId) -> bool {
-        self.windows.get(&id).is_some_and(|m| m.maximized)
+        self.windows.get(&id).is_some_and(|m| m.maximized())
+    }
+
+    pub fn is_maximized_horizontally(&self, id: WindowId) -> bool {
+        self.windows
+            .get(&id)
+            .is_some_and(|m| m.maximized_horizontally)
+    }
+
+    pub fn is_maximized_vertically(&self, id: WindowId) -> bool {
+        self.windows
+            .get(&id)
+            .is_some_and(|m| m.maximized_vertically)
+    }
+
+    pub fn is_shaded(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.shaded)
     }
 
     pub fn is_fullscreen(&self, id: WindowId) -> bool {
@@ -798,10 +942,11 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Sets the geometry of a maximised or fullscreen window from its output, or restores a
-    /// floating window's.
+    /// floating window's. A window maximised one way keeps its floating geometry the
+    /// other way.
     fn relayout(&mut self, id: WindowId) {
         let managed = &self.windows[&id];
-        if !managed.maximized && !managed.fullscreen {
+        if !managed.constrained() {
             let managed = self.windows.get_mut(&id).unwrap();
             if let Some(floating) = managed.floating.take() {
                 managed.geometry = floating;
@@ -821,14 +966,16 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             let area = Self::work_area(output);
             let e = managed.visible_extents();
-            Rectangle::new(
-                (area.loc.x + e.left, area.loc.y + e.top).into(),
-                (
-                    (area.size.w - e.left - e.right).max(1),
-                    (area.size.h - e.top - e.bottom).max(1),
-                )
-                    .into(),
-            )
+            let mut geometry = managed.floating.unwrap_or(managed.geometry);
+            if managed.maximized_horizontally {
+                geometry.loc.x = area.loc.x + e.left;
+                geometry.size.w = (area.size.w - e.left - e.right).max(1);
+            }
+            if managed.maximized_vertically {
+                geometry.loc.y = area.loc.y + e.top;
+                geometry.size.h = (area.size.h - e.top - e.bottom).max(1);
+            }
+            geometry
         };
         self.windows.get_mut(&id).unwrap().geometry = geometry;
     }
@@ -900,7 +1047,8 @@ impl<W: PolicyWindow> Policy<W> {
         if managed.ssd && frame.size.w >= area.size.w && frame.size.h >= area.size.h {
             let managed = self.windows.get_mut(&id).unwrap();
             managed.save_floating();
-            managed.maximized = true;
+            managed.maximized_horizontally = true;
+            managed.maximized_vertically = true;
             self.relayout(id);
         }
     }
@@ -1079,12 +1227,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Raises a window as Marco does: its transient root first, then the window itself.
     fn raise_family(&mut self, id: WindowId) {
-        self.raise(self.root(id));
-        self.raise(id);
+        self.move_to_top(self.root(id));
+        self.move_to_top(id);
     }
 
     /// Moves a window to the top of its workspace's stack.
-    fn raise(&mut self, id: WindowId) {
+    fn move_to_top(&mut self, id: WindowId) {
         let stack = &mut self.stacks[self.windows[&id].workspace];
         stack.retain(|w| *w != id);
         stack.push(id);

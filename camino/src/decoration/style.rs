@@ -15,12 +15,12 @@ pub struct FrameFacts {
     pub activated: bool,
     pub maximized: bool,
     pub fullscreen: bool,
+    pub shaded: bool,
 }
 
 /// The frame type and flags Marco draws a window with, or `None` for a type it never frames.
 ///
-/// Shading, sticking and keeping above come with the policy that does them, so their flags
-/// stay off.
+/// Sticking and keeping above come in M8, so their flags stay off.
 pub fn frame_style(
     facts: &FrameFacts,
     attach_modal_dialogs: bool,
@@ -48,7 +48,7 @@ pub fn frame_style(
     let has_minimize = normal_or_dialog;
     let has_maximize = normal_or_dialog && has_resize && !facts.fullscreen;
     let has_shade = !border_only && !facts.fullscreen;
-    let resize = has_resize && !facts.maximized && !facts.fullscreen;
+    let resize = has_resize && !facts.maximized && !facts.fullscreen && !facts.shaded;
 
     let decorated = !border_only;
     let flags = FrameFlags {
@@ -60,7 +60,7 @@ pub fn frame_style(
         allows_vertical_resize: resize && grows(min.h, max.h),
         allows_horizontal_resize: resize && grows(min.w, max.w),
         has_focus: facts.activated,
-        shaded: false,
+        shaded: facts.shaded,
         stuck: false,
         maximized: facts.maximized,
         allows_shade: decorated && has_shade,

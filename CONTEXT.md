@@ -109,5 +109,5 @@ Camino's window-management decisions: focus, stacking, placement, workspaces, tr
 _Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
 
 **Scene**:
-The order in which Camino draws an output: the lock, then the overlay layer, override-redirect windows, the top layer, the workspace's windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
+The order in which Camino draws an output: the pointer's cursor, the lock, then the overlay layer, override-redirect windows, the top layer, the workspace's windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Camino has no retained one), space (Smithay's `desktop::Space`, which Camino doesn't use)

@@ -1,6 +1,7 @@
 //! Input: the keyboard path, pointer focus, and interactive move and resize (15).
 
 pub mod bindings;
+pub mod frame;
 mod grab;
 
 pub use grab::GrabKind;
@@ -13,19 +14,19 @@ use smithay::backend::input::{
 };
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, KeysymHandle, ModifiersState};
-use smithay::input::pointer::{
-    AxisFrame, ButtonEvent, GrabStartData, MotionEvent, RelativeMotionEvent,
-};
+use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
 use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_constraint};
 
+use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
 use crate::state::{Camino, SEAT, State};
 
 // Linux input event codes.
 pub(crate) const BTN_LEFT: u32 = 0x110;
+pub(crate) const BTN_RIGHT: u32 = 0x111;
 pub(crate) const BTN_MIDDLE: u32 = 0x112;
 
 impl State {
@@ -262,11 +263,15 @@ impl State {
     }
 
     /// The pointer moved to `location`, in global logical coordinates. The surface under it
-    /// gets pointer focus, unless a grab decides otherwise.
+    /// gets pointer focus, unless a grab decides otherwise, and a frame under it lights up
+    /// its button.
     pub fn on_pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime) {
         let pointer = self.camino.seat.get_pointer().unwrap();
-        let under = self.camino.surface_under(location);
+        let target = self.camino.under(location);
+        let under = target.as_ref().and_then(Under::surface);
+        let hover = target.as_ref().and_then(Under::frame_control);
         self.camino.pointer_focus = under.clone();
+        self.camino.frame_pointer.hover = hover;
         let event = MotionEvent {
             location,
             serial: SERIAL_COUNTER.next_serial(),
@@ -275,24 +280,24 @@ impl State {
         pointer.motion(self, under, &event);
         pointer.frame(self);
         self.activate_pointer_constraint();
+        // The cursor moved.
+        self.camino.queue_redraw_all();
     }
 
-    /// A pointer button, as a Linux input event code. A press on a window focuses and raises
-    /// it through policy before the client sees the press. With Alt held, as Marco's
+    /// A pointer button, as a Linux input event code. With Alt held, as Marco's
     /// `mouse-button-modifier` defaults to, the left button moves the window and the middle
-    /// one resizes it, and the client never sees the press.
+    /// one resizes it. A press on a frame does what Marco's frames do. Otherwise a press on a
+    /// window focuses and raises it through policy before the client sees the press. The
+    /// client never sees an Alt press or a press on the frame.
     pub fn on_pointer_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
         let pointer = self.camino.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
         if state == ButtonState::Pressed
             && !pointer.is_grabbed()
-            && let Some(id) = self.camino.window_under(location)
+            && let Some(under) = self.camino.under(location)
         {
-            let now = self.camino.now();
-            self.camino.policy.click(SEAT, id, now);
-            self.update_keyboard_focus();
-
+            let id = under.window();
             let alt = self
                 .camino
                 .seat
@@ -308,13 +313,20 @@ impl State {
                     .map(GrabKind::Resize),
                 _ => None,
             };
+            match under {
+                Under::Frame(id, control)
+                    if drag.is_none() && control != FrameControl::ClientArea =>
+                {
+                    self.frame_press(id, control, button, location, serial, time);
+                }
+                _ => {
+                    let now = self.camino.now();
+                    self.camino.policy.click(SEAT, id, now);
+                    self.update_keyboard_focus();
+                }
+            }
             if let Some(kind) = drag {
-                let start_data = GrabStartData {
-                    focus: None,
-                    button,
-                    location,
-                };
-                self.begin_window_grab(id, kind, start_data, serial);
+                self.begin_window_grab(id, kind, grab::start_data(button, location), serial);
             }
         }
         let event = ButtonEvent {
@@ -327,7 +339,9 @@ impl State {
         pointer.frame(self);
     }
 
-    /// Gives the keyboard to the window policy focuses, unless a grab holds it.
+    /// Gives the keyboard to the window policy focuses, unless a grab holds it. A shaded
+    /// window keeps the focus, but as in Marco it's its frame that has it, so its client
+    /// gets no keys.
     pub fn update_keyboard_focus(&mut self) {
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         if keyboard.is_grabbed() {
@@ -337,6 +351,7 @@ impl State {
         let focus = policy
             .focus(SEAT)
             .and_then(|id| policy.window(id))
+            .filter(|mapped| !mapped.is_shaded())
             .and_then(|mapped| mapped.wl_surface());
         if keyboard.current_focus() != focus {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
@@ -344,8 +359,8 @@ impl State {
     }
 
     /// Brings pointer focus up to date when what's under the pointer changed without it
-    /// moving: a window mapped, moved or went away beneath it, or a grab ended. A grab decides
-    /// for itself.
+    /// moving: a window mapped, moved, shaded or went away beneath it, or a grab ended. A
+    /// grab decides for itself.
     pub fn update_pointer_focus(&mut self) {
         let pointer = self.camino.seat.get_pointer().unwrap();
         if pointer.is_grabbed() {
@@ -353,12 +368,48 @@ impl State {
         }
         let location = pointer.current_location();
         let current = pointer.current_focus();
-        let under = self.camino.surface_under(location);
+        let target = self.camino.under(location);
+        let under = target.as_ref().and_then(Under::surface);
+        let hover = target.as_ref().and_then(Under::frame_control);
         let stale = current.as_ref() != under.as_ref().map(|(surface, _)| surface)
-            || self.camino.pointer_focus != under;
+            || self.camino.pointer_focus != under
+            || self.camino.frame_pointer.hover != hover;
         if stale {
             let time = InputTime::from_micros(self.camino.now().as_micros() as u64);
             self.on_pointer_motion(location, time);
+        }
+    }
+}
+
+/// What the pointer is on in a window.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Under {
+    /// One of its surfaces, and that surface's origin in global logical coordinates.
+    Surface(WindowId, WlSurface, Point<f64, Logical>),
+    /// Its frame.
+    Frame(WindowId, FrameControl),
+}
+
+impl Under {
+    pub fn window(&self) -> WindowId {
+        match self {
+            Under::Surface(id, ..) | Under::Frame(id, _) => *id,
+        }
+    }
+
+    /// The surface and its origin, as pointer focus takes them.
+    pub fn surface(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
+        match self {
+            Under::Surface(_, surface, origin) => Some((surface.clone(), *origin)),
+            Under::Frame(..) => None,
+        }
+    }
+
+    /// The window and the frame control, as the frame pointer takes them.
+    pub fn frame_control(&self) -> Option<(WindowId, FrameControl)> {
+        match self {
+            Under::Frame(id, control) => Some((*id, *control)),
+            Under::Surface(..) => None,
         }
     }
 }
@@ -424,12 +475,10 @@ impl Camino {
         })
     }
 
-    /// The topmost showing window with a surface at `location`, the surface, and where that
-    /// surface's origin is, in global logical coordinates.
-    fn under(
-        &self,
-        location: Point<f64, Logical>,
-    ) -> Option<(WindowId, WlSurface, Point<f64, Logical>)> {
+    /// What's at `location` in the topmost showing window that takes input there: one of
+    /// its surfaces, which are above its frame, or its frame. A shaded window's surfaces
+    /// have left the scene.
+    pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
         let policy = &self.policy;
         policy
             .stacking(policy.active_workspace())
@@ -437,12 +486,20 @@ impl Camino {
             .rev()
             .filter(|id| policy.is_showing(**id))
             .find_map(|&id| {
-                let window = policy.window(id)?.window();
+                let mapped = policy.window(id)?;
+                let window = mapped.window();
                 let geometry = policy.geometry(id)?;
                 let origin = (geometry.loc - window.geometry().loc).to_f64();
-                let (surface, loc) =
-                    window.surface_under(location - origin, WindowSurfaceType::ALL)?;
-                Some((id, surface, loc.to_f64() + origin))
+                let surface = (!mapped.is_shaded())
+                    .then(|| window.surface_under(location - origin, WindowSurfaceType::ALL))
+                    .flatten();
+                if let Some((surface, loc)) = surface {
+                    return Some(Under::Surface(id, surface, loc.to_f64() + origin));
+                }
+                let control = mapped
+                    .frame()
+                    .control_at(location - geometry.loc.to_f64())?;
+                Some(Under::Frame(id, control))
             })
     }
 
@@ -451,12 +508,11 @@ impl Camino {
         &self,
         location: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.under(location)
-            .map(|(_, surface, origin)| (surface, origin))
+        self.under(location)?.surface()
     }
 
     /// The window under `location`.
     pub fn window_under(&self, location: Point<f64, Logical>) -> Option<WindowId> {
-        self.under(location).map(|(id, _, _)| id)
+        self.under(location).map(|under| under.window())
     }
 }

@@ -6,20 +6,22 @@
 //! its strips as `MemoryRenderBuffer`s, and draws them again only when something they're
 //! drawn from changes.
 
+pub mod control;
 pub mod palette;
 pub mod style;
 
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use camino_theme::{
-    ButtonLayout, ButtonStates, Frame, FrameFlags, FrameType, PaletteColors, Strip, Theme,
-    ThemeDirs, Title, pango, title_context,
+    ButtonFunction, ButtonLayout, ButtonStates, Frame, FrameFlags, FrameGeometry, FrameType,
+    PaletteColors, Strip, Theme, ThemeDirs, Title, pango, title_context,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
-use smithay::utils::{FrameExtents, Logical, Rectangle, Size, Transform};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::shm::with_buffer_contents;
 
+use crate::decoration::control::FrameControl;
 use crate::icons::{IconLookup, load_icon};
 use crate::settings::Settings;
 use crate::settings::translate::{Antialiasing, FontRendering, Hinting, RgbaOrder};
@@ -219,6 +221,9 @@ struct WindowIcons {
 #[derive(Debug, Default)]
 pub struct WindowFrame {
     drawn: Option<(FrameInputs, ButtonStates, u64)>,
+    /// Where everything was when the strips were last drawn, which the pointer finds the
+    /// frame's controls by.
+    geometry: Option<FrameGeometry>,
     strips: Vec<StripBuffer>,
     icons: Option<WindowIcons>,
     button_states: ButtonStates,
@@ -240,7 +245,17 @@ impl WindowFrame {
         }
         let (inputs, _, _) = &key;
         self.load_icons(&mut frame_context.icons, &inputs.icon, inputs.scale);
-        self.strips = self.draw(frame_context, colors, inputs);
+        let title = frame_context.title(inputs.frame_type, &inputs.flags, &inputs.title);
+        let geometry = frame_context.theme.frame_geometry(
+            inputs.frame_type,
+            title.text_height,
+            &inputs.flags,
+            inputs.size.w,
+            inputs.size.h,
+            &frame_context.button_layout,
+        );
+        self.strips = self.draw(frame_context, colors, inputs, &title, &geometry);
+        self.geometry = Some(geometry);
         self.drawn = Some(key);
         self.renders += 1;
         true
@@ -249,7 +264,44 @@ impl WindowFrame {
     /// Drops the strips, for a window that shows no frame. Returns whether it had any.
     pub fn clear(&mut self) -> bool {
         self.drawn = None;
+        self.geometry = None;
         !std::mem::take(&mut self.strips).is_empty()
+    }
+
+    /// The state each button is drawn in, from the next time the strips are drawn.
+    pub fn set_button_states(&mut self, states: ButtonStates) {
+        self.button_states = states;
+    }
+
+    pub fn button_states(&self) -> ButtonStates {
+        self.button_states
+    }
+
+    /// The flags the frame was last drawn with, if it's showing.
+    pub fn flags(&self) -> Option<FrameFlags> {
+        self.drawn.as_ref().map(|(inputs, _, _)| inputs.flags)
+    }
+
+    /// The control at `point` from the window geometry's origin, or `None` where the frame
+    /// takes no input.
+    pub fn control_at(&self, point: Point<f64, Logical>) -> Option<FrameControl> {
+        let geometry = self.geometry.as_ref()?;
+        let flags = self.flags()?;
+        let total = geometry.borders.total;
+        let point = point.to_i32_floor::<i32>() + Point::from((total.left, total.top));
+        control::in_input_region(geometry, point.x, point.y)
+            .then(|| control::control_at(geometry, &flags, point.x, point.y))
+    }
+
+    /// Where a button is drawn, from the window geometry's origin, if the frame shows it.
+    pub fn button_rect(&self, function: ButtonFunction) -> Option<Rectangle<i32, Logical>> {
+        let geometry = self.geometry.as_ref()?;
+        let rect = geometry.button(function)?.visible;
+        let total = geometry.borders.total;
+        Some(Rectangle::new(
+            (rect.x - total.left, rect.y - total.top).into(),
+            (rect.width, rect.height).into(),
+        ))
     }
 
     /// Each strip's buffer, and where it goes from the window geometry's origin.
@@ -272,30 +324,23 @@ impl WindowFrame {
         frame_context: &FrameContext,
         colors: &PaletteColors,
         inputs: &FrameInputs,
+        title: &Title,
+        geometry: &FrameGeometry,
     ) -> Vec<StripBuffer> {
         let theme = &frame_context.theme;
-        let title = frame_context.title(inputs.frame_type, &inputs.flags, &inputs.title);
         let icons = self.icons.as_ref();
         let frame = Frame {
             frame_type: inputs.frame_type,
             flags: inputs.flags,
             client_width: inputs.size.w,
             client_height: inputs.size.h,
-            title: &title,
+            title,
             button_layout: &frame_context.button_layout,
             button_states: self.button_states,
             mini_icon: icons.and_then(|icons| icons.mini.as_ref()),
             icon: icons.and_then(|icons| icons.full.as_ref()),
             colors,
         };
-        let geometry = theme.frame_geometry(
-            inputs.frame_type,
-            title.text_height,
-            &inputs.flags,
-            inputs.size.w,
-            inputs.size.h,
-            &frame_context.button_layout,
-        );
         let total = geometry.borders.total;
         Strip::ALL
             .into_iter()

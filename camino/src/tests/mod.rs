@@ -2,8 +2,10 @@
 
 mod bindings;
 mod client;
+mod cursors;
 mod decoration;
 mod fixture;
+mod frames;
 mod grabs;
 mod headless;
 mod input;

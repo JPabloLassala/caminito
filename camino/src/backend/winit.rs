@@ -25,6 +25,8 @@ impl Winit {
     /// loop.
     pub fn new(camino: &mut Camino) -> Result<Self, winit::Error> {
         let (backend, events) = winit::init::<GlesRenderer>()?;
+        // Camino draws its own cursor.
+        backend.window().set_cursor_visible(false);
 
         // GLES draws upside down relative to winit's window.
         let output = virtual_output(

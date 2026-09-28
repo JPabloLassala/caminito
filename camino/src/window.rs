@@ -194,9 +194,18 @@ impl Mapped {
         &self.frame
     }
 
+    pub fn frame_mut(&mut self) -> &mut WindowFrame {
+        &mut self.frame
+    }
+
     /// Whether the window shows a frame now: SSD, and not fullscreen.
     pub fn shows_frame(&self) -> bool {
         self.ssd && !self.states.fullscreen
+    }
+
+    /// Whether the window is shaded, so only its frame's titlebar shows.
+    pub fn is_shaded(&self) -> bool {
+        self.states.shaded
     }
 
     fn frame_facts(&self, maximized: bool) -> FrameFacts {
@@ -207,6 +216,7 @@ impl Mapped {
             activated: self.activated,
             maximized,
             fullscreen: self.states.fullscreen,
+            shaded: self.states.shaded,
         }
     }
 
@@ -509,6 +519,7 @@ impl Camino {
                 activated: true,
                 maximized,
                 fullscreen: false,
+                shaded: false,
             };
             frame_style(&facts, self.frame_context.attach_modal_dialogs())
                 .map(|(frame_type, flags)| self.frame_context.extents(frame_type, &flags))

@@ -164,7 +164,8 @@ fn minimising_hides_the_window() {
 
     let policy_id = f.policy_id(id, window).unwrap();
     assert!(f.state.camino.policy.is_minimized(policy_id));
-    assert_eq!(f.state.scene_element_count(&output), 0);
+    // Only the cursor.
+    assert_eq!(f.state.scene_element_count(&output), 1);
 }
 
 #[test]

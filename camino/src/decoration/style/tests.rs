@@ -11,6 +11,7 @@ fn normal() -> FrameFacts {
         activated: false,
         maximized: false,
         fullscreen: false,
+        shaded: false,
     }
 }
 
@@ -154,6 +155,24 @@ fn a_fullscreen_frame_neither_moves_resizes_shades_nor_maximises() {
             allows_minimize: true,
             fullscreen: true,
             ..FrameFlags::default()
+        }
+    );
+}
+
+#[test]
+fn a_shaded_frame_is_drawn_shaded_and_cant_be_resized() {
+    let facts = FrameFacts {
+        shaded: true,
+        ..normal()
+    };
+    let (_, flags) = frame_style(&facts, false).unwrap();
+    assert_eq!(
+        flags,
+        FrameFlags {
+            allows_vertical_resize: false,
+            allows_horizontal_resize: false,
+            shaded: true,
+            ..allows_all()
         }
     );
 }

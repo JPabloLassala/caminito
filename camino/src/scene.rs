@@ -4,11 +4,16 @@
 //! is the only code that knows the layer order.
 
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
 use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
+use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
-use smithay::utils::Scale;
+use smithay::reexports::wayland_server::Resource;
+use smithay::utils::{Logical, Point, Scale};
+use smithay::wayland::compositor::with_states;
 
 use crate::output::output_geometry;
 use crate::state::Camino;
@@ -18,14 +23,17 @@ pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
 
 render_elements! {
     pub SceneElement<R> where R: ImportAll + ImportMem;
+    /// A client's surface: a window's, or the cursor's.
     Window = WaylandSurfaceRenderElement<R>,
-    /// A frame's strip.
+    /// A frame's strip, or one of Camino's cursors.
     Frame = MemoryRenderBufferRenderElement<R>,
 }
 
 /// The scene's layers, top to bottom.
 #[derive(Debug, Clone, Copy)]
 enum SceneLayer {
+    /// The pointer's cursor, over everything.
+    Cursor,
     /// Lock surfaces, or the solid lock background (M7).
     Lock,
     /// The overlay layer-shell layer (M5).
@@ -42,7 +50,8 @@ enum SceneLayer {
     Background,
 }
 
-const LAYERS: [SceneLayer; 7] = [
+const LAYERS: [SceneLayer; 8] = [
+    SceneLayer::Cursor,
     SceneLayer::Lock,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
@@ -65,6 +74,7 @@ where
     let mut elements = Vec::new();
     for layer in LAYERS {
         match layer {
+            SceneLayer::Cursor => cursor_elements(renderer, camino, output, &mut elements),
             SceneLayer::Windows => window_elements(renderer, camino, output, &mut elements),
             SceneLayer::Lock
             | SceneLayer::Overlay
@@ -75,6 +85,73 @@ where
         }
     }
     elements
+}
+
+/// The cursor at the pointer, if it's on `output`: Camino's own, or the surface the client
+/// set.
+fn cursor_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let output_geometry = output_geometry(output);
+    let pointer = camino.seat.get_pointer().unwrap().current_location();
+    if !output_geometry.to_f64().contains(pointer) {
+        return;
+    }
+    let scale = output.current_scale().fractional_scale();
+    let at = |hotspot: Point<i32, Logical>| {
+        (pointer - hotspot.to_f64() - output_geometry.loc.to_f64()).to_physical_precise_round(scale)
+    };
+    match camino.cursor() {
+        CursorImageStatus::Hidden => {}
+        CursorImageStatus::Surface(surface) if surface.is_alive() => {
+            let hotspot = with_states(&surface, |states| {
+                states
+                    .data_map
+                    .get::<CursorImageSurfaceData>()
+                    .map(|data| data.lock().unwrap().hotspot)
+                    .unwrap_or_default()
+            });
+            elements.extend(
+                render_elements_from_surface_tree(
+                    renderer,
+                    &surface,
+                    at(hotspot),
+                    scale,
+                    1.0,
+                    Kind::Cursor,
+                )
+                .into_iter()
+                .map(SceneElement::Window),
+            );
+        }
+        status => {
+            let icon = match status {
+                CursorImageStatus::Named(icon) => icon,
+                // A client's cursor surface that's gone shows the default cursor.
+                _ => Default::default(),
+            };
+            let image = camino.cursors.image(icon, scale);
+            let element = MemoryRenderBufferRenderElement::from_buffer(
+                renderer,
+                at(image.hotspot).to_f64(),
+                &image.buffer,
+                None,
+                None,
+                None,
+                Kind::Cursor,
+            );
+            match element {
+                Ok(element) => elements.push(SceneElement::Frame(element)),
+                Err(err) => tracing::warn!("can't draw the cursor: {err:?}"),
+            }
+        }
+    }
 }
 
 fn window_elements<R>(
@@ -99,10 +176,10 @@ fn window_elements<R>(
         }
         let window = mapped.window();
         // The surface's origin sits the window geometry's offset away from where policy
-        // placed the geometry.
+        // placed the geometry. A shaded window's surfaces have left the scene.
         let mut bbox = window.bbox_with_popups();
         bbox.loc += geometry.loc - window.geometry().loc;
-        if bbox.overlaps(output_geometry) {
+        if !mapped.is_shaded() && bbox.overlaps(output_geometry) {
             let location = (geometry.loc - window.geometry().loc - output_geometry.loc)
                 .to_physical_precise_round(scale);
             elements.extend(window.render_elements(renderer, location, Scale::from(scale), 1.0));

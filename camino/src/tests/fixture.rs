@@ -38,7 +38,7 @@ fn test_schemas() -> &'static std::path::Path {
 }
 
 // Linux input event codes.
-pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE};
+pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub const KEY_TAB: u32 = 15;
 pub const KEY_LEFTCTRL: u32 = 29;
 pub const KEY_A: u32 = 30;
