@@ -31,6 +31,15 @@ jobs:
       - name: Test
         run: cargo test --workspace --exclude camino
 
+      # The palette helper against the colours Marco recorded, and live gtk-theme changes
+      # (28). The colours don't depend on the GDK backend, so it runs on X under Xvfb.
+      - name: Test the palette helper
+        run: |
+          meson setup target/meson
+          meson compile -C target/meson
+          CAMINO_GTK_PALETTE=$PWD/target/meson/helpers/camino-gtk-palette/camino-gtk-palette \
+            xvfb-run -a cargo test -p camino-theme --test palette_helper -- --ignored
+
       # A golden case that doesn't match writes Camino's image and a diff beside it.
       - name: Keep golden failures
         if: failure()

@@ -7,5 +7,6 @@ mod fixture;
 mod grabs;
 mod headless;
 mod input;
+mod palette_helper;
 mod popups;
 mod xdg_shell;

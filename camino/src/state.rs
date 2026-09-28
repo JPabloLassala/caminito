@@ -1,7 +1,7 @@
 //! `State` and `Camino`: everything the event loop runs on (15).
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -53,7 +53,11 @@ use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xdg_system_bell::XdgSystemBellState;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
 
+use camino_theme::PaletteCache;
+
 use crate::backend::Backend;
+use crate::decoration::palette::{PaletteSource, PaletteState};
+use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::window::{Mapped, Unmapped};
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
@@ -132,6 +136,48 @@ pub struct Camino {
     /// Toplevels made but not yet mapped.
     pub unmapped: Vec<Unmapped>,
     pub(crate) next_window_id: u64,
+
+    /// The GTK colours frames are drawn with.
+    pub palette: PaletteSource<State>,
+}
+
+/// The palette helper, `camino-gtk-palette` or what `CAMINO_GTK_PALETTE` names, as a
+/// client on `socket`. The GTK theme isn't known until the helper reports it, so the
+/// palette starts neutral.
+fn palette_source(
+    handle: LoopHandle<'static, State>,
+    socket: Option<&OsStr>,
+) -> PaletteSource<State> {
+    let program = std::env::var_os("CAMINO_GTK_PALETTE").unwrap_or("camino-gtk-palette".into());
+    let mut command =
+        HelperCommand::new("camino-gtk-palette", program).env("GDK_BACKEND", "wayland");
+    if let Some(socket) = socket {
+        command = command.env("WAYLAND_DISPLAY", socket);
+    }
+    PaletteSource::new(
+        handle,
+        command,
+        RestartPolicy::default(),
+        StderrTarget::Prefixed,
+        PaletteCache::from_env(),
+        None,
+    )
+}
+
+impl PaletteState for State {
+    fn palette_source(&mut self) -> &mut PaletteSource<State> {
+        &mut self.camino.palette
+    }
+
+    fn palette_changed(&mut self) {
+        tracing::debug!(
+            "palette for {} in use",
+            self.camino
+                .palette
+                .gtk_theme()
+                .unwrap_or("an unknown GTK theme")
+        );
+    }
 }
 
 /// Per-client data.
@@ -331,7 +377,14 @@ impl Camino {
             policy: Policy::new(Config::default()),
             unmapped: Vec::new(),
             next_window_id: 0,
+            palette: palette_source(event_loop.handle(), None),
         }
+    }
+
+    /// Starts `camino-gtk-palette` as a client on the socket `add_socket` opened.
+    pub fn start_palette_helper(&mut self, socket: &OsStr) {
+        self.palette = palette_source(self.loop_handle.clone(), Some(socket));
+        self.palette.start();
     }
 
     /// Opens a Wayland socket for clients to connect on, and returns its name.

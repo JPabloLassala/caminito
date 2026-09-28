@@ -6,7 +6,7 @@
 #   tools/dev-nested [--bin] [camino arguments...]
 #
 # It runs the installed camino, or with --bin the debug build in this checkout's target/,
-# building it first.
+# building it first, with the palette helper built by Meson in target/meson.
 set -euo pipefail
 
 camino=camino
@@ -15,6 +15,10 @@ if [[ ${1-} == --bin ]]; then
   root=$(dirname "$(realpath "$0")")/..
   cargo build --manifest-path "$root/Cargo.toml" -p camino
   camino=${CARGO_TARGET_DIR:-$root/target}/debug/camino
+  meson=${CARGO_TARGET_DIR:-$root/target}/meson
+  [[ -d $meson ]] || meson setup "$meson" "$root"
+  meson compile -C "$meson"
+  export CAMINO_GTK_PALETTE=$meson/helpers/camino-gtk-palette/camino-gtk-palette
 fi
 
 if ! command -v "$camino" >/dev/null; then

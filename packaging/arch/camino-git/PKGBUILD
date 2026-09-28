@@ -8,9 +8,10 @@ pkgdesc='Wayland compositor for the MATE desktop, the counterpart of Marco'
 arch=(x86_64)
 url='https://github.com/JPabloLassala/camino'
 license=(GPL-2.0-or-later)
-# Only what the binary links (16). winit dlopens libwayland-client and libEGL, which the
+# Only what the binaries link (16). winit dlopens libwayland-client and libEGL, which the
 # desktop a nested run sits inside always has; M4 and M5 add the real dependencies.
-depends=(glibc libgcc libxkbcommon)
+# camino-gtk-palette links gtk3 and glib2 (28).
+depends=(glibc libgcc libxkbcommon gtk3 glib2)
 # camino-theme builds and tests against pango and gdk-pixbuf2, which the binary doesn't
 # link yet (30).
 makedepends=(cargo git meson pango gdk-pixbuf2)

@@ -234,6 +234,26 @@ pub enum ColorSpec {
 }
 
 impl ColorSpec {
+    /// Adds the names of the `gtk:custom` colours in the spec, fallbacks included.
+    pub(crate) fn custom_names(&self, names: &mut std::collections::BTreeSet<String>) {
+        match self {
+            ColorSpec::Basic(_) | ColorSpec::Gtk { .. } => {}
+            ColorSpec::GtkCustom { name, fallback } => {
+                names.insert(name.clone());
+                fallback.custom_names(names);
+            }
+            ColorSpec::Blend {
+                background,
+                foreground,
+                ..
+            } => {
+                background.custom_names(names);
+                foreground.custom_names(names);
+            }
+            ColorSpec::Shade { base, .. } => base.custom_names(names),
+        }
+    }
+
     /// Parses a spec, with Marco's error message if it's malformed. Colour constants
     /// aren't looked up here: Marco resolves them only for a whole attribute value.
     pub fn parse(text: &str) -> Result<ColorSpec, String> {

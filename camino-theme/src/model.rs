@@ -3,7 +3,7 @@
 //! Everything named in a theme is shared by reference, as in Marco: a style holds its
 //! geometry and parent, and an `include` holds the list it draws.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -47,6 +47,29 @@ impl Theme {
             })
             .or_else(|| assigned(FrameType::Normal))
             .expect("validation requires a style set for every frame type but attached")
+    }
+
+    /// The names of the GTK colours the theme's `gtk:custom` specs read, which the palette
+    /// helper is asked to look up.
+    pub fn custom_color_names(&self) -> BTreeSet<String> {
+        let mut names = BTreeSet::new();
+        let mut add = |color: &ColorSpec| color.custom_names(&mut names);
+        // Every list is either named here or a style's own; includes and tiles only
+        // refer to named ones.
+        let style_lists = self.styles.values().flat_map(|style| {
+            let pieces = style.pieces.iter().flatten();
+            let buttons = style.buttons.iter().flatten().flatten();
+            pieces.chain(buttons)
+        });
+        for list in self.draw_ops.values().chain(style_lists) {
+            for op in &list.ops {
+                op.colors().for_each(&mut add);
+            }
+        }
+        for style in self.styles.values() {
+            style.window_background.iter().for_each(&mut add);
+        }
+        names
     }
 
     /// The frame style Marco uses for a window (`theme_get_style`).
@@ -215,6 +238,29 @@ pub enum DrawOp {
         tile_width: Expr,
         tile_height: Expr,
     },
+}
+
+impl DrawOp {
+    /// The colours the op draws with.
+    fn colors(&self) -> impl Iterator<Item = &ColorSpec> {
+        let (one, many): (Option<&ColorSpec>, &[ColorSpec]) = match self {
+            DrawOp::Line { color, .. }
+            | DrawOp::Rectangle { color, .. }
+            | DrawOp::Arc { color, .. }
+            | DrawOp::Tint { color, .. }
+            | DrawOp::Title { color, .. } => (Some(color), &[]),
+            DrawOp::Gradient { colors, .. } => (None, colors),
+            DrawOp::Image { colorize, .. } => (colorize.as_ref(), &[]),
+            DrawOp::Clip { .. }
+            | DrawOp::GtkArrow { .. }
+            | DrawOp::GtkBox { .. }
+            | DrawOp::GtkVline { .. }
+            | DrawOp::Icon { .. }
+            | DrawOp::Include { .. }
+            | DrawOp::Tile { .. } => (None, &[]),
+        };
+        one.into_iter().chain(many)
+    }
 }
 
 /// The alphas of an `alpha` attribute, `0.0:0.5:1.0` stored as bytes (`v * 255`,

@@ -33,7 +33,10 @@ pub use model::{
     FrameFocus, FrameLayout, FramePiece, FrameResize, FrameState, FrameStyle, FrameStyleSet,
     FrameType, GradientType, GtkArrow, GtkShadow, ImageFill, ImageSource, Theme, ThemeInfo,
 };
-pub use palette::{Palette, PaletteColors, StateColors, Variant};
+pub use palette::{
+    PALETTE_STREAM_HEADER, Palette, PaletteCache, PaletteCacheError, PaletteColors, PaletteReader,
+    PaletteStreamError, ReportedPalette, StateColors, Variant, format_report, names_request,
+};
 pub use title::{Title, title_context};
 
 // The versions of pango, cairo and gdk-pixbuf the API takes.

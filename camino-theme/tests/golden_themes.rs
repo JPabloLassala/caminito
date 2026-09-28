@@ -40,3 +40,31 @@ fn every_golden_theme_loads() {
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// The names the golden themes' `gtk:custom` colours use are the ones Camino asks the
+/// palette helper for. `tools/regenerate-goldens` recorded them by searching the theme
+/// files, so it also has the two that only constants no draw op uses name: Menta's
+/// `C_title_focused_hilight_dark` and Mint-Y's `C_wm_bg_unfocused`.
+#[test]
+fn the_golden_themes_use_the_custom_colours_the_palette_recorded() {
+    let dirs = vendored();
+    let mut names = std::collections::BTreeSet::new();
+    for (name, _) in GOLDEN_THEMES {
+        let theme = Theme::load(name, &dirs).unwrap();
+        names.extend(theme.custom_color_names());
+    }
+
+    let palette = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/goldens/palette.json");
+    let palette: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(palette).unwrap()).unwrap();
+    let recorded: std::collections::BTreeSet<String> = palette["variants"]["default"]["named"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    let unused: std::collections::BTreeSet<String> = ["wm_bg_unfocused", "wm_title_highlight_dark"]
+        .map(String::from)
+        .into();
+    assert_eq!(names, &recorded - &unused);
+}
