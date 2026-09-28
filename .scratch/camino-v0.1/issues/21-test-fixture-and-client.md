@@ -1,7 +1,7 @@
 # Test fixture and client
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M1
 Blocked by: 20
 Map: [Camino v0.1](../map.md)
@@ -19,4 +19,4 @@ The headless integration tier from 14, ready for [22](22-xdg-shell-and-input.md)
 
 - [x] A fixture test connects a client, lists the globals and snapshots the list.
 - [x] A fixture test creates an xdg toplevel and snapshots its first configure. The snapshot is expected to change when [22](22-xdg-shell-and-input.md) lands.
-- [ ] The headless tier runs in CI with no GPU or EGL.
+- [x] The headless tier runs in CI with no GPU or EGL.
