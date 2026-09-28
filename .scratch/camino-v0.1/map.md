@@ -25,11 +25,13 @@ An architecture spec and milestone plan for **Camino v0.1**, a Rust/Smithay Wayl
 
 <!-- one line per closed ticket -->
 
+- [Smithay capability audit](issues/03-smithay-capability-audit.md): pin Smithay master; it covers the core, but Camino writes foreign-toplevel, ext-workspace and output-management plus its own scene graph and window-management policy.
+
 ## Not yet specified
 
 - **Screen locking.** mate-screensaver doesn't work on Wayland. The likely route is ext-session-lock plus some locker, but it depends on what the MATE Wayland audit finds.
 - **Display configuration.** mate-display-properties only speaks RandR. We need an output-management story (wlr-output-management? our own dialog? kanshi-style?).
-- **XWayland integration details.** How X11 windows get Marco behaviour through Smithay's X11 window manager, XSettings bridging from mate-settings-daemon, and clipboard and DnD edge cases.
+- **XWayland integration details.** How X11 windows get Marco behaviour through Smithay's X11 window manager, XSettings bridging from mate-settings-daemon, and clipboard and DnD edge cases. Smithay's X11 window manager lacks the virtual-desktop, work-area and frame-extents properties (see the Smithay capability audit).
 - **Input configuration.** Mapping MATE's mouse, touchpad and keyboard gsettings to libinput and xkb inside Camino.
 - **Crate and module architecture.** How Camino's code is split up. It depends on the Smithay audit and on the feature and protocol cuts.
 - **Development and testing loop.** Running nested (winit backend) vs. on a TTY, headless tests, and CI.
