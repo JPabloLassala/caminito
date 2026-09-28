@@ -63,6 +63,7 @@ All of them are resolved, and 17 closed the map on 2026-09-28. Implementation st
 The plan is in [17](issues/17-milestone-slicing.md). Each milestone's tickets are written when it starts.
 
 - **M1 Nested compositor** (closed): [18 Workspace and CI](issues/18-workspace-and-ci.md), [19 Policy crate core](issues/19-policy-crate.md), [20 Compositor skeleton](issues/20-compositor-skeleton.md), [21 Test fixture and client](issues/21-test-fixture-and-client.md), [22 xdg-shell and input](issues/22-xdg-shell-and-input.md), [23 Packaging and development loop](issues/23-packaging-and-dev-loop.md). 18 is unblocked; 19, 20 and 23 follow it in parallel; 21 needs 20; 22 needs 19 and 21.
+- **M2 Marco frames** (open): [24 Theme parser and model](issues/24-theme-parser-and-model.md), [25 Golden harness](issues/25-golden-harness.md), [26 Theme geometry](issues/26-theme-geometry.md), [27 Frame drawing](issues/27-frame-drawing.md), [28 Palette helper](issues/28-palette-helper.md), [29 Settings thread](issues/29-settings-thread.md), [30 SSD frames](issues/30-ssd-frames.md), [31 Frame interaction](issues/31-frame-interaction.md), [32 Debug interface](issues/32-debug-interface.md), [33 Packaging and closing M2](issues/33-packaging-and-closing-m2.md). 24, 25 and 29 are unblocked; 26 needs 24 and 25, and 27 needs 26; 28 needs 24 and 25; 30 needs 27, 28 and 29; 31 and 32 need 30; 33 needs 31 and 32.
 
 ## Out of scope
 
