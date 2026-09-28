@@ -554,6 +554,10 @@ impl<W: PolicyWindow> Policy<W> {
         self.active
     }
 
+    pub fn outputs(&self) -> &[Output] {
+        &self.outputs
+    }
+
     /// A workspace's windows, bottom to top.
     pub fn stacking(&self, workspace: usize) -> &[WindowId] {
         &self.stacks[workspace]

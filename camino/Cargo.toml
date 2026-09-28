@@ -4,3 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Shipped through the PKGBUILD (16), never crates.io.
+publish = false
+
+[dependencies]
+camino-policy = { path = "../camino-policy" }
+smithay = { workspace = true, features = ["backend_winit", "desktop", "wayland_frontend"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[dev-dependencies]
+# The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
+smithay = { workspace = true, features = ["renderer_pixman"] }

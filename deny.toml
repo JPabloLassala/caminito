@@ -26,7 +26,11 @@ confidence-threshold = 0.8
 unused-allowed-license = "allow"
 
 [advisories]
-ignore = []
+ignore = [
+    # paste is unmaintained, with no replacement upstream. It comes only through
+    # pixman, which only the headless test backend uses.
+    { id = "RUSTSEC-2024-0436", reason = "test-only, through pixman" },
+]
 
 [bans]
 multiple-versions = "warn"
