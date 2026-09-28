@@ -8,9 +8,11 @@ runs:
     - name: Install packages
       shell: bash
       # pixman: the headless backend links it in test builds. The winit build
-      # dlopens EGL, Wayland and X11 at run time, so it links nothing new. dbus:
-      # dbus-run-session gives camino's tests a private bus (14).
-      run: pacman -Syu --noconfirm --needed gcc rustup cargo-deny libxkbcommon pixman dbus
+      # dlopens EGL, Wayland and X11 at run time, so it links nothing new. wayland:
+      # that dlopen mode reaches camino-test-client too, so the fixture's clients
+      # load libwayland-client. dbus: dbus-run-session gives camino's tests a private
+      # bus (14).
+      run: pacman -Syu --noconfirm --needed gcc rustup cargo-deny libxkbcommon pixman wayland dbus
 
     - name: Install Rust toolchain
       shell: bash
