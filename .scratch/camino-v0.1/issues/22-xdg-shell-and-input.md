@@ -1,7 +1,7 @@
 # xdg-shell and input
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M1
 Blocked by: 19, 21
 Map: [Camino v0.1](../map.md)
@@ -28,5 +28,10 @@ Enough protocol and input to meet M1's exit ([17](17-milestone-slicing.md)): rea
 ## Acceptance criteria
 
 - [x] Every behaviour above has a fixture test, written before the handler it covers.
-- [ ] Nested (`cargo run -p camino`, then clients on its socket): gtk3-demo, gtk4-demo, a Qt app and foot map, take focus by click, stack, move, resize, maximise and switch workspaces.
-- [ ] Popups and menus in gtk3-demo open in the right place.
+- [x] Nested (`cargo run -p camino`, then clients on its socket): gtk3-demo, gtk4-demo, a Qt app and foot map, take focus by click, stack, move, resize, maximise and switch workspaces.
+- [x] Popups and menus in gtk3-demo open in the right place.
+
+## Notes
+
+- gtk3-demo's entry completion list doesn't flip up at the bottom of an output. GTK3 maps it as a subsurface of the entry's window, not an `xdg_popup`, so only the client places it, and GTK3 doesn't know where its window is on the output.
+- Reopening a GTK3 submenu with radio items briefly shows the old selection. Each reopen is a new surface whose first buffer GTK3 draws stale, then corrects about 10 ms later.
