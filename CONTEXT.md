@@ -41,7 +41,7 @@ The GTK3 theme's colours that Marco themes refer to: the window background and t
 _Avoid_: colour scheme (that's the portal's light/dark preference)
 
 **Helper**:
-A process that Camino itself starts and supervises: Xwayland, the palette helper and the screen locker. MATE components aren't helpers, because mate-session starts and restarts them.
+A process that Camino itself starts and supervises: Xwayland, the palette helper and the locker. MATE components aren't helpers, because mate-session starts and restarts them.
 _Avoid_: daemon, child (for MATE components)
 
 **Session**:
@@ -63,3 +63,11 @@ _Avoid_: unmanaged window, X11 popup
 **Camino's X connection**:
 Camino's own ordinary client connection to Xwayland, alongside Smithay's window-manager connection. It publishes the desktop, work-area and frame-extent properties, and handles the bell, struts and the root messages Smithay drops. It never writes a property Smithay maintains.
 _Avoid_: second window manager, X helper
+
+**Locker**:
+The helper that draws the lock screen and checks the password: `camino-locker` by default, MATE's unlock dialog on ext-session-lock. The lock itself is Camino's; the locker can crash without unlocking the session.
+_Avoid_: screensaver (Camino only blanks), lock screen (for the program)
+
+**Screensaver shim**:
+Camino's implementation of `org.mate.ScreenSaver` and `org.freedesktop.ScreenSaver`, which turns MATE's lock, activity and inhibit calls into Camino's idle, blanking and lock state. mate-screensaver's daemon doesn't run under Camino.
+_Avoid_: mate-screensaver (the X11 program)

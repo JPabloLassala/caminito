@@ -169,13 +169,14 @@ It never reads an `org.mate.*` schema. msd's xsettings plugin feeds only XWaylan
 ### The `org.mate.Camino` schema
 
 - **Shape:** one flat schema, `org.mate.Camino`, at path `/org/mate/camino/`, shipped by Camino.
-- **What goes in it:** a key is added only if it is Wayland-only **and** no existing MATE schema already expresses it. v0.1 has three keys, which together are the pager grid layout from 05 and 06. They mirror `_NET_DESKTOP_LAYOUT` and libwnck's `try_set_workspace_layout`:
+- **What goes in it:** a key is added only if it is Wayland-only **and** no existing MATE schema already expresses it. v0.1 has four keys. Three together are the pager grid layout from 05 and 06, mirroring `_NET_DESKTOP_LAYOUT` and libwnck's `try_set_workspace_layout`; the fourth, `locker-command`, was added by [12](12-screen-locking.md):
 
 | Key | Type / default | Meaning |
 |---|---|---|
 | `workspace-layout-orientation` | enum `horizontal`/`vertical`, default `horizontal` | Fill order: along rows, or down columns. |
 | `workspace-layout-rows` | i, default 1 | Grid rows. 0 means derive it from the columns. |
 | `workspace-layout-columns` | i, default 0 | Grid columns. 0 means derive it from the rows. |
+| `locker-command` | as, default `['camino-locker']` | The locker Camino spawns to lock the session ([12](12-screen-locking.md)). |
 
 - **Derivation rules:**
   - If both keys are 0, the grid is one row.
@@ -188,7 +189,6 @@ It never reads an `org.mate.*` schema. msd's xsettings plugin feeds only XWaylan
   - output configuration (msd owns it);
   - privileged-protocol access (fixed by 06);
   - a quit binding (08: there isn't one);
-  - the locker command (for the Screen locking fog, which may add a key under this same rule).
 
 ### Unsupported in v0.1 (the "later" roadmap)
 
