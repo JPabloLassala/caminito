@@ -1,0 +1,49 @@
+name: Packaging
+
+on:
+  push:
+    paths:
+      - "packaging/arch/**"
+      - ".github/workflows/packaging.yml"
+  pull_request:
+    paths:
+      - "packaging/arch/**"
+      - ".github/workflows/packaging.yml"
+  workflow_dispatch:
+
+jobs:
+  camino-git:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      # rustup provides cargo, so makepkg doesn't pull in the rust package.
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed base-devel git namcap rustup
+
+      # pkgver() needs the history and tags.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # makepkg refuses to run as root. The builder installs dependencies through sudo.
+      - name: Add a build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+          chown -R builder: "$GITHUB_WORKSPACE"
+          sudo -u builder rustup toolchain install stable --profile minimal
+
+      # namcap exits 0 whatever it finds, so its errors are grepped for. Warnings are
+      # printed for review.
+      - name: namcap PKGBUILD
+        working-directory: packaging/arch/camino-git
+        # As builder, so git trusts the checkout that source=() reads.
+        run: sudo -u builder namcap PKGBUILD | tee namcap.log && ! grep -q ' E: ' namcap.log
+
+      - name: makepkg
+        working-directory: packaging/arch/camino-git
+        run: sudo -u builder makepkg --syncdeps --install --noconfirm
+
+      - name: namcap package
+        working-directory: packaging/arch/camino-git
+        run: namcap ./*.pkg.tar.zst | tee namcap.log && ! grep -q ' E: ' namcap.log

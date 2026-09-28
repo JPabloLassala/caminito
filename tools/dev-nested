@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Runs Camino nested inside the current desktop, on a private session bus and with a
+# scratch XDG_CONFIG_HOME, so neither the host's bus nor its dconf database is touched
+# (14). Extra arguments are passed to camino.
+#
+#   tools/dev-nested [--bin] [camino arguments...]
+#
+# It runs the installed camino, or with --bin the debug build in this checkout's target/,
+# building it first.
+set -euo pipefail
+
+camino=camino
+if [[ ${1-} == --bin ]]; then
+  shift
+  root=$(dirname "$(realpath "$0")")/..
+  cargo build --manifest-path "$root/Cargo.toml" -p camino
+  camino=${CARGO_TARGET_DIR:-$root/target}/debug/camino
+fi
+
+if ! command -v "$camino" >/dev/null; then
+  echo "dev-nested: $camino not found; install camino-git or pass --bin" >&2
+  exit 1
+fi
+
+config=$(mktemp -d -t camino-config.XXXXXX)
+trap 'rm -rf "$config"' EXIT
+echo "dev-nested: XDG_CONFIG_HOME=$config" >&2
+
+XDG_CONFIG_HOME=$config dbus-run-session -- "$camino" "$@"

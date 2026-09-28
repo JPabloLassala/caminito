@@ -1,0 +1,6 @@
+# makepkg's working files
+*/src/
+*/pkg/
+*/camino/
+*.pkg.tar.*
+*.log

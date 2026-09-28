@@ -47,13 +47,24 @@ sudo pacman -S --needed rustup gcc libxkbcommon pixman dbus
 cargo build --workspace
 ```
 
+To install it as a package, build `camino-git`'s PKGBUILD. It packages the checkout's committed
+`HEAD`, not uncommitted work:
+
+```sh
+cd packaging/arch/camino-git
+makepkg -si
+```
+
 ## Running
 
 Camino currently runs only nested, as a winit window inside an existing Wayland or X11 desktop.
-Run it on a private session bus so it doesn't touch your desktop's:
+`tools/dev-nested` runs the installed `camino` on a private session bus with a scratch
+`XDG_CONFIG_HOME`, so it doesn't touch your desktop's bus or dconf settings. `--bin` builds and
+runs this checkout's debug build instead, and any other arguments go to `camino`:
 
 ```sh
-dbus-run-session -- cargo run -p camino
+tools/dev-nested        # the installed camino
+tools/dev-nested --bin  # target/debug/camino
 ```
 
 It logs the socket it listens on (`WAYLAND_DISPLAY=wayland-N`). Point clients at it:
@@ -91,8 +102,11 @@ The tests are layered:
   snapshots.
 
 CI runs rustfmt, clippy (`-D warnings`), cargo-deny and the tests in an Arch container on every
-push. A weekly job builds against Smithay master, since Smithay is pinned by commit and bumped one
+push, and builds the PKGBUILD with `makepkg` and `namcap` when `packaging/arch/` changes. A weekly job builds against Smithay master, since Smithay is pinned by commit and bumped one
 commit at a time.
+
+Some checks need a real desktop and are run by hand before a milestone closes. They're listed in
+[docs/testing/checklist.md](docs/testing/checklist.md).
 
 ## Layout
 

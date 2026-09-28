@@ -1,0 +1,64 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+
+pkgname=camino-git
+_pkgname=camino
+pkgver=0
+pkgrel=1
+pkgdesc='Wayland compositor for the MATE desktop, the counterpart of Marco'
+arch=(x86_64)
+url='https://github.com/JPabloLassala/camino'
+license=(GPL-2.0-or-later)
+# Only what the binary links (16). winit dlopens libwayland-client and libEGL, which the
+# desktop a nested run sits inside always has; M4 and M5 add the real dependencies.
+depends=(glibc libgcc libxkbcommon)
+makedepends=(cargo git meson)
+# camino's tests link pixman for the headless backend, its test clients load
+# libwayland-client (21), and they run on a private session bus (14).
+checkdepends=(dbus pixman wayland)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+# The local checkout's committed HEAD, so uncommitted work is never packaged. makepkg
+# sources this from the PKGBUILD's directory, and namcap rejects naming that directory
+# by its makepkg variable.
+# This becomes the GitHub URL if the package is ever published (16).
+source=("$_pkgname::git+file://$(git rev-parse --show-toplevel)")
+sha256sums=('SKIP')
+# The release build has no debug symbols to split out.
+options=(!debug)
+
+pkgver() {
+  cd "$_pkgname"
+  (
+    set -o pipefail
+    git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+      printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+  )
+}
+
+prepare() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+  arch-meson . build
+  meson compile -C build
+}
+
+check() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  dbus-run-session -- cargo test --frozen
+}
+
+package() {
+  cd "$_pkgname"
+  meson install -C build --destdir "$pkgdir"
+  install -Dm755 target/release/camino -t "$pkgdir/usr/bin"
+}
