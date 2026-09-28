@@ -95,3 +95,11 @@ _Avoid_: nested session, dev session
 **Golden**:
 A reference rendering of one frame case (theme, frame type, state, button states, scale) produced by Marco's own C engine and committed to the repo, with its geometry. Camino's theme engine is correct when it matches the goldens.
 _Avoid_: snapshot (that's a text assertion in the integration tests), reference image
+
+**Policy**:
+Camino's window-management decisions: focus, stacking, placement, workspaces, transients and Marco's other window rules. It sees windows only through the `PolicyWindow` trait, never as protocol objects, so it treats xdg and XWayland windows alike.
+_Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
+
+**Scene**:
+The order in which Camino draws an output: the lock, then the overlay layer, override-redirect windows, the top layer, the workspace's windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
+_Avoid_: scene graph (Camino has no retained one), space (Smithay's `desktop::Space`, which Camino doesn't use)

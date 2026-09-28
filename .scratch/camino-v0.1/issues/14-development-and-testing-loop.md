@@ -171,7 +171,7 @@ How the Marco reference images are made is recorded in [ADR 0009](../../../docs/
   - Bare `camino`, or a tty stderr, logs to stderr.
   - Camino connects the stderr of its helpers (Xwayland, `camino-gtk-palette`, the locker) to the journal under their own identifiers.
   - `journalctl --user -t camino` is where 09's "unsupported key" messages are found.
-- **Profiling:** a `profile-with-tracy` feature through the `profiling` crate (anvil's approach, `anvil/src/main.rs:27-35`), with spans at the render, input and scene-graph entry points.
+- **Profiling:** a `profile-with-tracy` feature through the `profiling` crate (anvil's approach, `anvil/src/main.rs:27-35`), with spans at the render, input and scene entry points.
 - **Debug toggles** as `org.mate.Camino` keybindings and debug D-Bus methods:
   - damage;
   - opaque regions;
@@ -184,7 +184,7 @@ How the Marco reference images are made is recorded in [ADR 0009](../../../docs/
 
 - **[07](07-decoration-strategy.md):** the golden set is 07's surveyed themes plus ClearlooksRe, eOS and HighContrast, with the third-party ones vendored ([ADR 0009](../../../docs/adr/0009-committed-marco-goldens-from-libmarco-private.md)).
 - **[08](08-session-launch-model.md):** Camino's systemd import is skipped and logged when `org.freedesktop.systemd1` isn't on its bus.
-- **15 Crate and module architecture:**
+- **15 Crate and module architecture** ([15](15-crate-and-module-architecture.md): `camino-policy` and `camino-test-client` crates, a `cfg(test)` headless backend, in-crate integration tests, `tools/marco-frame-dump`, `dbus::debug` and `debug`, `tracing` in `logging`, helper stderr through `helpers`):
   - the `PolicyWindow` trait as the policy seam (Smithay geometry types allowed, protocol objects not);
   - the headless backend and its test feature;
   - the test client crate;
