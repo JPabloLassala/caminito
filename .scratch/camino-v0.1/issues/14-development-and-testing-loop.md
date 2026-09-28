@@ -151,7 +151,7 @@ How the Marco reference images are made is recorded in [ADR 0009](../../../docs/
 - **Weekly cron:**
   - the proptest run with a large case count;
   - a build and test against Smithay's current master, which opens or updates an issue when it fails;
-  - each carried MATE patch applied to and built against its upstream component's git head, so a patch that breaks in a rebase is caught early. How the patches are stored and built is 16's.
+  - each carried MATE patch applied to and built against its upstream component's git head, so a patch that breaks in a rebase is caught early. How the patches are stored and built is 16's. ([16](16-packaging.md): `format-patch` series beside each PKGBUILD in `packaging/arch/`.)
 - **Workflow:** the developer commits straight to `master`. There's no branch protection and no required pull requests.
 - **Toolchain:** latest stable Rust and no MSRV, since Camino isn't a library and Arch ships current Rust. `rust-toolchain.toml` pins `channel = "stable"` with rustfmt and clippy. rustfmt uses its defaults.
 - **cargo-deny** checks advisories and licences. Camino is GPL-2.0-or-later. Apache-2.0 crates are allowed (the combined work is then distributable under GPLv3, and Smithay's dependency tree is full of them). GPL-3-only crates and unknown licences are rejected, which keeps 03's rule that niri's and cosmic-comp's code is a design reference only.
@@ -191,7 +191,7 @@ How the Marco reference images are made is recorded in [ADR 0009](../../../docs/
   - `marco-frame-dump` as a C subproject beside `camino-gtk-palette` and `camino-locker`;
   - where `org.mate.Camino.Debug` and the debug toggles live;
   - where `tracing` is initialised, and the helpers' stderr going to the journal.
-- **16 Packaging:**
+- **16 Packaging** ([16](16-packaging.md): the packages replace stock MATE and every patch is gated on Camino, [ADR 0011](../../../docs/adr/0011-patched-mate-packages-replace-stock-and-gate-on-camino.md); the patches are `format-patch` files in `packaging/arch/<pkgname>/`; CI runs `makepkg` and `namcap` when they change):
   - the patched MATE packages must install system-wide on the developer's machine without breaking MATE on X11 (the fall-back rule);
   - the carried patches need a form that the weekly CI job can apply to upstream git heads;
   - Camino's package ships no test or debug binaries.

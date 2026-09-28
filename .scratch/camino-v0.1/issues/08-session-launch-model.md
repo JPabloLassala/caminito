@@ -91,7 +91,7 @@ Camino exports these variables before it spawns anything:
 
 ### Handed on
 
-- **Packaging:**
+- **Packaging** ([16](16-packaging.md): `camino-git` ships the session file; the patches are in `mate-session-manager-camino` and `mate-panel-camino`; Shut Down stays ungated, [ADR 0011](../../../docs/adr/0011-patched-mate-packages-replace-stock-and-gate-on-camino.md)):
   - the `mate-camino.desktop` session file;
   - the carried mate-session patch (`GDK_BACKEND` unset and no `windowmanager` component, both keyed on `MATE_WM_NAME=Camino`);
   - the carried mate-panel shutdown patch.

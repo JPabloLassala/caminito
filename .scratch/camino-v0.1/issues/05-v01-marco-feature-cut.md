@@ -85,4 +85,4 @@ These keys stay in the schema, because Camino reads Marco's schema and doesn't o
   - window types and struts
 - **07:** shade on CSD windows.
 - **09:** the pager-layout key name.
-- **Packaging:** the MATE baseline the carried patches apply to.
+- **Packaging:** the MATE baseline the carried patches apply to. ([16](16-packaging.md): each component's latest 1.29.x tag, or a pinned master commit for mate-panel and mate-session.)

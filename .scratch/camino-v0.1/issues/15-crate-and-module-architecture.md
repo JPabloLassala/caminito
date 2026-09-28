@@ -201,7 +201,7 @@ None of them is updated inline from a handler. Handlers change policy state and 
 
 ### Handed on
 
-- **16 Packaging:**
+- **16 Packaging** ([16](16-packaging.md): a top-level `meson.build` with `subproject_dir: 'helpers'` builds both helpers and installs the data; the PKGBUILD runs cargo separately):
   - the Cargo workspace plus three Meson projects: `helpers/camino-gtk-palette`, `helpers/camino-locker` and `tools/marco-frame-dump`, the last never packaged;
   - `resources/` holds the `org.mate.Camino` schema;
   - the headless backend and pixman renderer aren't in the release build.

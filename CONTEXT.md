@@ -17,8 +17,12 @@ The single Wayland process that owns the displays and input and manages windows.
 _Avoid_: Wayland window manager
 
 **Carried patch**:
-A change to a MATE component that Camino's packaging applies downstream and never sends upstream. It falls back to the component's normal behaviour when Camino isn't running.
+A change to a MATE component that Camino's packaging applies downstream and never sends upstream. It is gated on Camino (`MATE_WM_NAME=Camino`, or an owner of `org.mate.Camino`), so it falls back to the component's normal behaviour under X11 MATE, the Wayfire session, or anything else that isn't Camino.
 _Avoid_: fork, upstream patch
+
+**Patched package**:
+An Arch package named `<pkgname>-camino` that builds a MATE component with its carried patches and replaces the stock package through `provides` and `conflicts`.
+_Avoid_: fork package, Camino build of MATE
 
 **Layer surface**:
 A shell surface that sits in a fixed layer of an output rather than among ordinary windows: the panel, caja's desktop, the wallpaper, notification bubbles and the screenshot area picker.

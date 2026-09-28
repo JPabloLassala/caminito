@@ -200,7 +200,7 @@ These add to 05's "later" list (the XWayland-only hints and session restore), wh
 
 ### Handed on
 
-- **Packaging:**
+- **Packaging** ([16](16-packaging.md): the schema is installed by the top-level Meson project, `camino-git` depends on marco, and the msd and mate-panel patches are gated on `MATE_WM_NAME=Camino`):
   - ship the `org.mate.Camino` schema;
   - the runtime dependency on Marco's schemas;
   - the carried msd xsettings-mirror patch;

@@ -81,7 +81,7 @@ Layer-shell, foreign-toplevel, ext-workspace, output management, data-control an
 - **[08](08-session-launch-model.md):** mate-session's `DISPLAY` overwrite and `windowmanager` override. Also exporting `MATE_WM_NAME`, `MATE_WM_KEYBINDINGS`, `XDG_CURRENT_DESKTOP=MATE` and `DISPLAY` before msd starts.
 - **[09](09-gsettings-mapping.md):** the layout key name, and the mapping of the peripherals and xkb keys.
 - **XWayland fog:** the EWMH desktop atoms (`_NET_NUMBER_OF_DESKTOPS` and so on), `_NET_WORKAREA` and `_NET_FRAME_EXTENTS` go over the same Camino-side X connection as bells and struts.
-- **Packaging:**
+- **Packaging** ([16](16-packaging.md): 1.29.x tags or pinned master commits; the capplet overrides are dropped in favour of an mcc patch that picks the X11 backend under Camino, and the touchpad patch is gated on Camino, not Wayland, [ADR 0011](../../../docs/adr/0011-patched-mate-packages-replace-stock-and-gate-on-camino.md); `camino-git` depends on marco):
   - the MATE baseline for the carried patches to mate-panel, mcc, msd and mate-screenshot
   - the `.desktop` overrides for the Mouse and Keyboard capplets
   - the runtime dependency on Marco's `org.mate.Marco.*` schemas (the Windows capplet aborts without them)
