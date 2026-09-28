@@ -50,6 +50,9 @@ build() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   cargo build --frozen --release
+  # makepkg keeps src/ between runs, and Meson keeps a build directory's flags when it's
+  # set up again, so each build starts it afresh.
+  rm -rf build
   arch-meson . build
   meson compile -C build
 }
