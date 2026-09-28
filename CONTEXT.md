@@ -40,3 +40,11 @@ _Avoid_: undecorated window (that means a window with no decorations at all)
 The GTK3 theme's colours that Marco themes refer to: the window background and text colours per state, plus the theme's named colours, for the default and dark variants.
 _Avoid_: colour scheme (that's the portal's light/dark preference)
 
+
+**Helper**:
+A process that Camino itself starts and supervises: Xwayland, the palette helper and the screen locker. MATE components aren't helpers, because mate-session starts and restarts them.
+_Avoid_: daemon, child (for MATE components)
+
+**Session**:
+A "MATE on Camino" login, from the display manager starting Camino to mate-session exiting. Camino is its parent process, and mate-session exiting ends it.
+_Avoid_: desktop session (ambiguous with the X11 MATE session)
