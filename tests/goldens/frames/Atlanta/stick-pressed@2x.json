@@ -1,0 +1,206 @@
+{
+  "theme" : "Atlanta",
+  "case" : "stick-pressed",
+  "scale" : 2,
+  "type" : "normal",
+  "flags" : [
+    "allows_delete",
+    "allows_menu",
+    "allows_minimize",
+    "allows_maximize",
+    "allows_vertical_resize",
+    "allows_horizontal_resize",
+    "has_focus",
+    "allows_shade",
+    "allows_move"
+  ],
+  "text_height" : 19,
+  "width" : 392,
+  "height" : 104,
+  "borders" : {
+    "visible" : {
+      "left" : 6,
+      "right" : 6,
+      "top" : 29,
+      "bottom" : 7
+    },
+    "invisible" : {
+      "left" : 10,
+      "right" : 10,
+      "top" : 10,
+      "bottom" : 10
+    },
+    "total" : {
+      "left" : 16,
+      "right" : 16,
+      "top" : 39,
+      "bottom" : 17
+    }
+  },
+  "title_rect" : {
+    "x" : 127,
+    "y" : 14,
+    "width" : 164,
+    "height" : 22
+  },
+  "titlebar_edges" : {
+    "left" : 6,
+    "right" : 6,
+    "top" : 4,
+    "bottom" : 3
+  },
+  "buttons" : {
+    "close" : {
+      "visible" : {
+        "x" : 349,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 349,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "maximize" : {
+      "visible" : {
+        "x" : 322,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 322,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "minimize" : {
+      "visible" : {
+        "x" : 295,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 295,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "menu" : {
+      "visible" : {
+        "x" : 16,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 16,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "shade" : {
+      "visible" : {
+        "x" : 43,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 43,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "above" : {
+      "visible" : {
+        "x" : 70,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 70,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "stick" : {
+      "visible" : {
+        "x" : 97,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 97,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    }
+  },
+  "button_backgrounds" : {
+    "left_left" : {
+      "x" : 16,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    },
+    "left_middle" : [
+      {
+        "x" : 43,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      {
+        "x" : 70,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    ],
+    "left_right" : {
+      "x" : 97,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    },
+    "right_left" : {
+      "x" : 295,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    },
+    "right_middle" : [
+      {
+        "x" : 322,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    ],
+    "right_right" : {
+      "x" : 349,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    }
+  },
+  "corner_radii" : {
+    "top_left" : 0,
+    "top_right" : 0,
+    "bottom_left" : 0,
+    "bottom_right" : 0
+  }
+}

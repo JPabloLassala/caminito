@@ -1,0 +1,209 @@
+{
+  "theme" : "TraditionalOk",
+  "case" : "unshade-prelight",
+  "scale" : 1,
+  "type" : "normal",
+  "flags" : [
+    "allows_delete",
+    "allows_menu",
+    "allows_minimize",
+    "allows_maximize",
+    "allows_vertical_resize",
+    "allows_horizontal_resize",
+    "has_focus",
+    "shaded",
+    "stuck",
+    "allows_shade",
+    "allows_move",
+    "above"
+  ],
+  "text_height" : 19,
+  "width" : 388,
+  "height" : 37,
+  "borders" : {
+    "visible" : {
+      "left" : 4,
+      "right" : 4,
+      "top" : 27,
+      "bottom" : 0
+    },
+    "invisible" : {
+      "left" : 10,
+      "right" : 10,
+      "top" : 10,
+      "bottom" : 0
+    },
+    "total" : {
+      "left" : 14,
+      "right" : 14,
+      "top" : 37,
+      "bottom" : 0
+    }
+  },
+  "title_rect" : {
+    "x" : 116,
+    "y" : 14,
+    "width" : 181,
+    "height" : 19
+  },
+  "titlebar_edges" : {
+    "left" : 4,
+    "right" : 4,
+    "top" : 4,
+    "bottom" : 4
+  },
+  "buttons" : {
+    "close" : {
+      "visible" : {
+        "x" : 350,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 350,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    },
+    "maximize" : {
+      "visible" : {
+        "x" : 325,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 325,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    },
+    "minimize" : {
+      "visible" : {
+        "x" : 300,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 300,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    },
+    "menu" : {
+      "visible" : {
+        "x" : 15,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 15,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    },
+    "unshade" : {
+      "visible" : {
+        "x" : 40,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 40,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    },
+    "unabove" : {
+      "visible" : {
+        "x" : 65,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 65,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    },
+    "unstick" : {
+      "visible" : {
+        "x" : 90,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      "clickable" : {
+        "x" : 90,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    }
+  },
+  "button_backgrounds" : {
+    "left_left" : {
+      "x" : 15,
+      "y" : 12,
+      "width" : 23,
+      "height" : 23
+    },
+    "left_middle" : [
+      {
+        "x" : 40,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      },
+      {
+        "x" : 65,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    ],
+    "left_right" : {
+      "x" : 90,
+      "y" : 12,
+      "width" : 23,
+      "height" : 23
+    },
+    "right_left" : {
+      "x" : 300,
+      "y" : 12,
+      "width" : 23,
+      "height" : 23
+    },
+    "right_middle" : [
+      {
+        "x" : 325,
+        "y" : 12,
+        "width" : 23,
+        "height" : 23
+      }
+    ],
+    "right_right" : {
+      "x" : 350,
+      "y" : 12,
+      "width" : 23,
+      "height" : 23
+    }
+  },
+  "corner_radii" : {
+    "top_left" : 5,
+    "top_right" : 5,
+    "bottom_left" : 5,
+    "bottom_right" : 5
+  }
+}

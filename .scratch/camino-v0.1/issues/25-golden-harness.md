@@ -1,7 +1,7 @@
 # Golden harness
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M2
 Blocked by:
 Map: [Camino v0.1](../map.md)
@@ -30,6 +30,19 @@ The reference side of the theme goldens ([14](14-development-and-testing-loop.md
 
 ## Acceptance criteria
 
-- [ ] The goldens, geometry files, palette colours and metadata for all ten themes are committed under `tests/goldens/`.
-- [ ] Running the regeneration script twice in a row leaves the tree unchanged.
-- [ ] `marco-frame-dump` builds with `meson setup` in its own directory, and nothing in the top-level Meson project or the PKGBUILD refers to it.
+- [x] The goldens, geometry files, palette colours and metadata for all ten themes are committed under `tests/goldens/`.
+- [x] Running the regeneration script twice in a row leaves the tree unchanged.
+- [x] `marco-frame-dump` builds with `meson setup` in its own directory, and nothing in the top-level Meson project or the PKGBUILD refers to it.
+
+## Notes
+
+- **The cases.** "Each button" is read as every button a layout can name except `appmenu`, which Marco never shows in practice (26). The base layout is Marco's default, `menu:minimize,maximize,close`. The button cases use `menu,shade,above,stick:minimize,maximize,close`. Cases that set `shaded`, `above` and `stuck` draw the `unshade`, `unabove` and `unstick` buttons in all three states, and two maximised cases put the maximize button (which Marco draws as unmaximize) in prelight and pressed. That makes 34 cases, 680 images and 680 geometry files. Arc's title ellipsizes in the all-buttons cases at scale 1, so [27](27-frame-drawing.md)'s ellipsizing is covered too.
+- **What an image holds.** It's the whole frame as `meta_theme_draw_frame` draws it on a transparent surface, client area included. `frames.c` cuts out the client area and rounds the corners with an X shape afterwards, and the geometry file records the radii for that.
+- **Geometry is identical at scales 1 and 2**, since it's in logical pixels and the text height doesn't change with the scale. The three text heights (12, 16 and 19) come from the themes' `title_scale`.
+- **Pinned inputs beyond the ticket's.** The pango context's language is set to `en-us` explicitly, where Marco takes the locale's. GTK 3.24.52 turns hint metrics on, so `cases.json` records `hint_metrics: on`. The dump checks the antialiasing, hint style, hint metrics, resolution and language the title's pango context actually has, and fails if any differs from `cases.json`. It doesn't check the subpixel order, since grayscale antialiasing ignores it.
+- **The font** is Noto Sans Bold 2.015 (OFL-1.1), since MATE's default title font is `Sans Bold 10`.
+- **The palette** is rendered through Marco's own `meta_color_spec_render` (`gtk:bg[STATE]` and `gtk:fg[STATE]`), so the `background` class and the transparent-background fallback are Marco's. The named colours are the 24 names the ten themes' `gtk:custom` specs use. Adwaita defines only some of them; the rest are `null`, where Marco uses the spec's fallback. [28](28-palette-helper.md)'s helper has to be given the same names to compare. Because the colours go through Marco's renderer, a state whose `background-color` is transparent is recorded with Marco's fallback, the background of a fresh toplevel window (`theme.c`'s `get_background_color`). No Adwaita state is transparent today, but a helper that reads raw `background-color` would only disagree in that case, so 28 should apply the same fallback.
+- **Theme files.** Marco loads all ten themes from `tests/themes/` (`XDG_DATA_HOME`), so both sides read the same files. As [24](24-theme-parser-and-model.md) asked, the script checks that the installed marco and mate-themes are the versions `tests/themes/README.md` records, and that the seven stock themes there are identical to the installed ones.
+- **The environment** is scrubbed with `env -i`: private home, config and cache directories, so no `settings.ini` or `gtk.css` reaches GTK. The only system data directories it sees are `glycin-loaders` and `mime`, which gdk-pixbuf 2.44 needs to decode any image, theme images included.
+- **The style context** is a fresh one per theme, where Marco keeps one for the life of its frames. That makes no difference: Marco adds the `background` class while it renders a `gtk:` colour, but every draw op saves and restores the context around itself (`theme.c:3929`, `4435`), so the class never outlives the op.
+- Regenerating runs on Arch only (it reads package versions with `pacman -Q`). It needs `meson`, `xorg-server-xvfb` (for `xvfb-run`), `json-glib`, `python3`, and the network, to resolve Marco's tag to a commit. It takes about 20 seconds.

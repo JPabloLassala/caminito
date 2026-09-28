@@ -1,0 +1,144 @@
+{
+  "theme" : "Arc",
+  "case" : "border",
+  "scale" : 1,
+  "type" : "border",
+  "flags" : [
+    "allows_delete",
+    "allows_menu",
+    "allows_minimize",
+    "allows_maximize",
+    "allows_vertical_resize",
+    "allows_horizontal_resize",
+    "has_focus",
+    "allows_shade",
+    "allows_move"
+  ],
+  "text_height" : 19,
+  "width" : 382,
+  "height" : 70,
+  "borders" : {
+    "visible" : {
+      "left" : 1,
+      "right" : 1,
+      "top" : 1,
+      "bottom" : 1
+    },
+    "invisible" : {
+      "left" : 10,
+      "right" : 10,
+      "top" : 10,
+      "bottom" : 10
+    },
+    "total" : {
+      "left" : 11,
+      "right" : 11,
+      "top" : 11,
+      "bottom" : 11
+    }
+  },
+  "title_rect" : {
+    "x" : 52,
+    "y" : 10,
+    "width" : 218,
+    "height" : 1
+  },
+  "titlebar_edges" : {
+    "left" : 2,
+    "right" : 2,
+    "top" : 0,
+    "bottom" : 0
+  },
+  "buttons" : {
+    "close" : {
+      "visible" : {
+        "x" : 340,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      },
+      "clickable" : {
+        "x" : 340,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      }
+    },
+    "maximize" : {
+      "visible" : {
+        "x" : 310,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      },
+      "clickable" : {
+        "x" : 310,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      }
+    },
+    "minimize" : {
+      "visible" : {
+        "x" : 280,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      },
+      "clickable" : {
+        "x" : 280,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      }
+    },
+    "menu" : {
+      "visible" : {
+        "x" : 12,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      },
+      "clickable" : {
+        "x" : 12,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      }
+    }
+  },
+  "button_backgrounds" : {
+    "left_single" : {
+      "x" : 12,
+      "y" : 10,
+      "width" : 30,
+      "height" : 0
+    },
+    "right_left" : {
+      "x" : 280,
+      "y" : 10,
+      "width" : 30,
+      "height" : 0
+    },
+    "right_middle" : [
+      {
+        "x" : 310,
+        "y" : 10,
+        "width" : 30,
+        "height" : 0
+      }
+    ],
+    "right_right" : {
+      "x" : 340,
+      "y" : 10,
+      "width" : 30,
+      "height" : 0
+    }
+  },
+  "corner_radii" : {
+    "top_left" : 0,
+    "top_right" : 0,
+    "bottom_left" : 0,
+    "bottom_right" : 0
+  }
+}

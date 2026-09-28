@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Rewrites the theme goldens in tests/goldens/ with Marco's own rendering (14, ADR 0009):
+# builds tools/marco-frame-dump against the installed libmarco-private and runs it under
+# xvfb-run at each scale, then records what rendered them in metadata.json. Run it when
+# Marco is bumped or a case is added; CI only reads what it wrote.
+#
+#   tools/regenerate-goldens
+#
+# It needs Arch's marco and mate-themes at the versions tests/themes/README.md records,
+# xorg-server-xvfb, meson, json-glib and python, and the network, to look up Marco's
+# commit.
+set -euo pipefail
+
+root=$(realpath "$(dirname "$(realpath "$0")")/..")
+goldens=$root/tests/goldens
+themes=$root/tests/themes
+
+die() {
+  echo "regenerate-goldens: $*" >&2
+  exit 1
+}
+
+# Marco loads the vendored copies (XDG_DATA_HOME below), so the stock ones have to be what
+# the installed packages ship, or the goldens would record a Marco nobody runs.
+package_version() {
+  pacman -Q "$1" | cut -d' ' -f2
+}
+marco_package=$(package_version marco)
+mate_themes_package=$(package_version mate-themes)
+grep -qF "\`marco $marco_package\`" "$themes/README.md" ||
+  die "marco $marco_package is installed, but tests/themes/README.md records another version"
+grep -qF "\`mate-themes $mate_themes_package\`" "$themes/README.md" ||
+  die "mate-themes $mate_themes_package is installed, but tests/themes/README.md records another version"
+for theme in ClearlooksRe Atlanta eOS Menta HighContrast BlackMATE TraditionalOk; do
+  diff -r "/usr/share/themes/$theme/metacity-1" "$themes/$theme/metacity-1" >/dev/null ||
+    die "tests/themes/$theme differs from the installed /usr/share/themes/$theme"
+done
+
+marco_version=$(pkg-config --modversion libmarco-private)
+marco_commit=$(git ls-remote --tags https://github.com/mate-desktop/marco.git \
+  "v$marco_version" "v$marco_version^{}" | sort -k2 | tail -n1 | cut -f1)
+[[ -n $marco_commit ]] || die "no v$marco_version tag in mate-desktop/marco"
+
+scratch=$(mktemp -d -t camino-goldens.XXXXXX)
+trap 'rm -rf "$scratch"' EXIT
+
+meson setup "$scratch/build" "$root/tools/marco-frame-dump" >/dev/null
+meson compile -C "$scratch/build" >/dev/null
+dump=$scratch/build/marco-frame-dump
+
+# Nothing from this machine's desktop reaches Marco: no settings, CSS or themes from the
+# home directory, and only the vendored font. The only system data directories it sees are
+# the two gdk-pixbuf needs to decode images, through glycin.
+mkdir -p "$scratch"/{home,config,cache,data}
+ln -s /usr/share/glycin-loaders /usr/share/mime "$scratch/data/"
+run_dump() {
+  local scale=$1
+  shift
+  env -i \
+    PATH="$PATH" \
+    HOME="$scratch/home" \
+    TMPDIR="$scratch" \
+    XDG_CONFIG_HOME="$scratch/config" \
+    XDG_CACHE_HOME="$scratch/cache" \
+    XDG_DATA_HOME="$root/tests" \
+    XDG_DATA_DIRS="$scratch/data" \
+    FONTCONFIG_FILE="$root/tests/fonts/fonts.conf" \
+    LANG=C.UTF-8 \
+    GDK_BACKEND=x11 \
+    GDK_SCALE="$scale" \
+    GSETTINGS_BACKEND=memory \
+    NO_AT_BRIDGE=1 \
+    xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" "$dump" "$@"
+}
+
+rm -rf "$goldens/frames" "$goldens/palette.json" "$goldens/metadata.json"
+
+for scale in $(python3 -c 'import json, sys; print(*json.load(sys.stdin)["scales"])' <"$goldens/cases.json"); do
+  run_dump "$scale" frames "$goldens/cases.json" "$goldens/frames"
+done
+
+# GTK can't list a theme's @define-color table, so the palette looks up every name the
+# golden themes' gtk:custom colours use.
+mapfile -t names < <(grep -ohE 'gtk:custom\([^,)]*' "$themes"/*/metacity-1/*.xml |
+  sed 's/^gtk:custom(//' | LC_ALL=C sort -u)
+run_dump 1 palette "$goldens/cases.json" "$goldens/palette.json" "${names[@]}"
+
+MARCO_VERSION=$marco_version \
+MARCO_COMMIT=$marco_commit \
+MATE_THEMES_VERSION=${mate_themes_package%-*} \
+PACKAGES=$(pacman -Q marco mate-themes gtk3 pango cairo harfbuzz freetype2 fontconfig \
+  gdk-pixbuf2 librsvg glib2) \
+python3 - "$goldens" <<'EOF'
+import json, os, sys
+
+goldens = sys.argv[1]
+with open(os.path.join(goldens, "cases.json")) as f:
+    cases = json.load(f)
+metadata = {
+    "marco_version": os.environ["MARCO_VERSION"],
+    "marco_commit": os.environ["MARCO_COMMIT"],
+    "mate_themes_version": os.environ["MATE_THEMES_VERSION"],
+    "gtk_theme": cases["gtk_theme"],
+    "packages": dict(line.split(" ", 1) for line in os.environ["PACKAGES"].splitlines()),
+}
+with open(os.path.join(goldens, "metadata.json"), "w") as f:
+    json.dump(metadata, f, indent=2)
+    f.write("\n")
+EOF
+
+echo "regenerate-goldens: wrote $goldens" >&2

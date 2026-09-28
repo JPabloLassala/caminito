@@ -1,0 +1,145 @@
+{
+  "theme" : "Atlanta",
+  "case" : "maximized",
+  "scale" : 2,
+  "type" : "normal",
+  "flags" : [
+    "allows_delete",
+    "allows_menu",
+    "allows_minimize",
+    "allows_maximize",
+    "allows_vertical_resize",
+    "allows_horizontal_resize",
+    "has_focus",
+    "maximized",
+    "allows_shade",
+    "allows_move"
+  ],
+  "text_height" : 19,
+  "width" : 380,
+  "height" : 97,
+  "borders" : {
+    "visible" : {
+      "left" : 0,
+      "right" : 0,
+      "top" : 29,
+      "bottom" : 0
+    },
+    "invisible" : {
+      "left" : 10,
+      "right" : 10,
+      "top" : 10,
+      "bottom" : 10
+    },
+    "total" : {
+      "left" : 10,
+      "right" : 10,
+      "top" : 39,
+      "bottom" : 10
+    }
+  },
+  "title_rect" : {
+    "x" : 40,
+    "y" : 14,
+    "width" : 245,
+    "height" : 22
+  },
+  "titlebar_edges" : {
+    "left" : 0,
+    "right" : 0,
+    "top" : 4,
+    "bottom" : 3
+  },
+  "buttons" : {
+    "close" : {
+      "visible" : {
+        "x" : 343,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 343,
+        "y" : 0,
+        "width" : 27,
+        "height" : 38
+      }
+    },
+    "maximize" : {
+      "visible" : {
+        "x" : 316,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 316,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "minimize" : {
+      "visible" : {
+        "x" : 289,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 289,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    },
+    "menu" : {
+      "visible" : {
+        "x" : 10,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      },
+      "clickable" : {
+        "x" : 0,
+        "y" : 0,
+        "width" : 27,
+        "height" : 38
+      }
+    }
+  },
+  "button_backgrounds" : {
+    "left_single" : {
+      "x" : 10,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    },
+    "right_left" : {
+      "x" : 289,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    },
+    "right_middle" : [
+      {
+        "x" : 316,
+        "y" : 11,
+        "width" : 27,
+        "height" : 27
+      }
+    ],
+    "right_right" : {
+      "x" : 343,
+      "y" : 11,
+      "width" : 27,
+      "height" : 27
+    }
+  },
+  "corner_radii" : {
+    "top_left" : 0,
+    "top_right" : 0,
+    "bottom_left" : 0,
+    "bottom_right" : 0
+  }
+}
