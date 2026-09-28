@@ -87,3 +87,11 @@ _Avoid_: key logger, a11y grab
 **AccessX**:
 The keyboard accessibility features from `org.mate.accessibility-keyboard`: sticky, slow, bounce, toggle and mouse keys. On Wayland Camino implements them in its keyboard path. On X11 the X server does.
 _Avoid_: a11y keys, XKB controls (that's the X11 mechanism)
+
+**Nested run**:
+Camino running as a window inside another desktop, on a private session bus. A nested run may start mate-session, but it isn't a Session: no display manager, no logind session of its own, and no systemd environment.
+_Avoid_: nested session, dev session
+
+**Golden**:
+A reference rendering of one frame case (theme, frame type, state, button states, scale) produced by Marco's own C engine and committed to the repo, with its geometry. Camino's theme engine is correct when it matches the goldens.
+_Avoid_: snapshot (that's a text assertion in the integration tests), reference image

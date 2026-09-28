@@ -128,6 +128,6 @@ XWayland windows are ordinary Camino windows. The policy is the same as for nati
 
 - **12 Screen locking:** override-redirect windows sit below the lock, and Camino refuses and releases `zwp_xwayland_keyboard_grab_v1` grabs while locked ([#1714](https://github.com/Smithay/smithay/issues/1714)).
 - **13 HiDPI:** the X11 scale value (recommended: largest integer output scale) and its interaction with `window-scaling-factor`. The mechanism is fixed above. ([13](13-hidpi-and-accessibility-scope.md) took the recommendation.)
-- **14 Development and testing loop:** verify at runtime that `-terminate` doesn't fire while Camino is attached, that X11 clipboard contents survive the app quitting (msd's data-control manager), and exercise the restart path under bare `camino`.
+- **14 Development and testing loop:** verify at runtime that `-terminate` doesn't fire while Camino is attached, that X11 clipboard contents survive the app quitting (msd's data-control manager), and exercise the restart path under bare `camino`. ([14](14-development-and-testing-loop.md): `-terminate` and the restart path are X11-tier tests; clipboard persistence is a checklist item.)
 - **15 Crate and module architecture:** the X11 side is two parts, Smithay's `XwmHandler` policy and Camino's X connection (x11rb), sharing Camino's window state.
 - **16 Packaging:** the carried msd patch grows (skip the XSETTINGS claim under Camino). The patched msd is a hard dependency of the session package: without it, a Camino session loses the GNOME mirror (ADR 0006).

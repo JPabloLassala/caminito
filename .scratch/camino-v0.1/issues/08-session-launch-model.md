@@ -51,7 +51,7 @@ Camino exports these variables before it spawns anything:
 | `XCURSOR_THEME`, `XCURSOR_SIZE` | read once at start-up from `org.mate.peripherals-mouse`, for non-GTK clients and Xwayland |
 
 - **Nothing forces toolkit backends.** Qt and SDL choose their own; there's no `QT_QPA_PLATFORM`.
-- **Where the variables go.** Camino sets them in its own environment and pushes them into the D-Bus activation environment (`UpdateActivationEnvironment`) and the systemd user manager (`SetEnvironment`). It waits for both calls to finish before spawning.
+- **Where the variables go.** Camino sets them in its own environment and pushes them into the D-Bus activation environment (`UpdateActivationEnvironment`) and the systemd user manager (`SetEnvironment`). It waits for both calls to finish before spawning. ([14](14-development-and-testing-loop.md): when `org.freedesktop.systemd1` isn't on Camino's bus, as in nested runs under `dbus-run-session`, the systemd part is skipped and logged.)
 - **mate-session exports again.** At start-up it exports its whole environment to both places (`gsm-util.c:518-661`). Camino's own export exists for what runs before mate-session (the palette helper, and bare `camino`) and so Camino knows what to clean up.
 - **On exit,** Camino unsets `WAYLAND_DISPLAY`, `DISPLAY`, `MATE_WM_*` and `XCURSOR_*` in the systemd user manager, so they can't leak into the next login.
 - **No `graphical-session.target` in v0.1.** Nothing in the v0.1 scope is `PartOf=` it. It can be added later, as niri and cosmic do.
