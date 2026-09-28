@@ -11,8 +11,9 @@ runs:
       # dlopens EGL, Wayland and X11 at run time, so it links nothing new. wayland:
       # that dlopen mode reaches camino-test-client too, so the fixture's clients
       # load libwayland-client. dbus: dbus-run-session gives camino's tests a private
-      # bus (14).
-      run: pacman -Syu --noconfirm --needed gcc rustup cargo-deny libxkbcommon pixman wayland dbus
+      # bus (14). pango: camino-theme lays out titles with it, and pkgconf finds it and
+      # cairo for their -sys crates.
+      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango
 
     - name: Install Rust toolchain
       shell: bash

@@ -1,11 +1,12 @@
 //! Position and size expressions, parsed as Marco does at load time (`theme.c:1914-3125`).
 //!
-//! Evaluating them against a frame is the geometry ticket's job (26). Here they are
-//! tokenized, theme constants are substituted, and an expression with no variables is
-//! folded to its value, which is what `meta_draw_spec_new` does.
+//! When a theme loads they are tokenized, theme constants are substituted, and an
+//! expression with no variables is folded to its value, which is what
+//! `meta_draw_spec_new` does. Drawing evaluates the rest against an [`ExprEnv`].
 
 use std::collections::HashMap;
 
+use crate::geometry::Rect;
 use crate::number::strtod_prefix;
 
 /// A theme's `<constant>`s, which Marco types by their value: a number with a point is a
@@ -108,6 +109,97 @@ impl Operator {
             Operator::Add | Operator::Subtract => 1,
             Operator::Max | Operator::Min => 0,
         }
+    }
+}
+
+/// The values of an expression's variables where it's drawn (Marco's
+/// `MetaPositionExprEnv`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExprEnv {
+    /// The rectangle being drawn into: positions are offset by its origin, and it
+    /// gives `width` and `height`.
+    pub rect: Rect,
+    /// `object_width`, which Marco defines only for `image` and `icon`.
+    pub object_width: Option<i32>,
+    /// `object_height`, which Marco defines only for `image` and `icon`.
+    pub object_height: Option<i32>,
+    pub left_width: i32,
+    pub right_width: i32,
+    pub top_height: i32,
+    pub bottom_height: i32,
+    pub mini_icon_width: i32,
+    pub mini_icon_height: i32,
+    pub icon_width: i32,
+    pub icon_height: i32,
+    pub title_width: i32,
+    pub title_height: i32,
+    pub frame_x_center: i32,
+    pub frame_y_center: i32,
+}
+
+impl ExprEnv {
+    /// Marco's `pos_eval_get_variable`.
+    fn get(&self, variable: Variable) -> Result<i32, String> {
+        Ok(match variable {
+            Variable::Width => self.rect.width,
+            Variable::Height => self.rect.height,
+            Variable::ObjectWidth => self
+                .object_width
+                .ok_or_else(|| unknown_variable("object_width"))?,
+            Variable::ObjectHeight => self
+                .object_height
+                .ok_or_else(|| unknown_variable("object_height"))?,
+            Variable::LeftWidth => self.left_width,
+            Variable::RightWidth => self.right_width,
+            Variable::TopHeight => self.top_height,
+            Variable::BottomHeight => self.bottom_height,
+            Variable::MiniIconWidth => self.mini_icon_width,
+            Variable::MiniIconHeight => self.mini_icon_height,
+            Variable::IconWidth => self.icon_width,
+            Variable::IconHeight => self.icon_height,
+            Variable::TitleWidth => self.title_width,
+            Variable::TitleHeight => self.title_height,
+            Variable::FrameXCenter => self.frame_x_center,
+            Variable::FrameYCenter => self.frame_y_center,
+        })
+    }
+}
+
+fn unknown_variable(name: &str) -> String {
+    format!("Coordinate expression had unknown variable or constant \"{name}\"")
+}
+
+impl Expr {
+    /// The expression's value in pixels (Marco's `pos_eval`), or the error Marco
+    /// reports.
+    pub fn eval(&self, env: &ExprEnv) -> Result<i32, String> {
+        self.value(env).map(Value::to_int)
+    }
+
+    fn value(&self, env: &ExprEnv) -> Result<Value, String> {
+        match self {
+            Expr::Int(value) => Ok(Value::Int(*value)),
+            Expr::Double(value) => Ok(Value::Double(*value)),
+            Expr::Variable(variable) => env.get(*variable).map(Value::Int),
+            Expr::Binary(a, op, b) => apply(*op, a.value(env)?, b.value(env)?),
+            Expr::Invalid(message) => Err(message.clone()),
+        }
+    }
+
+    /// An x position, offset by the rectangle's (`parse_x_position_unchecked`). Marco
+    /// draws an expression it can't evaluate at 0.
+    pub fn x(&self, env: &ExprEnv) -> i32 {
+        self.eval(env).map_or(0, |value| env.rect.x + value)
+    }
+
+    /// A y position, offset by the rectangle's (`parse_y_position_unchecked`).
+    pub fn y(&self, env: &ExprEnv) -> i32 {
+        self.eval(env).map_or(0, |value| env.rect.y + value)
+    }
+
+    /// A size, at least 1 (`parse_size_unchecked`). One Marco can't evaluate is 0.
+    pub fn size(&self, env: &ExprEnv) -> i32 {
+        self.eval(env).map_or(0, |value| value.max(1))
     }
 }
 
@@ -360,11 +452,7 @@ fn build(tokens: &[Token]) -> Result<Expr, String> {
                 }
                 Token::Name(name) => match Variable::from_name(name) {
                     Some(variable) => items.push(Item::Operand(Expr::Variable(variable))),
-                    None => {
-                        return Err(format!(
-                            "Coordinate expression had unknown variable or constant \"{name}\""
-                        ));
-                    }
+                    None => return Err(unknown_variable(name)),
                 },
                 Token::Operator(op) => items.push(Item::Operator(*op)),
             }
@@ -605,6 +693,164 @@ mod tests {
         assert!(invalid("Undefined + 1").contains("\"Undefined\""));
         assert!(invalid("4 / (2 - 2)").contains("division by zero"));
         assert!(invalid("5 % 2.0").contains("mod operator"));
+    }
+
+    /// An environment where every variable has its own value.
+    fn env() -> ExprEnv {
+        ExprEnv {
+            rect: Rect {
+                x: 1000,
+                y: 2000,
+                width: 100,
+                height: 20,
+            },
+            object_width: Some(48),
+            object_height: Some(24),
+            left_width: 3,
+            right_width: 4,
+            top_height: 30,
+            bottom_height: 5,
+            mini_icon_width: 16,
+            mini_icon_height: 15,
+            icon_width: 49,
+            icon_height: 47,
+            title_width: 120,
+            title_height: 19,
+            frame_x_center: 190,
+            frame_y_center: 50,
+        }
+    }
+
+    fn eval(text: &str) -> Result<i32, String> {
+        parse(text).eval(&env())
+    }
+
+    #[test]
+    fn each_variable_evaluates_to_its_value_in_the_environment() {
+        for (name, value) in [
+            ("width", 100),
+            ("height", 20),
+            ("object_width", 48),
+            ("object_height", 24),
+            ("left_width", 3),
+            ("right_width", 4),
+            ("top_height", 30),
+            ("bottom_height", 5),
+            ("mini_icon_width", 16),
+            ("mini_icon_height", 15),
+            ("icon_width", 49),
+            ("icon_height", 47),
+            ("title_width", 120),
+            ("title_height", 19),
+            ("frame_x_center", 190),
+            ("frame_y_center", 50),
+        ] {
+            assert_eq!(eval(name), Ok(value), "{name}");
+        }
+    }
+
+    // Marco defines them only while it draws an image or an icon.
+    #[test]
+    fn object_size_outside_an_image_is_an_unknown_variable() {
+        let env = ExprEnv {
+            object_width: None,
+            object_height: None,
+            ..env()
+        };
+        for name in ["object_width", "object_height"] {
+            let error = parse(name).eval(&env).unwrap_err();
+            assert!(error.contains(&format!("\"{name}\"")), "{error}");
+        }
+    }
+
+    #[test]
+    fn integer_operators() {
+        assert_eq!(eval("width + 7"), Ok(107));
+        assert_eq!(eval("width - 7"), Ok(93));
+        assert_eq!(eval("width * 3"), Ok(300));
+        assert_eq!(eval("width / 3"), Ok(33));
+        assert_eq!(eval("width % 7"), Ok(2));
+        assert_eq!(eval("width `max` 150"), Ok(150));
+        assert_eq!(eval("width `max` 50"), Ok(100));
+        assert_eq!(eval("width `min` 150"), Ok(100));
+        assert_eq!(eval("width `min` 50"), Ok(50));
+    }
+
+    // C's integer division and remainder round towards zero.
+    #[test]
+    fn integer_division_truncates_towards_zero() {
+        assert_eq!(eval("(height - 27) / 2"), Ok(-3));
+        assert_eq!(eval("(height - 27) % 2"), Ok(-1));
+    }
+
+    #[test]
+    fn a_float_makes_the_operation_floating_point() {
+        assert_eq!(eval("width * 0.5 + 0.5"), Ok(50));
+        assert_eq!(eval("width / 3.0 * 3"), Ok(100));
+        assert_eq!(eval("height - 0.5 - 0.5"), Ok(19));
+        assert_eq!(eval("width `max` 100.9"), Ok(100));
+        assert_eq!(eval("width `min` 99.5"), Ok(99));
+    }
+
+    // Marco converts a floating-point result to pixels with a C cast.
+    #[test]
+    fn a_floating_point_result_truncates_towards_zero() {
+        assert_eq!(eval("width * 0.019"), Ok(1));
+        assert_eq!(eval("(height - 21) * 0.9"), Ok(0));
+        assert_eq!(eval("(height - 22) * 0.9"), Ok(-1));
+    }
+
+    #[test]
+    fn precedence_and_parentheses_apply_when_evaluating() {
+        assert_eq!(eval("width - height * 2"), Ok(60));
+        assert_eq!(eval("(width - height) * 2"), Ok(160));
+        assert_eq!(eval("width - 10 `max` height + 5"), Ok(90));
+        assert_eq!(eval("width - (10 `max` height) + 5"), Ok(85));
+    }
+
+    #[test]
+    fn evaluation_errors() {
+        assert!(eval("width / 0").unwrap_err().contains("division by zero"));
+        assert!(eval("width % 0").unwrap_err().contains("division by zero"));
+        assert!(
+            eval("width / 0.0")
+                .unwrap_err()
+                .contains("division by zero")
+        );
+        assert!(eval("width % 2.0").unwrap_err().contains("mod operator"));
+        assert!(
+            eval("width + Undefined")
+                .unwrap_err()
+                .contains("\"Undefined\"")
+        );
+    }
+
+    #[test]
+    fn a_constant_ignores_the_environment() {
+        assert_eq!(eval("ButtonWidth / 2"), Ok(9));
+    }
+
+    #[test]
+    fn a_position_is_offset_by_the_rectangle() {
+        assert_eq!(parse("width - 1").x(&env()), 1099);
+        assert_eq!(parse("height / 2").y(&env()), 2010);
+        assert_eq!(parse("3").x(&env()), 1003);
+    }
+
+    #[test]
+    fn a_size_is_at_least_one() {
+        assert_eq!(parse("width - 1").size(&env()), 99);
+        assert_eq!(parse("width - 100").size(&env()), 1);
+        assert_eq!(parse("0 - 5").size(&env()), 1);
+    }
+
+    // Marco draws with 0, not the rectangle's origin or 1, when it can't evaluate.
+    #[test]
+    fn a_failed_expression_is_zero_for_positions_and_sizes() {
+        assert_eq!(parse("width / 0").x(&env()), 0);
+        assert_eq!(parse("width / 0").y(&env()), 0);
+        assert_eq!(parse("width / 0").size(&env()), 0);
+        assert_eq!(parse("Undefined").size(&env()), 0);
     }
 
     #[test]

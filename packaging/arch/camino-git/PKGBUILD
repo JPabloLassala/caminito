@@ -11,7 +11,8 @@ license=(GPL-2.0-or-later)
 # Only what the binary links (16). winit dlopens libwayland-client and libEGL, which the
 # desktop a nested run sits inside always has; M4 and M5 add the real dependencies.
 depends=(glibc libgcc libxkbcommon)
-makedepends=(cargo git meson)
+# camino-theme builds and tests against pango, which the binary doesn't link yet (30).
+makedepends=(cargo git meson pango)
 # camino's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).
 checkdepends=(dbus pixman wayland)

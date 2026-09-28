@@ -6,6 +6,9 @@ ADR 0009). `tools/regenerate-goldens` writes everything here except `cases.json`
 `camino-theme/tests/golden_files.rs` checks that none is missing or left over. Regenerate when Marco is bumped or a case is
 added, and commit the result.
 
+`camino-theme/tests/goldens.rs` is the comparison: it runs Camino's theme engine on every
+case with the same pinned inputs, and its geometry has to match Marco's exactly.
+
 ## Inputs
 
 **`cases.json`** is the case list both sides read. Its top level pins everything a frame's

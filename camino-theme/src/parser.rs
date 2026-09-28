@@ -163,7 +163,7 @@ impl GeometryDraft {
         }
     }
 
-    fn from_parent(parent: &FrameGeometry) -> Self {
+    fn from_parent(parent: &FrameLayout) -> Self {
         let (sizing, button_aspect, button_width, button_height) = match parent.button_sizing {
             ButtonSizing::Aspect(aspect) => (Sizing::Aspect, aspect, None, None),
             ButtonSizing::Fixed { width, height } => {
@@ -196,7 +196,7 @@ impl GeometryDraft {
     }
 
     /// Marco's `meta_frame_layout_validate`, in its order.
-    fn validate(self) -> Parse<FrameGeometry> {
+    fn validate(self) -> Parse<FrameLayout> {
         fn value(value: Option<i32>, name: &str) -> Parse<i32> {
             value.ok_or_else(|| {
                 Failure::Invalid(format!(
@@ -241,7 +241,7 @@ impl GeometryDraft {
             bottom_left_radius,
             bottom_right_radius,
         ] = self.radii;
-        Ok(FrameGeometry {
+        Ok(FrameLayout {
             left_width,
             right_width,
             bottom_height,
@@ -290,7 +290,7 @@ struct ThemeDraft {
     format_version: u32,
     info: InfoDraft,
     constants: Constants,
-    geometries: HashMap<String, Arc<FrameGeometry>>,
+    geometries: HashMap<String, Arc<FrameLayout>>,
     draw_ops: HashMap<String, Arc<DrawOpList>>,
     styles: HashMap<String, Arc<FrameStyle>>,
     style_sets: HashMap<String, Arc<FrameStyleSet>>,

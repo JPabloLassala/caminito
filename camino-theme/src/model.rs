@@ -22,7 +22,7 @@ pub struct Theme {
     pub format_version: u32,
     pub info: ThemeInfo,
     pub constants: Constants,
-    pub geometries: HashMap<String, Arc<FrameGeometry>>,
+    pub geometries: HashMap<String, Arc<FrameLayout>>,
     pub draw_ops: HashMap<String, Arc<DrawOpList>>,
     pub styles: HashMap<String, Arc<FrameStyle>>,
     pub style_sets: HashMap<String, Arc<FrameStyleSet>>,
@@ -68,9 +68,9 @@ pub struct ThemeInfo {
     pub description: String,
 }
 
-/// A `<frame_geometry>` (Marco's `MetaFrameLayout`), with every field validated.
+/// A `<frame_geometry>`, Marco's `MetaFrameLayout`, with every field validated.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FrameGeometry {
+pub struct FrameLayout {
     pub left_width: i32,
     pub right_width: i32,
     pub bottom_height: i32,
@@ -262,7 +262,7 @@ pub enum GtkArrow {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrameStyle {
     pub parent: Option<Arc<FrameStyle>>,
-    pub geometry: Arc<FrameGeometry>,
+    pub geometry: Arc<FrameLayout>,
     /// `background`, which no surveyed theme uses.
     pub window_background: Option<ColorSpec>,
     /// `alpha`, 255 unless the theme sets it with a background.

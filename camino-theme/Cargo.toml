@@ -5,6 +5,15 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+pango = "0.22.9"
+pangocairo = "0.22.9"
+
 [dev-dependencies]
 serde_json = "1.0.151"
 tempfile = "3.27.0"
+
+# Its own main sets FONTCONFIG_FILE before any thread starts.
+[[test]]
+name = "goldens"
+harness = false
