@@ -19,10 +19,22 @@ fn main() -> ExitCode {
     match camino::run_nested() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            tracing::error!("{err}");
+            tracing::error!("{}", report(err.as_ref()));
             ExitCode::FAILURE
         }
     }
+}
+
+/// An error and its chain of causes, which Smithay's errors leave out of their messages.
+fn report(err: &dyn std::error::Error) -> String {
+    let mut report = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        report.push_str(": ");
+        report.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    report
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -65,5 +77,30 @@ mod tests {
     #[test]
     fn unknown_arguments_are_refused() {
         assert!(parse(&["--nested"]).is_err());
+    }
+
+    #[derive(Debug)]
+    struct Wrapped(std::io::Error);
+
+    impl std::fmt::Display for Wrapped {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("failed to initialize an event loop")
+        }
+    }
+
+    impl std::error::Error for Wrapped {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    #[test]
+    fn errors_are_reported_with_their_causes() {
+        let cause = std::io::Error::other("no Wayland or X11 display");
+        let err = Wrapped(cause);
+        assert_eq!(
+            report(&err),
+            "failed to initialize an event loop: no Wayland or X11 display"
+        );
     }
 }
