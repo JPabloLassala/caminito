@@ -190,7 +190,7 @@ This extends 14's CI.
 
 ### Handed on
 
-- **17 Milestone slicing:**
+- **17 Milestone slicing** ([17](17-milestone-slicing.md): `camino-git` and its CI job in M1; mate-session, mate-panel and msd packages with the weekly job in M5; mcc and mate-utils in M6; all six installed, with X11 MATE working, is part of v0.1 done):
   - The first milestone includes the top-level `meson.build` and `camino-git`'s PKGBUILD, so the developer runs a packaged Camino from the start.
   - The five patched packages come with the milestone that first needs the full session. mate-session's patch is needed first, for `camino --session`.
   - The PKGBUILD CI job arrives with the first package, and the weekly patch-on-head job with the first patch.

@@ -205,4 +205,4 @@ None of them is updated inline from a handler. Handlers change policy state and 
   - the Cargo workspace plus three Meson projects: `helpers/camino-gtk-palette`, `helpers/camino-locker` and `tools/marco-frame-dump`, the last never packaged;
   - `resources/` holds the `org.mate.Camino` schema;
   - the headless backend and pixman renderer aren't in the release build.
-- **17 Milestone slicing:** the first milestone creates the workspace, the four crates, the `State` and `Backend` skeleton with `Headless`, `PolicyWindow` with `TestWindow`, the refresh pass, and the CI from 14.
+- **17 Milestone slicing:** the first milestone creates the workspace, the four crates, the `State` and `Backend` skeleton with `Headless`, `PolicyWindow` with `TestWindow`, the refresh pass, and the CI from 14. ([17](17-milestone-slicing.md): all of it is in M1.)

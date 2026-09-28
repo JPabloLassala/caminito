@@ -195,4 +195,4 @@ How the Marco reference images are made is recorded in [ADR 0009](../../../docs/
   - the patched MATE packages must install system-wide on the developer's machine without breaking MATE on X11 (the fall-back rule);
   - the carried patches need a form that the weekly CI job can apply to upstream git heads;
   - Camino's package ships no test or debug binaries.
-- **17 Milestone slicing:** each milestone's exit criterion includes its checklist items, recorded in the closing commit message. The first milestone includes the CI workflow, the headless fixture and the policy test scaffolding.
+- **17 Milestone slicing:** each milestone's exit criterion includes its checklist items, recorded in the closing commit message. The first milestone includes the CI workflow, the headless fixture and the policy test scaffolding. ([17](17-milestone-slicing.md): exit criteria are runnable, tested and checked, with checklist tags `M1`–`M8`; all three are in M1.)

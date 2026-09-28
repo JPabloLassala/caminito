@@ -100,6 +100,10 @@ _Avoid_: nested session, dev session
 A reference rendering of one frame case (theme, frame type, state, button states, scale) produced by Marco's own C engine and committed to the repo, with its geometry. Camino's theme engine is correct when it matches the goldens.
 _Avoid_: snapshot (that's a text assertion in the integration tests), reference image
 
+**Milestone**:
+One of the eight slices of Camino v0.1, M1 to M8. It closes when its scenario runs, CI is green with its tests, and its checklist items pass, recorded in a `Close M<n>` commit.
+_Avoid_: phase, sprint, release (only v0.1.0 is a release)
+
 **Policy**:
 Camino's window-management decisions: focus, stacking, placement, workspaces, transients and Marco's other window rules. It sees windows only through the `PolicyWindow` trait, never as protocol objects, so it treats xdg and XWayland windows alike.
 _Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
