@@ -48,3 +48,7 @@ _Avoid_: daemon, child (for MATE components)
 **Session**:
 A "MATE on Camino" login, from the display manager starting Camino to mate-session exiting. Camino is its parent process, and mate-session exiting ends it.
 _Avoid_: desktop session (ambiguous with the X11 MATE session)
+
+**Unsupported key**:
+A gsettings key Camino reads but doesn't honour yet. It is logged once if the user has changed it from its default, and it is on the roadmap. It is not the same as a key Camino will never implement, or a key that belongs to another MATE component.
+_Avoid_: ignored key, missing setting
