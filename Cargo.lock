@@ -176,6 +176,9 @@ dependencies = [
 [[package]]
 name = "camino-theme"
 version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
 
 [[package]]
 name = "cc"
