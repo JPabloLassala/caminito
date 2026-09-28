@@ -27,6 +27,6 @@ Enough protocol and input to meet M1's exit ([17](17-milestone-slicing.md)): rea
 
 ## Acceptance criteria
 
-- [ ] Every behaviour above has a fixture test, written before the handler it covers.
+- [x] Every behaviour above has a fixture test, written before the handler it covers.
 - [ ] Nested (`cargo run -p camino`, then clients on its socket): gtk3-demo, gtk4-demo, a Qt app and foot map, take focus by click, stack, move, resize, maximise and switch workspaces.
 - [ ] Popups and menus in gtk3-demo open in the right place.

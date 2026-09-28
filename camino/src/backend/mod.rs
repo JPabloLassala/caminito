@@ -18,12 +18,16 @@ pub enum Backend {
 }
 
 impl Backend {
-    /// Renders `output` from the scene.
-    pub fn render(&mut self, camino: &mut Camino, output: &Output) {
+    /// Renders `output` from the scene. Returns false, drawing nothing, if the output
+    /// can't take a new frame yet.
+    pub fn render(&mut self, camino: &mut Camino, output: &Output) -> bool {
         match self {
             Backend::Winit(winit) => winit.render(camino, output),
             #[cfg(test)]
-            Backend::Headless(headless) => headless.render(camino, output),
+            Backend::Headless(headless) => {
+                headless.render(camino, output);
+                true
+            }
         }
     }
 

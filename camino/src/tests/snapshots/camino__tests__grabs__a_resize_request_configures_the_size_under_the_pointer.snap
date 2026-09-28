@@ -1,0 +1,9 @@
+---
+source: camino/src/tests/grabs.rs
+expression: format_configures(&f.client(id).window(window).configures)
+---
+size: 0 × 0, states: [], bounds: 1920 × 1080, capabilities: [Fullscreen, Maximize, Minimize, WindowMenu]
+size: 400 × 300, states: [Activated]
+size: 400 × 300, states: [Activated, Resizing]
+size: 500 × 350, states: [Activated, Resizing]
+size: 500 × 350, states: [Activated]

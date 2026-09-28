@@ -6,7 +6,9 @@ use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
+use smithay::wayland::compositor::{
+    CompositorClientState, CompositorHandler, CompositorState, get_parent,
+};
 use smithay::wayland::shm::{ShmHandler, ShmState};
 
 use crate::state::{ClientState, State};
@@ -25,7 +27,22 @@ impl CompositorHandler for State {
 
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
-        self.xdg_shell_commit(surface);
+
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+        if root == *surface {
+            self.xdg_shell_commit(surface);
+        } else {
+            // A subsurface: its window's cached geometry may have changed, and a
+            // desynchronised one draws without its parent committing.
+            let camino = &mut self.camino;
+            if let Some(id) = camino.mapped_for_surface(&root) {
+                camino.policy.window(id).unwrap().window().on_commit();
+            }
+            camino.queue_redraw_all();
+        }
     }
 }
 

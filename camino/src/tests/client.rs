@@ -6,39 +6,29 @@ use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
 
-use super::fixture::{ClientId, Fixture};
-
-/// One 1920 × 1080 output and a client that has seen the globals.
-fn connected() -> (Fixture, ClientId) {
-    let mut f = Fixture::new();
-    f.add_output((1920, 1080), 1.0);
-    let id = f.add_client();
-    f.roundtrip(id);
-    (f, id)
-}
+use super::fixture::Fixture;
 
 #[test]
 fn a_client_lists_the_globals() {
-    let (mut f, id) = connected();
+    let (mut f, id) = Fixture::connected();
 
     assert_snapshot!(format_globals(&f.client(id).state.globals));
 }
 
 #[test]
 fn a_new_toplevel_gets_a_first_configure() {
-    let (mut f, id) = connected();
+    let (mut f, id) = Fixture::connected();
 
     let window = f.client(id).create_window();
     f.client(id).commit(window);
     f.roundtrip(id);
 
-    // Expected to change when xdg-shell's handlers land (22).
     assert_snapshot!(format_configures(&f.client(id).window(window).configures));
 }
 
 #[test]
 fn a_toplevel_commits_a_buffer_and_its_properties() {
-    let (mut f, id) = connected();
+    let (mut f, id) = Fixture::connected();
 
     let parent = f.client(id).create_window();
     f.client(id).commit(parent);

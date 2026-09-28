@@ -170,6 +170,7 @@ dependencies = [
  "rustix",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-misc",
 ]
 
 [[package]]

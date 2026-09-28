@@ -1,6 +1,6 @@
 //! Output lifecycle: making outputs, laying them out, and telling policy about them (15).
 
-use camino_policy::OutputId;
+use camino_policy::{OutputId, PolicyWindow, WindowId};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::utils::{Logical, Physical, Rectangle, Size, Transform};
 
@@ -39,6 +39,14 @@ pub fn virtual_output(
     );
     output.set_preferred(mode);
     output
+}
+
+/// Policy's id for an output added through `Camino::add_output`.
+pub fn output_id(output: &Output) -> OutputId {
+    *output
+        .user_data()
+        .get::<OutputId>()
+        .expect("the output was added through add_output")
 }
 
 /// An output's place and size in the global logical space.
@@ -93,14 +101,28 @@ impl Camino {
 
     /// Policy's id for one of Camino's outputs.
     pub fn output_id(&self, output: &Output) -> OutputId {
-        *output
-            .user_data()
-            .get::<OutputId>()
-            .expect("the output was added through add_output")
+        output_id(output)
+    }
+
+    /// Brings each window's output enter and leave, scale and transform up to date with
+    /// where policy put it.
+    pub(crate) fn refresh_window_outputs(&mut self) {
+        let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
+        for id in ids {
+            let geometry = self.policy.geometry(id).unwrap();
+            let mapped = self.policy.window_mut(id).unwrap();
+            mapped.update_outputs(geometry, &self.outputs);
+        }
     }
 
     pub fn queue_redraw(&mut self, output: &Output) {
         self.redraws.insert(self.output_id(output));
+    }
+
+    pub fn queue_redraw_all(&mut self) {
+        for output in self.outputs.clone() {
+            self.queue_redraw(&output);
+        }
     }
 
     /// The outputs queued for redraw since the last call.

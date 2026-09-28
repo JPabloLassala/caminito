@@ -16,6 +16,8 @@ pub struct Winit {
     backend: WinitGraphicsBackend<GlesRenderer>,
     output: Output,
     damage_tracker: OutputDamageTracker,
+    /// A frame went to the host and it hasn't asked for the next one yet.
+    frame_pending: bool,
 }
 
 impl Winit {
@@ -43,17 +45,23 @@ impl Winit {
             backend,
             damage_tracker: OutputDamageTracker::from_output(&output),
             output,
+            frame_pending: false,
         })
     }
 
-    pub fn render(&mut self, camino: &mut Camino, output: &Output) {
+    /// Draws a frame, unless the host hasn't asked for the next one yet: frames, and so
+    /// clients' frame callbacks, are paced by the host's redraw requests.
+    pub fn render(&mut self, camino: &mut Camino, output: &Output) -> bool {
+        if self.frame_pending {
+            return false;
+        }
         let age = self.backend.buffer_age().unwrap_or(0);
         let damage = {
             let (renderer, mut framebuffer) = match self.backend.bind() {
                 Ok(bound) => bound,
                 Err(err) => {
                     tracing::warn!("error binding the winit window: {err}");
-                    return;
+                    return false;
                 }
             };
             let elements = scene::output_elements(renderer, camino, output);
@@ -67,7 +75,7 @@ impl Winit {
                 Ok(result) => result.damage.cloned(),
                 Err(err) => {
                     tracing::warn!("error rendering the winit output: {err:?}");
-                    return;
+                    return false;
                 }
             }
         };
@@ -76,6 +84,9 @@ impl Winit {
         {
             tracing::warn!("error submitting the winit frame: {err}");
         }
+        self.backend.window().request_redraw();
+        self.frame_pending = true;
+        true
     }
 
     fn resize(&mut self, camino: &mut Camino, size: Size<i32, Physical>) {
@@ -101,9 +112,10 @@ fn handle_event(state: &mut State, event: WinitEvent) {
     };
     match event {
         WinitEvent::Resized { size, .. } => winit.resize(&mut state.camino, size),
-        WinitEvent::Redraw => state.camino.queue_redraw(&winit.output),
+        WinitEvent::Redraw => winit.frame_pending = false,
         WinitEvent::CloseRequested => state.camino.loop_signal.stop(),
-        // Input comes in 22.
-        WinitEvent::Focus(_) | WinitEvent::Input(_) => {}
+        WinitEvent::Input(event) => state.process_input_event(event),
+        WinitEvent::Focus(false) => state.release_pressed_keys(),
+        WinitEvent::Focus(true) => {}
     }
 }

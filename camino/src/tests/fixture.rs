@@ -6,13 +6,30 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use camino_test_client::Client;
+use camino_policy::PolicyWindow;
+use camino_test_client::{Client, WindowId};
+use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::output::Output;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Physical, Size};
 
 use crate::state::{ClientState, State};
+
+// Linux input event codes.
+pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE};
+pub const KEY_TAB: u32 = 15;
+pub const KEY_LEFTCTRL: u32 = 29;
+pub const KEY_A: u32 = 30;
+pub const KEY_LEFTALT: u32 = 56;
+pub const KEY_F4: u32 = 62;
+pub const KEY_F10: u32 = 68;
+pub const KEY_LEFT: u32 = 105;
+pub const KEY_RIGHT: u32 = 106;
+
+/// The colour test windows are filled with.
+pub const WINDOW_COLOR: u32 = 0xff00ff00;
 
 /// How many dispatches a roundtrip may take before the test fails rather than hangs.
 const MAX_ROUNDTRIP_DISPATCHES: usize = 100;
@@ -21,6 +38,9 @@ pub struct Fixture {
     event_loop: EventLoop<'static, State>,
     pub state: State,
     clients: Vec<Client>,
+    /// Each client as the compositor knows it.
+    server_clients: Vec<smithay::reexports::wayland_server::Client>,
+    input_millis: u32,
 }
 
 /// The index of one of a fixture's clients.
@@ -36,6 +56,8 @@ impl Fixture {
             event_loop,
             state,
             clients: Vec::new(),
+            server_clients: Vec::new(),
+            input_millis: 0,
         }
     }
 
@@ -46,13 +68,110 @@ impl Fixture {
     /// Connects a new client over a socket pair. It has seen nothing until a roundtrip.
     pub fn add_client(&mut self) -> ClientId {
         let (server, client) = UnixStream::pair().unwrap();
-        self.state
+        let server_client = self
+            .state
             .camino
             .display_handle
             .insert_client(server, Arc::new(ClientState::default()))
             .unwrap();
+        self.server_clients.push(server_client);
         self.clients.push(Client::new(client));
         ClientId(self.clients.len() - 1)
+    }
+
+    /// One 1920 × 1080 output and a client that has seen the globals.
+    pub fn connected() -> (Self, ClientId) {
+        let mut f = Self::new();
+        f.add_output((1920, 1080), 1.0);
+        let id = f.add_client();
+        f.roundtrip(id);
+        (f, id)
+    }
+
+    /// Creates a window, lets it have its initial configure, then acks it and commits a
+    /// `size` buffer, which maps it.
+    pub fn map_window(&mut self, id: ClientId, size: (i32, i32)) -> WindowId {
+        let window = self.client(id).create_window();
+        self.client(id).commit(window);
+        self.roundtrip(id);
+        self.client(id)
+            .ack_and_commit_buffer(window, size, WINDOW_COLOR);
+        self.roundtrip(id);
+        window
+    }
+
+    /// Policy's id for a client's window, if it's mapped.
+    pub fn policy_id(&mut self, id: ClientId, window: WindowId) -> Option<camino_policy::WindowId> {
+        let protocol_id = self.client(id).surface_protocol_id(window);
+        let client = &self.server_clients[id.0];
+        self.state.camino.policy.windows().find_map(|mapped| {
+            let surface = mapped.wl_surface()?;
+            (surface.client().as_ref() == Some(client) && surface.id().protocol_id() == protocol_id)
+                .then(|| mapped.id())
+        })
+    }
+
+    /// A made-up input timestamp, later than the last.
+    fn input_time(&mut self) -> InputTime {
+        self.input_millis += 10;
+        InputTime::from_millis(self.input_millis)
+    }
+
+    /// Moves the pointer to `(x, y)` in global logical coordinates.
+    pub fn pointer_move(&mut self, x: f64, y: f64) {
+        let time = self.input_time();
+        self.state.on_pointer_motion((x, y).into(), time);
+        self.dispatch();
+    }
+
+    /// Moves the pointer by `(dx, dy)`, as a mouse does.
+    pub fn pointer_move_by(&mut self, dx: f64, dy: f64) {
+        let time = self.input_time();
+        self.state
+            .on_pointer_motion_relative((dx, dy).into(), (dx, dy).into(), time);
+        self.dispatch();
+    }
+
+    /// Presses or releases a pointer button, such as `BTN_LEFT`.
+    pub fn pointer_button(&mut self, button: u32, pressed: bool) {
+        let time = self.input_time();
+        let state = if pressed {
+            ButtonState::Pressed
+        } else {
+            ButtonState::Released
+        };
+        self.state.on_pointer_button(button, state, time);
+        self.dispatch();
+    }
+
+    /// Moves the pointer to `(x, y)`, then presses and releases `BTN_LEFT` there.
+    pub fn click(&mut self, x: f64, y: f64) {
+        self.pointer_move(x, y);
+        self.pointer_button(BTN_LEFT, true);
+        self.pointer_button(BTN_LEFT, false);
+    }
+
+    /// Presses or releases a key by its evdev code, such as `KEY_A`.
+    pub fn key(&mut self, key: u32, pressed: bool) {
+        let time = self.input_time();
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
+        // xkb key codes are evdev's plus 8.
+        self.state.on_key(Keycode::new(key + 8), state, time);
+        self.dispatch();
+    }
+
+    /// Presses `keys` in order, then releases them in reverse.
+    pub fn chord(&mut self, keys: &[u32]) {
+        for key in keys {
+            self.key(*key, true);
+        }
+        for key in keys.iter().rev() {
+            self.key(*key, false);
+        }
     }
 
     pub fn client(&mut self, id: ClientId) -> &mut Client {
