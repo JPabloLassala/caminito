@@ -602,7 +602,7 @@ impl Camino {
     fn refresh_views(&mut self) {
         self.refresh_window_outputs();
         for mapped in self.policy.windows() {
-            mapped.send_pending_configure();
+            mapped.flush();
         }
         self.popups.cleanup();
     }

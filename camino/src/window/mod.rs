@@ -1,30 +1,104 @@
 //! `Mapped`: a window Camino manages, as policy sees it.
+//!
+//! Smithay's `Window` covers xdg toplevels and XWayland windows alike (ADR 0010). What
+//! differs between the protocols sits behind [`Adapter`], implemented on each protocol's
+//! surface, and `Mapped` reaches it through its one `match` on the underlying surface.
 
-use std::cell::Cell;
+mod xdg;
+
+pub(crate) use xdg::owe_configure;
 
 use camino_policy::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
 use camino_theme::PaletteColors;
-use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
+use smithay::desktop::{Window, WindowSurface};
 use smithay::output::Output;
-use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
-use smithay::wayland::compositor::{send_surface_state, with_states};
+use smithay::wayland::compositor::send_surface_state;
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
-use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
-use smithay::wayland::xdg_toplevel_icon::ToplevelIconCachedState;
 
 use crate::decoration::style::{FrameFacts, frame_style};
 use crate::decoration::{FrameContext, FrameInputs, IconSource, WindowFrame};
-use crate::handlers::kde_server_side;
-
 use crate::output::{output_geometry, output_id};
 use crate::state::Camino;
+
+/// What a window is to Camino, whichever protocol it speaks: its facts, and the requests
+/// that carry out policy's decisions. Every adapter answers every fact, with a default
+/// where its protocol has none.
+trait Adapter {
+    // Facts.
+
+    fn title(&self) -> String;
+    fn app_id(&self) -> Option<String>;
+    /// Marco's type, given whether the window is transient for a managed one.
+    fn window_type(&self, has_parent: bool) -> WindowType;
+    fn size_hints(&self) -> SizeHints;
+    /// See [`PolicyWindow::requested_position`].
+    fn requested_position(&self) -> Option<Point<i32, Logical>>;
+    fn pid(&self) -> Option<u32>;
+    /// Whether the window wants Camino's frame.
+    fn wants_frame(&self) -> bool;
+    /// Whether the window will want Camino's frame once it's had the configure it's being
+    /// sent.
+    fn wants_frame_pending(&self) -> bool {
+        self.wants_frame()
+    }
+    fn icon(&self) -> IconSource;
+    /// The window it says it's transient for.
+    fn parent(&self) -> Option<WindowKey>;
+
+    // Requests.
+
+    /// Asks for `geometry` with `states`; [`flush`](Self::flush) sends it.
+    fn set_geometry(&self, geometry: Rectangle<i32, Logical>, states: WindowStates);
+    /// Sends what's been asked since the last flush. The refresh pass flushes every window,
+    /// so each protocol sends once per loop iteration.
+    fn flush(&self);
+    fn set_activated(&self, activated: bool);
+    /// Asks the client to close the window.
+    fn close(&self);
+    /// Configures a pending window before it maps.
+    fn configure_pending(&self, configure: &PreMapConfigure);
+}
+
+/// A pending window's configure before it maps, from the states it has asked for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PreMapConfigure {
+    /// Where the window will likely map, inside the frame it'll have.
+    bounds: Option<Size<i32, Logical>>,
+    /// The size it'll map at, if Camino sets it.
+    size: Option<Size<i32, Logical>>,
+    maximized: bool,
+    fullscreen: bool,
+}
+
+/// The adapter for a window's protocol.
+fn adapter(window: &Window) -> &dyn Adapter {
+    match window.underlying_surface() {
+        WindowSurface::Wayland(toplevel) => toplevel,
+        WindowSurface::X11(_) => unreachable!("XWayland windows aren't managed until 35"),
+    }
+}
+
+/// How Camino finds a window from what its protocol names it by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WindowKey {
+    /// An xdg toplevel's surface.
+    Wayland(WlSurface),
+}
+
+impl WindowKey {
+    fn of(window: &Window) -> Option<Self> {
+        match window.underlying_surface() {
+            WindowSurface::Wayland(toplevel) => {
+                Some(WindowKey::Wayland(toplevel.wl_surface().clone()))
+            }
+            WindowSurface::X11(_) => None,
+        }
+    }
+}
 
 /// A toplevel the client has made but not yet mapped with a buffer, and the states it asked
 /// for meanwhile, which it maps with.
@@ -53,13 +127,10 @@ pub struct Mapped {
     id: WindowId,
     window: Window,
     parent: Option<WindowId>,
-    pid: Option<u32>,
     outputs: Vec<OutputId>,
     /// The output the window overlaps most, whose scale and frame timing it follows
     /// (ADR 0008).
     primary_output: Option<Output>,
-    /// The client asked for a state, so it's owed a configure even if nothing changed.
-    configure_owed: Cell<bool>,
     activated: bool,
     /// The states policy last asked for.
     states: WindowStates,
@@ -75,16 +146,13 @@ pub struct Mapped {
 }
 
 impl Mapped {
-    /// `pid` comes from the client's credentials.
-    pub fn new(id: WindowId, window: Window, pid: Option<u32>) -> Self {
+    pub fn new(id: WindowId, window: Window) -> Self {
         Self {
             id,
             window,
             parent: None,
-            pid,
             outputs: Vec::new(),
             primary_output: None,
-            configure_owed: Cell::new(false),
             activated: false,
             states: WindowStates::default(),
             ssd: false,
@@ -99,7 +167,11 @@ impl Mapped {
         &self.window
     }
 
-    /// The toplevel's surface.
+    fn adapter(&self) -> &dyn Adapter {
+        adapter(&self.window)
+    }
+
+    /// The window's surface.
     pub fn wl_surface(&self) -> Option<WlSurface> {
         self.window.wl_surface().map(|surface| surface.into_owned())
     }
@@ -109,26 +181,9 @@ impl Mapped {
         self.parent = parent;
     }
 
-    /// Owes the client a configure in reply to a request, whether or not policy changed
-    /// anything, as xdg-shell expects.
-    pub fn owe_configure(&self) {
-        self.configure_owed.set(true);
-    }
-
-    /// Sends the client what policy has asked of it since the last configure, if anything,
-    /// or a configure it's owed.
-    pub fn send_pending_configure(&self) {
-        let Some(toplevel) = self.toplevel() else {
-            return;
-        };
-        if !toplevel.is_initial_configure_sent() {
-            return;
-        }
-        if self.configure_owed.take() {
-            toplevel.send_configure();
-        } else {
-            toplevel.send_pending_configure();
-        }
+    /// Sends the client what policy has asked of it since the last flush, if anything.
+    pub fn flush(&self) {
+        self.adapter().flush();
     }
 
     /// The outputs policy last put the window on.
@@ -186,10 +241,6 @@ impl Mapped {
         }
     }
 
-    fn toplevel(&self) -> Option<&ToplevelSurface> {
-        self.window.toplevel()
-    }
-
     pub fn frame(&self) -> &WindowFrame {
         &self.frame
     }
@@ -220,8 +271,8 @@ impl Mapped {
         }
     }
 
-    /// Reads the decoration mode the client last acked, and works out the frame's extents,
-    /// for policy to read next.
+    /// Asks the adapter whether the window wants a frame, and works out the frame's
+    /// extents, for policy to read next.
     pub fn update_frame_facts(&mut self, frame_context: &FrameContext) {
         let attach = frame_context.attach_modal_dialogs();
         let style = |maximized| frame_style(&self.frame_facts(maximized), attach);
@@ -230,7 +281,7 @@ impl Mapped {
                 .map(|(frame_type, flags)| frame_context.extents(frame_type, &flags))
                 .unwrap_or_default()
         };
-        let ssd = self.toplevel().is_some_and(server_side) && style(false).is_some();
+        let ssd = self.adapter().wants_frame() && style(false).is_some();
         (self.extents, self.maximized_extents) = (extents(false), extents(true));
         self.ssd = ssd;
     }
@@ -254,72 +305,14 @@ impl Mapped {
             flags,
             size: self.size(),
             title: self.title(),
-            icon: self.icon_source(),
+            icon: self.adapter().icon(),
             scale: self.frame_scale,
         };
         self.frame.update(frame_context, colors, inputs)
     }
 
     pub fn title(&self) -> String {
-        let Some(toplevel) = self.toplevel() else {
-            return String::new();
-        };
-        with_states(toplevel.wl_surface(), |states| {
-            let data = states.data_map.get::<XdgToplevelSurfaceData>()?;
-            data.lock().unwrap().title.clone()
-        })
-        .unwrap_or_default()
-    }
-
-    fn icon_source(&self) -> IconSource {
-        let app_id = self.app_id();
-        let toplevel_icon = self.toplevel().and_then(|toplevel| {
-            with_states(toplevel.wl_surface(), |states| {
-                let mut cached = states.cached_state.get::<ToplevelIconCachedState>();
-                let icon = cached.current();
-                let name = icon.icon_name().map(str::to_owned);
-                let buffers = icon.buffers().to_vec();
-                (name.is_some() || !buffers.is_empty()).then(|| IconSource::Toplevel {
-                    name,
-                    buffers,
-                    app_id: app_id.clone(),
-                })
-            })
-        });
-        toplevel_icon.unwrap_or(IconSource::AppId(app_id))
-    }
-}
-
-/// Whether the toplevel has server-side decorations: the last mode it acked from
-/// xdg-decoration, or KDE server-decoration's.
-fn server_side(toplevel: &ToplevelSurface) -> bool {
-    let xdg = toplevel.with_committed_state(|state| state.and_then(|s| s.decoration_mode));
-    xdg == Some(DecorationMode::ServerSide) || kde_server_side(toplevel.wl_surface())
-}
-
-/// Whether the toplevel is asking for server-side decorations in its next configure.
-fn pending_server_side(toplevel: &ToplevelSurface) -> bool {
-    let xdg = toplevel.with_pending_state(|state| state.decoration_mode);
-    xdg == Some(DecorationMode::ServerSide) || kde_server_side(toplevel.wl_surface())
-}
-
-/// Marco's window type for a toplevel: a modal dialog from xdg-dialog, a dialog if it has a
-/// transient parent, or else normal.
-fn window_type(window: &Window, has_parent: bool) -> WindowType {
-    let modal = window.toplevel().is_some_and(|toplevel| {
-        with_states(toplevel.wl_surface(), |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .is_some_and(|data| data.lock().unwrap().dialog_hint == ToplevelDialogHint::Modal)
-        })
-    });
-    if modal {
-        WindowType::ModalDialog
-    } else if has_parent {
-        WindowType::Dialog
-    } else {
-        WindowType::Normal
+        self.adapter().title()
     }
 }
 
@@ -329,7 +322,7 @@ impl PolicyWindow for Mapped {
     }
 
     fn window_type(&self) -> WindowType {
-        window_type(&self.window, self.parent.is_some())
+        self.adapter().window_type(self.parent.is_some())
     }
 
     fn transient_parent(&self) -> Option<WindowId> {
@@ -341,39 +334,19 @@ impl PolicyWindow for Mapped {
     }
 
     fn size_hints(&self) -> SizeHints {
-        let Some(toplevel) = self.toplevel() else {
-            return SizeHints::default();
-        };
-        with_states(toplevel.wl_surface(), |states| {
-            let mut cached = states.cached_state.get::<SurfaceCachedState>();
-            let current = cached.current();
-            SizeHints {
-                min: current.min_size,
-                max: current.max_size,
-            }
-        })
+        self.adapter().size_hints()
     }
 
     fn requested_position(&self) -> Option<Point<i32, Logical>> {
-        // xdg toplevels can't ask for a position; XWayland windows come in M3.
-        None
+        self.adapter().requested_position()
     }
 
     fn pid(&self) -> Option<u32> {
-        self.pid
+        self.adapter().pid()
     }
 
     fn app_id(&self) -> Option<String> {
-        let toplevel = self.toplevel()?;
-        with_states(toplevel.wl_surface(), |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()?
-                .lock()
-                .unwrap()
-                .app_id
-                .clone()
-        })
+        self.adapter().app_id()
     }
 
     fn is_ssd(&self) -> bool {
@@ -390,35 +363,16 @@ impl PolicyWindow for Mapped {
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {
         self.states = states;
-        let Some(toplevel) = self.toplevel() else {
-            return;
-        };
-        // The refresh pass sends what's pending, once per loop iteration.
-        toplevel.with_pending_state(|pending| {
-            pending.size = Some(geometry.size);
-            for (state, on) in [
-                (xdg_toplevel::State::Maximized, states.maximized),
-                (xdg_toplevel::State::Fullscreen, states.fullscreen),
-                (xdg_toplevel::State::Resizing, states.resizing),
-            ] {
-                if on {
-                    pending.states.set(state);
-                } else {
-                    pending.states.unset(state);
-                }
-            }
-        });
+        self.adapter().set_geometry(geometry, states);
     }
 
     fn set_activated(&mut self, activated: bool) {
         self.activated = activated;
-        self.window.set_activated(activated);
+        self.adapter().set_activated(activated);
     }
 
     fn close(&mut self) {
-        if let Some(toplevel) = self.toplevel() {
-            toplevel.send_close();
-        }
+        self.adapter().close();
     }
 
     fn set_outputs(&mut self, outputs: &[OutputId]) {
@@ -437,13 +391,7 @@ impl Camino {
             maximized,
             fullscreen,
         } = unmapped;
-        let dh = &self.display_handle;
-        let pid = window
-            .wl_surface()
-            .and_then(|surface| dh.get_client(surface.id()).ok())
-            .and_then(|client| client.get_credentials(dh).ok())
-            .and_then(|credentials| u32::try_from(credentials.pid).ok());
-        let mut mapped = Mapped::new(id, window, pid);
+        let mut mapped = Mapped::new(id, window);
         mapped.set_parent(self.transient_parent(mapped.window()));
         mapped.update_frame_facts(&self.frame_context);
 
@@ -458,13 +406,10 @@ impl Camino {
         id
     }
 
-    /// Sets an unmapped toplevel's pending configure from the states it has asked for: the
-    /// size it'll map at if it's maximised or fullscreen, and the bounds of the output it'll
-    /// likely map on, both inside the frame it'll have.
-    pub fn set_unmapped_pending_state(&self, unmapped: &Unmapped) {
-        let Some(toplevel) = unmapped.window.toplevel() else {
-            return;
-        };
+    /// Configures an unmapped window from the states it has asked for: the size it'll map
+    /// at if it's maximised or fullscreen, and the bounds of the output it'll likely map on,
+    /// both inside the frame it'll have.
+    pub fn configure_unmapped(&self, unmapped: &Unmapped) {
         let output = self.placement_bounds();
         let (extents, maximized_extents) = self.unmapped_extents(unmapped);
         let bounds = output.map(|size| inside(size, extents));
@@ -474,45 +419,36 @@ impl Camino {
                 .map(|o| o.geometry.size)
                 .or(bounds)
         });
-        toplevel.with_pending_state(|pending| {
-            pending.bounds = bounds;
-            pending.size = if let Some(size) = fullscreen_size {
-                size
-            } else if unmapped.maximized {
-                output.map(|size| inside(size, maximized_extents))
-            } else {
-                None
-            };
-            for (state, on) in [
-                (xdg_toplevel::State::Maximized, unmapped.maximized),
-                (
-                    xdg_toplevel::State::Fullscreen,
-                    unmapped.fullscreen.is_some(),
-                ),
-            ] {
-                if on {
-                    pending.states.set(state);
-                } else {
-                    pending.states.unset(state);
-                }
-            }
+        let size = if let Some(size) = fullscreen_size {
+            size
+        } else if unmapped.maximized {
+            output.map(|size| inside(size, maximized_extents))
+        } else {
+            None
+        };
+        adapter(&unmapped.window).configure_pending(&PreMapConfigure {
+            bounds,
+            size,
+            maximized: unmapped.maximized,
+            fullscreen: unmapped.fullscreen.is_some(),
         });
     }
 
-    /// The extents, unmaximised and maximised, of the frame a toplevel that isn't mapped yet
-    /// will have, if the decoration mode it's being configured with is server side.
+    /// The extents, unmaximised and maximised, of the frame a window that isn't mapped yet
+    /// will have, if it'll want a frame once configured.
     fn unmapped_extents(
         &self,
         unmapped: &Unmapped,
     ) -> (FrameExtents<i32, Logical>, FrameExtents<i32, Logical>) {
         let window = &unmapped.window;
-        if !window.toplevel().is_some_and(pending_server_side) {
+        let adapter = adapter(window);
+        if !adapter.wants_frame_pending() {
             return Default::default();
         }
         let has_parent = self.transient_parent(window).is_some();
         let extents = |maximized| {
             let facts = FrameFacts {
-                window_type: window_type(window, has_parent),
+                window_type: adapter.window_type(has_parent),
                 has_parent,
                 hints: SizeHints::default(),
                 // A new window is focused.
@@ -538,13 +474,20 @@ impl Camino {
         Some(mapped)
     }
 
-    /// The managed window a toplevel says it's transient for.
+    /// The managed window a window says it's transient for.
     pub fn transient_parent(&self, window: &Window) -> Option<WindowId> {
-        let parent = window.toplevel()?.parent()?;
-        self.mapped_for_surface(&parent)
+        self.mapped_for_key(&adapter(window).parent()?)
     }
 
-    /// The managed window whose toplevel is `surface`.
+    /// The managed window `key` names.
+    fn mapped_for_key(&self, key: &WindowKey) -> Option<WindowId> {
+        self.policy
+            .windows()
+            .find(|mapped| WindowKey::of(mapped.window()).as_ref() == Some(key))
+            .map(|mapped| mapped.id())
+    }
+
+    /// The managed window whose surface is `surface`.
     pub fn mapped_for_surface(&self, surface: &WlSurface) -> Option<WindowId> {
         self.policy
             .windows()

@@ -34,7 +34,7 @@ use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
 use crate::input::GrabKind;
 use crate::output::output_id;
 use crate::state::{Camino, State};
-use crate::window::Unmapped;
+use crate::window::{Unmapped, owe_configure};
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -186,7 +186,7 @@ impl XdgShellHandler for State {
 
 impl State {
     /// Passes a toplevel's request to policy if it's mapped, or else records it on the
-    /// unmapped toplevel, re-sending the configure if the initial one has gone out.
+    /// unmapped toplevel and configures it again.
     fn toplevel_request(
         &mut self,
         surface: &ToplevelSurface,
@@ -196,9 +196,7 @@ impl State {
         let camino = &mut self.camino;
         if let Some(id) = camino.mapped_for_surface(surface.wl_surface()) {
             mapped(camino, id);
-            if let Some(window) = camino.policy.window(id) {
-                window.owe_configure();
-            }
+            owe_configure(surface);
             camino.queue_redraw_all();
         } else if let Some(index) = camino
             .unmapped
@@ -206,10 +204,7 @@ impl State {
             .position(|u| u.window.toplevel() == Some(surface))
         {
             unmapped(&mut camino.unmapped[index]);
-            if surface.is_initial_configure_sent() {
-                camino.set_unmapped_pending_state(&camino.unmapped[index]);
-                surface.send_pending_configure();
-            }
+            camino.configure_unmapped(&camino.unmapped[index]);
         }
     }
 
@@ -277,7 +272,7 @@ impl State {
         };
         let toplevel = camino.unmapped[index].window.toplevel().unwrap().clone();
         if !toplevel.is_initial_configure_sent() {
-            camino.set_unmapped_pending_state(&camino.unmapped[index]);
+            camino.configure_unmapped(&camino.unmapped[index]);
             toplevel.send_configure();
         } else if has_buffer {
             let unmapped = camino.unmapped.remove(index);
