@@ -87,6 +87,13 @@ The keybindings are a hard-coded set of Marco's defaults until M8 reads them fro
 
 `camino --session`, which will start a full MATE session, isn't supported yet (M5).
 
+## Known limitations
+
+- **An Xwayland crash logs you out of a MATE on Camino session.** Camino survives it, drops the
+  XWayland windows and starts Xwayland again on the same `DISPLAY`, backing off and giving up after
+  repeated crashes. But mate-session is an X11 client, and it exits when it loses its display,
+  which ends the session. Outside a session, new X clients just work again.
+
 ## Testing
 
 ```sh

@@ -42,6 +42,11 @@ impl XwmHandler for State {
             .expect("X11Wm only calls back while Camino holds it")
     }
 
+    /// Xwayland has gone (42).
+    fn disconnected(&mut self, xwm: XwmId) {
+        self.xwayland_disconnected(xwm);
+    }
+
     fn new_window(&mut self, _xwm: XwmId, window: X11Surface) {
         self.camino
             .with_root_stack(|stack| stack.created(window.window_id()));

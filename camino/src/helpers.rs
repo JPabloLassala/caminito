@@ -9,8 +9,8 @@
 //! ([`RestartPolicy`]), until it has exited too often, when it's left stopped with one
 //! log line.
 //!
-//! Xwayland, the third helper, is spawned by Smithay, and only its stderr goes through here
-//! ([`stderr_to`]).
+//! Xwayland, the third helper, is spawned by Smithay, so only its stderr goes through here
+//! ([`stderr_to`]), and its restarts are counted with [`Restarts`] (42).
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -446,14 +446,14 @@ impl Default for RestartPolicy {
 
 /// A helper's recent exits.
 #[derive(Debug, Default)]
-struct Restarts {
+pub(crate) struct Restarts {
     exits: VecDeque<Instant>,
 }
 
 impl Restarts {
     /// Records an exit, and returns how long to wait before starting the helper again, or
     /// None to give up.
-    fn exited(&mut self, now: Instant, policy: &RestartPolicy) -> Option<Duration> {
+    pub(crate) fn exited(&mut self, now: Instant, policy: &RestartPolicy) -> Option<Duration> {
         while self
             .exits
             .front()

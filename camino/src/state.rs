@@ -72,7 +72,7 @@ use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
-use crate::xwayland::RunningXwayland;
+use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_secs(1));
@@ -169,6 +169,10 @@ pub struct Camino {
 
     /// Xwayland, from its spawn until it fails (11).
     pub xwayland: Option<RunningXwayland>,
+    /// What's kept of Xwayland from one spawn to the next, and when it's restarted (42).
+    pub(crate) xwayland_restart: xwayland::Restart,
+    /// The seat's Wayland selections, which X is owed as Xwayland starts (37, 42).
+    pub(crate) wayland_selections: WaylandSelections,
     pub xwayland_shell_state: XWaylandShellState,
     /// The keyboard grabs Xwayland takes for override-redirect windows (36).
     pub xwayland_keyboard_grab_state: XWaylandKeyboardGrabState,
@@ -312,6 +316,7 @@ impl State {
         // x11rb queues the X messages that arrive while Camino waits for a reply, which
         // leaves the socket quiet, so they're read here too.
         self.x_requests();
+        self.camino.notice_xwayland_died_starting();
         self.camino.refresh_views();
         self.update_pointer_focus();
         self.camino.update_button_states();
@@ -511,6 +516,8 @@ impl Camino {
             settings,
             settings_thread,
             xwayland: None,
+            xwayland_restart: xwayland::Restart::default(),
+            wayland_selections: WaylandSelections::default(),
             xwayland_shell_state,
             xwayland_keyboard_grab_state,
             xwayland_keyboard_grab: None,

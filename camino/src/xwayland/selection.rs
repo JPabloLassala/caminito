@@ -22,10 +22,31 @@ use crate::input::KeyboardFocus;
 use crate::state::{Camino, State};
 
 /// A Wayland selection X hasn't been told of.
+#[derive(Clone)]
 pub(super) struct Owed {
     target: SelectionTarget,
     /// Its mime types, or `None` once it's cleared.
     mime_types: Option<Vec<String>>,
+}
+
+/// The seat's Wayland selections, by their mime types. They outlive Xwayland, so that one
+/// started again is owed them (42).
+#[derive(Default)]
+pub(crate) struct WaylandSelections(Vec<Owed>);
+
+impl WaylandSelections {
+    /// A Wayland client set or cleared `target`, or an X client took it (`None`).
+    fn set(&mut self, target: SelectionTarget, mime_types: Option<Vec<String>>) {
+        self.0.retain(|owed| owed.target != target);
+        if mime_types.is_some() {
+            self.0.push(Owed { target, mime_types });
+        }
+    }
+
+    /// What a new Xwayland is owed.
+    pub(super) fn owed(&self) -> Vec<Owed> {
+        self.0.clone()
+    }
 }
 
 impl Camino {
@@ -79,6 +100,7 @@ impl State {
         mime_types: Option<Vec<String>>,
     ) {
         let camino = &mut self.camino;
+        camino.wayland_selections.set(target, mime_types.clone());
         let owed = Owed { target, mime_types };
         if camino.xwayland_has_keyboard() {
             camino.push_to_x(owed);
@@ -117,6 +139,7 @@ impl State {
     pub(super) fn x_selection_set(&mut self, target: SelectionTarget, mime_types: Vec<String>) {
         let camino = &mut self.camino;
         camino.forget_owed(target);
+        camino.wayland_selections.set(target, None);
         let (dh, seat) = (&camino.display_handle, &camino.seat);
         match target {
             SelectionTarget::Clipboard => set_data_device_selection(dh, seat, mime_types, ()),

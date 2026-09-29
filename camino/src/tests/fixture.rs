@@ -860,6 +860,38 @@ impl Fixture {
         self.state.camino.xwayland_display().unwrap()
     }
 
+    /// Kills Xwayland as a crash would, and dispatches until Camino has let it go.
+    pub fn crash_xwayland(&mut self) {
+        let display = self
+            .state
+            .camino
+            .xwayland_display()
+            .expect("Xwayland is ready");
+        let pid = xwayland_child(display).expect("Xwayland runs");
+        rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
+        self.dispatch_until(|f| f.state.camino.xwayland.is_none());
+    }
+
+    /// Kills Xwayland as it restarts, before it's ready, and dispatches until Camino has let
+    /// it go.
+    pub fn crash_xwayland_starting(&mut self) {
+        self.dispatch_until(|f| f.state.camino.xwayland.is_some());
+        let display = self.state.camino.xwayland.as_ref().unwrap().display;
+        assert_eq!(
+            self.state.camino.xwayland_display(),
+            None,
+            "Xwayland isn't ready"
+        );
+        let pid = xwayland_child(display).expect("Xwayland runs");
+        rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
+        self.dispatch_until(|f| f.state.camino.xwayland.is_none());
+    }
+
+    /// Dispatches until Xwayland is ready again after a crash.
+    pub fn wait_for_xwayland(&mut self) {
+        self.dispatch_until(|f| f.state.camino.xwayland_display().is_some());
+    }
+
     /// Connects an x11rb client to the running Xwayland.
     pub fn connect_x11(&mut self) -> ClientId {
         let display = self
@@ -955,8 +987,10 @@ fn xwayland_child(display: u32) -> Option<rustix::process::Pid> {
         // `pid (comm) state ppid …`
         let stat = std::fs::read_to_string(dir.join("stat")).ok()?;
         let (comm, rest) = stat.split_once(") ")?;
-        let ppid = rest.split(' ').nth(1)?;
-        if !comm.ends_with("(Xwayland") || ppid != parent {
+        let mut fields = rest.split(' ');
+        let (state, ppid) = (fields.next()?, fields.next()?);
+        // A crashed one may not be reaped yet.
+        if !comm.ends_with("(Xwayland") || ppid != parent || state == "Z" {
             return None;
         }
         let cmdline = std::fs::read(dir.join("cmdline")).ok()?;

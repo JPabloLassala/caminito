@@ -21,4 +21,5 @@ mod x11_scale;
 mod xdg_shell;
 mod xsettings;
 mod xwayland;
+mod xwayland_restart;
 mod xwayland_windows;

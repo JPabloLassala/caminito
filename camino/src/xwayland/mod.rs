@@ -1,10 +1,12 @@
 //! Xwayland (08, 11, 15): spawned by Smithay at start-up in every mode, eagerly, with
 //! Smithay's `X11Wm` attached once it's ready. If it can't start, Camino logs it once and
-//! runs without X; the restart path is 42's. Its windows are managed through `xwm`, and X's
+//! runs without X. Once it has been ready, `restart` brings it back on the same display
+//! when it goes (42). Its windows are managed through `xwm`, and X's
 //! stacking order follows Camino's scene. Camino's own X connection, `xconn`, publishes the
 //! root properties Smithay doesn't and runs the root messages it drops. Camino is the
 //! XSETTINGS manager, through `X11Wm` (40). Every X11 window has one scale, `scale` (41).
 
+mod restart;
 mod scale;
 mod selection;
 mod stack;
@@ -28,7 +30,9 @@ use smithay::xwayland::xwm::X11Window;
 use smithay::xwayland::xwm::settings::Value as XSettingValue;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
+pub(crate) use self::restart::Restart;
 use self::scale::X11Scale;
+pub(crate) use self::selection::WaylandSelections;
 use self::stack::RootStack;
 use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XConnection};
 use crate::decoration::{NetWmIcon, WindowFacts};
@@ -95,7 +99,8 @@ fn envs(mouse: &Mouse) -> Vec<(&'static str, String)> {
 }
 
 impl Camino {
-    /// Spawns Xwayland on a free display. It's ready once `Ready` has attached `X11Wm`.
+    /// Spawns Xwayland on a free display, or on the one it had if it's a restart. It's
+    /// ready once `Ready` has attached `X11Wm`.
     pub fn start_xwayland(&mut self) {
         let stderr = match helpers::stderr_to(&self.loop_handle, IDENTIFIER, StderrTarget::Prefixed)
         {
@@ -107,7 +112,7 @@ impl Camino {
         };
         let spawned = XWayland::spawn(
             &self.display_handle,
-            None,
+            self.xwayland_restart.display(),
             envs(&self.settings.mouse),
             std::iter::empty::<&str>(),
             true,
@@ -118,7 +123,7 @@ impl Camino {
         let (xwayland, client) = match spawned {
             Ok(spawned) => spawned,
             Err(err) => {
-                tracing::warn!("can't start Xwayland, so Camino runs without X: {err}");
+                self.xwayland_exited(format_args!("can't start Xwayland: {err}"));
                 return;
             }
         };
@@ -131,8 +136,9 @@ impl Camino {
             .insert_source(xwayland, |event, _, state| match event {
                 XWaylandEvent::Ready { x11_socket, .. } => state.xwayland_ready(x11_socket),
                 XWaylandEvent::Error => {
-                    tracing::warn!("Xwayland exited while starting, so Camino runs without X");
-                    state.camino.stop_xwayland();
+                    state
+                        .camino
+                        .xwayland_exited("Xwayland exited while starting");
                 }
             });
         match source {
@@ -148,15 +154,13 @@ impl Camino {
                     stacking: Vec::new(),
                     root_stack: RootStack::default(),
                     override_redirect: Vec::new(),
-                    owed_selections: Vec::new(),
+                    // A new Xwayland knows none of them, and a restarted one has forgotten.
+                    owed_selections: self.wayland_selections.owed(),
                     source,
                 })
             }
             Err(err) => {
-                tracing::warn!(
-                    "can't watch Xwayland, so Camino runs without X: {}",
-                    err.error
-                )
+                self.xwayland_exited(format_args!("can't watch Xwayland: {}", err.error));
             }
         }
     }
@@ -723,6 +727,7 @@ impl State {
         match started {
             Ok(wm) => {
                 xwayland.wm = Some(wm);
+                camino.xwayland_restart.ready(xwayland.display);
                 // Each `start_wm` claims XSETTINGS with an empty table (ADR 0006), and has
                 // the root window's cursor Xwayland made.
                 xwayland.xsettings.clear();
@@ -745,8 +750,7 @@ impl State {
                     .insert(OsString::from("DISPLAY"), OsString::from(value));
             }
             Err(err) => {
-                tracing::warn!("can't manage Xwayland's windows, so Camino runs without X: {err}");
-                camino.stop_xwayland();
+                camino.xwayland_exited(format_args!("can't manage Xwayland's windows: {err}"));
             }
         }
     }
