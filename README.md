@@ -68,10 +68,12 @@ tools/dev-nested        # the installed camino
 tools/dev-nested --bin  # target/debug/camino
 ```
 
-It logs the socket it listens on (`WAYLAND_DISPLAY=wayland-N`). Point clients at it:
+Once Xwayland is ready it prints the two displays, `dev-nested: WAYLAND_DISPLAY=wayland-N
+DISPLAY=:M`. Point clients at them:
 
 ```sh
 WAYLAND_DISPLAY=wayland-1 gtk4-demo
+DISPLAY=:1 xterm
 ```
 
 Logs go to stderr at `info`; set `RUST_LOG` (for example `RUST_LOG=camino=debug`) for more.

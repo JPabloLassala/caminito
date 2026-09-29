@@ -19,7 +19,7 @@ Some of [35](35-xwayland-windows.md)'s, [36](36-override-redirect-windows.md)'s,
 - **xterm after an Xwayland restart (42):** xterm wasn't installed, so gtk3-demo stood in.
 - **Menus by hand (36):** the menus were only driven through XTest, with Camino on Xvfb. This time use the real pointer and keyboard.
 
-Setup: run `tools/dev-nested --bin` and read the X display from the log line `Xwayland is ready on DISPLAY=:N` (43 makes `dev-nested` print it). Start each app in another terminal with `DISPLAY=:N GDK_BACKEND=x11`. For gtk3-demo, use `gtk3-demo --run=application_demo`.
+Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-nested: WAYLAND_DISPLAY=wayland-N DISPLAY=:M` it prints once Xwayland is ready (43). Start each app in another terminal with `DISPLAY=:N GDK_BACKEND=x11`. For gtk3-demo, use `gtk3-demo --run=application_demo`.
 
 ## Acceptance criteria
 

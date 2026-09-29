@@ -123,3 +123,52 @@ nested_env() {
   theme and one `can't load the Marco theme NoSuchTheme` line in Camino's log. Back on Menta,
   the frames are Menta's again, and the buttons still prelight, press and act.
 - **Debug tool:** `busctl` and Camino's stderr.
+
+## XWayland
+
+### An X11 app's copy and paste to and from a native app
+
+- **Milestone:** M3
+- **Steps:**
+  1. Run `tools/dev-nested`. Once Xwayland is ready it prints
+     `dev-nested: WAYLAND_DISPLAY=wayland-N DISPLAY=:M`.
+  2. In other terminals, run foot on Wayland (`WAYLAND_DISPLAY=wayland-N foot`), and xterm on X
+     with foot's clipboard keys. xterm's own selection and middle-click stay on the primary
+     selection:
+
+     ```sh
+     DISPLAY=:M xterm -xrm 'XTerm*VT100.translations: #override Ctrl Shift <Key>C: copy-selection(CLIPBOARD)\nCtrl Shift <Key>V: insert-selection(CLIPBOARD)'
+     ```
+
+  3. Clipboard: select text in one, press Ctrl+Shift+C, then click the other and press
+     Ctrl+Shift+V. Both ways.
+  4. Primary selection: select text in one, and middle-click in the other, both ways.
+  5. Copy something new in foot and leave foot focused. From a host terminal, run
+     `DISPLAY=:M xclip -o -selection clipboard`.
+- **Expected:** the text pastes unchanged both ways, through both the clipboard and the primary
+  selection. X only gets a Wayland selection once an X window is focused (37), so step 5 prints
+  what xterm last copied, not foot's new text.
+- **Debug tool:** the pasted text, and `xclip` on the nested `DISPLAY`.
+
+### `DISPLAY` only exported after the root properties exist
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Camino*. Before `camino --session`, nothing Camino spawns receives its
+     environment, so in M3 the X11 tier's test that `DISPLAY` isn't set until the root properties
+     exist (38) stands in.
+  2. Read the `DISPLAY` Camino gave mate-session, the first process it spawns with its
+     environment:
+
+     ```sh
+     tr '\0' '\n' </proc/"$(pgrep -o -x mate-session)"/environ | grep '^DISPLAY='
+     ```
+
+  3. `journalctl --user -b | grep -E 'Xwayland is ready|mate-session'` for the order.
+  4. `xprop -root _NET_SUPPORTED _NET_NUMBER_OF_DESKTOPS _NET_DESKTOP_NAMES _NET_CURRENT_DESKTOP
+     _NET_WORKAREA _GTK_WORKAREAS_D0` on that `DISPLAY`.
+- **Expected:** mate-session's `DISPLAY` is the one in `Xwayland is ready on DISPLAY=:N`, which
+  is logged before mate-session starts. `xprop -root` shows `_NET_SUPPORTED` with the desktop
+  atoms, `_NET_WORKAREA` and `_GTK_WORKAREAS` listed, the desktops as in `org.mate.Marco.general`,
+  and a work area per desktop.
+- **Debug tool:** `/proc/<pid>/environ`, `xprop -root` and the journal.
