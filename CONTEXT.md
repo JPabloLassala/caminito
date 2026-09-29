@@ -60,6 +60,10 @@ _Avoid_: ignored key, missing setting
 A window of an X11 client running on XWayland that Camino manages like any other toplevel, through Smithay's `X11Wm`.
 _Avoid_: X window (ambiguous with the X protocol's window objects), legacy window
 
+**Pending window**:
+A toplevel or XWayland window that its client has asked to show, which Camino doesn't manage yet because it has no content. It keeps the states it asks for meanwhile, such as maximised or fullscreen, and maps with them.
+_Avoid_: unmapped window (in X11 that's a withdrawn one)
+
 **Override-redirect window**:
 An X11 menu, tooltip or popup that Camino shows in its own layer but never manages or focuses. It gets the keyboard only through an Xwayland keyboard grab.
 _Avoid_: unmanaged window, X11 popup
