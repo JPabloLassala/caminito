@@ -153,7 +153,7 @@ pub struct Camino {
 
     pub policy: Policy<Mapped>,
     /// Windows asked to show that have no content yet.
-    pub pending: PendingWindows,
+    pub(crate) pending: PendingWindows,
     pub(crate) next_window_id: u64,
 
     /// The GTK colours frames are drawn with.

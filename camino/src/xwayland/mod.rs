@@ -120,10 +120,12 @@ impl Camino {
     pub(crate) fn refresh_x11_stacking(&mut self) {
         let policy = &self.policy;
         // Bottom to top: Smithay moves each window above the one before it, whatever its
-        // doc comment says.
-        let order: Vec<X11Surface> = policy
-            .stacking(policy.active_workspace())
-            .iter()
+        // doc comment says. Windows on other workspaces aren't in the scene, and go below.
+        let active = policy.active_workspace();
+        let order: Vec<X11Surface> = (0..policy.workspace_count())
+            .filter(|workspace| *workspace != active)
+            .chain([active])
+            .flat_map(|workspace| policy.stacking(workspace))
             .filter_map(|id| policy.window(*id)?.window().x11_surface().cloned())
             .collect();
         let ids: Vec<X11Window> = order.iter().map(X11Surface::window_id).collect();

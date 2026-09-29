@@ -196,18 +196,28 @@ impl<W> Managed<W> {
     /// A shaded window is only its frame's titlebar, which Marco's shaded styles keep the
     /// height of.
     fn frame(&self) -> Rectangle<i32, Logical> {
-        let geometry = Rectangle::new(self.geometry.loc, self.size);
         let e = self.visible_extents();
-        let height = if self.shaded {
-            e.top
-        } else {
-            geometry.size.h + e.top + e.bottom
-        };
-        Rectangle::new(
-            (geometry.loc.x - e.left, geometry.loc.y - e.top).into(),
-            (geometry.size.w + e.left + e.right, height).into(),
-        )
+        let mut frame = frame_around(Rectangle::new(self.geometry.loc, self.size), e);
+        if self.shaded {
+            frame.size.h = e.top;
+        }
+        frame
     }
+}
+
+/// The frame of `extents` around window geometry `geometry`.
+fn frame_around(
+    geometry: Rectangle<i32, Logical>,
+    e: FrameExtents<i32, Logical>,
+) -> Rectangle<i32, Logical> {
+    Rectangle::new(
+        (geometry.loc.x - e.left, geometry.loc.y - e.top).into(),
+        (
+            geometry.size.w + e.left + e.right,
+            geometry.size.h + e.top + e.bottom,
+        )
+            .into(),
+    )
 }
 
 pub struct Policy<W: PolicyWindow> {
@@ -594,9 +604,10 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// The client asks to move its window to `loc` or resize it to `size`, as an X11
     /// `ConfigureRequest` does. It's refused while the window is maximised either way,
-    /// fullscreen, or being moved or resized. Otherwise the size is kept within the hints
-    /// and the frame inside the work area, as Marco's constraints do for a configure request
-    /// (constraints.c:1456-1479).
+    /// fullscreen, or being moved or resized, as Marco ignores one during a grab
+    /// (window.c:4866-4885). Otherwise the size is kept within the hints, and the frame
+    /// shrunk and moved inside the work area, as Marco's constraints do for a configure
+    /// request (constraints.c:1456-1479).
     pub fn request_geometry(
         &mut self,
         id: WindowId,
@@ -617,18 +628,14 @@ impl<W: PolicyWindow> Policy<W> {
             managed.geometry.loc = loc;
         }
         let e = managed.visible_extents();
-        let geometry = managed.geometry;
-        let frame = Rectangle::new(
-            (geometry.loc.x - e.left, geometry.loc.y - e.top).into(),
-            (
-                geometry.size.w + e.left + e.right,
-                geometry.size.h + e.top + e.bottom,
-            )
-                .into(),
-        );
+        let frame = frame_around(managed.geometry, e);
         if let Some(output) = self.output_of(frame).or(self.outputs.first()) {
-            let frame_loc = placement::constrain(frame, Self::work_area(output));
+            let area = Self::work_area(output);
             let managed = self.windows.get_mut(&id).unwrap();
+            let size = &mut managed.geometry.size;
+            size.w = size.w.min(area.size.w - e.left - e.right).max(1);
+            size.h = size.h.min(area.size.h - e.top - e.bottom).max(1);
+            let frame_loc = placement::constrain(frame_around(managed.geometry, e), area);
             managed.geometry.loc = Point::new(frame_loc.x + e.left, frame_loc.y + e.top);
         }
         self.apply();
@@ -901,14 +908,17 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows.get(&id).is_some_and(|m| m.minimized)
     }
 
+    /// Whether the client asked to keep the window above others.
     pub fn is_above(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.above)
     }
 
+    /// Whether the client asked to keep the window below others.
     pub fn is_below(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.below)
     }
 
+    /// Whether the client asked to show the window on every workspace.
     pub fn is_sticky(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.sticky)
     }
@@ -1100,14 +1110,7 @@ impl<W: PolicyWindow> Policy<W> {
                 } else {
                     FrameExtents::default()
                 };
-                let frame = Rectangle::new(
-                    (floating.loc.x - e.left, floating.loc.y - e.top).into(),
-                    (
-                        floating.size.w + e.left + e.right,
-                        floating.size.h + e.top + e.bottom,
-                    )
-                        .into(),
-                );
+                let frame = frame_around(floating, e);
                 if self.output_of(frame).is_none() {
                     let frame_loc = placement::constrain(frame, area);
                     let floating = self

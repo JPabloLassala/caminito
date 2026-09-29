@@ -27,7 +27,7 @@ struct Pending {
 
 /// The pending windows.
 #[derive(Debug, Default)]
-pub struct PendingWindows(Vec<Pending>);
+pub(crate) struct PendingWindows(Vec<Pending>);
 
 impl PendingWindows {
     fn position(&self, key: &WindowKey) -> Option<usize> {
@@ -45,7 +45,7 @@ impl PendingWindows {
     }
 
     #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }

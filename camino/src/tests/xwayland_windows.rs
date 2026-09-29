@@ -345,3 +345,33 @@ fn the_title_follows_net_wm_name_live() {
 
     f.dispatch_until(|f| mapped(f, window).title() == "vim");
 }
+
+#[test]
+fn a_dialog_that_asks_to_be_modal_becomes_a_modal_dialog_and_x_is_told() {
+    let (mut f, x) = Fixture::with_x11();
+    let parent = f.map_x11_window(&x, spec(600, 400));
+    let dialog = f.map_x11_window(
+        &x,
+        WindowSpec {
+            transient_for: Some(parent),
+            ..spec(300, 200)
+        },
+    );
+
+    net_wm_state(
+        &mut f,
+        &x,
+        dialog,
+        1,
+        ["_NET_WM_STATE_MODAL", "_NET_WM_STATE_MODAL"],
+    );
+    f.dispatch_until(|f| mapped(f, dialog).window_type() == camino_policy::WindowType::ModalDialog);
+
+    let states = f
+        .x11_call(&x, move |x| {
+            let mut names = camino_test_client::x11::Names::new(x);
+            names.property(x, dialog, "_NET_WM_STATE")
+        })
+        .unwrap();
+    assert!(states.contains("_NET_WM_STATE_MODAL"), "{states}");
+}

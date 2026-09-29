@@ -64,6 +64,16 @@ fn a_request_for_neither_leaves_a_window_off_the_work_area_where_it_is() {
 }
 
 #[test]
+fn a_request_bigger_than_the_work_area_is_shrunk_to_fit_frame_and_all() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300).with_frame(5, 5, 25, 5), ms(1));
+
+    policy.request_geometry(id(1), Some((0, 0).into()), Some((3000, 2000).into()));
+
+    assert_eq!(geometry(&policy, 1), rect(5, 25, 1910, 1050));
+}
+
+#[test]
 fn a_requested_size_is_kept_within_the_size_hints() {
     let mut policy = policy();
     policy.map_window(

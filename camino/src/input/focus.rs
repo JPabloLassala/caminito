@@ -1,6 +1,7 @@
 //! What the keyboard can focus: a Wayland surface, or an XWayland window, through which
 //! Smithay's `KeyboardTarget` follows the window's ICCCM input model and sends
-//! `WM_TAKE_FOCUS` (11). The pointer still focuses surfaces only, until 37.
+//! `WM_TAKE_FOCUS` (11). The pointer still focuses surfaces only, until 37. The shape is
+//! anvil's `KeyboardFocusTarget` (`anvil/src/focus.rs`).
 
 use std::borrow::Cow;
 
@@ -15,7 +16,7 @@ use smithay::xwayland::X11Surface;
 
 use crate::state::State;
 
-/// The keyboard's focus.
+/// The keyboard's focus. It's public because the seat names it, and `State` is.
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeyboardFocus {
     Surface(WlSurface),
@@ -34,12 +35,13 @@ impl From<PopupKind> for KeyboardFocus {
     }
 }
 
-/// Popup grabs hand the keyboard's focus to the pointer.
+/// Popup grabs hand the keyboard's focus to the pointer. Only xdg popups are grabbed, so
+/// the focus is always their Wayland surface.
 impl From<KeyboardFocus> for WlSurface {
     fn from(focus: KeyboardFocus) -> Self {
         focus
             .wl_surface()
-            .expect("Camino focuses only XWayland windows that have content")
+            .expect("a popup grab's keyboard focus is an xdg popup's surface")
             .into_owned()
     }
 }

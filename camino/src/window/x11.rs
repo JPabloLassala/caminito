@@ -132,9 +132,40 @@ pub(crate) fn configure_request_geometry(
     }
 }
 
-/// What policy last asked of the window, for [`Adapter::flush`] to send.
+/// What was asked of the window since the last flush, for [`Adapter::flush`] to send.
 #[derive(Default)]
-struct Requested(Mutex<Option<(Rectangle<i32, Logical>, WindowStates)>>);
+struct Requested(Mutex<Unflushed>);
+
+#[derive(Default)]
+struct Unflushed {
+    /// Policy's geometry and states.
+    geometry: Option<(Rectangle<i32, Logical>, WindowStates)>,
+    /// `_NET_WM_STATE_MODAL`, as the client asked.
+    modal: Option<bool>,
+    /// `_NET_WM_STATE_DEMANDS_ATTENTION`, as the client asked.
+    demands_attention: Option<bool>,
+}
+
+/// Runs `f` on what hasn't been flushed yet.
+fn unflushed<T>(surface: &X11Surface, f: impl FnOnce(&mut Unflushed) -> T) -> T {
+    let requested = surface
+        .user_data()
+        .get_or_insert_threadsafe(Requested::default);
+    f(&mut requested.0.lock().unwrap())
+}
+
+/// Records the client's request to be a modal dialog or not. It's a fact at once, and
+/// `_NET_WM_STATE` follows at the next flush, as the refresh pass sends outward views.
+pub(crate) fn request_modal(surface: &X11Surface, modal: bool) {
+    unflushed(surface, |unflushed| unflushed.modal = Some(modal));
+}
+
+/// Records the client's request to demand attention or not, as [`request_modal`] does.
+pub(crate) fn request_demands_attention(surface: &X11Surface, demands_attention: bool) {
+    unflushed(surface, |unflushed| {
+        unflushed.demands_attention = Some(demands_attention)
+    });
+}
 
 /// The X window's rectangle for window geometry `geometry`: toolkits that draw shadows
 /// say how far they reach with `_GTK_FRAME_EXTENTS`.
@@ -177,7 +208,7 @@ impl Adapter for X11Surface {
         marco_type(
             X11Surface::window_type(self),
             self.is_transient_for().is_some(),
-            self.is_modal(),
+            unflushed(self, |unflushed| unflushed.modal).unwrap_or_else(|| self.is_modal()),
         )
     }
 
@@ -225,7 +256,9 @@ impl Adapter for X11Surface {
 
     /// `WM_HINTS`'s urgency, or `_NET_WM_STATE_DEMANDS_ATTENTION`.
     fn urgent(&self) -> bool {
-        self.hints().is_some_and(|hints| hints.urgent) || self.demands_attention()
+        let demands_attention = unflushed(self, |unflushed| unflushed.demands_attention)
+            .unwrap_or_else(|| self.demands_attention());
+        self.hints().is_some_and(|hints| hints.urgent) || demands_attention
     }
 
     /// ICCCM's input model: the input hint or `WM_TAKE_FOCUS`.
@@ -242,22 +275,33 @@ impl Adapter for X11Surface {
     }
 
     fn set_geometry(&self, geometry: Rectangle<i32, Logical>, states: WindowStates) {
-        let requested = self
-            .user_data()
-            .get_or_insert_threadsafe(Requested::default);
-        *requested.0.lock().unwrap() = Some((geometry, states));
+        unflushed(self, |unflushed| {
+            unflushed.geometry = Some((geometry, states))
+        });
     }
 
     fn flush(&self) {
-        let Some(requested) = self.user_data().get::<Requested>() else {
-            return;
-        };
-        let Some((geometry, states)) = requested.0.lock().unwrap().take() else {
-            return;
-        };
-        set_net_wm_states(self, states.maximized, states.fullscreen);
-        if let Err(err) = self.configure(x_rect(self, geometry)) {
-            tracing::debug!("can't configure an X window: {err}");
+        let Unflushed {
+            geometry,
+            modal,
+            demands_attention,
+        } = unflushed(self, std::mem::take);
+        let mut set = Ok(());
+        if let Some(modal) = modal {
+            set = set.and(self.set_modal(modal));
+        }
+        if let Some(demands_attention) = demands_attention {
+            set = set.and(self.set_demands_attention(demands_attention));
+        }
+        if let Some((geometry, states)) = geometry {
+            set_net_wm_states(self, states.maximized, states.fullscreen);
+            set = set.and(self.set_shaded(states.shaded));
+            if let Err(err) = self.configure(x_rect(self, geometry)) {
+                tracing::debug!("can't configure an X window: {err}");
+            }
+        }
+        if let Err(err) = set {
+            tracing::debug!("can't set an X window's state: {err}");
         }
     }
 

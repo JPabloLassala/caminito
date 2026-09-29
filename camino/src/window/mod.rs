@@ -8,9 +8,9 @@ mod lifecycle;
 mod x11;
 mod xdg;
 
-pub use lifecycle::PendingWindows;
+pub(crate) use lifecycle::PendingWindows;
 pub(crate) use lifecycle::StateRequest;
-pub(crate) use x11::configure_request_geometry;
+pub(crate) use x11::{configure_request_geometry, request_demands_attention, request_modal};
 pub(crate) use xdg::owe_configure;
 
 use camino_policy::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
@@ -83,7 +83,7 @@ trait Adapter {
 
 /// Whether a window is left out of the taskbar and the pager.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Skips {
+pub(crate) struct Skips {
     pub taskbar: bool,
     pub pager: bool,
 }
@@ -346,12 +346,12 @@ impl Mapped {
 
     /// Whether the window asks for the user's attention, for M5's foreign-toplevel and
     /// M8's Alt+Tab.
-    pub fn is_urgent(&self) -> bool {
+    pub(crate) fn is_urgent(&self) -> bool {
         self.adapter().urgent()
     }
 
     /// Whether the window is left out of the taskbar and the pager.
-    pub fn skips(&self) -> Skips {
+    pub(crate) fn skips(&self) -> Skips {
         let adapter = self.adapter();
         skips(
             self.window_type(),
@@ -361,12 +361,12 @@ impl Mapped {
     }
 
     /// What the keyboard focuses to give the window the keyboard.
-    pub fn keyboard_target(&self) -> KeyboardFocus {
+    pub(crate) fn keyboard_target(&self) -> KeyboardFocus {
         self.adapter().keyboard_target()
     }
 
     /// The X window's id, for an XWayland window.
-    pub fn x11_window(&self) -> Option<X11Window> {
+    pub(crate) fn x11_window(&self) -> Option<X11Window> {
         self.window.x11_surface().map(|surface| surface.window_id())
     }
 

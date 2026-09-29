@@ -16,7 +16,9 @@ use smithay::xwayland::{X11Surface, X11Wm, XwmHandler};
 
 use crate::input::GrabKind;
 use crate::state::{Camino, State};
-use crate::window::{StateRequest, WindowKey, configure_request_geometry};
+use crate::window::{
+    StateRequest, WindowKey, configure_request_geometry, request_demands_attention, request_modal,
+};
 
 /// The key `window::lifecycle` knows an X window by.
 fn key(window: &X11Surface) -> WindowKey {
@@ -228,9 +230,7 @@ impl State {
 
     /// Sets `_NET_WM_STATE_MODAL`, which makes a dialog a modal one.
     fn set_modal(&mut self, window: &X11Surface, modal: bool) {
-        if let Err(err) = window.set_modal(modal) {
-            tracing::debug!("can't set an X window's state: {err}");
-        }
+        request_modal(window, modal);
         if let Some(id) = self.camino.mapped_for_key(&key(window)) {
             self.camino.window_changed(id);
         }
@@ -238,9 +238,7 @@ impl State {
 
     /// Sets `_NET_WM_STATE_DEMANDS_ATTENTION`, which makes the window urgent.
     fn set_demands_attention(&mut self, window: &X11Surface, demands_attention: bool) {
-        if let Err(err) = window.set_demands_attention(demands_attention) {
-            tracing::debug!("can't set an X window's state: {err}");
-        }
+        request_demands_attention(window, demands_attention);
     }
 
     /// Starts a move or resize a managed window asked for, if a button still holds the
