@@ -1,7 +1,7 @@
 # XWayland windows
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M3
 Blocked by: 34
 Map: [Camino v0.1](../map.md)
@@ -33,9 +33,16 @@ XWayland windows managed like native ones ([11](11-xwayland-integration.md)): `x
 
 ## Acceptance criteria
 
-- [ ] Unit tests of the `WmWindowType`-to-Marco-type mapping and each type's features, written before the code.
-- [ ] X11-tier tests, written before the code: a normal window maps framed, takes focus on click and moves; a dialog with `WM_TRANSIENT_FOR` stacks above its parent on the parent's workspace; a `USPosition` window is placed where it asked; a `configure_request` for a maximised window is refused; a window with Motif decorations off gets no frame; `_NET_CLIENT_LIST_STACKING` follows Camino's order after a raise.
-- [ ] X11-tier lifecycle tests, written before the code: a window that asks to be maximised before it maps maps maximised; an unmap and remap gives a new policy id; a window destroyed while pending leaves no trace; focusing a window moves X input focus to it.
-- [ ] The fixture looks up a test's window by its policy id whichever protocol it uses, and frame interaction tests run against an XWayland window too.
-- [ ] The proptest invariants still hold with `TestWindow`s of every type (policy is shared, so no X11-specific operations are needed).
-- [ ] Nested, xterm, xeyes and gtk3-demo with `GDK_BACKEND=x11` map with Menta frames, take focus and move.
+- [x] Unit tests of the `WmWindowType`-to-Marco-type mapping and each type's features, written before the code.
+- [x] X11-tier tests, written before the code: a normal window maps framed, takes focus on click and moves; a dialog with `WM_TRANSIENT_FOR` stacks above its parent on the parent's workspace; a `USPosition` window is placed where it asked; a `configure_request` for a maximised window is refused; a window with Motif decorations off gets no frame; `_NET_CLIENT_LIST_STACKING` follows Camino's order after a raise.
+- [x] X11-tier lifecycle tests, written before the code: a window that asks to be maximised before it maps maps maximised; an unmap and remap gives a new policy id; a window destroyed while pending leaves no trace; focusing a window moves X input focus to it.
+- [x] The fixture looks up a test's window by its policy id whichever protocol it uses, and frame interaction tests run against an XWayland window too.
+- [x] The proptest invariants still hold with `TestWindow`s of every type (policy is shared, so no X11-specific operations are needed).
+- [x] Nested, xterm, xeyes and gtk3-demo with `GDK_BACKEND=x11` map with Menta frames, take focus and move.
+
+## Notes
+
+- Policy has no tiled state until M8's edge and keyboard tiling (17), so a `configure_request` is refused while the window is maximised either way, fullscreen or grabbed. The tiled case joins `request_geometry` with tiling.
+- `_NET_WM_ICON` is [39](39-x-window-properties-and-requests.md)'s. Until then an X window's icon comes from `WM_CLASS`, as a native window's comes from its app id.
+- The nested check ran winit on Xvfb, with XTest standing in for the hand. xterm and xeyes weren't installed, so glxgears stood in for a plain Xlib client and pluma for a GTK3 SSD app. glxgears (placed at its `USPosition` 0, 0) and pluma mapped with Menta frames, took focus on a click, moved by exactly the drag of their titlebars, and took typing. `_NET_ACTIVE_WINDOW` and `_NET_CLIENT_LIST_STACKING` followed. gtk3-demo's main window has a header bar, so it stays CSD (07); it took focus, and its header bar moved it through `_NET_WM_MOVERESIZE`. Its Spinner demo mapped as a modal dialog with Menta's modal frame, centred on its parent.
+- The check found a gap: Camino hit-tests an X window by its whole surface, but GTK's CSD windows on X11 set an input shape that leaves out their shadow (gtk3-demo's is inset 35 px into a 45 px `_GTK_FRAME_EXTENTS` shadow). Xwayland doesn't pass the X input shape on to the `wl_surface`, and Smithay doesn't read it, so a click on a window beneath the shadow goes to the CSD window. Reading the shape takes Camino's own X connection, so it's [39](39-x-window-properties-and-requests.md)'s.

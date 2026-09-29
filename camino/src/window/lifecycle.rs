@@ -23,6 +23,9 @@ struct Pending {
     maximized: bool,
     /// Fullscreen was asked for, on this output if the client named one.
     fullscreen: Option<Option<OutputId>>,
+    above: bool,
+    below: bool,
+    sticky: bool,
 }
 
 /// The pending windows.
@@ -58,6 +61,10 @@ pub(crate) enum StateRequest {
     Fullscreen(Option<OutputId>),
     Unfullscreen,
     Minimized,
+    /// Kept above others, or not. Recorded only until M8 (17), as are the two below.
+    Above(bool),
+    Below(bool),
+    Sticky(bool),
 }
 
 impl Camino {
@@ -68,6 +75,9 @@ impl Camino {
             window,
             maximized: false,
             fullscreen: None,
+            above: false,
+            below: false,
+            sticky: false,
         });
     }
 
@@ -82,6 +92,9 @@ impl Camino {
                 StateRequest::Fullscreen(output) => policy.set_fullscreen(id, true, output),
                 StateRequest::Unfullscreen => policy.set_fullscreen(id, false, None),
                 StateRequest::Minimized => policy.minimize(id),
+                StateRequest::Above(above) => policy.set_above(id, above),
+                StateRequest::Below(below) => policy.set_below(id, below),
+                StateRequest::Sticky(sticky) => policy.set_sticky(id, sticky),
             }
             self.queue_redraw_all();
             return true;
@@ -96,6 +109,19 @@ impl Camino {
             StateRequest::Unfullscreen => pending.fullscreen = None,
             // A window that isn't managed has nothing to minimise.
             StateRequest::Minimized => return false,
+            // Neither changes how the window is configured before it maps.
+            StateRequest::Above(above) => {
+                pending.above = above;
+                return false;
+            }
+            StateRequest::Below(below) => {
+                pending.below = below;
+                return false;
+            }
+            StateRequest::Sticky(sticky) => {
+                pending.sticky = sticky;
+                return false;
+            }
         }
         self.configure_pending(key);
         false
@@ -171,6 +197,9 @@ impl Camino {
             window,
             maximized,
             fullscreen,
+            above,
+            below,
+            sticky,
         } = pending;
         let mut mapped = Mapped::new(id, window);
         mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
@@ -182,6 +211,9 @@ impl Camino {
         } else if maximized {
             self.policy.set_maximized(id, true);
         }
+        self.policy.set_above(id, above);
+        self.policy.set_below(id, below);
+        self.policy.set_sticky(id, sticky);
         self.queue_redraw_all();
         id
     }

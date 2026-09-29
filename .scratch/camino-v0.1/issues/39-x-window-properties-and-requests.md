@@ -15,6 +15,8 @@ The per-window half of Camino's X connection ([11](11-xwayland-integration.md)):
 - **Property changes:** changes Smithay doesn't parse arrive as `XwmHandler::property_notify(Other(atom))`; Camino reads the new value over its own connection.
 - **`_NET_WM_ICON` (07, 11):** read at map and on change, in 07's order after xdg-toplevel-icon and before the `.desktop` icon found through `WM_CLASS`, in the `icons` lookup. If Smithay #2160 has landed on the pinned rev, use it instead.
 - **Struts:** `_NET_WM_STRUT` and `_NET_WM_STRUT_PARTIAL` read at map and on change, divided by the client scale, and kept per window. Policy's work area gains them with layer-shell exclusive zones in M5 (17).
+- **Input shape (35):** the SHAPE extension's input region, read at map and on `ShapeNotify`, bounds where an X window takes the pointer. GTK's CSD windows on X11 leave their shadow out of it, but Xwayland doesn't pass it on to the `wl_surface`, so without it a click beneath a CSD shadow goes to the shadow's window.
+- **States X is told (35):** a minimised window is hidden through `set_hidden` (`WM_STATE` Iconic and `_NET_WM_STATE_HIDDEN`), and shown again when it's restored. The above, below and sticky states policy records go back into `_NET_WM_STATE`.
 - **Skip-taskbar and skip-pager** changes after map, kept in Camino's window state and never written back to `_NET_WM_STATE`.
 - **Client messages Smithay drops (11):**
   - `_NET_CLOSE_WINDOW`, through `close()`;
@@ -25,5 +27,5 @@ The per-window half of Camino's X connection ([11](11-xwayland-integration.md)):
 
 ## Acceptance criteria
 
-- [ ] X11-tier tests, written before the code: `_NET_REQUEST_FRAME_EXTENTS` is answered before map; `_NET_FRAME_EXTENTS` changes on maximise and on a theme switch, and is zero for a Motif-undecorated window; a window with `_NET_WM_DESKTOP` 2 before map maps on workspace 3; the `_NET_WM_DESKTOP` message moves a window; `_NET_CLOSE_WINDOW` closes; `_NET_MOVERESIZE_WINDOW` moves; a keyboard-move request starts a move and direction 11 cancels it; `_NET_WM_ICON` becomes the frame icon; struts are read and appear in the dump.
+- [ ] X11-tier tests, written before the code: `_NET_REQUEST_FRAME_EXTENTS` is answered before map; `_NET_FRAME_EXTENTS` changes on maximise and on a theme switch, and is zero for a Motif-undecorated window; a window with `_NET_WM_DESKTOP` 2 before map maps on workspace 3; the `_NET_WM_DESKTOP` message moves a window; `_NET_CLOSE_WINDOW` closes; `_NET_MOVERESIZE_WINDOW` moves; a keyboard-move request starts a move and direction 11 cancels it; `_NET_WM_ICON` becomes the frame icon; struts are read and appear in the dump; a click on a window beneath another's input-shaped shadow reaches the window beneath.
 - [ ] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it.

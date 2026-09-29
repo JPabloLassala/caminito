@@ -43,10 +43,15 @@ impl XwmHandler for State {
         let key = key(&window);
         if !camino.is_pending(&key) && camino.mapped_for_key(&key).is_none() {
             camino.window_created(Window::new_x11_window(window.clone()));
-            if window.is_fullscreen() {
-                camino.window_state_request(&key, StateRequest::Fullscreen(None));
-            } else if window.is_maximized() {
-                camino.window_state_request(&key, StateRequest::Maximized(true));
+            let asked = [
+                (window.is_fullscreen(), StateRequest::Fullscreen(None)),
+                (window.is_maximized(), StateRequest::Maximized(true)),
+                (window.is_above(), StateRequest::Above(true)),
+                (window.is_below(), StateRequest::Below(true)),
+                (window.is_sticky(), StateRequest::Sticky(true)),
+            ];
+            for (_, request) in asked.into_iter().filter(|(asked, _)| *asked) {
+                camino.window_state_request(&key, request);
             }
         }
         if let Err(err) = window.set_mapped(true) {
@@ -155,27 +160,33 @@ impl XwmHandler for State {
     }
 
     fn above_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.policy_request(&window, |camino, id| camino.policy.set_above(id, true));
+        self.camino
+            .window_state_request(&key(&window), StateRequest::Above(true));
     }
 
     fn unabove_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.policy_request(&window, |camino, id| camino.policy.set_above(id, false));
+        self.camino
+            .window_state_request(&key(&window), StateRequest::Above(false));
     }
 
     fn below_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.policy_request(&window, |camino, id| camino.policy.set_below(id, true));
+        self.camino
+            .window_state_request(&key(&window), StateRequest::Below(true));
     }
 
     fn unbelow_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.policy_request(&window, |camino, id| camino.policy.set_below(id, false));
+        self.camino
+            .window_state_request(&key(&window), StateRequest::Below(false));
     }
 
     fn stick_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.policy_request(&window, |camino, id| camino.policy.set_sticky(id, true));
+        self.camino
+            .window_state_request(&key(&window), StateRequest::Sticky(true));
     }
 
     fn unstick_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.policy_request(&window, |camino, id| camino.policy.set_sticky(id, false));
+        self.camino
+            .window_state_request(&key(&window), StateRequest::Sticky(false));
     }
 
     fn shade_request(&mut self, _xwm: XwmId, window: X11Surface) {

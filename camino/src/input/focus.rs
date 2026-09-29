@@ -1,7 +1,7 @@
 //! What the keyboard can focus: a Wayland surface, or an XWayland window, through which
 //! Smithay's `KeyboardTarget` follows the window's ICCCM input model and sends
 //! `WM_TAKE_FOCUS` (11). The pointer still focuses surfaces only, until 37. The shape is
-//! anvil's `KeyboardFocusTarget` (`anvil/src/focus.rs`).
+//! anvil's `KeyboardFocusTarget` (`anvil/src/focus.rs:42`).
 
 use std::borrow::Cow;
 

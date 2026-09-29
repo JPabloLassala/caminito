@@ -28,6 +28,11 @@ fn x_position(f: &mut Fixture, window: ClientWindow) -> (i32, i32) {
         .unwrap()
 }
 
+/// The X window that has X's input focus, as client `x` sees it.
+fn x_focus(f: &mut Fixture, x: ClientId) -> u32 {
+    f.x11_call(x, |x| x.input_focus()).unwrap()
+}
+
 /// Sends a `_NET_WM_STATE` request, as a client does: `action` 0 removes, 1 adds.
 fn net_wm_state(f: &mut Fixture, window: ClientWindow, action: u32, states: [&str; 2]) {
     let states = states.map(str::to_owned);
@@ -57,17 +62,11 @@ fn a_normal_window_maps_framed_takes_focus_on_click_and_moves() {
     let first = f.map(x, spec(400, 300));
     let second = f.map(x, spec(400, 300));
     assert!(f.mapped(first).shows_frame());
-    assert_eq!(
-        f.state.camino.policy.focus(crate::state::SEAT),
-        Some(f.pid(second))
-    );
+    assert_eq!(x_focus(&mut f, x), second.x11());
 
     let point = center(f.geometry(first));
     f.click(point.x, point.y);
-    assert_eq!(
-        f.state.camino.policy.focus(crate::state::SEAT),
-        Some(f.pid(first))
-    );
+    assert_eq!(x_focus(&mut f, x), first.x11());
 
     // Alt+drag moves it, and the X client is told where it went.
     let before = f.geometry(first).loc;
@@ -163,7 +162,9 @@ fn a_configure_request_is_honoured_for_a_floating_window_and_refused_for_a_maxim
 
     f.x11_call(x, move |x| x.configure(id, (10, 10), (100, 100)))
         .unwrap();
-    f.dispatch_for(std::time::Duration::from_millis(200));
+    // Camino has refused the request once the client is in sync, as Xwayland redirects it
+    // to Camino before it answers the client.
+    f.sync(window);
     assert_eq!(f.geometry(window), maximized);
 }
 
@@ -213,6 +214,30 @@ fn a_window_that_asks_to_be_maximised_before_it_maps_maps_maximised() {
 }
 
 #[test]
+fn above_below_and_sticky_asked_for_before_map_are_recorded_at_map() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let above = f.map(
+        x,
+        WindowSpec {
+            states: vec!["_NET_WM_STATE_ABOVE", "_NET_WM_STATE_STICKY"],
+            ..spec(400, 300)
+        },
+    );
+    let below = f.map(
+        x,
+        WindowSpec {
+            states: vec!["_NET_WM_STATE_BELOW"],
+            ..spec(400, 300)
+        },
+    );
+
+    let policy = &f.state.camino.policy;
+    let (above, below) = (f.pid(above), f.pid(below));
+    assert!(policy.is_above(above) && policy.is_sticky(above) && !policy.is_below(above));
+    assert!(policy.is_below(below) && !policy.is_above(below) && !policy.is_sticky(below));
+}
+
+#[test]
 fn an_unmap_and_remap_gives_a_new_policy_id() {
     let (mut f, x) = Fixture::connected(Kind::X11);
     let window = f.map(x, spec(400, 300));
@@ -258,13 +283,12 @@ fn focusing_a_window_moves_x_input_focus_to_it() {
     let (mut f, x) = Fixture::connected(Kind::X11);
     let first = f.map(x, spec(400, 300));
     let second = f.map(x, spec(400, 300));
-    let focus = |f: &mut Fixture| f.x11_call(x, |x| x.input_focus()).unwrap();
-    assert_eq!(focus(&mut f), second.x11());
+    assert_eq!(x_focus(&mut f, x), second.x11());
 
     let point = center(f.geometry(first));
     f.click(point.x, point.y);
 
-    assert_eq!(focus(&mut f), first.x11());
+    assert_eq!(x_focus(&mut f, x), first.x11());
 }
 
 /// The debug dump's entry for policy's window `id`.
