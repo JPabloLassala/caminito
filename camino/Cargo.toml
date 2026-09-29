@@ -20,7 +20,7 @@ smithay = { workspace = true, features = ["backend_winit", "desktop", "wayland_f
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 # Camino's X connection (11, 15), beside Smithay's.
-x11rb = { workspace = true, features = ["xkb"] }
+x11rb = { workspace = true, features = ["shape", "xkb"] }
 xcursor = "0.3.11"
 zbus = "5.19.0"
 

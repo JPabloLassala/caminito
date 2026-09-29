@@ -165,3 +165,49 @@ fn workspace_names_follow_the_settings() {
 
     assert_eq!(policy.workspace_names(), ["Desk 1", "Desk 2", "Desk 3"]);
 }
+
+#[test]
+fn a_window_that_asks_for_another_workspace_maps_there_without_focus() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    policy.map_window(
+        TestWindow::new(2, 400, 300).with_requested_workspace(2),
+        ms(2),
+    );
+
+    assert_eq!(policy.workspace_of(id(2)), Some(2));
+    assert_eq!(policy.active_workspace(), 0);
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert!(!window(&policy, 2).is_activated());
+    assert_eq!(window(&policy, 2).last_outputs(), Some(&[][..]));
+}
+
+#[test]
+fn a_window_that_asks_for_a_workspace_that_doesnt_exist_maps_on_the_active_one() {
+    let mut policy = policy();
+
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_workspace(9),
+        ms(1),
+    );
+
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn a_transient_that_asks_for_another_workspace_maps_on_its_parents() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    policy.map_window(
+        TestWindow::new(2, 200, 100)
+            .with_parent(1)
+            .with_requested_workspace(3),
+        ms(2),
+    );
+
+    assert_eq!(policy.workspace_of(id(2)), Some(0));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}

@@ -1,7 +1,7 @@
 # X window properties and requests
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M3
 Blocked by: 35, 38, 44, 45
 Map: [Camino v0.1](../map.md)
@@ -27,5 +27,22 @@ The per-window half of Camino's X connection ([11](11-xwayland-integration.md)):
 
 ## Acceptance criteria
 
-- [ ] X11-tier tests, written before the code: `_NET_REQUEST_FRAME_EXTENTS` is answered before map; `_NET_FRAME_EXTENTS` changes on maximise and on a theme switch, and is zero for a Motif-undecorated window; a window with `_NET_WM_DESKTOP` 2 before map maps on workspace 3; the `_NET_WM_DESKTOP` message moves a window; `_NET_CLOSE_WINDOW` closes; `_NET_MOVERESIZE_WINDOW` moves; a keyboard-move request starts a move and direction 11 cancels it; `_NET_WM_ICON` becomes the frame icon; struts are read and appear in the dump; a click on a window beneath another's input-shaped shadow reaches the window beneath.
-- [ ] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it.
+- [x] X11-tier tests, written before the code: `_NET_REQUEST_FRAME_EXTENTS` is answered before map; `_NET_FRAME_EXTENTS` changes on maximise and on a theme switch, and is zero for a Motif-undecorated window; a window with `_NET_WM_DESKTOP` 2 before map maps on workspace 3; the `_NET_WM_DESKTOP` message moves a window; `_NET_CLOSE_WINDOW` closes; `_NET_MOVERESIZE_WINDOW` moves; a keyboard-move request starts a move and direction 11 cancels it; `_NET_WM_ICON` becomes the frame icon; struts are read and appear in the dump; a click on a window beneath another's input-shaped shadow reaches the window beneath.
+- [ ] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it. Passed with stand-ins, pluma and a script, since neither xterm nor wmctrl is installed; [46](46-nested-x11-checks-left-over.md) runs them.
+
+## Notes
+
+- **Where the facts live:** what Camino's X connection reads of a window (the desktop it asked for before map, `_NET_WM_ICON`, the struts, the input region, and skips asked after map) is kept in the `X11Surface`'s user data as `XFacts`, which the X11 adapter reads. `Mapped` and policy stay protocol-free.
+- **Before map:** `map_window_request` reads `_NET_WM_DESKTOP`, the icon, the struts and the input region, and selects `ShapeNotify`, before the window is pending. Policy gained the `PolicyWindow::requested_workspace` fact, read at map as `requested_position` is: a window maps on the desktop it asked for if that exists, and isn't focused if that isn't the active one. A transient goes with its parent whatever it asked. `0xFFFFFFFF` records sticky.
+- **Publishing** follows the refresh-pass rule, as the root properties do: `xconn` keeps what it last wrote on each managed window, `_NET_WM_DESKTOP` (sticky as `0xFFFFFFFF`) and `_NET_FRAME_EXTENTS` (policy's `frame_extents`, so zero for CSD and fullscreen windows), and writes only what differs. A window that's no longer managed loses its `_NET_WM_DESKTOP`, as EWMH asks of a withdrawn one.
+- **`_NET_REQUEST_FRAME_EXTENTS`** for a window that isn't managed is answered at once, from its type, `WM_TRANSIENT_FOR`, `_MOTIF_WM_HINTS` and the fullscreen and maximised states in its `_NET_WM_STATE`, read over Camino's own connection, since the message can arrive before Smithay has read them. The answer is the focused frame it would map with. A managed window's are policy's, which the refresh pass writes again.
+- **States X is told:** the refresh pass compares policy's minimised, above, below and sticky with Smithay's `_NET_WM_STATE` and calls `set_hidden`, `set_above`, `set_below` and `set_sticky` only where they differ.
+- **Property changes:** `property_notify(Other(atom))` now reads the icon or the struts again if the atom is theirs, and is otherwise ignored, so Camino's and Smithay's own writes no longer count as a window change.
+- **Keyboard move and resize** (directions 9 and 10) start policy's move, or a resize from the bottom right corner, from where the pointer is, until the next click. There's no keyboard grab yet: the arrow keys, Return and Escape come with M8's `begin-move` and `begin-resize`. Direction 11 ends the window's move or resize where it is, as Marco's `meta_display_end_grab_op` does.
+- **`_NET_MOVERESIZE_WINDOW`** shares `configure_request`'s path, with its gravity in place of `WM_NORMAL_HINTS`' when it names one. `_NET_CLOSE_WINDOW` goes through `Policy::close`, so docks and the desktop aren't closed, as with Alt+F4.
+- **The input region** is read with SHAPE's `GetRectangles`. X reports one rectangle covering an unshaped window, which is taken as no shape, so the region follows the window's size. The hit test passes over an XWayland window where the point is outside it. Only managed windows need it: their `wl_surface` is Smithay's frame window's, which has no shape, while Xwayland gives an override-redirect window's input shape to its own surface. A test checks the latter.
+- **Reading what Camino's X connection wrote:** Xwayland orders requests per connection only, so a test client could read a property before Xwayland had handled Camino's write of it. That made 38's `_NET_NUMBER_OF_DESKTOPS` test fail about once in twenty runs under load. The fixture's `x11_call` now syncs Camino's X connection first.
+- **`_NET_SUPPORTED`** gained the desktop, frame-extent, close, moveresize-window, icon and strut atoms. `_GTK_SHOW_WINDOW_MENU` is handled but not listed: GTK sends it only if it's listed, and shows its own menu otherwise, which is better until M8's window menu.
+- **Messages x11rb queues** while Camino waits for a reply leave the socket quiet, so the refresh pass reads them too.
+- **Ownership:** `xconn` writes only `_NET_WM_DESKTOP` and `_NET_FRAME_EXTENTS` on windows, through the helpers that assert it isn't Smithay's; `_NET_WM_STATE` and `WM_STATE` go through Smithay's setters. A test watching a window's property changes can't tell whose they are, so the assertion is the guard, as 38 left it.
+- **The nested check** ran winit on Xvfb. pluma's `_NET_FRAME_EXTENTS` was `1, 1, 31, 1`, Menta's normal frame, and a script sending what `wmctrl -r <window> -t 1` sends moved it to the second workspace, and back to the first. `_NET_SUPPORTED` listed the new atoms, and nothing was logged at `WARN`.

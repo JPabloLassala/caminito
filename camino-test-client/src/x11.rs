@@ -13,9 +13,9 @@ use x11rb::connection::Connection;
 use x11rb::errors::{ConnectError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
-    ConnectionExt, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode,
-    SELECTION_NOTIFY_EVENT, SelectionNotifyEvent, StackMode, Window, WindowClass,
+    Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ClipOrdering,
+    ConfigureWindowAux, ConnectionExt, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode,
+    Rectangle, SELECTION_NOTIFY_EVENT, SelectionNotifyEvent, StackMode, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -60,6 +60,8 @@ pub struct XWindowSpec {
     /// The colour it's filled with, if not [`BACKGROUND`].
     pub background: Option<u32>,
     pub override_redirect: bool,
+    /// `CARDINAL` properties set before it's mapped, such as `_NET_WM_DESKTOP`.
+    pub cardinals: Vec<(&'static str, Vec<u32>)>,
 }
 
 /// One connection to Xwayland.
@@ -238,6 +240,16 @@ impl X11Client {
                 value.as_bytes(),
             )?;
         }
+        for (name, value) in &spec.cardinals {
+            let property = self.atom(name)?;
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                property,
+                AtomEnum::CARDINAL,
+                value,
+            )?;
+        }
         if spec.delete_window {
             let protocols = self.atom("WM_PROTOCOLS")?;
             let delete = self.atom("WM_DELETE_WINDOW")?;
@@ -318,6 +330,60 @@ impl X11Client {
         let utf8 = self.atom("UTF8_STRING")?;
         self.conn
             .change_property8(PropMode::REPLACE, window, property, utf8, value.as_bytes())?;
+        self.conn.sync()
+    }
+
+    /// Sets a `CARDINAL` property, as a client does to change its icon or struts.
+    pub fn set_cardinals(
+        &self,
+        window: Window,
+        name: &str,
+        value: &[u32],
+    ) -> Result<(), ReplyError> {
+        let property = self.atom(name)?;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            property,
+            AtomEnum::CARDINAL,
+            value,
+        )?;
+        self.conn.sync()
+    }
+
+    /// Deletes a property, as a client does when it withdraws a hint.
+    pub fn delete_property(&self, window: Window, name: &str) -> Result<(), ReplyError> {
+        let property = self.atom(name)?;
+        self.conn.delete_property(window, property)?;
+        self.conn.sync()
+    }
+
+    /// Sets the window's input shape (SHAPE's `Input` kind) to `rects`, each x, y, width,
+    /// height from its origin, as GTK does to leave a CSD window's shadow out.
+    pub fn set_input_shape(
+        &self,
+        window: Window,
+        rects: &[(i16, i16, u16, u16)],
+    ) -> Result<(), ReplyError> {
+        use x11rb::protocol::shape::{self, ConnectionExt as _};
+        let rects: Vec<Rectangle> = rects
+            .iter()
+            .map(|&(x, y, width, height)| Rectangle {
+                x,
+                y,
+                width,
+                height,
+            })
+            .collect();
+        self.conn.shape_rectangles(
+            shape::SO::SET,
+            shape::SK::INPUT,
+            ClipOrdering::UNSORTED,
+            window,
+            0,
+            0,
+            &rects,
+        )?;
         self.conn.sync()
     }
 

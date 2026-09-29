@@ -93,6 +93,14 @@ fn the_root_lists_what_camino_supports_and_its_check_window_is_named_camino() {
     _NET_CURRENT_DESKTOP
     _NET_WORKAREA
     _GTK_WORKAREAS
+    _NET_WM_DESKTOP
+    _NET_FRAME_EXTENTS
+    _NET_REQUEST_FRAME_EXTENTS
+    _NET_CLOSE_WINDOW
+    _NET_MOVERESIZE_WINDOW
+    _NET_WM_ICON
+    _NET_WM_STRUT
+    _NET_WM_STRUT_PARTIAL
     ");
     assert_snapshot!(name, @r#"_NET_WM_NAME(UTF8_STRING) = "Camino""#);
 }

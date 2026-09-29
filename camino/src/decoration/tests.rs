@@ -91,3 +91,46 @@ fn a_csd_window_and_a_dock_have_no_frame() {
     assert!(normal.is_ssd());
     assert!(normal.extents(FrameState::default()).top > 0);
 }
+
+/// The ARGB32 word at the middle of `surface`.
+fn center(surface: &camino_theme::cairo::ImageSurface) -> u32 {
+    let (x, y) = (surface.width() / 2, surface.height() / 2);
+    let offset = (y * surface.stride() + x * 4) as usize;
+    let mut pixel = 0;
+    surface
+        .with_data(|data| pixel = u32::from_ne_bytes(data[offset..offset + 4].try_into().unwrap()))
+        .unwrap();
+    pixel
+}
+
+#[test]
+fn net_wm_icon_takes_the_smallest_image_at_least_as_big_and_premultiplies_it() {
+    let mut value = vec![2, 2];
+    value.extend([0xff00_ff00; 4]);
+    value.extend([32, 32]);
+    // Red at half opacity.
+    value.extend([0x80ff_0000; 32 * 32]);
+    value.extend([64, 64]);
+    value.extend([0xff00_00ff; 64 * 64]);
+    let icon = super::NetWmIcon::parse(&value).unwrap();
+
+    let drawn = super::icon_from_net_wm_icon(&icon, 16).unwrap();
+
+    assert_eq!((drawn.width(), drawn.height()), (16, 16));
+    assert_eq!(center(&drawn), 0x8080_0000);
+}
+
+#[test]
+fn net_wm_icon_leaves_out_a_truncated_image() {
+    let mut value = vec![4, 4];
+    value.extend([0xffff_ffff; 16]);
+    value.extend([16, 16]);
+    value.extend([0; 10]);
+    let icon = super::NetWmIcon::parse(&value).unwrap();
+
+    let drawn = super::icon_from_net_wm_icon(&icon, 16).unwrap();
+    assert_eq!(center(&drawn), 0xffff_ffff);
+
+    assert!(super::NetWmIcon::parse(&[16, 16, 0]).is_none());
+    assert!(super::NetWmIcon::parse(&[]).is_none());
+}

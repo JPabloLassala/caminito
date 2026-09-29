@@ -196,6 +196,8 @@ pub struct WindowSpec {
     pub states: Vec<&'static str>,
     /// X11 only: `WM_HINTS`'s input flag; `None` leaves `WM_HINTS` unset.
     pub input: Option<bool>,
+    /// X11 only: `CARDINAL` properties set before it's mapped, such as `_NET_WM_DESKTOP`.
+    pub cardinals: Vec<(&'static str, Vec<u32>)>,
     /// Whether it can be asked to close: `WM_DELETE_WINDOW` in `WM_PROTOCOLS`, as toolkits
     /// set it. An xdg toplevel always can.
     pub delete_window: bool,
@@ -214,6 +216,7 @@ impl Default for WindowSpec {
             types: Vec::new(),
             states: Vec::new(),
             input: None,
+            cardinals: Vec::new(),
             delete_window: true,
         }
     }
@@ -324,7 +327,8 @@ impl Fixture {
             spec.position.is_none()
                 && spec.types.is_empty()
                 && spec.states.is_empty()
-                && spec.input.is_none(),
+                && spec.input.is_none()
+                && spec.cardinals.is_empty(),
             "an xdg toplevel can't ask for X properties: {spec:?}"
         );
         assert!(spec.delete_window, "an xdg toplevel can always be closed");
@@ -388,6 +392,7 @@ impl Fixture {
             empty: false,
             background: None,
             override_redirect: false,
+            cardinals: spec.cardinals,
         };
         let window = self
             .x11_call(id, move |x| {
@@ -563,6 +568,11 @@ impl Fixture {
     /// How a frame's button is drawn.
     pub fn button_state(&self, window: ClientWindow, function: ButtonFunction) -> FrameButtonState {
         self.mapped(window).frame().button_states().get(function)
+    }
+
+    /// The colour at the middle of the icon a window's frame draws, as cairo's ARGB32.
+    pub fn frame_icon_color(&self, window: ClientWindow) -> Option<u32> {
+        self.mapped(window).frame().mini_icon_center()
     }
 
     /// The frame control under the pointer, if it's over a frame.
@@ -764,6 +774,19 @@ impl Fixture {
         }
     }
 
+    /// Dispatches until `done` holds, as [`dispatch_until`](Self::dispatch_until) does, for
+    /// a condition that asks a client, which dispatches too.
+    pub fn dispatch_until_mut(&mut self, mut done: impl FnMut(&mut Self) -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !done(self) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the condition didn't hold within 5 s"
+            );
+            self.dispatch_waiting();
+        }
+    }
+
     /// One `dispatch` that waits up to 10 ms for the compositor's sources.
     fn dispatch_waiting(&mut self) {
         for client in self.wayland_clients() {
@@ -860,6 +883,9 @@ impl Fixture {
             panic!("{id:?} isn't a connected X client");
         };
         let client = Arc::clone(client);
+        // Xwayland orders requests per connection only, so the call sees what Camino's X
+        // connection has written only once Xwayland has handled it.
+        self.state.camino.sync_x_connection_in_test();
         self.off_loop(move || call(&client))
     }
 

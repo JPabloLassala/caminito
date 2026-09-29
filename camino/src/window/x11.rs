@@ -10,8 +10,11 @@ use smithay::xwayland::X11Surface;
 use smithay::xwayland::xwm::{WmInputModel, WmWindowType};
 
 use super::{Adapter, PreMapConfigure, Skips, WindowKey};
-use crate::decoration::IconSource;
+use crate::decoration::{IconSource, NetWmIcon};
 use crate::input::KeyboardFocus;
+
+/// `_NET_WM_DESKTOP`'s value for a window on every desktop.
+pub(crate) const STICKY: u32 = 0xFFFF_FFFF;
 
 /// Marco's type for an X window (`recalc_window_type`, window.c:6568-6607): its first
 /// `_NET_WM_WINDOW_TYPE` Marco knows, or with none a dialog if it's transient for another
@@ -20,7 +23,7 @@ use crate::input::KeyboardFocus;
 /// Marco doesn't know the override-redirect types, so on a managed window they count as no
 /// type. It would carry on to a later type in the list; Smithay only reads the first it
 /// knows, so here they end the search.
-fn marco_type(ewmh: Option<WmWindowType>, transient: bool, modal: bool) -> WindowType {
+pub(crate) fn marco_type(ewmh: Option<WmWindowType>, transient: bool, modal: bool) -> WindowType {
     let window_type = match ewmh {
         Some(WmWindowType::Normal) => WindowType::Normal,
         Some(WmWindowType::Desktop) => WindowType::Desktop,
@@ -96,9 +99,11 @@ pub(crate) struct RequestedGeometry {
 }
 
 /// The geometry an X window asks for with a `ConfigureRequest`, as the window geometry
-/// inside a frame of `extents`. What it leaves out stays as it is.
+/// inside a frame of `extents`, placed by `gravity` or else its own. What it leaves out
+/// stays as it is.
 pub(crate) fn configure_request_geometry(
     surface: &X11Surface,
+    gravity: Option<Gravity>,
     loc: (Option<i32>, Option<i32>),
     size: (Option<u32>, Option<u32>),
     extents: FrameExtents<i32, Logical>,
@@ -114,9 +119,8 @@ pub(crate) fn configure_request_geometry(
             (loc.0.unwrap_or(last.loc.x), loc.1.unwrap_or(last.loc.y)).into(),
             requested_size.unwrap_or(last.size),
         );
-        let gravity = surface
-            .size_hints()
-            .and_then(|hints| hints.win_gravity)
+        let gravity = gravity
+            .or_else(|| surface.size_hints().and_then(|hints| hints.win_gravity))
             .unwrap_or(Gravity::NORTH_WEST);
         gravity_position(gravity, rect, extents) + Point::new(toolkit.left, toolkit.top)
     });
@@ -160,11 +164,115 @@ pub(crate) fn request_modal(surface: &X11Surface, modal: bool) {
     unflushed(surface, |unflushed| unflushed.modal = Some(modal));
 }
 
+/// Records the client's request to skip the taskbar or pager, or stop: `action` 0 removes,
+/// 1 adds and 2 toggles, as `_NET_WM_STATE` has it. It's Camino's to keep (11).
+pub(crate) fn request_skips(surface: &X11Surface, action: u32, taskbar: bool, pager: bool) {
+    let mut skips = Adapter::skips(surface);
+    let apply = |skip: &mut bool| match action {
+        0 => *skip = false,
+        1 => *skip = true,
+        2 => *skip = !*skip,
+        _ => {}
+    };
+    if taskbar {
+        apply(&mut skips.taskbar);
+    }
+    if pager {
+        apply(&mut skips.pager);
+    }
+    with_x_facts(surface, |facts| facts.skips = Some(skips));
+}
+
 /// Records the client's request to demand attention or not, as [`request_modal`] does.
 pub(crate) fn request_demands_attention(surface: &X11Surface, demands_attention: bool) {
     unflushed(surface, |unflushed| {
         unflushed.demands_attention = Some(demands_attention)
     });
+}
+
+/// What Camino's X connection has read of a window that Smithay doesn't (39).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct XFacts {
+    /// `_NET_WM_DESKTOP` as it was when the window asked to map. `0xFFFFFFFF` is sticky.
+    pub desktop: Option<u32>,
+    /// `_NET_WM_ICON`, kept up to date.
+    pub icon: Option<NetWmIcon>,
+    /// `_NET_WM_STRUT_PARTIAL`, else `_NET_WM_STRUT`, kept up to date. Policy's work area
+    /// takes them in M5 (17).
+    pub struts: Vec<Strut>,
+    /// The input region SHAPE gives it, from its origin, kept up to date; `None` takes the
+    /// pointer everywhere (35).
+    pub input_shape: Option<Vec<Rectangle<i32, Logical>>>,
+    /// Skip-taskbar and skip-pager as asked after map, which Smithay drops. Camino keeps
+    /// them and never writes them back to `_NET_WM_STATE` (11).
+    pub skips: Option<Skips>,
+}
+
+/// Whether an XWayland window takes the pointer at `point` from its origin. GTK's CSD windows
+/// leave their shadow out of their input region, which Xwayland doesn't pass on to the
+/// `wl_surface` (35).
+pub(crate) fn takes_pointer_at(surface: &X11Surface, point: Point<f64, Logical>) -> bool {
+    with_x_facts(surface, |facts| {
+        facts
+            .input_shape
+            .as_ref()
+            .is_none_or(|rects| rects.iter().any(|rect| rect.to_f64().contains(point)))
+    })
+}
+
+/// An edge of the screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Side {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// Space a window reserves along one edge of the screen, in logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Strut {
+    pub side: Side,
+    /// How far in from the edge it reaches.
+    pub width: i32,
+    /// The first and last pixel along the edge it covers, or `None` for all of it, as
+    /// `_NET_WM_STRUT` has it.
+    pub span: Option<(i32, i32)>,
+}
+
+/// A window's struts from `_NET_WM_STRUT_PARTIAL`, else from `_NET_WM_STRUT`, as EWMH
+/// has it: left, right, top and bottom widths, then for `_PARTIAL` each edge's start and
+/// end in that order. Values are in X client space, which is logical space until the X11
+/// scale (41) divides them by it.
+pub(crate) fn struts(partial: Option<&[u32]>, strut: Option<&[u32]>) -> Vec<Strut> {
+    let sides = [Side::Left, Side::Right, Side::Top, Side::Bottom];
+    let (widths, spans) = match (partial, strut) {
+        (Some(partial), _) if partial.len() >= 12 => (&partial[..4], Some(&partial[4..12])),
+        (_, Some(strut)) if strut.len() >= 4 => (&strut[..4], None),
+        _ => return Vec::new(),
+    };
+    sides
+        .into_iter()
+        .zip(widths)
+        .enumerate()
+        .filter(|(_, (_, width))| **width > 0)
+        .map(|(n, (side, width))| Strut {
+            side,
+            width: *width as i32,
+            span: spans.map(|spans| (spans[2 * n] as i32, spans[2 * n + 1] as i32)),
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct XFactsData(Mutex<XFacts>);
+
+/// Runs `f` on what Camino's X connection has read of the window.
+pub(crate) fn with_x_facts<T>(surface: &X11Surface, f: impl FnOnce(&mut XFacts) -> T) -> T {
+    let facts = surface
+        .user_data()
+        .get_or_insert_threadsafe(XFactsData::default);
+    f(&mut facts.0.lock().unwrap())
 }
 
 /// The X window's rectangle for window geometry `geometry`: toolkits that draw shadows
@@ -239,14 +347,24 @@ impl Adapter for X11Surface {
         X11Surface::pid(self)
     }
 
+    /// `_NET_WM_DESKTOP` as it was when the window asked to map (39).
+    fn requested_workspace(&self) -> Option<usize> {
+        let desktop = with_x_facts(self, |facts| facts.desktop)?;
+        (desktop != STICKY).then_some(desktop as usize)
+    }
+
     /// Unless `_MOTIF_WM_HINTS` turns decorations off.
     fn wants_frame(&self) -> bool {
         !self.is_decorated()
     }
 
-    /// `_NET_WM_ICON` comes with Camino's X connection (39).
+    /// `_NET_WM_ICON`, else the desktop entry's through `WM_CLASS` (07).
     fn icon(&self) -> IconSource {
-        IconSource::AppId(self.app_id())
+        let app_id = self.app_id();
+        match with_x_facts(self, |facts| facts.icon.clone()) {
+            Some(icon) => IconSource::X11 { icon, app_id },
+            None => IconSource::AppId(app_id),
+        }
     }
 
     /// `WM_TRANSIENT_FOR`.
@@ -266,12 +384,13 @@ impl Adapter for X11Surface {
         self.input_model() != WmInputModel::None
     }
 
-    /// `_NET_WM_STATE_SKIP_TASKBAR` and `_NET_WM_STATE_SKIP_PAGER`.
+    /// `_NET_WM_STATE_SKIP_TASKBAR` and `_NET_WM_STATE_SKIP_PAGER`, as asked at map or
+    /// since.
     fn skips(&self) -> Skips {
-        Skips {
+        with_x_facts(self, |facts| facts.skips).unwrap_or_else(|| Skips {
             taskbar: self.is_skip_taskbar(),
             pager: self.is_skip_pager(),
-        }
+        })
     }
 
     fn set_geometry(&self, geometry: Rectangle<i32, Logical>, states: WindowStates) {

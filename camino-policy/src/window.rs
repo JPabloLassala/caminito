@@ -89,6 +89,9 @@ pub trait PolicyWindow {
         &self,
         extents: FrameExtents<i32, Logical>,
     ) -> Option<Point<i32, Logical>>;
+    /// The workspace the client asked to map on (X11's `_NET_WM_DESKTOP` before map),
+    /// counted from 0.
+    fn requested_workspace(&self) -> Option<usize>;
     /// Whether the window takes keyboard input at all (ICCCM's input model). One that
     /// doesn't isn't focused when it maps.
     fn takes_input(&self) -> bool;

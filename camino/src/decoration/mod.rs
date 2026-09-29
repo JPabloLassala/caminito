@@ -13,6 +13,8 @@ pub mod style;
 #[cfg(test)]
 mod tests;
 
+use std::sync::Arc;
+
 use camino_policy::{FrameState, SizeHints, WindowType};
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use camino_theme::{
@@ -219,8 +221,55 @@ pub enum IconSource {
         buffers: Vec<(WlBuffer, i32)>,
         app_id: Option<String>,
     },
+    /// An XWayland window's `_NET_WM_ICON`, else the app id's as for `AppId` (07, 39).
+    X11 {
+        icon: NetWmIcon,
+        app_id: Option<String>,
+    },
     /// The desktop entry's icon for the app id, else `application-x-executable`.
     AppId(Option<String>),
+}
+
+/// `_NET_WM_ICON`'s images. Two are the same icon only if they were read together, so
+/// comparing them is cheap.
+#[derive(Debug, Clone)]
+pub struct NetWmIcon(Arc<[IconImage]>);
+
+/// One of `_NET_WM_ICON`'s images: non-premultiplied ARGB, one word a pixel, row by row.
+#[derive(Debug)]
+struct IconImage {
+    width: i32,
+    height: i32,
+    argb: Vec<u32>,
+}
+
+impl PartialEq for NetWmIcon {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl NetWmIcon {
+    /// Parses `_NET_WM_ICON`: width, height, then that many pixels, for each image. A
+    /// truncated last image is left out. `None` if there's no whole image.
+    pub fn parse(value: &[u32]) -> Option<Self> {
+        let mut images = Vec::new();
+        let mut rest = value;
+        while let [width, height, pixels @ ..] = rest {
+            let (width, height) = (*width as usize, *height as usize);
+            let len = width.checked_mul(height)?;
+            if width == 0 || len > pixels.len() || width > i32::MAX as usize {
+                break;
+            }
+            images.push(IconImage {
+                width: width as i32,
+                height: height as i32,
+                argb: pixels[..len].to_vec(),
+            });
+            rest = &pixels[len..];
+        }
+        (!images.is_empty()).then(|| NetWmIcon(images.into()))
+    }
 }
 
 /// What a window's frame is derived from besides its [`FrameState`]: facts that change only
@@ -466,6 +515,22 @@ impl WindowFrame {
         self.drawn.as_ref().map_or(1, |(inputs, _, _)| inputs.scale)
     }
 
+    /// The colour at the middle of the mini icon the frame last loaded, as cairo's ARGB32.
+    #[cfg(test)]
+    pub fn mini_icon_center(&self) -> Option<u32> {
+        let icon = self.icons.as_ref()?.mini.as_ref()?;
+        let (x, y) = (icon.width() / 2, icon.height() / 2);
+        let offset = (y * icon.stride() + x * 4) as usize;
+        let mut pixel = None;
+        icon.with_data(|data| {
+            pixel = Some(u32::from_ne_bytes(
+                data[offset..offset + 4].try_into().unwrap(),
+            ))
+        })
+        .ok()?;
+        pixel
+    }
+
     /// How many times the strips have been drawn.
     pub fn renders(&self) -> u64 {
         self.renders
@@ -567,8 +632,46 @@ fn window_icon(
             .and_then(|path| load_icon(&path, pixels))
             .or_else(|| icon_from_buffers(buffers, pixels))
             .or_else(|| from_file(lookup, app_id.as_deref())),
+        IconSource::X11 { icon, app_id } => {
+            icon_from_net_wm_icon(icon, pixels).or_else(|| from_file(lookup, app_id.as_deref()))
+        }
         IconSource::AppId(app_id) => from_file(lookup, app_id.as_deref()),
     }
+}
+
+/// The `_NET_WM_ICON` image nearest `pixels` wide, scaled to `pixels` square.
+fn icon_from_net_wm_icon(icon: &NetWmIcon, pixels: i32) -> Option<ImageSurface> {
+    // The smallest at least as big, else the biggest.
+    let images = icon.0.iter();
+    let nearest = images
+        .clone()
+        .filter(|image| image.width >= pixels)
+        .min_by_key(|image| image.width)
+        .or_else(|| images.max_by_key(|image| image.width))?;
+    let surface = premultiplied(nearest)?;
+    scaled(&surface, pixels)
+        .inspect_err(|err| tracing::warn!("can't scale a window icon: {err}"))
+        .ok()
+}
+
+/// An `_NET_WM_ICON` image as cairo's ARGB32, whose colours are premultiplied by alpha.
+fn premultiplied(image: &IconImage) -> Option<ImageSurface> {
+    let mut surface = ImageSurface::create(Format::ARgb32, image.width, image.height).ok()?;
+    let stride = surface.stride() as usize;
+    {
+        let mut data = surface.data().ok()?;
+        for (y, row) in image.argb.chunks(image.width as usize).enumerate() {
+            for (x, argb) in row.iter().enumerate() {
+                let alpha = argb >> 24;
+                let channel = |shift: u32| ((argb >> shift & 0xff) * alpha + 127) / 255;
+                let pixel = alpha << 24 | channel(16) << 16 | channel(8) << 8 | channel(0);
+                let offset = y * stride + x * 4;
+                data[offset..offset + 4].copy_from_slice(&pixel.to_ne_bytes());
+            }
+        }
+    }
+    surface.mark_dirty();
+    Some(surface)
 }
 
 /// The xdg-toplevel-icon buffer nearest `pixels` square, scaled to it.

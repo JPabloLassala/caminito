@@ -16,6 +16,7 @@ mod popups;
 mod root_properties;
 mod selection;
 mod settings;
+mod window_properties;
 mod xdg_shell;
 mod xwayland;
 mod xwayland_windows;

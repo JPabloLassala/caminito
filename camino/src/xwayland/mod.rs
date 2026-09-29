@@ -13,19 +13,29 @@ use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::process::Stdio;
 
-use camino_policy::{Action, MAX_WORKSPACES};
+use camino_policy::{Action, FrameState, MAX_WORKSPACES, PolicyWindow, ResizeEdges, SizeHints};
+use smithay::backend::input::InputTime;
+use smithay::input::pointer::GrabStartData;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::x11rb::errors::ConnectionError;
+use smithay::utils::{FrameExtents, Logical, SERIAL_COUNTER};
 use smithay::xwayland::xwm::X11Window;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
 use self::stack::RootStack;
-use self::xconn::{RootProperties, RootRequest, XConnection};
+use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XConnection};
+use crate::decoration::{NetWmIcon, WindowFacts};
 use crate::helpers::{self, StderrTarget};
+use crate::input::GrabKind;
 use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, Mouse};
 use crate::state::{Camino, SEAT, State};
+use crate::window::{STICKY, WindowKey, marco_type, request_skips, with_x_facts};
+
+/// One of Smithay's setters for a state in `_NET_WM_STATE`.
+type SetState = fn(&X11Surface, bool) -> Result<(), ConnectionError>;
 
 /// The identifier Xwayland's stderr is logged under.
 const IDENTIFIER: &str = "Xwayland";
@@ -192,29 +202,201 @@ impl Camino {
         });
     }
 
-    /// Runs the root messages X has sent as Camino's own bindings and the pager would (11).
-    fn x_root_requests(&mut self) {
-        let requests = self.with_xconn("read X's root messages", XConnection::requests);
-        for request in requests.into_iter().flatten() {
-            match request {
-                // Marco ignores a desktop it doesn't have.
-                RootRequest::CurrentDesktop(n) if n < self.policy.workspace_count() => {
-                    let now = self.now();
-                    self.policy.action(SEAT, Action::SwitchToWorkspace(n), now);
-                    self.queue_redraw_all();
+    /// Brings the properties Camino publishes on each XWayland window up to date with
+    /// policy (39).
+    pub(crate) fn refresh_x_windows(&mut self) {
+        let policy = &self.policy;
+        let windows: Vec<(X11Window, WindowProperties)> = policy
+            .windows()
+            .filter_map(|mapped| {
+                let window = mapped.x11_window()?;
+                let id = mapped.id();
+                let desktop = if policy.is_sticky(id) {
+                    STICKY
+                } else {
+                    policy.workspace_of(id)? as u32
+                };
+                // X client space is logical space until the X11 scale (41).
+                let frame_extents = policy.frame_extents(id);
+                Some((
+                    window,
+                    WindowProperties {
+                        desktop,
+                        frame_extents,
+                    },
+                ))
+            })
+            .collect();
+        self.with_xconn("publish X windows' properties", |xconn| {
+            xconn.publish_windows(windows)
+        });
+        self.refresh_x_states();
+    }
+
+    /// Tells each XWayland window the states policy keeps that X shows in `_NET_WM_STATE`
+    /// and `WM_STATE` (35): minimised as hidden and iconic, and the above, below and sticky
+    /// states policy records. They're Smithay's properties, so they go through its API,
+    /// only when they differ from what it last wrote.
+    fn refresh_x_states(&self) {
+        let policy = &self.policy;
+        for mapped in policy.windows() {
+            let Some(surface) = mapped.window().x11_surface() else {
+                continue;
+            };
+            let id = mapped.id();
+            let states: [(bool, bool, SetState); 4] = [
+                (
+                    policy.is_minimized(id),
+                    surface.is_hidden(),
+                    X11Surface::set_hidden,
+                ),
+                (
+                    policy.is_above(id),
+                    surface.is_above(),
+                    X11Surface::set_above,
+                ),
+                (
+                    policy.is_below(id),
+                    surface.is_below(),
+                    X11Surface::set_below,
+                ),
+                (
+                    policy.is_sticky(id),
+                    surface.is_sticky(),
+                    X11Surface::set_sticky,
+                ),
+            ];
+            for (wanted, told, tell) in states {
+                if wanted != told
+                    && let Err(err) = tell(surface, wanted)
+                {
+                    tracing::debug!("can't set an X window's state: {err}");
                 }
-                RootRequest::CurrentDesktop(n) => {
-                    tracing::debug!("an X client asked for desktop {n}, which isn't one");
-                }
-                // Marco ignores 0. GSettings would refuse more than the schema's most.
-                RootRequest::NumberOfDesktops(n) if n > 0 => {
-                    let n = n.min(MAX_WORKSPACES) as i32;
-                    self.settings_thread
-                        .set(MARCO_GENERAL, "num-workspaces", Value::Int(n));
-                }
-                RootRequest::NumberOfDesktops(_) => {}
             }
         }
+    }
+
+    /// Runs a message X has sent that only needs Camino's state.
+    fn x_request(&mut self, request: Request) {
+        match request {
+            // Marco ignores a desktop it doesn't have.
+            Request::CurrentDesktop(n) if n < self.policy.workspace_count() => {
+                let now = self.now();
+                self.policy.action(SEAT, Action::SwitchToWorkspace(n), now);
+                self.queue_redraw_all();
+            }
+            Request::CurrentDesktop(n) => {
+                tracing::debug!("an X client asked for desktop {n}, which isn't one");
+            }
+            // Marco ignores 0. GSettings would refuse more than the schema's most.
+            Request::NumberOfDesktops(n) if n > 0 => {
+                let n = n.min(MAX_WORKSPACES) as i32;
+                self.settings_thread
+                    .set(MARCO_GENERAL, "num-workspaces", Value::Int(n));
+            }
+            Request::NumberOfDesktops(_) => {}
+            Request::Desktop { window, desktop } => self.x_desktop_request(window, desktop),
+            Request::FrameExtents { window } => self.x_frame_extents_request(window),
+            Request::Close { window } => {
+                if let Some(id) = self.mapped_for_key(&WindowKey::X11(window)) {
+                    self.policy.close(id);
+                }
+            }
+            Request::MoveResize {
+                window,
+                gravity,
+                loc,
+                size,
+            } => {
+                if let Some(surface) = self.managed_x11_surface(window) {
+                    self.x_configure_request(&surface, gravity, loc, size);
+                }
+            }
+            Request::Skips {
+                window,
+                action,
+                taskbar,
+                pager,
+            } => {
+                if let Some(surface) = self.known_x11_surface(window) {
+                    request_skips(&surface, action, taskbar, pager);
+                }
+            }
+            Request::InputShape { window, shaped } => {
+                let Some(surface) = self.known_x11_surface(window) else {
+                    return;
+                };
+                if shaped {
+                    self.read_input_shape(&surface);
+                } else {
+                    with_x_facts(&surface, |facts| facts.input_shape = None);
+                }
+            }
+            Request::KeyboardMoveResize { .. } | Request::CancelMoveResize { .. } => {
+                unreachable!("State::x_requests runs the grabs")
+            }
+        }
+    }
+
+    /// `_NET_REQUEST_FRAME_EXTENTS` (11). A managed window's are policy's, which the
+    /// refresh pass writes again. Any other window isn't in policy, so the answer is
+    /// written here: the frame it would map with, focused, from the theme and what it says
+    /// of itself, which it waits for before it maps.
+    fn x_frame_extents_request(&mut self, window: X11Window) {
+        if self.mapped_for_key(&WindowKey::X11(window)).is_some() {
+            if let Some(xconn) = self.xwayland.as_mut().and_then(|x| x.xconn.as_mut()) {
+                xconn.republish_frame_extents(window);
+            }
+            return;
+        }
+        let request = self.with_xconn("read an X window's frame hints", |xconn| {
+            xconn.frame_request(window)
+        });
+        let Some(Some(request)) = request else {
+            return;
+        };
+        let has_parent = request
+            .transient_for
+            .is_some_and(|parent| self.mapped_for_key(&WindowKey::X11(parent)).is_some());
+        let facts = WindowFacts {
+            window_type: marco_type(request.window_type, request.transient_for.is_some(), false),
+            has_parent,
+            hints: SizeHints::default(),
+            // A fullscreen window shows no frame.
+            wants_frame: request.decorated && !request.fullscreen,
+        };
+        let state = FrameState {
+            maximized: request.maximized,
+            focused: true,
+            shaded: false,
+        };
+        let extents = self.frame_context.extents(&facts, state);
+        self.with_xconn("answer an X window's frame request", |xconn| {
+            xconn.answer_frame_extents(window, extents)
+        });
+    }
+
+    /// The XWayland window whose X window is `window`.
+    fn managed_x11_surface(&self, window: X11Window) -> Option<X11Surface> {
+        let id = self.mapped_for_key(&WindowKey::X11(window))?;
+        self.policy.window(id)?.window().x11_surface().cloned()
+    }
+
+    /// `_NET_WM_DESKTOP` for a managed window, as Marco takes it: every desktop makes it
+    /// sticky, and one it has moves it there, with its transient family (window.c's
+    /// `meta_window_client_message`).
+    fn x_desktop_request(&mut self, window: X11Window, desktop: u32) {
+        let Some(id) = self.mapped_for_key(&WindowKey::X11(window)) else {
+            return;
+        };
+        let policy = &mut self.policy;
+        if desktop == STICKY {
+            policy.set_sticky(id, true);
+        } else if (desktop as usize) < policy.workspace_count() {
+            policy.set_sticky(id, false);
+            policy.move_to_workspace(id, desktop as usize);
+        }
+        self.queue_redraw_all();
     }
 
     /// Runs `use_it` on Camino's X connection, if there is one. A connection that fails is
@@ -235,6 +417,89 @@ impl Camino {
         }
     }
 
+    /// Reads what Camino's X connection knows of a window Smithay doesn't, as it asks to
+    /// map (39).
+    pub(crate) fn read_x_facts(&mut self, window: &X11Surface) {
+        let id = window.window_id();
+        let desktop = self
+            .with_xconn("read an X window's desktop", |xconn| xconn.desktop(id))
+            .flatten();
+        // Skips asked after an earlier map are forgotten: `_NET_WM_STATE` says them now.
+        with_x_facts(window, |facts| {
+            facts.desktop = desktop;
+            facts.skips = None;
+        });
+        self.read_x_property(window, WindowProperty::Icon);
+        self.read_x_property(window, WindowProperty::Struts);
+        // Watched first, so a change after it's read isn't missed.
+        self.with_xconn("watch an X window's input region", |xconn| {
+            xconn.watch_shape(id)
+        });
+        self.read_input_shape(window);
+    }
+
+    /// Reads a window's input region again.
+    fn read_input_shape(&mut self, window: &X11Surface) {
+        let id = window.window_id();
+        let shape = self
+            .with_xconn("read an X window's input region", |xconn| {
+                xconn.input_shape(id)
+            })
+            .flatten();
+        with_x_facts(window, |facts| facts.input_shape = shape);
+    }
+
+    /// The pending or managed window whose X window is `window`.
+    fn known_x11_surface(&self, window: X11Window) -> Option<X11Surface> {
+        self.window_for_key(&WindowKey::X11(window))?
+            .x11_surface()
+            .cloned()
+    }
+
+    /// The frame extents Camino's X connection last published on an XWayland window.
+    pub(crate) fn published_frame_extents(
+        &self,
+        window: X11Window,
+    ) -> Option<FrameExtents<i32, Logical>> {
+        let xconn = self.xwayland.as_ref()?.xconn.as_ref()?;
+        xconn.published_frame_extents(window)
+    }
+
+    /// Reads one of the window properties Camino keeps again.
+    fn read_x_property(&mut self, window: &X11Surface, property: WindowProperty) {
+        let id = window.window_id();
+        match property {
+            WindowProperty::Icon => {
+                let icon = self
+                    .with_xconn("read an X window's icon", |xconn| xconn.icon(id))
+                    .flatten()
+                    .and_then(|value| NetWmIcon::parse(&value));
+                with_x_facts(window, |facts| facts.icon = icon);
+            }
+            WindowProperty::Struts => {
+                let struts = self
+                    .with_xconn("read an X window's struts", |xconn| xconn.struts(id))
+                    .unwrap_or_default();
+                with_x_facts(window, |facts| facts.struts = struts);
+            }
+        }
+    }
+
+    /// A property Smithay doesn't parse changed on a window, pending or managed. Returns
+    /// whether it's one Camino reads, which it has read again.
+    pub(crate) fn x_property_changed(&mut self, window: &X11Surface, atom: u32) -> bool {
+        let property = self
+            .xwayland
+            .as_ref()
+            .and_then(|xwayland| xwayland.xconn.as_ref())
+            .and_then(|xconn| xconn.window_property(atom));
+        let Some(property) = property else {
+            return false;
+        };
+        self.read_x_property(window, property);
+        true
+    }
+
     fn root_properties(&self) -> RootProperties {
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
@@ -251,6 +516,13 @@ impl Camino {
         }
     }
 
+    /// Waits until Xwayland has handled everything Camino's X connection has sent, for a
+    /// test client that reads what it wrote: Xwayland orders requests per connection only.
+    #[cfg(test)]
+    pub(crate) fn sync_x_connection_in_test(&mut self) {
+        self.with_xconn("sync with Xwayland", XConnection::sync);
+    }
+
     /// Stops Xwayland for a test fixture that's being dropped, which gives its display's
     /// lock back. Xwayland itself outlives it; see the fixture's `Drop`.
     #[cfg(test)]
@@ -260,6 +532,63 @@ impl Camino {
 }
 
 impl State {
+    /// Runs the messages X has sent as Camino's own bindings and the pager would (11, 39).
+    pub(crate) fn x_requests(&mut self) {
+        let requests = self
+            .camino
+            .with_xconn("read X's messages", XConnection::requests);
+        for request in requests.into_iter().flatten() {
+            match request {
+                Request::KeyboardMoveResize { window, resize } => {
+                    self.x_keyboard_move_resize(window, resize);
+                }
+                Request::CancelMoveResize { window } => self.x_cancel_move_resize(window),
+                request => self.camino.x_request(request),
+            }
+        }
+    }
+
+    /// `_NET_WM_MOVERESIZE`'s keyboard move or resize (05, 11): policy moves the window, or
+    /// resizes it from its bottom right corner, with the pointer from where it is, until a
+    /// click. The arrow keys, Return and Escape come with M8's `begin-move` and
+    /// `begin-resize`.
+    fn x_keyboard_move_resize(&mut self, window: X11Window, resize: bool) {
+        let Some(id) = self.camino.mapped_for_key(&WindowKey::X11(window)) else {
+            return;
+        };
+        let kind = if resize {
+            GrabKind::Resize(ResizeEdges {
+                bottom: true,
+                right: true,
+                ..ResizeEdges::default()
+            })
+        } else {
+            GrabKind::Move
+        };
+        let pointer = self.camino.seat.get_pointer().unwrap();
+        let start_data = GrabStartData {
+            focus: None,
+            button: 0,
+            location: pointer.current_location(),
+        };
+        self.begin_window_grab(id, kind, start_data, SERIAL_COUNTER.next_serial());
+    }
+
+    /// `_NET_WM_MOVERESIZE`'s cancel: ends the move or resize of the window, if one is in
+    /// progress, where it is, as Marco's `meta_display_end_grab_op` does.
+    fn x_cancel_move_resize(&mut self, window: X11Window) {
+        let camino = &self.camino;
+        let Some(id) = camino.mapped_for_key(&WindowKey::X11(window)) else {
+            return;
+        };
+        if camino.policy.grab(SEAT) != Some(id) {
+            return;
+        }
+        let pointer = camino.seat.get_pointer().unwrap();
+        let time = InputTime::from_micros(camino.now().as_micros() as u64);
+        pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+    }
+
     /// Xwayland is up. In 11's start-up order: attaches `X11Wm`, connects Camino's X
     /// connection, which claims Camino's identity, publishes the root properties, and only
     /// then sets `DISPLAY` for the clients Camino spawns, which read them at start-up.

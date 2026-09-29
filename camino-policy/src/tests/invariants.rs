@@ -139,24 +139,29 @@ fn test_window() -> impl Strategy<Value = TestWindow> {
         any::<bool>(),
         proptest::option::of((-500..3500i32, -500..2000i32)),
         any::<bool>(),
+        // Past the most workspaces there are, as a client may ask.
+        proptest::option::of(0..40usize),
     )
-        .prop_map(|(id, w, h, window_type, parent, ssd, requested, input)| {
-            let mut window = TestWindow::new(id, w, h).with_type(window_type);
-            window.input = input;
-            window.parent = parent.map(WindowId);
-            if ssd {
-                // A theme whose extents depend on the state, as eOS's do.
-                window = window
-                    .with_frame(5, 5, 25, 5)
-                    .with_unfocused_border(1)
-                    .with_shaded_top(20);
-                window.maximized_extents = smithay::utils::FrameExtents::new(0, 0, 22, 0);
-            }
-            if let Some((x, y)) = requested {
-                window = window.with_requested_position(x, y);
-            }
-            window
-        })
+        .prop_map(
+            |(id, w, h, window_type, parent, ssd, requested, input, workspace)| {
+                let mut window = TestWindow::new(id, w, h).with_type(window_type);
+                window.input = input;
+                window.parent = parent.map(WindowId);
+                if ssd {
+                    // A theme whose extents depend on the state, as eOS's do.
+                    window = window
+                        .with_frame(5, 5, 25, 5)
+                        .with_unfocused_border(1)
+                        .with_shaded_top(20);
+                    window.maximized_extents = smithay::utils::FrameExtents::new(0, 0, 22, 0);
+                }
+                if let Some((x, y)) = requested {
+                    window = window.with_requested_position(x, y);
+                }
+                window.requested_workspace = workspace;
+                window
+            },
+        )
 }
 
 fn action() -> impl Strategy<Value = Action> {

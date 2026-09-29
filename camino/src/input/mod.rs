@@ -28,6 +28,7 @@ use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
 use crate::scene;
 use crate::state::{Camino, SEAT, State};
+use crate::window::takes_pointer_at;
 
 // Linux input event codes.
 pub(crate) const BTN_LEFT: u32 = 0x110;
@@ -539,7 +540,12 @@ impl Camino {
                 let origin = (geometry.loc - window.geometry().loc).to_f64();
                 let surface = (!mapped.is_shaded())
                     .then(|| window.surface_under(location - origin, WindowSurfaceType::ALL))
-                    .flatten();
+                    .flatten()
+                    .filter(|(_, loc)| {
+                        window.x11_surface().is_none_or(|x11| {
+                            takes_pointer_at(x11, location - origin - loc.to_f64())
+                        })
+                    });
                 if let Some((surface, loc)) = surface {
                     let focus = match window.x11_surface() {
                         Some(x11) => PointerFocus::X11(Box::new(x11.clone())),

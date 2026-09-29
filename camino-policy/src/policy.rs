@@ -334,7 +334,15 @@ impl<W: PolicyWindow> Policy<W> {
         let parent = window
             .transient_parent()
             .filter(|p| self.windows.contains_key(p));
-        let workspace = parent.map_or(self.active, |p| self.windows[&p].workspace);
+        // Marco honours `_NET_WM_DESKTOP` for a desktop it has. A transient goes with its
+        // parent, since policy keeps a transient family on one workspace.
+        let workspace = match parent {
+            Some(parent) => self.windows[&parent].workspace,
+            None => window
+                .requested_workspace()
+                .filter(|workspace| *workspace < self.stacks.len())
+                .unwrap_or(self.active),
+        };
         self.windows.insert(
             id,
             Managed {
@@ -365,8 +373,10 @@ impl<W: PolicyWindow> Policy<W> {
         self.place(id);
         self.maximize_if_too_big(id);
         self.adopt_transients(id);
-        // Marco's `window_state_on_map` (window.c:1997-2044).
+        // Marco's `window_state_on_map` (window.c:1997-2044). A window mapped on another
+        // workspace isn't shown, so it isn't focused either.
         if takes_input
+            && workspace == self.active
             && !matches!(
                 window_type,
                 WindowType::Desktop

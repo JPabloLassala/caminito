@@ -10,7 +10,10 @@ mod xdg;
 
 pub(crate) use lifecycle::PendingWindows;
 pub(crate) use lifecycle::StateRequest;
-pub(crate) use x11::{configure_request_geometry, request_demands_attention, request_modal};
+pub(crate) use x11::{
+    STICKY, Strut, configure_request_geometry, marco_type, request_demands_attention,
+    request_modal, request_skips, struts, takes_pointer_at, with_x_facts,
+};
 pub(crate) use xdg::owe_configure;
 
 use camino_policy::{
@@ -49,6 +52,8 @@ trait Adapter {
         extents: FrameExtents<i32, Logical>,
     ) -> Option<Point<i32, Logical>>;
     fn pid(&self) -> Option<u32>;
+    /// See [`PolicyWindow::requested_workspace`].
+    fn requested_workspace(&self) -> Option<usize>;
     /// Whether the window wants Camino's frame.
     fn wants_frame(&self) -> bool;
     /// Whether the window will want Camino's frame once it's had the configure it's being
@@ -371,6 +376,10 @@ impl PolicyWindow for Mapped {
         extents: FrameExtents<i32, Logical>,
     ) -> Option<Point<i32, Logical>> {
         self.adapter().requested_position(extents)
+    }
+
+    fn requested_workspace(&self) -> Option<usize> {
+        self.adapter().requested_workspace()
     }
 
     fn takes_input(&self) -> bool {

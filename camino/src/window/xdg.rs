@@ -162,6 +162,11 @@ impl Adapter for ToplevelSurface {
         false
     }
 
+    /// xdg-shell has no workspaces.
+    fn requested_workspace(&self) -> Option<usize> {
+        None
+    }
+
     fn takes_input(&self) -> bool {
         true
     }

@@ -21,6 +21,7 @@ pub struct TestWindow {
     pub size: Size<i32, Logical>,
     pub hints: SizeHints,
     pub requested_position: Option<Point<i32, Logical>>,
+    pub requested_workspace: Option<usize>,
     pub input: bool,
     pub ssd: bool,
     pub extents: FrameExtents<i32, Logical>,
@@ -44,6 +45,7 @@ impl TestWindow {
             size: Size::new(w, h),
             hints: SizeHints::default(),
             requested_position: None,
+            requested_workspace: None,
             input: true,
             ssd: false,
             extents: FrameExtents::default(),
@@ -94,6 +96,12 @@ impl TestWindow {
 
     pub fn with_requested_position(mut self, x: i32, y: i32) -> Self {
         self.requested_position = Some(Point::new(x, y));
+        self
+    }
+
+    /// Has the window ask to map on `workspace`, as `_NET_WM_DESKTOP` does.
+    pub fn with_requested_workspace(mut self, workspace: usize) -> Self {
+        self.requested_workspace = Some(workspace);
         self
     }
 
@@ -156,6 +164,10 @@ impl PolicyWindow for TestWindow {
         _extents: FrameExtents<i32, Logical>,
     ) -> Option<Point<i32, Logical>> {
         self.requested_position
+    }
+
+    fn requested_workspace(&self) -> Option<usize> {
+        self.requested_workspace
     }
 
     fn takes_input(&self) -> bool {

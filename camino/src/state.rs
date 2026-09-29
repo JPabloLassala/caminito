@@ -309,6 +309,9 @@ impl State {
     /// The refresh pass, after each loop dispatch: brings the outward views up to date with
     /// policy, renders the outputs that asked for it, and flushes the clients.
     pub fn refresh_and_flush_clients(&mut self) {
+        // x11rb queues the X messages that arrive while Camino waits for a reply, which
+        // leaves the socket quiet, so they're read here too.
+        self.x_requests();
         self.camino.refresh_views();
         self.update_pointer_focus();
         self.camino.update_button_states();
@@ -635,6 +638,7 @@ impl Camino {
         }
         self.refresh_x11_stacking();
         self.refresh_x_root();
+        self.refresh_x_windows();
         self.popups.cleanup();
     }
 

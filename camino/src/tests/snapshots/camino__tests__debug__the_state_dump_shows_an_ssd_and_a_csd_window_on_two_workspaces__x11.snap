@@ -26,7 +26,14 @@ expression: without_x_ids(&dump)
       "xwayland": true,
       "x11": {
         "window": "[X id]",
-        "window_type": "Normal"
+        "window_type": "Normal",
+        "frame_extents": {
+          "left": 1,
+          "right": 1,
+          "top": 31,
+          "bottom": 1
+        },
+        "struts": []
       },
       "urgent": false,
       "skip_taskbar": false,
@@ -49,7 +56,14 @@ expression: without_x_ids(&dump)
       "xwayland": true,
       "x11": {
         "window": "[X id]",
-        "window_type": "Normal"
+        "window_type": "Normal",
+        "frame_extents": {
+          "left": 0,
+          "right": 0,
+          "top": 0,
+          "bottom": 0
+        },
+        "struts": []
       },
       "urgent": false,
       "skip_taskbar": false,

@@ -13,19 +13,21 @@ use smithay::desktop::Window;
 use smithay::input::Seat;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::x11rb::protocol::xproto::Gravity;
 use smithay::utils::{Logical, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::SelectionTarget;
 use smithay::wayland::xwayland_keyboard_grab::{XWaylandKeyboardGrab, XWaylandKeyboardGrabHandler};
 use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
-use smithay::xwayland::xwm::{Reorder, ResizeEdge, X11Window, XwmId};
+use smithay::xwayland::xwm::{Reorder, ResizeEdge, WmWindowProperty, X11Window, XwmId};
 use smithay::xwayland::{X11Surface, X11Wm, XwmHandler};
 
 use super::stack::RootStack;
 use crate::input::{GrabKind, KeyboardFocus};
 use crate::state::{Camino, State};
 use crate::window::{
-    StateRequest, WindowKey, configure_request_geometry, request_demands_attention, request_modal,
+    STICKY, StateRequest, WindowKey, configure_request_geometry, request_demands_attention,
+    request_modal, with_x_facts,
 };
 
 /// The key `window::lifecycle` knows an X window by.
@@ -59,13 +61,15 @@ impl XwmHandler for State {
         }
         let key = key(&window);
         if !camino.is_pending(&key) && camino.mapped_for_key(&key).is_none() {
+            camino.read_x_facts(&window);
             camino.window_created(Window::new_x11_window(window.clone()));
+            let sticky = with_x_facts(&window, |facts| facts.desktop) == Some(STICKY);
             let asked = [
                 (window.is_fullscreen(), StateRequest::Fullscreen(None)),
                 (window.is_maximized(), StateRequest::Maximized(true)),
                 (window.is_above(), StateRequest::Above(true)),
                 (window.is_below(), StateRequest::Below(true)),
-                (window.is_sticky(), StateRequest::Sticky(true)),
+                (window.is_sticky() || sticky, StateRequest::Sticky(true)),
             ];
             for (_, request) in asked.into_iter().filter(|(asked, _)| *asked) {
                 camino.window_state_request(&key, request);
@@ -110,13 +114,7 @@ impl XwmHandler for State {
         _reorder: Option<Reorder>,
     ) {
         let camino = &mut self.camino;
-        if let Some(id) = camino.mapped_for_key(&key(&window)) {
-            let extents = camino.policy.frame_extents(id);
-            let requested = configure_request_geometry(&window, (x, y), (w, h), extents);
-            camino
-                .policy
-                .request_geometry(id, requested.loc, requested.size);
-            camino.queue_redraw_all();
+        if camino.x_configure_request(&window, None, (x, y), (w, h)) {
             return;
         }
         let last = window.last_configure();
@@ -149,15 +147,18 @@ impl XwmHandler for State {
         }
     }
 
-    /// A managed window's title, hints, type or transient parent may have changed.
-    fn property_notify(
-        &mut self,
-        _xwm: XwmId,
-        window: X11Surface,
-        _property: smithay::xwayland::xwm::WmWindowProperty,
-    ) {
-        if let Some(id) = self.camino.mapped_for_key(&key(&window)) {
-            self.camino.window_changed(id);
+    /// A window's title, hints, type or transient parent may have changed, or a property
+    /// Camino reads itself (39). Others Smithay doesn't parse, such as those Camino and
+    /// Smithay write, change nothing Camino knows.
+    fn property_notify(&mut self, _xwm: XwmId, window: X11Surface, property: WmWindowProperty) {
+        let camino = &mut self.camino;
+        if let WmWindowProperty::Other(atom) = property
+            && !camino.x_property_changed(&window, atom)
+        {
+            return;
+        }
+        if let Some(id) = camino.mapped_for_key(&key(&window)) {
+            camino.window_changed(id);
         }
     }
 
@@ -347,6 +348,27 @@ impl State {
 }
 
 impl Camino {
+    /// A managed window asks to move or resize, by `ConfigureRequest` or
+    /// `_NET_MOVERESIZE_WINDOW`, with `gravity` in place of its own if it names one: policy
+    /// decides. Returns false if the window isn't managed.
+    pub(crate) fn x_configure_request(
+        &mut self,
+        window: &X11Surface,
+        gravity: Option<Gravity>,
+        loc: (Option<i32>, Option<i32>),
+        size: (Option<u32>, Option<u32>),
+    ) -> bool {
+        let Some(id) = self.mapped_for_key(&key(window)) else {
+            return false;
+        };
+        let extents = self.policy.frame_extents(id);
+        let requested = configure_request_geometry(window, gravity, loc, size, extents);
+        self.policy
+            .request_geometry(id, requested.loc, requested.size);
+        self.queue_redraw_all();
+        true
+    }
+
     /// Tells X's stacking order of the root's children what changed, once Xwayland runs.
     fn with_root_stack(&mut self, change: impl FnOnce(&mut RootStack)) {
         if let Some(xwayland) = self.xwayland.as_mut() {

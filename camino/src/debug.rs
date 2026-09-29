@@ -13,6 +13,7 @@ use smithay::utils::{FrameExtents, Logical, Rectangle};
 use crate::decoration::memory_buffer;
 use crate::output::{output_geometry, output_id};
 use crate::state::{Camino, SEAT};
+use crate::window::{Strut, with_x_facts};
 
 /// The debug toggles, and what they draw with.
 #[derive(Default)]
@@ -99,6 +100,28 @@ struct WindowDump {
 struct X11Dump {
     window: u32,
     window_type: String,
+    /// `_NET_FRAME_EXTENTS` as Camino's X connection last published it (39).
+    frame_extents: Option<ExtentsDump>,
+    /// The struts it reserves (39).
+    struts: Vec<StrutDump>,
+}
+
+#[derive(Serialize)]
+struct StrutDump {
+    side: String,
+    width: i32,
+    /// The first and last pixel along the edge, or none for the whole edge.
+    span: Option<(i32, i32)>,
+}
+
+impl From<Strut> for StrutDump {
+    fn from(strut: Strut) -> Self {
+        Self {
+            side: format!("{:?}", strut.side).to_lowercase(),
+            width: strut.width,
+            span: strut.span,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -162,9 +185,10 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 }
 
 impl Camino {
-    /// Windows, with the X window and Marco's type for XWayland windows, workspaces with
-    /// their names and stacking, outputs and their scales, and focus, as pretty-printed JSON. The lock state and the X11 scale come with the
-    /// milestones that make them.
+    /// Windows, with the X window, Marco's type, the published frame extents and the
+    /// struts for XWayland windows, workspaces with their names and stacking, outputs and
+    /// their scales, and focus, as pretty-printed JSON. The lock state and the X11 scale
+    /// come with the milestones that make them.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -189,9 +213,17 @@ impl Camino {
                         .then(|| policy.frame_extents(id).into()),
                     strip_scale: mapped.frame().drawn_scale(),
                     xwayland: mapped.window().is_x11(),
-                    x11: mapped.x11_window().map(|window| X11Dump {
-                        window,
-                        window_type: format!("{:?}", mapped.window_type()),
+                    x11: mapped.window().x11_surface().map(|surface| {
+                        let window = surface.window_id();
+                        X11Dump {
+                            window,
+                            window_type: format!("{:?}", mapped.window_type()),
+                            frame_extents: self.published_frame_extents(window).map(Into::into),
+                            struts: with_x_facts(surface, |facts| facts.struts.clone())
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                        }
                     }),
                     urgent: mapped.is_urgent(),
                     skip_taskbar: skips.taskbar,
