@@ -10,6 +10,8 @@ allow = [
     "GPL-2.0-or-later",
     "LGPL-2.1-or-later",
     "Apache-2.0",
+    # target-lexicon, a build dependency of the gtk-rs -sys crates through system-deps.
+    "Apache-2.0 WITH LLVM-exception",
     "MIT",
     "MIT-0",
     "BSD-2-Clause",
