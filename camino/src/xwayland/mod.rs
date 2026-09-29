@@ -3,6 +3,7 @@
 //! runs without X; the restart path is 42's. Its windows are managed through `xwm`, and X's
 //! stacking order follows Camino's scene.
 
+mod stack;
 mod xwm;
 
 use std::ffi::OsString;
@@ -11,9 +12,11 @@ use std::process::Stdio;
 
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::wayland_server::Client;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::xwayland::xwm::X11Window;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
+use self::stack::RootStack;
 use crate::helpers::{self, StderrTarget};
 use crate::settings::translate::Mouse;
 use crate::state::{Camino, State};
@@ -32,6 +35,11 @@ pub struct RunningXwayland {
     /// The XWayland windows in the order `X11Wm` was last told to stack them, bottom to
     /// top.
     stacking: Vec<X11Window>,
+    /// X's stacking order of the root's children, which override-redirect windows are drawn
+    /// in.
+    root_stack: RootStack,
+    /// The mapped override-redirect windows (36), in the order they mapped.
+    override_redirect: Vec<X11Surface>,
     /// The `XWayland` source, which kills Xwayland when it's removed.
     source: RegistrationToken,
 }
@@ -91,6 +99,8 @@ impl Camino {
                     client,
                     wm: None,
                     stacking: Vec::new(),
+                    root_stack: RootStack::default(),
+                    override_redirect: Vec::new(),
                     source,
                 })
             }
@@ -107,6 +117,24 @@ impl Camino {
     pub fn xwayland_display(&self) -> Option<u32> {
         let xwayland = self.xwayland.as_ref()?;
         xwayland.wm.is_some().then_some(xwayland.display)
+    }
+
+    /// The override-redirect windows Camino shows, top to bottom in X's stacking order.
+    /// They're in global logical coordinates, on no workspace, and policy doesn't know them.
+    pub(crate) fn override_redirect_windows(&self) -> impl Iterator<Item = &X11Surface> {
+        let mut windows: Vec<&X11Surface> = Vec::new();
+        if let Some(xwayland) = &self.xwayland {
+            windows.extend(&xwayland.override_redirect);
+            let stack = &xwayland.root_stack;
+            windows.sort_by_key(|window| std::cmp::Reverse(stack.index(window.window_id())));
+        }
+        windows.into_iter()
+    }
+
+    /// The override-redirect window Camino shows whose surface is `surface`.
+    pub(crate) fn override_redirect_for_surface(&self, surface: &WlSurface) -> Option<&X11Surface> {
+        self.override_redirect_windows()
+            .find(|window| window.wl_surface().as_ref() == Some(surface))
     }
 
     /// Smithay's window manager, once Xwayland is ready.

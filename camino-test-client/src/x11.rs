@@ -14,7 +14,8 @@ use x11rb::errors::{ConnectError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
-    ConnectionExt, CreateWindowAux, EventMask, PropMode, Window, WindowClass,
+    ConnectionExt, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode, StackMode, Window,
+    WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -56,6 +57,8 @@ pub struct XWindowSpec {
     pub delete_window: bool,
     /// Leaves out the background, so the window has no content and Xwayland commits none.
     pub empty: bool,
+    /// The colour it's filled with, if not [`BACKGROUND`].
+    pub background: Option<u32>,
     pub override_redirect: bool,
 }
 
@@ -125,7 +128,7 @@ impl X11Client {
                 EventMask::STRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE,
             );
         if !spec.empty {
-            aux = aux.background_pixel(BACKGROUND);
+            aux = aux.background_pixel(spec.background.unwrap_or(BACKGROUND));
         }
         let (x, y) = spec.position.unwrap_or_default();
         self.conn.create_window(
@@ -266,6 +269,43 @@ impl X11Client {
     ) -> Result<(), ReplyError> {
         let aux = ConfigureWindowAux::new().x(x).y(y).width(w).height(h);
         self.conn.configure_window(window, &aux)?;
+        self.conn.sync()
+    }
+
+    /// Restacks `window` as `ConfigureWindow` does: `Above` with no sibling raises it to the
+    /// top, and with one puts it just above that sibling.
+    pub fn restack(
+        &self,
+        window: Window,
+        mode: StackMode,
+        sibling: Option<Window>,
+    ) -> Result<(), ReplyError> {
+        let mut aux = ConfigureWindowAux::new().stack_mode(mode);
+        if let Some(sibling) = sibling {
+            aux = aux.sibling(sibling);
+        }
+        self.conn.configure_window(window, &aux)?;
+        self.conn.sync()
+    }
+
+    /// Grabs the keyboard for `window`, as a menu does when it opens.
+    pub fn grab_keyboard(&self, window: Window) -> Result<GrabStatus, ReplyError> {
+        let reply = self
+            .conn
+            .grab_keyboard(
+                false,
+                window,
+                x11rb::CURRENT_TIME,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+            )?
+            .reply()?;
+        Ok(reply.status)
+    }
+
+    /// Lets go of the keyboard, as a menu does when it closes.
+    pub fn ungrab_keyboard(&self) -> Result<(), ReplyError> {
+        self.conn.ungrab_keyboard(x11rb::CURRENT_TIME)?;
         self.conn.sync()
     }
 

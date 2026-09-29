@@ -7,7 +7,7 @@ use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Offscreen};
 use smithay::output::Output;
 use smithay::reexports::pixman::Image;
-use smithay::utils::{Physical, Rectangle, Size, Transform};
+use smithay::utils::{Buffer, Physical, Point, Rectangle, Size, Transform};
 
 use crate::output::virtual_output;
 use crate::scene::{self, CLEAR_COLOR};
@@ -90,18 +90,27 @@ impl Headless {
     /// The output's pixels as ARGB8888, row by row, or `None` before it's first rendered.
     pub fn pixels(&mut self, output: &Output) -> Option<Vec<u32>> {
         let target = target_mut(&mut self.targets, output)?;
+        let size = (target.buffer.width() as i32, target.buffer.height() as i32);
+        self.read(output, Rectangle::from_size(size.into()))
+    }
+
+    /// The output's pixel at `at` as ARGB8888, or `None` before it's first rendered.
+    pub fn pixel(&mut self, output: &Output, at: Point<i32, Physical>) -> Option<u32> {
+        self.read(output, Rectangle::new((at.x, at.y).into(), (1, 1).into()))?
+            .first()
+            .copied()
+    }
+
+    /// The output's pixels in `rect` as ARGB8888, row by row.
+    fn read(&mut self, output: &Output, rect: Rectangle<i32, Buffer>) -> Option<Vec<u32>> {
+        let target = target_mut(&mut self.targets, output)?;
         if !target.rendered {
             return None;
         }
-        let size = (target.buffer.width() as i32, target.buffer.height() as i32);
         let framebuffer = self.renderer.bind(&mut target.buffer).ok()?;
         let mapping = self
             .renderer
-            .copy_framebuffer(
-                &framebuffer,
-                Rectangle::from_size(size.into()),
-                Fourcc::Argb8888,
-            )
+            .copy_framebuffer(&framebuffer, rect, Fourcc::Argb8888)
             .ok()?;
         let bytes = self.renderer.map_texture(&mapping).ok()?;
         Some(

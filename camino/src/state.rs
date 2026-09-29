@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use camino_policy::{OutputId, Policy, PolicyWindow, SeatId, WindowId};
 use smithay::desktop::PopupManager;
-use smithay::desktop::utils::OutputPresentationFeedback;
+use smithay::desktop::utils::{OutputPresentationFeedback, send_frames_surface_tree};
 use smithay::backend::input::Keycode;
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::pointer::CursorImageStatus;
@@ -21,7 +21,7 @@ use smithay::reexports::wayland_server::backend::{ClientData, ClientId, Disconne
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
-use smithay::utils::{Clock, Logical, Monotonic, Point, Size};
+use smithay::utils::{Clock, Logical, Monotonic, Point, Serial, Size};
 use smithay::wayland::alpha_modifier::AlphaModifierState;
 use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState};
 use smithay::wayland::compositor::{
@@ -55,6 +55,8 @@ use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xdg_system_bell::XdgSystemBellState;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
+use smithay::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_v1::ZwpXwaylandKeyboardGrabV1;
+use smithay::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 
 use camino_theme::{PaletteCache, ThemeDirs, Variant};
@@ -168,6 +170,11 @@ pub struct Camino {
     /// Xwayland, from its spawn until it fails (11).
     pub xwayland: Option<RunningXwayland>,
     pub xwayland_shell_state: XWaylandShellState,
+    /// The keyboard grabs Xwayland takes for override-redirect windows (36).
+    pub xwayland_keyboard_grab_state: XWaylandKeyboardGrabState,
+    /// The keyboard grab an override-redirect window took through Xwayland, if any, and the
+    /// serial the keyboard knows it by (36).
+    pub(crate) xwayland_keyboard_grab: Option<(ZwpXwaylandKeyboardGrabV1, Serial)>,
     /// The variables Camino sets for the clients it spawns (08), such as `DISPLAY`. They're
     /// kept here rather than set with `set_var`, which isn't safe once the settings and
     /// D-Bus threads run.
@@ -292,6 +299,13 @@ impl State {
         crate::scene::output_elements(renderer, &self.camino, output).len()
     }
 
+    /// The layer of each of the scene's render elements for `output`, front to back.
+    #[cfg(test)]
+    pub(crate) fn scene_layers(&mut self, output: &Output) -> Vec<crate::scene::SceneLayer> {
+        let renderer = self.backend.headless_mut().renderer();
+        crate::scene::output_element_layers(renderer, &self.camino, output)
+    }
+
     /// The refresh pass, after each loop dispatch: brings the outward views up to date with
     /// policy, renders the outputs that asked for it, and flushes the clients.
     pub fn refresh_and_flush_clients(&mut self) {
@@ -359,6 +373,19 @@ impl State {
                 wp_presentation_feedback::Kind::empty()
             });
         }
+        // Override-redirect windows have no primary output: they're told of frames on
+        // every output they're drawn on.
+        let output_geometry = crate::output::output_geometry(output);
+        for window in self.camino.override_redirect_windows() {
+            let Some(surface) = window.wl_surface() else {
+                continue;
+            };
+            if crate::scene::override_redirect_bbox(window).overlaps(output_geometry) {
+                send_frames_surface_tree(&surface, output, now, FRAME_CALLBACK_THROTTLE, |_, _| {
+                    Some(output.clone())
+                });
+            }
+        }
         feedback.presented(now, refresh, 0, wp_presentation_feedback::Kind::empty());
 
         let dh = self.camino.display_handle.clone();
@@ -413,6 +440,7 @@ impl Camino {
             .expect("the default xkb keymap compiles");
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
         let xwayland_shell_state = XWaylandShellState::new::<State>(dh);
+        let xwayland_keyboard_grab_state = XWaylandKeyboardGrabState::new::<State>(dh);
 
         let frame_context = FrameContext::new(&settings, theme_dirs);
         let cursors = Cursors::new(&settings.mouse, cursor_source);
@@ -481,6 +509,8 @@ impl Camino {
             settings_thread,
             xwayland: None,
             xwayland_shell_state,
+            xwayland_keyboard_grab_state,
+            xwayland_keyboard_grab: None,
             environment: BTreeMap::new(),
             dbus: None,
             debug: DebugToggles::default(),

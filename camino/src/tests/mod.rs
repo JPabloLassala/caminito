@@ -10,6 +10,7 @@ mod frames;
 mod grabs;
 mod headless;
 mod input;
+mod override_redirect;
 mod palette_helper;
 mod popups;
 mod settings;

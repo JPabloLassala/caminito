@@ -17,6 +17,7 @@ use smithay::backend::input::{
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
@@ -25,6 +26,7 @@ use smithay::wayland::seat::WaylandFocus;
 
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
+use crate::scene;
 use crate::state::{Camino, SEAT, State};
 
 // Linux input event codes.
@@ -297,11 +299,13 @@ impl State {
         let pointer = self.camino.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
+        // A press on an override-redirect window goes to it alone: it's never focused or
+        // raised, and can't be dragged.
         if state == ButtonState::Pressed
             && !pointer.is_grabbed()
             && let Some(under) = self.camino.under(location)
+            && let Some(id) = under.window()
         {
-            let id = under.window();
             let alt = self
                 .camino
                 .seat
@@ -348,6 +352,16 @@ impl State {
     /// gets no keys.
     pub fn update_keyboard_focus(&mut self) {
         let keyboard = self.camino.seat.get_keyboard().unwrap();
+        // Xwayland destroys its grab when the X client lets go, and Smithay's grab would
+        // only notice at the next key, which it would send to the menu.
+        if let Some((_, serial)) = self
+            .camino
+            .xwayland_keyboard_grab
+            .take_if(|(grab, _)| !grab.is_alive())
+            && keyboard.has_grab(serial)
+        {
+            keyboard.unset_grab(self);
+        }
         if keyboard.is_grabbed() {
             return;
         }
@@ -385,26 +399,33 @@ impl State {
     }
 }
 
-/// What the pointer is on in a window.
+/// What the pointer is on.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Under {
-    /// One of its surfaces, and that surface's origin in global logical coordinates.
+    /// One of a managed window's surfaces, and that surface's origin in global logical
+    /// coordinates.
     Surface(WindowId, WlSurface, Point<f64, Logical>),
-    /// Its frame.
+    /// A managed window's frame.
     Frame(WindowId, FrameControl),
+    /// An override-redirect window's surface, and its origin, which policy doesn't know.
+    OverrideRedirect(WlSurface, Point<f64, Logical>),
 }
 
 impl Under {
-    pub fn window(&self) -> WindowId {
+    /// The managed window it's in.
+    pub fn window(&self) -> Option<WindowId> {
         match self {
-            Under::Surface(id, ..) | Under::Frame(id, _) => *id,
+            Under::Surface(id, ..) | Under::Frame(id, _) => Some(*id),
+            Under::OverrideRedirect(..) => None,
         }
     }
 
     /// The surface and its origin, as pointer focus takes them.
     pub fn surface(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
         match self {
-            Under::Surface(_, surface, origin) => Some((surface.clone(), *origin)),
+            Under::Surface(_, surface, origin) | Under::OverrideRedirect(surface, origin) => {
+                Some((surface.clone(), *origin))
+            }
             Under::Frame(..) => None,
         }
     }
@@ -413,7 +434,7 @@ impl Under {
     pub fn frame_control(&self) -> Option<(WindowId, FrameControl)> {
         match self {
             Under::Frame(id, control) => Some((*id, *control)),
-            Under::Surface(..) => None,
+            Under::Surface(..) | Under::OverrideRedirect(..) => None,
         }
     }
 }
@@ -479,10 +500,19 @@ impl Camino {
         })
     }
 
-    /// What's at `location` in the topmost showing window that takes input there: one of
-    /// its surfaces, which are above its frame, or its frame. A shaded window's surfaces
-    /// have left the scene.
+    /// What's at `location` in the topmost window that takes input there. Override-redirect
+    /// windows are above every managed one. In a managed window it's one of its surfaces,
+    /// which are above its frame, or its frame. A shaded window's surfaces have left the
+    /// scene.
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
+        // M7: nothing but the lock takes the pointer while locked (12).
+        let override_redirect = self.override_redirect_windows().find_map(|window| {
+            let origin = scene::override_redirect_bbox(window).loc;
+            window.surface_under(location, origin, WindowSurfaceType::ALL)
+        });
+        if let Some((surface, origin)) = override_redirect {
+            return Some(Under::OverrideRedirect(surface, origin.to_f64()));
+        }
         let policy = &self.policy;
         policy
             .stacking(policy.active_workspace())
@@ -517,6 +547,6 @@ impl Camino {
 
     /// The window under `location`.
     pub fn window_under(&self, location: Point<f64, Logical>) -> Option<WindowId> {
-        self.under(location).map(|under| under.window())
+        self.under(location)?.window()
     }
 }

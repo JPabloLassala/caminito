@@ -15,11 +15,15 @@ use camino_test_client::x11::{X11Client, XWindowSpec};
 use camino_test_client::{Client, DecorationMode, WindowId};
 use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::output::Output;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{FrameExtents, Logical, Physical, Point, Rectangle, Size};
+use smithay::wayland::seat::WaylandFocus;
+use smithay::xwayland::X11Surface;
 use x11rb::protocol::Event;
 
 use crate::decoration::control::FrameControl;
@@ -380,6 +384,7 @@ impl Fixture {
             class: spec.app_id,
             delete_window: spec.delete_window,
             empty: false,
+            background: None,
             override_redirect: false,
         };
         let window = self
@@ -398,6 +403,87 @@ impl Fixture {
         });
         self.sync(window);
         window
+    }
+
+    /// Creates and maps an override-redirect window of the X client `id` at `position`,
+    /// filled with `color`. It returns once Camino shows it, with content, in its
+    /// override-redirect layer. Such windows aren't managed, so they're X ids, not
+    /// `ClientWindow`s.
+    pub fn map_override_redirect(
+        &mut self,
+        id: ClientId,
+        position: (i16, i16),
+        size: (u16, u16),
+        color: u32,
+    ) -> u32 {
+        let spec = XWindowSpec {
+            size,
+            position: Some(position),
+            background: Some(color),
+            override_redirect: true,
+            ..XWindowSpec::default()
+        };
+        let window = self
+            .x11_call(id, move |x| {
+                let window = x.create_window(&spec)?;
+                x.map(window)?;
+                Ok::<_, x11rb::errors::ReplyOrIdError>(window)
+            })
+            .expect("the override-redirect window maps");
+        self.dispatch_until(|f| {
+            f.state
+                .camino
+                .override_redirect_windows()
+                .any(|surface| surface.window_id() == window && has_buffer(surface))
+        });
+        window
+    }
+
+    /// The override-redirect window whose surface has pointer focus, by X id.
+    pub fn override_redirect_under_pointer(&self) -> Option<u32> {
+        let (surface, _) = self.state.camino.pointer_focus.as_ref()?;
+        self.override_redirect_for(surface)
+    }
+
+    /// The override-redirect window whose surface has keyboard focus, by X id.
+    pub fn override_redirect_with_keyboard(&self) -> Option<u32> {
+        let keyboard = self.state.camino.seat.get_keyboard().unwrap();
+        let focus = keyboard.current_focus()?;
+        self.override_redirect_for(&*focus.wl_surface()?)
+    }
+
+    /// Whether a managed window has the keyboard.
+    pub fn has_keyboard(&self, window: ClientWindow) -> bool {
+        let keyboard = self.state.camino.seat.get_keyboard().unwrap();
+        keyboard.current_focus() == Some(self.mapped(window).keyboard_target())
+    }
+
+    fn override_redirect_for(&self, surface: &WlSurface) -> Option<u32> {
+        self.state
+            .camino
+            .override_redirect_for_surface(surface)
+            .map(X11Surface::window_id)
+    }
+
+    /// Dispatches until the first output shows `color` (`0xRRGGBB`, opaque) at the logical
+    /// point `(x, y)`, and fails rather than hangs.
+    pub fn wait_for_pixel(&mut self, x: i32, y: i32, color: u32) {
+        let output = self.state.camino.outputs[0].clone();
+        let scale = output.current_scale().fractional_scale();
+        let at = Point::<i32, Logical>::from((x, y)).to_physical_precise_round(scale);
+        let expected = 0xff00_0000 | color;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let pixel = self.state.backend.headless_mut().pixel(&output, at);
+            if pixel == Some(expected) {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "({x}, {y}) is {pixel:08x?}, not {expected:08x}, after 5 s"
+            );
+            self.dispatch_waiting();
+        }
     }
 
     /// Policy's id for a window, if it's managed.
@@ -760,6 +846,13 @@ impl Fixture {
         }
         panic!("roundtrip didn't finish in {MAX_ROUNDTRIP_DISPATCHES} dispatches");
     }
+}
+
+/// Whether an X window's surface has committed content.
+fn has_buffer(window: &X11Surface) -> bool {
+    window.wl_surface().is_some_and(|surface| {
+        with_renderer_surface_state(&surface, |state| state.buffer().is_some()).unwrap_or(false)
+    })
 }
 
 impl Drop for Fixture {

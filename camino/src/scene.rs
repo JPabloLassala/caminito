@@ -17,6 +17,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
+use smithay::xwayland::X11Surface;
 
 use crate::output::output_geometry;
 use crate::state::Camino;
@@ -41,15 +42,16 @@ render_elements! {
 }
 
 /// The scene's layers, top to bottom.
-#[derive(Debug, Clone, Copy)]
-enum SceneLayer {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SceneLayer {
     /// The pointer's cursor, over everything.
     Cursor,
     /// Lock surfaces, or the solid lock background (M7).
     Lock,
     /// The overlay layer-shell layer (M5).
     Overlay,
-    /// Override-redirect windows (M3).
+    /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
+    /// no workspace (36).
     OverrideRedirect,
     /// The top layer-shell layer (M5).
     Top,
@@ -61,7 +63,7 @@ enum SceneLayer {
     Background,
 }
 
-const LAYERS: [SceneLayer; 8] = [
+pub(crate) const LAYERS: [SceneLayer; 8] = [
     SceneLayer::Cursor,
     SceneLayer::Lock,
     SceneLayer::Overlay,
@@ -84,18 +86,53 @@ where
 {
     let mut elements = Vec::new();
     for layer in LAYERS {
-        match layer {
-            SceneLayer::Cursor => cursor_elements(renderer, camino, output, &mut elements),
-            SceneLayer::Windows => window_elements(renderer, camino, output, &mut elements),
-            SceneLayer::Lock
-            | SceneLayer::Overlay
-            | SceneLayer::OverrideRedirect
-            | SceneLayer::Top
-            | SceneLayer::Bottom
-            | SceneLayer::Background => {}
-        }
+        layer_elements(layer, renderer, camino, output, &mut elements);
     }
     elements
+}
+
+/// The layer of each of `output`'s render elements, front to back.
+#[cfg(test)]
+pub(crate) fn output_element_layers<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+) -> Vec<SceneLayer>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let mut elements = Vec::new();
+    let mut layers = Vec::new();
+    for layer in LAYERS {
+        layer_elements(layer, renderer, camino, output, &mut elements);
+        layers.resize(elements.len(), layer);
+    }
+    layers
+}
+
+fn layer_elements<R>(
+    layer: SceneLayer,
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    match layer {
+        SceneLayer::Cursor => cursor_elements(renderer, camino, output, elements),
+        SceneLayer::OverrideRedirect => {
+            override_redirect_elements(renderer, camino, output, elements)
+        }
+        SceneLayer::Windows => window_elements(renderer, camino, output, elements),
+        SceneLayer::Lock
+        | SceneLayer::Overlay
+        | SceneLayer::Top
+        | SceneLayer::Bottom
+        | SceneLayer::Background => {}
+    }
 }
 
 /// The cursor at the pointer, if it's on `output`: Camino's own, or the surface the client
@@ -163,6 +200,40 @@ fn cursor_elements<R>(
             }
         }
     }
+}
+
+/// The override-redirect windows on `output`. They render as other XWayland surfaces do,
+/// with the X11 client scale their buffers have.
+fn override_redirect_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let output_geometry = output_geometry(output);
+    let scale = output.current_scale().fractional_scale();
+    for window in camino.override_redirect_windows() {
+        let bbox = override_redirect_bbox(window);
+        if !bbox.overlaps(output_geometry) {
+            continue;
+        }
+        let location = (bbox.loc - output_geometry.loc).to_physical_precise_round(scale);
+        elements.extend(AsRenderElements::<R>::render_elements::<SceneElement<R>>(
+            window,
+            renderer,
+            location,
+            Scale::from(scale),
+            1.0,
+        ));
+    }
+}
+
+/// Where an override-redirect window's surface is, globally: where X last put it.
+pub(crate) fn override_redirect_bbox(window: &X11Surface) -> Rectangle<i32, Logical> {
+    Rectangle::new(window.last_configure().loc, window.bbox().size)
 }
 
 fn window_elements<R>(
