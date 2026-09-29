@@ -37,12 +37,12 @@ fn string(s: &str) -> XSetting {
 fn changed(change: impl FnOnce(&mut Settings)) -> Table {
     let mut settings = defaults();
     change(&mut settings);
-    table(&settings)
+    table(&settings, 1)
 }
 
 #[test]
 fn the_defaults_give_msds_table() {
-    assert_snapshot!(show(&table(&defaults())), @r#"
+    assert_snapshot!(show(&table(&defaults(), 1)), @r#"
     Gdk/UnscaledDPI = 98304
     Gdk/WindowScalingFactor = 1
     Gtk/AutoMnemonics = 1
@@ -253,7 +253,7 @@ fn each_key_msd_passes_on_reaches_its_setting() {
         assert_eq!(table.get(name), Some(expected), "{name}");
         // Nothing else changes.
         let mut others = table.clone();
-        let mut default_others = self::table(&defaults());
+        let mut default_others = self::table(&defaults(), 1);
         others.remove(name);
         default_others.remove(name);
         assert_eq!(others, default_others, "only {name} changes");
@@ -342,4 +342,64 @@ fn a_set_dpi_is_given_in_1024ths_of_an_inch() {
 fn dpi_is_clamped_to_what_msd_finds_reasonable() {
     assert_eq!(dpi(20.0), (int(50 * 1024), int(50 * 1024)));
     assert_eq!(dpi(600.0), (int(500 * 1024), int(500 * 1024)));
+}
+
+/// The X11 scale settings for a `dpi` key at the X11 scale `scale`, one per line.
+fn scaled(dpi: f64, scale: u32) -> String {
+    let mut settings = defaults();
+    settings.font_rendering.dpi = dpi;
+    let table = table(&settings, scale);
+    let names = [
+        "Xft/DPI",
+        "Gdk/UnscaledDPI",
+        "Gdk/WindowScalingFactor",
+        "Gtk/CursorThemeSize",
+    ];
+    names
+        .iter()
+        .map(|name| format!("{name} = {:?}", table[name]))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn the_x11_scale_multiplies_dpi_and_cursor_size_as_msd_does() {
+    // `msd-xsettings-manager.c:356-374`, `:411-421`: Xft/DPI = dpi × s × 1024,
+    // Gdk/UnscaledDPI = dpi × 1024, and the cursor size × s. The default cursor size is 24.
+    assert_snapshot!(scaled(0.0, 1), @r"
+    Xft/DPI = Int(98304)
+    Gdk/UnscaledDPI = Int(98304)
+    Gdk/WindowScalingFactor = Int(1)
+    Gtk/CursorThemeSize = Int(24)
+    ");
+    assert_snapshot!(scaled(0.0, 2), @r"
+    Xft/DPI = Int(196608)
+    Gdk/UnscaledDPI = Int(98304)
+    Gdk/WindowScalingFactor = Int(2)
+    Gtk/CursorThemeSize = Int(48)
+    ");
+    assert_snapshot!(scaled(96.0, 1), @r"
+    Xft/DPI = Int(98304)
+    Gdk/UnscaledDPI = Int(98304)
+    Gdk/WindowScalingFactor = Int(1)
+    Gtk/CursorThemeSize = Int(24)
+    ");
+    assert_snapshot!(scaled(96.0, 2), @r"
+    Xft/DPI = Int(196608)
+    Gdk/UnscaledDPI = Int(98304)
+    Gdk/WindowScalingFactor = Int(2)
+    Gtk/CursorThemeSize = Int(48)
+    ");
+    assert_snapshot!(scaled(120.0, 1), @r"
+    Xft/DPI = Int(122880)
+    Gdk/UnscaledDPI = Int(122880)
+    Gdk/WindowScalingFactor = Int(1)
+    Gtk/CursorThemeSize = Int(24)
+    ");
+    assert_snapshot!(scaled(120.0, 2), @r"
+    Xft/DPI = Int(245760)
+    Gdk/UnscaledDPI = Int(122880)
+    Gdk/WindowScalingFactor = Int(2)
+    Gtk/CursorThemeSize = Int(48)
+    ");
 }

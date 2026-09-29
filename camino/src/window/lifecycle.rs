@@ -165,11 +165,15 @@ impl Camino {
 
     /// The window, pending or managed, that `key` names.
     pub(crate) fn window_for_key(&self, key: &WindowKey) -> Option<&Window> {
+        self.known_windows()
+            .find(|window| WindowKey::of(window) == *key)
+    }
+
+    /// Every pending and managed window.
+    pub(crate) fn known_windows(&self) -> impl Iterator<Item = &Window> {
         let pending = self.pending.0.iter().map(|pending| &pending.window);
         let managed = self.policy.windows().map(|mapped| mapped.window());
-        pending
-            .chain(managed)
-            .find(|window| WindowKey::of(window) == *key)
+        pending.chain(managed)
     }
 
     /// Whether `key` names a pending window.

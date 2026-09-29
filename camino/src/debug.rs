@@ -70,6 +70,8 @@ struct StateDump {
     workspaces: Vec<WorkspaceDump>,
     active_workspace: usize,
     outputs: Vec<OutputDump>,
+    /// The one scale of every XWayland window (41).
+    x11_scale: u32,
     focus: Option<u64>,
 }
 
@@ -187,8 +189,8 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 impl Camino {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, outputs and
-    /// their scales, and focus, as pretty-printed JSON. The lock state and the X11 scale
-    /// come with the milestones that make them.
+    /// their scales, the X11 scale, and focus, as pretty-printed JSON. The lock state comes
+    /// with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -255,6 +257,7 @@ impl Camino {
             workspaces,
             active_workspace: policy.active_workspace(),
             outputs,
+            x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")

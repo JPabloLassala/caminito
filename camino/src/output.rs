@@ -65,7 +65,25 @@ pub fn output_geometry(output: &Output) -> Rectangle<i32, Logical> {
     Rectangle::new(output.current_location(), size)
 }
 
+/// The X11 scale for outputs at `scales` (ADR 0008): the largest of their rounded-up
+/// scales, so X11 windows are sharp on the densest output, or 1 with no outputs.
+pub(crate) fn x11_scale(scales: impl IntoIterator<Item = f64>) -> u32 {
+    scales
+        .into_iter()
+        .map(|scale| scale.ceil() as u32)
+        .fold(1, u32::max)
+}
+
 impl Camino {
+    /// The X11 scale for the outputs there are now.
+    pub(crate) fn x11_scale(&self) -> u32 {
+        x11_scale(
+            self.outputs
+                .iter()
+                .map(|output| output.current_scale().fractional_scale()),
+        )
+    }
+
     /// Starts showing an output whose mode and scale the backend has set. It goes to the
     /// right of the outputs already there.
     pub fn add_output(&mut self, output: Output) {
@@ -135,3 +153,6 @@ impl Camino {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -636,10 +636,13 @@ impl Camino {
         for mapped in self.policy.windows() {
             mapped.flush();
         }
+        // First, since what follows is worked out at the X11 scale.
+        self.refresh_x11_scale();
         self.refresh_x11_stacking();
         self.refresh_x_root();
         self.refresh_x_windows();
         self.refresh_xsettings();
+        self.refresh_x_root_cursor();
         self.popups.cleanup();
     }
 

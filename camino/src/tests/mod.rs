@@ -17,6 +17,7 @@ mod root_properties;
 mod selection;
 mod settings;
 mod window_properties;
+mod x11_scale;
 mod xdg_shell;
 mod xsettings;
 mod xwayland;

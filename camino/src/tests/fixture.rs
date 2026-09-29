@@ -18,7 +18,7 @@ use camino_test_client::{Client, DecorationMode, WindowId};
 use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
-use smithay::output::Output;
+use smithay::output::{Output, Scale};
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::Resource;
@@ -259,6 +259,13 @@ impl Fixture {
 
     pub fn add_output(&mut self, size: impl Into<Size<i32, Physical>>, scale: f64) -> Output {
         self.state.add_headless_output(size.into(), scale)
+    }
+
+    /// Changes an output's scale, as output management will, and dispatches.
+    pub fn set_output_scale(&mut self, output: &Output, scale: f64) {
+        output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+        self.state.camino.output_changed(output);
+        self.dispatch();
     }
 
     /// Connects a new Wayland client over a socket pair. It has seen nothing until a

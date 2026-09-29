@@ -10,10 +10,10 @@ expression: without_x_ids(&dump)
       "title": "Caja",
       "workspace": 0,
       "geometry": {
-        "x": 155,
-        "y": 58,
-        "width": 400,
-        "height": 300
+        "x": 47,
+        "y": 86,
+        "width": 200,
+        "height": 150
       },
       "decorations": "ssd",
       "frame_extents": {
@@ -28,10 +28,10 @@ expression: without_x_ids(&dump)
         "window": "[X id]",
         "window_type": "Normal",
         "frame_extents": {
-          "left": 1,
-          "right": 1,
-          "top": 31,
-          "bottom": 1
+          "left": 2,
+          "right": 2,
+          "top": 62,
+          "bottom": 2
         },
         "struts": []
       },
@@ -45,10 +45,10 @@ expression: without_x_ids(&dump)
       "title": "Files",
       "workspace": 1,
       "geometry": {
-        "x": 154,
-        "y": 359,
-        "width": 400,
-        "height": 300
+        "x": 46,
+        "y": 237,
+        "width": 200,
+        "height": 150
       },
       "decorations": "csd",
       "frame_extents": null,
@@ -117,5 +117,6 @@ expression: without_x_ids(&dump)
       "scale": 2.0
     }
   ],
+  "x11_scale": 2,
   "focus": 0
 }

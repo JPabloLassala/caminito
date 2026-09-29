@@ -95,5 +95,6 @@ expression: without_x_ids(&dump)
       "scale": 2.0
     }
   ],
+  "x11_scale": 2,
   "focus": 0
 }

@@ -40,6 +40,9 @@ on_both_kinds! {
     fn the_state_dump_shows_an_ssd_and_a_csd_window_on_two_workspaces(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
         f.add_output((2560, 1440), 2.0);
+        // The refresh pass applies the X11 scale of 2 before the X windows map, rather
+        // than while they do.
+        f.dispatch();
         let ssd = titled(&mut f, client, Decoration::Server, "Caja", "caja");
         let csd = titled(
             &mut f,

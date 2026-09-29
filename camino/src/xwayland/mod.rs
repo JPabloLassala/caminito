@@ -3,8 +3,9 @@
 //! runs without X; the restart path is 42's. Its windows are managed through `xwm`, and X's
 //! stacking order follows Camino's scene. Camino's own X connection, `xconn`, publishes the
 //! root properties Smithay doesn't and runs the root messages it drops. Camino is the
-//! XSETTINGS manager, through `X11Wm` (40).
+//! XSETTINGS manager, through `X11Wm` (40). Every X11 window has one scale, `scale` (41).
 
+mod scale;
 mod selection;
 mod stack;
 mod xconn;
@@ -27,6 +28,7 @@ use smithay::xwayland::xwm::X11Window;
 use smithay::xwayland::xwm::settings::Value as XSettingValue;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
+use self::scale::X11Scale;
 use self::stack::RootStack;
 use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XConnection};
 use crate::decoration::{NetWmIcon, WindowFacts};
@@ -55,6 +57,11 @@ pub struct RunningXwayland {
     xconn: Option<XConnection>,
     /// The XSETTINGS table `wm` publishes (40). Smithay's starts empty.
     xsettings: xsettings::Table,
+    /// The X11 scale `client` was given (41).
+    scale: X11Scale,
+    /// The cursor theme, size and X11 scale of the root window's cursor, once `wm` has set
+    /// it.
+    root_cursor: Option<(String, u32, X11Scale)>,
     /// The XWayland windows in the order `X11Wm` was last told to stack them, bottom to
     /// top.
     stacking: Vec<X11Window>,
@@ -67,6 +74,14 @@ pub struct RunningXwayland {
     owed_selections: Vec<selection::Owed>,
     /// The `XWayland` source, which kills Xwayland when it's removed.
     source: RegistrationToken,
+}
+
+/// Sends what `wm` has buffered. Smithay's setters, like `set_xsettings`
+/// (`xwm/mod.rs:1372-1386`) and `set_cursor`, leave their writes in the connection's buffer,
+/// which it flushes only when X next sends it an event. A restack flushes whatever it's
+/// given, and one of no windows changes nothing (`:1110-1165`).
+fn flush_wm(wm: &mut X11Wm) -> Result<(), ConnectionError> {
+    wm.update_stacking_order_upwards(std::iter::empty::<&X11Surface>())
 }
 
 /// What Xwayland is spawned with besides `PATH` and `XDG_RUNTIME_DIR`, since Smithay clears
@@ -108,6 +123,9 @@ impl Camino {
             }
         };
         let display = xwayland.display_number();
+        // Given before Xwayland binds the outputs, so its screen starts in client space.
+        let scale = X11Scale(self.x11_scale());
+        scale.apply(&client);
         let source = self
             .loop_handle
             .insert_source(xwayland, |event, _, state| match event {
@@ -125,6 +143,8 @@ impl Camino {
                     wm: None,
                     xconn: None,
                     xsettings: xsettings::Table::new(),
+                    scale,
+                    root_cursor: None,
                     stacking: Vec::new(),
                     root_stack: RootStack::default(),
                     override_redirect: Vec::new(),
@@ -216,7 +236,7 @@ impl Camino {
         let Some(wm) = xwayland.wm.as_mut() else {
             return;
         };
-        let table = xsettings::table(&self.settings);
+        let table = xsettings::table(&self.settings, xwayland.scale.0);
         let changed: Vec<(String, XSettingValue)> = table
             .iter()
             .filter(|(name, setting)| xwayland.xsettings.get(*name) != Some(*setting))
@@ -225,18 +245,44 @@ impl Camino {
         if changed.is_empty() {
             return;
         }
-        // `set_xsettings` leaves its write in the connection's buffer
-        // (`xwm/mod.rs:1372-1386`), which Smithay flushes only when X next sends it an event.
-        // A restack flushes whatever it's given, and one of no windows changes nothing
-        // (`:1110-1165`).
         if let Err(err) = wm.set_xsettings(changed.into_iter()) {
             tracing::warn!("can't publish XSETTINGS: {err}");
             return;
         }
         // Smithay has the table now, and sends it with its next write if this fails.
         xwayland.xsettings = table;
-        if let Err(err) = wm.update_stacking_order_upwards(std::iter::empty::<&X11Surface>()) {
+        if let Err(err) = flush_wm(wm) {
             tracing::warn!("can't send XSETTINGS to X: {err}");
+        }
+    }
+
+    /// Brings the root window's cursor, which X windows without their own show, up to date
+    /// with the cursor settings and the X11 scale (41). Xwayland's own, from
+    /// `XCURSOR_SIZE`, would be in client space, and small at a scale above 1.
+    pub(crate) fn refresh_x_root_cursor(&mut self) {
+        let Some(xwayland) = self.xwayland.as_mut() else {
+            return;
+        };
+        let Some(wm) = xwayland.wm.as_mut() else {
+            return;
+        };
+        let mouse = &self.settings.mouse;
+        let wanted = (
+            mouse.cursor_theme.clone(),
+            mouse.cursor_size,
+            xwayland.scale,
+        );
+        if xwayland.root_cursor.as_ref() == Some(&wanted) {
+            return;
+        }
+        let image = self.cursors.x_root_cursor(xwayland.scale.0);
+        if let Err(err) = wm.set_cursor(&image.pixels, image.size, image.hotspot) {
+            tracing::warn!("can't set X's root cursor: {err}");
+            return;
+        }
+        xwayland.root_cursor = Some(wanted);
+        if let Err(err) = flush_wm(wm) {
+            tracing::warn!("can't send X's root cursor: {err}");
         }
     }
 
@@ -244,6 +290,7 @@ impl Camino {
     /// policy (39).
     pub(crate) fn refresh_x_windows(&mut self) {
         let policy = &self.policy;
+        let scale = self.applied_x11_scale();
         let windows: Vec<(X11Window, WindowProperties)> = policy
             .windows()
             .filter_map(|mapped| {
@@ -254,8 +301,7 @@ impl Camino {
                 } else {
                     policy.workspace_of(id)? as u32
                 };
-                // X client space is logical space until the X11 scale (41).
-                let frame_extents = policy.frame_extents(id);
+                let frame_extents = scale.extents_to_x(policy.frame_extents(id));
                 Some((
                     window,
                     WindowProperties {
@@ -347,6 +393,13 @@ impl Camino {
                 size,
             } => {
                 if let Some(surface) = self.managed_x11_surface(window) {
+                    // Smithay converts a `ConfigureRequest`'s values, but not these.
+                    let scale = self.applied_x11_scale();
+                    let loc_to_logical = |n: Option<i32>| n.map(|n| scale.to_logical(n));
+                    let size_to_logical =
+                        |n: Option<u32>| n.map(|n| scale.to_logical(n as i32).max(1) as u32);
+                    let loc = (loc_to_logical(loc.0), loc_to_logical(loc.1));
+                    let size = (size_to_logical(size.0), size_to_logical(size.1));
                     self.x_configure_request(&surface, gravity, loc, size);
                 }
             }
@@ -408,7 +461,9 @@ impl Camino {
             focused: true,
             shaded: false,
         };
-        let extents = self.frame_context.extents(&facts, state);
+        let extents = self
+            .applied_x11_scale()
+            .extents_to_x(self.frame_context.extents(&facts, state));
         self.with_xconn("answer an X window's frame request", |xconn| {
             xconn.answer_frame_extents(window, extents)
         });
@@ -484,6 +539,13 @@ impl Camino {
                 xconn.input_shape(id)
             })
             .flatten();
+        let scale = self.applied_x11_scale();
+        let shape = shape.map(|rects| {
+            rects
+                .into_iter()
+                .map(|r| scale.rect_to_logical(r))
+                .collect()
+        });
         with_x_facts(window, |facts| facts.input_shape = shape);
     }
 
@@ -515,9 +577,13 @@ impl Camino {
                 with_x_facts(window, |facts| facts.icon = icon);
             }
             WindowProperty::Struts => {
+                let scale = self.applied_x11_scale();
                 let struts = self
                     .with_xconn("read an X window's struts", |xconn| xconn.struts(id))
-                    .unwrap_or_default();
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|strut| scale.strut_to_logical(strut))
+                    .collect();
                 with_x_facts(window, |facts| facts.struts = struts);
             }
         }
@@ -538,12 +604,24 @@ impl Camino {
         true
     }
 
+    /// The X11 scale Xwayland's client has, which X client space is at.
+    fn applied_x11_scale(&self) -> X11Scale {
+        self.xwayland
+            .as_ref()
+            .map_or(X11Scale(1), |xwayland| xwayland.scale)
+    }
+
     fn root_properties(&self) -> RootProperties {
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
             current_desktop: self.policy.active_workspace(),
-            // X client space is logical space until the X11 scale (41).
-            work_areas: self.policy.work_areas().collect(),
+            work_areas: {
+                let scale = self.applied_x11_scale();
+                self.policy
+                    .work_areas()
+                    .map(|area| scale.to_x(area))
+                    .collect()
+            },
         }
     }
 
@@ -628,9 +706,9 @@ impl State {
     }
 
     /// Xwayland is up. In 11's start-up order: attaches `X11Wm`, connects Camino's X
-    /// connection, which claims Camino's identity, publishes the root properties and
-    /// XSETTINGS, and only then sets `DISPLAY` for the clients Camino spawns, which read them
-    /// at start-up.
+    /// connection, which claims Camino's identity, publishes the root properties,
+    /// XSETTINGS and the root cursor, all at the X11 scale Xwayland's client has, and only
+    /// then sets `DISPLAY` for the clients Camino spawns, which read them at start-up.
     fn xwayland_ready(&mut self, x11_socket: UnixStream) {
         let camino = &mut self.camino;
         let Some(xwayland) = camino.xwayland.as_mut() else {
@@ -645,8 +723,10 @@ impl State {
         match started {
             Ok(wm) => {
                 xwayland.wm = Some(wm);
-                // Each `start_wm` claims XSETTINGS with an empty table (ADR 0006).
+                // Each `start_wm` claims XSETTINGS with an empty table (ADR 0006), and has
+                // the root window's cursor Xwayland made.
                 xwayland.xsettings.clear();
+                xwayland.root_cursor = None;
                 match XConnection::connect(xwayland.display, &camino.loop_handle) {
                     Ok(xconn) => xwayland.xconn = Some(xconn),
                     Err(err) => tracing::warn!(
@@ -658,6 +738,7 @@ impl State {
                 // them as they start (11): `DISPLAY` must not come first.
                 camino.refresh_x_root();
                 camino.refresh_xsettings();
+                camino.refresh_x_root_cursor();
                 tracing::info!("Xwayland is ready on DISPLAY={value}");
                 camino
                     .environment

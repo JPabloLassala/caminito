@@ -242,8 +242,8 @@ pub(crate) struct Strut {
 
 /// A window's struts from `_NET_WM_STRUT_PARTIAL`, else from `_NET_WM_STRUT`, as EWMH
 /// has it: left, right, top and bottom widths, then for `_PARTIAL` each edge's start and
-/// end in that order. Values are in X client space, which is logical space until the X11
-/// scale (41) divides them by it.
+/// end in that order. Values stay in X client space, which the caller divides by the X11
+/// scale (41).
 pub(crate) fn struts(partial: Option<&[u32]>, strut: Option<&[u32]>) -> Vec<Strut> {
     let sides = [Side::Left, Side::Right, Side::Top, Side::Bottom];
     let (widths, spans) = match (partial, strut) {

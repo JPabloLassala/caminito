@@ -65,15 +65,13 @@ const DPI_FALLBACK: f64 = 96.0;
 /// The DPIs msd believes, beyond which it clamps.
 const DPI_REASONABLE: std::ops::RangeInclusive<f64> = 50.0..=500.0;
 
-/// The table msd would publish for `settings`.
-pub(crate) fn table(settings: &Settings) -> Table {
+/// The table msd would publish for `settings` at the X11 scale `scale` (41).
+pub(crate) fn table(settings: &Settings, scale: u32) -> Table {
     let mouse = &settings.mouse;
     let interface = &settings.interface;
     let gtk = &interface.gtk;
     let sound = &settings.sound;
     let fonts = &settings.font_rendering;
-    // The X11 scale is 41's.
-    let scale: u32 = 1;
 
     let mut table = Table::new();
     let mut set = |name, value: XSetting| {

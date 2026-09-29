@@ -41,6 +41,17 @@ pub struct CursorImage {
     pub scale: i32,
 }
 
+/// A cursor for Xwayland's root window (41): premultiplied ARGB32 in the machine's byte
+/// order, as X's depth-32 pictures take it, which is also xcursor's file order and cairo's.
+pub(crate) struct XCursorImage {
+    /// Four bytes a pixel, row by row.
+    pub(crate) pixels: Vec<u8>,
+    /// In pixels.
+    pub(crate) size: Size<u16, Logical>,
+    /// The pixel the pointer's position is, from the image's top left corner.
+    pub(crate) hotspot: Point<u16, Logical>,
+}
+
 /// The cursor theme, and the cursors loaded from it.
 pub struct Cursors {
     source: CursorSource,
@@ -94,6 +105,32 @@ impl Cursors {
             .clone()
     }
 
+    /// The default cursor for Xwayland's root window at the X11 scale `scale`: X clients
+    /// are in client space, so it's `cursor-size` × `scale` pixels, drawn unscaled.
+    pub(crate) fn x_root_cursor(&self, scale: u32) -> XCursorImage {
+        let pixels = self.size.saturating_mul(scale) as i32;
+        let from_theme = self.theme.as_ref().and_then(|theme| {
+            names(CursorIcon::Default)
+                .into_iter()
+                .find_map(|name| xcursor_image(theme, name, pixels))
+        });
+        match from_theme {
+            Some(image) => XCursorImage {
+                pixels: image.pixels_rgba,
+                size: Size::from((image.width as u16, image.height as u16)),
+                hotspot: Point::from((image.xhot as u16, image.yhot as u16)),
+            },
+            None => {
+                let surface = draw_arrow(pixels).expect("cairo draws the built-in cursor");
+                XCursorImage {
+                    pixels: argb_rows(surface),
+                    size: Size::from((pixels as u16, pixels as u16)),
+                    hotspot: Point::from((0, 0)),
+                }
+            }
+        }
+    }
+
     fn load(&self, icon: CursorIcon, scale: i32) -> CursorImage {
         let pixels = self.size as i32 * scale;
         let from_theme = self.theme.as_ref().and_then(|theme| {
@@ -125,12 +162,11 @@ fn names(icon: CursorIcon) -> Vec<&'static str> {
 }
 
 /// The first frame of the theme's `name` cursor at the nominal size nearest `pixels`.
-fn load_xcursor(
+fn xcursor_image(
     theme: &xcursor::CursorTheme,
     name: &str,
     pixels: i32,
-    scale: i32,
-) -> Option<CursorImage> {
+) -> Option<xcursor::parser::Image> {
     let path = theme.load_icon(name)?;
     let content = std::fs::read(&path)
         .inspect_err(|err| tracing::warn!("can't read the cursor {}: {err}", path.display()))
@@ -138,8 +174,20 @@ fn load_xcursor(
     let images = xcursor::parser::parse_xcursor(&content)?;
     let nearest = images
         .iter()
-        .min_by_key(|image| (image.size as i32 - pixels).abs())?;
-    let image = images.iter().find(|image| image.size == nearest.size)?;
+        .min_by_key(|image| (image.size as i32 - pixels).abs())?
+        .size;
+    images.into_iter().find(|image| image.size == nearest)
+}
+
+/// The first frame of the theme's `name` cursor at the nominal size nearest `pixels`, for
+/// an output at `scale`.
+fn load_xcursor(
+    theme: &xcursor::CursorTheme,
+    name: &str,
+    pixels: i32,
+    scale: i32,
+) -> Option<CursorImage> {
+    let image = xcursor_image(theme, name, pixels)?;
     let size = Size::from((image.width as i32, image.height as i32));
     Some(CursorImage {
         // xcursor's premultiplied RGBA bytes are DRM's little-endian ABGR8888.
@@ -197,17 +245,21 @@ fn draw_arrow(pixels: i32) -> Result<ImageSurface, cairo::Error> {
     Ok(surface)
 }
 
-/// A cairo ARGB32 surface as a buffer, which is `Argb8888` on little-endian machines.
-fn memory_buffer(mut surface: ImageSurface, scale: i32) -> MemoryRenderBuffer {
-    let (width, height) = (surface.width(), surface.height());
+/// A cairo ARGB32 surface's pixels, without the padding at the end of each row.
+fn argb_rows(mut surface: ImageSurface) -> Vec<u8> {
     let stride = surface.stride() as usize;
-    let row = width as usize * 4;
+    let row = surface.width() as usize * 4;
     let data = surface.data().expect("the cursor surface isn't shared");
-    let pixels: Vec<u8> = data
-        .chunks(stride)
+    data.chunks(stride)
         .flat_map(|line| &line[..row])
         .copied()
-        .collect();
+        .collect()
+}
+
+/// A cairo ARGB32 surface as a buffer, which is `Argb8888` on little-endian machines.
+fn memory_buffer(surface: ImageSurface, scale: i32) -> MemoryRenderBuffer {
+    let (width, height) = (surface.width(), surface.height());
+    let pixels = argb_rows(surface);
     MemoryRenderBuffer::from_slice(
         &pixels,
         Fourcc::Argb8888,

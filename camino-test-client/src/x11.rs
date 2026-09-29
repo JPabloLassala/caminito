@@ -396,6 +396,12 @@ impl X11Client {
         Ok((reply.dst_x.into(), reply.dst_y.into()))
     }
 
+    /// `window`'s width and height, as its client sees them.
+    pub fn size(&self, window: Window) -> Result<(u16, u16), ReplyError> {
+        let reply = self.conn.get_geometry(window)?.reply()?;
+        Ok((reply.width, reply.height))
+    }
+
     /// Waits until Xwayland has handled every request this client sent, without reading
     /// its events.
     pub fn sync(&self) -> Result<(), ReplyError> {
