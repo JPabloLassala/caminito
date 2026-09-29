@@ -2,6 +2,8 @@
 //!
 //! Only Smithay's geometry types may be used here.
 
+#![forbid(unsafe_code)]
+
 mod action;
 mod output;
 mod placement;

@@ -29,3 +29,6 @@ tempfile = "3.27.0"
 x11rb = "0.13.2"
 # The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
 smithay = { workspace = true, features = ["renderer_pixman"] }
+
+[lints]
+workspace = true

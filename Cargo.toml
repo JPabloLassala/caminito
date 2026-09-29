@@ -12,3 +12,7 @@ repository = "https://github.com/JPabloLassala/camino"
 # Pinned by rev and bumped one commit at a time. The weekly canary rewrites this
 # line to build against master, so keep it on one line.
 smithay = { version = "0.7.0", git = "https://github.com/Smithay/smithay.git", rev = "928d4a9b222b2adcd739a2c60caf3e8f304a45a5", default-features = false }
+
+# CI runs clippy with -D warnings, so "warn" here fails the build there.
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
