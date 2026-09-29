@@ -1,99 +1,109 @@
 //! The debug interface (14, 32): `org.mate.Camino.Debug` on the test binary's private bus,
-//! and frame debug's outlines.
+//! and frame debug's outlines, with an xdg toplevel and an XWayland window (45).
 
 use camino_test_client::dbus::debug_proxy;
-use camino_test_client::{DecorationMode, WindowId};
 
-use super::fixture::{ClientId, Fixture, WINDOW_COLOR};
+use super::fixture::{ClientId, ClientWindow, Decoration, Fixture, WindowSpec, on_both_kinds};
 
-/// Maps a window with `title` and `app_id` that asks for `mode`.
-fn map_titled(
+/// Maps a window with `title` and `app_id` that asks for `decoration`.
+fn titled(
     f: &mut Fixture,
-    id: ClientId,
-    mode: DecorationMode,
-    title: &str,
-    app_id: &str,
-) -> WindowId {
-    let window = f.client(id).create_window();
-    f.client(id).set_title(window, title);
-    f.client(id).set_app_id(window, app_id);
-    f.client(id).request_decoration(window, Some(mode));
-    f.client(id).commit(window);
-    f.roundtrip(id);
-    f.client(id)
-        .ack_and_commit_buffer(window, (400, 300), WINDOW_COLOR);
-    f.roundtrip(id);
-    f.dispatch();
-    window
+    client: ClientId,
+    decoration: Decoration,
+    title: &'static str,
+    app_id: &'static str,
+) -> ClientWindow {
+    f.map(
+        client,
+        WindowSpec {
+            decoration,
+            title: Some(title),
+            app_id: Some(app_id),
+            ..WindowSpec::default()
+        },
+    )
 }
 
-#[test]
-fn the_state_dump_shows_an_ssd_and_a_csd_window_on_two_workspaces() {
-    let (mut f, id) = Fixture::connected();
-    f.add_output((2560, 1440), 2.0);
-    let ssd = map_titled(&mut f, id, DecorationMode::ServerSide, "Caja", "caja");
-    let csd = map_titled(
-        &mut f,
-        id,
-        DecorationMode::ClientSide,
-        "Files",
-        "org.gnome.Nautilus",
-    );
-    let csd = f.policy_id(id, csd).unwrap();
-    f.state.camino.policy.move_to_workspace(csd, 1);
-    let ssd = f.policy_id(id, ssd).unwrap();
-    f.state
-        .camino
-        .policy
-        .activate(crate::state::SEAT, ssd, f.state.camino.now());
-    f.dispatch();
-
-    let bus = f.start_dbus();
-    let dump = f.dbus_call(move || debug_proxy(&bus).unwrap().dump_state().unwrap());
-
-    insta::assert_snapshot!(dump);
+/// The dump with its X window ids, which differ from run to run, as `[X id]`.
+fn without_x_ids(dump: &str) -> String {
+    let lines = dump.lines().map(|line| {
+        let key = "\"window\": ";
+        match line.find(key) {
+            Some(at) => format!("{}{key}\"[X id]\",", &line[..at]),
+            None => line.to_owned(),
+        }
+    });
+    lines.collect::<Vec<_>>().join("\n")
 }
 
-#[test]
-fn frame_debug_adds_the_outlines_and_turning_it_off_removes_them() {
-    let (mut f, id) = Fixture::connected();
-    map_titled(&mut f, id, DecorationMode::ServerSide, "Caja", "caja");
-    let output = f.state.camino.outputs[0].clone();
-    let before = f.state.scene_element_count(&output);
-    let bus = f.start_dbus();
+on_both_kinds! {
+    fn the_state_dump_shows_an_ssd_and_a_csd_window_on_two_workspaces(kind: Kind) {
+        let (mut f, client) = Fixture::connected(kind);
+        f.add_output((2560, 1440), 2.0);
+        let ssd = titled(&mut f, client, Decoration::Server, "Caja", "caja");
+        let csd = titled(
+            &mut f,
+            client,
+            Decoration::Client,
+            "Files",
+            "org.gnome.Nautilus",
+        );
+        let csd = f.pid(csd);
+        f.state.camino.policy.move_to_workspace(csd, 1);
+        let ssd = f.pid(ssd);
+        f.state
+            .camino
+            .policy
+            .activate(crate::state::SEAT, ssd, f.state.camino.now());
+        f.dispatch();
 
-    let toggle = |f: &mut Fixture| {
-        let bus = bus.clone();
-        f.dbus_call(move || debug_proxy(&bus).unwrap().toggle_frame_debug().unwrap())
-    };
-    assert!(toggle(&mut f));
-    f.dispatch();
-    // Four sides of an outline for each of the four strips, the resize border and the
-    // title, and the scale's label.
-    assert_eq!(f.state.scene_element_count(&output), before + 6 * 4 + 1);
+        let bus = f.start_dbus();
+        let dump = f.dbus_call(move || debug_proxy(&bus).unwrap().dump_state().unwrap());
 
-    assert!(!toggle(&mut f));
-    f.dispatch();
-    assert_eq!(f.state.scene_element_count(&output), before);
+        insta::assert_snapshot!(format!("{kind:?}").to_lowercase(), without_x_ids(&dump));
+    }
 }
 
-#[test]
-fn frame_debug_outlines_nothing_for_a_csd_window() {
-    let (mut f, id) = Fixture::connected();
-    map_titled(
-        &mut f,
-        id,
-        DecorationMode::ClientSide,
-        "Files",
-        "org.gnome.Nautilus",
-    );
-    let output = f.state.camino.outputs[0].clone();
-    let before = f.state.scene_element_count(&output);
+on_both_kinds! {
+    fn frame_debug_adds_the_outlines_and_turning_it_off_removes_them(kind: Kind) {
+        let (mut f, client) = Fixture::connected(kind);
+        titled(&mut f, client, Decoration::Server, "Caja", "caja");
+        let output = f.state.camino.outputs[0].clone();
+        let before = f.state.scene_element_count(&output);
+        let bus = f.start_dbus();
 
-    f.state.camino.toggle_frame_debug();
-    f.dispatch();
+        let toggle = |f: &mut Fixture| {
+            let bus = bus.clone();
+            f.dbus_call(move || debug_proxy(&bus).unwrap().toggle_frame_debug().unwrap())
+        };
+        assert!(toggle(&mut f));
+        // Four sides of an outline for each of the four strips, the resize border and the
+        // title, and the scale's label.
+        assert_eq!(f.state.scene_element_count(&output), before + 6 * 4 + 1);
 
-    assert_eq!(f.state.scene_element_count(&output), before);
+        assert!(!toggle(&mut f));
+        assert_eq!(f.state.scene_element_count(&output), before);
+    }
+}
+
+on_both_kinds! {
+    fn frame_debug_outlines_nothing_for_a_csd_window(kind: Kind) {
+        let (mut f, client) = Fixture::connected(kind);
+        titled(
+            &mut f,
+            client,
+            Decoration::Client,
+            "Files",
+            "org.gnome.Nautilus",
+        );
+        let output = f.state.camino.outputs[0].clone();
+        let before = f.state.scene_element_count(&output);
+
+        f.state.camino.toggle_frame_debug();
+        f.dispatch();
+
+        assert_eq!(f.state.scene_element_count(&output), before);
+    }
 }
 
 #[test]

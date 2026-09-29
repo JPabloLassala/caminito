@@ -1,5 +1,9 @@
 //! `Fixture`: Camino on the headless backend and any number of test clients in one calloop
 //! (14, 15). This is niri's `tests/fixture.rs` shape.
+//!
+//! Tests map windows of either kind with [`Fixture::map`], and ask about them through the
+//! fixture's queries rather than `state.camino`, so a test of behaviour both kinds share can
+//! run on both through [`on_both_kinds!`] (45).
 
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -7,17 +11,21 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
-use camino_test_client::x11::{WindowSpec, X11Client};
-use camino_test_client::{Client, WindowId};
+use camino_test_client::x11::{X11Client, XWindowSpec};
+use camino_test_client::{Client, DecorationMode, WindowId};
+use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::output::Output;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Physical, Size};
+use smithay::utils::{FrameExtents, Logical, Physical, Point, Rectangle, Size};
+use x11rb::protocol::Event;
 
+use crate::decoration::control::FrameControl;
 use crate::settings::{self, Value};
 use crate::state::{ClientState, State};
+use crate::window::Mapped;
 
 /// The vendored schemas under `tests/schemas/` (14), compiled once per test run beside the
 /// test binary.
@@ -55,26 +63,166 @@ pub const WINDOW_COLOR: u32 = 0xff00ff00;
 /// How many dispatches a roundtrip may take before the test fails rather than hangs.
 const MAX_ROUNDTRIP_DISPATCHES: usize = 100;
 
+type PolicyId = camino_policy::WindowId;
+
+/// Expands one test body, which takes the `Kind` of client it runs with, into a module of
+/// two tests, `<name>::xdg` and `<name>::x11`, so each tier runs, filters and fails on its
+/// own.
+macro_rules! on_both_kinds {
+    ($(#[$meta:meta])* fn $name:ident($kind:ident: Kind) $body:block) => {
+        mod $name {
+            #[allow(unused_imports)]
+            use super::*;
+
+            $(#[$meta])*
+            fn body($kind: $crate::tests::fixture::Kind) $body
+
+            #[test]
+            fn xdg() {
+                body($crate::tests::fixture::Kind::Xdg);
+            }
+
+            #[test]
+            fn x11() {
+                body($crate::tests::fixture::Kind::X11);
+            }
+        }
+    };
+}
+pub(crate) use on_both_kinds;
+
+/// Which protocol a client speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A Wayland client, whose windows are xdg toplevels.
+    Xdg,
+    /// An X client on Xwayland.
+    X11,
+}
+
 pub struct Fixture {
     event_loop: EventLoop<'static, State>,
     pub state: State,
-    clients: Vec<Client>,
-    /// Each client as the compositor knows it.
-    server_clients: Vec<smithay::reexports::wayland_server::Client>,
+    clients: Vec<TestClient>,
     input_millis: u32,
 }
 
-/// The index of one of a fixture's clients.
+enum TestClient {
+    /// A Wayland client, and itself as the compositor knows it.
+    Wayland {
+        client: Box<Client>,
+        server: smithay::reexports::wayland_server::Client,
+    },
+    X11(Arc<X11Client>),
+    /// An X client the test disconnected.
+    Disconnected,
+}
+
+/// The index of one of a fixture's clients, of either kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClientId(usize);
 
 /// A test's window, whichever protocol its client speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientWindow {
-    /// An xdg toplevel of one of the fixture's Wayland clients.
-    Wayland(ClientId, WindowId),
-    /// An X window, by its id.
-    X11(u32),
+    /// An xdg toplevel of a Wayland client.
+    Xdg(ClientId, WindowId),
+    /// An X window of an X client, by its id.
+    X11(ClientId, u32),
+}
+
+impl ClientWindow {
+    pub fn client(self) -> ClientId {
+        match self {
+            ClientWindow::Xdg(client, _) | ClientWindow::X11(client, _) => client,
+        }
+    }
+
+    /// The xdg toplevel, for requests only an xdg client makes.
+    pub fn xdg(self) -> WindowId {
+        match self {
+            ClientWindow::Xdg(_, window) => window,
+            ClientWindow::X11(..) => panic!("{self:?} is an X window, not an xdg toplevel"),
+        }
+    }
+
+    /// The X window's id, for requests only an X client makes.
+    pub fn x11(self) -> u32 {
+        match self {
+            ClientWindow::X11(_, window) => window,
+            ClientWindow::Xdg(..) => panic!("{self:?} is an xdg toplevel, not an X window"),
+        }
+    }
+}
+
+/// What a window asks about its decoration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decoration {
+    /// A frame: xdg-decoration's server-side mode, or no `_MOTIF_WM_HINTS`.
+    Server,
+    /// Its own: xdg-decoration's client-side mode, or `_MOTIF_WM_HINTS` without decorations.
+    Client,
+    /// xdg only: an xdg-decoration object without a mode.
+    NoPreference,
+    /// Nothing: no xdg-decoration object, and no `_MOTIF_WM_HINTS`.
+    Unspoken,
+}
+
+/// A window for [`Fixture::map`] to map, as either kind of client asks for it. A field only
+/// one kind can ask for panics on the other.
+#[derive(Debug, Clone)]
+pub struct WindowSpec {
+    /// The size its client draws it at.
+    pub size: (i32, i32),
+    pub decoration: Decoration,
+    /// The xdg title, or `_NET_WM_NAME`.
+    pub title: Option<&'static str>,
+    /// The xdg app id, or `WM_CLASS`'s class.
+    pub app_id: Option<&'static str>,
+    /// A window of the same client it's transient for: the xdg parent, or
+    /// `WM_TRANSIENT_FOR`.
+    pub parent: Option<ClientWindow>,
+    /// X11 only: where it's created, with `USPosition`.
+    pub position: Option<(i16, i16)>,
+    /// X11 only: `_NET_WM_WINDOW_TYPE`'s atoms, most preferred first.
+    pub types: Vec<&'static str>,
+    /// X11 only: `_NET_WM_STATE`'s atoms before it's mapped.
+    pub states: Vec<&'static str>,
+    /// X11 only: `WM_HINTS`'s input flag; `None` leaves `WM_HINTS` unset.
+    pub input: Option<bool>,
+    /// Whether it can be asked to close: `WM_DELETE_WINDOW` in `WM_PROTOCOLS`, as toolkits
+    /// set it. An xdg toplevel always can.
+    pub delete_window: bool,
+}
+
+impl Default for WindowSpec {
+    /// A 400 × 300 window that asks for a frame, as a MATE app does.
+    fn default() -> Self {
+        WindowSpec {
+            size: (400, 300),
+            decoration: Decoration::Server,
+            title: None,
+            app_id: None,
+            parent: None,
+            position: None,
+            types: Vec::new(),
+            states: Vec::new(),
+            input: None,
+            delete_window: true,
+        }
+    }
+}
+
+impl WindowSpec {
+    /// A window of `size` that says nothing about its decoration, so Camino draws no frame
+    /// for it if it's an xdg toplevel.
+    pub fn plain(size: (i32, i32)) -> Self {
+        WindowSpec {
+            size,
+            decoration: Decoration::Unspoken,
+            ..WindowSpec::default()
+        }
+    }
 }
 
 impl Fixture {
@@ -96,7 +244,6 @@ impl Fixture {
             event_loop,
             state,
             clients: Vec::new(),
-            server_clients: Vec::new(),
             input_millis: 0,
         }
     }
@@ -105,79 +252,294 @@ impl Fixture {
         self.state.add_headless_output(size.into(), scale)
     }
 
-    /// Connects a new client over a socket pair. It has seen nothing until a roundtrip.
+    /// Connects a new Wayland client over a socket pair. It has seen nothing until a
+    /// roundtrip.
     pub fn add_client(&mut self) -> ClientId {
         let (server, client) = UnixStream::pair().unwrap();
-        let server_client = self
+        let server = self
             .state
             .camino
             .display_handle
             .insert_client(server, Arc::new(ClientState::default()))
             .unwrap();
-        self.server_clients.push(server_client);
-        self.clients.push(Client::new(client));
+        self.clients.push(TestClient::Wayland {
+            client: Box::new(Client::new(client)),
+            server,
+        });
         ClientId(self.clients.len() - 1)
     }
 
-    /// One 1920 × 1080 output and a client that has seen the globals.
-    pub fn connected() -> (Self, ClientId) {
-        let mut f = Self::new();
-        f.add_output((1920, 1080), 1.0);
-        let id = f.add_client();
-        f.roundtrip(id);
-        (f, id)
-    }
-
-    /// Creates a window, lets it have its initial configure, then acks it and commits a
-    /// `size` buffer, which maps it.
-    pub fn map_window(&mut self, id: ClientId, size: (i32, i32)) -> WindowId {
-        let window = self.client(id).create_window();
-        self.client(id).commit(window);
-        self.roundtrip(id);
-        self.client(id)
-            .ack_and_commit_buffer(window, size, WINDOW_COLOR);
-        self.roundtrip(id);
-        window
-    }
-
-    /// Policy's id for a client's window, if it's mapped.
-    pub fn policy_id(&mut self, id: ClientId, window: WindowId) -> Option<camino_policy::WindowId> {
-        let protocol_id = self.client(id).surface_protocol_id(window);
-        let client = &self.server_clients[id.0];
-        self.state.camino.policy.windows().find_map(|mapped| {
-            let surface = mapped.wl_surface()?;
-            (surface.client().as_ref() == Some(client) && surface.id().protocol_id() == protocol_id)
-                .then(|| mapped.id())
-        })
-    }
-
-    /// Policy's id for an X window, if Camino manages it.
-    pub fn x11_policy_id(&self, window: u32) -> Option<camino_policy::WindowId> {
-        self.state.camino.policy.windows().find_map(|mapped| {
-            let surface = mapped.window().x11_surface()?;
-            (surface.window_id() == window).then(|| mapped.id())
-        })
-    }
-
-    /// Policy's id for a test's window, whichever protocol it speaks, if it's managed.
-    pub fn window_policy_id(&mut self, window: ClientWindow) -> Option<camino_policy::WindowId> {
-        match window {
-            ClientWindow::Wayland(id, window) => self.policy_id(id, window),
-            ClientWindow::X11(window) => self.x11_policy_id(window),
+    /// Connects a client of `kind` that has seen the globals, or the root, starting
+    /// Xwayland first if it isn't running.
+    pub fn connect(&mut self, kind: Kind) -> ClientId {
+        match kind {
+            Kind::Xdg => {
+                let id = self.add_client();
+                self.roundtrip(id);
+                id
+            }
+            Kind::X11 => {
+                if self.state.camino.xwayland_display().is_none() {
+                    self.start_xwayland();
+                }
+                self.connect_x11()
+            }
         }
     }
 
-    /// Creates and maps an X window as `spec` says, and dispatches until Camino manages it.
-    pub fn map_x11_window(&mut self, client: &Arc<X11Client>, spec: WindowSpec) -> u32 {
+    /// One 1920 × 1080 output and a connected client of `kind`.
+    pub fn connected(kind: Kind) -> (Self, ClientId) {
+        let mut f = Self::new();
+        f.add_output((1920, 1080), 1.0);
+        let id = f.connect(kind);
+        (f, id)
+    }
+
+    /// Maps a window of `client` as `spec` says. It returns once policy manages the window,
+    /// its frame is drawn, and the client has seen everything Camino sent it.
+    pub fn map(&mut self, client: ClientId, spec: WindowSpec) -> ClientWindow {
+        let window = match &self.clients[client.0] {
+            TestClient::Wayland { .. } => self.map_xdg(client, spec),
+            TestClient::X11(_) => self.map_x11(client, spec),
+            TestClient::Disconnected => panic!("{client:?} is disconnected"),
+        };
+        let managed = self.mapped(window);
+        assert!(
+            !managed.shows_frame() || managed.frame().flags().is_some(),
+            "{window:?}'s frame is drawn"
+        );
+        window
+    }
+
+    /// Creates an xdg toplevel, lets it have its initial configure, then acks it and commits
+    /// a buffer, which maps it.
+    fn map_xdg(&mut self, id: ClientId, spec: WindowSpec) -> ClientWindow {
+        assert!(
+            spec.position.is_none()
+                && spec.types.is_empty()
+                && spec.states.is_empty()
+                && spec.input.is_none(),
+            "an xdg toplevel can't ask for X properties: {spec:?}"
+        );
+        assert!(spec.delete_window, "an xdg toplevel can always be closed");
+        let client = self.client(id);
+        let window = client.create_window();
+        if let Some(title) = spec.title {
+            client.set_title(window, title);
+        }
+        if let Some(app_id) = spec.app_id {
+            client.set_app_id(window, app_id);
+        }
+        if let Some(parent) = spec.parent {
+            assert_eq!(parent.client(), id, "a parent of the same client");
+            client.set_parent(window, Some(parent.xdg()));
+        }
+        match spec.decoration {
+            Decoration::Server => {
+                client.request_decoration(window, Some(DecorationMode::ServerSide));
+            }
+            Decoration::Client => {
+                client.request_decoration(window, Some(DecorationMode::ClientSide));
+            }
+            Decoration::NoPreference => client.create_decoration(window),
+            Decoration::Unspoken => {}
+        }
+        client.commit(window);
+        self.roundtrip(id);
+        self.client(id)
+            .ack_and_commit_buffer(window, spec.size, WINDOW_COLOR);
+        self.roundtrip(id);
+        let window = ClientWindow::Xdg(id, window);
+        assert!(self.policy_id(window).is_some(), "{window:?} is managed");
+        window
+    }
+
+    /// Creates and maps an X window, dispatches until Camino manages it and has drawn its
+    /// frame, then until the client has seen Camino's answer.
+    fn map_x11(&mut self, id: ClientId, spec: WindowSpec) -> ClientWindow {
+        let decorations = match spec.decoration {
+            Decoration::Server | Decoration::Unspoken => None,
+            Decoration::Client => Some(false),
+            Decoration::NoPreference => panic!("only xdg-decoration has no preference"),
+        };
+        let x_spec = XWindowSpec {
+            size: (
+                u16::try_from(spec.size.0).unwrap(),
+                u16::try_from(spec.size.1).unwrap(),
+            ),
+            position: spec.position,
+            types: spec.types,
+            states: spec.states,
+            input: spec.input,
+            transient_for: spec.parent.map(|parent| {
+                assert_eq!(parent.client(), id, "a parent of the same client");
+                parent.x11()
+            }),
+            decorations,
+            title: spec.title,
+            class: spec.app_id,
+            delete_window: spec.delete_window,
+            empty: false,
+            override_redirect: false,
+        };
         let window = self
-            .x11_call(client, move |x| {
-                let window = x.create_window(&spec)?;
+            .x11_call(id, move |x| {
+                let window = x.create_window(&x_spec)?;
                 x.map(window)?;
                 Ok::<_, x11rb::errors::ReplyOrIdError>(window)
             })
             .expect("the X window maps");
-        self.dispatch_until(|f| f.x11_policy_id(window).is_some());
+        let window = ClientWindow::X11(id, window);
+        self.dispatch_until(|f| {
+            f.policy_id(window).is_some_and(|pid| {
+                let mapped = f.state.camino.policy.window(pid).unwrap();
+                !mapped.shows_frame() || mapped.frame().flags().is_some()
+            })
+        });
+        self.sync(window);
         window
+    }
+
+    /// Policy's id for a window, if it's managed.
+    pub fn policy_id(&self, window: ClientWindow) -> Option<PolicyId> {
+        match window {
+            ClientWindow::Xdg(id, window) => {
+                let TestClient::Wayland { client, server } = &self.clients[id.0] else {
+                    unreachable!("an xdg toplevel's client is a Wayland one");
+                };
+                let protocol_id = client.surface_protocol_id(window);
+                self.state.camino.policy.windows().find_map(|mapped| {
+                    let surface = mapped.wl_surface()?;
+                    (surface.client().as_ref() == Some(server)
+                        && surface.id().protocol_id() == protocol_id)
+                        .then(|| mapped.id())
+                })
+            }
+            ClientWindow::X11(_, window) => self.state.camino.policy.windows().find_map(|mapped| {
+                let surface = mapped.window().x11_surface()?;
+                (surface.window_id() == window).then(|| mapped.id())
+            }),
+        }
+    }
+
+    /// Policy's id for a window it manages.
+    pub fn pid(&self, window: ClientWindow) -> PolicyId {
+        self.policy_id(window)
+            .unwrap_or_else(|| panic!("{window:?} is managed"))
+    }
+
+    /// A window policy manages.
+    pub fn mapped(&self, window: ClientWindow) -> &Mapped {
+        self.state.camino.policy.window(self.pid(window)).unwrap()
+    }
+
+    /// Where policy lays a window out, globally.
+    pub fn geometry(&self, window: ClientWindow) -> Rectangle<i32, Logical> {
+        self.state.camino.policy.geometry(self.pid(window)).unwrap()
+    }
+
+    /// The frame extents policy lays a window out with.
+    pub fn frame_extents(&self, window: ClientWindow) -> FrameExtents<i32, Logical> {
+        self.state.camino.policy.frame_extents(self.pid(window))
+    }
+
+    /// The visible frame around a window, globally: its geometry grown by its extents.
+    pub fn visible_frame(&self, window: ClientWindow) -> Rectangle<i32, Logical> {
+        let geometry = self.geometry(window);
+        let e = self.frame_extents(window);
+        Rectangle::new(
+            geometry.loc - Point::from((e.left, e.top)),
+            (
+                geometry.size.w + e.left + e.right,
+                geometry.size.h + e.top + e.bottom,
+            )
+                .into(),
+        )
+    }
+
+    /// Where a frame's button is drawn, globally.
+    pub fn button_rect(
+        &self,
+        window: ClientWindow,
+        function: ButtonFunction,
+    ) -> Rectangle<i32, Logical> {
+        let mut rect = self
+            .mapped(window)
+            .frame()
+            .button_rect(function)
+            .expect("the frame shows the button");
+        rect.loc += self.geometry(window).loc;
+        rect
+    }
+
+    /// How a frame's button is drawn.
+    pub fn button_state(&self, window: ClientWindow, function: ButtonFunction) -> FrameButtonState {
+        self.mapped(window).frame().button_states().get(function)
+    }
+
+    /// The frame control under the pointer, if it's over a frame.
+    pub fn control_under_pointer(&self) -> Option<FrameControl> {
+        self.state
+            .camino
+            .frame_pointer
+            .hover
+            .map(|(_, control)| control)
+    }
+
+    /// Lets the window's client see what Camino sent it, and Camino what the client answered.
+    pub fn sync(&mut self, window: ClientWindow) {
+        match window {
+            ClientWindow::Xdg(id, _) => self.roundtrip(id),
+            ClientWindow::X11(id, _) => {
+                // Xwayland has handled Camino's requests before it answers the client's, so
+                // its answers to Camino are waiting on Camino's connection by then.
+                self.x11_call(id, |x| x.sync()).unwrap();
+                self.dispatch();
+            }
+        }
+    }
+
+    /// Whether Camino has asked the window's client to close it since this was last asked.
+    pub fn close_requested(&mut self, window: ClientWindow) -> bool {
+        match window {
+            ClientWindow::Xdg(id, window) => self.client(id).window(window).close_requested,
+            ClientWindow::X11(id, window) => self
+                .x11_call(id, move |x| {
+                    let protocols = x.atom("WM_PROTOCOLS")?;
+                    let delete = x.atom("WM_DELETE_WINDOW")?;
+                    Ok::<_, x11rb::errors::ReplyError>(x.events()?.iter().any(|event| {
+                        matches!(event, Event::ClientMessage(message)
+                            if message.window == window
+                                && message.type_ == protocols
+                                && message.data.as_data32()[0] == delete)
+                    }))
+                })
+                .unwrap(),
+        }
+    }
+
+    /// Has the client draw at the size Camino last asked of it, `size`: an xdg client acks
+    /// and commits, and Xwayland redraws the window once X has resized it.
+    pub fn draw_at_asked_size(&mut self, window: ClientWindow, size: (i32, i32)) {
+        match window {
+            ClientWindow::Xdg(id, window) => {
+                self.roundtrip(id);
+                let asked = self
+                    .client(id)
+                    .window(window)
+                    .configures
+                    .last()
+                    .unwrap()
+                    .size;
+                assert_eq!(asked, size);
+                self.client(id)
+                    .ack_and_commit_buffer(window, size, WINDOW_COLOR);
+                self.roundtrip(id);
+            }
+            ClientWindow::X11(..) => {
+                self.dispatch_until(|f| f.geometry(window).size == size.into());
+            }
+        }
     }
 
     /// A made-up input timestamp, later than the last.
@@ -243,8 +605,19 @@ impl Fixture {
         }
     }
 
+    /// A Wayland client.
     pub fn client(&mut self, id: ClientId) -> &mut Client {
-        &mut self.clients[id.0]
+        match &mut self.clients[id.0] {
+            TestClient::Wayland { client, .. } => client,
+            _ => panic!("{id:?} isn't a Wayland client"),
+        }
+    }
+
+    fn wayland_clients(&mut self) -> impl Iterator<Item = &mut Client> {
+        self.clients.iter_mut().filter_map(|client| match client {
+            TestClient::Wayland { client, .. } => Some(&mut **client),
+            _ => None,
+        })
     }
 
     /// One pass of the compositor's loop and its refresh, without waiting.
@@ -276,14 +649,14 @@ impl Fixture {
 
     /// One `dispatch` that waits up to 10 ms for the compositor's sources.
     fn dispatch_waiting(&mut self) {
-        for client in &mut self.clients {
+        for client in self.wayland_clients() {
             client.flush();
         }
         self.event_loop
             .dispatch(Duration::from_millis(10), &mut self.state)
             .unwrap();
         self.state.refresh_and_flush_clients();
-        for client in &mut self.clients {
+        for client in self.wayland_clients() {
             client.dispatch();
         }
     }
@@ -330,33 +703,35 @@ impl Fixture {
         self.state.camino.xwayland_display().unwrap()
     }
 
-    /// One 1920 × 1080 output, Xwayland, and an x11rb client connected to it.
-    pub fn with_x11() -> (Self, Arc<X11Client>) {
-        let mut f = Self::new();
-        f.add_output((1920, 1080), 1.0);
-        f.start_xwayland();
-        let x = f.connect_x11();
-        (f, x)
-    }
-
     /// Connects an x11rb client to the running Xwayland.
-    pub fn connect_x11(&mut self) -> Arc<X11Client> {
+    pub fn connect_x11(&mut self) -> ClientId {
         let display = self
             .state
             .camino
             .xwayland_display()
             .expect("Xwayland is ready");
         let client = self.off_loop(move || X11Client::connect(display));
-        Arc::new(client.expect("the X11 client connects"))
+        let client = client.expect("the X11 client connects");
+        self.clients.push(TestClient::X11(Arc::new(client)));
+        ClientId(self.clients.len() - 1)
     }
 
-    /// Makes blocking X11 calls on `client` on another thread, dispatching until they return,
-    /// since Xwayland may need Camino to answer.
+    /// Closes an X client's connection.
+    pub fn disconnect(&mut self, id: ClientId) {
+        assert!(matches!(self.clients[id.0], TestClient::X11(_)));
+        self.clients[id.0] = TestClient::Disconnected;
+    }
+
+    /// Makes blocking X11 calls as the X client `id` on another thread, dispatching until
+    /// they return, since Xwayland may need Camino to answer.
     pub fn x11_call<T: Send + 'static>(
         &mut self,
-        client: &Arc<X11Client>,
+        id: ClientId,
         call: impl FnOnce(&X11Client) -> T + Send + 'static,
     ) -> T {
+        let TestClient::X11(client) = &self.clients[id.0] else {
+            panic!("{id:?} isn't a connected X client");
+        };
         let client = Arc::clone(client);
         self.off_loop(move || call(&client))
     }
@@ -364,11 +739,11 @@ impl Fixture {
     /// Every client sends its requests, the compositor handles them, then every client handles
     /// the compositor's answers.
     pub fn dispatch(&mut self) {
-        for client in &mut self.clients {
+        for client in self.wayland_clients() {
             client.flush();
         }
         self.dispatch_server();
-        for client in &mut self.clients {
+        for client in self.wayland_clients() {
             client.dispatch();
         }
     }
@@ -385,4 +760,42 @@ impl Fixture {
         }
         panic!("roundtrip didn't finish in {MAX_ROUNDTRIP_DISPATCHES} dispatches");
     }
+}
+
+impl Drop for Fixture {
+    /// Ends Xwayland, since Smithay only tries displays `:0` to `:32`, fewer than the tests
+    /// that start it. Stopping it gives the display's lock back, but not the display:
+    /// `X11Wm` leaves a source in the event loop that holds the loop's handle, so the loop
+    /// and Xwayland's Wayland connection outlive the fixture, and Xwayland with them. So
+    /// it's signalled too.
+    fn drop(&mut self) {
+        let Some(display) = self.state.camino.xwayland.as_ref().map(|x| x.display) else {
+            return;
+        };
+        self.state.camino.stop_xwayland_in_test();
+        if let Some(pid) = xwayland_child(display) {
+            let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
+        }
+    }
+}
+
+/// The Xwayland this test binary spawned for `:display`.
+fn xwayland_child(display: u32) -> Option<rustix::process::Pid> {
+    let parent = std::process::id().to_string();
+    let display = format!(":{display}");
+    std::fs::read_dir("/proc").ok()?.find_map(|entry| {
+        let dir = entry.ok()?.path();
+        // `pid (comm) state ppid …`
+        let stat = std::fs::read_to_string(dir.join("stat")).ok()?;
+        let (comm, rest) = stat.split_once(") ")?;
+        let ppid = rest.split(' ').nth(1)?;
+        if !comm.ends_with("(Xwayland") || ppid != parent {
+            return None;
+        }
+        let cmdline = std::fs::read(dir.join("cmdline")).ok()?;
+        cmdline
+            .split(|&b| b == 0)
+            .any(|arg| arg == display.as_bytes())
+            .then(|| rustix::process::Pid::from_raw(dir.file_name()?.to_str()?.parse().ok()?))?
+    })
 }

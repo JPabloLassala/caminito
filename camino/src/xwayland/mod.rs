@@ -150,6 +150,13 @@ impl Camino {
             self.loop_handle.remove(xwayland.source);
         }
     }
+
+    /// Stops Xwayland for a test fixture that's being dropped, which gives its display's
+    /// lock back. Xwayland itself outlives it; see the fixture's `Drop`.
+    #[cfg(test)]
+    pub(crate) fn stop_xwayland_in_test(&mut self) {
+        self.stop_xwayland();
+    }
 }
 
 impl State {

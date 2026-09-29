@@ -1,34 +1,27 @@
 //! Pointer and keyboard input: focus, click to focus and raise, and keys reaching the
-//! focused client (22).
+//! focused client (22). They check the input a Wayland client sees, so they map xdg
+//! toplevels only (45).
 
-use camino_test_client::{ToplevelState, WindowId, format_input};
+use camino_test_client::{ToplevelState, format_input};
 use insta::assert_snapshot;
 use smithay::utils::{Logical, Point};
 
 use crate::state::SEAT;
 
-use super::fixture::{ClientId, Fixture, KEY_A};
+use super::fixture::{ClientWindow, Fixture, KEY_A, Kind, WindowSpec};
 
 /// A point `(dx, dy)` inside a window's geometry.
-fn inside(
-    f: &mut Fixture,
-    id: ClientId,
-    window: WindowId,
-    dx: i32,
-    dy: i32,
-) -> Point<f64, Logical> {
-    let policy_id = f.policy_id(id, window).unwrap();
-    let geometry = f.state.camino.policy.geometry(policy_id).unwrap();
-    (geometry.loc + Point::from((dx, dy))).to_f64()
+fn inside(f: &Fixture, window: ClientWindow, dx: i32, dy: i32) -> Point<f64, Logical> {
+    (f.geometry(window).loc + Point::from((dx, dy))).to_f64()
 }
 
 #[test]
 fn pointer_focus_follows_the_surface_under_the_pointer() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();
-    let a = f.map_window(id, (400, 300));
-    let b = f.map_window(id, (400, 300));
-    let (in_a, in_b) = (inside(&mut f, id, a, 10, 20), inside(&mut f, id, b, 30, 40));
+    let a = f.map(id, WindowSpec::plain((400, 300)));
+    let b = f.map(id, WindowSpec::plain((400, 300)));
+    let (in_a, in_b) = (inside(&f, a, 10, 20), inside(&f, b, 30, 40));
     f.client(id).state.input.clear();
 
     f.pointer_move(in_a.x, in_a.y);
@@ -46,17 +39,17 @@ fn pointer_focus_follows_the_surface_under_the_pointer() {
 
 #[test]
 fn a_click_focuses_and_raises_the_window() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();
     // Too big to place side by side, so the second cascades over the first.
-    let a = f.map_window(id, (1200, 900));
-    let b = f.map_window(id, (1200, 900));
-    let (pa, pb) = (f.policy_id(id, a).unwrap(), f.policy_id(id, b).unwrap());
+    let a = f.map(id, WindowSpec::plain((1200, 900)));
+    let b = f.map(id, WindowSpec::plain((1200, 900)));
+    let (pa, pb) = (f.pid(a), f.pid(b));
     assert_eq!(f.state.camino.policy.stacking(0), [pa, pb]);
     f.client(id).state.input.clear();
 
     // A's bottom-right corner, which B doesn't cover.
-    let point = inside(&mut f, id, a, 1199, 899);
+    let point = inside(&f, a, 1199, 899);
     f.click(point.x, point.y);
     f.roundtrip(id);
 
@@ -76,18 +69,18 @@ fn a_click_focuses_and_raises_the_window() {
         let configure = f.client(id).window(w).configures.last().unwrap().clone();
         configure.states.contains(&ToplevelState::Activated)
     };
-    assert!(activated(a));
-    assert!(!activated(b));
+    assert!(activated(a.xdg()));
+    assert!(!activated(b.xdg()));
 }
 
 #[test]
 fn a_new_window_takes_keyboard_focus() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();
     f.roundtrip(id);
 
-    f.map_window(id, (400, 300));
-    f.map_window(id, (400, 300));
+    f.map(id, WindowSpec::plain((400, 300)));
+    f.map(id, WindowSpec::plain((400, 300)));
     f.roundtrip(id);
 
     assert_snapshot!(format_input(&f.client(id).state.input), @r"
@@ -99,9 +92,9 @@ fn a_new_window_takes_keyboard_focus() {
 
 #[test]
 fn unbound_keys_reach_the_focused_client() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();
-    f.map_window(id, (400, 300));
+    f.map(id, WindowSpec::plain((400, 300)));
     f.client(id).state.input.clear();
 
     f.key(KEY_A, true);
@@ -116,10 +109,10 @@ fn unbound_keys_reach_the_focused_client() {
 
 #[test]
 fn clicking_empty_space_keeps_focus() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();
-    let a = f.map_window(id, (400, 300));
-    let pa = f.policy_id(id, a);
+    let a = f.map(id, WindowSpec::plain((400, 300)));
+    let pa = f.policy_id(a);
 
     f.click(1919., 1079.);
     f.roundtrip(id);
@@ -129,12 +122,12 @@ fn clicking_empty_space_keeps_focus() {
 
 #[test]
 fn a_locked_pointer_stays_put_over_its_window() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();
-    let window = f.map_window(id, (400, 300));
-    let point = inside(&mut f, id, window, 50, 50);
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let point = inside(&f, window, 50, 50);
     f.pointer_move(point.x, point.y);
-    f.client(id).lock_pointer(window);
+    f.client(id).lock_pointer(window.xdg());
     f.roundtrip(id);
     assert!(f.client(id).state.pointer_locked);
 
@@ -146,7 +139,7 @@ fn a_locked_pointer_stays_put_over_its_window() {
 
 #[test]
 fn a_mouse_moves_the_pointer_within_the_outputs() {
-    let (mut f, _) = Fixture::connected();
+    let (mut f, _) = Fixture::connected(Kind::Xdg);
     f.pointer_move(100., 100.);
 
     f.pointer_move_by(5000., -50.);

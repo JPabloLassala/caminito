@@ -6,7 +6,7 @@ use camino_test_client::{
 use insta::assert_snapshot;
 use smithay::utils::{Logical, Point};
 
-use super::fixture::{ClientId, Fixture};
+use super::fixture::{ClientId, Fixture, Kind, WindowSpec};
 
 const POPUP_COLOR: u32 = 0xffff0000;
 
@@ -16,10 +16,8 @@ fn big_window(
     f: &mut Fixture,
     id: ClientId,
 ) -> (camino_test_client::WindowId, Point<i32, Logical>) {
-    let window = f.map_window(id, (1900, 1000));
-    let policy_id = f.policy_id(id, window).unwrap();
-    let geometry = f.state.camino.policy.geometry(policy_id).unwrap();
-    (window, geometry.loc)
+    let window = f.map(id, WindowSpec::plain((1900, 1000)));
+    (window.xdg(), f.geometry(window).loc)
 }
 
 /// A 300 × 200 popup hanging off the bottom-right corner of `anchor_rect`.
@@ -35,11 +33,11 @@ fn bottom_right(anchor_rect: (i32, i32, i32, i32), adjustment: ConstraintAdjustm
 
 #[test]
 fn a_popup_that_fits_goes_where_its_positioner_says() {
-    let (mut f, id) = Fixture::connected();
-    let window = f.map_window(id, (400, 300));
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let window = f.map(id, WindowSpec::plain((400, 300)));
 
     let popup = f.client(id).create_popup(
-        window,
+        window.xdg(),
         bottom_right((10, 20, 30, 40), ConstraintAdjustment::None),
     );
     f.roundtrip(id);
@@ -49,7 +47,7 @@ fn a_popup_that_fits_goes_where_its_positioner_says() {
 
 #[test]
 fn a_popup_flips_to_stay_on_its_output() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     let (window, _) = big_window(&mut f, id);
 
     let flip = ConstraintAdjustment::FlipX | ConstraintAdjustment::FlipY;
@@ -63,7 +61,7 @@ fn a_popup_flips_to_stay_on_its_output() {
 
 #[test]
 fn a_popup_slides_to_stay_on_its_output() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     let (window, loc) = big_window(&mut f, id);
 
     let slide = ConstraintAdjustment::SlideX | ConstraintAdjustment::SlideY;
@@ -83,7 +81,7 @@ fn a_popup_slides_to_stay_on_its_output() {
 
 #[test]
 fn a_repositioned_popup_stays_on_its_output() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     let (window, _) = big_window(&mut f, id);
     let popup = f.client(id).create_popup(
         window,
@@ -105,21 +103,19 @@ fn a_repositioned_popup_stays_on_its_output() {
 
 #[test]
 fn a_mapped_popup_is_drawn_over_its_parent() {
-    let (mut f, id) = Fixture::connected();
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
     let output = f.state.camino.outputs[0].clone();
-    let window = f.map_window(id, (400, 300));
+    let window = f.map(id, WindowSpec::plain((400, 300)));
     let popup = f.client(id).create_popup(
-        window,
+        window.xdg(),
         bottom_right((10, 20, 30, 40), ConstraintAdjustment::None),
     );
     f.roundtrip(id);
 
     f.client(id).map_popup(popup, POPUP_COLOR);
     f.roundtrip(id);
-    f.dispatch();
 
-    let policy_id = f.policy_id(id, window).unwrap();
-    let parent = f.state.camino.policy.geometry(policy_id).unwrap();
+    let parent = f.geometry(window);
     let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
     let (x, y) = (parent.loc.x + 40, parent.loc.y + 60);
     assert_eq!(pixels[(y * 1920 + x) as usize], POPUP_COLOR);

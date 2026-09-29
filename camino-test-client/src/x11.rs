@@ -29,9 +29,10 @@ const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
 /// The colour windows are filled with, so Xwayland commits a buffer when they map.
 pub const BACKGROUND: u32 = 0x00ff00;
 
-/// A window for [`X11Client::create_window`] to make.
+/// An X window for [`X11Client::create_window`] to make, with everything X lets a client
+/// say about it.
 #[derive(Debug, Clone, Default)]
-pub struct WindowSpec {
+pub struct XWindowSpec {
     pub size: (u16, u16),
     /// Where it's created, and whether `WM_NORMAL_HINTS` says the user asked for it
     /// (`USPosition`).
@@ -49,6 +50,8 @@ pub struct WindowSpec {
     pub decorations: Option<bool>,
     /// `_NET_WM_NAME`.
     pub title: Option<&'static str>,
+    /// `WM_CLASS`'s class, with the instance the same.
+    pub class: Option<&'static str>,
     /// Whether `WM_PROTOCOLS` has `WM_DELETE_WINDOW`, so closing it sends a message.
     pub delete_window: bool,
     /// Leaves out the background, so the window has no content and Xwayland commits none.
@@ -114,7 +117,7 @@ impl X11Client {
 
     /// Creates a window as `spec` says, with the properties set before it's mapped, and
     /// selects its structure and property events.
-    pub fn create_window(&self, spec: &WindowSpec) -> Result<Window, ReplyOrIdError> {
+    pub fn create_window(&self, spec: &XWindowSpec) -> Result<Window, ReplyOrIdError> {
         let window = self.conn.generate_id()?;
         let mut aux = CreateWindowAux::new()
             .override_redirect(u32::from(spec.override_redirect))
@@ -219,6 +222,16 @@ impl X11Client {
                 title.as_bytes(),
             )?;
         }
+        if let Some(class) = spec.class {
+            let value = format!("{class}\0{class}\0");
+            self.conn.change_property8(
+                PropMode::REPLACE,
+                window,
+                AtomEnum::WM_CLASS,
+                AtomEnum::STRING,
+                value.as_bytes(),
+            )?;
+        }
         if spec.delete_window {
             let protocols = self.atom("WM_PROTOCOLS")?;
             let delete = self.atom("WM_DELETE_WINDOW")?;
@@ -272,6 +285,12 @@ impl X11Client {
             .translate_coordinates(window, self.root, 0, 0)?
             .reply()?;
         Ok((reply.dst_x.into(), reply.dst_y.into()))
+    }
+
+    /// Waits until Xwayland has handled every request this client sent, without reading
+    /// its events.
+    pub fn sync(&self) -> Result<(), ReplyError> {
+        self.conn.sync()
     }
 
     /// The window with the X input focus.

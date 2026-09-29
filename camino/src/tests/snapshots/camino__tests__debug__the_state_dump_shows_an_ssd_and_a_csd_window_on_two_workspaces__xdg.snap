@@ -1,6 +1,6 @@
 ---
 source: camino/src/tests/debug.rs
-expression: dump
+expression: without_x_ids(&dump)
 ---
 {
   "windows": [

@@ -29,6 +29,8 @@ tempfile = "3.27.0"
 x11rb = "0.13.2"
 # The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
 smithay = { workspace = true, features = ["renderer_pixman"] }
+# The fixture signals the Xwayland each test started, when it's dropped.
+rustix = { version = "1.1.5", features = ["process"] }
 
 [lints]
 workspace = true

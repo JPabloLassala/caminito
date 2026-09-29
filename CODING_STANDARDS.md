@@ -66,6 +66,8 @@ Where each tier lives, per ticket 15's test seams:
 
 - Test names are sentences about behaviour, in snake case: `xwayland_outlives_its_last_client_while_camino_is_attached`.
 - Test through the seam, the way a client or the user would see it: the Wayland or X11 client, D-Bus, the debug dump. Don't test through `State` internals when a seam can show the same thing.
+- Map windows with `Fixture::map`, and read a window's facts (its geometry, frame extents, button rects, the frame control under the pointer, its `Mapped`) through the fixture's queries, not `state.camino`. `map` returns once the window is managed, its frame is drawn and its client is in sync, so no test dispatches after it to let things settle.
+- A test of behaviour both kinds of window share runs on both, through `on_both_kinds!`, as `<name>::xdg` and `<name>::x11`. A test or module that maps only one kind says why.
 - Text output that's easier to read than to assert goes in an `insta` snapshot. Snapshots are committed, and their diffs are reviewed like code.
 - The headless backend and `renderer_pixman` are `cfg(test)` and dev-dependencies only. Nothing test-only reaches the release binary.
 - No sleeps to wait for a state. Dispatch the fixture until the condition holds. A fixed wait is justified only when the thing being tested is that nothing happens, and the comment says why the time is long enough.

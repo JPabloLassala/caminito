@@ -1,11 +1,10 @@
 //! Camino's cursors (13, 31): which one shows over frames and during grabs, and the size
 //! each output loads it at.
 
-use camino_test_client::DecorationMode;
 use smithay::input::pointer::{CursorIcon, CursorImageStatus};
 use smithay::utils::{Logical, Point};
 
-use super::fixture::{BTN_LEFT, Fixture, WINDOW_COLOR};
+use super::fixture::{BTN_LEFT, Fixture, Kind, WindowSpec, on_both_kinds};
 use crate::backend::headless::argb8888;
 use crate::scene::CLEAR_COLOR;
 use crate::settings::Value;
@@ -18,46 +17,37 @@ fn named(f: &Fixture) -> Option<CursorIcon> {
     }
 }
 
-#[test]
-fn the_cursor_follows_the_frame_and_the_grab() {
-    let (mut f, id) = Fixture::connected();
-    f.client(id).bind_input();
-    let window = f.client(id).create_window();
-    f.client(id)
-        .request_decoration(window, Some(DecorationMode::ServerSide));
-    f.client(id).commit(window);
-    f.roundtrip(id);
-    f.client(id)
-        .ack_and_commit_buffer(window, (400, 300), WINDOW_COLOR);
-    f.roundtrip(id);
-    f.dispatch();
-    let pid = f.policy_id(id, window).unwrap();
-    let geometry = f.state.camino.policy.geometry(pid).unwrap().to_f64();
-    let middle_y = geometry.loc.y + geometry.size.h / 2.;
+on_both_kinds! {
+    fn the_cursor_follows_the_frame_and_the_grab(kind: Kind) {
+        let (mut f, client) = Fixture::connected(kind);
+        let window = f.map(client, WindowSpec::default());
+        let geometry = f.geometry(window).to_f64();
+        let middle_y = geometry.loc.y + geometry.size.h / 2.;
 
-    // On the left border, and dragging it.
-    f.pointer_move(geometry.loc.x - 5., middle_y);
-    assert_eq!(named(&f), Some(CursorIcon::WResize));
-    f.pointer_button(BTN_LEFT, true);
-    f.pointer_move(geometry.loc.x - 40., middle_y);
-    assert_eq!(named(&f), Some(CursorIcon::WResize));
-    f.pointer_button(BTN_LEFT, false);
+        // On the left border, and dragging it.
+        f.pointer_move(geometry.loc.x - 5., middle_y);
+        assert_eq!(named(&f), Some(CursorIcon::WResize));
+        f.pointer_button(BTN_LEFT, true);
+        f.pointer_move(geometry.loc.x - 40., middle_y);
+        assert_eq!(named(&f), Some(CursorIcon::WResize));
+        f.pointer_button(BTN_LEFT, false);
 
-    // On the client: the client's cursor, which is the default until it sets one.
-    let geometry = f.state.camino.policy.geometry(pid).unwrap().to_f64();
-    let inside = geometry.loc + geometry.size.downscale(2.).to_point();
-    f.pointer_move(inside.x, inside.y);
-    assert_eq!(named(&f), Some(CursorIcon::Default));
+        // On the client: the client's cursor, which is the default until it sets one.
+        let geometry = f.geometry(window).to_f64();
+        let inside = geometry.loc + geometry.size.downscale(2.).to_point();
+        f.pointer_move(inside.x, inside.y);
+        assert_eq!(named(&f), Some(CursorIcon::Default));
 
-    // Moving by the titlebar.
-    let title: Point<f64, Logical> = Point::from((inside.x, geometry.loc.y - 10.));
-    f.pointer_move(title.x, title.y);
-    assert_eq!(named(&f), Some(CursorIcon::Default));
-    f.pointer_button(BTN_LEFT, true);
-    f.pointer_move(title.x + 50., title.y + 50.);
-    assert_eq!(named(&f), Some(CursorIcon::Move));
-    f.pointer_button(BTN_LEFT, false);
-    assert_eq!(named(&f), Some(CursorIcon::Default));
+        // Moving by the titlebar.
+        let title: Point<f64, Logical> = Point::from((inside.x, geometry.loc.y - 10.));
+        f.pointer_move(title.x, title.y);
+        assert_eq!(named(&f), Some(CursorIcon::Default));
+        f.pointer_button(BTN_LEFT, true);
+        f.pointer_move(title.x + 50., title.y + 50.);
+        assert_eq!(named(&f), Some(CursorIcon::Move));
+        f.pointer_button(BTN_LEFT, false);
+        assert_eq!(named(&f), Some(CursorIcon::Default));
+    }
 }
 
 #[test]
@@ -87,11 +77,10 @@ fn each_output_loads_the_cursor_at_its_rounded_up_scale_and_size_changes_apply_l
 
 #[test]
 fn the_cursor_is_drawn_at_the_pointer_over_everything() {
-    let (mut f, _) = Fixture::connected();
+    let (mut f, _) = Fixture::connected(Kind::Xdg);
     let output = f.state.camino.outputs[0].clone();
 
     f.pointer_move(100., 100.);
-    f.dispatch();
 
     let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
     let at = |x: usize, y: usize| pixels[y * 1920 + x];

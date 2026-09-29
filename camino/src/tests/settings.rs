@@ -1,9 +1,10 @@
 //! The settings thread under Camino: the settings read before anything maps, and live
-//! `num-workspaces` changes (29).
+//! `num-workspaces` changes (29). The windows only fill workspaces, so xdg toplevels
+//! stand for either kind (45).
 
 use camino_test_client::ToplevelState;
 
-use super::fixture::{Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT};
+use super::fixture::{Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, WindowSpec};
 use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, MARCO_WORKSPACE_NAMES};
 
@@ -26,12 +27,11 @@ fn a_window_maps_only_after_the_settings_are_read() {
     assert_eq!(f.state.camino.policy.workspace_names()[5], "Last");
 
     f.add_output((1920, 1080), 1.0);
-    let id = f.add_client();
-    f.roundtrip(id);
+    let id = f.connect(Kind::Xdg);
     for _ in 0..5 {
         switch_right(&mut f);
     }
-    f.map_window(id, (400, 300));
+    f.map(id, WindowSpec::plain((400, 300)));
 
     assert_eq!(f.state.camino.policy.active_workspace(), 5);
     assert_eq!(f.state.camino.policy.stacking(5).len(), 1);
@@ -39,7 +39,7 @@ fn a_window_maps_only_after_the_settings_are_read() {
 
 #[test]
 fn raising_num_workspaces_live_adds_workspaces() {
-    let (mut f, _) = Fixture::connected();
+    let (mut f, _) = Fixture::connected(Kind::Xdg);
     assert_eq!(f.state.camino.policy.workspace_count(), 4);
 
     f.set_setting(MARCO_GENERAL, "num-workspaces", Value::Int(6));
@@ -53,14 +53,14 @@ fn raising_num_workspaces_live_adds_workspaces() {
 
 #[test]
 fn lowering_num_workspaces_live_moves_windows_and_the_active_workspace_as_marco_does() {
-    let (mut f, id) = Fixture::connected();
-    let kept = f.map_window(id, (400, 300));
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let kept = f.map(id, WindowSpec::plain((400, 300)));
     for _ in 0..3 {
         switch_right(&mut f);
     }
-    let moved = f.map_window(id, (400, 300));
-    let kept_id = f.policy_id(id, kept).unwrap();
-    let moved_id = f.policy_id(id, moved).unwrap();
+    let moved = f.map(id, WindowSpec::plain((400, 300)));
+    let kept_id = f.pid(kept);
+    let moved_id = f.pid(moved);
     assert_eq!(f.state.camino.policy.workspace_of(moved_id), Some(3));
 
     f.set_setting(MARCO_GENERAL, "num-workspaces", Value::Int(2));
@@ -73,7 +73,7 @@ fn lowering_num_workspaces_live_moves_windows_and_the_active_workspace_as_marco_
     assert_eq!(policy.workspace_of(kept_id), Some(0));
     let configure = f
         .client(id)
-        .window(moved)
+        .window(moved.xdg())
         .configures
         .last()
         .unwrap()
