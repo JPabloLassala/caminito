@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
+use camino_test_client::x11::X11Client;
 use camino_test_client::{Client, WindowId};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::output::Output;
@@ -231,16 +232,21 @@ impl Fixture {
                 std::time::Instant::now() < deadline,
                 "the condition didn't hold within 5 s"
             );
-            for client in &mut self.clients {
-                client.flush();
-            }
-            self.event_loop
-                .dispatch(Duration::from_millis(10), &mut self.state)
-                .unwrap();
-            self.state.refresh_and_flush_clients();
-            for client in &mut self.clients {
-                client.dispatch();
-            }
+            self.dispatch_waiting();
+        }
+    }
+
+    /// One `dispatch` that waits up to 10 ms for the compositor's sources.
+    fn dispatch_waiting(&mut self) {
+        for client in &mut self.clients {
+            client.flush();
+        }
+        self.event_loop
+            .dispatch(Duration::from_millis(10), &mut self.state)
+            .unwrap();
+        self.state.refresh_and_flush_clients();
+        for client in &mut self.clients {
+            client.dispatch();
         }
     }
 
@@ -257,9 +263,55 @@ impl Fixture {
     /// Makes a blocking D-Bus call on another thread, dispatching until it returns, since
     /// Camino answers from its event loop.
     pub fn dbus_call<T: Send + 'static>(&mut self, call: impl FnOnce() -> T + Send + 'static) -> T {
+        self.off_loop(call)
+    }
+
+    /// Runs a blocking call on another thread, dispatching until it returns.
+    fn off_loop<T: Send + 'static>(&mut self, call: impl FnOnce() -> T + Send + 'static) -> T {
         let call = std::thread::spawn(call);
         self.dispatch_until(|_| call.is_finished());
-        call.join().expect("the D-Bus call succeeds")
+        call.join().expect("the blocking call returns")
+    }
+
+    /// Dispatches for `duration`, as time passes in a running Camino.
+    pub fn dispatch_for(&mut self, duration: Duration) {
+        let end = std::time::Instant::now() + duration;
+        while std::time::Instant::now() < end {
+            self.dispatch_waiting();
+        }
+    }
+
+    /// Spawns Xwayland as Camino does at start-up, and dispatches until `X11Wm` is attached.
+    /// Returns its display number.
+    pub fn start_xwayland(&mut self) -> u32 {
+        self.state.camino.start_xwayland();
+        self.dispatch_until(|f| {
+            assert!(f.state.camino.xwayland.is_some(), "Xwayland starts");
+            f.state.camino.xwayland_display().is_some()
+        });
+        self.state.camino.xwayland_display().unwrap()
+    }
+
+    /// Connects an x11rb client to the running Xwayland.
+    pub fn connect_x11(&mut self) -> Arc<X11Client> {
+        let display = self
+            .state
+            .camino
+            .xwayland_display()
+            .expect("Xwayland is ready");
+        let client = self.off_loop(move || X11Client::connect(display));
+        Arc::new(client.expect("the X11 client connects"))
+    }
+
+    /// Makes blocking X11 calls on `client` on another thread, dispatching until they return,
+    /// since Xwayland may need Camino to answer.
+    pub fn x11_call<T: Send + 'static>(
+        &mut self,
+        client: &Arc<X11Client>,
+        call: impl FnOnce(&X11Client) -> T + Send + 'static,
+    ) -> T {
+        let client = Arc::clone(client);
+        self.off_loop(move || call(&client))
     }
 
     /// Every client sends its requests, the compositor handles them, then every client handles

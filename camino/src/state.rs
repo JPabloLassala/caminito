@@ -1,6 +1,6 @@
 //! `State` and `Camino`: everything the event loop runs on (15).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +55,7 @@ use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xdg_system_bell::XdgSystemBellState;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
+use smithay::wayland::xwayland_shell::XWaylandShellState;
 
 use camino_theme::{PaletteCache, ThemeDirs, Variant};
 
@@ -69,6 +70,7 @@ use crate::input::GrabKind;
 use crate::input::frame::FramePointer;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, Unmapped};
+use crate::xwayland::RunningXwayland;
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_secs(1));
@@ -162,6 +164,14 @@ pub struct Camino {
     /// The settings as last read, and the GLib thread that reads them.
     pub settings: Settings,
     pub settings_thread: SettingsThread,
+
+    /// Xwayland, from its spawn until it fails (11).
+    pub xwayland: Option<RunningXwayland>,
+    pub xwayland_shell_state: XWaylandShellState,
+    /// The variables Camino sets for the clients it spawns (08), such as `DISPLAY`. They're
+    /// kept here rather than set with `set_var`, which isn't safe once the settings and
+    /// D-Bus threads run.
+    pub environment: BTreeMap<OsString, OsString>,
 
     /// The connection to the session bus, once `start_dbus` has made it.
     pub dbus: Option<Dbus>,
@@ -402,6 +412,7 @@ impl Camino {
         seat.add_keyboard(XkbConfig::default(), 600, 25)
             .expect("the default xkb keymap compiles");
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
+        let xwayland_shell_state = XWaylandShellState::new::<State>(dh);
 
         let frame_context = FrameContext::new(&settings, theme_dirs);
         let cursors = Cursors::new(&settings.mouse, cursor_source);
@@ -468,6 +479,9 @@ impl Camino {
             frame_context,
             settings,
             settings_thread,
+            xwayland: None,
+            xwayland_shell_state,
+            environment: BTreeMap::new(),
             dbus: None,
             debug: DebugToggles::default(),
         };

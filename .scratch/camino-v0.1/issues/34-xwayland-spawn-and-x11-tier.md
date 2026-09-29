@@ -1,7 +1,7 @@
 # Xwayland spawn and the X11 tier
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M3
 Blocked by:
 Map: [Camino v0.1](../map.md)
@@ -22,8 +22,14 @@ Xwayland running under Camino with Smithay's window manager attached, and the X1
 
 ## Acceptance criteria
 
-- [ ] An X11-tier test, written before the code: the x11rb client connects, and the root has Smithay's `_NET_SUPPORTING_WM_CHECK` window.
-- [ ] An X11-tier test that Xwayland's `-terminate` doesn't fire while Camino's connection is attached: wait past its idle timeout with no clients, and Xwayland is still alive (11, 14).
-- [ ] Camino starts and runs normally with Xwayland missing from `PATH`, with one log line.
-- [ ] The X11 tier runs in CI with no GPU or EGL.
-- [ ] Nested, `xeyes` connects to Camino's `DISPLAY` (it won't be shown until 35).
+- [x] An X11-tier test, written before the code: the x11rb client connects, and the root has Smithay's `_NET_SUPPORTING_WM_CHECK` window.
+- [x] An X11-tier test that Xwayland's `-terminate` doesn't fire while Camino's connection is attached: wait past its idle timeout with no clients, and Xwayland is still alive (11, 14).
+- [x] Camino starts and runs normally with Xwayland missing from `PATH`, with one log line.
+- [x] The X11 tier runs in CI with no GPU or EGL.
+- [x] Nested, `xeyes` connects to Camino's `DISPLAY` (it won't be shown until 35).
+
+## Notes
+
+- `DISPLAY` goes into `Camino::environment`, the variables Camino gives the clients it spawns, not into the process environment: `set_var` isn't safe once the settings and D-Bus threads run. 38's test that `DISPLAY` isn't set until the root properties exist checks that map, and M5's session start-up spawns mate-session with it and exports it (08).
+- Xwayland's stderr is prefixed onto Camino's stderr, as the palette helper's is, until `--session` picks the journal (`helpers::stderr_to`).
+- Xwayland missing from `PATH` was checked by hand, nested under `xvfb-run` with an empty `PATH`: one warning, and Camino ran on. The nested client check used `glxgears` and `xprop -root`, since `xeyes` wasn't installed.

@@ -10,6 +10,7 @@ use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent,
 };
 use smithay::wayland::shm::{ShmHandler, ShmState};
+use smithay::xwayland::XWaylandClientData;
 
 use crate::state::{ClientState, State};
 
@@ -19,9 +20,12 @@ impl CompositorHandler for State {
     }
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        if let Some(xwayland) = client.get_data::<XWaylandClientData>() {
+            return &xwayland.compositor_state;
+        }
         &client
             .get_data::<ClientState>()
-            .expect("every client is inserted with ClientState")
+            .expect("every client but Xwayland is inserted with ClientState")
             .compositor_state
     }
 

@@ -15,6 +15,7 @@ pub mod scene;
 pub mod settings;
 pub mod state;
 pub mod window;
+pub mod xwayland;
 
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,7 @@ pub fn run_nested() -> Result<(), Box<dyn std::error::Error>> {
 
     let socket = state.camino.add_socket()?;
     tracing::info!("listening on WAYLAND_DISPLAY={}", socket.to_string_lossy());
+    state.camino.start_xwayland();
     state.camino.start_palette_helper(&socket);
     if let Err(err) = state.camino.start_dbus(dbus::Names::WellKnown) {
         tracing::warn!("can't serve Camino's D-Bus interfaces: {err}");

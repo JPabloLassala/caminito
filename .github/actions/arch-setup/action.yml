@@ -16,8 +16,10 @@ runs:
       # through glycin's loaders and librsvg, which it brings; glycin runs them without its
       # bubblewrap sandbox where the container can't make namespaces. meson, gtk3: the
       # palette helper's build. xorg-server-xvfb, xorg-xauth: xvfb-run, which the palette
-      # helper's test runs under.
-      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 xorg-server-xvfb xorg-xauth
+      # helper's test runs under. xorg-xwayland: the X11 tier spawns a real Xwayland from
+      # the headless fixture (14); it runs rootless on the fixture's socket pair, so it needs
+      # no GPU or EGL either.
+      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 xorg-server-xvfb xorg-xauth xorg-xwayland
 
     - name: Install Rust toolchain
       shell: bash

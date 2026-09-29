@@ -4,9 +4,10 @@
 //! owns it runs the compositor in the same thread, and calls [`Client::dispatch`] between the
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
-//! D-Bus names.
+//! D-Bus names, and the [`x11`] client speaks X11 to Camino's Xwayland.
 
 pub mod dbus;
+pub mod x11;
 
 use std::fmt;
 use std::fs::File;

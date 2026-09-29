@@ -14,3 +14,4 @@ mod palette_helper;
 mod popups;
 mod settings;
 mod xdg_shell;
+mod xwayland;

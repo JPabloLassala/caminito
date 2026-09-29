@@ -8,6 +8,9 @@
 //! the signal blocked in every thread. A helper that exits is restarted with backoff
 //! ([`RestartPolicy`]), until it has exited too often, when it's left stopped with one
 //! log line.
+//!
+//! Xwayland, the third helper, is spawned by Smithay, and only its stderr goes through here
+//! ([`stderr_to`]).
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -186,22 +189,12 @@ impl<D: 'static> Helper<D> {
     }
 
     fn try_spawn(&mut self) -> io::Result<Running> {
-        let journal = match self.stderr {
-            StderrTarget::Journal => journal_stream(&self.command.identifier)
-                .inspect_err(|err| {
-                    tracing::warn!(
-                        "{}: can't log to the journal, so its stderr goes to Camino's: {err}",
-                        self.command.identifier
-                    );
-                })
-                .ok(),
-            StderrTarget::Prefixed => None,
-        };
+        let stderr = stderr_to(&self.handle, &self.command.identifier, self.stderr)?;
         let mut child = Command::new(&self.command.program)
             .envs(self.command.env.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(journal.map_or_else(Stdio::piped, Stdio::from))
+            .stderr(stderr)
             .spawn()?;
         let mut sources = Vec::new();
         match self.supervise(&mut child, &mut sources) {
@@ -223,7 +216,7 @@ impl<D: 'static> Helper<D> {
         }
     }
 
-    /// Adds the sources for a spawned child's stdout and piped stderr.
+    /// Adds the source for a spawned child's stdout.
     fn supervise(
         &self,
         child: &mut Child,
@@ -255,18 +248,6 @@ impl<D: 'static> Helper<D> {
             }
         });
         sources.push(token.map_err(|err| io::Error::other(err.error))?);
-
-        if let Some(stderr) = child.stderr.take() {
-            let stderr = File::from(OwnedFd::from(stderr));
-            set_nonblocking(&stderr)?;
-            let identifier = self.command.identifier.clone();
-            let mut partial = Vec::new();
-            let source = Generic::new(stderr, Interest::READ, Mode::Level);
-            let token = self.handle.insert_source(source, move |_, stderr, _| {
-                Ok(prefix_lines(&identifier, stderr, &mut partial))
-            });
-            sources.push(token.map_err(|err| io::Error::other(err.error))?);
-        }
         Ok((stdin, stdout))
     }
 
@@ -353,6 +334,36 @@ impl<D: 'static> Drop for Helper<D> {
             self.handle.remove(token);
         }
     }
+}
+
+/// The stderr to spawn a helper with, for `target`: a journal stream, or a pipe whose lines
+/// a loop source prefixes with `identifier` onto Camino's stderr until the helper closes it.
+/// A helper that Camino doesn't spawn itself, such as Xwayland, is given it too (15).
+pub fn stderr_to<D: 'static>(
+    handle: &LoopHandle<'static, D>,
+    identifier: &str,
+    target: StderrTarget,
+) -> io::Result<Stdio> {
+    if target == StderrTarget::Journal {
+        match journal_stream(identifier) {
+            Ok(stream) => return Ok(stream.into()),
+            Err(err) => tracing::warn!(
+                "{identifier}: can't log to the journal, so its stderr goes to Camino's: {err}"
+            ),
+        }
+    }
+    let (reader, writer) = io::pipe()?;
+    let reader = File::from(OwnedFd::from(reader));
+    set_nonblocking(&reader)?;
+    let identifier = identifier.to_owned();
+    let mut partial = Vec::new();
+    let source = Generic::new(reader, Interest::READ, Mode::Level);
+    handle
+        .insert_source(source, move |_, stderr, _| {
+            Ok(prefix_lines(&identifier, stderr, &mut partial))
+        })
+        .map_err(|err| io::Error::other(err.error))?;
+    Ok(writer.into())
 }
 
 /// Reads what's there of a helper's stderr and writes it to Camino's, a line at a time.
