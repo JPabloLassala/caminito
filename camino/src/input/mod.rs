@@ -5,7 +5,7 @@ mod focus;
 pub mod frame;
 mod grab;
 
-pub use focus::KeyboardFocus;
+pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
 
 use camino_policy::{Action, ResizeEdges, WindowId};
@@ -18,11 +18,11 @@ use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_server::Resource;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
 use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_constraint};
 use smithay::wayland::seat::WaylandFocus;
+use smithay::xwayland::X11Surface;
 
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
@@ -116,11 +116,12 @@ impl State {
     /// `location` is on that surface and inside the constraint's region.
     fn pointer_constraint_at(&self, location: Point<f64, Logical>) -> Option<(Constraint, bool)> {
         let pointer = self.camino.seat.get_pointer().unwrap();
-        let (surface, origin) = self.camino.pointer_focus.clone()?;
+        let (focus, origin) = self.camino.pointer_focus.clone()?;
         let (under, _) = self.camino.surface_under(location)?;
-        if under != surface {
+        if under != focus {
             return None;
         }
+        let surface = focus.wl_surface()?;
         let local = (location - origin).to_i32_floor();
         with_pointer_constraint(&surface, &pointer, |constraint| {
             let constraint = constraint?;
@@ -148,7 +149,12 @@ impl State {
         {
             return;
         }
-        let Some((surface, _)) = self.camino.pointer_focus.clone() else {
+        let Some(surface) = self
+            .camino
+            .pointer_focus
+            .as_ref()
+            .and_then(|(focus, _)| focus.wl_surface())
+        else {
             return;
         };
         with_pointer_constraint(&surface, &pointer, |constraint| {
@@ -402,13 +408,13 @@ impl State {
 /// What the pointer is on.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Under {
-    /// One of a managed window's surfaces, and that surface's origin in global logical
-    /// coordinates.
-    Surface(WindowId, WlSurface, Point<f64, Logical>),
+    /// One of a managed window's surfaces, or an XWayland window itself, and its origin in
+    /// global logical coordinates.
+    Surface(WindowId, PointerFocus, Point<f64, Logical>),
     /// A managed window's frame.
     Frame(WindowId, FrameControl),
-    /// An override-redirect window's surface, and its origin, which policy doesn't know.
-    OverrideRedirect(WlSurface, Point<f64, Logical>),
+    /// An override-redirect window, and its origin, which policy doesn't know.
+    OverrideRedirect(Box<X11Surface>, Point<f64, Logical>),
 }
 
 impl Under {
@@ -420,11 +426,12 @@ impl Under {
         }
     }
 
-    /// The surface and its origin, as pointer focus takes them.
-    pub fn surface(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
+    /// The pointer focus and its origin.
+    pub fn surface(&self) -> Option<(PointerFocus, Point<f64, Logical>)> {
         match self {
-            Under::Surface(_, surface, origin) | Under::OverrideRedirect(surface, origin) => {
-                Some((surface.clone(), *origin))
+            Under::Surface(_, focus, origin) => Some((focus.clone(), *origin)),
+            Under::OverrideRedirect(window, origin) => {
+                Some((PointerFocus::X11(window.clone()), *origin))
             }
             Under::Frame(..) => None,
         }
@@ -506,12 +513,18 @@ impl Camino {
     /// scene.
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
         // M7: nothing but the lock takes the pointer while locked (12).
+        // X11Surface::surface_under passes over override-redirect windows during an XDND
+        // drag, since the X client's drag icon is one.
         let override_redirect = self.override_redirect_windows().find_map(|window| {
             let origin = scene::override_redirect_bbox(window).loc;
-            window.surface_under(location, origin, WindowSurfaceType::ALL)
+            let (_, origin) = window.surface_under(location, origin, WindowSurfaceType::ALL)?;
+            Some(Under::OverrideRedirect(
+                Box::new(window.clone()),
+                origin.to_f64(),
+            ))
         });
-        if let Some((surface, origin)) = override_redirect {
-            return Some(Under::OverrideRedirect(surface, origin.to_f64()));
+        if override_redirect.is_some() {
+            return override_redirect;
         }
         let policy = &self.policy;
         policy
@@ -528,7 +541,11 @@ impl Camino {
                     .then(|| window.surface_under(location - origin, WindowSurfaceType::ALL))
                     .flatten();
                 if let Some((surface, loc)) = surface {
-                    return Some(Under::Surface(id, surface, loc.to_f64() + origin));
+                    let focus = match window.x11_surface() {
+                        Some(x11) => PointerFocus::X11(Box::new(x11.clone())),
+                        None => PointerFocus::Surface(surface),
+                    };
+                    return Some(Under::Surface(id, focus, loc.to_f64() + origin));
                 }
                 let control = mapped
                     .frame()
@@ -537,11 +554,11 @@ impl Camino {
             })
     }
 
-    /// The surface under `location` and its origin, as pointer focus takes them.
+    /// The pointer focus under `location` and its origin.
     pub fn surface_under(
         &self,
         location: Point<f64, Logical>,
-    ) -> Option<(WlSurface, Point<f64, Logical>)> {
+    ) -> Option<(PointerFocus, Point<f64, Logical>)> {
         self.under(location)?.surface()
     }
 

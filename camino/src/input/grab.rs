@@ -11,9 +11,9 @@ use smithay::input::pointer::{
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData, MotionEvent, PointerGrab,
     PointerInnerHandle, RelativeMotionEvent,
 };
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Serial};
 
+use super::PointerFocus;
 use crate::state::{Camino, SEAT, State};
 
 /// What an interactive grab does to its window.
@@ -128,7 +128,7 @@ impl PointerGrab<State> for Grab {
         &mut self,
         data: &mut State,
         handle: &mut PointerInnerHandle<'_, State>,
-        _focus: Option<(WlSurface, Point<f64, Logical>)>,
+        _focus: Option<(PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
@@ -160,7 +160,7 @@ impl PointerGrab<State> for Grab {
         &mut self,
         data: &mut State,
         handle: &mut PointerInnerHandle<'_, State>,
-        _focus: Option<(WlSurface, Point<f64, Logical>)>,
+        _focus: Option<(PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, None, event);

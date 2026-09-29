@@ -5,6 +5,8 @@
 //! fixture's queries rather than `state.camino`, so a test of behaviour both kinds share can
 //! run on both through [`on_both_kinds!`] (45).
 
+use std::io::Read;
+use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -441,8 +443,8 @@ impl Fixture {
 
     /// The override-redirect window whose surface has pointer focus, by X id.
     pub fn override_redirect_under_pointer(&self) -> Option<u32> {
-        let (surface, _) = self.state.camino.pointer_focus.as_ref()?;
-        self.override_redirect_for(surface)
+        let (focus, _) = self.state.camino.pointer_focus.as_ref()?;
+        self.override_redirect_for(&*focus.wl_surface()?)
     }
 
     /// The override-redirect window whose surface has keyboard focus, by X id.
@@ -696,6 +698,35 @@ impl Fixture {
         match &mut self.clients[id.0] {
             TestClient::Wayland { client, .. } => client,
             _ => panic!("{id:?} isn't a Wayland client"),
+        }
+    }
+
+    /// A Wayland client, to read what it was told.
+    pub fn client_state(&self, id: ClientId) -> &camino_test_client::State {
+        match &self.clients[id.0] {
+            TestClient::Wayland { client, .. } => &client.state,
+            _ => panic!("{id:?} isn't a Wayland client"),
+        }
+    }
+
+    /// Reads a pipe to its end, dispatching while its writer, which may need the loop,
+    /// writes it, and fails rather than hangs.
+    pub fn read_to_end(&mut self, fd: OwnedFd) -> Vec<u8> {
+        rustix::io::ioctl_fionbio(&fd, true).expect("a non-blocking pipe");
+        let mut file = std::fs::File::from(fd);
+        let mut read = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match file.read_to_end(&mut read) {
+                Ok(_) => return read,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(err) => panic!("can't read the pipe: {err}"),
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the pipe didn't close within 5 s"
+            );
+            self.dispatch_waiting();
         }
     }
 

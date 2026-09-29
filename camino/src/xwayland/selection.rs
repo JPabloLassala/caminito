@@ -1,0 +1,182 @@
+//! The clipboard and primary selection between X and Wayland clients, with cosmic-comp's
+//! focus gate (11; `src/xwayland.rs:1275-1277` and `:327-372`): an X client reaches a
+//! selection only while one of Xwayland's surfaces has the keyboard, and a Wayland selection
+//! is pushed into X lazily, as one of them next takes the keyboard, so X clients in the
+//! background can't read it. An X client's selection is set on the seat as the compositor's
+//! own, which Wayland clients read through `X11Wm`.
+
+use std::os::fd::OwnedFd;
+
+use smithay::reexports::wayland_server::Resource;
+use smithay::wayland::selection::SelectionTarget;
+use smithay::wayland::selection::data_device::{
+    clear_data_device_selection, current_data_device_selection_userdata,
+    request_data_device_client_selection, set_data_device_selection,
+};
+use smithay::wayland::selection::primary_selection::{
+    clear_primary_selection, current_primary_selection_userdata, request_primary_client_selection,
+    set_primary_selection,
+};
+
+use crate::input::KeyboardFocus;
+use crate::state::{Camino, State};
+
+/// A Wayland selection X hasn't been told of.
+pub(super) struct Owed {
+    target: SelectionTarget,
+    /// Its mime types, or `None` once it's cleared.
+    mime_types: Option<Vec<String>>,
+}
+
+impl Camino {
+    /// Whether `focus` is one of Xwayland's surfaces: a managed X window, or an
+    /// override-redirect menu holding a keyboard grab, whose Paste item reads the selection.
+    fn is_xwayland(&self, focus: &KeyboardFocus) -> bool {
+        let Some(xwayland) = &self.xwayland else {
+            return false;
+        };
+        match focus {
+            KeyboardFocus::X11(_) => true,
+            KeyboardFocus::Surface(surface) => surface.client().as_ref() == Some(&xwayland.client),
+        }
+    }
+
+    fn xwayland_has_keyboard(&self) -> bool {
+        let keyboard = self.seat.get_keyboard().unwrap();
+        keyboard
+            .current_focus()
+            .is_some_and(|focus| self.is_xwayland(&focus))
+    }
+
+    /// Drops what X was owed of `target`, which something newer replaces.
+    fn forget_owed(&mut self, target: SelectionTarget) {
+        if let Some(xwayland) = self.xwayland.as_mut() {
+            xwayland
+                .owed_selections
+                .retain(|owed| owed.target != target);
+        }
+    }
+
+    /// Tells X of a Wayland selection, as Smithay's selection window owning it, or clears
+    /// it if Smithay's window owns it.
+    fn push_to_x(&mut self, Owed { target, mime_types }: Owed) {
+        let Some(wm) = self.xwm() else {
+            return;
+        };
+        if let Err(err) = wm.new_selection(target, mime_types) {
+            tracing::warn!("can't give X the {target:?} selection: {err}");
+        }
+    }
+}
+
+impl State {
+    /// A Wayland client set or cleared a selection. X is told at once if one of its windows
+    /// has the keyboard (the client needn't have it, with data-control in M5), and
+    /// otherwise when one next takes it.
+    pub(crate) fn wayland_selection_changed(
+        &mut self,
+        target: SelectionTarget,
+        mime_types: Option<Vec<String>>,
+    ) {
+        let camino = &mut self.camino;
+        let owed = Owed { target, mime_types };
+        if camino.xwayland_has_keyboard() {
+            camino.push_to_x(owed);
+        } else {
+            camino.forget_owed(target);
+            if let Some(xwayland) = camino.xwayland.as_mut() {
+                xwayland.owed_selections.push(owed);
+            }
+        }
+    }
+
+    /// `focus` is about to take the keyboard; if it's one of Xwayland's, X is told of what
+    /// it's owed. For an X window that's before Smithay sets X's input focus, whose flush
+    /// sends X the selections too, so they're there by the time the client hears it has the
+    /// focus. A menu's grab sends X nothing, and `X11Wm::new_selection` doesn't flush, so
+    /// for a menu whose window never had the keyboard they wait for `X11Wm`'s next flush.
+    pub(crate) fn keyboard_entering(&mut self, focus: &KeyboardFocus) {
+        let camino = &mut self.camino;
+        if !camino.is_xwayland(focus) {
+            return;
+        }
+        let Some(xwayland) = camino.xwayland.as_mut() else {
+            return;
+        };
+        for owed in std::mem::take(&mut xwayland.owed_selections) {
+            camino.push_to_x(owed);
+        }
+    }
+
+    /// The focus gate, which `X11Wm` asks before it answers an X client's `ConvertSelection`.
+    pub(super) fn allow_x_selection_access(&self) -> bool {
+        self.camino.xwayland_has_keyboard()
+    }
+
+    /// An X client set a selection. It replaces whatever Wayland selection X was owed.
+    pub(super) fn x_selection_set(&mut self, target: SelectionTarget, mime_types: Vec<String>) {
+        let camino = &mut self.camino;
+        camino.forget_owed(target);
+        let (dh, seat) = (&camino.display_handle, &camino.seat);
+        match target {
+            SelectionTarget::Clipboard => set_data_device_selection(dh, seat, mime_types, ()),
+            SelectionTarget::Primary => set_primary_selection(dh, seat, mime_types, ()),
+        }
+    }
+
+    /// The X client whose selection it was let go of it. A Wayland client's selection since
+    /// then is left alone.
+    pub(super) fn x_selection_cleared(&mut self, target: SelectionTarget) {
+        let (dh, seat) = (&self.camino.display_handle, &self.camino.seat);
+        match target {
+            SelectionTarget::Clipboard => {
+                if current_data_device_selection_userdata(seat).is_some() {
+                    clear_data_device_selection(dh, seat);
+                }
+            }
+            SelectionTarget::Primary => {
+                if current_primary_selection_userdata(seat).is_some() {
+                    clear_primary_selection(dh, seat);
+                }
+            }
+        }
+    }
+
+    /// An X client reads a Wayland selection: the Wayland client that owns it writes it to
+    /// `fd`, which `X11Wm` passes on.
+    pub(super) fn send_wayland_selection_to_x(
+        &mut self,
+        target: SelectionTarget,
+        mime_type: String,
+        fd: OwnedFd,
+    ) {
+        let seat = &self.camino.seat;
+        let requested = match target {
+            SelectionTarget::Clipboard => {
+                request_data_device_client_selection(seat, mime_type, fd).map_err(|e| e.to_string())
+            }
+            SelectionTarget::Primary => {
+                request_primary_client_selection(seat, mime_type, fd).map_err(|e| e.to_string())
+            }
+        };
+        if let Err(err) = requested {
+            tracing::debug!("can't pass the {target:?} selection to X: {err}");
+        }
+    }
+
+    /// A Wayland client reads an X client's selection, which the seat holds as the
+    /// compositor's.
+    pub(crate) fn send_x_selection_to_wayland(
+        &mut self,
+        target: SelectionTarget,
+        mime_type: String,
+        fd: OwnedFd,
+    ) {
+        let Some(wm) = self.camino.xwm() else {
+            return;
+        };
+        if let Err(err) = wm.send_selection(target, mime_type, fd) {
+            tracing::debug!("can't pass the {target:?} selection from X: {err}");
+        }
+    }
+}

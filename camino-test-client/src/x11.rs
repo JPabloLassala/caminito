@@ -14,8 +14,8 @@ use x11rb::errors::{ConnectError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
-    ConnectionExt, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode, StackMode, Window,
-    WindowClass,
+    ConnectionExt, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode,
+    SELECTION_NOTIFY_EVENT, SelectionNotifyEvent, StackMode, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -67,6 +67,8 @@ pub struct X11Client {
     conn: RustConnection,
     root: Window,
     atoms: Mutex<HashMap<String, Atom>>,
+    /// Events read while waiting for another, which [`events`](Self::events) reports first.
+    backlog: Mutex<Vec<Event>>,
 }
 
 impl X11Client {
@@ -78,6 +80,7 @@ impl X11Client {
             conn,
             root,
             atoms: Mutex::new(HashMap::new()),
+            backlog: Mutex::new(Vec::new()),
         })
     }
 
@@ -371,11 +374,123 @@ impl X11Client {
     /// The events that have arrived since the last call, after a roundtrip.
     pub fn events(&self) -> Result<Vec<Event>, ReplyError> {
         self.conn.sync()?;
-        let mut events = Vec::new();
+        let mut events = std::mem::take(&mut *self.backlog.lock().unwrap());
         while let Some(event) = self.conn.poll_for_event()? {
             events.push(event);
         }
         Ok(events)
+    }
+
+    /// Blocks until an event `pick` takes arrives, keeping the others for
+    /// [`events`](Self::events).
+    fn wait_for<T>(&self, pick: impl Fn(&Event) -> Option<T>) -> Result<T, ReplyError> {
+        loop {
+            let event = self.conn.wait_for_event()?;
+            match pick(&event) {
+                Some(found) => return Ok(found),
+                None => self.backlog.lock().unwrap().push(event),
+            }
+        }
+    }
+
+    /// The window that owns the selection `name`, such as `CLIPBOARD`, or `NONE` (0).
+    pub fn selection_owner(&self, name: &str) -> Result<Window, ReplyError> {
+        let selection = self.atom(name)?;
+        Ok(self.conn.get_selection_owner(selection)?.reply()?.owner)
+    }
+
+    /// Makes `window` the selection `name`'s owner, as a client does when the user copies.
+    pub fn set_selection_owner(&self, window: Window, name: &str) -> Result<(), ReplyError> {
+        let selection = self.atom(name)?;
+        self.conn
+            .set_selection_owner(window, selection, x11rb::CURRENT_TIME)?;
+        self.conn.sync()
+    }
+
+    /// Asks for the selection `name` as `target`, such as `UTF8_STRING`, into a property on
+    /// `window`, as a client does when the user pastes. `None` is the owner's refusal, or
+    /// no owner at all.
+    pub fn convert_selection(
+        &self,
+        window: Window,
+        name: &str,
+        target: &str,
+    ) -> Result<Option<Vec<u8>>, ReplyError> {
+        let selection = self.atom(name)?;
+        let property = self.atom("CAMINO_TEST_SELECTION")?;
+        self.conn.convert_selection(
+            window,
+            selection,
+            self.atom(target)?,
+            property,
+            x11rb::CURRENT_TIME,
+        )?;
+        self.conn.flush()?;
+        let answered = self.wait_for(|event| match event {
+            Event::SelectionNotify(notify)
+                if notify.requestor == window && notify.selection == selection =>
+            {
+                Some(notify.property)
+            }
+            _ => None,
+        })?;
+        if answered == u32::from(AtomEnum::NONE) {
+            return Ok(None);
+        }
+        let reply = self
+            .conn
+            .get_property(true, window, property, AtomEnum::ANY, 0, u32::MAX)?
+            .reply()?;
+        Ok(Some(reply.value))
+    }
+
+    /// Answers requests for the selection this client owns with `text` as `UTF8_STRING`, and
+    /// its `TARGETS`, until one asks for `last_target`. Others are refused.
+    pub fn serve_selection(&self, text: &str, last_target: &str) -> Result<(), ReplyError> {
+        let targets = self.atom("TARGETS")?;
+        let utf8 = self.atom("UTF8_STRING")?;
+        let last = self.atom(last_target)?;
+        loop {
+            let request = self.wait_for(|event| match event {
+                Event::SelectionRequest(request) => Some(*request),
+                _ => None,
+            })?;
+            let mut property = request.property;
+            if request.target == targets {
+                self.conn.change_property32(
+                    PropMode::REPLACE,
+                    request.requestor,
+                    request.property,
+                    AtomEnum::ATOM,
+                    &[targets, utf8],
+                )?;
+            } else if request.target == utf8 {
+                self.conn.change_property8(
+                    PropMode::REPLACE,
+                    request.requestor,
+                    request.property,
+                    utf8,
+                    text.as_bytes(),
+                )?;
+            } else {
+                property = x11rb::NONE;
+            }
+            let notify = SelectionNotifyEvent {
+                response_type: SELECTION_NOTIFY_EVENT,
+                sequence: 0,
+                time: request.time,
+                requestor: request.requestor,
+                selection: request.selection,
+                target: request.target,
+                property,
+            };
+            self.conn
+                .send_event(false, request.requestor, EventMask::NO_EVENT, notify)?;
+            self.conn.sync()?;
+            if request.target == last {
+                return Ok(());
+            }
+        }
     }
 }
 

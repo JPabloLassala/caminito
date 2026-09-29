@@ -68,8 +68,8 @@ use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
-use crate::input::GrabKind;
 use crate::input::frame::FramePointer;
+use crate::input::{GrabKind, PointerFocus};
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::RunningXwayland;
@@ -134,8 +134,8 @@ pub struct Camino {
     pub fifo_manager_state: FifoManagerState,
     pub commit_timing_state: CommitTimingManagerState,
 
-    /// The surface pointer focus was last given, and its origin then.
-    pub pointer_focus: Option<(WlSurface, Point<f64, Logical>)>,
+    /// What pointer focus was last given, and its origin then.
+    pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
     /// Keys whose press ran a binding, so their release is swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
     /// Where the pointer is on the frames, and what it's doing with them.

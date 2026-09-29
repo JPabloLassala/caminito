@@ -3,6 +3,7 @@
 //! runs without X; the restart path is 42's. Its windows are managed through `xwm`, and X's
 //! stacking order follows Camino's scene.
 
+mod selection;
 mod stack;
 mod xwm;
 
@@ -40,6 +41,8 @@ pub struct RunningXwayland {
     root_stack: RootStack,
     /// The mapped override-redirect windows (36), in the order they mapped.
     override_redirect: Vec<X11Surface>,
+    /// Wayland selections X is told of when one of its windows next takes the keyboard.
+    owed_selections: Vec<selection::Owed>,
     /// The `XWayland` source, which kills Xwayland when it's removed.
     source: RegistrationToken,
 }
@@ -101,6 +104,7 @@ impl Camino {
                     stacking: Vec::new(),
                     root_stack: RootStack::default(),
                     override_redirect: Vec::new(),
+                    owed_selections: Vec::new(),
                     source,
                 })
             }

@@ -12,6 +12,7 @@ Some of [35](35-xwayland-windows.md)'s and [36](36-override-redirect-windows.md)
 
 - **gtk3-demo's tooltips (36):** in the Application Class demo, hovering the toolbar's New button showed no tooltip, and the demo wasn't tried on bare X. A PyGObject GTK3 tooltip stood in. The button's tooltip is "Create a new file".
 - **xterm and xeyes (35):** they weren't installed, so glxgears and pluma stood in. Install them with `pacman -S xterm xorg-xeyes`.
+- **Clipboard and drag-and-drop (37):** PyGObject GTK3 apps stood in for xterm and foot, and for a file manager's drag. Use xterm, foot and caja this time.
 - **Menus by hand (36):** the menus were only driven through XTest, with Camino on Xvfb. This time use the real pointer and keyboard.
 
 Setup: run `tools/dev-nested --bin` and read the X display from the log line `Xwayland is ready on DISPLAY=:N` (43 makes `dev-nested` print it). Start each app in another terminal with `DISPLAY=:N GDK_BACKEND=x11`. For gtk3-demo, use `gtk3-demo --run=application_demo`.
@@ -22,4 +23,5 @@ Setup: run `tools/dev-nested --bin` and read the X display from the log line `Xw
 - [ ] Nested, that tooltip shows above its window, and goes away when the pointer leaves the button.
 - [ ] Nested, xterm and xeyes map with Menta frames, take focus on a click and move when their titlebar is dragged. xterm takes typing, and xeyes follows the pointer across Camino's output.
 - [ ] Nested, gtk3-demo's Preferences menu opens on a click and shows above its window. Down, Right and Escape navigate it and its Color submenu. Clicking outside the menu closes it. Afterwards, typing goes to the window again.
+- [ ] Nested, text copied in xterm pastes into foot, and back, through both the clipboard (Ctrl+Shift+C and V in foot) and the primary selection (select, then middle-click). A file dragged from caja with `GDK_BACKEND=x11` drops into a native caja, and the other way round.
 - [ ] The results are recorded in this ticket's notes, with a new ticket for each failure.

@@ -20,6 +20,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::dialog::XdgDialogHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -196,6 +197,7 @@ impl State {
         let start_data = pointer.grab_start_data()?;
         let (focus, _) = start_data.focus.as_ref()?;
         focus
+            .wl_surface()?
             .id()
             .same_client_as(&surface.wl_surface().id())
             .then_some((id, start_data))

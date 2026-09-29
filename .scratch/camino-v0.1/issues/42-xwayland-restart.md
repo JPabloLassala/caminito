@@ -23,3 +23,7 @@ Camino surviving an Xwayland crash, and bringing it back on the same display ([0
 - [ ] X11-tier tests, written before the code: kill Xwayland with two mapped X windows and an override-redirect one; policy, the scene and focus have no X windows left; Xwayland comes back on the same display; the root properties, `_NET_SUPPORTED` and XSETTINGS are republished; a new x11rb client maps and is managed.
 - [ ] A test that repeated immediate crashes back off and then give up, leaving Camino running without X.
 - [ ] Nested, `pkill Xwayland` with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a frame.
+
+## Notes
+
+- From [37](37-clipboard-and-dnd.md): the Wayland selections X is owed live in `RunningXwayland` and go with it, and a new Xwayland starts owing nothing. After a restart, the seat's current Wayland selections should be owed to the new X, which means Camino keeps the last Wayland selection's mime types outside `RunningXwayland`.

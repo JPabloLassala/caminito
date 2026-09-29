@@ -5,6 +5,8 @@
 //! Override-redirect windows skip all that: they're shown as they are, in X's stacking
 //! order, in the scene's override-redirect layer (36).
 
+use std::os::fd::OwnedFd;
+
 use camino_policy::{ResizeEdges, WindowId};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::Window;
@@ -12,6 +14,8 @@ use smithay::input::Seat;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, SERIAL_COUNTER};
+use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::selection::SelectionTarget;
 use smithay::wayland::xwayland_keyboard_grab::{XWaylandKeyboardGrab, XWaylandKeyboardGrabHandler};
 use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
 use smithay::xwayland::xwm::{Reorder, ResizeEdge, X11Window, XwmId};
@@ -258,6 +262,28 @@ impl XwmHandler for State {
     fn move_request(&mut self, _xwm: XwmId, window: X11Surface, _button: u32) {
         self.x11_interactive_request(&window, GrabKind::Move);
     }
+
+    fn allow_selection_access(&mut self, _xwm: XwmId, _selection: SelectionTarget) -> bool {
+        self.allow_x_selection_access()
+    }
+
+    fn send_selection(
+        &mut self,
+        _xwm: XwmId,
+        selection: SelectionTarget,
+        mime_type: String,
+        fd: OwnedFd,
+    ) {
+        self.send_wayland_selection_to_x(selection, mime_type, fd);
+    }
+
+    fn new_selection(&mut self, _xwm: XwmId, selection: SelectionTarget, mime_types: Vec<String>) {
+        self.x_selection_set(selection, mime_types);
+    }
+
+    fn cleared_selection(&mut self, _xwm: XwmId, selection: SelectionTarget) {
+        self.x_selection_cleared(selection);
+    }
 }
 
 impl State {
@@ -295,7 +321,8 @@ impl State {
         let on_xwayland = start_data.focus.as_ref().is_some_and(|(focus, _)| {
             window
                 .wl_surface()
-                .is_some_and(|surface| focus.id().same_client_as(&surface.id()))
+                .zip(focus.wl_surface())
+                .is_some_and(|(surface, focus)| focus.id().same_client_as(&surface.id()))
         });
         if !on_xwayland {
             return;

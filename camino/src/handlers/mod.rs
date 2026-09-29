@@ -18,12 +18,12 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::set_data_device_focus;
 use smithay::wayland::selection::primary_selection::set_primary_focus;
 
-use crate::input::KeyboardFocus;
+use crate::input::{KeyboardFocus, PointerFocus};
 use crate::state::State;
 
 impl SeatHandler for State {
     type KeyboardFocus = KeyboardFocus;
-    type PointerFocus = WlSurface;
+    type PointerFocus = PointerFocus;
     type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<State> {

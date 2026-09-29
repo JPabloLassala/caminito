@@ -7,6 +7,7 @@
 //! D-Bus names, and the [`x11`] client speaks X11 to Camino's Xwayland.
 
 pub mod dbus;
+pub mod selection;
 pub mod x11;
 
 use std::fmt;
@@ -22,6 +23,8 @@ use wayland_client::backend::WaylandError;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
 use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::{self, WlCompositor};
+use wayland_client::protocol::wl_data_device::WlDataDevice;
+use wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager;
 use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_pointer::{self, WlPointer};
@@ -45,6 +48,8 @@ use wayland_protocols::wp::pointer_constraints::zv1::client::zwp_locked_pointer_
 use wayland_protocols::wp::pointer_constraints::zv1::client::zwp_pointer_constraints_v1::{
     self, ZwpPointerConstraintsV1,
 };
+use wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1;
+use wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1;
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::{
     self, ZxdgDecorationManagerV1,
 };
@@ -107,6 +112,12 @@ pub struct State {
     pub last_press_serial: Option<u32>,
     /// The `wl_output`s bound so far, in the order the compositor advertised them.
     pub outputs: Vec<Output>,
+    data_device_manager: Option<WlDataDeviceManager>,
+    data_device: Option<WlDataDevice>,
+    primary_manager: Option<ZwpPrimarySelectionDeviceManagerV1>,
+    primary_device: Option<ZwpPrimarySelectionDeviceV1>,
+    /// The selections the compositor last offered.
+    offers: selection::Offers,
 }
 
 /// A bound `wl_output`.
