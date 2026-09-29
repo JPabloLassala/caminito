@@ -13,6 +13,7 @@ mod input;
 mod override_redirect;
 mod palette_helper;
 mod popups;
+mod root_properties;
 mod selection;
 mod settings;
 mod xdg_shell;

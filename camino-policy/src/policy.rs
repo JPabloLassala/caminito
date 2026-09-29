@@ -477,6 +477,7 @@ impl<W: PolicyWindow> Policy<W> {
             Action::SwitchToWorkspaceRight => {
                 self.switch_workspace((self.active + 1).min(self.stacks.len() - 1))
             }
+            Action::SwitchToWorkspace(workspace) => self.switch_workspace(workspace),
             Action::ToggleMaximized => {
                 // Marco gives the desktop and docks no maximise function.
                 if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
@@ -858,6 +859,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn outputs(&self) -> &[Output] {
         &self.outputs
+    }
+
+    /// Each output's work area, in the order of [`outputs`](Self::outputs). It's the same on
+    /// every workspace until struts and exclusive zones (17).
+    pub fn work_areas(&self) -> impl Iterator<Item = Rectangle<i32, Logical>> + '_ {
+        self.outputs.iter().map(Self::work_area)
     }
 
     /// A workspace's windows, bottom to top.

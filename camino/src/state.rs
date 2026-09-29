@@ -634,6 +634,7 @@ impl Camino {
             mapped.flush();
         }
         self.refresh_x11_stacking();
+        self.refresh_x_root();
         self.popups.cleanup();
     }
 

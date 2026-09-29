@@ -801,6 +801,16 @@ impl Fixture {
         call.join().expect("the blocking call returns")
     }
 
+    /// One pass of the compositor's loop that waits up to 10 ms for its sources, without the
+    /// refresh pass after it, to see what a source's callback alone leaves. It still flushes
+    /// the clients, which Xwayland waits on while it starts.
+    pub fn dispatch_sources_only(&mut self) {
+        self.event_loop
+            .dispatch(Duration::from_millis(10), &mut self.state)
+            .unwrap();
+        self.state.camino.display_handle.flush_clients().unwrap();
+    }
+
     /// Dispatches for `duration`, as time passes in a running Camino.
     pub fn dispatch_for(&mut self, duration: Duration) {
         let end = std::time::Instant::now() + duration;

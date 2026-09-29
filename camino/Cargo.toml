@@ -19,6 +19,8 @@ signal-hook = "0.4.4"
 smithay = { workspace = true, features = ["backend_winit", "desktop", "wayland_frontend", "xwayland"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+# Camino's X connection (11, 15), beside Smithay's.
+x11rb = { workspace = true, features = ["xkb"] }
 xcursor = "0.3.11"
 zbus = "5.19.0"
 
@@ -26,7 +28,6 @@ zbus = "5.19.0"
 camino-test-client = { path = "../camino-test-client" }
 insta = "1.48.0"
 tempfile = "3.27.0"
-x11rb = "0.13.2"
 # The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
 smithay = { workspace = true, features = ["renderer_pixman"] }
 # The fixture signals the Xwayland each test started, when it's dropped.

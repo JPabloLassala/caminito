@@ -7,6 +7,8 @@ pub enum Action {
     SwitchToWorkspaceLeft,
     /// `switch-to-workspace-right`
     SwitchToWorkspaceRight,
+    /// `switch-to-workspace-N`, numbered from 0 here.
+    SwitchToWorkspace(usize),
     /// `close`
     Close,
     /// `toggle-maximized`
