@@ -7,10 +7,10 @@ and configuration read from the existing `org.mate.Marco.*` gsettings.
 
 It is written in Rust on [Smithay](https://github.com/Smithay/smithay).
 
-> **Status:** early development. Camino v0.1 is being built in eight milestones. The first (M1, a
-> nested compositor) is done, and M2 (Marco frames) is next. Today Camino runs only as a window
-> inside another desktop, with no frames, XWayland or MATE session yet. It isn't ready for daily
-> use.
+> **Status:** early development. Camino v0.1 is being built in eight milestones. The first two
+> (M1, a nested compositor, and M2, Marco frames) are done, and M3 (XWayland) is next. Today
+> Camino runs only as a window inside another desktop, drawing Marco frames around Wayland
+> windows, with no XWayland or MATE session yet. It isn't ready for daily use.
 
 ## Goals for v0.1
 

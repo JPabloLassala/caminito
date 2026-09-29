@@ -1,7 +1,7 @@
 # Palette helper
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M2
 Blocked by: 24, 25
 Map: [Camino v0.1](../map.md)
@@ -21,7 +21,7 @@ The GTK colours for frames ([07](07-decoration-strategy.md), [ADR 0003](../../..
 
 ## Acceptance criteria
 
-- [ ] The exact palette test passes in CI.
+- [x] The exact palette test passes in CI.
 - [x] Unit tests for the stdout format and the cache format, written before the code, including a truncated line and an unknown version.
 - [x] Headless tests of the supervisor with a fake helper script: a palette arrives, a crash restarts it, the give-up state is reached, and the last palette stays in use throughout.
 - [x] Changing `gtk-theme` with `gsettings` makes the running helper emit the new theme's palette.
