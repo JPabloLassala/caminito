@@ -69,7 +69,7 @@ use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::GrabKind;
 use crate::input::frame::FramePointer;
 use crate::settings::{self, Settings, SettingsThread};
-use crate::window::{Mapped, Unmapped};
+use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::RunningXwayland;
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
@@ -152,8 +152,8 @@ pub struct Camino {
     pub(crate) redraws: HashSet<OutputId>,
 
     pub policy: Policy<Mapped>,
-    /// Toplevels made but not yet mapped.
-    pub unmapped: Vec<Unmapped>,
+    /// Windows asked to show that have no content yet.
+    pub pending: PendingWindows,
     pub(crate) next_window_id: u64,
 
     /// The GTK colours frames are drawn with.
@@ -473,7 +473,7 @@ impl Camino {
             next_output_id: 0,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
-            unmapped: Vec::new(),
+            pending: PendingWindows::default(),
             next_window_id: 0,
             palette,
             frame_context,

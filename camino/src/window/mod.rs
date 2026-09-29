@@ -4,8 +4,11 @@
 //! differs between the protocols sits behind [`Adapter`], implemented on each protocol's
 //! surface, and `Mapped` reaches it through its one `match` on the underlying surface.
 
+mod lifecycle;
 mod xdg;
 
+pub use lifecycle::PendingWindows;
+pub(crate) use lifecycle::StateRequest;
 pub(crate) use xdg::owe_configure;
 
 use camino_policy::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
@@ -90,32 +93,12 @@ pub(crate) enum WindowKey {
 }
 
 impl WindowKey {
-    fn of(window: &Window) -> Option<Self> {
+    pub(crate) fn of(window: &Window) -> Option<Self> {
         match window.underlying_surface() {
             WindowSurface::Wayland(toplevel) => {
                 Some(WindowKey::Wayland(toplevel.wl_surface().clone()))
             }
             WindowSurface::X11(_) => None,
-        }
-    }
-}
-
-/// A toplevel the client has made but not yet mapped with a buffer, and the states it asked
-/// for meanwhile, which it maps with.
-#[derive(Debug)]
-pub struct Unmapped {
-    pub window: Window,
-    pub maximized: bool,
-    /// Fullscreen was asked for, on this output if the client named one.
-    pub fullscreen: Option<Option<OutputId>>,
-}
-
-impl Unmapped {
-    pub fn new(window: Window) -> Self {
-        Self {
-            window,
-            maximized: false,
-            fullscreen: None,
         }
     }
 }
@@ -381,106 +364,13 @@ impl PolicyWindow for Mapped {
 }
 
 impl Camino {
-    /// Starts managing a window the client has mapped, and returns policy's id for it.
-    pub fn map_window(&mut self, unmapped: Unmapped) -> WindowId {
-        let id = WindowId(self.next_window_id);
-        self.next_window_id += 1;
-
-        let Unmapped {
-            window,
-            maximized,
-            fullscreen,
-        } = unmapped;
-        let mut mapped = Mapped::new(id, window);
-        mapped.set_parent(self.transient_parent(mapped.window()));
-        mapped.update_frame_facts(&self.frame_context);
-
-        let now = self.now();
-        self.policy.map_window(mapped, now);
-        if let Some(output) = fullscreen {
-            self.policy.set_fullscreen(id, true, output);
-        } else if maximized {
-            self.policy.set_maximized(id, true);
-        }
-        self.queue_redraw_all();
-        id
-    }
-
-    /// Configures an unmapped window from the states it has asked for: the size it'll map
-    /// at if it's maximised or fullscreen, and the bounds of the output it'll likely map on,
-    /// both inside the frame it'll have.
-    pub fn configure_unmapped(&self, unmapped: &Unmapped) {
-        let output = self.placement_bounds();
-        let (extents, maximized_extents) = self.unmapped_extents(unmapped);
-        let bounds = output.map(|size| inside(size, extents));
-        let fullscreen_size = unmapped.fullscreen.map(|output| {
-            output
-                .and_then(|id| self.policy.outputs().iter().find(|o| o.id == id))
-                .map(|o| o.geometry.size)
-                .or(bounds)
-        });
-        let size = if let Some(size) = fullscreen_size {
-            size
-        } else if unmapped.maximized {
-            output.map(|size| inside(size, maximized_extents))
-        } else {
-            None
-        };
-        adapter(&unmapped.window).configure_pending(&PreMapConfigure {
-            bounds,
-            size,
-            maximized: unmapped.maximized,
-            fullscreen: unmapped.fullscreen.is_some(),
-        });
-    }
-
-    /// The extents, unmaximised and maximised, of the frame a window that isn't mapped yet
-    /// will have, if it'll want a frame once configured.
-    fn unmapped_extents(
-        &self,
-        unmapped: &Unmapped,
-    ) -> (FrameExtents<i32, Logical>, FrameExtents<i32, Logical>) {
-        let window = &unmapped.window;
-        let adapter = adapter(window);
-        if !adapter.wants_frame_pending() {
-            return Default::default();
-        }
-        let has_parent = self.transient_parent(window).is_some();
-        let extents = |maximized| {
-            let facts = FrameFacts {
-                window_type: adapter.window_type(has_parent),
-                has_parent,
-                hints: SizeHints::default(),
-                // A new window is focused.
-                activated: true,
-                maximized,
-                fullscreen: false,
-                shaded: false,
-            };
-            frame_style(&facts, self.frame_context.attach_modal_dialogs())
-                .map(|(frame_type, flags)| self.frame_context.extents(frame_type, &flags))
-                .unwrap_or_default()
-        };
-        (extents(false), extents(true))
-    }
-
-    /// Stops managing a window that the client unmapped or destroyed, and hands it back.
-    pub fn unmap_window(&mut self, id: WindowId) -> Option<Mapped> {
-        let mapped = self.policy.unmap_window(id)?;
-        for output in &self.outputs {
-            mapped.window().output_leave(output);
-        }
-        self.queue_redraw_all();
-        Some(mapped)
-    }
-
     /// The managed window a window says it's transient for.
     pub fn transient_parent(&self, window: &Window) -> Option<WindowId> {
         self.mapped_for_key(&adapter(window).parent()?)
     }
 
     /// The managed window `key` names.
-    fn mapped_for_key(&self, key: &WindowKey) -> Option<WindowId> {
+    pub(crate) fn mapped_for_key(&self, key: &WindowKey) -> Option<WindowId> {
         self.policy
             .windows()
             .find(|mapped| WindowKey::of(mapped.window()).as_ref() == Some(key))
@@ -494,12 +384,4 @@ impl Camino {
             .find(|mapped| mapped.wl_surface().as_ref() == Some(surface))
             .map(|mapped| mapped.id())
     }
-}
-
-/// The size inside a frame of `extents` that fills `size`.
-fn inside(size: Size<i32, Logical>, extents: FrameExtents<i32, Logical>) -> Size<i32, Logical> {
-    Size::new(
-        (size.w - extents.left - extents.right).max(1),
-        (size.h - extents.top - extents.bottom).max(1),
-    )
 }

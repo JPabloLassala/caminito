@@ -1,8 +1,9 @@
 //! `xdg_wm_base` and the protocols that extend its toplevels: xdg-activation, xdg-foreign,
 //! xdg-dialog, xdg-toplevel-icon and xdg-system-bell.
 //!
-//! A toplevel waits in `Camino::unmapped` until it commits a buffer, then maps into policy
-//! as a `Mapped`. Committing a null buffer or destroying it unmaps it again.
+//! The toplevel handlers only translate xdg-shell's events into `window::lifecycle`'s: a new
+//! toplevel is created, and pending until it commits a buffer; committing a null buffer
+//! withdraws it, and it starts over as a new pending window.
 
 use camino_policy::{ResizeEdges, WindowId};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
@@ -19,7 +20,6 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
-use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::dialog::XdgDialogHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -34,7 +34,7 @@ use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
 use crate::input::GrabKind;
 use crate::output::output_id;
 use crate::state::{Camino, State};
-use crate::window::{Unmapped, owe_configure};
+use crate::window::{StateRequest, WindowKey, owe_configure};
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -44,57 +44,34 @@ impl XdgShellHandler for State {
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         // The initial configure goes out on the initial commit.
         let window = Window::new_wayland_window(surface);
-        self.camino.unmapped.push(Unmapped::new(window));
+        self.camino.window_created(window);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        let camino = &mut self.camino;
-        camino
-            .unmapped
-            .retain(|unmapped| unmapped.window.toplevel() != Some(&surface));
-        if let Some(id) = camino.mapped_for_surface(surface.wl_surface()) {
-            camino.unmap_window(id);
-        }
+        self.camino.window_destroyed(&key(&surface));
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
-        self.toplevel_request(
-            &surface,
-            |camino, id| camino.policy.set_maximized(id, true),
-            |u| u.maximized = true,
-        );
+        self.toplevel_request(&surface, StateRequest::Maximized(true));
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
-        self.toplevel_request(
-            &surface,
-            |camino, id| camino.policy.set_maximized(id, false),
-            |u| u.maximized = false,
-        );
+        self.toplevel_request(&surface, StateRequest::Maximized(false));
     }
 
     fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<WlOutput>) {
         let output = output
             .and_then(|output| Output::from_resource(&output))
             .map(|output| output_id(&output));
-        self.toplevel_request(
-            &surface,
-            |camino, id| camino.policy.set_fullscreen(id, true, output),
-            |u| u.fullscreen = Some(output),
-        );
+        self.toplevel_request(&surface, StateRequest::Fullscreen(output));
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
-        self.toplevel_request(
-            &surface,
-            |camino, id| camino.policy.set_fullscreen(id, false, None),
-            |u| u.fullscreen = None,
-        );
+        self.toplevel_request(&surface, StateRequest::Unfullscreen);
     }
 
     fn minimize_request(&mut self, surface: ToplevelSurface) {
-        // A window that isn't mapped has nothing to minimise.
-        self.toplevel_request(&surface, |camino, id| camino.policy.minimize(id), |_| {});
+        self.toplevel_request(&surface, StateRequest::Minimized);
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial) {
@@ -184,27 +161,17 @@ impl XdgShellHandler for State {
     }
 }
 
+/// The key `window::lifecycle` knows a toplevel by.
+fn key(toplevel: &ToplevelSurface) -> WindowKey {
+    WindowKey::Wayland(toplevel.wl_surface().clone())
+}
+
 impl State {
-    /// Passes a toplevel's request to policy if it's mapped, or else records it on the
-    /// unmapped toplevel and configures it again.
-    fn toplevel_request(
-        &mut self,
-        surface: &ToplevelSurface,
-        mapped: impl FnOnce(&mut Camino, WindowId),
-        unmapped: impl FnOnce(&mut Unmapped),
-    ) {
-        let camino = &mut self.camino;
-        if let Some(id) = camino.mapped_for_surface(surface.wl_surface()) {
-            mapped(camino, id);
+    /// Passes a toplevel's state request on. A managed toplevel is owed a configure in
+    /// reply, whatever policy decides.
+    fn toplevel_request(&mut self, surface: &ToplevelSurface, request: StateRequest) {
+        if self.camino.window_state_request(&key(surface), request) {
             owe_configure(surface);
-            camino.queue_redraw_all();
-        } else if let Some(index) = camino
-            .unmapped
-            .iter()
-            .position(|u| u.window.toplevel() == Some(surface))
-        {
-            unmapped(&mut camino.unmapped[index]);
-            camino.configure_unmapped(&camino.unmapped[index]);
         }
     }
 
@@ -246,38 +213,29 @@ impl State {
 
         let has_buffer =
             with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
-
-        if let Some(id) = camino.mapped_for_surface(surface) {
-            let window = camino.policy.window(id).unwrap().window().clone();
-            window.on_commit();
+        let key = WindowKey::Wayland(surface.clone());
+        if let Some(id) = camino.mapped_for_key(&key) {
             if has_buffer {
-                let parent = camino.transient_parent(&window);
-                let mapped = camino.policy.window_mut(id).unwrap();
-                mapped.set_parent(parent);
-                mapped.update_frame_facts(&camino.frame_context);
-                camino.policy.commit(id);
-                camino.queue_redraw_all();
-            } else if let Some(mapped) = camino.unmap_window(id) {
-                camino.unmapped.push(Unmapped::new(mapped.window().clone()));
+                camino.window_committed(&key);
+            } else {
+                // The toplevel is unmapped, and starts over from its initial commit.
+                let window = camino.policy.window(id).unwrap().window().clone();
+                camino.window_withdrawn(&key);
+                camino.window_created(window);
             }
-            return;
-        }
-
-        let Some(index) = camino
-            .unmapped
-            .iter()
-            .position(|unmapped| unmapped.window.wl_surface().as_deref() == Some(surface))
-        else {
-            return;
-        };
-        let toplevel = camino.unmapped[index].window.toplevel().unwrap().clone();
-        if !toplevel.is_initial_configure_sent() {
-            camino.configure_unmapped(&camino.unmapped[index]);
-            toplevel.send_configure();
-        } else if has_buffer {
-            let unmapped = camino.unmapped.remove(index);
-            unmapped.window.on_commit();
-            camino.map_window(unmapped);
+        } else if camino.is_pending(&key) {
+            let toplevel = camino
+                .xdg_shell_state
+                .toplevel_surfaces()
+                .iter()
+                .find(|toplevel| toplevel.wl_surface() == surface)
+                .cloned();
+            if let Some(toplevel) = toplevel.filter(|t| !t.is_initial_configure_sent()) {
+                camino.configure_pending(&key);
+                toplevel.send_configure();
+            } else if has_buffer {
+                camino.window_committed(&key);
+            }
         }
     }
 }
