@@ -15,3 +15,4 @@ mod popups;
 mod settings;
 mod xdg_shell;
 mod xwayland;
+mod xwayland_windows;

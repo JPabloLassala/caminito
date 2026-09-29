@@ -112,6 +112,10 @@ struct Managed<W> {
     /// The output a client asked to be fullscreen on.
     fullscreen_output: Option<OutputId>,
     minimized: bool,
+    /// Kept above, kept below and sticky, as the client asked; they take effect in M8 (17).
+    above: bool,
+    below: bool,
+    sticky: bool,
     /// The geometry to go back to, while maximised or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
     sent: Sent,
@@ -299,6 +303,7 @@ impl<W: PolicyWindow> Policy<W> {
         let size = window.size();
         let geometry = Rectangle::new(Point::default(), size);
         let window_type = window.window_type();
+        let takes_input = window.takes_input();
         let hints = window.size_hints();
         let ssd = window.is_ssd();
         let extents = window.frame_extents(false);
@@ -327,6 +332,9 @@ impl<W: PolicyWindow> Policy<W> {
                 fullscreen: false,
                 fullscreen_output: None,
                 minimized: false,
+                above: false,
+                below: false,
+                sticky: false,
                 floating: None,
                 sent: Sent::default(),
             },
@@ -335,10 +343,18 @@ impl<W: PolicyWindow> Policy<W> {
         self.place(id);
         self.maximize_if_too_big(id);
         self.adopt_transients(id);
-        if !matches!(
-            window_type,
-            WindowType::Desktop | WindowType::Dock | WindowType::Splashscreen
-        ) {
+        // Marco's `window_state_on_map` (window.c:1997-2044).
+        if takes_input
+            && !matches!(
+                window_type,
+                WindowType::Desktop
+                    | WindowType::Dock
+                    | WindowType::Splashscreen
+                    | WindowType::Menu
+                    | WindowType::Utility
+                    | WindowType::Toolbar
+            )
+        {
             self.focus_window(self.last_seat, id, now);
         }
         self.apply();
@@ -418,11 +434,15 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// A button press on a window: click focus, and Marco's raise on click.
+    /// A button press on a window: click focus, and Marco's raise on click. Marco raises a
+    /// dock but doesn't focus it, since panels ask for focus themselves (display.c:1937-1946).
     pub fn click(&mut self, seat: SeatId, id: WindowId, now: Duration) {
         self.set_last_seat(seat);
-        if self.is_showing(id) && self.focus_window(seat, id, now) {
-            self.raise_family(id);
+        if self.is_showing(id) {
+            let dock = self.windows[&id].window_type == WindowType::Dock;
+            if dock || self.focus_window(seat, id, now) {
+                self.raise_family(id);
+            }
         }
         self.apply();
     }
@@ -570,6 +590,69 @@ impl<W: PolicyWindow> Policy<W> {
         managed.fullscreen_output = output.filter(|_| fullscreen);
         self.relayout(id);
         self.apply();
+    }
+
+    /// The client asks to move its window to `loc` or resize it to `size`, as an X11
+    /// `ConfigureRequest` does. It's refused while the window is maximised either way,
+    /// fullscreen, or being moved or resized. Otherwise the size is kept within the hints
+    /// and the frame inside the work area, as Marco's constraints do for a configure request
+    /// (constraints.c:1456-1479).
+    pub fn request_geometry(
+        &mut self,
+        id: WindowId,
+        loc: Option<Point<i32, Logical>>,
+        size: Option<Size<i32, Logical>>,
+    ) {
+        let grabbed = self.grabs.values().any(|grab| grab.window == id);
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        if grabbed || managed.constrained() || (loc.is_none() && size.is_none()) {
+            return;
+        }
+        if let Some(size) = size {
+            managed.geometry.size = managed.hints.clamp(size);
+        }
+        if let Some(loc) = loc {
+            managed.geometry.loc = loc;
+        }
+        let e = managed.visible_extents();
+        let geometry = managed.geometry;
+        let frame = Rectangle::new(
+            (geometry.loc.x - e.left, geometry.loc.y - e.top).into(),
+            (
+                geometry.size.w + e.left + e.right,
+                geometry.size.h + e.top + e.bottom,
+            )
+                .into(),
+        );
+        if let Some(output) = self.output_of(frame).or(self.outputs.first()) {
+            let frame_loc = placement::constrain(frame, Self::work_area(output));
+            let managed = self.windows.get_mut(&id).unwrap();
+            managed.geometry.loc = Point::new(frame_loc.x + e.left, frame_loc.y + e.top);
+        }
+        self.apply();
+    }
+
+    /// Keeps the window above others, or stops. Recorded only until M8 (17).
+    pub fn set_above(&mut self, id: WindowId, above: bool) {
+        if let Some(managed) = self.windows.get_mut(&id) {
+            managed.above = above;
+        }
+    }
+
+    /// Keeps the window below others, or stops. Recorded only until M8 (17).
+    pub fn set_below(&mut self, id: WindowId, below: bool) {
+        if let Some(managed) = self.windows.get_mut(&id) {
+            managed.below = below;
+        }
+    }
+
+    /// Shows the window on every workspace, or stops. Recorded only until M8 (17).
+    pub fn set_sticky(&mut self, id: WindowId, sticky: bool) {
+        if let Some(managed) = self.windows.get_mut(&id) {
+            managed.sticky = sticky;
+        }
     }
 
     pub fn minimize(&mut self, id: WindowId) {
@@ -816,6 +899,18 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn is_minimized(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.minimized)
+    }
+
+    pub fn is_above(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.above)
+    }
+
+    pub fn is_below(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.below)
+    }
+
+    pub fn is_sticky(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|m| m.sticky)
     }
 
     pub fn workspace_of(&self, id: WindowId) -> Option<usize> {

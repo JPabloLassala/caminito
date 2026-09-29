@@ -4,6 +4,8 @@
 use proptest::prelude::*;
 
 use super::*;
+use smithay::utils::Size;
+
 use crate::ResizeEdges;
 
 const SEATS: u32 = 2;
@@ -94,6 +96,15 @@ enum Op {
     },
     EndGrab(u32),
     SetWorkspaceCount(usize),
+    RequestGeometry {
+        id: u64,
+        loc: Option<(i32, i32)>,
+        size: Option<(i32, i32)>,
+    },
+    SetAbove {
+        id: u64,
+        above: bool,
+    },
 }
 
 fn window_id() -> impl Strategy<Value = u64> {
@@ -110,6 +121,8 @@ fn window_type() -> impl Strategy<Value = WindowType> {
         2 => Just(WindowType::Dialog),
         1 => Just(WindowType::ModalDialog),
         1 => Just(WindowType::Utility),
+        1 => Just(WindowType::Toolbar),
+        1 => Just(WindowType::Menu),
         1 => Just(WindowType::Dock),
         1 => Just(WindowType::Desktop),
         1 => Just(WindowType::Splashscreen),
@@ -125,9 +138,11 @@ fn test_window() -> impl Strategy<Value = TestWindow> {
         proptest::option::of(window_id()),
         any::<bool>(),
         proptest::option::of((-500..3500i32, -500..2000i32)),
+        any::<bool>(),
     )
-        .prop_map(|(id, w, h, window_type, parent, ssd, requested)| {
+        .prop_map(|(id, w, h, window_type, parent, ssd, requested, input)| {
             let mut window = TestWindow::new(id, w, h).with_type(window_type);
+            window.input = input;
             window.parent = parent.map(WindowId);
             if ssd {
                 window = window.with_frame(5, 5, 25, 5);
@@ -182,6 +197,13 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (seat(), any::<i16>(), any::<i16>()).prop_map(|(seat, x, y)| Op::GrabMotion { seat, x, y }),
         1 => seat().prop_map(Op::EndGrab),
         1 => (1..=6usize).prop_map(Op::SetWorkspaceCount),
+        1 => (
+            window_id(),
+            proptest::option::of((-500..3500i32, -500..2000i32)),
+            proptest::option::of((1..2500i32, 1..1500i32)),
+        )
+            .prop_map(|(id, loc, size)| Op::RequestGeometry { id, loc, size }),
+        1 => (window_id(), any::<bool>()).prop_map(|(id, above)| Op::SetAbove { id, above }),
     ]
 }
 
@@ -261,6 +283,10 @@ impl Op {
                 workspace_count,
                 workspace_names: Vec::new(),
             }),
+            Op::RequestGeometry { id, loc, size } => {
+                policy.request_geometry(WindowId(id), loc.map(Point::from), size.map(Size::from))
+            }
+            Op::SetAbove { id, above } => policy.set_above(WindowId(id), above),
         }
     }
 }

@@ -2,9 +2,9 @@
 //! `wl_shm` for clients' buffers.
 
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
-use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent,
@@ -37,7 +37,14 @@ impl CompositorHandler for State {
             root = parent;
         }
         if root == *surface {
-            self.xdg_shell_commit(surface);
+            let xwayland = surface
+                .client()
+                .is_some_and(|client| client.get_data::<XWaylandClientData>().is_some());
+            if xwayland {
+                self.xwayland_commit(surface);
+            } else {
+                self.xdg_shell_commit(surface);
+            }
         } else {
             // A subsurface: its window's cached geometry may have changed, and a
             // desynchronised one draws without its parent committing.

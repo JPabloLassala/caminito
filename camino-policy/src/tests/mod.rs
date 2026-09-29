@@ -7,6 +7,7 @@ mod interactive;
 mod invariants;
 mod outputs;
 mod placement;
+mod requests;
 mod shade;
 mod stacking;
 mod states;

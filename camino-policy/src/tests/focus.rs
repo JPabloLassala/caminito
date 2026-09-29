@@ -130,3 +130,57 @@ fn docks_desktops_and_splash_screens_dont_take_focus_on_map() {
 
     assert_eq!(policy.focus(SEAT), Some(id(1)));
 }
+
+#[test]
+fn utility_toolbar_menu_and_splash_windows_dont_take_focus_on_map() {
+    // Marco's `window_state_on_map` (window.c:2031-2044), with docks and desktops.
+    for window_type in [
+        WindowType::Utility,
+        WindowType::Toolbar,
+        WindowType::Menu,
+        WindowType::Splashscreen,
+        WindowType::Dock,
+        WindowType::Desktop,
+    ] {
+        let mut policy = policy();
+        policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+        policy.map_window(TestWindow::new(2, 200, 100).with_type(window_type), ms(2));
+
+        assert_eq!(policy.focus(SEAT), Some(id(1)), "{window_type:?}");
+    }
+}
+
+#[test]
+fn a_click_raises_a_dock_but_doesnt_focus_it() {
+    let mut policy = policy();
+    policy.map_window(
+        TestWindow::new(1, 1920, 30).with_type(WindowType::Dock),
+        ms(1),
+    );
+    policy.map_window(
+        TestWindow::new(2, 1920, 30)
+            .with_type(WindowType::Dock)
+            .with_requested_position(0, 1050),
+        ms(2),
+    );
+    policy.map_window(TestWindow::new(3, 400, 300), ms(3));
+
+    policy.click(SEAT, id(1), ms(4));
+
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    assert_eq!(policy.stacking(0), [id(3), id(2), id(1)]);
+}
+
+#[test]
+fn a_window_that_takes_no_input_isnt_focused_when_it_maps_but_is_on_click() {
+    // Marco's `window_state_on_map` (window.c:1997-2001).
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    policy.map_window(TestWindow::new(2, 200, 100).without_input(), ms(2));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+
+    policy.click(SEAT, id(2), ms(3));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}

@@ -75,6 +75,9 @@ pub trait PolicyWindow {
     /// A position the client asked for (X11's `USPosition` or `PPosition`), in global
     /// logical coordinates of the window geometry.
     fn requested_position(&self) -> Option<Point<i32, Logical>>;
+    /// Whether the window takes keyboard input at all (ICCCM's input model). One that
+    /// doesn't isn't focused when it maps.
+    fn takes_input(&self) -> bool;
     fn pid(&self) -> Option<u32>;
     /// The xdg app id, or `WM_CLASS` for an XWayland window.
     fn app_id(&self) -> Option<String>;

@@ -5,10 +5,12 @@
 //! surface, and `Mapped` reaches it through its one `match` on the underlying surface.
 
 mod lifecycle;
+mod x11;
 mod xdg;
 
 pub use lifecycle::PendingWindows;
 pub(crate) use lifecycle::StateRequest;
+pub(crate) use x11::configure_request_geometry;
 pub(crate) use xdg::owe_configure;
 
 use camino_policy::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
@@ -21,9 +23,11 @@ use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::send_surface_state;
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::seat::WaylandFocus;
+use smithay::xwayland::xwm::X11Window;
 
 use crate::decoration::style::{FrameFacts, frame_style};
 use crate::decoration::{FrameContext, FrameInputs, IconSource, WindowFrame};
+use crate::input::KeyboardFocus;
 use crate::output::{output_geometry, output_id};
 use crate::state::Camino;
 
@@ -38,8 +42,11 @@ trait Adapter {
     /// Marco's type, given whether the window is transient for a managed one.
     fn window_type(&self, has_parent: bool) -> WindowType;
     fn size_hints(&self) -> SizeHints;
-    /// See [`PolicyWindow::requested_position`].
-    fn requested_position(&self) -> Option<Point<i32, Logical>>;
+    /// See [`PolicyWindow::requested_position`], with a frame of `extents`.
+    fn requested_position(
+        &self,
+        extents: FrameExtents<i32, Logical>,
+    ) -> Option<Point<i32, Logical>>;
     fn pid(&self) -> Option<u32>;
     /// Whether the window wants Camino's frame.
     fn wants_frame(&self) -> bool;
@@ -51,6 +58,12 @@ trait Adapter {
     fn icon(&self) -> IconSource;
     /// The window it says it's transient for.
     fn parent(&self) -> Option<WindowKey>;
+    /// Whether it asks for the user's attention.
+    fn urgent(&self) -> bool;
+    /// Whether it takes keyboard input at all.
+    fn takes_input(&self) -> bool;
+    /// Whether it asks to be left out of the taskbar and the pager.
+    fn skips(&self) -> Skips;
 
     // Requests.
 
@@ -64,6 +77,37 @@ trait Adapter {
     fn close(&self);
     /// Configures a pending window before it maps.
     fn configure_pending(&self, configure: &PreMapConfigure);
+    /// What the keyboard focuses to give the window the keyboard.
+    fn keyboard_target(&self) -> KeyboardFocus;
+}
+
+/// Whether a window is left out of the taskbar and the pager.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Skips {
+    pub taskbar: bool,
+    pub pager: bool,
+}
+
+/// Marco's rules (`recalc_window_features`, window.c:6861-6891): what the client asked,
+/// then both for every type but normal windows and dialogs, and the taskbar for a dialog
+/// with a transient parent.
+fn skips(window_type: WindowType, transient: bool, asked: Skips) -> Skips {
+    match window_type {
+        WindowType::Normal => asked,
+        WindowType::Dialog | WindowType::ModalDialog => Skips {
+            taskbar: asked.taskbar || transient,
+            pager: asked.pager,
+        },
+        WindowType::Desktop
+        | WindowType::Dock
+        | WindowType::Toolbar
+        | WindowType::Menu
+        | WindowType::Utility
+        | WindowType::Splashscreen => Skips {
+            taskbar: true,
+            pager: true,
+        },
+    }
 }
 
 /// A pending window's configure before it maps, from the states it has asked for.
@@ -81,24 +125,26 @@ struct PreMapConfigure {
 fn adapter(window: &Window) -> &dyn Adapter {
     match window.underlying_surface() {
         WindowSurface::Wayland(toplevel) => toplevel,
-        WindowSurface::X11(_) => unreachable!("XWayland windows aren't managed until 35"),
+        WindowSurface::X11(surface) => surface,
     }
 }
 
-/// How Camino finds a window from what its protocol names it by.
+/// How Camino finds a window from what its protocol names it by: for commits, X
+/// callbacks, transient parents and destroy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum WindowKey {
     /// An xdg toplevel's surface.
     Wayland(WlSurface),
+    /// An X window's id. `X11Surface`s aren't compared, since a dead one never compares
+    /// equal.
+    X11(X11Window),
 }
 
 impl WindowKey {
-    pub(crate) fn of(window: &Window) -> Option<Self> {
+    pub(crate) fn of(window: &Window) -> Self {
         match window.underlying_surface() {
-            WindowSurface::Wayland(toplevel) => {
-                Some(WindowKey::Wayland(toplevel.wl_surface().clone()))
-            }
-            WindowSurface::X11(_) => None,
+            WindowSurface::Wayland(toplevel) => WindowKey::Wayland(toplevel.wl_surface().clone()),
+            WindowSurface::X11(surface) => WindowKey::X11(surface.window_id()),
         }
     }
 }
@@ -297,6 +343,41 @@ impl Mapped {
     pub fn title(&self) -> String {
         self.adapter().title()
     }
+
+    /// Whether the window asks for the user's attention, for M5's foreign-toplevel and
+    /// M8's Alt+Tab.
+    pub fn is_urgent(&self) -> bool {
+        self.adapter().urgent()
+    }
+
+    /// Whether the window is left out of the taskbar and the pager.
+    pub fn skips(&self) -> Skips {
+        let adapter = self.adapter();
+        skips(
+            self.window_type(),
+            adapter.parent().is_some(),
+            adapter.skips(),
+        )
+    }
+
+    /// What the keyboard focuses to give the window the keyboard.
+    pub fn keyboard_target(&self) -> KeyboardFocus {
+        self.adapter().keyboard_target()
+    }
+
+    /// The X window's id, for an XWayland window.
+    pub fn x11_window(&self) -> Option<X11Window> {
+        self.window.x11_surface().map(|surface| surface.window_id())
+    }
+
+    /// The frame's extents, while the window has a frame.
+    pub(crate) fn visible_extents(&self) -> FrameExtents<i32, Logical> {
+        if self.ssd {
+            self.extents
+        } else {
+            FrameExtents::default()
+        }
+    }
 }
 
 impl PolicyWindow for Mapped {
@@ -321,7 +402,11 @@ impl PolicyWindow for Mapped {
     }
 
     fn requested_position(&self) -> Option<Point<i32, Logical>> {
-        self.adapter().requested_position()
+        self.adapter().requested_position(self.visible_extents())
+    }
+
+    fn takes_input(&self) -> bool {
+        self.adapter().takes_input()
     }
 
     fn pid(&self) -> Option<u32> {
@@ -373,7 +458,7 @@ impl Camino {
     pub(crate) fn mapped_for_key(&self, key: &WindowKey) -> Option<WindowId> {
         self.policy
             .windows()
-            .find(|mapped| WindowKey::of(mapped.window()).as_ref() == Some(key))
+            .find(|mapped| WindowKey::of(mapped.window()) == *key)
             .map(|mapped| mapped.id())
     }
 

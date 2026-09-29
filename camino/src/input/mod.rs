@@ -1,9 +1,11 @@
 //! Input: the keyboard path, pointer focus, and interactive move and resize (15).
 
 pub mod bindings;
+mod focus;
 pub mod frame;
 mod grab;
 
+pub use focus::KeyboardFocus;
 pub use grab::GrabKind;
 
 use camino_policy::{Action, ResizeEdges, WindowId};
@@ -19,6 +21,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
 use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_constraint};
+use smithay::wayland::seat::WaylandFocus;
 
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
@@ -258,6 +261,7 @@ impl State {
         let seat = &self.camino.seat;
         seat.get_keyboard()
             .and_then(|keyboard| keyboard.current_focus())
+            .and_then(|focus| focus.wl_surface().map(|surface| surface.into_owned()))
             .and_then(|surface| seat.keyboard_shortcuts_inhibitor_for_surface(&surface))
             .is_some_and(|inhibitor| inhibitor.is_active())
     }
@@ -352,7 +356,7 @@ impl State {
             .focus(SEAT)
             .and_then(|id| policy.window(id))
             .filter(|mapped| !mapped.is_shaded())
-            .and_then(|mapped| mapped.wl_surface());
+            .map(|mapped| mapped.keyboard_target());
         if keyboard.current_focus() != focus {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
         }

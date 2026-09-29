@@ -8,7 +8,8 @@ use crate::WindowId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layer {
     Desktop,
-    /// Windows kept below; reached from M3's `_NET_WM_STATE_BELOW`.
+    /// Windows kept below, from M8 (17). X11's `_NET_WM_STATE_BELOW` is only recorded until
+    /// then.
     Bottom,
     Normal,
     /// Docks, and windows kept above.

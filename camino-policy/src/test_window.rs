@@ -21,6 +21,7 @@ pub struct TestWindow {
     pub size: Size<i32, Logical>,
     pub hints: SizeHints,
     pub requested_position: Option<Point<i32, Logical>>,
+    pub input: bool,
     pub ssd: bool,
     pub extents: FrameExtents<i32, Logical>,
     /// The frame's extents while maximised.
@@ -38,6 +39,7 @@ impl TestWindow {
             size: Size::new(w, h),
             hints: SizeHints::default(),
             requested_position: None,
+            input: true,
             ssd: false,
             extents: FrameExtents::default(),
             maximized_extents: FrameExtents::default(),
@@ -73,6 +75,12 @@ impl TestWindow {
 
     pub fn with_requested_position(mut self, x: i32, y: i32) -> Self {
         self.requested_position = Some(Point::new(x, y));
+        self
+    }
+
+    /// Makes the window take no keyboard input.
+    pub fn without_input(mut self) -> Self {
+        self.input = false;
         self
     }
 
@@ -126,6 +134,10 @@ impl PolicyWindow for TestWindow {
 
     fn requested_position(&self) -> Option<Point<i32, Logical>> {
         self.requested_position
+    }
+
+    fn takes_input(&self) -> bool {
+        self.input
     }
 
     fn pid(&self) -> Option<u32> {

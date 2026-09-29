@@ -13,26 +13,46 @@ use x11rb::connection::Connection;
 use x11rb::errors::{ConnectError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConnectionExt, CreateWindowAux,
-    EventMask, PropMode, Window, WindowClass,
+    Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
+    ConnectionExt, CreateWindowAux, EventMask, PropMode, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 /// `WM_HINTS`'s input flag (ICCCM 4.1.2.4).
 const INPUT_HINT: u32 = 1;
+/// `WM_NORMAL_HINTS`'s `USPosition` flag (ICCCM 4.1.2.3).
+const US_POSITION: u32 = 1;
+/// `_MOTIF_WM_HINTS`'s decorations flag.
+const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
+
+/// The colour windows are filled with, so Xwayland commits a buffer when they map.
+pub const BACKGROUND: u32 = 0x00ff00;
 
 /// A window for [`X11Client::create_window`] to make.
 #[derive(Debug, Clone, Default)]
 pub struct WindowSpec {
     pub size: (u16, u16),
+    /// Where it's created, and whether `WM_NORMAL_HINTS` says the user asked for it
+    /// (`USPosition`).
+    pub position: Option<(i16, i16)>,
     /// `_NET_WM_WINDOW_TYPE`'s atoms, such as `_NET_WM_WINDOW_TYPE_DIALOG`, most preferred
     /// first. Empty leaves the property unset.
     pub types: Vec<&'static str>,
+    /// `_NET_WM_STATE`'s atoms before it's mapped, such as `_NET_WM_STATE_MAXIMIZED_VERT`.
+    pub states: Vec<&'static str>,
     /// `WM_HINTS`'s input flag; `None` leaves `WM_HINTS` unset.
     pub input: Option<bool>,
     /// `WM_TRANSIENT_FOR`.
     pub transient_for: Option<Window>,
+    /// `_MOTIF_WM_HINTS`'s decorations: `Some(false)` asks for none.
+    pub decorations: Option<bool>,
+    /// `_NET_WM_NAME`.
+    pub title: Option<&'static str>,
+    /// Whether `WM_PROTOCOLS` has `WM_DELETE_WINDOW`, so closing it sends a message.
+    pub delete_window: bool,
+    /// Leaves out the background, so the window has no content and Xwayland commits none.
+    pub empty: bool,
     pub override_redirect: bool,
 }
 
@@ -96,15 +116,21 @@ impl X11Client {
     /// selects its structure and property events.
     pub fn create_window(&self, spec: &WindowSpec) -> Result<Window, ReplyOrIdError> {
         let window = self.conn.generate_id()?;
-        let aux = CreateWindowAux::new()
+        let mut aux = CreateWindowAux::new()
             .override_redirect(u32::from(spec.override_redirect))
-            .event_mask(EventMask::STRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE);
+            .event_mask(
+                EventMask::STRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE,
+            );
+        if !spec.empty {
+            aux = aux.background_pixel(BACKGROUND);
+        }
+        let (x, y) = spec.position.unwrap_or_default();
         self.conn.create_window(
             x11rb::COPY_DEPTH_FROM_PARENT,
             window,
             self.root,
-            0,
-            0,
+            x,
+            y,
             spec.size.0.max(1),
             spec.size.1.max(1),
             0,
@@ -147,8 +173,110 @@ impl X11Client {
                 &[parent],
             )?;
         }
+        if let Some((x, y)) = spec.position {
+            // flags, then the obsolete position and size, which ICCCM says to leave be.
+            let mut hints = [0u32; 18];
+            hints[0] = US_POSITION;
+            (hints[1], hints[2]) = (x as u32, y as u32);
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                AtomEnum::WM_NORMAL_HINTS,
+                AtomEnum::WM_SIZE_HINTS,
+                &hints,
+            )?;
+        }
+        if !spec.states.is_empty() {
+            let states = spec
+                .states
+                .iter()
+                .map(|name| self.atom(name))
+                .collect::<Result<Vec<_>, _>>()?;
+            let property = self.atom("_NET_WM_STATE")?;
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                property,
+                AtomEnum::ATOM,
+                &states,
+            )?;
+        }
+        if let Some(decorations) = spec.decorations {
+            // flags, functions, decorations, input mode, status.
+            let hints = [MWM_HINTS_DECORATIONS, 0, u32::from(decorations), 0, 0];
+            let property = self.atom("_MOTIF_WM_HINTS")?;
+            self.conn
+                .change_property32(PropMode::REPLACE, window, property, property, &hints)?;
+        }
+        if let Some(title) = spec.title {
+            let property = self.atom("_NET_WM_NAME")?;
+            let utf8 = self.atom("UTF8_STRING")?;
+            self.conn.change_property8(
+                PropMode::REPLACE,
+                window,
+                property,
+                utf8,
+                title.as_bytes(),
+            )?;
+        }
+        if spec.delete_window {
+            let protocols = self.atom("WM_PROTOCOLS")?;
+            let delete = self.atom("WM_DELETE_WINDOW")?;
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                protocols,
+                AtomEnum::ATOM,
+                &[delete],
+            )?;
+        }
         self.conn.sync()?;
         Ok(window)
+    }
+
+    pub fn unmap(&self, window: Window) -> Result<(), ReplyError> {
+        self.conn.unmap_window(window)?;
+        self.conn.sync()
+    }
+
+    pub fn destroy(&self, window: Window) -> Result<(), ReplyError> {
+        self.conn.destroy_window(window)?;
+        self.conn.sync()
+    }
+
+    /// Asks to move and resize `window`, as a client does with `ConfigureWindow`.
+    pub fn configure(
+        &self,
+        window: Window,
+        (x, y): (i32, i32),
+        (w, h): (u32, u32),
+    ) -> Result<(), ReplyError> {
+        let aux = ConfigureWindowAux::new().x(x).y(y).width(w).height(h);
+        self.conn.configure_window(window, &aux)?;
+        self.conn.sync()
+    }
+
+    /// Sets a string property, as a client does to change its title.
+    pub fn set_string(&self, window: Window, name: &str, value: &str) -> Result<(), ReplyError> {
+        let property = self.atom(name)?;
+        let utf8 = self.atom("UTF8_STRING")?;
+        self.conn
+            .change_property8(PropMode::REPLACE, window, property, utf8, value.as_bytes())?;
+        self.conn.sync()
+    }
+
+    /// Where `window`'s origin is on the root, as its client sees it.
+    pub fn position(&self, window: Window) -> Result<(i32, i32), ReplyError> {
+        let reply = self
+            .conn
+            .translate_coordinates(window, self.root, 0, 0)?
+            .reply()?;
+        Ok((reply.dst_x.into(), reply.dst_y.into()))
+    }
+
+    /// The window with the X input focus.
+    pub fn input_focus(&self) -> Result<Window, ReplyError> {
+        Ok(self.conn.get_input_focus()?.reply()?.focus)
     }
 
     pub fn map(&self, window: Window) -> Result<(), ReplyError> {

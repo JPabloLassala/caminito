@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
-use camino_test_client::x11::X11Client;
+use camino_test_client::x11::{WindowSpec, X11Client};
 use camino_test_client::{Client, WindowId};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::output::Output;
@@ -67,6 +67,15 @@ pub struct Fixture {
 /// The index of one of a fixture's clients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClientId(usize);
+
+/// A test's window, whichever protocol its client speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientWindow {
+    /// An xdg toplevel of one of the fixture's Wayland clients.
+    Wayland(ClientId, WindowId),
+    /// An X window, by its id.
+    X11(u32),
+}
 
 impl Fixture {
     /// Camino with no outputs and no clients, and the settings at their defaults.
@@ -140,6 +149,35 @@ impl Fixture {
             (surface.client().as_ref() == Some(client) && surface.id().protocol_id() == protocol_id)
                 .then(|| mapped.id())
         })
+    }
+
+    /// Policy's id for an X window, if Camino manages it.
+    pub fn x11_policy_id(&self, window: u32) -> Option<camino_policy::WindowId> {
+        self.state.camino.policy.windows().find_map(|mapped| {
+            let surface = mapped.window().x11_surface()?;
+            (surface.window_id() == window).then(|| mapped.id())
+        })
+    }
+
+    /// Policy's id for a test's window, whichever protocol it speaks, if it's managed.
+    pub fn window_policy_id(&mut self, window: ClientWindow) -> Option<camino_policy::WindowId> {
+        match window {
+            ClientWindow::Wayland(id, window) => self.policy_id(id, window),
+            ClientWindow::X11(window) => self.x11_policy_id(window),
+        }
+    }
+
+    /// Creates and maps an X window as `spec` says, and dispatches until Camino manages it.
+    pub fn map_x11_window(&mut self, client: &Arc<X11Client>, spec: WindowSpec) -> u32 {
+        let window = self
+            .x11_call(client, move |x| {
+                let window = x.create_window(&spec)?;
+                x.map(window)?;
+                Ok::<_, x11rb::errors::ReplyOrIdError>(window)
+            })
+            .expect("the X window maps");
+        self.dispatch_until(|f| f.x11_policy_id(window).is_some());
+        window
     }
 
     /// A made-up input timestamp, later than the last.
@@ -290,6 +328,15 @@ impl Fixture {
             f.state.camino.xwayland_display().is_some()
         });
         self.state.camino.xwayland_display().unwrap()
+    }
+
+    /// One 1920 × 1080 output, Xwayland, and an x11rb client connected to it.
+    pub fn with_x11() -> (Self, Arc<X11Client>) {
+        let mut f = Self::new();
+        f.add_output((1920, 1080), 1.0);
+        f.start_xwayland();
+        let x = f.connect_x11();
+        (f, x)
     }
 
     /// Connects an x11rb client to the running Xwayland.

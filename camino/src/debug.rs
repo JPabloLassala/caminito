@@ -84,6 +84,21 @@ struct WindowDump {
     frame_extents: Option<ExtentsDump>,
     /// The scale the frame's strips were rendered at, while it shows one.
     strip_scale: Option<i32>,
+    /// Whether it's an XWayland window.
+    xwayland: bool,
+    /// For an XWayland window, its X window's id and Marco's type for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    x11: Option<X11Dump>,
+    /// Whether it asks for the user's attention.
+    urgent: bool,
+    skip_taskbar: bool,
+    skip_pager: bool,
+}
+
+#[derive(Serialize)]
+struct X11Dump {
+    window: u32,
+    window_type: String,
 }
 
 #[derive(Serialize)]
@@ -147,8 +162,8 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 }
 
 impl Camino {
-    /// Windows, workspaces with their names and stacking, outputs and their scales, and
-    /// focus, as pretty-printed JSON. The lock state and the X11 scale come with the
+    /// Windows, with the X window and Marco's type for XWayland windows, workspaces with
+    /// their names and stacking, outputs and their scales, and focus, as pretty-printed JSON. The lock state and the X11 scale come with the
     /// milestones that make them.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
@@ -157,6 +172,7 @@ impl Camino {
             .map(|mapped| {
                 let id = mapped.id();
                 let ssd = mapped.is_ssd();
+                let skips = mapped.skips();
                 WindowDump {
                     id: id.0,
                     app_id: mapped.app_id(),
@@ -172,6 +188,14 @@ impl Camino {
                         .shows_frame()
                         .then(|| mapped.frame_extents(policy.is_maximized(id)).into()),
                     strip_scale: mapped.frame().drawn_scale(),
+                    xwayland: mapped.window().is_x11(),
+                    x11: mapped.x11_window().map(|window| X11Dump {
+                        window,
+                        window_type: format!("{:?}", mapped.window_type()),
+                    }),
+                    urgent: mapped.is_urgent(),
+                    skip_taskbar: skips.taskbar,
+                    skip_pager: skips.pager,
                 }
             })
             .collect();

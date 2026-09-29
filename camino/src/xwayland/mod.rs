@@ -1,6 +1,7 @@
 //! Xwayland (08, 11, 15): spawned by Smithay at start-up in every mode, eagerly, with
 //! Smithay's `X11Wm` attached once it's ready. If it can't start, Camino logs it once and
-//! runs without X; the restart path is 42's.
+//! runs without X; the restart path is 42's. Its windows are managed through `xwm`, and X's
+//! stacking order follows Camino's scene.
 
 mod xwm;
 
@@ -10,7 +11,8 @@ use std::process::Stdio;
 
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::wayland_server::Client;
-use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
+use smithay::xwayland::xwm::X11Window;
+use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
 use crate::helpers::{self, StderrTarget};
 use crate::settings::translate::Mouse;
@@ -27,6 +29,9 @@ pub struct RunningXwayland {
     client: Client,
     /// Smithay's window manager, from `Ready` on.
     pub wm: Option<X11Wm>,
+    /// The XWayland windows in the order `X11Wm` was last told to stack them, bottom to
+    /// top.
+    stacking: Vec<X11Window>,
     /// The `XWayland` source, which kills Xwayland when it's removed.
     source: RegistrationToken,
 }
@@ -85,6 +90,7 @@ impl Camino {
                     display,
                     client,
                     wm: None,
+                    stacking: Vec::new(),
                     source,
                 })
             }
@@ -106,6 +112,34 @@ impl Camino {
     /// Smithay's window manager, once Xwayland is ready.
     pub fn xwm(&mut self) -> Option<&mut X11Wm> {
         self.xwayland.as_mut()?.wm.as_mut()
+    }
+
+    /// Camino's scene is the truth (11): after a restack that involves an XWayland window,
+    /// X's stacking order follows it, so that X clients and `_NET_CLIENT_LIST_STACKING` see
+    /// what the user sees.
+    pub(crate) fn refresh_x11_stacking(&mut self) {
+        let policy = &self.policy;
+        // Bottom to top: Smithay moves each window above the one before it, whatever its
+        // doc comment says.
+        let order: Vec<X11Surface> = policy
+            .stacking(policy.active_workspace())
+            .iter()
+            .filter_map(|id| policy.window(*id)?.window().x11_surface().cloned())
+            .collect();
+        let ids: Vec<X11Window> = order.iter().map(X11Surface::window_id).collect();
+        let Some(xwayland) = self.xwayland.as_mut() else {
+            return;
+        };
+        let Some(wm) = xwayland.wm.as_mut() else {
+            return;
+        };
+        if xwayland.stacking == ids {
+            return;
+        }
+        match wm.update_stacking_order_upwards(order.iter()) {
+            Ok(()) => xwayland.stacking = ids,
+            Err(err) => tracing::debug!("can't restack X windows: {err}"),
+        }
     }
 
     /// Drops Xwayland and its window manager, which ends it.

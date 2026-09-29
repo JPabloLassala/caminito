@@ -7,7 +7,9 @@
 use camino_policy::{OutputId, SizeHints, WindowId};
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{FrameExtents, Logical, Size};
+use smithay::wayland::seat::WaylandFocus;
 
 use super::{Mapped, PreMapConfigure, WindowKey, adapter};
 use crate::decoration::style::{FrameFacts, frame_style};
@@ -31,7 +33,7 @@ impl PendingWindows {
     fn position(&self, key: &WindowKey) -> Option<usize> {
         self.0
             .iter()
-            .position(|pending| WindowKey::of(&pending.window).as_ref() == Some(key))
+            .position(|pending| WindowKey::of(&pending.window) == *key)
     }
 
     fn get(&self, key: &WindowKey) -> Option<&Pending> {
@@ -40,6 +42,11 @@ impl PendingWindows {
 
     fn remove(&mut self, key: &WindowKey) -> Option<Pending> {
         self.position(key).map(|index| self.0.remove(index))
+    }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -118,6 +125,16 @@ impl Camino {
     /// Destroyed: the window is gone.
     pub(crate) fn window_destroyed(&mut self, key: &WindowKey) {
         self.window_withdrawn(key);
+    }
+
+    /// The key of the window, pending or managed, whose surface is `surface`.
+    pub(crate) fn window_key_for_surface(&self, surface: &WlSurface) -> Option<WindowKey> {
+        let pending = self.pending.0.iter().map(|pending| &pending.window);
+        let managed = self.policy.windows().map(|mapped| mapped.window());
+        pending
+            .chain(managed)
+            .find(|window| window.wl_surface().as_deref() == Some(surface))
+            .map(WindowKey::of)
     }
 
     /// Whether `key` names a pending window.

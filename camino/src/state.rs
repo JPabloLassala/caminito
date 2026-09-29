@@ -604,6 +604,7 @@ impl Camino {
         for mapped in self.policy.windows() {
             mapped.flush();
         }
+        self.refresh_x11_stacking();
         self.popups.cleanup();
     }
 

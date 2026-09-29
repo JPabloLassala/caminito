@@ -132,7 +132,11 @@ impl XdgShellHandler for State {
         if self.camino.mapped_for_surface(&root).is_none() {
             return;
         }
-        let Ok(mut grab) = self.camino.popups.grab_popup(root, popup, &seat, serial) else {
+        let Ok(mut grab) = self
+            .camino
+            .popups
+            .grab_popup(root.into(), popup, &seat, serial)
+        else {
             return;
         };
 

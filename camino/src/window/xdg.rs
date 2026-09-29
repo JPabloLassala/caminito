@@ -8,15 +8,16 @@ use camino_policy::{SizeHints, WindowStates, WindowType};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{DisplayHandle, Resource};
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
 use smithay::wayland::xdg_toplevel_icon::ToplevelIconCachedState;
 
-use super::{Adapter, PreMapConfigure, WindowKey};
+use super::{Adapter, PreMapConfigure, Skips, WindowKey};
 use crate::decoration::IconSource;
 use crate::handlers::kde_server_side;
+use crate::input::KeyboardFocus;
 
 /// The client asked for a state, so it's owed a configure even if nothing changed.
 #[derive(Default)]
@@ -107,7 +108,10 @@ impl Adapter for ToplevelSurface {
         })
     }
 
-    fn requested_position(&self) -> Option<Point<i32, Logical>> {
+    fn requested_position(
+        &self,
+        _extents: FrameExtents<i32, Logical>,
+    ) -> Option<Point<i32, Logical>> {
         // xdg toplevels can't ask for a position.
         None
     }
@@ -151,6 +155,20 @@ impl Adapter for ToplevelSurface {
 
     fn parent(&self) -> Option<WindowKey> {
         ToplevelSurface::parent(self).map(WindowKey::Wayland)
+    }
+
+    /// xdg-activation's urgency comes with focus-stealing prevention in M8.
+    fn urgent(&self) -> bool {
+        false
+    }
+
+    fn takes_input(&self) -> bool {
+        true
+    }
+
+    /// Only foreign-toplevel's clients would ask, and they come in M5.
+    fn skips(&self) -> Skips {
+        Skips::default()
     }
 
     fn set_geometry(&self, geometry: Rectangle<i32, Logical>, states: WindowStates) {
@@ -204,5 +222,9 @@ impl Adapter for ToplevelSurface {
         if self.is_initial_configure_sent() {
             self.send_pending_configure();
         }
+    }
+
+    fn keyboard_target(&self) -> KeyboardFocus {
+        KeyboardFocus::Surface(self.wl_surface().clone())
     }
 }

@@ -22,7 +22,11 @@ expression: dump
         "top": 31,
         "bottom": 1
       },
-      "strip_scale": 1
+      "strip_scale": 1,
+      "xwayland": false,
+      "urgent": false,
+      "skip_taskbar": false,
+      "skip_pager": false
     },
     {
       "id": 1,
@@ -37,7 +41,11 @@ expression: dump
       },
       "decorations": "csd",
       "frame_extents": null,
-      "strip_scale": null
+      "strip_scale": null,
+      "xwayland": false,
+      "urgent": false,
+      "skip_taskbar": false,
+      "skip_pager": false
     }
   ],
   "workspaces": [
