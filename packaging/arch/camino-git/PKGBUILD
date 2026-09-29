@@ -64,7 +64,9 @@ check() {
   cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  dbus-run-session -- cargo test --frozen
+  # In release, so the tests reuse build()'s dependencies instead of compiling them again
+  # in debug. CI runs them in debug.
+  dbus-run-session -- cargo test --frozen --release
 }
 
 package() {
