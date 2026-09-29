@@ -94,3 +94,24 @@ fn going_fullscreen_or_maximising_vertically_unshades_as_marco_does() {
     assert!(!policy.is_shaded(id(2)));
     assert!(policy.is_shaded(id(3)));
 }
+
+#[test]
+fn a_shaded_windows_frame_is_its_shaded_titlebar() {
+    let mut policy = Policy::new(Config::default());
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.add_output(output(2, 0, 1080, 1920, 1080));
+    // The window sits just inside the second output, and its 30px titlebar reaches up onto
+    // the first. The shaded titlebar is 10px, so it doesn't.
+    policy.map_window(
+        TestWindow::new(1, 400, 300)
+            .with_frame(5, 5, 30, 5)
+            .with_shaded_top(10)
+            .with_requested_position(100, 1100),
+        ms(1),
+    );
+
+    policy.set_shaded(id(1), true);
+
+    assert_eq!(policy.frame_extents(id(1)).top, 10);
+    assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(2)][..]));
+}

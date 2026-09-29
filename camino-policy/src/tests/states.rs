@@ -299,3 +299,46 @@ fn lowering_keeps_transients_above_their_parent() {
     // Marco lowers only the window; its transient stays where it was, above it.
     assert_eq!(policy.stacking(0), [id(2), id(1), id(3)]);
 }
+
+#[test]
+fn a_maximised_frame_fills_the_work_area_whether_its_window_is_focused_or_not() {
+    let mut policy = policy();
+    let mut w = TestWindow::new(1, 400, 300)
+        .with_frame(5, 5, 25, 5)
+        .with_unfocused_border(1);
+    w.maximized_extents = FrameExtents::new(0, 0, 20, 0);
+    policy.map_window(w, ms(1));
+    policy.set_maximized(id(1), true);
+    assert_eq!(
+        window(&policy, 1).last_geometry().unwrap().0,
+        rect(0, 20, 1920, 1060)
+    );
+
+    // Another window takes the focus, and the unfocused frame has borders.
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    assert!(!window(&policy, 1).is_activated());
+    assert_eq!(
+        window(&policy, 1).last_geometry().unwrap().0,
+        rect(1, 20, 1918, 1059)
+    );
+    assert_eq!(policy.frame_extents(id(1)), FrameExtents::new(1, 1, 20, 1));
+
+    policy.activate(SEAT, id(1), ms(3));
+    assert_eq!(
+        window(&policy, 1).last_geometry().unwrap().0,
+        rect(0, 20, 1920, 1060)
+    );
+}
+
+#[test]
+fn a_csd_or_fullscreen_window_has_no_frame_extents() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300).with_frame(5, 5, 25, 5), ms(2));
+    assert_eq!(policy.frame_extents(id(1)), FrameExtents::default());
+    assert_eq!(policy.frame_extents(id(2)), FrameExtents::new(5, 5, 25, 5));
+
+    policy.set_fullscreen(id(2), true, None);
+
+    assert_eq!(policy.frame_extents(id(2)), FrameExtents::default());
+}

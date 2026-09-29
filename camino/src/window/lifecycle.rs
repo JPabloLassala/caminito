@@ -4,7 +4,7 @@
 //! into this module's: created, pending state request, committed content, withdrawn and
 //! destroyed.
 
-use camino_policy::{OutputId, SizeHints, WindowId};
+use camino_policy::{FrameState, OutputId, SizeHints, WindowId};
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -12,7 +12,7 @@ use smithay::utils::{FrameExtents, Logical, Size};
 use smithay::wayland::seat::WaylandFocus;
 
 use super::{Mapped, PreMapConfigure, WindowKey, adapter};
-use crate::decoration::style::{FrameFacts, frame_style};
+use crate::decoration::WindowFacts;
 use crate::state::Camino;
 
 /// A window its client has asked to show, which Camino doesn't manage until it has
@@ -142,18 +142,24 @@ impl Camino {
         self.pending.get(key).is_some()
     }
 
-    /// A managed window's facts changed: reads its frame facts again, then has policy read
-    /// the rest.
+    /// A managed window's facts changed: reads them again, then has policy read them.
     pub(crate) fn window_changed(&mut self, id: WindowId) {
+        if self.read_window_facts(id) {
+            self.policy.commit(id);
+            self.queue_redraw_all();
+        }
+    }
+
+    /// Reads a managed window's facts again, which policy must be told of next: the one
+    /// place they're read after it maps. Returns whether the window is managed.
+    pub(crate) fn read_window_facts(&mut self, id: WindowId) -> bool {
         let Some(mapped) = self.policy.window(id) else {
-            return;
+            return false;
         };
         let parent = self.transient_parent(mapped.window());
         let mapped = self.policy.window_mut(id).unwrap();
-        mapped.set_parent(parent);
-        mapped.update_frame_facts(&self.frame_context);
-        self.policy.commit(id);
-        self.queue_redraw_all();
+        mapped.read_facts(parent, &self.frame_context);
+        true
     }
 
     /// Starts managing a pending window, with the states it asked for.
@@ -167,8 +173,7 @@ impl Camino {
             fullscreen,
         } = pending;
         let mut mapped = Mapped::new(id, window);
-        mapped.set_parent(self.transient_parent(mapped.window()));
-        mapped.update_frame_facts(&self.frame_context);
+        mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
 
         let now = self.now();
         self.policy.map_window(mapped, now);
@@ -233,20 +238,20 @@ impl Camino {
             return Default::default();
         }
         let has_parent = self.transient_parent(window).is_some();
+        let facts = WindowFacts {
+            window_type: adapter.window_type(has_parent),
+            has_parent,
+            hints: SizeHints::default(),
+            wants_frame: true,
+        };
         let extents = |maximized| {
-            let facts = FrameFacts {
-                window_type: adapter.window_type(has_parent),
-                has_parent,
-                hints: SizeHints::default(),
-                // A new window is focused.
-                activated: true,
+            let state = FrameState {
                 maximized,
-                fullscreen: false,
+                // A new window is focused.
+                focused: true,
                 shaded: false,
             };
-            frame_style(&facts, self.frame_context.attach_modal_dialogs())
-                .map(|(frame_type, flags)| self.frame_context.extents(frame_type, &flags))
-                .unwrap_or_default()
+            self.frame_context.extents(&facts, state)
         };
         (extents(false), extents(true))
     }

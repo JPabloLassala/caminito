@@ -13,7 +13,9 @@ pub(crate) use lifecycle::StateRequest;
 pub(crate) use x11::{configure_request_geometry, request_demands_attention, request_modal};
 pub(crate) use xdg::owe_configure;
 
-use camino_policy::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
+use camino_policy::{
+    FrameState, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
+};
 use camino_theme::PaletteColors;
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::{Window, WindowSurface};
@@ -25,8 +27,7 @@ use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::xwm::X11Window;
 
-use crate::decoration::style::{FrameFacts, frame_style};
-use crate::decoration::{FrameContext, FrameInputs, IconSource, WindowFrame};
+use crate::decoration::{FrameContent, FrameContext, IconSource, WindowFacts, WindowFrame};
 use crate::input::KeyboardFocus;
 use crate::output::{output_geometry, output_id};
 use crate::state::Camino;
@@ -163,11 +164,6 @@ pub struct Mapped {
     activated: bool,
     /// The states policy last asked for.
     states: WindowStates,
-    /// Whether Camino draws a frame, and its extents unmaximised and maximised, as policy
-    /// last read them.
-    ssd: bool,
-    extents: FrameExtents<i32, Logical>,
-    maximized_extents: FrameExtents<i32, Logical>,
     /// The largest rounded-up scale of the outputs the window is on, which its strips are
     /// drawn at (13).
     frame_scale: i32,
@@ -184,9 +180,6 @@ impl Mapped {
             primary_output: None,
             activated: false,
             states: WindowStates::default(),
-            ssd: false,
-            extents: FrameExtents::default(),
-            maximized_extents: FrameExtents::default(),
             frame_scale: 1,
             frame: WindowFrame::default(),
         }
@@ -205,9 +198,17 @@ impl Mapped {
         self.window.wl_surface().map(|surface| surface.into_owned())
     }
 
-    /// Records the managed window this one is transient for.
-    pub fn set_parent(&mut self, parent: Option<WindowId>) {
+    /// Reads the window's facts again: the managed window it's transient for, and what its
+    /// frame is derived from. Policy reads them next.
+    pub fn read_facts(&mut self, parent: Option<WindowId>, frame_context: &FrameContext) {
         self.parent = parent;
+        let facts = WindowFacts {
+            window_type: self.window_type(),
+            has_parent: parent.is_some(),
+            hints: self.size_hints(),
+            wants_frame: self.adapter().wants_frame(),
+        };
+        self.frame.set_facts(facts, frame_context);
     }
 
     /// Sends the client what policy has asked of it since the last flush, if anything.
@@ -280,7 +281,7 @@ impl Mapped {
 
     /// Whether the window shows a frame now: SSD, and not fullscreen.
     pub fn shows_frame(&self) -> bool {
-        self.ssd && !self.states.fullscreen
+        self.frame.is_ssd() && !self.states.fullscreen
     }
 
     /// Whether the window is shaded, so only its frame's titlebar shows.
@@ -288,56 +289,29 @@ impl Mapped {
         self.states.shaded
     }
 
-    fn frame_facts(&self, maximized: bool) -> FrameFacts {
-        FrameFacts {
-            window_type: self.window_type(),
-            has_parent: self.parent.is_some(),
-            hints: self.size_hints(),
-            activated: self.activated,
-            maximized,
-            fullscreen: self.states.fullscreen,
-            shaded: self.states.shaded,
-        }
-    }
-
-    /// Asks the adapter whether the window wants a frame, and works out the frame's
-    /// extents, for policy to read next.
-    pub fn update_frame_facts(&mut self, frame_context: &FrameContext) {
-        let attach = frame_context.attach_modal_dialogs();
-        let style = |maximized| frame_style(&self.frame_facts(maximized), attach);
-        let extents = |maximized| {
-            style(maximized)
-                .map(|(frame_type, flags)| frame_context.extents(frame_type, &flags))
-                .unwrap_or_default()
-        };
-        let ssd = self.adapter().wants_frame() && style(false).is_some();
-        (self.extents, self.maximized_extents) = (extents(false), extents(true));
-        self.ssd = ssd;
-    }
-
     /// Draws the frame's strips again if anything they're drawn from changed, or drops them
-    /// if the window shows no frame. Returns whether the strips changed.
+    /// if the window shows no frame. They're drawn in the state policy last sent, the one
+    /// it laid the window out in (ADR 0012). Returns whether the strips changed.
     pub fn refresh_frame(
         &mut self,
         frame_context: &mut FrameContext,
         colors: &PaletteColors,
     ) -> bool {
-        let style = frame_style(
-            &self.frame_facts(self.states.maximized),
-            frame_context.attach_modal_dialogs(),
-        );
-        let Some((frame_type, flags)) = style.filter(|_| self.shows_frame()) else {
+        if self.states.fullscreen {
             return self.frame.clear();
+        }
+        let state = FrameState {
+            maximized: self.states.maximized,
+            focused: self.activated,
+            shaded: self.states.shaded,
         };
-        let inputs = FrameInputs {
-            frame_type,
-            flags,
+        let content = FrameContent {
             size: self.size(),
             title: self.title(),
             icon: self.adapter().icon(),
             scale: self.frame_scale,
         };
-        self.frame.update(frame_context, colors, inputs)
+        self.frame.refresh(frame_context, colors, state, content)
     }
 
     pub fn title(&self) -> String {
@@ -369,15 +343,6 @@ impl Mapped {
     pub(crate) fn x11_window(&self) -> Option<X11Window> {
         self.window.x11_surface().map(|surface| surface.window_id())
     }
-
-    /// The frame's extents, while the window has a frame.
-    pub(crate) fn visible_extents(&self) -> FrameExtents<i32, Logical> {
-        if self.ssd {
-            self.extents
-        } else {
-            FrameExtents::default()
-        }
-    }
 }
 
 impl PolicyWindow for Mapped {
@@ -401,8 +366,11 @@ impl PolicyWindow for Mapped {
         self.adapter().size_hints()
     }
 
-    fn requested_position(&self) -> Option<Point<i32, Logical>> {
-        self.adapter().requested_position(self.visible_extents())
+    fn requested_position(
+        &self,
+        extents: FrameExtents<i32, Logical>,
+    ) -> Option<Point<i32, Logical>> {
+        self.adapter().requested_position(extents)
     }
 
     fn takes_input(&self) -> bool {
@@ -418,15 +386,11 @@ impl PolicyWindow for Mapped {
     }
 
     fn is_ssd(&self) -> bool {
-        self.ssd
+        self.frame.is_ssd()
     }
 
-    fn frame_extents(&self, maximized: bool) -> FrameExtents<i32, Logical> {
-        if maximized {
-            self.maximized_extents
-        } else {
-            self.extents
-        }
+    fn frame_extents(&self, state: FrameState) -> FrameExtents<i32, Logical> {
+        self.frame.extents(state)
     }
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {

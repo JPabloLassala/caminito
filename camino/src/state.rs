@@ -534,8 +534,7 @@ impl Camino {
 
     /// Reads a window's frame again, and has policy lay it out by it.
     fn update_frame(&mut self, id: WindowId) {
-        if let Some(mapped) = self.policy.window_mut(id) {
-            mapped.update_frame_facts(&self.frame_context);
+        if self.read_window_facts(id) {
             self.policy.frame_changed(id);
         }
     }

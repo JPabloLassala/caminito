@@ -32,6 +32,10 @@ _Avoid_: panel window, dock window
 The decoration Camino draws around a window from the Marco theme: titlebar, buttons and borders, plus the invisible resize border. The shadow isn't part of the frame.
 _Avoid_: decoration (for Camino's own drawing), border, titlebar (for the whole)
 
+**Frame extents**:
+How far a window's frame reaches beyond the window on each side. The theme sets them from the window's type and its state: focused or not, maximised, shaded. A focus change can change them. They're zero for a CSD or fullscreen window.
+_Avoid_: borders (the theme's term for one part of them), decoration size
+
 **SSD window**:
 A window that Camino draws a frame for.
 _Avoid_: decorated window

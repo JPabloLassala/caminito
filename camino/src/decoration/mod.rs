@@ -2,14 +2,18 @@
 //! strips, and the colours they're drawn with.
 //!
 //! [`FrameContext`] holds what every frame is drawn with: the theme, the title font and how
-//! it's rendered, the button layout and the icon theme. Each window's [`WindowFrame`] keeps
-//! its strips as `MemoryRenderBuffer`s, and draws them again only when something they're
-//! drawn from changes.
+//! it's rendered, the button layout and the icon theme. Each window's [`WindowFrame`] derives
+//! its frame from the window's [`WindowFacts`] and a [`FrameState`] (ADR 0012): whether the
+//! window is SSD, its extents in every state, and its strips as `MemoryRenderBuffer`s, which
+//! it draws again only when something they're drawn from changes.
 
 pub mod control;
 pub mod palette;
 pub mod style;
+#[cfg(test)]
+mod tests;
 
+use camino_policy::{FrameState, SizeHints, WindowType};
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use camino_theme::{
     ButtonFunction, ButtonLayout, ButtonStates, Frame, FrameFlags, FrameGeometry, FrameType,
@@ -22,6 +26,7 @@ use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::shm::with_buffer_contents;
 
 use crate::decoration::control::FrameControl;
+use crate::decoration::style::{FrameFacts, frame_style};
 use crate::icons::{IconLookup, load_icon};
 use crate::settings::Settings;
 use crate::settings::translate::{Antialiasing, FontRendering, Hinting, RgbaOrder};
@@ -117,9 +122,40 @@ impl FrameContext {
         self.attach_modal_dialogs
     }
 
-    /// The frame's visible borders around the window geometry, which policy places and
-    /// maximises by. The invisible resize border lies outside them.
-    pub fn extents(&self, frame_type: FrameType, flags: &FrameFlags) -> FrameExtents<i32, Logical> {
+    /// The extents of the frame a window of `facts` has in `state`, which policy places and
+    /// maximises by: none if it has no frame. A pending window's are worked out here too,
+    /// before it has a [`WindowFrame`].
+    pub fn extents(&self, facts: &WindowFacts, state: FrameState) -> FrameExtents<i32, Logical> {
+        self.style(facts, state)
+            .map(|(frame_type, flags)| self.visible_borders(frame_type, &flags))
+            .unwrap_or_default()
+    }
+
+    /// The frame type and flags Marco draws a window of `facts` with in `state`, or `None`
+    /// if it has no frame. A fullscreen window shows no frame, so it's never asked for.
+    fn style(&self, facts: &WindowFacts, state: FrameState) -> Option<(FrameType, FrameFlags)> {
+        if !facts.wants_frame {
+            return None;
+        }
+        let facts = FrameFacts {
+            window_type: facts.window_type,
+            has_parent: facts.has_parent,
+            hints: facts.hints,
+            activated: state.focused,
+            maximized: state.maximized,
+            fullscreen: false,
+            shaded: state.shaded,
+        };
+        frame_style(&facts, self.attach_modal_dialogs)
+    }
+
+    /// The frame's visible borders around the window geometry. The invisible resize border
+    /// lies outside them.
+    fn visible_borders(
+        &self,
+        frame_type: FrameType,
+        flags: &FrameFlags,
+    ) -> FrameExtents<i32, Logical> {
         let title = self.title(frame_type, flags, "");
         let visible = self
             .theme
@@ -187,9 +223,32 @@ pub enum IconSource {
     AppId(Option<String>),
 }
 
+/// What a window's frame is derived from besides its [`FrameState`]: facts that change only
+/// when the window commits or its decoration mode changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowFacts {
+    pub window_type: WindowType,
+    /// It's transient for a managed window.
+    pub has_parent: bool,
+    pub hints: SizeHints,
+    /// It wants Camino's frame.
+    pub wants_frame: bool,
+}
+
+/// What a window's strips show of it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameContent {
+    /// The window geometry's size.
+    pub size: Size<i32, Logical>,
+    pub title: String,
+    pub icon: IconSource,
+    /// The integer scale the strips are drawn at (13).
+    pub scale: i32,
+}
+
 /// What a window's strips are drawn from, besides [`FrameContext`].
 #[derive(Debug, Clone, PartialEq)]
-pub struct FrameInputs {
+struct FrameInputs {
     pub frame_type: FrameType,
     pub flags: FrameFlags,
     /// The window geometry's size.
@@ -217,9 +276,14 @@ struct WindowIcons {
     full: Option<ImageSurface>,
 }
 
-/// One window's frame: its strips, and what they were last drawn from.
+/// One window's frame: whether it has one, its extents in every state, its strips, and what
+/// they were last drawn from.
 #[derive(Debug, Default)]
 pub struct WindowFrame {
+    facts: Option<WindowFacts>,
+    ssd: bool,
+    /// The extents in each [`FrameState`], by [`state_index`].
+    extents: [FrameExtents<i32, Logical>; 8],
     drawn: Option<(FrameInputs, ButtonStates, u64)>,
     /// Where everything was when the strips were last drawn, which the pointer finds the
     /// frame's controls by.
@@ -230,10 +294,74 @@ pub struct WindowFrame {
     renders: u64,
 }
 
+/// Where a state's extents are in [`WindowFrame::extents`].
+fn state_index(state: FrameState) -> usize {
+    usize::from(state.maximized) << 2 | usize::from(state.focused) << 1 | usize::from(state.shaded)
+}
+
 impl WindowFrame {
+    /// Takes up the window's facts, or the theme they're framed with: works out again
+    /// whether the window is SSD, and its extents in every state.
+    pub fn set_facts(&mut self, facts: WindowFacts, frame_context: &FrameContext) {
+        self.ssd = frame_context.style(&facts, FrameState::default()).is_some();
+        for (index, extents) in self.extents.iter_mut().enumerate() {
+            let state = FrameState {
+                maximized: index & 4 != 0,
+                focused: index & 2 != 0,
+                shaded: index & 1 != 0,
+            };
+            debug_assert_eq!(state_index(state), index);
+            *extents = frame_context.extents(&facts, state);
+        }
+        self.facts = Some(facts);
+    }
+
+    /// Whether Camino draws a frame for the window.
+    pub fn is_ssd(&self) -> bool {
+        self.ssd
+    }
+
+    /// The frame's extents in `state`: none for a CSD window.
+    pub fn extents(&self, state: FrameState) -> FrameExtents<i32, Logical> {
+        self.extents[state_index(state)]
+    }
+
+    /// Draws the strips for `content` in `state` again if anything they're drawn from changed
+    /// since they were last drawn, or drops them if the window has no frame. Returns whether
+    /// the strips changed.
+    pub fn refresh(
+        &mut self,
+        frame_context: &mut FrameContext,
+        colors: &PaletteColors,
+        state: FrameState,
+        content: FrameContent,
+    ) -> bool {
+        let style = self
+            .facts
+            .and_then(|facts| frame_context.style(&facts, state));
+        let Some((frame_type, flags)) = style else {
+            return self.clear();
+        };
+        let FrameContent {
+            size,
+            title,
+            icon,
+            scale,
+        } = content;
+        let inputs = FrameInputs {
+            frame_type,
+            flags,
+            size,
+            title,
+            icon,
+            scale,
+        };
+        self.update(frame_context, colors, inputs)
+    }
+
     /// Draws the strips again if anything they're drawn from changed since they were last
     /// drawn. Returns whether it did.
-    pub fn update(
+    fn update(
         &mut self,
         frame_context: &mut FrameContext,
         colors: &PaletteColors,

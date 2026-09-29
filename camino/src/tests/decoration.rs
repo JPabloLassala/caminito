@@ -1,7 +1,7 @@
 //! SSD frames (07, 30): decoration-mode negotiation, frame extents in placement and
 //! maximise, when strips are drawn again, and the scale they're drawn at.
 
-use camino_policy::PolicyWindow;
+use camino_policy::{FrameState, PolicyWindow};
 use camino_test_client::{DecorationMode, KdeMode, WindowId, format_configures};
 use camino_theme::{ButtonStates, Frame, FrameFlags, FrameType, Strip, Variant};
 use insta::assert_snapshot;
@@ -152,7 +152,8 @@ fn kde_server_decoration_defaults_to_server_side_and_grants_what_is_asked() {
 fn a_frame_is_placed_where_a_window_of_the_frames_size_would_be() {
     let (mut f, id) = Fixture::connected();
     let window = map_with_mode(&mut f, id, Some(DecorationMode::ServerSide), (200, 100));
-    let e = mapped(&mut f, id, window).frame_extents(false);
+    let policy_id = f.policy_id(id, window).unwrap();
+    let e = f.state.camino.policy.frame_extents(policy_id);
     assert!(e.top > 0, "the frame has a titlebar");
     let geometry = geometry(&mut f, id, window);
 
@@ -180,7 +181,11 @@ fn maximising_fits_the_maximised_frame_in_the_work_area() {
         top,
         bottom,
         ..
-    } = mapped(&mut f, id, window).frame_extents(true);
+    } = mapped(&mut f, id, window).frame_extents(FrameState {
+        maximized: true,
+        focused: true,
+        shaded: false,
+    });
 
     f.client(id).set_maximized(window);
     f.roundtrip(id);
@@ -399,7 +404,8 @@ fn a_new_theme_font_or_button_layout_applies_to_open_windows() {
     let policy_id = f.policy_id(id, window).unwrap();
     let mapped = |f: &Fixture| {
         let mapped = f.state.camino.policy.window(policy_id).unwrap();
-        (mapped.frame().renders(), mapped.frame_extents(false))
+        let extents = f.state.camino.policy.frame_extents(policy_id);
+        (mapped.frame().renders(), extents)
     };
     let (_, menta) = mapped(&f);
 

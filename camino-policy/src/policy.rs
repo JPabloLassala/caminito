@@ -9,7 +9,8 @@ use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
-    Action, Output, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
+    Action, FrameState, Output, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates,
+    WindowType,
 };
 
 /// A seat, as the compositor numbers them.
@@ -100,8 +101,8 @@ struct Managed<W> {
     size: Size<i32, Logical>,
     hints: SizeHints,
     ssd: bool,
-    extents: FrameExtents<i32, Logical>,
-    maximized_extents: FrameExtents<i32, Logical>,
+    /// Focused by some seat, as policy lays it out: the frame extents can depend on it.
+    activated: bool,
     /// The edges and starting geometry of an interactive resize in progress.
     resize: Option<(ResizeEdges, Rectangle<i32, Logical>)>,
     maximized_horizontally: bool,
@@ -125,9 +126,40 @@ impl<W: PolicyWindow> Managed<W> {
     /// Re-reads the frame. A window that no longer has one can't stay shaded.
     fn read_frame(&mut self) {
         self.ssd = self.window.is_ssd();
-        self.extents = self.window.frame_extents(false);
-        self.maximized_extents = self.window.frame_extents(true);
         self.shaded &= self.ssd;
+    }
+
+    /// The frame's extents, or none when the window has no frame showing.
+    fn visible_extents(&self) -> FrameExtents<i32, Logical> {
+        if self.ssd && !self.fullscreen {
+            self.window.frame_extents(self.frame_state())
+        } else {
+            FrameExtents::default()
+        }
+    }
+
+    /// The frame's extents once unmaximised: the frame around the floating geometry.
+    fn floating_extents(&self) -> FrameExtents<i32, Logical> {
+        if self.ssd {
+            self.window.frame_extents(FrameState {
+                maximized: false,
+                ..self.frame_state()
+            })
+        } else {
+            FrameExtents::default()
+        }
+    }
+
+    /// The window's outer rectangle: its committed geometry plus the frame, if it has one.
+    /// A shaded window is only its frame's titlebar, which Marco's shaded styles keep the
+    /// height of.
+    fn frame(&self) -> Rectangle<i32, Logical> {
+        let e = self.visible_extents();
+        let mut frame = frame_around(Rectangle::new(self.geometry.loc, self.size), e);
+        if self.shaded {
+            frame.size.h = e.top;
+        }
+        frame
     }
 }
 
@@ -179,29 +211,12 @@ impl<W> Managed<W> {
         }
     }
 
-    /// The frame's extents, or none when the window has no frame showing.
-    fn visible_extents(&self) -> FrameExtents<i32, Logical> {
-        if self.ssd && !self.fullscreen {
-            if self.maximized() {
-                self.maximized_extents
-            } else {
-                self.extents
-            }
-        } else {
-            FrameExtents::default()
+    fn frame_state(&self) -> FrameState {
+        FrameState {
+            maximized: self.maximized(),
+            focused: self.activated,
+            shaded: self.shaded,
         }
-    }
-
-    /// The window's outer rectangle: its committed geometry plus the frame, if it has one.
-    /// A shaded window is only its frame's titlebar, which Marco's shaded styles keep the
-    /// height of.
-    fn frame(&self) -> Rectangle<i32, Logical> {
-        let e = self.visible_extents();
-        let mut frame = frame_around(Rectangle::new(self.geometry.loc, self.size), e);
-        if self.shaded {
-            frame.size.h = e.top;
-        }
-        frame
     }
 }
 
@@ -316,8 +331,6 @@ impl<W: PolicyWindow> Policy<W> {
         let takes_input = window.takes_input();
         let hints = window.size_hints();
         let ssd = window.is_ssd();
-        let extents = window.frame_extents(false);
-        let maximized_extents = window.frame_extents(true);
         let parent = window
             .transient_parent()
             .filter(|p| self.windows.contains_key(p));
@@ -333,8 +346,7 @@ impl<W: PolicyWindow> Policy<W> {
                 size,
                 hints,
                 ssd,
-                extents,
-                maximized_extents,
+                activated: false,
                 resize: None,
                 maximized_horizontally: false,
                 maximized_vertically: false,
@@ -896,6 +908,15 @@ impl<W: PolicyWindow> Policy<W> {
             .is_some_and(|m| m.maximized_vertically)
     }
 
+    /// The frame extents policy lays the window out with: none for a CSD or fullscreen
+    /// window. What the debug dump shows and `_NET_FRAME_EXTENTS` publishes (39).
+    pub fn frame_extents(&self, id: WindowId) -> FrameExtents<i32, Logical> {
+        self.windows
+            .get(&id)
+            .map(Managed::visible_extents)
+            .unwrap_or_default()
+    }
+
     pub fn is_shaded(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.shaded)
     }
@@ -1105,11 +1126,7 @@ impl<W: PolicyWindow> Policy<W> {
             // The geometry to restore must land on an output too.
             let managed = &self.windows[&id];
             if let Some(floating) = managed.floating {
-                let e = if managed.ssd {
-                    managed.extents
-                } else {
-                    FrameExtents::default()
-                };
+                let e = managed.floating_extents();
                 let frame = frame_around(floating, e);
                 if self.output_of(frame).is_none() {
                     let frame_loc = placement::constrain(frame, area);
@@ -1154,15 +1171,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// Places a newly mapped window with Marco's automatic placement.
     fn place(&mut self, id: WindowId) {
         let managed = &self.windows[&id];
-        let (left, top) = if managed.ssd {
-            (managed.extents.left, managed.extents.top)
-        } else {
-            (0, 0)
-        };
+        let e = managed.visible_extents();
+        let (left, top) = (e.left, e.top);
         let frame_size = managed.frame().size;
         let size = managed.size;
 
-        let loc = if let Some(requested) = managed.window.requested_position() {
+        let loc = if let Some(requested) = managed.window.requested_position(e) {
             // Marco honours USPosition and PPosition with its workarounds on (the default).
             requested
         } else if let (WindowType::Dialog | WindowType::ModalDialog, Some(parent)) =
@@ -1354,6 +1368,20 @@ impl<W: PolicyWindow> Policy<W> {
         self.stacks = stacks;
 
         let focused: Vec<WindowId> = self.focus.values().copied().collect();
+        // A window's frame extents can change with its focus (ADR 0012).
+        let refocused: Vec<WindowId> = self
+            .windows
+            .iter_mut()
+            .filter_map(|(id, managed)| {
+                let activated = focused.contains(id);
+                let changed = managed.activated != activated;
+                managed.activated = activated;
+                (changed && managed.constrained()).then_some(*id)
+            })
+            .collect();
+        for id in refocused {
+            self.relayout(id);
+        }
         let showing: BTreeSet<WindowId> = self
             .windows
             .keys()

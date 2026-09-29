@@ -78,8 +78,7 @@ impl XwmHandler for State {
     ) {
         let camino = &mut self.camino;
         if let Some(id) = camino.mapped_for_key(&key(&window)) {
-            let mapped = camino.policy.window(id).unwrap();
-            let extents = mapped.visible_extents();
+            let extents = camino.policy.frame_extents(id);
             let requested = configure_request_geometry(&window, (x, y), (w, h), extents);
             camino
                 .policy

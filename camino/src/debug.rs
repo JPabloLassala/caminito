@@ -186,7 +186,7 @@ impl Camino {
                     },
                     frame_extents: mapped
                         .shows_frame()
-                        .then(|| mapped.frame_extents(policy.is_maximized(id)).into()),
+                        .then(|| policy.frame_extents(id).into()),
                     strip_scale: mapped.frame().drawn_scale(),
                     xwayland: mapped.window().is_x11(),
                     x11: mapped.x11_window().map(|window| X11Dump {

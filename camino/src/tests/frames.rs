@@ -1,7 +1,7 @@
 //! Using a frame as Marco's is used (07, 31): its buttons, titlebar and borders, the
 //! cursors over them, and shade.
 
-use camino_policy::{PolicyWindow, ResizeEdges};
+use camino_policy::ResizeEdges;
 use std::sync::Arc;
 
 use camino_test_client::x11::{WindowSpec, X11Client};
@@ -531,7 +531,7 @@ fn middle_and_right_clicks_on_the_titlebar_run_their_actions() {
 /// The visible frame around a window, globally.
 fn visible_frame(f: &Fixture, pid: PolicyId) -> Rectangle<i32, Logical> {
     let geometry = geometry(f, pid);
-    let e = mapped(f, pid).frame_extents(false);
+    let e = f.state.camino.policy.frame_extents(pid);
     Rectangle::new(
         geometry.loc - Point::from((e.left, e.top)),
         (

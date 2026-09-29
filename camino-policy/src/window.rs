@@ -56,11 +56,22 @@ pub struct WindowStates {
     pub resizing: bool,
 }
 
+/// The state of a window that its frame extents can depend on (ADR 0012), which policy lays
+/// the window out in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameState {
+    /// Maximised both ways.
+    pub maximized: bool,
+    /// Focused by some seat, so shown activated.
+    pub focused: bool,
+    pub shaded: bool,
+}
+
 /// A window as policy sees it: facts to read, and requests to apply decisions.
 ///
 /// Policy owns its `W` values. It reads the facts when a window maps, when it commits, and when
-/// the compositor says its frame changed, and calls each request only when what it asks for
-/// changes.
+/// the compositor says its frame changed, except the frame extents, which it asks for whenever
+/// it lays the window out. It calls each request only when what it asks for changes.
 pub trait PolicyWindow {
     // Facts.
 
@@ -73,8 +84,11 @@ pub trait PolicyWindow {
     fn size(&self) -> Size<i32, Logical>;
     fn size_hints(&self) -> SizeHints;
     /// A position the client asked for (X11's `USPosition` or `PPosition`), in global
-    /// logical coordinates of the window geometry.
-    fn requested_position(&self) -> Option<Point<i32, Logical>>;
+    /// logical coordinates of the window geometry, for a frame of `extents`.
+    fn requested_position(
+        &self,
+        extents: FrameExtents<i32, Logical>,
+    ) -> Option<Point<i32, Logical>>;
     /// Whether the window takes keyboard input at all (ICCCM's input model). One that
     /// doesn't isn't focused when it maps.
     fn takes_input(&self) -> bool;
@@ -83,10 +97,10 @@ pub trait PolicyWindow {
     fn app_id(&self) -> Option<String>;
     /// Whether Camino draws a frame for this window.
     fn is_ssd(&self) -> bool;
-    /// The frame's size around the window geometry, maximised or not, since a theme can draw
-    /// a maximised frame with other borders. Policy ignores it when the window isn't SSD, and
-    /// while it's fullscreen.
-    fn frame_extents(&self, maximized: bool) -> FrameExtents<i32, Logical>;
+    /// The frame's size around the window geometry in `state`, since a theme can draw a
+    /// maximised, unfocused or shaded frame with other borders. Policy ignores it when the
+    /// window isn't SSD, and while it's fullscreen.
+    fn frame_extents(&self, state: FrameState) -> FrameExtents<i32, Logical>;
 
     // Requests.
 

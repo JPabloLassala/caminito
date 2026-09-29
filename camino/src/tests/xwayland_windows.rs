@@ -138,7 +138,7 @@ fn a_window_with_us_position_is_placed_where_it_asked() {
     );
 
     // Its gravity is north-west, so its frame's corner goes where it asked (ICCCM 4.1.2.3).
-    let extents = mapped(&f, window).frame_extents(false);
+    let extents = f.state.camino.policy.frame_extents(policy_id(&f, window));
     let at = Point::from((300 + extents.left, 200 + extents.top));
     assert_eq!(geometry(&f, window).loc, at);
     f.dispatch_until(|_| true);
@@ -153,7 +153,7 @@ fn a_configure_request_is_honoured_for_a_floating_window_and_refused_for_a_maxim
     f.x11_call(&x, move |x| x.configure(window, (100, 150), (500, 400)))
         .unwrap();
     f.dispatch_until(|f| geometry(f, window).size == (500, 400).into());
-    let extents = mapped(&f, window).frame_extents(false);
+    let extents = f.state.camino.policy.frame_extents(policy_id(&f, window));
     assert_eq!(
         geometry(&f, window).loc,
         Point::from((100 + extents.left, 150 + extents.top))

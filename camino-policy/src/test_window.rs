@@ -2,7 +2,7 @@
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
-use crate::{OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
+use crate::{FrameState, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
 
 /// A request policy made on a `TestWindow`.
 #[derive(Debug, Clone, PartialEq)]
@@ -26,6 +26,11 @@ pub struct TestWindow {
     pub extents: FrameExtents<i32, Logical>,
     /// The frame's extents while maximised.
     pub maximized_extents: FrameExtents<i32, Logical>,
+    /// How much wider the side and bottom borders are while the window isn't focused, as in
+    /// eOS's maximised utility frames.
+    pub unfocused_border: i32,
+    /// The frame's top while shaded, if the theme's shaded style gives it another.
+    pub shaded_top: Option<i32>,
     pub calls: Vec<Call>,
 }
 
@@ -43,6 +48,8 @@ impl TestWindow {
             ssd: false,
             extents: FrameExtents::default(),
             maximized_extents: FrameExtents::default(),
+            unfocused_border: 0,
+            shaded_top: None,
             calls: Vec::new(),
         }
     }
@@ -62,6 +69,18 @@ impl TestWindow {
         self.ssd = true;
         self.extents = FrameExtents::new(left, right, top, bottom);
         self.maximized_extents = self.extents;
+        self
+    }
+
+    /// Widens the side and bottom borders by `border` while the window isn't focused.
+    pub fn with_unfocused_border(mut self, border: i32) -> Self {
+        self.unfocused_border = border;
+        self
+    }
+
+    /// Gives the frame a top of `top` while shaded.
+    pub fn with_shaded_top(mut self, top: i32) -> Self {
+        self.shaded_top = Some(top);
         self
     }
 
@@ -132,7 +151,10 @@ impl PolicyWindow for TestWindow {
         self.hints
     }
 
-    fn requested_position(&self) -> Option<Point<i32, Logical>> {
+    fn requested_position(
+        &self,
+        _extents: FrameExtents<i32, Logical>,
+    ) -> Option<Point<i32, Logical>> {
         self.requested_position
     }
 
@@ -152,12 +174,21 @@ impl PolicyWindow for TestWindow {
         self.ssd
     }
 
-    fn frame_extents(&self, maximized: bool) -> FrameExtents<i32, Logical> {
-        if maximized {
+    fn frame_extents(&self, state: FrameState) -> FrameExtents<i32, Logical> {
+        let mut extents = if state.maximized {
             self.maximized_extents
         } else {
             self.extents
+        };
+        if !state.focused {
+            extents.left += self.unfocused_border;
+            extents.right += self.unfocused_border;
+            extents.bottom += self.unfocused_border;
         }
+        if let Some(top) = self.shaded_top.filter(|_| state.shaded) {
+            extents.top = top;
+        }
+        extents
     }
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {

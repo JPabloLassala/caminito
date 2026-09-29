@@ -20,4 +20,4 @@ pub use action::Action;
 pub use output::{Output, OutputId};
 pub use policy::{Config, MAX_WORKSPACES, Policy, ResizeEdges, SeatId, default_workspace_name};
 pub use stack::Layer;
-pub use window::{PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
+pub use window::{FrameState, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};

@@ -6,7 +6,7 @@ use proptest::prelude::*;
 use super::*;
 use smithay::utils::Size;
 
-use crate::ResizeEdges;
+use crate::{FrameState, PolicyWindow, ResizeEdges};
 
 const SEATS: u32 = 2;
 
@@ -145,7 +145,12 @@ fn test_window() -> impl Strategy<Value = TestWindow> {
             window.input = input;
             window.parent = parent.map(WindowId);
             if ssd {
-                window = window.with_frame(5, 5, 25, 5);
+                // A theme whose extents depend on the state, as eOS's do.
+                window = window
+                    .with_frame(5, 5, 25, 5)
+                    .with_unfocused_border(1)
+                    .with_shaded_top(20);
+                window.maximized_extents = smithay::utils::FrameExtents::new(0, 0, 22, 0);
             }
             if let Some((x, y)) = requested {
                 window = window.with_requested_position(x, y);
@@ -346,9 +351,21 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
             policy.is_maximized(id),
             policy.is_maximized_horizontally(id) && policy.is_maximized_vertically(id)
         );
-        if let Some((_, states)) = policy.window(id).unwrap().last_geometry() {
+        let window = policy.window(id).unwrap();
+        if let Some((_, states)) = window.last_geometry() {
             assert_eq!(states.maximized, policy.is_maximized(id), "{id:?}'s states");
             assert_eq!(states.shaded, policy.is_shaded(id), "{id:?}'s states");
+            // Policy lays the window out with the frame drawn for what it was last sent.
+            let drawn = if window.ssd && !states.fullscreen {
+                window.frame_extents(FrameState {
+                    maximized: states.maximized,
+                    focused: window.is_activated(),
+                    shaded: states.shaded,
+                })
+            } else {
+                smithay::utils::FrameExtents::default()
+            };
+            assert_eq!(policy.frame_extents(id), drawn, "{id:?}'s frame extents");
         }
     }
 
