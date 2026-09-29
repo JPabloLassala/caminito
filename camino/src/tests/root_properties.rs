@@ -197,7 +197,7 @@ fn the_work_area_covers_both_outputs_and_each_desktop_lists_each_output() {
 }
 
 #[test]
-fn display_is_set_only_once_the_root_properties_exist() {
+fn display_is_set_only_once_the_root_properties_and_xsettings_exist() {
     let mut f = Fixture::new();
     f.add_output((1920, 1080), 1.0);
     f.state.camino.start_xwayland();
@@ -254,6 +254,13 @@ fn display_is_set_only_once_the_root_properties_exist() {
                 unreachable!("the root has a WINDOW property");
             };
             lines.push(names.property(&x, check[0], "_NET_WM_NAME")?);
+            // GTK reads XSETTINGS as it starts, too (40).
+            let theme = x.xsettings()?.and_then(|table| {
+                table
+                    .into_iter()
+                    .find_map(|(name, value)| (name == "Net/ThemeName").then_some(value))
+            });
+            lines.push(format!("XSETTINGS Net/ThemeName: {theme:?}"));
             Ok::<_, x11rb::errors::ReplyError>(lines)
         };
         sender.send(read().unwrap().join("\n")).unwrap();
@@ -270,6 +277,7 @@ fn display_is_set_only_once_the_root_properties_exist() {
     _GTK_WORKAREAS_D0(CARDINAL) = 0, 0, 1920, 1080
     _NET_SUPPORTED lists _GTK_WORKAREAS: true
     _NET_WM_NAME(UTF8_STRING) = "Camino"
+    XSETTINGS Net/ThemeName: Some(Str("Menta"))
     "#);
 }
 

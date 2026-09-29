@@ -639,6 +639,7 @@ impl Camino {
         self.refresh_x11_stacking();
         self.refresh_x_root();
         self.refresh_x_windows();
+        self.refresh_xsettings();
         self.popups.cleanup();
     }
 

@@ -465,6 +465,22 @@ impl X11Client {
         Ok(self.conn.get_selection_owner(selection)?.reply()?.owner)
     }
 
+    /// The XSETTINGS table, as a GTK client reads it: `_XSETTINGS_SETTINGS` on the owner of
+    /// `_XSETTINGS_S0`, by name. `None` if there's no owner or it has no table.
+    pub fn xsettings(&self) -> Result<Option<Vec<(String, XSetting)>>, ReplyError> {
+        let owner = self.selection_owner("_XSETTINGS_S0")?;
+        if owner == x11rb::NONE {
+            return Ok(None);
+        }
+        let Some(property) = self.property(owner, "_XSETTINGS_SETTINGS")? else {
+            return Ok(None);
+        };
+        let PropertyValue::Bytes(bytes) = property.value else {
+            panic!("_XSETTINGS_SETTINGS has format 8");
+        };
+        Ok(Some(parse_xsettings(&bytes)))
+    }
+
     /// Makes `window` the selection `name`'s owner, as a client does when the user copies.
     pub fn set_selection_owner(&self, window: Window, name: &str) -> Result<(), ReplyError> {
         let selection = self.atom(name)?;
@@ -558,6 +574,68 @@ impl X11Client {
             }
         }
     }
+}
+
+/// An XSETTINGS value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XSetting {
+    Int(i32),
+    Str(String),
+    Color([u16; 4]),
+}
+
+/// The settings in an `_XSETTINGS_SETTINGS` property, sorted by name (the XSETTINGS
+/// specification 0.5, "Format of the _XSETTINGS_SETTINGS property").
+fn parse_xsettings(bytes: &[u8]) -> Vec<(String, XSetting)> {
+    let big_endian = bytes[0] == 1;
+    let mut at = 4;
+    let mut take = |len: usize| {
+        let taken = &bytes[at..at + len];
+        at += len;
+        taken
+    };
+    let card16 = |b: &[u8]| {
+        let b = [b[0], b[1]];
+        if big_endian {
+            u16::from_be_bytes(b)
+        } else {
+            u16::from_le_bytes(b)
+        }
+    };
+    let card32 = |b: &[u8]| {
+        let b = [b[0], b[1], b[2], b[3]];
+        if big_endian {
+            u32::from_be_bytes(b)
+        } else {
+            u32::from_le_bytes(b)
+        }
+    };
+    let padded = |len: usize| len.div_ceil(4) * 4;
+
+    let _serial = card32(take(4));
+    let count = card32(take(4));
+    let mut settings = Vec::new();
+    for _ in 0..count {
+        let kind = take(2)[0];
+        let name_len = usize::from(card16(take(2)));
+        let name = String::from_utf8_lossy(&take(padded(name_len))[..name_len]).into_owned();
+        let _last_change_serial = card32(take(4));
+        let value = match kind {
+            0 => XSetting::Int(card32(take(4)) as i32),
+            1 => {
+                let len = card32(take(4)) as usize;
+                XSetting::Str(String::from_utf8_lossy(&take(padded(len))[..len]).into_owned())
+            }
+            2 => {
+                let color = take(8);
+                XSetting::Color([0, 2, 4, 6].map(|i| card16(&color[i..])))
+            }
+            other => panic!("an XSETTINGS setting has an unknown type {other}"),
+        };
+        settings.push((name, value));
+    }
+    settings.sort_by(|a, b| a.0.cmp(&b.0));
+    settings
 }
 
 /// A property as read.

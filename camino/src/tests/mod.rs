@@ -18,5 +18,6 @@ mod selection;
 mod settings;
 mod window_properties;
 mod xdg_shell;
+mod xsettings;
 mod xwayland;
 mod xwayland_windows;

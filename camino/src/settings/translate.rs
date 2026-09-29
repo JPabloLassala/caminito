@@ -13,6 +13,7 @@ pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
 pub const INTERFACE: &str = "org.mate.interface";
 pub const FONT_RENDERING: &str = "org.mate.font-rendering";
 pub const MOUSE: &str = "org.mate.peripherals-mouse";
+pub const SOUND: &str = "org.mate.sound";
 
 /// A schema Camino reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,10 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: MOUSE,
+        required: false,
+    },
+    Schema {
+        id: SOUND,
         required: false,
     },
 ];
@@ -229,6 +234,7 @@ pub struct Settings {
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
+    pub sound: Sound,
 }
 
 /// What SSD frames are drawn with and do (05, 07).
@@ -337,6 +343,35 @@ pub struct Interface {
     pub gtk_theme: String,
     pub font_name: String,
     pub icon_theme: String,
+    pub gtk: GtkOptions,
+}
+
+/// The `org.mate.interface` keys Camino only passes on to X11 GTK apps through XSETTINGS,
+/// as they are (40). Each is its key without a `gtk-` prefix.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GtkOptions {
+    pub key_theme: String,
+    pub toolbar_style: String,
+    pub toolbar_icons_size: String,
+    pub cursor_blink: bool,
+    pub cursor_blink_time: i32,
+    pub color_scheme: String,
+    pub im_preedit_style: String,
+    pub im_status_style: String,
+    pub im_module: String,
+    pub file_chooser_backend: String,
+    pub decoration_layout: String,
+    pub shell_shows_app_menu: bool,
+    pub shell_shows_menubar: bool,
+    pub menus_have_icons: bool,
+    pub buttons_have_icons: bool,
+    pub menubar_accel: String,
+    pub show_input_method_menu: bool,
+    pub show_unicode_menu: bool,
+    pub automatic_mnemonics: bool,
+    pub enable_primary_paste: bool,
+    pub enable_animations: bool,
+    pub dialogs_use_header: bool,
 }
 
 /// `org.mate.font-rendering`.
@@ -345,6 +380,8 @@ pub struct FontRendering {
     pub antialiasing: Antialiasing,
     pub hinting: Hinting,
     pub rgba_order: RgbaOrder,
+    /// As the key has it: 0 and below mean "not set".
+    pub dpi: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -380,6 +417,14 @@ pub struct Mouse {
     pub double_click_time: Duration,
     /// How far, in logical pixels, a press must move to become a drag.
     pub drag_threshold: u32,
+}
+
+/// `org.mate.sound`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sound {
+    pub theme_name: String,
+    pub event_sounds: bool,
+    pub input_feedback_sounds: bool,
 }
 
 /// Settings from a reading, and what was wrong with it.
@@ -457,11 +502,40 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,
             icon_theme: r.non_empty(INTERFACE, "icon-theme", "menta"),
+            gtk: GtkOptions {
+                key_theme: r.string(INTERFACE, "gtk-key-theme", "Default"),
+                toolbar_style: r.string(INTERFACE, "toolbar-style", "both-horiz"),
+                toolbar_icons_size: r.string(INTERFACE, "toolbar-icons-size", "large-toolbar"),
+                cursor_blink: r.bool(INTERFACE, "cursor-blink", true),
+                cursor_blink_time: r.int(INTERFACE, "cursor-blink-time", 1200),
+                color_scheme: r.string(INTERFACE, "gtk-color-scheme", ""),
+                im_preedit_style: r.string(INTERFACE, "gtk-im-preedit-style", "callback"),
+                im_status_style: r.string(INTERFACE, "gtk-im-status-style", "callback"),
+                im_module: r.string(INTERFACE, "gtk-im-module", ""),
+                file_chooser_backend: r.string(INTERFACE, "file-chooser-backend", "gio"),
+                decoration_layout: r.string(
+                    INTERFACE,
+                    "gtk-decoration-layout",
+                    "menu:minimize,maximize,close",
+                ),
+                shell_shows_app_menu: r.bool(INTERFACE, "gtk-shell-shows-app-menu", false),
+                shell_shows_menubar: r.bool(INTERFACE, "gtk-shell-shows-menubar", false),
+                menus_have_icons: r.bool(INTERFACE, "menus-have-icons", true),
+                buttons_have_icons: r.bool(INTERFACE, "buttons-have-icons", true),
+                menubar_accel: r.string(INTERFACE, "menubar-accel", "F10"),
+                show_input_method_menu: r.bool(INTERFACE, "show-input-method-menu", true),
+                show_unicode_menu: r.bool(INTERFACE, "show-unicode-menu", true),
+                automatic_mnemonics: r.bool(INTERFACE, "automatic-mnemonics", true),
+                enable_primary_paste: r.bool(INTERFACE, "gtk-enable-primary-paste", true),
+                enable_animations: r.bool(INTERFACE, "gtk-enable-animations", true),
+                dialogs_use_header: r.bool(INTERFACE, "gtk-dialogs-use-header", false),
+            },
         },
         font_rendering: FontRendering {
             antialiasing: r.nick(FONT_RENDERING, "antialiasing", Antialiasing::Rgba),
             hinting: r.nick(FONT_RENDERING, "hinting", Hinting::Slight),
             rgba_order: r.nick(FONT_RENDERING, "rgba-order", RgbaOrder::Rgb),
+            dpi: r.double(FONT_RENDERING, "dpi", 0.0),
         },
         mouse: Mouse {
             // Empty means the default cursor theme.
@@ -471,6 +545,11 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
                 r.int_at_least(MOUSE, "double-click", 400, 1) as u64
             ),
             drag_threshold: r.int_at_least(MOUSE, "drag-threshold", 8, 0) as u32,
+        },
+        sound: Sound {
+            theme_name: r.string(SOUND, "theme-name", "freedesktop"),
+            event_sounds: r.bool(SOUND, "event-sounds", false),
+            input_feedback_sounds: r.bool(SOUND, "input-feedback-sounds", false),
         },
     };
     for schema in &reading.missing {
@@ -556,6 +635,22 @@ impl Reader<'_> {
         self.read(schema, key, builtin, accept, |b| Value::Bool(*b))
     }
 
+    fn int(&mut self, schema: &str, key: &str, builtin: i32) -> i32 {
+        let accept = |v: &Value| match v {
+            Value::Int(i) => Some(*i),
+            _ => None,
+        };
+        self.read(schema, key, builtin, accept, |i| Value::Int(*i))
+    }
+
+    fn double(&mut self, schema: &str, key: &str, builtin: f64) -> f64 {
+        let accept = |v: &Value| match v {
+            Value::Double(d) => Some(*d),
+            _ => None,
+        };
+        self.read(schema, key, builtin, accept, |d| Value::Double(*d))
+    }
+
     /// An enum key, by its nick.
     fn nick<T: Nick>(&mut self, schema: &str, key: &str, builtin: T) -> T {
         let accept = |v: &Value| match v {
@@ -579,11 +674,7 @@ impl Reader<'_> {
 
     /// An integer, clamped to `min..=max`.
     fn int_clamped(&mut self, schema: &str, key: &str, builtin: i32, min: i32, max: i32) -> i32 {
-        let accept = |v: &Value| match v {
-            Value::Int(i) => Some(*i),
-            _ => None,
-        };
-        let value = self.read(schema, key, builtin, accept, |i| Value::Int(*i));
+        let value = self.int(schema, key, builtin);
         let clamped = value.clamp(min, max);
         if clamped != value {
             self.problems.push(Problem::OutOfRange {

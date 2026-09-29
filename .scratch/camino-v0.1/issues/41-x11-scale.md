@@ -12,7 +12,7 @@ One global X11 scale ([ADR 0008](../../../docs/adr/0008-fractional-default-scale
 
 - **The value (ADR 0008):** the largest rounded-up output scale, computed in the `output` module as a pure function of the outputs (15).
 - **Applied** through Smithay's `set_client_scale` on the Xwayland client.
-- **XSETTINGS (13):** `Xft/DPI`, `Gdk/UnscaledDPI`, `Gdk/WindowScalingFactor` and `Gtk/CursorThemeSize` from msd's formulas (`msd-xsettings-manager.c:356-374`, `:411-421`), with `org.mate.font-rendering dpi`, or 96 when it's ≤ 0, added to [40](40-xsettings.md)'s table.
+- **XSETTINGS (13):** `Xft/DPI`, `Gdk/UnscaledDPI`, `Gdk/WindowScalingFactor` and `Gtk/CursorThemeSize` from msd's formulas (`msd-xsettings-manager.c:356-374`, `:411-421`), with `org.mate.font-rendering dpi`, or 96 when it's ≤ 0. [40](40-xsettings.md)'s `xsettings::table` already reads `dpi` and runs msd's formulas with a `scale` of 1; 41 makes that the X11 scale, and the refresh pass re-sends whatever it changes.
 - **When it changes** (only when outputs or their scales change, 13): re-send XSETTINGS, reload the X cursor at the new size, republish the work area and every window's frame extents in the new client space, and reconfigure every XWayland window (11).
 - **Coordinates:** every value `xconn` writes is in X client space (logical × scale), and the struts and input regions read from X are divided by it ([38](38-x-connection-and-root-properties.md), [39](39-x-window-properties-and-requests.md)).
 - **Debug dump:** the X11 scale.

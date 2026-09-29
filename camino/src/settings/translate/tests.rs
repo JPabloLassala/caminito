@@ -32,13 +32,43 @@ fn defaults() -> Reading {
     put(INTERFACE, "gtk-theme", s("Menta"));
     put(INTERFACE, "font-name", s("Sans 10"));
     put(INTERFACE, "icon-theme", s("menta"));
+    put(INTERFACE, "gtk-key-theme", s("Default"));
+    put(INTERFACE, "toolbar-style", s("both-horiz"));
+    put(INTERFACE, "toolbar-icons-size", s("large-toolbar"));
+    put(INTERFACE, "cursor-blink", Value::Bool(true));
+    put(INTERFACE, "cursor-blink-time", Value::Int(1200));
+    put(INTERFACE, "gtk-color-scheme", s(""));
+    put(INTERFACE, "gtk-im-preedit-style", s("callback"));
+    put(INTERFACE, "gtk-im-status-style", s("callback"));
+    put(INTERFACE, "gtk-im-module", s(""));
+    put(INTERFACE, "file-chooser-backend", s("gio"));
+    put(
+        INTERFACE,
+        "gtk-decoration-layout",
+        s("menu:minimize,maximize,close"),
+    );
+    put(INTERFACE, "gtk-shell-shows-app-menu", Value::Bool(false));
+    put(INTERFACE, "gtk-shell-shows-menubar", Value::Bool(false));
+    put(INTERFACE, "menus-have-icons", Value::Bool(true));
+    put(INTERFACE, "buttons-have-icons", Value::Bool(true));
+    put(INTERFACE, "menubar-accel", s("F10"));
+    put(INTERFACE, "show-input-method-menu", Value::Bool(true));
+    put(INTERFACE, "show-unicode-menu", Value::Bool(true));
+    put(INTERFACE, "automatic-mnemonics", Value::Bool(true));
+    put(INTERFACE, "gtk-enable-primary-paste", Value::Bool(true));
+    put(INTERFACE, "gtk-enable-animations", Value::Bool(true));
+    put(INTERFACE, "gtk-dialogs-use-header", Value::Bool(false));
     put(FONT_RENDERING, "antialiasing", s("rgba"));
     put(FONT_RENDERING, "hinting", s("slight"));
     put(FONT_RENDERING, "rgba-order", s("rgb"));
+    put(FONT_RENDERING, "dpi", Value::Double(0.0));
     put(MOUSE, "cursor-theme", s(""));
     put(MOUSE, "cursor-size", Value::Int(24));
     put(MOUSE, "double-click", Value::Int(400));
     put(MOUSE, "drag-threshold", Value::Int(8));
+    put(SOUND, "theme-name", s("freedesktop"));
+    put(SOUND, "event-sounds", Value::Bool(false));
+    put(SOUND, "input-feedback-sounds", Value::Bool(false));
     reading
 }
 
@@ -305,6 +335,34 @@ fn a_value_of_the_wrong_type_falls_back_to_the_default() {
 
 // org.mate.interface.
 
+/// The GTK options at MATE 1.28's defaults.
+fn default_gtk_options() -> GtkOptions {
+    GtkOptions {
+        key_theme: "Default".into(),
+        toolbar_style: "both-horiz".into(),
+        toolbar_icons_size: "large-toolbar".into(),
+        cursor_blink: true,
+        cursor_blink_time: 1200,
+        color_scheme: String::new(),
+        im_preedit_style: "callback".into(),
+        im_status_style: "callback".into(),
+        im_module: String::new(),
+        file_chooser_backend: "gio".into(),
+        decoration_layout: "menu:minimize,maximize,close".into(),
+        shell_shows_app_menu: false,
+        shell_shows_menubar: false,
+        menus_have_icons: true,
+        buttons_have_icons: true,
+        menubar_accel: "F10".into(),
+        show_input_method_menu: true,
+        show_unicode_menu: true,
+        automatic_mnemonics: true,
+        enable_primary_paste: true,
+        enable_animations: true,
+        dialogs_use_header: false,
+    }
+}
+
 #[test]
 fn the_defaults_give_mates_interface() {
     assert_eq!(
@@ -313,6 +371,73 @@ fn the_defaults_give_mates_interface() {
             gtk_theme: "Menta".into(),
             font_name: "Sans 10".into(),
             icon_theme: "menta".into(),
+            gtk: default_gtk_options(),
+        }
+    );
+}
+
+#[test]
+fn the_builtin_interface_matches_the_schema_defaults() {
+    assert_eq!(
+        settings(&Reading::default()).interface,
+        settings(&defaults()).interface
+    );
+}
+
+#[test]
+fn the_gtk_options_are_read() {
+    let mut reading = defaults();
+    let mut set = |key: &str, value: Value| {
+        let default = reading.get(INTERFACE, key).unwrap().default.clone();
+        reading.insert(INTERFACE, key, value, default);
+    };
+    set("gtk-key-theme", string("Emacs"));
+    set("toolbar-style", string("icons"));
+    set("toolbar-icons-size", string("small-toolbar"));
+    set("cursor-blink", Value::Bool(false));
+    set("cursor-blink-time", Value::Int(800));
+    set("gtk-color-scheme", string("fg_color:#000"));
+    set("gtk-im-preedit-style", string("nothing"));
+    set("gtk-im-status-style", string("none"));
+    set("gtk-im-module", string("ibus"));
+    set("file-chooser-backend", string("gnome-vfs"));
+    set("gtk-decoration-layout", string("close:"));
+    set("gtk-shell-shows-app-menu", Value::Bool(true));
+    set("gtk-shell-shows-menubar", Value::Bool(true));
+    set("menus-have-icons", Value::Bool(false));
+    set("buttons-have-icons", Value::Bool(false));
+    set("menubar-accel", string("F9"));
+    set("show-input-method-menu", Value::Bool(false));
+    set("show-unicode-menu", Value::Bool(false));
+    set("automatic-mnemonics", Value::Bool(false));
+    set("gtk-enable-primary-paste", Value::Bool(false));
+    set("gtk-enable-animations", Value::Bool(false));
+    set("gtk-dialogs-use-header", Value::Bool(true));
+    assert_eq!(
+        settings(&reading).interface.gtk,
+        GtkOptions {
+            key_theme: "Emacs".into(),
+            toolbar_style: "icons".into(),
+            toolbar_icons_size: "small-toolbar".into(),
+            cursor_blink: false,
+            cursor_blink_time: 800,
+            color_scheme: "fg_color:#000".into(),
+            im_preedit_style: "nothing".into(),
+            im_status_style: "none".into(),
+            im_module: "ibus".into(),
+            file_chooser_backend: "gnome-vfs".into(),
+            decoration_layout: "close:".into(),
+            shell_shows_app_menu: true,
+            shell_shows_menubar: true,
+            menus_have_icons: false,
+            buttons_have_icons: false,
+            menubar_accel: "F9".into(),
+            show_input_method_menu: false,
+            show_unicode_menu: false,
+            automatic_mnemonics: false,
+            enable_primary_paste: false,
+            enable_animations: false,
+            dialogs_use_header: true,
         }
     );
 }
@@ -333,6 +458,7 @@ fn interface_keys_are_read() {
             gtk_theme: "BlackMATE".into(),
             font_name: "Cantarell 11".into(),
             icon_theme: "mate".into(),
+            gtk: default_gtk_options(),
         }
     );
 }
@@ -371,8 +497,18 @@ fn the_defaults_give_mates_font_rendering() {
             antialiasing: Antialiasing::Rgba,
             hinting: Hinting::Slight,
             rgba_order: RgbaOrder::Rgb,
+            dpi: 0.0,
         }
     );
+}
+
+#[test]
+fn dpi_is_read_as_it_is() {
+    // What a DPI of 0 or less means is XSETTINGS' to say (40).
+    for dpi in [120.0, -3.0] {
+        let reading = with(FONT_RENDERING, "dpi", Value::Double(dpi));
+        assert_eq!(settings(&reading).font_rendering.dpi, dpi);
+    }
 }
 
 #[test]
@@ -413,6 +549,49 @@ fn an_unknown_font_rendering_nick_falls_back_to_the_default() {
         problem,
         invalid(FONT_RENDERING, "hinting", "'extreme'", "'slight'")
     );
+}
+
+// org.mate.sound.
+
+#[test]
+fn the_defaults_give_mates_sound() {
+    assert_eq!(
+        settings(&defaults()).sound,
+        Sound {
+            theme_name: "freedesktop".into(),
+            event_sounds: false,
+            input_feedback_sounds: false,
+        }
+    );
+}
+
+#[test]
+fn sound_keys_are_read() {
+    let mut reading = with(SOUND, "theme-name", string("mate"));
+    reading.insert(SOUND, "event-sounds", Value::Bool(true), Value::Bool(false));
+    reading.insert(
+        SOUND,
+        "input-feedback-sounds",
+        Value::Bool(true),
+        Value::Bool(false),
+    );
+    assert_eq!(
+        settings(&reading).sound,
+        Sound {
+            theme_name: "mate".into(),
+            event_sounds: true,
+            input_feedback_sounds: true,
+        }
+    );
+}
+
+#[test]
+fn without_the_sound_schema_its_keys_are_defaults() {
+    let mut reading = Reading::default();
+    reading.set_missing(SOUND);
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.sound, self::settings(&defaults()).sound);
+    assert_eq!(problem, Problem::MissingSchema(SOUND.into()));
 }
 
 // org.mate.peripherals-mouse.

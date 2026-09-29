@@ -2,11 +2,13 @@
 //! Smithay's `X11Wm` attached once it's ready. If it can't start, Camino logs it once and
 //! runs without X; the restart path is 42's. Its windows are managed through `xwm`, and X's
 //! stacking order follows Camino's scene. Camino's own X connection, `xconn`, publishes the
-//! root properties Smithay doesn't and runs the root messages it drops.
+//! root properties Smithay doesn't and runs the root messages it drops. Camino is the
+//! XSETTINGS manager, through `X11Wm` (40).
 
 mod selection;
 mod stack;
 mod xconn;
+mod xsettings;
 mod xwm;
 
 use std::ffi::OsString;
@@ -22,6 +24,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::x11rb::errors::ConnectionError;
 use smithay::utils::{FrameExtents, Logical, SERIAL_COUNTER};
 use smithay::xwayland::xwm::X11Window;
+use smithay::xwayland::xwm::settings::Value as XSettingValue;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
 use self::stack::RootStack;
@@ -50,6 +53,8 @@ pub struct RunningXwayland {
     pub wm: Option<X11Wm>,
     /// Camino's own X connection (11), from `Ready` on, if it connected.
     xconn: Option<XConnection>,
+    /// The XSETTINGS table `wm` publishes (40). Smithay's starts empty.
+    xsettings: xsettings::Table,
     /// The XWayland windows in the order `X11Wm` was last told to stack them, bottom to
     /// top.
     stacking: Vec<X11Window>,
@@ -119,6 +124,7 @@ impl Camino {
                     client,
                     wm: None,
                     xconn: None,
+                    xsettings: xsettings::Table::new(),
                     stacking: Vec::new(),
                     root_stack: RootStack::default(),
                     override_redirect: Vec::new(),
@@ -200,6 +206,38 @@ impl Camino {
         self.with_xconn("publish the root properties", |xconn| {
             xconn.publish(properties)
         });
+    }
+
+    /// Brings XSETTINGS up to date with the settings (40), sending only what changed.
+    pub(crate) fn refresh_xsettings(&mut self) {
+        let Some(xwayland) = self.xwayland.as_mut() else {
+            return;
+        };
+        let Some(wm) = xwayland.wm.as_mut() else {
+            return;
+        };
+        let table = xsettings::table(&self.settings);
+        let changed: Vec<(String, XSettingValue)> = table
+            .iter()
+            .filter(|(name, setting)| xwayland.xsettings.get(*name) != Some(*setting))
+            .map(|(name, setting)| (name.to_string(), setting.to_smithay()))
+            .collect();
+        if changed.is_empty() {
+            return;
+        }
+        // `set_xsettings` leaves its write in the connection's buffer
+        // (`xwm/mod.rs:1372-1386`), which Smithay flushes only when X next sends it an event.
+        // A restack flushes whatever it's given, and one of no windows changes nothing
+        // (`:1110-1165`).
+        if let Err(err) = wm.set_xsettings(changed.into_iter()) {
+            tracing::warn!("can't publish XSETTINGS: {err}");
+            return;
+        }
+        // Smithay has the table now, and sends it with its next write if this fails.
+        xwayland.xsettings = table;
+        if let Err(err) = wm.update_stacking_order_upwards(std::iter::empty::<&X11Surface>()) {
+            tracing::warn!("can't send XSETTINGS to X: {err}");
+        }
     }
 
     /// Brings the properties Camino publishes on each XWayland window up to date with
@@ -590,8 +628,9 @@ impl State {
     }
 
     /// Xwayland is up. In 11's start-up order: attaches `X11Wm`, connects Camino's X
-    /// connection, which claims Camino's identity, publishes the root properties, and only
-    /// then sets `DISPLAY` for the clients Camino spawns, which read them at start-up.
+    /// connection, which claims Camino's identity, publishes the root properties and
+    /// XSETTINGS, and only then sets `DISPLAY` for the clients Camino spawns, which read them
+    /// at start-up.
     fn xwayland_ready(&mut self, x11_socket: UnixStream) {
         let camino = &mut self.camino;
         let Some(xwayland) = camino.xwayland.as_mut() else {
@@ -606,6 +645,8 @@ impl State {
         match started {
             Ok(wm) => {
                 xwayland.wm = Some(wm);
+                // Each `start_wm` claims XSETTINGS with an empty table (ADR 0006).
+                xwayland.xsettings.clear();
                 match XConnection::connect(xwayland.display, &camino.loop_handle) {
                     Ok(xconn) => xwayland.xconn = Some(xconn),
                     Err(err) => tracing::warn!(
@@ -616,6 +657,7 @@ impl State {
                 // Published here rather than left to the refresh pass, since X clients read
                 // them as they start (11): `DISPLAY` must not come first.
                 camino.refresh_x_root();
+                camino.refresh_xsettings();
                 tracing::info!("Xwayland is ready on DISPLAY={value}");
                 camino
                     .environment
