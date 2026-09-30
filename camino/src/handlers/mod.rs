@@ -8,6 +8,7 @@ mod selection;
 mod xdg_shell;
 
 pub(crate) use decoration::kde_server_side;
+pub(crate) use selection::DragIcon;
 
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};

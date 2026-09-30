@@ -67,6 +67,7 @@ use crate::dbus::Dbus;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
+use crate::handlers::DragIcon;
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
@@ -144,6 +145,8 @@ pub struct Camino {
     pub window_grab: Option<GrabKind>,
     /// The cursor the client with pointer focus asked for.
     pub client_cursor: CursorImageStatus,
+    /// The icon of the Wayland drag in progress, if it has one (48).
+    pub(crate) drag_icon: Option<DragIcon>,
     /// Camino's own cursors.
     pub cursors: Cursors,
 
@@ -394,6 +397,12 @@ impl State {
                 });
             }
         }
+        // The drag icon is drawn only on the pointer's output.
+        if let Some(icon) = &self.camino.drag_icon
+            && crate::scene::pointer_on(&self.camino, output).is_some()
+        {
+            icon.send_frame(output, now, FRAME_CALLBACK_THROTTLE);
+        }
         feedback.presented(now, refresh, 0, wp_presentation_feedback::Kind::empty());
 
         let dh = self.camino.display_handle.clone();
@@ -501,6 +510,7 @@ impl Camino {
             frame_pointer: FramePointer::default(),
             window_grab: None,
             client_cursor: CursorImageStatus::default_named(),
+            drag_icon: None,
             cursors,
             clock,
             display_handle,

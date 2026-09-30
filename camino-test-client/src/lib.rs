@@ -118,6 +118,10 @@ pub struct State {
     primary_device: Option<ZwpPrimarySelectionDeviceV1>,
     /// The selections the compositor last offered.
     offers: selection::Offers,
+    /// The drag the client last started, if it gave it an icon.
+    drag_icon: Option<selection::DragIcon>,
+    /// How many frame callbacks the drag icon has had.
+    pub drag_icon_frames_done: u32,
 }
 
 /// A bound `wl_output`.

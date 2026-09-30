@@ -33,7 +33,7 @@ const TITLE_OUTLINE: Color32F = Color32F::new(0.0, 1.0, 0.0, 1.0);
 
 render_elements! {
     pub SceneElement<R> where R: ImportAll + ImportMem;
-    /// A client's surface: a window's, or the cursor's.
+    /// A client's surface: a window's, the cursor's, or a drag icon's.
     Window = WaylandSurfaceRenderElement<R>,
     /// A frame's strip, one of Camino's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
@@ -46,6 +46,8 @@ render_elements! {
 pub(crate) enum SceneLayer {
     /// The pointer's cursor, over everything.
     Cursor,
+    /// A Wayland drag's icon, at the pointer (48).
+    DragIcon,
     /// Lock surfaces, or the solid lock background (M7).
     Lock,
     /// The overlay layer-shell layer (M5).
@@ -63,8 +65,9 @@ pub(crate) enum SceneLayer {
     Background,
 }
 
-pub(crate) const LAYERS: [SceneLayer; 8] = [
+pub(crate) const LAYERS: [SceneLayer; 9] = [
     SceneLayer::Cursor,
+    SceneLayer::DragIcon,
     SceneLayer::Lock,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
@@ -123,6 +126,7 @@ fn layer_elements<R>(
 {
     match layer {
         SceneLayer::Cursor => cursor_elements(renderer, camino, output, elements),
+        SceneLayer::DragIcon => drag_icon_elements(renderer, camino, output, elements),
         SceneLayer::OverrideRedirect => {
             override_redirect_elements(renderer, camino, output, elements)
         }
@@ -146,11 +150,10 @@ fn cursor_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let output_geometry = output_geometry(output);
-    let pointer = camino.seat.get_pointer().unwrap().current_location();
-    if !output_geometry.to_f64().contains(pointer) {
+    let Some(pointer) = pointer_on(camino, output) else {
         return;
-    }
+    };
+    let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
     let at = |hotspot: Point<i32, Logical>| {
         (pointer - hotspot.to_f64() - output_geometry.loc.to_f64()).to_physical_precise_round(scale)
@@ -200,6 +203,49 @@ fn cursor_elements<R>(
             }
         }
     }
+}
+
+/// Where the pointer is, if it's on `output`. The cursor and a drag icon are drawn only on
+/// that output, at its scale.
+pub(crate) fn pointer_on(camino: &Camino, output: &Output) -> Option<Point<f64, Logical>> {
+    let pointer = camino.seat.get_pointer().unwrap().current_location();
+    output_geometry(output)
+        .to_f64()
+        .contains(pointer)
+        .then_some(pointer)
+}
+
+/// The drag icon at the pointer plus its offset, if the pointer's on `output`.
+fn drag_icon_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let (Some(icon), Some(pointer)) = (&camino.drag_icon, pointer_on(camino, output)) else {
+        return;
+    };
+    if !icon.surface.is_alive() {
+        return;
+    }
+    let scale = output.current_scale().fractional_scale();
+    let location = (pointer + icon.offset.to_f64() - output_geometry(output).loc.to_f64())
+        .to_physical_precise_round(scale);
+    elements.extend(
+        render_elements_from_surface_tree(
+            renderer,
+            &icon.surface,
+            location,
+            scale,
+            1.0,
+            Kind::Unspecified,
+        )
+        .into_iter()
+        .map(SceneElement::Window),
+    );
 }
 
 /// The override-redirect windows on `output`. They render as other XWayland surfaces do,

@@ -1,15 +1,17 @@
 //! The clipboard (`wl_data_device`) and the primary selection (`zwp_primary_selection_v1`)
 //! as a Wayland client sees them: it offers text from memory, and reads what the
-//! compositor offers it through a pipe.
+//! compositor offers it through a pipe. It drags text too, with an icon if asked.
 
 use std::io::Write;
 use std::os::fd::{AsFd, OwnedFd};
 use std::sync::Mutex;
 
+use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_data_device::{self, WlDataDevice};
-use wayland_client::protocol::wl_data_device_manager::{self, WlDataDeviceManager};
+use wayland_client::protocol::wl_data_device_manager::{self, DndAction, WlDataDeviceManager};
 use wayland_client::protocol::wl_data_offer::{self, WlDataOffer};
 use wayland_client::protocol::wl_data_source::{self, WlDataSource};
+use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, event_created_child};
 use wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection_device_manager_v1::{
     self, ZwpPrimarySelectionDeviceManagerV1,
@@ -24,7 +26,7 @@ use wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection
     self, ZwpPrimarySelectionSourceV1,
 };
 
-use crate::{Client, State};
+use crate::{Buffer, Client, State, WindowId};
 
 /// The mime type text is offered as, which Xwayland's `UTF8_STRING` maps to.
 pub const TEXT: &str = "text/plain;charset=utf-8";
@@ -46,7 +48,81 @@ pub(crate) struct Offers {
     primary: Option<ZwpPrimarySelectionOfferV1>,
 }
 
+/// A drag's icon as [`Client::start_drag`] draws it.
+#[derive(Debug, Clone, Copy)]
+pub struct DragIconSpec {
+    /// In surface pixels, at buffer scale 1.
+    pub size: (i32, i32),
+    /// What it's filled with.
+    pub argb: u32,
+    /// Where its top left corner is from the pointer, set with `wl_surface.offset` before
+    /// the drag starts, as GTK does.
+    pub offset: (i32, i32),
+}
+
+/// The icon surface of the client's last drag, and its buffer, which lives as long as it.
+pub(crate) struct DragIcon {
+    surface: WlSurface,
+    _buffer: Buffer,
+}
+
+/// A drag icon's frame callback's user data.
+struct DragIconFrame;
+
 impl Client {
+    /// Starts a drag of `text` from `origin`, as if `serial`'s button press started it,
+    /// with `icon` drawn under the pointer if it's given.
+    pub fn start_drag(
+        &mut self,
+        origin: WindowId,
+        serial: u32,
+        text: &str,
+        icon: Option<DragIconSpec>,
+    ) {
+        self.bind_selections();
+        let manager: WlDataDeviceManager = self.global(|s| &mut s.data_device_manager, 3);
+        let source = manager.create_data_source(&self.qh, text.to_owned());
+        source.offer(TEXT.to_owned());
+        source.set_actions(DndAction::Copy);
+        let icon = icon.map(|spec| {
+            let surface = self.compositor().create_surface(&self.qh, ());
+            let (pool, buffer) = self.shm_buffer(spec.size, spec.argb);
+            surface.attach(Some(&buffer), 0, 0);
+            surface.offset(spec.offset.0, spec.offset.1);
+            surface.damage_buffer(0, 0, spec.size.0, spec.size.1);
+            surface.commit();
+            DragIcon {
+                surface,
+                _buffer: Buffer { buffer, pool },
+            }
+        });
+        self.state.data_device.as_ref().unwrap().start_drag(
+            Some(&source),
+            &self.window(origin).surface,
+            icon.as_ref().map(|icon| &icon.surface),
+            serial,
+        );
+        self.state.drag_icon = icon;
+    }
+
+    /// Moves the last drag's icon by `(dx, dy)` with `wl_surface.offset`, and commits.
+    pub fn offset_drag_icon(&self, dx: i32, dy: i32) {
+        let surface = &self.drag_icon().surface;
+        surface.offset(dx, dy);
+        surface.commit();
+    }
+
+    /// Asks for a frame callback on the drag icon, and commits.
+    pub fn request_drag_icon_frame(&self) {
+        let surface = &self.drag_icon().surface;
+        surface.frame(&self.qh, DragIconFrame);
+        surface.commit();
+    }
+
+    fn drag_icon(&self) -> &DragIcon {
+        self.state.drag_icon.as_ref().expect("a drag with an icon")
+    }
+
     /// Makes the seat's data device and primary selection device, so the client is told of
     /// the selections while it has the keyboard.
     pub fn bind_selections(&mut self) {
@@ -181,6 +257,21 @@ impl Dispatch<WlDataSource, String> for State {
             wl_data_source::Event::Send { fd, .. } => send(text, fd),
             wl_data_source::Event::Cancelled => source.destroy(),
             _ => {}
+        }
+    }
+}
+
+impl Dispatch<WlCallback, DragIconFrame> for State {
+    fn event(
+        state: &mut Self,
+        _: &WlCallback,
+        event: wl_callback::Event,
+        _: &DragIconFrame,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_callback::Event::Done { .. } = event {
+            state.drag_icon_frames_done += 1;
         }
     }
 }

@@ -5,6 +5,7 @@ mod client;
 mod cursors;
 mod debug;
 mod decoration;
+mod drag_icons;
 mod fixture;
 mod frames;
 mod grabs;
