@@ -57,6 +57,7 @@ pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub const KEY_TAB: u32 = 15;
 pub const KEY_LEFTCTRL: u32 = 29;
 pub const KEY_A: u32 = 30;
+pub const KEY_LEFTSHIFT: u32 = 42;
 pub const KEY_LEFTALT: u32 = 56;
 pub const KEY_F4: u32 = 62;
 pub const KEY_F10: u32 = 68;

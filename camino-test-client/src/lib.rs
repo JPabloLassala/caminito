@@ -14,6 +14,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::AsFd;
+use std::os::unix::fs::FileExt;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -119,6 +120,10 @@ pub struct State {
     pub repeat_info: Option<(i32, i32)>,
     /// The keyboard's last locked modifiers, as xkb's mask.
     pub locked_modifiers: u32,
+    /// The keyboard's last keymap, as xkb's text.
+    pub keymap: Option<String>,
+    /// The keyboard's last active group.
+    pub group: u32,
     /// The serial of the last button press, which starts moves, resizes and popup grabs.
     pub last_press_serial: Option<u32>,
     /// The `wl_output`s bound so far, in the order the compositor advertised them.
@@ -1002,8 +1007,21 @@ impl Dispatch<WlKeyboard, ()> for State {
                 state.repeat_info = Some((rate, delay));
                 return;
             }
-            wl_keyboard::Event::Modifiers { mods_locked, .. } => {
+            wl_keyboard::Event::Modifiers {
+                mods_locked, group, ..
+            } => {
                 state.locked_modifiers = mods_locked;
+                state.group = group;
+                return;
+            }
+            wl_keyboard::Event::Keymap { fd, size, .. } => {
+                // At an offset, as the compositor may share one file between clients.
+                let mut text = vec![0; size as usize];
+                File::from(fd)
+                    .read_exact_at(&mut text, 0)
+                    .expect("a keymap of its size");
+                let text = String::from_utf8(text).expect("a UTF-8 keymap");
+                state.keymap = Some(text.trim_end_matches('\0').to_owned());
                 return;
             }
             _ => return,

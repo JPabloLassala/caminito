@@ -15,6 +15,7 @@ pub const FONT_RENDERING: &str = "org.mate.font-rendering";
 pub const MOUSE: &str = "org.mate.peripherals-mouse";
 pub const TOUCHPAD: &str = "org.mate.peripherals-touchpad";
 pub const KEYBOARD: &str = "org.mate.peripherals-keyboard";
+pub const KEYBOARD_XKB: &str = "org.mate.peripherals-keyboard-xkb.kbd";
 pub const SOUND: &str = "org.mate.sound";
 
 /// A schema Camino reads.
@@ -60,6 +61,10 @@ pub const SCHEMAS: &[Schema] = &[
         id: KEYBOARD,
         required: false,
     },
+    Schema {
+        id: KEYBOARD_XKB,
+        required: false,
+    },
 ];
 
 /// Keys Camino doesn't support yet, whose defaults it doesn't match (09). Each is logged
@@ -70,6 +75,11 @@ pub const SCHEMAS: &[Schema] = &[
 /// Of the input schemas, those are `motion-threshold` and `tap-button-*-finger`, which msd
 /// uses only for non-libinput drivers, and the keyboard's `bell-mode`, `click`,
 /// `click-volume`, `bell-pitch`, `bell-duration` and `bell-custom-file`.
+///
+/// `org.mate.peripherals-keyboard-xkb.general`'s `group-per-window` and `default-group` are
+/// unsupported, as v0.1 has one global group, but they're documented rather than logged
+/// (09, 54). Camino behaves as if `group-per-window` were off, so a log line would reach
+/// only the users who turned it off, whom Camino already matches.
 pub const UNSUPPORTED: &[(&str, &str)] = &[
     // Camino will draw the ripple itself; M8's parity audit decides when (53).
     (MOUSE, "locate-pointer"),
@@ -144,6 +154,8 @@ pub struct Reading {
     entries: BTreeMap<(String, String), Entry>,
     /// Optional schemas that aren't installed.
     missing: Vec<&'static str>,
+    /// The keymap the system names, for the parts the settings leave empty.
+    system_keymap: Keymap,
 }
 
 impl Reading {
@@ -155,6 +167,11 @@ impl Reading {
     /// Notes that an optional schema isn't installed.
     pub fn set_missing(&mut self, schema: &'static str) {
         self.missing.push(schema);
+    }
+
+    /// Sets the keymap the system names: `XKB_DEFAULT_*`, then localed's X11 keymap.
+    pub fn set_system_keymap(&mut self, keymap: Keymap) {
+        self.system_keymap = keymap;
     }
 
     fn get(&self, schema: &str, key: &str) -> Option<&Entry> {
@@ -255,6 +272,7 @@ pub struct Settings {
     pub sound: Sound,
     pub devices: Devices,
     pub keyboard: Keyboard,
+    pub keymap: Keymap,
 }
 
 /// What SSD frames are drawn with and do (05, 07).
@@ -582,6 +600,56 @@ pub struct Keyboard {
     pub numlock: Option<bool>,
 }
 
+/// A keymap by its RMLVO names, for xkbcommon with rules `evdev` (09, 54). An empty part is
+/// left to xkbcommon's own default.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Keymap {
+    pub model: String,
+    /// Comma-joined, one per group.
+    pub layouts: String,
+    /// Comma-joined, one per layout, each possibly empty.
+    pub variants: String,
+    /// Comma-joined.
+    pub options: String,
+}
+
+impl Keymap {
+    /// The keymap `XKB_DEFAULT_*` names, as `lookup` reads them.
+    pub fn from_environment(lookup: impl Fn(&str) -> Option<String>) -> Self {
+        let var = |name| lookup(name).unwrap_or_default();
+        Self {
+            model: var("XKB_DEFAULT_MODEL"),
+            layouts: var("XKB_DEFAULT_LAYOUT"),
+            variants: var("XKB_DEFAULT_VARIANT"),
+            options: var("XKB_DEFAULT_OPTIONS"),
+        }
+    }
+
+    /// This keymap, with each empty part taken from `fallback`: the model, the layouts and
+    /// the options each on their own, as libmatekbd merges its defaults. Variants belong to
+    /// their layouts, so they come from wherever the layouts do, as in xkbcommon.
+    pub fn or(self, fallback: &Keymap) -> Self {
+        let or = |part: String, fallback: &String| {
+            if part.is_empty() {
+                fallback.clone()
+            } else {
+                part
+            }
+        };
+        let (layouts, variants) = if self.layouts.is_empty() {
+            (fallback.layouts.clone(), fallback.variants.clone())
+        } else {
+            (self.layouts, self.variants)
+        };
+        Self {
+            model: or(self.model, &fallback.model),
+            layouts,
+            variants,
+            options: or(self.options, &fallback.options),
+        }
+    }
+}
+
 /// Settings from a reading, and what was wrong with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Translation {
@@ -713,6 +781,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         },
         devices: devices(&mut r),
         keyboard: keyboard(&mut r),
+        keymap: keymap(&mut r).or(&reading.system_keymap),
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -822,6 +891,27 @@ fn keyboard(r: &mut Reader<'_>) -> Keyboard {
     }
 }
 
+/// The keymap libmatekbd's strings name, which are `layout\tvariant` and `group\toption`
+/// (09).
+fn keymap(r: &mut Reader<'_>) -> Keymap {
+    let layouts = r.strings(KEYBOARD_XKB, "layouts");
+    let (layouts, variants): (Vec<&str>, Vec<&str>) = layouts
+        .iter()
+        .map(|layout| layout.split_once('\t').unwrap_or((layout, "")))
+        .unzip();
+    let options = r.strings(KEYBOARD_XKB, "options");
+    let options: Vec<&str> = options
+        .iter()
+        .map(|option| option.split_once('\t').map_or(option.as_str(), |(_, o)| o))
+        .collect();
+    Keymap {
+        model: r.string(KEYBOARD_XKB, "model", ""),
+        layouts: layouts.join(","),
+        variants: variants.join(","),
+        options: options.join(","),
+    }
+}
+
 /// Reads keys from a reading, falling back to the schema default Camino knows when a key
 /// is missing, and noting each problem.
 struct Reader<'a> {
@@ -899,6 +989,17 @@ impl Reader<'_> {
             _ => None,
         };
         self.read(schema, key, builtin, accept, |d| Value::Double(*d))
+    }
+
+    /// A list of strings, empty by default.
+    fn strings(&mut self, schema: &str, key: &str) -> Vec<String> {
+        let accept = |v: &Value| match v {
+            Value::StrList(list) => Some(list.clone()),
+            _ => None,
+        };
+        self.read(schema, key, Vec::new(), accept, |list| {
+            Value::StrList(list.clone())
+        })
     }
 
     /// An enum key, by its nick.

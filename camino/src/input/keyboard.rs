@@ -1,11 +1,23 @@
-//! The seat keyboard's settings (09, 53): the repeat info clients get, and NumLock
-//! restored at start-up and written back, on every backend.
+//! The seat keyboard's settings (09, 53, 54): its keymap, the repeat info clients get, and
+//! NumLock restored at start-up and written back, on every backend.
 
-use smithay::input::keyboard::KeyboardHandle;
+use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
 
 use crate::settings::Value;
-use crate::settings::translate::{KEYBOARD, Keyboard};
+use crate::settings::translate::{KEYBOARD, Keyboard, Keymap};
 use crate::state::{Camino, State};
+
+/// The keymap's names for xkbcommon, with rules `evdev` (09). Empty options are left to
+/// xkbcommon, like the other parts, rather than meaning none.
+pub(crate) fn xkb_config(keymap: &Keymap) -> XkbConfig<'_> {
+    XkbConfig {
+        rules: "evdev",
+        model: &keymap.model,
+        layout: &keymap.layouts,
+        variant: &keymap.variants,
+        options: (!keymap.options.is_empty()).then(|| keymap.options.clone()),
+    }
+}
 
 /// Restores NumLock, when it's remembered, before any client has the keyboard
 /// (`msd-keyboard-manager.c:260-265`).
@@ -14,6 +26,28 @@ pub(crate) fn restore_numlock(keyboard: &KeyboardHandle<State>, settings: &Keybo
         let mut mods = keyboard.modifier_state();
         mods.num_lock = on;
         keyboard.set_modifier_state(mods);
+    }
+}
+
+impl State {
+    /// A new keymap for the seat's keyboard, which clients, Xwayland among them, are sent.
+    /// One xkbcommon can't compile keeps the current keymap.
+    pub(crate) fn keymap_changed(&mut self, keymap: &Keymap) {
+        let keyboard = self.camino.seat.get_keyboard().unwrap();
+        // A new keymap starts with nothing locked. Keep NumLock and CapsLock, or a layout
+        // change would turn them off and the refresh pass would remember NumLock off.
+        let locks = keyboard.modifier_state();
+        if let Err(err) = keyboard.set_xkb_config(self, xkb_config(keymap)) {
+            tracing::warn!("can't compile the keymap {keymap:?}: {err}; keeping the current one");
+            return;
+        }
+        let mut mods = keyboard.modifier_state();
+        if (mods.num_lock, mods.caps_lock) != (locks.num_lock, locks.caps_lock) {
+            mods.num_lock = locks.num_lock;
+            mods.caps_lock = locks.caps_lock;
+            keyboard.set_modifier_state(mods);
+            keyboard.advertise_modifier_state(self);
+        }
     }
 }
 

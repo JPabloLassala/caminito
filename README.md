@@ -95,6 +95,10 @@ The keybindings are a hard-coded set of Marco's defaults until M8 reads them fro
   XWayland windows and starts Xwayland again on the same `DISPLAY`, backing off and giving up after
   repeated crashes. But mate-session is an X11 client, and it exits when it loses its display,
   which ends the session. Outside a session, new X clients just work again.
+- **One keyboard layout for every window.** Camino switches layouts globally, so
+  `org.mate.peripherals-keyboard-xkb.general`'s `group-per-window` (on by default) and
+  `default-group` have no effect. The layout indicator applet runs on Xwayland, so it may not
+  show the layout Camino has switched to.
 
 ## Testing
 

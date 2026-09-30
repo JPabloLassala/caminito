@@ -296,6 +296,15 @@ impl State {
         Self { backend, camino }
     }
 
+    /// New settings from the settings thread. The keymap is set here, as the keyboard
+    /// needs all of `State` to send it.
+    fn settings_changed(&mut self, settings: Settings) {
+        if settings.keymap != self.camino.settings.keymap {
+            self.keymap_changed(&settings.keymap);
+        }
+        self.camino.settings_changed(settings);
+    }
+
     /// Plugs in a headless monitor whose EDID says it's `physical_size` millimetres, with
     /// one mode of `mode`, which it prefers.
     #[cfg(test)]
@@ -470,7 +479,7 @@ impl Camino {
         let loop_handle = event_loop.handle();
         loop_handle
             .insert_source(changes, |event, _, state| match event {
-                channel::Event::Msg(settings) => state.camino.settings_changed(settings),
+                channel::Event::Msg(settings) => state.settings_changed(settings),
                 channel::Event::Closed => {
                     tracing::error!("the settings thread stopped; changes are no longer seen")
                 }
@@ -495,12 +504,20 @@ impl Camino {
         let mut seat = seat_state.new_wl_seat(dh, "seat0");
         seat.add_pointer();
         let keyboard_settings = &settings.keyboard;
+        let (delay, rate) = (
+            keyboard_settings.repeat_delay,
+            keyboard_settings.repeat_rate,
+        );
+        let xkb = crate::input::keyboard::xkb_config(&settings.keymap);
         let keyboard = seat
-            .add_keyboard(
-                XkbConfig::default(),
-                keyboard_settings.repeat_delay,
-                keyboard_settings.repeat_rate,
-            )
+            .add_keyboard(xkb, delay, rate)
+            .or_else(|err| {
+                tracing::warn!(
+                    "can't compile the keymap {:?}: {err}; using xkbcommon's default",
+                    settings.keymap
+                );
+                seat.add_keyboard(XkbConfig::default(), delay, rate)
+            })
             .expect("the default xkb keymap compiles");
         crate::input::keyboard::restore_numlock(&keyboard, keyboard_settings);
         let numlock_seen = keyboard.modifier_state().num_lock;

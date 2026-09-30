@@ -174,3 +174,23 @@ nested_env() {
   atoms, `_NET_WORKAREA` and `_GTK_WORKAREAS` listed, the desktops as in `org.mate.Marco.general`,
   and a work area per desktop.
 - **Debug tool:** `/proc/<pid>/environ`, `xprop -root` and the journal.
+
+## Input
+
+### Switching keyboard layouts in native and X11 apps
+
+- **Milestone:** M4
+- **Steps:**
+  1. Run `tools/dev-nested`, then start `gtk3-demo` (or any GTK3 text field) and `xterm` in it.
+  2. On the nested bus, run:
+
+     ```sh
+     gsettings set org.mate.peripherals-keyboard-xkb.kbd layouts "['us', 'es']"
+     gsettings set org.mate.peripherals-keyboard-xkb.kbd options "['grp\tgrp:alt_shift_toggle']"
+     ```
+
+  3. In each app, type `;`, press Alt+Shift, type `;` again, then press Alt+Shift to go back.
+- **Expected:** both apps type `;` with the US layout and `ñ` with the Spanish one, and switch
+  back. The switch applies to every window at once (54).
+- **Debug tool:** the typed text, and `xkbcomp "$DISPLAY" - | grep xkb_symbols` on the nested
+  `DISPLAY`.

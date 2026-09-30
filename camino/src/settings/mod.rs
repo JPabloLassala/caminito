@@ -5,6 +5,9 @@
 //! GLib main loop. `start` waits for its first full reading, so the settings are complete
 //! before anything maps. After that, each burst of changes reaches Camino's loop as new
 //! `Settings` over a calloop channel.
+//!
+//! The thread also reads the keymap the system names, for the parts of the keymap the
+//! settings leave empty (54). localed is asked once, at start-up.
 
 pub mod translate;
 
@@ -17,7 +20,7 @@ use gio::glib;
 use gio::prelude::*;
 use smithay::reexports::calloop::channel;
 
-use translate::{Logged, Reading, SCHEMAS};
+use translate::{Keymap, Logged, Reading, SCHEMAS};
 pub use translate::{MissingSchemas, Settings, Value};
 
 /// Where the settings come from.
@@ -140,6 +143,7 @@ struct Watcher {
     main_loop: glib::MainLoop,
     settings: Vec<(&'static str, gio::Settings)>,
     missing: Vec<&'static str>,
+    system_keymap: Keymap,
     logged: Logged,
     last: Settings,
     changes: channel::Sender<Settings>,
@@ -153,7 +157,12 @@ thread_local! {
 
 impl Watcher {
     fn translate(&mut self) -> Settings {
-        read(&self.settings, &self.missing, &mut self.logged)
+        read(
+            &self.settings,
+            &self.missing,
+            &self.system_keymap,
+            &mut self.logged,
+        )
     }
 }
 
@@ -161,10 +170,12 @@ impl Watcher {
 fn read(
     settings: &[(&'static str, gio::Settings)],
     missing: &[&'static str],
+    system_keymap: &Keymap,
     logged: &mut Logged,
 ) -> Settings {
     {
         let mut reading = Reading::default();
+        reading.set_system_keymap(system_keymap.clone());
         for schema in missing {
             reading.set_missing(schema);
         }
@@ -217,6 +228,13 @@ fn run(
         return;
     }
 
+    let system_keymap = match &source {
+        Source::System => Keymap::from_environment(|name| std::env::var(name).ok())
+            .or(&localed_keymap().unwrap_or_default()),
+        // Tests don't ask localed, so what they get doesn't depend on the machine's locale.
+        #[cfg(test)]
+        Source::Test { .. } => Keymap::default(),
+    };
     let mut settings = Vec::new();
     let mut missing = Vec::new();
     for schema in SCHEMAS {
@@ -245,12 +263,13 @@ fn run(
     }
 
     let mut logged = Logged::default();
-    let first = read(&settings, &missing, &mut logged);
+    let first = read(&settings, &missing, &system_keymap, &mut logged);
     WATCHER.set(Some(Watcher {
         context: context.clone(),
         main_loop: main_loop.clone(),
         settings,
         missing,
+        system_keymap,
         logged,
         last: first.clone(),
         changes,
@@ -261,6 +280,41 @@ fn run(
     }
     main_loop.run();
     WATCHER.set(None);
+}
+
+/// localed's X11 keymap, which is what the X server would have used (09). Without it, the
+/// keymap is xkbcommon's default.
+fn localed_keymap() -> Option<Keymap> {
+    let proxy = gio::DBusProxy::for_bus_sync(
+        gio::BusType::System,
+        gio::DBusProxyFlags::DO_NOT_CONNECT_SIGNALS,
+        None,
+        "org.freedesktop.locale1",
+        "/org/freedesktop/locale1",
+        "org.freedesktop.locale1",
+        gio::Cancellable::NONE,
+    );
+    let proxy = match proxy {
+        Ok(proxy) => proxy,
+        Err(err) => {
+            tracing::warn!("can't ask localed for the system keymap: {err}");
+            return None;
+        }
+    };
+    let property = |name| {
+        proxy
+            .cached_property(name)
+            .and_then(|value| value.get::<String>())
+            .unwrap_or_default()
+    };
+    let keymap = Keymap {
+        model: property("X11Model"),
+        layouts: property("X11Layout"),
+        variants: property("X11Variant"),
+        options: property("X11Options"),
+    };
+    tracing::debug!("localed's keymap: {keymap:?}");
+    Some(keymap)
 }
 
 /// Queues sending the settings for when the current burst of changes is over, such as the many

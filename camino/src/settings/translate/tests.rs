@@ -105,6 +105,9 @@ fn defaults() -> Reading {
     put(KEYBOARD, "bell-custom-file", s(""));
     put(KEYBOARD, "remember-numlock-state", Value::Bool(true));
     put(KEYBOARD, "numlock-state", s("unknown"));
+    put(KEYBOARD_XKB, "model", s(""));
+    put(KEYBOARD_XKB, "layouts", Value::StrList(Vec::new()));
+    put(KEYBOARD_XKB, "options", Value::StrList(Vec::new()));
     put(SOUND, "theme-name", s("freedesktop"));
     put(SOUND, "event-sounds", Value::Bool(false));
     put(SOUND, "input-feedback-sounds", Value::Bool(false));
@@ -1080,6 +1083,156 @@ fn numlock_state_is_read_by_nick() {
 fn remember_numlock_state_is_read() {
     let reading = with(KEYBOARD, "remember-numlock-state", Value::Bool(false));
     assert!(!settings(&reading).keyboard.remember_numlock);
+}
+
+// org.mate.peripherals-keyboard-xkb.kbd (54).
+
+fn strings(values: &[&str]) -> Value {
+    Value::StrList(values.iter().map(|&v| v.into()).collect())
+}
+
+fn keymap(keys: &[(&str, Value)]) -> Keymap {
+    let keys: Vec<_> = keys
+        .iter()
+        .map(|(key, value)| (KEYBOARD_XKB, *key, value.clone()))
+        .collect();
+    settings(&with_all(&keys)).keymap
+}
+
+fn rmlvo(model: &str, layouts: &str, variants: &str, options: &str) -> Keymap {
+    Keymap {
+        model: model.into(),
+        layouts: layouts.into(),
+        variants: variants.into(),
+        options: options.into(),
+    }
+}
+
+#[test]
+fn the_defaults_with_no_system_keymap_leave_every_part_to_xkbcommon() {
+    assert_eq!(settings(&defaults()).keymap, Keymap::default());
+}
+
+#[test]
+fn one_layout_without_a_variant_is_the_layout() {
+    assert_eq!(
+        keymap(&[("layouts", strings(&["us"]))]),
+        rmlvo("", "us", "", "")
+    );
+}
+
+#[test]
+fn one_layout_with_a_variant_splits_at_the_tab() {
+    assert_eq!(
+        keymap(&[("layouts", strings(&["us\tintl"]))]),
+        rmlvo("", "us", "intl", "")
+    );
+}
+
+#[test]
+fn several_layouts_are_comma_joined_with_a_variant_each() {
+    assert_eq!(
+        keymap(&[("layouts", strings(&["us\tdvorak", "es", "de\tnodeadkeys"]))]),
+        rmlvo("", "us,es,de", "dvorak,,nodeadkeys", "")
+    );
+}
+
+#[test]
+fn options_drop_their_group_and_are_comma_joined() {
+    assert_eq!(
+        keymap(&[(
+            "options",
+            strings(&["grp\tgrp:alt_shift_toggle", "ctrl\tctrl:nocaps"])
+        )]),
+        rmlvo("", "", "", "grp:alt_shift_toggle,ctrl:nocaps")
+    );
+}
+
+#[test]
+fn an_option_without_a_group_is_taken_whole() {
+    assert_eq!(
+        keymap(&[("options", strings(&["compose:ralt"]))]),
+        rmlvo("", "", "", "compose:ralt")
+    );
+}
+
+#[test]
+fn the_model_is_taken_as_it_is() {
+    assert_eq!(
+        keymap(&[("model", string("pc105"))]),
+        rmlvo("pc105", "", "", "")
+    );
+}
+
+#[test]
+fn empty_parts_take_the_system_keymap() {
+    let mut reading = with_all(&[(KEYBOARD_XKB, "layouts", strings(&["es"]))]);
+    reading.set_system_keymap(rmlvo("pc104", "de", "nodeadkeys", "caps:escape"));
+    assert_eq!(
+        settings(&reading).keymap,
+        rmlvo("pc104", "es", "", "caps:escape")
+    );
+}
+
+#[test]
+fn set_parts_ignore_the_system_keymap() {
+    let mut reading = with_all(&[
+        (KEYBOARD_XKB, "model", string("pc105")),
+        (KEYBOARD_XKB, "layouts", strings(&["es"])),
+        (KEYBOARD_XKB, "options", strings(&["ctrl\tctrl:nocaps"])),
+    ]);
+    reading.set_system_keymap(rmlvo("pc104", "de", "nodeadkeys", "caps:escape"));
+    assert_eq!(
+        settings(&reading).keymap,
+        rmlvo("pc105", "es", "", "ctrl:nocaps")
+    );
+}
+
+#[test]
+fn the_environment_names_the_system_keymap_before_localed() {
+    let environment = |name: &str| match name {
+        "XKB_DEFAULT_MODEL" => Some("pc105".to_string()),
+        "XKB_DEFAULT_LAYOUT" => Some("fr".to_string()),
+        "XKB_DEFAULT_VARIANT" => Some("azerty".to_string()),
+        "XKB_DEFAULT_OPTIONS" => Some("compose:ralt".to_string()),
+        _ => None,
+    };
+    let localed = rmlvo("pc104", "de", "nodeadkeys", "caps:escape");
+    assert_eq!(
+        Keymap::from_environment(environment).or(&localed),
+        rmlvo("pc105", "fr", "azerty", "compose:ralt")
+    );
+}
+
+#[test]
+fn what_the_environment_leaves_empty_comes_from_localed() {
+    let localed = rmlvo("pc104", "de", "nodeadkeys", "caps:escape");
+    assert_eq!(Keymap::from_environment(|_| None).or(&localed), localed);
+}
+
+#[test]
+fn a_variant_comes_only_with_its_layout() {
+    // As xkbcommon does: XKB_DEFAULT_VARIANT without XKB_DEFAULT_LAYOUT is ignored.
+    let environment = |name: &str| (name == "XKB_DEFAULT_VARIANT").then(|| "azerty".to_string());
+    let localed = rmlvo("", "de", "nodeadkeys", "");
+    assert_eq!(
+        Keymap::from_environment(environment).or(&localed),
+        rmlvo("", "de", "nodeadkeys", "")
+    );
+}
+
+#[test]
+fn without_the_xkb_schema_the_keymap_is_the_system_one() {
+    let mut reading = Reading::default();
+    reading.insert(
+        MARCO_GENERAL,
+        "num-workspaces",
+        Value::Int(4),
+        Value::Int(4),
+    );
+    reading.set_missing(KEYBOARD_XKB);
+    reading.set_system_keymap(rmlvo("", "de", "", ""));
+    assert_eq!(translate(&reading).settings.keymap, rmlvo("", "de", "", ""));
 }
 
 #[test]
