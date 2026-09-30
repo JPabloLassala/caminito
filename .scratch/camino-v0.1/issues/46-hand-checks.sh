@@ -187,12 +187,15 @@ finish() {
 # Ticket 46's by-hand checks in a real nested Camino. Run it from a terminal on
 # the host desktop, with tools/dev-nested running in a second terminal. Each
 # result is appended to the ticket's notes, and a passing criterion is ticked.
+# Results are saved as they're given, so a stopped run resumes where it left off.
 
 TOTAL_STAGES=11
 
 TICKET="$(dirname "$(realpath "$0")")/46-nested-x11-checks-left-over.md"
 RESULTS=()   # "prefix|short name|pass or FAIL|note"
 FAILED=()
+PROGRESS="${XDG_STATE_HOME:-$HOME/.local/state}/camino/46-hand-checks.progress"
+DEMO_OPEN=
 
 # x11 CMD... starts an X11 client on the nested Xwayland, detached. GTK apps get
 # their own session bus, so they can't hand off to an instance on the host's.
@@ -233,6 +236,48 @@ result() {
   printf '  %sNote (what you saw; Enter for none):%s ' "$BOLD" "$RESET"
   read -r note || true
   RESULTS+=("$prefix|$name|$verdict|$note")
+  printf '%s|%s|%s|%s\n' "$prefix" "$name" "$verdict" "$note" >> "$PROGRESS"
+}
+
+# load_progress offers to resume from the results a stopped run saved.
+load_progress() {
+  local r name verdict note
+  mkdir -p "$(dirname "$PROGRESS")"
+  [[ -s $PROGRESS ]] || return 0
+  say "A stopped run saved these results:"
+  while IFS= read -r r; do
+    IFS='|' read -r _ name verdict note <<< "$r"
+    say "  $verdict  $name${note:+ ($note)}"
+  done < "$PROGRESS"
+  if confirm "Resume, skipping the stages they cover? (No starts over)"; then
+    mapfile -t RESULTS < "$PROGRESS"
+    for r in "${RESULTS[@]}"; do
+      IFS='|' read -r _ name verdict _ <<< "$r"
+      [[ $verdict == FAIL ]] && FAILED+=("$name")
+    done
+  else
+    : > "$PROGRESS"
+  fi
+}
+
+# done_already NAME... succeeds, and says so, when every named result is recorded.
+done_already() {
+  local name
+  for name in "$@"; do
+    printf '%s\n' "${RESULTS[@]}" | grep -qF "|$name|" || return 1
+  done
+  say "Already recorded; skipping."
+  sleep 1
+}
+
+# ensure_xterm opens the nested xterm unless one titled "xterm" is already open.
+ensure_xterm() {
+  env DISPLAY=":$NESTED_X" wmctrl -l 2>/dev/null | awk '$NF == "xterm" {f=1} END {exit !f}' || nested_xterm
+}
+# ensure_demo opens the nested gtk3-demo unless this run already did.
+ensure_demo() {
+  [[ -n $DEMO_OPEN ]] || x11 gtk3-demo --run=application_demo
+  DEMO_OPEN=1
 }
 
 # write_results appends the results to the ticket's notes and ticks each criterion
@@ -256,6 +301,7 @@ write_results() {
 }
 
 banner "Ticket 46: nested X11 checks by hand"
+load_progress
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Start the nested Camino"
@@ -269,6 +315,7 @@ read_nested
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "gtk3-demo's tooltip on the host, without Camino"
+if ! done_already "gtk3-demo's tooltip on the host"; then
 say "Opening gtk3-demo's Application Class demo on the host's own display."
 env GDK_BACKEND=x11 setsid dbus-run-session -- gtk3-demo --run=application_demo >/dev/null 2>&1 &
 step "Hover the toolbar's New button. Its tooltip should read \"Create a new file\"."
@@ -277,20 +324,25 @@ step "write down which one in the note. The next stage uses the same widget."
 result "On the host desktop, without Camino" "gtk3-demo's tooltip on the host"
 say "Close the host's gtk3-demo now."
 pause
+fi
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
 stage "gtk3-demo's tooltip, nested"
+if ! done_already "The tooltip, nested"; then
 say "Opening the same demo on the nested Xwayland (:$NESTED_X)."
-x11 gtk3-demo --run=application_demo
+ensure_demo
 step "Hover the same widget as before, with the real pointer."
 step "The tooltip shows above the window, not behind it."
 step "Move the pointer off the widget: the tooltip goes away."
 result "Nested, that tooltip" "The tooltip, nested"
 say "Leave gtk3-demo open; the menus are next."
 pause
+fi
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
 stage "Menus by hand"
+if ! done_already "Menus by hand"; then
+ensure_demo
 step "Click the demo's Preferences menu. It opens, above its window."
 step "Press Down to move through it, then Right on Color to open its submenu."
 step "Press Escape to back out of the submenu, then open it again."
@@ -299,11 +351,13 @@ step "Click in the demo's text area and type: the text goes to the window."
 result "Nested, gtk3-demo's Preferences menu" "Menus by hand"
 say "Close the nested gtk3-demo."
 pause
+fi
 
 # ── 5 ─────────────────────────────────────────────────────────────────────
 stage "xterm and xeyes"
+if ! done_already "xterm and xeyes"; then
 say "Opening xterm and xeyes on :$NESTED_X."
-nested_xterm
+ensure_xterm
 x11 xeyes
 step "Both map with Menta frames (Camino's titlebar and border)."
 step "Click one, then the other: each takes focus, its frame going active."
@@ -313,9 +367,12 @@ step "Move the pointer all over Camino's output: xeyes's eyes follow it everywhe
 result "Nested, xterm and xeyes" "xterm and xeyes"
 say "Close xeyes; keep xterm open."
 pause
+fi
 
 # ── 6 ─────────────────────────────────────────────────────────────────────
 stage "Clipboard and primary selection, xterm and foot"
+if ! done_already "Clipboard and primary, xterm and foot"; then
+ensure_xterm
 say "Opening a native foot on $NESTED_WL."
 native foot
 step "Primary, xterm → foot: select text in xterm, middle-click in foot."
@@ -326,9 +383,11 @@ step "Clipboard, xterm → foot: select text in xterm, Ctrl+Shift+V in foot."
 step "Clipboard, foot → xterm: select text in foot, Ctrl+Shift+C, middle-click in xterm."
 result "Nested, text copied in xterm" "Clipboard and primary, xterm and foot"
 pause
+fi
 
 # ── 7 ─────────────────────────────────────────────────────────────────────
 stage "Drag and drop, caja on X11 and native caja"
+if ! done_already "Drag and drop, caja on X11 and native caja"; then
 say "Opening caja on :$NESTED_X and a native caja on $NESTED_WL, each in its own /tmp folder."
 mkdir -p /tmp/camino-dnd-x11 /tmp/camino-dnd-native
 : > /tmp/camino-dnd-x11/from-x11.txt
@@ -342,9 +401,13 @@ note "Criterion 5 is ticked only if this and the clipboard stage both pass."
 result "Nested, text copied in xterm" "Drag and drop, caja on X11 and native caja"
 say "Close both cajas."
 pause
+fi
 
 # ── 8 ─────────────────────────────────────────────────────────────────────
 stage "Frame extents and workspaces"
+if ! done_already "Frame extents and wmctrl -t" "wmctrl -d and -s"; then
+ensure_xterm
+sleep 1
 say "Running the checks against the open xterm (titled \"xterm\")."
 nx sh -c 'xprop -id "$(wmctrl -l | awk "\$NF == \"xterm\" {print \$1; exit}")" _NET_FRAME_EXTENTS'
 note "The Menta frame is 1, 1, 31, 1 (left, right, top, bottom)."
@@ -362,10 +425,12 @@ nx wmctrl -s 0
 result "Nested, \`xprop\` on an xterm" "Frame extents and wmctrl -t"
 result "Nested, \`wmctrl -d\`" "wmctrl -d and -s"
 pause
+fi
 
 # ── 9 ─────────────────────────────────────────────────────────────────────
 stage "xterm after an Xwayland restart"
-nested_xterm
+if ! done_already "xterm after an Xwayland restart"; then
+ensure_xterm
 say "A fresh xterm is opening on :$NESTED_X."
 XW_PID=$(ps -eo pid=,args= | awk -v d=":$NESTED_X" '$2 ~ /Xwayland$/ && $3 == d {print $1}')
 if [[ -z $XW_PID ]]; then
@@ -385,9 +450,11 @@ if confirm "Kill it (SIGKILL)?"; then
 else
   SKIPPED+=("the Xwayland restart check")
 fi
+fi
 
 # ── 10 ────────────────────────────────────────────────────────────────────
 stage "xterm at scale 2"
+if ! done_already "xterm at scale 2"; then
 step "Stop dev-nested (Ctrl+C) and start it again with:  tools/dev-nested --bin --scale 2"
 read_nested
 nested_xterm
@@ -396,6 +463,7 @@ pause "Press Enter once it's open"
 nx sh -c 'xprop -id "$(wmctrl -l | awk "\$NF == \"xterm\" {print \$1; exit}")" _NET_FRAME_EXTENTS'
 note "Expected: 2, 2, 62, 2, twice the frame's 1, 1, 31, 1."
 result "Nested with \`tools/dev-nested --bin --scale 2\`" "xterm at scale 2"
+fi
 
 # ── 11 ────────────────────────────────────────────────────────────────────
 stage "Record the results"
@@ -405,9 +473,10 @@ for r in "${RESULTS[@]}"; do
 done
 if confirm "Write these to the ticket's notes?"; then
   write_results
+  rm -f "$PROGRESS"
   (( ${#FAILED[@]} )) && SKIPPED+=("a new ticket for each failure: ${FAILED[*]}")
 else
-  SKIPPED+=("recording the results in ticket 46")
+  SKIPPED+=("recording the results in ticket 46 (they stay in $PROGRESS)")
 fi
 say "Stop dev-nested with Ctrl+C when you're done."
 pause
