@@ -2,7 +2,7 @@
 
 Type: implementation
 Status: open
-Milestone: M4
+Milestone: before v0.1 (gates no milestone)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
 
@@ -33,4 +33,4 @@ Keep the display across the restart:
   - **Timing:** Xwayland was ready within 100 ms of each spawn. The wait was before the spawn, at 0.5 s, 3.5 s or 7.5 s. That's the restart backoff after one, three or four exits, 0.5 + 1 + 2 + 4.
   - **The cause:** a print in `xwayland_exited` showed the extra exits were `can't start Xwayland: Could not find a free socket for the XServer`, from the respawn on the same display while a parallel test's Xwayland held it.
 - **Not a fix:** a longer deadline in `dispatch_until`. It would hide the gap in tests and leave it in sessions.
-- **Workaround in the tests (2026-09-30), so M3 could close:** a process-wide `RwLock` in the fixture, `X_DISPLAYS`. Every fixture that starts Xwayland holds it shared (`start_xwayland`, or `hold_x_displays` for the one test that starts it on `state.camino`), and a test that crashes Xwayland holds it exclusively from before the start (`restarts_xwayland`), which `crash_xwayland` asserts. So no test's Xwayland can take a restarting test's display. Pinned to two cores, the lib suite then passed in release ten runs in a row, at the same 17.5 s. The gap is still there in sessions. This ticket stays open for the fix, and the lock goes when it lands.
+- **Workaround in the tests (2026-09-30), so M3 could close:** a process-wide `RwLock` in the fixture, `X_DISPLAYS`. Every fixture that starts Xwayland holds it shared (`start_xwayland`, or `hold_x_displays` for the one test that starts it on `state.camino`), and a test that crashes Xwayland holds it exclusively from before the start (`restarts_xwayland`), which `crash_xwayland` asserts. So no test's Xwayland can take a restarting test's display. Pinned to two cores, the lib suite then passed in release ten runs in a row, at the same 17.5 s. The gap is still there in sessions. This ticket stays open for the fix, and the lock goes when it lands. It gates no milestone, only v0.1 (decided 2026-09-30).
