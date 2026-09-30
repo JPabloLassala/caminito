@@ -18,7 +18,7 @@ use camino_test_client::{Client, DecorationMode, WindowId};
 use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
-use smithay::output::{Output, Scale};
+use smithay::output::Output;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::Resource;
@@ -257,14 +257,44 @@ impl Fixture {
         }
     }
 
+    /// Adds an output of `size` pixels at `scale`, as output management would set it, at
+    /// the default place.
     pub fn add_output(&mut self, size: impl Into<Size<i32, Physical>>, scale: f64) -> Output {
-        self.state.add_headless_output(size.into(), scale)
+        let output = self.state.plug_headless_output((0, 0).into(), size.into());
+        self.state.camino.set_output_scale(&output, scale);
+        output
+    }
+
+    /// Plugs in a monitor whose EDID says it's `physical_size` millimetres, with one mode
+    /// of `mode` pixels, which it prefers. Camino picks its scale and place.
+    pub fn plug(&mut self, physical_size: (i32, i32), mode: (i32, i32)) -> Output {
+        self.state
+            .plug_headless_output(physical_size.into(), mode.into())
+    }
+
+    /// Unplugs a monitor, and dispatches.
+    pub fn unplug(&mut self, output: &Output) {
+        self.state.unplug_headless_output(output);
+        self.dispatch();
+    }
+
+    /// Switches a monitor to a mode of `mode` pixels, as the backend does, and dispatches.
+    pub fn change_mode(&mut self, output: &Output, mode: (i32, i32)) {
+        self.state.change_headless_mode(output, mode.into());
+        self.dispatch();
     }
 
     /// Changes an output's scale, as output management will, and dispatches.
     pub fn set_output_scale(&mut self, output: &Output, scale: f64) {
-        output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
-        self.state.camino.output_changed(output);
+        self.state.camino.set_output_scale(output, scale);
+        self.dispatch();
+    }
+
+    /// Moves an output, as output management will, and dispatches.
+    pub fn set_output_position(&mut self, output: &Output, position: (i32, i32)) {
+        self.state
+            .camino
+            .set_output_position(output, position.into());
         self.dispatch();
     }
 

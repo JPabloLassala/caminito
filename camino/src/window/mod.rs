@@ -276,6 +276,14 @@ impl Mapped {
         }
     }
 
+    /// Sends the surfaces output leave for an output that's gone.
+    pub(crate) fn leave_output(&mut self, output: &Output) {
+        self.window.output_leave(output);
+        if self.primary_output.as_ref() == Some(output) {
+            self.primary_output = None;
+        }
+    }
+
     pub fn frame(&self) -> &WindowFrame {
         &self.frame
     }

@@ -5,11 +5,11 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Offscreen};
-use smithay::output::Output;
+use smithay::output::{Mode, Output};
 use smithay::reexports::pixman::Image;
-use smithay::utils::{Buffer, Physical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Buffer, Physical, Point, Raw, Rectangle, Size, Transform};
 
-use crate::output::virtual_output;
+use crate::output::{DEFAULT_REFRESH, virtual_output};
 use crate::scene::{self, CLEAR_COLOR};
 use crate::state::Camino;
 
@@ -17,6 +17,8 @@ use crate::state::Camino;
 pub struct Headless {
     renderer: PixmanRenderer,
     targets: Vec<Target>,
+    /// How many outputs were ever plugged in, which names the next one.
+    plugged: usize,
 }
 
 /// A virtual output and the memory it renders into.
@@ -32,6 +34,7 @@ impl Default for Headless {
         Self {
             renderer: PixmanRenderer::new().expect("pixman renderer"),
             targets: Vec::new(),
+            plugged: 0,
         }
     }
 }
@@ -41,24 +44,26 @@ impl Headless {
         &mut self.renderer
     }
 
-    /// Adds a virtual output of `size` physical pixels at `scale`.
-    pub fn add_output(
+    /// Plugs in a virtual monitor whose EDID says it's `physical_size` millimetres, with
+    /// one mode of `mode`, which it prefers.
+    pub fn plug(
         &mut self,
         camino: &mut Camino,
-        size: Size<i32, Physical>,
-        scale: f64,
+        physical_size: Size<i32, Raw>,
+        mode: Size<i32, Physical>,
     ) -> Output {
+        self.plugged += 1;
         let output = virtual_output(
-            format!("headless-{}", self.targets.len() + 1),
+            format!("headless-{}", self.plugged),
             "Headless",
-            size,
-            scale,
+            physical_size,
+            mode,
             Transform::Normal,
         );
 
         let buffer = self
             .renderer
-            .create_buffer(Fourcc::Argb8888, (size.w, size.h).into())
+            .create_buffer(Fourcc::Argb8888, (mode.w, mode.h).into())
             .expect("pixman buffer");
         self.targets.push(Target {
             damage_tracker: OutputDamageTracker::from_output(&output),
@@ -68,6 +73,32 @@ impl Headless {
         });
         camino.add_output(output.clone());
         output
+    }
+
+    /// Switches a virtual monitor to a mode of `size`.
+    pub fn change_mode(&mut self, camino: &mut Camino, output: &Output, size: Size<i32, Physical>) {
+        let target = target_mut(&mut self.targets, output).expect("a headless output");
+        target.buffer = self
+            .renderer
+            .create_buffer(Fourcc::Argb8888, (size.w, size.h).into())
+            .expect("pixman buffer");
+        target.rendered = false;
+        output.change_current_state(
+            Some(Mode {
+                size,
+                refresh: DEFAULT_REFRESH,
+            }),
+            None,
+            None,
+            None,
+        );
+        camino.output_mode_changed(output);
+    }
+
+    /// Unplugs a virtual monitor.
+    pub fn unplug(&mut self, camino: &mut Camino, output: &Output) {
+        self.targets.retain(|target| target.output != *output);
+        camino.remove_output(output);
     }
 
     pub fn render(&mut self, camino: &mut Camino, output: &Output) {

@@ -279,17 +279,43 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Adds an output, or updates the one with the same id.
     pub fn add_output(&mut self, output: Output) {
-        match self.outputs.iter_mut().find(|o| o.id == output.id) {
+        let mut outputs = self.outputs.clone();
+        match outputs.iter_mut().find(|o| o.id == output.id) {
             Some(existing) => *existing = output,
-            None => self.outputs.push(output),
+            None => outputs.push(output),
         }
-        self.rehome_windows();
-        self.apply();
+        self.set_outputs(outputs);
     }
 
     /// Removes an output. Windows left on no output move onto the first remaining one.
     pub fn remove_output(&mut self, id: OutputId) {
-        self.outputs.retain(|o| o.id != id);
+        let mut outputs = self.outputs.clone();
+        outputs.retain(|o| o.id != id);
+        self.set_outputs(outputs);
+    }
+
+    /// Replaces every output at once, as the compositor lays them out again (51). Windows
+    /// on an output that moved move with it, keeping their place on it; windows left on no
+    /// output move onto the first one.
+    pub fn set_outputs(&mut self, outputs: Vec<Output>) {
+        let moves: Vec<(WindowId, Point<i32, Logical>)> = self
+            .windows
+            .iter()
+            .filter_map(|(id, managed)| {
+                let old = self.output_of(managed.frame())?;
+                let new = outputs.iter().find(|o| o.id == old.id)?;
+                let delta = new.geometry.loc - old.geometry.loc;
+                (delta != Point::default()).then_some((*id, delta))
+            })
+            .collect();
+        for (id, delta) in moves {
+            let managed = self.windows.get_mut(&id).unwrap();
+            managed.geometry.loc += delta;
+            if let Some(floating) = &mut managed.floating {
+                floating.loc += delta;
+            }
+        }
+        self.outputs = outputs;
         self.rehome_windows();
         self.apply();
     }

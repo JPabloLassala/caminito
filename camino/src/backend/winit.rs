@@ -30,20 +30,20 @@ impl Winit {
         // Camino draws its own cursor.
         backend.window().set_cursor_visible(false);
 
-        let scale = winit_output_scale(std::env::var_os("CAMINO_WINIT_SCALE").as_deref())
-            .unwrap_or_else(|err| {
-                tracing::warn!("{err}; using 1");
-                1.0
-            });
         // GLES draws upside down relative to winit's window.
         let output = virtual_output(
             "winit".to_owned(),
             "Winit",
+            (0, 0).into(),
             backend.window_size(),
-            scale,
             Transform::Flipped180,
         );
         camino.add_output(output.clone());
+        match winit_output_scale(std::env::var_os("CAMINO_WINIT_SCALE").as_deref()) {
+            Ok(Some(scale)) => camino.set_output_scale(&output, scale),
+            Ok(None) => {}
+            Err(err) => tracing::warn!("{err}; using the default scale"),
+        }
 
         camino
             .loop_handle
@@ -107,7 +107,7 @@ impl Winit {
         self.output
             .change_current_state(Some(mode), None, None, None);
         self.output.set_preferred(mode);
-        camino.output_changed(&self.output);
+        camino.output_mode_changed(&self.output);
     }
 }
 
@@ -130,11 +130,12 @@ fn handle_event(state: &mut State, event: WinitEvent) {
 }
 
 /// The winit output's scale from `CAMINO_WINIT_SCALE`, for checking frames at other scales
-/// in nested runs: 1 when it's unset, or a positive number snapped to fractional-scale-v1's
-/// 1/120 steps. `window-scaling-factor` and the default scale rule take over in M4 (13).
-fn winit_output_scale(var: Option<&OsStr>) -> Result<f64, String> {
+/// in nested runs: a positive number snapped to fractional-scale-v1's 1/120 steps, set as
+/// output management would set it. Unset, the output has its default scale (51): 1, since
+/// winit's window has no EDID, or `window-scaling-factor`'s.
+fn winit_output_scale(var: Option<&OsStr>) -> Result<Option<f64>, String> {
     let Some(var) = var else {
-        return Ok(1.0);
+        return Ok(None);
     };
     let scale = var
         .to_str()
@@ -142,7 +143,7 @@ fn winit_output_scale(var: Option<&OsStr>) -> Result<f64, String> {
         .filter(|scale| scale.is_finite())
         .map(|scale| (scale * 120.0).round() / 120.0)
         .filter(|&scale| scale > 0.0);
-    scale.ok_or_else(|| {
+    scale.map(Some).ok_or_else(|| {
         format!(
             "CAMINO_WINIT_SCALE={} isn't a positive number",
             var.display()
@@ -155,12 +156,12 @@ mod tests {
     use super::*;
 
     fn scale(value: &str) -> Result<f64, String> {
-        winit_output_scale(Some(value.as_ref()))
+        winit_output_scale(Some(value.as_ref())).map(Option::unwrap)
     }
 
     #[test]
-    fn the_scale_is_1_when_unset() {
-        assert_eq!(winit_output_scale(None), Ok(1.0));
+    fn the_default_scale_is_kept_when_unset() {
+        assert_eq!(winit_output_scale(None), Ok(None));
     }
 
     #[test]

@@ -71,6 +71,7 @@ use crate::handlers::DragIcon;
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
+use crate::output::OutputRecord;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
@@ -153,6 +154,8 @@ pub struct Camino {
     /// Every output, in the order they were added.
     pub outputs: Vec<Output>,
     pub(crate) next_output_id: u64,
+    /// What Camino keeps of each output beside Smithay's state (51).
+    pub(crate) output_records: HashMap<OutputId, OutputRecord>,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -288,15 +291,35 @@ impl State {
         Self { backend, camino }
     }
 
+    /// Plugs in a headless monitor whose EDID says it's `physical_size` millimetres, with
+    /// one mode of `mode`, which it prefers.
     #[cfg(test)]
-    pub fn add_headless_output(
+    pub fn plug_headless_output(
         &mut self,
-        size: smithay::utils::Size<i32, smithay::utils::Physical>,
-        scale: f64,
+        physical_size: smithay::utils::Size<i32, smithay::utils::Raw>,
+        mode: smithay::utils::Size<i32, smithay::utils::Physical>,
     ) -> Output {
         self.backend
             .headless_mut()
-            .add_output(&mut self.camino, size, scale)
+            .plug(&mut self.camino, physical_size, mode)
+    }
+
+    /// Switches a headless monitor to a mode of `size`.
+    #[cfg(test)]
+    pub fn change_headless_mode(
+        &mut self,
+        output: &Output,
+        size: smithay::utils::Size<i32, smithay::utils::Physical>,
+    ) {
+        self.backend
+            .headless_mut()
+            .change_mode(&mut self.camino, output, size);
+    }
+
+    /// Unplugs a headless monitor.
+    #[cfg(test)]
+    pub fn unplug_headless_output(&mut self, output: &Output) {
+        self.backend.headless_mut().unplug(&mut self.camino, output);
     }
 
     /// The number of render elements the scene has for `output`.
@@ -517,6 +540,7 @@ impl Camino {
             loop_handle,
             outputs: Vec::new(),
             next_output_id: 0,
+            output_records: HashMap::new(),
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
@@ -568,7 +592,12 @@ impl Camino {
         if self.cursors.settings_changed(&settings.mouse) {
             self.queue_redraw_all();
         }
+        let factor = settings.interface.window_scaling_factor;
+        let factor_changed = factor != self.settings.interface.window_scaling_factor;
         self.settings = settings;
+        if factor_changed {
+            self.window_scaling_factor_changed(factor);
+        }
     }
 
     /// Something every frame is drawn with changed: frames may have new extents, which

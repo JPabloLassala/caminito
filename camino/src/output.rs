@@ -1,9 +1,13 @@
 //! Output lifecycle: making outputs, laying them out, picking their default scales, and
-//! telling policy about them (15).
+//! telling policy about them (15, 51).
+
+use std::time::Duration;
 
 use camino_policy::{OutputId, PolicyWindow, WindowId};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
-use smithay::utils::{Logical, Physical, Raw, Rectangle, Size, Transform};
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::wayland_server::backend::GlobalId;
+use smithay::utils::{Logical, Physical, Point, Raw, Rectangle, Size, Transform};
 
 use crate::settings::translate::WindowScalingFactor;
 use crate::state::{Camino, State};
@@ -11,35 +15,30 @@ use crate::state::{Camino, State};
 /// The refresh rate backends without a real one report, in mHz.
 pub const DEFAULT_REFRESH: i32 = 60_000;
 
-/// An output with one mode of `size` at `scale`, made by Camino rather than a monitor.
+/// An output made by Camino rather than a monitor's connector, whose EDID says it's
+/// `physical_size` millimetres, with one mode of `size`, which it prefers.
 pub fn virtual_output(
     name: String,
     model: &str,
+    physical_size: Size<i32, Raw>,
     size: Size<i32, Physical>,
-    scale: f64,
     transform: Transform,
 ) -> Output {
     let output = Output::new(
         name,
         PhysicalProperties {
-            size: (0, 0).into(),
+            size: physical_size,
             subpixel: Subpixel::Unknown,
             make: "Camino".to_owned(),
             model: model.to_owned(),
             serial_number: String::new(),
         },
     );
-    let mode = Mode {
+    output.change_current_state(None, Some(transform), None, None);
+    output.set_preferred(Mode {
         size,
         refresh: DEFAULT_REFRESH,
-    };
-    output.change_current_state(
-        Some(mode),
-        Some(transform),
-        Some(Scale::Fractional(scale)),
-        None,
-    );
-    output.set_preferred(mode);
+    });
     output
 }
 
@@ -80,12 +79,32 @@ pub(crate) struct Monitor {
     pub(crate) lid_switch: bool,
 }
 
+impl Monitor {
+    /// What an output's EDID and the mode it shows say. Nothing reports a lid switch until
+    /// libinput runs on the tty (56).
+    fn of(output: &Output) -> Self {
+        Monitor {
+            physical_size: output.physical_properties().size,
+            mode_size: output
+                .current_mode()
+                .map(|mode| mode.size)
+                .unwrap_or_default(),
+            internal: is_internal(&output.name()),
+            lid_switch: false,
+        }
+    }
+}
+
+/// Whether a connector is built in, by its DRM connector type: a laptop's or a phone's
+/// panel.
+fn is_internal(connector: &str) -> bool {
+    ["eDP-", "LVDS-", "DSI-"]
+        .iter()
+        .any(|kind| connector.starts_with(kind))
+}
+
 /// The scale Camino gives a monitor no output-management client has set (13, ADR 0008):
 /// `window-scaling-factor`'s integer when it forces one, and otherwise KWin's rule.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the output lifecycle (51) calls it")
-)]
 pub(crate) fn default_scale(monitor: &Monitor, factor: WindowScalingFactor) -> f64 {
     match factor {
         WindowScalingFactor::Auto => kwin_scale(monitor),
@@ -150,6 +169,30 @@ pub(crate) fn x11_scale(scales: impl IntoIterator<Item = f64>) -> u32 {
         .fold(1, u32::max)
 }
 
+/// Who chose an output's scale or place (13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChosenBy {
+    /// Camino's default, which it may change.
+    Camino,
+    /// A client, over output management, which Camino leaves alone.
+    OutputManagement,
+}
+
+/// What Camino keeps of an output beside Smithay's state. It goes with the output, so a
+/// monitor plugged in again starts at the defaults (06).
+#[derive(Debug)]
+pub(crate) struct OutputRecord {
+    /// What the default scale is picked from.
+    monitor: Monitor,
+    scale: ChosenBy,
+    position: ChosenBy,
+    global: GlobalId,
+}
+
+/// How long a removed output's global stays disabled before it's destroyed. A client may
+/// bind it before it hears the global is gone, and binding a destroyed global is an error.
+const GLOBAL_REMOVAL_DELAY: Duration = Duration::from_secs(10);
+
 impl Camino {
     /// The X11 scale for the outputs there are now.
     pub(crate) fn x11_scale(&self) -> u32 {
@@ -160,37 +203,149 @@ impl Camino {
         )
     }
 
-    /// Starts showing an output whose mode and scale the backend has set. It goes to the
-    /// right of the outputs already there.
+    /// Starts showing an output the backend found: in its preferred mode, at its default
+    /// scale, and at the default place, to the right of the outputs there are.
     pub fn add_output(&mut self, output: Output) {
         let id = OutputId(self.next_output_id);
         self.next_output_id += 1;
         output.user_data().insert_if_missing(|| id);
 
-        let x = self
-            .outputs
-            .iter()
-            .map(|o| {
-                let geometry = output_geometry(o);
-                geometry.loc.x + geometry.size.w
-            })
-            .max()
-            .unwrap_or(0);
-        output.change_current_state(None, None, None, Some((x, 0).into()));
-        output.create_global::<State>(&self.display_handle);
-
-        self.outputs.push(output.clone());
-        self.output_changed(&output);
+        output.change_current_state(output.preferred_mode(), None, None, None);
+        let monitor = Monitor::of(&output);
+        let scale = default_scale(&monitor, self.settings.interface.window_scaling_factor);
+        output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+        let global = output.create_global::<State>(&self.display_handle);
+        self.output_records.insert(
+            id,
+            OutputRecord {
+                monitor,
+                scale: ChosenBy::Camino,
+                position: ChosenBy::Camino,
+                global,
+            },
+        );
+        self.outputs.push(output);
+        self.lay_out_outputs();
     }
 
-    /// Tells policy an output's mode, scale or place changed, and redraws it.
-    pub fn output_changed(&mut self, output: &Output) {
-        self.policy.add_output(camino_policy::Output {
-            id: self.output_id(output),
-            geometry: output_geometry(output),
-            scale: output.current_scale().fractional_scale(),
-        });
-        self.queue_redraw(output);
+    /// Stops showing an output that was unplugged or disabled. Policy moves its windows
+    /// onto the others, and the outputs at the default place close the gap.
+    pub fn remove_output(&mut self, output: &Output) {
+        let id = self.output_id(output);
+        self.outputs.retain(|o| o != output);
+        self.redraws.remove(&id);
+        let record = self
+            .output_records
+            .remove(&id)
+            .expect("every output has a record");
+
+        let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
+        for window in ids {
+            self.policy.window_mut(window).unwrap().leave_output(output);
+        }
+        output.leave_all();
+
+        self.display_handle
+            .disable_global::<State>(record.global.clone());
+        self.loop_handle
+            .insert_source(
+                Timer::from_duration(GLOBAL_REMOVAL_DELAY),
+                move |_, _, state| {
+                    state
+                        .camino
+                        .display_handle
+                        .remove_global::<State>(record.global.clone());
+                    TimeoutAction::Drop
+                },
+            )
+            .expect("the timer joins the loop");
+
+        self.lay_out_outputs();
+    }
+
+    /// Sets an output's scale, as output management does. `window-scaling-factor` leaves
+    /// it alone from now on.
+    pub fn set_output_scale(&mut self, output: &Output, scale: f64) {
+        output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+        self.record_mut(output).scale = ChosenBy::OutputManagement;
+        self.lay_out_outputs();
+    }
+
+    /// Sets an output's place, as output management does. Laying out leaves it alone from
+    /// now on.
+    pub fn set_output_position(&mut self, output: &Output, position: Point<i32, Logical>) {
+        output.change_current_state(None, None, None, Some(position));
+        self.record_mut(output).position = ChosenBy::OutputManagement;
+        self.lay_out_outputs();
+    }
+
+    /// `window-scaling-factor` changed: the outputs still at Camino's default scale take
+    /// the new default (13).
+    pub(crate) fn window_scaling_factor_changed(&mut self, factor: WindowScalingFactor) {
+        for output in &self.outputs {
+            let record = self.record(output);
+            if record.scale == ChosenBy::Camino {
+                let scale = default_scale(&record.monitor, factor);
+                output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+            }
+        }
+        self.lay_out_outputs();
+    }
+
+    /// The backend changed an output's mode. At Camino's default scale, the output takes
+    /// the default for its new mode, and the outputs are laid out again for its new size.
+    pub fn output_mode_changed(&mut self, output: &Output) {
+        let factor = self.settings.interface.window_scaling_factor;
+        let record = self.record_mut(output);
+        record.monitor = Monitor::of(output);
+        if record.scale == ChosenBy::Camino {
+            let scale = default_scale(&record.monitor, factor);
+            output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+        }
+        self.lay_out_outputs();
+    }
+
+    /// Lays the outputs at the default place out left to right, in the order they were
+    /// added, after the ones output management placed, so they never overlap those. Tells
+    /// policy where every output is now, and redraws them all.
+    fn lay_out_outputs(&mut self) {
+        let is_set = |output: &Output| self.record(output).position == ChosenBy::OutputManagement;
+        let mut x = self
+            .outputs
+            .iter()
+            .filter(|output| is_set(output))
+            .map(|output| output_geometry(output).loc.x + output_geometry(output).size.w)
+            .max()
+            .unwrap_or(0);
+        for output in self.outputs.iter().filter(|output| !is_set(output)) {
+            let position = Point::from((x, 0));
+            if output.current_location() != position {
+                output.change_current_state(None, None, None, Some(position));
+            }
+            x += output_geometry(output).size.w;
+        }
+
+        self.policy.set_outputs(
+            self.outputs
+                .iter()
+                .map(|output| camino_policy::Output {
+                    id: output_id(output),
+                    geometry: output_geometry(output),
+                    scale: output.current_scale().fractional_scale(),
+                })
+                .collect(),
+        );
+        self.queue_redraw_all();
+    }
+
+    fn record(&self, output: &Output) -> &OutputRecord {
+        &self.output_records[&output_id(output)]
+    }
+
+    fn record_mut(&mut self, output: &Output) -> &mut OutputRecord {
+        self.output_records
+            .get_mut(&output_id(output))
+            .expect("every output has a record")
     }
 
     /// Policy's id for one of Camino's outputs.

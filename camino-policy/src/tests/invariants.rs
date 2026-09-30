@@ -20,6 +20,15 @@ enum Op {
         h: i32,
     },
     RemoveOutput(u64),
+    /// An output of `w` × `h` is plugged in, and the compositor lays every output out left
+    /// to right again, as Camino does (51).
+    Plug {
+        id: u64,
+        w: i32,
+        h: i32,
+    },
+    /// An output is unplugged, and the rest are laid out left to right again.
+    Unplug(u64),
     Map {
         window: TestWindow,
     },
@@ -179,6 +188,8 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (1..=3u64, -2000..4000i32, -2000..2000i32, 1..4000i32, 1..3000i32)
             .prop_map(|(id, x, y, w, h)| Op::AddOutput { id, x, y, w, h }),
         1 => (1..=3u64).prop_map(Op::RemoveOutput),
+        1 => (1..=3u64, 1..4000i32, 1..3000i32).prop_map(|(id, w, h)| Op::Plug { id, w, h }),
+        1 => (1..=3u64).prop_map(Op::Unplug),
         3 => test_window().prop_map(|window| Op::Map { window }),
         2 => window_id().prop_map(Op::Unmap),
         1 => (window_id(), 1..2500i32, 1..1500i32, proptest::option::of(window_id()), window_type())
@@ -224,6 +235,12 @@ impl Op {
         match self {
             Op::AddOutput { id, x, y, w, h } => policy.add_output(output(id, x, y, w, h)),
             Op::RemoveOutput(id) => policy.remove_output(OutputId(id)),
+            Op::Plug { id, w, h } => {
+                let mut sizes = sizes_without(policy, id);
+                sizes.push((id, w, h));
+                policy.set_outputs(left_to_right(sizes));
+            }
+            Op::Unplug(id) => policy.set_outputs(left_to_right(sizes_without(policy, id))),
             Op::Map { window } => {
                 // The compositor never maps an id twice.
                 if policy.window(window.id).is_none() {
@@ -301,6 +318,29 @@ impl Op {
     }
 }
 
+/// Each output's id and size, but for `id`'s.
+fn sizes_without(policy: &Policy<TestWindow>, id: u64) -> Vec<(u64, i32, i32)> {
+    policy
+        .outputs()
+        .iter()
+        .map(|o| (o.id.0, o.geometry.size.w, o.geometry.size.h))
+        .filter(|(existing, _, _)| *existing != id)
+        .collect()
+}
+
+/// Outputs of these ids and sizes side by side from the origin, in order.
+fn left_to_right(sizes: Vec<(u64, i32, i32)>) -> Vec<Output> {
+    let mut x = 0;
+    sizes
+        .into_iter()
+        .map(|(id, w, h)| {
+            let placed = output(id, x, 0, w, h);
+            x += w;
+            placed
+        })
+        .collect()
+}
+
 fn verify_invariants(policy: &Policy<TestWindow>) {
     let windows: Vec<WindowId> = policy.windows().map(|w| w.id).collect();
     let stacks: Vec<&[WindowId]> = (0..policy.workspace_count())
@@ -371,6 +411,18 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                 smithay::utils::FrameExtents::default()
             };
             assert_eq!(policy.frame_extents(id), drawn, "{id:?}'s frame extents");
+        }
+    }
+
+    // A window is told only of outputs there are.
+    for &id in &windows {
+        if let Some(outputs) = policy.window(id).unwrap().last_outputs() {
+            for output in outputs {
+                assert!(
+                    policy.outputs().iter().any(|o| o.id == *output),
+                    "{id:?} is on {output:?}, which policy doesn't have"
+                );
+            }
         }
     }
 

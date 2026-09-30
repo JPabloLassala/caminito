@@ -82,3 +82,50 @@ fn a_window_maximised_on_a_removed_output_unmaximises_onto_a_remaining_one() {
     assert_eq!(policy.geometry(id(1)).unwrap().loc, (1520, 780).into());
     assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(1)][..]));
 }
+
+#[test]
+fn windows_move_with_their_output_when_it_moves() {
+    let mut policy = two_outputs();
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(2000, 100),
+        ms(1),
+    );
+    policy.map_window(
+        TestWindow::new(2, 400, 300).with_requested_position(100, 100),
+        ms(2),
+    );
+
+    policy.add_output(output(2, 0, 1080, 1280, 1024));
+
+    assert_eq!(policy.geometry(id(1)).unwrap().loc, (80, 1180).into());
+    assert_eq!(policy.geometry(id(2)).unwrap().loc, (100, 100).into());
+}
+
+#[test]
+fn a_maximised_window_restores_onto_its_moved_output() {
+    let mut policy = two_outputs();
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(2000, 100),
+        ms(1),
+    );
+    policy.set_maximized(id(1), true);
+
+    policy.add_output(output(2, 0, 1080, 1280, 1024));
+    policy.set_maximized(id(1), false);
+
+    assert_eq!(policy.geometry(id(1)).unwrap().loc, (80, 1180).into());
+}
+
+#[test]
+fn removing_the_left_output_and_moving_the_right_one_to_the_origin_keeps_windows_on_it() {
+    let mut policy = two_outputs();
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(2000, 100),
+        ms(1),
+    );
+
+    policy.set_outputs(vec![output(2, 0, 0, 1280, 1024)]);
+
+    assert_eq!(policy.geometry(id(1)).unwrap().loc, (80, 100).into());
+    assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(2)][..]));
+}
