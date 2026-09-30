@@ -4,12 +4,20 @@
 //! After too many exits Camino logs once and runs without X. It's one code path in every
 //! mode.
 //!
+//! Between an exit and the restart Camino holds the display's lock file itself (49), so no
+//! other X server takes the number in the delay. Smithay's `XWayland::spawn` always grabs
+//! the lock afresh and keeps its `X11Lock` private, so Camino takes its own at the end of
+//! the dispatch that saw the exit, and lets it go just before the spawn. Another server
+//! could still take the display in those two gaps, but not in the restart's delay. The
+//! listening sockets aren't held, since the spawn binds its own.
+//!
 //! Known limitation (11): in a MATE on Camino session, an Xwayland crash logs the user out.
 //! mate-session is an X11 GTK client, GTK exits when it loses its display, and mate-session
 //! exiting ends the session. The restart doesn't hold up that teardown.
 
 use std::ffi::OsStr;
 use std::fmt::Display;
+use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -27,6 +35,8 @@ pub(crate) struct Restart {
     /// then, a failure to start means Camino runs without X.
     display: Option<u32>,
     exits: Restarts,
+    /// The display's lock, while Xwayland is down for a restart.
+    display_lock: Option<DisplayLock>,
     /// The helpers' backoff and give-up rule (08), which a test makes quicker.
     pub(crate) policy: RestartPolicy,
 }
@@ -47,6 +57,24 @@ impl Restart {
         self.display
     }
 
+    /// Takes the display's lock until the restart, unless Camino holds it already.
+    fn hold_display_lock(&mut self, number: u32) {
+        if self.display_lock.is_some() {
+            return;
+        }
+        match DisplayLock::grab(number) {
+            Ok(lock) => self.display_lock = Some(lock),
+            Err(err) => {
+                tracing::warn!("can't hold :{number}'s lock until Xwayland restarts: {err}");
+            }
+        }
+    }
+
+    /// Lets the display's lock go, for a spawn to take.
+    pub(super) fn release_display_lock(&mut self) {
+        self.display_lock = None;
+    }
+
     /// Xwayland is ready on `display`.
     pub(super) fn ready(&mut self, display: u32) {
         self.display.get_or_insert(display);
@@ -60,6 +88,38 @@ impl Restart {
         match self.exits.exited(now, &self.policy) {
             Some(delay) => AfterExit::Respawn { display, delay },
             None => AfterExit::GiveUp,
+        }
+    }
+}
+
+/// `/tmp/.X<n>-lock`, taken as X servers take it, with Camino's pid in X's format. Every
+/// X server leaves a lock naming a live process alone. It's removed when dropped.
+#[derive(Debug)]
+struct DisplayLock {
+    display: u32,
+}
+
+impl DisplayLock {
+    fn path(display: u32) -> String {
+        format!("/tmp/.X{display}-lock")
+    }
+
+    fn grab(display: u32) -> io::Result<Self> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(Self::path(display))?;
+        // Built first, so a failed write removes the file again.
+        let lock = DisplayLock { display };
+        writeln!(file, "{:>10}", std::process::id())?;
+        Ok(lock)
+    }
+}
+
+impl Drop for DisplayLock {
+    fn drop(&mut self) {
+        if let Err(err) = std::fs::remove_file(Self::path(self.display)) {
+            tracing::warn!("can't remove :{}'s lock: {err}", self.display);
         }
     }
 }
@@ -122,12 +182,23 @@ impl Camino {
                             state.camino.start_xwayland();
                             TimeoutAction::Drop
                         });
-                if let Err(err) = timer {
-                    tracing::warn!(
+                match timer {
+                    // Taken once this dispatch is over, since an exit reported by the
+                    // `XWayland` source's own callback leaves it, and Smithay's lock, alive
+                    // until the callback returns.
+                    Ok(_) => {
+                        self.loop_handle.insert_idle(move |state| {
+                            let camino = &mut state.camino;
+                            if camino.xwayland.is_none() {
+                                camino.xwayland_restart.hold_display_lock(number);
+                            }
+                        });
+                    }
+                    Err(err) => tracing::warn!(
                         "can't schedule Xwayland's restart, so Camino runs without X: {}",
                         err.error
-                    );
-                }
+                    ),
+                };
             }
         }
     }

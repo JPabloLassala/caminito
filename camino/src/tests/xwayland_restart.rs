@@ -49,7 +49,6 @@ fn a_crashed_xwayland_leaves_no_xwayland_windows_and_comes_back_on_the_same_disp
         Value::Str("BlackMATE".into()),
     )]);
     let output = f.add_output((1920, 1080), 1.0);
-    f.restarts_xwayland();
     let x = f.connect(Kind::X11);
     let first = f.map(x, WindowSpec::default());
     assert!(f.has_keyboard(first), "an XWayland window has the keyboard");
@@ -114,7 +113,6 @@ fn a_crashed_xwayland_leaves_no_xwayland_windows_and_comes_back_on_the_same_disp
 #[test]
 fn xwayland_crashing_again_and_again_as_it_starts_makes_camino_give_up_and_run_without_x() {
     let mut f = Fixture::new();
-    f.restarts_xwayland();
     f.state.camino.xwayland_restart.policy = quick_restarts();
     f.add_output((1920, 1080), 1.0);
     f.start_xwayland();
@@ -143,7 +141,6 @@ fn xwayland_crashing_again_and_again_as_it_starts_makes_camino_give_up_and_run_w
 #[test]
 fn a_restarted_xwayland_is_owed_the_wayland_clipboard() {
     let (mut f, wayland) = Fixture::connected(Kind::Xdg);
-    f.restarts_xwayland();
     f.client(wayland).bind_selections();
     let wayland_window = f.map(wayland, WindowSpec::default());
     f.start_xwayland();
@@ -174,4 +171,63 @@ fn a_restarted_xwayland_is_owed_the_wayland_clipboard() {
         })
         .unwrap();
     assert_eq!(pasted.as_deref(), Some(&b"from Wayland"[..]));
+}
+
+/// Whether another X server could take `:display` now. It takes the lock file as X servers
+/// do: a new one, or one naming a process that's gone. A lock it took is let go at once.
+fn another_server_could_take(display: u32) -> bool {
+    let path = format!("/tmp/.X{display}-lock");
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(_) => {
+            std::fs::remove_file(&path).unwrap();
+            true
+        }
+        Err(_) => {
+            let owner = std::fs::read_to_string(&path).unwrap();
+            let pid = rustix::process::Pid::from_raw(owner.trim().parse().unwrap()).unwrap();
+            rustix::process::test_kill_process(pid).is_err()
+        }
+    }
+}
+
+#[test]
+fn xwayland_s_display_stays_camino_s_while_xwayland_is_down_for_a_restart() {
+    let mut f = Fixture::new();
+    f.add_output((1920, 1080), 1.0);
+    let display = f.start_xwayland();
+
+    f.crash_xwayland();
+
+    assert!(f.state.camino.xwayland.is_none(), "Xwayland is down");
+    assert!(
+        !another_server_could_take(display),
+        "no other X server can take :{display}"
+    );
+    f.wait_for_xwayland();
+    assert_eq!(f.state.camino.xwayland_display(), Some(display));
+}
+
+#[test]
+fn an_xwayland_started_while_another_restarts_takes_a_display_of_its_own() {
+    let mut restarting = Fixture::new();
+    restarting.add_output((1920, 1080), 1.0);
+    // One failed restart and Camino gives up.
+    restarting.state.camino.xwayland_restart.policy = RestartPolicy {
+        give_up_after: 2,
+        ..RestartPolicy::default()
+    };
+    let display = restarting.start_xwayland();
+    restarting.crash_xwayland();
+
+    let mut starting = Fixture::new();
+    starting.add_output((1920, 1080), 1.0);
+    let other = starting.start_xwayland();
+
+    assert_ne!(other, display);
+    restarting.wait_for_xwayland();
+    assert_eq!(restarting.state.camino.xwayland_display(), Some(display));
 }

@@ -8,8 +8,8 @@
 use std::io::Read;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
@@ -111,25 +111,6 @@ pub struct Fixture {
     pub state: State,
     clients: Vec<TestClient>,
     input_millis: u32,
-    /// This fixture's hold on [`X_DISPLAYS`], last so it's let go only after `Drop` has
-    /// ended Xwayland.
-    x_displays: Option<XDisplays>,
-}
-
-/// Held shared by every fixture that starts Xwayland, and exclusively by one that restarts
-/// it. Camino holds nothing on its display between an exit and the restart, so another
-/// test's Xwayland could take it and the restart would fail (49). Until Camino keeps it,
-/// a restarting test runs alone among those that start Xwayland.
-static X_DISPLAYS: RwLock<()> = RwLock::new(());
-
-/// A fixture's hold on [`X_DISPLAYS`], kept until it's dropped.
-enum XDisplays {
-    Shared {
-        _guard: RwLockReadGuard<'static, ()>,
-    },
-    Exclusive {
-        _guard: RwLockWriteGuard<'static, ()>,
-    },
 }
 
 enum TestClient {
@@ -273,7 +254,6 @@ impl Fixture {
             state,
             clients: Vec::new(),
             input_millis: 0,
-            x_displays: None,
         }
     }
 
@@ -877,44 +857,10 @@ impl Fixture {
         }
     }
 
-    /// Holds [`X_DISPLAYS`] shared, as a fixture that starts Xwayland must, unless it's
-    /// already held. A test that starts Xwayland on `state.camino` itself calls this first.
-    pub fn hold_x_displays(&mut self) {
-        if self.x_displays.is_none() {
-            let guard = X_DISPLAYS
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            self.x_displays = Some(XDisplays::Shared { _guard: guard });
-        }
-    }
-
-    /// Holds [`X_DISPLAYS`] exclusively, so no other test starts an Xwayland that could take
-    /// this one's display while it restarts (49). A test that crashes Xwayland calls this
-    /// before starting it.
-    pub fn restarts_xwayland(&mut self) {
-        assert!(
-            self.x_displays.is_none(),
-            "restarts_xwayland comes before Xwayland starts"
-        );
-        let guard = X_DISPLAYS
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.x_displays = Some(XDisplays::Exclusive { _guard: guard });
-    }
-
-    #[track_caller]
-    fn assert_restarts_xwayland(&self) {
-        assert!(
-            matches!(self.x_displays, Some(XDisplays::Exclusive { .. })),
-            "a test that crashes Xwayland calls restarts_xwayland first (49)"
-        );
-    }
-
     /// Spawns Xwayland as Camino does at start-up, and dispatches until `X11Wm` is attached.
     /// Returns its display number.
     #[track_caller]
     pub fn start_xwayland(&mut self) -> u32 {
-        self.hold_x_displays();
         self.state.camino.start_xwayland();
         self.dispatch_until(|f| {
             assert!(f.state.camino.xwayland.is_some(), "Xwayland starts");
@@ -926,7 +872,6 @@ impl Fixture {
     /// Kills Xwayland as a crash would, and dispatches until Camino has let it go.
     #[track_caller]
     pub fn crash_xwayland(&mut self) {
-        self.assert_restarts_xwayland();
         let display = self
             .state
             .camino
@@ -941,7 +886,6 @@ impl Fixture {
     /// it go.
     #[track_caller]
     pub fn crash_xwayland_starting(&mut self) {
-        self.assert_restarts_xwayland();
         self.dispatch_until(|f| f.state.camino.xwayland.is_some());
         let display = self.state.camino.xwayland.as_ref().unwrap().display;
         assert_eq!(

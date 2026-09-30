@@ -110,6 +110,7 @@ impl Camino {
                 Stdio::null()
             }
         };
+        self.xwayland_restart.release_display_lock();
         let spawned = XWayland::spawn(
             &self.display_handle,
             self.xwayland_restart.display(),

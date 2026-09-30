@@ -200,7 +200,6 @@ fn the_work_area_covers_both_outputs_and_each_desktop_lists_each_output() {
 fn display_is_set_only_once_the_root_properties_and_xsettings_exist() {
     let mut f = Fixture::new();
     f.add_output((1920, 1080), 1.0);
-    f.hold_x_displays();
     f.state.camino.start_xwayland();
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let display = loop {
