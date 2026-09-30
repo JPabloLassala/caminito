@@ -15,6 +15,7 @@ mod output_lifecycle;
 mod override_redirect;
 mod palette_helper;
 mod popups;
+mod preferred_scale;
 mod root_properties;
 mod selection;
 mod settings;

@@ -104,6 +104,7 @@ fn a_window_leaves_an_output_that_is_unplugged_and_enters_the_one_it_moves_to() 
     enter headless-1
     leave headless-1
     enter headless-2
+    buffer scale 2
     ");
 }
 

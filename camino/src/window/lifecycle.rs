@@ -11,7 +11,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{FrameExtents, Logical, Size};
 use smithay::wayland::seat::WaylandFocus;
 
-use super::{Mapped, PreMapConfigure, WindowKey, adapter};
+use super::{Mapped, PreMapConfigure, WindowKey, adapter, send_preferred_scale};
 use crate::decoration::WindowFacts;
 use crate::state::Camino;
 
@@ -248,6 +248,13 @@ impl Camino {
         let Some(pending) = self.pending.get(key) else {
             return;
         };
+        // So the client draws its first buffer at the scale it'll likely be shown at.
+        let parent = self.transient_parent(&pending.window);
+        if let Some(output) = self.primary_output_until_drawn(parent) {
+            pending.window.with_surfaces(|surface, data| {
+                send_preferred_scale(surface, data, &output);
+            });
+        }
         let output = self.placement_bounds();
         let (extents, maximized_extents) = self.pending_extents(&pending.window);
         let bounds = output.map(|size| inside(size, extents));

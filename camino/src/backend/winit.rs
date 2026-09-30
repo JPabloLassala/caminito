@@ -3,6 +3,7 @@
 use std::ffi::OsStr;
 
 use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output};
@@ -60,17 +61,17 @@ impl Winit {
 
     /// Draws a frame, unless the host hasn't asked for the next one yet: frames, and so
     /// clients' frame callbacks, are paced by the host's redraw requests.
-    pub fn render(&mut self, camino: &mut Camino, output: &Output) -> bool {
+    pub fn render(&mut self, camino: &mut Camino, output: &Output) -> Option<RenderElementStates> {
         if self.frame_pending {
-            return false;
+            return None;
         }
         let age = self.backend.buffer_age().unwrap_or(0);
-        let damage = {
+        let (damage, states) = {
             let (renderer, mut framebuffer) = match self.backend.bind() {
                 Ok(bound) => bound,
                 Err(err) => {
                     tracing::warn!("error binding the winit window: {err}");
-                    return false;
+                    return None;
                 }
             };
             let elements = scene::output_elements(renderer, camino, output);
@@ -81,10 +82,10 @@ impl Winit {
                 &elements,
                 CLEAR_COLOR,
             ) {
-                Ok(result) => result.damage.cloned(),
+                Ok(result) => (result.damage.cloned(), result.states),
                 Err(err) => {
                     tracing::warn!("error rendering the winit output: {err:?}");
-                    return false;
+                    return None;
                 }
             }
         };
@@ -95,7 +96,7 @@ impl Winit {
         }
         self.backend.window().request_redraw();
         self.frame_pending = true;
-        true
+        Some(states)
     }
 
     fn resize(&mut self, camino: &mut Camino, size: Size<i32, Physical>) {

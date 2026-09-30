@@ -3,6 +3,7 @@
 
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Offscreen};
 use smithay::output::{Mode, Output};
@@ -101,11 +102,12 @@ impl Headless {
         camino.remove_output(output);
     }
 
-    pub fn render(&mut self, camino: &mut Camino, output: &Output) {
+    /// Renders `output`, and returns how each element was drawn.
+    pub fn render(&mut self, camino: &mut Camino, output: &Output) -> RenderElementStates {
         let target = target_mut(&mut self.targets, output).expect("a headless output");
         let mut framebuffer = self.renderer.bind(&mut target.buffer).expect("bind");
         let elements = scene::output_elements(&mut self.renderer, camino, output);
-        target
+        let states = target
             .damage_tracker
             .render_output(
                 &mut self.renderer,
@@ -114,8 +116,10 @@ impl Headless {
                 &elements,
                 CLEAR_COLOR,
             )
-            .expect("render");
+            .expect("render")
+            .states;
         target.rendered = true;
+        states
     }
 
     /// The output's pixels as ARGB8888, row by row, or `None` before it's first rendered.

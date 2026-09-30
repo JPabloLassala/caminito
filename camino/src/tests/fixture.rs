@@ -201,6 +201,9 @@ pub struct WindowSpec {
     /// Whether it can be asked to close: `WM_DELETE_WINDOW` in `WM_PROTOCOLS`, as toolkits
     /// set it. An xdg toplevel always can.
     pub delete_window: bool,
+    /// xdg only: whether it makes a `wp_fractional_scale_v1` before its first commit, as
+    /// GTK4 and Qt 6 do.
+    pub fractional_scale: bool,
 }
 
 impl Default for WindowSpec {
@@ -218,6 +221,7 @@ impl Default for WindowSpec {
             input: None,
             cardinals: Vec::new(),
             delete_window: true,
+            fractional_scale: false,
         }
     }
 }
@@ -372,6 +376,9 @@ impl Fixture {
         assert!(spec.delete_window, "an xdg toplevel can always be closed");
         let client = self.client(id);
         let window = client.create_window();
+        if spec.fractional_scale {
+            client.request_fractional_scale(window);
+        }
         if let Some(title) = spec.title {
             client.set_title(window, title);
         }
@@ -405,6 +412,10 @@ impl Fixture {
     /// Creates and maps an X window, dispatches until Camino manages it and has drawn its
     /// frame, then until the client has seen Camino's answer.
     fn map_x11(&mut self, id: ClientId, spec: WindowSpec) -> ClientWindow {
+        assert!(
+            !spec.fractional_scale,
+            "Xwayland makes an X window's surface: {spec:?}"
+        );
         let decorations = match spec.decoration {
             Decoration::Server | Decoration::Unspoken => None,
             Decoration::Client => Some(false),

@@ -16,16 +16,24 @@ pub(crate) use x11::{
 };
 pub(crate) use xdg::owe_configure;
 
+use std::sync::Mutex;
+
 use camino_policy::{
     FrameState, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
 };
 use camino_theme::PaletteColors;
+use smithay::backend::renderer::element::{
+    PrimaryScanoutOutput, RenderElementStates, default_primary_scanout_output_compare,
+};
 use smithay::desktop::space::SpaceElement;
+use smithay::desktop::utils::{
+    surface_primary_scanout_output, update_surface_primary_scanout_output,
+};
 use smithay::desktop::{Window, WindowSurface};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
-use smithay::wayland::compositor::send_surface_state;
+use smithay::wayland::compositor::{SurfaceData, send_surface_state, with_states};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::xwm::X11Window;
@@ -163,8 +171,10 @@ pub struct Mapped {
     window: Window,
     parent: Option<WindowId>,
     outputs: Vec<OutputId>,
-    /// The output the window overlaps most, whose scale and frame timing it follows
-    /// (ADR 0008).
+    /// The output whose frame timing the window follows, and whose scale its surfaces
+    /// prefer until they have primary outputs of their own (13): its surface's primary
+    /// output once it's drawn, and before that its parent's, or the pointer's. It stays
+    /// while the window isn't drawn anywhere.
     primary_output: Option<Output>,
     activated: bool,
     /// The states policy last asked for.
@@ -231,14 +241,19 @@ impl Mapped {
     }
 
     /// Sends the surfaces output enter and leave for the outputs policy put the window on,
-    /// with its geometry at `geometry`, and the primary output's scale and transform.
-    pub fn update_outputs(&mut self, geometry: Rectangle<i32, Logical>, outputs: &[Output]) {
+    /// with its geometry at `geometry`, and their preferred scales. A window not drawn yet
+    /// takes `fallback` as its primary output.
+    pub fn update_outputs(
+        &mut self,
+        geometry: Rectangle<i32, Logical>,
+        outputs: &[Output],
+        fallback: Option<Output>,
+    ) {
         // Where the surface's origin is, globally.
         let origin = geometry.loc - self.window.geometry().loc;
         let mut bbox = self.window.bbox_with_popups();
         bbox.loc += origin;
 
-        let mut primary: Option<(&Output, i64)> = None;
         for output in outputs {
             let overlap = self
                 .outputs
@@ -249,36 +264,88 @@ impl Mapped {
                 self.window.output_leave(output);
                 continue;
             };
-            let area = i64::from(overlap.size.w) * i64::from(overlap.size.h);
-            if primary.is_none_or(|(_, most)| area > most) {
-                primary = Some((output, area));
-            }
             overlap.loc -= origin;
             self.window.output_enter(output, overlap);
         }
 
-        self.primary_output = primary.map(|(output, _)| output.clone());
         self.frame_scale = outputs
             .iter()
             .filter(|output| self.outputs.contains(&output_id(output)))
             .map(|output| output.current_scale().fractional_scale().ceil() as i32)
             .max()
             .unwrap_or(1);
-        if let Some(output) = &self.primary_output {
-            let scale = output.current_scale();
-            let transform = output.current_transform();
-            self.window.with_surfaces(|surface, states| {
-                send_surface_state(surface, states, scale.integer_scale(), transform);
-                with_fractional_scale(states, |fractional| {
-                    fractional.set_preferred_scale(scale.fractional_scale());
-                });
-            });
+        if self.primary_output.is_none() {
+            self.primary_output = fallback;
         }
+        self.send_preferred_scales();
     }
 
-    /// Sends the surfaces output leave for an output that's gone.
+    /// Picks each surface's primary output from the frames just drawn on `rendered`, in
+    /// the order they were drawn, with Smithay's default comparison (13): another output
+    /// takes over once it shows at least twice the pixels
+    /// (`renderer/element/mod.rs:428-460`). Run after rendering, as cosmic-comp does
+    /// (`state.rs:957-1000`).
+    pub(crate) fn update_primary_outputs(&mut self, rendered: &[(Output, RenderElementStates)]) {
+        self.window.with_surfaces(|surface, data| {
+            let update = || {
+                for (output, states) in rendered {
+                    update_surface_primary_scanout_output(
+                        surface,
+                        output,
+                        data,
+                        None,
+                        states,
+                        default_primary_scanout_output_compare,
+                    );
+                }
+            };
+            update();
+            // Smithay drops the primary output of a surface that's no longer on it, even
+            // when it was drawn on an output earlier in the pass; a second pass lets that
+            // output take over.
+            if surface_primary_scanout_output(surface, data).is_none() {
+                update();
+            }
+        });
+        let primary = self.wl_surface().and_then(|surface| {
+            with_states(&surface, |data| {
+                surface_primary_scanout_output(&surface, data)
+            })
+        });
+        if primary.is_some() {
+            self.primary_output = primary;
+        }
+        self.send_preferred_scales();
+    }
+
+    /// Sends each surface its primary output's scale, fractional and rounded up, and
+    /// transform. Smithay sends only what changed.
+    fn send_preferred_scales(&self) {
+        let fallback = self.primary_output.as_ref();
+        self.window.with_surfaces(|surface, data| {
+            let primary = surface_primary_scanout_output(surface, data);
+            if let Some(output) = primary.as_ref().or(fallback) {
+                send_preferred_scale(surface, data, output);
+            }
+        });
+    }
+
+    /// Sends the surfaces output leave for an output that's gone, and forgets it as their
+    /// primary output.
     pub(crate) fn leave_output(&mut self, output: &Output) {
         self.window.output_leave(output);
+        self.window.with_surfaces(|surface, data| {
+            if surface_primary_scanout_output(surface, data).as_ref() == Some(output) {
+                // Smithay would keep comparing other outputs with it while the output
+                // lives on elsewhere.
+                *data
+                    .data_map
+                    .get::<Mutex<PrimaryScanoutOutput>>()
+                    .expect("Smithay keeps a surface's primary output in its data map")
+                    .lock()
+                    .unwrap() = PrimaryScanoutOutput::default();
+            }
+        });
         if self.primary_output.as_ref() == Some(output) {
             self.primary_output = None;
         }
@@ -429,7 +496,37 @@ impl PolicyWindow for Mapped {
     }
 }
 
+/// Sends `surface` the scale and transform of `output` to draw at: its fractional scale,
+/// and its scale rounded up as `preferred_buffer_scale`.
+pub(crate) fn send_preferred_scale(surface: &WlSurface, data: &SurfaceData, output: &Output) {
+    let scale = output.current_scale();
+    send_surface_state(
+        surface,
+        data,
+        scale.integer_scale(),
+        output.current_transform(),
+    );
+    with_fractional_scale(data, |fractional| {
+        fractional.set_preferred_scale(scale.fractional_scale());
+    });
+}
+
 impl Camino {
+    /// The primary output of a window not drawn yet (13): its parent's, or else the one
+    /// under the pointer.
+    pub(crate) fn primary_output_until_drawn(&self, parent: Option<WindowId>) -> Option<Output> {
+        let parents = parent
+            .and_then(|parent| self.policy.window(parent))
+            .and_then(|parent| parent.primary_output().cloned());
+        parents.or_else(|| {
+            let pointer = self.seat.get_pointer().unwrap().current_location();
+            self.outputs
+                .iter()
+                .find(|output| output_geometry(output).to_f64().contains(pointer))
+                .cloned()
+        })
+    }
+
     /// The managed window a window says it's transient for.
     pub fn transient_parent(&self, window: &Window) -> Option<WindowId> {
         self.mapped_for_key(&adapter(window).parent()?)

@@ -359,8 +359,14 @@ impl Camino {
         let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
         for id in ids {
             let geometry = self.policy.geometry(id).unwrap();
+            let mapped = self.policy.window(id).unwrap();
+            let fallback = mapped
+                .primary_output()
+                .is_none()
+                .then(|| self.primary_output_until_drawn(mapped.transient_parent()))
+                .flatten();
             let mapped = self.policy.window_mut(id).unwrap();
-            mapped.update_outputs(geometry, &self.outputs);
+            mapped.update_outputs(geometry, &self.outputs, fallback);
         }
     }
 

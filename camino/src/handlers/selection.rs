@@ -23,9 +23,8 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Monotonic, Point, Serial, Time};
 use smithay::wayland::compositor::{
-    SurfaceAttributes, TraversalAction, send_surface_state, with_states, with_surface_tree_downward,
+    SurfaceAttributes, TraversalAction, with_states, with_surface_tree_downward,
 };
-use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler,
 };
@@ -35,6 +34,7 @@ use smithay::wayland::selection::primary_selection::{
 use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
 
 use crate::state::State;
+use crate::window::send_preferred_scale;
 
 /// The only selections Camino sets on the seat itself are X clients', so its user data
 /// says nothing more.
@@ -80,18 +80,11 @@ impl DragIcon {
         now: Time<Monotonic>,
         throttle: Option<Duration>,
     ) {
-        let scale = output.current_scale();
-        let transform = output.current_transform();
         with_surface_tree_downward(
             &self.surface,
             (),
             |_, _, _| TraversalAction::DoChildren(()),
-            |surface, states, _| {
-                send_surface_state(surface, states, scale.integer_scale(), transform);
-                with_fractional_scale(states, |fractional| {
-                    fractional.set_preferred_scale(scale.fractional_scale());
-                });
-            },
+            |surface, states, _| send_preferred_scale(surface, states, output),
             |_, _, _| true,
         );
         send_frames_surface_tree(&self.surface, output, now, throttle, |_, _| {

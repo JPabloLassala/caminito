@@ -36,6 +36,12 @@ use wayland_client::protocol::wl_subcompositor::{self, WlSubcompositor};
 use wayland_client::protocol::wl_subsurface::{self, WlSubsurface};
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
+use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::{
+    self, WpFractionalScaleManagerV1,
+};
+use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::{
+    self, WpFractionalScaleV1,
+};
 use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibit_manager_v1::{
     self, ZwpKeyboardShortcutsInhibitManagerV1,
 };
@@ -95,6 +101,7 @@ pub struct State {
     wm_base: Option<XdgWmBase>,
     seat: Option<WlSeat>,
     decoration_manager: Option<ZxdgDecorationManagerV1>,
+    fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
     shortcuts_inhibit_manager: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
     pointer_constraints: Option<ZwpPointerConstraintsV1>,
     /// Whether the pointer lock the client asked for is active.
@@ -160,7 +167,9 @@ pub struct Window {
     /// How many frame callbacks the compositor has answered.
     pub frames_done: usize,
     /// The window surface's `enter` and `leave` events, as `enter <output name>` and
-    /// `leave <output name>`, oldest first.
+    /// `leave <output name>`, and the scales it's asked to draw at, as `buffer scale <n>`
+    /// for `preferred_buffer_scale` and `fractional scale <scale>` for
+    /// `wp_fractional_scale_v1`, oldest first.
     pub output_events: Vec<String>,
     /// Every mode KDE server-decoration has sent for the window, oldest first.
     pub kde_modes: Vec<KdeMode>,
@@ -642,6 +651,13 @@ impl Client {
         }
     }
 
+    /// Makes the window's `wp_fractional_scale_v1`, so it's told its preferred fractional
+    /// scale.
+    pub fn request_fractional_scale(&mut self, id: WindowId) {
+        let manager = self.global(|state| &mut state.fractional_scale_manager, 1);
+        manager.get_fractional_scale(&self.window(id).surface, &self.qh, id);
+    }
+
     /// Makes the window's xdg-decoration object without asking for a mode.
     pub fn create_decoration(&mut self, id: WindowId) {
         let manager = self.global(|state| &mut state.decoration_manager, 1);
@@ -889,6 +905,14 @@ impl Dispatch<WlSurface, ()> for State {
         let (verb, output) = match event {
             wl_surface::Event::Enter { output } => ("enter", output),
             wl_surface::Event::Leave { output } => ("leave", output),
+            wl_surface::Event::PreferredBufferScale { factor } => {
+                if let SurfaceRef::Window(id) = state.surface_ref(surface) {
+                    state.windows[id.0]
+                        .output_events
+                        .push(format!("buffer scale {factor}"));
+                }
+                return;
+            }
             _ => return,
         };
         let name = state
@@ -1007,6 +1031,24 @@ impl Dispatch<ZxdgToplevelDecorationV1, WindowId> for State {
         } = event
         {
             state.windows[id.0].pending.decoration = Some(mode);
+        }
+    }
+}
+
+impl Dispatch<WpFractionalScaleV1, WindowId> for State {
+    fn event(
+        state: &mut Self,
+        _: &WpFractionalScaleV1,
+        event: wp_fractional_scale_v1::Event,
+        id: &WindowId,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            let scale = f64::from(scale) / 120.;
+            state.windows[id.0]
+                .output_events
+                .push(format!("fractional scale {scale}"));
         }
     }
 }
@@ -1238,6 +1280,7 @@ ignore_events!(
     WlSubsurface => wl_subsurface::Event,
     XdgPositioner => xdg_positioner::Event,
     ZxdgDecorationManagerV1 => zxdg_decoration_manager_v1::Event,
+    WpFractionalScaleManagerV1 => wp_fractional_scale_manager_v1::Event,
     ZwpPointerConstraintsV1 => zwp_pointer_constraints_v1::Event,
     ZwpKeyboardShortcutsInhibitManagerV1 => zwp_keyboard_shortcuts_inhibit_manager_v1::Event,
     ZwpKeyboardShortcutsInhibitorV1 => zwp_keyboard_shortcuts_inhibitor_v1::Event,

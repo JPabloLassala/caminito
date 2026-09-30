@@ -355,13 +355,26 @@ impl State {
     }
 
     fn redraw_queued_outputs(&mut self) {
+        let mut rendered = Vec::new();
         for output in self.camino.take_queued_redraws() {
-            if self.backend.render(&mut self.camino, &output) {
-                self.post_render(&output);
-            } else {
+            match self.backend.render(&mut self.camino, &output) {
+                Some(states) => rendered.push((output, states)),
                 // The backend can't take a frame yet; it'll be drawn when it can.
-                self.camino.queue_redraw(&output);
+                None => self.camino.queue_redraw(&output),
             }
+        }
+        if rendered.is_empty() {
+            return;
+        }
+        // Every output drawn in this pass has its say in the primary outputs before any
+        // frame callback goes by them.
+        let ids: Vec<WindowId> = self.camino.policy.windows().map(|m| m.id()).collect();
+        for id in ids {
+            let mapped = self.camino.policy.window_mut(id).unwrap();
+            mapped.update_primary_outputs(&rendered);
+        }
+        for (output, _) in &rendered {
+            self.post_render(output);
         }
     }
 
@@ -492,7 +505,7 @@ impl Camino {
         );
         let mut camino = Self {
             loop_signal: event_loop.get_signal(),
-            compositor_state: CompositorState::new::<State>(dh),
+            compositor_state: CompositorState::new_v6::<State>(dh),
             shm_state: ShmState::new::<State>(dh, Vec::new()),
             output_manager_state: OutputManagerState::new_with_xdg_output::<State>(dh),
             seat_state,
