@@ -17,7 +17,7 @@ use smithay::backend::input::{
     PointerMotionEvent,
 };
 use smithay::desktop::WindowSurfaceType;
-use smithay::input::keyboard::{FilterResult, KeysymHandle, ModifiersState};
+use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
@@ -222,8 +222,9 @@ impl State {
             return;
         }
 
-        // 4. Camino's bindings, inside Smithay's filter so they see xkb's keysyms; then 5.
-        // the keyboard sends whatever the filter forwards to the focused client.
+        // 4. VT switching, then Camino's bindings, inside Smithay's filter so they see xkb's
+        // keysyms; then 5. the keyboard sends whatever the filter forwards to the focused
+        // client.
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
@@ -254,8 +255,8 @@ impl State {
         }
     }
 
-    /// Stage 4: Camino's own bindings. A key whose press ran a binding has its release
-    /// swallowed too, so the client never sees half a key.
+    /// Stage 4: VT switching (55) and Camino's own bindings. A key whose press switched VTs
+    /// or ran a binding has its release swallowed too, so the client never sees half a key.
     fn bindings_stage(
         &mut self,
         keycode: Keycode,
@@ -269,6 +270,13 @@ impl State {
             } else {
                 FilterResult::Forward
             };
+        }
+        // The keymap gives Ctrl+Alt+Fn these keysyms. No client can inhibit them, so none
+        // can keep the user from leaving the VT.
+        if let Some(vt) = vt_switch(keysym.modified_sym()) {
+            self.backend.change_vt(vt);
+            self.camino.suppressed_keys.insert(keycode);
+            return FilterResult::Intercept(None);
         }
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
@@ -479,6 +487,14 @@ enum Constraint {
 /// keyboard monitor pass. There's no lock yet.
 fn lock_passes(_keycode: Keycode) -> bool {
     true
+}
+
+/// The VT an `XF86Switch_VT_n` keysym switches to.
+fn vt_switch(keysym: Keysym) -> Option<i32> {
+    let first = Keysym::XF86_Switch_VT_1.raw();
+    (first..=Keysym::XF86_Switch_VT_12.raw())
+        .contains(&keysym.raw())
+        .then(|| (keysym.raw() - first + 1) as i32)
 }
 
 /// Stage 2, AccessX (M7): sticky, slow and bounce keys. Nothing is filtered yet.

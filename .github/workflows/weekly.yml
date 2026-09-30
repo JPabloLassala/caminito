@@ -19,9 +19,10 @@ jobs:
 
       - name: Point Smithay at master
         run: |
-          sed -i -E '/^smithay = /{s/version = "[^"]+", //;s/rev = "[0-9a-f]+"/branch = "master"/}' Cargo.toml
+          sed -i -E '/^smithay(-drm-extras)? = /{s/version = "[^"]+", //;s/rev = "[0-9a-f]+"/branch = "master"/}' Cargo.toml
           grep '^smithay = .*branch = "master"' Cargo.toml
-          cargo update -p smithay
+          grep '^smithay-drm-extras = .*branch = "master"' Cargo.toml
+          cargo update -p smithay -p smithay-drm-extras
 
       - name: Build
         run: cargo build --workspace

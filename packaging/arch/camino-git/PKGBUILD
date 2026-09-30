@@ -10,14 +10,16 @@ url='https://github.com/JPabloLassala/camino'
 license=(GPL-2.0-or-later)
 # Only what the binaries link (16), and what they load at run time. winit dlopens
 # libwayland-client, libEGL and libxcb, which the desktop a nested run sits inside always
-# has; M4 and M5 add the real dependencies. camino draws frames with cairo, pango and gdk-pixbuf2
+# has. On the tty (55), camino takes its seat through libseat (seatd's, which talks to
+# logind too), finds the GPU with libudev (systemd-libs), drives it through libdrm and
+# mesa's GBM, reads EDIDs with libdisplay-info, and dlopens libglvnd's libEGL. camino draws frames with cairo, pango and gdk-pixbuf2
 # (30), whose loaders need librsvg for SVG theme images; camino-gtk-palette links gtk3 and
 # glib2 (28); camino reads marco's gsettings schemas (09), which marco provides; and
 # mate-themes has Menta, the default theme, which marco doesn't pull in. camino spawns
 # Xwayland (11, 34); its own X connection is x11rb's pure-Rust one, which links nothing, and
 # the X11 test tier runs the same Xwayland from check().
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 marco mate-themes
-  xorg-xwayland)
+  xorg-xwayland seatd systemd-libs libdrm mesa libdisplay-info libglvnd)
 makedepends=(cargo git meson)
 # camino's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).

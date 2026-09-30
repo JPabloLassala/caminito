@@ -25,10 +25,12 @@ use smithay::reexports::wayland_server::Display;
 
 use crate::state::State;
 
-/// Runs Camino nested, in a winit window, until the window closes.
-pub fn run_nested() -> Result<(), Box<dyn std::error::Error>> {
+/// Runs Camino on `kind`'s backend until the winit window closes, or SIGTERM or SIGINT
+/// comes.
+pub fn run(kind: backend::Kind) -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = EventLoop::try_new()?;
-    let mut state = State::new_winit(&event_loop, Display::new()?)?;
+    let mut state = State::new(&event_loop, Display::new()?, kind)?;
+    state.camino.stop_on_signals()?;
 
     let socket = state.camino.add_socket()?;
     tracing::info!("listening on WAYLAND_DISPLAY={}", socket.to_string_lossy());

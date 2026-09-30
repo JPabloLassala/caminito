@@ -16,7 +16,11 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    match camino::run_nested() {
+    let kind = camino::backend::Kind::choose(
+        std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+        std::env::var_os("DISPLAY").as_deref(),
+    );
+    match camino::run(kind) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!("{}", report(err.as_ref()));
@@ -39,7 +43,7 @@ fn report(err: &dyn std::error::Error) -> String {
 
 #[derive(Debug, Default, PartialEq)]
 struct Args {
-    /// Run as the Session (08), rather than nested.
+    /// Run as the Session (08), rather than bare.
     session: bool,
 }
 
@@ -65,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn no_arguments_is_a_nested_run() {
+    fn no_arguments_is_a_bare_run() {
         assert_eq!(parse(&[]), Ok(Args { session: false }));
     }
 

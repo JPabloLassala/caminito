@@ -29,7 +29,7 @@ The layout is ticket 15's ([.scratch/camino-v0.1/issues/15-crate-and-module-arch
 
 - There is no `anyhow` or `thiserror`. A module that can fail defines its own error enum with a documented variant for each cause, a hand-written `Display` and `impl std::error::Error`. `settings::Error` is the model.
 - `Display` messages are lowercase with no trailing period, and they read as the cause: `can't start the settings thread: {err}`.
-- `?` passes errors up to `run_nested` and `main`, which log them. Returning `Box<dyn Error>` is fine at that top level only.
+- `?` passes errors up to `run` and `main`, which log them. Returning `Box<dyn Error>` is fine at that top level only.
 - A feature Camino can run without (Xwayland, D-Bus, a helper) logs one `warn!` line when it fails and Camino carries on. It doesn't abort start-up.
 - Use `expect` for invariants Camino holds itself, with a message that states the invariant as a fact: `.expect("the display joins the event loop")`, not `"failed to insert source"`.
 - A bare `unwrap()` outside tests is acceptable only where the value is guaranteed by construction and a message would add nothing: `seat.get_pointer()` after the seat was built with one, or `Mutex::lock` on a lock that is never poisoned. Anything a client, the user's settings or the environment can cause is handled, not unwrapped.
@@ -75,7 +75,7 @@ Where each tier lives, per ticket 15's test seams:
 
 ## Dependencies
 
-- Shared dependencies are declared once in `[workspace.dependencies]`. Smithay is pinned by `rev` on one line, which the canary rewrites.
+- Shared dependencies are declared once in `[workspace.dependencies]`. Smithay is pinned by `rev` on one line, which the canary rewrites, and `smithay-drm-extras`, from the same repository, on the next, at the same `rev`.
 - Add a dependency only when it earns its weight. It must pass `cargo deny`, and its features are enabled per crate, as narrowly as possible.
 - A dev-only dependency never becomes a normal dependency just to make a test easier.
 

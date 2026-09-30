@@ -16,7 +16,19 @@ rustix = { version = "1.1.5", features = ["fs"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 signal-hook = "0.4.4"
-smithay = { workspace = true, features = ["backend_winit", "desktop", "wayland_frontend", "xwayland"] }
+smithay = { workspace = true, features = [
+    "backend_drm",
+    "backend_gbm",
+    "backend_session_libseat",
+    "backend_udev",
+    "backend_winit",
+    "desktop",
+    "renderer_gl",
+    "wayland_frontend",
+    "xwayland",
+] }
+# EDIDs' make, model and serial, through libdisplay-info.
+smithay-drm-extras = { workspace = true, features = ["display-info"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 # Camino's X connection (11, 15), beside Smithay's.

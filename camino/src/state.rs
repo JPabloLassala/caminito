@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
+use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -61,7 +62,7 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 
 use camino_theme::{PaletteCache, ThemeDirs, Variant};
 
-use crate::backend::Backend;
+use crate::backend::{self, Backend};
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
 use crate::debug::DebugToggles;
@@ -254,10 +255,12 @@ impl ClientData for ClientState {
 }
 
 impl State {
-    /// Opens a winit window as the one output, with the installed settings.
-    pub fn new_winit(
+    /// Starts on `kind`'s backend, with the installed settings: a winit window as the one
+    /// output, or the machine's monitors from the tty.
+    pub fn new(
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
+        kind: backend::Kind,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut camino = Camino::new(
             event_loop,
@@ -267,7 +270,12 @@ impl State {
             PaletteCache::from_env(),
             CursorSource::Xcursor,
         )?;
-        let backend = Backend::Winit(Box::new(crate::backend::winit::Winit::new(&mut camino)?));
+        let backend = match kind {
+            backend::Kind::Winit => {
+                Backend::Winit(Box::new(backend::winit::Winit::new(&mut camino)?))
+            }
+            backend::Kind::Tty => Backend::Tty(Box::new(backend::tty::Tty::new(&mut camino)?)),
+        };
         Ok(Self { backend, camino })
     }
 
@@ -716,6 +724,27 @@ impl Camino {
             })
             .map_err(|err| err.error)?;
         Ok(name)
+    }
+
+    /// Stops the loop when SIGTERM or SIGINT comes, so Camino tears down as it does when
+    /// its winit window closes: on the tty, that gives the VT back (08). Nothing else
+    /// quits a bare `camino` on the tty.
+    pub fn stop_on_signals(&mut self) -> std::io::Result<()> {
+        let (read, write) = UnixStream::pair()?;
+        read.set_nonblocking(true)?;
+        write.set_nonblocking(true)?;
+        for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+            signal_hook::low_level::pipe::register(signal, write.try_clone()?)?;
+        }
+        let source = Generic::new(read, Interest::READ, Mode::Level);
+        self.loop_handle
+            .insert_source(source, |_, _, state| {
+                tracing::debug!("stopping on a signal");
+                state.camino.loop_signal.stop();
+                Ok(PostAction::Remove)
+            })
+            .map_err(|err| std::io::Error::other(err.error))?;
+        Ok(())
     }
 
     /// The time policy is given as `now`.

@@ -112,12 +112,9 @@ impl Winit {
     }
 }
 
-// `Headless` is the other variant, under `cfg(test)`.
-#[allow(clippy::infallible_destructuring_match)]
 fn handle_event(state: &mut State, event: WinitEvent) {
     let winit = match &mut state.backend {
         Backend::Winit(winit) => winit,
-        #[cfg(test)]
         _ => unreachable!("winit's events come only on the winit backend"),
     };
     match event {

@@ -12,6 +12,8 @@ repository = "https://github.com/JPabloLassala/camino"
 # Pinned by rev and bumped one commit at a time. The weekly canary rewrites this
 # line to build against master, so keep it on one line.
 smithay = { version = "0.7.0", git = "https://github.com/Smithay/smithay.git", rev = "928d4a9b222b2adcd739a2c60caf3e8f304a45a5", default-features = false }
+# Smithay's connector scanner, from the same repository and rev, which the canary moves too.
+smithay-drm-extras = { git = "https://github.com/Smithay/smithay.git", rev = "928d4a9b222b2adcd739a2c60caf3e8f304a45a5", default-features = false }
 x11rb = "0.13.2"
 
 # CI runs clippy with -D warnings, so "warn" here fails the build there.

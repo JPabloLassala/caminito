@@ -21,9 +21,13 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] A unit test, written before the code, of the backend choice for each combination of `WAYLAND_DISPLAY` and `DISPLAY`.
-- [ ] `tools/dev-nested` still runs winit, unchanged.
+- [x] A unit test, written before the code, of the backend choice for each combination of `WAYLAND_DISPLAY` and `DISPLAY`.
+- [x] `tools/dev-nested` still runs winit, unchanged.
 - [ ] On a spare tty as `caminotest`, bare `camino` lights both of the developer's monitors in their preferred modes, left to right, at their default scales, and a terminal started with its `WAYLAND_DISPLAY` shows on them.
 - [ ] Switching to another VT and back works, and the outputs redraw.
 - [ ] Unplugging and re-plugging a monitor removes and adds its output, and windows move off it.
 - [ ] Quitting gives the VT back in text mode.
+
+## Hand-check notes
+
+Until libinput comes in 56, no key reaches Camino on the tty, so the VT keysyms can't be pressed there yet. Switch VTs from another VT or over ssh with `chvt <n>` (or `loginctl activate`), and quit by sending `camino` SIGTERM or SIGINT, which now stop it cleanly. A terminal is started from another VT with `WAYLAND_DISPLAY` set to the socket Camino logs.
