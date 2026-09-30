@@ -29,7 +29,7 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
 - [x] Nested, gtk3-demo's Preferences menu opens on a click and shows above its window. Down, Right and Escape navigate it and its Color submenu. Clicking outside the menu closes it. Afterwards, typing goes to the window again.
 - [x] Nested, text copied in xterm pastes into foot, and back, through both the clipboard (Ctrl+Shift+C and V in foot) and the primary selection (select, then middle-click). A file dragged from caja with `GDK_BACKEND=x11` drops into a native caja, and the other way round.
 - [x] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it to the second workspace.
-- [ ] Nested with `tools/dev-nested --bin --scale 2`, xterm (with `-fa Monospace`, after [47](47-xft-resources.md)) renders sharp with a Menta frame, and `xprop` shows its `_NET_FRAME_EXTENTS` at twice the frame's logical size.
+- [x] Nested with `tools/dev-nested --bin --scale 2`, xterm (with `-fa Monospace`, after [47](47-xft-resources.md)) renders sharp with a Menta frame, and `xprop` shows its `_NET_FRAME_EXTENTS` at twice the frame's logical size.
 - [x] Nested, killing the nested Xwayland by pid with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a Menta frame.
 - [x] Nested, `wmctrl -d` lists four workspaces, `Workspace 1` to `Workspace 4`, with the first current, and `wmctrl -s 2` switches to the third.
 - [x] The results are recorded in this ticket's notes, with a new ticket for each failure.
@@ -63,4 +63,4 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
   - **Drag and drop** passed, but a drag from the native caja showed no icon under the pointer, while one from the X11 caja did: Camino doesn't draw Wayland drag icons yet. Filed as [48](48-drag-icons.md).
   - **wmctrl -t:** xterm staying on workspace 2 afterwards is expected, since nothing moves it back.
 
-- **After 47 (2026-09-30):** nested with `--scale 2`, `xterm -fa Monospace -fs 11`'s text rendered at scale 2. Its sharpness and Menta frame weren't reported, so the scale-2 criterion stays open for them.
+- **After 47 (2026-09-30):** nested with `--scale 2`, `xterm -fa Monospace -fs 11`'s text rendered at scale 2. Its sharpness and Menta frame weren't reported, so the scale-2 criterion stays open for them. Confirmed afterwards: it renders sharp with a Menta frame, so the criterion is ticked. Its frame extents were 2, 2, 62, 2 in the scripted run.
