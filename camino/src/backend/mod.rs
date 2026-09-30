@@ -2,9 +2,12 @@
 
 use std::ffi::OsStr;
 
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::input::keyboard::LedState;
 use smithay::output::Output;
+use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 use crate::state::Camino;
 
@@ -69,6 +72,32 @@ impl Backend {
     pub fn update_leds(&mut self, leds: LedState) {
         if let Backend::Tty(tty) = self {
             tty.update_leds(leds);
+        }
+    }
+
+    /// linux-dmabuf's state. Its global is offered only on the tty (57), so only there do
+    /// clients reach it.
+    pub fn dmabuf_state(&mut self) -> &mut DmabufState {
+        match self {
+            Backend::Tty(tty) => tty.dmabuf_state(),
+            _ => unreachable!("linux-dmabuf is offered only on the tty"),
+        }
+    }
+
+    /// Imports a client's dmabuf for rendering, and returns whether it was taken.
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.import_dmabuf(dmabuf),
+            _ => false,
+        }
+    }
+
+    /// drm-syncobj's state, if it's offered: only on the tty, where there's a DRM device to
+    /// import timelines on (57).
+    pub fn syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        match self {
+            Backend::Tty(tty) => tty.syncobj_state(),
+            _ => None,
         }
     }
 

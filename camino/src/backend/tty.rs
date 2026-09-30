@@ -8,7 +8,8 @@
 //! Cut down to the primary GPU, which v0.1 drives alone, and composited with GLES every
 //! frame, as on winit, so nothing is scanned out directly. libinput is set up as in
 //! `run_udev` (`:294-320`), and its keyboards' LEDs kept as `update_led_state` does
-//! (`:212-216`).
+//! (`:212-216`). linux-dmabuf and drm-syncobj are offered as `run_udev` does (`:451-498`),
+//! and dmabufs imported as `dmabuf_imported` does (`:170-185`), on the primary GPU (57).
 
 mod libinput;
 
@@ -17,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::compositor::FrameFlags;
 use smithay::backend::drm::exporter::gbm::{GbmFramebufferExporter, NodeFilter};
@@ -25,6 +27,7 @@ use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmNode,
 use smithay::backend::egl::{self, EGLContext, EGLDisplay};
 use smithay::backend::input::{DeviceCapability, InputEvent};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
+use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::{GlesError, GlesRenderer};
 use smithay::backend::session::libseat::{self, LibSeatSession};
@@ -38,6 +41,8 @@ use smithay::reexports::drm::control::{ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::DeviceFd;
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
+use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
 use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 
@@ -113,12 +118,20 @@ pub struct Tty {
     /// The keyboards plugged in, whose LEDs show the seat's.
     keyboards: Vec<input::Device>,
     seat: LibSeatSession,
+    /// linux-dmabuf, through which clients hand over the buffers they render on the GPU. Its
+    /// global is offered only here, where there's a GPU to import them on (57).
+    dmabuf: DmabufState,
+    /// drm-syncobj, offered only with linux-dmabuf and when the GPU has syncobj timelines
+    /// (57).
+    syncobj: Option<DrmSyncobjState>,
 }
 
 /// The GPU's DRM device, its renderer and the monitors lit on it.
 struct Gpu {
     /// The GPU's primary node, which udev's events name.
     node: DrmNode,
+    /// The GPU's render node, which clients render on, or its primary node if it has none.
+    render_node: DrmNode,
     manager: TtyOutputManager,
     renderer: GlesRenderer,
     scanner: DrmScanner,
@@ -160,7 +173,7 @@ impl Tty {
             .map(|(_, path)| path.to_owned())
             .ok_or(Error::NoGpu)?;
         tracing::info!("using {} as the primary GPU", path.display());
-        let gpu = Gpu::open(&mut seat, node, &path, &camino.loop_handle)?;
+        let mut gpu = Gpu::open(&mut seat, node, &path, &camino.loop_handle)?;
 
         let mut libinput = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
             seat.clone().into(),
@@ -169,11 +182,19 @@ impl Tty {
             .udev_assign_seat(&seat_name)
             .map_err(|()| Error::Libinput)?;
 
+        let mut dmabuf = DmabufState::new();
+        let syncobj = if gpu.offer_dmabuf(camino, &mut dmabuf) {
+            gpu.offer_syncobj(camino)
+        } else {
+            None
+        };
         let mut tty = Tty {
             gpu,
             libinput: libinput.clone(),
             keyboards: Vec::new(),
             seat,
+            dmabuf,
+            syncobj,
         };
         tty.scan_connectors(camino);
 
@@ -207,6 +228,29 @@ impl Tty {
         if let Err(err) = self.seat.change_vt(vt) {
             tracing::warn!("can't switch to VT {vt}: {err}");
         }
+    }
+
+    /// linux-dmabuf's state, whose global the tty offers.
+    pub fn dmabuf_state(&mut self) -> &mut DmabufState {
+        &mut self.dmabuf
+    }
+
+    /// drm-syncobj's state, if the GPU has syncobj timelines.
+    pub fn syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        self.syncobj.as_mut()
+    }
+
+    /// Imports a client's dmabuf on the GPU, so it's known to render before the client
+    /// uses it. Returns whether the GPU took it.
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
+        if let Err(err) = self.gpu.renderer.import_dmabuf(dmabuf, None) {
+            tracing::debug!("can't import a client's dmabuf: {err}");
+            return false;
+        }
+        if dmabuf.node().is_none() {
+            dmabuf.set_node(self.gpu.render_node);
+        }
+        true
     }
 
     /// A keyboard was plugged in: it shows `leds` now, and the seat's on each change.
@@ -400,13 +444,51 @@ impl Gpu {
             })
             .expect("the GPU's events join the loop");
 
+        let render_node = node
+            .node_with_type(NodeType::Render)
+            .and_then(Result::ok)
+            .unwrap_or(node);
         Ok(Gpu {
             node,
+            render_node,
             manager,
             renderer,
             scanner: DrmScanner::new(),
             monitors: HashMap::new(),
         })
+    }
+
+    /// Offers linux-dmabuf with the formats the GPU renders from, on its render node.
+    /// Returns whether it's offered: without it, GPU clients fall back to shared memory.
+    fn offer_dmabuf(&mut self, camino: &Camino, dmabuf: &mut DmabufState) -> bool {
+        let formats = self.renderer.dmabuf_formats();
+        match DmabufFeedbackBuilder::new(self.render_node.dev_id(), formats).build() {
+            Ok(feedback) => {
+                dmabuf.create_global_with_default_feedback::<State>(
+                    &camino.display_handle,
+                    &feedback,
+                );
+                true
+            }
+            Err(err) => {
+                tracing::warn!("can't offer linux-dmabuf: {err}");
+                false
+            }
+        }
+    }
+
+    /// Offers drm-syncobj if the GPU can wait on syncobj timelines' points, which the
+    /// acquire points' blockers need.
+    fn offer_syncobj(&self, camino: &Camino) -> Option<DrmSyncobjState> {
+        let device = self.manager.device().device_fd();
+        if !supports_syncobj_eventfd(device) {
+            tracing::info!("the GPU has no syncobj timelines, so explicit sync isn't offered");
+            return None;
+        }
+        Some(DrmSyncobjState::new::<State>(
+            &camino.display_handle,
+            device.clone(),
+        ))
     }
 
     /// A queued frame reached the screen. A vblank of a frame queued before the VT was

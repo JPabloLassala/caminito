@@ -11,6 +11,7 @@ Map: [Camino v0.1](../map.md)
 `linux-drm-syncobj-v1` on the tty backend, deferred from M1 to M4's DRM ([22](22-xdg-shell-and-input.md), [06](06-v01-protocol-and-integration-set.md)): explicit sync for clients that use it, as Smithay's `drm_syncobj` provides.
 
 - **Offered only when the DRM device supports syncobj timelines**, and never on winit, where there's no DRM device to import them on.
+- **linux-dmabuf on the tty (decided 2026-09-30):** Camino offered no linux-dmabuf, and drm-syncobj applies only to dmabuf buffers, so 57 offers it on the tty, with the primary GPU's render formats as default feedback. Winit stays shm-only: nested GPU clients get no dmabuf, a gap for a later ticket.
 - **Blocking:** a surface's commit waits for its acquire point before the scene uses the buffer, and the release point is signalled once the buffer isn't read any more.
 
 ## Acceptance criteria

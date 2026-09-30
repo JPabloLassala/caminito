@@ -128,7 +128,7 @@ pub struct Camino {
     pub input_method_state: InputMethodManagerState,
     pub cursor_shape_state: CursorShapeManagerState,
 
-    // Rendering (06). drm-syncobj comes with M4's DRM.
+    // Rendering (06). linux-dmabuf and drm-syncobj are the tty backend's (57).
     pub viewporter_state: ViewporterState,
     pub fractional_scale_state: FractionalScaleManagerState,
     pub presentation_state: PresentationState,
