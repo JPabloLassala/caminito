@@ -266,7 +266,9 @@ impl Fixture {
     /// Adds an output of `size` pixels at `scale`, as output management would set it, at
     /// the default place.
     pub fn add_output(&mut self, size: impl Into<Size<i32, Physical>>, scale: f64) -> Output {
-        let output = self.state.plug_headless_output((0, 0).into(), size.into());
+        let output = self
+            .state
+            .plug_headless_output((0, 0).into(), size.into(), false);
         self.state.camino.set_output_scale(&output, scale);
         output
     }
@@ -275,7 +277,13 @@ impl Fixture {
     /// of `mode` pixels, which it prefers. Camino picks its scale and place.
     pub fn plug(&mut self, physical_size: (i32, i32), mode: (i32, i32)) -> Output {
         self.state
-            .plug_headless_output(physical_size.into(), mode.into())
+            .plug_headless_output(physical_size.into(), mode.into(), false)
+    }
+
+    /// Plugs in a built-in panel, as `plug` does a monitor.
+    pub fn plug_internal(&mut self, physical_size: (i32, i32), mode: (i32, i32)) -> Output {
+        self.state
+            .plug_headless_output(physical_size.into(), mode.into(), true)
     }
 
     /// Unplugs a monitor, and dispatches.

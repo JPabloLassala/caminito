@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use insta::assert_snapshot;
 
-use super::fixture::Fixture;
+use super::fixture::{Fixture, Kind, WindowSpec};
 use crate::input::devices::{ConfigurableDevice, DeviceKind, Setting};
 use crate::settings::Value;
 use crate::settings::translate::{MOUSE, TOUCHPAD};
@@ -157,4 +157,83 @@ fn a_removed_device_gets_no_more_settings() {
     f.set_setting(TOUCHPAD, "tap-to-click", Value::Bool(true));
     f.dispatch_until(|_| kept.borrow().contains(&Setting::Tap(true)));
     assert_eq!(format(&removed), "");
+}
+
+/// A 13.3" 2560×1600 laptop panel: 1.80 with a lid switch, 1.50 without (50).
+const PANEL: ((i32, i32), (i32, i32)) = ((286, 179), (2560, 1600));
+
+/// The scale of the first output, as the debug dump shows it.
+fn scale(f: &Fixture) -> f64 {
+    let dump: serde_json::Value = serde_json::from_str(&f.state.camino.state_dump()).unwrap();
+    dump["outputs"][0]["scale"].as_f64().unwrap()
+}
+
+#[test]
+fn a_lid_switch_gives_the_built_in_panel_a_laptops_scale() {
+    let mut f = Fixture::new();
+    f.plug_internal(PANEL.0, PANEL.1);
+    assert_eq!(scale(&f), 1.5);
+
+    plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.dispatch();
+    assert_eq!(scale(&f), 1.8);
+}
+
+#[test]
+fn a_panel_plugged_in_after_the_lid_switch_gets_a_laptops_scale() {
+    let mut f = Fixture::new();
+    plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.plug_internal(PANEL.0, PANEL.1);
+    assert_eq!(scale(&f), 1.8);
+}
+
+#[test]
+fn the_panel_loses_the_laptops_scale_when_the_lid_switch_goes() {
+    let mut f = Fixture::new();
+    plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.plug_internal(PANEL.0, PANEL.1);
+    f.state.camino.remove_input_device("event1");
+    f.dispatch();
+    assert_eq!(scale(&f), 1.5);
+}
+
+#[test]
+fn a_lid_switch_leaves_a_scale_output_management_set() {
+    let mut f = Fixture::new();
+    let panel = f.plug_internal(PANEL.0, PANEL.1);
+    f.set_output_scale(&panel, 2.0);
+    plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.dispatch();
+    assert_eq!(scale(&f), 2.0);
+}
+
+#[test]
+fn a_lid_switch_gets_no_settings() {
+    let mut f = Fixture::new();
+    let lid = plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.set_setting(MOUSE, "left-handed", Value::Bool(true));
+    f.dispatch_until(|f| f.state.camino.settings.devices.mouse.left_handed);
+    assert_eq!(format(&lid), "");
+}
+
+/// Switching VTs, libinput unplugs every device and plugs it in again, and both come in one
+/// dispatch. The panel keeps its scale throughout, so a maximized window isn't sized for
+/// 1.50 and back.
+#[test]
+fn a_lid_switch_unplugged_and_plugged_again_in_one_dispatch_leaves_windows_alone() {
+    let mut f = Fixture::new();
+    plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.plug_internal(PANEL.0, PANEL.1);
+    let client = f.connect(Kind::Xdg);
+    let window = f.map(client, WindowSpec::plain((200, 100))).xdg();
+    f.client(client).set_maximized(window);
+    f.roundtrip(client);
+    let configures = f.client(client).window(window).configures.len();
+
+    f.state.camino.remove_input_device("event1");
+    plug(&mut f, "event1", DeviceKind::LidSwitch);
+    f.roundtrip(client);
+
+    assert_eq!(scale(&f), 1.8);
+    assert_eq!(f.client(client).window(window).configures.len(), configures);
 }

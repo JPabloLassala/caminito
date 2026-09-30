@@ -46,19 +46,7 @@ impl State {
                 self.on_key(event.key_code(), event.state(), event.time());
             }
             InputEvent::PointerMotion { event } => {
-                let pointer = self.camino.seat.get_pointer().unwrap();
-                let location = self
-                    .camino
-                    .clamp_to_outputs(pointer.current_location() + event.delta());
-                self.on_pointer_motion(location, event.time());
-                let under = self.camino.surface_under(location);
-                let relative = RelativeMotionEvent {
-                    delta: event.delta(),
-                    delta_unaccel: event.delta_unaccel(),
-                    time: event.time(),
-                };
-                pointer.relative_motion(self, under, &relative);
-                pointer.frame(self);
+                self.on_pointer_motion_relative(event.delta(), event.delta_unaccel(), event.time());
             }
             InputEvent::PointerMotionAbsolute { event } => {
                 // Absolute devices (the winit window) span the first output.

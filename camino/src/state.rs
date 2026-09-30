@@ -314,16 +314,17 @@ impl State {
     }
 
     /// Plugs in a headless monitor whose EDID says it's `physical_size` millimetres, with
-    /// one mode of `mode`, which it prefers.
+    /// one mode of `mode`, which it prefers, built in if `internal`.
     #[cfg(test)]
     pub fn plug_headless_output(
         &mut self,
         physical_size: smithay::utils::Size<i32, smithay::utils::Raw>,
         mode: smithay::utils::Size<i32, smithay::utils::Physical>,
+        internal: bool,
     ) -> Output {
         self.backend
             .headless_mut()
-            .plug(&mut self.camino, physical_size, mode)
+            .plug(&mut self.camino, physical_size, mode, internal)
     }
 
     /// Switches a headless monitor to a mode of `size`.
@@ -754,6 +755,8 @@ impl Camino {
 
     /// Sends the outward views of policy state whatever changed since they last sent.
     fn refresh_views(&mut self) {
+        // First, since windows' outputs and scales follow the outputs' scales.
+        self.refresh_lid_switch();
         self.refresh_window_outputs();
         for mapped in self.policy.windows() {
             mapped.flush();

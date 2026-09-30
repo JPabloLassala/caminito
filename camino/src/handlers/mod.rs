@@ -10,6 +10,7 @@ mod xdg_shell;
 pub(crate) use decoration::kde_server_side;
 pub(crate) use selection::DragIcon;
 
+use smithay::input::keyboard::LedState;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::Resource;
@@ -44,6 +45,10 @@ impl SeatHandler for State {
             .and_then(|surface| dh.get_client(surface.id()).ok());
         set_data_device_focus(dh, seat, client.clone());
         set_primary_focus(dh, seat, client);
+    }
+
+    fn led_state_changed(&mut self, _seat: &Seat<Self>, leds: LedState) {
+        self.backend.update_leds(leds);
     }
 }
 

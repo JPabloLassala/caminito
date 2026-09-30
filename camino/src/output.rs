@@ -80,9 +80,9 @@ pub(crate) struct Monitor {
 }
 
 impl Monitor {
-    /// What an output's EDID and the mode it shows say. Nothing reports a lid switch until
-    /// libinput runs on the tty (56).
-    fn of(output: &Output) -> Self {
+    /// What an output's EDID and the mode it shows say, and whether libinput has a lid
+    /// switch (56).
+    fn of(output: &Output, lid_switch: bool) -> Self {
         Monitor {
             physical_size: output.physical_properties().size,
             mode_size: output
@@ -90,7 +90,7 @@ impl Monitor {
                 .map(|mode| mode.size)
                 .unwrap_or_default(),
             internal: is_internal(&output.name()),
-            lid_switch: false,
+            lid_switch,
         }
     }
 }
@@ -211,7 +211,7 @@ impl Camino {
         output.user_data().insert_if_missing(|| id);
 
         output.change_current_state(output.preferred_mode(), None, None, None);
-        let monitor = Monitor::of(&output);
+        let monitor = Monitor::of(&output, self.input_devices.has_lid_switch());
         let scale = default_scale(&monitor, self.settings.interface.window_scaling_factor);
         output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
         let global = output.create_global::<State>(&self.display_handle);
@@ -282,6 +282,28 @@ impl Camino {
     /// `window-scaling-factor` changed: the outputs still at Camino's default scale take
     /// the new default (13).
     pub(crate) fn window_scaling_factor_changed(&mut self, factor: WindowScalingFactor) {
+        self.take_default_scales(factor);
+    }
+
+    /// If a lid switch came or went since the outputs' scales were picked, the outputs
+    /// still at Camino's default scale take the default for a laptop's panel, or for a panel
+    /// without a lid (50). In the refresh pass, since switching VTs unplugs the lid switch
+    /// and plugs it in again in one dispatch, and outputs shouldn't flip scales and back.
+    pub(crate) fn refresh_lid_switch(&mut self) {
+        let lid_switch = self.input_devices.has_lid_switch();
+        let mut changed = false;
+        for record in self.output_records.values_mut() {
+            changed |= record.monitor.lid_switch != lid_switch;
+            record.monitor.lid_switch = lid_switch;
+        }
+        if changed {
+            self.take_default_scales(self.settings.interface.window_scaling_factor);
+        }
+    }
+
+    /// The outputs still at Camino's default scale take the default for `factor` and what
+    /// Camino now knows of their monitors, and are laid out again.
+    fn take_default_scales(&mut self, factor: WindowScalingFactor) {
         for output in &self.outputs {
             let record = self.record(output);
             if record.scale == ChosenBy::Camino {
@@ -296,8 +318,9 @@ impl Camino {
     /// the default for its new mode, and the outputs are laid out again for its new size.
     pub fn output_mode_changed(&mut self, output: &Output) {
         let factor = self.settings.interface.window_scaling_factor;
+        let lid_switch = self.input_devices.has_lid_switch();
         let record = self.record_mut(output);
-        record.monitor = Monitor::of(output);
+        record.monitor = Monitor::of(output, lid_switch);
         if record.scale == ChosenBy::Camino {
             let scale = default_scale(&record.monitor, factor);
             output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);

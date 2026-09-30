@@ -8,14 +8,17 @@ use crate::settings::translate::{
 };
 use crate::state::Camino;
 
-/// Which settings a device takes.
+/// What a device is, for the settings it takes and for the default scale's rule (50).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceKind {
     /// A pointer that isn't a touchpad.
     Mouse,
     /// A pointer that libinput can tap on, as msd tells touchpads apart.
     Touchpad,
-    /// A device msd sets nothing on, such as a keyboard or a switch.
+    /// A laptop's lid. It takes no settings, but tells the default scale's rule (50) that
+    /// the built-in panel is a laptop's (56).
+    LidSwitch,
+    /// A device msd sets nothing on, such as a keyboard or another switch.
     Other,
 }
 
@@ -118,6 +121,13 @@ impl InputDevices {
         }
     }
 
+    /// Whether a lid switch is plugged in, which makes the built-in panel a laptop's (50).
+    pub fn has_lid_switch(&self) -> bool {
+        self.devices
+            .iter()
+            .any(|device| device.kind() == DeviceKind::LidSwitch)
+    }
+
     /// Whether the device with `id` passes on horizontal scrolling. A device Camino wasn't
     /// told of, such as the winit window, does.
     pub fn scrolls_horizontally(&self, id: &str) -> bool {
@@ -140,12 +150,13 @@ fn settings_for(devices: &Devices, kind: DeviceKind) -> Option<&DeviceSettings> 
     match kind {
         DeviceKind::Mouse => Some(&devices.mouse),
         DeviceKind::Touchpad => Some(&devices.touchpad),
-        DeviceKind::Other => None,
+        DeviceKind::LidSwitch | DeviceKind::Other => None,
     }
 }
 
 impl Camino {
-    /// A device was plugged in: it gets its kind's settings now and on each change.
+    /// A device was plugged in: it gets its kind's settings now and on each change. A lid
+    /// switch reaches the outputs' scales in the refresh pass.
     pub fn add_input_device(&mut self, device: Box<dyn ConfigurableDevice>) {
         self.input_devices.add(device);
     }

@@ -19,6 +19,7 @@ signal-hook = "0.4.4"
 smithay = { workspace = true, features = [
     "backend_drm",
     "backend_gbm",
+    "backend_libinput",
     "backend_session_libseat",
     "backend_udev",
     "backend_winit",

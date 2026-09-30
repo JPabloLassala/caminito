@@ -46,16 +46,19 @@ impl Headless {
     }
 
     /// Plugs in a virtual monitor whose EDID says it's `physical_size` millimetres, with
-    /// one mode of `mode`, which it prefers.
+    /// one mode of `mode`, which it prefers. An internal one is named as a laptop's panel
+    /// is (50).
     pub fn plug(
         &mut self,
         camino: &mut Camino,
         physical_size: Size<i32, Raw>,
         mode: Size<i32, Physical>,
+        internal: bool,
     ) -> Output {
         self.plugged += 1;
+        let connector = if internal { "eDP" } else { "headless" };
         let output = virtual_output(
-            format!("headless-{}", self.plugged),
+            format!("{connector}-{}", self.plugged),
             "Headless",
             physical_size,
             mode,

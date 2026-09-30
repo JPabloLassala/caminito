@@ -19,7 +19,7 @@ license=(GPL-2.0-or-later)
 # Xwayland (11, 34); its own X connection is x11rb's pure-Rust one, which links nothing, and
 # the X11 test tier runs the same Xwayland from check().
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 marco mate-themes
-  xorg-xwayland seatd systemd-libs libdrm mesa libdisplay-info libglvnd)
+  xorg-xwayland seatd systemd-libs libdrm mesa libdisplay-info libglvnd libinput)
 makedepends=(cargo git meson)
 # camino's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).

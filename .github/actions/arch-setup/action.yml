@@ -18,10 +18,10 @@ runs:
       # palette helper's build. xorg-server-xvfb, xorg-xauth: xvfb-run, which the palette
       # helper's test runs under. xorg-xwayland: the X11 tier spawns a real Xwayland from
       # the headless fixture (14); it runs rootless on the fixture's socket pair, so it needs
-      # no GPU or EGL either. seatd, systemd-libs, libdrm, mesa, libdisplay-info: the tty
-      # backend links libseat, libudev, libdrm, libgbm and libdisplay-info (55), though
-      # nothing in CI drives it.
-      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 xorg-server-xvfb xorg-xauth xorg-xwayland seatd systemd-libs libdrm mesa libdisplay-info
+      # no GPU or EGL either. seatd, systemd-libs, libdrm, mesa, libdisplay-info, libinput:
+      # the tty backend links libseat, libudev, libdrm, libgbm, libdisplay-info (55) and
+      # libinput (56), though nothing in CI drives it.
+      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 xorg-server-xvfb xorg-xauth xorg-xwayland seatd systemd-libs libdrm mesa libdisplay-info libinput
 
     - name: Install Rust toolchain
       shell: bash

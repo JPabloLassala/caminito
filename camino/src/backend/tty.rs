@@ -1,11 +1,16 @@
 //! The tty backend: Camino on a spare tty, driving the machine's monitors through DRM/KMS,
-//! with the devices libseat grants (08, 15, 55). Input devices come with libinput (56).
+//! with the devices libseat grants (08, 15, 55), and reading its input devices through
+//! libinput (56).
 //!
 //! Adapted from Smithay's anvil at Smithay commit 928d4a9, `anvil/src/udev.rs`: start-up
 //! from `run_udev` (`:219-600`), the GPU from `device_added` (`:774-898`), monitors from
 //! `connector_connected`, `connector_disconnected` and `device_changed` (`:900-1164`).
 //! Cut down to the primary GPU, which v0.1 drives alone, and composited with GLES every
-//! frame, as on winit, so nothing is scanned out directly.
+//! frame, as on winit, so nothing is scanned out directly. libinput is set up as in
+//! `run_udev` (`:294-320`), and its keyboards' LEDs kept as `update_led_state` does
+//! (`:212-216`).
+
+mod libinput;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,21 +23,26 @@ use smithay::backend::drm::exporter::gbm::{GbmFramebufferExporter, NodeFilter};
 use smithay::backend::drm::output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmNode, NodeType};
 use smithay::backend::egl::{self, EGLContext, EGLDisplay};
+use smithay::backend::input::{DeviceCapability, InputEvent};
+use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::{GlesError, GlesRenderer};
 use smithay::backend::session::libseat::{self, LibSeatSession};
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
+use smithay::input::keyboard::LedState;
 use smithay::output::{Mode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{ModeTypeFlags, connector, crtc};
+use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::DeviceFd;
 use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 
 use crate::backend::Backend;
+use crate::input::devices::ConfigurableDevice;
 use crate::output::DEFAULT_REFRESH;
 use crate::scene::{self, CLEAR_COLOR, SceneElement};
 use crate::state::{Camino, State};
@@ -58,6 +68,8 @@ pub enum Error {
     Seat(libseat::Error),
     /// udev can't list or watch the seat's devices.
     Udev(std::io::Error),
+    /// libinput can't take the seat's input devices.
+    Libinput,
     /// The seat has no GPU.
     NoGpu,
     /// The GPU udev named isn't a DRM device.
@@ -79,6 +91,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::Seat(err) => write!(f, "can't take a seat from seatd or logind: {err}"),
             Error::Udev(err) => write!(f, "can't list the seat's devices: {err}"),
+            Error::Libinput => f.write_str("can't read the seat's input devices"),
             Error::NoGpu => f.write_str("the seat has no GPU"),
             Error::NotDrm(path) => write!(f, "{} isn't a DRM device", path.display()),
             Error::Open(err) => write!(f, "can't open the GPU: {err}"),
@@ -92,10 +105,13 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// libseat's hold on the seat, and the primary GPU.
+/// libseat's hold on the seat, the primary GPU and the input devices.
 pub struct Tty {
     /// Dropped before the seat, which gives the VT back when it's released.
     gpu: Gpu,
+    libinput: Libinput,
+    /// The keyboards plugged in, whose LEDs show the seat's.
+    keyboards: Vec<input::Device>,
     seat: LibSeatSession,
 }
 
@@ -146,15 +162,37 @@ impl Tty {
         tracing::info!("using {} as the primary GPU", path.display());
         let gpu = Gpu::open(&mut seat, node, &path, &camino.loop_handle)?;
 
-        let mut tty = Tty { gpu, seat };
+        let mut libinput = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
+            seat.clone().into(),
+        );
+        libinput
+            .udev_assign_seat(&seat_name)
+            .map_err(|()| Error::Libinput)?;
+
+        let mut tty = Tty {
+            gpu,
+            libinput: libinput.clone(),
+            keyboards: Vec::new(),
+            seat,
+        };
         tty.scan_connectors(camino);
 
         camino
             .loop_handle
             .insert_source(notifier, |event, _, state| {
-                tty_mut(&mut state.backend).seat_event(&mut state.camino, event)
+                let paused = matches!(event, SessionEvent::PauseSession);
+                tty_mut(&mut state.backend).seat_event(&mut state.camino, event);
+                // The keys held to switch VTs come up on the other VT, so no release reaches
+                // Camino.
+                if paused {
+                    state.release_pressed_keys();
+                }
             })
             .expect("the seat's events join the loop");
+        camino
+            .loop_handle
+            .insert_source(LibinputInputBackend::new(libinput), input_event)
+            .expect("libinput's events join the loop");
         camino
             .loop_handle
             .insert_source(udev, |event, _, state| {
@@ -168,6 +206,23 @@ impl Tty {
     pub fn change_vt(&mut self, vt: i32) {
         if let Err(err) = self.seat.change_vt(vt) {
             tracing::warn!("can't switch to VT {vt}: {err}");
+        }
+    }
+
+    /// A keyboard was plugged in: it shows `leds` now, and the seat's on each change.
+    fn add_keyboard(&mut self, mut keyboard: input::Device, leds: LedState) {
+        keyboard.led_update(leds.into());
+        self.keyboards.push(keyboard);
+    }
+
+    fn remove_keyboard(&mut self, keyboard: &input::Device) {
+        self.keyboards.retain(|k| k != keyboard);
+    }
+
+    /// Shows the seat's Caps, Num and Scroll Lock on every keyboard.
+    pub fn update_leds(&mut self, leds: LedState) {
+        for keyboard in &mut self.keyboards {
+            keyboard.led_update(leds.into());
         }
     }
 
@@ -221,16 +276,21 @@ impl Tty {
         Some(states)
     }
 
-    /// Switching VTs away drops the DRM master; switching back takes it again, catches up
-    /// with monitors plugged or unplugged meanwhile, and redraws every output (08).
+    /// Switching VTs away drops the DRM master and the input devices; switching back takes
+    /// them again, catches up with monitors plugged or unplugged meanwhile, and redraws
+    /// every output (08). libinput adds its devices again, so they get their settings anew.
     fn seat_event(&mut self, camino: &mut Camino, event: SessionEvent) {
         match event {
             SessionEvent::PauseSession => {
                 tracing::debug!("the VT was switched away");
+                self.libinput.suspend();
                 self.gpu.manager.pause();
             }
             SessionEvent::ActivateSession => {
                 tracing::debug!("the VT was switched back");
+                if self.libinput.resume().is_err() {
+                    tracing::warn!("can't take the input devices back");
+                }
                 if let Err(err) = self.gpu.manager.lock().activate(false) {
                     tracing::warn!("can't take the GPU back: {err}");
                 }
@@ -453,6 +513,30 @@ impl LitMonitor {
         }
         self.frame = Frame::Shown;
     }
+}
+
+/// One event from libinput. A device plugged in gets its settings (53) and, if it's a
+/// keyboard, the seat's LEDs; then the event goes the way every backend's does.
+fn input_event(event: InputEvent<LibinputInputBackend>, _: &mut (), state: &mut State) {
+    match &event {
+        InputEvent::DeviceAdded { device } => {
+            tracing::debug!("{} was plugged in", device.name());
+            if device.has_capability(DeviceCapability::Keyboard.into()) {
+                let leds = state.camino.seat.get_keyboard().unwrap().led_state();
+                tty_mut(&mut state.backend).add_keyboard(device.clone(), leds);
+            }
+            state.camino.add_input_device(Box::new(device.clone()));
+        }
+        InputEvent::DeviceRemoved { device } => {
+            tracing::debug!("{} was unplugged", device.name());
+            tty_mut(&mut state.backend).remove_keyboard(device);
+            state
+                .camino
+                .remove_input_device(&ConfigurableDevice::id(device));
+        }
+        _ => {}
+    }
+    state.process_input_event(event);
 }
 
 /// The seat's primary GPU, or its first if udev marks none as primary, by its primary node.

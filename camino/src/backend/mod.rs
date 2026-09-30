@@ -3,6 +3,7 @@
 use std::ffi::OsStr;
 
 use smithay::backend::renderer::element::RenderElementStates;
+use smithay::input::keyboard::LedState;
 use smithay::output::Output;
 
 use crate::state::Camino;
@@ -60,6 +61,14 @@ impl Backend {
     pub fn change_vt(&mut self, vt: i32) {
         if let Backend::Tty(tty) = self {
             tty.change_vt(vt);
+        }
+    }
+
+    /// Shows the seat's lock LEDs on the keyboards. Nested, the host's keyboard shows its
+    /// own.
+    pub fn update_leds(&mut self, leds: LedState) {
+        if let Backend::Tty(tty) = self {
+            tty.update_leds(leds);
         }
     }
 
