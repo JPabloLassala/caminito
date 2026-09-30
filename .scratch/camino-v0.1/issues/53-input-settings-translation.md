@@ -1,7 +1,7 @@
 # Input settings translation
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M4
 Blocked by:
 Map: [Camino v0.1](../map.md)
@@ -20,6 +20,6 @@ The `org.mate.peripherals-*` keys turned into device and keyboard settings exact
 
 ## Acceptance criteria
 
-- [ ] Translation unit tests for every key above, written before the code, including the acceleration formula's ends and clamping, `left-handed=mouse`, and the scrolling precedence.
-- [ ] Headless tests: changing `rate` and `delay` live changes the repeat info a test client receives; NumLock's state is restored at start-up and written back.
-- [ ] Tests with the recording device double: a settings change reaches every device of its kind, and a device added later gets the current settings.
+- [x] Translation unit tests for every key above, written before the code, including the acceleration formula's ends and clamping, `left-handed=mouse`, and the scrolling precedence.
+- [x] Headless tests: changing `rate` and `delay` live changes the repeat info a test client receives; NumLock's state is restored at start-up and written back.
+- [x] Tests with the recording device double: a settings change reaches every device of its kind, and a device added later gets the current settings.
