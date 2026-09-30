@@ -49,6 +49,7 @@ fn a_crashed_xwayland_leaves_no_xwayland_windows_and_comes_back_on_the_same_disp
         Value::Str("BlackMATE".into()),
     )]);
     let output = f.add_output((1920, 1080), 1.0);
+    f.restarts_xwayland();
     let x = f.connect(Kind::X11);
     let first = f.map(x, WindowSpec::default());
     assert!(f.has_keyboard(first), "an XWayland window has the keyboard");
@@ -113,6 +114,7 @@ fn a_crashed_xwayland_leaves_no_xwayland_windows_and_comes_back_on_the_same_disp
 #[test]
 fn xwayland_crashing_again_and_again_as_it_starts_makes_camino_give_up_and_run_without_x() {
     let mut f = Fixture::new();
+    f.restarts_xwayland();
     f.state.camino.xwayland_restart.policy = quick_restarts();
     f.add_output((1920, 1080), 1.0);
     f.start_xwayland();
@@ -141,6 +143,7 @@ fn xwayland_crashing_again_and_again_as_it_starts_makes_camino_give_up_and_run_w
 #[test]
 fn a_restarted_xwayland_is_owed_the_wayland_clipboard() {
     let (mut f, wayland) = Fixture::connected(Kind::Xdg);
+    f.restarts_xwayland();
     f.client(wayland).bind_selections();
     let wayland_window = f.map(wayland, WindowSpec::default());
     f.start_xwayland();

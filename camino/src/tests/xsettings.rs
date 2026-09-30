@@ -94,6 +94,7 @@ fn xft_dpi(f: &mut Fixture, x: ClientId) -> String {
 #[test]
 fn xft_clients_read_the_dpi_at_the_x11_scale_from_the_resources_and_again_after_a_restart() {
     let mut f = Fixture::new();
+    f.restarts_xwayland();
     let output = f.add_output((1920, 1080), 1.0);
     let x = f.connect(Kind::X11);
     assert_eq!(xft_dpi(&mut f, x), "Xft.dpi:\t96");
