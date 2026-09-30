@@ -104,7 +104,9 @@ nested_env() {
 
 - **Milestone:** M2
 - **Steps:**
-  1. Run `tools/dev-nested`, and pluma and gtk3-demo in it. Maximise one of them.
+  1. Run `tools/dev-nested`, and pluma, caja (`caja --no-desktop`) and gtk3-demo in it. Maximise
+     pluma, and leave caja at its size. gtk3-demo is CSD, so pluma and caja carry the frames. A
+     second pluma won't do: pluma hands a new window to the running instance.
   2. On the nested bus, switch the theme a few times, then to one that doesn't exist, then back,
      dumping the state after each switch:
 

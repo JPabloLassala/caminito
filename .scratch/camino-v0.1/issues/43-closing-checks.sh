@@ -371,27 +371,26 @@ fi
 # ── 5 ─────────────────────────────────────────────────────────────────────
 stage "M2: a theme switch while windows are open"
 if ! done_already "A theme switch while windows are open"; then
-say "Opening two plumas, each on its own bus, and gtk3-demo on $NESTED_WL."
-note "Close stage 4's pluma first, so the two here are easy to tell apart."
-pause "Press Enter once it's closed"
-native pluma
-native pluma
+pgrep -f "^pluma$" >/dev/null || native pluma
+say "Opening caja and gtk3-demo on $NESTED_WL beside pluma. pluma won't start a second"
+say "instance, so caja is the second framed window."
+native caja --no-desktop /tmp
 native gtk3-demo
-step "Maximise one pluma, and leave the other at its size. gtk3-demo stays CSD."
-pause "Press Enter once one pluma is maximised"
+step "Maximise pluma, and leave caja at its size. gtk3-demo stays CSD."
+pause "Press Enter once pluma is maximised"
 for theme in BlackMATE HighContrast TraditionalOk NoSuchTheme Menta; do
   nbus gsettings set org.mate.Marco.general theme "$theme"
   sleep 2
   nbus "${DEBUG_CALL[@]}" DumpState
-  step "Both plumas' frames are now $theme's, with no window unmapped."
+  step "pluma's and caja's frames are now $theme's, with no window unmapped."
   pause "Press Enter for the next theme"
 done
-note "Expected: the unmaximised pluma's client area kept its size, the maximised one"
+note "Expected: caja's client area kept its size, the maximised pluma"
 note "and its frame still fill the output, and frame_extents followed the theme."
 note "NoSuchTheme gave the built-in theme, with one \"can't load the Marco theme NoSuchTheme\""
 note "line in the dev-nested terminal. On Menta the buttons still prelight, press and act."
 result "A theme switch while windows are open"
-say "Close both plumas and gtk3-demo."
+say "Close pluma, caja and gtk3-demo."
 pause
 fi
 
