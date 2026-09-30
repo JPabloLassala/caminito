@@ -283,13 +283,15 @@ ensure_demo() {
 # write_results appends the results to the ticket's notes and ticks each criterion
 # whose results all passed.
 write_results() {
-  local r prefix name verdict note today
+  local r prefix name verdict note today line
   today=$(date +%F)
   grep -q '^## Notes' "$TICKET" || printf '\n## Notes\n' >> "$TICKET"
   printf '\n- **By hand (%s):**\n' "$today" >> "$TICKET"
   for r in "${RESULTS[@]}"; do
     IFS='|' read -r prefix name verdict note <<< "$r"
-    printf '  - %s: %s.%s\n' "$name" "$verdict" "${note:+ $note}" >> "$TICKET"
+    line=$(printf '  - %s: %s.%s' "$name" "$verdict" "${note:+ $note}")
+    # A resumed run's earlier results may be in the notes already.
+    grep -qxF -- "$line" "$TICKET" || printf '%s\n' "$line" >> "$TICKET"
   done
   for r in "${RESULTS[@]}"; do
     IFS='|' read -r prefix _ verdict _ <<< "$r"
@@ -316,8 +318,8 @@ read_nested
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "gtk3-demo's tooltip on the host, without Camino"
 if ! done_already "gtk3-demo's tooltip on the host"; then
-say "Opening gtk3-demo's Application Class demo on the host's own display."
-env GDK_BACKEND=x11 setsid dbus-run-session -- gtk3-demo --run=application_demo >/dev/null 2>&1 &
+say "Opening gtk3-demo's Builder demo on the host's own display."
+env GDK_BACKEND=x11 setsid dbus-run-session -- gtk3-demo --run=builder >/dev/null 2>&1 &
 step "Hover the toolbar's New button. Its tooltip should read \"Create a new file\"."
 step "If it doesn't show, find another widget in this demo whose tooltip does, and"
 step "write down which one in the note. The next stage uses the same widget."
@@ -330,12 +332,12 @@ fi
 stage "gtk3-demo's tooltip, nested"
 if ! done_already "The tooltip, nested"; then
 say "Opening the same demo on the nested Xwayland (:$NESTED_X)."
-ensure_demo
+x11 gtk3-demo --run=builder
 step "Hover the same widget as before, with the real pointer."
 step "The tooltip shows above the window, not behind it."
 step "Move the pointer off the widget: the tooltip goes away."
 result "Nested, that tooltip" "The tooltip, nested"
-say "Leave gtk3-demo open; the menus are next."
+say "Close the Builder demo; the menus are next, in the Application Class demo."
 pause
 fi
 
@@ -363,7 +365,8 @@ step "Both map with Menta frames (Camino's titlebar and border)."
 step "Click one, then the other: each takes focus, its frame going active."
 step "Drag each by its titlebar: it moves."
 step "Type in xterm (echo hello): the text goes to it."
-step "Move the pointer all over Camino's output: xeyes's eyes follow it everywhere."
+step "Move the pointer over xterm and xeyes: xeyes's eyes follow it."
+note "Over Wayland windows or the empty output they stop; rootless Xwayland can't see the pointer there."
 result "Nested, xterm and xeyes" "xterm and xeyes"
 say "Close xeyes; keep xterm open."
 pause
@@ -457,8 +460,9 @@ stage "xterm at scale 2"
 if ! done_already "xterm at scale 2"; then
 step "Stop dev-nested (Ctrl+C) and start it again with:  tools/dev-nested --bin --scale 2"
 read_nested
-nested_xterm
-step "xterm's text renders sharp, not blurred, inside a Menta frame at scale 2."
+x11 xterm -T xterm -xrm 'XTerm*allowTitleOps: false' -fa Monospace -fs 11
+step "xterm's text renders sharp, not blurred, at the same physical size as at scale 1,"
+step "inside a Menta frame at scale 2. Needs ticket 47."
 pause "Press Enter once it's open"
 nx sh -c 'xprop -id "$(wmctrl -l | awk "\$NF == \"xterm\" {print \$1; exit}")" _NET_FRAME_EXTENTS'
 note "Expected: 2, 2, 62, 2, twice the frame's 1, 1, 31, 1."

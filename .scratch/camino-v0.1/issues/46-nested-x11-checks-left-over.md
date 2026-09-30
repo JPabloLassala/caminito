@@ -23,16 +23,16 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
 
 ## Acceptance criteria
 
-- [ ] On the host desktop, without Camino, gtk3-demo's New button shows its tooltip. If it doesn't, find another gtk3-demo widget whose tooltip does show there, and use that one below.
+- [ ] On the host desktop, without Camino, the Builder demo's (`gtk3-demo --run=builder`) New button shows its tooltip. If it doesn't, find another gtk3-demo widget whose tooltip does show there, and use that one below.
 - [ ] Nested, that tooltip shows above its window, and goes away when the pointer leaves the button.
-- [ ] Nested, xterm and xeyes map with Menta frames, take focus on a click and move when their titlebar is dragged. xterm takes typing, and xeyes follows the pointer across Camino's output.
-- [ ] Nested, gtk3-demo's Preferences menu opens on a click and shows above its window. Down, Right and Escape navigate it and its Color submenu. Clicking outside the menu closes it. Afterwards, typing goes to the window again.
-- [ ] Nested, text copied in xterm pastes into foot, and back, through both the clipboard (Ctrl+Shift+C and V in foot) and the primary selection (select, then middle-click). A file dragged from caja with `GDK_BACKEND=x11` drops into a native caja, and the other way round.
+- [x] Nested, xterm and xeyes map with Menta frames, take focus on a click and move when their titlebar is dragged. xterm takes typing, and xeyes follows the pointer while it's over an X window.
+- [x] Nested, gtk3-demo's Preferences menu opens on a click and shows above its window. Down, Right and Escape navigate it and its Color submenu. Clicking outside the menu closes it. Afterwards, typing goes to the window again.
+- [x] Nested, text copied in xterm pastes into foot, and back, through both the clipboard (Ctrl+Shift+C and V in foot) and the primary selection (select, then middle-click). A file dragged from caja with `GDK_BACKEND=x11` drops into a native caja, and the other way round.
 - [x] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it to the second workspace.
-- [ ] Nested with `tools/dev-nested --bin --scale 2`, xterm renders sharp with a Menta frame, and `xprop` shows its `_NET_FRAME_EXTENTS` at twice the frame's logical size.
-- [ ] Nested, killing the nested Xwayland by pid with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a Menta frame.
+- [ ] Nested with `tools/dev-nested --bin --scale 2`, xterm (with `-fa Monospace`, after [47](47-xft-resources.md)) renders sharp with a Menta frame, and `xprop` shows its `_NET_FRAME_EXTENTS` at twice the frame's logical size.
+- [x] Nested, killing the nested Xwayland by pid with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a Menta frame.
 - [x] Nested, `wmctrl -d` lists four workspaces, `Workspace 1` to `Workspace 4`, with the first current, and `wmctrl -s 2` switches to the third.
-- [ ] The results are recorded in this ticket's notes, with a new ticket for each failure.
+- [x] The results are recorded in this ticket's notes, with a new ticket for each failure.
 
 ## Notes
 
@@ -43,3 +43,22 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
   - SIGKILL of the nested Xwayland by pid, with xterm and xeyes open: Camino logged the restart, Xwayland was ready on `:2` again 600 ms later, both clients had exited, and a new xterm on `:2` got `_NET_FRAME_EXTENTS` 1, 1, 31, 1. Nobody watched the output, so the criterion waits for the hand run.
   - With `--scale 2`, xterm's `_NET_FRAME_EXTENTS` were 2, 2, 62, 2, twice the frame's. Sharpness needs eyes, so the criterion waits for the hand run.
 - **The hand checks** are in the wizard [46-hand-checks.sh](46-hand-checks.sh). Run it from a terminal on the host desktop with `tools/dev-nested --bin` in another. It launches each app on the right display, each GTK app on its own `dbus-run-session` so it can't hand off to a host instance, and walks through every criterion. The results go into these notes, and it ticks each criterion whose checks all passed. Each result is saved as it's given, in `~/.local/state/camino/46-hand-checks.progress`, so a stopped run resumes where it left off.
+
+- **By hand (2026-09-30):**
+  - gtk3-demo's tooltip on the host: FAIL. No tooltip at all
+  - The tooltip, nested: FAIL. No tooltip at all
+  - Menus by hand: pass. Everything as expected
+  - xterm and xeyes: FAIL. Everything worked correctly except for xeyes. It only followed the cursor when it was above xterm or above xeyes
+  - Clipboard and primary, xterm and foot: pass. All worked correctly
+  - Drag and drop, caja on X11 and native caja: pass. All worked correctly with a nitpic. When dragging the file from x11 to native, while dragging the cursor held a ghost version of the file. This didnt happen when dragging from native to x11
+  - Frame extents and wmctrl -t: pass. Xterm went to workspace 2 and it didnt go back to workspace 1
+  - wmctrl -d and -s: pass.
+  - xterm after an Xwayland restart: pass. Xterm showed up
+  - xterm at scale 2: FAIL. The title window rendered at scale 2, but the terminal text is still at scale 1
+
+- **What the hand run found:**
+  - **The tooltips:** "Create a new file" is the New button's tooltip in gtk3-demo's **Builder** demo (`builder.c`'s `demo.ui`, which also has the "Name list" tree view with a tooltip column). The Application Class demo sets no tooltips, which is why none showed on the host or nested. The first two criteria now name the Builder demo, and the wizard's tooltip stages open it. They need running again. The menus stage keeps the Application Class demo, which has the Preferences menu.
+  - **xeyes** followed the pointer only while it was over xterm or xeyes. That's rootless Xwayland on any compositor: X clients see the pointer only when it's over an X surface, so `XQueryPointer` reports its last position over one. It's not a Camino failure. The criterion now says "over an X window", and every other part of it passed.
+  - **xterm at scale 2:** the frame was at scale 2 and the text at scale-1 size. xterm's default core font never scales, on any desktop. An Xft xterm would, but Camino doesn't write msd's Xft resources to `RESOURCE_MANAGER`, which 40 left out, so `Xft.dpi` isn't set. Filed as [47](47-xft-resources.md). The criterion now uses `xterm -fa Monospace`, after 47. The frame extents were 2, 2, 62, 2 in the scripted run.
+  - **Drag and drop** passed, but a drag from the native caja showed no icon under the pointer, while one from the X11 caja did: Camino doesn't draw Wayland drag icons yet. Filed as [48](48-drag-icons.md).
+  - **wmctrl -t:** xterm staying on workspace 2 afterwards is expected, since nothing moves it back.
