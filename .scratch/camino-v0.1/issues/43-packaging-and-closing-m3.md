@@ -3,7 +3,7 @@
 Type: implementation
 Status: open
 Milestone: M3
-Blocked by: 42
+Blocked by: 42, 49
 Map: [Camino v0.1](../map.md)
 
 ## What to build
@@ -48,3 +48,4 @@ M3's code installed through `camino-git` (17: packaging keeps up), its checklist
     - A first try used a plain xterm, which has no Ctrl+Shift+C, so xterm never owned the clipboard. `xclip` then got nothing, not an old value: with foot focused, the Wayland selection Camino had pushed into X earlier is refused to X clients (37's gate).
   - Killing Xwayland brings it back with the root properties republished: pass. After SIGKILL of the nested Xwayland, Camino logged `Xwayland exited, so it's started again on :3 in 500ms`, and it was ready on `:3` 590 ms after the kill. The X windows went and foot stayed. `xprop -root` of `_NET_SUPPORTED`, the desktop atoms, `_NET_WORKAREA` and `_GTK_WORKAREAS_D0` was identical before and after, and a new xterm got a Menta frame (1, 1, 31, 1) and took typing.
   - Frames at an output scale of 2 in a nested run: pass. `DumpState` showed the output at scale 2 and pluma as `ssd` with `strip_scale` 2. Its extents were 1/1/31/1 unmaximised and 0/0/31/0 maximised, as at scale 1. Frame debug labelled the frame ×2 on its edges, the title and icons were sharp, the buttons prelit, pressed and acted, and drag and edge and corner resize worked where the outlines said.
+- **The Packaging job (2026-09-30)**, dispatched on 803a58f, failed twice in `check()`, on `a_restarted_xwayland_is_owed_the_wayland_clipboard`. CI was green on the same commit. The restart can lose its display to another X server in the gap before it respawns, and on the runner's two cores the other X11-tier tests take it. That's filed as [49](49-xwayland-display-across-restart.md), which blocks closing M3. The hand run above stands.

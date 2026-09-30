@@ -23,7 +23,7 @@ Map: [Camino v0.1](../map.md)
 - [x] X11-tier tests, written before the code: `_NET_SUPPORTED` is Camino's superset and the WM name is "Camino"; the desktop atoms follow `num-workspaces`, `workspace-names` and a workspace switch; a `_NET_CURRENT_DESKTOP` client message switches workspaces; a `_NET_NUMBER_OF_DESKTOPS` message changes `num-workspaces`; `_NET_WORKAREA` and `_GTK_WORKAREAS_D0` are right for two headless outputs.
 - [x] A test that `DISPLAY` isn't set in Camino's environment until the root properties exist.
 - [x] A test that `xconn` never writes any of `_NET_CLIENT_LIST`, `_NET_CLIENT_LIST_STACKING`, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE` or `WM_STATE`.
-- [ ] Nested, `xprop -root` shows the desktop atoms and work area, and `wmctrl -d` lists the workspaces. The `xprop` half passed; `wmctrl -d` moved to [46](46-nested-x11-checks-left-over.md), since wmctrl isn't installed.
+- [x] Nested, `xprop -root` shows the desktop atoms and work area, and `wmctrl -d` lists the workspaces. The `xprop` half passed; `wmctrl -d` moved to [46](46-nested-x11-checks-left-over.md), since wmctrl isn't installed.
 
 ## Notes
 

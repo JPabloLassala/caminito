@@ -22,7 +22,7 @@ Camino surviving an Xwayland crash, and bringing it back on the same display ([0
 
 - [x] X11-tier tests, written before the code: kill Xwayland with two mapped X windows and an override-redirect one; policy, the scene and focus have no X windows left; Xwayland comes back on the same display; the root properties, `_NET_SUPPORTED` and XSETTINGS are republished; a new x11rb client maps and is managed.
 - [x] A test that repeated immediate crashes back off and then give up, leaving Camino running without X.
-- [ ] Nested, `pkill Xwayland` with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a frame.
+- [x] Nested, `pkill Xwayland` with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a frame.
 
 ## Notes
 

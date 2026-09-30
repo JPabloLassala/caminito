@@ -28,7 +28,7 @@ The per-window half of Camino's X connection ([11](11-xwayland-integration.md)):
 ## Acceptance criteria
 
 - [x] X11-tier tests, written before the code: `_NET_REQUEST_FRAME_EXTENTS` is answered before map; `_NET_FRAME_EXTENTS` changes on maximise and on a theme switch, and is zero for a Motif-undecorated window; a window with `_NET_WM_DESKTOP` 2 before map maps on workspace 3; the `_NET_WM_DESKTOP` message moves a window; `_NET_CLOSE_WINDOW` closes; `_NET_MOVERESIZE_WINDOW` moves; a keyboard-move request starts a move and direction 11 cancels it; `_NET_WM_ICON` becomes the frame icon; struts are read and appear in the dump; a click on a window beneath another's input-shaped shadow reaches the window beneath.
-- [ ] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it. Passed with stand-ins, pluma and a script, since neither xterm nor wmctrl is installed; [46](46-nested-x11-checks-left-over.md) runs them.
+- [x] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it. Passed with stand-ins, pluma and a script, since neither xterm nor wmctrl is installed; [46](46-nested-x11-checks-left-over.md) runs them.
 
 ## Notes
 

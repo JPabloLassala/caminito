@@ -313,6 +313,7 @@ impl Fixture {
 
     /// Maps a window of `client` as `spec` says. It returns once policy manages the window,
     /// its frame is drawn, and the client has seen everything Camino sent it.
+    #[track_caller]
     pub fn map(&mut self, client: ClientId, spec: WindowSpec) -> ClientWindow {
         let window = match &self.clients[client.0] {
             TestClient::Wayland { .. } => self.map_xdg(client, spec),
@@ -423,6 +424,7 @@ impl Fixture {
     /// filled with `color`. It returns once Camino shows it, with content, in its
     /// override-redirect layer. Such windows aren't managed, so they're X ids, not
     /// `ClientWindow`s.
+    #[track_caller]
     pub fn map_override_redirect(
         &mut self,
         id: ClientId,
@@ -481,6 +483,7 @@ impl Fixture {
 
     /// Dispatches until the first output shows `color` (`0xRRGGBB`, opaque) at the logical
     /// point `(x, y)`, and fails rather than hangs.
+    #[track_caller]
     pub fn wait_for_pixel(&mut self, x: i32, y: i32, color: u32) {
         let output = self.state.camino.outputs[0].clone();
         let scale = output.current_scale().fractional_scale();
@@ -625,6 +628,7 @@ impl Fixture {
 
     /// Has the client draw at the size Camino last asked of it, `size`: an xdg client acks
     /// and commits, and Xwayland redraws the window once X has resized it.
+    #[track_caller]
     pub fn draw_at_asked_size(&mut self, window: ClientWindow, size: (i32, i32)) {
         match window {
             ClientWindow::Xdg(id, window) => {
@@ -770,6 +774,7 @@ impl Fixture {
 
     /// Dispatches until `done` holds, waiting for other threads such as the settings
     /// thread, and fails rather than hangs.
+    #[track_caller]
     pub fn dispatch_until(&mut self, done: impl Fn(&Self) -> bool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !done(self) {
@@ -783,6 +788,7 @@ impl Fixture {
 
     /// Dispatches until `done` holds, as [`dispatch_until`](Self::dispatch_until) does, for
     /// a condition that asks a client, which dispatches too.
+    #[track_caller]
     pub fn dispatch_until_mut(&mut self, mut done: impl FnMut(&mut Self) -> bool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !done(self) {
@@ -820,11 +826,13 @@ impl Fixture {
 
     /// Makes a blocking D-Bus call on another thread, dispatching until it returns, since
     /// Camino answers from its event loop.
+    #[track_caller]
     pub fn dbus_call<T: Send + 'static>(&mut self, call: impl FnOnce() -> T + Send + 'static) -> T {
         self.off_loop(call)
     }
 
     /// Runs a blocking call on another thread, dispatching until it returns.
+    #[track_caller]
     fn off_loop<T: Send + 'static>(&mut self, call: impl FnOnce() -> T + Send + 'static) -> T {
         let call = std::thread::spawn(call);
         self.dispatch_until(|_| call.is_finished());
@@ -851,6 +859,7 @@ impl Fixture {
 
     /// Spawns Xwayland as Camino does at start-up, and dispatches until `X11Wm` is attached.
     /// Returns its display number.
+    #[track_caller]
     pub fn start_xwayland(&mut self) -> u32 {
         self.state.camino.start_xwayland();
         self.dispatch_until(|f| {
@@ -861,6 +870,7 @@ impl Fixture {
     }
 
     /// Kills Xwayland as a crash would, and dispatches until Camino has let it go.
+    #[track_caller]
     pub fn crash_xwayland(&mut self) {
         let display = self
             .state
@@ -874,6 +884,7 @@ impl Fixture {
 
     /// Kills Xwayland as it restarts, before it's ready, and dispatches until Camino has let
     /// it go.
+    #[track_caller]
     pub fn crash_xwayland_starting(&mut self) {
         self.dispatch_until(|f| f.state.camino.xwayland.is_some());
         let display = self.state.camino.xwayland.as_ref().unwrap().display;
@@ -888,11 +899,13 @@ impl Fixture {
     }
 
     /// Dispatches until Xwayland is ready again after a crash.
+    #[track_caller]
     pub fn wait_for_xwayland(&mut self) {
         self.dispatch_until(|f| f.state.camino.xwayland_display().is_some());
     }
 
     /// Connects an x11rb client to the running Xwayland.
+    #[track_caller]
     pub fn connect_x11(&mut self) -> ClientId {
         let display = self
             .state
@@ -913,6 +926,7 @@ impl Fixture {
 
     /// Makes blocking X11 calls as the X client `id` on another thread, dispatching until
     /// they return, since Xwayland may need Camino to answer.
+    #[track_caller]
     pub fn x11_call<T: Send + 'static>(
         &mut self,
         id: ClientId,

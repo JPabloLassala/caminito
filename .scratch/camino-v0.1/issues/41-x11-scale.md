@@ -21,7 +21,7 @@ One global X11 scale ([ADR 0008](../../../docs/adr/0008-fractional-default-scale
 
 - [x] Unit tests of the scale for 1.0, 1.25, 1.5, 2.0 and mixed output sets, and of the DPI formulas for `dpi` of 0, 96 and 120 at scales 1 and 2, written before the code.
 - [x] X11-tier tests on headless outputs at 1.0 and then 2.0: `Gdk/WindowScalingFactor` and `Xft/DPI` change, `_NET_WORKAREA` and `_NET_FRAME_EXTENTS` are in X client space, and an open X window is reconfigured to the same logical size.
-- [ ] Nested at a winit scale of 2, xterm and an X11 gtk3-demo render sharp at scale 2 with correct frames, and the dump shows an X11 scale of 2.
+- [x] Nested at a winit scale of 2, xterm and an X11 gtk3-demo render sharp at scale 2 with correct frames, and the dump shows an X11 scale of 2.
 
 ## Notes
 
