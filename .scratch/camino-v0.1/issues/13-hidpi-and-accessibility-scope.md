@@ -77,7 +77,7 @@ The scale policy is recorded in [ADR 0008](../../../docs/adr/0008-fractional-def
 - msd's wlrandr plugin stores fractional scales in `monitors-wayland.xml` and applies them at login (`msd-wlrandr-manager.c:1424-1425`, `:711`). With no saved config it only turns disabled heads on, and never picks a scale itself (`:1698-1785`). The Wayland Display capplet offers 1.00–2.00 in quarter steps per output (`wlrandr-capplet.c:1093-1110`). So Camino's default is what a user sees until they save a layout, and on every output msd has no entry for.
 - **Camino's default is KWin's rule, ported as-is** (`chooseScale`, `outputconfigurationstore.cpp:859-931`):
   - **Target DPI:** 125 for an internal output when a lid switch exists (a laptop panel), 150 for an internal output without one, 30.5 for an external output more than 500 mm tall (a TV), and 96 otherwise.
-  - **Raw scale:** DPI ÷ target on each axis, clamped to 1 and to at most mode size ÷ 800 (and at most 3), so at least 800 logical pixels remain. The smaller axis wins.
+  - **Raw scale:** DPI ÷ target on each axis, clamped to 1 and to at most mode size ÷ 800 (and at most 3), so at least 800 logical pixels remain. (Corrected in [50](50-default-output-scale.md): KWin keeps 360 logical pixels for an internal output without a lid switch, and the port does too.) The smaller axis wins.
   - **Rounding:** to 5% steps (6/120, exact in fractional-scale-v1). Below 1.20 it becomes 1, and within 0.06 of an integer it snaps to that integer.
   - **Bad sizes:** an EDID size under 3 mm on either axis gives 1.
 

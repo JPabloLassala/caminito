@@ -1,9 +1,11 @@
-//! Output lifecycle: making outputs, laying them out, and telling policy about them (15).
+//! Output lifecycle: making outputs, laying them out, picking their default scales, and
+//! telling policy about them (15).
 
 use camino_policy::{OutputId, PolicyWindow, WindowId};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
-use smithay::utils::{Logical, Physical, Rectangle, Size, Transform};
+use smithay::utils::{Logical, Physical, Raw, Rectangle, Size, Transform};
 
+use crate::settings::translate::WindowScalingFactor;
 use crate::state::{Camino, State};
 
 /// The refresh rate backends without a real one report, in mHz.
@@ -63,6 +65,80 @@ pub fn output_geometry(output: &Output) -> Rectangle<i32, Logical> {
         })
         .unwrap_or_default();
     Rectangle::new(output.current_location(), size)
+}
+
+/// What Camino knows of a monitor when it picks the monitor's default scale.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Monitor {
+    /// The EDID's size, in millimetres.
+    pub(crate) physical_size: Size<i32, Raw>,
+    /// The size of the mode the monitor will show.
+    pub(crate) mode_size: Size<i32, Physical>,
+    /// Whether it's built in, such as a laptop's panel.
+    pub(crate) internal: bool,
+    /// Whether libinput has a lid switch, which makes an internal monitor a laptop's.
+    pub(crate) lid_switch: bool,
+}
+
+/// The scale Camino gives a monitor no output-management client has set (13, ADR 0008):
+/// `window-scaling-factor`'s integer when it forces one, and otherwise KWin's rule.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the output lifecycle (51) calls it")
+)]
+pub(crate) fn default_scale(monitor: &Monitor, factor: WindowScalingFactor) -> f64 {
+    match factor {
+        WindowScalingFactor::Auto => kwin_scale(monitor),
+        WindowScalingFactor::Forced(scale) => f64::from(scale),
+    }
+}
+
+/// KWin's `chooseScale`, ported as it is (13), from `src/outputconfigurationstore.cpp:859-931`
+/// at KWin commit 79ea0aa5. Each device type has its own target DPI, for how far the eyes
+/// are from it. Ticket 13's summary gives every output 800 logical pixels, but KWin keeps
+/// 360 for an internal output without a lid, a phone's.
+fn kwin_scale(monitor: &Monitor) -> f64 {
+    let Monitor {
+        physical_size: mm,
+        mode_size: px,
+        internal,
+        lid_switch,
+    } = *monitor;
+    // Less than 3 mm is a monitor misreporting its size.
+    if mm.w < 3 || mm.h < 3 {
+        return 1.0;
+    }
+    let (target_dpi, min_size) = match (internal, lid_switch) {
+        (true, true) => (125.0, 800.0),
+        (true, false) => (150.0, 360.0),
+        // Height rather than the diagonal, so ultrawide monitors aren't TVs. 30.5 gives a
+        // 77" 4K TV a scale of 2.
+        (false, _) if mm.h > 500 => (30.5, 800.0),
+        (false, _) => (96.0, 800.0),
+    };
+    let axis = |px: i32, mm: i32| {
+        let px = f64::from(px);
+        let dpi = px / (f64::from(mm) / 25.4);
+        let max = (px / min_size).clamp(1.0, 3.0);
+        (dpi / target_dpi).clamp(1.0, max)
+    };
+    round_scale(axis(px.w, mm.w).min(axis(px.h, mm.h)))
+}
+
+/// Rounds a raw scale to KWin's 5% steps (6/120, exact in fractional-scale-v1). Scales just
+/// above 1 look blurry for little gain, so they become 1, and integer scales are sharper
+/// than their near neighbours, so those snap to the integer.
+fn round_scale(raw: f64) -> f64 {
+    let scale = (100.0 * raw / 5.0).round() * 5.0 / 100.0;
+    if scale < 1.20 {
+        return 1.0;
+    }
+    let integer = scale.round();
+    if (integer - scale).abs() < 0.06 {
+        integer
+    } else {
+        scale
+    }
 }
 
 /// The X11 scale for outputs at `scales` (ADR 0008): the largest of their rounded-up

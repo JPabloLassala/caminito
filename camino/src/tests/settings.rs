@@ -1,12 +1,14 @@
-//! The settings thread under Camino: the settings read before anything maps, and live
-//! `num-workspaces` changes (29). The windows only fill workspaces, so xdg toplevels
-//! stand for either kind (45).
+//! The settings thread under Camino: the settings read before anything maps, live
+//! `num-workspaces` changes (29), and `window-scaling-factor` read through MATE's schema
+//! (50). The windows only fill workspaces, so xdg toplevels stand for either kind (45).
 
 use camino_test_client::ToplevelState;
 
 use super::fixture::{Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, WindowSpec};
 use crate::settings::Value;
-use crate::settings::translate::{MARCO_GENERAL, MARCO_WORKSPACE_NAMES};
+use crate::settings::translate::{
+    INTERFACE, MARCO_GENERAL, MARCO_WORKSPACE_NAMES, WindowScalingFactor,
+};
 
 fn switch_right(f: &mut Fixture) {
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
@@ -79,4 +81,17 @@ fn lowering_num_workspaces_live_moves_windows_and_the_active_workspace_as_marco_
         .unwrap()
         .clone();
     assert!(configure.states.contains(&ToplevelState::Activated));
+}
+
+#[test]
+fn window_scaling_factor_is_read_from_mates_schema() {
+    let f = Fixture::with_settings(vec![(
+        INTERFACE,
+        "window-scaling-factor".into(),
+        Value::Int(2),
+    )]);
+    assert_eq!(
+        f.state.camino.settings.interface.window_scaling_factor,
+        WindowScalingFactor::Forced(2)
+    );
 }

@@ -58,6 +58,7 @@ fn defaults() -> Reading {
     put(INTERFACE, "gtk-enable-primary-paste", Value::Bool(true));
     put(INTERFACE, "gtk-enable-animations", Value::Bool(true));
     put(INTERFACE, "gtk-dialogs-use-header", Value::Bool(false));
+    put(INTERFACE, "window-scaling-factor", Value::Int(0));
     put(FONT_RENDERING, "antialiasing", s("rgba"));
     put(FONT_RENDERING, "hinting", s("slight"));
     put(FONT_RENDERING, "rgba-order", s("rgb"));
@@ -372,6 +373,7 @@ fn the_defaults_give_mates_interface() {
             font_name: "Sans 10".into(),
             icon_theme: "menta".into(),
             gtk: default_gtk_options(),
+            window_scaling_factor: WindowScalingFactor::Auto,
         }
     );
 }
@@ -459,7 +461,51 @@ fn interface_keys_are_read() {
             font_name: "Cantarell 11".into(),
             icon_theme: "mate".into(),
             gtk: default_gtk_options(),
+            window_scaling_factor: WindowScalingFactor::Auto,
         }
+    );
+}
+
+#[test]
+fn window_scaling_factor_0_leaves_outputs_to_the_default_rule() {
+    let reading = with(INTERFACE, "window-scaling-factor", Value::Int(0));
+    assert_eq!(
+        settings(&reading).interface.window_scaling_factor,
+        WindowScalingFactor::Auto
+    );
+}
+
+#[test]
+fn window_scaling_factor_1_or_2_forces_that_integer() {
+    for factor in [1, 2] {
+        let reading = with(INTERFACE, "window-scaling-factor", Value::Int(factor));
+        assert_eq!(
+            settings(&reading).interface.window_scaling_factor,
+            WindowScalingFactor::Forced(factor as u32)
+        );
+    }
+}
+
+#[test]
+fn window_scaling_factor_out_of_range_is_clamped() {
+    let (above, above_problem) = problem(&with(INTERFACE, "window-scaling-factor", Value::Int(3)));
+    assert_eq!(
+        above.interface.window_scaling_factor,
+        WindowScalingFactor::Forced(2)
+    );
+    assert_eq!(
+        above_problem,
+        out_of_range(INTERFACE, "window-scaling-factor", "3", "2")
+    );
+
+    let (below, below_problem) = problem(&with(INTERFACE, "window-scaling-factor", Value::Int(-1)));
+    assert_eq!(
+        below.interface.window_scaling_factor,
+        WindowScalingFactor::Auto
+    );
+    assert_eq!(
+        below_problem,
+        out_of_range(INTERFACE, "window-scaling-factor", "-1", "0")
     );
 }
 

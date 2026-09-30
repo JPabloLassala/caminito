@@ -344,6 +344,17 @@ pub struct Interface {
     pub font_name: String,
     pub icon_theme: String,
     pub gtk: GtkOptions,
+    pub window_scaling_factor: WindowScalingFactor,
+}
+
+/// `window-scaling-factor` under Camino (13): which default scale outputs get. On X11 it
+/// was GTK's own scale, but here it forces the output scale instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowScalingFactor {
+    /// 0: KWin's rule picks each output's scale.
+    Auto,
+    /// 1 or 2: every output gets that integer.
+    Forced(u32),
 }
 
 /// The `org.mate.interface` keys Camino only passes on to X11 GTK apps through XSETTINGS,
@@ -529,6 +540,11 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
                 enable_primary_paste: r.bool(INTERFACE, "gtk-enable-primary-paste", true),
                 enable_animations: r.bool(INTERFACE, "gtk-enable-animations", true),
                 dialogs_use_header: r.bool(INTERFACE, "gtk-dialogs-use-header", false),
+            },
+            window_scaling_factor: match r.int_clamped(INTERFACE, "window-scaling-factor", 0, 0, 2)
+            {
+                0 => WindowScalingFactor::Auto,
+                factor => WindowScalingFactor::Forced(factor as u32),
             },
         },
         font_rendering: FontRendering {
