@@ -1,7 +1,7 @@
 # Nested X11 checks left over from 35 and 36
 
 Type: verification
-Status: open
+Status: resolved
 Milestone: M3
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -23,8 +23,8 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
 
 ## Acceptance criteria
 
-- [ ] On the host desktop, without Camino, the Builder demo's (`gtk3-demo --run=builder`) New button shows its tooltip. If it doesn't, find another gtk3-demo widget whose tooltip does show there, and use that one below.
-- [ ] Nested, that tooltip shows above its window, and goes away when the pointer leaves the button.
+- [x] On the host desktop, without Camino, the Builder demo's (`gtk3-demo --run=builder`) New button shows its tooltip. If it doesn't, find another gtk3-demo widget whose tooltip does show there, and use that one below.
+- [x] Nested, that tooltip shows above its window, and goes away when the pointer leaves the button.
 - [x] Nested, xterm and xeyes map with Menta frames, take focus on a click and move when their titlebar is dragged. xterm takes typing, and xeyes follows the pointer while it's over an X window.
 - [x] Nested, gtk3-demo's Preferences menu opens on a click and shows above its window. Down, Right and Escape navigate it and its Color submenu. Clicking outside the menu closes it. Afterwards, typing goes to the window again.
 - [x] Nested, text copied in xterm pastes into foot, and back, through both the clipboard (Ctrl+Shift+C and V in foot) and the primary selection (select, then middle-click). A file dragged from caja with `GDK_BACKEND=x11` drops into a native caja, and the other way round.
@@ -64,3 +64,4 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
   - **wmctrl -t:** xterm staying on workspace 2 afterwards is expected, since nothing moves it back.
 
 - **After 47 (2026-09-30):** nested with `--scale 2`, `xterm -fa Monospace -fs 11`'s text rendered at scale 2. Its sharpness and Menta frame weren't reported, so the scale-2 criterion stays open for them. Confirmed afterwards: it renders sharp with a Menta frame, so the criterion is ticked. Its frame extents were 2, 2, 62, 2 in the scripted run.
+- **The tooltip, again (2026-09-30):** nested, hovering the Builder demo's New button showed "Create a new file" above both gtk3-demo windows, and it worked as expected. The host check wasn't run again: it was there to find a widget with a tooltip, and the nested run shows this one has one. Every criterion has now passed, so the ticket is resolved.
