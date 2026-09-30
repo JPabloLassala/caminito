@@ -1,7 +1,8 @@
 //! Camino's X connection (11, 15): an ordinary x11rb client of Xwayland, beside Smithay's
 //! window-manager connection, for the X work Smithay doesn't do. It claims Camino's
 //! identity on the root once per `start_wm`, and publishes the root properties Smithay
-//! doesn't: the desktops, from policy, whenever the refresh pass finds them changed. Per
+//! doesn't: the desktops, from policy, whenever the refresh pass finds them changed, and
+//! the Xft resources in `RESOURCE_MANAGER`, from the settings (47). Per
 //! window it publishes each managed window's desktop, and reads what Smithay doesn't
 //! (39). It's a calloop fd source on the main thread (15), which hands on the root and
 //! window messages Smithay drops as [`Request`]s, and hears XKB's bell (06).
@@ -32,6 +33,7 @@ use x11rb::protocol::xproto::{
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
+use super::xsettings::{Resources, merge_resources};
 use crate::state::State;
 use crate::window::{Strut, struts};
 
@@ -331,6 +333,8 @@ pub(super) struct XConnection {
     published: Option<RootProperties>,
     /// What was last written on each managed window.
     published_windows: HashMap<Window, WindowProperties>,
+    /// The X resources last merged into `RESOURCE_MANAGER`.
+    published_resources: Option<Resources>,
     /// Managed windows whose `_NET_FRAME_EXTENTS` is written again, changed or not.
     frame_extents_owed: HashSet<Window>,
     /// Whether Xwayland has SHAPE, which input regions are read with.
@@ -407,6 +411,7 @@ impl XConnection {
             gtk_workareas,
             published: None,
             published_windows: HashMap::new(),
+            published_resources: None,
             frame_extents_owed: HashSet::new(),
             has_shape,
             loop_handle: handle.clone(),
@@ -828,6 +833,38 @@ impl XConnection {
             AtomEnum::CARDINAL.into(),
             &value,
         )
+    }
+
+    /// Merges `resources` into the root's `RESOURCE_MANAGER` (47) if they differ from those
+    /// last merged. What other clients wrote there, such as xrdb, is kept.
+    pub(super) fn publish_resources(&mut self, resources: Resources) -> Result<(), Error> {
+        if self.published_resources.as_ref() == Some(&resources) {
+            return Ok(());
+        }
+        let existing = self
+            .conn
+            .get_property(
+                false,
+                self.root,
+                AtomEnum::RESOURCE_MANAGER,
+                AtomEnum::STRING,
+                0,
+                u32::MAX,
+            )?
+            .reply()?
+            .value;
+        let merged = merge_resources(&existing, &resources);
+        if merged != existing {
+            self.replace8(
+                self.root,
+                AtomEnum::RESOURCE_MANAGER.into(),
+                AtomEnum::STRING.into(),
+                &merged,
+            )?;
+            self.conn.flush()?;
+        }
+        self.published_resources = Some(resources);
+        Ok(())
     }
 
     /// Waits until Xwayland has handled every request sent so far. x11rb queues the events

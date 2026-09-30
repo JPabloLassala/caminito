@@ -649,6 +649,7 @@ impl Camino {
         self.refresh_x_root();
         self.refresh_x_windows();
         self.refresh_xsettings();
+        self.refresh_x_resources();
         self.refresh_x_root_cursor();
         self.popups.cleanup();
     }

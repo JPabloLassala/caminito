@@ -260,6 +260,16 @@ impl Camino {
         }
     }
 
+    /// Brings the Xft resources in `RESOURCE_MANAGER` up to date with the settings and the
+    /// X11 scale (47), writing only when they changed.
+    pub(crate) fn refresh_x_resources(&mut self) {
+        let scale = self.applied_x11_scale();
+        let resources = xsettings::resources(&self.settings, scale.0);
+        self.with_xconn("publish the Xft resources", |xconn| {
+            xconn.publish_resources(resources)
+        });
+    }
+
     /// Brings the root window's cursor, which X windows without their own show, up to date
     /// with the cursor settings and the X11 scale (41). Xwayland's own, from
     /// `XCURSOR_SIZE`, would be in client space, and small at a scale above 1.
@@ -711,8 +721,9 @@ impl State {
 
     /// Xwayland is up. In 11's start-up order: attaches `X11Wm`, connects Camino's X
     /// connection, which claims Camino's identity, publishes the root properties,
-    /// XSETTINGS and the root cursor, all at the X11 scale Xwayland's client has, and only
-    /// then sets `DISPLAY` for the clients Camino spawns, which read them at start-up.
+    /// XSETTINGS, the Xft resources and the root cursor, all at the X11 scale Xwayland's
+    /// client has, and only then sets `DISPLAY` for the clients Camino spawns, which read
+    /// them at start-up.
     fn xwayland_ready(&mut self, x11_socket: UnixStream) {
         let camino = &mut self.camino;
         let Some(xwayland) = camino.xwayland.as_mut() else {
@@ -743,6 +754,7 @@ impl State {
                 // them as they start (11): `DISPLAY` must not come first.
                 camino.refresh_x_root();
                 camino.refresh_xsettings();
+                camino.refresh_x_resources();
                 camino.refresh_x_root_cursor();
                 tracing::info!("Xwayland is ready on DISPLAY={value}");
                 camino

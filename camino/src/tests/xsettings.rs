@@ -1,7 +1,8 @@
-//! XSETTINGS (40) as an X11 GTK app reads them: the table on the `_XSETTINGS_S0` owner. It
-//! isn't a window's, so no test maps one.
+//! XSETTINGS (40) as an X11 GTK app reads them: the table on the `_XSETTINGS_S0` owner, and
+//! the Xft resources (47) as an Xft app reads them, from `RESOURCE_MANAGER`. Neither is a
+//! window's, so no test maps one.
 
-use camino_test_client::x11::XSetting;
+use camino_test_client::x11::{PropertyValue, XSetting};
 use insta::assert_snapshot;
 
 use super::fixture::{ClientId, Fixture, Kind};
@@ -70,6 +71,40 @@ fn x_clients_read_mates_theme_fonts_and_dpi() {
     Gdk/WindowScalingFactor = 1
     "#
     );
+}
+
+/// `Xft.dpi` in `RESOURCE_MANAGER`, as an Xft client reads it.
+fn xft_dpi(f: &mut Fixture, x: ClientId) -> String {
+    let property = f
+        .x11_call(x, |x| x.property(x.root(), "RESOURCE_MANAGER"))
+        .unwrap()
+        .expect("Camino writes RESOURCE_MANAGER");
+    assert_eq!(property.type_, "STRING");
+    let PropertyValue::Bytes(bytes) = property.value else {
+        panic!("RESOURCE_MANAGER has format 8");
+    };
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .filter(|line| line.starts_with("Xft.dpi:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn xft_clients_read_the_dpi_at_the_x11_scale_from_the_resources_and_again_after_a_restart() {
+    let mut f = Fixture::new();
+    let output = f.add_output((1920, 1080), 1.0);
+    let x = f.connect(Kind::X11);
+    assert_eq!(xft_dpi(&mut f, x), "Xft.dpi:\t96");
+
+    f.set_output_scale(&output, 2.0);
+    assert_eq!(xft_dpi(&mut f, x), "Xft.dpi:\t192");
+
+    f.crash_xwayland();
+    f.wait_for_xwayland();
+    let x = f.connect_x11();
+    assert_eq!(xft_dpi(&mut f, x), "Xft.dpi:\t192");
 }
 
 #[test]

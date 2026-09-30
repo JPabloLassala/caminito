@@ -10,9 +10,13 @@
 //! threshold. A `dpi` of 0 or less is 96 (13), where msd measures the screen for 0 and
 //! clamps a negative one to 50.
 //!
+//! The same Xft settings go to the root window's `RESOURCE_MANAGER` too (47), as msd's
+//! `xft_settings_set_xresources` (`:599-677`) writes them, for Xft apps that don't read
+//! XSETTINGS. Camino's X connection writes them, since Smithay's has no call for it.
+//!
 //! Left out of msd's plugin: its `overrides` key, the `Fontconfig/Timestamp` its fontconfig
-//! monitor bumps, the Xft resources it writes to `RESOURCE_MANAGER`, and the Qt variables
-//! it exports, which would scale Wayland Qt apps twice (13).
+//! monitor bumps, and the Qt variables it exports, which would scale Wayland Qt apps twice
+//! (13).
 
 use std::collections::BTreeMap;
 
@@ -71,7 +75,6 @@ pub(crate) fn table(settings: &Settings, scale: u32) -> Table {
     let interface = &settings.interface;
     let gtk = &interface.gtk;
     let sound = &settings.sound;
-    let fonts = &settings.font_rendering;
 
     let mut table = Table::new();
     let mut set = |name, value: XSetting| {
@@ -132,53 +135,157 @@ pub(crate) fn table(settings: &Settings, scale: u32) -> Table {
     // Set once at start-up (`:1014-1017`) and again on every change (`xsettings_callback`).
     set("Net/FallbackIconTheme", "mate".into());
 
-    // `xft_settings_get` and `xft_settings_set_xsettings`.
-    let (antialias, subpixel) = match fonts.antialiasing {
-        Antialiasing::None => (false, false),
-        Antialiasing::Grayscale => (true, false),
-        Antialiasing::Rgba => (true, true),
-    };
-    let rgba = if subpixel {
-        match fonts.rgba_order {
-            RgbaOrder::Rgb => "rgb",
-            RgbaOrder::Bgr => "bgr",
-            RgbaOrder::Vrgb => "vrgb",
-            RgbaOrder::Vbgr => "vbgr",
-        }
-    } else {
-        "none"
-    };
-    let (hinting, hint_style) = match fonts.hinting {
-        Hinting::None => (false, "hintnone"),
-        Hinting::Slight => (true, "hintslight"),
-        Hinting::Medium => (true, "hintmedium"),
-        Hinting::Full => (true, "hintfull"),
-    };
-    let dpi = if fonts.dpi > 0.0 {
-        fonts.dpi
-    } else {
-        DPI_FALLBACK
-    };
-    let dpi = (dpi * f64::from(scale)).clamp(*DPI_REASONABLE.start(), *DPI_REASONABLE.end());
-    set("Xft/Antialias", antialias.into());
-    set("Xft/Hinting", hinting.into());
-    set("Xft/HintStyle", hint_style.into());
+    // `xft_settings_set_xsettings`.
+    let xft = Xft::new(settings, scale);
+    set("Xft/Antialias", xft.antialias.into());
+    set("Xft/Hinting", xft.hinting.into());
+    set("Xft/HintStyle", xft.hint_style.into());
     set("Gdk/WindowScalingFactor", saturate(scale));
     // In 1024ths of an inch, truncated as C's conversion to int is.
     set(
         "Gdk/UnscaledDPI",
-        ((dpi / f64::from(scale) * 1024.0) as i32).into(),
+        ((xft.dpi / f64::from(scale) * 1024.0) as i32).into(),
     );
-    set("Xft/DPI", ((dpi * 1024.0) as i32).into());
-    set("Xft/RGBA", rgba.into());
-    let lcd_filter = if rgba == "rgb" { "lcddefault" } else { "none" };
-    set("Xft/lcdfilter", lcd_filter.into());
-    set(
-        "Gtk/CursorThemeSize",
-        saturate(mouse.cursor_size.saturating_mul(scale)),
-    );
+    set("Xft/DPI", xft.dpi_1024ths().into());
+    set("Xft/RGBA", xft.rgba.into());
+    set("Xft/lcdfilter", xft.lcd_filter().into());
+    set("Gtk/CursorThemeSize", saturate(xft.cursor_size));
 
     table
+}
+
+/// msd's `MateXftSettings`, from `xft_settings_get` (`:395-483`), which both XSETTINGS and
+/// the X resources are written from.
+struct Xft {
+    antialias: bool,
+    hinting: bool,
+    hint_style: &'static str,
+    rgba: &'static str,
+    /// Dots per inch at the X11 scale, clamped.
+    dpi: f64,
+    /// At the X11 scale.
+    cursor_size: u32,
+}
+
+impl Xft {
+    fn new(settings: &Settings, scale: u32) -> Self {
+        let fonts = &settings.font_rendering;
+        let (antialias, subpixel) = match fonts.antialiasing {
+            Antialiasing::None => (false, false),
+            Antialiasing::Grayscale => (true, false),
+            Antialiasing::Rgba => (true, true),
+        };
+        let rgba = if subpixel {
+            match fonts.rgba_order {
+                RgbaOrder::Rgb => "rgb",
+                RgbaOrder::Bgr => "bgr",
+                RgbaOrder::Vrgb => "vrgb",
+                RgbaOrder::Vbgr => "vbgr",
+            }
+        } else {
+            "none"
+        };
+        let (hinting, hint_style) = match fonts.hinting {
+            Hinting::None => (false, "hintnone"),
+            Hinting::Slight => (true, "hintslight"),
+            Hinting::Medium => (true, "hintmedium"),
+            Hinting::Full => (true, "hintfull"),
+        };
+        let dpi = if fonts.dpi > 0.0 {
+            fonts.dpi
+        } else {
+            DPI_FALLBACK
+        };
+        let dpi = (dpi * f64::from(scale)).clamp(*DPI_REASONABLE.start(), *DPI_REASONABLE.end());
+        Xft {
+            antialias,
+            hinting,
+            hint_style,
+            rgba,
+            dpi,
+            cursor_size: settings.mouse.cursor_size.saturating_mul(scale),
+        }
+    }
+
+    /// `Xft/DPI`: in 1024ths of an inch, truncated as C's conversion to int is.
+    fn dpi_1024ths(&self) -> i32 {
+        (self.dpi * 1024.0) as i32
+    }
+
+    fn lcd_filter(&self) -> &'static str {
+        if self.rgba == "rgb" {
+            "lcddefault"
+        } else {
+            "none"
+        }
+    }
+}
+
+/// X resources by name, in the order msd writes them.
+pub(super) type Resources = Vec<(&'static str, String)>;
+
+/// The X resources msd would write to `RESOURCE_MANAGER` for `settings` at the X11 scale
+/// `scale` (47): `xft_settings_set_xresources` (`:630-677`). Xft apps that don't read
+/// XSETTINGS, such as `xterm -fa`, take their DPI from `Xft.dpi`.
+pub(super) fn resources(settings: &Settings, scale: u32) -> Resources {
+    let xft = Xft::new(settings, scale);
+    let flag = |on: bool| if on { "1" } else { "0" }.to_string();
+    vec![
+        // Whole dots, rounded from `Xft/DPI` as msd's `+ 0.5` does.
+        (
+            "Xft.dpi",
+            ((f64::from(xft.dpi_1024ths()) / 1024.0 + 0.5) as i32).to_string(),
+        ),
+        ("Xft.antialias", flag(xft.antialias)),
+        ("Xft.hinting", flag(xft.hinting)),
+        ("Xft.hintstyle", xft.hint_style.to_string()),
+        ("Xft.rgba", xft.rgba.to_string()),
+        ("Xft.lcdfilter", xft.lcd_filter().to_string()),
+        ("Xcursor.theme", settings.mouse.cursor_theme.clone()),
+        ("Xcursor.size", xft.cursor_size.to_string()),
+    ]
+}
+
+/// `RESOURCE_MANAGER` with `resources` merged into `existing`, as msd's `update_property`
+/// (`:599-628`) does: every other line is kept, a line that sets one of `resources` is
+/// replaced where it is, and the rest are appended as `name:\tvalue`. Unlike msd, a line
+/// matches only if its resource name is the same, not if it contains it, so `XTerm*Xft.dpi`
+/// is left alone. Whitespace around a name is ignored, as Xrm ignores it, so
+/// `Xft.rgba : bgr` is replaced. Every line that sets a name is replaced, not only the
+/// first, and blank lines, which Xrm skips, are dropped.
+pub(super) fn merge_resources(existing: &[u8], resources: &Resources) -> Vec<u8> {
+    let line_for = |(name, value): &(&str, String)| format!("{name}:\t{value}").into_bytes();
+    let mut written = vec![false; resources.len()];
+    let mut merged: Vec<u8> = Vec::with_capacity(existing.len());
+    let lines = existing
+        .split(|&b| b == b'\n')
+        .filter(|line| !line.is_empty());
+    for line in lines {
+        let name = line
+            .iter()
+            .position(|&b| b == b':')
+            .map(|colon| line[..colon].trim_ascii());
+        let found = name.and_then(|name| {
+            resources
+                .iter()
+                .position(|(resource, _)| resource.as_bytes() == name)
+        });
+        match found {
+            Some(i) => {
+                merged.extend(line_for(&resources[i]));
+                written[i] = true;
+            }
+            None => merged.extend_from_slice(line),
+        }
+        merged.push(b'\n');
+    }
+    for (resource, written) in resources.iter().zip(written) {
+        if !written {
+            merged.extend(line_for(resource));
+            merged.push(b'\n');
+        }
+    }
+    merged
 }
 
 /// A size the settings keep unsigned, which came from a GSettings `i32`.

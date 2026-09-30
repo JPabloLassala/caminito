@@ -403,3 +403,119 @@ fn the_x11_scale_multiplies_dpi_and_cursor_size_as_msd_does() {
     Gtk/CursorThemeSize = Int(48)
     ");
 }
+
+/// `RESOURCE_MANAGER` as the resources for `settings` at the X11 scale `scale` leave an
+/// empty one.
+fn fresh_resources(settings: &Settings, scale: u32) -> String {
+    show_resources(merge_resources(b"", &resources(settings, scale)))
+}
+
+/// `RESOURCE_MANAGER`'s text, with its tabs as `\t` so a snapshot keeps them.
+fn show_resources(merged: Vec<u8>) -> String {
+    String::from_utf8(merged).unwrap().replace('\t', "\\t")
+}
+
+#[test]
+fn the_defaults_give_msds_resources() {
+    // `msd-xsettings-manager.c:630-677`: one `name:\tvalue` line each, in msd's order.
+    assert_snapshot!(fresh_resources(&defaults(), 1), @r"
+    Xft.dpi:\t96
+    Xft.antialias:\t1
+    Xft.hinting:\t1
+    Xft.hintstyle:\thintslight
+    Xft.rgba:\trgb
+    Xft.lcdfilter:\tlcddefault
+    Xcursor.theme:\t
+    Xcursor.size:\t24
+    ");
+}
+
+/// `Xft.dpi` and `Xcursor.size` for a `dpi` key at the X11 scale `scale`.
+fn scaled_resources(dpi: f64, scale: u32) -> String {
+    let mut settings = defaults();
+    settings.font_rendering.dpi = dpi;
+    fresh_resources(&settings, scale)
+        .lines()
+        .filter(|line| line.starts_with("Xft.dpi:") || line.starts_with("Xcursor.size:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn xft_dpi_is_the_dpi_times_the_x11_scale_in_whole_dots() {
+    // `:650`: `Xft/DPI` without the 1024, rounded.
+    assert_snapshot!(scaled_resources(96.0, 1), @r"
+    Xft.dpi:\t96
+    Xcursor.size:\t24
+    ");
+    assert_snapshot!(scaled_resources(96.0, 2), @r"
+    Xft.dpi:\t192
+    Xcursor.size:\t48
+    ");
+    assert_snapshot!(scaled_resources(120.0, 1), @r"
+    Xft.dpi:\t120
+    Xcursor.size:\t24
+    ");
+    assert_snapshot!(scaled_resources(120.0, 2), @r"
+    Xft.dpi:\t240
+    Xcursor.size:\t48
+    ");
+    // Rounded from the truncated 1024ths, as msd's `+ 0.5` does.
+    assert_snapshot!(scaled_resources(96.6, 1), @r"
+    Xft.dpi:\t97
+    Xcursor.size:\t24
+    ");
+}
+
+#[test]
+fn the_resources_follow_the_font_rendering_and_cursor_settings() {
+    let mut settings = defaults();
+    settings.font_rendering.antialiasing = Antialiasing::Grayscale;
+    settings.font_rendering.hinting = Hinting::None;
+    settings.mouse.cursor_theme = "mate-black".into();
+    settings.mouse.cursor_size = 32;
+    assert_snapshot!(fresh_resources(&settings, 1), @r"
+    Xft.dpi:\t96
+    Xft.antialias:\t1
+    Xft.hinting:\t0
+    Xft.hintstyle:\thintnone
+    Xft.rgba:\tnone
+    Xft.lcdfilter:\tnone
+    Xcursor.theme:\tmate-black
+    Xcursor.size:\t32
+    ");
+}
+
+#[test]
+fn a_merge_keeps_other_lines_and_replaces_stale_xft_ones_where_they_are() {
+    let existing = "*background:\tblack\n\
+                    Xft.dpi:\t96\n\
+                    XTerm*faceName:\tMonospace\n\
+                    XTerm*Xft.dpi:\t100\n\
+                    Xft.rgba : bgr\n\
+                    Xcursor.size:\t16";
+    let mut settings = defaults();
+    settings.font_rendering.dpi = 120.0;
+    let merged = merge_resources(existing.as_bytes(), &resources(&settings, 2));
+    // `XTerm*Xft.dpi` is another resource, which msd's `strstr` would have rewritten.
+    assert_snapshot!(show_resources(merged), @r"
+    *background:\tblack
+    Xft.dpi:\t240
+    XTerm*faceName:\tMonospace
+    XTerm*Xft.dpi:\t100
+    Xft.rgba:\trgb
+    Xcursor.size:\t48
+    Xft.antialias:\t1
+    Xft.hinting:\t1
+    Xft.hintstyle:\thintslight
+    Xft.lcdfilter:\tlcddefault
+    Xcursor.theme:\t
+    ");
+}
+
+#[test]
+fn a_merge_of_what_it_wrote_changes_nothing() {
+    let resources = resources(&defaults(), 2);
+    let once = merge_resources(b"*background:\tblack\n", &resources);
+    assert_eq!(merge_resources(&once, &resources), once);
+}
