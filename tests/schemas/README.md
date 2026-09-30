@@ -12,7 +12,12 @@ as their only schema source, each on a memory backend of its own (the settings t
 | `org.mate.Marco.*` (`org.mate.marco.gschema.xml`) | marco 1.29.0 (`42a17368923adf3e17cc606ad464c0b2fd19d56f`), as installed by Arch's `marco 1.29.0-1` |
 | `org.mate.font-rendering` | mate-settings-daemon 1.28.0 (`e35462eeefb6d5eabebf76317640ee4fa62ecbb0`), as installed by Arch's `mate-settings-daemon 1.28.0-2` |
 | `org.mate.peripherals-mouse` | mate-settings-daemon 1.28.0 (`e35462eeefb6d5eabebf76317640ee4fa62ecbb0`), as installed by Arch's `mate-settings-daemon 1.28.0-2` |
+| `org.mate.peripherals-touchpad`, `org.mate.peripherals-keyboard` | mate-settings-daemon 1.28.0 (`e35462eeefb6d5eabebf76317640ee4fa62ecbb0`), as installed by Arch's `mate-settings-daemon 1.28.0-2` |
+| `org.mate.peripherals-keyboard-xkb` | libmatekbd 1.28.0, as installed by Arch's `libmatekbd 1.28.0-2` |
 | `org.mate.sound` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-2` |
+
+mate-settings-daemon 1.28.0's mouse schema has no `natural-scroll`, which msd's master reads, so
+Camino reads that key only where a schema has it.
 
 An upstream schema change is a deliberate re-vendor. These are test data only; nothing
 here is installed.

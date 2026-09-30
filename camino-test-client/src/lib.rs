@@ -115,6 +115,10 @@ pub struct State {
     keyboard: Option<WlKeyboard>,
     /// Every pointer and keyboard event received, oldest first.
     pub input: Vec<InputEvent>,
+    /// The keyboard's last `repeat_info`, as (rate, delay).
+    pub repeat_info: Option<(i32, i32)>,
+    /// The keyboard's last locked modifiers, as xkb's mask.
+    pub locked_modifiers: u32,
     /// The serial of the last button press, which starts moves, resizes and popup grabs.
     pub last_press_serial: Option<u32>,
     /// The `wl_output`s bound so far, in the order the compositor advertised them.
@@ -994,6 +998,14 @@ impl Dispatch<WlKeyboard, ()> for State {
                 key,
                 pressed: key_state == WEnum::Value(wl_keyboard::KeyState::Pressed),
             },
+            wl_keyboard::Event::RepeatInfo { rate, delay } => {
+                state.repeat_info = Some((rate, delay));
+                return;
+            }
+            wl_keyboard::Event::Modifiers { mods_locked, .. } => {
+                state.locked_modifiers = mods_locked;
+                return;
+            }
             _ => return,
         };
         state.input.push(input);

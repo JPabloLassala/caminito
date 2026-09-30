@@ -13,6 +13,8 @@ pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
 pub const INTERFACE: &str = "org.mate.interface";
 pub const FONT_RENDERING: &str = "org.mate.font-rendering";
 pub const MOUSE: &str = "org.mate.peripherals-mouse";
+pub const TOUCHPAD: &str = "org.mate.peripherals-touchpad";
+pub const KEYBOARD: &str = "org.mate.peripherals-keyboard";
 pub const SOUND: &str = "org.mate.sound";
 
 /// A schema Camino reads.
@@ -50,12 +52,28 @@ pub const SCHEMAS: &[Schema] = &[
         id: SOUND,
         required: false,
     },
+    Schema {
+        id: TOUCHPAD,
+        required: false,
+    },
+    Schema {
+        id: KEYBOARD,
+        required: false,
+    },
 ];
 
 /// Keys Camino doesn't support yet, whose defaults it doesn't match (09). Each is logged
 /// once per run, and only when set away from its default. Entries arrive with the
 /// milestones that read their neighbours.
-pub const UNSUPPORTED: &[(&str, &str)] = &[];
+///
+/// Keys that are *never* supported aren't here: they're ignored without a word (09, 53).
+/// Of the input schemas, those are `motion-threshold` and `tap-button-*-finger`, which msd
+/// uses only for non-libinput drivers, and the keyboard's `bell-mode`, `click`,
+/// `click-volume`, `bell-pitch`, `bell-duration` and `bell-custom-file`.
+pub const UNSUPPORTED: &[(&str, &str)] = &[
+    // Camino will draw the ripple itself; M8's parity audit decides when (53).
+    (MOUSE, "locate-pointer"),
+];
 
 /// Marco's schemas that aren't installed, which stop Camino starting (09).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,6 +253,8 @@ pub struct Settings {
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
     pub sound: Sound,
+    pub devices: Devices,
+    pub keyboard: Keyboard,
 }
 
 /// What SSD frames are drawn with and do (05, 07).
@@ -337,6 +357,47 @@ impl Nick for RgbaOrder {
     ];
 }
 
+impl Nick for AccelProfile {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("default", Self::Default),
+        ("adaptive", Self::Adaptive),
+        ("flat", Self::Flat),
+    ];
+}
+
+/// `org.mate.peripherals-touchpad.Handedness`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Handedness {
+    Right,
+    Left,
+    /// Whatever the mouse's `left-handed` says.
+    Mouse,
+}
+
+impl Nick for Handedness {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("right", Self::Right),
+        ("left", Self::Left),
+        ("mouse", Self::Mouse),
+    ];
+}
+
+/// `org.mate.peripherals-keyboard.NumLockState`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NumLockState {
+    Off,
+    On,
+    Unknown,
+}
+
+impl Nick for NumLockState {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("off", Self::Off),
+        ("on", Self::On),
+        ("unknown", Self::Unknown),
+    ];
+}
+
 /// `org.mate.interface`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interface {
@@ -436,6 +497,89 @@ pub struct Sound {
     pub theme_name: String,
     pub event_sounds: bool,
     pub input_feedback_sounds: bool,
+}
+
+/// What msd's mouse plugin sets on each kind of pointer under X11, which Camino sets on
+/// libinput devices instead (09, 53).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Devices {
+    /// Pointers that aren't touchpads.
+    pub mouse: DeviceSettings,
+    /// Pointers libinput can tap on.
+    pub touchpad: DeviceSettings,
+}
+
+/// One kind of device's settings. A `None` is one msd doesn't set on this kind, so the
+/// device keeps its own.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeviceSettings {
+    /// Whether the device sends events at all.
+    pub send_events: Option<bool>,
+    /// Whether the primary and secondary buttons are swapped.
+    pub left_handed: bool,
+    /// libinput's pointer speed, in [−1, 1], or `None` for the device's default.
+    pub accel_speed: Option<f64>,
+    /// How the pointer speeds up with the device's motion.
+    pub accel_profile: AccelProfile,
+    /// Whether scrolling is reversed.
+    pub natural_scroll: bool,
+    /// Whether pressing left and right together is a middle click.
+    pub middle_emulation: Option<bool>,
+    /// Whether a tap is a click.
+    pub tap: Option<bool>,
+    /// Whether the device ignores touches while the keyboard is typed on.
+    pub disable_while_typing: Option<bool>,
+    /// How clicks tell the buttons apart.
+    pub click_method: Option<ClickMethod>,
+    /// How the device scrolls.
+    pub scroll_method: Option<ScrollMethod>,
+    /// Whether the device's horizontal scrolling reaches clients. libinput has no switch
+    /// for it, so Camino drops the device's horizontal axis events itself.
+    pub horizontal_scroll: bool,
+}
+
+/// libinput's pointer acceleration profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccelProfile {
+    /// The device's own default profile.
+    Default,
+    /// Faster motion moves the pointer further.
+    Adaptive,
+    /// Motion is scaled by one factor.
+    Flat,
+}
+
+/// How a touchpad without physical buttons tells the buttons apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClickMethod {
+    /// By where on the pad the click is.
+    ButtonAreas,
+    /// By how many fingers are down.
+    Clickfinger,
+}
+
+/// How a touchpad scrolls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollMethod {
+    /// It doesn't.
+    NoScroll,
+    /// By moving two fingers.
+    TwoFinger,
+    /// By moving along the pad's edge.
+    Edge,
+}
+
+/// `org.mate.peripherals-keyboard`, for the seat's keyboard on every backend (09, 53).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Keyboard {
+    /// Repeats per second, where 0 turns repeat off, as `wl_keyboard.repeat_info` has it.
+    pub repeat_rate: i32,
+    /// Milliseconds before a held key repeats, at least 1.
+    pub repeat_delay: i32,
+    /// Whether NumLock is restored at start-up and its state written back on each change.
+    pub remember_numlock: bool,
+    /// NumLock's remembered state, or `None` when it's `unknown`.
+    pub numlock: Option<bool>,
 }
 
 /// Settings from a reading, and what was wrong with it.
@@ -567,6 +711,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             event_sounds: r.bool(SOUND, "event-sounds", false),
             input_feedback_sounds: r.bool(SOUND, "input-feedback-sounds", false),
         },
+        devices: devices(&mut r),
+        keyboard: keyboard(&mut r),
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -585,6 +731,94 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     Translation {
         settings,
         problems: r.problems,
+    }
+}
+
+/// The pointers' settings, as msd's mouse plugin applies them to libinput devices
+/// (`msd-mouse-manager.c`).
+fn devices(r: &mut Reader<'_>) -> Devices {
+    let mouse_left_handed = r.bool(MOUSE, "left-handed", false);
+    let mouse = DeviceSettings {
+        send_events: None,
+        left_handed: mouse_left_handed,
+        accel_speed: accel_speed(r.double(MOUSE, "motion-acceleration", -1.0)),
+        accel_profile: r.nick(MOUSE, "accel-profile", AccelProfile::Default),
+        // Newer than MATE 1.28's schema, so often missing.
+        natural_scroll: r.bool(MOUSE, "natural-scroll", false),
+        // Touchpads keep their own (`msd-mouse-manager.c:851-876`).
+        middle_emulation: Some(r.bool(MOUSE, "middle-button-enabled", true)),
+        tap: None,
+        disable_while_typing: None,
+        click_method: None,
+        scroll_method: None,
+        horizontal_scroll: true,
+    };
+
+    // The button numbers are ignored, as msd does (`msd-mouse-manager.c:1275-1287`).
+    let clickfinger = r.int(TOUCHPAD, "two-finger-click", 0) != 0
+        || r.int(TOUCHPAD, "three-finger-click", 0) != 0;
+    // libinput has one scroll method, and msd prefers two fingers
+    // (`msd-mouse-manager.c:1520-1561`).
+    let scroll_method = if r.bool(TOUCHPAD, "vertical-two-finger-scrolling", true) {
+        ScrollMethod::TwoFinger
+    } else if r.bool(TOUCHPAD, "vertical-edge-scrolling", true) {
+        ScrollMethod::Edge
+    } else {
+        ScrollMethod::NoScroll
+    };
+    let horizontal_scroll = match scroll_method {
+        ScrollMethod::TwoFinger => r.bool(TOUCHPAD, "horizontal-two-finger-scrolling", false),
+        ScrollMethod::Edge => r.bool(TOUCHPAD, "horizontal-edge-scrolling", false),
+        // Nothing scrolls, so there's nothing to drop.
+        ScrollMethod::NoScroll => true,
+    };
+    let touchpad = DeviceSettings {
+        send_events: Some(r.bool(TOUCHPAD, "touchpad-enabled", true)),
+        left_handed: match r.nick(TOUCHPAD, "left-handed", Handedness::Mouse) {
+            Handedness::Right => false,
+            Handedness::Left => true,
+            Handedness::Mouse => mouse_left_handed,
+        },
+        accel_speed: accel_speed(r.double(TOUCHPAD, "motion-acceleration", -1.0)),
+        accel_profile: r.nick(TOUCHPAD, "accel-profile", AccelProfile::Default),
+        natural_scroll: r.bool(TOUCHPAD, "natural-scroll", false),
+        middle_emulation: None,
+        tap: Some(r.bool(TOUCHPAD, "tap-to-click", false)),
+        disable_while_typing: Some(r.bool(TOUCHPAD, "disable-while-typing", false)),
+        click_method: Some(if clickfinger {
+            ClickMethod::Clickfinger
+        } else {
+            ClickMethod::ButtonAreas
+        }),
+        scroll_method: Some(scroll_method),
+        horizontal_scroll,
+    };
+    Devices { mouse, touchpad }
+}
+
+/// `motion-acceleration`'s 1 to 10, from the Mouse capplet, as libinput's speed
+/// (`msd-mouse-manager.c:751-754`). -1 is unset, which here means the device's default
+/// rather than msd's 0 (09). msd doesn't clamp, but libinput refuses a speed outside
+/// [−1, 1].
+fn accel_speed(acceleration: f64) -> Option<f64> {
+    (acceleration != -1.0).then(|| ((acceleration - 1.0) * 2.0 / 9.0 - 1.0).clamp(-1.0, 1.0))
+}
+
+/// The keyboard's repeat and NumLock, as msd's keyboard plugin applies them
+/// (`msd-keyboard-manager.c:165-265`).
+fn keyboard(r: &mut Reader<'_>) -> Keyboard {
+    let repeat = r.bool(KEYBOARD, "repeat", true);
+    let rate = r.int(KEYBOARD, "rate", 30);
+    let delay = r.int(KEYBOARD, "delay", 500);
+    Keyboard {
+        repeat_rate: if repeat { rate.max(0) } else { 0 },
+        repeat_delay: delay.max(1),
+        remember_numlock: r.bool(KEYBOARD, "remember-numlock-state", true),
+        numlock: match r.nick(KEYBOARD, "numlock-state", NumLockState::Unknown) {
+            NumLockState::On => Some(true),
+            NumLockState::Off => Some(false),
+            NumLockState::Unknown => None,
+        },
     }
 }
 

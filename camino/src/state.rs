@@ -69,6 +69,7 @@ use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::handlers::DragIcon;
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::OutputRecord;
@@ -172,6 +173,10 @@ pub struct Camino {
     /// The settings as last read, and the GLib thread that reads them.
     pub settings: Settings,
     pub settings_thread: SettingsThread,
+    /// The input devices plugged in, which get the settings for their kind (53).
+    pub(crate) input_devices: InputDevices,
+    /// NumLock's state when the refresh pass last looked, so a change is written back once.
+    pub(crate) numlock_seen: bool,
 
     /// Xwayland, from its spawn until it fails (11).
     pub xwayland: Option<RunningXwayland>,
@@ -489,8 +494,16 @@ impl Camino {
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(dh, "seat0");
         seat.add_pointer();
-        seat.add_keyboard(XkbConfig::default(), 600, 25)
+        let keyboard_settings = &settings.keyboard;
+        let keyboard = seat
+            .add_keyboard(
+                XkbConfig::default(),
+                keyboard_settings.repeat_delay,
+                keyboard_settings.repeat_rate,
+            )
             .expect("the default xkb keymap compiles");
+        crate::input::keyboard::restore_numlock(&keyboard, keyboard_settings);
+        let numlock_seen = keyboard.modifier_state().num_lock;
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
         let xwayland_shell_state = XWaylandShellState::new::<State>(dh);
         let xwayland_keyboard_grab_state = XWaylandKeyboardGrabState::new::<State>(dh);
@@ -560,6 +573,8 @@ impl Camino {
             next_window_id: 0,
             palette,
             frame_context,
+            input_devices: InputDevices::new(settings.devices),
+            numlock_seen,
             settings,
             settings_thread,
             xwayland: None,
@@ -605,6 +620,8 @@ impl Camino {
         if self.cursors.settings_changed(&settings.mouse) {
             self.queue_redraw_all();
         }
+        self.input_devices.settings_changed(settings.devices);
+        self.keyboard_settings_changed(&settings.keyboard);
         let factor = settings.interface.window_scaling_factor;
         let factor_changed = factor != self.settings.interface.window_scaling_factor;
         self.settings = settings;
@@ -703,6 +720,7 @@ impl Camino {
         self.refresh_xsettings();
         self.refresh_x_resources();
         self.refresh_x_root_cursor();
+        self.refresh_numlock();
         self.popups.cleanup();
     }
 

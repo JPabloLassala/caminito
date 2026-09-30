@@ -1,16 +1,18 @@
 //! Input: the keyboard path, pointer focus, and interactive move and resize (15).
 
 pub mod bindings;
+pub mod devices;
 mod focus;
 pub mod frame;
 mod grab;
+pub(crate) mod keyboard;
 
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
 
 use camino_policy::{Action, ResizeEdges, WindowId};
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, Event, InputBackend, InputEvent,
     InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent,
 };
@@ -70,7 +72,13 @@ impl State {
             InputEvent::PointerButton { event } => {
                 self.on_pointer_button(event.button_code(), event.state(), event.time());
             }
-            InputEvent::PointerAxis { event } => self.on_pointer_axis::<I>(&event),
+            InputEvent::PointerAxis { event } => {
+                let horizontal = self
+                    .camino
+                    .input_devices
+                    .scrolls_horizontally(&event.device().id());
+                self.on_pointer_axis::<I>(&event, horizontal);
+            }
             _ => {}
         }
     }
@@ -167,10 +175,17 @@ impl State {
         });
     }
 
-    /// Scrolling, sent to whatever has the pointer.
-    fn on_pointer_axis<I: InputBackend>(&mut self, event: &I::PointerAxisEvent) {
+    /// Scrolling, sent to whatever has the pointer. Without `horizontal`, the horizontal
+    /// axis is dropped, as the device's settings ask (53).
+    fn on_pointer_axis<I: InputBackend>(&mut self, event: &I::PointerAxisEvent, horizontal: bool) {
         let mut frame = AxisFrame::new(event.time()).source(event.source());
-        for axis in [Axis::Horizontal, Axis::Vertical] {
+        let mut sent = false;
+        let axes: &[Axis] = if horizontal {
+            &[Axis::Horizontal, Axis::Vertical]
+        } else {
+            &[Axis::Vertical]
+        };
+        for &axis in axes {
             // A wheel click is 15 units, as libinput and GTK have it.
             let v120 = event.amount_v120(axis);
             let amount = event
@@ -183,10 +198,16 @@ impl State {
                 if let Some(v120) = v120 {
                     frame = frame.v120(axis, v120 as i32);
                 }
+                sent = true;
             }
             if event.source() == AxisSource::Finger && event.amount(axis) == Some(0.) {
                 frame = frame.stop(axis);
+                sent = true;
             }
+        }
+        // All of it was horizontal scrolling the device's settings drop.
+        if !sent && !horizontal {
+            return;
         }
         let pointer = self.camino.seat.get_pointer().unwrap();
         pointer.axis(self, frame);

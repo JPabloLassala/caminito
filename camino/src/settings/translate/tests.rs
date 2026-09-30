@@ -67,6 +67,44 @@ fn defaults() -> Reading {
     put(MOUSE, "cursor-size", Value::Int(24));
     put(MOUSE, "double-click", Value::Int(400));
     put(MOUSE, "drag-threshold", Value::Int(8));
+    put(MOUSE, "left-handed", Value::Bool(false));
+    put(MOUSE, "motion-acceleration", Value::Double(-1.0));
+    put(MOUSE, "motion-threshold", Value::Int(-1));
+    put(MOUSE, "accel-profile", s("default"));
+    put(MOUSE, "middle-button-enabled", Value::Bool(true));
+    put(MOUSE, "locate-pointer", Value::Bool(false));
+    put(TOUCHPAD, "disable-while-typing", Value::Bool(false));
+    put(TOUCHPAD, "tap-to-click", Value::Bool(false));
+    put(TOUCHPAD, "vertical-edge-scrolling", Value::Bool(true));
+    put(TOUCHPAD, "horizontal-edge-scrolling", Value::Bool(false));
+    put(TOUCHPAD, "vertical-two-finger-scrolling", Value::Bool(true));
+    put(
+        TOUCHPAD,
+        "horizontal-two-finger-scrolling",
+        Value::Bool(false),
+    );
+    put(TOUCHPAD, "natural-scroll", Value::Bool(false));
+    put(TOUCHPAD, "touchpad-enabled", Value::Bool(true));
+    put(TOUCHPAD, "two-finger-click", Value::Int(0));
+    put(TOUCHPAD, "three-finger-click", Value::Int(0));
+    put(TOUCHPAD, "tap-button-one-finger", Value::Int(1));
+    put(TOUCHPAD, "tap-button-two-finger", Value::Int(3));
+    put(TOUCHPAD, "tap-button-three-finger", Value::Int(2));
+    put(TOUCHPAD, "left-handed", s("mouse"));
+    put(TOUCHPAD, "motion-acceleration", Value::Double(-1.0));
+    put(TOUCHPAD, "motion-threshold", Value::Int(-1));
+    put(TOUCHPAD, "accel-profile", s("default"));
+    put(KEYBOARD, "repeat", Value::Bool(true));
+    put(KEYBOARD, "click", Value::Bool(true));
+    put(KEYBOARD, "rate", Value::Int(30));
+    put(KEYBOARD, "delay", Value::Int(500));
+    put(KEYBOARD, "click-volume", Value::Int(0));
+    put(KEYBOARD, "bell-mode", s("on"));
+    put(KEYBOARD, "bell-pitch", Value::Int(400));
+    put(KEYBOARD, "bell-duration", Value::Int(100));
+    put(KEYBOARD, "bell-custom-file", s(""));
+    put(KEYBOARD, "remember-numlock-state", Value::Bool(true));
+    put(KEYBOARD, "numlock-state", s("unknown"));
     put(SOUND, "theme-name", s("freedesktop"));
     put(SOUND, "event-sounds", Value::Bool(false));
     put(SOUND, "input-feedback-sounds", Value::Bool(false));
@@ -691,6 +729,374 @@ fn a_negative_drag_threshold_falls_back_to_the_default() {
     let (settings, problem) = problem(&with(MOUSE, "drag-threshold", Value::Int(-1)));
     assert_eq!(settings.mouse.drag_threshold, 8);
     assert_eq!(problem, invalid(MOUSE, "drag-threshold", "-1", "8"));
+}
+
+// org.mate.peripherals-mouse and -touchpad on devices (53).
+
+/// The defaults with each key set.
+fn with_all(keys: &[(&str, &str, Value)]) -> Reading {
+    let mut reading = defaults();
+    for (schema, key, value) in keys {
+        let default = reading
+            .get(schema, key)
+            .map_or(value.clone(), |e| e.default.clone());
+        reading.insert(schema, key, value.clone(), default);
+    }
+    reading
+}
+
+fn mouse_device(reading: &Reading) -> DeviceSettings {
+    settings(reading).devices.mouse
+}
+
+fn touchpad(reading: &Reading) -> DeviceSettings {
+    settings(reading).devices.touchpad
+}
+
+#[test]
+fn the_defaults_give_a_mouse_as_msd_sets_it() {
+    assert_eq!(
+        mouse_device(&defaults()),
+        DeviceSettings {
+            send_events: None,
+            left_handed: false,
+            accel_speed: None,
+            accel_profile: AccelProfile::Default,
+            natural_scroll: false,
+            middle_emulation: Some(true),
+            tap: None,
+            disable_while_typing: None,
+            click_method: None,
+            scroll_method: None,
+            horizontal_scroll: true,
+        }
+    );
+}
+
+#[test]
+fn the_defaults_give_a_touchpad_as_msd_sets_it() {
+    assert_eq!(
+        touchpad(&defaults()),
+        DeviceSettings {
+            send_events: Some(true),
+            left_handed: false,
+            accel_speed: None,
+            accel_profile: AccelProfile::Default,
+            natural_scroll: false,
+            middle_emulation: None,
+            tap: Some(false),
+            disable_while_typing: Some(false),
+            click_method: Some(ClickMethod::ButtonAreas),
+            scroll_method: Some(ScrollMethod::TwoFinger),
+            horizontal_scroll: false,
+        }
+    );
+}
+
+#[test]
+fn mouse_device_keys_are_read() {
+    let reading = with_all(&[
+        (MOUSE, "left-handed", Value::Bool(true)),
+        (MOUSE, "accel-profile", string("flat")),
+        (MOUSE, "middle-button-enabled", Value::Bool(false)),
+        (MOUSE, "natural-scroll", Value::Bool(true)),
+    ]);
+    let mouse = mouse_device(&reading);
+    assert!(mouse.left_handed);
+    assert_eq!(mouse.accel_profile, AccelProfile::Flat);
+    assert_eq!(mouse.middle_emulation, Some(false));
+    assert!(mouse.natural_scroll);
+}
+
+#[test]
+fn natural_scroll_is_off_where_the_mouse_schema_lacks_it() {
+    // mate-settings-daemon 1.28's schema has no such key.
+    assert!(!mouse_device(&defaults()).natural_scroll);
+}
+
+#[test]
+fn motion_acceleration_minus_1_is_the_devices_default_speed() {
+    let reading = with(MOUSE, "motion-acceleration", Value::Double(-1.0));
+    assert_eq!(mouse_device(&reading).accel_speed, None);
+}
+
+#[test]
+fn motion_acceleration_maps_1_to_10_onto_libinputs_speed() {
+    for (m, speed) in [(1.0, -1.0), (5.5, 0.0), (10.0, 1.0), (3.25, -0.5)] {
+        let reading = with(MOUSE, "motion-acceleration", Value::Double(m));
+        assert_eq!(mouse_device(&reading).accel_speed, Some(speed), "for {m}");
+    }
+}
+
+#[test]
+fn motion_acceleration_beyond_the_range_is_clamped() {
+    for (m, speed) in [(0.0, -1.0), (-3.0, -1.0), (12.0, 1.0)] {
+        let reading = with(MOUSE, "motion-acceleration", Value::Double(m));
+        assert_eq!(mouse_device(&reading).accel_speed, Some(speed), "for {m}");
+    }
+}
+
+#[test]
+fn every_accel_profile_nick_is_known() {
+    for (nick, profile) in [
+        ("default", AccelProfile::Default),
+        ("adaptive", AccelProfile::Adaptive),
+        ("flat", AccelProfile::Flat),
+    ] {
+        let reading = with_all(&[
+            (MOUSE, "accel-profile", string(nick)),
+            (TOUCHPAD, "accel-profile", string(nick)),
+        ]);
+        assert_eq!(mouse_device(&reading).accel_profile, profile);
+        assert_eq!(touchpad(&reading).accel_profile, profile);
+    }
+}
+
+#[test]
+fn the_touchpad_has_its_own_acceleration_and_natural_scroll() {
+    let reading = with_all(&[
+        (TOUCHPAD, "motion-acceleration", Value::Double(10.0)),
+        (TOUCHPAD, "accel-profile", string("adaptive")),
+        (TOUCHPAD, "natural-scroll", Value::Bool(true)),
+    ]);
+    let settings = settings(&reading);
+    assert_eq!(settings.devices.touchpad.accel_speed, Some(1.0));
+    assert_eq!(
+        settings.devices.touchpad.accel_profile,
+        AccelProfile::Adaptive
+    );
+    assert!(settings.devices.touchpad.natural_scroll);
+    assert_eq!(settings.devices.mouse.accel_speed, None);
+    assert_eq!(settings.devices.mouse.accel_profile, AccelProfile::Default);
+    assert!(!settings.devices.mouse.natural_scroll);
+}
+
+#[test]
+fn touchpad_enabled_off_stops_touchpads_sending_events() {
+    let reading = with(TOUCHPAD, "touchpad-enabled", Value::Bool(false));
+    assert_eq!(touchpad(&reading).send_events, Some(false));
+}
+
+#[test]
+fn touchpad_left_handed_left_and_right_ignore_the_mouse() {
+    for (mouse, nick, left) in [
+        (true, "right", false),
+        (false, "left", true),
+        (true, "left", true),
+    ] {
+        let reading = with_all(&[
+            (MOUSE, "left-handed", Value::Bool(mouse)),
+            (TOUCHPAD, "left-handed", string(nick)),
+        ]);
+        assert_eq!(touchpad(&reading).left_handed, left, "{nick}");
+    }
+}
+
+#[test]
+fn touchpad_left_handed_mouse_follows_the_mouse_key() {
+    for mouse in [false, true] {
+        let reading = with_all(&[
+            (MOUSE, "left-handed", Value::Bool(mouse)),
+            (TOUCHPAD, "left-handed", string("mouse")),
+        ]);
+        assert_eq!(touchpad(&reading).left_handed, mouse);
+    }
+}
+
+#[test]
+fn tap_to_click_and_disable_while_typing_are_read() {
+    let reading = with_all(&[
+        (TOUCHPAD, "tap-to-click", Value::Bool(true)),
+        (TOUCHPAD, "disable-while-typing", Value::Bool(true)),
+    ]);
+    assert_eq!(touchpad(&reading).tap, Some(true));
+    assert_eq!(touchpad(&reading).disable_while_typing, Some(true));
+}
+
+#[test]
+fn a_two_or_three_finger_click_button_picks_clickfinger() {
+    for (two, three, method) in [
+        (0, 0, ClickMethod::ButtonAreas),
+        (3, 0, ClickMethod::Clickfinger),
+        (0, 2, ClickMethod::Clickfinger),
+        (1, 1, ClickMethod::Clickfinger),
+    ] {
+        let reading = with_all(&[
+            (TOUCHPAD, "two-finger-click", Value::Int(two)),
+            (TOUCHPAD, "three-finger-click", Value::Int(three)),
+        ]);
+        assert_eq!(
+            touchpad(&reading).click_method,
+            Some(method),
+            "{two} {three}"
+        );
+    }
+}
+
+#[test]
+fn two_finger_scrolling_beats_edge_scrolling_and_neither_means_none() {
+    for (two_finger, edge, method) in [
+        (true, true, ScrollMethod::TwoFinger),
+        (true, false, ScrollMethod::TwoFinger),
+        (false, true, ScrollMethod::Edge),
+        (false, false, ScrollMethod::NoScroll),
+    ] {
+        let reading = with_all(&[
+            (
+                TOUCHPAD,
+                "vertical-two-finger-scrolling",
+                Value::Bool(two_finger),
+            ),
+            (TOUCHPAD, "vertical-edge-scrolling", Value::Bool(edge)),
+        ]);
+        assert_eq!(
+            touchpad(&reading).scroll_method,
+            Some(method),
+            "{two_finger} {edge}"
+        );
+    }
+}
+
+#[test]
+fn horizontal_scrolling_follows_the_key_of_the_chosen_method() {
+    let cases = [
+        // Two-finger scrolling, whatever the edge keys say.
+        (true, true, false, true, false),
+        (true, true, true, false, true),
+        // Edge scrolling.
+        (false, true, true, false, false),
+        (false, true, false, true, true),
+    ];
+    for (two_finger, edge, horizontal_two_finger, horizontal_edge, horizontal) in cases {
+        let reading = with_all(&[
+            (
+                TOUCHPAD,
+                "vertical-two-finger-scrolling",
+                Value::Bool(two_finger),
+            ),
+            (TOUCHPAD, "vertical-edge-scrolling", Value::Bool(edge)),
+            (
+                TOUCHPAD,
+                "horizontal-two-finger-scrolling",
+                Value::Bool(horizontal_two_finger),
+            ),
+            (
+                TOUCHPAD,
+                "horizontal-edge-scrolling",
+                Value::Bool(horizontal_edge),
+            ),
+        ]);
+        assert_eq!(touchpad(&reading).horizontal_scroll, horizontal);
+    }
+}
+
+#[test]
+fn the_never_keys_change_nothing_and_arent_reported() {
+    let reading = with_all(&[
+        (MOUSE, "motion-threshold", Value::Int(5)),
+        (TOUCHPAD, "motion-threshold", Value::Int(5)),
+        (TOUCHPAD, "tap-button-one-finger", Value::Int(3)),
+        (TOUCHPAD, "tap-button-two-finger", Value::Int(1)),
+        (TOUCHPAD, "tap-button-three-finger", Value::Int(1)),
+        (KEYBOARD, "bell-mode", string("off")),
+        (KEYBOARD, "click", Value::Bool(false)),
+        (KEYBOARD, "click-volume", Value::Int(50)),
+        (KEYBOARD, "bell-pitch", Value::Int(800)),
+        (KEYBOARD, "bell-duration", Value::Int(10)),
+    ]);
+    assert_eq!(settings(&reading), settings(&defaults()));
+}
+
+#[test]
+fn locate_pointer_set_on_is_reported_as_unsupported() {
+    let problems = translate(&with(MOUSE, "locate-pointer", Value::Bool(true))).problems;
+    assert_eq!(
+        problems,
+        [Problem::Unsupported {
+            schema: MOUSE.into(),
+            key: "locate-pointer".into(),
+            value: "true".into(),
+        }]
+    );
+}
+
+// org.mate.peripherals-keyboard (53).
+
+#[test]
+fn the_defaults_give_mates_keyboard() {
+    assert_eq!(
+        settings(&defaults()).keyboard,
+        Keyboard {
+            repeat_rate: 30,
+            repeat_delay: 500,
+            remember_numlock: true,
+            numlock: None,
+        }
+    );
+}
+
+#[test]
+fn rate_and_delay_are_the_repeat_info() {
+    let reading = with_all(&[
+        (KEYBOARD, "rate", Value::Int(50)),
+        (KEYBOARD, "delay", Value::Int(250)),
+    ]);
+    let keyboard = settings(&reading).keyboard;
+    assert_eq!((keyboard.repeat_rate, keyboard.repeat_delay), (50, 250));
+}
+
+#[test]
+fn repeat_off_sends_rate_0() {
+    let reading = with(KEYBOARD, "repeat", Value::Bool(false));
+    let keyboard = settings(&reading).keyboard;
+    assert_eq!((keyboard.repeat_rate, keyboard.repeat_delay), (0, 500));
+}
+
+#[test]
+fn a_rate_of_0_or_less_sends_rate_0() {
+    for rate in [0, -4] {
+        let reading = with(KEYBOARD, "rate", Value::Int(rate));
+        assert_eq!(settings(&reading).keyboard.repeat_rate, 0, "for {rate}");
+    }
+}
+
+#[test]
+fn a_delay_below_1_becomes_1() {
+    for delay in [0, -100] {
+        let reading = with(KEYBOARD, "delay", Value::Int(delay));
+        assert_eq!(settings(&reading).keyboard.repeat_delay, 1, "for {delay}");
+    }
+}
+
+#[test]
+fn numlock_state_is_read_by_nick() {
+    for (nick, state) in [("on", Some(true)), ("off", Some(false)), ("unknown", None)] {
+        let reading = with(KEYBOARD, "numlock-state", string(nick));
+        assert_eq!(settings(&reading).keyboard.numlock, state, "{nick}");
+    }
+}
+
+#[test]
+fn remember_numlock_state_is_read() {
+    let reading = with(KEYBOARD, "remember-numlock-state", Value::Bool(false));
+    assert!(!settings(&reading).keyboard.remember_numlock);
+}
+
+#[test]
+fn without_the_device_schemas_their_keys_are_defaults() {
+    let mut reading = Reading::default();
+    reading.insert(
+        MARCO_GENERAL,
+        "num-workspaces",
+        Value::Int(4),
+        Value::Int(4),
+    );
+    reading.set_missing(TOUCHPAD);
+    reading.set_missing(KEYBOARD);
+    let missing = translate(&reading).settings;
+    let defaults = settings(&defaults());
+    assert_eq!(missing.devices, defaults.devices);
+    assert_eq!(missing.keyboard, defaults.keyboard);
 }
 
 // Unsupported keys, logging once, and missing schemas.

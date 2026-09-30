@@ -11,6 +11,8 @@ mod frames;
 mod grabs;
 mod headless;
 mod input;
+mod input_devices;
+mod keyboard_settings;
 mod output_lifecycle;
 mod override_redirect;
 mod palette_helper;
