@@ -28,8 +28,18 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
 - [ ] Nested, xterm and xeyes map with Menta frames, take focus on a click and move when their titlebar is dragged. xterm takes typing, and xeyes follows the pointer across Camino's output.
 - [ ] Nested, gtk3-demo's Preferences menu opens on a click and shows above its window. Down, Right and Escape navigate it and its Color submenu. Clicking outside the menu closes it. Afterwards, typing goes to the window again.
 - [ ] Nested, text copied in xterm pastes into foot, and back, through both the clipboard (Ctrl+Shift+C and V in foot) and the primary selection (select, then middle-click). A file dragged from caja with `GDK_BACKEND=x11` drops into a native caja, and the other way round.
-- [ ] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it to the second workspace.
+- [x] Nested, `xprop` on an xterm shows `_NET_FRAME_EXTENTS` matching the Menta frame, and `wmctrl -r xterm -t 1` moves it to the second workspace.
 - [ ] Nested with `tools/dev-nested --bin --scale 2`, xterm renders sharp with a Menta frame, and `xprop` shows its `_NET_FRAME_EXTENTS` at twice the frame's logical size.
 - [ ] Nested, killing the nested Xwayland by pid with xterm open removes the xterm, and a new xterm on the same `DISPLAY` gets a Menta frame.
-- [ ] Nested, `wmctrl -d` lists four workspaces, `Workspace 1` to `Workspace 4`, with the first current, and `wmctrl -s 2` switches to the third.
+- [x] Nested, `wmctrl -d` lists four workspaces, `Workspace 1` to `Workspace 4`, with the first current, and `wmctrl -s 2` switches to the third.
 - [ ] The results are recorded in this ticket's notes, with a new ticket for each failure.
+
+## Notes
+
+- **Scripted, not by hand:** xterm, xeyes and wmctrl are installed. The checks that need no hands ran against `tools/dev-nested --bin`, driven by `wmctrl` and `xprop`. It was started with `DISPLAY` set to an Xvfb, but winit found the host's `wayland-0` in `XDG_RUNTIME_DIR` and opened on the host desktop instead. A screenshot of the Xvfb was black.
+  - `wmctrl -d` listed `Workspace 1` to `Workspace 4` with the first current, and `wmctrl -s 2` made the third current (`_NET_CURRENT_DESKTOP` 2).
+  - xterm and xeyes both mapped with `_NET_FRAME_EXTENTS` 1, 1, 31, 1, the Menta frame's, as 42's gtk3-demo had.
+  - `wmctrl -r xterm -t 1` matches by title, and xterm's shell sets its title to the prompt, so it matched nothing and exited 1. `wmctrl -x -r xterm -t 1`, or an xterm started with `-T xterm -xrm 'XTerm*allowTitleOps: false'`, set `_NET_WM_DESKTOP` to 1. That's wmctrl's matching, not a Camino failure.
+  - SIGKILL of the nested Xwayland by pid, with xterm and xeyes open: Camino logged the restart, Xwayland was ready on `:2` again 600 ms later, both clients had exited, and a new xterm on `:2` got `_NET_FRAME_EXTENTS` 1, 1, 31, 1. Nobody watched the output, so the criterion waits for the hand run.
+  - With `--scale 2`, xterm's `_NET_FRAME_EXTENTS` were 2, 2, 62, 2, twice the frame's. Sharpness needs eyes, so the criterion waits for the hand run.
+- **The hand checks** are in the wizard [46-hand-checks.sh](46-hand-checks.sh). Run it from a terminal on the host desktop with `tools/dev-nested --bin` in another. It launches each app on the right display, each GTK app on its own `dbus-run-session` so it can't hand off to a host instance, and walks through every criterion. The results go into these notes, and it ticks each criterion whose checks all passed.
