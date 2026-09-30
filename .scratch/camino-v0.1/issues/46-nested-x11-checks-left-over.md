@@ -62,3 +62,5 @@ Setup: run `tools/dev-nested --bin` and read the X display from the line `dev-ne
   - **xterm at scale 2:** the frame was at scale 2 and the text at scale-1 size. xterm's default core font never scales, on any desktop. An Xft xterm would, but Camino doesn't write msd's Xft resources to `RESOURCE_MANAGER`, which 40 left out, so `Xft.dpi` isn't set. Filed as [47](47-xft-resources.md). The criterion now uses `xterm -fa Monospace`, after 47. The frame extents were 2, 2, 62, 2 in the scripted run.
   - **Drag and drop** passed, but a drag from the native caja showed no icon under the pointer, while one from the X11 caja did: Camino doesn't draw Wayland drag icons yet. Filed as [48](48-drag-icons.md).
   - **wmctrl -t:** xterm staying on workspace 2 afterwards is expected, since nothing moves it back.
+
+- **After 47 (2026-09-30):** nested with `--scale 2`, `xterm -fa Monospace -fs 11`'s text rendered at scale 2. Its sharpness and Menta frame weren't reported, so the scale-2 criterion stays open for them.

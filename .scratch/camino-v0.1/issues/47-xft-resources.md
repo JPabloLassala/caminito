@@ -1,7 +1,7 @@
 # Xft resources in RESOURCE_MANAGER
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M3
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -18,7 +18,7 @@ Found by [46](46-nested-x11-checks-left-over.md): at a winit scale of 2, xterm's
 
 - [x] Unit tests, written before the code: the resource lines for `dpi` 96 and 120 at scales 1 and 2, and a merge that keeps unrelated lines and replaces stale Xft ones.
 - [x] An X11-tier test: `RESOURCE_MANAGER` has `Xft.dpi: 96` at scale 1 and `Xft.dpi: 192` at scale 2, and again after an Xwayland restart.
-- [ ] Nested with `tools/dev-nested --bin --scale 2`, `xterm -fa Monospace -fs 11` renders its text at the same physical size as at scale 1, and sharp.
+- [x] Nested with `tools/dev-nested --bin --scale 2`, `xterm -fa Monospace -fs 11` renders its text at the same physical size as at scale 1, and sharp.
 
 ## Notes
 
@@ -26,4 +26,4 @@ Found by [46](46-nested-x11-checks-left-over.md): at a winit scale of 2, xterm's
 - **The merge** follows msd's `update_property` (`:599-628`): other lines are kept, a stale line is replaced where it is, and missing ones are appended. Where it differs from msd is in the module's doc: a line matches only when its resource name is the same (msd's `strstr` would also rewrite `XTerm*Xft.dpi`), whitespace around the name is ignored as Xrm ignores it, every line setting a name is replaced, not only the first, and blank lines are dropped.
 - **Written** by Camino's X connection, `XConnection::publish_resources`, which reads `RESOURCE_MANAGER`, merges and writes it only when Camino's resources changed since it last did. `xwayland_ready` writes them after XSETTINGS and before `DISPLAY`. The refresh pass writes them again when the settings or the X11 scale change. A restart makes a new X connection, which has written nothing yet, so they're written again.
 - **Tested:** unit tests for the lines at `dpi` 96 and 120 at scales 1 and 2, the font rendering and cursor settings, a merge that keeps unrelated lines and replaces stale Xft ones, and a merge of its own output. The X11-tier test `xft_clients_read_the_dpi_at_the_x11_scale_from_the_resources_and_again_after_a_restart` reads `Xft.dpi: 96`, then `192` after the output goes to scale 2, and `192` again after an Xwayland crash and restart.
-- **The nested check** needs eyes, so it waits for a hand run, with [46](46-nested-x11-checks-left-over.md)'s scale-2 criterion.
+- **The nested check, by hand (2026-09-30):** with `tools/dev-nested --bin --scale 2`, `xterm -fa Monospace -fs 11`'s text rendered at scale 2, where [46](46-nested-x11-checks-left-over.md)'s run had it at scale-1 size.
