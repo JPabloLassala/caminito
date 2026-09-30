@@ -1,7 +1,7 @@
 # Packaging and closing M3
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M3
 Blocked by: 42
 Map: [Camino v0.1](../map.md)
@@ -21,9 +21,9 @@ M3's code installed through `camino-git` (17: packaging keeps up), its checklist
 
 ## Acceptance criteria
 
-- [ ] `makepkg -si` in `packaging/arch/camino-git/` installs a `camino` that starts Xwayland, and the packaging job is green in CI.
+- [x] `makepkg -si` in `packaging/arch/camino-git/` installs a `camino` that starts Xwayland, and the packaging job is green in CI.
 - [x] The two checklist items are written.
-- [ ] Closing M3: nested, xterm, xeyes and a GTK3 app with `GDK_BACKEND=x11` map, get Marco frames, take focus and move; their menus and tooltips sit in the override-redirect layer; `_NET_FRAME_EXTENTS` and `_NET_WORKAREA` are right; killing Xwayland brings it back on the same display with the root properties republished; the X11 tier passes in CI; the checklist results are in a `Close M3 XWayland` commit.
+- [x] Closing M3: nested, xterm, xeyes and a GTK3 app with `GDK_BACKEND=x11` map, get Marco frames, take focus and move; their menus and tooltips sit in the override-redirect layer; `_NET_FRAME_EXTENTS` and `_NET_WORKAREA` are right; killing Xwayland brings it back on the same display with the root properties republished; the X11 tier passes in CI; the checklist results are in a `Close M3 XWayland` commit.
 
 ## Notes
 
@@ -49,3 +49,4 @@ M3's code installed through `camino-git` (17: packaging keeps up), its checklist
   - Killing Xwayland brings it back with the root properties republished: pass. After SIGKILL of the nested Xwayland, Camino logged `Xwayland exited, so it's started again on :3 in 500ms`, and it was ready on `:3` 590 ms after the kill. The X windows went and foot stayed. `xprop -root` of `_NET_SUPPORTED`, the desktop atoms, `_NET_WORKAREA` and `_GTK_WORKAREAS_D0` was identical before and after, and a new xterm got a Menta frame (1, 1, 31, 1) and took typing.
   - Frames at an output scale of 2 in a nested run: pass. `DumpState` showed the output at scale 2 and pluma as `ssd` with `strip_scale` 2. Its extents were 1/1/31/1 unmaximised and 0/0/31/0 maximised, as at scale 1. Frame debug labelled the frame ×2 on its edges, the title and icons were sharp, the buttons prelit, pressed and acted, and drag and edge and corner resize worked where the outlines said.
 - **The Packaging job (2026-09-30)**, dispatched on 803a58f, failed twice in `check()`, on `a_restarted_xwayland_is_owed_the_wayland_clipboard`. CI was green on the same commit. The restart can lose its display to another X server in the gap before it respawns, and on the runner's two cores the other X11-tier tests take it. That's filed as [49](49-xwayland-display-across-restart.md). Until 49 fixes it, the tests that restart Xwayland run alone among those that start one, which is enough for the Packaging job. The hand run above stands.
+- **Green (2026-09-30):** with the workaround from 49, CI and the dispatched Packaging job passed on ecda755. The Packaging job's namcap warnings were the ones explained above. Since the installed r82.069e4cf only the tests have changed, so the hand run is on M3's code.
