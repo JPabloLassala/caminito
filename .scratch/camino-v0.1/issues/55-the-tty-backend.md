@@ -1,7 +1,7 @@
 # The tty backend
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M4
 Blocked by: 51
 Map: [Camino v0.1](../map.md)
@@ -23,11 +23,26 @@ Map: [Camino v0.1](../map.md)
 
 - [x] A unit test, written before the code, of the backend choice for each combination of `WAYLAND_DISPLAY` and `DISPLAY`.
 - [x] `tools/dev-nested` still runs winit, unchanged.
-- [ ] On a spare tty as `caminotest`, bare `camino` lights both of the developer's monitors in their preferred modes, left to right, at their default scales, and a terminal started with its `WAYLAND_DISPLAY` shows on them.
-- [ ] Switching to another VT and back works, and the outputs redraw.
-- [ ] Unplugging and re-plugging a monitor removes and adds its output, and windows move off it.
-- [ ] Quitting gives the VT back in text mode.
+- [ ] On a spare tty as `caminotest`, bare `camino` lights both of the developer's monitors in their preferred modes, left to right, at their default scales, and a terminal started with its `WAYLAND_DISPLAY` shows on them. Checked in the virtual machine only; the developer's monitors are [60](60-tty-checks-left-over.md)'s.
+- [x] Switching to another VT and back works, and the outputs redraw.
+- [ ] Unplugging and re-plugging a monitor removes and adds its output, and windows move off it. Checked in the virtual machine with a forced connector and no window on it; the rest is [60](60-tty-checks-left-over.md)'s.
+- [x] Quitting gives the VT back in text mode.
 
 ## Hand-check notes
 
 Until libinput comes in 56, no key reaches Camino on the tty, so the VT keysyms can't be pressed there yet. Switch VTs from another VT or over ssh with `chvt <n>` (or `loginctl activate`), and quit by sending `camino` SIGTERM or SIGINT, which now stop it cleanly. A terminal is started from another VT with `WAYLAND_DISPLAY` set to the socket Camino logs.
+
+## Hand-check results
+
+2026-10-04, in the UTM virtual machine (Arch Linux ARM, `virtio-gpu`, one `Virtual-1` connector), at 3380aec, as `jpablo` in a logind session on VT 9:
+
+- Bare `camino` lit `Virtual-1` in its preferred mode (1280x800), at scale 1, and a `mate-terminal` started with its `WAYLAND_DISPLAY` was mapped on it.
+- `chvt` to another VT and back: Camino paused and resumed, and its page flips continued on the CRTC after the switch back.
+- SIGTERM stopped it cleanly, and VT 9 was back in text mode (`KDGETMODE`).
+
+Later that day, at the same commit, with QEMU's `virtio-gpu-gl-pci.max_outputs=2` and `Virtual-2` forced on through `/sys/class/drm/card0-Virtual-2/status` (UTM shows no window for it, so nobody saw its picture):
+
+- Camino lit both connectors, `Virtual-1` at 1280x800 at x=0 and `Virtual-2` at 1024x768 at x=1280, both at scale 1. A forced connector has no EDID, so 1024x768 is the kernel's default mode, not a preferred one.
+- Forcing `Virtual-2` off, with a udev change event sent by hand, removed its output and turned its CRTC off. Forcing it on again added the output at x=1280 and lit it. No window was on `Virtual-2`.
+
+The two unticked criteria were met only this far. Real monitors, their preferred modes and default scales, a real hot-plug and windows moving off the output are [60](60-tty-checks-left-over.md)'s, so this ticket is resolved.
