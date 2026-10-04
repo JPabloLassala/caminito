@@ -57,6 +57,47 @@ cd packaging/arch/camino-git
 makepkg -si
 ```
 
+### Patched MATE packages
+
+Some MATE components need carried patches to work in the session
+([ADR 0011](docs/adr/0011-patched-mate-packages-replace-stock-and-gate-on-camino.md)). Each is a
+`<pkgname>-camino` package under [packaging/arch/](packaging/arch/), made from Arch's own
+PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino is running, so
+X11 MATE stays as it was. Build them before `camino-git`, which will depend on them:
+
+```sh
+cd packaging/arch/mate-session-manager-camino
+makepkg -si
+```
+
+The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
+series applies to a baseline: an upstream tag, or a pinned commit where the component has no
+tag. To move a package to a new baseline, rebase its series:
+
+1. In a checkout of the component, at the old baseline, apply the series:
+
+   ```sh
+   git checkout -b camino <old baseline>
+   git am /path/to/camino/packaging/arch/<pkgname>-camino/*.patch
+   ```
+
+2. Move it to the new baseline, and correct what breaks:
+
+   ```sh
+   git rebase --onto <new baseline> <old baseline> camino
+   ```
+
+3. Export the series again, then update the PKGBUILD's source, `pkgver` and checksums
+   (`updpkgsums`). Commit the patches and the PKGBUILD together, one commit for each move:
+
+   ```sh
+   rm /path/to/camino/packaging/arch/<pkgname>-camino/*.patch
+   git format-patch --zero-commit --no-signature -N \
+     -o /path/to/camino/packaging/arch/<pkgname>-camino <new baseline>
+   ```
+
+A change to the patches alone, on the same baseline, increases `pkgrel` instead.
+
 ## Running
 
 Camino currently runs only nested, as a winit window inside an existing Wayland or X11 desktop.
@@ -117,8 +158,10 @@ The tests are layered:
   snapshots.
 
 CI runs rustfmt, clippy (`-D warnings`), cargo-deny and the tests in an Arch container on every
-push, and builds the PKGBUILD with `makepkg` and `namcap` when `packaging/arch/` changes. A weekly job builds against Smithay master, since Smithay is pinned by commit and bumped one
-commit at a time.
+push, and builds each PKGBUILD with `makepkg` and `namcap` when `packaging/arch/` changes. A
+weekly job builds against Smithay master, since Smithay is pinned by commit and bumped one
+commit at a time. Another weekly job builds each patched package's series on its component's
+upstream head. A failure of either opens an issue.
 
 Some checks need a real desktop and are run by hand before a milestone closes. They're listed in
 [docs/testing/checklist.md](docs/testing/checklist.md).
