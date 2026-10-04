@@ -189,6 +189,10 @@ pub(crate) struct OutputSettings {
     pub(crate) scale: Option<f64>,
 }
 
+/// The scales a configuration may set. Outside them, an output's logical size is of no use,
+/// and Camino's own defaults are from 1 to 3 (50).
+const SETTABLE_SCALES: std::ops::RangeInclusive<f64> = 0.5..=8.0;
+
 /// The one of an output's `modes` a configuration means by `asked`: that mode, or for a
 /// custom mode with no refresh rate, the first of its size.
 fn matching_mode(modes: &[Mode], asked: Mode) -> Option<Mode> {
@@ -476,8 +480,8 @@ impl Camino {
     }
 
     /// What a configuration would change, if every head it names is a monitor that can
-    /// show what's asked of it: one of its modes, in the transform it has, without adaptive
-    /// sync. Camino doesn't rotate outputs yet, and has no adaptive sync. The backend still
+    /// show what's asked of it: one of its modes, in the transform it has, at a scale of
+    /// use, without adaptive sync. Camino doesn't rotate outputs yet, and has no adaptive sync. The backend still
     /// has to agree.
     pub(crate) fn plan_output_changes(
         &self,
@@ -497,6 +501,7 @@ impl Camino {
                     return Some(OutputChange { output, to: None });
                 };
                 if asked.adaptive_sync == Some(true)
+                    || asked.scale.is_some_and(|s| !SETTABLE_SCALES.contains(&s))
                     || asked
                         .transform
                         .is_some_and(|t| t != output.current_transform())

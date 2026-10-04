@@ -110,6 +110,7 @@ pub struct EnabledHead {
 
 /// What the compositor does with clients' configurations.
 pub trait OutputManagementHandler: 'static {
+    /// The compositor's output management state.
     fn output_management_state(&mut self) -> &mut OutputManagementState;
 
     /// Whether `configuration` could be applied. It changes nothing.
@@ -123,9 +124,15 @@ pub trait OutputManagementHandler: 'static {
 /// The manager's global, the heads last sent, and every client's objects for them.
 #[derive(Debug)]
 pub struct OutputManagementState {
-    global: GlobalId,
-    /// The serial of the last `done`. A configuration made at an earlier one is cancelled.
+    /// Kept for M5's security-context filter (58).
+    _global: GlobalId,
+    /// The serial of the next or the last `done`. A configuration made at an earlier one is
+    /// cancelled.
     serial: u32,
+    /// Whether a configuration was applied since the last `done`. The serial has moved on
+    /// already, so that a second configuration made before the change is cancelled, and
+    /// clients are still owed it.
+    applied: bool,
     heads: Vec<Head>,
     managers: Vec<Manager>,
 }
@@ -200,25 +207,21 @@ impl OutputManagementState {
     {
         let global = display.create_global::<D, ZwlrOutputManagerV1, _>(VERSION, ManagerGlobalData);
         Self {
-            global,
+            _global: global,
             serial: 0,
+            applied: false,
             heads: Vec::new(),
             managers: Vec::new(),
         }
     }
 
-    /// The manager's global.
-    pub fn global(&self) -> GlobalId {
-        self.global.clone()
-    }
-
-    /// Tells every client what changed since the heads were last sent, if anything did, and
-    /// ends the change with `done` and a new serial.
+    /// Tells every client what changed since the heads were last sent, if anything did or a
+    /// configuration was applied, and ends the change with `done` and a new serial.
     pub fn refresh<D>(&mut self, display: &DisplayHandle, heads: Vec<Head>)
     where
         D: Dispatch<ZwlrOutputHeadV1, HeadData> + Dispatch<ZwlrOutputModeV1, ModeData> + 'static,
     {
-        if heads == self.heads {
+        if heads == self.heads && !self.applied {
             return;
         }
         for old in &self.heads {
@@ -244,7 +247,10 @@ impl OutputManagementState {
             }
         }
         self.heads = heads;
-        self.serial = self.serial.wrapping_add(1);
+        if !self.applied {
+            self.serial = self.serial.wrapping_add(1);
+        }
+        self.applied = false;
         for manager in &self.managers {
             manager.resource.done(self.serial);
         }
@@ -538,7 +544,15 @@ where
                 if let Some(requests) = configuration.take(state, resource) {
                     // The handler may run requests of this client; none is this one's.
                     drop(configuration);
-                    answer(resource, state.apply_output_configuration(&requests));
+                    let applied = state.apply_output_configuration(&requests);
+                    if applied {
+                        let state = state.output_management_state();
+                        if !state.applied {
+                            state.serial = state.serial.wrapping_add(1);
+                        }
+                        state.applied = true;
+                    }
+                    answer(resource, applied);
                 }
             }
             zwlr_output_configuration_v1::Request::Test => {

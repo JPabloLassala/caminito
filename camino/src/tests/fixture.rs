@@ -292,6 +292,14 @@ impl Fixture {
             .plug_headless_output(physical_size.into(), &[mode.into()], true)
     }
 
+    /// Makes a monitor fail to show its mode of `mode` pixels, though it lists it.
+    pub fn refuse_mode(&mut self, output: &Output, mode: (i32, i32)) {
+        self.state
+            .backend
+            .headless_mut()
+            .refuse_mode(output, mode.into());
+    }
+
     /// Unplugs a monitor, and dispatches.
     pub fn unplug(&mut self, output: &Output) {
         self.state.unplug_headless_output(output);

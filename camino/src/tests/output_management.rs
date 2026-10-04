@@ -299,10 +299,7 @@ fn a_configuration_the_backend_cant_apply_fails_and_changes_nothing() {
     f.plug_with_modes(AOC_MM, &AOC_MODES);
     let lg = f.plug_with_modes(LG.0, &[LG.1, (1920, 1080)]);
     let client = manage_outputs(&mut f);
-    f.state
-        .backend
-        .headless_mut()
-        .refuse_mode(&lg, (1920, 1080).into());
+    f.refuse_mode(&lg, (1920, 1080));
     let before = (layout(&f), heads(&mut f, client));
 
     // The first head's mode is switched before the second's is refused.
@@ -339,6 +336,54 @@ fn a_configuration_that_asks_for_adaptive_sync_fails() {
     f.roundtrip(client);
 
     assert_eq!(outcome(&mut f, client), Outcome::Failed);
+}
+
+#[test]
+fn a_configuration_with_a_scale_of_no_use_fails() {
+    let (mut f, client) = aoc_and_a_client();
+
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1").scale(0.01)]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Failed);
+}
+
+#[test]
+fn a_second_configuration_made_before_the_first_was_applied_is_cancelled() {
+    let (mut f, client) = aoc_and_a_client();
+
+    // Both are made at the same serial, and reach Camino in one dispatch.
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1").scale(1.25)]);
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1").scale(1.5)]);
+    f.roundtrip(client);
+
+    assert_eq!(
+        f.client(client).output_management().outcomes,
+        [Outcome::Succeeded, Outcome::Cancelled]
+    );
+    assert_snapshot!(layout(&f), @"headless-1 at 0,0 1536x864 scale 1.25");
+}
+
+#[test]
+fn a_configuration_that_changes_nothing_still_gives_a_new_serial() {
+    let (mut f, client) = aoc_and_a_client();
+    let serial = f.client(client).output_serial();
+
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1")]);
+    f.roundtrip(client);
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1")]);
+    f.roundtrip(client);
+
+    assert_ne!(f.client(client).output_serial(), serial);
+    assert_eq!(
+        f.client(client).output_management().outcomes,
+        [Outcome::Succeeded, Outcome::Succeeded]
+    );
 }
 
 #[test]

@@ -112,11 +112,13 @@ impl HeadChange {
         }
     }
 
+    /// Enables the head, in its preferred mode unless a mode is given.
     pub fn enable(mut self) -> Self {
         self.enabled = Some(true);
         self
     }
 
+    /// Disables the head.
     pub fn disable(mut self) -> Self {
         self.enabled = Some(false);
         self
@@ -134,16 +136,19 @@ impl HeadChange {
         self
     }
 
+    /// Places the head at `position` in the global space.
     pub fn position(mut self, position: (i32, i32)) -> Self {
         self.position = Some(position);
         self
     }
 
+    /// Sets the head's scale.
     pub fn scale(mut self, scale: f64) -> Self {
         self.scale = Some(scale);
         self
     }
 
+    /// Sets the head's transform.
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = Some(transform);
         self
@@ -163,6 +168,7 @@ impl Client {
         self.state.output_management.manager = Some(manager);
     }
 
+    /// What output management has told the client.
     pub fn output_management(&self) -> &OutputManagement {
         &self.state.output_management
     }

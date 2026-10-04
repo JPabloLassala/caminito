@@ -307,8 +307,8 @@ impl Tty {
             tracing::warn!("can't switch {} to {mode:?}: {err}", output.name());
             return false;
         }
-        // The switch reset the CRTC, so no frame is still on its way.
-        monitor.stop_waiting(&camino.loop_handle);
+        // A frame on its way is still shown, and its vblank still comes: the mode is set
+        // with the next frame.
         output.change_current_state(Some(mode), None, None, None);
         camino.output_mode_changed(output);
         true
