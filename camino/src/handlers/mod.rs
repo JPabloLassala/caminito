@@ -3,6 +3,7 @@
 mod compositor;
 mod decoration;
 mod input;
+mod output_management;
 mod rendering;
 mod selection;
 mod xdg_shell;

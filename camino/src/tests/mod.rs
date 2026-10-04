@@ -15,6 +15,7 @@ mod input_devices;
 mod keyboard_settings;
 mod keymap;
 mod output_lifecycle;
+mod output_management;
 mod override_redirect;
 mod palette_helper;
 mod popups;

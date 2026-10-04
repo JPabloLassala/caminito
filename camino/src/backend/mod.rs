@@ -5,10 +5,11 @@ use std::ffi::OsStr;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::input::keyboard::LedState;
-use smithay::output::Output;
+use smithay::output::{Mode, Output};
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
+use crate::output::OutputChange;
 use crate::state::Camino;
 
 #[cfg(test)]
@@ -98,6 +99,54 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.syncobj_state(),
             _ => None,
+        }
+    }
+
+    /// Whether the backend can show what `changes` ask, as far as it can tell without
+    /// trying (58).
+    pub(crate) fn can_change_outputs(&self, changes: &[OutputChange]) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.can_change_outputs(),
+            // The host owns the window: it can't be turned off, and its size is its only
+            // mode.
+            Backend::Winit(_) => changes.iter().all(|change| {
+                change
+                    .to
+                    .is_some_and(|settings| Some(settings.mode) == change.output.current_mode())
+            }),
+            #[cfg(test)]
+            Backend::Headless(_) => true,
+        }
+    }
+
+    /// Switches an output to another of its modes, and returns whether it did.
+    pub fn set_output_mode(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.set_output_mode(camino, output, mode),
+            Backend::Winit(_) => false,
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.set_mode(camino, output, mode),
+        }
+    }
+
+    /// Lights again, in `mode`, a monitor output management disabled, and returns whether
+    /// it did.
+    pub fn enable_output(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.enable_output(camino, output, mode),
+            Backend::Winit(_) => false,
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.enable(camino, output, mode),
+        }
+    }
+
+    /// Turns a monitor off, as output management asks. Nested, the host's window stays.
+    pub fn disable_output(&mut self, camino: &mut Camino, output: &Output) {
+        match self {
+            Backend::Tty(tty) => tty.disable_output(camino, output),
+            Backend::Winit(_) => {}
+            #[cfg(test)]
+            Backend::Headless(_) => camino.disable_output(output),
         }
     }
 
