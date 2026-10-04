@@ -4,10 +4,11 @@
 //! owns it runs the compositor in the same thread, and calls [`Client::dispatch`] between the
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
-//! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, and [`output_management`]
-//! configures the outputs as `wlr-randr` does.
+//! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, [`output_management`]
+//! configures the outputs as `wlr-randr` does, and [`gtk_shell`] speaks GTK3's own protocol.
 
 pub mod dbus;
+pub mod gtk_shell;
 pub mod output_management;
 pub mod selection;
 pub mod x11;
@@ -142,6 +143,7 @@ pub struct State {
     pub drag_icon_frames_done: u32,
     /// The heads output management shows, and its answers to configurations.
     pub output_management: output_management::OutputManagement,
+    gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
 }
 
 /// A bound `wl_output`.
@@ -188,6 +190,7 @@ pub struct Window {
     pub kde_modes: Vec<KdeMode>,
     xdg_decoration: Option<ZxdgToplevelDecorationV1>,
     kde_decoration: Option<OrgKdeKwinServerDecoration>,
+    gtk_surface: Option<gtk_shell::raw::gtk_surface1::GtkSurface1>,
     subsurfaces: Vec<WlSubsurface>,
     /// The buffers attached so far, kept alive until the window is dropped.
     buffers: Vec<Buffer>,
@@ -361,6 +364,7 @@ impl Client {
             kde_modes: Vec::new(),
             xdg_decoration: None,
             kde_decoration: None,
+            gtk_surface: None,
             subsurfaces: Vec::new(),
             buffers: Vec::new(),
         });

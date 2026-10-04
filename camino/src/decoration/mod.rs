@@ -454,6 +454,11 @@ impl WindowFrame {
         self.button_states
     }
 
+    /// The style set the frame was last drawn in, if it's showing.
+    pub fn frame_type(&self) -> Option<FrameType> {
+        self.drawn.as_ref().map(|(inputs, _, _)| inputs.frame_type)
+    }
+
     /// The flags the frame was last drawn with, if it's showing.
     pub fn flags(&self) -> Option<FrameFlags> {
         self.drawn.as_ref().map(|(inputs, _, _)| inputs.flags)

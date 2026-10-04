@@ -9,6 +9,7 @@ mod drag_icons;
 mod fixture;
 mod frames;
 mod grabs;
+mod gtk_shell;
 mod headless;
 mod input;
 mod input_devices;

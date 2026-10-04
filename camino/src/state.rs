@@ -74,6 +74,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::OutputRecord;
+use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
@@ -114,6 +115,7 @@ pub struct Camino {
     pub xdg_activation_state: XdgActivationState,
     pub xdg_foreign_state: XdgForeignState,
     pub xdg_dialog_state: XdgDialogState,
+    pub gtk_shell_state: GtkShellState,
     pub xdg_toplevel_icon_manager: XdgToplevelIconManager,
     pub xdg_system_bell_state: XdgSystemBellState,
     pub xdg_decoration_state: XdgDecorationState,
@@ -561,6 +563,7 @@ impl Camino {
             xdg_activation_state: XdgActivationState::new::<State>(dh),
             xdg_foreign_state: XdgForeignState::new::<State>(dh),
             xdg_dialog_state: XdgDialogState::new::<State>(dh),
+            gtk_shell_state: GtkShellState::new::<State>(dh),
             xdg_toplevel_icon_manager: XdgToplevelIconManager::new::<State>(dh),
             xdg_system_bell_state: XdgSystemBellState::new::<State>(dh),
             xdg_decoration_state: XdgDecorationState::new::<State>(dh),

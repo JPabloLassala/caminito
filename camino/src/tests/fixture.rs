@@ -15,7 +15,7 @@ use std::time::Duration;
 use camino_policy::PolicyWindow;
 use camino_test_client::x11::{X11Client, XWindowSpec};
 use camino_test_client::{Client, DecorationMode, WindowId};
-use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
+use camino_theme::{ButtonFunction, ButtonState as FrameButtonState, FrameType};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::output::Output;
@@ -623,6 +623,11 @@ impl Fixture {
             )
                 .into(),
         )
+    }
+
+    /// The style set a window's frame is drawn in, or `None` if it shows no frame.
+    pub fn frame_type(&self, window: ClientWindow) -> Option<FrameType> {
+        self.mapped(window).frame().frame_type()
     }
 
     /// Where a frame's button is drawn, globally.

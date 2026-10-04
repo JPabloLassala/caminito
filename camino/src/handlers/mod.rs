@@ -2,6 +2,7 @@
 
 mod compositor;
 mod decoration;
+mod gtk_shell;
 mod input;
 mod output_management;
 mod rendering;
