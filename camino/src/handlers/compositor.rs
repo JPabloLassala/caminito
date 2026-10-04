@@ -98,13 +98,14 @@ impl State {
         let Some(dmabuf) = dmabuf else {
             return;
         };
-        // drm-syncobj holds a client to an acquire point with every dmabuf, but one whose
-        // eventfd can't be made falls back to the implicit fence.
+        // drm-syncobj holds a client to an acquire point with every dmabuf, but one that
+        // can't be waited on falls back to the implicit fence.
         if let Some(acquire_point) = acquire_point {
             match acquire_point.generate_blocker() {
                 Ok((blocker, source)) => {
-                    self.block_until(surface, blocker, source);
-                    return;
+                    if self.block_until(surface, blocker, source) {
+                        return;
+                    }
                 }
                 Err(err) => tracing::debug!("can't wait on an acquire point: {err}"),
             }
@@ -116,17 +117,18 @@ impl State {
     }
 
     /// Holds back `surface`'s commit until `source` fires, then lets its client's commits
-    /// through.
+    /// through. Returns whether the commit is held back.
     fn block_until<S>(
         &mut self,
         surface: &WlSurface,
         blocker: impl Blocker + Send + 'static,
         source: S,
-    ) where
+    ) -> bool
+    where
         S: EventSource<Event = (), Ret = Result<(), std::io::Error>> + 'static,
     {
         let Some(client) = surface.client() else {
-            return;
+            return false;
         };
         let inserted = self
             .camino
@@ -139,8 +141,14 @@ impl State {
                 Ok(())
             });
         match inserted {
-            Ok(_) => add_blocker(surface, blocker),
-            Err(err) => tracing::debug!("can't wait for a client's buffer: {err}"),
+            Ok(_) => {
+                add_blocker(surface, blocker);
+                true
+            }
+            Err(err) => {
+                tracing::debug!("can't wait for a client's buffer: {err}");
+                false
+            }
         }
     }
 }
