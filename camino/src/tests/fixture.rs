@@ -165,7 +165,7 @@ enum TestClient {
         server: smithay::reexports::wayland_server::Client,
     },
     X11(Arc<X11Client>),
-    /// An X client the test disconnected.
+    /// A client the test disconnected.
     Disconnected,
 }
 
@@ -1082,10 +1082,11 @@ impl Fixture {
         ClientId(self.clients.len() - 1)
     }
 
-    /// Closes an X client's connection.
+    /// Closes a client's connection, and dispatches so Camino sees a Wayland client go.
     pub fn disconnect(&mut self, id: ClientId) {
-        assert!(matches!(self.clients[id.0], TestClient::X11(_)));
+        assert!(!matches!(self.clients[id.0], TestClient::Disconnected));
         self.clients[id.0] = TestClient::Disconnected;
+        self.dispatch();
     }
 
     /// Makes blocking X11 calls as the X client `id` on another thread, dispatching until

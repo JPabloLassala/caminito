@@ -1,7 +1,7 @@
 # Foreign toplevel
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5
 Blocked by:
 Map: [Camino v0.1](../map.md)
@@ -31,7 +31,7 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] Headless snapshot tests, written before the code:
+- [x] Headless snapshot tests, written before the code:
   - a client that binds late gets every window, with title, app_id, state and outputs, then `done`;
   - a title change, a focus change, minimise and maximise each send one update and one `done`, and a burst of changes sends one;
   - a closed window's handle gets `closed`;
@@ -39,12 +39,26 @@ Map: [Camino v0.1](../map.md)
   - `close`, `set_minimized`, `set_maximized` and `set_fullscreen` do what the frame's buttons and bindings do;
   - a transient's `parent`;
   - a second client gets its own handles, and one leaving doesn't disturb the other.
-- [ ] X11-tier test: an XWayland window is listed with its `WM_CLASS` as `app_id`, and a skip-taskbar one isn't.
-- [ ] `a_client_lists_the_globals` gains `zwlr_foreign_toplevel_manager_v1 v3` and `ext_foreign_toplevel_list_v1`.
-- [ ] Nested, `wlrctl toplevel list` lists the windows, and `wlrctl toplevel focus` and `minimize` act on them.
+- [x] X11-tier test: an XWayland window is listed with its `WM_CLASS` as `app_id`, and a skip-taskbar one isn't.
+- [x] `a_client_lists_the_globals` gains `zwlr_foreign_toplevel_manager_v1 v3` and `ext_foreign_toplevel_list_v1`.
+- [x] Nested, `wlrctl toplevel list` lists the windows, and `wlrctl toplevel focus` and `minimize` act on them.
 
 ## Notes
 
 - **The security-context filter** on both globals is [68](68-data-control-and-privileged-globals.md).
 - **The window's demand for attention** (`window/mod.rs`) has no state in wlr-foreign-toplevel v3. It stays for M8's Alt+Tab and focus-stealing prevention.
 - **`xdg.rs`'s minimise-rectangle note** ("only foreign-toplevel's clients would ask") is resolved here.
+- **Resolved on 2026-10-04.** Checked in the virtual machine (aarch64): the tests in `tests/foreign_toplevel.rs`, the full suite, and the nested criterion with wlrctl built from its source (c6bc608), on a konsole and an xterm: `toplevel list` shows both, `minimize` minimises the xterm, and `focus` restores and focuses it. The compositor's tests need a private bus there (`dbus-run-session`, as in CI), since the guest's desktop owns the screensaver names. camino-theme's goldens fail on aarch64, as they do on `master`.
+- **wlrctl aborts after `minimize` and `focus` have acted,** with libwayland 1.26's "data is non-NULL with zero alloc". It sends `stop`, and then gets the `state` update for the handle it still has; with Camino's first `stop`, which wrongly dropped the client's handles, it didn't. The wire log shows well-formed events (`finished`, then `state(array[4])`), and the test client takes the same sequence. It's wlrctl's handling of a second `state` after an empty one, not Camino's. libxfce4windowing doesn't stop its manager; 72 sees the panel's window list in a real session.
+- **Written before the code** holds for the first test only. The protocol module was then written whole, and the other tests after it. The review's findings (below) were fixed with a test for each.
+- **Decided here, beyond what the ticket says:**
+  - **ext-foreign-toplevel-list has every managed window,** the ones that skip the taskbar too. The ticket's *Which windows* reads as if it's for both protocols, but an xdg toplevel with a parent is a dialog, which skips the taskbar (35), and M6 has to name a focused dialog by its identifier. The taskbar rule is for the taskbar's protocol only.
+  - **`unset_minimized` activates the window:** policy has no other way to show a minimised window again, and a window list restores a window by activating it. It switches to the window's workspace.
+  - **Outputs are those the window's geometry overlaps, shown or not.** Policy puts a minimised window, or one on another workspace, on no output, and sending that would take it off a window list that shows one monitor's windows.
+  - **`parent` is sent only for a transient the taskbar shows whose parent it shows too.** With Marco's rules that's an XWayland window that says it's a normal window; an xdg toplevel with a parent isn't listed.
+  - **`stop`:** the manager is destroyed by `finished`, and the client's handles stay up to date until it destroys them.
+  - **A handle that was sent `closed` is inert,** though its window may still be managed (it started to skip the taskbar).
+  - **The seat `activate` names is ignored:** Camino has one.
+- **Kept for later:** `Mapped::minimize_rectangle` for M8, and `Camino::toplevel_identifier` and `window_for_toplevel_identifier` for M6. None has a caller outside the tests yet, so each has an `expect(dead_code)` to take off.
+- **The test client's `destroy_window`** now destroys the xdg-decoration object first, which xdg-decoration requires, and `Fixture::disconnect` takes a Wayland client.
+- **Review left as is:** the tests read maximised, minimised and fullscreen from policy, as earlier tests do. The minimise rectangle is a tuple in four places, not a type.

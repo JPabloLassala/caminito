@@ -5,10 +5,12 @@
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
 //! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, [`output_management`]
-//! configures the outputs as `wlr-randr` does, [`gtk_shell`] speaks GTK3's own protocol, and
-//! [`layer_shell`] makes layer surfaces.
+//! configures the outputs as `wlr-randr` does, [`foreign_toplevel`] lists the windows as a
+//! panel does, [`gtk_shell`] speaks GTK3's own protocol, and [`layer_shell`] makes layer
+//! surfaces.
 
 pub mod dbus;
+pub mod foreign_toplevel;
 pub mod gtk_shell;
 pub mod layer_shell;
 pub mod output_management;
@@ -148,6 +150,8 @@ pub struct State {
     pub drag_icon_frames_done: u32,
     /// The heads output management shows, and its answers to configurations.
     pub output_management: output_management::OutputManagement,
+    /// The toplevels foreign toplevel management and the foreign toplevel list show.
+    pub foreign_toplevels: foreign_toplevel::ForeignToplevels,
     gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
 }
 
@@ -574,9 +578,13 @@ impl Client {
         self.window(id).surface.frame(&self.qh, FrameCallback(id));
     }
 
-    /// Destroys the toplevel and its surfaces.
+    /// Destroys the toplevel and its surfaces, after its xdg-decoration object, which
+    /// xdg-decoration wants gone first.
     pub fn destroy_window(&self, id: WindowId) {
         let window = self.window(id);
+        if let Some(decoration) = &window.xdg_decoration {
+            decoration.destroy();
+        }
         window.toplevel.destroy();
         window.xdg_surface.destroy();
         window.surface.destroy();

@@ -2,6 +2,7 @@
 
 mod compositor;
 mod decoration;
+mod foreign_toplevel;
 mod gtk_shell;
 mod input;
 mod layer_shell;

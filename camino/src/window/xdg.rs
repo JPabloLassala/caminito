@@ -172,7 +172,7 @@ impl Adapter for ToplevelSurface {
         true
     }
 
-    /// Only foreign-toplevel's clients would ask, and they come in M5.
+    /// xdg-shell has no request to be left out of either.
     fn skips(&self) -> Skips {
         Skips::default()
     }
