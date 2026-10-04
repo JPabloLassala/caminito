@@ -1,0 +1,137 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sun, 4 Oct 2026 12:00:00 -0300
+Subject: [PATCH] wayland/tasklist: Tell the compositor where each button is
+
+On X11, libwnck's window list sets _NET_WM_ICON_GEOMETRY on each window, and
+the window manager animates a minimize towards the window's button. The
+Wayland window list sent nothing, so a compositor had no target.
+
+Call xfw_window_set_button_geometry for each window, which is
+wlr-foreign-toplevel's set_rectangle, with the button's rectangle on the
+panel's surface. A window in a group gets the group's button. The geometry is
+sent from an idle, because the buttons are first allocated before the panel
+has a surface.
+---
+ applets/wncklet/wayland-backend.c | 73 +++++++++++++++++++++++++++++++
+ 1 file changed, 73 insertions(+)
+
+diff --git a/applets/wncklet/wayland-backend.c b/applets/wncklet/wayland-backend.c
+index c0743475..2de3ed59 100644
+--- a/applets/wncklet/wayland-backend.c
++++ b/applets/wncklet/wayland-backend.c
+@@ -70,6 +70,7 @@ typedef struct
+ 	gboolean auto_grouping;
+ 	gboolean auto_grouping_applied;
+ 	guint auto_grouping_idle;
++	guint button_geometry_idle;
+ 	gboolean rebuilding;
+ 	GHashTable *apps;
+ 	GHashTable *window_to_group;
+@@ -131,6 +132,67 @@ static void tasklist_assign_to_group (TasklistManager *tasklist, ToplevelTask *t
+ static void group_task_child_state_changed (GroupTask *group);
+ static void tasklist_rebuild (TasklistManager *tasklist);
+ 
++/* Tell the compositor where each window's button is, as the X11 window list
++ * does with _NET_WM_ICON_GEOMETRY, so that it can minimize a window towards it.
++ * A window in a group has the group's button.
++ */
++static gboolean
++tasklist_update_button_geometry (gpointer data)
++{
++	TasklistManager *tasklist = data;
++	GList *l;
++
++	tasklist->button_geometry_idle = 0;
++
++	for (l = tasklist->tasks; l != NULL; l = l->next)
++	{
++		ToplevelTask *task = l->data;
++		GtkWidget *button, *toplevel;
++		GdkWindow *window;
++		GdkRectangle rect;
++
++		button = task->button;
++		if (task->group && (button == NULL || !gtk_widget_get_mapped (button)))
++			button = task->group->button;
++		if (button == NULL || !gtk_widget_get_mapped (button))
++			continue;
++
++		/* the panel's surface is there only once the panel is mapped */
++		toplevel = gtk_widget_get_toplevel (button);
++		window = gtk_widget_get_window (toplevel);
++		if (window == NULL || gdk_wayland_window_get_wl_surface (window) == NULL)
++			continue;
++
++		if (!gtk_widget_translate_coordinates (button, toplevel, 0, 0, &rect.x, &rect.y))
++			continue;
++		rect.width = gtk_widget_get_allocated_width (button);
++		rect.height = gtk_widget_get_allocated_height (button);
++
++		xfw_window_set_button_geometry (task->window, window, &rect, NULL);
++	}
++
++	return G_SOURCE_REMOVE;
++}
++
++/* The buttons are allocated before the panel is mapped, and several at once,
++ * so the geometry is sent from an idle.
++ */
++static void
++tasklist_queue_button_geometry (TasklistManager *tasklist)
++{
++	if (tasklist->button_geometry_idle == 0)
++		tasklist->button_geometry_idle = g_idle_add (tasklist_update_button_geometry, tasklist);
++}
++
++static void
++tasklist_track_button_geometry (TasklistManager *tasklist, GtkWidget *button)
++{
++	g_signal_connect_swapped (button, "map",
++				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
++	g_signal_connect_swapped (button, "size-allocate",
++				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
++}
++
+ static void
+ update_task_state (ToplevelTask *task)
+ {
+@@ -753,6 +815,7 @@ group_task_new (TasklistManager *tasklist, XfwApplication *app)
+ 			  G_CALLBACK (on_group_button_press), group);
+ 	g_signal_connect (group->button, "scroll-event",
+ 			  G_CALLBACK (tasklist_scroll_event), tasklist);
++	tasklist_track_button_geometry (tasklist, group->button);
+ 
+ 	g_signal_connect (app, "icon-changed",
+ 			  G_CALLBACK (group_task_icon_changed), group);
+@@ -808,6 +871,9 @@ group_task_add_window (GroupTask *group, ToplevelTask *task)
+ 	group_task_update_member_buttons (group);
+ 	group_task_child_state_changed (group);
+ 	group_task_update_name_for (group, task);
++
++	/* a group's button that is already there is not allocated again */
++	tasklist_queue_button_geometry (group->tasklist);
+ }
+ 
+ static void
+@@ -1120,6 +1186,10 @@ tasklist_manager_disconnected_from_widget (TasklistManager *tasklist)
+ 		tasklist->context_menu = NULL;
+ 	}
+ 
++	/* after the buttons are gone, since destroying them can queue it */
++	if (tasklist->button_geometry_idle != 0)
++		g_source_remove (tasklist->button_geometry_idle);
++
+ 	g_free (tasklist);
+ }
+ 
+@@ -1535,6 +1605,9 @@ toplevel_task_new (TasklistManager *tasklist, XfwWindow *window)
+ 	g_signal_connect (task->button, "drag-begin",
+ 			  G_CALLBACK (tasklist_button_drag_begin), task);
+ 
++	/* the minimize target */
++	tasklist_track_button_geometry (tasklist, task->button);
++
+ 	/* monitor window changes */
+ 	task->state_changed_id = g_signal_connect (window, "state-changed",
+ 						   G_CALLBACK (window_state_changed), task);

@@ -64,6 +64,7 @@ jobs:
       matrix:
         package:
           - mate-session-manager-camino
+          - mate-panel-camino
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git

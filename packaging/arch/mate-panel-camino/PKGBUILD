@@ -1,0 +1,85 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Alexander Epaneshnikov <alex19ep@archlinux.org>
+# Contributor: Brad Fanella <cesura@archlinux.org>
+# Contributor: Martin Wimpress <code@flexion.org>
+
+# Arch's mate-panel PKGBUILD with the smallest diff (16), so a change there shows what to
+# carry over. The differences: the name, the pinned commit and its pkgver(), provides and
+# conflicts, libxfce4windowing and the configure options after --enable-introspection, and the
+# carried patches (ADR 0011).
+
+pkgname=mate-panel-camino
+_pkgname=mate-panel
+# The libxfce4windowing window list and workspace switcher are only on master (16). The
+# commit is pinned, so the package needs no -git suffix. The weekly job builds the patches on
+# master instead.
+_commit=58ac6c101bdf2e2975c0395723ad16e9c9764f5c
+# Master comes from v1.28.1, and the 1.28 branch's tags aren't its ancestors, so git describe
+# gives a version below Arch's. The base is Arch's version, so constraints on mate-panel hold.
+_basever=1.28.7
+pkgver=1.28.7.r111.g58ac6c1
+pkgrel=1
+pkgdesc="The MATE Panel, with Camino's carried patches"
+url="https://mate-desktop.org"
+arch=('x86_64')
+license=('GPL-2.0-or-later AND LGPL-2.0-or-later')
+depends=('dbus-glib' 'libwnck3' 'libcanberra' 'libmateweather' 'libsm' 'mate-menus' 'mate-desktop' 'gettext' 'gtk-layer-shell' 'dconf-editor' 'libxfce4windowing')
+makedepends=('itstool' 'git' 'glib2-devel' 'gobject-introspection' 'mate-common' 'yelp-tools' 'autoconf-archive')
+groups=('mate')
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}" 'mate-panel-gtk3')
+# Neither patch is gated on Camino: both are correct on any compositor (ADR 0011).
+source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
+        git+https://github.com/mate-desktop/mate-submodules.git
+        0001-wayland-tasklist-Tell-the-compositor-where-each-butt.patch
+        0002-action-button-Shut-down-through-the-session-manager-.patch)
+sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
+            'SKIP'
+            '7b33e869a2cd4d4154a0a11fa977f55e7e984ffc41be18e3c2b14885a8ecb490'
+            '94a0dcc1016524880f416370c2a4f419b14f5fe7a539a7ddcf82d8adfd0a934e')
+
+pkgver() {
+    cd "${_pkgname}"
+    printf '%s.r%s.g%s' "${_basever}" "$(git rev-list --count v1.28.1..HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+    cd "${_pkgname}"
+    git submodule init
+    git config submodule.mate-submodules.url "${srcdir}/mate-submodules"
+    git -c protocol.file.allow=always submodule update
+
+    local src
+    for src in "${source[@]}"; do
+        [[ ${src} = *.patch ]] || continue
+        patch -Np1 -i "${srcdir}/${src}"
+    done
+
+    ./autogen.sh
+}
+
+build() {
+    cd "${_pkgname}"
+    # --enable-wayland makes a missing gtk-layer-shell or libxfce4windowing an error. Without
+    # it, configure turns Wayland off and says nothing. The applets are in the panel's
+    # process, because Wayland has nothing to embed another process's applet with. Master's
+    # clock links evolution-data-server when it's installed, which isn't a dependency, so
+    # that's off.
+    ./configure \
+                --prefix=/usr \
+                --libexecdir="/usr/lib/${_pkgname}" \
+                --sysconfdir=/etc \
+                --localstatedir=/var \
+                --enable-introspection \
+                --enable-wayland \
+                --with-in-process-applets=all \
+                --disable-eds
+    make
+}
+
+package() {
+    cd "${_pkgname}"
+    make DESTDIR="${pkgdir}" install
+}
