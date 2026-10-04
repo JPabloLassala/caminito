@@ -38,6 +38,7 @@ use smithay::output::{Mode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{ModeTypeFlags, connector, crtc};
+use smithay::reexports::input::event::{DeviceEvent, EventTrait, KeyboardEvent, PointerEvent};
 use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::DeviceFd;
@@ -214,6 +215,7 @@ impl Tty {
             .loop_handle
             .insert_source(LibinputInputBackend::new(libinput), input_event)
             .expect("libinput's events join the loop");
+        camino.loop_handle.insert_idle(queued_events);
         camino
             .loop_handle
             .insert_source(udev, |event, _, state| {
@@ -335,6 +337,7 @@ impl Tty {
                 if self.libinput.resume().is_err() {
                     tracing::warn!("can't take the input devices back");
                 }
+                camino.loop_handle.insert_idle(queued_events);
                 if let Err(err) = self.gpu.manager.lock().activate(false) {
                     tracing::warn!("can't take the GPU back: {err}");
                 }
@@ -619,6 +622,34 @@ fn input_event(event: InputEvent<LibinputInputBackend>, _: &mut (), state: &mut 
         _ => {}
     }
     state.process_input_event(event);
+}
+
+/// Handles what libinput has queued. Assigning the seat and resuming queue each device as
+/// plugged in without making libinput readable, so the loop wouldn't hear of them until the
+/// first key or motion: until then no lid switch would reach the default scale's rule (50),
+/// and no keyboard would show the seat's LEDs. wlroots' `backend_start`
+/// (`backend/libinput/backend.c`) reads them at once as well. Nothing is read from the
+/// devices here, so the queue holds only that and what suspending left: each device
+/// unplugged, after the releases of its keys and buttons, which go on as Smithay's source
+/// would pass them.
+fn queued_events(state: &mut State) {
+    let mut libinput = tty_mut(&mut state.backend).libinput.clone();
+    for event in &mut libinput {
+        let event = match event {
+            input::Event::Device(DeviceEvent::Added(event)) => InputEvent::DeviceAdded {
+                device: event.device(),
+            },
+            input::Event::Device(DeviceEvent::Removed(event)) => InputEvent::DeviceRemoved {
+                device: event.device(),
+            },
+            input::Event::Keyboard(KeyboardEvent::Key(event)) => InputEvent::Keyboard { event },
+            input::Event::Pointer(PointerEvent::Button(event)) => {
+                InputEvent::PointerButton { event }
+            }
+            _ => continue,
+        };
+        input_event(event, &mut (), state);
+    }
 }
 
 /// The seat's primary GPU, or its first if udev marks none as primary, by its primary node.
