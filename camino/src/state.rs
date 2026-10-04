@@ -31,6 +31,7 @@ use smithay::wayland::compositor::{
 use smithay::wayland::content_type::ContentTypeState;
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
+use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
@@ -76,6 +77,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::OutputRecord;
+use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::settings::{self, Settings, SettingsThread};
@@ -125,6 +127,13 @@ pub struct Camino {
     pub popups: PopupManager,
     /// wlr-layer-shell, for the panel, the desktop and the wallpaper (63).
     pub(crate) layer_shell_state: WlrLayerShellState,
+
+    // The windows as a panel sees them (65).
+    pub foreign_toplevel_state: ForeignToplevelState,
+    pub foreign_toplevel_list_state: ForeignToplevelListState,
+    /// ext-foreign-toplevel-list's handle for each window it lists, whose identifier names
+    /// the window to M6's `GetActiveToplevel` and image capture.
+    pub(crate) foreign_toplevel_handles: HashMap<WindowId, ForeignToplevelHandle>,
 
     // Input (06).
     pub pointer_constraints_state: PointerConstraintsState,
@@ -587,6 +596,10 @@ impl Camino {
             popups: PopupManager::default(),
             layer_shell_state: WlrLayerShellState::new::<State>(dh),
 
+            foreign_toplevel_state: ForeignToplevelState::new::<State>(dh),
+            foreign_toplevel_list_state: ForeignToplevelListState::new::<State>(dh),
+            foreign_toplevel_handles: HashMap::new(),
+
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),
             pointer_gestures_state: PointerGesturesState::new::<State>(dh),
@@ -788,6 +801,8 @@ impl Camino {
         self.refresh_window_outputs();
         self.refresh_layers();
         self.refresh_output_management();
+        self.refresh_foreign_toplevels();
+        self.refresh_foreign_toplevel_list();
         for mapped in self.policy.windows() {
             mapped.flush();
         }

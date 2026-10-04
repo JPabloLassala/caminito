@@ -7,6 +7,7 @@ mod debug;
 mod decoration;
 mod drag_icons;
 mod fixture;
+mod foreign_toplevel;
 mod frames;
 mod grabs;
 mod gtk_shell;
