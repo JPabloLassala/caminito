@@ -24,10 +24,20 @@ Map: [Camino v0.1](../map.md)
 - [x] A unit test, written before the code, of the backend choice for each combination of `WAYLAND_DISPLAY` and `DISPLAY`.
 - [x] `tools/dev-nested` still runs winit, unchanged.
 - [ ] On a spare tty as `caminotest`, bare `camino` lights both of the developer's monitors in their preferred modes, left to right, at their default scales, and a terminal started with its `WAYLAND_DISPLAY` shows on them.
-- [ ] Switching to another VT and back works, and the outputs redraw.
+- [x] Switching to another VT and back works, and the outputs redraw.
 - [ ] Unplugging and re-plugging a monitor removes and adds its output, and windows move off it.
-- [ ] Quitting gives the VT back in text mode.
+- [x] Quitting gives the VT back in text mode.
 
 ## Hand-check notes
 
 Until libinput comes in 56, no key reaches Camino on the tty, so the VT keysyms can't be pressed there yet. Switch VTs from another VT or over ssh with `chvt <n>` (or `loginctl activate`), and quit by sending `camino` SIGTERM or SIGINT, which now stop it cleanly. A terminal is started from another VT with `WAYLAND_DISPLAY` set to the socket Camino logs.
+
+## Hand-check results
+
+2026-10-04, in the UTM virtual machine (Arch Linux ARM, `virtio-gpu`, one `Virtual-1` connector), at 3380aec, as `jpablo` in a logind session on VT 9:
+
+- Bare `camino` lit `Virtual-1` in its preferred mode (1280x800), at scale 1, and a `mate-terminal` started with its `WAYLAND_DISPLAY` was mapped on it.
+- `chvt` to another VT and back: Camino paused and resumed, and its page flips continued on the CRTC after the switch back.
+- SIGTERM stopped it cleanly, and VT 9 was back in text mode (`KDGETMODE`).
+
+Not checked, because the virtual machine has one virtual connector: two monitors left to right at their default scales, and unplugging and re-plugging a monitor. These two criteria stay open for the developer's machine.
