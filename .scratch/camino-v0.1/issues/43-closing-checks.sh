@@ -193,7 +193,8 @@ finish() {
 
 TOTAL_STAGES=13
 
-TICKET="$(dirname "$(realpath "$0")")/43-packaging-and-closing-m3.md"
+# A later milestone's closing run names its own ticket in TICKET (59).
+TICKET="${TICKET:-$(dirname "$(realpath "$0")")/43-packaging-and-closing-m3.md}"
 RESULTS=()   # "short name|pass or FAIL|note"
 FAILED=()
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/camino"
@@ -277,7 +278,7 @@ load_progress() {
     mapfile -t RESULTS < "$PROGRESS"
     for r in "${RESULTS[@]}"; do
       IFS='|' read -r name verdict _ <<< "$r"
-      [[ $verdict == FAIL ]] && FAILED+=("$name")
+      if [[ $verdict == FAIL ]]; then FAILED+=("$name"); fi
     done
   else
     : > "$PROGRESS"
