@@ -18,6 +18,11 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] Conversion unit tests, written before the code: one and several layouts with and without variants, options, a model, empty lists and each fallback.
-- [ ] Headless tests: setting `layouts` live sends a test client a new keymap with the layouts, and a `grp:` option's key switches the group.
+- [x] Conversion unit tests, written before the code: one and several layouts with and without variants, options, a model, empty lists and each fallback.
+- [x] Headless tests: setting `layouts` live sends a test client a new keymap with the layouts, and a `grp:` option's key switches the group.
 - [ ] Nested, `gsettings set org.mate.peripherals-keyboard-xkb.kbd layouts "['us', 'es']"` with `options "['grp\tgrp:alt_shift_toggle']"` switches between them in a GTK3 app and in xterm.
+
+## Notes
+
+- **Implemented** in 6fc330e. The conversion unit tests (`settings/translate/tests.rs`) and the headless keymap tests (`tests/keymap.rs`) pass.
+- **The nested check** is run by hand with `54-hand-checks.sh`. The ticket stays open until it passes.
