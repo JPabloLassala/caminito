@@ -9,6 +9,7 @@ mod handlers;
 pub mod helpers;
 pub mod icons;
 pub mod input;
+mod layer;
 pub mod logging;
 pub mod output;
 pub mod protocols;

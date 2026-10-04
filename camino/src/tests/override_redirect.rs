@@ -164,8 +164,7 @@ fn the_override_redirect_layer_is_drawn_between_the_top_and_overlay_layers() {
             SceneLayer::Windows
         ]
     );
-    // The layer-shell layers have nothing in them until M5, so where they go is the layer
-    // order's.
+    // An X client makes no layer surfaces, so where their layers go is the layer order's.
     let at = |layer| LAYERS.iter().position(|l| *l == layer).unwrap();
     assert!(at(SceneLayer::Overlay) < at(SceneLayer::OverrideRedirect));
     assert!(at(SceneLayer::OverrideRedirect) < at(SceneLayer::Top));

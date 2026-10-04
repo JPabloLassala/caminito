@@ -13,9 +13,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
+use camino_test_client::layer_shell::{LayerId, LayerSpec};
 use camino_test_client::x11::{X11Client, XWindowSpec};
 use camino_test_client::{Client, DecorationMode, WindowId};
-use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
+use camino_theme::{ButtonFunction, ButtonState as FrameButtonState, FrameType};
 use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::output::Output;
@@ -164,7 +165,7 @@ enum TestClient {
         server: smithay::reexports::wayland_server::Client,
     },
     X11(Arc<X11Client>),
-    /// An X client the test disconnected.
+    /// A client the test disconnected.
     Disconnected,
 }
 
@@ -528,6 +529,17 @@ impl Fixture {
         window
     }
 
+    /// Creates a layer surface of the Wayland client `id` as `spec` says, lets it have its
+    /// initial configure, then acks it and commits a buffer of the configured size filled
+    /// with `argb`, which maps it.
+    pub fn map_layer(&mut self, id: ClientId, spec: LayerSpec, argb: u32) -> LayerId {
+        let layer = self.client(id).create_layer_surface(&spec);
+        self.roundtrip(id);
+        self.client(id).map_layer_surface(layer, argb);
+        self.roundtrip(id);
+        layer
+    }
+
     /// Creates and maps an override-redirect window of the X client `id` at `position`,
     /// filled with `color`. It returns once Camino shows it, with content, in its
     /// override-redirect layer. Such windows aren't managed, so they're X ids, not
@@ -666,6 +678,11 @@ impl Fixture {
             )
                 .into(),
         )
+    }
+
+    /// The style set a window's frame is drawn in, or `None` if it shows no frame.
+    pub fn frame_type(&self, window: ClientWindow) -> Option<FrameType> {
+        self.mapped(window).frame().frame_type()
     }
 
     /// Where a frame's button is drawn, globally.
@@ -1065,10 +1082,11 @@ impl Fixture {
         ClientId(self.clients.len() - 1)
     }
 
-    /// Closes an X client's connection.
+    /// Closes a client's connection, and dispatches so Camino sees a Wayland client go.
     pub fn disconnect(&mut self, id: ClientId) {
-        assert!(matches!(self.clients[id.0], TestClient::X11(_)));
+        assert!(!matches!(self.clients[id.0], TestClient::Disconnected));
         self.clients[id.0] = TestClient::Disconnected;
+        self.dispatch();
     }
 
     /// Makes blocking X11 calls as the X client `id` on another thread, dispatching until

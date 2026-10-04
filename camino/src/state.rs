@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use camino_policy::{OutputId, Policy, PolicyWindow, SeatId, WindowId};
-use smithay::desktop::PopupManager;
+use smithay::desktop::{LayerSurface, PopupManager, layer_map_for_output};
 use smithay::desktop::utils::{OutputPresentationFeedback, send_frames_surface_tree};
 use smithay::backend::input::Keycode;
 use smithay::input::keyboard::XkbConfig;
@@ -31,6 +31,7 @@ use smithay::wayland::compositor::{
 use smithay::wayland::content_type::ContentTypeState;
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
+use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
@@ -43,6 +44,7 @@ use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
+use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::dialog::XdgDialogState;
@@ -75,6 +77,8 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::OutputRecord;
+use crate::protocols::foreign_toplevel::ForeignToplevelState;
+use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
@@ -115,11 +119,21 @@ pub struct Camino {
     pub xdg_activation_state: XdgActivationState,
     pub xdg_foreign_state: XdgForeignState,
     pub xdg_dialog_state: XdgDialogState,
+    pub gtk_shell_state: GtkShellState,
     pub xdg_toplevel_icon_manager: XdgToplevelIconManager,
     pub xdg_system_bell_state: XdgSystemBellState,
     pub xdg_decoration_state: XdgDecorationState,
     pub kde_decoration_state: KdeDecorationState,
     pub popups: PopupManager,
+    /// wlr-layer-shell, for the panel, the desktop and the wallpaper (63).
+    pub(crate) layer_shell_state: WlrLayerShellState,
+
+    // The windows as a panel sees them (65).
+    pub foreign_toplevel_state: ForeignToplevelState,
+    pub foreign_toplevel_list_state: ForeignToplevelListState,
+    /// ext-foreign-toplevel-list's handle for each window it lists, whose identifier names
+    /// the window to M6's `GetActiveToplevel` and image capture.
+    pub(crate) foreign_toplevel_handles: HashMap<WindowId, ForeignToplevelHandle>,
 
     // Input (06).
     pub pointer_constraints_state: PointerConstraintsState,
@@ -143,6 +157,8 @@ pub struct Camino {
 
     /// What pointer focus was last given, and its origin then.
     pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
+    /// The layer surface a click gave the keyboard, and policy's focus then (63).
+    pub(crate) keyboard_layer: Option<(LayerSurface, Option<WindowId>)>,
     /// Keys whose press ran a binding, so their release is swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -409,7 +425,8 @@ impl State {
     }
 
     /// After `output` is drawn: frame callbacks and presentation feedback for the windows
-    /// whose primary output it is, and their fifo and commit-timing barriers released.
+    /// whose primary output it is and for its layer surfaces, and their fifo and
+    /// commit-timing barriers released.
     fn post_render(&mut self, output: &Output) {
         let now = self.camino.clock.now();
         let refresh = output
@@ -419,36 +436,43 @@ impl State {
         let mut feedback = OutputPresentationFeedback::new(output);
         let mut blocked = HashMap::new();
 
+        let mut release_barriers = |surface: &WlSurface, states: &SurfaceData| {
+            let mut signalled = false;
+            if let Some(timer) = states.data_map.get::<CommitTimerBarrierStateUserData>() {
+                signalled |= timer.lock().unwrap().signal_until(now);
+            }
+            let fifo = states
+                .cached_state
+                .get::<FifoBarrierCachedState>()
+                .current()
+                .barrier
+                .take();
+            if let Some(fifo) = fifo {
+                fifo.signal();
+                signalled = true;
+            }
+            if signalled && let Some(client) = surface.client() {
+                blocked.insert(client.id(), client);
+            }
+        };
+        let primary = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
+        let no_flags = |_: &WlSurface, _: &SurfaceData| wp_presentation_feedback::Kind::empty();
+
         for mapped in self.camino.policy.windows() {
             if mapped.primary_output() != Some(output) {
                 continue;
             }
             let window = mapped.window();
-            window.with_surfaces(|surface, states| {
-                let mut signalled = false;
-                if let Some(timer) = states.data_map.get::<CommitTimerBarrierStateUserData>() {
-                    signalled |= timer.lock().unwrap().signal_until(now);
-                }
-                let fifo = states
-                    .cached_state
-                    .get::<FifoBarrierCachedState>()
-                    .current()
-                    .barrier
-                    .take();
-                if let Some(fifo) = fifo {
-                    fifo.signal();
-                    signalled = true;
-                }
-                if signalled && let Some(client) = surface.client() {
-                    blocked.insert(client.id(), client);
-                }
-            });
-            let primary = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
+            window.with_surfaces(&mut release_barriers);
             window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, primary);
             // Every frame is composited; nothing is scanned out directly.
-            window.take_presentation_feedback(&mut feedback, primary, |_, _| {
-                wp_presentation_feedback::Kind::empty()
-            });
+            window.take_presentation_feedback(&mut feedback, primary, no_flags);
+        }
+        // A layer surface is drawn on its one output.
+        for layer in layer_map_for_output(output).layers() {
+            layer.with_surfaces(&mut release_barriers);
+            layer.send_frame(output, now, FRAME_CALLBACK_THROTTLE, primary);
+            layer.take_presentation_feedback(&mut feedback, primary, no_flags);
         }
         // Override-redirect windows have no primary output: they're told of frames on
         // every output they're drawn on.
@@ -564,11 +588,17 @@ impl Camino {
             xdg_activation_state: XdgActivationState::new::<State>(dh),
             xdg_foreign_state: XdgForeignState::new::<State>(dh),
             xdg_dialog_state: XdgDialogState::new::<State>(dh),
+            gtk_shell_state: GtkShellState::new::<State>(dh),
             xdg_toplevel_icon_manager: XdgToplevelIconManager::new::<State>(dh),
             xdg_system_bell_state: XdgSystemBellState::new::<State>(dh),
             xdg_decoration_state: XdgDecorationState::new::<State>(dh),
             kde_decoration_state: KdeDecorationState::new::<State>(dh, KdeDefaultMode::Server),
             popups: PopupManager::default(),
+            layer_shell_state: WlrLayerShellState::new::<State>(dh),
+
+            foreign_toplevel_state: ForeignToplevelState::new::<State>(dh),
+            foreign_toplevel_list_state: ForeignToplevelListState::new::<State>(dh),
+            foreign_toplevel_handles: HashMap::new(),
 
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),
@@ -589,6 +619,7 @@ impl Camino {
             commit_timing_state: CommitTimingManagerState::new::<State>(dh),
 
             pointer_focus: None,
+            keyboard_layer: None,
             suppressed_keys: HashSet::new(),
             frame_pointer: FramePointer::default(),
             window_grab: None,
@@ -768,7 +799,10 @@ impl Camino {
         // First, since windows' outputs and scales follow the outputs' scales.
         self.refresh_lid_switch();
         self.refresh_window_outputs();
+        self.refresh_layers();
         self.refresh_output_management();
+        self.refresh_foreign_toplevels();
+        self.refresh_foreign_toplevel_list();
         for mapped in self.policy.windows() {
             mapped.flush();
         }

@@ -4,10 +4,15 @@
 //! owns it runs the compositor in the same thread, and calls [`Client::dispatch`] between the
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
-//! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, and [`output_management`]
-//! configures the outputs as `wlr-randr` does.
+//! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, [`output_management`]
+//! configures the outputs as `wlr-randr` does, [`foreign_toplevel`] lists the windows as a
+//! panel does, [`gtk_shell`] speaks GTK3's own protocol, and [`layer_shell`] makes layer
+//! surfaces.
 
 pub mod dbus;
+pub mod foreign_toplevel;
+pub mod gtk_shell;
+pub mod layer_shell;
 pub mod output_management;
 pub mod selection;
 pub mod x11;
@@ -73,6 +78,7 @@ use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration::{
     self, OrgKdeKwinServerDecoration,
 };
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1;
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration_manager::{
     self, OrgKdeKwinServerDecorationManager,
 };
@@ -114,6 +120,8 @@ pub struct State {
     pub kde_default_mode: Option<KdeMode>,
     windows: Vec<Window>,
     popups: Vec<Popup>,
+    layer_shell: Option<ZwlrLayerShellV1>,
+    layer_surfaces: Vec<layer_shell::LayerSurface>,
     pointer: Option<WlPointer>,
     keyboard: Option<WlKeyboard>,
     /// Every pointer and keyboard event received, oldest first.
@@ -142,6 +150,9 @@ pub struct State {
     pub drag_icon_frames_done: u32,
     /// The heads output management shows, and its answers to configurations.
     pub output_management: output_management::OutputManagement,
+    /// The toplevels foreign toplevel management and the foreign toplevel list show.
+    pub foreign_toplevels: foreign_toplevel::ForeignToplevels,
+    gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
 }
 
 /// A bound `wl_output`.
@@ -188,6 +199,7 @@ pub struct Window {
     pub kde_modes: Vec<KdeMode>,
     xdg_decoration: Option<ZxdgToplevelDecorationV1>,
     kde_decoration: Option<OrgKdeKwinServerDecoration>,
+    gtk_surface: Option<gtk_shell::raw::gtk_surface1::GtkSurface1>,
     subsurfaces: Vec<WlSubsurface>,
     /// The buffers attached so far, kept alive until the window is dropped.
     buffers: Vec<Buffer>,
@@ -198,6 +210,7 @@ pub struct Window {
 pub enum SurfaceRef {
     Window(WindowId),
     Popup(PopupId),
+    Layer(layer_shell::LayerId),
     Unknown,
 }
 
@@ -361,6 +374,7 @@ impl Client {
             kde_modes: Vec::new(),
             xdg_decoration: None,
             kde_decoration: None,
+            gtk_surface: None,
             subsurfaces: Vec::new(),
             buffers: Vec::new(),
         });
@@ -564,9 +578,13 @@ impl Client {
         self.window(id).surface.frame(&self.qh, FrameCallback(id));
     }
 
-    /// Destroys the toplevel and its surfaces.
+    /// Destroys the toplevel and its surfaces, after its xdg-decoration object, which
+    /// xdg-decoration wants gone first.
     pub fn destroy_window(&self, id: WindowId) {
         let window = self.window(id);
+        if let Some(decoration) = &window.xdg_decoration {
+            decoration.destroy();
+        }
         window.toplevel.destroy();
         window.xdg_surface.destroy();
         window.surface.destroy();
@@ -796,6 +814,7 @@ pub fn format_input(events: &[InputEvent]) -> String {
     let surface = |s: &SurfaceRef| match s {
         SurfaceRef::Window(w) => format!("window {}", w.0),
         SurfaceRef::Popup(p) => format!("popup {}", p.0),
+        SurfaceRef::Layer(l) => format!("layer surface {}", l.0),
         SurfaceRef::Unknown => "unknown surface".to_owned(),
     };
     let press = |pressed: &bool| if *pressed { "pressed" } else { "released" };
@@ -900,8 +919,19 @@ impl State {
             SurfaceRef::Window(WindowId(i))
         } else if let Some(i) = self.popups.iter().position(|p| p.surface == *surface) {
             SurfaceRef::Popup(PopupId(i))
+        } else if let Some(i) = (self.layer_surfaces.iter()).position(|l| l.surface == *surface) {
+            SurfaceRef::Layer(layer_shell::LayerId(i))
         } else {
             SurfaceRef::Unknown
+        }
+    }
+
+    /// Where a window's or a layer surface's output events are recorded.
+    fn output_events_mut(&mut self, surface: &WlSurface) -> Option<&mut Vec<String>> {
+        match self.surface_ref(surface) {
+            SurfaceRef::Window(id) => Some(&mut self.windows[id.0].output_events),
+            SurfaceRef::Layer(id) => Some(&mut self.layer_surfaces[id.0].output_events),
+            SurfaceRef::Popup(_) | SurfaceRef::Unknown => None,
         }
     }
 }
@@ -919,10 +949,8 @@ impl Dispatch<WlSurface, ()> for State {
             wl_surface::Event::Enter { output } => ("enter", output),
             wl_surface::Event::Leave { output } => ("leave", output),
             wl_surface::Event::PreferredBufferScale { factor } => {
-                if let SurfaceRef::Window(id) = state.surface_ref(surface) {
-                    state.windows[id.0]
-                        .output_events
-                        .push(format!("buffer scale {factor}"));
+                if let Some(events) = state.output_events_mut(surface) {
+                    events.push(format!("buffer scale {factor}"));
                 }
                 return;
             }
@@ -934,10 +962,8 @@ impl Dispatch<WlSurface, ()> for State {
             .find(|o| o.proxy == output)
             .and_then(|o| o.name.clone())
             .unwrap_or_else(|| "unknown output".to_owned());
-        if let SurfaceRef::Window(id) = state.surface_ref(surface) {
-            state.windows[id.0]
-                .output_events
-                .push(format!("{verb} {name}"));
+        if let Some(events) = state.output_events_mut(surface) {
+            events.push(format!("{verb} {name}"));
         }
     }
 }

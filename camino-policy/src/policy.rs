@@ -430,6 +430,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
         // Marco hands focus to a lost transient's parent before the rest of the stack.
         if let Some(parent) = managed.parent.filter(|p| self.is_showing(*p)) {
+            let parent = self.modal_transient(parent);
             for focus in self.focus.values_mut() {
                 if *focus == id {
                     *focus = parent;
@@ -1305,16 +1306,34 @@ impl<W: PolicyWindow> Policy<W> {
         self.last_seat = seat;
     }
 
-    /// Focuses `id` for `seat` on user input at `now`. Returns false, changing nothing, if the
-    /// request is older than the seat's last focus change.
+    /// Focuses `id` for `seat` on user input at `now`, or the modal dialog over it. Returns
+    /// false, changing nothing, if the request is older than the seat's last focus change.
     fn focus_window(&mut self, seat: SeatId, id: WindowId, now: Duration) -> bool {
         if self.focus_time.get(&seat).is_some_and(|last| now < *last) {
             return false;
         }
         self.seats.insert(seat);
         self.focus_time.insert(seat, now);
-        self.focus.insert(seat, id);
+        self.focus.insert(seat, self.modal_transient(id));
         true
+    }
+
+    /// The window that takes the focus `id` is given: the last of the modal dialogs over
+    /// it, or `id` itself with none, as Marco's `get_modal_transient` finds it
+    /// (window.c:4381-4417). Marco then focuses nothing if that dialog is minimised; policy
+    /// skips such a dialog instead, so that a seat's focus is always on screen. A transient
+    /// is on its parent's workspace already, so nothing is moved as Marco moves it.
+    fn modal_transient(&self, id: WindowId) -> WindowId {
+        let mut current = id;
+        // Parents make no cycle, so each step goes one dialog further and the walk ends.
+        while let Some((&next, _)) = self.windows.iter().find(|(_, managed)| {
+            managed.parent == Some(current)
+                && managed.window_type == WindowType::ModalDialog
+                && !managed.minimized
+        }) {
+            current = next;
+        }
+        current
     }
 
     fn is_desktop_or_dock(&self, id: WindowId) -> bool {

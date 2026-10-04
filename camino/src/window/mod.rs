@@ -31,6 +31,7 @@ use smithay::desktop::utils::{
 };
 use smithay::desktop::{Window, WindowSurface};
 use smithay::output::Output;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::{SurfaceData, send_surface_state, with_states};
@@ -183,6 +184,9 @@ pub struct Mapped {
     /// drawn at (13).
     frame_scale: i32,
     frame: WindowFrame,
+    /// Where a foreign-toplevel client shows the window, as a rectangle on one of its
+    /// surfaces (65): the target of M8's minimise animation.
+    minimize_rectangle: Option<(WlSurface, Rectangle<i32, Logical>)>,
 }
 
 impl Mapped {
@@ -197,6 +201,7 @@ impl Mapped {
             states: WindowStates::default(),
             frame_scale: 1,
             frame: WindowFrame::default(),
+            minimize_rectangle: None,
         }
     }
 
@@ -398,8 +403,8 @@ impl Mapped {
         self.adapter().title()
     }
 
-    /// Whether the window asks for the user's attention, for M5's foreign-toplevel and
-    /// M8's Alt+Tab.
+    /// Whether the window asks for the user's attention, for M8's Alt+Tab and
+    /// focus-stealing prevention. wlr-foreign-toplevel version 3 has no state for it (65).
     pub(crate) fn is_urgent(&self) -> bool {
         self.adapter().urgent()
     }
@@ -412,6 +417,24 @@ impl Mapped {
             adapter.parent().is_some(),
             adapter.skips(),
         )
+    }
+
+    /// Where a foreign-toplevel client last said it shows the window, if its surface is
+    /// still there.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "M8's minimise animation reads it")
+    )]
+    pub(crate) fn minimize_rectangle(&self) -> Option<(&WlSurface, Rectangle<i32, Logical>)> {
+        let (surface, rectangle) = self.minimize_rectangle.as_ref()?;
+        surface.is_alive().then_some((surface, *rectangle))
+    }
+
+    pub(crate) fn set_minimize_rectangle(
+        &mut self,
+        rectangle: Option<(WlSurface, Rectangle<i32, Logical>)>,
+    ) {
+        self.minimize_rectangle = rectangle;
     }
 
     /// What the keyboard focuses to give the window the keyboard.
