@@ -74,6 +74,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::OutputRecord;
+use crate::protocols::output_management::OutputManagementState;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
@@ -102,6 +103,7 @@ pub struct Camino {
     pub compositor_state: CompositorState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
+    pub output_management_state: OutputManagementState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub data_device_state: DataDeviceState,
@@ -156,6 +158,8 @@ pub struct Camino {
     /// Every output, in the order they were added.
     pub outputs: Vec<Output>,
     pub(crate) next_output_id: u64,
+    /// The monitors output management disabled, which it can enable again (58).
+    pub(crate) disabled_outputs: Vec<Output>,
     /// What Camino keeps of each output beside Smithay's state (51).
     pub(crate) output_records: HashMap<OutputId, OutputRecord>,
     /// Outputs to render in the next refresh pass.
@@ -314,17 +318,17 @@ impl State {
     }
 
     /// Plugs in a headless monitor whose EDID says it's `physical_size` millimetres, with
-    /// one mode of `mode`, which it prefers, built in if `internal`.
+    /// modes of `modes`, the first of which it prefers, built in if `internal`.
     #[cfg(test)]
     pub fn plug_headless_output(
         &mut self,
         physical_size: smithay::utils::Size<i32, smithay::utils::Raw>,
-        mode: smithay::utils::Size<i32, smithay::utils::Physical>,
+        modes: &[smithay::utils::Size<i32, smithay::utils::Physical>],
         internal: bool,
     ) -> Output {
         self.backend
             .headless_mut()
-            .plug(&mut self.camino, physical_size, mode, internal)
+            .plug(&mut self.camino, physical_size, modes, internal)
     }
 
     /// Switches a headless monitor to a mode of `size`.
@@ -547,6 +551,7 @@ impl Camino {
             compositor_state: CompositorState::new_v6::<State>(dh),
             shm_state: ShmState::new::<State>(dh, Vec::new()),
             output_manager_state: OutputManagerState::new_with_xdg_output::<State>(dh),
+            output_management_state: OutputManagementState::new::<State>(dh),
             seat_state,
             seat,
             data_device_state: DataDeviceState::new::<State>(dh),
@@ -591,6 +596,7 @@ impl Camino {
             display_handle,
             loop_handle,
             outputs: Vec::new(),
+            disabled_outputs: Vec::new(),
             next_output_id: 0,
             output_records: HashMap::new(),
             redraws: HashSet::new(),
@@ -758,6 +764,7 @@ impl Camino {
         // First, since windows' outputs and scales follow the outputs' scales.
         self.refresh_lid_switch();
         self.refresh_window_outputs();
+        self.refresh_output_management();
         for mapped in self.policy.windows() {
             mapped.flush();
         }

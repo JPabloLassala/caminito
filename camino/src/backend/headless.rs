@@ -20,6 +20,8 @@ pub struct Headless {
     targets: Vec<Target>,
     /// How many outputs were ever plugged in, which names the next one.
     plugged: usize,
+    /// The modes monitors list but can't show, for tests of a configuration that fails.
+    refused: Vec<(Output, Mode)>,
 }
 
 /// A virtual output and the memory it renders into.
@@ -36,6 +38,7 @@ impl Default for Headless {
             renderer: PixmanRenderer::new().expect("pixman renderer"),
             targets: Vec::new(),
             plugged: 0,
+            refused: Vec::new(),
         }
     }
 }
@@ -46,15 +49,16 @@ impl Headless {
     }
 
     /// Plugs in a virtual monitor whose EDID says it's `physical_size` millimetres, with
-    /// one mode of `mode`, which it prefers. An internal one is named as a laptop's panel
-    /// is (50).
+    /// modes of `modes`, the first of which it prefers. An internal one is named as a
+    /// laptop's panel is (50).
     pub fn plug(
         &mut self,
         camino: &mut Camino,
         physical_size: Size<i32, Raw>,
-        mode: Size<i32, Physical>,
+        modes: &[Size<i32, Physical>],
         internal: bool,
     ) -> Output {
+        let mode = modes[0];
         self.plugged += 1;
         let connector = if internal { "eDP" } else { "headless" };
         let output = virtual_output(
@@ -64,6 +68,12 @@ impl Headless {
             mode,
             Transform::Normal,
         );
+        for &size in &modes[1..] {
+            output.add_mode(Mode {
+                size,
+                refresh: DEFAULT_REFRESH,
+            });
+        }
 
         let buffer = self
             .renderer
@@ -81,22 +91,54 @@ impl Headless {
 
     /// Switches a virtual monitor to a mode of `size`.
     pub fn change_mode(&mut self, camino: &mut Camino, output: &Output, size: Size<i32, Physical>) {
+        let mode = Mode {
+            size,
+            refresh: DEFAULT_REFRESH,
+        };
+        assert!(self.set_mode(camino, output, mode), "the mode is shown");
+    }
+
+    /// Makes a virtual monitor fail to show its mode of `size`, as a monitor does whose
+    /// mode the GPU can't drive.
+    pub fn refuse_mode(&mut self, output: &Output, size: Size<i32, Physical>) {
+        let mode = Mode {
+            size,
+            refresh: DEFAULT_REFRESH,
+        };
+        self.refused.push((output.clone(), mode));
+    }
+
+    /// Switches a virtual monitor to `mode`, and returns whether it did.
+    pub fn set_mode(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
+        if !self.resize(output, mode) {
+            return false;
+        }
+        output.change_current_state(Some(mode), None, None, None);
+        camino.output_mode_changed(output);
+        true
+    }
+
+    /// Lights a disabled virtual monitor again in `mode`, and returns whether it did.
+    pub fn enable(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
+        if !self.resize(output, mode) {
+            return false;
+        }
+        camino.enable_output(output, mode);
+        true
+    }
+
+    /// Gives a virtual monitor the memory for `mode`, unless it refuses the mode.
+    fn resize(&mut self, output: &Output, mode: Mode) -> bool {
+        if self.refused.contains(&(output.clone(), mode)) {
+            return false;
+        }
         let target = target_mut(&mut self.targets, output).expect("a headless output");
         target.buffer = self
             .renderer
-            .create_buffer(Fourcc::Argb8888, (size.w, size.h).into())
+            .create_buffer(Fourcc::Argb8888, (mode.size.w, mode.size.h).into())
             .expect("pixman buffer");
         target.rendered = false;
-        output.change_current_state(
-            Some(Mode {
-                size,
-                refresh: DEFAULT_REFRESH,
-            }),
-            None,
-            None,
-            None,
-        );
-        camino.output_mode_changed(output);
+        true
     }
 
     /// Unplugs a virtual monitor.

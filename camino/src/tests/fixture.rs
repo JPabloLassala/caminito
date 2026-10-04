@@ -268,7 +268,7 @@ impl Fixture {
     pub fn add_output(&mut self, size: impl Into<Size<i32, Physical>>, scale: f64) -> Output {
         let output = self
             .state
-            .plug_headless_output((0, 0).into(), size.into(), false);
+            .plug_headless_output((0, 0).into(), &[size.into()], false);
         self.state.camino.set_output_scale(&output, scale);
         output
     }
@@ -276,14 +276,28 @@ impl Fixture {
     /// Plugs in a monitor whose EDID says it's `physical_size` millimetres, with one mode
     /// of `mode` pixels, which it prefers. Camino picks its scale and place.
     pub fn plug(&mut self, physical_size: (i32, i32), mode: (i32, i32)) -> Output {
+        self.plug_with_modes(physical_size, &[mode])
+    }
+
+    /// Plugs in a monitor, as `plug` does, with every mode of `modes`. It prefers the first.
+    pub fn plug_with_modes(&mut self, physical_size: (i32, i32), modes: &[(i32, i32)]) -> Output {
+        let modes: Vec<Size<i32, Physical>> = modes.iter().map(|&mode| mode.into()).collect();
         self.state
-            .plug_headless_output(physical_size.into(), mode.into(), false)
+            .plug_headless_output(physical_size.into(), &modes, false)
     }
 
     /// Plugs in a built-in panel, as `plug` does a monitor.
     pub fn plug_internal(&mut self, physical_size: (i32, i32), mode: (i32, i32)) -> Output {
         self.state
-            .plug_headless_output(physical_size.into(), mode.into(), true)
+            .plug_headless_output(physical_size.into(), &[mode.into()], true)
+    }
+
+    /// Makes a monitor fail to show its mode of `mode` pixels, though it lists it.
+    pub fn refuse_mode(&mut self, output: &Output, mode: (i32, i32)) {
+        self.state
+            .backend
+            .headless_mut()
+            .refuse_mode(output, mode.into());
     }
 
     /// Unplugs a monitor, and dispatches.

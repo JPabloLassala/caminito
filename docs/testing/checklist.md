@@ -23,6 +23,13 @@ nested_env() {
 }
 ```
 
+The items on the tty run bare `camino` as `caminotest`, the second user (14). Log in as
+`caminotest` on a spare tty and run `camino 2>~/camino.log`. Run the commands of each item from a
+second login of `caminotest` (another tty, or `ssh`), which shares the first one's session bus,
+with `WAYLAND_DISPLAY` set to the socket in the log's `listening on WAYLAND_DISPLAY=` line, and
+`DISPLAY` to the one in its `Xwayland is ready on DISPLAY=` line for X11 apps. Ctrl+Alt+F<n>
+switches between the ttys.
+
 ## Nested runs
 
 ### A nested run uses its private bus
@@ -194,3 +201,65 @@ nested_env() {
   back. The switch applies to every window at once (54).
 - **Debug tool:** the typed text, and `xkbcomp "$DISPLAY" - | grep xkb_symbols` on the nested
   `DISPLAY`.
+
+## Outputs
+
+### The scale picked for each of the developer's monitors
+
+- **Milestone:** M4
+- **Steps:**
+  1. With both monitors connected, run `camino` on the tty.
+  2. Start a terminal on it (`foot`), and move it to each monitor.
+  3. Run `wlr-randr`, and
+     `busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug org.mate.Camino.Debug DumpState`.
+  4. `gsettings set org.mate.interface window-scaling-factor 2`, read the scales again, then
+     set it back to 0 and read them once more.
+- **Expected:** each monitor is in its preferred mode at the scale its rule picks (50): the AOC
+  (DP-1, 1920×1080) at 1.0 and the LG (HDMI-A-1, 3840×2160) at 1.7. They sit left to right in
+  the order they were found, with the second one's `x` the first one's logical width, and the
+  pointer crosses between them where they touch. The terminal's text is the same physical size
+  on both, and sharp on both. `window-scaling-factor` 2 puts both at 2 and moves the second
+  output to the first one's new right edge, and 0 brings the defaults back.
+- **Debug tool:** `wlr-randr`, the `outputs` of `DumpState`, and `edid-decode
+  /sys/class/drm/card*-*/edid` for the sizes the rule read.
+
+### Hot-plugging a monitor
+
+- **Milestone:** M4
+- **Steps:**
+  1. With both monitors connected, run `camino` on the tty, and put a GTK3 window (pluma) and
+     an X11 one (xterm) on the right-hand monitor. Maximise one of them.
+  2. Unplug the right-hand monitor's cable. Run `wlr-randr` and `DumpState`.
+  3. Plug it back in, and run them again.
+  4. Do the same with the left-hand monitor.
+- **Expected:** unplugging removes the output: `wlr-randr` and `DumpState` list one output, at
+  0,0, and the windows that were on the unplugged monitor are on the other one, with the
+  maximised one filling it. They're moved, not resized, so one larger than the output hangs
+  over its edge. The monitor that stays never goes black or freezes. Plugging the
+  monitor back lights it in its preferred mode at its default scale, to the right of the other
+  one, whichever side it was on before, and the pointer and windows can go to it again. The log
+  has no `can't light` line.
+- **Debug tool:** `wlr-randr`, the `outputs` and windows of `DumpState`, and `~/camino.log`.
+
+### A GTK3 window dragged across a 1.0 and a 2.0 output
+
+- **Milestone:** M4
+- **Steps:**
+  1. With both monitors connected, run `camino` on the tty. Set the LG to 2.0, so the AOC stays
+     at 1.0: `wlr-randr --output HDMI-A-1 --scale 2`.
+  2. Start pluma on the 1.0 output, type a line of text, and run `ToggleFrameDebug`, as in *The
+     debug interface answers on the nested bus*.
+  3. Drag pluma slowly by its titlebar onto the 2.0 output, stop while it spans both, go on
+     until it's wholly on the 2.0 output, then drag it back the same way.
+  4. Do the same with an X11 window (xterm).
+- **Expected:** pluma's content and its frame stay the same logical size all the way across, so
+  the window never jumps, doubles or halves. While the window spans both outputs, its frame is
+  drawn at ×2 and is sharp on both. GTK3 gets no preferred scale (52): it draws at the largest
+  scale of the outputs it has entered. So pluma's content switches to scale 2 as soon as the
+  window enters the 2.0 output, and back to scale 1 only once it has wholly left it. Wholly on
+  either output, the title, the button icons and pluma's text are as sharp as
+  that output's other windows, and frame debug's label is that output's scale. xterm is drawn
+  at the X11 scale, 2, on both outputs (41), and its frame behaves as pluma's does.
+- **Debug tool:** frame debug's `×<n>` label, `strip_scale` in `DumpState`, and
+  `WAYLAND_DEBUG=1 pluma 2>&1 | grep -E 'wl_surface.*(enter|leave|set_buffer_scale)'` for the
+  outputs pluma is told of and the scale it draws at.

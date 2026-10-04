@@ -17,7 +17,7 @@ The layout is ticket 15's ([.scratch/camino-v0.1/issues/15-crate-and-module-arch
 - A crate exists only where it enforces a dependency rule. Everything else is a module of `camino`.
 - `camino-policy` names no protocol object. It may use Smithay's geometry types and nothing else from Smithay. It reaches windows only through `PolicyWindow`.
 - `camino-theme` knows nothing of Wayland.
-- Protocols Camino implements itself (none yet) go in `camino/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. D-Bus interfaces go in `camino/src/dbus/`.
+- Protocols Camino implements itself go in `camino/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. `output_management` is the first. D-Bus interfaces go in `camino/src/dbus/`.
 - `scene` is the only code that knows the layer order.
 - Handlers change policy state and mark it dirty. They never update an outward view inline (foreign-toplevel, ext-workspace, EWMH properties, D-Bus properties, the debug dump). The refresh pass after each dispatch does that.
 - Wayland, X11, input, policy and rendering all run on the main thread. A new thread is justified only when a library needs its own loop. It talks to the main loop through a `calloop::channel`, and the main thread never blocks on it.

@@ -11,6 +11,7 @@ rustix = { version = "1.1.5", features = ["fs", "pipe"] }
 wayland-client = "0.31.15"
 wayland-protocols = { version = "0.32.13", features = ["client", "staging", "unstable"] }
 wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 x11rb = { workspace = true, features = ["shape"] }
 zbus = "5.19.0"
 
