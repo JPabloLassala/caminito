@@ -1,7 +1,7 @@
 # Packaging and closing M4
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M4
 Blocked by: 52, 54, 56, 57, 58
 Map: [Camino v0.1](../map.md)
@@ -19,16 +19,43 @@ M4's code installed through `camino-git` (17: packaging keeps up), its checklist
 
 ## Acceptance criteria
 
-- [ ] `makepkg -si` in `packaging/arch/camino-git/` installs a `camino` that runs on a tty, and the packaging job is green in CI.
+- [x] `makepkg -si` in `packaging/arch/camino-git/` installs a `camino` that runs on a tty, and the packaging job is green in CI.
 - [x] The three checklist items are written.
-- [ ] Closing M4: as `caminotest` on a spare tty, bare `camino` drives both of the developer's monitors at their default scales; `wlr-randr` changes modes, scales and positions; mouse, touchpad and keyboard-layout settings changed with `gsettings` apply live; switching VT away and back works; CI is green; the checklist results are in a `Close M4 On the metal` commit.
+- [x] Closing M4: as `caminotest` on a spare tty, bare `camino` drives both of the developer's monitors at their default scales; `wlr-randr` changes modes, scales and positions; mouse, touchpad and keyboard-layout settings changed with `gsettings` apply live; switching VT away and back works; CI is green; the checklist results are in a `Close M4 On the metal` commit.
 
 ## Notes
 
-- **Not closed (2026-10-04).** The packaging, the checklist items and the closing wizard are done, and the blockers are all resolved. What's left needs the developer:
-  - the closing run on the machine with both monitors, as `caminotest`, with the wizard below;
-  - a push. `master` is 17 commits ahead of `origin/master` (3380aec), so CI and the Packaging job haven't run on 58's or 56's code, or on the `libdrm` change;
-  - the `Close M4 On the metal` commit, with the results.
+- **Closed (2026-10-04)** in the `Close M4 On the metal` commit, with the hot-plug item not run: the developer put it off, and [60](60-tty-checks-left-over.md) carries it.
+- **Pushed (2026-10-04).** `master` is `origin/master` at 2e03d31. CI ([run 37182870690](https://github.com/JPabloLassala/camino/actions/runs/37182870690)) and the Packaging job ([run 37182870731](https://github.com/JPabloLassala/camino/actions/runs/37182870731)) are green on it, with 56's and 58's code and the `libdrm` change.
+- **Closing run on the tty (2026-10-04), on camino-git r116.2e03d31-1,** installed with `pacman -U` from `makepkg -f` on the developer's machine (x86_64, `check()` passing), as `caminotest` on tty4, with `RUST_LOG=debug` and the log in `~/debug.log`. The saved layout was HDMI-A-1 at 0,0, 2259x1271 at 1.7, and DP-1 at 2259,0, 1920x1080 at 1.0. The wizard stopped after stage 11, so these are from its progress file:
+  - Bare camino drives both monitors at their default scales: pass.
+  - The scale picked for each of the developer's monitors: pass.
+  - wlr-randr changes modes, scales and positions: pass.
+  - wlr-randr turns a monitor off and on: FAIL, twice. The first time the wizard ran from the KDE session's VT, so Camino's VT was switched away when `--off` was sent, and Camino refuses every output change then (58). The second time, on a new Camino with the wizard waiting for Camino's VT before each change, stages 4 and 5 were run again: 4 passed, and 5 failed with "nothing happened". Neither log has a `was turned off` line or a DRM warning, so the request was refused before it reached the GPU, or never arrived. What `wlr-randr` printed wasn't kept.
+  - The same check by hand, on a third Camino with its VT active: pass. `wlr-randr --output DP-1 --off` exited 0, the AOC went dark while the LG stayed lit, `wlr-randr` listed DP-1 as `Enabled: no`, and the log has `DP-1 was turned off`. Six seconds later `--on` exited 0 and DP-1 was lit again in its preferred mode, at 2259,0 and scale 1.0, with `lit DP-1` in the log and no new warning. So the wizard's stage 5 failed for a reason of its own, most likely the output's name as typed, which `wlr-randr` refuses without changing anything. Run again with foot dragged onto DP-1: when DP-1 went dark foot showed on the LG, which never went black, and `DumpState` has it against the LG's right edge (x 1394, 864 wide, on an output 2259 wide). It stayed there when DP-1 was lit again.
+  - A GTK3 window dragged across a 1.0 and a 2.0 output: pass.
+  - Hot-plugging a monitor: not run. Deferred by the developer to a later ticket; recorded by the wizard as FAIL.
+  - Mouse settings apply live: pass.
+  - Touchpad settings apply live: n/a. The machine has no touchpad.
+  - Keyboard-layout settings apply live: pass.
+  - Switching VT away and back works: pass. The log has `the VT was switched away` and `back` three times.
+  - Explicit sync: pass.
+  - Quitting gives the VT back in text mode: pass. Recorded as FAIL by mistake: the developer saw tty4 back at the shell prompt from before `camino`, which is what's expected. The log ends with `stopping on a signal`.
+  - The log's only errors are 8 of Smithay's `surface missing from known popups`. Its warnings are from startup: no DRM master at first, two `Failed to destroy old mode property blob`, and X displays 0 and 1 taken by the host's session, so Xwayland is on `:2`.
+- **The nested items (2026-10-04), on camino-git r116.2e03d31-1,** with `tools/dev-nested` on the host desktop (KDE on Wayland). Claude ran the commands and read the results; what needs eyes and hands was the developer's.
+  - A nested run uses its private bus: pass. Camino's `DBUS_SESSION_BUS_ADDRESS` was a `/tmp/dbus-*` bus, not `unix:path=/run/user/1000/bus`.
+  - dconf goes to the scratch config: pass. The nested read printed `true`, `dconf/user` was in the scratch `XDG_CONFIG_HOME`, the host read printed nothing, and the scratch directory was gone after exit.
+  - The host desktop's systemd environment is untouched: pass. It was the same before and after the run.
+  - The debug interface answers on the nested bus: pass. `DumpState` listed pluma as ssd with `strip_scale` 1, and `ToggleFrameDebug` answered true, then false. The outlines weren't looked at in this run at scale 1, only at scale 2.
+  - A theme switch while windows are open: pass, by `DumpState` only. Through BlackMATE, HighContrast, TraditionalOk, NoSuchTheme and Menta, pluma, caja and gtk3-demo all stayed mapped, the maximised pluma and its frame filled the 1280x800 output, caja kept its 800x526 client area, and `frame_extents` followed the theme. NoSuchTheme logged one `can't load the Marco theme` line. Nobody looked at the frames or tried Menta's buttons afterwards.
+  - Frames at an output scale of 2 in a nested run: pass. The output was at scale 2 and pluma ssd with `strip_scale` 2 and the extents of scale 1. The developer saw the frame labelled x2 and sharp, and the buttons, drag and resize working.
+  - X11 apps map, get frames, take focus and move: pass, by the developer. `DumpState` had xterm, xeyes and the Application Class demo as ssd with extents 1/1/31/1.
+  - Menus and tooltips sit in the override-redirect layer: pass, by the developer.
+  - `_NET_FRAME_EXTENTS` and `_NET_WORKAREA` are right: pass. 1, 1, 31, 1 on xterm, xeyes and the Application Class demo; `_NET_WORKAREA` 0, 0, 1280, 800 once for each of the 4 desktops, and `_GTK_WORKAREAS_D0` the same.
+  - An X11 app's copy and paste to and from a native app: pass, by the developer. The `xclip` read with foot focused wasn't done.
+  - Killing Xwayland brings it back with the root properties republished: pass. Back on the same `:3` about 590 ms after SIGKILL, the six root properties identical before and after, and a new xterm framed with extents 1/1/31/1.
+  - Switching keyboard layouts in native and X11 apps: pass. Xwayland's keymap was `pc_us_es_2_inet(evdev)_group(alt_shift_toggle)`, and the developer typed `;` and `ñ` in pluma and in xterm, one Alt+Shift switching both.
+  - `DumpState` also listed gtk3-demo's main window, client-decorated, 800x645 and with no frame, once for each `gtk3-demo --run` started on Xwayland. Nobody checked whether it shows.
 - **Packaging:** 55 and 56 already added the tty's dependencies: `seatd`, `systemd-libs`, `mesa`, `libdisplay-info`, `libglvnd` and `libinput`. This ticket drops `libdrm`. The Packaging job's namcap on 3380aec ([run 37177692118](https://github.com/JPabloLassala/camino/actions/runs/37177692118)) flagged it as possibly not needed, and it's right: `readelf -d` on a built `camino` shows `libgbm`, `libseat`, `libudev`, `libinput`, `libdisplay-info` and `libxkbcommon`, but no `libdrm`, since Smithay's `drm` crate makes the KMS ioctls itself. mesa depends on libdrm for GBM, so it's still installed. CI's package list drops it too.
 - **namcap warnings that stay,** each explained in the PKGBUILD's comment: ld-linux, `librsvg`, `marco`, `mate-themes` and `xorg-xwayland` (as in 33 and 43), and `libglvnd`, whose libEGL Smithay dlopens.
 - **Smithay's new features** (`backend_drm`, `backend_gbm`, `backend_udev`, `backend_session_libseat`, `backend_libinput`, `renderer_gl`) link nothing beyond those libraries.

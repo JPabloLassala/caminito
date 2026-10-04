@@ -234,8 +234,25 @@ native() { on_tty env -u DISPLAY GDK_BACKEND=wayland setsid "$@" >/dev/null 2>&1
 x11() { on_tty env -u WAYLAND_DISPLAY GDK_BACKEND=x11 setsid "$@" >/dev/null 2>&1 & }
 # show CMD... runs a command and shows it with its output, indented.
 show() { printf '  %s$ %s%s\n' "$DIM" "$*" "$RESET"; "$@" 2>&1 | sed 's/^/    /' || true; }
-# randr ARGS... runs wlr-randr on the tty's Camino and shows its output.
-randr() { show on_tty wlr-randr "$@"; }
+# await_vt waits until Camino's VT is the active one. Camino refuses every output change
+# while it's switched away (58), as it is when the wizard runs from another VT.
+await_vt() {
+  local vt active
+  vt=$(ps -o tty= -p "$CAMINO_PID" 2>/dev/null | tr -d ' ')
+  [[ $vt == tty* ]] || return 0
+  active=$(cat /sys/class/tty/tty0/active 2>/dev/null) || return 0
+  [[ $active != "$vt" ]] || return 0
+  warn "Camino's $vt isn't the active VT, and it refuses output changes while switched away (58)."
+  step "Switch to it (Ctrl+Alt+F${vt#tty}): the change is sent 2 seconds later. Then come back."
+  until [[ $(cat /sys/class/tty/tty0/active) == "$vt" ]]; do sleep 0.5; done
+  sleep 2
+}
+# randr ARGS... runs wlr-randr on the tty's Camino and shows its output. With ARGS it
+# changes the outputs, so it waits for Camino's VT.
+randr() {
+  if (( $# )); then await_vt; fi
+  show on_tty wlr-randr "$@"
+}
 # ok "..." prints a check that passed.
 ok() { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
 

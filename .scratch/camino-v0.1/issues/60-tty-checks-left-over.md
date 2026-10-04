@@ -2,7 +2,7 @@
 
 Type: verification
 Status: open
-Milestone: M4
+Milestone: before v0.1
 Blocked by: 55, 57, 58
 Map: [Camino v0.1](../map.md)
 
@@ -19,10 +19,15 @@ Setup: on a spare tty as `caminotest`, run bare `camino`. With [56](56-libinput-
 
 ## Acceptance criteria
 
-- [ ] Bare `camino` lights both of the developer's monitors in their preferred modes, left to right, at their default scales, and a terminal started with its `WAYLAND_DISPLAY` shows on them.
+- [x] Bare `camino` lights both of the developer's monitors in their preferred modes, left to right, at their default scales, and a terminal started with its `WAYLAND_DISPLAY` shows on them.
 - [ ] Unplugging a monitor removes its output, and a window that was on it moves to the other monitor.
 - [ ] Re-plugging the monitor adds its output again, in its preferred mode and at its default scale.
-- [ ] `wayland-info` lists `wp_linux_drm_syncobj_manager_v1`, and a client that uses explicit sync (a GTK4 app, or `vkcube --wsi wayland` with Mesa) sets acquire points and renders without stalls or tearing.
-- [ ] `wlr-randr` lists both monitors with all their modes, and changes one monitor's mode, scale and position; the picture and `DumpState` follow, and frames keep coming after the mode switch.
-- [ ] `wlr-randr --output <name> --off` turns a monitor off and its windows move to the other; `--on` lights it again.
+- [x] `wayland-info` lists `wp_linux_drm_syncobj_manager_v1`, and a client that uses explicit sync (a GTK4 app, or `vkcube --wsi wayland` with Mesa) sets acquire points and renders without stalls or tearing.
+- [x] `wlr-randr` lists both monitors with all their modes, and changes one monitor's mode, scale and position; the picture and `DumpState` follow, and frames keep coming after the mode switch.
+- [x] `wlr-randr --output <name> --off` turns a monitor off and its windows move to the other; `--on` lights it again.
 - [ ] The results are recorded in this ticket's notes, with a new ticket for each failure.
+
+## Notes
+
+- **Run with 59's closing wizard (2026-10-04),** on `camino-git r116.2e03d31-1`, on the developer's machine. The results are in [59](59-packaging-and-closing-m4.md)'s notes, under *Closing run on the tty*. Of this ticket's criteria: the two monitors at their default scales, explicit sync, and `wlr-randr`'s modes, scales and positions passed. `wlr-randr --off` did nothing in the wizard, but by hand from Camino's VT it turned DP-1 off, foot moved from it to the LG, and `--on` lit it again, so that criterion passed. The hot-plug wasn't run, so its two criteria are still open.
+- **M4 closed without the hot-plug (2026-10-04).** The developer put it off, so this ticket stays open for its two hot-plug criteria and gates no milestone. The *Hot-plugging a monitor* checklist item is the procedure, and stage 7 of 59's wizard walks through it.
