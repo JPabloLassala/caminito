@@ -58,6 +58,7 @@ impl Camino {
         };
         match focus {
             KeyboardFocus::X11(_) => true,
+            KeyboardFocus::Layer(_) => false,
             KeyboardFocus::Surface(surface) => surface.client().as_ref() == Some(&xwayland.client),
         }
     }

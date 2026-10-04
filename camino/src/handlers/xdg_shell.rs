@@ -19,7 +19,7 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::Serial;
+use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::dialog::XdgDialogHandler;
 use smithay::wayland::shell::xdg::{
@@ -32,7 +32,7 @@ use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
 use smithay::wayland::xdg_system_bell::XdgSystemBellHandler;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
 
-use crate::input::GrabKind;
+use crate::input::{GrabKind, KeyboardFocus};
 use crate::output::output_id;
 use crate::state::{Camino, State};
 use crate::window::{StateRequest, WindowKey, owe_configure};
@@ -130,14 +130,16 @@ impl XdgShellHandler for State {
         let Ok(root) = find_popup_root_surface(&popup) else {
             return;
         };
-        if self.camino.mapped_for_surface(&root).is_none() {
+        // A menu takes the keyboard from whatever has it, also when its layer surface never
+        // takes it, as the panel's doesn't.
+        let root = if let Some((_, layer)) = self.camino.layer_for_surface(&root) {
+            KeyboardFocus::Layer(layer)
+        } else if self.camino.mapped_for_surface(&root).is_some() {
+            root.into()
+        } else {
             return;
-        }
-        let Ok(mut grab) = self
-            .camino
-            .popups
-            .grab_popup(root.into(), popup, &seat, serial)
-        else {
+        };
+        let Ok(mut grab) = self.camino.popups.grab_popup(root, popup, &seat, serial) else {
             return;
         };
 
@@ -247,18 +249,32 @@ impl State {
 }
 
 impl Camino {
-    /// Constrains a popup to the output its toplevel is most on, through the positioner's
-    /// constraint adjustments.
-    fn unconstrain_popup(&self, popup: &PopupSurface) {
+    /// Constrains a popup to the output its toplevel is most on, or its layer surface is
+    /// on, through the positioner's constraint adjustments.
+    pub(super) fn unconstrain_popup(&self, popup: &PopupSurface) {
         let kind = PopupKind::Xdg(popup.clone());
-        let Some(geometry) = find_popup_root_surface(&kind)
-            .ok()
-            .and_then(|root| self.mapped_for_surface(&root))
-            .and_then(|id| self.policy.geometry(id))
-        else {
+        let Ok(root) = find_popup_root_surface(&kind) else {
             return;
         };
-        let Some(output) = self
+        let bounds = self
+            .layer_popup_bounds(&root)
+            .or_else(|| self.window_popup_bounds(&root));
+        let Some(mut target) = bounds else {
+            return;
+        };
+        // The positioner works relative to the popup's parent.
+        target.loc -= get_popup_toplevel_coords(&kind);
+        popup.with_pending_state(|state| {
+            state.geometry = state.positioner.get_unconstrained_geometry(target);
+        });
+    }
+
+    /// The output the toplevel `root` is most on, relative to its window geometry.
+    fn window_popup_bounds(&self, root: &WlSurface) -> Option<Rectangle<i32, Logical>> {
+        let geometry = self
+            .mapped_for_surface(root)
+            .and_then(|id| self.policy.geometry(id))?;
+        let mut target = self
             .policy
             .outputs()
             .iter()
@@ -270,18 +286,9 @@ impl Camino {
                 ))
             })
             .max_by_key(|(_, area)| *area)
-            .map(|(output, _)| output)
-        else {
-            return;
-        };
-
-        // The positioner works relative to the parent's window geometry.
-        let mut target = output;
+            .map(|(output, _)| output)?;
         target.loc -= geometry.loc;
-        target.loc -= get_popup_toplevel_coords(&kind);
-        popup.with_pending_state(|state| {
-            state.geometry = state.positioner.get_unconstrained_geometry(target);
-        });
+        Some(target)
     }
 }
 

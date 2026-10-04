@@ -1,4 +1,5 @@
-//! What the keyboard and the pointer can focus: a Wayland surface, or an XWayland window.
+//! What the keyboard and the pointer can focus: a Wayland surface, an XWayland window, or
+//! for the keyboard a layer surface (63).
 //! Through the window, Smithay's `KeyboardTarget` follows its ICCCM input model and sends
 //! `WM_TAKE_FOCUS` (11), and a drag over it speaks XDND rather than `wl_data_device` (37).
 //! The shape is anvil's `KeyboardFocusTarget` and `PointerFocusTarget`
@@ -6,9 +7,10 @@
 
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use smithay::backend::input::{InputTime, KeyState};
-use smithay::desktop::PopupKind;
+use smithay::desktop::{LayerSurface, PopupKind};
 use smithay::input::Seat;
 use smithay::input::dnd::{DndFocus, OfferData, Source};
 use smithay::input::keyboard::{KeyboardTarget, KeysymHandle, ModifiersState};
@@ -32,6 +34,9 @@ use crate::state::State;
 pub enum KeyboardFocus {
     Surface(WlSurface),
     X11(Box<X11Surface>),
+    /// A layer surface, which has the keyboard while policy's focused window keeps the
+    /// focus (63).
+    Layer(LayerSurface),
 }
 
 impl From<WlSurface> for KeyboardFocus {
@@ -62,6 +67,7 @@ impl IsAlive for KeyboardFocus {
         match self {
             KeyboardFocus::Surface(surface) => surface.alive(),
             KeyboardFocus::X11(surface) => surface.alive(),
+            KeyboardFocus::Layer(layer) => layer.alive(),
         }
     }
 }
@@ -71,6 +77,7 @@ impl WaylandFocus for KeyboardFocus {
         match self {
             KeyboardFocus::Surface(surface) => Some(Cow::Borrowed(surface)),
             KeyboardFocus::X11(surface) => surface.wl_surface().map(Cow::Owned),
+            KeyboardFocus::Layer(layer) => Some(Cow::Borrowed(layer.wl_surface())),
         }
     }
 }
@@ -91,6 +98,11 @@ impl KeyboardTarget<State> for KeyboardFocus {
             KeyboardFocus::X11(surface) => {
                 KeyboardTarget::enter(&**surface, seat, data, keys, serial)
             }
+            KeyboardFocus::Layer(layer) => {
+                if let Some(surface) = keyboard_surface(layer, KeyboardEvent::Enter) {
+                    KeyboardTarget::enter(surface, seat, data, keys, serial)
+                }
+            }
         }
     }
 
@@ -98,6 +110,11 @@ impl KeyboardTarget<State> for KeyboardFocus {
         match self {
             KeyboardFocus::Surface(surface) => KeyboardTarget::leave(surface, seat, data, serial),
             KeyboardFocus::X11(surface) => KeyboardTarget::leave(&**surface, seat, data, serial),
+            KeyboardFocus::Layer(layer) => {
+                if let Some(surface) = keyboard_surface(layer, KeyboardEvent::Leave) {
+                    KeyboardTarget::leave(surface, seat, data, serial)
+                }
+            }
         }
     }
 
@@ -117,6 +134,11 @@ impl KeyboardTarget<State> for KeyboardFocus {
             KeyboardFocus::X11(surface) => {
                 KeyboardTarget::key(&**surface, seat, data, key, state, serial, time)
             }
+            KeyboardFocus::Layer(layer) => {
+                if let Some(surface) = keyboard_surface(layer, KeyboardEvent::Other) {
+                    KeyboardTarget::key(surface, seat, data, key, state, serial, time)
+                }
+            }
         }
     }
 
@@ -134,8 +156,43 @@ impl KeyboardTarget<State> for KeyboardFocus {
             KeyboardFocus::X11(surface) => {
                 KeyboardTarget::modifiers(&**surface, seat, data, modifiers, serial)
             }
+            KeyboardFocus::Layer(layer) => {
+                if let Some(surface) = keyboard_surface(layer, KeyboardEvent::Other) {
+                    KeyboardTarget::modifiers(surface, seat, data, modifiers, serial)
+                }
+            }
         }
     }
+}
+
+/// Whether a layer surface was told the keyboard entered it, kept with the surface.
+#[derive(Default)]
+struct KeyboardEntered(AtomicBool);
+
+/// A keyboard event for a layer surface, as `keyboard_surface` tells them apart.
+enum KeyboardEvent {
+    Enter,
+    Leave,
+    Other,
+}
+
+/// The surface the keyboard's events for a layer surface go to, if it heard the keyboard
+/// enter. A popup grab hands the keyboard to its root when it ends, on its way back to
+/// whatever had it, and a layer surface with no keyboard interactivity, such as the panel
+/// under its menu, is to hear nothing of that (63). One that heard the enter always hears
+/// the leave, since unmapping resets its interactivity.
+fn keyboard_surface(layer: &LayerSurface, event: KeyboardEvent) -> Option<&WlSurface> {
+    let entered = &layer.user_data().get_or_insert(KeyboardEntered::default).0;
+    let heard = match event {
+        KeyboardEvent::Enter => {
+            let takes = layer.can_receive_keyboard_focus();
+            entered.store(takes, Ordering::Relaxed);
+            takes
+        }
+        KeyboardEvent::Leave => entered.swap(false, Ordering::Relaxed),
+        KeyboardEvent::Other => entered.load(Ordering::Relaxed),
+    };
+    heard.then(|| layer.wl_surface())
 }
 
 /// The pointer's focus. An XWayland window is its own target, rather than its surface, so

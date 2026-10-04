@@ -81,7 +81,8 @@ expression: without_x_ids(&dump)
         "width": 1920,
         "height": 1080
       },
-      "scale": 1.0
+      "scale": 1.0,
+      "layer_surfaces": []
     },
     {
       "id": 1,
@@ -92,7 +93,8 @@ expression: without_x_ids(&dump)
         "width": 1280,
         "height": 720
       },
-      "scale": 2.0
+      "scale": 2.0,
+      "layer_surfaces": []
     }
   ],
   "x11_scale": 2,

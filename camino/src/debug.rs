@@ -8,7 +8,9 @@ use camino_policy::PolicyWindow;
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
+use smithay::desktop::LayerSurface;
 use smithay::utils::{FrameExtents, Logical, Rectangle};
+use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, Layer};
 
 use crate::decoration::memory_buffer;
 use crate::output::{output_geometry, output_id};
@@ -146,6 +148,47 @@ struct OutputDump {
     name: String,
     geometry: RectDump,
     scale: f64,
+    /// In the order they were made.
+    layer_surfaces: Vec<LayerSurfaceDump>,
+}
+
+#[derive(Serialize)]
+struct LayerSurfaceDump {
+    /// `background`, `bottom`, `top` or `overlay`.
+    layer: &'static str,
+    namespace: String,
+    geometry: RectDump,
+    /// As the protocol has it: what it reserves on its edge, 0 to stay out of what others
+    /// reserve, or -1 to ignore that.
+    exclusive_zone: i32,
+    /// `none`, `exclusive` or `on_demand`.
+    keyboard_interactivity: &'static str,
+}
+
+impl LayerSurfaceDump {
+    fn new(layer: &LayerSurface, geometry: Rectangle<i32, Logical>) -> Self {
+        let state = layer.cached_state();
+        Self {
+            layer: match state.layer {
+                Layer::Background => "background",
+                Layer::Bottom => "bottom",
+                Layer::Top => "top",
+                Layer::Overlay => "overlay",
+            },
+            namespace: layer.namespace().to_owned(),
+            geometry: geometry.into(),
+            exclusive_zone: match state.exclusive_zone {
+                ExclusiveZone::Exclusive(zone) => zone as i32,
+                ExclusiveZone::Neutral => 0,
+                ExclusiveZone::DontCare => -1,
+            },
+            keyboard_interactivity: match state.keyboard_interactivity {
+                KeyboardInteractivity::None => "none",
+                KeyboardInteractivity::Exclusive => "exclusive",
+                KeyboardInteractivity::OnDemand => "on_demand",
+            },
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -188,9 +231,9 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 
 impl Camino {
     /// Windows, with the X window, Marco's type, the published frame extents and the
-    /// struts for XWayland windows, workspaces with their names and stacking, outputs and
-    /// their scales, the X11 scale, and focus, as pretty-printed JSON. The lock state comes
-    /// with the milestone that makes it.
+    /// struts for XWayland windows, workspaces with their names and stacking, outputs with
+    /// their scales and layer surfaces, the X11 scale, and focus, as pretty-printed JSON. The
+    /// lock state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -250,6 +293,11 @@ impl Camino {
                 name: output.name(),
                 geometry: output_geometry(output).into(),
                 scale: output.current_scale().fractional_scale(),
+                layer_surfaces: self
+                    .layer_surfaces(output)
+                    .iter()
+                    .map(|(layer, geometry)| LayerSurfaceDump::new(layer, *geometry))
+                    .collect(),
             })
             .collect();
         let dump = StateDump {
