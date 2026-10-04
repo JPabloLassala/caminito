@@ -26,7 +26,7 @@ M4's code installed through `camino-git` (17: packaging keeps up), its checklist
 ## Notes
 
 - **Not closed (2026-10-04).** The packaging and the checklist items are done. The closing run isn't, because the blockers aren't resolved:
-  - [58](58-wlr-output-management.md) isn't on `master`. Its only code is a WIP commit on `origin/ticket-58-output-management` (0cd91ec), whose CI failed. M4's exit and two of the checklist items below need `wlr-randr`.
+  - [58](58-wlr-output-management.md) is on `master` and resolved since this note was written, with its tty criterion moved to [60](60-tty-checks-left-over.md). M4's exit and two of the checklist items below need `wlr-randr`.
   - [54](54-keyboard-layouts.md), [55](55-the-tty-backend.md), [56](56-libinput-on-the-tty.md) and [57](57-drm-syncobj.md) are on `master`, but their criteria on the tty and nested are unticked.
   - The closing run needs the developer at the machine with both monitors, as `caminotest`.
 - **Packaging:** 55 and 56 already added the tty's dependencies: `seatd`, `systemd-libs`, `mesa`, `libdisplay-info`, `libglvnd` and `libinput`. This ticket drops `libdrm`. The Packaging job's namcap on 3380aec ([run 37177692118](https://github.com/JPabloLassala/camino/actions/runs/37177692118)) flagged it as possibly not needed, and it's right: `readelf -d` on a built `camino` shows `libgbm`, `libseat`, `libudev`, `libinput`, `libdisplay-info` and `libxkbcommon`, but no `libdrm`, since Smithay's `drm` crate makes the KMS ioctls itself. mesa depends on libdrm for GBM, so it's still installed. CI's package list drops it too.

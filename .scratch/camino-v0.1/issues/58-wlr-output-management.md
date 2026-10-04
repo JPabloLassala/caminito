@@ -1,7 +1,7 @@
 # wlr-output-management
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M4
 Blocked by: 51
 Map: [Camino v0.1](../map.md)
@@ -40,4 +40,5 @@ Map: [Camino v0.1](../map.md)
 - **Scales** from a client are snapped to 1/120. A scale sent back as a `wl_fixed` (1.7 comes as 435/256) snaps to what it was.
 - **Tests:** `tests/output_management.rs`, with a wlr-output-management client in `camino-test-client::output_management` that sends every head, as `wlr-randr` does. The headless backend plugs monitors with several modes, and `Headless::refuse_mode` makes one fail, for the test that a failed configuration takes its earlier steps back. `a_client_lists_the_globals` gains `zwlr_output_manager_v1 v4`.
 - **Nested, checked in the virtual machine** with `wlr-randr` 0.5.0: it lists `winit` with its one mode, `flipped-180` and scale 1; `--output winit --scale 1.5` succeeds and the list then shows 1.5; `--off` and `--transform 90` get "failed to apply configuration"; `--dryrun --pos 10,10` succeeds and changes nothing.
-- **The tty criterion isn't checked.** Another ticket's checks had the virtual machine's tty while this was written. It's left as a hand check.
+- **The tty criterion isn't checked, and is unticked.** Another ticket's checks had the virtual machine's tty while this was written, so none of the tty code (mode switch, off and on) has run. It moves to [60](60-tty-checks-left-over.md), on the developer's machine with its two monitors (resolved 2026-10-04 on that basis, as 55 was).
+- **An earlier attempt** is on `origin/ticket-58-output-management` (0cd91ec, WIP, CI failed). This implementation doesn't build on it.
