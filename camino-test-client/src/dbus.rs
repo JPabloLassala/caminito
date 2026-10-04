@@ -27,3 +27,72 @@ pub fn debug_proxy(destination: &str) -> zbus::Result<DebugProxy<'static>> {
         .destination(destination.to_owned())?
         .build()
 }
+
+/// `org.mate.ScreenSaver`, the Screensaver shim (12), with mate-screensaver's methods.
+#[zbus::proxy(
+    interface = "org.mate.ScreenSaver",
+    default_service = "org.mate.ScreenSaver",
+    default_path = "/org/mate/ScreenSaver",
+    gen_async = false,
+    blocking_name = "ScreenSaverProxy"
+)]
+pub trait ScreenSaver {
+    fn lock(&self) -> zbus::Result<()>;
+    fn unlock(&self) -> zbus::Result<()>;
+    fn cycle(&self) -> zbus::Result<()>;
+    fn simulate_user_activity(&self) -> zbus::Result<()>;
+    /// Returns the inhibitor's cookie.
+    fn inhibit(&self, application_name: &str, reason: &str) -> zbus::Result<u32>;
+    fn un_inhibit(&self, cookie: u32) -> zbus::Result<()>;
+    /// A description of each inhibitor.
+    fn get_inhibitors(&self) -> zbus::Result<Vec<String>>;
+    /// Returns the throttle's cookie.
+    fn throttle(&self, application_name: &str, reason: &str) -> zbus::Result<u32>;
+    fn un_throttle(&self, cookie: u32) -> zbus::Result<()>;
+    fn get_active(&self) -> zbus::Result<bool>;
+    fn get_active_time(&self) -> zbus::Result<u32>;
+    fn set_active(&self, value: bool) -> zbus::Result<()>;
+    fn show_message(&self, summary: &str, body: &str, icon: &str) -> zbus::Result<()>;
+}
+
+/// `org.freedesktop.ScreenSaver`, the Screensaver shim's other name (12).
+#[zbus::proxy(
+    interface = "org.freedesktop.ScreenSaver",
+    default_service = "org.freedesktop.ScreenSaver",
+    default_path = "/org/freedesktop/ScreenSaver",
+    gen_async = false,
+    blocking_name = "FreedesktopScreenSaverProxy"
+)]
+pub trait FreedesktopScreenSaver {
+    /// Returns the inhibitor's cookie.
+    fn inhibit(&self, application_name: &str, reason_for_inhibit: &str) -> zbus::Result<u32>;
+    fn un_inhibit(&self, cookie: u32) -> zbus::Result<()>;
+}
+
+/// A proxy for `org.mate.ScreenSaver` at `destination` on `connection`. The caller it is to
+/// Camino lasts as long as `connection` does.
+pub fn screensaver_proxy(
+    connection: &zbus::blocking::Connection,
+    destination: &str,
+) -> zbus::Result<ScreenSaverProxy<'static>> {
+    ScreenSaverProxy::builder(connection)
+        .destination(destination.to_owned())?
+        .build()
+}
+
+/// A proxy for `org.freedesktop.ScreenSaver` at `destination` and `path` on `connection`.
+pub fn freedesktop_screensaver_proxy(
+    connection: &zbus::blocking::Connection,
+    destination: &str,
+    path: &str,
+) -> zbus::Result<FreedesktopScreenSaverProxy<'static>> {
+    FreedesktopScreenSaverProxy::builder(connection)
+        .destination(destination.to_owned())?
+        .path(path.to_owned())?
+        .build()
+}
+
+/// A new connection to the session bus.
+pub fn session() -> zbus::Result<zbus::blocking::Connection> {
+    zbus::blocking::Connection::session()
+}
