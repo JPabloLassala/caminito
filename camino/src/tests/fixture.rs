@@ -125,6 +125,7 @@ pub struct Logs {
 }
 
 impl Logs {
+    /// Starts to capture, in place of whatever the thread logged to.
     pub fn capture() -> Self {
         struct Writer(Arc<Mutex<Vec<u8>>>);
         impl std::io::Write for Writer {
@@ -931,22 +932,28 @@ impl Fixture {
         camino.dbus.as_ref().unwrap().unique_name().unwrap()
     }
 
-    /// Serves Camino's D-Bus interfaces with its well-known names. The tests share one bus,
-    /// so only one fixture at a time has them: this waits for the last one's to be free.
-    pub fn start_dbus_with_names(&mut self) {
-        self.reserve_names();
-        self.state
-            .camino
+    /// Serves Camino's D-Bus interfaces with its well-known names, and returns its unique
+    /// name. The tests share one bus, so only one fixture at a time has the names: this
+    /// waits for the last one's to be free.
+    pub fn start_dbus_with_names(&mut self) -> String {
+        if self.names.is_none() {
+            self.reserve_names();
+        }
+        let camino = &mut self.state.camino;
+        camino
             .start_dbus(crate::dbus::Names::WellKnown)
             .expect("the test binary runs under dbus-run-session (14)");
+        camino.dbus.as_ref().unwrap().unique_name().unwrap()
     }
 
     /// Keeps Camino's well-known names for this fixture until it's dropped, for a test that
     /// owns one itself before Camino starts.
     pub fn reserve_names(&mut self) {
-        static NAMES: Mutex<()> = Mutex::new(());
+        static ONE_FIXTURE: Mutex<()> = Mutex::new(());
         // A test that failed with the names did no harm to them.
-        let names = NAMES.lock().unwrap_or_else(|failed| failed.into_inner());
+        let names = ONE_FIXTURE
+            .lock()
+            .unwrap_or_else(|failed| failed.into_inner());
         // The bus frees a name some time after its owner's connection closes.
         let bus = camino_test_client::dbus::session().unwrap();
         let bus = zbus::blocking::fdo::DBusProxy::new(&bus).unwrap();

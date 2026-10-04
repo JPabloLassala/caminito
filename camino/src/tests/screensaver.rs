@@ -229,9 +229,8 @@ fn the_calls_with_no_effect_are_answered() {
 #[test]
 fn camino_owns_the_screensaver_names() {
     let mut f = Fixture::new();
-    f.start_dbus_with_names();
+    let camino = f.start_dbus_with_names();
     assert!(f.state.camino.dbus_ready());
-    let camino = f.state.camino.dbus.as_ref().unwrap().unique_name().unwrap();
 
     let bus = DBusProxy::new(&session().unwrap()).unwrap();
     for name in ["org.mate.ScreenSaver", "org.freedesktop.ScreenSaver"] {
@@ -256,14 +255,17 @@ fn a_name_that_is_taken_is_logged_and_camino_is_still_ready() {
     let mut f = Fixture::new();
     f.reserve_names();
     let screensaver = session().unwrap();
-    screensaver.request_name("org.mate.ScreenSaver").unwrap();
+    // It would let Camino replace it, if Camino asked to.
+    screensaver
+        .request_name_with_flags(
+            "org.mate.ScreenSaver",
+            RequestNameFlags::AllowReplacement.into(),
+        )
+        .unwrap();
     let screensaver_name = screensaver.unique_name().unwrap().to_string();
 
     assert!(!f.state.camino.dbus_ready());
-    f.state
-        .camino
-        .start_dbus(crate::dbus::Names::WellKnown)
-        .unwrap();
+    let camino = f.start_dbus_with_names();
 
     assert!(f.state.camino.dbus_ready());
     let logs = logs.text();
@@ -274,7 +276,6 @@ fn a_name_that_is_taken_is_logged_and_camino_is_still_ready() {
         "{logs}"
     );
     // The other name is Camino's, and the first is left with its owner.
-    let camino = f.state.camino.dbus.as_ref().unwrap().unique_name().unwrap();
     let bus = DBusProxy::new(&session().unwrap()).unwrap();
     let owner = |name: &'static str| bus.get_name_owner(name.try_into().unwrap()).unwrap();
     assert_eq!(owner("org.freedesktop.ScreenSaver").as_str(), camino);

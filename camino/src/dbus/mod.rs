@@ -7,6 +7,7 @@
 pub mod debug;
 pub mod screensaver;
 
+use futures_channel::oneshot;
 use smithay::reexports::calloop::channel;
 
 use crate::state::{Camino, State};
@@ -19,6 +20,18 @@ pub enum Names {
     /// None: it's reached at its unique name. Tests share one bus, so they can't all own
     /// the well-known names.
     UniqueOnly,
+}
+
+/// Sends the event loop a request, and waits for its reply: what makes an interface's
+/// methods thin (15).
+async fn ask<R, T>(
+    requests: &channel::Sender<R>,
+    request: impl FnOnce(oneshot::Sender<T>) -> R,
+) -> zbus::fdo::Result<T> {
+    let (reply, answer) = oneshot::channel();
+    let gone = || zbus::fdo::Error::Failed("Camino's event loop has stopped".into());
+    requests.send(request(reply)).map_err(|_| gone())?;
+    answer.await.map_err(|_| gone())
 }
 
 /// Camino's connection to the session bus.
@@ -38,8 +51,9 @@ impl Dbus {
 
 impl Camino {
     /// Connects to the session bus and serves Camino's interfaces on it. Connecting is the
-    /// one time the main thread waits on the bus. It returns once the Screensaver shim's
-    /// names are owned or refused (62), so [`Camino::dbus_ready`] holds from then on.
+    /// one time the main thread waits on the bus, and asking for the names is part of it:
+    /// it returns once the Screensaver shim's names are owned or refused (62), so
+    /// [`Camino::dbus_ready`] holds from then on.
     pub fn start_dbus(&mut self, names: Names) -> zbus::Result<()> {
         let debug_requests = self.dbus_requests(Camino::debug_request);
         let screensaver_requests = self.dbus_requests(Camino::screensaver_request);
@@ -74,7 +88,8 @@ impl Camino {
     }
 
     /// Whether Camino's interfaces are served and its names are owned, or were refused
-    /// (62). The session's start-up waits for it before it spawns mate-session (61).
+    /// (62). The session's start-up waits for it before it spawns mate-session (61). It
+    /// never holds if `start_dbus` failed: then there are no names to wait for.
     pub fn dbus_ready(&self) -> bool {
         self.dbus.is_some()
     }

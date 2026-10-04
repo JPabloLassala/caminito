@@ -19,14 +19,15 @@ use zbus::names::BusName;
 use crate::state::Camino;
 
 /// The names mate-screensaver's daemon and X11 applications look for.
-pub const NAMES: [&str; 2] = ["org.mate.ScreenSaver", "org.freedesktop.ScreenSaver"];
-pub const MATE_PATH: &str = "/org/mate/ScreenSaver";
+pub(crate) const NAMES: [&str; 2] = ["org.mate.ScreenSaver", "org.freedesktop.ScreenSaver"];
+/// Where `org.mate.ScreenSaver` is served.
+const MATE_PATH: &str = "/org/mate/ScreenSaver";
 /// `org.freedesktop.ScreenSaver` is served at both (12).
-pub const FREEDESKTOP_PATHS: [&str; 2] = ["/org/freedesktop/ScreenSaver", "/ScreenSaver"];
+const FREEDESKTOP_PATHS: [&str; 2] = ["/org/freedesktop/ScreenSaver", "/ScreenSaver"];
 
 /// What a cookie holds back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HoldKind {
+pub(super) enum HoldKind {
     /// Idle, from M7.
     Inhibit,
     /// Nothing: throttling only slows screensaver themes (12).
@@ -34,21 +35,27 @@ pub enum HoldKind {
 }
 
 /// A call, or a caller that left the bus, for the event loop to answer.
-pub enum Request {
+pub(super) enum Request {
+    /// `Lock`, from `caller`.
     Lock {
         caller: String,
         reply: oneshot::Sender<Result<(), Refused>>,
     },
+    /// `Unlock`, from `caller`.
     Unlock {
         caller: String,
         reply: oneshot::Sender<Result<(), Refused>>,
     },
+    /// `SetActive`.
     SetActive {
         active: bool,
         reply: oneshot::Sender<()>,
     },
+    /// `GetActive`: whether the session is blanked or locked.
     GetActive(oneshot::Sender<bool>),
+    /// `GetActiveTime`: for how many seconds it has been.
     GetActiveTime(oneshot::Sender<u32>),
+    /// `Inhibit` or `Throttle`, answered with the new cookie.
     Hold {
         kind: HoldKind,
         caller: String,
@@ -56,12 +63,14 @@ pub enum Request {
         reason: String,
         reply: oneshot::Sender<u32>,
     },
+    /// `UnInhibit` or `UnThrottle`.
     Release {
         kind: HoldKind,
         caller: String,
         cookie: u32,
         reply: oneshot::Sender<()>,
     },
+    /// `GetInhibitors`: a description of each.
     GetInhibitors(oneshot::Sender<Vec<String>>),
     /// The connection with this unique name is gone, and its cookies with it.
     CallerLeft(String),
@@ -69,7 +78,7 @@ pub enum Request {
 
 /// Why the event loop refused a call.
 #[derive(Debug)]
-pub enum Refused {
+pub(super) enum Refused {
     /// The session can't lock until M7. A caller told that it locked would be wrong in
     /// the unsafe direction (62).
     NoLockYet,
@@ -120,7 +129,7 @@ impl ScreensaverShim {
     }
 
     /// Takes back `cookie` if it's `caller`'s hold of `kind`. mate-screensaver takes back
-    /// any caller's (`gs-listener-dbus.c:1030`, a FIXME there); 12 keeps them per caller.
+    /// any caller's (`gs-listener-dbus.c:1030`, a FIXME there), but they're kept per caller (12).
     fn release(&mut self, kind: HoldKind, caller: &str, cookie: u32) {
         let held = self
             .holds
@@ -131,6 +140,11 @@ impl ScreensaverShim {
         } else {
             tracing::debug!("{caller} has no {kind:?} cookie {cookie} to give back");
         }
+    }
+
+    /// Drops the cookies of a caller that left the bus.
+    fn caller_left(&mut self, caller: &str) {
+        self.holds.retain(|_, hold| hold.caller != caller);
     }
 
     /// The inhibitors as mate-screensaver describes them (`gs-listener-dbus.c:840`).
@@ -190,7 +204,7 @@ impl Camino {
                 let _ = reply.send(Err(Refused::UnlockIsTheLockers));
             }
             Request::SetActive { active, reply } => {
-                tracing::info!("ignoring SetActive({active}): blanking comes with M7");
+                tracing::warn!("can't set the session active to {active}: blanking comes with M7");
                 let _ = reply.send(());
             }
             Request::GetActive(reply) => {
@@ -231,9 +245,7 @@ impl Camino {
                 let _ = reply.send(self.screensaver.inhibitors());
             }
             Request::CallerLeft(caller) => {
-                self.screensaver
-                    .holds
-                    .retain(|_, hold| hold.caller != caller);
+                self.screensaver.caller_left(&caller);
             }
         }
     }
@@ -246,28 +258,34 @@ struct Requests(Sender<Request>);
 impl Requests {
     /// Sends the event loop a request, and waits for its reply.
     async fn ask<T>(&self, request: impl FnOnce(oneshot::Sender<T>) -> Request) -> fdo::Result<T> {
-        let (reply, answer) = oneshot::channel();
-        let gone = || fdo::Error::Failed("Camino's event loop has stopped".into());
-        self.0.send(request(reply)).map_err(|_| gone())?;
-        answer.await.map_err(|_| gone())
+        super::ask(&self.0, request).await
     }
 
+    /// Hands `header`'s sender a cookie.
     async fn hold(
         &self,
         kind: HoldKind,
         header: &Header<'_>,
+        connection: &zbus::Connection,
         application: String,
         reason: String,
     ) -> fdo::Result<u32> {
         let caller = caller(header);
-        self.ask(|reply| Request::Hold {
+        let hold = |reply| Request::Hold {
             kind,
-            caller,
+            caller: caller.clone(),
             application,
             reason,
             reply,
-        })
-        .await
+        };
+        let cookie = self.ask(hold).await?;
+        // The caller watch is another task, so a caller that left at once can have been
+        // reported before the loop got this call, and its cookie would stay for good. A
+        // caller that's still on the bus now is reported after it.
+        if !on_the_bus(connection, &caller).await {
+            let _ = self.0.send(Request::CallerLeft(caller));
+        }
+        Ok(cookie)
     }
 
     async fn release(&self, kind: HoldKind, header: &Header<'_>, cookie: u32) -> fdo::Result<()> {
@@ -288,7 +306,18 @@ fn caller(header: &Header<'_>) -> String {
     header.sender().map(ToString::to_string).unwrap_or_default()
 }
 
-pub struct MateInterface {
+/// Whether `name` has an owner. An answer that can't be had counts as yes: the caller
+/// watch still reports it when it leaves.
+async fn on_the_bus(connection: &zbus::Connection, name: &str) -> bool {
+    let has_owner = async {
+        let bus = fdo::DBusProxy::new(connection).await?;
+        zbus::Result::Ok(bus.name_has_owner(BusName::try_from(name)?).await?)
+    };
+    has_owner.await.unwrap_or(true)
+}
+
+/// `org.mate.ScreenSaver`, with mate-screensaver's methods.
+struct MateInterface {
     requests: Requests,
 }
 
@@ -318,11 +347,18 @@ impl MateInterface {
     async fn inhibit(
         &self,
         #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
         application_name: String,
         reason: String,
     ) -> fdo::Result<u32> {
         self.requests
-            .hold(HoldKind::Inhibit, &header, application_name, reason)
+            .hold(
+                HoldKind::Inhibit,
+                &header,
+                connection,
+                application_name,
+                reason,
+            )
             .await
     }
 
@@ -342,11 +378,18 @@ impl MateInterface {
     async fn throttle(
         &self,
         #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
         application_name: String,
         reason: String,
     ) -> fdo::Result<u32> {
         self.requests
-            .hold(HoldKind::Throttle, &header, application_name, reason)
+            .hold(
+                HoldKind::Throttle,
+                &header,
+                connection,
+                application_name,
+                reason,
+            )
             .await
     }
 
@@ -397,7 +440,7 @@ impl MateInterface {
 
 /// `org.freedesktop.ScreenSaver`: the inhibitors only, the same set as
 /// `org.mate.ScreenSaver`'s (12).
-pub struct FreedesktopInterface {
+struct FreedesktopInterface {
     requests: Requests,
 }
 
@@ -407,6 +450,7 @@ impl FreedesktopInterface {
     async fn inhibit(
         &self,
         #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
         application_name: String,
         reason_for_inhibit: String,
     ) -> fdo::Result<u32> {
@@ -414,6 +458,7 @@ impl FreedesktopInterface {
             .hold(
                 HoldKind::Inhibit,
                 &header,
+                connection,
                 application_name,
                 reason_for_inhibit,
             )
@@ -463,6 +508,8 @@ pub(super) async fn own_names(connection: &zbus::Connection) {
             Ok(RequestNameReply::Exists | RequestNameReply::InQueue)
             | Err(zbus::Error::NameTaken) => {
                 let owner = owner(connection, name).await;
+                // An error, though Camino carries on: the session can then get an X11
+                // lock that Camino can't show (62).
                 tracing::error!("can't own {name}: {owner} has it");
             }
             Err(err) => tracing::error!("can't own {name}: {err}"),
