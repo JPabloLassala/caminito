@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sun, 4 Oct 2026 12:00:00 -0300
+Subject: [PATCH] action-button: Shut down through the session manager on
+ Wayland too
+
+On Wayland, Shut Down showed the panel's own dialog and ran shutdown and
+systemctl itself, also in a session that has a session manager. That
+bypassed the session manager's dialog, its inhibitors and its orderly end of
+the session.
+
+Show the panel's dialog only when org.gnome.SessionManager has no owner.
+With an owner, ask it to shut down and ask it if shut down is available, as
+on X11.
+---
+ .../libpanel-util/panel-session-manager.c      | 18 ++++++++++++++++++
+ .../libpanel-util/panel-session-manager.h      |  1 +
+ mate-panel/panel-action-button.c               | 18 ++++++++++++++----
+ 3 files changed, 33 insertions(+), 4 deletions(-)
+
+diff --git a/mate-panel/libpanel-util/panel-session-manager.c b/mate-panel/libpanel-util/panel-session-manager.c
+index a4a17862..3ccbe3f8 100644
+--- a/mate-panel/libpanel-util/panel-session-manager.c
++++ b/mate-panel/libpanel-util/panel-session-manager.c
+@@ -126,6 +126,24 @@ panel_session_manager_request_shutdown (PanelSessionManager *manager)
+ 	}
+ }
+ 
++gboolean
++panel_session_manager_is_present (PanelSessionManager *manager)
++{
++	char *owner;
++	gboolean is_present;
++
++	g_return_val_if_fail (PANEL_IS_SESSION_MANAGER (manager), FALSE);
++
++	if (manager->proxy == NULL)
++		return FALSE;
++
++	owner = g_dbus_proxy_get_name_owner (manager->proxy);
++	is_present = owner != NULL;
++	g_free (owner);
++
++	return is_present;
++}
++
+ gboolean
+ panel_session_manager_is_shutdown_available (PanelSessionManager *manager)
+ {
+diff --git a/mate-panel/libpanel-util/panel-session-manager.h b/mate-panel/libpanel-util/panel-session-manager.h
+index fe148e9d..6e01aa94 100644
+--- a/mate-panel/libpanel-util/panel-session-manager.h
++++ b/mate-panel/libpanel-util/panel-session-manager.h
+@@ -46,6 +46,7 @@ void panel_session_manager_request_logout   (PanelSessionManager           *sess
+ 					     PanelSessionManagerLogoutType  mode);
+ void panel_session_manager_request_shutdown (PanelSessionManager *session);
+ 
++gboolean panel_session_manager_is_present            (PanelSessionManager *session);
+ gboolean panel_session_manager_is_shutdown_available (PanelSessionManager *session);
+ 
+ G_END_DECLS
+diff --git a/mate-panel/panel-action-button.c b/mate-panel/panel-action-button.c
+index ba598ea7..d34d1a7e 100644
+--- a/mate-panel/panel-action-button.c
++++ b/mate-panel/panel-action-button.c
+@@ -341,13 +341,24 @@ wayland_shutdown_dialog_add_button (GtkDialog   *dialog,
+ 
+ 	return button;
+ }
++
++/* A session manager has its own shut down dialog, and knows the inhibitors.
++ * The dialog here is for a Wayland session without one.
++ */
++static gboolean
++panel_action_shutdown_is_ours (void)
++{
++	if (!GDK_IS_WAYLAND_DISPLAY (gdk_display_get_default ()))
++		return FALSE;
++
++	return !panel_session_manager_is_present (panel_session_manager_get ());
++}
+ #endif
+ static void
+ panel_action_shutdown (GtkWidget *widget)
+ {
+ #ifdef HAVE_WAYLAND
+-	GdkDisplay *display = gdk_display_get_default ();
+-	if (GDK_IS_WAYLAND_DISPLAY (display))
++	if (panel_action_shutdown_is_ours ())
+ 	{
+ 		GtkWidget *dialog, *hbox, *buttonbox, *shutdown_btn, *label;
+ 		GtkStyleContext *context;
+@@ -427,8 +438,7 @@ panel_action_shutdown_reboot_is_disabled (void)
+ 	if (panel_lockdown_get_disable_log_out())
+ 		return TRUE;
+ #ifdef HAVE_WAYLAND
+-	GdkDisplay *display = gdk_display_get_default ();
+-	if (!(panel_lockdown_get_disable_log_out()) && (GDK_IS_WAYLAND_DISPLAY (display)))
++	if (panel_action_shutdown_is_ours ())
+ 		return FALSE;
+ #endif
+ 	manager = panel_session_manager_get ();

@@ -20,6 +20,7 @@ jobs:
       # against it. The patched packages come before camino-git, which will depend on them (16).
       PACKAGES: >-
         mate-session-manager-camino
+        mate-panel-camino
         camino-git
     steps:
       # rustup provides cargo, so makepkg doesn't pull in the rust package.
