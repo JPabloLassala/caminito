@@ -54,6 +54,63 @@ jobs:
             gh issue create --title "$title" --body "$body"
           fi
 
+  # Each patched package's series on its component's upstream head (14, 16), so a patch
+  # that stops applying or building is known before the baseline has to move.
+  patches-on-head:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - mate-session-manager-camino
+    steps:
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - uses: actions/checkout@v5
+
+      # makepkg refuses to run as root. The builder installs dependencies through sudo.
+      - name: Add a build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+          chown -R builder: "$GITHUB_WORKSPACE"
+
+      # A pinned commit becomes the default branch's head, and a tag does too.
+      - name: Point the source at upstream's head
+        working-directory: packaging/arch/${{ matrix.package }}
+        run: |
+          sed -i -E '/^source=\(/,/^\)/s/#(commit|tag)=[^"]*//' PKGBUILD
+          if grep -E '#(commit|tag)=' PKGBUILD; then exit 1; fi
+
+      # The pinned source's checksum doesn't hold for the head. pkgver() names what was built.
+      - name: makepkg
+        working-directory: packaging/arch/${{ matrix.package }}
+        run: sudo -u builder makepkg --syncdeps --noconfirm --skipchecksums
+
+  patches-on-head-report:
+    needs: patches-on-head
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the patches issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Carried patches failing on upstream head"
+          body="The weekly build of a patched package on its upstream head failed: $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
   proptest:
     runs-on: ubuntu-latest
     container: archlinux:latest

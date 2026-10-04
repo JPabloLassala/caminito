@@ -12,15 +12,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  camino-git:
+  packages:
     runs-on: ubuntu-latest
     container: archlinux:latest
+    env:
+      # In dependency order. Each package is installed as it's built, so the next one builds
+      # against it. The patched packages come before camino-git, which will depend on them (16).
+      PACKAGES: >-
+        mate-session-manager-camino
+        camino-git
     steps:
       # rustup provides cargo, so makepkg doesn't pull in the rust package.
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git namcap rustup
 
-      # pkgver() needs the history and tags.
+      # camino-git's pkgver() needs the history and tags.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -34,20 +40,19 @@ jobs:
           sudo -u builder rustup toolchain install stable --profile minimal
 
       # namcap exits 0 whatever it finds, so its errors are grepped for. Warnings are
-      # printed for review.
-      - name: namcap PKGBUILD
-        working-directory: packaging/arch/camino-git
-        # As builder, so git trusts the checkout that source=() reads.
+      # printed for review. It reads the PKGBUILD as builder, so git trusts the checkout
+      # that camino-git's source=() reads. makepkg also makes a -debug package for C code, which
+      # isn't checked.
+      - name: Build and check each package
+        shell: bash
         run: |
-          sudo -u builder namcap PKGBUILD | tee namcap.log
-          ! grep -q ' E: ' namcap.log
-
-      - name: makepkg
-        working-directory: packaging/arch/camino-git
-        run: sudo -u builder makepkg --syncdeps --install --noconfirm
-
-      - name: namcap package
-        working-directory: packaging/arch/camino-git
-        run: |
-          namcap ./*.pkg.tar.zst | tee namcap.log
-          ! grep -q ' E: ' namcap.log
+          for package in $PACKAGES; do
+            echo "::group::$package"
+            cd "$GITHUB_WORKSPACE/packaging/arch/$package"
+            sudo -u builder namcap PKGBUILD | tee namcap.log
+            if grep -q ' E: ' namcap.log; then exit 1; fi
+            sudo -u builder makepkg --syncdeps --install --noconfirm
+            namcap $(ls ./*.pkg.tar.zst | grep -v -- '-debug-') | tee namcap.log
+            if grep -q ' E: ' namcap.log; then exit 1; fi
+            echo "::endgroup::"
+          done

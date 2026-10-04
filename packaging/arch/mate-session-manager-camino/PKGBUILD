@@ -1,0 +1,111 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Alexander Epaneshnikov <alex19ep@archlinux.org>
+# Contributor: Brad Fanella <cesura@archlinux.org>
+# Contributor: Martin Wimpress <code@flexion.org>
+
+# Arch's mate-session-manager PKGBUILD with the smallest diff (16), so a change there shows
+# what to carry over. The differences: the name, the pinned commit and its pkgver(), provides
+# and conflicts, and the carried patches (ADR 0011).
+
+pkgname=mate-session-manager-camino
+_pkgname=mate-session-manager
+# mate-session-manager has no 1.29 tag, so the baseline is a master commit (16). It's pinned,
+# so the package needs no -git suffix. The weekly job builds the patches on master instead.
+_commit=57a9178e766cd02176dc1c2d70cc48f963ee9fff
+pkgver=1.28.0.r23.g57a9178
+pkgrel=1
+pkgdesc="The MATE Session Handler, with Camino's carried patches"
+arch=(x86_64)
+url='https://github.com/mate-desktop/mate-session-manager'
+license=(GPL-2.0-or-later)
+depends=(
+  bash
+  cairo
+  dbus
+  dbus-glib
+  dconf
+  gdk-pixbuf2
+  glib2
+  glibc
+  gtk3
+  hicolor-icon-theme
+  libepoxy
+  libgcc
+  libglvnd
+  libice
+  libsm
+  libx11
+  libxau
+  libxcomposite
+  libxext
+  libxrender
+  libxtst
+  mate-desktop
+  systemd-libs
+)
+makedepends=(
+  docbook-xsl
+  git
+  glib2-devel
+  mate-common
+  xmlto
+  xtrans
+)
+optdepends=(
+  'gnome-keyring: keyring support'
+  'xdg-user-dirs-gtk: manage user directories'
+)
+groups=(mate)
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("$_pkgname=$pkgver")
+conflicts=("$_pkgname")
+# Both patches are active only when MATE_WM_NAME=Camino (08, ADR 0004).
+source=(
+  "git+https://github.com/mate-desktop/mate-session-manager.git#commit=$_commit"
+  git+https://github.com/mate-desktop/mate-submodules.git
+  0001-main-Unset-GDK_BACKEND-under-Camino.patch
+  0002-main-Skip-the-windowmanager-required-component-under.patch
+)
+b2sums=(
+  ef165f32eef80783df69906d7054bd51133099b10141a033a269c33086dd66a9f60315b6b10b95c72e1d25662a9d9870aba5c9546cb99865d6ba0b6716efa55b
+  SKIP
+  bfb9db6542cbb161c3ca2dfc1205093421fc15d3a9a6fa27d2445c0bf72fcfa156d6a9c528ad4badadf47ffa8a81e3441a40a600a7f89945a33adcfeaf120069
+  4a236cc71486bc8d7102b0c036426a29381ccc3045b8ec4c7c20afc5bdc580847f24e496440ab47bb74c9b06078fd2ded12e3da91418db80ee848f884745f16e
+)
+
+pkgver() {
+  cd $_pkgname
+  git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+prepare() {
+  cd $_pkgname
+
+  git submodule init
+  git config submodule.mate-submodules.url "$srcdir/mate-submodules"
+  git -c protocol.file.allow=always submodule update
+
+  local src
+  for src in "${source[@]}"; do
+    [[ $src = *.patch ]] || continue
+    patch -Np1 -i "$srcdir/$src"
+  done
+
+  autoreconf -fiv
+}
+
+build() {
+  cd $_pkgname
+  ./configure \
+    --prefix=/usr \
+    --libexecdir="/usr/lib/$_pkgname" \
+    --sysconfdir=/etc \
+    --localstatedir=/var
+  make
+}
+
+package() {
+  cd $_pkgname
+  make DESTDIR="$pkgdir" install
+}
