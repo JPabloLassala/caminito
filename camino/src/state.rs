@@ -77,6 +77,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::OutputRecord;
+use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::output_management::OutputManagementState;
@@ -134,6 +135,8 @@ pub struct Camino {
     /// ext-foreign-toplevel-list's handle for each window it lists, whose identifier names
     /// the window to M6's `GetActiveToplevel` and image capture.
     pub(crate) foreign_toplevel_handles: HashMap<WindowId, ForeignToplevelHandle>,
+    /// The workspaces as a panel's workspace switcher sees them (66).
+    pub ext_workspace_state: ExtWorkspaceState,
 
     // Input (06).
     pub pointer_constraints_state: PointerConstraintsState,
@@ -599,6 +602,7 @@ impl Camino {
             foreign_toplevel_state: ForeignToplevelState::new::<State>(dh),
             foreign_toplevel_list_state: ForeignToplevelListState::new::<State>(dh),
             foreign_toplevel_handles: HashMap::new(),
+            ext_workspace_state: ExtWorkspaceState::new::<State>(dh),
 
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),
@@ -803,6 +807,7 @@ impl Camino {
         self.refresh_output_management();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
+        self.refresh_ext_workspace();
         for mapped in self.policy.windows() {
             mapped.flush();
         }

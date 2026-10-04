@@ -5,11 +5,12 @@
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
 //! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, [`output_management`]
-//! configures the outputs as `wlr-randr` does, [`foreign_toplevel`] lists the windows as a
-//! panel does, [`gtk_shell`] speaks GTK3's own protocol, and [`layer_shell`] makes layer
-//! surfaces.
+//! configures the outputs as `wlr-randr` does, [`foreign_toplevel`] lists the windows and
+//! [`ext_workspace`] the workspaces as a panel does, [`gtk_shell`] speaks GTK3's own
+//! protocol, and [`layer_shell`] makes layer surfaces.
 
 pub mod dbus;
+pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gtk_shell;
 pub mod layer_shell;
@@ -152,6 +153,8 @@ pub struct State {
     pub output_management: output_management::OutputManagement,
     /// The toplevels foreign toplevel management and the foreign toplevel list show.
     pub foreign_toplevels: foreign_toplevel::ForeignToplevels,
+    /// The workspaces ext-workspace shows.
+    pub workspaces: ext_workspace::Workspaces,
     gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
 }
 
@@ -914,6 +917,15 @@ impl Dispatch<WlCallback, Arc<AtomicBool>> for State {
 }
 
 impl State {
+    /// The name of a bound output, as the events that name one are recorded.
+    fn output_name(&self, output: &WlOutput) -> String {
+        self.outputs
+            .iter()
+            .find(|bound| bound.proxy == *output)
+            .and_then(|bound| bound.name.clone())
+            .unwrap_or("an unnamed output".to_owned())
+    }
+
     fn surface_ref(&self, surface: &WlSurface) -> SurfaceRef {
         if let Some(i) = self.windows.iter().position(|w| w.surface == *surface) {
             SurfaceRef::Window(WindowId(i))

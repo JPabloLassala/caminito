@@ -6,6 +6,7 @@ mod cursors;
 mod debug;
 mod decoration;
 mod drag_icons;
+mod ext_workspace;
 mod fixture;
 mod foreign_toplevel;
 mod frames;

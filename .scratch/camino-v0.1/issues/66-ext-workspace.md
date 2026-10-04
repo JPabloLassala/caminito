@@ -1,7 +1,7 @@
 # ext-workspace
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5
 Blocked by:
 Map: [Camino v0.1](../map.md)
@@ -25,14 +25,14 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] Headless snapshot tests, written before the code:
+- [x] Headless snapshot tests, written before the code:
   - a client gets one group with the outputs, four workspaces with names, two-value coordinates and `activate`, the first `active`, then `done`;
   - switching workspace by binding moves `active`, with one `done`;
   - `activate` then `commit` switches workspace, and `activate` without `commit` doesn't;
   - `num-workspaces` 4 to 6 adds two, 6 to 2 removes four, and a new name is sent;
   - `remove` and `create_workspace` from a client change nothing;
   - a new output enters the group.
-- [ ] `a_client_lists_the_globals` gains `ext_workspace_manager_v1`.
+- [x] `a_client_lists_the_globals` gains `ext_workspace_manager_v1`.
 
 ## Notes
 
@@ -40,3 +40,15 @@ Map: [Camino v0.1](../map.md)
 - **Window-to-workspace** isn't in either protocol: libxfce4windowing can't tell which workspace a toplevel is on, so the window list shows every workspace's windows. Whether that's acceptable for v0.1 is checked in [72](72-session-file-and-first-login.md).
 - **The security-context filter** on the global is [68](68-data-control-and-privileged-globals.md).
 - **Smithay may have gained `ext_workspace`** since 03's audit at `928d4a9`. Check the pinned `rev` first; if it has it, use it and keep this ticket's behaviour.
+- **Resolved on 2026-10-04.** Checked in the virtual machine (aarch64): the tests in `tests/ext_workspace.rs` and the full suite on a private bus (`dbus-run-session`). camino-theme's goldens fail on aarch64, as they do on `master`. No pager was run against it; [72](72-session-file-and-first-login.md) sees mate-panel's workspace switcher in a real session.
+- **Smithay has no `ext_workspace`** at the pinned `rev` (`928d4a9`), so `protocols::ext_workspace` is Camino's, written from the XML. `wayland-protocols` 0.32.13 has the bindings.
+- **Written before the code:** the test client and the ticket's tests were written and seen to fail (no global) before the protocol module. The tests for `stop` and for a removed handle came after the review.
+- **Decided here, beyond what the ticket says:**
+  - **`id` is the workspace's number, from 1,** as a string: "1" to "36".
+  - **A workspace that comes back is a new handle with the same id.** A client's old handle for that id was sent `removed` and stays inert.
+  - **Of several `activate`s before a `commit`, the last counts,** since one workspace is active. An `activate` for a workspace that goes before the `commit` is dropped. `commit` with nothing pending does nothing.
+  - **`stop`:** the client is sent `finished`, which destroys the manager, and gets no event after it: each later event would need the manager's `done`.
+  - **A client that destroys its group handle** gets no new one, so no more output events and no `workspace_enter` for new workspaces. The protocol allows that.
+  - **`output_enter` is by `wl_output`,** so a client that binds an output after the manager is told on the next refresh, as in [65](65-foreign-toplevel.md).
+  - **`deactivate` is ignored too,** with `remove`, `assign` and `create_workspace`.
+- **Review left as is:** the diff of a client's `wl_output`s is written twice, here and in `protocols::foreign_toplevel`, and the workspace id is a `String`, not a type. No test sends `assign`.

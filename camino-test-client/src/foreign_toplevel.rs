@@ -3,7 +3,6 @@
 //! and asks for them to be activated, closed, minimised, maximised and made fullscreen. It
 //! lists the toplevels of `ext_foreign_toplevel_list_v1` too.
 
-use wayland_client::protocol::wl_output::WlOutput;
 use wayland_client::{Connection, Dispatch, QueueHandle, event_created_child};
 use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::{
     self, ExtForeignToplevelHandleV1,
@@ -193,17 +192,6 @@ pub fn format_toplevels(toplevels: &[Toplevel]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-impl State {
-    /// The name of a bound output.
-    fn output_name(&self, output: &WlOutput) -> String {
-        self.outputs
-            .iter()
-            .find(|bound| bound.proxy == *output)
-            .and_then(|bound| bound.name.clone())
-            .unwrap_or("an unnamed output".to_owned())
-    }
 }
 
 impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for State {
