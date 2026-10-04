@@ -230,7 +230,7 @@ read_nested() {
 # scratch dconf database, read from its environment as the checklist's nested_env does.
 nested_gsettings() {
   local pid
-  pid=$(pgrep -n -x camino) || { warn "no camino is running"; return 1; }
+  pid=$(pgrep -n -x -u "$(id -u)" camino) || { warn "no camino is running"; return 1; }
   env $(tr '\0' '\n' </proc/"$pid"/environ |
     grep -E '^(DBUS_SESSION_BUS_ADDRESS|XDG_CONFIG_HOME)=') gsettings "$@"
 }
