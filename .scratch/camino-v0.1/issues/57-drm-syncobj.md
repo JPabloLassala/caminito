@@ -1,7 +1,7 @@
 # drm-syncobj
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M4
 Blocked by: 55
 Map: [Camino v0.1](../map.md)
@@ -16,5 +16,18 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] On the tty as `caminotest`, the global is offered (`wayland-info`), and a client using explicit sync (a GTK4 app, or `vkcube --wsi wayland` with Mesa) renders without stalls or tearing.
-- [ ] Nested, the global isn't offered.
+- [ ] On the tty as `caminotest`, the global is offered (`wayland-info`), and a client using explicit sync (a GTK4 app, or `vkcube --wsi wayland` with Mesa) renders without stalls or tearing. The global was checked in the virtual machine; no client there uses explicit sync, so that part is [60](60-tty-checks-left-over.md)'s.
+- [x] Nested, the global isn't offered.
+
+## Hand-check notes
+
+Checked on 2026-10-04 in the UTM virtual machine (Arch Linux ARM, Linux 7.2.8, virtio-gpu with virgl, Mesa 26.2.3), with 5828597's `camino`:
+
+- **Nested:** `wayland-info` on a `tools/dev-nested --bin` Camino in Plasma lists neither `zwp_linux_dmabuf_v1` nor `wp_linux_drm_syncobj_manager_v1`.
+- **On the tty as `caminotest`:** `wayland-info` lists `zwp_linux_dmabuf_v1` version 6, with the render formats on `/dev/dri/renderD128` as its one tranche, and `wp_linux_drm_syncobj_manager_v1` version 1. So virtio-gpu waits on syncobj timelines' points.
+- **A dmabuf client:** `es2gears_wayland` for 15 s made 4 dmabufs and committed 57 to 68 times in each second, with no gap, so the wait on the implicit fence doesn't stall it. Camino logged no error.
+- **Not checked:** explicit sync itself. Mesa's EGL on virgl sees the global and doesn't bind it, so `es2gears_wayland` set no acquire point, and a GTK4 app would use the same EGL. The machine has no Vulkan driver for `vkcube`. Nobody watched the screen, so tearing wasn't looked for.
+
+A tty Camino started through `systemd-run` needs a VT above 6 there: on 1 to 6 logind starts `kmsconvt@`, which hangs the tty up, and Camino quits without a word.
+
+The acquire and release points are met only as far as the review of the code against anvil goes. A client that uses them, on a real GPU, is [60](60-tty-checks-left-over.md)'s, so this ticket is resolved.
