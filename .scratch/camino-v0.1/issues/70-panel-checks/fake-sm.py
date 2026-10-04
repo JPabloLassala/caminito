@@ -1,3 +1,4 @@
+# A stand-in owner of org.gnome.SessionManager that prints each call it gets.
 from gi.repository import Gio, GLib
 xml = """<node><interface name='org.gnome.SessionManager'>
 <method name='CanShutdown'><arg type='b' direction='out'/></method>

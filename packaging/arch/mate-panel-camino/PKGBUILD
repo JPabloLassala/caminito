@@ -37,8 +37,8 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         0002-action-button-Shut-down-through-the-session-manager-.patch)
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             'SKIP'
-            '4781960c2ddd05337b8cbca507e761fd8aa357555414722fb7c25ddf5a26851b'
-            '18563394972ad11fa28b45c4933939bc3292334ee33c136086f9a37431f18a7a')
+            '7b33e869a2cd4d4154a0a11fa977f55e7e984ffc41be18e3c2b14885a8ecb490'
+            '94a0dcc1016524880f416370c2a4f419b14f5fe7a539a7ddcf82d8adfd0a934e')
 
 pkgver() {
     cd "${_pkgname}"

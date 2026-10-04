@@ -60,7 +60,7 @@ index fe148e9d..6e01aa94 100644
  
  G_END_DECLS
 diff --git a/mate-panel/panel-action-button.c b/mate-panel/panel-action-button.c
-index ba598ea7..d34d1a7e 100644
+index ba598ea7..e4ef5fc9 100644
 --- a/mate-panel/panel-action-button.c
 +++ b/mate-panel/panel-action-button.c
 @@ -341,13 +341,24 @@ wayland_shutdown_dialog_add_button (GtkDialog   *dialog,
@@ -72,7 +72,7 @@ index ba598ea7..d34d1a7e 100644
 + * The dialog here is for a Wayland session without one.
 + */
 +static gboolean
-+panel_action_shutdown_is_ours (void)
++panel_action_shutdown_uses_own_dialog (void)
 +{
 +	if (!GDK_IS_WAYLAND_DISPLAY (gdk_display_get_default ()))
 +		return FALSE;
@@ -86,7 +86,7 @@ index ba598ea7..d34d1a7e 100644
  #ifdef HAVE_WAYLAND
 -	GdkDisplay *display = gdk_display_get_default ();
 -	if (GDK_IS_WAYLAND_DISPLAY (display))
-+	if (panel_action_shutdown_is_ours ())
++	if (panel_action_shutdown_uses_own_dialog ())
  	{
  		GtkWidget *dialog, *hbox, *buttonbox, *shutdown_btn, *label;
  		GtkStyleContext *context;
@@ -96,7 +96,7 @@ index ba598ea7..d34d1a7e 100644
  #ifdef HAVE_WAYLAND
 -	GdkDisplay *display = gdk_display_get_default ();
 -	if (!(panel_lockdown_get_disable_log_out()) && (GDK_IS_WAYLAND_DISPLAY (display)))
-+	if (panel_action_shutdown_is_ours ())
++	if (panel_action_shutdown_uses_own_dialog ())
  		return FALSE;
  #endif
  	manager = panel_session_manager_get ();

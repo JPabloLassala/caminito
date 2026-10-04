@@ -13,11 +13,11 @@ panel's surface. A window in a group gets the group's button. The geometry is
 sent from an idle, because the buttons are first allocated before the panel
 has a surface.
 ---
- applets/wncklet/wayland-backend.c | 72 +++++++++++++++++++++++++++++++
- 1 file changed, 72 insertions(+)
+ applets/wncklet/wayland-backend.c | 73 +++++++++++++++++++++++++++++++
+ 1 file changed, 73 insertions(+)
 
 diff --git a/applets/wncklet/wayland-backend.c b/applets/wncklet/wayland-backend.c
-index c0743475..def993a3 100644
+index c0743475..2de3ed59 100644
 --- a/applets/wncklet/wayland-backend.c
 +++ b/applets/wncklet/wayland-backend.c
 @@ -70,6 +70,7 @@ typedef struct
@@ -28,7 +28,7 @@ index c0743475..def993a3 100644
  	gboolean rebuilding;
  	GHashTable *apps;
  	GHashTable *window_to_group;
-@@ -131,6 +132,58 @@ static void tasklist_assign_to_group (TasklistManager *tasklist, ToplevelTask *t
+@@ -131,6 +132,67 @@ static void tasklist_assign_to_group (TasklistManager *tasklist, ToplevelTask *t
  static void group_task_child_state_changed (GroupTask *group);
  static void tasklist_rebuild (TasklistManager *tasklist);
  
@@ -52,7 +52,7 @@ index c0743475..def993a3 100644
 +		GdkRectangle rect;
 +
 +		button = task->button;
-+		if (task->group && !gtk_widget_get_mapped (button))
++		if (task->group && (button == NULL || !gtk_widget_get_mapped (button)))
 +			button = task->group->button;
 +		if (button == NULL || !gtk_widget_get_mapped (button))
 +			continue;
@@ -84,21 +84,27 @@ index c0743475..def993a3 100644
 +		tasklist->button_geometry_idle = g_idle_add (tasklist_update_button_geometry, tasklist);
 +}
 +
++static void
++tasklist_track_button_geometry (TasklistManager *tasklist, GtkWidget *button)
++{
++	g_signal_connect_swapped (button, "map",
++				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
++	g_signal_connect_swapped (button, "size-allocate",
++				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
++}
++
  static void
  update_task_state (ToplevelTask *task)
  {
-@@ -753,6 +806,10 @@ group_task_new (TasklistManager *tasklist, XfwApplication *app)
+@@ -753,6 +815,7 @@ group_task_new (TasklistManager *tasklist, XfwApplication *app)
  			  G_CALLBACK (on_group_button_press), group);
  	g_signal_connect (group->button, "scroll-event",
  			  G_CALLBACK (tasklist_scroll_event), tasklist);
-+	g_signal_connect_swapped (group->button, "map",
-+				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
-+	g_signal_connect_swapped (group->button, "size-allocate",
-+				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
++	tasklist_track_button_geometry (tasklist, group->button);
  
  	g_signal_connect (app, "icon-changed",
  			  G_CALLBACK (group_task_icon_changed), group);
-@@ -808,6 +865,9 @@ group_task_add_window (GroupTask *group, ToplevelTask *task)
+@@ -808,6 +871,9 @@ group_task_add_window (GroupTask *group, ToplevelTask *task)
  	group_task_update_member_buttons (group);
  	group_task_child_state_changed (group);
  	group_task_update_name_for (group, task);
@@ -108,28 +114,23 @@ index c0743475..def993a3 100644
  }
  
  static void
-@@ -1055,6 +1115,12 @@ tasklist_manager_disconnected_from_widget (TasklistManager *tasklist)
- 		tasklist->auto_grouping_idle = 0;
+@@ -1120,6 +1186,10 @@ tasklist_manager_disconnected_from_widget (TasklistManager *tasklist)
+ 		tasklist->context_menu = NULL;
  	}
  
++	/* after the buttons are gone, since destroying them can queue it */
 +	if (tasklist->button_geometry_idle != 0)
-+	{
 +		g_source_remove (tasklist->button_geometry_idle);
-+		tasklist->button_geometry_idle = 0;
-+	}
 +
- 	if (tasklist->list)
- 	{
- 		GList *children = gtk_container_get_children (GTK_CONTAINER (tasklist->list));
-@@ -1535,6 +1601,12 @@ toplevel_task_new (TasklistManager *tasklist, XfwWindow *window)
+ 	g_free (tasklist);
+ }
+ 
+@@ -1535,6 +1605,9 @@ toplevel_task_new (TasklistManager *tasklist, XfwWindow *window)
  	g_signal_connect (task->button, "drag-begin",
  			  G_CALLBACK (tasklist_button_drag_begin), task);
  
 +	/* the minimize target */
-+	g_signal_connect_swapped (task->button, "map",
-+				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
-+	g_signal_connect_swapped (task->button, "size-allocate",
-+				  G_CALLBACK (tasklist_queue_button_geometry), tasklist);
++	tasklist_track_button_geometry (tasklist, task->button);
 +
  	/* monitor window changes */
  	task->state_changed_id = g_signal_connect (window, "state-changed",

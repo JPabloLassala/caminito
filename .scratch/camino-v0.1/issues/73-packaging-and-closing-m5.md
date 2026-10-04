@@ -37,3 +37,4 @@ M5's checklist items and the closing commit ([17](17-milestone-slicing.md)), on 
 - **The nested and tty items of M1 to M4** still apply. 43's, 54's and 59's wizards take the ticket to write to (`TICKET=…`).
 - **[60](60-tty-checks-left-over.md)'s hot-plug** is still open and gates no milestone; the same sitting can run it.
 - **The session can't lock until M7** ([62](62-screensaver-names.md)), so the developer doesn't use it daily yet (17).
+- **Handed on by [70](70-mate-panel-camino.md):** `mate-panel-camino` has master's `libmate-panel-applet-4.so.2`, and Arch's `mate-applets`, `mate-sensors-applet` and `mate-notification-daemon`'s applet are linked to `.so.1`, so they don't start under the patched panel, on X11 too. That is against "X11 MATE on the same machine still works" for anyone who uses those applets. Decide here: build those packages again against the patched panel, or keep the stock library beside the new one.

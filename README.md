@@ -62,8 +62,8 @@ makepkg -si
 Some MATE components need carried patches to work in the session
 ([ADR 0011](docs/adr/0011-patched-mate-packages-replace-stock-and-gate-on-camino.md)). Each is a
 `<pkgname>-camino` package under [packaging/arch/](packaging/arch/), made from Arch's own
-PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino is running, so
-X11 MATE stays as it was. Build them before `camino-git`, which will depend on them:
+PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino is running, or
+are correct on any compositor, so X11 MATE stays as it was. Build them before `camino-git`, which will depend on them:
 
 ```sh
 for package in mate-session-manager-camino mate-panel-camino; do
