@@ -112,10 +112,7 @@ on_both_kinds! {
 #[test]
 fn camino_owns_its_debug_name() {
     let mut f = Fixture::new();
-    f.state
-        .camino
-        .start_dbus(crate::dbus::Names::WellKnown)
-        .unwrap();
+    f.start_dbus_with_names();
 
     let dump = f.dbus_call(|| {
         debug_proxy("org.mate.Camino.Debug")

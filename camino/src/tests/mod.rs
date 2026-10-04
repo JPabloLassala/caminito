@@ -21,6 +21,7 @@ mod palette_helper;
 mod popups;
 mod preferred_scale;
 mod root_properties;
+mod screensaver;
 mod selection;
 mod settings;
 mod window_properties;

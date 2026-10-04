@@ -65,6 +65,7 @@ use camino_theme::{PaletteCache, ThemeDirs, Variant};
 use crate::backend::{self, Backend};
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
+use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
@@ -202,6 +203,8 @@ pub struct Camino {
 
     /// The connection to the session bus, once `start_dbus` has made it.
     pub dbus: Option<Dbus>,
+    /// The cookies the Screensaver shim has handed out (62).
+    pub screensaver: ScreensaverShim,
     pub debug: DebugToggles,
 }
 
@@ -617,6 +620,7 @@ impl Camino {
             xwayland_keyboard_grab: None,
             environment: BTreeMap::new(),
             dbus: None,
+            screensaver: ScreensaverShim::default(),
             debug: DebugToggles::default(),
         };
         camino.ask_palette_for_theme_colors();

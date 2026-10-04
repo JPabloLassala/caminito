@@ -8,8 +8,8 @@
 use std::io::Read;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
@@ -113,6 +113,47 @@ pub struct Fixture {
     pub state: State,
     clients: Vec<TestClient>,
     input_millis: u32,
+    /// Camino's well-known names on the tests' bus, while this fixture has them.
+    names: Option<MutexGuard<'static, ()>>,
+}
+
+/// What Camino logs on the test's thread, at `info` and above, while this lives. Camino's
+/// event loop runs on that thread, so it's all that the loop logs.
+pub struct Logs {
+    text: Arc<Mutex<Vec<u8>>>,
+    _subscriber: tracing::subscriber::DefaultGuard,
+}
+
+impl Logs {
+    pub fn capture() -> Self {
+        struct Writer(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Writer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let text = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer({
+                let text = text.clone();
+                move || Writer(text.clone())
+            })
+            .finish();
+        Self {
+            text,
+            _subscriber: tracing::subscriber::set_default(subscriber),
+        }
+    }
+
+    /// Every line so far.
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.text.lock().unwrap()).into_owned()
+    }
 }
 
 enum TestClient {
@@ -260,6 +301,7 @@ impl Fixture {
             state,
             clients: Vec::new(),
             input_millis: 0,
+            names: None,
         }
     }
 
@@ -887,6 +929,39 @@ impl Fixture {
             .start_dbus(crate::dbus::Names::UniqueOnly)
             .expect("the test binary runs under dbus-run-session (14)");
         camino.dbus.as_ref().unwrap().unique_name().unwrap()
+    }
+
+    /// Serves Camino's D-Bus interfaces with its well-known names. The tests share one bus,
+    /// so only one fixture at a time has them: this waits for the last one's to be free.
+    pub fn start_dbus_with_names(&mut self) {
+        self.reserve_names();
+        self.state
+            .camino
+            .start_dbus(crate::dbus::Names::WellKnown)
+            .expect("the test binary runs under dbus-run-session (14)");
+    }
+
+    /// Keeps Camino's well-known names for this fixture until it's dropped, for a test that
+    /// owns one itself before Camino starts.
+    pub fn reserve_names(&mut self) {
+        static NAMES: Mutex<()> = Mutex::new(());
+        // A test that failed with the names did no harm to them.
+        let names = NAMES.lock().unwrap_or_else(|failed| failed.into_inner());
+        // The bus frees a name some time after its owner's connection closes.
+        let bus = camino_test_client::dbus::session().unwrap();
+        let bus = zbus::blocking::fdo::DBusProxy::new(&bus).unwrap();
+        let free = |name: &'static str| !bus.name_has_owner(name.try_into().unwrap()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !(free(crate::dbus::debug::NAME)
+            && crate::dbus::screensaver::NAMES.into_iter().all(free))
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the last owner's names weren't freed within 5 s"
+            );
+            std::thread::yield_now();
+        }
+        self.names = Some(names);
     }
 
     /// Makes a blocking D-Bus call on another thread, dispatching until it returns, since
