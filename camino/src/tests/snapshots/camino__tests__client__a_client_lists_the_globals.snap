@@ -2,6 +2,7 @@
 source: camino/src/tests/client.rs
 expression: format_globals(&f.client(id).state.globals)
 ---
+gtk_shell1 v1
 org_kde_kwin_server_decoration_manager v1
 wl_compositor v6
 wl_data_device_manager v3

@@ -1,6 +1,6 @@
 //! The xdg-shell adapter: what `Mapped` reads from an xdg toplevel and asks of it, through
-//! the protocols that extend it (xdg-decoration, KDE server-decoration, xdg-dialog and
-//! xdg-toplevel-icon).
+//! the protocols that extend it (xdg-decoration, KDE server-decoration, xdg-dialog,
+//! `gtk_shell1` and xdg-toplevel-icon).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,6 +18,7 @@ use super::{Adapter, PreMapConfigure, Skips, WindowKey};
 use crate::decoration::IconSource;
 use crate::handlers::kde_server_side;
 use crate::input::KeyboardFocus;
+use crate::protocols::gtk_shell;
 
 /// The client asked for a state, so it's owed a configure even if nothing changed.
 #[derive(Default)]
@@ -79,8 +80,8 @@ impl Adapter for ToplevelSurface {
         })
     }
 
-    /// A modal dialog from xdg-dialog, a dialog if it has a transient parent, or else
-    /// normal.
+    /// A modal dialog from xdg-dialog or `gtk_shell1`, a dialog if it has a transient
+    /// parent, or else normal.
     fn window_type(&self, has_parent: bool) -> WindowType {
         let modal = with_states(self.wl_surface(), |states| {
             states
@@ -88,7 +89,7 @@ impl Adapter for ToplevelSurface {
                 .get::<XdgToplevelSurfaceData>()
                 .is_some_and(|data| data.lock().unwrap().dialog_hint == ToplevelDialogHint::Modal)
         });
-        if modal {
+        if modal || gtk_shell::is_modal(self.wl_surface()) {
             WindowType::ModalDialog
         } else if has_parent {
             WindowType::Dialog
