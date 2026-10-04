@@ -14,6 +14,7 @@ mod input;
 mod input_devices;
 mod keyboard_settings;
 mod keymap;
+mod layer_shell;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;

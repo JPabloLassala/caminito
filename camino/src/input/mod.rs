@@ -16,7 +16,7 @@ use smithay::backend::input::{
     InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent,
 };
-use smithay::desktop::WindowSurfaceType;
+use smithay::desktop::{LayerSurface, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_server::Resource;
@@ -28,7 +28,7 @@ use smithay::xwayland::X11Surface;
 
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
-use crate::scene;
+use crate::scene::{self, SceneLayer};
 use crate::state::{Camino, SEAT, State};
 use crate::window::takes_pointer_at;
 
@@ -323,13 +323,19 @@ impl State {
         let pointer = self.camino.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
+        let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
+            .then(|| self.camino.under(location))
+            .flatten();
+        if let Some(Under::Layer(layer, ..)) = &under {
+            self.camino.layer_pressed(layer);
+            self.update_keyboard_focus();
+        }
         // A press on an override-redirect window goes to it alone: it's never focused or
         // raised, and can't be dragged.
-        if state == ButtonState::Pressed
-            && !pointer.is_grabbed()
-            && let Some(under) = self.camino.under(location)
+        if let Some(under) = under
             && let Some(id) = under.window()
         {
+            self.camino.window_pressed();
             let alt = self
                 .camino
                 .seat
@@ -371,9 +377,9 @@ impl State {
         pointer.frame(self);
     }
 
-    /// Gives the keyboard to the window policy focuses, unless a grab holds it. A shaded
-    /// window keeps the focus, but as in Marco it's its frame that has it, so its client
-    /// gets no keys.
+    /// Gives the keyboard to the layer surface that takes it (63), or else to the window
+    /// policy focuses, unless a grab holds it. A shaded window keeps the focus, but as in
+    /// Marco it's its frame that has it, so its client gets no keys.
     pub fn update_keyboard_focus(&mut self) {
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         // Xwayland destroys its grab when the X client lets go, and Smithay's grab would
@@ -389,12 +395,15 @@ impl State {
         if keyboard.is_grabbed() {
             return;
         }
+        let layer = self.camino.layer_with_keyboard();
         let policy = &self.camino.policy;
-        let focus = policy
-            .focus(SEAT)
-            .and_then(|id| policy.window(id))
-            .filter(|mapped| !mapped.is_shaded())
-            .map(|mapped| mapped.keyboard_target());
+        let focus = layer.map(KeyboardFocus::Layer).or_else(|| {
+            policy
+                .focus(SEAT)
+                .and_then(|id| policy.window(id))
+                .filter(|mapped| !mapped.is_shaded())
+                .map(|mapped| mapped.keyboard_target())
+        });
         if keyboard.current_focus() != focus {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
         }
@@ -433,6 +442,8 @@ pub enum Under {
     Frame(WindowId, FrameControl),
     /// An override-redirect window, and its origin, which policy doesn't know.
     OverrideRedirect(Box<X11Surface>, Point<f64, Logical>),
+    /// One of a layer surface's surfaces, and its origin.
+    Layer(LayerSurface, PointerFocus, Point<f64, Logical>),
 }
 
 impl Under {
@@ -440,14 +451,16 @@ impl Under {
     pub fn window(&self) -> Option<WindowId> {
         match self {
             Under::Surface(id, ..) | Under::Frame(id, _) => Some(*id),
-            Under::OverrideRedirect(..) => None,
+            Under::OverrideRedirect(..) | Under::Layer(..) => None,
         }
     }
 
     /// The pointer focus and its origin.
     pub fn surface(&self) -> Option<(PointerFocus, Point<f64, Logical>)> {
         match self {
-            Under::Surface(_, focus, origin) => Some((focus.clone(), *origin)),
+            Under::Surface(_, focus, origin) | Under::Layer(_, focus, origin) => {
+                Some((focus.clone(), *origin))
+            }
             Under::OverrideRedirect(window, origin) => {
                 Some((PointerFocus::X11(window.clone()), *origin))
             }
@@ -459,7 +472,7 @@ impl Under {
     pub fn frame_control(&self) -> Option<(WindowId, FrameControl)> {
         match self {
             Under::Frame(id, control) => Some((*id, *control)),
-            Under::Surface(..) | Under::OverrideRedirect(..) => None,
+            Under::Surface(..) | Under::OverrideRedirect(..) | Under::Layer(..) => None,
         }
     }
 }
@@ -533,31 +546,70 @@ impl Camino {
         })
     }
 
-    /// What's at `location` in the topmost window that takes input there. Override-redirect
-    /// windows are above every managed one. In a managed window it's one of its surfaces,
-    /// which are above its frame, or its frame. A shaded window's surfaces have left the
-    /// scene.
+    /// What's at `location` in the topmost window or layer surface that takes input there,
+    /// by the scene's order.
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
         // M7: nothing but the lock takes the pointer while locked (12).
+        scene::LAYERS.into_iter().find_map(|layer| match layer {
+            SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock => None,
+            SceneLayer::Overlay | SceneLayer::Top | SceneLayer::Bottom | SceneLayer::Background => {
+                self.layer_surface_under(layer, location)
+            }
+            SceneLayer::OverrideRedirect => self.override_redirect_under(location),
+            SceneLayer::FullscreenWindows | SceneLayer::Windows => {
+                self.managed_under(layer, location)
+            }
+        })
+    }
+
+    /// What's at `location` in the topmost layer surface of one layer-shell layer that
+    /// takes input there: one of its surfaces or its popups', inside its input region.
+    fn layer_surface_under(
+        &self,
+        layer: SceneLayer,
+        location: Point<f64, Logical>,
+    ) -> Option<Under> {
+        let shell_layer = scene::shell_layer(layer)?;
+        self.outputs
+            .iter()
+            .filter(|output| output_geometry(output).to_f64().contains(location))
+            .find_map(|output| {
+                scene::layer_surfaces_on(self, output, shell_layer)
+                    .into_iter()
+                    .find_map(|(surface, geometry)| {
+                        let origin = geometry.loc.to_f64();
+                        let (under, loc) =
+                            surface.surface_under(location - origin, WindowSurfaceType::ALL)?;
+                        let focus = PointerFocus::Surface(under);
+                        Some(Under::Layer(surface, focus, loc.to_f64() + origin))
+                    })
+            })
+    }
+
+    /// The topmost override-redirect window that takes input at `location`.
+    fn override_redirect_under(&self, location: Point<f64, Logical>) -> Option<Under> {
         // X11Surface::surface_under passes over override-redirect windows during an XDND
         // drag, since the X client's drag icon is one.
-        let override_redirect = self.override_redirect_windows().find_map(|window| {
+        self.override_redirect_windows().find_map(|window| {
             let origin = scene::override_redirect_bbox(window).loc;
             let (_, origin) = window.surface_under(location, origin, WindowSurfaceType::ALL)?;
             Some(Under::OverrideRedirect(
                 Box::new(window.clone()),
                 origin.to_f64(),
             ))
-        });
-        if override_redirect.is_some() {
-            return override_redirect;
-        }
+        })
+    }
+
+    /// What's at `location` in the topmost managed window of `layer`, of the two that hold
+    /// windows, that takes input there: one of its surfaces, which are above its frame, or
+    /// its frame. A shaded window's surfaces have left the scene.
+    fn managed_under(&self, layer: SceneLayer, location: Point<f64, Logical>) -> Option<Under> {
         let policy = &self.policy;
         policy
             .stacking(policy.active_workspace())
             .iter()
             .rev()
-            .filter(|id| policy.is_showing(**id))
+            .filter(|id| policy.is_showing(**id) && scene::window_is_in(self, **id, layer))
             .find_map(|&id| {
                 let mapped = policy.window(id)?;
                 let window = mapped.window();

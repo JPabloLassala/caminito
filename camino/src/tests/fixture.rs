@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use camino_policy::PolicyWindow;
+use camino_test_client::layer_shell::{LayerId, LayerSpec};
 use camino_test_client::x11::{X11Client, XWindowSpec};
 use camino_test_client::{Client, DecorationMode, WindowId};
 use camino_theme::{ButtonFunction, ButtonState as FrameButtonState};
@@ -526,6 +527,17 @@ impl Fixture {
         });
         self.sync(window);
         window
+    }
+
+    /// Creates a layer surface of the Wayland client `id` as `spec` says, lets it have its
+    /// initial configure, then acks it and commits a buffer of the configured size filled
+    /// with `argb`, which maps it.
+    pub fn map_layer(&mut self, id: ClientId, spec: LayerSpec, argb: u32) -> LayerId {
+        let layer = self.client(id).create_layer_surface(&spec);
+        self.roundtrip(id);
+        self.client(id).map_layer_surface(layer, argb);
+        self.roundtrip(id);
+        layer
     }
 
     /// Creates and maps an override-redirect window of the X client `id` at `position`,

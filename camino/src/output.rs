@@ -305,6 +305,7 @@ impl Camino {
         for window in ids {
             self.policy.window_mut(window).unwrap().leave_output(output);
         }
+        self.close_layers(output);
         output.leave_all();
 
         self.display_handle
@@ -411,7 +412,8 @@ impl Camino {
 
     /// Lays the outputs at the default place out left to right, in the order they were
     /// added, after the ones output management placed, so they never overlap those. Tells
-    /// policy where every output is now, and redraws them all.
+    /// policy where every output is now, arranges their layer surfaces for their new sizes,
+    /// and redraws them all.
     fn lay_out_outputs(&mut self) {
         let is_set = |output: &Output| self.record(output).position == ChosenBy::OutputManagement;
         let mut x = self
@@ -439,6 +441,7 @@ impl Camino {
                 })
                 .collect(),
         );
+        self.arrange_layers();
         self.queue_redraw_all();
     }
 
