@@ -37,7 +37,7 @@ use smithay::input::keyboard::LedState;
 use smithay::output::{Mode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
-use smithay::reexports::drm::control::{ModeTypeFlags, connector, crtc};
+use smithay::reexports::drm::control::{Mode as DrmMode, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::DeviceFd;
@@ -137,13 +137,40 @@ struct Gpu {
     scanner: DrmScanner,
     /// Each lit monitor, by the CRTC driving it.
     monitors: HashMap<crtc::Handle, LitMonitor>,
+    /// Each monitor output management turned off, by the CRTC that drove it and will again
+    /// (58).
+    dark: HashMap<crtc::Handle, DarkMonitor>,
 }
 
 /// One lit monitor's output, and the swapchain it's shown from.
 struct LitMonitor {
     output: Output,
+    connector: Connector,
     drm_output: TtyOutput,
     frame: Frame,
+}
+
+/// A connected monitor that isn't lit: one output management turned off, or one on its way
+/// to being lit.
+struct DarkMonitor {
+    output: Output,
+    connector: Connector,
+}
+
+/// What lighting a monitor, or switching its mode, needs of its connector.
+struct Connector {
+    handle: connector::Handle,
+    modes: Vec<DrmMode>,
+}
+
+impl Connector {
+    /// The first of the connector's modes that the output lists as `mode`.
+    fn drm_mode(&self, mode: Mode) -> Option<DrmMode> {
+        self.modes
+            .iter()
+            .copied()
+            .find(|&drm_mode| Mode::from(drm_mode) == mode)
+    }
 }
 
 /// Where a monitor's last frame is.
@@ -251,6 +278,85 @@ impl Tty {
             dmabuf.set_node(self.gpu.render_node);
         }
         true
+    }
+
+    /// Whether monitors can be lit and their modes switched: only with the DRM master,
+    /// which another VT has while Camino is switched away.
+    pub fn can_change_outputs(&self) -> bool {
+        self.seat.is_active()
+    }
+
+    /// Switches a lit monitor to another of its modes, and returns whether the GPU took it.
+    pub fn set_output_mode(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
+        let gpu = &mut self.gpu;
+        let monitor = output
+            .user_data()
+            .get::<crtc::Handle>()
+            .and_then(|crtc| gpu.monitors.get_mut(crtc));
+        let Some(monitor) = monitor else {
+            return false;
+        };
+        let Some(drm_mode) = monitor.connector.drm_mode(mode) else {
+            return false;
+        };
+        let elements = DrmOutputRenderElements::<_, SceneElement<GlesRenderer>>::default();
+        if let Err(err) = monitor
+            .drm_output
+            .use_mode(drm_mode, &mut gpu.renderer, &elements)
+        {
+            tracing::warn!("can't switch {} to {mode:?}: {err}", output.name());
+            return false;
+        }
+        // A frame on its way is still shown, and its vblank still comes: the mode is set
+        // with the next frame.
+        output.change_current_state(Some(mode), None, None, None);
+        camino.output_mode_changed(output);
+        true
+    }
+
+    /// Turns a lit monitor off, as output management asks. It stays connected, so it can be
+    /// lit again.
+    pub fn disable_output(&mut self, camino: &mut Camino, output: &Output) {
+        let Some(&crtc) = output.user_data().get::<crtc::Handle>() else {
+            return;
+        };
+        let Some(mut monitor) = self.gpu.monitors.remove(&crtc) else {
+            return;
+        };
+        tracing::debug!("{} was turned off", output.name());
+        monitor.stop_waiting(&camino.loop_handle);
+        // Dropping the monitor's DRM output turns its CRTC off.
+        let LitMonitor {
+            output, connector, ..
+        } = monitor;
+        camino.disable_output(&output);
+        self.gpu
+            .dark
+            .insert(crtc, DarkMonitor { output, connector });
+    }
+
+    /// Lights again, in `mode`, a monitor output management turned off, and returns whether
+    /// the GPU took it.
+    pub fn enable_output(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
+        let Some(&crtc) = output.user_data().get::<crtc::Handle>() else {
+            return false;
+        };
+        let Some(monitor) = self.gpu.dark.remove(&crtc) else {
+            return false;
+        };
+        let Some(drm_mode) = monitor.connector.drm_mode(mode) else {
+            self.gpu.dark.insert(crtc, monitor);
+            return false;
+        };
+        camino.enable_output(output, mode);
+        match self.gpu.light(crtc, monitor, drm_mode) {
+            Ok(()) => true,
+            Err(monitor) => {
+                camino.disable_output(output);
+                self.gpu.dark.insert(crtc, monitor);
+                false
+            }
+        }
     }
 
     /// A keyboard was plugged in: it shows `leds` now, and the seat's on each change.
@@ -455,6 +561,7 @@ impl Gpu {
             renderer,
             scanner: DrmScanner::new(),
             monitors: HashMap::new(),
+            dark: HashMap::new(),
         })
     }
 
@@ -516,7 +623,8 @@ impl Gpu {
         }
     }
 
-    /// Lights a monitor in its preferred mode, as a new output (50, 51).
+    /// Lights a monitor in its preferred mode, as a new output (50, 51) that lists every
+    /// mode the monitor has (58).
     fn connect(&mut self, camino: &mut Camino, connector: &connector::Info, crtc: crtc::Handle) {
         let name = connector_name(connector);
         let modes = connector.modes();
@@ -533,7 +641,7 @@ impl Gpu {
         let edid_text = |text: Option<String>| text.unwrap_or_else(|| "Unknown".to_owned());
         let (width, height) = connector.size().unwrap_or((0, 0));
         let output = Output::new(
-            name.clone(),
+            name,
             PhysicalProperties {
                 size: (width as i32, height as i32).into(),
                 subpixel: connector.subpixel().into(),
@@ -543,17 +651,40 @@ impl Gpu {
             },
         );
         output.set_preferred(Mode::from(drm_mode));
+        for &mode in modes {
+            output.add_mode(Mode::from(mode));
+        }
         output.user_data().insert_if_missing(|| crtc);
         camino.add_output(output.clone());
 
+        let monitor = DarkMonitor {
+            output,
+            connector: Connector {
+                handle: connector.handle(),
+                modes: modes.to_vec(),
+            },
+        };
+        if let Err(monitor) = self.light(crtc, monitor, drm_mode) {
+            camino.remove_output(&monitor.output);
+        }
+    }
+
+    /// Lights a monitor in `drm_mode`, or gives it back if the GPU can't.
+    fn light(
+        &mut self,
+        crtc: crtc::Handle,
+        monitor: DarkMonitor,
+        drm_mode: DrmMode,
+    ) -> Result<(), DarkMonitor> {
+        let name = monitor.output.name();
         let drm_output = self
             .manager
             .lock()
             .initialize_output::<_, SceneElement<GlesRenderer>>(
                 crtc,
                 drm_mode,
-                &[connector.handle()],
-                &output,
+                &[monitor.connector.handle],
+                &monitor.output,
                 None,
                 &mut self.renderer,
                 &DrmOutputRenderElements::default(),
@@ -561,27 +692,35 @@ impl Gpu {
         match drm_output {
             Ok(drm_output) => {
                 tracing::debug!("lit {name}");
+                let DarkMonitor { output, connector } = monitor;
                 self.monitors.insert(
                     crtc,
                     LitMonitor {
                         output,
+                        connector,
                         drm_output,
                         frame: Frame::Shown,
                     },
                 );
+                Ok(())
             }
             Err(err) => {
                 tracing::warn!("can't light {name}: {err}");
-                camino.remove_output(&output);
+                Err(monitor)
             }
         }
     }
 
     /// A monitor was unplugged: its output goes, and policy moves its windows off it (51).
+    /// One that was turned off is only forgotten.
     fn disconnect(&mut self, camino: &mut Camino, crtc: crtc::Handle) {
         if let Some(mut monitor) = self.monitors.remove(&crtc) {
             tracing::debug!("{} was unplugged", monitor.output.name());
             monitor.stop_waiting(&camino.loop_handle);
+            camino.remove_output(&monitor.output);
+        }
+        if let Some(monitor) = self.dark.remove(&crtc) {
+            tracing::debug!("{} was unplugged", monitor.output.name());
             camino.remove_output(&monitor.output);
         }
     }

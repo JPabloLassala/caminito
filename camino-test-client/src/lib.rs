@@ -4,9 +4,11 @@
 //! owns it runs the compositor in the same thread, and calls [`Client::dispatch`] between the
 //! compositor's own dispatches. It records what the compositor sends, and the `Display` impls
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
-//! D-Bus names, and the [`x11`] client speaks X11 to Camino's Xwayland.
+//! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, and [`output_management`]
+//! configures the outputs as `wlr-randr` does.
 
 pub mod dbus;
+pub mod output_management;
 pub mod selection;
 pub mod x11;
 
@@ -138,6 +140,8 @@ pub struct State {
     drag_icon: Option<selection::DragIcon>,
     /// How many frame callbacks the drag icon has had.
     pub drag_icon_frames_done: u32,
+    /// The heads output management shows, and its answers to configurations.
+    pub output_management: output_management::OutputManagement,
 }
 
 /// A bound `wl_output`.
