@@ -111,10 +111,7 @@ impl Camino {
             connection,
             address: address.map(str::to_owned),
         };
-        tracing::info!(
-            "on the session bus as {}",
-            dbus.unique_name().unwrap_or_default()
-        );
+        tracing::info!("on the bus as {}", dbus.unique_name().unwrap_or_default());
         self.dbus = Some(dbus);
         Ok(())
     }

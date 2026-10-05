@@ -193,7 +193,7 @@ impl Systemd {
         Self::with(None, started, 1)
     }
 
-    /// One on the bus at `address`.
+    /// One on `bus`, a test's own.
     fn on(bus: &Bus, started: PathBuf) -> Self {
         Self::with(Some(&bus.address), started, 0)
     }
@@ -254,7 +254,7 @@ impl Bus {
         Bus { daemon, address }
     }
 
-    /// Stops the bus, and returns once its connections are closed.
+    /// Stops the bus, and returns once its connections are closed, as dropping it does.
     fn stop(self) {}
 }
 
@@ -615,7 +615,11 @@ fn the_systemd_on_the_bus_that_replaces_one_that_stops_with_the_command_forgets(
         "XCURSOR_THEME",
     ];
     let names = names.map(String::from).to_vec();
-    assert_eq!(systemd.calls(), [("UnsetEnvironment", names, true)]);
+    // A machine slow enough to leave one request unanswered for its share of the wait
+    // makes a second.
+    let calls = systemd.calls();
+    assert_eq!(calls.first(), Some(&("UnsetEnvironment", names, true)));
+    assert!(calls.iter().all(|call| call == &calls[0]), "{calls:?}");
     let logs = logs.text();
     assert!(!logs.contains("systemd didn't unset"), "{logs}");
 }
@@ -634,6 +638,8 @@ fn a_bus_that_stops_with_the_command_and_isnt_replaced_is_given_up_on_after_the_
     f.dispatch_until(|f| f.state.camino.session_exit().is_some());
 
     assert!(stopped.elapsed() >= wait);
+    // Far less than the 5 s of a real Session: nothing but the wait holds Camino.
+    assert!(stopped.elapsed() < wait * 5);
     assert_eq!(f.state.camino.session_exit(), Some(0));
     let logs = logs.text();
     assert!(

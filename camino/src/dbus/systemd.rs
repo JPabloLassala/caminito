@@ -77,10 +77,10 @@ async fn set_environment(
 /// `builder`. Camino's may be to a bus that has stopped and been replaced, and then nothing
 /// runs what's spawned on its executor (74).
 pub(crate) async fn unset(
-    builder: zbus::Result<zbus::connection::Builder<'static>>,
+    builder: zbus::connection::Builder<'static>,
     names: &[&str],
 ) -> zbus::Result<()> {
-    let connection = builder?.build().await?;
+    let connection = builder.build().await?;
     connection
         .call_method(
             Some(NAME),

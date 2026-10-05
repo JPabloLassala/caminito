@@ -5,7 +5,10 @@
 # (CONTEXT.md), and not the login on a tty of the ticket (72): there is one output, no input
 # device, no logind session and no VT.
 #
-#   sudo xvfb-login.sh
+#   sudo xvfb-login.sh [CAMINO]
+#
+# With CAMINO, a camino binary, that one runs in place of the installed one, with the
+# installed helpers (74).
 #
 # It makes the user if there is none, starts mate-session under Camino, waits for it, prints
 # what the ticket's criteria ask about, logs out through mate-session, and prints what is
@@ -24,6 +27,12 @@ work=/home/$user/72-xvfb-login
 rm -rf $work
 install -d -o $user -g $user $work
 install -o $user -g $user -m 755 "$here/gtk-probe.py" "$here/xwd-to-png.py" $work/
+
+camino_bin=camino
+if [ $# -gt 0 ]; then
+  install -o $user -g $user -m 755 "$1" $work/camino
+  camino_bin=$work/camino
+fi
 
 # Waits up to $1 seconds for the rest of its arguments to succeed.
 wait_for() {
@@ -73,7 +82,7 @@ wait_for 10 as_user xdpyinfo -display $x_display || { echo "xvfb-login: no Xvfb"
 
 since=$(date '+%Y-%m-%d %H:%M:%S')
 # stderr is a file, as it is from a display manager, so the logs go to the journal.
-as_user env DISPLAY=$x_display camino --session </dev/null >$work/camino.stderr 2>&1 &
+as_user env DISPLAY=$x_display $camino_bin --session </dev/null >$work/camino.stderr 2>&1 &
 session=$!
 
 exported() { session_environment | grep -q '^WAYLAND_DISPLAY='; }

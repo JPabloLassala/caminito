@@ -47,13 +47,13 @@ use crate::state::{Camino, State};
 /// forget the variables before Camino exits anyway.
 const WAIT: Duration = Duration::from_secs(5);
 
-/// How many times systemd can be asked to forget the variables and not answer, within the
-/// wait (74). A request it hasn't answered in its share of the wait is given up on.
-const UNANSWERED: u32 = 5;
+/// How many requests to forget the variables systemd can leave unanswered within the wait
+/// (74). One it hasn't answered in its share of the wait is followed by another.
+const REQUESTS_IN_WAIT: u32 = 5;
 
 /// How long after a request to systemd fails the next is made (74): a bus that's being
 /// replaced is there again this soon, and one that isn't is asked this often until `WAIT`.
-const PAUSE: Duration = Duration::from_millis(50);
+const PAUSE_AFTER_FAILURE: Duration = Duration::from_millis(50);
 
 /// The status Camino exits with when the Session ends without one from its command.
 const FAILURE: u8 = 1;
@@ -373,7 +373,7 @@ impl Camino {
             (Event::Unset(Err(err)), Phase::Ending { .. }) => {
                 tracing::debug!("can't unset the environment in systemd yet: {err}");
                 session.unset_error = Some(err);
-                self.ask_systemd_again_after(PAUSE);
+                self.ask_systemd_again_after(PAUSE_AFTER_FAILURE);
             }
             // systemd's answer after Camino gave up on it, or its second to one request.
             _ => {}
@@ -547,15 +547,15 @@ impl Camino {
         let builder = dbus.builder();
         let thread = std::thread::Builder::new().name("session environment".into());
         let thread = thread.spawn(move || {
-            let unset = zbus::block_on(systemd::unset(builder, &UNSET));
+            let unset = builder.and_then(|bus| zbus::block_on(systemd::unset(bus, &UNSET)));
             // The Session may be over by now.
             let _ = events.send(Event::Unset(unset));
         });
         if let Err(err) = thread {
             tracing::warn!("can't start the thread that asks systemd: {err}");
         }
-        let unanswered = session.wait / UNANSWERED;
-        self.ask_systemd_again_after(unanswered);
+        let share = session.wait / REQUESTS_IN_WAIT;
+        self.ask_systemd_again_after(share);
     }
 
     /// Has systemd asked again to forget the variables once `delay` has passed, and not
