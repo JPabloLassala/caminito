@@ -106,7 +106,7 @@ _Avoid_: profile, monitors file
 
 **Dock**:
 To place an output against the outline of the others, which is the only way an output is moved in a layout.
-_Avoid_: snap (that's the finer alignment of edges and centres while docking)
+_Avoid_: snap (that's the finer alignment of matching edges while docking; centres don't snap)
 
 **Heal**:
 To make a layout contiguous again after a change that broke it: an output removed, added, turned off, or changed in size.

@@ -119,44 +119,130 @@ fn a_client_is_told_of_outputs_that_come_and_go() {
 }
 
 #[test]
-fn applying_a_configuration_changes_the_scale_the_position_and_the_mode() {
+fn applying_a_configuration_changes_the_scale_and_the_mode() {
     let (mut f, client) = aoc_and_a_client();
 
-    let change = HeadChange::of("headless-1")
-        .mode((1280, 720))
-        .scale(1.25)
-        .position((100, 50));
+    let change = HeadChange::of("headless-1").mode((1280, 720)).scale(1.25);
     f.client(client).apply_outputs(&[change]);
     f.roundtrip(client);
 
     assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
-    assert_snapshot!(layout(&f), @"headless-1 at 100,50 1024x576 scale 1.25");
+    assert_snapshot!(layout(&f), @"headless-1 at 0,0 1024x576 scale 1.25");
     // The client is told what the head shows now.
     assert_snapshot!(heads(&mut f, client), @"
     headless-1: Camino - Headless - headless-1, 527x296 mm, make Camino, model Headless, serial (empty)
       modes: 1920x1080@60000 preferred, 1280x720@60000
-      enabled: 1280x720@60000 at 100,50, scale 1.25, transform Normal
+      enabled: 1280x720@60000 at 0,0, scale 1.25, transform Normal
       adaptive sync off
     ");
 }
 
 #[test]
-fn an_applied_scale_and_position_are_set_not_camino_s_default() {
+fn an_applied_scale_is_set_not_camino_s_default() {
     let (mut f, client) = aoc_and_a_client();
-    let change = HeadChange::of("headless-1").scale(1.25).position((100, 50));
+    let change = HeadChange::of("headless-1").scale(1.25);
     f.client(client).apply_outputs(&[change]);
     f.roundtrip(client);
 
-    // The LG is at Camino's defaults, so it goes after the AOC and takes
-    // `window-scaling-factor`'s scale. The AOC keeps what the client set.
+    // The LG is at Camino's default, so it takes `window-scaling-factor`'s scale. The AOC
+    // keeps what the client set.
     f.plug(LG.0, LG.1);
     f.set_setting(INTERFACE, "window-scaling-factor", Value::Int(1));
     f.dispatch_until(|f| layout(f).contains("3840x2160"));
 
     assert_snapshot!(layout(&f), @"
-    headless-1 at 100,50 1536x864 scale 1.25
-    headless-2 at 1636,0 3840x2160 scale 1.0
+    headless-1 at 0,0 1536x864 scale 1.25
+    headless-2 at 1536,0 3840x2160 scale 1.0
     ");
+}
+
+#[test]
+fn applying_a_configuration_places_an_output_against_another() {
+    let mut f = Fixture::new();
+    f.plug_with_modes(AOC_MM, &AOC_MODES);
+    f.plug(LG.0, LG.1);
+    let client = manage_outputs(&mut f);
+
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-2").position((300, 1080))]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    headless-2 at 300,1080 2259x1271 scale 1.7
+    ");
+}
+
+/// As `wlr-randr` and kanshi users write places by hand (82).
+#[test]
+fn a_configuration_that_isnt_contiguous_succeeds_and_is_healed() {
+    let mut f = Fixture::new();
+    f.plug_with_modes(AOC_MM, &AOC_MODES);
+    f.plug(LG.0, LG.1);
+    let client = manage_outputs(&mut f);
+
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-2").position((3000, 200))]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    headless-2 at 1920,200 2259x1271 scale 1.7
+    ");
+    // The client is told where the output went, not where it asked.
+    assert!(heads(&mut f, client).contains("3840x2160@60000 at 1920,200,"));
+}
+
+#[test]
+fn disabling_the_middle_output_of_three_leaves_the_other_two_touching() {
+    let mut f = Fixture::new();
+    f.plug_with_modes(AOC_MM, &AOC_MODES);
+    f.plug(LG.0, LG.1);
+    f.plug(AOC_MM, AOC_MODES[0]);
+    let client = manage_outputs(&mut f);
+
+    // The client sends the other two's places back, as `wlr-randr --output A --off` does.
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-2").disable()]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    headless-3 at 1920,0 1920x1080 scale 1.0
+    ");
+}
+
+#[test]
+fn an_applied_scale_that_grows_an_output_moves_its_neighbour_off_it() {
+    let mut f = Fixture::new();
+    f.plug(LG.0, LG.1);
+    f.plug_with_modes(AOC_MM, &AOC_MODES);
+    let client = manage_outputs(&mut f);
+
+    // The client sends the AOC's place back as it was, 2259,0, which the LG now covers.
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1").scale(1.5)]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 2560x1440 scale 1.5
+    headless-2 at 2560,0 1920x1080 scale 1.0
+    ");
+}
+
+#[test]
+fn a_configuration_with_a_place_of_no_use_fails() {
+    let (mut f, client) = aoc_and_a_client();
+
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1").position((i32::MAX, 0))]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Failed);
 }
 
 #[test]
@@ -208,12 +294,12 @@ on_both_kinds! {
         f.sync(window);
 
         assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
-        // The other output stays where it was: the client sent its place back, as
-        // `wlr-randr` does, which sets it.
-        assert_eq!(layout(&f), "headless-2 at 1920,0 2259x1271 scale 1.7");
+        // The client sent the other output's place back, as `wlr-randr` does, and it
+        // goes to the origin all the same (82).
+        assert_eq!(layout(&f), "headless-2 at 0,0 2259x1271 scale 1.7");
         let geometry = f.geometry(window);
         assert!(
-            Rectangle::new((1920, 0).into(), (2259, 1271).into()).contains_rect(geometry),
+            Rectangle::new((0, 0).into(), (2259, 1271).into()).contains_rect(geometry),
             "the window is on the remaining output: {geometry:?}"
         );
         assert!(
@@ -242,19 +328,19 @@ fn an_output_enabled_again_is_at_camino_s_defaults() {
         f.client(client).output_management().outcomes,
         [Outcome::Succeeded, Outcome::Succeeded]
     );
-    // In its preferred mode, after the output the first configuration placed.
+    // In its preferred mode, right of the output that stayed.
     assert_snapshot!(layout(&f), @"
-    headless-2 at 1920,0 2259x1271 scale 1.7
-    headless-1 at 4179,0 1920x1080 scale 1.0
+    headless-2 at 0,0 2259x1271 scale 1.7
+    headless-1 at 2259,0 1920x1080 scale 1.0
     ");
     assert_snapshot!(heads(&mut f, client), @"
     headless-1: Camino - Headless - headless-1, 527x296 mm, make Camino, model Headless, serial (empty)
       modes: 1920x1080@60000 preferred, 1280x720@60000
-      enabled: 1920x1080@60000 at 4179,0, scale 1, transform Normal
+      enabled: 1920x1080@60000 at 2259,0, scale 1, transform Normal
       adaptive sync off
     headless-2: Camino - Headless - headless-2, 600x340 mm, make Camino, model Headless, serial (empty)
       modes: 3840x2160@60000 preferred
-      enabled: 3840x2160@60000 at 1920,0, scale 1.69921875, transform Normal
+      enabled: 3840x2160@60000 at 0,0, scale 1.69921875, transform Normal
       adaptive sync off
     ");
 }

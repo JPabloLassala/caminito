@@ -328,6 +328,7 @@ dependencies = [
 name = "camino"
 version = "0.1.0"
 dependencies = [
+ "camino-layout",
  "camino-policy",
  "camino-test-client",
  "camino-theme",
@@ -348,6 +349,13 @@ dependencies = [
  "x11rb",
  "xcursor",
  "zbus",
+]
+
+[[package]]
+name = "camino-layout"
+version = "0.1.0"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]

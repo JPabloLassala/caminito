@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["camino", "camino-policy", "camino-theme", "camino-test-client"]
+members = ["camino", "camino-layout", "camino-policy", "camino-theme", "camino-test-client"]
 
 [workspace.package]
 version = "0.1.0"

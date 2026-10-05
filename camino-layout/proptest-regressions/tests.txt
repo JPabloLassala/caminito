@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d1bfa438af067b17741271d9b2089280b6d56fc00a212564f92295fa2f04a2a3 # shrinks to (outputs, anchor) = ([Rect { x: 0, y: 0, w: 1, h: 1 }], 0)
+cc 87edfb6429f5398b751b57ed808c88c18d3124e40108d016a1cf6f3155af9161 # shrinks to (outputs, anchor) = ([Rect { x: 0, y: 0, w: 1, h: 1 }], 0)
+cc e5084a0c8e732b28f7eb8e6f2a1c0d1213b545d0060a9e2092c662d551f83340 # shrinks to (others, anchor) = ([Rect { x: 0, y: 0, w: 1, h: 1 }], 0), output = Rect { x: 0, y: 0, w: 1, h: 1 }, snap = 0
+cc 9e36c709b7a0bc88277a3f4b1c6e89369f6df9df9351c073ca282ca1222bd6b4 # shrinks to (others, anchor) = ([Rect { x: 0, y: 0, w: 1, h: 1 }], 0), output = Rect { x: 0, y: 0, w: 1, h: 1 }
+cc d4aa7e882b6f1e578dea7ba3eebfb71087d1e78e303e321b830ce67224bd8611 # shrinks to (outputs, anchor) = ([Rect { x: 0, y: 0, w: 1, h: 1 }], 0)
+cc 26336c4e78605d0808fd5652c3aa2e1f5b7323b5c6a521672004f803f6ea714a # shrinks to (outputs, anchor) = ([Rect { x: 0, y: 0, w: 1, h: 1 }], 0), second_anchor = Index(0)

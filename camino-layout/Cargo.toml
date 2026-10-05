@@ -1,0 +1,15 @@
+[package]
+name = "camino-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# None, and it stays so: camino-displays depends on this crate too (82).
+[dependencies]
+
+[dev-dependencies]
+proptest = "1.11.0"
+
+[lints]
+workspace = true
