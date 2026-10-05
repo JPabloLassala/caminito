@@ -93,7 +93,7 @@ impl Camino {
 
 impl State {
     /// A Wayland client set or cleared a selection. X is told at once if one of its windows
-    /// has the keyboard (the client needn't have it, with data-control in M5), and
+    /// has the keyboard (the client needn't have it, if it set it through data-control), and
     /// otherwise when one next takes it.
     pub(crate) fn wayland_selection_changed(
         &mut self,

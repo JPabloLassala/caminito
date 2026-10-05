@@ -2,6 +2,7 @@
 //! only reach a selection while one of Xwayland's windows has the keyboard, so every test
 //! has one window of each kind, side by side, and focuses them by clicking.
 
+use camino_test_client::data_control::Protocol;
 use camino_test_client::selection::{Selection, TEXT};
 
 use super::fixture::{ClientId, ClientWindow, Fixture, Kind, WindowSpec};
@@ -178,5 +179,60 @@ on_both_selections! {
         d.f.dispatch_until(|f| f.override_redirect_with_keyboard() == Some(menu));
 
         assert_eq!(d.x_pastes_into(menu, selection).as_deref(), Some("from Wayland"));
+    }
+}
+
+on_both_selections! {
+    fn a_data_control_client_keeps_an_x_selection_after_its_x_client_exits(selection: Selection) {
+        let mut d = desk();
+        let manager = d.f.connect(Kind::Xdg);
+        d.f.client(manager).bind_data_control(Protocol::Ext);
+        d.f.roundtrip(manager);
+
+        d.focus(d.xwayland_window);
+        let window = d.xwayland_window.x11();
+        d.f.x11_call(d.xwayland, move |x| {
+            x.set_selection_owner(window, x_name(selection))?;
+            x.serve_selection("from X", "TARGETS")
+        })
+        .expect("the X client owns the selection");
+        let offered = |f: &Fixture, id| f.client_state(id).offered_through_data_control(selection);
+        d.f.dispatch_until(|f| offered(f, manager).is_some_and(|mimes| mimes.contains(&TEXT.into())));
+
+        // The manager takes the selection over, as msd's clipboard plugin does.
+        let pipe = d.f.client(manager).receive_through_data_control(selection, TEXT);
+        d.f.x11_call(d.xwayland, |x| x.serve_selection("from X", "UTF8_STRING"))
+            .expect("the X client writes the selection");
+        let text = String::from_utf8(d.f.read_to_end(pipe)).unwrap();
+        assert_eq!(text, "from X");
+        d.f.client(manager).set_selection_through_data_control(selection, &text);
+        d.f.roundtrip(manager);
+
+        d.f.disconnect(d.xwayland);
+        let x_window = d.xwayland_window;
+        d.f.dispatch_until(|f| f.policy_id(x_window).is_none());
+        d.focus(d.wayland_window);
+        let wayland = d.wayland;
+        d.f.dispatch_until(|f| f.client_state(wayland).offered(selection).is_some());
+        let pipe = d.f.client(wayland).receive(selection, TEXT);
+        assert_eq!(d.f.read_to_end(pipe), b"from X");
+    }
+}
+
+on_both_selections! {
+    fn a_selection_set_through_data_control_reaches_x_once_an_x_window_is_focused(
+        selection: Selection
+    ) {
+        let mut d = desk();
+        d.focus(d.wayland_window);
+        let manager = d.f.connect(Kind::Xdg);
+        d.f.client(manager).bind_data_control(Protocol::Wlr);
+        d.f.client(manager).set_selection_through_data_control(selection, "from a manager");
+        d.f.roundtrip(manager);
+
+        assert_eq!(d.x_owner(selection), x11rb::NONE, "X hasn't been given it yet");
+
+        d.focus(d.xwayland_window);
+        assert_eq!(d.x_pastes(selection).as_deref(), Some("from a manager"));
     }
 }
