@@ -108,8 +108,14 @@ impl Client {
     }
 }
 
+impl Workspace {
+    pub(crate) fn proxy(&self) -> &ExtWorkspaceHandleV1 {
+        &self.proxy
+    }
+}
+
 impl State {
-    fn workspace_index(&self, proxy: &ExtWorkspaceHandleV1) -> Option<usize> {
+    pub(crate) fn workspace_index(&self, proxy: &ExtWorkspaceHandleV1) -> Option<usize> {
         let workspaces = &self.workspaces.workspaces;
         workspaces.iter().position(|w| w.proxy == *proxy)
     }

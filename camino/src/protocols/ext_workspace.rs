@@ -160,6 +160,15 @@ impl ExtWorkspaceState {
         self.outputs = outputs;
         self.workspaces = workspaces;
     }
+
+    /// A client's handle for the workspace with this id, if it has one that wasn't sent
+    /// `removed`.
+    pub fn workspace_handle(&self, client: &Client, id: &str) -> Option<ExtWorkspaceHandleV1> {
+        let managers = self.managers.iter().filter(|m| m.client == *client);
+        let mut handles = managers.flat_map(|manager| &manager.handles);
+        let handle = handles.find(|handle| handle.id == id)?;
+        Some(handle.resource.clone())
+    }
 }
 
 impl Manager {

@@ -208,12 +208,44 @@ switches between the ttys.
        --command=/run/host/usr/bin/wayland-info org.freedesktop.Platform//25.08
      ```
 
-- **Expected:** the sandbox lists eight globals fewer than step 2 counts. It lists none of
-  `zwlr_layer_shell_v1`, `zwlr_foreign_toplevel_manager_v1`, `ext_foreign_toplevel_list_v1`,
+- **Expected:** the sandbox lists nine globals fewer than step 2 counts. It lists none of
+  `zwlr_layer_shell_v1`, `zwlr_foreign_toplevel_manager_v1`,
+  `xfce_foreign_toplevel_manager_private_v1`, `ext_foreign_toplevel_list_v1`,
   `ext_workspace_manager_v1`, `zwlr_output_manager_v1`, `ext_data_control_manager_v1`,
   `zwlr_data_control_manager_v1` and `wp_security_context_manager_v1`, and it does list
-  `xdg_wm_base` and `wl_data_device_manager` (68).
+  `xdg_wm_base` and `wl_data_device_manager` (68, 75).
 - **Debug tool:** `wayland-info` in and out of the sandbox.
+
+## The panel
+
+### The window list shows the active workspace's windows
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 2 or later, and open two
+     windows on the first workspace.
+  2. Switch to the second workspace with the workspace switcher, look at the window list, and
+     switch back.
+  3. Move one of the windows to the second workspace from its window menu, and look at the
+     window list on both workspaces.
+  4. In a terminal, find the window list's settings and show every workspace's windows:
+
+     ```sh
+     path=$(dconf list /org/mate/panel/objects/ | grep window-list)
+     gsettings set org.mate.panel.applet.window-list:/org/mate/panel/objects/${path}prefs/ \
+       display-all-workspaces true
+     ```
+
+  5. Set it back to `false`, then open the window list's *Preferences* and choose *Show windows
+     from all workspaces* there.
+  6. `journalctl --user -b | grep 'Window<->Workspace'`.
+- **Expected:** on the second workspace the window list has no button in step 2, and both
+  windows' buttons are there again on the first. In step 3 each workspace's list has the button
+  of its one window. In step 4 both buttons are there on every workspace, and in step 5 they go
+  and come back; the two choices in *Preferences* can be clicked. Step 6 prints nothing:
+  libxfce4windowing logs that line only where it can't learn a window's workspace (75).
+- **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
+  xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
 ## Input
 

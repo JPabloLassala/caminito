@@ -5,6 +5,7 @@ pub mod foreign_toplevel;
 pub mod gtk_shell;
 pub mod output_management;
 pub mod raw;
+pub mod xfce_foreign_toplevel;
 
 use smithay::reexports::wayland_server::Client;
 

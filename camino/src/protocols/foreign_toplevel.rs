@@ -194,6 +194,13 @@ impl ForeignToplevelState {
         }
         self.toplevels = toplevels;
     }
+
+    /// The toplevel a client's handle is for, unless the handle was sent `closed`.
+    pub fn toplevel(&self, handle: &ZwlrForeignToplevelHandleV1) -> Option<ToplevelId> {
+        let mut handles = self.managers.iter().flat_map(|manager| &manager.handles);
+        let handle = handles.find(|known| known.resource == *handle)?;
+        Some(handle.id)
+    }
 }
 
 impl Manager {

@@ -9,9 +9,10 @@ use super::fixture::{ClientId, Fixture, Kind};
 
 /// The globals that show or change what belongs to other clients, and security-context
 /// itself.
-const PRIVILEGED: [&str; 8] = [
+const PRIVILEGED: [&str; 9] = [
     "zwlr_layer_shell_v1",
     "zwlr_foreign_toplevel_manager_v1",
+    "xfce_foreign_toplevel_manager_private_v1",
     "ext_foreign_toplevel_list_v1",
     "ext_workspace_manager_v1",
     "zwlr_output_manager_v1",

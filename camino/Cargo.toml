@@ -35,7 +35,8 @@ tracing = "0.1.44"
 # A Session's logs, when its stderr isn't a terminal (14).
 tracing-journald = "0.3.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-# Generates gtk_shell1 from `resources/gtk-shell.xml` (15, 67).
+# Generates gtk_shell1 and Xfce's foreign toplevel protocol from the XML in `resources/`
+# (15, 67, 75).
 wayland-scanner = "0.31.11"
 # Camino's X connection (11, 15), beside Smithay's.
 x11rb = { workspace = true, features = ["shape", "xkb"] }

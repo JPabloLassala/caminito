@@ -28,6 +28,7 @@ xdg_system_bell_v1 v1
 xdg_toplevel_icon_manager_v1 v1
 xdg_wm_base v7
 xdg_wm_dialog_v1 v1
+xfce_foreign_toplevel_manager_private_v1 v1
 zwlr_data_control_manager_v1 v2
 zwlr_foreign_toplevel_manager_v1 v3
 zwlr_layer_shell_v1 v5

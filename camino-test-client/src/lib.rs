@@ -6,7 +6,8 @@
 //! turn those records into stable text for snapshots. The [`dbus`] proxies call Camino's
 //! D-Bus names, the [`x11`] client speaks X11 to Camino's Xwayland, [`output_management`]
 //! configures the outputs as `wlr-randr` does, [`foreign_toplevel`] lists the windows and
-//! [`ext_workspace`] the workspaces as a panel does, [`gtk_shell`] speaks GTK3's own
+//! [`ext_workspace`] the workspaces as a panel does, [`xfce_foreign_toplevel`] learns each
+//! window's workspace as libxfce4windowing does, [`gtk_shell`] speaks GTK3's own
 //! protocol, [`layer_shell`] makes layer surfaces, [`data_control`] reads and sets the
 //! selections as a clipboard manager does, and [`security_context`] makes the socket a
 //! sandboxed client connects through.
@@ -21,6 +22,7 @@ pub mod output_management;
 pub mod security_context;
 pub mod selection;
 pub mod x11;
+pub mod xfce_foreign_toplevel;
 
 use std::fmt;
 use std::fs::File;

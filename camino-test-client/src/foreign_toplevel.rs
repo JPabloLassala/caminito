@@ -2,6 +2,9 @@
 //! (65): it records the toplevels the compositor shows and every event it sends for them,
 //! and asks for them to be activated, closed, minimised, maximised and made fullscreen. It
 //! lists the toplevels of `ext_foreign_toplevel_list_v1` too.
+//!
+//! [`xfce_foreign_toplevel`](crate::xfce_foreign_toplevel) adds the workspace each toplevel
+//! is on (75).
 
 use wayland_client::{Connection, Dispatch, QueueHandle, event_created_child};
 use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::{
@@ -19,12 +22,17 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_m
 
 pub use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::State as HandleState;
 
+use crate::xfce_foreign_toplevel::raw::xfce_foreign_toplevel_handle_v1::XfceForeignToplevelHandleV1;
+use crate::xfce_foreign_toplevel::raw::xfce_foreign_toplevel_manager_private_v1::XfceForeignToplevelManagerPrivateV1;
 use crate::{Client, State, WindowId, decode_enums};
 
 /// What foreign toplevel management, and the foreign toplevel list, have told the client.
 #[derive(Default)]
 pub struct ForeignToplevels {
     manager: Option<ZwlrForeignToplevelManagerV1>,
+    /// Xfce's manager, once bound: every toplevel announced after that is asked for its
+    /// Xfce handle, as libxfce4windowing asks.
+    pub(crate) xfce_manager: Option<XfceForeignToplevelManagerPrivateV1>,
     /// Every toplevel the compositor has announced, in the order it did. A closed one
     /// stays, so a toplevel's index names it for as long as the client lives.
     pub toplevels: Vec<Toplevel>,
@@ -42,10 +50,14 @@ pub struct ForeignToplevels {
 
 /// A toplevel, as its last events left it.
 pub struct Toplevel {
-    proxy: ZwlrForeignToplevelHandleV1,
+    pub(crate) proxy: ZwlrForeignToplevelHandleV1,
+    /// Its Xfce handle, if the client asked for one.
+    pub(crate) xfce: Option<XfceForeignToplevelHandleV1>,
     pub title: Option<String>,
     pub app_id: Option<String>,
     pub states: Vec<HandleState>,
+    /// The index of the workspace its Xfce handle last said it's on.
+    pub workspace: Option<usize>,
     /// The names of the outputs it's on, in the order it entered them.
     pub outputs: Vec<String>,
     /// The index of its parent.
@@ -71,6 +83,11 @@ impl ForeignToplevels {
             .iter()
             .position(|toplevel| !toplevel.closed && toplevel.title.as_deref() == Some(title))
             .unwrap_or_else(|| panic!("there's a toplevel titled {title}"))
+    }
+
+    /// Records an event of the toplevel at `index`.
+    pub(crate) fn push_event(&mut self, index: usize, text: &str) {
+        self.events.push(format!("toplevel {index}: {text}"));
     }
 }
 
@@ -201,7 +218,7 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for State {
         event: zwlr_foreign_toplevel_manager_v1::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
     ) {
         let foreign = &mut state.foreign_toplevels;
         match event {
@@ -209,11 +226,16 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for State {
                 foreign
                     .events
                     .push(format!("toplevel {}: new", foreign.toplevels.len()));
+                let xfce = foreign.xfce_manager.as_ref();
+                let xfce =
+                    xfce.map(|xfce| xfce.get_xfce_foreign_toplevel_handle(&toplevel, qh, ()));
                 foreign.toplevels.push(Toplevel {
                     proxy: toplevel,
+                    xfce,
                     title: None,
                     app_id: None,
                     states: Vec::new(),
+                    workspace: None,
                     outputs: Vec::new(),
                     parent: None,
                     closed: false,
@@ -288,14 +310,17 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
             Event::Closed => {
                 state.foreign_toplevels.toplevels[index].closed = true;
                 if !state.foreign_toplevels.keep_closed_handles {
+                    // The Xfce handle goes with it, as the protocol asks.
+                    if let Some(xfce) = state.foreign_toplevels.toplevels[index].xfce.take() {
+                        xfce.destroy();
+                    }
                     state.foreign_toplevels.toplevels[index].proxy.destroy();
                 }
                 "closed".to_owned()
             }
             _ => return,
         };
-        let events = &mut state.foreign_toplevels.events;
-        events.push(format!("toplevel {index}: {text}"));
+        state.foreign_toplevels.push_event(index, &text);
     }
 }
 

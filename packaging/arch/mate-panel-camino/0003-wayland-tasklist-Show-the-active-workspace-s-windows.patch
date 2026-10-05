@@ -1,0 +1,277 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 12:00:00 -0300
+Subject: [PATCH] wayland/tasklist: Show the active workspace's windows only
+
+On X11, libwnck's window list shows the windows of the active workspace
+unless display-all-workspaces is set. The Wayland window list showed every
+window, and the setting did nothing, because wlr-foreign-toplevel does not say
+which workspace a window is on.
+
+libxfce4windowing knows it on a compositor that has Xfce's foreign toplevel
+protocol. Give a window a button only while it is on the active workspace, or
+on all of them, and follow the window's workspace and the active workspace.
+With display-all-workspaces every window has one, and the setting can be
+changed in the preferences again. Where the compositor does not say where a
+window is, xfw_window_get_workspace gives none and every window has a button,
+as before.
+
+A button that comes back is added after the others, so the order of the
+buttons, and one the user made by dragging, is not kept across workspaces.
+---
+ applets/wncklet/wayland-backend.c | 139 ++++++++++++++++++++++++++++--
+ applets/wncklet/wayland-backend.h |   1 +
+ applets/wncklet/window-list.c     |   8 +-
+ 3 files changed, 141 insertions(+), 7 deletions(-)
+
+diff --git a/applets/wncklet/wayland-backend.c b/applets/wncklet/wayland-backend.c
+index 2de3ed5..cd1dc0c 100644
+--- a/applets/wncklet/wayland-backend.c
++++ b/applets/wncklet/wayland-backend.c
+@@ -66,6 +66,7 @@ typedef struct
+ 	GList *tasks;
+ 	gboolean scroll_enabled;
+ 	gboolean middle_click_close;
++	gboolean include_all_workspaces;
+ 	WaylandTasklistGroupingType grouping;
+ 	gboolean auto_grouping;
+ 	gboolean auto_grouping_applied;
+@@ -1043,8 +1044,26 @@ tasklist_has_window (TasklistManager *tasklist, XfwWindow *window)
+ 	return FALSE;
+ }
+ 
++/* Whether the window has a button: it is on the active workspace, or on all of
++ * them, or the list shows every workspace's windows. A compositor that does not
++ * say where its windows are has them all shown, as before. */
++static gboolean
++tasklist_shows_window (TasklistManager *tasklist, XfwWindow *window)
++{
++	XfwWorkspace *workspace;
++
++	if (tasklist->include_all_workspaces || xfw_window_is_pinned (window))
++		return TRUE;
++
++	workspace = xfw_window_get_workspace (window);
++	if (workspace == NULL)
++		return TRUE;
++
++	return (xfw_workspace_get_state (workspace) & XFW_WORKSPACE_STATE_ACTIVE) != 0;
++}
++
+ static void
+-screen_window_opened (XfwScreen *screen, XfwWindow *window, TasklistManager *tasklist)
++tasklist_add_window (TasklistManager *tasklist, XfwWindow *window)
+ {
+ 	ToplevelTask *task;
+ 
+@@ -1056,7 +1075,7 @@ screen_window_opened (XfwScreen *screen, XfwWindow *window, TasklistManager *tas
+ }
+ 
+ static void
+-screen_window_closed (XfwScreen *screen, XfwWindow *window, TasklistManager *tasklist)
++tasklist_remove_window (TasklistManager *tasklist, XfwWindow *window)
+ {
+ 	GList *l;
+ 
+@@ -1102,6 +1121,80 @@ screen_window_closed (XfwScreen *screen, XfwWindow *window, TasklistManager *tas
+ 	}
+ }
+ 
++/* Gives the window its button, or takes it away. */
++static void
++tasklist_sync_window (TasklistManager *tasklist, XfwWindow *window)
++{
++	if (tasklist_shows_window (tasklist, window))
++		tasklist_add_window (tasklist, window);
++	else
++		tasklist_remove_window (tasklist, window);
++}
++
++static void
++tasklist_sync_windows (TasklistManager *tasklist)
++{
++	GList *l;
++
++	/* oldest first, which is the order the buttons are added in as windows open */
++	for (l = g_list_last (xfw_screen_get_windows (tasklist->screen)); l != NULL; l = l->prev)
++		tasklist_sync_window (tasklist, l->data);
++}
++
++static void
++window_workspace_changed (XfwWindow *window, TasklistManager *tasklist)
++{
++	tasklist_sync_window (tasklist, window);
++}
++
++static void
++window_pinned_changed (XfwWindow *window, XfwWindowState changed_mask, XfwWindowState new_state, TasklistManager *tasklist)
++{
++	if ((changed_mask & XFW_WINDOW_STATE_PINNED) != 0)
++		tasklist_sync_window (tasklist, window);
++}
++
++/* Follows a window whether it has a button or not, since one on another
++ * workspace has none. */
++static void
++tasklist_track_window (TasklistManager *tasklist, XfwWindow *window)
++{
++	g_signal_connect (window, "workspace-changed",
++			  G_CALLBACK (window_workspace_changed), tasklist);
++	g_signal_connect (window, "state-changed",
++			  G_CALLBACK (window_pinned_changed), tasklist);
++}
++
++static void
++screen_window_opened (XfwScreen *screen, XfwWindow *window, TasklistManager *tasklist)
++{
++	if (!window)
++		return;
++
++	tasklist_track_window (tasklist, window);
++	tasklist_sync_window (tasklist, window);
++}
++
++static void
++screen_window_closed (XfwScreen *screen, XfwWindow *window, TasklistManager *tasklist)
++{
++	g_signal_handlers_disconnect_by_data (window, tasklist);
++	tasklist_remove_window (tasklist, window);
++}
++
++static void
++group_active_workspace_changed (XfwWorkspaceGroup *group, XfwWorkspace *previously_active, TasklistManager *tasklist)
++{
++	tasklist_sync_windows (tasklist);
++}
++
++static void
++workspace_group_created (XfwWorkspaceManager *manager, XfwWorkspaceGroup *group, TasklistManager *tasklist)
++{
++	g_signal_connect (group, "active-workspace-changed",
++			  G_CALLBACK (group_active_workspace_changed), tasklist);
++}
++
+ static void
+ screen_active_window_changed (XfwScreen *screen, XfwWindow *previous_window, gpointer user_data)
+ {
+@@ -1174,6 +1267,15 @@ tasklist_manager_disconnected_from_widget (TasklistManager *tasklist)
+ 
+ 	if (tasklist->screen)
+ 	{
++		XfwWorkspaceManager *manager = xfw_screen_get_workspace_manager (tasklist->screen);
++		GList *l;
++
++		for (l = xfw_screen_get_windows (tasklist->screen); l != NULL; l = l->next)
++			g_signal_handlers_disconnect_by_data (l->data, tasklist);
++		for (l = xfw_workspace_manager_list_workspace_groups (manager); l != NULL; l = l->next)
++			g_signal_handlers_disconnect_by_data (l->data, tasklist);
++		g_signal_handlers_disconnect_by_data (manager, tasklist);
++
+ 		g_signal_handlers_disconnect_by_data (tasklist->screen, tasklist);
+ 		g_object_unref (tasklist->screen);
+ 		tasklist->screen = NULL;
+@@ -1198,6 +1300,7 @@ tasklist_manager_new (void)
+ {
+ 	TasklistManager *tasklist;
+ 	GList *windows, *l;
++	XfwWorkspaceManager *workspace_manager;
+ 	XfwScreen *screen = xfw_screen_get_default ();
+ 
+ 	if (screen == NULL)
+@@ -1228,16 +1331,26 @@ tasklist_manager_new (void)
+ 	g_signal_connect (tasklist->list, "size-allocate",
+ 			  G_CALLBACK (tasklist_list_size_allocate), tasklist);
+ 
+-	/* add all existing windows on this screen */
++	/* add the existing windows on this screen that are shown */
+ 	windows = xfw_screen_get_windows (screen);
+ 	for (l = windows; l != NULL; l = l->next)
+ 	{
+ 		XfwWindow *window = l->data;
+-		ToplevelTask *task = toplevel_task_new (tasklist, window);
+-		if (task != NULL)
+-			gtk_box_pack_start (GTK_BOX (tasklist->list), task->button, TRUE, TRUE, 0);
++
++		if (window == NULL)
++			continue;
++
++		tasklist_track_window (tasklist, window);
++		tasklist_sync_window (tasklist, window);
+ 	}
+ 
++	/* a window's button comes and goes with its workspace */
++	workspace_manager = xfw_screen_get_workspace_manager (screen);
++	for (l = xfw_workspace_manager_list_workspace_groups (workspace_manager); l != NULL; l = l->next)
++		workspace_group_created (workspace_manager, l->data, tasklist);
++	g_signal_connect (workspace_manager, "workspace-group-created",
++			  G_CALLBACK (workspace_group_created), tasklist);
++
+ 	/* monitor window changes */
+ 	g_signal_connect (screen, "window-opened",
+ 			  G_CALLBACK (screen_window_opened), tasklist);
+@@ -1751,6 +1864,20 @@ wayland_tasklist_set_middle_click_close (GtkWidget *tasklist_widget, gboolean en
+ 	tasklist->middle_click_close = enabled;
+ }
+ 
++void
++wayland_tasklist_set_include_all_workspaces (GtkWidget *tasklist_widget, gboolean include_all_workspaces)
++{
++	TasklistManager *tasklist = tasklist_widget_get_tasklist (tasklist_widget);
++	g_return_if_fail (tasklist);
++
++	include_all_workspaces = (include_all_workspaces != FALSE);
++	if (tasklist->include_all_workspaces == include_all_workspaces)
++		return;
++
++	tasklist->include_all_workspaces = include_all_workspaces;
++	tasklist_sync_windows (tasklist);
++}
++
+ void
+ wayland_tasklist_set_scroll_enabled (GtkWidget *tasklist_widget, gboolean enabled)
+ {
+diff --git a/applets/wncklet/wayland-backend.h b/applets/wncklet/wayland-backend.h
+index 7028fef..e18d86b 100644
+--- a/applets/wncklet/wayland-backend.h
++++ b/applets/wncklet/wayland-backend.h
+@@ -46,6 +46,7 @@ GtkWidget* wayland_tasklist_new (void);
+ void wayland_tasklist_set_orientation (GtkWidget* tasklist_widget, GtkOrientation orient);
+ void wayland_tasklist_set_middle_click_close (GtkWidget* tasklist_widget, gboolean enabled);
+ void wayland_tasklist_set_scroll_enabled (GtkWidget* tasklist_widget, gboolean enabled);
++void wayland_tasklist_set_include_all_workspaces (GtkWidget* tasklist_widget, gboolean include_all_workspaces);
+ void wayland_tasklist_set_grouping (GtkWidget* tasklist_widget, WaylandTasklistGroupingType grouping);
+ 
+ #ifdef __cplusplus
+diff --git a/applets/wncklet/window-list.c b/applets/wncklet/window-list.c
+index cc09c41..830b747 100644
+--- a/applets/wncklet/window-list.c
++++ b/applets/wncklet/window-list.c
+@@ -163,6 +163,7 @@ static void tasklist_update(TasklistData* tasklist)
+ 				grouping = WAYLAND_TASKLIST_NEVER_GROUP;
+ 		}
+ 		wayland_tasklist_set_grouping (tasklist->tasklist, grouping);
++		wayland_tasklist_set_include_all_workspaces (tasklist->tasklist, tasklist->include_all_workspaces);
+ 		wayland_tasklist_set_scroll_enabled (tasklist->tasklist, tasklist->scroll_enable);
+ 		wayland_tasklist_set_middle_click_close (tasklist->tasklist, tasklist->middle_click_close);
+ 	}
+@@ -668,6 +669,12 @@ static void tasklist_properties_update_content_radio(TasklistData* tasklist)
+ 	if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button)))
+ 		gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button), TRUE);
+ 
++#ifdef HAVE_WAYLAND
++	/* where a restored window goes is not ours to say on Wayland */
++	if (GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default()))
++		return;
++#endif /* HAVE_WAYLAND */
++
+ 	gtk_widget_set_sensitive(tasklist->minimized_windows_box, tasklist->include_all_workspaces);
+ }
+ 
+@@ -1140,7 +1147,6 @@ static void setup_dialog_wayland(TasklistData* tasklist)
+ 	if (tasklist->wayland_info_label != NULL)
+ 		gtk_widget_show(tasklist->wayland_info_label);
+ 
+-	gtk_widget_set_sensitive(tasklist->window_list_content_box, FALSE);
+ 	gtk_widget_set_sensitive(tasklist->minimized_windows_box, FALSE);
+ 
+ 	gtk_widget_set_sensitive(tasklist->window_thumbnail_box, FALSE);
