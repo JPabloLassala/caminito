@@ -120,7 +120,7 @@ fn handle_event(state: &mut State, event: WinitEvent) {
     match event {
         WinitEvent::Resized { size, .. } => winit.resize(&mut state.camino, size),
         WinitEvent::Redraw => winit.frame_pending = false,
-        WinitEvent::CloseRequested => state.camino.loop_signal.stop(),
+        WinitEvent::CloseRequested => state.camino.quit(),
         WinitEvent::Input(event) => state.process_input_event(event),
         WinitEvent::Focus(false) => state.release_pressed_keys(),
         WinitEvent::Focus(true) => {}

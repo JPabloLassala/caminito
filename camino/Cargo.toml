@@ -12,7 +12,8 @@ camino-policy = { path = "../camino-policy" }
 camino-theme = { path = "../camino-theme" }
 futures-channel = "0.3.34"
 gio = "0.22.10"
-rustix = { version = "1.1.5", features = ["fs"] }
+# process: SIGTERM to the helpers and to the session command (61).
+rustix = { version = "1.1.5", features = ["fs", "process"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 signal-hook = "0.4.4"
@@ -31,6 +32,8 @@ smithay = { workspace = true, features = [
 # EDIDs' make, model and serial, through libdisplay-info.
 smithay-drm-extras = { workspace = true, features = ["display-info"] }
 tracing = "0.1.44"
+# A Session's logs, when its stderr isn't a terminal (14).
+tracing-journald = "0.3.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 # Generates gtk_shell1 from `resources/gtk-shell.xml` (15, 67).
 wayland-scanner = "0.31.11"
@@ -45,8 +48,6 @@ insta = "1.48.0"
 tempfile = "3.27.0"
 # The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
 smithay = { workspace = true, features = ["renderer_pixman"] }
-# The fixture signals the Xwayland each test started, when it's dropped.
-rustix = { version = "1.1.5", features = ["process"] }
 
 [lints]
 workspace = true

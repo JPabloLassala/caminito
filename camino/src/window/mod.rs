@@ -11,7 +11,7 @@ mod xdg;
 pub(crate) use lifecycle::PendingWindows;
 pub(crate) use lifecycle::StateRequest;
 pub(crate) use x11::{
-    STICKY, Strut, configure_request_geometry, marco_type, request_demands_attention,
+    STICKY, Side, Strut, configure_request_geometry, marco_type, request_demands_attention,
     request_modal, request_skips, struts, takes_pointer_at, with_x_facts,
 };
 pub(crate) use xdg::owe_configure;

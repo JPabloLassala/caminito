@@ -217,19 +217,8 @@ pub(super) struct RootProperties {
     pub(super) current_desktop: usize,
     /// Each monitor's, in X client space.
     pub(super) work_areas: Vec<Rectangle<i32, Logical>>,
-}
-
-impl RootProperties {
-    /// `_NET_WORKAREA`'s one rectangle: Marco's is the X screen's, from the origin to the
-    /// far edges of every monitor, less the struts (`screen.c:2354-2435`). There are none
-    /// yet.
-    fn screen_work_area(&self) -> Rectangle<i32, Logical> {
-        let far = self.work_areas.iter().fold((0, 0), |(w, h), area| {
-            let edge = area.loc + area.size;
-            (w.max(edge.x), h.max(edge.y))
-        });
-        Rectangle::new((0, 0).into(), far.into())
-    }
+    /// `_NET_WORKAREA`'s one rectangle, the X screen's work area, in X client space.
+    pub(super) screen_work_area: Rectangle<i32, Logical>,
 }
 
 /// `_MOTIF_WM_HINTS`'s flag for its decorations field.
@@ -754,9 +743,13 @@ impl XConnection {
         }
         let count_changed =
             last.map(|last| last.desktop_names.len()) != Some(properties.desktop_names.len());
-        if count_changed || last.map(|last| &last.work_areas) != Some(&properties.work_areas) {
+        let areas_changed = last.is_none_or(|last| {
+            last.work_areas != properties.work_areas
+                || last.screen_work_area != properties.screen_work_area
+        });
+        if count_changed || areas_changed {
             let count = properties.desktop_names.len();
-            let screen = cardinals(properties.screen_work_area());
+            let screen = cardinals(properties.screen_work_area);
             self.replace32(
                 root,
                 atoms._NET_WORKAREA,

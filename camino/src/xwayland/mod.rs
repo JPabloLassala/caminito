@@ -31,17 +31,20 @@ use smithay::xwayland::xwm::settings::Value as XSettingValue;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
 pub(crate) use self::restart::Restart;
+#[cfg(test)]
+pub(crate) use self::restart::process;
 use self::scale::X11Scale;
 pub(crate) use self::selection::WaylandSelections;
 use self::stack::RootStack;
 use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XConnection};
 use crate::decoration::{NetWmIcon, WindowFacts};
-use crate::helpers::{self, StderrTarget};
+use crate::helpers;
 use crate::input::GrabKind;
 use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, Mouse};
 use crate::state::{Camino, SEAT, State};
 use crate::window::{STICKY, WindowKey, marco_type, request_skips, with_x_facts};
+use crate::work_area::screen_work_area;
 
 /// One of Smithay's setters for a state in `_NET_WM_STATE`.
 type SetState = fn(&X11Surface, bool) -> Result<(), ConnectionError>;
@@ -102,8 +105,7 @@ impl Camino {
     /// Spawns Xwayland on a free display, or on the one it had if it's a restart. It's
     /// ready once `Ready` has attached `X11Wm`.
     pub fn start_xwayland(&mut self) {
-        let stderr = match helpers::stderr_to(&self.loop_handle, IDENTIFIER, StderrTarget::Prefixed)
-        {
+        let stderr = match helpers::stderr_to(&self.loop_handle, IDENTIFIER, self.helper_stderr) {
             Ok(stderr) => stderr,
             Err(err) => {
                 tracing::warn!("{IDENTIFIER}: can't pipe its stderr, so it's dropped: {err}");
@@ -627,16 +629,16 @@ impl Camino {
     }
 
     fn root_properties(&self) -> RootProperties {
+        let scale = self.applied_x11_scale();
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
             current_desktop: self.policy.active_workspace(),
-            work_areas: {
-                let scale = self.applied_x11_scale();
-                self.policy
-                    .work_areas()
-                    .map(|area| scale.to_x(area))
-                    .collect()
-            },
+            work_areas: self
+                .policy
+                .work_areas()
+                .map(|area| scale.to_x(area))
+                .collect(),
+            screen_work_area: scale.to_x(screen_work_area(self.policy.outputs())),
         }
     }
 

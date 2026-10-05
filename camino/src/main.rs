@@ -1,27 +1,26 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::OsStrExt;
 use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    camino::logging::init();
+use camino::session::SessionCommand;
 
+fn main() -> ExitCode {
     let args = match Args::parse(std::env::args_os().skip(1)) {
         Ok(args) => args,
         Err(err) => {
+            camino::logging::init(false);
             tracing::error!("{err}");
             return ExitCode::FAILURE;
         }
     };
-    if args.session {
-        tracing::error!("--session isn't supported yet");
-        return ExitCode::FAILURE;
-    }
+    camino::logging::init(args.session.is_some());
 
     let kind = camino::backend::Kind::choose(
         std::env::var_os("WAYLAND_DISPLAY").as_deref(),
         std::env::var_os("DISPLAY").as_deref(),
     );
-    match camino::run(kind) {
-        Ok(()) => ExitCode::SUCCESS,
+    match camino::run(kind, args.session) {
+        Ok(status) => ExitCode::from(status),
         Err(err) => {
             tracing::error!("{}", report(err.as_ref()));
             ExitCode::FAILURE
@@ -43,17 +42,22 @@ fn report(err: &dyn std::error::Error) -> String {
 
 #[derive(Debug, Default, PartialEq)]
 struct Args {
-    /// Run as the Session (08), rather than bare.
-    session: bool,
+    /// What to run as the Session (08), rather than bare.
+    session: Option<SessionCommand>,
 }
 
 impl Args {
     fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self, String> {
         let mut parsed = Args::default();
         for arg in args {
-            match arg.to_str() {
-                Some("--session") => parsed.session = true,
-                _ => return Err(format!("unknown argument {}", arg.to_string_lossy())),
+            if arg == "--session" {
+                parsed.session = Some(SessionCommand::mate_session());
+            } else if let Some(command) = arg.as_bytes().strip_prefix(b"--session=") {
+                let command = SessionCommand::parse(OsStr::from_bytes(command))
+                    .ok_or("--session= needs a command")?;
+                parsed.session = Some(command);
+            } else {
+                return Err(format!("unknown argument {}", arg.to_string_lossy()));
             }
         }
         Ok(parsed)
@@ -68,19 +72,53 @@ mod tests {
         Args::parse(args.iter().map(OsString::from))
     }
 
-    #[test]
-    fn no_arguments_is_a_bare_run() {
-        assert_eq!(parse(&[]), Ok(Args { session: false }));
+    /// The program and arguments `args` make the Session's command.
+    fn session(args: &[&str]) -> Option<Vec<String>> {
+        let command = parse(args).unwrap().session?;
+        let words = std::iter::once(command.program()).chain(command.args());
+        Some(
+            words
+                .map(|word| word.to_str().unwrap().to_owned())
+                .collect(),
+        )
     }
 
     #[test]
-    fn session_is_parsed() {
-        assert_eq!(parse(&["--session"]), Ok(Args { session: true }));
+    fn no_arguments_is_a_bare_run() {
+        assert_eq!(parse(&[]), Ok(Args { session: None }));
+    }
+
+    #[test]
+    fn session_runs_mate_session_without_its_acceleration_check() {
+        assert_eq!(
+            session(&["--session"]).unwrap(),
+            ["mate-session", "--disable-acceleration-check"]
+        );
+    }
+
+    #[test]
+    fn session_with_a_command_runs_it_instead() {
+        assert_eq!(session(&["--session=foot"]).unwrap(), ["foot"]);
+    }
+
+    #[test]
+    fn a_session_commands_words_are_its_arguments() {
+        assert_eq!(
+            session(&["--session=foot  --title scratch"]).unwrap(),
+            ["foot", "--title", "scratch"]
+        );
+    }
+
+    #[test]
+    fn session_with_an_empty_command_is_refused() {
+        assert!(parse(&["--session="]).is_err());
+        assert!(parse(&["--session= "]).is_err());
     }
 
     #[test]
     fn unknown_arguments_are_refused() {
         assert!(parse(&["--nested"]).is_err());
+        assert!(parse(&["--sessions"]).is_err());
     }
 
     #[derive(Debug)]

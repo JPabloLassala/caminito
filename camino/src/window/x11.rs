@@ -197,8 +197,8 @@ pub(crate) struct XFacts {
     pub desktop: Option<u32>,
     /// `_NET_WM_ICON`, kept up to date.
     pub icon: Option<NetWmIcon>,
-    /// `_NET_WM_STRUT_PARTIAL`, else `_NET_WM_STRUT`, kept up to date. Policy's work area
-    /// takes them in M5 (17).
+    /// `_NET_WM_STRUT_PARTIAL`, else `_NET_WM_STRUT`, kept up to date. While the window
+    /// is managed, they're reserved in policy's work area (64).
     pub struts: Vec<Strut>,
     /// The input region SHAPE gives it, from its origin, kept up to date; `None` takes the
     /// pointer everywhere (35).
