@@ -235,8 +235,8 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 impl Camino {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, outputs with
-    /// their scales, work areas and layer surfaces, the X11 scale, and focus, as pretty-printed JSON. The
-    /// lock state comes with the milestone that makes it.
+    /// their scales, work areas and layer surfaces, the X11 scale, and focus, as
+    /// pretty-printed JSON. The lock state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy

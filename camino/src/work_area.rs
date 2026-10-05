@@ -27,7 +27,7 @@ type Rect = Rectangle<i32, Logical>;
 ///
 /// A `base` that's wholly reserved has no work area in Marco. Here nothing is reserved on
 /// it then, so windows still have somewhere to go.
-pub(crate) fn largest_free(base: Rect, reserved: &[Rect]) -> Rect {
+fn largest_free(base: Rect, reserved: &[Rect]) -> Rect {
     let mut free = vec![base];
     for strut in reserved {
         let mut split = Vec::new();
@@ -77,34 +77,25 @@ pub(crate) fn largest_free(base: Rect, reserved: &[Rect]) -> Rect {
 /// makes it (window.c:6400-6520): the strut's width in from the screen's edge, along its
 /// span, or along the whole edge for `_NET_WM_STRUT`. It's the X screen's edge, not a
 /// monitor's, so the strut counts on the monitors this rectangle is on.
-pub(crate) fn strut_rect(strut: Strut, screen: Rect) -> Rect {
+fn strut_rect(strut: Strut, screen: Rect) -> Rect {
     let (far_x, far_y) = (screen.loc.x + screen.size.w, screen.loc.y + screen.size.h);
     let along = |start: i32, length: i32| match strut.span {
         Some((first, last)) => (first, last - first + 1),
         None => (start, length),
     };
-    match strut.side {
-        Side::Left | Side::Right => {
-            let x = match strut.side {
-                Side::Left => screen.loc.x,
-                _ => far_x - strut.width,
-            };
-            let (y, height) = along(screen.loc.y, screen.size.h);
-            Rect::new((x, y).into(), (strut.width, height).into())
-        }
-        Side::Top | Side::Bottom => {
-            let y = match strut.side {
-                Side::Top => screen.loc.y,
-                _ => far_y - strut.width,
-            };
-            let (x, width) = along(screen.loc.x, screen.size.w);
-            Rect::new((x, y).into(), (width, strut.width).into())
-        }
-    }
+    let (y, height) = along(screen.loc.y, screen.size.h);
+    let (x, width) = along(screen.loc.x, screen.size.w);
+    let (loc, size) = match strut.side {
+        Side::Left => ((screen.loc.x, y), (strut.width, height)),
+        Side::Right => ((far_x - strut.width, y), (strut.width, height)),
+        Side::Top => ((x, screen.loc.y), (width, strut.width)),
+        Side::Bottom => ((x, far_y - strut.width), (width, strut.width)),
+    };
+    Rect::new(loc.into(), size.into())
 }
 
 /// The strips along `geometry`'s edges that `reserved` takes from it.
-pub(crate) fn edge_rects(geometry: Rect, reserved: ReservedEdges) -> Vec<Rect> {
+fn edge_rects(geometry: Rect, reserved: ReservedEdges) -> Vec<Rect> {
     let Rect { loc, size } = geometry;
     [
         Rect::new(loc, (reserved.left, size.h).into()),
@@ -124,7 +115,7 @@ pub(crate) fn edge_rects(geometry: Rect, reserved: ReservedEdges) -> Vec<Rect> {
 }
 
 /// What's reserved along `geometry`'s edges when `area` of it is left.
-pub(crate) fn edges_around(geometry: Rect, area: Rect) -> ReservedEdges {
+fn edges_around(geometry: Rect, area: Rect) -> ReservedEdges {
     ReservedEdges {
         left: area.loc.x - geometry.loc.x,
         right: geometry.loc.x + geometry.size.w - area.loc.x - area.size.w,
@@ -135,7 +126,7 @@ pub(crate) fn edges_around(geometry: Rect, area: Rect) -> ReservedEdges {
 
 /// The X screen for outputs at `geometries`: from the origin to their far edges, as
 /// Xwayland makes it.
-pub(crate) fn screen(geometries: impl IntoIterator<Item = Rect>) -> Rect {
+fn screen(geometries: impl IntoIterator<Item = Rect>) -> Rect {
     let far = geometries.into_iter().fold((0, 0), |(w, h), geometry| {
         let edge = geometry.loc + geometry.size;
         (w.max(edge.x), h.max(edge.y))

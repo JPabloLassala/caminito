@@ -743,10 +743,11 @@ impl XConnection {
         }
         let count_changed =
             last.map(|last| last.desktop_names.len()) != Some(properties.desktop_names.len());
-        let areas = |properties: &RootProperties| {
-            (properties.work_areas.clone(), properties.screen_work_area)
-        };
-        if count_changed || last.map(areas) != Some(areas(&properties)) {
+        let areas_changed = last.is_none_or(|last| {
+            last.work_areas != properties.work_areas
+                || last.screen_work_area != properties.screen_work_area
+        });
+        if count_changed || areas_changed {
             let count = properties.desktop_names.len();
             let screen = cardinals(properties.screen_work_area);
             self.replace32(

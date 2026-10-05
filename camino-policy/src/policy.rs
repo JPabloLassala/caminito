@@ -1110,8 +1110,8 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// The part of an output windows are placed and maximised in: the output less its
     /// reserved edges (64). Edges that reserve the whole output leave one pixel of it, so
-    /// the area is never empty; Marco widens such an area to 100 pixels instead
-    /// (workspace.c:665-700).
+    /// the area is never empty. Marco gives such a monitor a work area with no size
+    /// (workspace.c:717-727).
     fn work_area(output: &Output) -> Rectangle<i32, Logical> {
         let Output {
             geometry, reserved, ..

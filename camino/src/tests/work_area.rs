@@ -33,16 +33,21 @@ fn work_areas(f: &Fixture) -> String {
     lines.collect::<Vec<_>>().join("\n")
 }
 
-/// Maximises the focused `window` with Alt+F10, has its client draw at the size it's asked
-/// for, which is its frame's less `height` of the 1920 × 1080 output's, and returns its
-/// frame.
+/// Maximises the focused `window` with Alt+F10 if it isn't maximised yet, has its client
+/// draw at the size it's asked for, which is its frame's in a work area 1920 wide and
+/// `area_height` high, and returns its frame.
 #[track_caller]
-fn maximised_frame(f: &mut Fixture, window: ClientWindow, height: i32) -> Rectangle<i32, Logical> {
+fn maximised_frame(
+    f: &mut Fixture,
+    window: ClientWindow,
+    area_height: i32,
+) -> Rectangle<i32, Logical> {
     if !f.state.camino.policy.is_maximized(f.pid(window)) {
         f.chord(&[KEY_LEFTALT, KEY_F10]);
     }
     let e = f.frame_extents(window);
-    f.draw_at_asked_size(window, (1920 - e.left - e.right, height - e.top - e.bottom));
+    let size = (1920 - e.left - e.right, area_height - e.top - e.bottom);
+    f.draw_at_asked_size(window, size);
     f.visible_frame(window)
 }
 
@@ -226,6 +231,26 @@ fn a_strut_along_part_of_an_edge_leaves_the_largest_free_rectangle_as_in_marco()
     // 600 along the top of the left quarter: beside it there's more than below it.
     f.map(x, dock([0, 0, 600, 0, 0, 0, 0, 0, 0, 479, 0, 0]));
     assert_snapshot!(work_areas(&f), @"headless-1: 480,30 1440x1050");
+}
+
+#[test]
+fn a_strut_is_reserved_at_the_x11_scale_as_soon_as_the_scale_changes() {
+    let mut f = Fixture::new();
+    let output = f.add_output((1920, 1080), 2.0);
+    let x = f.connect(Kind::X11);
+    // 60 of the X screen's pixels, which are 30 logical ones at the X11 scale of 2.
+    let window = f.map(x, dock([0, 0, 60, 0, 0, 0, 0, 0, 0, 1919, 0, 0]));
+    assert_snapshot!(work_areas(&f), @"headless-1: 0,30 960x510");
+
+    f.set_output_scale(&output, 1.0);
+    f.sync(window);
+
+    // The same 60 pixels are 60 logical ones now.
+    assert_snapshot!(work_areas(&f), @"headless-1: 0,60 1920x1020");
+    assert_snapshot!(root_work_areas(&mut f, x), @"
+    _NET_WORKAREA(CARDINAL) = 0, 60, 1920, 1020, 0, 60, 1920, 1020, 0, 60, 1920, 1020, 0, 60, 1920, 1020
+    _GTK_WORKAREAS_D0(CARDINAL) = 0, 60, 1920, 1020
+    ");
 }
 
 #[test]
