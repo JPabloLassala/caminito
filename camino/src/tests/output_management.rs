@@ -216,21 +216,46 @@ fn disabling_the_middle_output_of_three_leaves_the_other_two_touching() {
 }
 
 #[test]
-fn an_applied_scale_that_grows_an_output_moves_its_neighbour_off_it() {
+fn an_applied_scale_that_grows_an_output_pushes_its_neighbour_along() {
     let mut f = Fixture::new();
-    f.plug(LG.0, LG.1);
+    let lg = f.plug(LG.0, LG.1);
+    f.set_output_scale(&lg, 2.0);
     f.plug_with_modes(AOC_MM, &AOC_MODES);
     let client = manage_outputs(&mut f);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 2.0
+    headless-2 at 1920,0 1920x1080 scale 1.0
+    ");
 
-    // The client sends the AOC's place back as it was, 2259,0, which the LG now covers.
+    // The client sends the AOC's place back as it was, as `wlr-randr` does, which the LG
+    // now covers. That's no new place, so the AOC stays on the LG's right, though above
+    // the LG would be nearer.
     f.client(client)
-        .apply_outputs(&[HeadChange::of("headless-1").scale(1.5)]);
+        .apply_outputs(&[HeadChange::of("headless-1").scale(1.0)]);
     f.roundtrip(client);
 
     assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
     assert_snapshot!(layout(&f), @"
-    headless-1 at 0,0 2560x1440 scale 1.5
-    headless-2 at 2560,0 1920x1080 scale 1.0
+    headless-1 at 0,0 3840x2160 scale 1.0
+    headless-2 at 3840,0 1920x1080 scale 1.0
+    ");
+}
+
+#[test]
+fn an_applied_mode_that_shrinks_an_output_brings_its_neighbour_along() {
+    let mut f = Fixture::new();
+    f.plug_with_modes(AOC_MM, &AOC_MODES);
+    f.plug(LG.0, LG.1);
+    let client = manage_outputs(&mut f);
+
+    f.client(client)
+        .apply_outputs(&[HeadChange::of("headless-1").mode((1280, 720))]);
+    f.roundtrip(client);
+
+    assert_eq!(outcome(&mut f, client), Outcome::Succeeded);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1280x720 scale 1.0
+    headless-2 at 1280,0 2259x1271 scale 1.7
     ");
 }
 

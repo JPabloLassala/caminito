@@ -20,9 +20,13 @@ pub const MIN_SHARED_EDGE: i32 = 100;
 /// An output's place and size in a layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rect {
+    /// Its left edge.
     pub x: i32,
+    /// Its top edge.
     pub y: i32,
+    /// Its width.
     pub w: i32,
+    /// Its height.
     pub h: i32,
 }
 
@@ -168,20 +172,20 @@ fn places_beside(output: Rect, others: &[Rect], snap: i32) -> Vec<Rect> {
 
 /// The closed `intervals` without what lies strictly between `from` and `to`.
 fn without(intervals: &[(i32, i32)], from: i32, to: i32) -> Vec<(i32, i32)> {
-    let mut left = Vec::new();
+    let mut kept = Vec::new();
     for &(start, end) in intervals {
         if end <= from || start >= to {
-            left.push((start, end));
+            kept.push((start, end));
             continue;
         }
         if start <= from {
-            left.push((start, from));
+            kept.push((start, from));
         }
         if end >= to {
-            left.push((to, end));
+            kept.push((to, end));
         }
     }
-    left
+    kept
 }
 
 /// Makes a layout contiguous, moving each output as little as it can. The output at

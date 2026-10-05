@@ -15,6 +15,8 @@ smithay = { version = "0.7.0", git = "https://github.com/Smithay/smithay.git", r
 # Smithay's connector scanner, from the same repository and rev, which the canary moves too.
 smithay-drm-extras = { git = "https://github.com/Smithay/smithay.git", rev = "928d4a9b222b2adcd739a2c60caf3e8f304a45a5", default-features = false }
 x11rb = "0.13.2"
+# The property tests of camino-policy and camino-layout.
+proptest = "1.11.0"
 
 # CI runs clippy with -D warnings, so "warn" here fails the build there.
 [workspace.lints.clippy]

@@ -185,7 +185,8 @@ pub(crate) struct OutputChange {
 pub(crate) struct OutputSettings {
     /// One of the output's modes.
     pub(crate) mode: Mode,
-    /// The place, if the configuration sets it. Camino heals the layout around it (82).
+    /// The place, if the configuration moves the output. Camino heals the layout around
+    /// it (82).
     pub(crate) position: Option<Point<i32, Logical>>,
     /// The scale, if the configuration sets it. Unset, it stays as it is, and stays
     /// Camino's to choose if it was.
@@ -536,9 +537,12 @@ impl Camino {
                     None if enabled.is_some() => output.current_mode()?,
                     None => output.preferred_mode()?,
                 };
+                // `wlr-randr` sends every head's place back. The place an output has is no
+                // new place, so an output that grows beside it still pushes it along.
+                let has = enabled.map(|output| output.current_location());
                 let settings = OutputSettings {
                     mode,
-                    position: asked.position,
+                    position: asked.position.filter(|&place| Some(place) != has),
                     scale: asked.scale,
                 };
                 Some(OutputChange {
@@ -561,7 +565,7 @@ impl Camino {
             }
         }
         // The outputs that changed size move their neighbours before the places are set,
-        // so that only an output the configuration doesn't place is moved by them.
+        // so that only an output the configuration doesn't move is moved by them.
         self.heal_layout();
         for (output, settings) in &set {
             if let Some(position) = settings.position {
