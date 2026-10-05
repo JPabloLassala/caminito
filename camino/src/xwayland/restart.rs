@@ -20,6 +20,7 @@ use std::fmt::Display;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
+use rustix::process::{Pid, Signal, kill_process};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::wayland::selection::SelectionTarget;
 use smithay::xwayland::xwm::XwmId;
@@ -39,6 +40,8 @@ pub(crate) struct Restart {
     display_lock: Option<DisplayLock>,
     /// The helpers' backoff and give-up rule (08), which a test makes quicker.
     pub(crate) policy: RestartPolicy,
+    /// Whether Camino runs without X: Xwayland is down, and isn't started again.
+    without_x: bool,
 }
 
 /// What follows an exit of Xwayland.
@@ -68,6 +71,11 @@ impl Restart {
                 tracing::warn!("can't hold :{number}'s lock until Xwayland restarts: {err}");
             }
         }
+    }
+
+    /// Whether Camino runs without X, which a Session's start-up doesn't wait for (61).
+    pub(crate) fn without_x(&self) -> bool {
+        self.without_x
     }
 
     /// Lets the display's lock go, for a spawn to take.
@@ -160,9 +168,18 @@ impl Camino {
     /// it has exited too often, Camino runs without X.
     pub(super) fn xwayland_exited(&mut self, why: impl Display) {
         self.stop_xwayland();
+        // Given up on, or ended with the Session: there's nothing to start again.
+        if self.xwayland_restart.without_x {
+            tracing::debug!("{why}");
+            return;
+        }
         match self.xwayland_restart.exited(Instant::now()) {
-            AfterExit::WithoutX => tracing::warn!("{why}, so Camino runs without X"),
+            AfterExit::WithoutX => {
+                tracing::warn!("{why}, so Camino runs without X");
+                self.xwayland_restart.without_x = true;
+            }
             AfterExit::GiveUp => {
+                self.xwayland_restart.without_x = true;
                 let policy = &self.xwayland_restart.policy;
                 tracing::warn!(
                     "{why}, {} times within {:?}, so Camino runs without X",
@@ -179,7 +196,10 @@ impl Camino {
                 let timer =
                     self.loop_handle
                         .insert_source(Timer::from_duration(delay), |_, _, state| {
-                            state.camino.start_xwayland();
+                            // A Session that ended in the delay has no use for it.
+                            if !state.camino.xwayland_restart.without_x {
+                                state.camino.start_xwayland();
+                            }
                             TimeoutAction::Drop
                         });
                 match timer {
@@ -194,12 +214,33 @@ impl Camino {
                             }
                         });
                     }
-                    Err(err) => tracing::warn!(
-                        "can't schedule Xwayland's restart, so Camino runs without X: {}",
-                        err.error
-                    ),
+                    Err(err) => {
+                        tracing::warn!(
+                            "can't schedule Xwayland's restart, so Camino runs without X: {}",
+                            err.error
+                        );
+                        self.xwayland_restart.without_x = true;
+                    }
                 };
             }
+        }
+    }
+
+    /// Ends Xwayland for good with SIGTERM, as a Session tears down (08). `X11Wm` stays
+    /// until it sees X go, since it calls back for as long as X talks to it, and Camino
+    /// doesn't wait for that.
+    pub(crate) fn end_xwayland(&mut self) {
+        self.xwayland_restart.without_x = true;
+        self.xwayland_restart.release_display_lock();
+        let Some(xwayland) = &self.xwayland else {
+            return;
+        };
+        let Some(pid) = process(xwayland.display) else {
+            tracing::warn!("can't find Xwayland's process to send it SIGTERM");
+            return;
+        };
+        if let Err(err) = kill_process(pid, Signal::TERM) {
+            tracing::warn!("can't send Xwayland SIGTERM: {err}");
         }
     }
 
@@ -219,4 +260,28 @@ impl Camino {
             self.xwayland_exited("Xwayland exited while starting");
         }
     }
+}
+
+/// The Xwayland this process spawned for `:display`, found among its children in `/proc`:
+/// Smithay spawns it and keeps its `Child` to itself (`xserver.rs:199-224`).
+pub(crate) fn process(display: u32) -> Option<Pid> {
+    let parent = std::process::id().to_string();
+    let display = format!(":{display}");
+    std::fs::read_dir("/proc").ok()?.find_map(|entry| {
+        let dir = entry.ok()?.path();
+        // `pid (comm) state ppid …`
+        let stat = std::fs::read_to_string(dir.join("stat")).ok()?;
+        let (comm, rest) = stat.split_once(") ")?;
+        let mut fields = rest.split(' ');
+        let (state, ppid) = (fields.next()?, fields.next()?);
+        // One that has exited may not be reaped yet.
+        if !comm.ends_with("(Xwayland") || ppid != parent || state == "Z" {
+            return None;
+        }
+        let cmdline = std::fs::read(dir.join("cmdline")).ok()?;
+        cmdline
+            .split(|&b| b == 0)
+            .any(|arg| arg == display.as_bytes())
+            .then(|| Pid::from_raw(dir.file_name()?.to_str()?.parse().ok()?))?
+    })
 }

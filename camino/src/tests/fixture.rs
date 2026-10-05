@@ -1080,7 +1080,7 @@ impl Fixture {
             .camino
             .xwayland_display()
             .expect("Xwayland is ready");
-        let pid = xwayland_child(display).expect("Xwayland runs");
+        let pid = crate::xwayland::process(display).expect("Xwayland runs");
         rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
         self.dispatch_until(|f| f.state.camino.xwayland.is_none());
     }
@@ -1096,7 +1096,7 @@ impl Fixture {
             None,
             "Xwayland isn't ready"
         );
-        let pid = xwayland_child(display).expect("Xwayland runs");
+        let pid = crate::xwayland::process(display).expect("Xwayland runs");
         rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
         self.dispatch_until(|f| f.state.camino.xwayland.is_none());
     }
@@ -1105,6 +1105,11 @@ impl Fixture {
     #[track_caller]
     pub fn wait_for_xwayland(&mut self) {
         self.dispatch_until(|f| f.state.camino.xwayland_display().is_some());
+    }
+
+    /// Whether the Xwayland this fixture spawned for `:display` still runs.
+    pub fn xwayland_runs(&self, display: u32) -> bool {
+        crate::xwayland::process(display).is_some()
     }
 
     /// Connects an x11rb client to the running Xwayland.
@@ -1190,31 +1195,8 @@ impl Drop for Fixture {
             return;
         };
         self.state.camino.stop_xwayland_in_test();
-        if let Some(pid) = xwayland_child(display) {
+        if let Some(pid) = crate::xwayland::process(display) {
             let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
         }
     }
-}
-
-/// The Xwayland this test binary spawned for `:display`.
-fn xwayland_child(display: u32) -> Option<rustix::process::Pid> {
-    let parent = std::process::id().to_string();
-    let display = format!(":{display}");
-    std::fs::read_dir("/proc").ok()?.find_map(|entry| {
-        let dir = entry.ok()?.path();
-        // `pid (comm) state ppid …`
-        let stat = std::fs::read_to_string(dir.join("stat")).ok()?;
-        let (comm, rest) = stat.split_once(") ")?;
-        let mut fields = rest.split(' ');
-        let (state, ppid) = (fields.next()?, fields.next()?);
-        // A crashed one may not be reaped yet.
-        if !comm.ends_with("(Xwayland") || ppid != parent || state == "Z" {
-            return None;
-        }
-        let cmdline = std::fs::read(dir.join("cmdline")).ok()?;
-        cmdline
-            .split(|&b| b == 0)
-            .any(|arg| arg == display.as_bytes())
-            .then(|| rustix::process::Pid::from_raw(dir.file_name()?.to_str()?.parse().ok()?))?
-    })
 }

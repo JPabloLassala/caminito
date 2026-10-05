@@ -16,7 +16,7 @@ use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
-    EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, channel,
+    EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken, channel,
 };
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -84,6 +84,7 @@ use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::output_management::OutputManagementState;
+use crate::session::Session;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
@@ -228,6 +229,13 @@ pub struct Camino {
     /// D-Bus threads run.
     pub environment: BTreeMap<OsString, OsString>,
 
+    /// The Wayland socket's source, until a Session closes it as it ends (61).
+    socket_source: Option<RegistrationToken>,
+    /// Where the helpers' stderr goes: the journal in a Session that logs there (14).
+    pub(crate) helper_stderr: StderrTarget,
+    /// The Session, under `--session` (61).
+    pub(crate) session: Option<Session>,
+
     /// The connection to the session bus, once `start_dbus` has made it.
     pub dbus: Option<Dbus>,
     /// The cookies the Screensaver shim has handed out (62).
@@ -243,6 +251,7 @@ fn palette_source(
     socket: Option<&OsStr>,
     cache: Option<PaletteCache>,
     gtk_theme: &str,
+    stderr: StderrTarget,
 ) -> PaletteSource<State> {
     let program = std::env::var_os("CAMINO_GTK_PALETTE").unwrap_or("camino-gtk-palette".into());
     let mut command =
@@ -254,7 +263,7 @@ fn palette_source(
         handle,
         command,
         RestartPolicy::default(),
-        StderrTarget::Prefixed,
+        stderr,
         cache,
         Some(gtk_theme),
     )
@@ -402,6 +411,7 @@ impl State {
         // leaves the socket quiet, so they're read here too.
         self.x_requests();
         self.camino.notice_xwayland_died_starting();
+        self.camino.advance_session();
         self.camino.refresh_views();
         self.update_pointer_focus();
         self.camino.update_button_states();
@@ -590,6 +600,7 @@ impl Camino {
             None,
             palette_cache,
             &settings.interface.gtk_theme,
+            StderrTarget::Prefixed,
         );
         let mut camino = Self {
             loop_signal: event_loop.get_signal(),
@@ -674,6 +685,9 @@ impl Camino {
             xwayland_keyboard_grab_state,
             xwayland_keyboard_grab: None,
             environment: BTreeMap::new(),
+            socket_source: None,
+            helper_stderr: StderrTarget::Prefixed,
+            session: None,
             dbus: None,
             screensaver: ScreensaverShim::default(),
             debug: DebugToggles::default(),
@@ -769,6 +783,7 @@ impl Camino {
             Some(socket),
             self.palette.cache().cloned(),
             &self.settings.interface.gtk_theme,
+            self.helper_stderr,
         );
         self.ask_palette_for_theme_colors();
         self.palette.start();
@@ -778,7 +793,8 @@ impl Camino {
     pub fn add_socket(&mut self) -> Result<OsString, Box<dyn std::error::Error>> {
         let source = ListeningSocketSource::new_auto()?;
         let name = source.socket_name().to_os_string();
-        self.loop_handle
+        let token = self
+            .loop_handle
             .insert_source(source, |stream, _, state| {
                 let client = state
                     .camino
@@ -789,12 +805,22 @@ impl Camino {
                 }
             })
             .map_err(|err| err.error)?;
+        self.socket_source = Some(token);
         Ok(name)
     }
 
-    /// Stops the loop when SIGTERM or SIGINT comes, so Camino tears down as it does when
-    /// its winit window closes: on the tty, that gives the VT back (08). Nothing else
-    /// quits a bare `camino` on the tty.
+    /// Closes the socket `add_socket` opened, so no new client connects. Those that
+    /// are connected stay until Camino exits.
+    pub(crate) fn close_socket(&mut self) {
+        if let Some(token) = self.socket_source.take() {
+            self.loop_handle.remove(token);
+        }
+    }
+
+    /// Quits when SIGTERM or SIGINT comes, so Camino tears down as it does when its winit
+    /// window closes: on the tty, that gives the VT back (08). Nothing else quits a bare
+    /// `camino` on the tty, and a Session has no quit binding either: it ends with its
+    /// command, which `quit` stops first (61).
     pub fn stop_on_signals(&mut self) -> std::io::Result<()> {
         let (read, write) = UnixStream::pair()?;
         read.set_nonblocking(true)?;
@@ -805,8 +831,8 @@ impl Camino {
         let source = Generic::new(read, Interest::READ, Mode::Level);
         self.loop_handle
             .insert_source(source, |_, _, state| {
-                tracing::debug!("stopping on a signal");
-                state.camino.loop_signal.stop();
+                tracing::debug!("quitting on a signal");
+                state.camino.quit();
                 Ok(PostAction::Remove)
             })
             .map_err(|err| std::io::Error::other(err.error))?;

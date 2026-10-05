@@ -65,6 +65,11 @@ impl<D: PaletteState> PaletteSource<D> {
         self.helper.start();
     }
 
+    /// Stops the helper for good, with SIGTERM. The last palette stays in use.
+    pub fn stop(&mut self) {
+        self.helper.stop();
+    }
+
     pub fn palette(&self) -> &Palette {
         &self.palette
     }

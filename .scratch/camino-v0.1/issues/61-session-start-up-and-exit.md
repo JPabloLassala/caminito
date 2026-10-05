@@ -1,7 +1,7 @@
 # Session start-up and exit
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5
 Blocked by: 62
 Map: [Camino v0.1](../map.md)
@@ -34,16 +34,16 @@ Map: [Camino v0.1](../map.md)
 
 ## Acceptance criteria
 
-- [ ] Unit tests, written before the code: the arguments (`--session`, `--session=CMD`, neither); the environment built from an Xwayland display, a cursor theme and size, with `XDG_CURRENT_DESKTOP` set and unset, and with no `DISPLAY`.
-- [ ] Headless tests on the tests' private bus, with a stand-in session command:
+- [x] Unit tests, written before the code: the arguments (`--session`, `--session=CMD`, neither); the environment built from an Xwayland display, a cursor theme and size, with `XDG_CURRENT_DESKTOP` set and unset, and with no `DISPLAY`.
+- [x] Headless tests on the tests' private bus, with a stand-in session command:
   - the command starts only after Xwayland is ready and the names of 62 are owned, and it's given every variable above and `GDK_BACKEND=x11`;
   - the D-Bus activation environment has the variables before the command starts (a D-Bus-activated test service sees them);
   - with no `org.freedesktop.systemd1` on the bus, the systemd export is skipped and logged once, and the session still starts;
   - with a stand-in `org.freedesktop.systemd1`, `SetEnvironment` is called before the command starts and `UnsetEnvironment` on exit;
   - the command exiting with status 3 ends the loop with status 3, after Xwayland and the palette helper have been stopped;
   - SIGTERM to Camino reaches the command, and a command that ignores it is given up on after 5 s.
-- [ ] Nested, `camino --session=foot` shows foot, and closing foot ends Camino with foot's status.
-- [ ] Nested, `camino --session` on a private bus starts mate-session, and the log says the systemd export was skipped.
+- [x] Nested, `camino --session=foot` shows foot, and closing foot ends Camino with foot's status.
+- [x] Nested, `camino --session` on a private bus starts mate-session, and the log says the systemd export was skipped.
 
 ## Notes
 
@@ -51,3 +51,25 @@ Map: [Camino v0.1](../map.md)
 - **mate-session's patch** ([69](69-mate-session-manager-camino.md)) isn't needed for this ticket's tests. Unpatched, mate-session starts Marco, which finds no X window manager selection free and exits; that's 72's concern.
 - **An Xwayland crash still ends the session** (11): mate-session is an X11 client and exits when its display goes. Camino restarts Xwayland as it does now, then tears down because its child exited.
 - **The journald path can't be tested in CI,** whose container has no journald (28). It's checked in 72.
+- **Resolved on 2026-10-05.** Checked in an OrbStack Arch Linux machine (aarch64): the tests in `tests/session.rs`, `session.rs` and `main.rs`, and the full suite on a private bus (`dbus-run-session`). camino-theme's goldens fail on aarch64, as they do on `master`.
+- **Written before the code:** the argument tests, the environment tests and the first seven tests of `tests/session.rs` were written and seen to fail (no `session` module) before the module. The two tests for a stop during the export and for a systemd that doesn't answer came after the review.
+- **The nested criteria were checked on Xvfb,** not in a desktop: the machine has none. [61-nested-checks.sh](61-nested-checks.sh) runs them.
+  - `--session=foot <script>`: Camino's state dump, taken from inside foot, lists foot's window, framed and focused, and Camino exits with the script's status, 5.
+  - `--session`: mate-session 1.28 starts, and the panel and caja with it, and the journal has "org.freedesktop.systemd1 isn't on the bus, so the environment isn't exported to systemd".
+  - SIGTERM to that Camino, by hand: foot is stopped, and Camino exits with foot's status.
+- **Not tested:** the signal source itself (the headless tests call `Camino::quit`, which it calls; the SIGTERM was by hand), a Session with no Xwayland beyond the environment's unit test, the socket closing, and the real systemd path, which is [72](72-session-file-and-first-login.md)'s.
+- **Decided here, beyond what the ticket says:**
+  - **`--session=CMD` is split at whitespace** into a program and its arguments, with no shell and no quoting. `--session=` with no word is refused.
+  - **Camino's exit status** is the command's, or 128 and the signal that ended it. It's 1 if the command couldn't start, was given up on, or was never spawned.
+  - **A command that ignores SIGTERM for 5 s is killed,** so it doesn't outlive the Session.
+  - **The winit window closing** is treated as SIGTERM is: the command is stopped first.
+  - **A stop before the command is spawned** spawns none. One that comes during the export waits for the bus's answer, so systemd is still asked to forget.
+  - **systemd has 5 s to answer `UnsetEnvironment`.** Then Camino exits anyway, since a systemd that's shutting down may not answer.
+  - **Xwayland is sent SIGTERM by its process id, found in `/proc`** among Camino's children (`xwayland::process`, which was the fixture's). Smithay keeps the `Child` to itself, and its own way to stop Xwayland, dropping it, leaves `X11Wm`'s source calling back for a window manager that's gone.
+  - **`XCURSOR_THEME` is exported only when the theme isn't empty,** as Xwayland's own is (34). The default theme has no name to export.
+  - **With no `DISPLAY`, the command is spawned with `DISPLAY` removed,** since a nested run has its host's.
+  - **All of `Camino::environment` is exported.** It holds nothing but the Session's variables.
+  - **Whether logs go to the journal is decided once,** in `logging::init`, and the helpers' stderr follows what it did, so a journal that can't be reached sends both to stderr.
+- **`tools/dev-nested --session` logs to the journal,** since the script pipes Camino's stderr, so its `WAYLAND_DISPLAY=… DISPLAY=…` line isn't printed. The script's header says so. Whether a nested run should log to stderr whatever it is, is open.
+- **"The Wayland socket closed" closes the listening socket.** The clients that are connected stay until Camino exits, right after.
+- **Review left as is:** the `SIGCHLD` pipe is written a third time, after `helpers` and `stop_on_signals`. `Restart::without_x` also means that the Session ended. The tests reach `state.camino` for the exit status, the palette helper and `quit`, for want of a seam. "Xwayland didn't start" is logged as an error, as the ticket asks, though Camino carries on.

@@ -29,6 +29,7 @@ mod root_properties;
 mod screensaver;
 mod security_context;
 mod selection;
+mod session;
 mod settings;
 mod window_properties;
 mod work_area;

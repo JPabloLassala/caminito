@@ -31,12 +31,14 @@ use smithay::xwayland::xwm::settings::Value as XSettingValue;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
 pub(crate) use self::restart::Restart;
+#[cfg(test)]
+pub(crate) use self::restart::process;
 use self::scale::X11Scale;
 pub(crate) use self::selection::WaylandSelections;
 use self::stack::RootStack;
 use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XConnection};
 use crate::decoration::{NetWmIcon, WindowFacts};
-use crate::helpers::{self, StderrTarget};
+use crate::helpers;
 use crate::input::GrabKind;
 use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, Mouse};
@@ -103,8 +105,7 @@ impl Camino {
     /// Spawns Xwayland on a free display, or on the one it had if it's a restart. It's
     /// ready once `Ready` has attached `X11Wm`.
     pub fn start_xwayland(&mut self) {
-        let stderr = match helpers::stderr_to(&self.loop_handle, IDENTIFIER, StderrTarget::Prefixed)
-        {
+        let stderr = match helpers::stderr_to(&self.loop_handle, IDENTIFIER, self.helper_stderr) {
             Ok(stderr) => stderr,
             Err(err) => {
                 tracing::warn!("{IDENTIFIER}: can't pipe its stderr, so it's dropped: {err}");

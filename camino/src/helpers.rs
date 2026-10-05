@@ -139,6 +139,27 @@ impl<D: 'static> Helper<D> {
             .insert_idle(move |data| Self::spawn(data, access));
     }
 
+    /// Stops the helper for good, as Camino tears down (08): it's sent SIGTERM, and it's
+    /// neither watched nor started again. Camino doesn't wait for it to exit.
+    pub fn stop(&mut self) {
+        if let Some(running) = self.running.take() {
+            for token in running.sources {
+                self.handle.remove(token);
+            }
+            let pid = rustix::process::Pid::from_child(&running.child);
+            if let Err(err) = rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
+                tracing::warn!("{}: can't send it SIGTERM: {err}", self.command.identifier);
+            }
+        }
+        if let Some((id, token)) = self.sigchld.take() {
+            signal_hook::low_level::unregister(id);
+            self.handle.remove(token);
+        }
+        if let Some(token) = self.restart_timer.take() {
+            self.handle.remove(token);
+        }
+    }
+
     /// Writes to the helper's stdin, which never blocks: a full pipe is an error. A write of
     /// at most `PIPE_BUF` (4096) bytes is all or nothing, so a request that size is never
     /// left half written.
@@ -171,6 +192,10 @@ impl<D: 'static> Helper<D> {
     fn spawn(data: &mut D, access: fn(&mut D) -> &mut Helper<D>) {
         let helper = access(data);
         helper.restart_timer = None;
+        // It was stopped between `start` and the loop's next run.
+        if helper.sigchld.is_none() {
+            return;
+        }
         match helper.try_spawn() {
             Ok(running) => {
                 helper.running = Some(running);
