@@ -129,22 +129,17 @@ fn a_theme_without_a_default_cursor_shows_its_own_arrow_not_one_it_inherits() {
     write_theme(&yellow, Some(&inherited), &[("left_ptr", YELLOW)]);
 
     let mut f = Fixture::new();
-    let output = f.add_output((1920, 1080), 1.0);
+    f.add_output((1920, 1080), 1.0);
     f.state.camino.cursors = Cursors::new(&f.state.camino.settings.mouse, CursorSource::Xcursor);
     f.pointer_move(100., 100.);
 
     // The pointer stays where it is: the cursor on screen follows the setting.
     let theme = yellow.to_str().unwrap().to_owned();
-    f.set_setting(MOUSE, "cursor-theme", Value::Str(theme.clone()));
-    f.dispatch_until(|f| f.state.camino.settings.mouse.cursor_theme == theme);
+    f.set_setting(MOUSE, "cursor-theme", Value::Str(theme));
+    f.wait_for_pixel(105, 105, YELLOW & 0xff_ffff);
 
-    let pixel = f
-        .state
-        .backend
-        .headless_mut()
-        .pixel(&output, (105, 105).into());
-    assert_eq!(pixel, Some(YELLOW));
-    // Xwayland's root window gets the same arrow.
+    // Xwayland's root window gets the same arrow. An X client can't read a cursor's
+    // pixels back, so this asks for what Camino would send.
     let root = f.state.camino.cursors.x_root_cursor(1);
     assert_eq!(root.pixels[..4], YELLOW.to_le_bytes());
 }
