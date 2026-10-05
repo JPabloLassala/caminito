@@ -2,7 +2,7 @@
 
 Type: implementation
 Status: open
-Milestone: M5 (proposed)
+Milestone: M5
 Blocked by: 69
 Map: [Camino v0.1](../map.md)
 
@@ -29,5 +29,5 @@ In the first login on a tty ([76](76-tty-login-left-over.md), 2026-10-05, on the
 ## Notes
 
 - The stacks are in `coredumpctl info` for pids 452735, 452729 and 452756 on the developer's machine, while its journal keeps them.
-- The milestone needs the developer: the session logs in and works without the three, so M5's exit doesn't ask for this, and it doesn't block [73](73-packaging-and-closing-m5.md) as filed.
+- **M5, and it blocks [73](73-packaging-and-closing-m5.md):** the developer's decision on 2026-10-05.
 - **Seen again the same day** in the developer's own login from sddm: the same three, with core dumps at 11:59:23 (pids 463867, 463861 and 463884).

@@ -59,7 +59,7 @@ Layer surfaces are in the `layer` module, on Smithay's `layer_map_for_output`, a
 
 Known, and left as they are:
 
-- A popup is drawn in its surface's layer, as this ticket says. So caja's desktop menu is under any window that overlaps it. sway and niri draw such popups above the windows. This needs a decision before 72.
+- A popup is drawn in its surface's layer, as this ticket says. So caja's desktop menu is under any window that overlaps it. sway and niri draw such popups above the windows. This needs a decision before 72. Decided on 2026-10-05, after 76 saw it in the session: above the windows, in [80](80-layer-popups-above-windows.md).
 - A commit that unmaps a layer surface gets a configure at once, where the protocol expects it after the next initial commit. niri does the same, and mapping again works.
 - A window's popup grab takes the keyboard from an `exclusive` surface until the grab ends.
 - After a client closes the menu of a surface with no keyboard interactivity, the ended grab stays until the next input event, so that one key event is dropped.

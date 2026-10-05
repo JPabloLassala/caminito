@@ -59,7 +59,7 @@ The README's *The MATE session* section has the steps to make the user and start
   - The cursor theme: FAIL. With `cursor-theme` set to `Oxygen_Yellow`, both windows reported it and no pointer on screen changed. [79](79-cursor-theme-change-not-shown.md).
   - The layer-shell keyboard modes (63): pass, with [76-checks/layer-demo.py](76-checks/layer-demo.py) on the overlay layer. `exclusive` had the keyboard without a click, kept it through a click on a window, and gave it back to the focused window on Escape. `on_demand` had it from a click on it until a click on a window. `none` never had it.
   - `xrdb` (71, 47): pass. `xrdb -query` had 193 lines after login: each of Camino's eight once (`Xft.dpi: 192`, `Xcursor.size: 48`), and msd's 185 colour lines. After the theme went from BlackMATE to Menta, and after it went back, the output was the same to the byte. So neither undoes the other. But msd's colours didn't follow the theme: its `xrdb -merge` didn't run again, or merged the same colours, in the 9 s waited. Whether it does on X11 wasn't looked at, and it has no ticket.
-  - 63's question: seen. caja's desktop menu is cut off where a window overlaps it. The developer hasn't said whether it should be drawn above the windows.
+  - 63's question: seen. caja's desktop menu is cut off where a window overlaps it. The developer decided it goes above the windows: [80](80-layer-popups-above-windows.md).
   - Also seen: Camino logged `surface missing from known popups` three times, and `Got X11 Error` in runs.
 - **The demo had a bug,** found in this run and fixed: it imported `Gdk` without asking for 3.0, and PyGObject loaded 4.0.
 
