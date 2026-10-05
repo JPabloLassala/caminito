@@ -48,6 +48,7 @@ What follows it in Camino:
 - **A layer surface that names no output** still goes to the output under the pointer, and to the primary output only without one.
 - **XWayland's RandR primary** is set by Camino's X connection, and set again when RandR's outputs change, since Xwayland hears of an output after Camino makes it.
 - **The debug dump** has `primary_output`.
+- **Healing** ([82](82-layout-healing.md)) holds the primary output still, where it held the first. With no choice made and no built-in panel, that is the output that's leftmost before the layout is healed.
 
 The tests are `camino/src/tests/primary_output.rs` and `camino-policy/src/tests/outputs.rs`. The mate-panel patch was compiled in a built tree and `caja-camino` was built with `makepkg`; neither was run in a Session.
 

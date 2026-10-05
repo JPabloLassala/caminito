@@ -128,4 +128,4 @@ jobs:
       - uses: ./.github/actions/arch-setup
 
       - name: Property tests
-        run: cargo test --release -p camino-policy
+        run: cargo test --release -p camino-policy -p camino-layout

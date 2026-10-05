@@ -235,6 +235,7 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 |---|---|
 | [camino](camino/) | The compositor: backends, Wayland protocol handlers, input and rendering |
 | [camino-policy](camino-policy/) | Window-management policy (focus, stacking, placement, workspaces, transients), free of protocol types |
+| [camino-layout](camino-layout/) | Docking and healing a layout of outputs, with no dependencies, for Camino and camino-displays |
 | [camino-theme](camino-theme/) | Marco's theme engine, with no Smithay or GTK (from M2) |
 | [camino-test-client](camino-test-client/) | The Wayland client the integration tests drive |
 

@@ -458,7 +458,7 @@ session_env() {
   maximised one filling it. They're moved, not resized, so one larger than the output hangs
   over its edge. The monitor that stays never goes black or freezes. Plugging the
   monitor back lights it in its preferred mode at its default scale, to the right of the other
-  one, whichever side it was on before, and the pointer and windows can go to it again. The log
+  one, whichever side it was on before (82 keeps that until 83 restores a saved layout), and the pointer and windows can go to it again. The log
   has no `can't light` line.
 - **Debug tool:** `wlr-randr`, the `outputs` and windows of `DumpState`, and `~/camino.log`.
 
@@ -495,6 +495,22 @@ session_env() {
 - **Debug tool:** `primary_output` and each output's `layer_surfaces` in `DumpState`,
   `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Camino` for the property's
   signal.
+
+### Turning an output off leaves the others touching
+
+- **Milestone:** M6
+- **Steps:**
+  1. With three monitors connected, run `camino` on the tty, and run `wlr-randr`.
+  2. `wlr-randr --output A --off`, with A the middle one, and run `wlr-randr` again.
+  3. `wlr-randr --output A --on`, then `wlr-randr --output B --pos 5000,300`, with B another
+     one, and run `wlr-randr` again.
+  4. With two monitors only: `wlr-randr --output A --scale 1`, with A the left one at a scale
+     above 1.
+- **Expected:** after step 2 the two outputs left touch, with the leftmost at 0,0, and the
+  pointer crosses between them. After step 3 A is back, right of the others, and B is against
+  the others, not at 5000,300, with no gap and nothing overlapping. After step 4 the right
+  output's `x` is the left one's new logical width (82).
+- **Debug tool:** `wlr-randr`, and the `outputs` of `DumpState`.
 
 ### A GTK3 window dragged across a 1.0 and a 2.0 output
 

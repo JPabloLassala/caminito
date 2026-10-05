@@ -8,6 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+camino-layout = { path = "../camino-layout" }
 camino-policy = { path = "../camino-policy" }
 camino-theme = { path = "../camino-theme" }
 futures-channel = "0.3.34"

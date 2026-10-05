@@ -1,10 +1,12 @@
-//! Output lifecycle: making outputs, laying them out, picking their default scales, and
-//! telling policy about them (15, 51), and changing them as output management asks (58).
+//! Output lifecycle: making outputs, picking their default scales, keeping their layout
+//! contiguous (82), and telling policy about them (15, 51), and changing them as output
+//! management asks (58).
 
 pub(crate) mod primary;
 
 use std::time::Duration;
 
+use camino_layout::Rect;
 use camino_policy::{OutputId, PolicyWindow, WindowId};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -188,15 +190,21 @@ pub(crate) struct OutputChange {
 pub(crate) struct OutputSettings {
     /// One of the output's modes.
     pub(crate) mode: Mode,
-    /// The place and the scale, if the configuration sets them. Unset, they stay as they
-    /// are, and stay Camino's to choose if they were.
+    /// The place, if the configuration moves the output. Camino heals the layout around
+    /// it (82).
     pub(crate) position: Option<Point<i32, Logical>>,
+    /// The scale, if the configuration sets it. Unset, it stays as it is, and stays
+    /// Camino's to choose if it was.
     pub(crate) scale: Option<f64>,
 }
 
 /// The scales a configuration may set. Outside them, an output's logical size is of no use,
 /// and Camino's own defaults are from 1 to 3 (50).
 const SETTABLE_SCALES: std::ops::RangeInclusive<f64> = 0.5..=8.0;
+
+/// The coordinates a configuration may place an output at. Healing brings any place back
+/// to the others, so these only keep the sums of places and sizes within an `i32`.
+const SETTABLE_COORDINATES: std::ops::RangeInclusive<i32> = -(1 << 24)..=1 << 24;
 
 /// The one of an output's `modes` a configuration means by `asked`: that mode, or for a
 /// custom mode with no refresh rate, the first of its size.
@@ -209,7 +217,8 @@ fn matching_mode(modes: &[Mode], asked: Mode) -> Option<Mode> {
         .copied()
 }
 
-/// Who chose an output's scale or place (13).
+/// Who chose an output's scale (13). Its place has no such mark: whoever placed it, Camino
+/// heals the layout around it (82).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChosenBy {
     /// Camino's default, which it may change.
@@ -225,7 +234,9 @@ pub(crate) struct OutputRecord {
     /// What the default scale is picked from.
     monitor: Monitor,
     scale: ChosenBy,
-    position: ChosenBy,
+    /// Its logical size when the outputs were last laid out, which tells laying out that
+    /// it changed size since.
+    size: Size<i32, Logical>,
     global: GlobalId,
 }
 
@@ -244,7 +255,7 @@ impl Camino {
     }
 
     /// Starts showing an output the backend found: in its preferred mode, at its default
-    /// scale, and at the default place, to the right of the outputs there are.
+    /// scale, and to the right of the outputs there are, at the layout's top (82).
     pub fn add_output(&mut self, output: Output) {
         let mode = output.preferred_mode();
         self.show_output(output, mode);
@@ -269,13 +280,17 @@ impl Camino {
         let monitor = Monitor::of(&output, self.input_devices.has_lid_switch());
         let scale = default_scale(&monitor, self.settings.interface.window_scaling_factor);
         output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+        let size = output_geometry(&output).size;
+        // Where it may touch no other output, or too little of one. Laying out docks it.
+        let place = camino_layout::at_the_right(size.w, size.h, &self.layout());
+        output.change_current_state(None, None, None, Some((place.x, place.y).into()));
         let global = output.create_global::<State>(&self.display_handle);
         self.output_records.insert(
             id,
             OutputRecord {
                 monitor,
                 scale: ChosenBy::Camino,
-                position: ChosenBy::Camino,
+                size,
                 global,
             },
         );
@@ -291,8 +306,8 @@ impl Camino {
     }
 
     /// Stops showing an output that was unplugged. Policy moves its windows onto the
-    /// others, and the outputs at the default place close the gap. A disabled output is
-    /// only forgotten.
+    /// others, and the others close the gap it leaves (82). A disabled output is only
+    /// forgotten.
     pub fn remove_output(&mut self, output: &Output) {
         if let Some(index) = self.disabled_outputs.iter().position(|o| o == output) {
             self.disabled_outputs.remove(index);
@@ -339,31 +354,11 @@ impl Camino {
         self.lay_out_outputs();
     }
 
-    /// Sets an output's place, as output management does. Laying out leaves it alone from
-    /// now on.
+    /// Asks for an output's place, as output management does. It ends up the nearest to
+    /// there that keeps the layout contiguous (82).
     pub fn set_output_position(&mut self, output: &Output, position: Point<i32, Logical>) {
         output.change_current_state(None, None, None, Some(position));
-        self.record_mut(output).position = ChosenBy::OutputManagement;
         self.lay_out_outputs();
-    }
-
-    /// Sets an output's place and scale, those of them a configuration gave, as
-    /// `set_output_position` and `set_output_scale` do.
-    fn set_output_place_and_scale(
-        &mut self,
-        output: &Output,
-        position: Option<Point<i32, Logical>>,
-        scale: Option<f64>,
-    ) {
-        let scale = scale.map(Scale::Fractional);
-        output.change_current_state(None, None, scale, position);
-        let record = self.record_mut(output);
-        if scale.is_some() {
-            record.scale = ChosenBy::OutputManagement;
-        }
-        if position.is_some() {
-            record.position = ChosenBy::OutputManagement;
-        }
     }
 
     /// `window-scaling-factor` changed: the outputs still at Camino's default scale take
@@ -415,26 +410,58 @@ impl Camino {
         self.lay_out_outputs();
     }
 
-    /// Lays the outputs at the default place out left to right, in the order they were
-    /// added, after the ones output management placed, so they never overlap those.
-    /// Arranges their layer surfaces for their new sizes, tells policy where every output
-    /// is now, and redraws them all.
-    fn lay_out_outputs(&mut self) {
-        let is_set = |output: &Output| self.record(output).position == ChosenBy::OutputManagement;
-        let mut x = self
+    /// Each output's place, with the size it had when the outputs were last laid out.
+    fn layout(&self) -> Vec<Rect> {
+        let rect = |output: &Output| {
+            let (place, size) = (output.current_location(), self.record(output).size);
+            Rect {
+                x: place.x,
+                y: place.y,
+                w: size.w,
+                h: size.h,
+            }
+        };
+        self.outputs.iter().map(rect).collect()
+    }
+
+    /// Makes the layout contiguous again (82, ADR 0014). The outputs right of and below
+    /// one that changed size since the last time keep their side of it. Then the layout
+    /// is healed around the primary output, and its top-left corner goes to the origin.
+    fn heal_layout(&mut self) {
+        let mut layout = self.layout();
+        let sizes: Vec<_> = self
             .outputs
             .iter()
-            .filter(|output| is_set(output))
-            .map(|output| output_geometry(output).loc.x + output_geometry(output).size.w)
-            .max()
-            .unwrap_or(0);
-        for output in self.outputs.iter().filter(|output| !is_set(output)) {
-            let position = Point::from((x, 0));
-            if output.current_location() != position {
-                output.change_current_state(None, None, None, Some(position));
+            .map(|o| output_geometry(o).size)
+            .collect();
+        for (index, size) in sizes.iter().enumerate() {
+            if (layout[index].w, layout[index].h) != (size.w, size.h) {
+                layout = camino_layout::resized(&layout, index, size.w, size.h);
             }
-            x += output_geometry(output).size.w;
         }
+        // The primary output is the one held still (81), as the places stand before
+        // healing: with no choice made and no built-in panel, that's the leftmost.
+        let held = self
+            .primary_output()
+            .and_then(|primary| self.outputs.iter().position(|output| output == primary))
+            .unwrap_or(0);
+        let layout = camino_layout::at_origin(&camino_layout::heal(&layout, held));
+
+        for ((output, place), size) in self.outputs.iter().zip(layout).zip(sizes) {
+            let place = Point::from((place.x, place.y));
+            if output.current_location() != place {
+                output.change_current_state(None, None, None, Some(place));
+            }
+            let id = output_id(output);
+            let record = self.output_records.get_mut(&id);
+            record.expect("every output has a record").size = size;
+        }
+    }
+
+    /// Heals the layout, arranges the outputs' layer surfaces for their new sizes, tells
+    /// policy where every output is now, and redraws them all.
+    fn lay_out_outputs(&mut self) {
+        self.heal_layout();
 
         // First, since what the layer surfaces reserve of their outputs' new sizes is in
         // what policy is told (64).
@@ -484,9 +511,11 @@ impl Camino {
     }
 
     /// What a configuration would change, if every head it names is a monitor that can
-    /// show what's asked of it: one of its modes, in the transform it has, at a scale of
-    /// use, without adaptive sync. Camino doesn't rotate outputs yet, and has no adaptive sync. The backend still
-    /// has to agree.
+    /// show what's asked of it: one of its modes, in the transform it has, at a scale and
+    /// a place of use, without adaptive sync. Its places needn't be contiguous, since
+    /// `wlr-randr` and kanshi users write them by hand: Camino heals them (82). Camino
+    /// doesn't rotate outputs yet, and has no adaptive sync. The backend still has to
+    /// agree.
     pub(crate) fn plan_output_changes(
         &self,
         requests: &[HeadRequest],
@@ -506,6 +535,9 @@ impl Camino {
                 };
                 if asked.adaptive_sync == Some(true)
                     || asked.scale.is_some_and(|s| !SETTABLE_SCALES.contains(&s))
+                    || asked.position.is_some_and(|p| {
+                        !SETTABLE_COORDINATES.contains(&p.x) || !SETTABLE_COORDINATES.contains(&p.y)
+                    })
                     || asked
                         .transform
                         .is_some_and(|t| t != output.current_transform())
@@ -518,9 +550,12 @@ impl Camino {
                     None if enabled.is_some() => output.current_mode()?,
                     None => output.preferred_mode()?,
                 };
+                // `wlr-randr` sends every head's place back. The place an output has is no
+                // new place, so an output that grows beside it still pushes it along.
+                let has = enabled.map(|output| output.current_location());
                 let settings = OutputSettings {
                     mode,
-                    position: asked.position,
+                    position: asked.position.filter(|&place| Some(place) != has),
                     scale: asked.scale,
                 };
                 Some(OutputChange {
@@ -531,12 +566,23 @@ impl Camino {
             .collect()
     }
 
-    /// Gives the outputs the places and scales `changes` set, once the backend shows their
-    /// modes, and lays the outputs out.
+    /// Gives the outputs the scales and places `changes` set, once the backend shows their
+    /// modes, and lays the outputs out, which heals the places (82).
     pub(crate) fn finish_output_changes(&mut self, changes: &[OutputChange]) {
-        for change in changes {
-            if let Some(settings) = &change.to {
-                self.set_output_place_and_scale(&change.output, settings.position, settings.scale);
+        let settings = |change: &OutputChange| change.to.map(|to| (change.output.clone(), to));
+        let set: Vec<(Output, OutputSettings)> = changes.iter().filter_map(settings).collect();
+        for (output, settings) in &set {
+            if let Some(scale) = settings.scale {
+                output.change_current_state(None, None, Some(Scale::Fractional(scale)), None);
+                self.record_mut(output).scale = ChosenBy::OutputManagement;
+            }
+        }
+        // The outputs that changed size move their neighbours before the places are set,
+        // so that only an output the configuration doesn't move is moved by them.
+        self.heal_layout();
+        for (output, settings) in &set {
+            if let Some(position) = settings.position {
+                output.change_current_state(None, None, None, Some(position));
             }
         }
         self.lay_out_outputs();

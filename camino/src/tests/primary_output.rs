@@ -77,8 +77,8 @@ fn with_no_choice_made_the_primary_output_is_the_leftmost() {
     let (mut f, _aoc, lg) = aoc_and_lg();
     assert_eq!(primary(&f).as_deref(), Some("headless-1"));
 
-    // The AOC, still at its default place, goes to the LG's right.
-    f.set_output_position(&lg, (0, 0));
+    // To the AOC's left, which puts the AOC at the LG's right edge.
+    f.set_output_position(&lg, (-2259, 0));
 
     assert_eq!(primary(&f).as_deref(), Some("headless-2"));
 }

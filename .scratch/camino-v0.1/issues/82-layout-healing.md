@@ -1,7 +1,7 @@
 # Docking and healing a layout
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6 (proposed)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -20,9 +20,9 @@ Every Layout is contiguous (CONTEXT.md, [ADR 0014](../../../docs/adr/0014-camino
 
 ## Acceptance criteria
 
-- [ ] Property tests in the crate, written before the code: a healed layout has no gap, no overlap and no output cut off; healing it again changes nothing; a docked output leaves the layout contiguous.
-- [ ] Unit tests for the snap: it takes the matching edge of an output it lies against, and not that of one it doesn't touch.
-- [ ] Headless tests: unplugging the middle output of three closes the gap; a scale change that grows an output pushes its right-hand neighbour along.
+- [x] Property tests in the crate, written before the code: a healed layout has no gap, no overlap and no output cut off; healing it again changes nothing; a docked output leaves the layout contiguous.
+- [x] Unit tests for the snap: it takes the matching edge of an output it lies against, and not that of one it doesn't touch.
+- [x] Headless tests: unplugging the middle output of three closes the gap; a scale change that grows an output pushes its right-hand neighbour along.
 - [ ] Nested or on the tty, `wlr-randr --output A --off` with three outputs leaves the other two touching.
 
 ## Notes
@@ -30,3 +30,20 @@ Every Layout is contiguous (CONTEXT.md, [ADR 0014](../../../docs/adr/0014-camino
 - **Which crate:** `camino-policy` is the proposal, since it is already free of protocols (ADR 0010) and camino-displays can depend on it. A crate of its own is the other way, if policy pulls in too much for a settings program. To decide here.
 - **Logical pixels and rounding:** an output's logical size is its mode over its scale, rounded. The prototype rounds to whole pixels; Camino's own rounding (51) is what to match.
 - The prototype that settled the design is `.scratch/camino-displays-prototype/index.html` on the branch `prototype/camino-displays` (8a4981d), with its verdicts in the commit message. It is a source, not code to keep.
+
+## Resolution
+
+The logic is the crate `camino-layout`: `dock`, `heal`, `resized`, `at_origin`, `at_the_right` and `is_contiguous`, over a `Rect` of its own, with its tests in `camino-layout/src/tests.rs`. Camino's side is `heal_layout` in `camino/src/output.rs`, which every change to the outputs goes through, with its tests in `camino/src/tests/output_lifecycle.rs` and `output_management.rs`.
+
+- **Which crate (decided here):** one of its own, with no dependencies ([ADR 0015](../../../docs/adr/0015-the-layout-logic-is-a-crate-of-its-own.md)). `camino-policy` would have brought Smithay, pinned by git revision, into camino-displays.
+- **A configuration that isn't contiguous (decided here):** Camino heals it and answers `succeeded`. The client is then sent the places the outputs took, which may not be the ones it asked for. A place beyond 2^24 on either axis fails the configuration, as a scale of no use does, so that the sums of places and sizes stay within an `i32`.
+- **A place is no longer marked as set.** 58's `ChosenBy` stays for the scale alone. 51's rule, the outputs at the default place laid left to right after the placed ones, is gone: an output is given a place once, when it's shown, and after that only healing moves it. So an output a client placed goes to the origin when it's the only one left, and `wlr-randr --output A --off` closes the gap though it sends the others' places back. [83](83-saved-layouts.md)'s "a restored place counts as set" has nothing to set, for the place.
+- **The output held still** is the first one, in the order the outputs were shown. [81](81-primary-output.md) should hold the primary output instead, as the prototype does. (81 does, since its merge.)
+- **The order within one configuration:** the modes and the outputs turned on and off first, each healed as it happens (58's order). Then the scales, whose changes of size push the neighbours. Then the places the configuration gives, and one last heal. A place the configuration gives that is the one the output already has is no new place: `wlr-randr` sends every head's place back, and without this an output that grew would leave its neighbour under it, to be moved off by the shortest way, which is often above it. So a resize pushes every output the configuration doesn't move.
+- **A new output** goes right of the rightmost at the layout's top, and is then healed, so where it would touch no other output it is docked: beside a wider output below the first one, it ends 100 pixels down that output's side.
+- **Logical sizes:** the crate takes them and doesn't work them out. Camino's is `output_geometry`'s: the mode over the scale, each axis rounded half away from zero, at a scale already snapped to 120ths. camino-displays ([84](84-camino-displays.md)) has to round the same way.
+- **Snapping** is in the crate and tested there, but nothing in Camino calls `dock` with a snap distance: that's camino-displays's drag.
+- **Differences from the prototype:** distances are compared as squared integers, not floats, and where two places are equally near, the one beside an output wins over the one above or below it.
+- **Not tested:** more than one output changing size in one configuration. And an enabled output with no mode, whose logical size is 0 by 0, touches nothing, so healing leaves it where it is; no backend makes one.
+
+The fourth criterion needs three monitors on the tty, and is the developer's. It's in [the checklist](../../../docs/testing/checklist.md) as "Turning an output off leaves the others touching". Its headless stand-in is `disabling_the_middle_output_of_three_leaves_the_other_two_touching`, whose client sends every other head's place back as `wlr-randr` does.
