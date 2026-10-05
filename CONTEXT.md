@@ -84,6 +84,38 @@ _Avoid_: screensaver (Camino only blanks), lock screen (for the program)
 Camino's implementation of `org.mate.ScreenSaver` and `org.freedesktop.ScreenSaver`, which turns MATE's lock, activity and inhibit calls into Camino's idle, blanking and lock state. mate-screensaver's daemon doesn't run under Camino.
 _Avoid_: mate-screensaver (the X11 program)
 
+**Output**:
+A monitor Camino is drawing on, with a mode, a place in the layout and an output scale. A monitor that is turned off is a disabled output.
+_Avoid_: display (that's the word the user reads in camino-displays, and nowhere else), screen, head (the protocol's word)
+
+**Primary output**:
+The one output the user chooses as primary. The panel and caja's desktop go there, new windows open there when nothing says otherwise, and X11 apps see it as the RandR primary. When it is unplugged or disabled, the built-in panel stands in, else the leftmost output, until it returns.
+_Avoid_: main output, default output
+
+**Main output**:
+The output a surface is mostly on, which decides the scale the surface is asked to render at.
+_Avoid_: primary output (that's the user's choice; Smithay's name for this is "primary scanout output")
+
+**Layout**:
+The enabled outputs with their places, modes and output scales, and which one is the primary output. Its outputs are always contiguous: no gaps, no overlaps, and each touches another along a shared edge of at least 100 logical pixels.
+_Avoid_: configuration (that's one client's request over output management), arrangement
+
+**Saved layout**:
+A layout Camino keeps for one set of connected monitors and restores when that set is connected again. A monitor is known by its make, model and serial, or by its connector when it reports none.
+_Avoid_: profile, monitors file
+
+**Dock**:
+To place an output against the outline of the others, which is the only way an output is moved in a layout.
+_Avoid_: snap (that's the finer alignment of edges and centres while docking)
+
+**Heal**:
+To make a layout contiguous again after a change that broke it: an output removed, added, turned off, or changed in size.
+_Avoid_: repack, normalise
+
+**camino-displays**:
+Camino's display settings program, which replaces MATE's Display capplet in a Session.
+_Avoid_: the capplet, display properties
+
 **Output scale**:
 The factor from logical to physical pixels for one output. It may be fractional. Camino's default comes from KWin's rule, or from `window-scaling-factor` when that is 1 or 2, and msd's saved layout overrides it.
 _Avoid_: DPI (that's the font setting), window scale (GTK's term)
