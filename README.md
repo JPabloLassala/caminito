@@ -9,9 +9,9 @@ It is written in Rust on [Smithay](https://github.com/Smithay/smithay).
 
 > **Status:** early development. Camino v0.1 is being built in eight milestones. The first four
 > (M1, a nested compositor, M2, Marco frames, M3, XWayland, and M4, on the metal) are done, and
-> M5 (the MATE session) is next. Today Camino runs as a window inside another desktop or bare on
-> a tty, drawing Marco frames around Wayland and X11 windows on the machine's monitors, with no
-> MATE session yet. It isn't ready for daily use.
+> M5 (the MATE session) is in progress. Today Camino runs as a window inside another desktop or
+> bare on a tty, drawing Marco frames around Wayland and X11 windows on the machine's monitors,
+> and it starts a MATE session that isn't finished yet. It isn't ready for daily use.
 
 ## Goals for v0.1
 
@@ -124,10 +124,14 @@ A change to the patches alone, on the same baseline, increases `pkgrel` instead.
 
 ## Running
 
-Camino currently runs only nested, as a winit window inside an existing Wayland or X11 desktop.
-`tools/dev-nested` runs the installed `camino` on a private session bus with a scratch
-`XDG_CONFIG_HOME`, so it doesn't touch your desktop's bus or dconf settings. `--bin` builds and
-runs this checkout's debug build instead, and any other arguments go to `camino`:
+A bare `camino` chooses where it runs from the environment. With `WAYLAND_DISPLAY` or `DISPLAY`
+set it runs nested, as a winit window inside that Wayland or X11 desktop. With neither, as on a
+spare tty, it drives the machine's monitors itself.
+
+To run it nested, use `tools/dev-nested`. It runs the installed `camino` on a private session bus
+with a scratch `XDG_CONFIG_HOME`, so it doesn't touch your desktop's bus or dconf settings.
+`--bin` builds and runs this checkout's debug build instead, and any other arguments go to
+`camino`:
 
 ```sh
 tools/dev-nested        # the installed camino
