@@ -96,7 +96,8 @@ session_environment
 
 echo "== the session's processes"
 pgrep -u $user -a | grep -vE 'systemd|\(sd-pam\)|Xvfb|dbus-(daemon|broker)|pgrep'
-echo "mate-screensaver running: $(pgrep -u $user -x mate-screensaver >/dev/null && echo yes || echo no)"
+# The kernel keeps 15 characters of a name, and pgrep matches no pattern longer than that.
+echo "mate-screensaver running: $(pgrep -u $user -x mate-screensave >/dev/null && echo yes || echo no)"
 
 echo "== the screensaver names (camino is pid $camino)"
 for name in org.mate.ScreenSaver org.freedesktop.ScreenSaver; do
