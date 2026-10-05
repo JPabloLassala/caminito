@@ -30,6 +30,17 @@ with `WAYLAND_DISPLAY` set to the socket in the log's `listening on WAYLAND_DISP
 `DISPLAY` to the one in its `Xwayland is ready on DISPLAY=` line for X11 apps. Ctrl+Alt+F<n>
 switches between the ttys.
 
+The items in the session run `camino --session` instead, the same way or from the display
+manager, and their commands run in a terminal inside the session or from a second login. A
+second login gets the session's displays from systemd, where Camino exports them, as in
+`env $(session_env) wlr-randr`:
+
+```sh
+session_env() {
+  systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|DISPLAY)='
+}
+```
+
 ## Nested runs
 
 ### A nested run uses its private bus
@@ -181,6 +192,149 @@ switches between the ttys.
   atoms, `_NET_WORKAREA` and `_GTK_WORKAREAS` listed, the desktops as in `org.mate.Marco.general`,
   and a work area per desktop.
 - **Debug tool:** `/proc/<pid>/environ`, `xprop -root` and the journal.
+
+## Session
+
+### Logging into MATE on Camino
+
+- **Milestone:** M5
+- **Steps:**
+  1. On a tty: log in as `caminotest` on a spare tty and run `camino --session 2>~/session.log`.
+  2. From the display manager: log out of every session of the user first, since its logins
+     share one systemd manager and bus (14). At the greeter, choose *MATE on Camino* in the
+     session list and log in.
+  3. Each time, look at the desktop, then run:
+
+     ```sh
+     systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|DISPLAY|MATE_WM_NAME)='
+     loginctl show-session "$XDG_SESSION_ID" -p Type -p Desktop -p TTY
+     pgrep -a -u "$USER" -x 'camino|mate-session|mate-panel|caja|mate-settings-d' | sort -k2
+     journalctl --user -b -t camino -p warning
+     grep -aiE 'timed out|time-?out' ~/session.log
+     ```
+
+- **Expected:** the greeter lists *MATE on Camino*. Both ways the desktop is up well inside 30
+  seconds, with no mate-session phase timing out (08): both panels, with the window list and the
+  workspace switcher, caja's desktop icons, and msd's wallpaper under them on every output.
+  systemd has `WAYLAND_DISPLAY`, `DISPLAY` and `MATE_WM_NAME=Camino`, and the five processes
+  run. From the display manager the logind session's type is `wayland`. Camino's stderr isn't a
+  terminal either way, so its lines are in the journal. mate-session and what it starts write to
+  that stderr itself (72): `~/session.log` on the tty, and the display manager's log of the
+  session otherwise, where the `grep` goes then. Neither has a time-out.
+- **Debug tool:** `systemctl --user show-environment`, `loginctl`, the journal, and the
+  `outputs` of `DumpState` for the panels' and the desktop's layer surfaces.
+
+### Log Out and Shut Down from the panel
+
+- **Milestone:** M5
+- **Steps:**
+  1. As `caminotest` on a tty, run `camino --session 2>~/session.log; echo "camino exited with $?"`.
+  2. In the panel, choose *System*, *Shut Down…*, look at the dialog, and cancel it.
+  3. Choose *System*, *Log Out caminotest…*, then *Log Out*.
+  4. From a second login, run `systemctl --user show-environment` and `pgrep -a -u caminotest`.
+  5. Log in as yourself, from the display manager, choose *Shut Down…* and then *Shut Down*.
+     After the machine is back, read `journalctl --user -b -1 -t camino | tail`.
+- **Expected:** *Shut Down…* shows mate-session's dialog (*Shut down this system now?*, with its
+  countdown), an XWayland window that Camino frames, not the panel's own *System Shutdown* (70).
+  Cancelling it leaves the session as it was. *Log Out* ends the session: the tty is back in text
+  mode at the shell prompt, which prints `camino exited with 0`, mate-session's status (61).
+  Nothing of the session still runs, and of its variables systemd has only
+  `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` (61, 74). *Shut Down* powers the machine off, and
+  the journal of that boot ends with `the session command exited`. It may also have `systemd
+  didn't unset the environment`, since a systemd that's shutting down may not answer (61).
+- **Debug tool:** the exit status, `systemctl --user show-environment`, the journal, and
+  `dbus-monitor "interface='org.gnome.SessionManager'"` for the panel's `Logout` and `Shutdown`
+  calls.
+
+### An X11 app's clipboard contents survive the app quitting
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Camino*, with no pluma running: pluma hands a new window to the running
+     instance.
+  2. Run `GDK_BACKEND=x11 pluma`, type a line, select it, copy it with Ctrl+C, and quit pluma.
+  3. Wait five seconds. Run `pluma`, which is native, paste with Ctrl+V, and quit it.
+  4. Run `GDK_BACKEND=x11 pluma` again and paste there.
+  5. `wayland-info | grep ext_data_control`, and
+     `grep -a 'data-control' ~/session.log` or the display manager's log of the session.
+- **Expected:** the line pastes in both, though the app that owned it is gone: msd's clipboard
+  plugin keeps a copy through `ext_data_control_manager_v1` and takes the selection about 2
+  seconds after its owner goes (11, 68, 71). Step 5 lists the global, and msd never logged `The
+  compositor does not support the ext-data-control protocol`.
+- **Debug tool:** the pasted text, `wayland-info`, and
+  `WAYLAND_DEBUG=1 mate-settings-daemon --replace 2>&1 | grep data_control` for msd's offers.
+
+### X11 MATE and the Wayfire session are unchanged with the Patched packages
+
+- **Milestone:** M5
+- **Steps:**
+  1. As the developer's own user, with the three Patched packages installed
+     (`pacman -Q mate-session-manager mate-panel mate-settings-daemon` names the `-camino` ones),
+     log into *MATE*, the X11 session, from the display manager.
+  2. Run:
+
+     ```sh
+     echo "$XDG_SESSION_TYPE ${MATE_WM_NAME:-unset} ${GDK_BACKEND:-unset}"
+     pgrep -a -x marco
+     busctl --user status org.mate.Camino
+     theme=$(gsettings get org.mate.interface gtk-theme)
+     gsettings get org.gnome.desktop.interface gtk-theme
+     gsettings set org.mate.interface gtk-theme TraditionalOk
+     gsettings get org.gnome.desktop.interface gtk-theme
+     gsettings set org.mate.interface gtk-theme "$theme"
+     for applet in $(grep -h '^Location=' /usr/share/mate-panel/applets/* | cut -d= -f2); do
+       ldd "$applet" | grep 'libmate-panel-applet.*not found' && echo "in $applet"
+     done
+     ```
+
+  3. Use the panel: a window list button, the workspace switcher, every applet that was on the
+     panel before, and *Log Out…* and *Shut Down…*, cancelling both.
+  4. Log out, and log into *MATE on Wayfire*. Look at its panel and wallpaper, and log
+     out.
+- **Expected:** the session is as it was with the stock packages (the fall-back rule, ADR 0011).
+  It's `x11`, with `MATE_WM_NAME` not Camino's and `GDK_BACKEND` as before, mate-session starts
+  Marco, and nothing owns `org.mate.Camino`. msd serves XSETTINGS, so open apps restyle at the
+  theme change, and it doesn't mirror into `org.gnome.desktop.interface`, which keeps its value.
+  The panel's buttons, switcher and dialogs work, and no applet is missing from the panel: the
+  loop prints nothing, since no installed applet is linked to an applet library that's gone
+  (70). The Wayfire session logs in and out, with its panel and its wallpaper.
+- **Debug tool:** `ldd` on the applets, `busctl`, `gsettings`, and `~/.xsession-errors` or the
+  journal for what a missing applet logged.
+
+### msd applies the saved display layout at login
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Camino* with both monitors connected, and note `wlr-randr`'s scales and
+     positions, which are Camino's defaults (50).
+  2. Keep a copy of `~/.config/monitors-wayland.xml` if there is one. Save a layout that isn't
+     the default in it, with *System*,
+     *Preferences*, *Hardware*, *Displays* if it runs, or by hand. One `<head>` for each output,
+     with the mode and transform `wlr-randr` shows, the rate in mHz, and a scale and a place of
+     your own:
+
+     ```xml
+     <monitors version="1">
+       <configuration>
+         <head name="DP-1">
+           <enabled>yes</enabled>
+           <width>1920</width> <height>1080</height> <rate>60000</rate>
+           <x>0</x> <y>0</y>
+           <scale>1.25</scale>
+           <transform>normal</transform>
+         </head>
+       </configuration>
+     </monitors>
+     ```
+
+  3. Log out and in again, and run `wlr-randr` and `DumpState`.
+  4. Remove the file, log out and in once more, and then put the copy back.
+- **Expected:** after step 3 each output has the saved mode, scale and place, not Camino's
+  default, set by msd's wlrandr plugin over wlr-output-management (58, 71). The outputs may
+  blank once as msd applies it, which is a known gap (06). msd logged no `Could not apply the
+  display configuration`: one part that Camino refuses fails the whole layout (71). After step 4
+  the defaults are back.
+- **Debug tool:** `wlr-randr`, the `outputs` of `DumpState`, and msd's lines in `~/session.log`.
 
 ## Privileged clients
 
