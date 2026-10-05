@@ -20,8 +20,15 @@ license=(GPL-2.0-or-later)
 # mate-themes has Menta, the default theme, which marco doesn't pull in. camino spawns
 # Xwayland (11, 34); its own X connection is x11rb's pure-Rust one, which links nothing, and
 # the X11 test tier runs the same Xwayland from check().
+#
+# The last line is the session that `camino --session` starts (08, 17). The three patched
+# packages are named by their real names, so the stock ones don't satisfy them (16, ADR
+# 0011); caja draws the desktop, and mate-session autostarts the notification daemon and the
+# polkit agent. camino links none of them.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 marco mate-themes
-  xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput)
+  xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput
+  mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino caja
+  mate-notification-daemon mate-polkit)
 makedepends=(cargo git meson)
 # camino's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).

@@ -64,7 +64,7 @@ Some MATE components need carried patches to work in the session
 `<pkgname>-camino` package under [packaging/arch/](packaging/arch/), made from Arch's own
 PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino is running, or
 are correct on any compositor, or only let the baseline build against Arch's libraries, so X11
-MATE stays as it was. Build them before `camino-git`, which will depend on them:
+MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
 for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino; do

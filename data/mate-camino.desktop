@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=MATE on Camino
+Comment=The MATE desktop on the Camino Wayland compositor
+Exec=camino --session
+DesktopNames=MATE
