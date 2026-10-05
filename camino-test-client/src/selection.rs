@@ -39,7 +39,7 @@ pub enum Selection {
 }
 
 /// The mime types an offer lists, as they arrive.
-type MimeTypes = Mutex<Vec<String>>;
+pub(crate) type MimeTypes = Mutex<Vec<String>>;
 
 /// The selections the compositor last offered the client.
 #[derive(Default)]
@@ -203,7 +203,7 @@ impl State {
 }
 
 /// Writes a source's text to the pipe a reader sent, which closes it.
-fn send(text: &str, fd: OwnedFd) {
+pub(crate) fn send(text: &str, fd: OwnedFd) {
     let mut file = std::fs::File::from(fd);
     let _ = file.write_all(text.as_bytes());
 }

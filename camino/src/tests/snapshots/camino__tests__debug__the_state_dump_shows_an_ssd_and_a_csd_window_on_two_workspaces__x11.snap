@@ -104,6 +104,12 @@ expression: without_x_ids(&dump)
         "height": 1080
       },
       "scale": 1.0,
+      "work_area": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      },
       "layer_surfaces": []
     },
     {
@@ -116,6 +122,12 @@ expression: without_x_ids(&dump)
         "height": 720
       },
       "scale": 2.0,
+      "work_area": {
+        "x": 1920,
+        "y": 0,
+        "width": 1280,
+        "height": 720
+      },
       "layer_surfaces": []
     }
   ],

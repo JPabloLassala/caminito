@@ -4,6 +4,7 @@
 */camino/
 */mate-panel/
 */mate-session-manager/
+*/mate-settings-daemon/
 */mate-submodules/
 *.pkg.tar.*
 *.log

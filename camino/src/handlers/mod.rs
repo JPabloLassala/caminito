@@ -9,10 +9,12 @@ mod input;
 mod layer_shell;
 mod output_management;
 mod rendering;
+mod security_context;
 mod selection;
 mod xdg_shell;
 
 pub(crate) use decoration::kde_server_side;
+pub(crate) use security_context::sees_privileged_globals;
 pub(crate) use selection::DragIcon;
 
 use smithay::input::keyboard::LedState;

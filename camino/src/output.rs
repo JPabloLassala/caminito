@@ -411,9 +411,9 @@ impl Camino {
     }
 
     /// Lays the outputs at the default place out left to right, in the order they were
-    /// added, after the ones output management placed, so they never overlap those. Tells
-    /// policy where every output is now, arranges their layer surfaces for their new sizes,
-    /// and redraws them all.
+    /// added, after the ones output management placed, so they never overlap those.
+    /// Arranges their layer surfaces for their new sizes, tells policy where every output
+    /// is now, and redraws them all.
     fn lay_out_outputs(&mut self) {
         let is_set = |output: &Output| self.record(output).position == ChosenBy::OutputManagement;
         let mut x = self
@@ -431,17 +431,10 @@ impl Camino {
             x += output_geometry(output).size.w;
         }
 
-        self.policy.set_outputs(
-            self.outputs
-                .iter()
-                .map(|output| camino_policy::Output {
-                    id: output_id(output),
-                    geometry: output_geometry(output),
-                    scale: output.current_scale().fractional_scale(),
-                })
-                .collect(),
-        );
+        // First, since what the layer surfaces reserve of their outputs' new sizes is in
+        // what policy is told (64).
         self.arrange_layers();
+        self.policy.set_outputs(self.policy_outputs());
         self.queue_redraw_all();
     }
 

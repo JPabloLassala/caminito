@@ -5,3 +5,8 @@ pub mod foreign_toplevel;
 pub mod gtk_shell;
 pub mod output_management;
 pub mod raw;
+
+use smithay::reexports::wayland_server::Client;
+
+/// Says whether a client is offered a global, as Smithay's states' filters do.
+pub(crate) type GlobalFilter = Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>;

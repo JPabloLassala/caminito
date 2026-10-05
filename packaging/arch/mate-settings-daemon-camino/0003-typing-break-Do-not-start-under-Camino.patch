@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 09:37:53 -0300
+Subject: [PATCH] typing-break: Do not start under Camino
+
+The plugin starts mate-typing-monitor, which watches the keyboard through
+X11. Under Camino, the Wayland compositor for MATE, it sees only the keys
+typed into XWayland applications, so its breaks come at the wrong times.
+
+When MATE_WM_NAME is Camino, do not start the manager. Without that
+variable, nothing changes.
+---
+ plugins/typing-break/msd-typing-break-plugin.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/plugins/typing-break/msd-typing-break-plugin.c b/plugins/typing-break/msd-typing-break-plugin.c
+index 5b9233c..3e3194a 100644
+--- a/plugins/typing-break/msd-typing-break-plugin.c
++++ b/plugins/typing-break/msd-typing-break-plugin.c
+@@ -71,6 +71,14 @@ impl_activate (MateSettingsPlugin *plugin)
+         gboolean res;
+         GError  *error;
+ 
++        /* mate-typing-monitor watches the keyboard through X11, and under
++         * Camino, the Wayland compositor for MATE, it would see the keys of
++         * XWayland applications only and count a break that is not one. */
++        if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Camino") == 0) {
++                g_debug ("Not activating typing_break plugin under Camino");
++                return;
++        }
++
+         g_debug ("Activating typing_break plugin");
+ 
+         error = NULL;

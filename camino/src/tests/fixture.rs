@@ -7,7 +7,7 @@
 
 use std::io::Read;
 use std::os::fd::OwnedFd;
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -21,9 +21,9 @@ use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::output::Output;
 use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::wayland_server::Display;
-use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::backend::ClientId as ServerClientId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Display, Resource};
 use smithay::utils::{FrameExtents, Logical, Physical, Point, Rectangle, Size};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::X11Surface;
@@ -162,7 +162,7 @@ enum TestClient {
     /// A Wayland client, and itself as the compositor knows it.
     Wayland {
         client: Box<Client>,
-        server: smithay::reexports::wayland_server::Client,
+        server: ServerClientId,
     },
     X11(Arc<X11Client>),
     /// A client the test disconnected.
@@ -382,9 +382,48 @@ impl Fixture {
             .unwrap();
         self.clients.push(TestClient::Wayland {
             client: Box::new(Client::new(client)),
-            server,
+            server: server.id(),
         });
         ClientId(self.clients.len() - 1)
+    }
+
+    /// Connects a Wayland client through a security context that `engine` makes, as Flatpak
+    /// connects an app, so Camino has it as sandboxed. It has seen the globals.
+    pub fn connect_sandboxed(&mut self, engine: ClientId) -> ClientId {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sandbox");
+        let listener = UnixListener::bind(&path).unwrap();
+        // Camino listens for as long as the other end is open. Clients connected by then
+        // stay, so the context is closed once this one is.
+        let (close, _engine_end) = UnixStream::pair().unwrap();
+        self.client(engine).create_security_context(
+            &listener,
+            &close,
+            "org.camino.Sandboxed",
+            "instance",
+        );
+        self.roundtrip(engine);
+
+        let known = self.server_client_ids();
+        let client = Box::new(Client::new(UnixStream::connect(&path).unwrap()));
+        self.dispatch_until(|f| f.server_client_ids().len() > known.len());
+        let new = self
+            .server_client_ids()
+            .into_iter()
+            .find(|id| !known.contains(id));
+        let server = new.expect("the sandboxed client is connected");
+        self.clients.push(TestClient::Wayland { client, server });
+        let id = ClientId(self.clients.len() - 1);
+        self.roundtrip(id);
+        id
+    }
+
+    /// Camino's id for every client connected to it.
+    fn server_client_ids(&self) -> Vec<ServerClientId> {
+        let mut ids = Vec::new();
+        let dh = &self.state.camino.display_handle;
+        dh.backend_handle().with_all_clients(|id| ids.push(id));
+        ids
     }
 
     /// Connects a client of `kind` that has seen the globals, or the root, starting
@@ -633,7 +672,7 @@ impl Fixture {
                 let protocol_id = client.surface_protocol_id(window);
                 self.state.camino.policy.windows().find_map(|mapped| {
                     let surface = mapped.wl_surface()?;
-                    (surface.client().as_ref() == Some(server)
+                    (surface.client().map(|client| client.id()).as_ref() == Some(server)
                         && surface.id().protocol_id() == protocol_id)
                         .then(|| mapped.id())
                 })

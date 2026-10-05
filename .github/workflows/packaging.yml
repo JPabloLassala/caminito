@@ -21,6 +21,7 @@ jobs:
       PACKAGES: >-
         mate-session-manager-camino
         mate-panel-camino
+        mate-settings-daemon-camino
         camino-git
     steps:
       # rustup provides cargo, so makepkg doesn't pull in the rust package.

@@ -182,6 +182,39 @@ switches between the ttys.
   and a work area per desktop.
 - **Debug tool:** `/proc/<pid>/environ`, `xprop -root` and the journal.
 
+## Privileged clients
+
+### A clipboard watcher sees each copy without a window
+
+- **Milestone:** M5
+- **Steps:**
+  1. Run `tools/dev-nested`, and set `WAYLAND_DISPLAY` to the nested socket in two terminals.
+  2. In the first, run `wl-paste --watch cat`, which is a data-control client with no window.
+  3. In the second, run `wl-copy first`, then `wl-copy second`.
+- **Expected:** the first terminal prints `first`, then `second`, as each is copied (68).
+- **Debug tool:** `wl-paste --watch`, and `wayland-info | grep data_control`.
+
+### A Flatpak app's sandbox is offered no privileged global
+
+- **Milestone:** M5
+- **Steps:**
+  1. Run `tools/dev-nested`, and set `WAYLAND_DISPLAY` to the nested socket.
+  2. Run `wayland-info | grep -c interface:`.
+  3. Run `wayland-info` in a Flatpak sandbox, from the host's `/usr`, with any installed
+     runtime:
+
+     ```sh
+     flatpak run --socket=wayland --filesystem=host-os:ro \
+       --command=/run/host/usr/bin/wayland-info org.freedesktop.Platform//25.08
+     ```
+
+- **Expected:** the sandbox lists eight globals fewer than step 2 counts. It lists none of
+  `zwlr_layer_shell_v1`, `zwlr_foreign_toplevel_manager_v1`, `ext_foreign_toplevel_list_v1`,
+  `ext_workspace_manager_v1`, `zwlr_output_manager_v1`, `ext_data_control_manager_v1`,
+  `zwlr_data_control_manager_v1` and `wp_security_context_manager_v1`, and it does list
+  `xdg_wm_base` and `wl_data_device_manager` (68).
+- **Debug tool:** `wayland-info` in and out of the sandbox.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

@@ -18,6 +18,7 @@ pub mod session;
 pub mod settings;
 pub mod state;
 pub mod window;
+mod work_area;
 pub mod xwayland;
 
 #[cfg(test)]

@@ -40,8 +40,11 @@ use smithay::wayland::pointer_constraints::PointerConstraintsState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::{PresentationState, Refresh};
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
+use smithay::wayland::security_context::{SecurityContext, SecurityContextState};
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
@@ -71,7 +74,7 @@ use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
-use crate::handlers::DragIcon;
+use crate::handlers::{DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
@@ -115,6 +118,11 @@ pub struct Camino {
     pub seat: Seat<State>,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
+    // Data-control, for a clipboard manager (68).
+    pub ext_data_control_state: ExtDataControlState,
+    pub wlr_data_control_state: WlrDataControlState,
+    /// The global through which a sandbox engine makes security contexts (68).
+    pub security_context_state: SecurityContextState,
 
     // Shell (06): xdg-shell and the protocols that extend its toplevels.
     pub xdg_shell_state: XdgShellState,
@@ -283,6 +291,8 @@ impl PaletteState for State {
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    /// The security context the client connected through, which makes it sandboxed (68).
+    pub(crate) security_context: Option<SecurityContext>,
 }
 
 impl ClientData for ClientState {
@@ -575,6 +585,11 @@ impl Camino {
         crate::input::keyboard::restore_numlock(&keyboard, keyboard_settings);
         let numlock_seen = keyboard.modifier_state().num_lock;
         let primary_selection_state = PrimarySelectionState::new::<State>(dh);
+        // The privileged globals (68).
+        let privileged = sees_privileged_globals;
+        let primary = Some(&primary_selection_state);
+        let ext_data_control_state = ExtDataControlState::new::<State, _>(dh, primary, privileged);
+        let wlr_data_control_state = WlrDataControlState::new::<State, _>(dh, primary, privileged);
         let xwayland_shell_state = XWaylandShellState::new::<State>(dh);
         let xwayland_keyboard_grab_state = XWaylandKeyboardGrabState::new::<State>(dh);
 
@@ -592,11 +607,14 @@ impl Camino {
             compositor_state: CompositorState::new_v6::<State>(dh),
             shm_state: ShmState::new::<State>(dh, Vec::new()),
             output_manager_state: OutputManagerState::new_with_xdg_output::<State>(dh),
-            output_management_state: OutputManagementState::new::<State>(dh),
+            output_management_state: OutputManagementState::new::<State, _>(dh, privileged),
             seat_state,
             seat,
             data_device_state: DataDeviceState::new::<State>(dh),
             primary_selection_state,
+            ext_data_control_state,
+            wlr_data_control_state,
+            security_context_state: SecurityContextState::new::<State, _>(dh, privileged),
 
             xdg_shell_state: XdgShellState::new::<State>(dh),
             xdg_activation_state: XdgActivationState::new::<State>(dh),
@@ -608,12 +626,14 @@ impl Camino {
             xdg_decoration_state: XdgDecorationState::new::<State>(dh),
             kde_decoration_state: KdeDecorationState::new::<State>(dh, KdeDefaultMode::Server),
             popups: PopupManager::default(),
-            layer_shell_state: WlrLayerShellState::new::<State>(dh),
+            layer_shell_state: WlrLayerShellState::new_with_filter::<State, _>(dh, privileged),
 
-            foreign_toplevel_state: ForeignToplevelState::new::<State>(dh),
-            foreign_toplevel_list_state: ForeignToplevelListState::new::<State>(dh),
+            foreign_toplevel_state: ForeignToplevelState::new::<State, _>(dh, privileged),
+            foreign_toplevel_list_state: ForeignToplevelListState::new_with_filter::<State>(
+                dh, privileged,
+            ),
             foreign_toplevel_handles: HashMap::new(),
-            ext_workspace_state: ExtWorkspaceState::new::<State>(dh),
+            ext_workspace_state: ExtWorkspaceState::new::<State, _>(dh, privileged),
 
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),
@@ -828,6 +848,11 @@ impl Camino {
     fn refresh_views(&mut self) {
         // First, since windows' outputs and scales follow the outputs' scales.
         self.refresh_lid_switch();
+        // Before the work areas, which take the struts as read at the X11 scale, and
+        // before anything else that's worked out at it.
+        self.refresh_x11_scale();
+        // Before the windows are told what policy asks of them.
+        self.refresh_work_areas();
         self.refresh_window_outputs();
         self.refresh_layers();
         self.refresh_output_management();
@@ -837,8 +862,6 @@ impl Camino {
         for mapped in self.policy.windows() {
             mapped.flush();
         }
-        // First, since what follows is worked out at the X11 scale.
-        self.refresh_x11_scale();
         self.refresh_x11_stacking();
         self.refresh_x_root();
         self.refresh_x_windows();
@@ -849,17 +872,18 @@ impl Camino {
         self.popups.cleanup();
     }
 
-    /// The bounds a new toplevel is told to fit in: the output of the focused window, where
-    /// policy places new windows, or else the first output.
+    /// The bounds a new toplevel is told to fit in: the work area of the focused window's
+    /// output, where policy places new windows, or else the first output's.
     pub fn placement_bounds(&self) -> Option<Size<i32, Logical>> {
         let focused = self
             .policy
             .focus(SEAT)
             .and_then(|id| self.policy.geometry(id));
+        let areas: Vec<_> = self.policy.work_areas().collect();
         let outputs = self.policy.outputs();
         focused
-            .and_then(|geometry| outputs.iter().find(|o| o.geometry.overlaps(geometry)))
-            .or(outputs.first())
-            .map(|output| output.geometry.size)
+            .and_then(|geometry| outputs.iter().position(|o| o.geometry.overlaps(geometry)))
+            .or((!outputs.is_empty()).then_some(0))
+            .map(|output| areas[output].size)
     }
 }
