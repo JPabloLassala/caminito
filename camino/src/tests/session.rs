@@ -170,7 +170,7 @@ impl Manager {
         let unanswered = |left: u32| left.checked_sub(1);
         if self
             .unanswered
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, unanswered)
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, unanswered)
             .is_ok()
         {
             std::future::pending::<()>().await;
