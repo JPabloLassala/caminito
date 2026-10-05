@@ -4,7 +4,7 @@
 //! A nested run's private bus has no systemd on it (14), so the manager is called only when
 //! its name has an owner. Camino never runs `systemctl`.
 //!
-//! These run on zbus's executor and log nothing: the `session` module logs what they
+//! These run off the event loop and log nothing: the `session` module logs what they
 //! return, from the event loop.
 
 use std::collections::HashMap;
@@ -73,8 +73,14 @@ async fn set_environment(
     Ok(true)
 }
 
-/// Has systemd's user manager forget `names`.
-pub(crate) async fn unset(connection: &zbus::Connection, names: &[&str]) -> zbus::Result<()> {
+/// Has systemd's user manager forget `names`, over a connection of its own, made from
+/// `builder`. Camino's may be to a bus that has stopped and been replaced, and then nothing
+/// runs what's spawned on its executor (74).
+pub(crate) async fn unset(
+    builder: zbus::connection::Builder<'static>,
+    names: &[&str],
+) -> zbus::Result<()> {
+    let connection = builder.build().await?;
     connection
         .call_method(
             Some(NAME),

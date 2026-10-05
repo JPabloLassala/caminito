@@ -1002,6 +1002,15 @@ impl Fixture {
         camino.dbus.as_ref().unwrap().unique_name().unwrap()
     }
 
+    /// Serves Camino's D-Bus interfaces with its well-known names on the bus at `address`,
+    /// a test's own, where no other fixture has them.
+    pub fn start_dbus_at(&mut self, address: &str) {
+        self.state
+            .camino
+            .start_dbus_at(crate::dbus::Names::WellKnown, Some(address))
+            .expect("the test's bus runs");
+    }
+
     /// Keeps Camino's well-known names for this fixture until it's dropped, for a test that
     /// owns one itself before Camino starts.
     pub fn reserve_names(&mut self) {

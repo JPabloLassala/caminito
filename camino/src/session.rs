@@ -13,9 +13,17 @@
 //! the command's status. SIGTERM or SIGINT, and the winit window closing, are passed to the
 //! command as SIGTERM first ([`Camino::quit`]).
 //!
-//! Nothing here waits in the loop: the bus calls run on zbus's executor and report through
-//! a `calloop::channel`, and the command's exit comes through a `SIGCHLD` source, as the
-//! helpers' do. The one wait is for a command Camino has just killed.
+//! mate-session restarts the user's bus as it exits, if the session is the user's last
+//! (`maybe_restart_user_bus` in its `gsm-manager.c`), so Camino's connection may be to a bus
+//! that has stopped, and zbus's executor for it stops with its last task (74). systemd is
+//! therefore asked over a connection made for the request, on a thread of the request's
+//! own, and asked again until it answers: the bus may stop after it took the request, and
+//! the one that takes its place may not be there yet.
+//!
+//! Nothing here waits in the loop: the bus calls run on zbus's executor, or on a thread,
+//! and report through a `calloop::channel`, and the command's exit comes through a
+//! `SIGCHLD` source, as the helpers' do. The one wait is for a command Camino has just
+//! killed.
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -38,6 +46,14 @@ use crate::state::{Camino, State};
 /// How long a command that was sent SIGTERM has to exit (08), and how long systemd has to
 /// forget the variables before Camino exits anyway.
 const WAIT: Duration = Duration::from_secs(5);
+
+/// How many requests to forget the variables systemd can leave unanswered within the wait
+/// (74). One it hasn't answered in its share of the wait is followed by another.
+const REQUESTS_IN_WAIT: u32 = 5;
+
+/// How long after a request to systemd fails the next is made (74): a bus that's being
+/// replaced is there again this soon, and one that isn't is asked this often until `WAIT`.
+const PAUSE_AFTER_FAILURE: Duration = Duration::from_millis(50);
 
 /// The status Camino exits with when the Session ends without one from its command.
 const FAILURE: u8 = 1;
@@ -144,11 +160,14 @@ pub(crate) struct Session {
     phase: Phase,
     /// What the bus tasks answer on.
     events: channel::Sender<Event>,
-    /// The bus task that runs, which holds Camino's connection. It stops when dropped, so
-    /// one that systemd never answers doesn't keep the connection open.
+    /// The export, which holds Camino's connection while it runs. It stops when dropped.
     bus_task: Option<zbus::Task<()>>,
     /// Whether systemd's user manager took the environment, and so is asked to forget it.
     systemd_has_environment: bool,
+    /// The timer that asks systemd again to forget the environment (74).
+    ask_again: Option<RegistrationToken>,
+    /// Why systemd's last request to forget failed, if it did.
+    unset_error: Option<zbus::Error>,
     /// The `SIGCHLD` source, from the command's spawn on.
     sigchld: Option<(signal_hook::SigId, RegistrationToken)>,
     /// `WAIT`, which a test makes shorter.
@@ -214,6 +233,8 @@ impl Camino {
             events,
             bus_task: None,
             systemd_has_environment: false,
+            ask_again: None,
+            unset_error: None,
             sigchld: None,
             wait: WAIT,
         });
@@ -342,16 +363,19 @@ impl Camino {
                     self.spawn_session_command();
                 }
             }
-            (Event::Unset(unset), &Phase::Ending { status, give_up }) => {
-                if let Err(err) = unset {
-                    tracing::warn!("can't unset the environment in systemd: {err}");
-                }
+            (Event::Unset(Ok(())), &Phase::Ending { status, give_up }) => {
                 if let Some(give_up) = give_up {
                     self.loop_handle.remove(give_up);
                 }
                 self.session_over(status);
             }
-            // systemd's answer after Camino gave up on it.
+            // The bus has stopped, or the one in its place isn't there yet (74).
+            (Event::Unset(Err(err)), Phase::Ending { .. }) => {
+                tracing::debug!("can't unset the environment in systemd yet: {err}");
+                session.unset_error = Some(err);
+                self.ask_systemd_again_after(PAUSE_AFTER_FAILURE);
+            }
+            // systemd's answer after Camino gave up on it, or its second to one request.
             _ => {}
         }
     }
@@ -459,7 +483,7 @@ impl Camino {
     /// Tears Camino down (08): its helpers and Xwayland are stopped, its socket is closed,
     /// and systemd forgets the variables, if it had them. Then the loop stops, and `run`
     /// gives the VT back as it drops the backend and exits with `status`. A systemd that
-    /// doesn't answer within `WAIT`, as one that's shutting down may not, isn't waited for.
+    /// hasn't done so within `WAIT`, as one that's shutting down may not, isn't waited for.
     fn end_session(&mut self, status: u8) {
         let session = self.session.as_mut().expect("a Session is ending");
         let ending = Phase::Ending {
@@ -478,46 +502,97 @@ impl Camino {
             self.loop_handle.remove(token);
         }
         let forget = session.systemd_has_environment;
-        let events = session.events.clone();
         let wait = session.wait;
 
         self.palette.stop();
         self.end_xwayland();
         self.close_socket();
 
-        match &self.dbus {
-            Some(dbus) if forget => {
-                let connection = dbus.connection().clone();
-                let task = dbus.connection().executor().spawn(
-                    async move {
-                        let unset = systemd::unset(&connection, &UNSET).await;
-                        let _ = events.send(Event::Unset(unset));
-                    },
-                    "session environment",
-                );
-                let timer = Timer::from_duration(wait);
-                let timer = self.loop_handle.insert_source(timer, move |_, _, state| {
-                    tracing::warn!("systemd didn't unset the environment within {wait:?}");
-                    state.camino.session_over(status);
-                    TimeoutAction::Drop
-                });
-                match timer {
-                    Ok(token) => {
-                        let session = self.session.as_mut().expect("a Session is ending");
-                        session.bus_task = Some(task);
-                        session.phase = Phase::Ending {
-                            status,
-                            give_up: Some(token),
-                        };
-                    }
-                    Err(err) => {
-                        tracing::warn!("can't wait for systemd: {}", err.error);
-                        self.session_over(status);
-                    }
-                }
-            }
-            _ => self.session_over(status),
+        if !forget || self.dbus.is_none() {
+            self.session_over(status);
+            return;
         }
+        let timer = Timer::from_duration(wait);
+        let timer = self.loop_handle.insert_source(timer, move |_, _, state| {
+            state.camino.give_up_on_systemd(status);
+            TimeoutAction::Drop
+        });
+        match timer {
+            Ok(token) => {
+                let session = self.session.as_mut().expect("a Session is ending");
+                session.phase = Phase::Ending {
+                    status,
+                    give_up: Some(token),
+                };
+                self.ask_systemd_to_forget();
+            }
+            Err(err) => {
+                tracing::warn!("can't wait for systemd: {}", err.error);
+                self.session_over(status);
+            }
+        }
+    }
+
+    /// Asks systemd to forget the variables, over a new connection to the bus that's there
+    /// now. If it doesn't answer in its share of the wait, as on a bus that stopped once it
+    /// had the request, it's asked again (74).
+    ///
+    /// Each request has a thread, since zbus needs something to run the connection being
+    /// made. One that's never answered keeps its thread until Camino exits, which is soon.
+    fn ask_systemd_to_forget(&mut self) {
+        let (Some(session), Some(dbus)) = (&mut self.session, &self.dbus) else {
+            return;
+        };
+        let events = session.events.clone();
+        let builder = dbus.builder();
+        let thread = std::thread::Builder::new().name("session environment".into());
+        let thread = thread.spawn(move || {
+            let unset = builder.and_then(|bus| zbus::block_on(systemd::unset(bus, &UNSET)));
+            // The Session may be over by now.
+            let _ = events.send(Event::Unset(unset));
+        });
+        if let Err(err) = thread {
+            tracing::warn!("can't start the thread that asks systemd: {err}");
+        }
+        let share = session.wait / REQUESTS_IN_WAIT;
+        self.ask_systemd_again_after(share);
+    }
+
+    /// Has systemd asked again to forget the variables once `delay` has passed, and not
+    /// when it was to be before.
+    fn ask_systemd_again_after(&mut self, delay: Duration) {
+        let session = self.session.as_mut().expect("a Session is ending");
+        if let Some(ask_again) = session.ask_again.take() {
+            self.loop_handle.remove(ask_again);
+        }
+        let timer = Timer::from_duration(delay);
+        let timer = self.loop_handle.insert_source(timer, |_, _, state| {
+            let camino = &mut state.camino;
+            if let Some(session) = &mut camino.session {
+                // The timer is dropped as this returns.
+                session.ask_again = None;
+                camino.ask_systemd_to_forget();
+            }
+            TimeoutAction::Drop
+        });
+        match timer {
+            Ok(token) => session.ask_again = Some(token),
+            // The timer that gives up on systemd still ends the Session.
+            Err(err) => tracing::warn!("can't ask systemd again: {}", err.error),
+        }
+    }
+
+    /// systemd didn't forget the variables within the wait, and the Session ends anyway.
+    fn give_up_on_systemd(&mut self, status: u8) {
+        let session = self.session.as_mut().expect("a Session is ending");
+        let wait = session.wait;
+        match session.unset_error.take() {
+            Some(err) => {
+                tracing::warn!("systemd didn't unset the environment within {wait:?}: {err}");
+            }
+            None => tracing::warn!("systemd didn't unset the environment within {wait:?}"),
+        }
+        self.session_over(status);
     }
 
     /// The Session has ended, and Camino exits with `status`.
@@ -525,6 +600,9 @@ impl Camino {
         let session = self.session.as_mut().expect("a Session is ending");
         session.phase = Phase::Over(status);
         session.bus_task = None;
+        if let Some(ask_again) = session.ask_again.take() {
+            self.loop_handle.remove(ask_again);
+        }
         self.loop_signal.stop();
     }
 
