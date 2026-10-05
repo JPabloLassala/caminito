@@ -11,7 +11,7 @@ GTK3, which is most of MATE, renders only at an integer scale. It has no fractio
 
 ## Decision
 
-- **Camino's default output scale is KWin's `chooseScale`, ported as-is.** Target DPI is 125 for a laptop panel, 150 for an internal output with no lid, 30.5 for a TV and 96 for other monitors. At least 800 logical pixels remain, the result is clamped to 1–3 and rounded to 5% steps, anything under 1.20 becomes 1, and anything within 0.06 of an integer snaps to it. msd's saved layout overrides it.
+- **Camino's default output scale is KWin's `chooseScale`, ported as-is.** Target DPI is 125 for a laptop panel, 150 for an internal output with no lid, 30.5 for a TV and 96 for other monitors. At least 800 logical pixels remain, the result is clamped to 1–3 and rounded to 5% steps, anything under 1.20 becomes 1, and anything within 0.06 of an integer snaps to it. Camino's saved layout overrides it.
 - **`window-scaling-factor` 1 or 2 forces that integer** on outputs with no saved config. 0, the default, uses the rule. A live change applies only to outputs no output-management client has set.
 - **A carried mate-control-center patch** makes the Wayland Display capplet offer 1.00–3.00 in 5% steps, so it can show and choose any scale Camino picks.
 - **The X11 scale is the largest rounded-up output scale**, an integer. XSETTINGS DPI uses msd's formulas with `org.mate.font-rendering dpi` (or 96).

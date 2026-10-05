@@ -117,7 +117,7 @@ Camino's display settings program, which replaces MATE's Display capplet in a Se
 _Avoid_: the capplet, display properties
 
 **Output scale**:
-The factor from logical to physical pixels for one output. It may be fractional. Camino's default comes from KWin's rule, or from `window-scaling-factor` when that is 1 or 2, and msd's saved layout overrides it.
+The factor from logical to physical pixels for one output. It may be fractional. Camino's default comes from KWin's rule, or from `window-scaling-factor` when that is 1 or 2, and Camino's saved layout overrides it.
 _Avoid_: DPI (that's the font setting), window scale (GTK's term)
 
 **X11 scale**:

@@ -231,6 +231,8 @@ impl Tty {
             .insert_source(notifier, |event, _, state| {
                 let paused = matches!(event, SessionEvent::PauseSession);
                 tty_mut(&mut state.backend).seat_event(&mut state.camino, event);
+                // Switching back finds the monitors plugged in and unplugged meanwhile.
+                state.restore_saved_layout();
                 // The keys held to switch VTs come up on the other VT, so no release reaches
                 // Camino.
                 if paused {
@@ -246,7 +248,8 @@ impl Tty {
         camino
             .loop_handle
             .insert_source(udev, |event, _, state| {
-                tty_mut(&mut state.backend).udev_event(&mut state.camino, event)
+                tty_mut(&mut state.backend).udev_event(&mut state.camino, event);
+                state.restore_saved_layout();
             })
             .expect("udev's events join the loop");
         Ok(tty)

@@ -1,6 +1,6 @@
-//! `zwlr_output_management_unstable_v1` version 4 (06, 58): clients such as `wlr-randr`,
-//! and msd's wlrandr plugin, see the monitors as heads with their modes, and change them
-//! with configurations that are tested or applied whole.
+//! `zwlr_output_management_unstable_v1` version 4 (06, 58): clients such as `wlr-randr`
+//! and camino-displays see the monitors as heads with their modes, and change them with
+//! configurations that are tested or applied whole.
 //!
 //! This module owns the protocol's objects and its rules: which head and mode objects each
 //! client has, the serial, and what makes a request a protocol error. It knows nothing of

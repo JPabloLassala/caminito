@@ -1,8 +1,9 @@
 //! Output lifecycle: making outputs, picking their default scales, keeping their layout
 //! contiguous (82), and telling policy about them (15, 51), and changing them as output
-//! management asks (58).
+//! management asks (58) and as a saved layout has them (83).
 
 pub(crate) mod primary;
+pub(crate) mod saved;
 
 use std::time::Duration;
 
@@ -223,7 +224,8 @@ fn matching_mode(modes: &[Mode], asked: Mode) -> Option<Mode> {
 pub(crate) enum ChosenBy {
     /// Camino's default, which it may change.
     Camino,
-    /// A client, over output management, which Camino leaves alone.
+    /// A client, over output management, or the saved layout (83), which Camino leaves
+    /// alone.
     OutputManagement,
 }
 
@@ -257,6 +259,7 @@ impl Camino {
     /// Starts showing an output the backend found: in its preferred mode, at its default
     /// scale, and to the right of the outputs there are, at the layout's top (82).
     pub fn add_output(&mut self, output: Output) {
+        self.monitors_changed = true;
         let mode = output.preferred_mode();
         self.show_output(output, mode);
     }
@@ -301,18 +304,23 @@ impl Camino {
     /// Stops showing an output that output management disabled, as if it was unplugged
     /// (51), but keeps it as a head that can be enabled again (58).
     pub fn disable_output(&mut self, output: &Output) {
-        self.remove_output(output);
+        self.hide_output(output);
         self.disabled_outputs.push(output.clone());
     }
 
-    /// Stops showing an output that was unplugged. Policy moves its windows onto the
-    /// others, and the others close the gap it leaves (82). A disabled output is only
-    /// forgotten.
+    /// Stops showing an output that was unplugged. A disabled output is only forgotten.
     pub fn remove_output(&mut self, output: &Output) {
+        self.monitors_changed = true;
         if let Some(index) = self.disabled_outputs.iter().position(|o| o == output) {
             self.disabled_outputs.remove(index);
             return;
         }
+        self.hide_output(output);
+    }
+
+    /// Stops showing an output. Policy moves its windows onto the others, and the others
+    /// close the gap it leaves (82).
+    fn hide_output(&mut self, output: &Output) {
         let id = self.output_id(output);
         self.outputs.retain(|o| o != output);
         self.redraws.remove(&id);

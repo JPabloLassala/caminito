@@ -30,6 +30,7 @@ use smithay::xwayland::X11Surface;
 use x11rb::protocol::Event;
 
 use crate::decoration::control::FrameControl;
+use crate::output::saved::{self, SavedLayouts};
 use crate::settings::{self, Value};
 use crate::state::{ClientState, State};
 use crate::window::Mapped;
@@ -305,6 +306,14 @@ impl Fixture {
             input_millis: 0,
             names: None,
         }
+    }
+
+    /// Camino with no outputs and no clients, keeping its saved layouts in `dir` as it does
+    /// in `$XDG_CONFIG_HOME/camino` (83).
+    pub fn with_saved_layouts(dir: &std::path::Path) -> Self {
+        let mut fixture = Self::new();
+        fixture.state.camino.saved_layouts = SavedLayouts::load(Some(dir.join(saved::FILE_NAME)));
+        fixture
     }
 
     /// Adds an output of `size` pixels at `scale`, as output management would set it, at

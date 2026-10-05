@@ -80,6 +80,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
 use crate::output::primary::PrimaryChoice;
+use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -197,6 +198,11 @@ pub struct Camino {
     pub(crate) output_records: HashMap<OutputId, OutputRecord>,
     /// The monitor the user chose as the primary output (81), if they chose one.
     pub(crate) primary_choice: Option<PrimaryChoice>,
+    /// The layouts the user saved, which are restored as monitors come and go (83).
+    pub(crate) saved_layouts: SavedLayouts,
+    /// Whether a monitor was plugged in or unplugged since a saved layout was last looked
+    /// for.
+    pub(crate) monitors_changed: bool,
     /// The primary output's name as `org.mate.Camino`'s callers last heard it (81).
     pub(crate) primary_output_signalled: Option<String>,
     /// Outputs to render in the next refresh pass.
@@ -323,13 +329,18 @@ impl State {
             PaletteCache::from_env(),
             CursorSource::Xcursor,
         )?;
+        // Before the backend finds the monitors, so that they're restored as they're found.
+        camino.saved_layouts = SavedLayouts::load(saved::default_path());
         let backend = match kind {
             backend::Kind::Winit => {
                 Backend::Winit(Box::new(backend::winit::Winit::new(&mut camino)?))
             }
             backend::Kind::Tty => Backend::Tty(Box::new(backend::tty::Tty::new(&mut camino)?)),
         };
-        Ok(Self { backend, camino })
+        let mut state = Self { backend, camino };
+        // Before the first frame, which the event loop draws (ADR 0014).
+        state.restore_saved_layout();
+        Ok(state)
     }
 
     /// Starts with no outputs; tests add them with `add_headless_output`. Frames use the
@@ -375,21 +386,26 @@ impl State {
         modes: &[smithay::utils::Size<i32, smithay::utils::Physical>],
         internal: bool,
     ) -> Output {
-        self.backend
-            .headless_mut()
-            .plug(&mut self.camino, physical_size, modes, internal)
+        let output =
+            self.backend
+                .headless_mut()
+                .plug(&mut self.camino, physical_size, modes, internal);
+        self.restore_saved_layout();
+        output
     }
 
     /// Plugs a headless monitor that was unplugged in again, at the connector it was at.
     #[cfg(test)]
     pub fn replug_headless_output(&mut self, unplugged: &Output) -> Output {
         let modes: Vec<_> = unplugged.modes().iter().map(|mode| mode.size).collect();
-        self.backend.headless_mut().plug_at(
+        let output = self.backend.headless_mut().plug_at(
             &mut self.camino,
             unplugged.name(),
             unplugged.physical_properties().size,
             &modes,
-        )
+        );
+        self.restore_saved_layout();
+        output
     }
 
     /// Switches a headless monitor to a mode of `size`.
@@ -408,6 +424,7 @@ impl State {
     #[cfg(test)]
     pub fn unplug_headless_output(&mut self, output: &Output) {
         self.backend.headless_mut().unplug(&mut self.camino, output);
+        self.restore_saved_layout();
     }
 
     /// The number of render elements the scene has for `output`.
@@ -690,6 +707,8 @@ impl Camino {
             next_output_id: 0,
             output_records: HashMap::new(),
             primary_choice: None,
+            saved_layouts: SavedLayouts::default(),
+            monitors_changed: false,
             primary_output_signalled: None,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),

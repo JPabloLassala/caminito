@@ -44,6 +44,9 @@ pub trait Camino {
     /// Chooses the primary output, by the name of an enabled output.
     #[zbus(property)]
     fn set_primary_output(&self, name: &str) -> zbus::Result<()>;
+
+    /// Saves the layout the connected monitors have now (83).
+    fn save_layout(&self) -> zbus::Result<()>;
 }
 
 /// A proxy for `org.mate.Camino` at `destination`, a unique or well-known name, on a new

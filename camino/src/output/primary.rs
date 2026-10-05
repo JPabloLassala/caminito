@@ -48,6 +48,16 @@ pub(crate) struct PrimaryChoice {
     connector: String,
 }
 
+impl PrimaryChoice {
+    /// The choice of the monitor `output` shows.
+    fn of(output: &Output) -> Self {
+        PrimaryChoice {
+            monitor: MonitorIdentity::of(output),
+            connector: output.name(),
+        }
+    }
+}
+
 /// Why an output can't be made the primary output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -96,20 +106,24 @@ impl Camino {
     }
 
     /// Makes the enabled output named `name` the user's choice of primary output, for the
-    /// Session (83 keeps it longer). It's the monitor that's chosen: unplugged or
-    /// disabled, it has a stand-in until it returns.
+    /// Session, and for longer once the layout is saved (83). It's the monitor that's
+    /// chosen: unplugged or disabled, it has a stand-in until it returns.
     pub(crate) fn choose_primary_output(&mut self, name: &str) -> Result<(), Error> {
         let output = self
             .outputs
             .iter()
             .find(|output| output.name() == name)
             .ok_or_else(|| Error::NotEnabled(name.to_owned()))?;
-        self.primary_choice = Some(PrimaryChoice {
-            monitor: MonitorIdentity::of(output),
-            connector: output.name(),
-        });
-        self.tell_policy_the_primary_output();
+        let output = output.clone();
+        self.restore_primary_choice(&output);
         Ok(())
+    }
+
+    /// Makes the monitor `output` shows the user's choice again, as a saved layout has it
+    /// (83). The output may be disabled still, on its way to being enabled.
+    pub(super) fn restore_primary_choice(&mut self, output: &Output) {
+        self.primary_choice = Some(PrimaryChoice::of(output));
+        self.tell_policy_the_primary_output();
     }
 
     /// Tells policy which output is the primary one now, after the choice or the outputs
@@ -127,7 +141,7 @@ mod tests {
 
     use smithay::output::{Output, PhysicalProperties, Subpixel};
 
-    use super::{MonitorIdentity, PrimaryChoice, primary};
+    use super::{PrimaryChoice, primary};
 
     /// An output at `connector` whose monitor's EDID has `serial`.
     fn output(connector: &str, serial: &str) -> Output {
@@ -143,16 +157,9 @@ mod tests {
         )
     }
 
-    fn choice(output: &Output) -> PrimaryChoice {
-        PrimaryChoice {
-            monitor: MonitorIdentity::of(output),
-            connector: output.name(),
-        }
-    }
-
     #[test]
     fn a_chosen_monitor_is_known_again_at_another_connector() {
-        let chosen = choice(&output("DP-1", "A1"));
+        let chosen = PrimaryChoice::of(&output("DP-1", "A1"));
         let outputs = [output("HDMI-A-1", "B2"), output("DP-2", "A1")];
 
         assert_eq!(primary(&outputs, Some(&chosen)), Some(&outputs[1]));
@@ -161,14 +168,14 @@ mod tests {
     #[test]
     fn of_two_monitors_with_one_serial_the_one_at_the_chosen_connector_is_primary() {
         let outputs = [output("DP-1", "0"), output("DP-2", "0")];
-        let chosen = choice(&outputs[1]);
+        let chosen = PrimaryChoice::of(&outputs[1]);
 
         assert_eq!(primary(&outputs, Some(&chosen)), Some(&outputs[1]));
     }
 
     #[test]
     fn a_monitor_without_a_serial_is_known_by_its_connector() {
-        let chosen = choice(&output("DP-1", "Unknown"));
+        let chosen = PrimaryChoice::of(&output("DP-1", "Unknown"));
         let outputs = [output("HDMI-A-1", "Unknown"), output("DP-1", "")];
 
         assert_eq!(primary(&outputs, Some(&chosen)), Some(&outputs[1]));

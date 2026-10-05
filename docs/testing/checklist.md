@@ -303,40 +303,41 @@ session_env() {
 - **Debug tool:** `ldd` on the applets, `busctl`, `gsettings`, and `~/.xsession-errors` or the
   journal for what a missing applet logged.
 
-### msd applies the saved display layout at login
+### Camino restores the saved layout from the first frame
 
-- **Milestone:** M5
+- **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino* with both monitors connected, and note `wlr-randr`'s scales and
-     positions, which are Camino's defaults (50).
-  2. Keep a copy of `~/.config/monitors-wayland.xml` if there is one. Save a layout that isn't
-     the default in it, with *System*,
-     *Preferences*, *Hardware*, *Displays* if it runs, or by hand. One `<head>` for each output,
-     with the mode and transform `wlr-randr` shows, the rate in mHz, and a scale and a place of
-     your own:
+  1. With `mate-settings-daemon-camino` at `pkgrel` 2 or later, log into *MATE on Camino* with
+     both monitors connected, and note `wlr-randr`'s scales and positions, which are Camino's
+     defaults (50) unless a layout is saved already. Keep a copy of
+     `~/.config/camino/layouts.json` if there is one.
+  2. Apply a layout that isn't the default, choose the other output as the primary one, and
+     save it:
 
-     ```xml
-     <monitors version="1">
-       <configuration>
-         <head name="DP-1">
-           <enabled>yes</enabled>
-           <width>1920</width> <height>1080</height> <rate>60000</rate>
-           <x>0</x> <y>0</y>
-           <scale>1.25</scale>
-           <transform>normal</transform>
-         </head>
-       </configuration>
-     </monitors>
+     ```sh
+     wlr-randr --output DP-1 --scale 1.25 --pos 0,0 --output HDMI-A-1 --pos 1536,0
+     gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
+       --method org.freedesktop.DBus.Properties.Set org.mate.Camino PrimaryOutput "<'HDMI-A-1'>"
+     gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
+       --method org.mate.Camino.SaveLayout
      ```
 
-  3. Log out and in again, and run `wlr-randr` and `DumpState`.
-  4. Remove the file, log out and in once more, and then put the copy back.
-- **Expected:** after step 3 each output has the saved mode, scale and place, not Camino's
-  default, set by msd's wlrandr plugin over wlr-output-management (58, 71). The outputs may
-  blank once as msd applies it, which is a known gap (06). msd logged no `Could not apply the
-  display configuration`: one part that Camino refuses fails the whole layout (71). After step 4
-  the defaults are back.
-- **Debug tool:** `wlr-randr`, the `outputs` of `DumpState`, and msd's lines in `~/session.log`.
+  3. Apply another scale with `wlr-randr`, and don't save it. Log out and in again, watching
+     the monitors as the session starts, and run `wlr-randr` and `DumpState`.
+  4. Unplug the second monitor's cable, run `wlr-randr`, plug it back in, and run it again.
+  5. Run `pgrep -a mate-settings-daemon` and `gdbus introspect --session --dest
+     org.mate.SettingsDaemon --object-path /org/mate/SettingsDaemon/WLRANDR`.
+  6. Remove `layouts.json`, log out and in once more, and then put the copy back.
+- **Expected:** after step 3 each output has the mode, scale and place of step 2, not Camino's
+  default and not the scale of step 3, and the panels are on the output chosen (81). The
+  layout is there from the first frame: the outputs don't blank or jump once the session is
+  up, as they did while msd applied it (06). In step 4 the monitor that stays is at the
+  origin while it's alone, and the saved layout and the primary output are back when the
+  other is plugged in. In step 5 msd runs, and the object has no
+  `org.mate.SettingsDaemon.WLRANDR` interface: the plugin isn't started under Camino, and `~/.config/monitors-wayland.xml` is neither read nor written (ADR
+  0014). After step 6 the defaults are back.
+- **Debug tool:** `wlr-randr`, the `outputs` and `primary_output` of `DumpState`,
+  `~/.config/camino/layouts.json`, and `can't restore the saved layout` in `~/camino.log`.
 
 ## Privileged clients
 
@@ -458,7 +459,7 @@ session_env() {
   maximised one filling it. They're moved, not resized, so one larger than the output hangs
   over its edge. The monitor that stays never goes black or freezes. Plugging the
   monitor back lights it in its preferred mode at its default scale, to the right of the other
-  one, whichever side it was on before (82 keeps that until 83 restores a saved layout), and the pointer and windows can go to it again. The log
+  one, whichever side it was on before, unless a layout is saved for the two (83), and the pointer and windows can go to it again. The log
   has no `can't light` line.
 - **Debug tool:** `wlr-randr`, the `outputs` and windows of `DumpState`, and `~/camino.log`.
 

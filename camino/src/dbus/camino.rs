@@ -1,11 +1,11 @@
 //! `org.mate.Camino` (ADR 0002's third channel): what MATE's components and
-//! camino-displays ask of Camino that no protocol carries. So far, the primary output (81,
-//! ADR 0014).
+//! camino-displays ask of Camino that no protocol carries. So far, the primary output (81)
+//! and saving the layout (83), both ADR 0014's.
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
 
-use crate::output::primary;
+use crate::output::{primary, saved};
 use crate::state::Camino;
 
 /// The well-known name, which carried patches look for an owner of (ADR 0011).
@@ -19,6 +19,8 @@ pub(crate) enum Request {
     PrimaryOutput(oneshot::Sender<String>),
     /// Writes `PrimaryOutput`, with the name written.
     ChoosePrimaryOutput(String, oneshot::Sender<Result<(), primary::Error>>),
+    /// Calls `SaveLayout`.
+    SaveLayout(oneshot::Sender<Result<(), saved::Error>>),
 }
 
 /// `org.mate.Camino`, as zbus serves it.
@@ -51,6 +53,16 @@ impl CaminoInterface {
             .await?
             .map_err(|err| zbus::fdo::Error::InvalidArgs(err.to_string()))
     }
+
+    /// Saves the layout as it is now, for the monitors connected now: which are enabled,
+    /// their modes, places and scales, and the primary output. Camino restores it when it
+    /// next has those monitors, at start-up and as they're plugged in. Nothing else saves
+    /// one: a configuration applied over output management lasts for the Session.
+    async fn save_layout(&self) -> zbus::fdo::Result<()> {
+        super::ask(&self.requests, Request::SaveLayout)
+            .await?
+            .map_err(|err| zbus::fdo::Error::Failed(err.to_string()))
+    }
 }
 
 impl Camino {
@@ -67,6 +79,9 @@ impl Camino {
                     self.primary_output_signalled = Some(self.primary_output_name());
                 }
                 let _ = reply.send(chosen);
+            }
+            Request::SaveLayout(reply) => {
+                let _ = reply.send(self.save_layout());
             }
         }
     }

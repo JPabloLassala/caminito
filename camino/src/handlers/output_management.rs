@@ -42,7 +42,7 @@ impl State {
 
     /// Changes the outputs. The steps that can fail, lighting a monitor and switching its
     /// mode, come first, so that a failure leaves only those to take back.
-    fn apply_output_changes(&mut self, changes: &[OutputChange]) -> bool {
+    pub(crate) fn apply_output_changes(&mut self, changes: &[OutputChange]) -> bool {
         let mut taken = Vec::new();
         for change in changes {
             let Some(settings) = change.to else {
