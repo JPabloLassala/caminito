@@ -140,7 +140,43 @@ The keybindings are a hard-coded set of Marco's defaults until M8 reads them fro
 | Alt+F4 | Close window |
 | Alt+F10 | Toggle maximised |
 
-`camino --session` runs mate-session as Camino's child, and Camino exits with it and with its status. `camino --session=CMD` runs `CMD` instead, for example `--session=foot`. The *MATE on Camino* session entry and the patched MATE packages it needs aren't installed yet (M5).
+### The MATE session
+
+`camino --session` runs mate-session as Camino's child, and Camino exits with it and with its
+status. `camino --session=CMD` runs `CMD` instead, for example `--session=foot`. The `camino-git`
+package installs the session entry, *MATE on Camino*
+(`/usr/share/wayland-sessions/mate-camino.desktop`), which a display manager lists, and depends
+on the patched MATE packages the session needs.
+
+Until M5 closes, try the session as a second user, not from the display manager as yourself.
+Every login of one user shares one systemd user manager and one session bus, and the session
+changes the environment of both, so it would disturb the desktop you are logged in to. A second
+user has its own:
+
+```sh
+sudo useradd -m caminotest
+sudo passwd caminotest
+```
+
+Switch to a spare tty (Ctrl+Alt+F4, for example), log in as `caminotest`, and run:
+
+```sh
+camino --session
+```
+
+Logging out from the panel's menu ends the session and gives the tty back.
+
+Started from a display manager, the session logs to the journal, and so do Camino's helpers,
+each under its own name:
+
+```sh
+journalctl --user -t camino -b            # Camino
+journalctl --user -t camino-gtk-palette   # a helper
+journalctl --user -b                      # the whole session, mate-session's parts too
+```
+
+On a tty Camino's stderr is the terminal, so its logs go there instead. To have them in the
+journal, send stderr away from the terminal: `camino --session 2>/dev/null`.
 
 ## Known limitations
 

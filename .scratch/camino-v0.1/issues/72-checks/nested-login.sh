@@ -89,12 +89,23 @@ in_session env GDK_BACKEND=x11 $work/gtk-probe.py probe-x11 2>$work/probe-x11.st
 sleep 5
 dump_state >$work/dump-windows.txt 2>&1
 screenshot windows
-sleep 4
+# 66's open question: what the window list shows on a workspace with no windows.
+if command -v wmctrl >/dev/null; then
+  in_session wmctrl -s 1
+  sleep 2
+  screenshot workspace-2
+  in_session wmctrl -s 0
+fi
+sleep 6
 
 echo "== the journal: lines for each identifier"
 journalctl _UID=$uid --since "$since" -o json --no-pager |
   grep -o '"SYSLOG_IDENTIFIER":"[^"]*"' | sort | uniq -c
 journalctl _UID=$uid --since "$since" --no-pager -o short-precise >$work/journal.txt
+echo "== journalctl --user, as the user, as the README says"
+for tag in camino Xwayland camino-gtk-palette; do
+  echo "$tag: $(as_user journalctl --user -t $tag --since "$since" --no-pager -o cat 2>&1 | wc -l) lines"
+done
 echo "== the journal: camino's warnings and errors"
 journalctl _UID=$uid -t camino --since "$since" --no-pager -p warning -o cat | sort | uniq -c | head -30
 echo "== the journal: timeouts"

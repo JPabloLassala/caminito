@@ -1,7 +1,7 @@
 # The session file and the first login
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5
 Blocked by: 61, 64, 67, 68, 70, 71
 Map: [Camino v0.1](../map.md)
@@ -27,7 +27,7 @@ Map: [Camino v0.1](../map.md)
   - has `mate-screensaver` not running, and `org.mate.ScreenSaver` owned by Camino ([62](62-screensaver-names.md));
   - maximises native and X11 windows to the work area ([64](64-work-areas-from-struts.md));
   - gives a GTK3 app MATE's theme, fonts and cursor, natively and on XWayland ([71](71-mate-settings-daemon-camino.md)).
-- [ ] The results are recorded in this ticket's notes, with a ticket for each failure not fixed here.
+- [x] The results are recorded in this ticket's notes, with a ticket for each failure not fixed here.
 
 ## Notes
 
@@ -35,3 +35,24 @@ Map: [Camino v0.1](../map.md)
 - **Known gaps that aren't failures (06):** caja's desktop icons on one output only; a second modeset when msd applies the saved layout; mate-session's idle status. The window list showing every workspace's windows is the open question from [66](66-ext-workspace.md): decide here whether it needs a ticket in M5 or goes to M6.
 - **An Xwayland crash logs the user out** (11). It's a documented limitation, not something to fix here.
 - **Logging in from the display manager on the developer's own user** is the closing ticket's, since it shares the host's systemd manager and bus (14).
+- **Resolved on 2026-10-05 with two criteria unticked and the third checked nested.** The session file, the dependencies and the README are in. The machine this was done in (OrbStack, Arch Linux, aarch64) has no tty, no GPU (`/dev/dri`) and no display manager, and the virtual machine of 59 wasn't available. So the first login was `camino --session` as `caminotest` nested on Xvfb, on `caminotest`'s own systemd user manager and bus. [76](76-tty-login-left-over.md) carries the login on a tty, the display manager and the Packaging job, which needs a push.
+- **The packages (criterion 1):** [72-checks/build-packages.sh](72-checks/build-packages.sh) built and installed `mate-session-manager-camino` 1.28.0.r23.g57a9178-1, `mate-panel-camino` 1.28.7.r111.g58ac6c1-1 and `camino-git` r148.fdb854a-1 with `makepkg --ignorearch --nocheck --syncdeps`, beside 71's `mate-settings-daemon-camino` 1.29.1-1. `camino-git`'s build pulled in `mate-notification-daemon` and `mate-polkit`. `arch` is still `x86_64` in all four. `makepkg --install --noconfirm` answers no to taking out the stock package a Patched one conflicts with, so the script installs with `pacman -U`; CI's container has no stock package to take out.
+- **The session file (criterion 2):** `pacman -Qo` gives `/usr/share/wayland-sessions/mate-camino.desktop` to `camino-git`. `desktop-file-validate` rejects `DesktopNames` as a key with no `X-`, as it does for every session file. A `Comment` line was added beyond what 08 lists. No display manager read it.
+- **The nested login (2026-10-05), on those packages,** with [72-checks/nested-login.sh](72-checks/nested-login.sh), run three times with the same results. One 1280x800 output, no input device, no logind session.
+  - Reaches the desktop: pass. The panel, caja, msd, the polkit agent and the notification daemon were running 25 s after the start, and the journal has no time-out. The phases' order isn't in the journal: mate-session logs it only with `--debug`.
+  - Exports to systemd: pass. `systemctl --user show-environment` had none of the variables before, and `DISPLAY=:2`, `MATE_WM_NAME=Camino`, `WAYLAND_DISPLAY=wayland-1`, `XCURSOR_SIZE=24`, `XDG_CURRENT_DESKTOP=MATE` and `XDG_SESSION_TYPE=wayland` in the session.
+  - None of them after logout: FAIL. All six were still there, and Camino logged `systemd didn't unset the environment within 5s`. mate-session restarts the user's bus as it exits, so Camino's request is lost. [74](74-systemd-environment-after-logout.md) has it, and blocks 73.
+  - Logs to the journal: pass. `journalctl --user -t camino`, as `caminotest`, has Camino's lines, and `-t Xwayland` has Xwayland's. `camino-gtk-palette` wrote nothing. mate-session and what it starts write to Camino's stderr, not to the journal under Camino's name.
+  - mate-panel: pass by a screenshot. Both panels are layer surfaces with exclusive zones 27 and 25; the window list had a button for each of two windows; the switcher showed four workspaces and followed a switch to the second (`wmctrl -s 1`). Nothing was clicked.
+  - caja's desktop icons above msd's wallpaper: pass on the one output. Computer, Home and Trash are drawn on the gradient; `DumpState` has `mate-background` in `background` and `desktop` in `bottom`. Both are 1280x800 at y 27, below the top panel's zone, so their last 52 rows are under the bottom panel or off the output. It looks right. The second output is 76's.
+  - `mate-screensaver` not running, `org.mate.ScreenSaver` owned by Camino: pass. `org.freedesktop.ScreenSaver` too.
+  - Maximising to the work area: pass. The work area was 0,27 1280x748. A native and an XWayland GTK3 window that asked to be maximised were both 1280x721 at 0,54 with a 27-row title bar.
+  - MATE's theme, fonts and cursor: pass for the theme (`Menta`) and the font (`Sans 10`), the same in `gsettings` and in both windows. The cursor theme is MATE's default, which is empty, in all three, so it says little.
+  - Logout: `mate-session-save --logout` ended mate-session with status 0 and Camino with it. Camino exited 5 s later, with status 0, after its wait for systemd.
+- **Also seen, with no ticket:**
+  - mate-session warns `Unable to find provider '' of required component 'dock'`, as it does on X11, and that `gnome-keyring-daemon` isn't installed (an optional dependency).
+  - msd warns `Could not execute xrdb`: `xorg-xrdb` wasn't installed. Camino writes the Xft resources itself (47).
+  - Camino's warnings were winit's on Xvfb (`[EGL] BAD_SURFACE`, `error setting XSETTINGS`, the display's size) and two `Failed to handle X11 event`.
+  - After logout, with the variables still in systemd, `xdg-desktop-portal-gtk` was started on the new bus and failed with `cannot open display: :2` (74).
+- **The window list on every workspace (66):** seen. With two windows on workspace 1, the list on workspace 2 still had both buttons. [75](75-window-list-by-workspace.md) has it, proposed for M6: the session logs in and the list loses nothing, and M5's exit asks only that the list is shown. The developer hasn't confirmed the milestone.
+- **The README** has a new *The MATE session* section. Its status paragraph and milestone table are 73's.

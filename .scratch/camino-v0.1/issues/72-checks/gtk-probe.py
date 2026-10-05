@@ -4,7 +4,7 @@
   gtk-probe.py TITLE
 
 After 3 s it prints one JSON line: GDK's backend, the theme, the font, the cursor theme and
-the window's size. It stays 4 s more, so a state dump or a screenshot can show it, then
+the window's size. It stays 9 s more, so a state dump or a screenshot can show it, then
 exits. GDK_BACKEND picks Wayland or X11.
 """
 import json
@@ -38,5 +38,5 @@ def report():
 
 
 GLib.timeout_add_seconds(3, report)
-GLib.timeout_add_seconds(7, Gtk.main_quit)
+GLib.timeout_add_seconds(12, Gtk.main_quit)
 Gtk.main()
