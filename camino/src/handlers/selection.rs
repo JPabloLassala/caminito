@@ -1,11 +1,12 @@
-//! The clipboard, primary selection and drag-and-drop. data-control comes in M5. X
-//! clients reach them through `xwayland::selection` and Smithay's XDND bridge (37).
+//! The clipboard, primary selection and drag-and-drop, and data-control, through which a
+//! clipboard manager reads and sets the selections without the keyboard (68). X clients
+//! reach them through `xwayland::selection` and Smithay's XDND bridge (37).
 //!
 //! Known bugs, accepted with no workarounds in v0.1 (11): they're fixed upstream or not at
 //! all, and picked up by bumping the Smithay pin.
 //! - XDND's Ask and Private actions aren't bridged.
 //! - `CLIPBOARD_MANAGER`'s `SAVE_TARGETS` isn't implemented, so an X client's clipboard
-//!   only outlives it through msd's data-control clipboard manager (M5).
+//!   only outlives it through msd's data-control clipboard manager.
 //! - A drop can be lost: Smithay #1953.
 //!
 //! A Wayland drag's icon is kept here from the drag's start until it's dropped or
@@ -28,8 +29,14 @@ use smithay::wayland::compositor::{
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler,
 };
+use smithay::wayland::selection::ext_data_control::{
+    DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
+};
 use smithay::wayland::selection::primary_selection::{
     PrimarySelectionHandler, PrimarySelectionState,
+};
+use smithay::wayland::selection::wlr_data_control::{
+    DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
 };
 use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
 
@@ -37,7 +44,7 @@ use crate::state::State;
 use crate::window::send_preferred_scale;
 
 /// The only selections Camino sets on the seat itself are X clients', so its user data
-/// says nothing more.
+/// says nothing more. A data-control client's selection comes here as any other client's.
 impl SelectionHandler for State {
     type SelectionUserData = ();
 
@@ -183,5 +190,17 @@ impl DndGrabHandler for State {
 impl PrimarySelectionHandler for State {
     fn primary_selection_state(&mut self) -> &mut PrimarySelectionState {
         &mut self.camino.primary_selection_state
+    }
+}
+
+impl ExtDataControlHandler for State {
+    fn data_control_state(&mut self) -> &mut ExtDataControlState {
+        &mut self.camino.ext_data_control_state
+    }
+}
+
+impl WlrDataControlHandler for State {
+    fn data_control_state(&mut self) -> &mut WlrDataControlState {
+        &mut self.camino.wlr_data_control_state
     }
 }

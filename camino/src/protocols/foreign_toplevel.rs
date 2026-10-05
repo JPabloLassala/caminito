@@ -27,6 +27,8 @@ use smithay::reexports::wayland_server::{
 use smithay::utils::{Logical, Rectangle};
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 
+use super::GlobalFilter;
+
 /// The version of the protocol Camino offers.
 const VERSION: u32 = 3;
 /// The fullscreen state, and its two requests, are since version 2.
@@ -123,7 +125,6 @@ pub trait ForeignToplevelHandler: 'static {
 /// The manager's global, the toplevels last sent, and every client's handles for them.
 #[derive(Debug)]
 pub struct ForeignToplevelState {
-    /// Kept for the security-context filter (68).
     _global: GlobalId,
     toplevels: Vec<Toplevel>,
     managers: Vec<Manager>,
@@ -150,9 +151,10 @@ struct Handle {
     parent: Option<ToplevelId>,
 }
 
-/// The manager global's data.
-#[derive(Debug)]
-pub struct ManagerGlobalData;
+/// The manager global's data: the clients it's offered to.
+pub struct ManagerGlobalData {
+    filter: GlobalFilter,
+}
 
 /// A manager's data.
 #[derive(Debug)]
@@ -163,14 +165,16 @@ pub struct ManagerData;
 pub struct HandleData(ToplevelId);
 
 impl ForeignToplevelState {
-    /// Offers the manager's global to every client. The security-context filter comes with
-    /// the other privileged globals (68).
-    pub fn new<D>(display: &DisplayHandle) -> Self
+    /// Offers the manager's global to the clients `filter` allows.
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrForeignToplevelManagerV1, ManagerGlobalData> + 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let global =
-            display.create_global::<D, ZwlrForeignToplevelManagerV1, _>(VERSION, ManagerGlobalData);
+        let data = ManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        let global = display.create_global::<D, ZwlrForeignToplevelManagerV1, _>(VERSION, data);
         Self {
             _global: global,
             toplevels: Vec::new(),
@@ -360,6 +364,10 @@ where
         let state = state.foreign_toplevel_state();
         manager.refresh::<D>(display, &[], &state.toplevels);
         state.managers.push(manager);
+    }
+
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 

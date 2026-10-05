@@ -37,6 +37,8 @@ use smithay::reexports::wayland_server::{
 use smithay::utils::{Logical, Point, Raw, Size, Transform};
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 
+use super::GlobalFilter;
+
 /// The version of the protocol Camino offers.
 const VERSION: u32 = 4;
 /// `zwlr_output_mode_v1`'s own version, which is lower than the manager's.
@@ -124,7 +126,6 @@ pub trait OutputManagementHandler: 'static {
 /// The manager's global, the heads last sent, and every client's objects for them.
 #[derive(Debug)]
 pub struct OutputManagementState {
-    /// Kept for M5's security-context filter (58).
     _global: GlobalId,
     /// The serial of the next or the last `done`. A configuration made at an earlier one is
     /// cancelled.
@@ -151,9 +152,10 @@ struct ManagerHead {
     modes: Vec<(Mode, ZwlrOutputModeV1)>,
 }
 
-/// The manager global's data.
-#[derive(Debug)]
-pub struct ManagerGlobalData;
+/// The manager global's data: the clients it's offered to.
+pub struct ManagerGlobalData {
+    filter: GlobalFilter,
+}
 
 /// A manager's data.
 #[derive(Debug)]
@@ -199,13 +201,16 @@ pub struct ConfigurationHeadData {
 }
 
 impl OutputManagementState {
-    /// Offers the manager's global to every client. The security-context filter comes in M5
-    /// with the other privileged globals (58).
-    pub fn new<D>(display: &DisplayHandle) -> Self
+    /// Offers the manager's global to the clients `filter` allows.
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrOutputManagerV1, ManagerGlobalData> + 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let global = display.create_global::<D, ZwlrOutputManagerV1, _>(VERSION, ManagerGlobalData);
+        let data = ManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        let global = display.create_global::<D, ZwlrOutputManagerV1, _>(VERSION, data);
         Self {
             _global: global,
             serial: 0,
@@ -417,6 +422,10 @@ where
         }
         manager.resource.done(state.serial);
         state.managers.push(manager);
+    }
+
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
