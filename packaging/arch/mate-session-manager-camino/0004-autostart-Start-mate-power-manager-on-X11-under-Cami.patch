@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 13:05:51 -0300
+Subject: [PATCH] autostart: Start mate-power-manager on X11 under Camino
+
+Under Camino, the Wayland compositor for MATE, mate-session unsets
+GDK_BACKEND, so what it starts opens GDK on Wayland. mate-power-manager
+calls XKeysymToKeycode as it grabs its keys, without checking for an X
+display, and dies with SIGSEGV at every login.
+
+Camino has no stand-in for it, so it should run. Give its autostart entry
+GDK_BACKEND=x11 when MATE_WM_NAME is Camino, so it starts on XWayland.
+Without that variable, nothing changes.
+---
+ mate-session/gsm-autostart-app.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/mate-session/gsm-autostart-app.c b/mate-session/gsm-autostart-app.c
+index 09bc524..4ae26b9 100644
+--- a/mate-session/gsm-autostart-app.c
++++ b/mate-session/gsm-autostart-app.c
+@@ -118,6 +118,13 @@ static const char * const camino_skipped_ids[] = {
+         NULL
+ };
+ 
++/* Autostart entries that are X11-only, and that Camino has no stand-in for.
++ * Under Camino they start on XWayland. */
++static const char * const camino_x11_ids[] = {
++        "mate-power-manager.desktop",
++        NULL
++};
++
+ static gboolean
+ is_under_camino (void)
+ {
+@@ -874,7 +881,7 @@ static gboolean
+ autostart_app_start_spawn (GsmAutostartApp *app,
+                            GError         **error)
+ {
+-        char            *env[2] = { NULL, NULL };
++        char            *env[3] = { NULL, NULL, NULL };
+         gboolean         success;
+         GError          *local_error;
+         const char      *startup_id;
+@@ -887,6 +894,14 @@ autostart_app_start_spawn (GsmAutostartApp *app,
+ 
+         env[0] = g_strdup_printf ("DESKTOP_AUTOSTART_ID=%s", startup_id);
+ 
++        /* mate-session unsets GDK_BACKEND under Camino, so its children open GDK
++         * on Wayland. An X11-only one gets the variable back. */
++        if (is_under_camino () && priv->desktop_id != NULL &&
++            g_strv_contains (camino_x11_ids, priv->desktop_id)) {
++                g_debug ("GsmAutostartApp: starting %s on X11 under Camino", priv->desktop_id);
++                env[1] = g_strdup ("GDK_BACKEND=x11");
++        }
++
+         local_error = NULL;
+         command = egg_desktop_file_parse_exec (priv->desktop_file,
+                                                NULL,
+@@ -912,6 +927,7 @@ autostart_app_start_spawn (GsmAutostartApp *app,
+                                            EGG_DESKTOP_FILE_LAUNCH_RETURN_STARTUP_ID, &priv->startup_id,
+                                            NULL);
+         g_free (env[0]);
++        g_free (env[1]);
+ 
+         if (success) {
+                 g_debug ("GsmAutostartApp: started pid:%d", priv->pid);

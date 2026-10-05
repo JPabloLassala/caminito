@@ -1,7 +1,7 @@
 # 4. Run mate-session as Camino's child, on XWayland, with a carried patch
 
 Date: 2026-09-28
-Status: Accepted
+Status: Accepted. Qualified on 2026-10-05 by ticket 78: with `GDK_BACKEND` unset, X11-only autostart entries crash, so two more carried patches skip them or start them on XWayland (ADR 0014).
 
 ## Context
 

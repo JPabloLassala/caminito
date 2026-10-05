@@ -13,7 +13,7 @@ _pkgname=mate-session-manager
 # so the package needs no -git suffix. The weekly job builds the patches on master instead.
 _commit=57a9178e766cd02176dc1c2d70cc48f963ee9fff
 pkgver=1.28.0.r23.g57a9178
-pkgrel=1
+pkgrel=2
 pkgdesc="The MATE Session Handler, with Camino's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-session-manager'
@@ -60,18 +60,22 @@ groups=(mate)
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
-# Both patches are active only when MATE_WM_NAME=Camino (08, ADR 0004).
+# Every patch is active only when MATE_WM_NAME=Camino (08, ADR 0004; 78, ADR 0014).
 source=(
   "git+https://github.com/mate-desktop/mate-session-manager.git#commit=$_commit"
   git+https://github.com/mate-desktop/mate-submodules.git
   0001-main-Unset-GDK_BACKEND-under-Camino.patch
   0002-main-Skip-the-windowmanager-required-component-under.patch
+  0003-autostart-Skip-mate-screensaver-and-mate-maximus-und.patch
+  0004-autostart-Start-mate-power-manager-on-X11-under-Cami.patch
 )
 b2sums=(
   ef165f32eef80783df69906d7054bd51133099b10141a033a269c33086dd66a9f60315b6b10b95c72e1d25662a9d9870aba5c9546cb99865d6ba0b6716efa55b
   SKIP
   bfb9db6542cbb161c3ca2dfc1205093421fc15d3a9a6fa27d2445c0bf72fcfa156d6a9c528ad4badadf47ffa8a81e3441a40a600a7f89945a33adcfeaf120069
   4a236cc71486bc8d7102b0c036426a29381ccc3045b8ec4c7c20afc5bdc580847f24e496440ab47bb74c9b06078fd2ded12e3da91418db80ee848f884745f16e
+  2e0c93ac36013e841ba804b74872d7b72aefc9c7aa1b85fc6e813376a42f72475ea661fc51e96f6b0601cc6a3a8d79f3fdb132527ec304550ca40c7847c04625
+  45cac414c2b628f6755ea035cdfe234fefa321e3af09c8480ff5b1434a2d26303622b5a56a3657e12f51274343aa8621d78861fb4e9ceffe04ab02124dcf1a67
 )
 
 pkgver() {
