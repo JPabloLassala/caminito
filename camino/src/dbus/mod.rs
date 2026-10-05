@@ -41,6 +41,8 @@ pub struct Dbus {
     /// it holds, so that it stops first.
     _caller_watch: Option<zbus::Task<()>>,
     connection: zbus::Connection,
+    /// The bus's address, if it isn't the session bus's: a test's own bus.
+    address: Option<String>,
 }
 
 impl Dbus {
@@ -49,9 +51,23 @@ impl Dbus {
         &self.connection
     }
 
+    /// A builder for another connection to the same bus, which finds the bus that has
+    /// replaced the one `connection` was to (74).
+    pub(crate) fn builder(&self) -> zbus::Result<zbus::connection::Builder<'static>> {
+        builder(self.address.as_deref())
+    }
+
     /// The connection's unique name on the bus.
     pub fn unique_name(&self) -> Option<String> {
         self.connection.unique_name().map(|name| name.to_string())
+    }
+}
+
+/// A builder for a connection to the bus at `address`, or to the session bus.
+fn builder(address: Option<&str>) -> zbus::Result<zbus::connection::Builder<'static>> {
+    match address {
+        Some(address) => zbus::connection::Builder::address(address),
+        None => zbus::connection::Builder::session(),
     }
 }
 
@@ -61,11 +77,20 @@ impl Camino {
     /// it returns once the Screensaver shim's names are owned or refused (62), so
     /// [`Camino::dbus_ready`] holds from then on.
     pub fn start_dbus(&mut self, names: Names) -> zbus::Result<()> {
+        self.start_dbus_at(names, None)
+    }
+
+    /// [`Camino::start_dbus`] on the bus at `address`, or on the session bus.
+    pub(crate) fn start_dbus_at(
+        &mut self,
+        names: Names,
+        address: Option<&str>,
+    ) -> zbus::Result<()> {
         let debug_requests = self.dbus_requests(Camino::debug_request);
         let screensaver_requests = self.dbus_requests(Camino::screensaver_request);
 
-        let mut builder = zbus::connection::Builder::session()?
-            .serve_at(debug::PATH, debug::DebugInterface::new(debug_requests))?;
+        let mut builder =
+            builder(address)?.serve_at(debug::PATH, debug::DebugInterface::new(debug_requests))?;
         builder = screensaver::serve(builder, screensaver_requests.clone())?;
         if names == Names::WellKnown {
             builder = builder.name(debug::NAME)?;
@@ -84,6 +109,7 @@ impl Camino {
         let dbus = Dbus {
             _caller_watch: caller_watch,
             connection,
+            address: address.map(str::to_owned),
         };
         tracing::info!(
             "on the session bus as {}",

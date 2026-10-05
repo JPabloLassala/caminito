@@ -5,12 +5,15 @@
 //!
 //! The activation environment and `org.freedesktop.systemd1` are the bus's, not a
 //! connection's, so every test here takes Camino's well-known names, which only one fixture
-//! has at a time.
+//! has at a time. The tests of a bus that stops (74) each run a bus of their own instead.
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -44,6 +47,11 @@ const EXPORTED: [&str; 6] = [
 /// The lines that wait until the script is signalled. A shell runs a trap only between
 /// commands, so the wait is many short ones.
 const WAIT: &str = "while :; do sleep 0.05; done";
+
+/// The lines that wait until the test writes the file `name`.
+fn wait_for(name: &str) -> String {
+    format!("while [ ! -e \"$dir/{name}\" ]; do sleep 0.05; done")
+}
 
 /// Shell scripts in a scratch directory, and the files they leave there. Each starts with
 /// `dir`, the directory, set.
@@ -139,8 +147,8 @@ type Calls = Arc<Mutex<Vec<(&'static str, Vec<String>, bool)>>>;
 struct Manager {
     calls: Calls,
     started: PathBuf,
-    /// Whether `UnsetEnvironment` never answers, as a systemd that's shutting down.
-    unset_hangs: bool,
+    /// How many more calls of `UnsetEnvironment` are never answered.
+    unanswered: AtomicU32,
 }
 
 impl Manager {
@@ -159,7 +167,12 @@ impl Manager {
 
     async fn unset_environment(&self, names: Vec<String>) {
         self.called("UnsetEnvironment", names);
-        if self.unset_hangs {
+        let unanswered = |left: u32| left.checked_sub(1);
+        if self
+            .unanswered
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, unanswered)
+            .is_ok()
+        {
             std::future::pending::<()>().await;
         }
     }
@@ -167,22 +180,38 @@ impl Manager {
 
 impl Systemd {
     fn new(started: PathBuf) -> Self {
-        Self::with(started, false)
+        Self::with(None, started, 0)
     }
 
-    /// One whose `UnsetEnvironment` never answers.
+    /// One whose `UnsetEnvironment` never answers, as a systemd that's shutting down.
     fn that_hangs(started: PathBuf) -> Self {
-        Self::with(started, true)
+        Self::with(None, started, u32::MAX)
     }
 
-    fn with(started: PathBuf, unset_hangs: bool) -> Self {
+    /// One that never answers its first `UnsetEnvironment`, and answers the ones after.
+    fn that_hangs_once(started: PathBuf) -> Self {
+        Self::with(None, started, 1)
+    }
+
+    /// One on the bus at `address`.
+    fn on(bus: &Bus, started: PathBuf) -> Self {
+        Self::with(Some(&bus.address), started, 0)
+    }
+
+    /// On the bus at `address`, or on the tests' bus, with `unanswered` calls of
+    /// `UnsetEnvironment` that it never answers.
+    fn with(address: Option<&str>, started: PathBuf, unanswered: u32) -> Self {
         let calls = Calls::default();
         let manager = Manager {
             calls: calls.clone(),
             started,
-            unset_hangs,
+            unanswered: unanswered.into(),
         };
-        let connection = zbus::blocking::connection::Builder::session()
+        let builder = match address {
+            Some(address) => zbus::blocking::connection::Builder::address(address),
+            None => zbus::blocking::connection::Builder::session(),
+        };
+        let connection = builder
             .unwrap()
             .name(SYSTEMD)
             .unwrap()
@@ -196,6 +225,57 @@ impl Systemd {
     fn calls(&self) -> Vec<(&'static str, Vec<String>, bool)> {
         self.calls.lock().unwrap().clone()
     }
+}
+
+/// A bus of a test's own, at a socket in its scratch directory. It can stop, and another
+/// can take its address, as the user's bus does when mate-session restarts it (74).
+struct Bus {
+    daemon: Child,
+    address: String,
+}
+
+impl Bus {
+    /// Starts a bus that listens at `socket`, and returns once it does.
+    fn start(socket: &Path) -> Self {
+        let address = format!("unix:path={}", socket.display());
+        let mut daemon = Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--print-address=1"])
+            .arg(format!("--address={address}"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("dbus-daemon is installed, as dbus-run-session is (14)");
+        // It prints its address once it listens there.
+        let mut printed = String::new();
+        BufReader::new(daemon.stdout.take().unwrap())
+            .read_line(&mut printed)
+            .unwrap();
+        assert!(printed.starts_with(&address), "{printed}");
+        Bus { daemon, address }
+    }
+
+    /// Stops the bus, and returns once its connections are closed.
+    fn stop(self) {}
+}
+
+impl Drop for Bus {
+    fn drop(&mut self) {
+        let _ = self.daemon.kill();
+        let _ = self.daemon.wait();
+    }
+}
+
+/// A Session whose command has started, on a bus of the test's own with a stand-in for
+/// systemd that has the environment. The command exits once `exit` is written.
+fn session_on_its_own_bus(scripts: &Scripts) -> (Fixture, Bus, Systemd) {
+    let bus = Bus::start(&scripts.path("bus"));
+    let mut f = Fixture::with_settings(Vec::new());
+    f.start_dbus_at(&bus.address);
+    let systemd = Systemd::on(&bus, scripts.path("started"));
+    let command = scripts.session_command(&format!("touch \"$dir/started\"\n{}", wait_for("exit")));
+    start(&mut f, command);
+    f.dispatch_until(|_| scripts.exists("started"));
+    (f, bus, systemd)
 }
 
 /// A service file the tests' bus activates, in the directory for transient services, which
@@ -461,7 +541,8 @@ fn a_systemd_that_doesnt_answer_the_unset_is_given_up_on_after_the_wait() {
     f.state.camino.quit();
     f.dispatch_until(|f| f.state.camino.session_exit().is_some());
 
-    assert_eq!(systemd.calls().len(), 2, "it was asked");
+    let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
+    assert_eq!(calls[..2], ["SetEnvironment", "UnsetEnvironment"]);
     let logs = logs.text();
     assert!(
         logs.contains("systemd didn't unset the environment"),
@@ -486,4 +567,77 @@ fn a_stop_during_the_export_spawns_no_command_and_systemd_still_forgets() {
     assert!(!scripts.exists("started"));
     let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
     assert_eq!(calls, ["SetEnvironment", "UnsetEnvironment"]);
+}
+
+#[test]
+fn a_systemd_that_doesnt_answer_the_unset_is_asked_again() {
+    let logs = Logs::capture();
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::that_hangs_once(scripts.path("started"));
+    let command = scripts.session_command("touch \"$dir/started\"");
+
+    start(&mut f, command);
+    f.dispatch_until(|f| f.state.camino.session_exit().is_some());
+
+    let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
+    assert_eq!(
+        calls,
+        ["SetEnvironment", "UnsetEnvironment", "UnsetEnvironment"]
+    );
+    let logs = logs.text();
+    assert!(!logs.contains("systemd didn't unset"), "{logs}");
+}
+
+#[test]
+fn the_systemd_on_the_bus_that_replaces_one_that_stops_with_the_command_forgets() {
+    let logs = Logs::capture();
+    let scripts = Scripts::new();
+    let (mut f, bus, first) = session_on_its_own_bus(&scripts);
+
+    // mate-session restarts the user's bus as it exits (74). No dispatch comes between the
+    // two here, so Camino finds its connection closed as it sees the command gone.
+    bus.stop();
+    fs::write(scripts.path("exit"), "").unwrap();
+    let bus = Bus::start(&scripts.path("bus"));
+    let systemd = Systemd::on(&bus, scripts.path("started"));
+    f.dispatch_until(|f| f.state.camino.session_exit().is_some());
+
+    assert_eq!(f.state.camino.session_exit(), Some(0));
+    let asked: Vec<&str> = first.calls().iter().map(|call| call.0).collect();
+    assert_eq!(asked, ["SetEnvironment"]);
+    let names = [
+        "DISPLAY",
+        "MATE_WM_KEYBINDINGS",
+        "MATE_WM_NAME",
+        "WAYLAND_DISPLAY",
+        "XCURSOR_SIZE",
+        "XCURSOR_THEME",
+    ];
+    let names = names.map(String::from).to_vec();
+    assert_eq!(systemd.calls(), [("UnsetEnvironment", names, true)]);
+    let logs = logs.text();
+    assert!(!logs.contains("systemd didn't unset"), "{logs}");
+}
+
+#[test]
+fn a_bus_that_stops_with_the_command_and_isnt_replaced_is_given_up_on_after_the_wait() {
+    let logs = Logs::capture();
+    let scripts = Scripts::new();
+    let (mut f, bus, _systemd) = session_on_its_own_bus(&scripts);
+    let wait = Duration::from_millis(400);
+    f.state.camino.set_session_wait(wait);
+
+    bus.stop();
+    fs::write(scripts.path("exit"), "").unwrap();
+    let stopped = Instant::now();
+    f.dispatch_until(|f| f.state.camino.session_exit().is_some());
+
+    assert!(stopped.elapsed() >= wait);
+    assert_eq!(f.state.camino.session_exit(), Some(0));
+    let logs = logs.text();
+    assert!(
+        logs.contains("systemd didn't unset the environment"),
+        "{logs}"
+    );
 }
