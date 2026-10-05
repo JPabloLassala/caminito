@@ -208,6 +208,7 @@ SESSION="$STATE/76-tty-login.session"
 # Made when stage 14 or 15 asks for a logout, so a wizard run again goes on from there.
 LOGOUT_ASKED="$STATE/76-tty-login.logout-asked"
 BARE_ASKED="$STATE/76-tty-login.bare-asked"
+XRDB_LOGIN="$STATE/76-xrdb-login"
 LOG="${SESSION_LOG:-$HOME/session.log}"
 DEBUG_CALL=(busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug org.mate.Camino.Debug)
 PACKAGES=(camino-git mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino)
@@ -243,7 +244,7 @@ ok() { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
 running() { pgrep -u "$(id -u)" -x "$1" >/dev/null; }
 # bus_started prints when the user's message bus last started, to tell a restart (74).
 bus_started() { systemctl --user show dbus.service -p ActiveEnterTimestamp --value 2>/dev/null || true; }
-# session_log prints what mate-session and its children wrote: the file Camino's stderr
+# session_log prints what mate-session and what it starts wrote: the file Camino's stderr
 # went to, and the journal, since mate-session's --debug writes to both.
 session_log() {
   [[ -r $LOG ]] && sed 's/\x1b\[[0-9;]*m//g' "$LOG"
@@ -270,7 +271,7 @@ else:
         print("%s %r: %s, frame %s" % (
             "X11   " if w["xwayland"] else "native", w["title"], rect(w["geometry"]),
             "l%d r%d t%d b%d" % (e["left"], e["right"], e["top"], e["bottom"]) if e else "none"))
-' "$1" "$reply" | sed 's/^/    /'
+' "$1" "$reply" | sed 's/^/    /' || warn "DumpState's reply couldn't be read"
 }
 
 # find_session finds the Camino that runs the session, and waits for its export.
@@ -294,6 +295,8 @@ find_session() {
   SINCE=$(date -d "$(ps -o lstart= -p "$CAMINO_PID")" '+%F %T')
   COMMAND=$(tr '\0' ' ' < /proc/"$CAMINO_PID"/cmdline | sed 's/ $//')
   printf '%s\n%s\n%s\n' "$CAMINO_PID" "$SINCE" "$COMMAND" > "$SESSION"
+  # For stage 12, before any stage changes a setting.
+  in_session xrdb -query > "$XRDB_LOGIN" 2>&1 || true
   ok "camino is pid $CAMINO_PID, started at $SINCE as: $COMMAND"
   exe=$(readlink /proc/"$CAMINO_PID"/exe 2>/dev/null || true)
   [[ -z $exe || $exe == /usr/bin/camino ]] || warn "it's $exe, not the installed /usr/bin/camino"
@@ -301,7 +304,7 @@ find_session() {
 # load_session reads back the session a stopped run found, which may have ended since.
 load_session() {
   [[ -s $SESSION ]] || return 0
-  { read -r CAMINO_PID; read -r SINCE; read -r COMMAND; } < "$SESSION"
+  { read -r CAMINO_PID; read -r SINCE; read -r COMMAND; } < "$SESSION" || true
 }
 # await_exit waits for the session's Camino to be gone.
 await_exit() {
@@ -373,13 +376,12 @@ done_already() {
 write_results() {
   local r name verdict note line target="$TICKET"
   [[ -w $target ]] || target="$STATE/76-tty-login-results.md"
-  printf '\n- **The login on the tty (%s), on %s, started as `%s`:**\n' \
-    "$(date +%F)" "$(pacman -Q "${PACKAGES[@]}" 2>&1 | paste -sd, | sed 's/,/, /g')" "$COMMAND" >> "$target"
+  printf '\n- **The login on the tty (%s), on %s (%s), on %s, started as `%s`:**\n' \
+    "$(date +%F)" "$(uname -n)" "$(uname -m)" "$(pacman -Q "${PACKAGES[@]}" 2>&1 | paste -sd, | sed 's/,/, /g')" "$COMMAND" >> "$target"
   for r in "${RESULTS[@]}"; do
     IFS='|' read -r name verdict note <<< "$r"
     line=$(printf '  - %s: %s.%s' "$name" "$verdict" "${note:+ $note}")
-    # A resumed run's earlier results may be there already.
-    grep -qxF -- "$line" "$target" || printf '%s\n' "$line" >> "$target"
+    printf '%s\n' "$line" >> "$target"
   done
   printf '  %s✓ wrote%s %s results to %s\n' "$GREEN" "$RESET" "${#RESULTS[@]}" "$target"
   [[ $target == "$TICKET" ]] ||
@@ -435,9 +437,10 @@ else
   warn "no phase lines; was the session started with mate-session --debug? Lines with 'phase':"
   session_log | grep -i phase | head -n 20 | sed 's/^/    /' || true
 fi
-say "Time-outs, in what mate-session and its children wrote and in the journal:"
-{ session_log; journalctl --user --since "$SINCE" -o cat --no-pager 2>/dev/null; } |
-  grep -iE 'timed out|time-?out' | sort | uniq -c | sed 's/^/    /' || ok "none"
+say "Time-outs, in what mate-session and what it starts wrote and in the journal:"
+TIMEOUTS=$({ session_log; journalctl --user --since "$SINCE" -o cat --no-pager 2>/dev/null || true; } |
+  grep -iE 'timed out|time-?out' | sort | uniq -c || true)
+if [[ -n $TIMEOUTS ]]; then sed 's/^/    /' <<< "$TIMEOUTS"; else ok "none"; fi
 step "The desktop came up well inside 30 seconds: both panels, the wallpaper, the icons."
 note "Expected (08): the phases in order, from STARTUP or EARLY_INITIALIZATION through"
 note "INITIALIZATION, WINDOW_MANAGER, PANEL, DESKTOP and APPLICATION to RUNNING, none of"
@@ -453,6 +456,13 @@ for name in WAYLAND_DISPLAY DISPLAY; do
   if session_environment | grep -q "^$name="; then ok "$name is there"; else warn "$name is missing"; fi
 done
 if session_environment | grep -qx 'MATE_WM_NAME=Camino'; then ok "MATE_WM_NAME=Camino is there"; else warn "MATE_WM_NAME=Camino is missing"; fi
+# Variables that stayed from an earlier session (74) would be there too.
+SOCKET="$XDG_RUNTIME_DIR/$(session_environment | sed -n 's/^WAYLAND_DISPLAY=//p')"
+if [[ -S $SOCKET ]] && in_session "${DEBUG_CALL[@]}" DumpState >/dev/null 2>&1; then
+  ok "$SOCKET is a socket, and Camino answers on the bus"
+else
+  warn "$SOCKET isn't a socket, or Camino doesn't answer: the variables may be an earlier session's"
+fi
 show loginctl list-sessions --no-pager
 note "Expected: the three variables, and a logind session of caminotest on Camino's tty."
 result "Exports to systemd from a login"
@@ -526,10 +536,11 @@ fi
 # ── 9 ─────────────────────────────────────────────────────────────────────
 stage "Maximising to the work area, on each output"
 if ! done_already "A native and an X11 window maximise to the work area on each output"; then
-say "Two GTK3 windows that ask to be maximised open where the pointer is."
+running foot || native foot
+say "Two GTK3 windows that ask to be maximised open on the focused window's output."
 for which in first second; do
-  step "Put the pointer on the $which output."
-  pause "Press Enter once it's there"
+  step "Drag foot to the $which output, and click into it."
+  pause "Press Enter once foot is there and focused"
   native "$HERE/gtk-window.py" "76 native, $which output"
   x11 "$HERE/gtk-window.py" "76 X11, $which output"
   sleep 4
@@ -537,6 +548,7 @@ for which in first second; do
   dump windows
   step "Both windows fill that output between the panels, which stay visible, and"
   step "neither reaches under a panel or onto the other output."
+  step "If they opened on the other output, say so in the note."
   pause "Press Enter once you've looked: the windows stay for the next output"
 done
 note "Expected (64): each window's geometry and frame together are its output's work"
@@ -551,10 +563,9 @@ say "The cursor themes installed:"
 for d in /usr/share/icons/*/cursors; do say "  $(basename "$(dirname "$d")")"; done
 show in_session gsettings get org.mate.peripherals-mouse cursor-theme
 CURSOR=
-while [[ -z $CURSOR ]]; do
-  printf '  %sA theme from the list that looks unlike the default (e.g. mate-black):%s ' "$BOLD" "$RESET"
-  read -r CURSOR || true
-done
+printf '  %sA theme from the list that looks unlike the default (Enter for mate-black):%s ' "$BOLD" "$RESET"
+read -r CURSOR || true
+CURSOR=${CURSOR:-mate-black}
 show in_session gsettings set org.mate.peripherals-mouse cursor-theme "$CURSOR"
 sleep 2
 show sh -c "systemctl --user show-environment | grep XCURSOR"
@@ -609,28 +620,32 @@ fi
 # ── 12 ────────────────────────────────────────────────────────────────────
 stage "msd's xrdb -merge and Camino's Xft resources (71, 47)"
 if ! done_already "msd's xrdb -merge and Camino's Xft resources don't get in each other's way"; then
-# count_resources prints how often each of Camino's resources (47) is in xrdb -query.
+# count_resources FILE prints how often each of Camino's resources (47) is in a saved
+# xrdb -query.
 count_resources() {
   local name
   for name in Xft.dpi Xft.antialias Xft.hinting Xft.hintstyle Xft.rgba Xft.lcdfilter Xcursor.theme Xcursor.size; do
-    printf '    %-16s %s\n' "$name" "$(in_session xrdb -query | grep -c "^$name:" || true)"
+    printf '    %-16s %s\n' "$name" "$(grep -c "^$name:" "$1" || true)"
   done
 }
-in_session xrdb -query > "$STATE/76-xrdb-login" 2>&1 || warn "xrdb -query failed"
-say "xrdb -query after login has $(wc -l < "$STATE/76-xrdb-login") lines. Camino's, and how often each is there:"
-count_resources
-show grep -E '^(Xft|Xcursor)\.' "$STATE/76-xrdb-login"
-THEME=$(in_session gsettings get org.mate.interface gtk-theme | tr -d "'")
+# Saved when the session was found. A run that didn't find one saves it now.
+[[ -s $XRDB_LOGIN ]] || in_session xrdb -query > "$XRDB_LOGIN" 2>&1 || warn "xrdb -query failed"
+say "xrdb -query after login has $(wc -l < "$XRDB_LOGIN") lines. Camino's, and how often each is there:"
+count_resources "$XRDB_LOGIN"
+show grep -E '^(Xft|Xcursor)\.' "$XRDB_LOGIN"
+THEME=$(in_session gsettings get org.mate.interface gtk-theme | tr -d "'" || true)
+THEME=${THEME:-Menta}
 OTHER=TraditionalOk
 [[ $THEME != "$OTHER" ]] || OTHER=Menta
+[[ -d /usr/share/themes/$OTHER ]] || warn "$OTHER isn't installed (mate-themes has it)"
 say "Changing the theme from $THEME to $OTHER."
 show in_session gsettings set org.mate.interface gtk-theme "$OTHER"
 sleep 4
 in_session xrdb -query > "$STATE/76-xrdb-theme" 2>&1 || warn "xrdb -query failed"
 say "xrdb -query after the theme change has $(wc -l < "$STATE/76-xrdb-theme") lines. Camino's:"
-count_resources
+count_resources "$STATE/76-xrdb-theme"
 say "What changed:"
-diff "$STATE/76-xrdb-login" "$STATE/76-xrdb-theme" | sed 's/^/    /' || true
+diff "$XRDB_LOGIN" "$STATE/76-xrdb-theme" | sed 's/^/    /' || true
 note "Expected: each of Camino's eight is there once, before and after, with the values"
 note "of MATE's font and mouse settings, and the theme change touched only msd's colour"
 note "lines (*background and the like). xterm and the GTK3 windows redraw in $OTHER."
@@ -659,7 +674,7 @@ if [[ ! -e $LOGOUT_ASKED ]]; then
   say "Before the logout:"
   show loginctl list-sessions --no-pager
   show session_environment
-  printf '%s\n%s\n' "$(bus_started)" "$(loginctl list-sessions --no-legend | grep -c " $(id -un) " || true)" > "$LOGOUT_ASKED"
+  printf '%s\n%s\n' "$(bus_started)" "$(loginctl list-sessions --no-legend | awk -v user="$(id -un)" '$3 == user && $6 == "user"' | wc -l)" > "$LOGOUT_ASKED"
   step "In the panel: System, Log Out caminotest…, then Log Out."
   warn "A wizard inside the session ends with it. Run it again from the tty and resume."
   pause "Press Enter once the session has ended"
@@ -678,9 +693,10 @@ pgrep -u "$(id -u)" -a | grep -vE 'systemd|\(sd-pam\)|dbus-(daemon|broker)|pgrep
 step "Camino's tty is back in text mode, at caminotest's shell prompt."
 note "Expected (61): only XDG_CURRENT_DESKTOP and XDG_SESSION_TYPE stay. More than"
 note "those is 74's, and not a failure of this check, which is the tty."
-result "Logging out from the panel gives the tty back"
+# Before the result, which is what a resumed run skips this stage by.
 record "For 74: the systemd environment after a logout on the tty" seen \
-  "With $LOGINS logind session(s) of caminotest, the bus $BUS, 'didn't unset' was logged $UNSET times, and these stayed: ${LEFT:-none}."
+  "With $LOGINS logind session(s) of class user for caminotest, the bus $BUS, 'didn't unset' was logged $UNSET times, and these stayed: ${LEFT:-none}."
+result "Logging out from the panel gives the tty back"
 fi
 
 # ── 15 ────────────────────────────────────────────────────────────────────
@@ -707,9 +723,9 @@ show session_environment
 if [[ $(bus_started) == "$(cat "$BARE_ASKED")" ]]; then BUS="wasn't restarted"; else BUS="was restarted"; fi
 say "The user's bus $BUS."
 note "Camino's stderr was the terminal, so what it logged is on the tty and not in the journal."
-result "Bare camino --session reaches the desktop and logs out"
 record "For 74: the systemd environment after the second logout" seen \
   "The bus $BUS, and these stayed: ${LEFT:-none}."
+result "Bare camino --session reaches the desktop and logs out"
 fi
 
 # ── 16 ────────────────────────────────────────────────────────────────────
