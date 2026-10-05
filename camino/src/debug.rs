@@ -148,6 +148,9 @@ struct OutputDump {
     name: String,
     geometry: RectDump,
     scale: f64,
+    /// The output less what layer surfaces' exclusive zones and XWayland windows' struts
+    /// reserve along its edges (64).
+    work_area: RectDump,
     /// In the order they were made.
     layer_surfaces: Vec<LayerSurfaceDump>,
 }
@@ -232,7 +235,7 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 impl Camino {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, outputs with
-    /// their scales and layer surfaces, the X11 scale, and focus, as pretty-printed JSON. The
+    /// their scales, work areas and layer surfaces, the X11 scale, and focus, as pretty-printed JSON. The
     /// lock state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
@@ -285,6 +288,14 @@ impl Camino {
                 stacking: policy.stacking(workspace).iter().map(|id| id.0).collect(),
             })
             .collect();
+        let work_area = |output| {
+            let id = output_id(output);
+            let mut areas = policy.outputs().iter().zip(policy.work_areas());
+            let (_, area) = areas
+                .find(|(output, _)| output.id == id)
+                .expect("policy has every output");
+            area
+        };
         let outputs = self
             .outputs
             .iter()
@@ -293,6 +304,7 @@ impl Camino {
                 name: output.name(),
                 geometry: output_geometry(output).into(),
                 scale: output.current_scale().fractional_scale(),
+                work_area: work_area(output).into(),
                 layer_surfaces: self
                     .layer_surfaces(output)
                     .iter()

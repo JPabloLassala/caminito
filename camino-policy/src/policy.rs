@@ -294,9 +294,11 @@ impl<W: PolicyWindow> Policy<W> {
         self.set_outputs(outputs);
     }
 
-    /// Replaces every output at once, as the compositor lays them out again (51). Windows
-    /// on an output that moved move with it, keeping their place on it; windows left on no
-    /// output move onto the first one.
+    /// Replaces every output at once, as the compositor lays them out again (51) or as what
+    /// their edges reserve changes (64). Windows on an output that moved move with it,
+    /// keeping their place on it; windows left on no output move onto the first one.
+    /// Maximised windows fill their output's new work area, and a floating window stays
+    /// where it is, even under a new panel, as in Marco.
     pub fn set_outputs(&mut self, outputs: Vec<Output>) {
         let moves: Vec<(WindowId, Point<i32, Logical>)> = self
             .windows
@@ -898,8 +900,8 @@ impl<W: PolicyWindow> Policy<W> {
         &self.outputs
     }
 
-    /// Each output's work area, in the order of [`outputs`](Self::outputs). It's the same on
-    /// every workspace until struts and exclusive zones (17).
+    /// Each output's work area, in the order of [`outputs`](Self::outputs): the output less
+    /// its reserved edges (64). It's the same on every workspace.
     pub fn work_areas(&self) -> impl Iterator<Item = Rectangle<i32, Logical>> + '_ {
         self.outputs.iter().map(Self::work_area)
     }
@@ -1106,9 +1108,26 @@ impl<W: PolicyWindow> Policy<W> {
             .map(|(o, _)| o)
     }
 
-    /// The part of an output windows are placed and maximised in. Struts come later.
+    /// The part of an output windows are placed and maximised in: the output less its
+    /// reserved edges (64). Edges that reserve the whole output leave one pixel of it, so
+    /// the area is never empty; Marco widens such an area to 100 pixels instead
+    /// (workspace.c:665-700).
     fn work_area(output: &Output) -> Rectangle<i32, Logical> {
-        output.geometry
+        let Output {
+            geometry, reserved, ..
+        } = *output;
+        let left = reserved.left.clamp(0, (geometry.size.w - 1).max(0));
+        let right = reserved.right.clamp(0, (geometry.size.w - 1 - left).max(0));
+        let top = reserved.top.clamp(0, (geometry.size.h - 1).max(0));
+        let bottom = reserved.bottom.clamp(0, (geometry.size.h - 1 - top).max(0));
+        Rectangle::new(
+            (geometry.loc.x + left, geometry.loc.y + top).into(),
+            (
+                geometry.size.w - left - right,
+                geometry.size.h - top - bottom,
+            )
+                .into(),
+        )
     }
 
     /// Sets the geometry of a maximised or fullscreen window from its output, or restores a

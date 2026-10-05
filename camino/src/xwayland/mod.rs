@@ -42,6 +42,7 @@ use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, Mouse};
 use crate::state::{Camino, SEAT, State};
 use crate::window::{STICKY, WindowKey, marco_type, request_skips, with_x_facts};
+use crate::work_area::screen_work_area;
 
 /// One of Smithay's setters for a state in `_NET_WM_STATE`.
 type SetState = fn(&X11Surface, bool) -> Result<(), ConnectionError>;
@@ -627,16 +628,16 @@ impl Camino {
     }
 
     fn root_properties(&self) -> RootProperties {
+        let scale = self.applied_x11_scale();
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
             current_desktop: self.policy.active_workspace(),
-            work_areas: {
-                let scale = self.applied_x11_scale();
-                self.policy
-                    .work_areas()
-                    .map(|area| scale.to_x(area))
-                    .collect()
-            },
+            work_areas: self
+                .policy
+                .work_areas()
+                .map(|area| scale.to_x(area))
+                .collect(),
+            screen_work_area: scale.to_x(screen_work_area(self.policy.outputs())),
         }
     }
 
