@@ -8,6 +8,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use smithay::backend::allocator::Fourcc;
@@ -110,9 +111,9 @@ impl Cursors {
     pub(crate) fn x_root_cursor(&self, scale: u32) -> XCursorImage {
         let pixels = self.size.saturating_mul(scale) as i32;
         let from_theme = self.theme.as_ref().and_then(|theme| {
-            names(CursorIcon::Default)
-                .into_iter()
-                .find_map(|name| xcursor_image(theme, name, pixels))
+            files(theme, CursorIcon::Default)
+                .iter()
+                .find_map(|file| xcursor_image(file, pixels))
         });
         match from_theme {
             Some(image) => XCursorImage {
@@ -134,9 +135,9 @@ impl Cursors {
     fn load(&self, icon: CursorIcon, scale: i32) -> CursorImage {
         let pixels = self.size as i32 * scale;
         let from_theme = self.theme.as_ref().and_then(|theme| {
-            names(icon)
-                .into_iter()
-                .find_map(|name| load_xcursor(theme, name, pixels, scale))
+            files(theme, icon)
+                .iter()
+                .find_map(|file| load_xcursor(file, pixels, scale))
         });
         from_theme.unwrap_or_else(|| {
             tracing::debug!(
@@ -161,14 +162,23 @@ fn names(icon: CursorIcon) -> Vec<&'static str> {
     names
 }
 
-/// The first frame of the theme's `name` cursor at the nominal size nearest `pixels`.
-fn xcursor_image(
-    theme: &xcursor::CursorTheme,
-    name: &str,
-    pixels: i32,
-) -> Option<xcursor::parser::Image> {
-    let path = theme.load_icon(name)?;
-    let content = std::fs::read(&path)
+/// The theme's files for `icon`, the best first: one in the theme itself under any of the
+/// icon's names, before one in a theme it inherits. Oxygen's themes name their arrow
+/// `left_ptr` only, and every theme inherits `default` in the end, which is Adwaita where
+/// that has a `default` cursor (79).
+fn files(theme: &xcursor::CursorTheme, icon: CursorIcon) -> Vec<PathBuf> {
+    let mut found: Vec<(PathBuf, usize)> = names(icon)
+        .into_iter()
+        .filter_map(|name| theme.load_icon_with_depth(name))
+        .collect();
+    // Stable, so names keep their order within a theme.
+    found.sort_by_key(|&(_, inherited)| inherited);
+    found.into_iter().map(|(file, _)| file).collect()
+}
+
+/// The first frame of the cursor in `path` at the nominal size nearest `pixels`.
+fn xcursor_image(path: &Path, pixels: i32) -> Option<xcursor::parser::Image> {
+    let content = std::fs::read(path)
         .inspect_err(|err| tracing::warn!("can't read the cursor {}: {err}", path.display()))
         .ok()?;
     let images = xcursor::parser::parse_xcursor(&content)?;
@@ -179,21 +189,18 @@ fn xcursor_image(
     images.into_iter().find(|image| image.size == nearest)
 }
 
-/// The first frame of the theme's `name` cursor at the nominal size nearest `pixels`, for
-/// an output at `scale`.
-fn load_xcursor(
-    theme: &xcursor::CursorTheme,
-    name: &str,
-    pixels: i32,
-    scale: i32,
-) -> Option<CursorImage> {
-    let image = xcursor_image(theme, name, pixels)?;
+/// The first frame of the cursor in `path` at the nominal size nearest `pixels`, for an
+/// output at `scale`.
+fn load_xcursor(path: &Path, pixels: i32, scale: i32) -> Option<CursorImage> {
+    let image = xcursor_image(path, pixels)?;
     let size = Size::from((image.width as i32, image.height as i32));
     Some(CursorImage {
-        // xcursor's premultiplied RGBA bytes are DRM's little-endian ABGR8888.
+        // `pixels_rgba` is the file's order whatever its name: premultiplied ARGB32 words,
+        // little-endian, which is DRM's ARGB8888. Read as ABGR8888, a yellow theme was
+        // cyan (79).
         buffer: MemoryRenderBuffer::from_slice(
             &image.pixels_rgba,
-            Fourcc::Abgr8888,
+            Fourcc::Argb8888,
             (size.w, size.h),
             scale,
             Transform::Normal,
