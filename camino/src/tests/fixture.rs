@@ -413,6 +413,18 @@ impl Fixture {
         ClientId(self.clients.len() - 1)
     }
 
+    /// Connects a Wayland client that isn't the fixture's to dispatch, and returns its end
+    /// of the socket pair: a program's own client code, as camino-displays's (84).
+    pub fn connect_stream(&mut self) -> UnixStream {
+        let (server, client) = UnixStream::pair().unwrap();
+        self.state
+            .camino
+            .display_handle
+            .insert_client(server, Arc::new(ClientState::default()))
+            .unwrap();
+        client
+    }
+
     /// Connects a Wayland client through a security context that `engine` makes, as Flatpak
     /// connects an app, so Camino has it as sandboxed. It has seen the globals.
     pub fn connect_sandboxed(&mut self, engine: ClientId) -> ClientId {

@@ -14,7 +14,7 @@ camino-theme = { path = "../camino-theme" }
 futures-channel = "0.3.34"
 gio = "0.22.10"
 # process: SIGTERM to the helpers and to the session command (61).
-rustix = { version = "1.1.5", features = ["fs", "process"] }
+rustix = { workspace = true, features = ["fs", "process"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 signal-hook = "0.4.4"
@@ -45,6 +45,9 @@ xcursor = "0.3.11"
 zbus = "5.19.0"
 
 [dev-dependencies]
+# Its page and its client of output management, which the headless tests drive against
+# Camino (84).
+camino-displays = { path = "../camino-displays" }
 camino-test-client = { path = "../camino-test-client" }
 insta = "1.48.0"
 tempfile = "3.27.0"

@@ -70,6 +70,28 @@ const UNSET: [&str; 6] = [
     "XCURSOR_SIZE",
 ];
 
+/// Where `camino-git` puts what a Session's programs are to find before the stock
+/// packages' own, as the XDG base directories have it (84): the desktop entry that takes
+/// the Display capplet's place, with the capplet's id, so that the control center and the
+/// menus show camino-displays where they showed the capplet.
+const DATA_DIR: &str = "/usr/share/camino/xdg";
+
+/// What the specification has for an `XDG_DATA_DIRS` that isn't set.
+const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
+
+/// The session command's `XDG_DATA_DIRS`: Camino's directory, then what Camino `has`.
+///
+/// It's the command's alone, and what the command starts inherits it. The bus and systemd
+/// aren't given it: systemd's user manager outlives the Session, and an X11 MATE login
+/// after it must find the capplet's own entry.
+fn data_dirs(has: Option<&OsStr>) -> OsString {
+    let has = has.filter(|dirs| !dirs.is_empty());
+    let mut dirs = OsString::from(DATA_DIR);
+    dirs.push(":");
+    dirs.push(has.unwrap_or(OsStr::new(DEFAULT_DATA_DIRS)));
+    dirs
+}
+
 /// What `--session` runs as Camino's child.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCommand {
@@ -382,7 +404,8 @@ impl Camino {
 
     /// Spawns the command with `Camino::environment`, and `GDK_BACKEND=x11` for itself
     /// alone: mate-session isn't Wayland-safe, and its carried patch unsets the variable
-    /// for what it starts (08).
+    /// for what it starts (08). Camino's data directory is first in its `XDG_DATA_DIRS`,
+    /// and so in those of what it starts (84).
     fn spawn_session_command(&mut self) {
         let sigchld = match self.watch_session_command() {
             Ok(sigchld) => sigchld,
@@ -400,6 +423,10 @@ impl Camino {
             .args(&session.command.args)
             .envs(&self.environment)
             .env("GDK_BACKEND", "x11")
+            .env(
+                "XDG_DATA_DIRS",
+                data_dirs(std::env::var_os("XDG_DATA_DIRS").as_deref()),
+            )
             .stdin(Stdio::null());
         // A nested run has its host's, which isn't the Session's.
         if !self.environment.contains_key(OsStr::new("DISPLAY")) {
@@ -674,6 +701,22 @@ mod tests {
         let environment = environment("wayland-1".as_ref(), Some(0), &mouse("", 24), false);
         assert!(!environment.contains_key(OsStr::new("XCURSOR_THEME")));
         assert_eq!(environment[OsStr::new("XCURSOR_SIZE")], "24");
+    }
+
+    #[test]
+    fn caminos_data_directory_is_first_among_the_commands() {
+        let dirs = data_dirs(Some("/usr/share:/var/lib/flatpak/exports/share".as_ref()));
+        assert_eq!(
+            dirs,
+            "/usr/share/camino/xdg:/usr/share:/var/lib/flatpak/exports/share"
+        );
+    }
+
+    #[test]
+    fn without_data_directories_set_the_command_has_camino_s_and_the_default_ones() {
+        let expected = "/usr/share/camino/xdg:/usr/local/share:/usr/share";
+        assert_eq!(data_dirs(None), expected);
+        assert_eq!(data_dirs(Some("".as_ref())), expected);
     }
 
     #[test]

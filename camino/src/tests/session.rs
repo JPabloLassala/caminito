@@ -358,6 +358,12 @@ fn the_command_starts_once_xwayland_is_ready_with_the_names_owned_and_the_enviro
             "{name}"
         );
     }
+    // Where camino-displays's desktop entry takes the Display capplet's place (84).
+    let data_dirs = &environment["XDG_DATA_DIRS"];
+    assert!(
+        data_dirs.starts_with("/usr/share/camino/xdg:"),
+        "{data_dirs}"
+    );
 }
 
 #[test]
@@ -424,6 +430,8 @@ fn systemd_is_given_the_environment_before_the_command_starts_and_forgets_it_on_
     }
     assert!(assignments.contains(&format!("DISPLAY=:{display}")));
     assert!(!assignments.iter().any(|a| a.starts_with("GDK_BACKEND=")));
+    // systemd outlives the Session, and the next login may be X11 MATE's (84).
+    assert!(!assignments.iter().any(|a| a.starts_with("XDG_DATA_DIRS=")));
     assert_eq!(
         names,
         &[

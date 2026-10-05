@@ -1,0 +1,27 @@
+[package]
+name = "camino-displays"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shipped through the PKGBUILD (16), never crates.io.
+publish = false
+
+[dependencies]
+camino-layout = { path = "../camino-layout" }
+# GTK4 without libadwaita (ADR 0014). v4_12: a widget's colour, for the arrangement, and
+# CSS from a string.
+gtk = { package = "gtk4", version = "0.11.5", features = ["v4_12"] }
+# The labels Identify shows are drawn with pango, as GTK draws the page's text.
+pangocairo.workspace = true
+# memfd_create, for the buffers of the labels Identify shows.
+rustix = { workspace = true, features = ["fs"] }
+wayland-client.workspace = true
+wayland-protocols = { workspace = true, features = ["client"] }
+wayland-protocols-wlr = { workspace = true, features = ["client"] }
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

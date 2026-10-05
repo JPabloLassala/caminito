@@ -535,3 +535,69 @@ session_env() {
 - **Debug tool:** frame debug's `×<n>` label, `strip_scale` in `DumpState`, and
   `WAYLAND_DEBUG=1 pluma 2>&1 | grep -E 'wl_surface.*(enter|leave|set_buffer_scale)'` for the
   outputs pluma is told of and the scale it draws at.
+
+## camino-displays
+
+### The page with MATE's theme, at 100% and at a fractional scale
+
+- **Milestone:** M6
+- **Steps:**
+  1. Run `tools/dev-nested --bin`, and in another terminal, with `WAYLAND_DISPLAY` set to the
+     nested socket, `target/debug/camino-displays --demo`. The demo has three made-up monitors
+     and changes nothing outside its window.
+  2. Drag a display, change a resolution and a scale, turn a display off, press Apply, and
+     let the countdown run out once and press Keep once.
+  3. Run both again with `tools/dev-nested --bin --scale 1.5`.
+  4. In the session, open it from the control center with Menta, with BlackMATE and with a
+     theme that has a `gtk-4.0` directory, such as Breeze.
+- **Expected:** the page is the prototype's (84): the arrangement on top, a row with one entry
+  per display, the selected display's settings below, and Identify, Reset and Apply at the
+  bottom. At 1.5 the text and the tiles' borders are sharp. mate-themes ship no `gtk-4.0`, so
+  with Menta and with BlackMATE the page is in GTK4's own light theme, with MATE's font, and
+  with Breeze it's in Breeze (ADR 0014).
+- **Debug tool:** `GTK_DEBUG=interactive`, and `gsettings get org.gnome.desktop.interface
+  gtk-theme`, which msd mirrors from MATE's (ADR 0005).
+
+### camino-displays applies, reverts and keeps a configuration
+
+- **Milestone:** M6
+- **Steps:**
+  1. On the tty with two monitors, log into *MATE on Camino*, keep a copy of
+     `~/.config/camino/layouts.json` if there is one, and run `wlr-randr`.
+  2. Open *Displays* from the control center. Press Identify.
+  3. Drag the second display to the other side of the first, set its scale to another step,
+     and press Apply. Let the countdown run out, and run `wlr-randr`.
+  4. Do the same again and press Revert, and once more and press Keep. Run `wlr-randr`, and
+     read `layouts.json`.
+  5. Change a resolution and a refresh rate, and keep them. Turn a display off, keep it, turn
+     it on again, and keep it.
+  6. Tick Primary on the display that isn't, and press Apply.
+  7. Close the window during a countdown.
+  8. With the window open and a scale changed but not applied, unplug the second monitor's
+     cable, and plug it back in.
+- **Expected:** in step 2 the entry opens camino-displays, not the Display capplet, and each
+  monitor shows its own name for two seconds. Nothing changes until Apply. After step 3 and
+  after Revert, `wlr-randr` lists the scales and places of step 1. After Keep it lists what
+  the window showed, with no gap and no overlap, and `layouts.json` has them (83). In step 5
+  each change is what `wlr-randr` lists, and the display that comes back is on the right of
+  the other. In step 6 there's no countdown, the panel and the desktop icons move (81), and
+  `layouts.json` has the new primary output. In step 7 the old configuration is back. In step
+  8 the window shows one display, then two again, and the scale that wasn't applied is gone.
+- **Debug tool:** `wlr-randr`, the `outputs` and `primary_output` of `DumpState`,
+  `~/.config/camino/layouts.json`, and `camino-displays` run from a terminal for GTK's and
+  its own warnings.
+
+### The control center's Displays is camino-displays, under Camino only
+
+- **Milestone:** M6
+- **Steps:**
+  1. In the session, run `tr '\0' '\n' </proc/"$(pgrep -o -x mate-session)"/environ | grep
+     '^XDG_DATA_DIRS='`, and `systemctl --user show-environment | grep XDG_DATA_DIRS`.
+  2. Open the control center and the panel's *System ▸ Preferences ▸ Hardware* menu, and open
+     *Displays* from each.
+  3. Log out, log into *MATE*, the X11 session, and open *Displays* there.
+- **Expected:** mate-session's `XDG_DATA_DIRS` starts with `/usr/share/camino/xdg:`, and
+  systemd's, if it has one, doesn't name it. Each place has one *Displays*, which opens
+  camino-displays. In X11 MATE it opens the Display capplet (84).
+- **Debug tool:** `gtk-launch mate-display-properties`, and `ls
+  /usr/share/camino/xdg/applications`.

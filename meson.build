@@ -20,3 +20,14 @@ install_data(
   'data/mate-camino.desktop',
   install_dir: get_option('datadir') / 'wayland-sessions',
 )
+
+# camino-displays's entry, in the Display capplet's place (84). It has the capplet's id,
+# mate-display-properties.desktop, in a directory that only a Session's programs look in,
+# before the stock packages': Camino puts it first in its session command's XDG_DATA_DIRS.
+# So the control center and the menus show camino-displays where they showed the capplet,
+# and X11 MATE and the Wayfire session still find the capplet's own entry.
+install_data(
+  'data/camino-displays.desktop',
+  rename: 'mate-display-properties.desktop',
+  install_dir: get_option('datadir') / 'camino' / 'xdg' / 'applications',
+)

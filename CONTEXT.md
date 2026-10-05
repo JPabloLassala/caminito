@@ -98,7 +98,7 @@ _Avoid_: primary output (that's the user's choice; Smithay's name for this is "p
 
 **Layout**:
 The enabled outputs with their places, modes and output scales, and which one is the primary output. Its outputs are always contiguous: no gaps, no overlaps, and each touches another along a shared edge of at least 100 logical pixels.
-_Avoid_: configuration (that's one client's request over output management), arrangement
+_Avoid_: configuration (that's one client's request over output management), arrangement (that's the picture of the layout in camino-displays's window, which the user drags the displays about in)
 
 **Saved layout**:
 A layout Camino keeps for one set of connected monitors and restores when that set is connected again. A monitor is known by its make, model and serial, or by its connector when it reports none.

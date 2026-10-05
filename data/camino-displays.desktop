@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Displays
+Comment=Change resolution and position of monitors and projectors
+Exec=camino-displays
+Icon=preferences-desktop-display
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;HardwareSettings;
+Keywords=mate-control-center;MATE;resolution;position;monitors;display;properties;scale;
+OnlyShowIn=MATE;

@@ -7,7 +7,7 @@ How Camino's code is written. Reviews check a diff against this file, [CONTEXT.m
 - `cargo fmt --all --check`, with rustfmt's defaults. There is no `rustfmt.toml`.
 - `cargo clippy --workspace --all-targets -- -D warnings`, so every clippy warning fails the build. Fix the code rather than silencing the lint. If an allow is truly needed, use `#[expect(clippy::…, reason = "…")]` on the smallest item.
 - `[workspace.lints]` in [Cargo.toml](Cargo.toml) adds `clippy::undocumented_unsafe_blocks`. Every crate opts in with `lints.workspace = true`.
-- `camino-policy` and `camino-layout` are `#![forbid(unsafe_code)]`.
+- `camino-policy`, `camino-layout` and camino-displays's library are `#![forbid(unsafe_code)]`.
 - `cargo deny check` against [deny.toml](deny.toml) for licences and advisories.
 
 ## Crates and modules
@@ -18,6 +18,7 @@ The layout is ticket 15's ([.scratch/camino-v0.1/issues/15-crate-and-module-arch
 - `camino-policy` names no protocol object. It may use Smithay's geometry types and nothing else from Smithay. It reaches windows only through `PolicyWindow`.
 - `camino-theme` knows nothing of Wayland.
 - `camino-layout` has no dependencies, and gets none (ADR 0015). camino-displays depends on it too.
+- `camino-displays` is a program of its own (ADR 0014), and depends on `camino-layout` alone of Camino's crates. Its library, the page's state and its client of output management, names no toolkit, so that Camino's headless tests can drive it. GTK is the binary's.
 - Protocols Camino implements itself go in `camino/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. `output_management` is the first. D-Bus interfaces go in `camino/src/dbus/`.
 - `scene` is the only code that knows the layer order.
 - Handlers change policy state and mark it dirty. They never update an outward view inline (foreign-toplevel, ext-workspace, EWMH properties, D-Bus properties, the debug dump). The refresh pass after each dispatch does that.
@@ -37,7 +38,7 @@ The layout is ticket 15's ([.scratch/camino-v0.1/issues/15-crate-and-module-arch
 
 ## Logging
 
-- Use `tracing`, not `log` or `println!`.
+- Use `tracing`, not `log` or `println!`. camino-displays, which GLib's main loop runs, tells the user in its window and warns through `glib::g_warning!`.
 - Messages are lowercase phrases. Failures begin `can't …` and end with the error: `tracing::warn!("can't load the icon {}: {err}", name)`.
 - Use `warn!` for a degraded feature, `error!` for what stops Camino, `info!` for a few start-up facts (the socket, `DISPLAY`), and `debug!` or `trace!` for the rest. Nothing in a per-frame path logs above `debug!`.
 
@@ -62,6 +63,8 @@ Where each tier lives, per ticket 15's test seams:
 |---|---|
 | Policy, including proptest | `camino-policy/src/tests/`, against `TestWindow` |
 | Docking and healing a layout, including proptest | `camino-layout/src/tests.rs` |
+| camino-displays's page, including proptest | `camino-displays/src/page/tests.rs` |
+| camino-displays's page and client against Camino | `camino/src/tests/camino_displays.rs`, through `Fixture` |
 | Pure logic in `camino` (settings translation, AccessX, scale rules, the lock state machine) | a `tests` module beside the code |
 | Headless integration, X11 tier, D-Bus | `camino/src/tests/`, through `Fixture` |
 | Theme goldens and the palette | `camino-theme/tests/`, with files under `tests/goldens/` (ADR 0009) |
