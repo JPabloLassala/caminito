@@ -66,7 +66,7 @@ PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino 
 are correct on any compositor, so X11 MATE stays as it was. Build them before `camino-git`, which will depend on them:
 
 ```sh
-for package in mate-session-manager-camino mate-panel-camino; do
+for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino; do
   (cd packaging/arch/$package && makepkg -si)
 done
 ```
