@@ -203,7 +203,7 @@ pub(crate) fn layer_surfaces_in(
 ) -> Vec<(LayerSurface, Rectangle<i32, Logical>)> {
     shell_layers(layer)
         .into_iter()
-        .flat_map(|layer| layer_surfaces_on(camino, output, layer))
+        .flat_map(|shell_layer| layer_surfaces_on(camino, output, shell_layer))
         .collect()
 }
 

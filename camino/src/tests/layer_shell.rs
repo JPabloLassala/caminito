@@ -541,6 +541,27 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
+    fn a_top_surface_covers_a_bottom_surfaces_popup(kind: Kind) {
+        let (mut f, shell, _, window) = a_desktop_menu_over_a_window(kind);
+        let covered = under_the_menu(&f, window);
+
+        f.map_layer(shell, LayerSpec::covering(Layer::Top, "test"), BAR_COLOR);
+
+        assert_eq!(
+            scene_layers(&mut f),
+            [
+                SceneLayer::Cursor,
+                SceneLayer::Top,
+                SceneLayer::LayerPopups,
+                SceneLayer::Windows,
+                SceneLayer::Bottom,
+            ]
+        );
+        f.wait_for_pixel(covered.x, covered.y, BAR_COLOR & 0xffffff);
+    }
+}
+
+on_both_kinds! {
     fn a_fullscreen_window_with_the_focus_covers_a_bottom_surfaces_popup(kind: Kind) {
         let (mut f, _, _, window) = a_desktop_menu_over_a_window(kind);
 
