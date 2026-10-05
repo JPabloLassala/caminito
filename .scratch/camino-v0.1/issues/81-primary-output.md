@@ -40,7 +40,7 @@ Decided here, on 2026-10-05:
   - `mate-panel-camino`'s fourth patch puts the primary output first among the panel's monitors, as the panel does with RandR's primary on X11, and has the panel name its output, which it never did on Wayland. `pkgrel` is 3.
   - `caja-camino` is a new patched package, the sixth (ADR 0011), on Arch's caja 1.28.0. Its patch puts the desktop on the primary output, at its size. `camino-git` depends on it.
   - Both match the property against GDK's connector name for each monitor, and follow the property's signal. gtk-layer-shell maps the surface again on the new output.
-- **A monitor is known** by its EDID's make, model and serial, or by its connector when the EDID has no serial (`MonitorIdentity` in `camino/src/output/primary.rs`). That is what brings the choice back, and it's [83](83-saved-layouts.md)'s to reuse or change.
+- **A monitor is known** by its EDID's make, model and serial, or by its connector when the EDID has no serial (`MonitorIdentity` in `camino/src/output/primary.rs`). Of two monitors with the same EDID, the one at the connector that was chosen is the choice. That is what brings the choice back, and it's [83](83-saved-layouts.md)'s to reuse or change.
 
 What follows it in Camino:
 

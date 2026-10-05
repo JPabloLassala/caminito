@@ -46,7 +46,7 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '7b33e869a2cd4d4154a0a11fa977f55e7e984ffc41be18e3c2b14885a8ecb490'
             '94a0dcc1016524880f416370c2a4f419b14f5fe7a539a7ddcf82d8adfd0a934e'
             '51039efc813e292e5c4e4e201c2824261ebcbc417aa443b1a3381780a60d9f09'
-            '91959ae66c0acfc0f5066e23b496fe1a8dfed7eb90ba7a56785c9230fb9d43d9')
+            'f87ffcfe4fa6ef6f04a8253bb24732bf8203a3bf300a6b090c489eed850a9eb3')
 
 pkgver() {
     cd "${_pkgname}"

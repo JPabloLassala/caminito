@@ -388,6 +388,8 @@ impl XConnection {
             .extension_information(randr::X11_EXTENSION_NAME)?
             .is_some();
         if has_randr {
+            // Xwayland tells of outputs only to a client that says it knows RandR 1.2.
+            conn.randr_query_version(1, 3)?.reply()?;
             let changes = randr::NotifyMask::SCREEN_CHANGE
                 | randr::NotifyMask::CRTC_CHANGE
                 | randr::NotifyMask::OUTPUT_CHANGE;

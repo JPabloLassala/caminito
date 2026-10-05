@@ -79,7 +79,7 @@ use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
-use crate::output::primary::MonitorIdentity;
+use crate::output::primary::PrimaryChoice;
 use crate::output::{OutputRecord, output_id};
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -196,7 +196,7 @@ pub struct Camino {
     /// What Camino keeps of each output beside Smithay's state (51).
     pub(crate) output_records: HashMap<OutputId, OutputRecord>,
     /// The monitor the user chose as the primary output (81), if they chose one.
-    pub(crate) primary_choice: Option<MonitorIdentity>,
+    pub(crate) primary_choice: Option<PrimaryChoice>,
     /// The primary output's name as `org.mate.Camino`'s callers last heard it (81).
     pub(crate) primary_output_signalled: Option<String>,
     /// Outputs to render in the next refresh pass.

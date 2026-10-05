@@ -8,21 +8,26 @@ use smithay::reexports::calloop::channel::Sender;
 use crate::output::primary;
 use crate::state::Camino;
 
-pub const NAME: &str = "org.mate.Camino";
-pub const PATH: &str = "/org/mate/Camino";
+/// The well-known name, which carried patches look for an owner of (ADR 0011).
+pub(crate) const NAME: &str = "org.mate.Camino";
+/// The object the interface is served at.
+pub(crate) const PATH: &str = "/org/mate/Camino";
 
 /// A call, for the event loop to answer.
-pub enum Request {
+pub(crate) enum Request {
+    /// Reads `PrimaryOutput`.
     PrimaryOutput(oneshot::Sender<String>),
+    /// Writes `PrimaryOutput`, with the name written.
     ChoosePrimaryOutput(String, oneshot::Sender<Result<(), primary::Error>>),
 }
 
-pub struct CaminoInterface {
+/// `org.mate.Camino`, as zbus serves it.
+pub(crate) struct CaminoInterface {
     requests: Sender<Request>,
 }
 
 impl CaminoInterface {
-    pub fn new(requests: Sender<Request>) -> Self {
+    pub(crate) fn new(requests: Sender<Request>) -> Self {
         Self { requests }
     }
 }

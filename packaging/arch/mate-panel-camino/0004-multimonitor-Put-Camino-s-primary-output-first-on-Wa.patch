@@ -20,8 +20,8 @@ compositor, nothing changes.
 ---
  mate-panel/panel-multimonitor.c | 127 ++++++++++++++++++++++++++++++++
  mate-panel/panel-multimonitor.h |   2 +
- mate-panel/wayland-backend.c    |  16 +++-
- 3 files changed, 144 insertions(+), 1 deletion(-)
+ mate-panel/wayland-backend.c    |  22 +++++-
+ 3 files changed, 149 insertions(+), 2 deletions(-)
 
 diff --git a/mate-panel/panel-multimonitor.c b/mate-panel/panel-multimonitor.c
 index ca392d6b..08352272 100644
@@ -217,7 +217,7 @@ index aa10cda3..a70591f1 100644
  int	panel_multimonitor_get_monitor_at_point  (int x, int y);
  void	panel_multimonitor_is_at_visible_extreme (int        monitor_id,
 diff --git a/mate-panel/wayland-backend.c b/mate-panel/wayland-backend.c
-index 68cd1cc3..8bba24e1 100644
+index 68cd1cc3..fbde575c 100644
 --- a/mate-panel/wayland-backend.c
 +++ b/mate-panel/wayland-backend.c
 @@ -33,6 +33,7 @@
@@ -254,13 +254,18 @@ index 68cd1cc3..8bba24e1 100644
  	int         monitor;
  	int         n_monitors;
  
-@@ -313,8 +322,13 @@ wayland_panel_toplevel_autohide_window_show (GtkWindow          *window,
+@@ -313,8 +322,17 @@ wayland_panel_toplevel_autohide_window_show (GtkWindow          *window,
  	monitor = panel_toplevel_get_monitor (toplevel);
  	if (monitor < 0 || monitor >= n_monitors)
  		monitor = 0;
-+	camino_monitor = panel_multimonitor_get_camino_monitor (monitor);
- 
+-
 -	gtk_layer_set_monitor (window, gdk_display_get_monitor (display, monitor));
++	/* The panel can have fewer monitors than GDK: it counts overlapping
++	 * ones as one. */
++	camino_monitor = NULL;
++	if (monitor < panel_multimonitor_monitors ())
++		camino_monitor = panel_multimonitor_get_camino_monitor (monitor);
++
 +	/* Under Camino the panel's monitors aren't in GDK's order. */
 +	if (camino_monitor != NULL)
 +		gtk_layer_set_monitor (window, camino_monitor);
