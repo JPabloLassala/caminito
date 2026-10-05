@@ -233,6 +233,7 @@ impl Ui {
         tabs.set_margin_top(12);
         tabs.set_margin_start(18);
         tabs.set_margin_end(18);
+        tabs.set_halign(gtk::Align::Center);
 
         let form = gtk::Grid::builder()
             .row_spacing(12)
