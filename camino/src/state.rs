@@ -79,7 +79,8 @@ use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
-use crate::output::OutputRecord;
+use crate::output::primary::PrimaryChoice;
+use crate::output::{OutputRecord, output_id};
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
@@ -194,6 +195,10 @@ pub struct Camino {
     pub(crate) disabled_outputs: Vec<Output>,
     /// What Camino keeps of each output beside Smithay's state (51).
     pub(crate) output_records: HashMap<OutputId, OutputRecord>,
+    /// The monitor the user chose as the primary output (81), if they chose one.
+    pub(crate) primary_choice: Option<PrimaryChoice>,
+    /// The primary output's name as `org.mate.Camino`'s callers last heard it (81).
+    pub(crate) primary_output_signalled: Option<String>,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -375,6 +380,18 @@ impl State {
             .plug(&mut self.camino, physical_size, modes, internal)
     }
 
+    /// Plugs a headless monitor that was unplugged in again, at the connector it was at.
+    #[cfg(test)]
+    pub fn replug_headless_output(&mut self, unplugged: &Output) -> Output {
+        let modes: Vec<_> = unplugged.modes().iter().map(|mode| mode.size).collect();
+        self.backend.headless_mut().plug_at(
+            &mut self.camino,
+            unplugged.name(),
+            unplugged.physical_properties().size,
+            &modes,
+        )
+    }
+
     /// Switches a headless monitor to a mode of `size`.
     #[cfg(test)]
     pub fn change_headless_mode(
@@ -438,12 +455,12 @@ impl State {
         if rendered.is_empty() {
             return;
         }
-        // Every output drawn in this pass has its say in the primary outputs before any
+        // Every output drawn in this pass has its say in the main outputs before any
         // frame callback goes by them.
         let ids: Vec<WindowId> = self.camino.policy.windows().map(|m| m.id()).collect();
         for id in ids {
             let mapped = self.camino.policy.window_mut(id).unwrap();
-            mapped.update_primary_outputs(&rendered);
+            mapped.update_main_outputs(&rendered);
         }
         for (output, _) in &rendered {
             self.post_render(output);
@@ -451,7 +468,7 @@ impl State {
     }
 
     /// After `output` is drawn: frame callbacks and presentation feedback for the windows
-    /// whose primary output it is and for its layer surfaces, and their fifo and
+    /// whose main output it is and for its layer surfaces, and their fifo and
     /// commit-timing barriers released.
     fn post_render(&mut self, output: &Output) {
         let now = self.camino.clock.now();
@@ -481,26 +498,26 @@ impl State {
                 blocked.insert(client.id(), client);
             }
         };
-        let primary = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
+        let main = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
         let no_flags = |_: &WlSurface, _: &SurfaceData| wp_presentation_feedback::Kind::empty();
 
         for mapped in self.camino.policy.windows() {
-            if mapped.primary_output() != Some(output) {
+            if mapped.main_output() != Some(output) {
                 continue;
             }
             let window = mapped.window();
             window.with_surfaces(&mut release_barriers);
-            window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, primary);
+            window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
             // Every frame is composited; nothing is scanned out directly.
-            window.take_presentation_feedback(&mut feedback, primary, no_flags);
+            window.take_presentation_feedback(&mut feedback, main, no_flags);
         }
         // A layer surface is drawn on its one output.
         for layer in layer_map_for_output(output).layers() {
             layer.with_surfaces(&mut release_barriers);
-            layer.send_frame(output, now, FRAME_CALLBACK_THROTTLE, primary);
-            layer.take_presentation_feedback(&mut feedback, primary, no_flags);
+            layer.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
+            layer.take_presentation_feedback(&mut feedback, main, no_flags);
         }
-        // Override-redirect windows have no primary output: they're told of frames on
+        // Override-redirect windows have no main output: they're told of frames on
         // every output they're drawn on.
         let output_geometry = crate::output::output_geometry(output);
         for window in self.camino.override_redirect_windows() {
@@ -672,6 +689,8 @@ impl Camino {
             disabled_outputs: Vec::new(),
             next_output_id: 0,
             output_records: HashMap::new(),
+            primary_choice: None,
+            primary_output_signalled: None,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
@@ -860,6 +879,7 @@ impl Camino {
         self.refresh_window_outputs();
         self.refresh_layers();
         self.refresh_output_management();
+        self.refresh_primary_output_property();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
         // On both sides of ext-workspace's refresh: a window leaves a workspace that's
@@ -876,13 +896,14 @@ impl Camino {
         self.refresh_x_windows();
         self.refresh_xsettings();
         self.refresh_x_resources();
+        self.refresh_x_primary_output();
         self.refresh_x_root_cursor();
         self.refresh_numlock();
         self.popups.cleanup();
     }
 
     /// The bounds a new toplevel is told to fit in: the work area of the focused window's
-    /// output, where policy places new windows, or else the first output's.
+    /// output, where policy places new windows, or else the primary output's.
     pub fn placement_bounds(&self) -> Option<Size<i32, Logical>> {
         let focused = self
             .policy
@@ -892,7 +913,10 @@ impl Camino {
         let outputs = self.policy.outputs();
         focused
             .and_then(|geometry| outputs.iter().position(|o| o.geometry.overlaps(geometry)))
-            .or((!outputs.is_empty()).then_some(0))
+            .or_else(|| {
+                let primary = output_id(self.primary_output()?);
+                outputs.iter().position(|o| o.id == primary)
+            })
             .map(|output| areas[output].size)
     }
 }

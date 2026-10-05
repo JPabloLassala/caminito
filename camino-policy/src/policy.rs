@@ -243,6 +243,8 @@ pub struct Policy<W: PolicyWindow> {
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
     outputs: Vec<Output>,
+    /// The user's primary output, or its stand-in (81), if the compositor has told of one.
+    primary_output: Option<OutputId>,
     /// Every seat seen so far.
     seats: BTreeSet<SeatId>,
     focus: BTreeMap<SeatId, WindowId>,
@@ -264,6 +266,7 @@ impl<W: PolicyWindow> Policy<W> {
             active: 0,
             workspace_names: Vec::new(),
             outputs: Vec::new(),
+            primary_output: None,
             seats: BTreeSet::new(),
             focus: BTreeMap::new(),
             focus_time: BTreeMap::new(),
@@ -287,7 +290,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.set_outputs(outputs);
     }
 
-    /// Removes an output. Windows left on no output move onto the first remaining one.
+    /// Removes an output. Windows left on no output move onto the primary output.
     pub fn remove_output(&mut self, id: OutputId) {
         let mut outputs = self.outputs.clone();
         outputs.retain(|o| o.id != id);
@@ -296,7 +299,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Replaces every output at once, as the compositor lays them out again (51) or as what
     /// their edges reserve changes (64). Windows on an output that moved move with it,
-    /// keeping their place on it; windows left on no output move onto the first one.
+    /// keeping their place on it; windows left on no output move onto the primary output.
     /// Maximised windows fill their output's new work area, and a floating window stays
     /// where it is, even under a new panel, as in Marco.
     pub fn set_outputs(&mut self, outputs: Vec<Output>) {
@@ -320,6 +323,12 @@ impl<W: PolicyWindow> Policy<W> {
         self.outputs = outputs;
         self.rehome_windows();
         self.apply();
+    }
+
+    /// Names the primary output (81): where a new window opens with nothing better to go
+    /// by, and where windows left on no output go. No window moves when it changes.
+    pub fn set_primary_output(&mut self, primary: Option<OutputId>) {
+        self.primary_output = primary;
     }
 
     /// The settings changed. A smaller workspace count moves the windows on the removed
@@ -681,7 +690,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let e = managed.visible_extents();
         let frame = frame_around(managed.geometry, e);
-        if let Some(output) = self.output_of(frame).or(self.outputs.first()) {
+        if let Some(output) = self.output_of(frame).or(self.primary_output()) {
             let area = Self::work_area(output);
             let managed = self.windows.get_mut(&id).unwrap();
             let size = &mut managed.geometry.size;
@@ -1096,6 +1105,14 @@ impl<W: PolicyWindow> Policy<W> {
 
     // Outputs and placement.
 
+    /// The primary output (81), or the first while policy is told of none that it has.
+    fn primary_output(&self) -> Option<&Output> {
+        self.outputs
+            .iter()
+            .find(|output| Some(output.id) == self.primary_output)
+            .or(self.outputs.first())
+    }
+
     /// The output a frame is most on, if it's on any.
     fn output_of(&self, frame: Rectangle<i32, Logical>) -> Option<&Output> {
         self.outputs
@@ -1146,7 +1163,7 @@ impl<W: PolicyWindow> Policy<W> {
             .fullscreen_output
             .and_then(|o| self.outputs.iter().find(|output| output.id == o))
             .or_else(|| self.output_of(managed.frame()))
-            .or(self.outputs.first());
+            .or(self.primary_output());
         let Some(output) = output else {
             return;
         };
@@ -1169,13 +1186,13 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows.get_mut(&id).unwrap().geometry = geometry;
     }
 
-    /// After outputs change: moves every window that's on no output onto the first one, and
-    /// lays out maximised and fullscreen windows again.
+    /// After outputs change: moves every window that's on no output onto the primary
+    /// output, and lays out maximised and fullscreen windows again.
     fn rehome_windows(&mut self) {
-        let Some(first) = self.outputs.first() else {
+        let Some(primary) = self.primary_output() else {
             return;
         };
-        let area = Self::work_area(first);
+        let area = Self::work_area(primary);
         let ids: Vec<WindowId> = self.windows.keys().copied().collect();
         for id in ids {
             let managed = &self.windows[&id];
@@ -1218,7 +1235,7 @@ impl<W: PolicyWindow> Policy<W> {
     fn maximize_if_too_big(&mut self, id: WindowId) {
         let managed = &self.windows[&id];
         let frame = managed.frame();
-        let Some(output) = self.output_of(frame).or(self.outputs.first()) else {
+        let Some(output) = self.output_of(frame).or(self.primary_output()) else {
             return;
         };
         let area = Self::work_area(output);
@@ -1264,7 +1281,7 @@ impl<W: PolicyWindow> Policy<W> {
             let output = self
                 .focus(self.last_seat)
                 .and_then(|f| self.output_of(self.windows[&f].frame()))
-                .or(self.outputs.first());
+                .or(self.primary_output());
             match output {
                 None => Point::new(left, top),
                 Some(output) => self.place_on(id, output, frame_size, (left, top)),

@@ -25,6 +25,7 @@ mod override_redirect;
 mod palette_helper;
 mod popups;
 mod preferred_scale;
+mod primary_output;
 mod root_properties;
 mod screensaver;
 mod security_context;

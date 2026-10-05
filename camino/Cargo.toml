@@ -40,7 +40,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 # (15, 67, 75).
 wayland-scanner = "0.31.11"
 # Camino's X connection (11, 15), beside Smithay's.
-x11rb = { workspace = true, features = ["shape", "xkb"] }
+x11rb = { workspace = true, features = ["randr", "shape", "xkb"] }
 xcursor = "0.3.11"
 zbus = "5.19.0"
 

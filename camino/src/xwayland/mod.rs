@@ -235,6 +235,15 @@ impl Camino {
         });
     }
 
+    /// Brings RandR's primary output, which X11 apps place themselves by, up to date with
+    /// the primary output (81).
+    pub(crate) fn refresh_x_primary_output(&mut self) {
+        let name = self.primary_output().map(|output| output.name());
+        self.with_xconn("set RandR's primary output", |xconn| {
+            xconn.publish_primary_output(name.as_deref())
+        });
+    }
+
     /// Brings XSETTINGS up to date with the settings (40), sending only what changed.
     pub(crate) fn refresh_xsettings(&mut self) {
         let Some(xwayland) = self.xwayland.as_mut() else {

@@ -66,6 +66,7 @@ jobs:
           - mate-session-manager-camino
           - mate-panel-camino
           - mate-settings-daemon-camino
+          - caja-camino
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git

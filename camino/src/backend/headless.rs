@@ -58,16 +58,23 @@ impl Headless {
         modes: &[Size<i32, Physical>],
         internal: bool,
     ) -> Output {
-        let mode = modes[0];
         self.plugged += 1;
         let connector = if internal { "eDP" } else { "headless" };
-        let output = virtual_output(
-            format!("{connector}-{}", self.plugged),
-            "Headless",
-            physical_size,
-            mode,
-            Transform::Normal,
-        );
+        let name = format!("{connector}-{}", self.plugged);
+        self.plug_at(camino, name, physical_size, modes)
+    }
+
+    /// Plugs a virtual monitor in at the connector `name`, as `plug` does at a new one: an
+    /// unplugged monitor plugged in again where it was.
+    pub fn plug_at(
+        &mut self,
+        camino: &mut Camino,
+        name: String,
+        physical_size: Size<i32, Raw>,
+        modes: &[Size<i32, Physical>],
+    ) -> Output {
+        let mode = modes[0];
+        let output = virtual_output(name, "Headless", physical_size, mode, Transform::Normal);
         for &size in &modes[1..] {
             output.add_mode(Mode {
                 size,

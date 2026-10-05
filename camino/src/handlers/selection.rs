@@ -80,7 +80,7 @@ pub(crate) struct DragIcon {
 
 impl DragIcon {
     /// Tells the icon of a frame of `output`, the pointer's, and of its scale, as a window
-    /// is told of its primary output's.
+    /// is told of its main output's.
     pub(crate) fn send_frame(
         &self,
         output: &Output,

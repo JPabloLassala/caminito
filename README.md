@@ -67,7 +67,8 @@ are correct on any compositor, or only let the baseline build against Arch's lib
 MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
-for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino; do
+for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
+  caja-camino; do
   (cd packaging/arch/$package && makepkg -si)
 done
 ```
@@ -80,6 +81,9 @@ start until that package is built again.
 `mate-settings-daemon-camino` is msd 1.29.1, which asks for mate-desktop 1.29.0. Arch has 1.28.2,
 so the package's last patch takes out the one upstream commit that needs the newer library (a
 change to the X11 display plugin for virtual machines that resize the screen).
+
+`caja-camino` is Arch's caja 1.28.0 with one patch, which puts the desktop on Camino's primary
+output.
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no

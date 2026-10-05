@@ -14,7 +14,7 @@ wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 # gtk_shell1 and Xfce's foreign toplevel protocol, from the XML Camino vendors (67, 75).
 wayland-scanner = "0.31.11"
-x11rb = { workspace = true, features = ["shape"] }
+x11rb = { workspace = true, features = ["randr", "shape"] }
 zbus = "5.19.0"
 
 [lints]

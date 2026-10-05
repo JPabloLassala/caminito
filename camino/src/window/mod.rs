@@ -173,10 +173,10 @@ pub struct Mapped {
     parent: Option<WindowId>,
     outputs: Vec<OutputId>,
     /// The output whose frame timing the window follows, and whose scale its surfaces
-    /// prefer until they have primary outputs of their own (13): its surface's primary
+    /// prefer until they have main outputs of their own (13): its surface's main
     /// output once it's drawn, and before that its parent's, or the pointer's. It stays
     /// while the window isn't drawn anywhere.
-    primary_output: Option<Output>,
+    main_output: Option<Output>,
     activated: bool,
     /// The states policy last asked for.
     states: WindowStates,
@@ -196,7 +196,7 @@ impl Mapped {
             window,
             parent: None,
             outputs: Vec::new(),
-            primary_output: None,
+            main_output: None,
             activated: false,
             states: WindowStates::default(),
             frame_scale: 1,
@@ -241,13 +241,13 @@ impl Mapped {
         &self.outputs
     }
 
-    pub fn primary_output(&self) -> Option<&Output> {
-        self.primary_output.as_ref()
+    pub fn main_output(&self) -> Option<&Output> {
+        self.main_output.as_ref()
     }
 
     /// Sends the surfaces output enter and leave for the outputs policy put the window on,
     /// with its geometry at `geometry`, and their preferred scales. A window not drawn yet
-    /// takes `fallback` as its primary output.
+    /// takes `fallback` as its main output.
     pub fn update_outputs(
         &mut self,
         geometry: Rectangle<i32, Logical>,
@@ -279,18 +279,18 @@ impl Mapped {
             .map(|output| output.current_scale().fractional_scale().ceil() as i32)
             .max()
             .unwrap_or(1);
-        if self.primary_output.is_none() {
-            self.primary_output = fallback;
+        if self.main_output.is_none() {
+            self.main_output = fallback;
         }
         self.send_preferred_scales();
     }
 
-    /// Picks each surface's primary output from the frames just drawn on `rendered`, in
+    /// Picks each surface's main output from the frames just drawn on `rendered`, in
     /// the order they were drawn, with Smithay's default comparison (13): another output
     /// takes over once it shows at least twice the pixels
     /// (`renderer/element/mod.rs:428-460`). Run after rendering, as cosmic-comp does
     /// (`state.rs:957-1000`).
-    pub(crate) fn update_primary_outputs(&mut self, rendered: &[(Output, RenderElementStates)]) {
+    pub(crate) fn update_main_outputs(&mut self, rendered: &[(Output, RenderElementStates)]) {
         self.window.with_surfaces(|surface, data| {
             let update = || {
                 for (output, states) in rendered {
@@ -305,38 +305,38 @@ impl Mapped {
                 }
             };
             update();
-            // Smithay drops the primary output of a surface that's no longer on it, even
+            // Smithay drops the main output of a surface that's no longer on it, even
             // when it was drawn on an output earlier in the pass; a second pass lets that
             // output take over.
             if surface_primary_scanout_output(surface, data).is_none() {
                 update();
             }
         });
-        let primary = self.wl_surface().and_then(|surface| {
+        let main = self.wl_surface().and_then(|surface| {
             with_states(&surface, |data| {
                 surface_primary_scanout_output(&surface, data)
             })
         });
-        if primary.is_some() {
-            self.primary_output = primary;
+        if main.is_some() {
+            self.main_output = main;
         }
         self.send_preferred_scales();
     }
 
-    /// Sends each surface its primary output's scale, fractional and rounded up, and
+    /// Sends each surface its main output's scale, fractional and rounded up, and
     /// transform. Smithay sends only what changed.
     fn send_preferred_scales(&self) {
-        let fallback = self.primary_output.as_ref();
+        let fallback = self.main_output.as_ref();
         self.window.with_surfaces(|surface, data| {
-            let primary = surface_primary_scanout_output(surface, data);
-            if let Some(output) = primary.as_ref().or(fallback) {
+            let main = surface_primary_scanout_output(surface, data);
+            if let Some(output) = main.as_ref().or(fallback) {
                 send_preferred_scale(surface, data, output);
             }
         });
     }
 
     /// Sends the surfaces output leave for an output that's gone, and forgets it as their
-    /// primary output.
+    /// main output.
     pub(crate) fn leave_output(&mut self, output: &Output) {
         self.window.output_leave(output);
         self.window.with_surfaces(|surface, data| {
@@ -346,13 +346,13 @@ impl Mapped {
                 *data
                     .data_map
                     .get::<Mutex<PrimaryScanoutOutput>>()
-                    .expect("Smithay keeps a surface's primary output in its data map")
+                    .expect("Smithay keeps a surface's main output in its data map")
                     .lock()
                     .unwrap() = PrimaryScanoutOutput::default();
             }
         });
-        if self.primary_output.as_ref() == Some(output) {
-            self.primary_output = None;
+        if self.main_output.as_ref() == Some(output) {
+            self.main_output = None;
         }
     }
 
@@ -535,12 +535,12 @@ pub(crate) fn send_preferred_scale(surface: &WlSurface, data: &SurfaceData, outp
 }
 
 impl Camino {
-    /// The primary output of a window not drawn yet (13): its parent's, or else the one
+    /// The main output of a window not drawn yet (13): its parent's, or else the one
     /// under the pointer.
-    pub(crate) fn primary_output_until_drawn(&self, parent: Option<WindowId>) -> Option<Output> {
+    pub(crate) fn main_output_until_drawn(&self, parent: Option<WindowId>) -> Option<Output> {
         let parents = parent
             .and_then(|parent| self.policy.window(parent))
-            .and_then(|parent| parent.primary_output().cloned());
+            .and_then(|parent| parent.main_output().cloned());
         parents.or_else(|| {
             let pointer = self.seat.get_pointer().unwrap().current_location();
             self.outputs

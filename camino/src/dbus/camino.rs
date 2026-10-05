@@ -1,0 +1,119 @@
+//! `org.mate.Camino` (ADR 0002's third channel): what MATE's components and
+//! camino-displays ask of Camino that no protocol carries. So far, the primary output (81,
+//! ADR 0014).
+
+use futures_channel::oneshot;
+use smithay::reexports::calloop::channel::Sender;
+
+use crate::output::primary;
+use crate::state::Camino;
+
+/// The well-known name, which carried patches look for an owner of (ADR 0011).
+pub(crate) const NAME: &str = "org.mate.Camino";
+/// The object the interface is served at.
+pub(crate) const PATH: &str = "/org/mate/Camino";
+
+/// A call, for the event loop to answer.
+pub(crate) enum Request {
+    /// Reads `PrimaryOutput`.
+    PrimaryOutput(oneshot::Sender<String>),
+    /// Writes `PrimaryOutput`, with the name written.
+    ChoosePrimaryOutput(String, oneshot::Sender<Result<(), primary::Error>>),
+}
+
+/// `org.mate.Camino`, as zbus serves it.
+pub(crate) struct CaminoInterface {
+    requests: Sender<Request>,
+}
+
+impl CaminoInterface {
+    pub(crate) fn new(requests: Sender<Request>) -> Self {
+        Self { requests }
+    }
+}
+
+#[zbus::interface(name = "org.mate.Camino")]
+impl CaminoInterface {
+    /// The primary output's name, as `wl_output`, output management and RandR have it: the
+    /// user's choice, or its stand-in while that monitor is unplugged or disabled. It's
+    /// the empty string when there are no outputs.
+    #[zbus(property)]
+    async fn primary_output(&self) -> zbus::fdo::Result<String> {
+        super::ask(&self.requests, Request::PrimaryOutput).await
+    }
+
+    /// Chooses the primary output, by the name of an enabled output. The choice is of
+    /// its monitor, and returns with it after a stand-in.
+    #[zbus(property)]
+    async fn set_primary_output(&self, name: String) -> zbus::fdo::Result<()> {
+        let choose = |reply| Request::ChoosePrimaryOutput(name, reply);
+        super::ask(&self.requests, choose)
+            .await?
+            .map_err(|err| zbus::fdo::Error::InvalidArgs(err.to_string()))
+    }
+}
+
+impl Camino {
+    pub(super) fn camino_request(&mut self, request: Request) {
+        // A caller that has gone away doesn't want the answer.
+        match request {
+            Request::PrimaryOutput(reply) => {
+                let _ = reply.send(self.primary_output_name());
+            }
+            Request::ChoosePrimaryOutput(name, reply) => {
+                let chosen = self.choose_primary_output(&name);
+                if chosen.is_ok() {
+                    // zbus signals a property that its own setter changed.
+                    self.primary_output_signalled = Some(self.primary_output_name());
+                }
+                let _ = reply.send(chosen);
+            }
+        }
+    }
+
+    /// The interface is served: a caller reads the primary output as it is now, so
+    /// nothing is signalled until it changes.
+    pub(super) fn primary_output_read_from_now_on(&mut self) {
+        self.primary_output_signalled = Some(self.primary_output_name());
+    }
+
+    /// The primary output's name as the property has it.
+    fn primary_output_name(&self) -> String {
+        self.primary_output()
+            .map(|output| output.name())
+            .unwrap_or_default()
+    }
+
+    /// Signals `PrimaryOutput` if it's not what the callers last heard: the stand-in went
+    /// in, or the choice returned (81).
+    pub(crate) fn refresh_primary_output_property(&mut self) {
+        let Some(dbus) = &self.dbus else {
+            return;
+        };
+        let name = self.primary_output_name();
+        if self.primary_output_signalled.as_ref() == Some(&name) {
+            return;
+        }
+        let connection = dbus.connection().clone();
+        // On zbus's thread, which asks the event loop for the value it sends: the main
+        // thread never waits on the bus (15).
+        let signal = async move {
+            let signalled = async {
+                let interface = connection
+                    .object_server()
+                    .interface::<_, CaminoInterface>(PATH)
+                    .await?;
+                let emitter = interface.signal_emitter();
+                interface.get().await.primary_output_changed(emitter).await
+            };
+            if let Err(err) = signalled.await {
+                tracing::warn!("can't signal the primary output on D-Bus: {err}");
+            }
+        };
+        dbus.connection()
+            .executor()
+            .spawn(signal, "primary output changed")
+            .detach();
+        self.primary_output_signalled = Some(name);
+    }
+}

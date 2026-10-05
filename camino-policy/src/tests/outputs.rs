@@ -129,3 +129,39 @@ fn removing_the_left_output_and_moving_the_right_one_to_the_origin_keeps_windows
     assert_eq!(policy.geometry(id(1)).unwrap().loc, (80, 100).into());
     assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(2)][..]));
 }
+
+#[test]
+fn a_new_window_with_nothing_to_go_by_opens_on_the_primary_output() {
+    let mut policy = two_outputs();
+    policy.set_primary_output(Some(OutputId(2)));
+
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    // On the 1280×1024 output at x 1920: x is 1920 + 1280 % 401 / 2, y is 1024 % 301 / 3.
+    assert_eq!(policy.geometry(id(1)).unwrap().loc, (1958, 40).into());
+}
+
+#[test]
+fn windows_on_a_removed_output_move_onto_the_primary_output() {
+    let mut policy = two_outputs();
+    policy.add_output(output(3, 3200, 0, 1920, 1080));
+    policy.set_primary_output(Some(OutputId(3)));
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(2000, 100),
+        ms(1),
+    );
+
+    policy.remove_output(OutputId(2));
+
+    assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(3)][..]));
+}
+
+#[test]
+fn without_its_primary_output_policy_falls_back_on_the_first() {
+    let mut policy = two_outputs();
+    policy.set_primary_output(Some(OutputId(7)));
+
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(1)][..]));
+}

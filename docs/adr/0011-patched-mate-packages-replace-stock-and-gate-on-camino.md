@@ -1,7 +1,7 @@
 # 11. Patched MATE packages replace the stock ones, and every carried patch is gated on Camino
 
 Date: 2026-09-28
-Status: Accepted. Qualified on 2026-10-05 by ticket 71: a patched package can also have a build patch, which isn't a carried patch.
+Status: Accepted. Qualified on 2026-10-05 by ticket 71: a patched package can also have a build patch, which isn't a carried patch. Qualified the same day by ticket 81: caja is a sixth patched component, `caja-camino`, on Arch's own version, since its one patch needs nothing newer.
 
 ## Context
 
