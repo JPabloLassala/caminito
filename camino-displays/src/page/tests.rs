@@ -197,6 +197,26 @@ fn the_rates_are_those_of_the_chosen_resolution_the_highest_first() {
     assert_eq!(rate_label(143_856), "143.86 Hz");
 }
 
+/// The window gives a list new entries only when they change, and can't while the list
+/// is being chosen from (85).
+#[test]
+fn choosing_from_a_list_leaves_its_entries_as_they_were() {
+    let mut page = three();
+    for index in 0..page.draft().displays.len() {
+        let resolutions = page.draft().displays[index].resolutions();
+        for resolution in &resolutions {
+            page.set_resolution(index, resolution.width, resolution.height);
+            assert_eq!(page.draft().displays[index].resolutions(), resolutions);
+
+            let rates = page.draft().displays[index].rates();
+            for &rate in &rates {
+                page.set_rate(index, rate);
+                assert_eq!(page.draft().displays[index].rates(), rates);
+            }
+        }
+    }
+}
+
 #[test]
 fn a_new_resolution_takes_the_rate_nearest_the_current_one() {
     let mut page = three();

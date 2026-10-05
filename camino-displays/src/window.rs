@@ -200,6 +200,25 @@ fn row(children: &[&gtk::Widget]) -> gtk::Box {
     row
 }
 
+/// Gives a list the entries `labels`, unless it has them already. The page is shown
+/// again from the list's own handler, with its popover still open, and GTK never returns
+/// from a new model given to it there (85). Choosing an entry leaves the entries of its
+/// own list as they were, which the page's tests hold it to, so the list that is replaced
+/// is never the one being chosen from.
+fn fill(dropdown: &gtk::DropDown, labels: &[String]) {
+    let entries = dropdown.model().and_downcast::<gtk::StringList>();
+    let same = entries.is_some_and(|entries| {
+        entries.n_items() as usize == labels.len()
+            && (0..entries.n_items())
+                .zip(labels)
+                .all(|(at, label)| entries.string(at).is_some_and(|entry| entry == *label))
+    });
+    if !same {
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        dropdown.set_model(Some(&gtk::StringList::new(&labels)));
+    }
+}
+
 impl Ui {
     fn build(application: &gtk::Application, compositor: Compositor) -> Ui {
         let page = Page::new(&compositor.monitors(), compositor.primary().as_deref());
@@ -628,9 +647,7 @@ impl Ui {
             let shown = display.mode();
             let resolutions = display.resolutions();
             let labels: Vec<String> = resolutions.iter().map(|r| r.label()).collect();
-            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-            self.resolution
-                .set_model(Some(&gtk::StringList::new(&labels)));
+            fill(&self.resolution, &labels);
             let of_shown = |r: &camino_displays::page::Resolution| {
                 shown.is_some_and(|mode| (r.width, r.height) == (mode.width, mode.height))
             };
@@ -640,8 +657,7 @@ impl Ui {
 
             let rates = display.rates();
             let labels: Vec<String> = rates.iter().map(|&rate| rate_label(rate)).collect();
-            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-            self.rate.set_model(Some(&gtk::StringList::new(&labels)));
+            fill(&self.rate, &labels);
             let shown_rate = |&rate: &i32| shown.is_some_and(|mode| mode.refresh == rate);
             if let Some(at) = rates.iter().position(shown_rate) {
                 self.rate.set_selected(at as u32);

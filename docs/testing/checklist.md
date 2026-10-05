@@ -545,14 +545,16 @@ session_env() {
   1. Run `tools/dev-nested --bin`, and in another terminal, with `WAYLAND_DISPLAY` set to the
      nested socket, `target/debug/camino-displays --demo`. The demo has three made-up monitors
      and changes nothing outside its window.
-  2. Drag a display, change a resolution and a scale, turn a display off, press Apply, and
-     let the countdown run out once and press Keep once.
+  2. Drag a display, choose each resolution of one display and then each of its refresh
+     rates, change a scale, turn a display off, press Apply, and let the countdown run out
+     once and press Keep once.
   3. Run both again with `tools/dev-nested --bin --scale 1.5`.
   4. In the session, open it from the control center with Menta, with BlackMATE and with a
      theme that has a `gtk-4.0` directory, such as Breeze.
 - **Expected:** the page is the prototype's (84): the arrangement on top, a row with one entry
   per display, the selected display's settings below, and Identify, Reset and Apply at the
-  bottom. At 1.5 the text and the tiles' borders are sharp. mate-themes ship no `gtk-4.0`, so
+  bottom. After each resolution and each refresh rate the window is still up and shows the
+  choice (85). At 1.5 the text and the tiles' borders are sharp. mate-themes ship no `gtk-4.0`, so
   with Menta and with BlackMATE the page is in GTK4's own light theme, with MATE's font, and
   with Breeze it's in Breeze (ADR 0014).
 - **Debug tool:** `GTK_DEBUG=interactive`, and `gsettings get org.gnome.desktop.interface

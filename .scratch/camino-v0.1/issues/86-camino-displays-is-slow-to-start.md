@@ -28,3 +28,4 @@ camino-displays ([84](84-camino-displays.md)) takes a long time to show its wind
 ## Notes
 
 - **"The panel"** in the developer's report is read as camino-displays's window, since it came with [85](85-camino-displays-hangs-on-a-resolution.md). If mate-panel was meant, this ticket is about the wrong program.
+- **From 85:** the Session's log of 2026-10-05 (`~/.local/share/sddm/wayland-session.log`) has `Failed to register: Timeout was reached` three times. camino-displays is a unique application, so a second start asks the first to show its window, and waits for a first one that hangs (85) until the bus gives up. Some of the slow starts may be that, and gone with 85. Not checked.
