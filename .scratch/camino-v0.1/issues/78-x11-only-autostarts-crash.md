@@ -30,3 +30,4 @@ In the first login on a tty ([76](76-tty-login-left-over.md), 2026-10-05, on the
 
 - The stacks are in `coredumpctl info` for pids 452735, 452729 and 452756 on the developer's machine, while its journal keeps them.
 - The milestone needs the developer: the session logs in and works without the three, so M5's exit doesn't ask for this, and it doesn't block [73](73-packaging-and-closing-m5.md) as filed.
+- **Seen again the same day** in the developer's own login from sddm: the same three, with core dumps at 11:59:23 (pids 463867, 463861 and 463884).

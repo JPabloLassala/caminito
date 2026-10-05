@@ -46,3 +46,4 @@ After some logouts, systemd's user manager still has the variables Camino export
   - `Dbus` keeps its bus's address, which only a test sets.
   - The loss of the bus is still followed by `stopping the session command`.
 - **Left behind by the runs:** `xvfb-login.sh` leaves `caminotest`'s user manager and some of the session's processes running (`kunifiedpush-distributor`, `keyboxd`, and an Xvfb from a run that was the first), as 72's did.
+- **A login on a tty does restart the bus (2026-10-05, 76).** After `caminotest`'s logout from tty4 on the developer's machine, `dbus.service` was active since the second of the logout, and the bus went first (`Failed to parse NameLost signal`, then `stopping the session command`). That time the variables were unset: only `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` stayed, and Camino logged no `systemd didn't unset the environment`. One sample, from a user manager that earlier runs of `xvfb-login.sh` had left running.
