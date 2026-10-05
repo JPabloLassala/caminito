@@ -9,6 +9,9 @@
 # building it first, with the palette helper built by Meson in target/meson. --scale sets
 # the nested output's scale, 1 by default. Once Xwayland is ready it prints the nested
 # DISPLAY beside WAYLAND_DISPLAY, the two variables a client needs.
+#
+# With --session, Camino logs to the journal, since its stderr here is a pipe and not a
+# terminal (14), so that line isn't printed: read `journalctl -t camino`.
 set -euo pipefail
 
 camino=camino

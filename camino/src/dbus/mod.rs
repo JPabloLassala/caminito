@@ -1,4 +1,4 @@
-//! Camino's D-Bus (15): one file per name or peer.
+//! Camino's D-Bus (15): one file per name or peer. `systemd` is the one peer so far.
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
@@ -6,6 +6,7 @@
 
 pub mod debug;
 pub mod screensaver;
+pub(crate) mod systemd;
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel;
@@ -43,6 +44,11 @@ pub struct Dbus {
 }
 
 impl Dbus {
+    /// The connection, for the Session's calls to the bus and to systemd (61).
+    pub(crate) fn connection(&self) -> &zbus::Connection {
+        &self.connection
+    }
+
     /// The connection's unique name on the bus.
     pub fn unique_name(&self) -> Option<String> {
         self.connection.unique_name().map(|name| name.to_string())

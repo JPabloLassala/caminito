@@ -135,7 +135,7 @@ The keybindings are a hard-coded set of Marco's defaults until M8 reads them fro
 | Alt+F4 | Close window |
 | Alt+F10 | Toggle maximised |
 
-`camino --session`, which will start a full MATE session, isn't supported yet (M5).
+`camino --session` runs mate-session as Camino's child, and Camino exits with it and with its status. `camino --session=CMD` runs `CMD` instead, for example `--session=foot`. The *MATE on Camino* session entry and the patched MATE packages it needs aren't installed yet (M5).
 
 ## Known limitations
 

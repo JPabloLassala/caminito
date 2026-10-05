@@ -27,6 +27,7 @@ mod preferred_scale;
 mod root_properties;
 mod screensaver;
 mod selection;
+mod session;
 mod settings;
 mod window_properties;
 mod x11_scale;
