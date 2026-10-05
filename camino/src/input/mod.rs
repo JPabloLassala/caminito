@@ -552,9 +552,11 @@ impl Camino {
         // M7: nothing but the lock takes the pointer while locked (12).
         scene::LAYERS.into_iter().find_map(|layer| match layer {
             SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock => None,
-            SceneLayer::Overlay | SceneLayer::Top | SceneLayer::Bottom | SceneLayer::Background => {
-                self.layer_surface_under(layer, location)
-            }
+            SceneLayer::Overlay
+            | SceneLayer::Top
+            | SceneLayer::LayerPopups
+            | SceneLayer::Bottom
+            | SceneLayer::Background => self.layer_surface_under(layer, location),
             SceneLayer::OverrideRedirect => self.override_redirect_under(location),
             SceneLayer::FullscreenWindows | SceneLayer::Windows => {
                 self.managed_under(layer, location)
@@ -562,24 +564,24 @@ impl Camino {
         })
     }
 
-    /// What's at `location` in the topmost layer surface of one layer-shell layer that
-    /// takes input there: one of its surfaces or its popups', inside its input region.
+    /// What's at `location` in the topmost layer surface of one of the scene's layers that
+    /// hold them that takes input there: one of its surfaces or its popups', of those the
+    /// layer has, inside its input region.
     fn layer_surface_under(
         &self,
         layer: SceneLayer,
         location: Point<f64, Logical>,
     ) -> Option<Under> {
-        let shell_layer = scene::shell_layer(layer)?;
+        let part = scene::layer_surface_part(layer);
         self.outputs
             .iter()
             .filter(|output| output_geometry(output).to_f64().contains(location))
             .find_map(|output| {
-                scene::layer_surfaces_on(self, output, shell_layer)
+                scene::layer_surfaces_in(self, output, layer)
                     .into_iter()
                     .find_map(|(surface, geometry)| {
                         let origin = geometry.loc.to_f64();
-                        let (under, loc) =
-                            surface.surface_under(location - origin, WindowSurfaceType::ALL)?;
+                        let (under, loc) = surface.surface_under(location - origin, part)?;
                         let focus = PointerFocus::Surface(under);
                         Some(Under::Layer(surface, focus, loc.to_f64() + origin))
                     })

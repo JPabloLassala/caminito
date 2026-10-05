@@ -1,7 +1,7 @@
 # A layer surface's popups are drawn above the windows
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5 (proposed)
 Blocked by: 63
 Map: [Camino v0.1](../map.md)
@@ -16,11 +16,21 @@ A popup of a layer surface on the background or bottom layer is drawn above the 
 
 ## Acceptance criteria
 
-- [ ] A headless test, written before the code: a popup of a bottom-layer surface that overlaps a window is above it in the render order, and a press on the overlap goes to the popup.
-- [ ] A popup of a top-layer surface is drawn as before.
+- [x] A headless test, written before the code: a popup of a bottom-layer surface that overlaps a window is above it in the render order, and a press on the overlap goes to the popup.
+- [x] A popup of a top-layer surface is drawn as before.
 - [ ] In the session, caja's desktop menu opened beside a window is whole, and its items under the pointer answer a click where they're over the window.
 
 ## Notes
 
 - 63's notes have what it decided and why; its line on this question can point here.
 - Whether this is M5's or later needs the developer. It doesn't block [73](73-packaging-and-closing-m5.md) as filed.
+
+## Resolution
+
+The scene has one more layer, `LayerPopups`, between the top layer and the windows. It holds the popups of the bottom and background layers' surfaces, the bottom layer's in front. The bottom and background layers hold their surfaces without the popups. `scene::layer_surface_part` says which part of a layer surface each scene layer has, and both the drawing and the pointer's focus read it, so the input follows the picture. The tests are in `camino/src/tests/layer_shell.rs`.
+
+- **Fullscreen:** a fullscreen window that has the focus covers these popups, as it covers the top layer, since they're below it in the scene. A menu that's open when the window goes fullscreen stays open under it. A fullscreen window without the focus is among the other windows, so the popups are above it.
+- **The top and overlay layers** are as 63 left them: each surface under its own popups, in its layer.
+- **The keyboard** is as before. A press on such a popup is a press on its layer surface, so an `on_demand` one takes the keyboard.
+
+The third criterion, caja's desktop menu in the session, needs eyes and hands, and is the developer's.
