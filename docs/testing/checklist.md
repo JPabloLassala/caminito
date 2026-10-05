@@ -268,8 +268,9 @@ session_env() {
 
 - **Milestone:** M5
 - **Steps:**
-  1. As the developer's own user, with the three Patched packages installed
-     (`pacman -Q mate-session-manager mate-panel mate-settings-daemon` names the `-camino` ones),
+  1. As the developer's own user, with the four Patched packages installed
+     (`pacman -Q mate-session-manager mate-panel mate-settings-daemon caja` names the `-camino`
+     ones),
      log into *MATE*, the X11 session, from the display manager.
   2. Run:
 
@@ -289,15 +290,16 @@ session_env() {
 
   3. Use the panel: a window list button, the workspace switcher, every applet that was on the
      panel before, and *Log Out…* and *Shut Down…*, cancelling both.
-  4. Log out, and log into *MATE on Wayfire*. Look at its panel and wallpaper, and log
-     out.
+  4. Log out, and log into *MATE on Wayfire*. Look at its panel, its desktop icons and its
+     wallpaper, and log out.
 - **Expected:** the session is as it was with the stock packages (the fall-back rule, ADR 0011).
   It's `x11`, with `MATE_WM_NAME` not Camino's and `GDK_BACKEND` as before, mate-session starts
   Marco, and nothing owns `org.mate.Camino`. msd serves XSETTINGS, so open apps restyle at the
   theme change, and it doesn't mirror into `org.gnome.desktop.interface`, which keeps its value.
   The panel's buttons, switcher and dialogs work, and no applet is missing from the panel: the
   loop prints nothing, since no installed applet is linked to an applet library that's gone
-  (70). The Wayfire session logs in and out, with its panel and its wallpaper.
+  (70). The Wayfire session logs in and out, with its panel, its desktop icons and its
+  wallpaper where they were with the stock packages (81).
 - **Debug tool:** `ldd` on the applets, `busctl`, `gsettings`, and `~/.xsession-errors` or the
   journal for what a missing applet logged.
 
@@ -459,6 +461,40 @@ session_env() {
   one, whichever side it was on before, and the pointer and windows can go to it again. The log
   has no `can't light` line.
 - **Debug tool:** `wlr-randr`, the `outputs` and windows of `DumpState`, and `~/camino.log`.
+
+### The primary output moves the panel, the desktop icons and RandR's primary
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected, and `mate-panel-camino` at `pkgrel` 3 or later and
+     `caja-camino` installed, log into *MATE on Camino*. Read the primary output:
+
+     ```sh
+     primary() {
+       gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
+         --method org.freedesktop.DBus.Properties.Get org.mate.Camino PrimaryOutput
+     }
+     choose() {
+       gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
+         --method org.freedesktop.DBus.Properties.Set org.mate.Camino PrimaryOutput "<'$1'>"
+     }
+     primary; xrandr | grep ' connected'
+     ```
+
+  2. Choose the other output, by its name in `wlr-randr`, such as `choose HDMI-A-1`, and run
+     the last line again.
+  3. With the pointer on the output that isn't primary and no window open, start pluma.
+  4. Unplug the primary output's cable, look, and plug it back in.
+  5. `choose VGA-9`.
+- **Expected:** with no choice made, the primary output is the left-hand monitor, or a
+  laptop's own panel, and the panels and the desktop icons are on it. In step 2 they move to
+  the output chosen, each at that output's size, the wallpaper stays on both, and `xrandr`
+  marks the output chosen as `primary` both times. Pluma opens on the primary output. In step
+  4 the panels and the icons go to the output that's left, and come back with the monitor.
+  Step 5 is refused with `isn't an enabled output`, and changes nothing (81).
+- **Debug tool:** `primary_output` and each output's `layer_surfaces` in `DumpState`,
+  `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Camino` for the property's
+  signal.
 
 ### A GTK3 window dragged across a 1.0 and a 2.0 output
 

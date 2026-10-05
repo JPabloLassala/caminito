@@ -28,6 +28,33 @@ pub fn debug_proxy(destination: &str) -> zbus::Result<DebugProxy<'static>> {
         .build()
 }
 
+/// `org.mate.Camino` (ADR 0002's third channel).
+#[zbus::proxy(
+    interface = "org.mate.Camino",
+    default_service = "org.mate.Camino",
+    default_path = "/org/mate/Camino",
+    gen_async = false,
+    blocking_name = "CaminoProxy"
+)]
+pub trait Camino {
+    /// The primary output's name (81), or the empty string when there are no outputs.
+    #[zbus(property)]
+    fn primary_output(&self) -> zbus::Result<String>;
+
+    /// Chooses the primary output, by the name of an enabled output.
+    #[zbus(property)]
+    fn set_primary_output(&self, name: &str) -> zbus::Result<()>;
+}
+
+/// A proxy for `org.mate.Camino` at `destination`, a unique or well-known name, on a new
+/// connection to the session bus.
+pub fn camino_proxy(destination: &str) -> zbus::Result<CaminoProxy<'static>> {
+    let connection = zbus::blocking::Connection::session()?;
+    CaminoProxy::builder(&connection)
+        .destination(destination.to_owned())?
+        .build()
+}
+
 /// `org.mate.ScreenSaver`, the Screensaver shim (12), with mate-screensaver's methods.
 #[zbus::proxy(
     interface = "org.mate.ScreenSaver",

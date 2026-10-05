@@ -1,6 +1,8 @@
 //! Output lifecycle: making outputs, laying them out, picking their default scales, and
 //! telling policy about them (15, 51), and changing them as output management asks (58).
 
+pub(crate) mod primary;
+
 use std::time::Duration;
 
 use camino_policy::{OutputId, PolicyWindow, WindowId};
@@ -12,6 +14,9 @@ use smithay::utils::{Logical, Physical, Point, Raw, Rectangle, Size, Transform};
 use crate::protocols::output_management::{Head, HeadRequest, HeadState};
 use crate::settings::translate::WindowScalingFactor;
 use crate::state::{Camino, State};
+
+/// What an output's make, model or serial says when its monitor's EDID doesn't.
+pub(crate) const UNKNOWN_EDID_TEXT: &str = "Unknown";
 
 /// The refresh rate backends without a real one report, in mHz.
 pub const DEFAULT_REFRESH: i32 = 60_000;
@@ -434,6 +439,9 @@ impl Camino {
         // First, since what the layer surfaces reserve of their outputs' new sizes is in
         // what policy is told (64).
         self.arrange_layers();
+        // Before the outputs, so the windows of an output that's gone move to the primary
+        // output there is now (81).
+        self.tell_policy_the_primary_output();
         self.policy.set_outputs(self.policy_outputs());
         self.queue_redraw_all();
     }
@@ -557,9 +565,9 @@ impl Camino {
             let geometry = self.policy.geometry(id).unwrap();
             let mapped = self.policy.window(id).unwrap();
             let fallback = mapped
-                .primary_output()
+                .main_output()
                 .is_none()
-                .then(|| self.primary_output_until_drawn(mapped.transient_parent()))
+                .then(|| self.main_output_until_drawn(mapped.transient_parent()))
                 .flatten();
             let mapped = self.policy.window_mut(id).unwrap();
             mapped.update_outputs(geometry, &self.outputs, fallback);

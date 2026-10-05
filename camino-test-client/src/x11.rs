@@ -487,6 +487,25 @@ impl X11Client {
         Ok(Some(parse_xsettings(&bytes)))
     }
 
+    /// The name of RandR's primary output, as `xrandr` shows it, or `None` if RandR has
+    /// none.
+    pub fn randr_primary(&self) -> Result<Option<String>, ReplyError> {
+        use x11rb::protocol::randr::ConnectionExt as _;
+        let primary = self
+            .conn
+            .randr_get_output_primary(self.root)?
+            .reply()?
+            .output;
+        if primary == x11rb::NONE {
+            return Ok(None);
+        }
+        let info = self
+            .conn
+            .randr_get_output_info(primary, x11rb::CURRENT_TIME)?
+            .reply()?;
+        Ok(Some(String::from_utf8_lossy(&info.name).into_owned()))
+    }
+
     /// Makes `window` the selection `name`'s owner, as a client does when the user copies.
     pub fn set_selection_owner(&self, window: Window, name: &str) -> Result<(), ReplyError> {
         let selection = self.atom(name)?;

@@ -20,12 +20,12 @@ use crate::window::send_preferred_scale;
 
 impl Camino {
     /// The output for a layer surface that names none: the one under the pointer, or else
-    /// the first.
+    /// the primary output.
     pub(crate) fn default_layer_output(&self) -> Option<Output> {
         self.outputs
             .iter()
             .find(|output| scene::pointer_on(self, output).is_some())
-            .or(self.outputs.first())
+            .or(self.primary_output())
             .cloned()
     }
 
@@ -122,7 +122,7 @@ impl Camino {
     }
 
     /// Tells every layer surface's surfaces the scale of its output to draw at, as windows
-    /// are told their primary output's (52).
+    /// are told their main output's (52).
     pub(crate) fn refresh_layers(&self) {
         for output in &self.outputs {
             for layer in layer_map_for_output(output).layers() {

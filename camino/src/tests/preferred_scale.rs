@@ -1,5 +1,5 @@
 //! The scale a window is asked to draw at across outputs of different scales (13, 52):
-//! enter and leave for every output it overlaps, and one preferred scale, its primary
+//! enter and leave for every output it overlaps, and one preferred scale, its main
 //! output's, as `preferred_buffer_scale` and `wp_fractional_scale_v1`. The outputs are a
 //! 1.0 and a 2.0 one, left to right. Output events and preferred scales are Wayland surface
 //! events, and Xwayland owns the surfaces of XWayland windows, so these map xdg toplevels

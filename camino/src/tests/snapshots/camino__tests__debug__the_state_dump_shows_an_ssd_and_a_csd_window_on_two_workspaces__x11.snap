@@ -131,6 +131,7 @@ expression: without_x_ids(&dump)
       "layer_surfaces": []
     }
   ],
+  "primary_output": "headless-1",
   "x11_scale": 2,
   "focus": 0
 }

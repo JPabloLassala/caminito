@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 12:00:00 -0300
+Subject: [PATCH] desktop-window: Put the desktop on Camino's primary output
+
+Wayland has no primary output, so the desktop is as big as GDK's first
+monitor and names no output to the compositor, which puts it where it likes.
+With two monitors the icons can be on either, at the size of the other.
+
+Camino, the Wayland compositor, has a primary output, the PrimaryOutput
+property of org.mate.Camino on the session bus. While that name has an
+owner, put the desktop on that output, at its size, and follow the property,
+so the icons move with the primary output. gtk-layer-shell maps the surface
+again on its new output.
+
+Without an owner of org.mate.Camino, which is any other Wayland compositor,
+nothing changes. X11 is as it was.
+---
+ src/caja-desktop-window.c | 127 +++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 125 insertions(+), 2 deletions(-)
+
+diff --git a/src/caja-desktop-window.c b/src/caja-desktop-window.c
+index 662c2472..58a32d61 100644
+--- a/src/caja-desktop-window.c
++++ b/src/caja-desktop-window.c
+@@ -90,6 +90,122 @@ struct _CajaDesktopWindowPrivate
+ G_DEFINE_TYPE_WITH_PRIVATE (CajaDesktopWindow, caja_desktop_window,
+                CAJA_TYPE_SPATIAL_WINDOW);
+ 
++#ifdef HAVE_WAYLAND
++#define CAMINO_NAME      "org.mate.Camino"
++#define CAMINO_PATH      "/org/mate/Camino"
++#define CAMINO_INTERFACE "org.mate.Camino"
++
++/* The monitor of the primary output of Camino, the Wayland compositor, which
++ * has one where Wayland has none. NULL while nothing owns Camino's name,
++ * which is any other compositor.
++ */
++static GdkMonitor *
++caja_desktop_window_get_camino_monitor (CajaDesktopWindow *window)
++{
++    GDBusProxy *camino;
++    GVariant *value;
++    GdkMonitor *monitor = NULL;
++
++    camino = g_object_get_data (G_OBJECT (window), "camino");
++    if (camino == NULL)
++        return NULL;
++
++    value = g_dbus_proxy_get_cached_property (camino, "PrimaryOutput");
++    if (value == NULL)
++        return NULL;
++
++    if (g_variant_is_of_type (value, G_VARIANT_TYPE_STRING))
++    {
++        GdkDisplay *display;
++        GdkScreen *screen;
++        const char *primary;
++        int i;
++
++        display = gtk_widget_get_display (GTK_WIDGET (window));
++        screen = gdk_display_get_default_screen (display);
++        primary = g_variant_get_string (value, NULL);
++
++        for (i = 0; monitor == NULL && i < gdk_display_get_n_monitors (display); i++)
++        {
++            char *connector;
++
++            G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
++            connector = gdk_screen_get_monitor_plug_name (screen, i);
++            G_GNUC_END_IGNORE_DEPRECATIONS;
++            if (g_strcmp0 (connector, primary) == 0)
++                monitor = gdk_display_get_monitor (display, i);
++            g_free (connector);
++        }
++    }
++    g_variant_unref (value);
++
++    return monitor;
++}
++
++/* Puts the desktop on Camino's primary output, at its size. A change of
++ * output maps the layer surface again. Elsewhere the compositor places the
++ * desktop, as before.
++ */
++static void
++caja_desktop_window_follow_camino (CajaDesktopWindow *window)
++{
++    GdkMonitor *monitor;
++    GdkRectangle geometry = {0};
++
++    monitor = caja_desktop_window_get_camino_monitor (window);
++    if (monitor == NULL)
++        return;
++
++    if (gtk_layer_get_monitor (GTK_WINDOW (window)) != monitor)
++        gtk_layer_set_monitor (GTK_WINDOW (window), monitor);
++
++    gdk_monitor_get_geometry (monitor, &geometry);
++    g_object_set (window,
++                  "width_request", geometry.width,
++                  "height_request", geometry.height,
++                  NULL);
++}
++
++/* Looks for Camino, and follows its primary output from then on: as the
++ * property changes, as Camino comes or goes, and as the monitors do, since
++ * the primary output can be named before GDK has its monitor.
++ */
++static void
++caja_desktop_window_watch_camino (CajaDesktopWindow *window)
++{
++    GDBusProxy *camino;
++    GdkDisplay *display;
++
++    camino = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SESSION,
++                                            G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
++                                            NULL,
++                                            CAMINO_NAME,
++                                            CAMINO_PATH,
++                                            CAMINO_INTERFACE,
++                                            NULL, NULL);
++    if (camino == NULL)
++        return;
++
++    g_object_set_data_full (G_OBJECT (window), "camino", camino, g_object_unref);
++    g_signal_connect_object (camino, "g-properties-changed",
++                             G_CALLBACK (caja_desktop_window_follow_camino),
++                             window, G_CONNECT_SWAPPED);
++    g_signal_connect_object (camino, "notify::g-name-owner",
++                             G_CALLBACK (caja_desktop_window_follow_camino),
++                             window, G_CONNECT_SWAPPED);
++
++    display = gtk_widget_get_display (GTK_WIDGET (window));
++    g_signal_connect_object (display, "monitor-added",
++                             G_CALLBACK (caja_desktop_window_follow_camino),
++                             window, G_CONNECT_SWAPPED);
++    g_signal_connect_object (display, "monitor-removed",
++                             G_CALLBACK (caja_desktop_window_follow_camino),
++                             window, G_CONNECT_SWAPPED);
++
++    caja_desktop_window_follow_camino (window);
++}
++#endif
++
+ static void
+ caja_desktop_window_init (CajaDesktopWindow *window)
+ {
+@@ -170,8 +286,12 @@ caja_desktop_window_screen_size_changed (GdkScreen             *screen,
+     {
+         /*No root window or primary monitor in wayland unless compositors add it back*/
+         GdkRectangle geometry = {0};
+-        GdkMonitor *monitor;
+-        monitor = gdk_display_get_monitor (display, 0);
++        GdkMonitor *monitor = NULL;
++#ifdef HAVE_WAYLAND
++        monitor = caja_desktop_window_get_camino_monitor (window);
++#endif
++        if (monitor == NULL)
++            monitor = gdk_display_get_monitor (display, 0);
+         gdk_monitor_get_geometry (monitor, &geometry);
+         width_request = geometry.width;
+         height_request = geometry.height;
+@@ -254,6 +374,9 @@ caja_desktop_window_new (CajaApplication *application,
+ 
+         /*Enable keyboard use on the desktop*/
+         gtk_layer_set_keyboard_mode (gtkwin, GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
++
++        /* Under Camino, the desktop is on the primary output */
++        caja_desktop_window_watch_camino (window);
+     }
+ #endif
+     /* Special sawmill setting*/

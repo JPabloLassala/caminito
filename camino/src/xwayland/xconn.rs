@@ -5,7 +5,8 @@
 //! the Xft resources in `RESOURCE_MANAGER`, from the settings (47). Per
 //! window it publishes each managed window's desktop, and reads what Smithay doesn't
 //! (39). It's a calloop fd source on the main thread (15), which hands on the root and
-//! window messages Smithay drops as [`Request`]s, and hears XKB's bell (06).
+//! window messages Smithay drops as [`Request`]s, and hears XKB's bell (06). It also makes
+//! the primary output RandR's primary (81).
 //!
 //! Ownership rule (11): it never writes a property Smithay maintains. Every write goes
 //! through `replace32`, `replace8` or `delete`, which assert it in debug builds.
@@ -24,6 +25,7 @@ use smithay::xwayland::xwm::WmWindowType;
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::errors::{ConnectError, ConnectionError, ReplyError};
 use x11rb::protocol::Event;
+use x11rb::protocol::randr::{self, ConnectionExt as _};
 use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xkb::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::{
@@ -328,6 +330,11 @@ pub(super) struct XConnection {
     frame_extents_owed: HashSet<Window>,
     /// Whether Xwayland has SHAPE, which input regions are read with.
     has_shape: bool,
+    /// Whether Xwayland has RandR, whose primary output is set (81).
+    has_randr: bool,
+    /// The output last asked for as RandR's primary, or `None` to ask again: RandR's
+    /// outputs changed since.
+    randr_primary: Option<Option<String>>,
     loop_handle: LoopHandle<'static, State>,
     source: RegistrationToken,
 }
@@ -376,6 +383,18 @@ impl XConnection {
         if !has_shape {
             tracing::debug!("Xwayland has no SHAPE, so X windows take the pointer everywhere");
         }
+        // Xwayland hears of an output after Camino makes it, and says so here.
+        let has_randr = conn
+            .extension_information(randr::X11_EXTENSION_NAME)?
+            .is_some();
+        if has_randr {
+            let changes = randr::NotifyMask::SCREEN_CHANGE
+                | randr::NotifyMask::CRTC_CHANGE
+                | randr::NotifyMask::OUTPUT_CHANGE;
+            conn.randr_select_input(root, changes)?;
+        } else {
+            tracing::debug!("Xwayland has no RandR, so X clients see no primary output");
+        }
         let fd = conn
             .stream()
             .as_fd()
@@ -403,6 +422,8 @@ impl XConnection {
             published_resources: None,
             frame_extents_owed: HashSet::new(),
             has_shape,
+            has_randr,
+            randr_primary: None,
             loop_handle: handle.clone(),
             source,
         };
@@ -428,6 +449,10 @@ impl XConnection {
                 }
                 Event::XkbBellNotify(bell) => {
                     tracing::debug!("an X client rang the bell at {}%", bell.percent);
+                    continue;
+                }
+                Event::RandrScreenChangeNotify(_) | Event::RandrNotify(_) => {
+                    self.randr_primary = None;
                     continue;
                 }
                 _ => continue,
@@ -776,6 +801,46 @@ impl XConnection {
         }
         self.conn.flush()?;
         self.published = Some(properties);
+        Ok(())
+    }
+
+    /// Makes the output named `name` RandR's primary (81), or none of them without a
+    /// name, unless that was last asked and RandR's outputs are as they were. Xwayland
+    /// may not have the output yet: then its RandR event, when it has, brings this back.
+    pub(super) fn publish_primary_output(&mut self, name: Option<&str>) -> Result<(), Error> {
+        if !self.has_randr || self.randr_primary.as_ref().map(Option::as_deref) == Some(name) {
+            return Ok(());
+        }
+        self.randr_primary = Some(name.map(str::to_owned));
+        let primary = self.conn.randr_get_output_primary(self.root)?;
+        let resources = self
+            .conn
+            .randr_get_screen_resources_current(self.root)?
+            .reply()?;
+        let infos = resources
+            .outputs
+            .iter()
+            .map(|&output| {
+                let info = self
+                    .conn
+                    .randr_get_output_info(output, resources.config_timestamp)?;
+                Ok((output, info))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let primary = primary.reply()?.output;
+        let mut wanted = name.is_none().then_some(x11rb::NONE);
+        for (output, info) in infos {
+            // An output can go between the two requests.
+            let info = gone_is_none(info.reply())?;
+            if info.is_some_and(|info| Some(info.name.as_slice()) == name.map(str::as_bytes)) {
+                wanted = Some(output);
+            }
+        }
+        // Setting it is itself a change RandR tells of, so it's set only when it differs.
+        if let Some(wanted) = wanted.filter(|wanted| *wanted != primary) {
+            self.conn.randr_set_output_primary(self.root, wanted)?;
+            self.conn.flush()?;
+        }
         Ok(())
     }
 

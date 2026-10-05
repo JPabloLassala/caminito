@@ -49,7 +49,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 
 use crate::backend::Backend;
 use crate::input::devices::ConfigurableDevice;
-use crate::output::DEFAULT_REFRESH;
+use crate::output::{DEFAULT_REFRESH, UNKNOWN_EDID_TEXT};
 use crate::scene::{self, CLEAR_COLOR, SceneElement};
 use crate::state::{Camino, State};
 
@@ -641,7 +641,7 @@ impl Gpu {
         };
 
         let edid = display_info::for_connector(self.manager.device(), connector.handle());
-        let edid_text = |text: Option<String>| text.unwrap_or_else(|| "Unknown".to_owned());
+        let edid_text = |text: Option<String>| text.unwrap_or_else(|| UNKNOWN_EDID_TEXT.to_owned());
         let (width, height) = connector.size().unwrap_or((0, 0));
         let output = Output::new(
             name,

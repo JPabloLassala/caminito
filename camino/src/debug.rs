@@ -72,6 +72,8 @@ struct StateDump {
     workspaces: Vec<WorkspaceDump>,
     active_workspace: usize,
     outputs: Vec<OutputDump>,
+    /// The primary output's name (81): the user's choice, or its stand-in.
+    primary_output: Option<String>,
     /// The one scale of every XWayland window (41).
     x11_scale: u32,
     focus: Option<u64>,
@@ -317,6 +319,7 @@ impl Camino {
             workspaces,
             active_workspace: policy.active_workspace(),
             outputs,
+            primary_output: self.primary_output().map(|output| output.name()),
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
         };

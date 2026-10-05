@@ -350,6 +350,23 @@ impl Fixture {
         self.dispatch();
     }
 
+    /// Plugs a monitor that was unplugged in again, at the connector it was at, and
+    /// dispatches. It's a new output to Camino, of the same monitor.
+    pub fn replug(&mut self, unplugged: &Output) -> Output {
+        let output = self.state.replug_headless_output(unplugged);
+        self.dispatch();
+        output
+    }
+
+    /// Chooses the primary output, as `org.mate.Camino` does, and dispatches.
+    pub fn choose_primary_output(&mut self, output: &Output) {
+        self.state
+            .camino
+            .choose_primary_output(&output.name())
+            .expect("the output is enabled");
+        self.dispatch();
+    }
+
     /// Switches a monitor to a mode of `mode` pixels, as the backend does, and dispatches.
     pub fn change_mode(&mut self, output: &Output, mode: (i32, i32)) {
         self.state.change_headless_mode(output, mode.into());
@@ -1025,6 +1042,7 @@ impl Fixture {
         let free = |name: &'static str| !bus.name_has_owner(name.try_into().unwrap()).unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !(free(crate::dbus::debug::NAME)
+            && free(crate::dbus::camino::NAME)
             && crate::dbus::screensaver::NAMES.into_iter().all(free))
         {
             assert!(

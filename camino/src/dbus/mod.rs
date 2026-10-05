@@ -4,6 +4,7 @@
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
 //! main thread never waits on the bus.
 
+pub mod camino;
 pub mod debug;
 pub mod screensaver;
 pub(crate) mod systemd;
@@ -16,7 +17,8 @@ use crate::state::{Camino, State};
 /// Which names Camino's connection asks the bus for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Names {
-    /// Its well-known names: `org.mate.Camino.Debug`, and the Screensaver shim's two (62).
+    /// Its well-known names: `org.mate.Camino`, which carried patches look for an owner of
+    /// (ADR 0011), `org.mate.Camino.Debug`, and the Screensaver shim's two (62).
     WellKnown,
     /// None: it's reached at its unique name. Tests share one bus, so they can't all own
     /// the well-known names.
@@ -86,14 +88,16 @@ impl Camino {
         names: Names,
         address: Option<&str>,
     ) -> zbus::Result<()> {
+        let camino_requests = self.dbus_requests(Camino::camino_request);
         let debug_requests = self.dbus_requests(Camino::debug_request);
         let screensaver_requests = self.dbus_requests(Camino::screensaver_request);
 
-        let mut builder =
-            builder(address)?.serve_at(debug::PATH, debug::DebugInterface::new(debug_requests))?;
+        let mut builder = builder(address)?
+            .serve_at(camino::PATH, camino::CaminoInterface::new(camino_requests))?
+            .serve_at(debug::PATH, debug::DebugInterface::new(debug_requests))?;
         builder = screensaver::serve(builder, screensaver_requests.clone())?;
         if names == Names::WellKnown {
-            builder = builder.name(debug::NAME)?;
+            builder = builder.name(camino::NAME)?.name(debug::NAME)?;
         }
         let connection = zbus::block_on(builder.build())?;
         if names == Names::WellKnown {
@@ -113,6 +117,7 @@ impl Camino {
         };
         tracing::info!("on the bus as {}", dbus.unique_name().unwrap_or_default());
         self.dbus = Some(dbus);
+        self.primary_output_read_from_now_on();
         Ok(())
     }
 

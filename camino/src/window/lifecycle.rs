@@ -250,7 +250,7 @@ impl Camino {
         };
         // So the client draws its first buffer at the scale it'll likely be shown at.
         let parent = self.transient_parent(&pending.window);
-        if let Some(output) = self.primary_output_until_drawn(parent) {
+        if let Some(output) = self.main_output_until_drawn(parent) {
             pending.window.with_surfaces(|surface, data| {
                 send_preferred_scale(surface, data, &output);
             });
