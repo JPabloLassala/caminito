@@ -13,7 +13,7 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
-use smithay::desktop::{LayerSurface, PopupManager};
+use smithay::desktop::{LayerSurface, PopupManager, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
@@ -64,12 +64,18 @@ pub(crate) enum SceneLayer {
     FullscreenWindows,
     /// The top layer-shell layer (63).
     Top,
+    /// The popups of the bottom and background layers' surfaces. They're above the windows,
+    /// as sway and niri draw them, so no window cuts off the menu of caja's desktop, and
+    /// below the top layer, so a panel covers them. A fullscreen window that has the focus
+    /// covers them as it covers the panel (80).
+    LayerPopups,
     /// The current workspace's other windows in policy's stacking order, each with its
     /// frame.
     Windows,
-    /// The bottom layer-shell layer (63).
+    /// The bottom layer-shell layer (63), without its surfaces' popups.
     Bottom,
-    /// The background layer-shell layer (63), with msd's wallpaper behind caja's desktop.
+    /// The background layer-shell layer (63), with msd's wallpaper behind caja's desktop,
+    /// and without its surfaces' popups.
     Background,
 }
 
@@ -77,7 +83,7 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 10] = [
+pub(crate) const LAYERS: [SceneLayer; 11] = [
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
     SceneLayer::Lock,
@@ -85,6 +91,7 @@ pub(crate) const LAYERS: [SceneLayer; 10] = [
     SceneLayer::OverrideRedirect,
     SceneLayer::FullscreenWindows,
     SceneLayer::Top,
+    SceneLayer::LayerPopups,
     SceneLayer::Windows,
     SceneLayer::Bottom,
     SceneLayer::Background,
@@ -146,15 +153,17 @@ fn layer_elements<R>(
         SceneLayer::FullscreenWindows | SceneLayer::Windows => {
             window_elements(layer, renderer, camino, output, elements)
         }
-        SceneLayer::Overlay | SceneLayer::Top | SceneLayer::Bottom | SceneLayer::Background => {
-            layer_shell_elements(layer, renderer, camino, output, elements)
-        }
+        SceneLayer::Overlay
+        | SceneLayer::Top
+        | SceneLayer::LayerPopups
+        | SceneLayer::Bottom
+        | SceneLayer::Background => layer_shell_elements(layer, renderer, camino, output, elements),
         SceneLayer::Lock => {}
     }
 }
 
-/// The layer-shell layer a scene layer shows.
-pub(crate) fn shell_layer(layer: SceneLayer) -> Option<Layer> {
+/// The layer-shell layer a scene layer shows the surfaces of.
+fn shell_layer(layer: SceneLayer) -> Option<Layer> {
     match layer {
         SceneLayer::Overlay => Some(Layer::Overlay),
         SceneLayer::Top => Some(Layer::Top),
@@ -164,9 +173,43 @@ pub(crate) fn shell_layer(layer: SceneLayer) -> Option<Layer> {
     }
 }
 
+/// The layer-shell layers whose surfaces have a part in a scene layer, front to back.
+fn shell_layers(layer: SceneLayer) -> Vec<Layer> {
+    match layer {
+        SceneLayer::LayerPopups => vec![Layer::Bottom, Layer::Background],
+        _ => shell_layer(layer).into_iter().collect(),
+    }
+}
+
+/// The part of a layer surface that a scene layer holds: a layer above the windows has its
+/// surfaces whole, and a layer below them has them without their popups, which are in a
+/// layer of their own above the windows (80).
+pub(crate) fn layer_surface_part(layer: SceneLayer) -> WindowSurfaceType {
+    match layer {
+        SceneLayer::LayerPopups => WindowSurfaceType::POPUP | WindowSurfaceType::SUBSURFACE,
+        SceneLayer::Bottom | SceneLayer::Background => {
+            WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE
+        }
+        _ => WindowSurfaceType::ALL,
+    }
+}
+
+/// `output`'s layer surfaces that have a part in a scene layer, front to back, each with
+/// where it is, globally.
+pub(crate) fn layer_surfaces_in(
+    camino: &Camino,
+    output: &Output,
+    layer: SceneLayer,
+) -> Vec<(LayerSurface, Rectangle<i32, Logical>)> {
+    shell_layers(layer)
+        .into_iter()
+        .flat_map(|shell_layer| layer_surfaces_on(camino, output, shell_layer))
+        .collect()
+}
+
 /// `output`'s layer surfaces on `layer`, front to back, each with where it is, globally:
 /// the newest in front, and the wallpaper behind the rest.
-pub(crate) fn layer_surfaces_on(
+fn layer_surfaces_on(
     camino: &Camino,
     output: &Output,
     layer: Layer,
@@ -227,7 +270,8 @@ pub(crate) fn window_is_in(camino: &Camino, id: WindowId, layer: SceneLayer) -> 
     fullscreen == (layer == SceneLayer::FullscreenWindows)
 }
 
-/// `output`'s layer surfaces on one layer-shell layer, each under its popups.
+/// `output`'s layer surfaces in one of the scene's layers that hold them, each under its
+/// popups where the layer has both.
 fn layer_shell_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -238,17 +282,19 @@ fn layer_shell_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let Some(layer) = shell_layer(layer) else {
-        return;
-    };
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
-    for (surface, geometry) in layer_surfaces_on(camino, output, layer) {
+    let part = layer_surface_part(layer);
+    for (surface, geometry) in layer_surfaces_in(camino, output, layer) {
         let origin = geometry.loc - output_geometry.loc;
         let wl_surface = surface.wl_surface();
         let popups = PopupManager::popups_for_surface(wl_surface)
-            .map(|(popup, offset)| (popup.wl_surface().clone(), offset - popup.geometry().loc));
-        for (tree, offset) in popups.chain([(wl_surface.clone(), Point::default())]) {
+            .map(|(popup, offset)| (popup.wl_surface().clone(), offset - popup.geometry().loc))
+            .filter(|_| part.contains(WindowSurfaceType::POPUP));
+        let main = part
+            .contains(WindowSurfaceType::TOPLEVEL)
+            .then(|| (wl_surface.clone(), Point::default()));
+        for (tree, offset) in popups.chain(main) {
             elements.extend(
                 render_elements_from_surface_tree(
                     renderer,

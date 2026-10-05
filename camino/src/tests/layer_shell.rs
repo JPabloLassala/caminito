@@ -8,11 +8,11 @@ use camino_test_client::layer_shell::{
     KeyboardInteractivity, Layer, LayerAnchor, LayerSpec, format_layer_configures,
 };
 use camino_test_client::{
-    Anchor, ConstraintAdjustment, Gravity, InputEvent, Positioner, SurfaceRef, format_input,
-    format_popup_configures,
+    Anchor, ConstraintAdjustment, Gravity, InputEvent, PopupId, Positioner, SurfaceRef,
+    format_input, format_popup_configures,
 };
 use insta::assert_snapshot;
-use smithay::utils::Point;
+use smithay::utils::{Logical, Point};
 
 use super::fixture::{BTN_LEFT, ClientId, ClientWindow, Fixture, Kind, WindowSpec, on_both_kinds};
 use crate::scene::SceneLayer;
@@ -464,4 +464,143 @@ fn a_layer_surfaces_popup_maps_and_takes_a_grab() {
     ");
     assert!(f.client(id).popup(popup).done);
     assert!(f.has_keyboard(window));
+}
+
+/// How far from the window's frame the press that opens the desktop's menu is: to its
+/// right, and below its top.
+const BESIDE: (i32, i32) = (20, 100);
+
+/// A red 200 × 200 menu of caja's desktop, which is blue, that lies over the right side of
+/// a window of `kind`'s client. A press on the desktop beside the window opened it, as
+/// caja's is opened. Returns the desktop's client, the menu and the window.
+fn a_desktop_menu_over_a_window(kind: Kind) -> (Fixture, ClientId, PopupId, ClientWindow) {
+    let (mut f, client) = Fixture::connected(kind);
+    let shell = f.connect(Kind::Xdg);
+    f.client(shell).bind_input();
+    let desktop = f.map_layer(shell, LayerSpec::covering(Layer::Bottom, "desktop"), BLUE);
+    let window = f.map(client, WindowSpec::plain((400, 300)));
+    let frame = f.visible_frame(window);
+    let beside = frame.loc + Point::from((frame.size.w + BESIDE.0, BESIDE.1));
+    f.pointer_move(f64::from(beside.x), f64::from(beside.y));
+    f.pointer_button(BTN_LEFT, true);
+    f.roundtrip(shell);
+    let serial = f.client(shell).state.last_press_serial.unwrap();
+
+    // The desktop covers the output, so its coordinates are the output's.
+    let menu = Positioner {
+        size: (200, 200),
+        anchor_rect: (beside.x, beside.y, 1, 1),
+        anchor: Anchor::TopLeft,
+        gravity: Gravity::BottomLeft,
+        constraint_adjustment: ConstraintAdjustment::None,
+    };
+    let popup = f
+        .client(shell)
+        .create_layer_popup(desktop, menu, Some(serial));
+    f.roundtrip(shell);
+    f.client(shell).map_popup(popup, RED);
+    f.pointer_button(BTN_LEFT, false);
+    f.roundtrip(shell);
+    (f, shell, popup, window)
+}
+
+/// A point of `a_desktop_menu_over_a_window`'s window that its menu lies over.
+fn under_the_menu(f: &Fixture, window: ClientWindow) -> Point<i32, Logical> {
+    let frame = f.visible_frame(window);
+    frame.loc + Point::from((frame.size.w - 50, BESIDE.1 + 100))
+}
+
+on_both_kinds! {
+    fn a_bottom_surfaces_popup_is_above_a_window_it_overlaps_and_takes_a_press_there(kind: Kind) {
+        let (mut f, shell, popup, window) = a_desktop_menu_over_a_window(kind);
+        let covered = under_the_menu(&f, window);
+
+        assert_eq!(
+            scene_layers(&mut f),
+            [
+                SceneLayer::Cursor,
+                SceneLayer::LayerPopups,
+                SceneLayer::Windows,
+                SceneLayer::Bottom,
+            ]
+        );
+        f.wait_for_pixel(covered.x, covered.y, RED & 0xffffff);
+
+        f.client(shell).state.input.clear();
+        f.click(f64::from(covered.x), f64::from(covered.y));
+        f.roundtrip(shell);
+        // The press is the menu's, and so didn't dismiss it.
+        let input = &f.client(shell).state.input;
+        assert!(input.contains(&InputEvent::Button { button: BTN_LEFT, pressed: true }));
+        assert!(input.iter().any(|event| matches!(
+            event,
+            InputEvent::PointerEnter { surface, .. } if *surface == SurfaceRef::Popup(popup)
+        )));
+        assert!(!f.client(shell).popup(popup).done);
+    }
+}
+
+on_both_kinds! {
+    fn a_top_surface_covers_a_bottom_surfaces_popup(kind: Kind) {
+        let (mut f, shell, _, window) = a_desktop_menu_over_a_window(kind);
+        let covered = under_the_menu(&f, window);
+
+        f.map_layer(shell, LayerSpec::covering(Layer::Top, "test"), BAR_COLOR);
+
+        assert_eq!(
+            scene_layers(&mut f),
+            [
+                SceneLayer::Cursor,
+                SceneLayer::Top,
+                SceneLayer::LayerPopups,
+                SceneLayer::Windows,
+                SceneLayer::Bottom,
+            ]
+        );
+        f.wait_for_pixel(covered.x, covered.y, BAR_COLOR & 0xffffff);
+    }
+}
+
+on_both_kinds! {
+    fn a_fullscreen_window_with_the_focus_covers_a_bottom_surfaces_popup(kind: Kind) {
+        let (mut f, _, _, window) = a_desktop_menu_over_a_window(kind);
+
+        make_fullscreen(&mut f, window);
+
+        assert_eq!(
+            scene_layers(&mut f),
+            [
+                SceneLayer::Cursor,
+                SceneLayer::FullscreenWindows,
+                SceneLayer::LayerPopups,
+                SceneLayer::Bottom,
+            ]
+        );
+    }
+}
+
+on_both_kinds! {
+    fn a_top_surfaces_popup_stays_in_the_top_layer(kind: Kind) {
+        let (mut f, client) = Fixture::connected(kind);
+        let shell = f.connect(Kind::Xdg);
+        let bar = f.map_layer(shell, LayerSpec::top_bar(28), BAR_COLOR);
+        f.map(client, WindowSpec::plain((400, 300)));
+        let menu = Positioner {
+            size: (300, 200),
+            anchor_rect: (90, 0, 20, 28),
+            anchor: Anchor::BottomLeft,
+            gravity: Gravity::BottomRight,
+            constraint_adjustment: ConstraintAdjustment::None,
+        };
+
+        let popup = f.client(shell).create_layer_popup(bar, menu, None);
+        f.roundtrip(shell);
+        f.client(shell).map_popup(popup, RED);
+
+        f.wait_for_pixel(100, 100, RED & 0xffffff);
+        assert_eq!(
+            scene_layers(&mut f),
+            [SceneLayer::Cursor, SceneLayer::Top, SceneLayer::Windows]
+        );
+    }
 }
