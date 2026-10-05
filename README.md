@@ -192,6 +192,14 @@ journal, and those of mate-session's programs in a file, send stderr to the file
   `org.mate.peripherals-keyboard-xkb.general`'s `group-per-window` (on by default) and
   `default-group` have no effect. The layout indicator applet runs on Xwayland, so it may not
   show the layout Camino has switched to.
+- **Some programs keep the cursor theme you logged in with.** Camino's own cursors, the ones it
+  draws for clients that ask for a cursor by name (GTK and foot among them), and
+  XWayland's default cursor follow `org.mate.peripherals-mouse`'s `cursor-theme` and
+  `cursor-size` at once. Programs that load cursors themselves from `XCURSOR_THEME` and
+  `XCURSOR_SIZE` don't: Camino exports those once, at start-up, so such a program shows the theme
+  of the login until you log in again, even if it's started after the change. That includes X11
+  programs that leave the theme to libXcursor, which reads the environment before the
+  `Xcursor.theme` resource Camino keeps up to date.
 
 ## Testing
 
