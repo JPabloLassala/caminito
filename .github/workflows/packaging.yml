@@ -17,13 +17,16 @@ jobs:
     container: archlinux:latest
     env:
       # In dependency order. Each package is installed as it's built, so the next one builds
-      # against it. The patched packages come before camino-git, which depends on them (16).
+      # against it. The patched packages come before camino-git, which depends on them (16),
+      # and camino-desktop, the meta package, depends on camino-git. tools/bootstrap has the
+      # same order.
       PACKAGES: >-
         mate-session-manager-camino
         mate-panel-camino
         mate-settings-daemon-camino
         caja-camino
         camino-git
+        camino-desktop
     steps:
       # rustup provides cargo, so makepkg doesn't pull in the rust package.
       - name: Install packages

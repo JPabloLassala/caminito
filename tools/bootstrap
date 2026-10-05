@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Builds and installs all of Camino on a fresh Arch system: the build tools, the patched MATE
+# packages, camino-git, and camino-desktop, the meta package that brings the rest of MATE.
+# makepkg installs each package's own dependencies from Arch's repositories.
+#
+#   tools/bootstrap [makepkg arguments...]
+#
+# Extra arguments go to every makepkg, for example --noconfirm, or --nocheck to skip
+# camino-git's tests. Run it as yourself: makepkg refuses root, and asks for sudo itself.
+#
+# camino-git packages the checkout's committed HEAD, so it is built again on every run. A
+# patched package that is already built is only installed, since its sources are pinned.
+set -euo pipefail
+
+# In dependency order: each package is installed as it's built, so the next one builds
+# against it.
+packages=(mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino
+  caja-camino camino-git camino-desktop)
+
+[[ $EUID -ne 0 ]] || { echo "bootstrap: run as a normal user, not root" >&2; exit 1; }
+root=$(dirname "$(realpath "$0")")/..
+
+sudo pacman -S --needed base-devel git
+# rustup provides cargo. Chosen here so makepkg doesn't stop to ask between it and the rust
+# package, and left alone where either is already installed.
+pacman -T cargo >/dev/null || sudo pacman -S --needed rustup
+# camino-git's PKGBUILD builds with RUSTUP_TOOLCHAIN=stable.
+if command -v rustup >/dev/null && ! rustup toolchain list | grep -q '^stable'; then
+  rustup toolchain install stable --profile minimal
+fi
+
+for package in "${packages[@]}"; do
+  cd "$root/packaging/arch/$package"
+  echo "bootstrap: $package"
+  if [[ $package == camino-git ]]; then
+    makepkg --syncdeps --install --force "$@"
+    continue
+  fi
+  # The -debug packages are left out: makepkg lists them whether or not it makes them.
+  mapfile -t built < <(makepkg --packagelist | grep -v -- '-debug-')
+  if [[ -e ${built[0]} ]]; then
+    sudo pacman -U --needed "${built[@]}"
+  else
+    # From a clean src/: makepkg checks the sources out again over an earlier build's, but
+    # leaves the files its patches added, and the patches then fail on them.
+    makepkg --syncdeps --install --cleanbuild "$@"
+  fi
+done
