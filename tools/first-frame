@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Times a Wayland client from its start to its first frame (86).
+
+  tools/first-frame [-n <runs>] [--log <prefix>] [VARIABLE=value...] program [arguments...]
+
+It runs the program with WAYLAND_DEBUG=client, stamps each line of the protocol as it
+comes, and ends the program at its first frame: the first commit of a surface that has a
+buffer attached, which at a start is the window's. Each run prints one line, in
+milliseconds since the program was started:
+
+  connected      the first message on a connection to the compositor
+  toplevel       the window is asked for, so the toolkit and its renderer have started
+  first frame    the window's first buffer is committed
+  exit           the program ended by itself, with no frame
+
+What else the program says on its standard error is passed on. With --log, the stamped
+protocol of run N, counted from 0, is kept in <prefix>.N.log, to see what the time between
+two marks went to. The variables are set for the program alone, as in
+`tools/first-frame GSK_RENDERER=cairo camino-displays`.
+
+A program that hands its start to another instance, as camino-displays does to the one
+that's running, shows no frame of its own: it's reported with the time it took to exit.
+Only the program that was run is ended. What a launcher such as `gio launch` started stays
+up, and is to be ended by hand before the next run, or that run is handed to it.
+"""
+
+import os
+import re
+import select
+import signal
+import subprocess
+import sys
+import time
+
+# What libwayland stamps a line of the protocol with.
+PROTOCOL = re.compile(r"\[[ \d:.]+\]")
+
+# How long a run may take, in seconds: longer than the bus's 25 s, which is what a start
+# waits for when the instance it hands itself to doesn't answer.
+LIMIT = 40.0
+
+ATTACH = re.compile(r"wl_surface#(\d+)\.attach\((?!nil)")
+COMMIT = re.compile(r"wl_surface#(\d+)\.commit\(")
+
+
+def run(argv, variables, log):
+    """Runs the program once. Returns its marks, and its exit status if it ended itself."""
+    environment = dict(os.environ, WAYLAND_DEBUG="client", **variables)
+    start = time.monotonic()
+    try:
+        program = subprocess.Popen(
+            argv, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
+    except OSError as err:
+        sys.exit(f"first-frame: can't run {argv[0]}: {err.strerror}")
+    stderr = program.stderr.fileno()
+    marks, attached, lines, rest = {}, set(), [], b""
+    status = None
+    while "first frame" not in marks and time.monotonic() - start < LIMIT:
+        readable, _, _ = select.select([stderr], [], [], 0.5)
+        if not readable:
+            continue
+        chunk = os.read(stderr, 65536)
+        now = (time.monotonic() - start) * 1000
+        if not chunk:
+            try:
+                # It may have closed its standard error and gone on.
+                status = program.wait(1)
+                marks["exit"] = now
+            except subprocess.TimeoutExpired:
+                pass
+            break
+        *whole, rest = (rest + chunk).split(b"\n")
+        for line in whole:
+            line = line.decode(errors="replace")
+            lines.append((now, line))
+            if not PROTOCOL.match(line):
+                print(line, file=sys.stderr, flush=True)
+            if "wl_display#1" in line or "wl_registry" in line:
+                marks.setdefault("connected", now)
+            if "get_toplevel" in line:
+                marks.setdefault("toplevel", now)
+            if found := ATTACH.search(line):
+                attached.add(found.group(1))
+            elif found := re.search(r"wl_surface#(\d+)\.attach\(nil", line):
+                attached.discard(found.group(1))
+            found = COMMIT.search(line)
+            if found and found.group(1) in attached:
+                marks.setdefault("first frame", now)
+    if status is None:
+        program.send_signal(signal.SIGTERM)
+        try:
+            program.wait(3)
+        except subprocess.TimeoutExpired:
+            program.kill()
+    if log:
+        with open(log, "w") as file:
+            for at, line in lines:
+                file.write(f"{at:9.1f} {line}\n")
+    return marks, status
+
+
+def main():
+    arguments = sys.argv[1:]
+    runs, prefix, variables = 1, None, {}
+    while arguments:
+        if arguments[0] in ("-n", "--log") and len(arguments) < 2:
+            sys.exit(f"first-frame: {arguments[0]} needs a value")
+        if arguments[0] == "-n":
+            if not arguments[1].isdecimal():
+                sys.exit("first-frame: -n needs a number of runs")
+            runs = int(arguments[1])
+            arguments = arguments[2:]
+        elif arguments[0] == "--log":
+            prefix = arguments[1]
+            arguments = arguments[2:]
+        elif re.match(r"[A-Za-z_][A-Za-z0-9_]*=", arguments[0]):
+            name, value = arguments.pop(0).split("=", 1)
+            variables[name] = value
+        else:
+            break
+    if not arguments:
+        sys.exit(__doc__.strip())
+    for nth in range(runs):
+        if nth:
+            # The compositor is done with the last run's window.
+            time.sleep(0.7)
+        marks, status = run(arguments, variables, prefix and f"{prefix}.{nth}.log")
+        line = "  ".join(f"{name} {ms:.0f}" for name, ms in marks.items())
+        if "first frame" not in marks:
+            ended = "still running" if status is None else f"exit status {status}"
+            line = f"{line}  no frame, {ended}".strip()
+        print(line, flush=True)
+
+
+if __name__ == "__main__":
+    main()

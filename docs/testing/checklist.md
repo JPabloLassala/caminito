@@ -560,6 +560,26 @@ session_env() {
 - **Debug tool:** `GTK_DEBUG=interactive`, and `gsettings get org.gnome.desktop.interface
   gtk-theme`, which msd mirrors from MATE's (ADR 0005).
 
+### camino-displays shows its window at once
+
+- **Milestone:** M6
+- **Steps:**
+  1. In the session, with no camino-displays running, run `tools/first-frame -n 5
+     camino-displays`. Each run shows the window and ends it.
+  2. Open *Displays* from the control center, see how long its window takes, leave it open,
+     and run `tools/first-frame camino-displays` again.
+- **Expected:** in step 1 the first frame is within about 0.3 s of the start, as ticket 86
+  measured it on an RTX 3060 with GTK's Vulkan renderer (265 to 313 ms). The first run after a
+  login or a driver update may take 1.4 s, while the driver compiles the renderer's shaders. In
+  step 2 the window is there as soon from the control center, and the run shows no frame of
+  its own and exits with status 0 in well under a second: the window that was open is the one
+  there is.
+- **Debug tool:** `tools/first-frame --log /tmp/start camino-displays` keeps the stamped
+  protocol, to see between which messages the time went. `GSK_RENDERER=cairo` before the
+  program takes GTK's GPU renderer out of it. A run that ends after 25 s with `Failed to
+  register: Timeout was reached` is waiting for an instance that hangs: `pgrep -a
+  camino-displays`.
+
 ### camino-displays applies, reverts and keeps a configuration
 
 - **Milestone:** M6
