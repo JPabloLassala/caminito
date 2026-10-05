@@ -17,7 +17,7 @@ use crate::state::{Camino, SEAT, State};
 use crate::window::Mapped;
 
 /// Policy's id for a toplevel, which is named by it.
-fn window_id(toplevel: ToplevelId) -> WindowId {
+pub(super) fn window_id(toplevel: ToplevelId) -> WindowId {
     WindowId(toplevel.0)
 }
 

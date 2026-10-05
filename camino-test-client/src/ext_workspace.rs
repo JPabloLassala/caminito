@@ -91,6 +91,12 @@ impl Client {
         self.state.workspaces.manager.is_none()
     }
 
+    /// Destroys the client's handle for a workspace that's still there, which the protocol
+    /// allows: the client is told no more of it.
+    pub fn destroy_workspace_handle(&self, index: usize) {
+        self.workspace_proxy(index).destroy();
+    }
+
     /// Keeps the handles of workspaces removed from now on, so the client can make requests
     /// of them, which a compositor ignores.
     pub fn keep_removed_workspace_handles(&mut self) {
@@ -108,8 +114,14 @@ impl Client {
     }
 }
 
+impl Workspace {
+    pub(crate) fn proxy(&self) -> &ExtWorkspaceHandleV1 {
+        &self.proxy
+    }
+}
+
 impl State {
-    fn workspace_index(&self, proxy: &ExtWorkspaceHandleV1) -> Option<usize> {
+    pub(crate) fn workspace_index(&self, proxy: &ExtWorkspaceHandleV1) -> Option<usize> {
         let workspaces = &self.workspaces.workspaces;
         workspaces.iter().position(|w| w.proxy == *proxy)
     }

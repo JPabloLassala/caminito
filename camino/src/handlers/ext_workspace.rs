@@ -8,7 +8,7 @@ use crate::state::{Camino, SEAT, State};
 
 /// A workspace's id for ext-workspace: its number, from 1, which is what stays the same
 /// from one session to the next.
-fn workspace_id(index: usize) -> String {
+pub(super) fn workspace_id(index: usize) -> String {
     (index + 1).to_string()
 }
 

@@ -84,6 +84,7 @@ use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::output_management::OutputManagementState;
+use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
 use crate::settings::{self, Settings, SettingsThread};
 use crate::window::{Mapped, PendingWindows};
@@ -146,6 +147,8 @@ pub struct Camino {
     pub(crate) foreign_toplevel_handles: HashMap<WindowId, ForeignToplevelHandle>,
     /// The workspaces as a panel's workspace switcher sees them (66).
     pub ext_workspace_state: ExtWorkspaceState,
+    /// The workspace each window is on, as a panel's window list sees it (75).
+    pub xfce_foreign_toplevel_state: XfceForeignToplevelState,
 
     // Input (06).
     pub pointer_constraints_state: PointerConstraintsState,
@@ -634,6 +637,7 @@ impl Camino {
             ),
             foreign_toplevel_handles: HashMap::new(),
             ext_workspace_state: ExtWorkspaceState::new::<State, _>(dh, privileged),
+            xfce_foreign_toplevel_state: XfceForeignToplevelState::new::<State, _>(dh, privileged),
 
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),
@@ -858,7 +862,12 @@ impl Camino {
         self.refresh_output_management();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
+        // On both sides of ext-workspace's refresh: a window leaves a workspace that's
+        // going while a client still has that workspace's handle, and enters a new one
+        // once the client has that one's.
+        self.refresh_toplevel_workspaces();
         self.refresh_ext_workspace();
+        self.refresh_toplevel_workspaces();
         for mapped in self.policy.windows() {
             mapped.flush();
         }

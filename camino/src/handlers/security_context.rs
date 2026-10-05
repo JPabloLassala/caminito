@@ -14,7 +14,7 @@ use smithay::xwayland::XWaylandClientData;
 use crate::state::{ClientState, State};
 
 /// Whether `client` is offered the privileged globals, which show or change what belongs to
-/// other clients: layer-shell, the two foreign-toplevel protocols, ext-workspace, output
+/// other clients: layer-shell, the two foreign-toplevel protocols and Xfce's, ext-workspace, output
 /// management, the two data-control protocols, and security-context itself, so that a
 /// sandboxed client can't make a context of its own. Every such global's filter is this
 /// function. M6's image capture and M7's session lock join them.

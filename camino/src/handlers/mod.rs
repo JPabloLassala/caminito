@@ -12,6 +12,7 @@ mod rendering;
 mod security_context;
 mod selection;
 mod xdg_shell;
+mod xfce_foreign_toplevel;
 
 pub(crate) use decoration::kde_server_side;
 pub(crate) use security_context::sees_privileged_globals;

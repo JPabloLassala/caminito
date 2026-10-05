@@ -23,6 +23,7 @@ The patches written so far didn't agree on when they turn on:
   - The only ungated changes are protocol-generic ones that are correct on any compositor:
     - the foreign-toplevel minimise rectangle;
     - the pager's use of ext-workspace `coordinates`;
+    - the window list's use of each window's workspace, where libxfce4windowing has it (ADR 0013);
     - Shut Down through `org.gnome.SessionManager` when it has an owner.
 - **A build patch isn't a carried patch.** Where a baseline doesn't build against Arch's libraries, the series can end with a patch that takes out the upstream change that needs the newer library. It has no gate, and it's allowed only when what it leaves is what the stock package does. It's removed when Arch has the library. The first is `mate-settings-daemon-camino`'s `0004`: msd 1.29.1 needs mate-desktop 1.29.0 for one commit of the X11 xrandr plugin, and Arch has 1.28.2.
 - **The patches are `git format-patch` series beside each PKGBUILD**, applied to a 1.29.x tag or, where a component has none, a pinned master commit. They move only on purpose.

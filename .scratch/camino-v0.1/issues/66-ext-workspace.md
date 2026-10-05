@@ -37,7 +37,7 @@ Map: [Camino v0.1](../map.md)
 ## Notes
 
 - **The grid** from `org.mate.Camino`'s three `workspace-layout-*` keys, and the pager's patch that places by coordinates, are M6 (09, 17). One row is what an unpatched pager shows anyway.
-- **Window-to-workspace** isn't in either protocol: libxfce4windowing can't tell which workspace a toplevel is on, so the window list shows every workspace's windows. Whether that's acceptable for v0.1 is checked in [72](72-session-file-and-first-login.md). 72 saw it in a session, and [75](75-window-list-by-workspace.md) has it, proposed for M6.
+- **Window-to-workspace** isn't in either protocol: libxfce4windowing can't tell which workspace a toplevel is on, so the window list shows every workspace's windows. Whether that's acceptable for v0.1 is checked in [72](72-session-file-and-first-login.md). 72 saw it in a session, and [75](75-window-list-by-workspace.md) fixed it with Xfce's foreign toplevel protocol, which does say (ADR 0013).
 - **The security-context filter** on the global is [68](68-data-control-and-privileged-globals.md).
 - **Smithay may have gained `ext_workspace`** since 03's audit at `928d4a9`. Check the pinned `rev` first; if it has it, use it and keep this ticket's behaviour.
 - **Resolved on 2026-10-04.** Checked in the virtual machine (aarch64): the tests in `tests/ext_workspace.rs` and the full suite on a private bus (`dbus-run-session`). camino-theme's goldens fail on aarch64, as they do on `master`. No pager was run against it; [72](72-session-file-and-first-login.md) sees mate-panel's workspace switcher in a real session.
