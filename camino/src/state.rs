@@ -822,6 +822,11 @@ impl Camino {
     fn refresh_views(&mut self) {
         // First, since windows' outputs and scales follow the outputs' scales.
         self.refresh_lid_switch();
+        // Before the work areas, which take the struts as read at the X11 scale, and
+        // before anything else that's worked out at it.
+        self.refresh_x11_scale();
+        // Before the windows are told what policy asks of them.
+        self.refresh_work_areas();
         self.refresh_window_outputs();
         self.refresh_layers();
         self.refresh_output_management();
@@ -831,8 +836,6 @@ impl Camino {
         for mapped in self.policy.windows() {
             mapped.flush();
         }
-        // First, since what follows is worked out at the X11 scale.
-        self.refresh_x11_scale();
         self.refresh_x11_stacking();
         self.refresh_x_root();
         self.refresh_x_windows();
@@ -843,17 +846,18 @@ impl Camino {
         self.popups.cleanup();
     }
 
-    /// The bounds a new toplevel is told to fit in: the output of the focused window, where
-    /// policy places new windows, or else the first output.
+    /// The bounds a new toplevel is told to fit in: the work area of the focused window's
+    /// output, where policy places new windows, or else the first output's.
     pub fn placement_bounds(&self) -> Option<Size<i32, Logical>> {
         let focused = self
             .policy
             .focus(SEAT)
             .and_then(|id| self.policy.geometry(id));
+        let areas: Vec<_> = self.policy.work_areas().collect();
         let outputs = self.policy.outputs();
         focused
-            .and_then(|geometry| outputs.iter().find(|o| o.geometry.overlaps(geometry)))
-            .or(outputs.first())
-            .map(|output| output.geometry.size)
+            .and_then(|geometry| outputs.iter().position(|o| o.geometry.overlaps(geometry)))
+            .or((!outputs.is_empty()).then_some(0))
+            .map(|output| areas[output].size)
     }
 }

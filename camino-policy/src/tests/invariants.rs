@@ -29,6 +29,11 @@ enum Op {
     },
     /// An output is unplugged, and the rest are laid out left to right again.
     Unplug(u64),
+    /// A panel or a dock maps, changes or goes: an output's reserved edges change (64).
+    Reserve {
+        id: u64,
+        reserved: ReservedEdges,
+    },
     Map {
         window: TestWindow,
     },
@@ -190,6 +195,13 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (1..=3u64).prop_map(Op::RemoveOutput),
         1 => (1..=3u64, 1..4000i32, 1..3000i32).prop_map(|(id, w, h)| Op::Plug { id, w, h }),
         1 => (1..=3u64).prop_map(Op::Unplug),
+        // Past the output's size too, as a client may ask.
+        2 => (1..=3u64, 0..300i32, 0..300i32, 0..5000i32, 0..300i32).prop_map(
+            |(id, left, right, top, bottom)| Op::Reserve {
+                id,
+                reserved: ReservedEdges { left, right, top, bottom },
+            }
+        ),
         3 => test_window().prop_map(|window| Op::Map { window }),
         2 => window_id().prop_map(Op::Unmap),
         1 => (window_id(), 1..2500i32, 1..1500i32, proptest::option::of(window_id()), window_type())
@@ -241,6 +253,13 @@ impl Op {
                 policy.set_outputs(left_to_right(sizes));
             }
             Op::Unplug(id) => policy.set_outputs(left_to_right(sizes_without(policy, id))),
+            Op::Reserve { id, reserved } => {
+                let mut outputs = policy.outputs().to_vec();
+                if let Some(output) = outputs.iter_mut().find(|o| o.id == OutputId(id)) {
+                    output.reserved = reserved;
+                }
+                policy.set_outputs(outputs);
+            }
             Op::Map { window } => {
                 // The compositor never maps an id twice.
                 if policy.window(window.id).is_none() {
@@ -411,6 +430,30 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                 smithay::utils::FrameExtents::default()
             };
             assert_eq!(policy.frame_extents(id), drawn, "{id:?}'s frame extents");
+        }
+    }
+
+    // Each output's work area is in it, and isn't empty, whatever is reserved.
+    for (output, area) in policy.outputs().iter().zip(policy.work_areas()) {
+        assert!(
+            output.geometry.contains_rect(area) && area.size.w >= 1 && area.size.h >= 1,
+            "{:?}'s work area {area:?} should be in {:?}",
+            output.id,
+            output.geometry
+        );
+    }
+
+    for &id in &windows {
+        let window = policy.window(id).unwrap();
+        let Some((geometry, states)) = window.last_geometry() else {
+            continue;
+        };
+        // A fullscreen window covers an output, reserved edges and all.
+        if states.fullscreen && !policy.outputs().is_empty() {
+            assert!(
+                policy.outputs().iter().any(|o| o.geometry == geometry),
+                "fullscreen {id:?} at {geometry:?} should cover an output"
+            );
         }
     }
 
