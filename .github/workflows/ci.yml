@@ -52,6 +52,8 @@ jobs:
           if-no-files-found: ignore
 
       # The headless tier renders with pixman, so it needs no GPU or EGL, and the X11 tier
-      # runs with it. camino's tests get a private session bus (14).
+      # runs with it. camino's tests get a private session bus (14). The bus takes its home
+      # from the user database (/root), and a container job's HOME is /github/home, so
+      # XDG_DATA_HOME makes the bus read the service files that a test writes below HOME.
       - name: Test camino
-        run: dbus-run-session -- cargo test -p camino
+        run: XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p camino
