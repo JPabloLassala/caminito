@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turns an `xwd -root` dump of a 24-bit or 32-bit TrueColor screen into a PNG.
+"""Turns an `xwd -root` dump of a TrueColor screen with 32 bits for each pixel into a PNG.
 
   xwd-to-png.py FILE.xwd FILE.png
 """

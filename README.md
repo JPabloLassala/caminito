@@ -166,17 +166,21 @@ camino --session
 
 Logging out from the panel's menu ends the session and gives the tty back.
 
-Started from a display manager, the session logs to the journal, and so do Camino's helpers,
-each under its own name:
+When Camino's stderr isn't a terminal, as from a display manager, Camino logs to the journal,
+and so do its helpers and Xwayland, each under its own name:
 
 ```sh
-journalctl --user -t camino -b            # Camino
-journalctl --user -t camino-gtk-palette   # a helper
-journalctl --user -b                      # the whole session, mate-session's parts too
+journalctl --user -b -t camino               # Camino
+journalctl --user -b -t Xwayland             # Xwayland
+journalctl --user -b -t camino-gtk-palette   # a helper
 ```
 
-On a tty Camino's stderr is the terminal, so its logs go there instead. To have them in the
-journal, send stderr away from the terminal: `camino --session 2>/dev/null`.
+mate-session and the programs it starts write to Camino's stderr itself, so they are where the
+display manager sends that.
+
+On a tty Camino's stderr is the terminal, so all of it goes there. To have Camino's logs in the
+journal, and those of mate-session's programs in a file, send stderr to the file:
+`camino --session 2>~/session.log`.
 
 ## Known limitations
 
