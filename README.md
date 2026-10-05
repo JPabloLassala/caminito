@@ -64,7 +64,7 @@ Some MATE components need carried patches to work in the session
 `<pkgname>-camino` package under [packaging/arch/](packaging/arch/), made from Arch's own
 PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino is running, or
 are correct on any compositor, or only let the baseline build against Arch's libraries, so X11
-MATE stays as it was. Build them before `camino-git`, which will depend on them:
+MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
 for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino; do
@@ -140,7 +140,47 @@ The keybindings are a hard-coded set of Marco's defaults until M8 reads them fro
 | Alt+F4 | Close window |
 | Alt+F10 | Toggle maximised |
 
-`camino --session` runs mate-session as Camino's child, and Camino exits with it and with its status. `camino --session=CMD` runs `CMD` instead, for example `--session=foot`. The *MATE on Camino* session entry and the patched MATE packages it needs aren't installed yet (M5).
+### The MATE session
+
+`camino --session` runs mate-session as Camino's child, and Camino exits with it and with its
+status. `camino --session=CMD` runs `CMD` instead, for example `--session=foot`. The `camino-git`
+package installs the session entry, *MATE on Camino*
+(`/usr/share/wayland-sessions/mate-camino.desktop`), which a display manager lists, and depends
+on the patched MATE packages the session needs.
+
+Until M5 closes, try the session as a second user, not from the display manager as yourself.
+Every login of one user shares one systemd user manager and one session bus, and the session
+changes the environment of both, so it would disturb the desktop you are logged in to. A second
+user has its own:
+
+```sh
+sudo useradd -m caminotest
+sudo passwd caminotest
+```
+
+Switch to a spare tty (Ctrl+Alt+F4, for example), log in as `caminotest`, and run:
+
+```sh
+camino --session
+```
+
+Logging out from the panel's menu ends the session and gives the tty back.
+
+When Camino's stderr isn't a terminal, as from a display manager, Camino logs to the journal,
+and so do its helpers and Xwayland, each under its own name:
+
+```sh
+journalctl --user -b -t camino               # Camino
+journalctl --user -b -t Xwayland             # Xwayland
+journalctl --user -b -t camino-gtk-palette   # a helper
+```
+
+mate-session and the programs it starts write to Camino's stderr itself, so they are where the
+display manager sends that.
+
+On a tty Camino's stderr is the terminal, so all of it goes there. To have Camino's logs in the
+journal, and those of mate-session's programs in a file, send stderr to the file:
+`camino --session 2>~/session.log`.
 
 ## Known limitations
 
