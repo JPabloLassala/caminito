@@ -63,7 +63,8 @@ Some MATE components need carried patches to work in the session
 ([ADR 0011](docs/adr/0011-patched-mate-packages-replace-stock-and-gate-on-camino.md)). Each is a
 `<pkgname>-camino` package under [packaging/arch/](packaging/arch/), made from Arch's own
 PKGBUILD, that replaces the stock package. Its patches do nothing unless Camino is running, or
-are correct on any compositor, so X11 MATE stays as it was. Build them before `camino-git`, which will depend on them:
+are correct on any compositor, or only let the baseline build against Arch's libraries, so X11
+MATE stays as it was. Build them before `camino-git`, which will depend on them:
 
 ```sh
 for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino; do
@@ -75,6 +76,10 @@ done
 soname (`libmate-panel-applet-4.so.2`). An applet from a different package, such as
 `mate-applets` or the applet of `mate-notification-daemon`, is linked to the old one and doesn't
 start until that package is built again.
+
+`mate-settings-daemon-camino` is msd 1.29.1, which asks for mate-desktop 1.29.0. Arch has 1.28.2,
+so the package's last patch takes out the one upstream commit that needs the newer library (a
+change to the X11 display plugin for virtual machines that resize the screen).
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no

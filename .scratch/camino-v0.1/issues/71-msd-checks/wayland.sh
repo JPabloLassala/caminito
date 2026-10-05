@@ -1,7 +1,8 @@
 #!/bin/bash
 # The patched msd on Wayland, under a headless labwc, with MATE_WM_NAME=Camino or, with
 # "stock" as the first argument, without it: which plugins start, the mirror into the GNOME
-# keys, and the background's layer surfaces while caja's show-desktop-icons is on.
+# keys, the background's layer surfaces while caja's show-desktop-icons is on, and the
+# clipboard plugin keeping the clipboard.
 # Settings go to a dconf database in a scratch XDG_CONFIG_HOME. The script starts its own
 # session bus after it sets that, because dconf-service takes the bus's environment, and
 # would write the user's database otherwise. (The keyfile backend isn't used: it loses
@@ -49,14 +50,20 @@ echo "cursor-theme: $(gnome interface cursor-theme)"
 echo "cursor-size: $(gnome interface cursor-size)"
 echo "event-sounds: $(gnome sound event-sounds)"
 echo "font-antialiasing: $(gnome interface font-antialiasing)"
-echo "--- one way: a GNOME-side change stays until the MATE key changes"
+echo "--- one way: a GNOME-side change stays until a MATE key changes"
 gsettings set org.gnome.desktop.interface gtk-theme Adwaita; sleep 1
 echo "MATE gtk-theme: $(gsettings get org.mate.interface gtk-theme)"
-sleep 4
+gsettings set org.mate.interface cursor-blink-time 900; sleep 1
+echo "GNOME gtk-theme after another MATE key changed: $(gnome interface gtk-theme)"
+echo "--- the clipboard after its owner quits (needs wl-clipboard)"
+# msd takes the selection over 2 s after its owner goes.
+wl-copy "ticket 71" 2>/dev/null; sleep 2; pkill -x wl-copy; sleep 4
+echo "wl-copy running: $(pgrep -c -x wl-copy), pasted: $(timeout 3 wl-paste 2>&1)"
+sleep 2
 echo "--- the msd log"
 grep -c "get_layer_surface" $run/msd.log | sed 's/^/layer surfaces: /'
 grep -o 'get_layer_surface([^)]*)' $run/msd.log | head -2
-grep -a "): DEBUG\|WARNING" $run/msd.log | grep -ai "typing_break\|mirroring\|xsettings manager\|requires X11\|caja desktop" | sed 's/.*: [0-9:.]*: //' 
+grep -a "): DEBUG\|WARNING" $run/msd.log | grep -ai "typing_break\|mirroring\|xsettings manager\|requires X11\|caja desktop" | sed 's/.*: [0-9:.]*: //'
 grep -o "ext_data_control_manager_v1[^ ]*\|zwlr_output_manager_v1#[0-9]*\.[a-z_]*" $run/msd.log | sort | uniq -c | head
 echo "typing monitor running: $(pgrep -c -x mate-typing-mon)"
 kill $(jobs -p) 2>/dev/null; sleep 1

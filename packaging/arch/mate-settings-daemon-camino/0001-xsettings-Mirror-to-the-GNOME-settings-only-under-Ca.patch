@@ -21,10 +21,10 @@ differs. That also leaves out the X resources and the QT_SCALE_FACTOR
 export, which are wrong on Wayland. Without that variable, nothing changes.
 ---
  plugins/xsettings/Makefile.am             |   2 +
- plugins/xsettings/msd-gnome-mirror.c      | 313 ++++++++++++++++++++++
+ plugins/xsettings/msd-gnome-mirror.c      | 329 ++++++++++++++++++++++
  plugins/xsettings/msd-gnome-mirror.h      |  35 +++
  plugins/xsettings/msd-xsettings-manager.c |  16 ++
- 4 files changed, 366 insertions(+)
+ 4 files changed, 382 insertions(+)
  create mode 100644 plugins/xsettings/msd-gnome-mirror.c
  create mode 100644 plugins/xsettings/msd-gnome-mirror.h
 
@@ -43,10 +43,10 @@ index e81842f..aa73e98 100644
  	xsettings-manager.h	\
 diff --git a/plugins/xsettings/msd-gnome-mirror.c b/plugins/xsettings/msd-gnome-mirror.c
 new file mode 100644
-index 0000000..829de69
+index 0000000..2cca969
 --- /dev/null
 +++ b/plugins/xsettings/msd-gnome-mirror.c
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,329 @@
 +/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
 + *
 + * Copyright (C) 2026 MATE Developers
@@ -72,7 +72,8 @@ index 0000000..829de69
 + * settings one way into the GNOME keys GTK reads, at start-up and on every
 + * change, so native Wayland applications follow the MATE control center.
 + * A key is written only when its value differs, and nothing is read back:
-+ * MATE is the source of truth. */
++ * MATE is the source of truth, and a change made on the GNOME side is
++ * overwritten at the next change on the MATE side. */
 +
 +#include "config.h"
 +
@@ -203,6 +204,15 @@ index 0000000..829de69
 +        return has_key ? settings : NULL;
 +}
 +
++static gboolean
++value_fits (GSettingsSchemaKey *schema_key,
++            GVariant           *value)
++{
++        return g_variant_type_equal (g_variant_get_type (value),
++                                     g_settings_schema_key_get_value_type (schema_key)) &&
++               g_settings_schema_key_range_check (schema_key, value);
++}
++
 +static void
 +mirror_entry (MsdGnomeMirror    *mirror,
 +              const MirrorEntry *entry)
@@ -231,17 +241,12 @@ index 0000000..829de69
 +        g_object_get (gnome, "settings-schema", &schema, NULL);
 +        schema_key = g_settings_schema_get_key (schema, entry->gnome_key);
 +
-+        if (g_variant_type_equal (g_variant_get_type (value),
-+                                  g_settings_schema_key_get_value_type (schema_key)) &&
-+            !g_settings_schema_key_range_check (schema_key, value) &&
-+            entry->fallback != NULL) {
++        if (!value_fits (schema_key, value) && entry->fallback != NULL) {
 +                g_variant_unref (value);
 +                value = g_variant_ref_sink (g_variant_new_string (entry->fallback));
 +        }
 +
-+        if (!g_variant_type_equal (g_variant_get_type (value),
-+                                   g_settings_schema_key_get_value_type (schema_key)) ||
-+            !g_settings_schema_key_range_check (schema_key, value)) {
++        if (!value_fits (schema_key, value)) {
 +                g_debug ("gnome-mirror: %s %s cannot have the value of %s %s",
 +                         entry->gnome_schema, entry->gnome_key,
 +                         entry->mate_schema, entry->mate_key);
@@ -259,6 +264,18 @@ index 0000000..829de69
 +}
 +
 +static void
++mirror_all (MsdGnomeMirror *mirror)
++{
++        guint i;
++
++        for (i = 0; i < G_N_ELEMENTS (mirror_entries); i++) {
++                mirror_entry (mirror, &mirror_entries[i]);
++        }
++}
++
++/* A change to one mirrored key copies them all, so that a change made on the
++ * GNOME side does not stay after the next change on the MATE side. */
++static void
 +mate_settings_changed (GSettings      *settings,
 +                       const char     *key,
 +                       MsdGnomeMirror *mirror)
@@ -271,7 +288,8 @@ index 0000000..829de69
 +        for (i = 0; i < G_N_ELEMENTS (mirror_entries); i++) {
 +                if (g_str_equal (schema_id, mirror_entries[i].mate_schema) &&
 +                    g_str_equal (key, mirror_entries[i].mate_key)) {
-+                        mirror_entry (mirror, &mirror_entries[i]);
++                        mirror_all (mirror);
++                        break;
 +                }
 +        }
 +
@@ -333,9 +351,7 @@ index 0000000..829de69
 +                add_settings (mirror, mirror_entries[i].gnome_schema);
 +        }
 +
-+        for (i = 0; i < G_N_ELEMENTS (mirror_entries); i++) {
-+                mirror_entry (mirror, &mirror_entries[i]);
-+        }
++        mirror_all (mirror);
 +
 +        return mirror;
 +}
