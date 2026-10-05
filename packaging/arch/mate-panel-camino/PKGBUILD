@@ -30,8 +30,10 @@ groups=('mate')
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("${_pkgname}=${pkgver}")
 conflicts=("${_pkgname}" 'mate-panel-gtk3')
-# No patch is gated on Camino: each is correct on any compositor (ADR 0011). The third
-# changes nothing where the compositor hasn't Xfce's foreign toplevel protocol (ADR 0013).
+# No patch is gated on Camino: each is correct on any compositor (ADR 0011). With the third,
+# the window list is as it was where the compositor hasn't Xfce's foreign toplevel protocol,
+# and the choice of workspaces in its preferences can be made there too, to no effect
+# (ADR 0013).
 source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         git+https://github.com/mate-desktop/mate-submodules.git
         0001-wayland-tasklist-Tell-the-compositor-where-each-butt.patch
@@ -41,7 +43,7 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             'SKIP'
             '7b33e869a2cd4d4154a0a11fa977f55e7e984ffc41be18e3c2b14885a8ecb490'
             '94a0dcc1016524880f416370c2a4f419b14f5fe7a539a7ddcf82d8adfd0a934e'
-            'd39598b1cf40cc7078e0f149f57954f96a2f9b9cebc162c5c2c0bf9f89bf7066')
+            '51039efc813e292e5c4e4e201c2824261ebcbc417aa443b1a3381780a60d9f09')
 
 pkgver() {
     cd "${_pkgname}"

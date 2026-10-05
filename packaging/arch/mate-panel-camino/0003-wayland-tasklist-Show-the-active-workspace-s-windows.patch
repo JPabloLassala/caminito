@@ -14,18 +14,18 @@ on all of them, and follow the window's workspace and the active workspace.
 With display-all-workspaces every window has one, and the setting can be
 changed in the preferences again. Where the compositor does not say where a
 window is, xfw_window_get_workspace gives none and every window has a button,
-as before.
+as before, whatever the setting says.
 
 A button that comes back is added after the others, so the order of the
 buttons, and one the user made by dragging, is not kept across workspaces.
 ---
- applets/wncklet/wayland-backend.c | 139 ++++++++++++++++++++++++++++--
+ applets/wncklet/wayland-backend.c | 153 ++++++++++++++++++++++++++++--
  applets/wncklet/wayland-backend.h |   1 +
  applets/wncklet/window-list.c     |   8 +-
- 3 files changed, 141 insertions(+), 7 deletions(-)
+ 3 files changed, 155 insertions(+), 7 deletions(-)
 
 diff --git a/applets/wncklet/wayland-backend.c b/applets/wncklet/wayland-backend.c
-index 2de3ed5..cd1dc0c 100644
+index 2de3ed5..730a5b6 100644
 --- a/applets/wncklet/wayland-backend.c
 +++ b/applets/wncklet/wayland-backend.c
 @@ -66,6 +66,7 @@ typedef struct
@@ -36,7 +36,7 @@ index 2de3ed5..cd1dc0c 100644
  	WaylandTasklistGroupingType grouping;
  	gboolean auto_grouping;
  	gboolean auto_grouping_applied;
-@@ -1043,8 +1044,26 @@ tasklist_has_window (TasklistManager *tasklist, XfwWindow *window)
+@@ -1043,8 +1044,34 @@ tasklist_has_window (TasklistManager *tasklist, XfwWindow *window)
  	return FALSE;
  }
  
@@ -47,6 +47,7 @@ index 2de3ed5..cd1dc0c 100644
 +tasklist_shows_window (TasklistManager *tasklist, XfwWindow *window)
 +{
 +	XfwWorkspace *workspace;
++	XfwWorkspaceGroup *group;
 +
 +	if (tasklist->include_all_workspaces || xfw_window_is_pinned (window))
 +		return TRUE;
@@ -55,7 +56,14 @@ index 2de3ed5..cd1dc0c 100644
 +	if (workspace == NULL)
 +		return TRUE;
 +
-+	return (xfw_workspace_get_state (workspace) & XFW_WORKSPACE_STATE_ACTIVE) != 0;
++	/* The group's, not the workspace's own state: as the active workspace
++	 * changes, the one that was active can still say it is when the group
++	 * tells us of the new one, and nothing tells us when it stops. */
++	group = xfw_workspace_get_workspace_group (workspace);
++	if (group == NULL)
++		return (xfw_workspace_get_state (workspace) & XFW_WORKSPACE_STATE_ACTIVE) != 0;
++
++	return xfw_workspace_group_get_active_workspace (group) == workspace;
 +}
 +
  static void
@@ -64,7 +72,7 @@ index 2de3ed5..cd1dc0c 100644
  {
  	ToplevelTask *task;
  
-@@ -1056,7 +1075,7 @@ screen_window_opened (XfwScreen *screen, XfwWindow *window, TasklistManager *tas
+@@ -1056,7 +1083,7 @@ screen_window_opened (XfwScreen *screen, XfwWindow *window, TasklistManager *tas
  }
  
  static void
@@ -73,7 +81,7 @@ index 2de3ed5..cd1dc0c 100644
  {
  	GList *l;
  
-@@ -1102,6 +1121,80 @@ screen_window_closed (XfwScreen *screen, XfwWindow *window, TasklistManager *tas
+@@ -1102,6 +1129,80 @@ screen_window_closed (XfwScreen *screen, XfwWindow *window, TasklistManager *tas
  	}
  }
  
@@ -154,7 +162,7 @@ index 2de3ed5..cd1dc0c 100644
  static void
  screen_active_window_changed (XfwScreen *screen, XfwWindow *previous_window, gpointer user_data)
  {
-@@ -1174,6 +1267,15 @@ tasklist_manager_disconnected_from_widget (TasklistManager *tasklist)
+@@ -1174,6 +1275,18 @@ tasklist_manager_disconnected_from_widget (TasklistManager *tasklist)
  
  	if (tasklist->screen)
  	{
@@ -163,14 +171,17 @@ index 2de3ed5..cd1dc0c 100644
 +
 +		for (l = xfw_screen_get_windows (tasklist->screen); l != NULL; l = l->next)
 +			g_signal_handlers_disconnect_by_data (l->data, tasklist);
-+		for (l = xfw_workspace_manager_list_workspace_groups (manager); l != NULL; l = l->next)
-+			g_signal_handlers_disconnect_by_data (l->data, tasklist);
-+		g_signal_handlers_disconnect_by_data (manager, tasklist);
++		if (manager != NULL)
++		{
++			for (l = xfw_workspace_manager_list_workspace_groups (manager); l != NULL; l = l->next)
++				g_signal_handlers_disconnect_by_data (l->data, tasklist);
++			g_signal_handlers_disconnect_by_data (manager, tasklist);
++		}
 +
  		g_signal_handlers_disconnect_by_data (tasklist->screen, tasklist);
  		g_object_unref (tasklist->screen);
  		tasklist->screen = NULL;
-@@ -1198,6 +1300,7 @@ tasklist_manager_new (void)
+@@ -1198,6 +1311,7 @@ tasklist_manager_new (void)
  {
  	TasklistManager *tasklist;
  	GList *windows, *l;
@@ -178,7 +189,7 @@ index 2de3ed5..cd1dc0c 100644
  	XfwScreen *screen = xfw_screen_get_default ();
  
  	if (screen == NULL)
-@@ -1228,16 +1331,26 @@ tasklist_manager_new (void)
+@@ -1228,14 +1342,27 @@ tasklist_manager_new (void)
  	g_signal_connect (tasklist->list, "size-allocate",
  			  G_CALLBACK (tasklist_list_size_allocate), tasklist);
  
@@ -197,19 +208,20 @@ index 2de3ed5..cd1dc0c 100644
 +
 +		tasklist_track_window (tasklist, window);
 +		tasklist_sync_window (tasklist, window);
- 	}
- 
++	}
++
 +	/* a window's button comes and goes with its workspace */
 +	workspace_manager = xfw_screen_get_workspace_manager (screen);
-+	for (l = xfw_workspace_manager_list_workspace_groups (workspace_manager); l != NULL; l = l->next)
-+		workspace_group_created (workspace_manager, l->data, tasklist);
-+	g_signal_connect (workspace_manager, "workspace-group-created",
-+			  G_CALLBACK (workspace_group_created), tasklist);
-+
++	if (workspace_manager != NULL)
++	{
++		for (l = xfw_workspace_manager_list_workspace_groups (workspace_manager); l != NULL; l = l->next)
++			workspace_group_created (workspace_manager, l->data, tasklist);
++		g_signal_connect (workspace_manager, "workspace-group-created",
++				  G_CALLBACK (workspace_group_created), tasklist);
+ 	}
+ 
  	/* monitor window changes */
- 	g_signal_connect (screen, "window-opened",
- 			  G_CALLBACK (screen_window_opened), tasklist);
-@@ -1751,6 +1864,20 @@ wayland_tasklist_set_middle_click_close (GtkWidget *tasklist_widget, gboolean en
+@@ -1751,6 +1878,20 @@ wayland_tasklist_set_middle_click_close (GtkWidget *tasklist_widget, gboolean en
  	tasklist->middle_click_close = enabled;
  }
  

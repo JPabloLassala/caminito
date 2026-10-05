@@ -46,7 +46,8 @@ pub(crate) mod raw {
 
 impl Client {
     /// Binds Xfce's manager, and asks for the Xfce handle of every open toplevel the client
-    /// has, and of each one announced from now on. `bind_foreign_toplevels` first.
+    /// has, and of each one announced from now on, so it's for before or after
+    /// `bind_foreign_toplevels`.
     pub fn bind_toplevel_workspaces(&mut self) {
         let manager: XfceForeignToplevelManagerPrivateV1 =
             crate::bind(&self.registry, &self.state.globals, &self.qh, 1);

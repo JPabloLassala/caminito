@@ -123,7 +123,10 @@ impl XfceForeignToplevelState {
                 .and_then(|client| workspaces.workspace_handle(&client, &workspace_of(toplevel)?));
             let mut changed = !handle.announced;
             if workspace != handle.workspace {
-                if let Some(left) = handle.workspace.take() {
+                // A workspace handle the client destroyed needs no leave.
+                if let Some(left) = handle.workspace.take()
+                    && left.is_alive()
+                {
                     handle.resource.workspace_leave(&left);
                 }
                 if let Some(entered) = &workspace {

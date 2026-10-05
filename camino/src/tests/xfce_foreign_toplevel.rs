@@ -1,5 +1,9 @@
 //! Xfce's foreign toplevel protocol (75): the workspace a panel's window list is told each
 //! window is on, as the windows and the workspaces change.
+//!
+//! The tests of where a window is run on both kinds of window. The rest map an xdg toplevel
+//! only: they're of the panel's objects, and of workspaces that come and go, which are the
+//! same whichever kind of window is on them.
 
 use camino_policy::Config;
 use insta::{allow_duplicates, assert_snapshot};
@@ -21,8 +25,8 @@ fn titled(title: &'static str) -> WindowSpec {
 }
 
 /// A client that has bound what libxfce4windowing binds, in its order: the outputs,
-/// ext-workspace, foreign toplevel management, and Xfce's manager with it. It has seen the
-/// toplevels there are, and asked for their Xfce handles.
+/// ext-workspace, Xfce's manager, and foreign toplevel management, whose toplevels it asks
+/// for the Xfce handles of as they're announced. It has seen the toplevels there are.
 fn panel(f: &mut Fixture) -> ClientId {
     let client = f.connect(Kind::Xdg);
     f.client(client).bind_outputs();
@@ -69,7 +73,8 @@ fn placements(f: &mut Fixture, panel: ClientId) -> String {
         .join(", ")
 }
 
-/// Moves a window to the workspace at `workspace`, as the window menu does.
+/// Moves a window to the workspace at `workspace`, as the window menu will: no binding or
+/// client's request does it yet, so it's asked of policy.
 fn move_to_workspace(f: &mut Fixture, window: ClientWindow, workspace: usize) {
     let id = f.pid(window);
     f.state.camino.policy.move_to_workspace(id, workspace);
@@ -199,6 +204,25 @@ fn a_window_enters_a_workspace_that_is_new_once_the_panel_has_it() {
     toplevel 0: workspace_leave workspace 0
     toplevel 0: done
     toplevel 0: workspace_enter workspace 5
+    toplevel 0: done
+    ");
+}
+
+#[test]
+fn a_workspace_handle_the_panel_destroyed_is_not_left() {
+    let (mut f, caja, panel) = a_window_and_a_panel(Kind::Xdg);
+    f.client(panel).destroy_workspace_handle(0);
+    f.roundtrip(panel);
+
+    move_to_workspace(&mut f, caja, 2);
+
+    // A `workspace_leave` would name an object the panel no longer has. The first `done`
+    // is for being on no workspace the panel knows.
+    assert_snapshot!(events(&mut f, panel), @"
+    toplevel 0: done
+    toplevel 0: state []
+    toplevel 0: done
+    toplevel 0: workspace_enter workspace 2
     toplevel 0: done
     ");
 }
