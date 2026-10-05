@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="data/icons/camino.svg" width="128" height="128" alt="The Camino logo">
+</p>
+
 # Camino
 
 Camino is a Wayland compositor for the MATE desktop, built to be the Wayland counterpart of
