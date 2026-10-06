@@ -23,7 +23,7 @@ foot dragged between the AOC (scale 1.0) and the LG (scale 1.7) comes out anothe
 
 - [x] The cause is named: what flips the scale, and which configure carries a stale size.
 - [x] A headless test, written before the change: a client that takes another size at each preferred scale, moved from a 1.0 output to a 1.7 one and back, gets each scale once per crossing and ends at the size it started with.
-- [ ] On the developer's machine, on bare `camino` at the default scales, foot dragged from the LG to the AOC and back five times is the size it was.
+- [x] On the developer's machine, on bare `camino` at the default scales, foot dragged from the LG to the AOC and back five times is the size it was.
 
 ## What was found
 
@@ -44,7 +44,7 @@ Bare `camino` as `caminotest` on tty4, `camino-git r238.ea769c7-1`, the LG at 1.
 
 - **The scales no longer come in turn at each frame:** 26 `preferred_scale` over about a dozen crossings in 80 s, none closer than 0.3 s to the one before, against 142 in two round trips.
 - **The size no longer walks:** foot is 699x474 at 1.7 and 648x496 at 1.0 throughout, and ends 648x496 on the AOC.
-- **The developer still sees the window change height as it crosses.** That's the one change per crossing, 474 to 496 and back, which is foot's: it keeps its grid, and a cell isn't the same logical size at both scales. The criterion below stays unticked until the developer says whether that's what was seen.
+- **The developer still sees the window change height as it crosses.** That's the one change per crossing, 474 to 496 and back, which is foot's: it keeps its grid, and a cell isn't the same logical size at both scales. The developer confirmed it: one change of height at each crossing, and nothing else. The third criterion is ticked on that and on the log.
 - **One configure with a stale size was left,** at 23:39:36.617: `configure(699, 474)` reached foot at 1.0, foot answered 696x464, and the next configure, `(648, 496)`, 1 ms later, put it back. It was the review's own addition, which owed a configure whenever policy named another size than the pending one: a late commit of foot's and a step of the drag read in one pass of the loop made policy name the size of that commit before the adapter had followed it. The adapter now decides that at the flush, where it knows the size the client draws at, with `a_window_isnt_configured_with_the_size_it_picked_in_the_same_pass_as_a_drag_step` written first. Not yet run on the tty.
 
 ## Notes
