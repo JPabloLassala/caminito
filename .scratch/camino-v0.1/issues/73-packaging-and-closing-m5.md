@@ -91,3 +91,13 @@ M5's checklist items and the closing commit ([17](17-milestone-slicing.md)), on 
   - Then the `Close M5 MATE session` commit, with the map's M5 line, the README's status and milestone table, and its `--session` note.
 
 - **The review (2026-10-06),** applied: the PKGBUILD's header lists the second source among its differences from Arch's, and its comment has the in-process exception and the weekly job's `-stock` name; ADR 0011 is qualified for the kept library; the wizard's `x11` part asks for an applet of another package on a panel and for the dialog's look under Marco, and `wlr-randr` is asked for in the `dm` part, which uses it; 83's criterion on the plugin is ticked. **Left as is:** the bump to r225 went in with no ticket in its subject, already pushed; the two submodule set-ups in the PKGBUILD's `prepare()`, since the submodule's name differs between the tag and master; and master's own `git config submodule.mate-submodules.url`, which doesn't match master's name for it, so that submodule comes from GitHub and not the local clone, as before this ticket.
+
+- **Closing run, the login on a tty (2026-10-06), as caminotest on arch (x86_64), on camino-git r225.c221860-1, mate-session-manager-camino 1.28.0.r23.g57a9178-2, mate-panel-camino 1.28.7.r111.g58ac6c1-4, mate-settings-daemon-camino 1.29.1-3, caja-camino 1.28.0-2:**
+  - As caminotest on a tty, MATE on Camino starts mate-session, the panel, caja's desktop and msd: pass.
+  - DISPLAY only exported after the root properties exist: pass.
+  - An X11 app's clipboard contents survive the app quitting: pass.
+  - Shut Down shows mate-session's dialog: pass. In usual mate-session shutdown dialog theres a space between the progress bar timer and the buttons and it wasnt there this time
+  - Log Out ends the session, and Camino exits with mate-session's status: pass.
+  - The run above is the wizard's `tty` part, by the developer, in a login at 18:08:43, copied here from `caminotest`'s results file. The dialog's note is to compare in the `x11` part: under Marco there's a gap between the countdown's bar and the buttons, and in the Session there isn't. The window has the size GTK asks for either way (the note of 2026-10-06 above), so what differs is what GTK is told there, XSETTINGS or the X11 scale among it, and not the window's size. No ticket until it's seen side by side.
+- **CI and the Packaging job are green on `7e2bbf0`** (runs 37530069043 and 37530069149), with `mate-panel-camino`'s second source built there for the first time.
+- **Still open after the `tty` part:** the `dm` part's Shut Down for real, the `x11` part, the Flatpak item and `ToggleFrameDebug`'s outlines, and the M1 to M4 items of 43's, 54's and 59's wizards.
