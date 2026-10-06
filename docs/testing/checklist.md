@@ -291,7 +291,7 @@ session_env() {
   3. Use the panel: a window list button, the workspace switcher, every applet that was on the
      panel before, and *Log Out…* and *Shut Down…*, cancelling both.
   4. Log out, and log into *MATE on Wayfire*. Look at its panel, its desktop icons and its
-     wallpaper, and log out.
+     wallpaper, and leave it with Super+Escape (`wlogout`), or `pkill wayfire` from a terminal.
 - **Expected:** the session is as it was with the stock packages (the fall-back rule, ADR 0011).
   It's `x11`, with `MATE_WM_NAME` not Camino's and `GDK_BACKEND` as before, mate-session starts
   Marco, and nothing owns `org.mate.Camino`. msd serves XSETTINGS, so open apps restyle at the
@@ -301,8 +301,10 @@ session_env() {
   `mate-panel-camino` installs the 1.28 library beside master's (70, 73). An applet of another
   package that was on the panel shows and works, unless it's one the panel loads into its own
   process (`InProcess=true`, as `mate-notification-daemon`'s), where the two libraries can't
-  work together. The Wayfire session logs in and out, with its panel, its desktop icons and its
-  wallpaper where they were with the stock packages (81).
+  work together. The Wayfire session logs in, with its panel, its desktop icons and its
+  wallpaper where they were with the stock packages (81). The panel's *Log Out* does nothing
+  there, with the stock panel too: it asks the session manager, and that session has no
+  mate-session.
 - **Debug tool:** `ldd` on the applets, `busctl`, `gsettings`, and `~/.xsession-errors` or the
   journal for what a missing applet logged.
 

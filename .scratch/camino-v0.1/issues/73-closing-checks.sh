@@ -796,7 +796,8 @@ else
     if pgrep -u "$(id -u)" -f "(^|/)$process( |\$)" >/dev/null; then ok "$process runs"; else warn "$process isn't running"; fi
   done
   step "The panel, its window list, the desktop icons and the wallpaper are as they were"
-  step "with the stock packages (81), and the session logs out from the panel."
+  step "with the stock packages (81). Leave with Super+Escape (wlogout) or pkill wayfire:"
+  step "the panel's Log Out does nothing there, stock or patched, with no mate-session."
   note "Expected (ADR 0011): a patch that turns on under Wayfire is a bug. The panel's own"
   note "patches aren't gated: it tells Wayfire where each button is, and Shut Down goes"
   note "through the session manager when there is one."
