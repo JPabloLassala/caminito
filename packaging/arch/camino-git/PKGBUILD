@@ -2,7 +2,7 @@
 
 pkgname=camino-git
 _pkgname=camino
-pkgver=r210.ad13fa1
+pkgver=r220.daef32d
 pkgrel=1
 pkgdesc='Wayland compositor for the MATE desktop, the counterpart of Marco'
 arch=(x86_64)

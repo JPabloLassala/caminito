@@ -33,16 +33,16 @@ replacing the Wayfire-based MATE Wayland session.
 
 ## Milestones
 
-| # | Milestone | Ends with |
-|---|---|---|
-| M1 | Nested compositor | GTK and Qt apps mapped, focused, stacked, moved and resized on several workspaces, nested under winit |
-| M2 | Marco frames | SSD windows framed from the Marco theme, matching the goldens |
-| M3 | XWayland | X11 apps managed and framed like native ones |
-| M4 | On the metal | DRM/KMS, libinput, several outputs at fractional scales |
-| M5 | MATE session | "MATE on Camino" logs in and out with mate-panel, caja's desktop and msd |
-| M6 | MATE integrations | Alt+F1/F2, pager layout, Show Desktop, mate-control-center dialogs, window screenshots |
-| M7 | Lock, idle and accessibility | the lock fails closed; idle, blanking, DPMS, Orca and AccessX work |
-| M8 | Marco parity | every Marco key and action accounted for; `v0.1.0` is tagged |
+| #   | Milestone                    | Ends with                                                                                             |
+| --- | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
+| M1  | Nested compositor            | GTK and Qt apps mapped, focused, stacked, moved and resized on several workspaces, nested under winit |
+| M2  | Marco frames                 | SSD windows framed from the Marco theme, matching the goldens                                         |
+| M3  | XWayland                     | X11 apps managed and framed like native ones                                                          |
+| M4  | On the metal                 | DRM/KMS, libinput, several outputs at fractional scales                                               |
+| M5  | MATE session                 | "MATE on Camino" logs in and out with mate-panel, caja's desktop and msd                              |
+| M6  | MATE integrations            | Alt+F1/F2, pager layout, Show Desktop, mate-control-center dialogs, window screenshots                |
+| M7  | Lock, idle and accessibility | the lock fails closed; idle, blanking, DPMS, Orca and AccessX work                                    |
+| M8  | Marco parity                 | every Marco key and action accounted for; `v0.1.0` is tagged                                          |
 
 ## Building
 
@@ -80,7 +80,7 @@ are correct on any compositor, or only let the baseline build against Arch's lib
 MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
-for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
+for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino camino-git \
   caja-camino; do
   (cd packaging/arch/$package && makepkg -si)
 done
@@ -154,18 +154,18 @@ Logs go to stderr at `info`; set `RUST_LOG` (for example `RUST_LOG=camino=debug`
 
 The keybindings are a hard-coded set of Marco's defaults until M8 reads them from gsettings:
 
-| Keys | Action |
-|---|---|
+| Keys                  | Action           |
+| --------------------- | ---------------- |
 | Ctrl+Alt+Left / Right | Switch workspace |
-| Alt+Tab | Switch windows |
-| Alt+F4 | Close window |
-| Alt+F10 | Toggle maximised |
+| Alt+Tab               | Switch windows   |
+| Alt+F4                | Close window     |
+| Alt+F10               | Toggle maximised |
 
 ### The MATE session
 
 `camino --session` runs mate-session as Camino's child, and Camino exits with it and with its
 status. `camino --session=CMD` runs `CMD` instead, for example `--session=foot`. The `camino-git`
-package installs the session entry, *MATE on Camino*
+package installs the session entry, _MATE on Camino_
 (`/usr/share/wayland-sessions/mate-camino.desktop`), which a display manager lists, and depends
 on the patched MATE packages the session needs.
 
@@ -253,18 +253,18 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 
 ## Layout
 
-| Crate | What it is |
-|---|---|
-| [camino](camino/) | The compositor: backends, Wayland protocol handlers, input and rendering |
-| [camino-policy](camino-policy/) | Window-management policy (focus, stacking, placement, workspaces, transients), free of protocol types |
-| [camino-layout](camino-layout/) | Docking and healing a layout of outputs, with no dependencies, for Camino and camino-displays |
-| [camino-displays](camino-displays/) | The display settings program, in GTK4: a library with the page's state and its client of output management, and the window over them |
-| [camino-theme](camino-theme/) | Marco's theme engine, with no Smithay or GTK (from M2) |
-| [camino-test-client](camino-test-client/) | The Wayland client the integration tests drive |
+| Crate                                     | What it is                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [camino](camino/)                         | The compositor: backends, Wayland protocol handlers, input and rendering                                                             |
+| [camino-policy](camino-policy/)           | Window-management policy (focus, stacking, placement, workspaces, transients), free of protocol types                                |
+| [camino-layout](camino-layout/)           | Docking and healing a layout of outputs, with no dependencies, for Camino and camino-displays                                        |
+| [camino-displays](camino-displays/)       | The display settings program, in GTK4: a library with the page's state and its client of output management, and the window over them |
+| [camino-theme](camino-theme/)             | Marco's theme engine, with no Smithay or GTK (from M2)                                                                               |
+| [camino-test-client](camino-test-client/) | The Wayland client the integration tests drive                                                                                       |
 
 ## Design documents
 
-- [CONTEXT.md](CONTEXT.md): the project's vocabulary. Camino is a *compositor*, never a "window
+- [CONTEXT.md](CONTEXT.md): the project's vocabulary. Camino is a _compositor_, never a "window
   manager".
 - [docs/adr/](docs/adr/): architecture decision records, from the choice of Rust and Smithay to how
   MATE packages are patched.
