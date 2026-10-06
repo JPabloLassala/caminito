@@ -1,7 +1,7 @@
 # A monitor turned off and on again gets its saved layout back
 
 Type: implementation
-Status: open
+Status: implemented, to check on hardware
 Milestone: M6 (proposed)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -19,6 +19,32 @@ When a monitor is turned off over output management and turned on again, it come
 
 ## Acceptance criteria
 
-- [ ] Headless tests, written before the code: with a layout saved for two monitors, one disabled over output management and enabled again with no mode, place or scale asked comes up as the layout has it; what a client asks for when it enables a monitor stands.
+- [x] Headless tests, written before the code: with a layout saved for two monitors, one disabled over output management and enabled again with no mode, place or scale asked comes up as the layout has it; what a client asks for when it enables a monitor stands.
 - [ ] On the developer's machine, `wlr-randr --output HDMI-A-1 --off` and `--on` leave the two monitors as the saved layout has them, the primary output with them.
-- [ ] 58's and 83's decisions that this changes are noted in this ticket's resolution.
+- [x] 58's and 83's decisions that this changes are noted in this ticket's resolution.
+
+## Resolution
+
+Implemented on 2026-10-06, and not yet run on the developer's machine: the second criterion is open.
+
+A configuration that enables a disabled monitor and asks no mode, place or scale of it brings back the layout saved for the connected monitors, if that layout has the monitor enabled (`Camino::plan_monitors_return` in `camino/src/output/saved.rs`, applied by `State::apply_with_saved_layout`).
+
+The decisions:
+
+- **What comes back: the whole layout**, of the monitor and of the outputs that are enabled, the primary output with them. Disabling the monitor moved the others to close the gap (82), so the monitor's own place alone wouldn't give the layout back.
+- **What a client asks stands.**
+  - Which monitors are enabled is the configuration's: the layout lights none that the configuration leaves disabled, and disables none.
+  - A monitor enabled with a mode, a place or a scale asked gets all of what the configuration says, and nothing from the layout. camino-displays (84) sends all three, so it never brings the layout back.
+  - Of an output that's enabled already, what the configuration asks and the output doesn't already have stands, and the layout says the rest. What the output already has is no ask, since a client may send back what every head has, as the test client does. So a place, mode or scale asked that equals the current one, in the same configuration as a bare enable, gives way to the layout's.
+- **A layout that has the monitor disabled says nothing of it enabled**: it comes up at the defaults, as before.
+- **A configuration applied since, and not saved, is lost**, as when a monitor is plugged in.
+- **A saved mode the backend can't show** leaves the rest of the layout restored, with the monitor in its preferred mode, as on hot-plug (83).
+
+What this changes of earlier decisions:
+
+- **58** and **51**: an output enabled over output management is no longer always shown as a new output at the defaults. `Camino::enable_output` still does that, and the layout is applied over it in the same configuration, so the monitor is lit once, in its saved mode.
+- **83** and **ADR 0014**: the saved layout is restored at startup, on hot-plug, and now on such an enable. A configuration from `wlr-randr` lasts for the Session or until then. The ADR is amended.
+
+Not covered by a test: three monitors, with the layout coming back for the ones enabled while another stays disabled. The places are the saved ones, healed (82).
+
+The 13 tests that take Camino's names on the session bus fail while a Camino Session runs on it. The suite was run under `dbus-run-session`.

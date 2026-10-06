@@ -11,9 +11,9 @@ The capplet's design is also not the one wanted. The aim is Plasma's page: the o
 
 ## Decision
 
-- **Camino saves and restores layouts itself.** A saved layout is kept per set of connected monitors, each known by its EDID make, model and serial, or by its connector when it has none. Camino restores it at startup and on hot-plug. msd's `monitors-wayland.xml` isn't imported.
+- **Camino saves and restores layouts itself.** A saved layout is kept per set of connected monitors, each known by its EDID make, model and serial, or by its connector when it has none. Camino restores it at startup and on hot-plug, and when a configuration enables a disabled monitor and asks no mode, place or scale of it, as `wlr-randr --on` does (ticket 90). msd's `monitors-wayland.xml` isn't imported.
 - **Camino owns the primary output** and offers it on `org.mate.Camino` (ADR 0002's third channel). It decides where the panel and caja's desktop go, where new windows open, and the RandR primary under XWayland. (Ticket 81: it is the `PrimaryOutput` property, an output's name, and mate-panel and caja follow it through carried patches.)
-- **A layout is saved only when asked over D-Bus**, not whenever a configuration is applied. A configuration from `wlr-randr` lasts for the Session.
+- **A layout is saved only when asked over D-Bus**, not whenever a configuration is applied. A configuration from `wlr-randr` lasts for the Session, or until the saved layout is next restored.
 - **Every layout is contiguous.** Camino heals a layout on hot-plug and when a saved one no longer fits.
 - **camino-displays replaces the Display capplet.** It is a Rust program in this repo, in GTK4 without libadwaita. It applies configurations over wlr-output-management, and uses `org.mate.Camino` for the primary output and for saving, after the user keeps a change.
 - **camino-displays offers scales from 100% to 300% in 25% steps**, plus the current one when it is off that grid. Camino's default rule (ADR 0008) is unchanged.

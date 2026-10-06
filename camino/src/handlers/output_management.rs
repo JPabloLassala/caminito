@@ -28,8 +28,11 @@ impl OutputManagementHandler for State {
     }
 
     fn apply_output_configuration(&mut self, configuration: &[HeadRequest]) -> bool {
-        self.plan_output_changes(configuration)
-            .is_some_and(|changes| self.apply_output_changes(&changes))
+        let Some(changes) = self.plan_output_changes(configuration) else {
+            return false;
+        };
+        // A monitor turned on again brings the saved layout back (90).
+        self.apply_with_saved_layout(configuration, &changes) || self.apply_output_changes(&changes)
     }
 }
 

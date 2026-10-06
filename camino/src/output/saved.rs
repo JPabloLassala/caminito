@@ -1,7 +1,7 @@
 //! Saved layouts (83, ADR 0014): for each set of connected monitors the user saved one for,
 //! which monitors are enabled, their modes, places and scales, and the primary output. The
 //! file they're kept in, saving one when `org.mate.Camino` asks, and restoring the one for
-//! the monitors there are when a monitor comes or goes.
+//! the monitors there are when a monitor comes or goes, or is turned on again (90).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,7 @@ use smithay::output::{Mode, Output};
 
 use super::primary::MonitorIdentity;
 use super::{OutputChange, OutputSettings, SETTABLE_COORDINATES, SETTABLE_SCALES, matching_mode};
+use crate::protocols::output_management::HeadRequest;
 use crate::state::{Camino, State};
 
 /// The file's name, in Camino's directory under `$XDG_CONFIG_HOME`.
@@ -312,6 +313,12 @@ struct Restore {
     primary: Option<Output>,
 }
 
+/// Whether two scales are the same step of fractional-scale-v1 (13), a 120th: a client
+/// sends a scale back as a fixed-point number, which isn't the scale to the last bit.
+fn same_scale(a: f64, b: f64) -> bool {
+    (a * 120.0).round() == (b * 120.0).round()
+}
+
 impl Camino {
     /// The connected monitors: the outputs, then the ones output management disabled.
     fn connected_monitors(&self) -> Vec<Output> {
@@ -352,6 +359,27 @@ impl Camino {
         }
     }
 
+    /// What a saved layout has a monitor show, if the monitor has a mode to show it in.
+    /// What of it no longer fits is left out: a mode the monitor no longer has, for the
+    /// one [`Camino::mode_without_a_saved_one`] gives, or a scale or a place of no use.
+    fn saved_settings(&self, output: &Output, shows: Shown) -> Option<OutputSettings> {
+        let saved_mode = shows.mode.and_then(|mode| {
+            let mode = Mode {
+                size: (mode.width, mode.height).into(),
+                refresh: mode.refresh,
+            };
+            matching_mode(&output.modes(), mode)
+        });
+        let mode = saved_mode.or_else(|| self.mode_without_a_saved_one(output))?;
+        let place_of_use =
+            SETTABLE_COORDINATES.contains(&shows.x) && SETTABLE_COORDINATES.contains(&shows.y);
+        Some(OutputSettings {
+            mode,
+            position: place_of_use.then(|| (shows.x, shows.y).into()),
+            scale: Some(shows.scale).filter(|scale| SETTABLE_SCALES.contains(scale)),
+        })
+    }
+
     /// What the layout saved for the connected monitors changes of them, if one is saved.
     /// What of it no longer fits is left as it is: a mode the monitor no longer has, or a
     /// scale or a place of no use. A layout that enables no monitor isn't restored.
@@ -365,22 +393,8 @@ impl Camino {
                 changes.push(OutputChange { output, to: None });
                 continue;
             };
-            let saved_mode = shows.mode.and_then(|mode| {
-                let mode = Mode {
-                    size: (mode.width, mode.height).into(),
-                    refresh: mode.refresh,
-                };
-                matching_mode(&output.modes(), mode)
-            });
-            let Some(mode) = saved_mode.or_else(|| self.mode_without_a_saved_one(&output)) else {
+            let Some(settings) = self.saved_settings(&output, shows) else {
                 continue;
-            };
-            let place_of_use =
-                SETTABLE_COORDINATES.contains(&shows.x) && SETTABLE_COORDINATES.contains(&shows.y);
-            let settings = OutputSettings {
-                mode,
-                position: place_of_use.then(|| (shows.x, shows.y).into()),
-                scale: Some(shows.scale).filter(|scale| SETTABLE_SCALES.contains(scale)),
             };
             if monitor.primary {
                 primary = Some(output.clone());
@@ -393,9 +407,163 @@ impl Camino {
         let enables_one = changes.iter().any(|change| change.to.is_some());
         enables_one.then_some(Restore { changes, primary })
     }
+
+    /// What a configuration changes with the saved layout brought back, if it turns a
+    /// monitor on again as `wlr-randr --on` does: enables a disabled monitor that the
+    /// layout saved for the connected monitors has enabled, and asks no mode, place or
+    /// scale of it (90). `changes` are what `requests` change without the layout, one for
+    /// each.
+    ///
+    /// The layout then says what the configuration doesn't, of that monitor and of the
+    /// enabled ones, and the primary output is its own: turning the monitor off moved the
+    /// others, so it's the whole layout that returns, and a configuration applied since
+    /// and not saved is gone, as when a monitor is plugged in. What the configuration asks
+    /// stands: which monitors are enabled, all of a monitor it enables with something
+    /// asked, as camino-displays does (84), and what it asks of an enabled output that the
+    /// output doesn't have already. What the output has is no ask, since a client may send
+    /// back what every head has.
+    fn plan_monitors_return(
+        &self,
+        requests: &[HeadRequest],
+        changes: &[OutputChange],
+    ) -> Option<Restore> {
+        let connected = self.connected_monitors();
+        let layout = self.saved_layouts.for_monitors(&connected)?;
+        // What the layout has an output show, and whether it's the layout's primary one.
+        let saved_for = |output: &Output| {
+            let (_, monitor) = layout.iter().find(|(of, _)| of == output)?;
+            Some((
+                self.saved_settings(output, monitor.shows?)?,
+                monitor.primary,
+            ))
+        };
+        let mut a_monitor_returns = false;
+        let mut primary = None;
+        let mut with_layout = Vec::new();
+        for (request, change) in requests.iter().zip(changes) {
+            let output = &change.output;
+            let (Some(asked), Some(to), Some((saved, was_primary))) =
+                (request.enabled, change.to, saved_for(output))
+            else {
+                with_layout.push(change.clone());
+                continue;
+            };
+            if was_primary {
+                primary = Some(output.clone());
+            }
+            let enabled = self.outputs.contains(output);
+            let scale_now = output.current_scale().fractional_scale();
+            let (mode, scale) = if enabled {
+                (
+                    Some(to.mode).filter(|&mode| Some(mode) != output.current_mode()),
+                    to.scale.filter(|&scale| !same_scale(scale, scale_now)),
+                )
+            } else {
+                // `to` has a mode, the preferred one, though none was asked.
+                (asked.mode.and(Some(to.mode)), to.scale)
+            };
+            let asks_nothing = mode.is_none() && to.position.is_none() && scale.is_none();
+            if !enabled && !asks_nothing {
+                with_layout.push(change.clone());
+                continue;
+            }
+            a_monitor_returns |= !enabled;
+            let settings = OutputSettings {
+                mode: mode.unwrap_or(saved.mode),
+                position: to.position.or(saved.position),
+                scale: scale.or(saved.scale),
+            };
+            with_layout.push(OutputChange {
+                output: output.clone(),
+                to: Some(settings),
+            });
+        }
+        if !a_monitor_returns {
+            return None;
+        }
+        // The enabled outputs a configuration leaves out stay enabled.
+        for output in &self.outputs {
+            if changes.iter().any(|change| &change.output == output) {
+                continue;
+            }
+            if let Some((saved, was_primary)) = saved_for(output) {
+                if was_primary {
+                    primary = Some(output.clone());
+                }
+                with_layout.push(OutputChange {
+                    output: output.clone(),
+                    to: Some(saved),
+                });
+            }
+        }
+        Some(Restore {
+            changes: with_layout,
+            primary,
+        })
+    }
 }
 
 impl State {
+    /// Changes the outputs as a saved layout has them, the primary output with them, and
+    /// returns whether it did. If it didn't, nothing has changed. Where the backend can't
+    /// show a mode the monitor lists, the rest of the layout is still restored, with that
+    /// output in `other_mode`'s mode.
+    fn apply_restore(
+        &mut self,
+        restore: Restore,
+        other_mode: impl Fn(&Camino, &Output) -> Option<Mode>,
+    ) -> bool {
+        let Restore { changes, primary } = restore;
+        // First, since healing holds the primary output still (82).
+        let choice_before = self.camino.primary_choice.clone();
+        if let Some(primary) = primary {
+            self.camino.restore_primary_choice(&primary);
+        }
+        if self.backend.can_change_outputs(&changes) && self.apply_output_changes(&changes) {
+            return true;
+        }
+        let in_other_modes: Vec<OutputChange> = changes
+            .into_iter()
+            .map(|mut change| {
+                if let Some(settings) = &mut change.to
+                    && let Some(mode) = other_mode(&self.camino, &change.output)
+                {
+                    settings.mode = mode;
+                }
+                change
+            })
+            .collect();
+        if self.backend.can_change_outputs(&in_other_modes)
+            && self.apply_output_changes(&in_other_modes)
+        {
+            return true;
+        }
+        self.camino.primary_choice = choice_before;
+        self.camino.tell_policy_the_primary_output();
+        false
+    }
+
+    /// Applies a configuration with the saved layout brought back, if it turns a monitor
+    /// on again ([`Camino::plan_monitors_return`]), and returns whether it did. `changes`
+    /// are what `requests` change without the layout, which the backend can show: where
+    /// it can't show a saved mode, an output is in the mode `changes` have for it.
+    pub(crate) fn apply_with_saved_layout(
+        &mut self,
+        requests: &[HeadRequest],
+        changes: &[OutputChange],
+    ) -> bool {
+        let Some(restore) = self.camino.plan_monitors_return(requests, changes) else {
+            return false;
+        };
+        self.apply_restore(restore, |camino, output| {
+            let change = changes.iter().find(|change| &change.output == output);
+            match change {
+                Some(change) => change.to.map(|to| to.mode),
+                None => camino.mode_without_a_saved_one(output),
+            }
+        })
+    }
+
     /// Shows the monitors as a scan left them. The backends call it once they've added and
     /// removed what the scan found: the saved layout is restored first, and the monitors
     /// found are lit after it, so each is lit once, in the mode it's to show, and the first
@@ -436,43 +604,20 @@ impl State {
         if !self.camino.monitors_changed {
             return;
         }
-        let Some(Restore { changes, primary }) = self.camino.plan_saved_layout() else {
+        let Some(restore) = self.camino.plan_saved_layout() else {
             self.camino.monitors_changed = false;
             return;
         };
         // Not now, as on a VT that's switched away: the next scan of the monitors tries
         // again.
-        if !self.backend.can_change_outputs(&changes) {
+        if !self.backend.can_change_outputs(&restore.changes) {
             tracing::debug!("the backend can't show the saved layout yet");
             return;
         }
         self.camino.monitors_changed = false;
-        // First, since healing holds the primary output still (82).
-        let choice_before = self.camino.primary_choice.clone();
-        if let Some(primary) = primary {
-            self.camino.restore_primary_choice(&primary);
-        }
-        if self.apply_output_changes(&changes) {
-            return;
-        }
-        // A mode the monitor lists and the backend can't show: the rest of the layout is
-        // still restored, in the modes the outputs show, and a disabled monitor's
-        // preferred one.
-        let in_other_modes: Vec<OutputChange> = changes
-            .into_iter()
-            .map(|mut change| {
-                if let Some(settings) = &mut change.to
-                    && let Some(mode) = self.camino.mode_without_a_saved_one(&change.output)
-                {
-                    settings.mode = mode;
-                }
-                change
-            })
-            .collect();
-        if !self.apply_output_changes(&in_other_modes) {
+        // In the modes the outputs show, and a disabled monitor's preferred one.
+        if !self.apply_restore(restore, Camino::mode_without_a_saved_one) {
             tracing::warn!("can't restore the saved layout: the backend can't show it");
-            self.camino.primary_choice = choice_before;
-            self.camino.tell_policy_the_primary_output();
         }
     }
 }

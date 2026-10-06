@@ -332,6 +332,122 @@ fn a_monitor_saved_as_disabled_isnt_lit_when_its_plugged_back() {
     assert_eq!(f.mode_sets(&lg), [LG.1]);
 }
 
+/// Camino with the AOC and the LG, and saved for them: the LG in the smaller of its two
+/// modes on the left, as the primary output, and the AOC on its right.
+fn start_with_the_lg_saved_on_the_left_in_its_smaller_mode(
+    dir: &Path,
+) -> (Fixture, Output, ClientId) {
+    let mut f = Fixture::with_saved_layouts(dir);
+    plug(&mut f, AOC);
+    let lg = f.plug_with_modes(LG.0, &[LG.1, (1920, 1080)]);
+    let client = output_manager(&mut f);
+    let lg_left = HeadChange::of("headless-2")
+        .mode((1920, 1080))
+        .scale(1.0)
+        .position((0, 0));
+    let aoc_right = HeadChange::of("headless-1").position((1920, 0));
+    apply(&mut f, client, &[lg_left, aoc_right]);
+    f.choose_primary_output(&lg);
+    save(&mut f).unwrap();
+    (f, lg, client)
+}
+
+#[test]
+fn a_monitor_disabled_and_enabled_again_comes_up_as_the_saved_layout_has_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, lg, client) = start_with_the_lg_saved_on_the_left_in_its_smaller_mode(dir.path());
+
+    apply(&mut f, client, &[HeadChange::of("headless-2").disable()]);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    primary headless-1
+    ");
+
+    // As `wlr-randr --on` does: no mode, place or scale is asked of it (90).
+    apply(&mut f, client, &[HeadChange::of("headless-2").enable()]);
+
+    // Lit in its saved mode, and not in its preferred one first.
+    assert_eq!(f.mode_sets(&lg), [LG.1, (1920, 1080), (1920, 1080)]);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 1920,0 1920x1080 scale 1.0
+    headless-2 at 0,0 1920x1080 scale 1.0
+    primary headless-2
+    ");
+}
+
+#[test]
+fn what_a_client_asks_of_a_monitor_it_enables_stands() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, _lg, client) = start_with_the_lg_saved_on_the_left_in_its_smaller_mode(dir.path());
+    apply(&mut f, client, &[HeadChange::of("headless-2").disable()]);
+
+    // As camino-displays does (84).
+    let asked = HeadChange::of("headless-2")
+        .enable()
+        .mode(LG.1)
+        .scale(1.5)
+        .position((1920, 0));
+    apply(&mut f, client, &[asked]);
+
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    headless-2 at 1920,0 2560x1440 scale 1.5
+    primary headless-2
+    ");
+}
+
+#[test]
+fn a_configuration_that_wasnt_saved_is_gone_when_a_monitor_enabled_again_brings_the_layout_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, _lg, client) = start_with_the_lg_saved_on_the_left_in_its_smaller_mode(dir.path());
+    apply(&mut f, client, &[HeadChange::of("headless-1").scale(1.25)]);
+    apply(&mut f, client, &[HeadChange::of("headless-2").disable()]);
+
+    apply(&mut f, client, &[HeadChange::of("headless-2").enable()]);
+
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 1920,0 1920x1080 scale 1.0
+    headless-2 at 0,0 1920x1080 scale 1.0
+    primary headless-2
+    ");
+}
+
+#[test]
+fn what_a_client_asks_of_another_monitor_stands_when_the_layout_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, _lg, client) = start_with_the_lg_saved_on_the_left_in_its_smaller_mode(dir.path());
+    apply(&mut f, client, &[HeadChange::of("headless-2").disable()]);
+
+    let lg_on = HeadChange::of("headless-2").enable();
+    let aoc_scaled = HeadChange::of("headless-1").scale(1.25);
+    apply(&mut f, client, &[lg_on, aoc_scaled]);
+
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 1920,0 1536x864 scale 1.25
+    headless-2 at 0,0 1920x1080 scale 1.0
+    primary headless-2
+    ");
+}
+
+#[test]
+fn a_monitor_enabled_again_that_cant_be_lit_in_its_saved_mode_is_lit_in_its_preferred_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, lg, client) = start_with_the_lg_saved_on_the_left_in_its_smaller_mode(dir.path());
+    apply(&mut f, client, &[HeadChange::of("headless-2").disable()]);
+    f.refuse_mode(&lg, (1920, 1080));
+
+    apply(&mut f, client, &[HeadChange::of("headless-2").enable()]);
+
+    // The rest of the layout still comes back: the LG's scale and place, and the AOC,
+    // saved where the LG now is, is moved to above it.
+    assert_eq!(f.mode_sets(&lg).last(), Some(&LG.1));
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 1920,0 1920x1080 scale 1.0
+    headless-2 at 0,1080 3840x2160 scale 1.0
+    primary headless-2
+    ");
+}
+
 #[test]
 fn a_restored_scale_counts_as_set_so_window_scaling_factor_leaves_it() {
     let dir = tempfile::tempdir().unwrap();
