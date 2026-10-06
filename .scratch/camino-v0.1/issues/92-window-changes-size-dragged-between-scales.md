@@ -21,9 +21,22 @@ foot dragged between the AOC (scale 1.0) and the LG (scale 1.7) comes out anothe
 
 ## Acceptance criteria
 
-- [ ] The cause is named: what flips the scale, and which configure carries a stale size.
-- [ ] A headless test, written before the change: a client that takes another size at each preferred scale, moved from a 1.0 output to a 1.7 one and back, gets each scale once per crossing and ends at the size it started with.
+- [x] The cause is named: what flips the scale, and which configure carries a stale size.
+- [x] A headless test, written before the change: a client that takes another size at each preferred scale, moved from a 1.0 output to a 1.7 one and back, gets each scale once per crossing and ends at the size it started with.
 - [ ] On the developer's machine, on bare `camino` at the default scales, foot dragged from the LG to the AOC and back five times is the size it was.
+
+## What was found
+
+- **What flips the scale** is the two outputs' refresh rates, not the window's size. Smithay's `default_primary_scanout_output_compare` (`renderer/element/mod.rs:428-460`) hands a surface to another output when that one shows twice the pixels, *or when it has the higher refresh rate*, however little of the surface is on it. On the tty each output draws at its own vblank, so while a window spans both, the faster output takes it at its frame and the slower one takes it back at its own, with twice the pixels. The headless test shows it with the 1.0 output at 75 Hz and the 1.7 one at 60: a scale at every frame before the change, and with both at 60 Hz one per crossing. The supposition above, that the client's change of size moves the line, is wrong: the size plays no part.
+- **Why the Session doesn't show it** isn't known. If the outputs' modes there have the same refresh rate, or the LG is the faster one and the window is dragged where the AOC never has twice its pixels, it wouldn't. `wlr-randr` in both would say.
+- **The configure with a stale size** is the one a move sends. A floating client that picks its own size has policy's geometry follow it without a request (`Policy::commit`). At the next step of a drag the position changes, policy sends the window its geometry, and the xdg adapter puts that size, which the client was never configured with, in the pending configure; it differs from the last one sent, so a configure goes out for the size alone. With the scale flipping every 6 ms, foot had left that size by the time it arrived.
+
+## What was done
+
+- `Mapped::update_main_outputs` compares with Camino's own `main_output_compare`: twice the pixels, and nothing about refresh rates. The ticket's other idea, the output under the pointer or the window's centre, wasn't needed: twice the pixels each way is already a choice that's kept.
+- The xdg adapter's `flush` sends no configure whose only news is the size a floating client draws at, and keeps the pending size at the client's own while policy hasn't asked for another, so the next configure with a reason to go (focus, a state) carries the size the client has, not one it left. A maximized, fullscreen or resizing window is configured as before.
+- Left as they are: a configure for the size alone still goes out while an earlier configure isn't acked, with the size the client had when it was sent; and a window maximized one way, which xdg-shell has no state for, counts as floating here, so if its client picks another size the next configure carries that one until policy next sends its geometry.
+- Tests, in `camino/src/tests/preferred_scale.rs`: `a_window_that_resizes_with_its_scale_gets_each_scale_once_as_its_dragged_across_and_back`, with a client that keeps a grid of cells as foot does and each output drawn in turn, and `a_window_that_picked_its_own_size_isnt_configured_with_it_as_its_dragged`.
 
 ## Notes
 

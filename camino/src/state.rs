@@ -425,6 +425,18 @@ impl State {
             .change_mode(&mut self.camino, output, size);
     }
 
+    /// Switches a headless monitor to its mode at another refresh rate, in millihertz.
+    #[cfg(test)]
+    pub fn change_headless_refresh(&mut self, output: &Output, refresh: i32) {
+        let size = output.current_mode().expect("a lit output has a mode").size;
+        let mode = smithay::output::Mode { size, refresh };
+        let headless = self.backend.headless_mut();
+        assert!(
+            headless.set_mode(&mut self.camino, output, mode),
+            "the mode is shown"
+        );
+    }
+
     /// Unplugs a headless monitor.
     #[cfg(test)]
     pub fn unplug_headless_output(&mut self, output: &Output) {

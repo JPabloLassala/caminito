@@ -389,6 +389,20 @@ impl Fixture {
         self.dispatch();
     }
 
+    /// Switches a monitor to its mode at `refresh` millihertz, as the backend does, and
+    /// dispatches.
+    pub fn change_refresh(&mut self, output: &Output, refresh: i32) {
+        self.state.change_headless_refresh(output, refresh);
+        self.dispatch();
+    }
+
+    /// Draws a frame on `output` alone, as the tty does at that output's vblank, where the
+    /// headless backend draws every output that's due in one pass.
+    pub fn draw(&mut self, output: &Output) {
+        self.state.camino.queue_redraw(output);
+        self.dispatch();
+    }
+
     /// Changes an output's scale, as output management will, and dispatches.
     pub fn set_output_scale(&mut self, output: &Output, scale: f64) {
         self.state.camino.set_output_scale(output, scale);

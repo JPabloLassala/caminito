@@ -23,7 +23,7 @@ use camino_policy::{
 };
 use camino_theme::PaletteColors;
 use smithay::backend::renderer::element::{
-    PrimaryScanoutOutput, RenderElementStates, default_primary_scanout_output_compare,
+    PrimaryScanoutOutput, RenderElementState, RenderElementStates,
 };
 use smithay::desktop::space::SpaceElement;
 use smithay::desktop::utils::{
@@ -84,9 +84,10 @@ trait Adapter {
 
     /// Asks for `geometry` with `states`; [`flush`](Self::flush) sends it.
     fn set_geometry(&self, geometry: Rectangle<i32, Logical>, states: WindowStates);
-    /// Sends what's been asked since the last flush. The refresh pass flushes every window,
-    /// so each protocol sends once per loop iteration.
-    fn flush(&self);
+    /// Sends what's been asked since the last flush, to a client that draws the window at
+    /// `size`. The refresh pass flushes every window, so each protocol sends once per loop
+    /// iteration.
+    fn flush(&self, size: Size<i32, Logical>);
     fn set_activated(&self, activated: bool);
     /// Asks the client to close the window.
     fn close(&self);
@@ -189,6 +190,26 @@ pub struct Mapped {
     minimize_rectangle: Option<(WlSurface, Rectangle<i32, Logical>)>,
 }
 
+/// Which of two outputs a surface drawn on both has as its main output: the one it has,
+/// until the other shows at least twice the pixels. It's the visible-area half of Smithay's
+/// `default_primary_scanout_output_compare` (`renderer/element/mod.rs:428-460`), without
+/// the half that hands the surface to the output with the higher refresh rate however
+/// little of it is there: on outputs that draw in turn, the slower one took the surface
+/// back with twice the pixels at its next frame, and a window on both was sent their
+/// scales in turn, frame after frame (92).
+fn main_output_compare<'a>(
+    current_output: &'a Output,
+    current_state: &RenderElementState,
+    next_output: &'a Output,
+    next_state: &RenderElementState,
+) -> &'a Output {
+    if next_state.visible_area >= current_state.visible_area * 2 {
+        next_output
+    } else {
+        current_output
+    }
+}
+
 impl Mapped {
     pub fn new(id: WindowId, window: Window) -> Self {
         Self {
@@ -233,7 +254,7 @@ impl Mapped {
 
     /// Sends the client what policy has asked of it since the last flush, if anything.
     pub fn flush(&self) {
-        self.adapter().flush();
+        self.adapter().flush(self.window.geometry().size);
     }
 
     /// The outputs policy last put the window on.
@@ -286,10 +307,8 @@ impl Mapped {
     }
 
     /// Picks each surface's main output from the frames just drawn on `rendered`, in
-    /// the order they were drawn, with Smithay's default comparison (13): another output
-    /// takes over once it shows at least twice the pixels
-    /// (`renderer/element/mod.rs:428-460`). Run after rendering, as cosmic-comp does
-    /// (`state.rs:957-1000`).
+    /// the order they were drawn: another output takes over once it shows at least twice
+    /// the pixels (13). Run after rendering, as cosmic-comp does (`state.rs:957-1000`).
     pub(crate) fn update_main_outputs(&mut self, rendered: &[(Output, RenderElementStates)]) {
         self.window.with_surfaces(|surface, data| {
             let update = || {
@@ -300,7 +319,7 @@ impl Mapped {
                         data,
                         None,
                         states,
-                        default_primary_scanout_output_compare,
+                        main_output_compare,
                     );
                 }
             };

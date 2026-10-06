@@ -399,7 +399,7 @@ impl Adapter for X11Surface {
         });
     }
 
-    fn flush(&self) {
+    fn flush(&self, _size: Size<i32, Logical>) {
         let Unflushed {
             geometry,
             modal,
