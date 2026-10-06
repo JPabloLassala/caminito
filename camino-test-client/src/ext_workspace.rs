@@ -192,7 +192,16 @@ impl Dispatch<ExtWorkspaceGroupHandleV1, ()> for State {
                 capabilities: WEnum::Value(capabilities),
             } => format!("capabilities {capabilities:?}"),
             Event::OutputEnter { output } => format!("output_enter {}", state.output_name(&output)),
-            Event::OutputLeave { output } => format!("output_leave {}", state.output_name(&output)),
+            Event::OutputLeave { output } => {
+                // libxfce4windowing can only take a monitor out of the group while it still
+                // has it, which is until its global is removed (91).
+                let late = if state.output_is_advertised(&output) {
+                    ""
+                } else {
+                    ", after its global was removed"
+                };
+                format!("output_leave {}{late}", state.output_name(&output))
+            }
             Event::WorkspaceEnter { workspace: entered } => {
                 format!("workspace_enter {}", workspace(state, &entered))
             }

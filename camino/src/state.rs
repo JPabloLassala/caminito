@@ -18,7 +18,9 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
     EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken, channel,
 };
-use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::backend::{
+    ClientData, ClientId, DisconnectReason, GlobalId,
+};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
@@ -196,6 +198,9 @@ pub struct Camino {
     pub(crate) disabled_outputs: Vec<Output>,
     /// What Camino keeps of each output beside Smithay's state (51).
     pub(crate) output_records: HashMap<OutputId, OutputRecord>,
+    /// The `wl_output` globals of the outputs hidden since the last refresh, which the
+    /// clients still see (91).
+    pub(crate) globals_to_withdraw: Vec<GlobalId>,
     /// The monitor the user chose as the primary output (81), if they chose one.
     pub(crate) primary_choice: Option<PrimaryChoice>,
     /// The layouts the user saved, which are restored as monitors come and go (83).
@@ -706,6 +711,7 @@ impl Camino {
             disabled_outputs: Vec::new(),
             next_output_id: 0,
             output_records: HashMap::new(),
+            globals_to_withdraw: Vec::new(),
             primary_choice: None,
             saved_layouts: SavedLayouts::default(),
             monitors_changed: false,
@@ -907,6 +913,8 @@ impl Camino {
         self.refresh_toplevel_workspaces();
         self.refresh_ext_workspace();
         self.refresh_toplevel_workspaces();
+        // After foreign-toplevel and ext-workspace, whose leaves name the `wl_output`s.
+        self.refresh_output_globals();
         for mapped in self.policy.windows() {
             mapped.flush();
         }

@@ -336,22 +336,31 @@ impl Camino {
         self.close_layers(output);
         output.leave_all();
 
-        self.display_handle
-            .disable_global::<State>(record.global.clone());
-        self.loop_handle
-            .insert_source(
-                Timer::from_duration(GLOBAL_REMOVAL_DELAY),
-                move |_, _, state| {
-                    state
-                        .camino
-                        .display_handle
-                        .remove_global::<State>(record.global.clone());
-                    TimeoutAction::Drop
-                },
-            )
-            .expect("the timer joins the loop");
+        self.globals_to_withdraw.push(record.global);
 
         self.lay_out_outputs();
+    }
+
+    /// Tells the clients that the globals of the outputs hidden since the last refresh
+    /// are gone. It's after the views that name a `wl_output` said the output left:
+    /// libxfce4windowing can't take a monitor out of a workspace group once the global
+    /// is removed, and reads it, freed, at the group's next change (91).
+    pub(crate) fn refresh_output_globals(&mut self) {
+        for global in std::mem::take(&mut self.globals_to_withdraw) {
+            self.display_handle.disable_global::<State>(global.clone());
+            self.loop_handle
+                .insert_source(
+                    Timer::from_duration(GLOBAL_REMOVAL_DELAY),
+                    move |_, _, state| {
+                        state
+                            .camino
+                            .display_handle
+                            .remove_global::<State>(global.clone());
+                        TimeoutAction::Drop
+                    },
+                )
+                .expect("the timer joins the loop");
+        }
     }
 
     /// Sets an output's scale, as output management does. `window-scaling-factor` leaves

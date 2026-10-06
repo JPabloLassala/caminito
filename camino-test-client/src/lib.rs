@@ -934,6 +934,12 @@ impl State {
             .unwrap_or("an unnamed output".to_owned())
     }
 
+    /// Whether a bound output's global hasn't been removed.
+    fn output_is_advertised(&self, output: &WlOutput) -> bool {
+        let bound = self.outputs.iter().find(|bound| bound.proxy == *output);
+        bound.is_some_and(|bound| self.globals.iter().any(|g| g.name == bound.global_name))
+    }
+
     fn surface_ref(&self, surface: &WlSurface) -> SurfaceRef {
         if let Some(i) = self.windows.iter().position(|w| w.surface == *surface) {
             SurfaceRef::Window(WindowId(i))

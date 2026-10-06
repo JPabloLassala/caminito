@@ -2,6 +2,7 @@
 //! they change, and what its requests do. No test maps a window: workspaces are the same
 //! whichever kind of window is on them.
 
+use camino_test_client::output_management::HeadChange;
 use insta::assert_snapshot;
 
 use super::fixture::{ClientId, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind};
@@ -222,6 +223,28 @@ fn a_new_output_enters_the_group_and_one_that_s_unplugged_leaves_it() {
     group 0: output_leave headless-2
     done
     ");
+}
+
+#[test]
+fn an_output_that_s_disabled_leaves_the_group_before_its_global_is_removed() {
+    let (mut f, pager) = pager();
+    f.add_output((1280, 720), 1.0);
+    f.roundtrip(pager);
+    f.client(pager).bind_outputs();
+    f.client(pager).bind_output_management();
+    f.roundtrip(pager);
+    events(&mut f, pager);
+
+    // As `wlr-randr --off` does. libxfce4windowing keeps a monitor that's gone in the
+    // group if the leave comes after, and mate-panel dies of it at the next enter (91).
+    let off = [HeadChange::of("headless-2").disable()];
+    f.client(pager).apply_outputs(&off);
+    assert_snapshot!(events(&mut f, pager), @"
+    group 0: output_leave headless-2
+    done
+    ");
+    let outputs = f.client(pager).state.globals.iter();
+    assert_eq!(outputs.filter(|g| g.interface == "wl_output").count(), 1);
 }
 
 #[test]

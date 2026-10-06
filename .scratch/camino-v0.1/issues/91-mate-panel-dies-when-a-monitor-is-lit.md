@@ -23,6 +23,41 @@ mate-panel dies when a monitor is turned on or plugged in, and when two die with
 
 ## Acceptance criteria
 
-- [ ] The cause is named: the event, and whose fault its handling is.
+- [x] The cause is named: the event, and whose fault its handling is.
 - [ ] On the developer's machine, `.scratch/camino-v0.1/issues/90-off-on.sh` leaves the mate-panel that was running, running, and `coredumpctl list mate-panel` has no new line.
-- [ ] If Camino changes, a headless test written before the change. If a package is patched, ADR 0011's list has it.
+- [x] If Camino changes, a headless test written before the change. If a package is patched, ADR 0011's list has it.
+
+## Resolution
+
+Implemented on 2026-10-06. The check on the developer's machine is still to do: it needs the new `camino-git` installed and a new Session, so the ticket stays open.
+
+### The cause
+
+The event is `ext_workspace_group_handle_v1.output_leave`, sent after the `wl_registry.global_remove` of the output it names. The fault is libxfce4windowing's, and Camino's order is what met it.
+
+- **In libxfce4windowing** (4.20.7, and the same on its master on 2026-10-06), `xfw-workspace-group-wayland.c`:
+  - A workspace group keeps a list of its monitors, with no reference to them.
+  - When an output's global is removed, the screen takes the monitor off its own list, then emits `monitor-removed`, then drops the monitor. The group's handler of that signal, `screen_monitor_removed`, calls `group_output_leave`, which looks for the monitor in the screen's list. It's no longer there, so the group keeps its pointer, to a monitor that's freed.
+  - An `output_leave` that comes after finds nothing either, for the same reason.
+  - At the group's next `monitors-changed`, which is when an output enters it, each workspace's `group_monitors_changed` reads every monitor of the group. `objdump` puts the two return addresses of the core dumps, `+ 0x24b67` and `+ 0x24b7d`, after its two calls of `xfw_monitor_get_physical_geometry`. That's why the panel dies when a monitor is lit, and not when it goes off.
+  - The SIGABRT under `realloc` fits the same freed monitor, read where the memory was reused. That wasn't shown.
+- **In Camino**, `hide_output` disabled the global at once, and the group's `output_leave` went out later, in the refresh pass. With the leave first, the library finds the monitor and takes it out of the group, and the global's removal then has nothing to do.
+
+### The change
+
+A hidden output's global is now withdrawn in the refresh pass, after foreign-toplevel and ext-workspace have said the output left (`Camino::refresh_output_globals`, in `camino/src/output.rs`). It's one order for unplugging and for disabling over output management.
+
+The headless tests are in `camino/src/tests/ext_workspace.rs`, written first: the test client marks an `output_leave` that names an output whose global it was already told is removed. The unplug test that was there failed with the new one.
+
+No package is patched, so ADR 0011's list is as it was.
+
+### Not done
+
+- **The library's bug isn't reported upstream.** It's theirs on any compositor that removes the global first. The fix there is for `screen_monitor_removed` to take the monitor off the group's list itself.
+- **wayfire and labwc weren't tried.** The source says what the cause is, so the answer wouldn't change the fix.
+- **The Qt clients that died at the same moments** (kdeconnectd, kalendarac, akonadi's agents) weren't looked at. Their core dumps would say whether it's the same order.
+- **A `wl_output` of the old global enters the group again** when its output is enabled again, if the client didn't release it: `Output::client_outputs` has every `wl_output` the client still holds, of the removed global too. The test client holds them, and sees a second `output_enter`. libxfce4windowing only notes an output it has no monitor for, so it's harmless there, and it was so before this change. Foreign-toplevel's `output_enter` reads the same list.
+- **An output hidden and shown again before a refresh gets no leave**, since ext-workspace compares the `wl_output`s the client has, and they're the same. Its old global is still removed, so the library would keep the monitor. It needs a head disabled and enabled in one dispatch, which no client was seen to do, and it was so before this change.
+- **Foreign-toplevel's `output_leave` now comes before the removal too**, by the refresh pass's order, with no test of it. libxfce4windowing's windows take a removed monitor off their own lists, so nothing there depended on it.
+
+The 13 tests that take Camino's names on the session bus fail while a Camino Session runs on it. The suite was run under `dbus-run-session`.
