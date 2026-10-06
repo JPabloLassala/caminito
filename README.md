@@ -87,9 +87,11 @@ done
 ```
 
 `mate-panel-camino` is built from mate-panel's master, where the applet library has a new
-soname (`libmate-panel-applet-4.so.2`). An applet from a different package, such as
-`mate-applets` or the applet of `mate-notification-daemon`, is linked to the old one and doesn't
-start until that package is built again.
+soname (`libmate-panel-applet-4.so.2`). Arch's applets in other packages, such as `mate-applets`,
+are linked to the old one, so the package also builds the 1.28 library and installs it beside
+master's: each of those applets is a program of its own, which talks to the panel over D-Bus.
+The applet of `mate-notification-daemon` is loaded into the panel's process instead, where the two
+libraries can't work together, and doesn't work until that package is built again.
 
 `mate-settings-daemon-camino` is msd 1.29.1, which asks for mate-desktop 1.29.0. Arch has 1.28.2,
 so one of the package's patches takes out the one upstream commit that needs the newer library (a

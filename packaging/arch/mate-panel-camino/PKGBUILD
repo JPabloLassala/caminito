@@ -5,8 +5,9 @@
 
 # Arch's mate-panel PKGBUILD with the smallest diff (16), so a change there shows what to
 # carry over. The differences: the name, the pinned commit and its pkgver(), provides and
-# conflicts, libxfce4windowing and the configure options after --enable-introspection, and the
-# carried patches (ADR 0011).
+# conflicts, libxfce4windowing and the configure options after --enable-introspection, the
+# carried patches, and the 1.28 branch's applet library, built from a second source and
+# installed beside master's (ADR 0011).
 
 pkgname=mate-panel-camino
 _pkgname=mate-panel
@@ -17,8 +18,15 @@ _commit=58ac6c101bdf2e2975c0395723ad16e9c9764f5c
 # Master comes from v1.28.1, and the 1.28 branch's tags aren't its ancestors, so git describe
 # gives a version below Arch's. The base is Arch's version, so constraints on mate-panel hold.
 _basever=1.28.7
+# Master's applet library is libmate-panel-applet-4.so.2, and Arch's applets in other packages
+# (mate-applets, mate-media, mate-power-manager and more) are linked to the 1.28 branch's
+# .so.1. An applet that is a program of its own talks to the panel over D-Bus, in a protocol
+# master only added a method to, so the 1.28 library is built from this tag and installed
+# beside master's (73). One the panel loads into its own process can't use it there. The
+# weekly job knows this source by its -stock name, and leaves it at the tag.
+_stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=3
+pkgrel=4
 pkgdesc="The MATE Panel, with Camino's carried patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -36,12 +44,14 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # effect (ADR 0013). The fourth is active only while org.mate.Camino has an owner: the
 # panel's first monitor is Camino's primary output, and the panel names its output (81).
 source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
+        "${_pkgname}-stock::git+https://github.com/mate-desktop/mate-panel.git#tag=${_stocktag}"
         git+https://github.com/mate-desktop/mate-submodules.git
         0001-wayland-tasklist-Tell-the-compositor-where-each-butt.patch
         0002-action-button-Shut-down-through-the-session-manager-.patch
         0003-wayland-tasklist-Show-the-active-workspace-s-windows.patch
         0004-multimonitor-Put-Camino-s-primary-output-first-on-Wa.patch)
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
+            '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
             '7b33e869a2cd4d4154a0a11fa977f55e7e984ffc41be18e3c2b14885a8ecb490'
             '94a0dcc1016524880f416370c2a4f419b14f5fe7a539a7ddcf82d8adfd0a934e'
@@ -66,6 +76,12 @@ prepare() {
     done
 
     ./autogen.sh
+
+    cd "${srcdir}/${_pkgname}-stock"
+    git submodule init
+    git config submodule.mate-panel/mate-submodules.url "${srcdir}/mate-submodules"
+    git -c protocol.file.allow=always submodule update
+    ./autogen.sh
 }
 
 build() {
@@ -85,9 +101,19 @@ build() {
                 --with-in-process-applets=all \
                 --disable-eds
     make
+
+    # Only the applet library of the 1.28 branch.
+    cd "${srcdir}/${_pkgname}-stock"
+    ./configure --prefix=/usr --disable-introspection
+    make -C libmate-panel-applet libmate-panel-applet-4.la
 }
 
 package() {
     cd "${_pkgname}"
     make DESTDIR="${pkgdir}" install
+
+    # The 1.28 library and its soname's link, and not the libmate-panel-applet-4.so that
+    # programs are built against, which stays master's.
+    cd "${srcdir}/${_pkgname}-stock/libmate-panel-applet/.libs"
+    cp -a libmate-panel-applet-4.so.1 libmate-panel-applet-4.so.1.* "${pkgdir}/usr/lib/"
 }

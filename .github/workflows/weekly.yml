@@ -80,12 +80,13 @@ jobs:
           echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
           chown -R builder: "$GITHUB_WORKSPACE"
 
-      # A pinned commit becomes the default branch's head, and a tag does too.
+      # A pinned commit becomes the default branch's head, and a tag does too. A source
+      # named -stock stays where it is: mate-panel-camino's 1.28 applet library.
       - name: Point the source at upstream's head
         working-directory: packaging/arch/${{ matrix.package }}
         run: |
-          sed -i -E '/^source=\(/,/^\)/s/#(commit|tag)=[^"]*//' PKGBUILD
-          if grep -E '#(commit|tag)=' PKGBUILD; then exit 1; fi
+          sed -i -E '/^source=\(/,/^\)/{/-stock::/!s/#(commit|tag)=[^"]*//}' PKGBUILD
+          if grep -v -e '-stock::' PKGBUILD | grep -E '#(commit|tag)='; then exit 1; fi
 
       # The pinned source's checksum doesn't hold for the head. pkgver() names what was built.
       - name: makepkg

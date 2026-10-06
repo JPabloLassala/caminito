@@ -1,7 +1,7 @@
 # 11. Patched MATE packages replace the stock ones, and every carried patch is gated on Camino
 
 Date: 2026-09-28
-Status: Accepted. Qualified on 2026-10-05 by ticket 71: a patched package can also have a build patch, which isn't a carried patch. Qualified the same day by ticket 81: caja is a sixth patched component, `caja-camino`, on Arch's own version, since its one patch needs nothing newer. Qualified on 2026-10-06 by ticket 88, and still to be confirmed by the developer: a patched package can also have an upstream fix, which isn't a carried patch.
+Status: Accepted. Qualified on 2026-10-05 by ticket 71: a patched package can also have a build patch, which isn't a carried patch. Qualified the same day by ticket 81: caja is a sixth patched component, `caja-camino`, on Arch's own version, since its one patch needs nothing newer. Qualified on 2026-10-06 by ticket 88, and still to be confirmed by the developer: a patched package can also have an upstream fix, which isn't a carried patch. Qualified on 2026-10-06 by ticket 73: a patched package can also install the stock library of an soname its baseline dropped.
 
 ## Context
 
@@ -27,6 +27,7 @@ The patches written so far didn't agree on when they turn on:
     - Shut Down through `org.gnome.SessionManager` when it has an owner.
 - **A build patch isn't a carried patch.** Where a baseline doesn't build against Arch's libraries, the series can end with a patch that takes out the upstream change that needs the newer library. It has no gate, and it's allowed only when what it leaves is what the stock package does. It's removed when Arch has the library. The first is `mate-settings-daemon-camino`'s `0004`: msd 1.29.1 needs mate-desktop 1.29.0 for one commit of the X11 xrandr plugin, and Arch has 1.28.2.
 - **An upstream fix isn't a carried patch either.** Where the baseline has a bug of upstream's own that the session meets, the series can have a patch that fixes it as upstream would. It has no gate, since a gate would only keep the bug for the other sessions, and it's allowed only when it's right on any compositor and changes nothing where the bug doesn't show. It's meant to be sent upstream, and it's removed when the baseline has the fix. The first is `mate-settings-daemon-camino`'s `0006`: msd's Wayland background left more layer surfaces at each hot-plug (88).
+- **A dropped soname's library is kept.** Where the baseline's library has a newer soname than Arch's, and Arch's other packages are linked to the old one, the patched package also builds the old library from Arch's version and installs it beside the new one, without the link that programs are built against. Otherwise installing the package would break those programs in every session. The first is `mate-panel-camino`'s `libmate-panel-applet-4.so.1`, for the applets of seven other packages (73). It helps only a program of its own: one loaded into the patched component's process meets both libraries there, as `mate-notification-daemon`'s applet does in the panel.
 - **The patches are `git format-patch` series beside each PKGBUILD**, applied to a 1.29.x tag or, where a component has none, a pinned master commit. They move only on purpose.
 
 ## Consequences

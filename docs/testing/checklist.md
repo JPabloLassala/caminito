@@ -297,8 +297,11 @@ session_env() {
   Marco, and nothing owns `org.mate.Camino`. msd serves XSETTINGS, so open apps restyle at the
   theme change, and it doesn't mirror into `org.gnome.desktop.interface`, which keeps its value.
   The panel's buttons, switcher and dialogs work, and no applet is missing from the panel: the
-  loop prints nothing, since no installed applet is linked to an applet library that's gone
-  (70). The Wayfire session logs in and out, with its panel, its desktop icons and its
+  loop prints nothing, since no installed applet is linked to an applet library that's gone:
+  `mate-panel-camino` installs the 1.28 library beside master's (70, 73). An applet of another
+  package that was on the panel shows and works, unless it's one the panel loads into its own
+  process (`InProcess=true`, as `mate-notification-daemon`'s), where the two libraries can't
+  work together. The Wayfire session logs in and out, with its panel, its desktop icons and its
   wallpaper where they were with the stock packages (81).
 - **Debug tool:** `ldd` on the applets, `busctl`, `gsettings`, and `~/.xsession-errors` or the
   journal for what a missing applet logged.
