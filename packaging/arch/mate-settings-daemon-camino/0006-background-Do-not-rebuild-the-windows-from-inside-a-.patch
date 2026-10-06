@@ -1,0 +1,127 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 16:40:00 -0300
+Subject: [PATCH] background: Do not rebuild the windows from inside a rebuild
+
+Showing a layer window makes gtk-layer-shell do a Wayland roundtrip. A
+monitor that was just plugged in sends its facts in more than one batch,
+so "monitors-changed" can be emitted from inside that roundtrip, while
+rebuild_monitor_windows is still making the windows. The handler then
+saw a list shorter than the monitors and rebuilt it, and the rebuild it
+interrupted added its own windows after that. Every monitor was left
+with two or more background surfaces, and since the list no longer had
+one window for each monitor, the next change could leave a monitor with
+none.
+
+While a rebuild is running, leave the change to it: once it has made the
+windows it checks that there is one for each monitor, in order, and
+makes them again if not. The handler makes the same check where it
+compared the two counts, so a monitor replaced by another is seen too.
+---
+ .../msd-background-manager-wayland.c          | 59 ++++++++++++++++---
+ 1 file changed, 50 insertions(+), 9 deletions(-)
+
+diff --git a/plugins/background/msd-background-manager-wayland.c b/plugins/background/msd-background-manager-wayland.c
+index 3b79cfc..eafce89 100644
+--- a/plugins/background/msd-background-manager-wayland.c
++++ b/plugins/background/msd-background-manager-wayland.c
+@@ -41,6 +41,7 @@ struct _MsdBackgroundManagerWayland
+ 	MateBG       *bg;
+ 	GPtrArray    *monitor_windows;
+ 	gboolean      caja_desktop_active;
++	gboolean      rebuilding;
+ };
+ 
+ typedef struct
+@@ -468,11 +469,31 @@ destroy_all_monitor_windows (MsdBackgroundManagerWayland *manager)
+ 	g_ptr_array_set_size (manager->monitor_windows, 0);
+ }
+ 
++/* Whether there is one window for each monitor of the display, in the
++ * display's order.
++ */
++static gboolean
++monitor_windows_match_monitors (MsdBackgroundManagerWayland *manager)
++{
++	guint n_monitors = gdk_display_get_n_monitors (manager->display);
++	guint i;
++
++	if (n_monitors != manager->monitor_windows->len)
++		return FALSE;
++
++	for (i = 0; i < n_monitors; i++) {
++		MonitorWindow *mw = g_ptr_array_index (manager->monitor_windows, i);
++		if (mw->monitor != gdk_display_get_monitor (manager->display, i))
++			return FALSE;
++	}
++
++	return TRUE;
++}
++
+ static void
+ rebuild_monitor_windows (MsdBackgroundManagerWayland *manager)
+ {
+ 	GdkDisplay *display = manager->display;
+-	int         n_monitors;
+ 	int         i;
+ 
+ 	destroy_all_monitor_windows (manager);
+@@ -489,15 +510,31 @@ rebuild_monitor_windows (MsdBackgroundManagerWayland *manager)
+ 	}
+ 	manager->caja_desktop_active = FALSE;
+ 
+-	n_monitors = gdk_display_get_n_monitors (display);
+-	for (i = 0; i < n_monitors; i++) {
+-		GdkMonitor    *monitor;
+-		MonitorWindow *mw;
++	/* Showing a layer window does a Wayland roundtrip, which can
++	 * dispatch a monitor change: a hot-plugged output sends its facts
++	 * in more than one batch. on_monitors_changed leaves it to this
++	 * loop, which makes the windows again until they are the monitors'.
++	 * Handled there, it would rebuild a list this loop is still adding
++	 * to, and both sets of windows would stay.
++	 */
++	manager->rebuilding = TRUE;
++	for (;;) {
++		for (i = 0; i < gdk_display_get_n_monitors (display); i++) {
++			GdkMonitor    *monitor;
++			MonitorWindow *mw;
++
++			monitor = gdk_display_get_monitor (display, i);
++			mw = create_monitor_window (manager, monitor);
++			g_ptr_array_add (manager->monitor_windows, mw);
++		}
++
++		if (monitor_windows_match_monitors (manager))
++			break;
+ 
+-		monitor = gdk_display_get_monitor (display, i);
+-		mw = create_monitor_window (manager, monitor);
+-		g_ptr_array_add (manager->monitor_windows, mw);
++		g_debug ("msd-background-wayland: monitors changed during the rebuild, rebuilding again");
++		destroy_all_monitor_windows (manager);
+ 	}
++	manager->rebuilding = FALSE;
+ }
+ 
+ static void
+@@ -530,6 +567,10 @@ on_monitors_changed (GdkScreen                     *screen G_GNUC_UNUSED,
+ 	guint n_monitors = gdk_display_get_n_monitors (manager->display);
+ 	guint i;
+ 
++	/* rebuild_monitor_windows is on the stack, and sees to it. */
++	if (manager->rebuilding)
++		return;
++
+ 	/* A monitor set change (added/removed) requires recreating the
+ 	 * layer windows. A pure geometry/scale change (e.g. the compositor
+ 	 * output is being resized) keeps the same window count, so just
+@@ -537,7 +578,7 @@ on_monitors_changed (GdkScreen                     *screen G_GNUC_UNUSED,
+ 	 * windows mid-resize races with the compositor and leaves the
+ 	 * wallpaper missing.
+ 	 */
+-	if (n_monitors != manager->monitor_windows->len) {
++	if (!monitor_windows_match_monitors (manager)) {
+ 		g_debug ("msd-background-wayland: monitors changed, rebuilding (%u monitors)",
+ 			 n_monitors);
+ 		rebuild_monitor_windows (manager);

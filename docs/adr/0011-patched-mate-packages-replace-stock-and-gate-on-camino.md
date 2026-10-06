@@ -1,7 +1,7 @@
 # 11. Patched MATE packages replace the stock ones, and every carried patch is gated on Camino
 
 Date: 2026-09-28
-Status: Accepted. Qualified on 2026-10-05 by ticket 71: a patched package can also have a build patch, which isn't a carried patch. Qualified the same day by ticket 81: caja is a sixth patched component, `caja-camino`, on Arch's own version, since its one patch needs nothing newer.
+Status: Accepted. Qualified on 2026-10-05 by ticket 71: a patched package can also have a build patch, which isn't a carried patch. Qualified the same day by ticket 81: caja is a sixth patched component, `caja-camino`, on Arch's own version, since its one patch needs nothing newer. Qualified on 2026-10-06 by ticket 88: a fix to upstream's own bug, right on any compositor, is carried ungated.
 
 ## Context
 
@@ -24,7 +24,8 @@ The patches written so far didn't agree on when they turn on:
     - the foreign-toplevel minimise rectangle;
     - the pager's use of ext-workspace `coordinates`;
     - the window list's use of each window's workspace, where libxfce4windowing has it (ADR 0013);
-    - Shut Down through `org.gnome.SessionManager` when it has an owner.
+    - Shut Down through `org.gnome.SessionManager` when it has an owner;
+    - fixes to upstream's own bugs, where gating one would only keep the bug for the other sessions. The first is `mate-settings-daemon-camino`'s `0006`: msd's Wayland background left more layer surfaces at each hot-plug (88).
 - **A build patch isn't a carried patch.** Where a baseline doesn't build against Arch's libraries, the series can end with a patch that takes out the upstream change that needs the newer library. It has no gate, and it's allowed only when what it leaves is what the stock package does. It's removed when Arch has the library. The first is `mate-settings-daemon-camino`'s `0004`: msd 1.29.1 needs mate-desktop 1.29.0 for one commit of the X11 xrandr plugin, and Arch has 1.28.2.
 - **The patches are `git format-patch` series beside each PKGBUILD**, applied to a 1.29.x tag or, where a component has none, a pinned master commit. They move only on purpose.
 

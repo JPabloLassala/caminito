@@ -307,7 +307,7 @@ session_env() {
 
 - **Milestone:** M6
 - **Steps:**
-  1. With `mate-settings-daemon-camino` at `pkgrel` 2 or later, log into *MATE on Camino* with
+  1. With `mate-settings-daemon-camino` at `pkgrel` 3 or later, log into *MATE on Camino* with
      both monitors connected, and note `wlr-randr`'s scales and positions, which are Camino's
      defaults (50) unless a layout is saved already. Keep a copy of
      `~/.config/camino/layouts.json` if there is one.
@@ -324,7 +324,8 @@ session_env() {
 
   3. Apply another scale with `wlr-randr`, and don't save it. Log out and in again, watching
      the monitors as the session starts, and run `wlr-randr` and `DumpState`.
-  4. Unplug the second monitor's cable, run `wlr-randr`, plug it back in, and run it again.
+  4. Unplug the second monitor's cable, run `wlr-randr`, plug it back in, and run it again,
+     and `DumpState`.
   5. Run `pgrep -a mate-settings-daemon` and `gdbus introspect --session --dest
      org.mate.SettingsDaemon --object-path /org/mate/SettingsDaemon/WLRANDR`.
   6. Remove `layouts.json`, log out and in once more, and then put the copy back.
@@ -333,7 +334,7 @@ session_env() {
   layout is there from the first frame: the outputs don't blank or jump once the session is
   up, as they did while msd applied it (06). In step 4 the monitor that stays is at the
   origin while it's alone, and the saved layout and the primary output are back when the
-  other is plugged in. In step 5 msd runs, and the object has no
+  other is plugged in, with one `mate-background` layer surface on each output, as before the unplug (88). In step 5 msd runs, and the object has no
   `org.mate.SettingsDaemon.WLRANDR` interface: the plugin isn't started under Camino, and `~/.config/monitors-wayland.xml` is neither read nor written (ADR
   0014). After step 6 the defaults are back.
 - **Debug tool:** `wlr-randr`, the `outputs` and `primary_output` of `DumpState`,

@@ -92,7 +92,7 @@ soname (`libmate-panel-applet-4.so.2`). An applet from a different package, such
 start until that package is built again.
 
 `mate-settings-daemon-camino` is msd 1.29.1, which asks for mate-desktop 1.29.0. Arch has 1.28.2,
-so the package's last patch takes out the one upstream commit that needs the newer library (a
+so one of the package's patches takes out the one upstream commit that needs the newer library (a
 change to the X11 display plugin for virtual machines that resize the screen).
 
 `caja-camino` is Arch's caja 1.28.0 with one patch, which puts the desktop on Camino's primary
