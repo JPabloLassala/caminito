@@ -370,13 +370,14 @@ fn the_command_starts_once_xwayland_is_ready_with_the_names_owned_and_the_enviro
 fn the_activation_environment_has_the_variables_before_the_command_starts() {
     let mut f = fixture();
     let scripts = Scripts::new();
-    // It never takes its name, so the bus doesn't answer an activation that works before
-    // the test ends, and the command doesn't wait for an answer. One that fails is answered
-    // at once, so the command keeps the answer for the test's failure (77).
+    // It never takes its name, so the bus answers an activation that works only when the
+    // request times out, and the command doesn't wait for that. One whose service file the
+    // bus doesn't find is answered at once, so the command keeps the answer for the test's
+    // failure (77). Its timeout is shorter than the wait, so it doesn't outlive the test.
     let program = scripts.write("service", &write_environment("activated"));
     let service = ActivatedService::new(&program);
     let command = scripts.session_command(&format!(
-        "dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+        "dbus-send --session --print-reply --reply-timeout=4000 --dest=org.freedesktop.DBus \
          /org/freedesktop/DBus \
          org.freedesktop.DBus.StartServiceByName string:{} uint32:0 \
          >\"$dir/answer\" 2>&1 &\n{WAIT}",
@@ -384,16 +385,16 @@ fn the_activation_environment_has_the_variables_before_the_command_starts() {
     ));
 
     let display = start(&mut f, command);
-    f.dispatch_until_else(
+    f.dispatch_until_explained(
         |_| scripts.exists("activated"),
         || {
             let answer = match fs::read_to_string(scripts.path("answer")) {
                 Ok(answer) if !answer.is_empty() => answer,
-                Ok(_) => "nothing yet, so the bus is still activating it".into(),
+                Ok(_) => "no answer yet: the bus is activating it, or it started and failed".into(),
                 Err(_) => "nothing: the command hasn't asked".into(),
             };
             format!(
-                "; the activation with {} answered: {}",
+                "the activation with {} answered: {}",
                 service.file.display(),
                 answer.trim_end()
             )
