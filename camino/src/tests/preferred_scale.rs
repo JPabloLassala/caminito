@@ -306,3 +306,29 @@ fn a_window_that_picked_its_own_size_isnt_configured_with_it_as_its_dragged() {
     let sent = &f.client(client).window(window.xdg()).configures[configures..];
     assert_snapshot!(format_configures(sent), @"");
 }
+
+/// On the tty a commit and a pointer motion are often read in one pass of the loop, with
+/// the motion's request made before anything is flushed to the client (92).
+#[test]
+fn a_window_isnt_configured_with_the_size_it_picked_in_the_same_pass_as_a_drag_step() {
+    let (mut f, client, _, _) = two_scales();
+    let window = f.map(client, spec());
+    let start = f.geometry(window).loc;
+    let grip = start + Point::from((10, 10));
+    f.pointer_move(grip.x.into(), grip.y.into());
+    f.key(KEY_LEFTALT, true);
+    f.pointer_button(BTN_LEFT, true);
+    f.roundtrip(client);
+    let configures = f.client(client).window(window.xdg()).configures.len();
+
+    f.client(client)
+        .ack_and_commit_buffer(window.xdg(), (500, 300), 0xff20_2020);
+    f.client(client).flush();
+    f.dispatch_sources_only();
+    f.pointer_move((grip.x + 100).into(), grip.y.into());
+    f.roundtrip(client);
+
+    assert_eq!(f.geometry(window).size, (500, 300).into());
+    let sent = &f.client(client).window(window.xdg()).configures[configures..];
+    assert_snapshot!(format_configures(sent), @"");
+}

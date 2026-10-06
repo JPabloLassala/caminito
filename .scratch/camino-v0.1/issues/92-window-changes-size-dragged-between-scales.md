@@ -38,6 +38,15 @@ foot dragged between the AOC (scale 1.0) and the LG (scale 1.7) comes out anothe
 - Left as they are: a configure for the size alone still goes out while an earlier configure isn't acked, with the size the client had when it was sent; and a window maximized one way, which xdg-shell has no state for, counts as floating here, so if its client picks another size the next configure carries that one until policy next sends its geometry.
 - Tests, in `camino/src/tests/preferred_scale.rs`: `a_window_that_resizes_with_its_scale_gets_each_scale_once_as_its_dragged_across_and_back`, with a client that keeps a grid of cells as foot does and each output drawn in turn, and `a_window_that_picked_its_own_size_isnt_configured_with_it_as_its_dragged`.
 
+## On the developer's machine (2026-10-06)
+
+Bare `camino` as `caminotest` on tty4, `camino-git r238.ea769c7-1`, the LG at 1.7 (3840x2160 at 59.997 Hz) and the AOC at 1.0 (1920x1080 at 60.000 Hz), so the refresh rates do differ there. A foot with `WAYLAND_DEBUG=1` was dragged across and back many times; the trimmed log is [92-checks/foot-after-ea769c7.log](92-checks/foot-after-ea769c7.log).
+
+- **The scales no longer come in turn at each frame:** 26 `preferred_scale` over about a dozen crossings in 80 s, none closer than 0.3 s to the one before, against 142 in two round trips.
+- **The size no longer walks:** foot is 699x474 at 1.7 and 648x496 at 1.0 throughout, and ends 648x496 on the AOC.
+- **The developer still sees the window change height as it crosses.** That's the one change per crossing, 474 to 496 and back, which is foot's: it keeps its grid, and a cell isn't the same logical size at both scales. The criterion below stays unticked until the developer says whether that's what was seen.
+- **One configure with a stale size was left,** at 23:39:36.617: `configure(699, 474)` reached foot at 1.0, foot answered 696x464, and the next configure, `(648, 496)`, 1 ms later, put it back. It was the review's own addition, which owed a configure whenever policy named another size than the pending one: a late commit of foot's and a step of the drag read in one pass of the loop made policy name the size of that commit before the adapter had followed it. The adapter now decides that at the flush, where it knows the size the client draws at, with `a_window_isnt_configured_with_the_size_it_picked_in_the_same_pass_as_a_drag_step` written first. Not yet run on the tty.
+
 ## Notes
 
 - GTK3 has no preferred scale (52), so pluma doesn't show it. A client with `wp_fractional_scale_v1` that keeps its logical size wouldn't walk either, but would still get the scales in turn.

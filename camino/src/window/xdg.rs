@@ -59,24 +59,38 @@ fn set_pending_states(toplevel: &ToplevelSurface, states: &[(xdg_toplevel::State
     });
 }
 
-/// Whether the size pending for the toplevel is one its client picked, not one policy
-/// asked of it since.
+/// Whose the size pending for a toplevel is.
 #[derive(Default)]
-struct OwnSize(AtomicBool);
+struct OwnSize {
+    /// The client picked it, and policy hasn't asked for one since.
+    own: AtomicBool,
+    /// Policy asked for it when the pending size was the client's own.
+    asked: AtomicBool,
+}
 
-/// Takes whether the size pending for the toplevel is its client's own, since policy is
-/// about to ask for one.
-fn take_own_size(toplevel: &ToplevelSurface) -> bool {
+/// Notes that policy is asking the toplevel for a size.
+fn size_asked(toplevel: &ToplevelSurface) {
     with_states(toplevel.wl_surface(), |states| {
-        states
-            .data_map
-            .get::<OwnSize>()
-            .is_some_and(|own| own.0.swap(false, Ordering::Relaxed))
-    })
+        if let Some(size) = states.data_map.get::<OwnSize>()
+            && size.own.swap(false, Ordering::Relaxed)
+        {
+            size.asked.store(true, Ordering::Relaxed);
+        }
+    });
+}
+
+/// What [`follow_own_size`] found there is to tell a toplevel.
+enum Pending {
+    /// Nothing, or only the size the client draws at.
+    OwnSizeAtMost,
+    /// The size last sent, which the client has left since.
+    SizeLastSent,
+    /// Whatever Smithay finds changed.
+    Changes,
 }
 
 /// Keeps the size pending for a floating toplevel at `size`, the one its client draws it
-/// at, once the client has that size, and returns whether nothing else is pending.
+/// at, once the client has that size, and says what's left to tell it.
 ///
 /// A floating client picks its own size, and policy's geometry follows it without a
 /// request, so the size policy names next, at each step of a move, is one the client was
@@ -84,9 +98,11 @@ fn take_own_size(toplevel: &ToplevelSurface) -> bool {
 /// reaches it after it may have picked another size, as foot does at each preferred
 /// scale: foot then cut the old size down to its cells at the new scale, and its size
 /// walked (92). The size goes with the next configure there's another reason to send.
-fn follow_own_size(toplevel: &ToplevelSurface, size: Size<i32, Logical>) -> bool {
+fn follow_own_size(toplevel: &ToplevelSurface, size: Size<i32, Logical>) -> Pending {
     with_states(toplevel.wl_surface(), |states| {
-        let own = states.data_map.get_or_insert_threadsafe(OwnSize::default);
+        let own_size = states.data_map.get_or_insert_threadsafe(OwnSize::default);
+        let asked = own_size.asked.swap(false, Ordering::Relaxed);
+        let own = &own_size.own;
         let mut attributes = states
             .data_map
             .get::<XdgToplevelSurfaceData>()
@@ -108,18 +124,26 @@ fn follow_own_size(toplevel: &ToplevelSurface, size: Size<i32, Logical>) -> bool
         .into_iter()
         .any(|state| pending.states.contains(state));
         if sized_by_camino {
-            own.0.store(false, Ordering::Relaxed);
-            return false;
+            own.store(false, Ordering::Relaxed);
+            return Pending::Changes;
         }
-        if own.0.load(Ordering::Relaxed) {
+        if own.load(Ordering::Relaxed) {
             pending.size = Some(size);
         } else if acked && pending.size == Some(size) {
-            own.0.store(true, Ordering::Relaxed);
+            own.store(true, Ordering::Relaxed);
+        } else if asked && *pending == sent {
+            // Another size than the client's own is news to the client even when it's
+            // the one last sent, which Smithay would find no change.
+            return Pending::SizeLastSent;
         } else {
-            return false;
+            return Pending::Changes;
         }
         sent.size = pending.size;
-        *pending == sent
+        if *pending == sent {
+            Pending::OwnSizeAtMost
+        } else {
+            Pending::Changes
+        }
     })
 }
 
@@ -243,13 +267,8 @@ impl Adapter for ToplevelSurface {
 
     fn set_geometry(&self, geometry: Rectangle<i32, Logical>, states: WindowStates) {
         // Where the window is is Camino's alone; the client is told its size and states.
-        let own_size = take_own_size(self);
-        let before = self.with_pending_state(|pending| pending.size.replace(geometry.size));
-        if own_size && before != Some(geometry.size) {
-            // Another size than the client's own is news to the client even when it's the
-            // one last sent, which Smithay would find no change.
-            owe_configure(self);
-        }
+        self.with_pending_state(|pending| pending.size = Some(geometry.size));
+        size_asked(self);
         set_pending_states(
             self,
             &[
@@ -266,11 +285,19 @@ impl Adapter for ToplevelSurface {
         if !self.is_initial_configure_sent() {
             return;
         }
-        let only_own_size = follow_own_size(self, size);
+        let pending = follow_own_size(self, size);
         if take_configure_owed(self) {
             self.send_configure();
-        } else if !only_own_size {
-            self.send_pending_configure();
+            return;
+        }
+        match pending {
+            Pending::OwnSizeAtMost => {}
+            Pending::SizeLastSent => {
+                self.send_configure();
+            }
+            Pending::Changes => {
+                self.send_pending_configure();
+            }
         }
     }
 
