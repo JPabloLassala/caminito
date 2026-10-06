@@ -978,12 +978,26 @@ impl Fixture {
     /// thread, and fails rather than hangs.
     #[track_caller]
     pub fn dispatch_until(&mut self, done: impl Fn(&Self) -> bool) {
+        self.dispatch_until_explained(done, String::new);
+    }
+
+    /// Dispatches until `done` holds, as [`dispatch_until`](Self::dispatch_until) does, and
+    /// adds what `seen` returns to the failure, for a wait on another process that can say
+    /// what it saw.
+    #[track_caller]
+    pub fn dispatch_until_explained(
+        &mut self,
+        done: impl Fn(&Self) -> bool,
+        seen: impl Fn() -> String,
+    ) {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !done(self) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the condition didn't hold within 5 s"
-            );
+            if std::time::Instant::now() >= deadline {
+                match seen() {
+                    seen if seen.is_empty() => panic!("the condition didn't hold within 5 s"),
+                    seen => panic!("the condition didn't hold within 5 s: {seen}"),
+                }
+            }
             self.dispatch_waiting();
         }
     }
