@@ -1,7 +1,7 @@
 # The desktop icons don't come back with the primary output
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6 (proposed)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -16,5 +16,22 @@ When the primary output is unplugged and plugged back, the panels come back to i
 
 ## Acceptance criteria
 
-- [ ] The cause is written down in this ticket's notes, with a headless test written before the fix where the cause is Camino's.
-- [ ] After the primary output is unplugged and plugged back, the `desktop` layer surface is on it, at its size, as the panels are.
+- [x] The cause is written down in this ticket's notes, with a headless test written before the fix where the cause is Camino's. (The cause is in `caja-camino`'s patch, so there's no headless test to keep.)
+- [ ] After the primary output is unplugged and plugged back, the `desktop` layer surface is on it, at its size, as the panels are. (Seen with the real caja on the headless Camino. On the two monitors it's the developer's.)
+
+## Notes
+
+- **The cause is `caja-camino`'s patch (81), not Camino.** The patch followed the monitors by GDK's `monitor-added`. GDK 3.24 on Wayland emits that as soon as it binds the `wl_output`, before any of the output's events, so the monitor has no connector yet and can't be matched against `PrimaryOutput` (`_gdk_wayland_screen_add_output` in `gdk/wayland/gdkscreen-wayland.c`, read at 3.24.52, the version installed). The connector is set later, in `apply_monitor_change`, which emits the screen's `monitors-changed` and `size-changed` and nothing on the display.
+- **So at the re-plug** `monitor-added` came while the new monitor had no name, and so did Camino's `PropertiesChanged`, which races the output's events on another socket and is sent as soon as the output is added. The patch left the surface where it was. Then `size-changed` ran caja's own size handler, which the patch had made ask for the primary output's monitor: by then it had its name, so the desktop took HDMI-A-1's size, on DP-1. That handler sets the size and never the output.
+- **The two things the ticket left to look at:** Camino does signal `PrimaryOutput` when the choice returns, restored from a saved layout or not: the stand-in's name was the last one signalled, so the name differs (`unplugging_the_primary_output_puts_the_stand_in_in_and_plugging_it_back_returns_the_choice` in `camino/src/tests/primary_output.rs` listens for it). And the patch follows a name that's the same as before the unplug, since it compares nothing with what it had before.
+- **Why 81's own check passed,** and the unplug here: a choice made with both monitors on, and a stand-in going in, name a monitor GDK already has.
+- **The panel** isn't in this: mate-panel's patch came back to HDMI-A-1 in the same run.
+- **Reproduced before the fix (2026-10-06)** with a throwaway test, not kept: the headless Camino with the AOC and the LG plugged in, the LG chosen, `org.mate.Camino` owned on the test's bus, and the installed `/usr/bin/caja --force-desktop` (`caja-camino 1.28.0-1`) on Camino's socket. Unplugging the LG put `desktop` on `headless-1` at 1920x1080. Plugging it back left it on `headless-1`, at 0,0 and 2259x1271, the LG's logical size, with nothing on `headless-2`: what 60 saw.
+
+## Resolution
+
+Resolved on 2026-10-06, in `caja-camino`, whose `pkgrel` is 2.
+
+- **The fix:** the patch follows the screen's `monitors-changed` in place of the display's `monitor-added` and `monitor-removed`. It comes each time GDK applies what a monitor's events said, its connector among it, and when one is removed. It also comes when a monitor's mode or scale changes, so the desktop's size follows those through the same function.
+- **Seen:** the same throwaway test with the caja built from the patched tree had `desktop` on `headless-2` at 1920,0 and 2259x1271 after the re-plug, and nothing on `headless-1`, in two runs. `caja-camino 1.28.0-2` was then built with `makepkg` from this patch. It wasn't installed, and wasn't run in a Session.
+- **Left for the developer's machine:** install `caja-camino 1.28.0-2`, log in again, and do step 4 of the checklist's *The primary output moves the panel, the desktop icons and RandR's primary*, which asks for that `pkgrel` now.

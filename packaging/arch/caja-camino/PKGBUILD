@@ -11,7 +11,7 @@
 pkgname=caja-camino
 _pkgname=caja
 pkgver=1.28.0
-pkgrel=1
+pkgrel=2
 pkgdesc="File manager for the MATE desktop, with Camino's carried patch"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -25,13 +25,13 @@ groups=('mate')
 provides=("${_pkgname}=${pkgver}")
 conflicts=("${_pkgname}" 'caja-gtk3')
 # 0001 is active only while org.mate.Camino has an owner (ADR 0011): the desktop goes on
-# Camino's primary output and follows it (81).
+# Camino's primary output and follows it (81, 89).
 source=("git+https://github.com/mate-desktop/caja.git#tag=v${pkgver}"
         git+https://github.com/mate-desktop/mate-submodules.git
         0001-desktop-window-Put-the-desktop-on-Camino-s-primary-o.patch)
 sha256sums=('1d3387cdf0acc9d7c01a563143ab91e097e8201a183a0fcece37beb03e0009f6'
             'SKIP'
-            '47e92cdbf036d9b1dd3816b7567a4e6b47a4fa54e449e46f3131566a7f2d17ba')
+            'de06fcdf8bb30802b5451a81c04607ea40006fd0623894dc16ea331c3c59683d')
 
 
 prepare() {

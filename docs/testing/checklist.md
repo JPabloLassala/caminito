@@ -469,7 +469,7 @@ session_env() {
 - **Milestone:** M6
 - **Steps:**
   1. With both monitors connected, and `mate-panel-camino` at `pkgrel` 3 or later and
-     `caja-camino` installed, log into *MATE on Camino*. Read the primary output:
+     `caja-camino` at `pkgrel` 2 or later, log into *MATE on Camino*. Read the primary output:
 
      ```sh
      primary() {

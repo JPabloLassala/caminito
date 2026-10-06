@@ -13,17 +13,23 @@ owner, put the desktop on that output, at its size, and follow the property,
 so the icons move with the primary output. gtk-layer-shell maps the surface
 again on its new output.
 
+GDK adds a monitor before it knows its connector, so the monitors are
+followed by the screen's "monitors-changed", which comes once a monitor can
+be told from the others, and not by the display's "monitor-added". With the
+latter, the desktop stayed on the stand-in when the primary output was
+plugged back, at the primary output's size.
+
 Without an owner of org.mate.Camino, which is any other Wayland compositor,
 nothing changes. X11 is as it was.
 ---
- src/caja-desktop-window.c | 127 +++++++++++++++++++++++++++++++++++++-
- 1 file changed, 125 insertions(+), 2 deletions(-)
+ src/caja-desktop-window.c | 125 +++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 123 insertions(+), 2 deletions(-)
 
 diff --git a/src/caja-desktop-window.c b/src/caja-desktop-window.c
-index 662c2472..58a32d61 100644
+index 662c2472..b5e20494 100644
 --- a/src/caja-desktop-window.c
 +++ b/src/caja-desktop-window.c
-@@ -90,6 +90,122 @@ struct _CajaDesktopWindowPrivate
+@@ -90,6 +90,120 @@ struct _CajaDesktopWindowPrivate
  G_DEFINE_TYPE_WITH_PRIVATE (CajaDesktopWindow, caja_desktop_window,
                 CAJA_TYPE_SPATIAL_WINDOW);
  
@@ -105,13 +111,14 @@ index 662c2472..58a32d61 100644
 +
 +/* Looks for Camino, and follows its primary output from then on: as the
 + * property changes, as Camino comes or goes, and as the monitors do, since
-+ * the primary output can be named before GDK has its monitor.
++ * the primary output can be named before GDK has its monitor. GDK adds a
++ * monitor before it knows its connector, so it's "monitors-changed" that
++ * says a monitor can be told from the others, and not "monitor-added".
 + */
 +static void
 +caja_desktop_window_watch_camino (CajaDesktopWindow *window)
 +{
 +    GDBusProxy *camino;
-+    GdkDisplay *display;
 +
 +    camino = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SESSION,
 +                                            G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
@@ -131,11 +138,8 @@ index 662c2472..58a32d61 100644
 +                             G_CALLBACK (caja_desktop_window_follow_camino),
 +                             window, G_CONNECT_SWAPPED);
 +
-+    display = gtk_widget_get_display (GTK_WIDGET (window));
-+    g_signal_connect_object (display, "monitor-added",
-+                             G_CALLBACK (caja_desktop_window_follow_camino),
-+                             window, G_CONNECT_SWAPPED);
-+    g_signal_connect_object (display, "monitor-removed",
++    g_signal_connect_object (gtk_widget_get_screen (GTK_WIDGET (window)),
++                             "monitors-changed",
 +                             G_CALLBACK (caja_desktop_window_follow_camino),
 +                             window, G_CONNECT_SWAPPED);
 +
@@ -146,7 +150,7 @@ index 662c2472..58a32d61 100644
  static void
  caja_desktop_window_init (CajaDesktopWindow *window)
  {
-@@ -170,8 +286,12 @@ caja_desktop_window_screen_size_changed (GdkScreen             *screen,
+@@ -170,8 +284,12 @@ caja_desktop_window_screen_size_changed (GdkScreen             *screen,
      {
          /*No root window or primary monitor in wayland unless compositors add it back*/
          GdkRectangle geometry = {0};
@@ -161,7 +165,7 @@ index 662c2472..58a32d61 100644
          gdk_monitor_get_geometry (monitor, &geometry);
          width_request = geometry.width;
          height_request = geometry.height;
-@@ -254,6 +374,9 @@ caja_desktop_window_new (CajaApplication *application,
+@@ -254,6 +372,9 @@ caja_desktop_window_new (CajaApplication *application,
  
          /*Enable keyboard use on the desktop*/
          gtk_layer_set_keyboard_mode (gtkwin, GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
