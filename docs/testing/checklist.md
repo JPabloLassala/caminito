@@ -457,7 +457,7 @@ session_env() {
 - **Expected:** unplugging removes the output: `wlr-randr` and `DumpState` list one output, at
   0,0, and the windows that were on the unplugged monitor are on the other one, with the
   maximised one filling it. They're moved, not resized, so one larger than the output hangs
-  over its edge. The monitor that stays never goes black or freezes. Plugging the
+  over its edge. The monitor that stays never freezes, and never goes black, but for the README's known limitation on NVIDIA (87). Plugging the
   monitor back lights it in its preferred mode at its default scale, to the right of the other
   one, whichever side it was on before, unless a layout is saved for the two (83), and the pointer and windows can go to it again. The log
   has no `can't light` line.

@@ -209,6 +209,11 @@ journal, and those of mate-session's programs in a file, send stderr to the file
   XWayland windows and starts Xwayland again on the same `DISPLAY`, backing off and giving up after
   repeated crashes. But mate-session is an X11 client, and it exits when it loses its display,
   which ends the session. Outside a session, new X clients just work again.
+- **On NVIDIA, turning one monitor off or on can blank another for a moment.** Seen on an RTX 3060
+  with driver 615.71.09: a monitor on DisplayPort at 144 Hz goes black briefly when one on HDMI is
+  unplugged, plugged in, or turned off or on. The other way round, nothing happens. Camino changes
+  only the monitor that comes or goes, and wayfire does the same on that machine, so the cause is
+  the driver's or the hardware's. No window is lost.
 - **One keyboard layout for every window.** Camino switches layouts globally, so
   `org.mate.peripherals-keyboard-xkb.general`'s `group-per-window` (on by default) and
   `default-group` have no effect. The layout indicator applet runs on Xwayland, so it may not

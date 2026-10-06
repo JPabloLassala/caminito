@@ -1,7 +1,7 @@
 # Plugging or unplugging a monitor blanks the other one
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: before v0.1
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -19,9 +19,9 @@ When a monitor is plugged in or unplugged on the tty, the monitor that stays goe
 
 ## Acceptance criteria
 
-- [ ] The cause is written down in this ticket's notes: Camino's, the driver's, or both.
+- [x] The cause is written down in this ticket's notes: Camino's, the driver's, or both.
 - [x] What is Camino's is fixed: a re-plugged monitor with a saved layout is lit once, in the saved mode.
-- [ ] On the developer's machine, the monitor that stays shows its picture without a break through an unplug and a re-plug of the other one, or what's left is in the README's *Known limitations* with its cause.
+- [x] On the developer's machine, the monitor that stays shows its picture without a break through an unplug and a re-plug of the other one, or what's left is in the README's *Known limitations* with its cause.
 
 ## Notes
 
@@ -53,3 +53,16 @@ When a monitor is plugged in or unplugged on the tty, the monitor that stays goe
 - **It's the LG going off or on, not the cable (2026-10-06, 16:17).** The developer says the AOC goes dark both when the LG is unplugged and when it's plugged back, and that `wlr-randr --output HDMI-A-1 --off` does the same. So udev's events and the scans aren't the cause: what's left is the commit that turns the LG's CRTC off or on, or the desktop moving to the AOC and back. mate-panel died at that `--on` too (16:17:58).
 - **`--on` lit the LG at 60 Hz and at the defaults,** which the developer took for the layout forgotten. That's as 58 and 83 have it: a monitor enabled over output management comes up as a new one, and the saved layout is restored only when a monitor comes or goes. The developer wants the layout back there too: [90](90-a-monitor-turned-on-again-gets-its-saved-layout.md).
 - **[87-off-on.sh](87-off-on.sh) tells the two apart.** From a text login on a spare tty it starts a compositor with no desktop, and a terminal that turns each monitor off and on and says when. Under bare `camino` an AOC that goes black, not grey, is the commit's doing. Under `wayfire`, which is wlroots, the same says the driver's and not Smithay's or Camino's.
+- **The runs of [87-off-on.sh](87-off-on.sh) (2026-10-06, 16:23 to 16:25), as the developer saw them:**
+  - **Under bare `camino`, r210, with no desktop:** the AOC went black when the LG went off and when it came back. The LG did nothing when the AOC went off and on. `~/87-camino.log`, at `debug`, has one mode set per lighting, no commit on the AOC's CRTC but its own frames, and no frame of the AOC that couldn't be drawn or queued.
+  - **Under wayfire 0.11.0, which is wlroots:** the same, the AOC black at the LG's off and on, and the LG untouched by the AOC's. wlroots sets the AOC's mode again at each change of the LG (`connector DP-1: Modesetting` in `~/87-wayfire.log`), so this run alone wouldn't say whose it is. It does say the blanking doesn't need Smithay or Camino.
+
+## Resolution
+
+Resolved on 2026-10-06. The cause is both.
+
+- **Camino's, fixed:** a monitor that was plugged in was lit in its preferred mode and then switched to its saved one, two mode sets where one does. It's lit once now, in the mode it's to show, at a re-plug and at start-up. With that, the LG stays on through the AOC's unplug and re-plug on the developer's machine, where it blanked on r195.
+- **Below Camino, left as a known limitation:** the AOC, on DisplayPort at 144 Hz, goes black for a moment whenever the LG, on HDMI, is turned off or on, by the cable or by `wlr-randr`. Camino's commit names only the LG's CRTC, connector and plane, the AOC's frames go on being queued, and it happens under wlroots too. So it's the NVIDIA driver's or the hardware's: the driver's source shuts down only the heads a mode set names, but runs steps on every head at each one, and what the firmware does under them wasn't read. It's in the README's *Known limitations*, and the checklist's *Hot-plugging a monitor* says so.
+- **Not tried:** the AOC at 60 Hz, or the monitors on other connectors, which would say whether it's the 144 Hz mode's; and a compositor that leaves the other head out of its commit, other than Camino. In `caminotest`'s Session, on r195 with both monitors at 60 Hz, an unplug left the other monitor on, but which monitor was unplugged wasn't said.
+- **Filed from this:** [90](90-a-monitor-turned-on-again-gets-its-saved-layout.md). mate-panel's crash each time the LG is lit (a `general protection fault` in `libxfce4windowing-0.so`, four times on 2026-10-06) has no ticket yet.
+- **A gap the fix leaves** is in the notes above: the saved layout is restored before the monitors found are lit, so one that then can't be lit at all leaves the others as that layout had them.
