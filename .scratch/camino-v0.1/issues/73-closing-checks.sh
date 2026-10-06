@@ -483,7 +483,7 @@ tty)
 stage "Before the checks"
 [[ $(id -un) == caminotest ]] || warn "this is $(id -un), not caminotest, the second user (14)"
 show pacman -Q "${PACKAGES[@]}"
-for tool in busctl gsettings python3 pluma xprop wlr-randr wayland-info loginctl journalctl; do
+for tool in busctl gsettings python3 pluma xprop wayland-info loginctl journalctl; do
   command -v "$tool" >/dev/null || warn "$tool is missing"
 done
 say "The session runs as caminotest on a spare tty, with Camino's stderr in a file, so"
@@ -613,6 +613,7 @@ stage "Before the checks"
 show pacman -Q "${PACKAGES[@]}"
 show pacman -Qo /usr/share/wayland-sessions/mate-camino.desktop
 show systemctl is-active display-manager.service
+command -v wlr-randr >/dev/null || warn "wlr-randr is missing"
 say "Log out of every session of yours first: its logins share one systemd manager and"
 say "bus, and the session changes both (14). The session can't lock until M7 (62)."
 if [[ -e $ASKED ]]; then
@@ -743,6 +744,13 @@ if (( BROKEN )); then
 else
   ok "none"
 fi
+say "Applets loaded into the panel's process and linked to the 1.28 library, which can't"
+say "work there beside master's (73):"
+INSIDE=$(grep -l '^InProcess=true' /usr/share/mate-panel/applets/*.mate-panel-applet | xargs -r grep -h '^Location=' | cut -d= -f2 |
+  while IFS= read -r applet; do
+    [[ $(ldd "$applet" 2>/dev/null | grep -c 'libmate-panel-applet-4\.so\.1 ' || true) -gt 0 ]] && printf '    %s\n' "$applet"
+  done || true)
+if [[ -n $INSIDE ]]; then printf '%s\n' "$INSIDE"; note "One of these on a panel is a failure; installed and unused, it's the known gap."; else ok "none"; fi
 say "The applets on your panels:"
 dconf dump /org/mate/panel/objects/ | sed -n "s/^applet-iid='\(.*\)'/    \1/p" | sort | uniq -c || true
 note "Expected (ADR 0011): x11, with MATE_WM_NAME and GDK_BACKEND as they were with the"
@@ -754,11 +762,14 @@ fi
 stage "Checklist: X11 MATE with the Patched packages, by hand"
 if ! done_already "X11 MATE is unchanged with the Patched packages: the panel"; then
 step "Every applet that was on your panels before is there, and works."
+step "Add an applet of another package to a panel (Command or Trash, of mate-applets): it"
+step "shows and works, on the 1.28 library (73). Take it off again."
 step "A window list button focuses its window, minimises it, and brings it back, with"
 step "Marco's minimise animation going to the button."
 step "The workspace switcher switches, and shows the windows of each workspace."
 step "System, Log Out…  shows mate-session's dialog: cancel it."
 step "System, Shut Down…  shows mate-session's dialog: cancel it."
+step "Say in the note whether the countdown's bar sits as close to the buttons as in the Session."
 step "The wallpaper and the desktop icons are caja's, as before."
 show sh -c "grep -aiE 'mate-panel|applet' ~/.xsession-errors 2>/dev/null | tail -n 8"
 note "Expected: all of it as with the stock packages."

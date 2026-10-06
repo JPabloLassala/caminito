@@ -22,7 +22,7 @@ Camino keeps the Saved layouts itself and restores them, in place of msd's wlran
 
 - [x] Headless tests, written before the code: a layout saved for two monitors is restored when Camino starts with those two; a different set gets the defaults; plugging the second monitor back restores the layout and the primary output; an applied configuration that wasn't saved is gone after a restart; a saved mode that the monitor no longer has leaves a contiguous layout.
 - [ ] On the tty with two monitors, a layout saved in one Session is there at the next login from the first frame.
-- [ ] msd's wlrandr plugin isn't loaded in the session, and 73's checklist item on `monitors-wayland.xml` is rewritten.
+- [x] msd's wlrandr plugin isn't loaded in the session, and 73's checklist item on `monitors-wayland.xml` is rewritten.
 - [x] ADR 0008's and CONTEXT.md's "msd's saved layout" read "Camino's saved layout".
 
 ## Notes
@@ -50,4 +50,4 @@ Decided here, on 2026-10-05:
 
 Not tested: the start-up path of `State::new` itself, since the headless backend has no monitors before the first is plugged in, so a start with two monitors is the second one's plugging in; the second try after a refused mode with a disabled monitor in the layout; and the file at its real place.
 
-The second criterion and the first half of the third need the tty, two monitors and a Session, and are the developer's. They're the checklist's *Camino restores the saved layout from the first frame*, which replaces 73's *msd applies the saved display layout at login*. `73-closing-checks.sh` still writes a `monitors-wayland.xml`, and its layout step no longer holds.
+The second criterion and the first half of the third need the tty, two monitors and a Session, and are the developer's. They're the checklist's *Camino restores the saved layout from the first frame*, which replaces 73's *msd applies the saved display layout at login*. `73-closing-checks.sh` wrote a `monitors-wayland.xml` until 2026-10-06, when 73 took its layout stages out. The third criterion's first half was seen the same day in the developer's login from sddm, on `mate-settings-daemon-camino 1.29.1-3`: msd ran, `/org/mate/SettingsDaemon/WLRANDR` had no interface, and there was no `~/.config/monitors-wayland.xml`.
