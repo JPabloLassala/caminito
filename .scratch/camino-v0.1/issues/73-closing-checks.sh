@@ -195,7 +195,7 @@ finish() {
 #
 # Run tty over ssh from another machine, which is best since the monitors stay on Camino,
 # or in a MATE Terminal inside the session, or from another tty. The session ends in
-# tty's stage 7 and the machine powers off in dm's stage 3: a wizard that ends with
+# tty's stage 6 and the machine powers off in dm's stage 3: a wizard that ends with
 # them is run again and resumes. The results are saved as they're given. At the end
 # they're appended to the ticket's notes when this copy can write them, and to a file to
 # copy from otherwise: caminotest can't read the developer's checkout, so it runs a copy.
@@ -205,7 +205,7 @@ finish() {
 
 PART="${1:-}"
 case $PART in
-  tty) TOTAL_STAGES=9; WHERE="the login on a tty" ;;
+  tty) TOTAL_STAGES=7; WHERE="the login on a tty" ;;
   dm) TOTAL_STAGES=4; WHERE="the login from the display manager" ;;
   x11) TOTAL_STAGES=5; WHERE="X11 MATE and MATE on Wayfire" ;;
   nested) TOTAL_STAGES=4; WHERE="the nested items" ;;
@@ -225,13 +225,10 @@ SESSION="$STATE/73-closing-checks-$PART.session"
 # Made when a stage asks for what ends the wizard's session, so a wizard run again goes on
 # from there: tty's logout, dm's Shut Down (with the boot's id) and x11's Wayfire login.
 ASKED="$STATE/73-closing-checks-$PART.asked"
-# tty's saved layout: what it was before, and what the next login should show.
-LAYOUT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/monitors-wayland.xml"
-LAYOUT_BEFORE="$STATE/73-monitors-wayland.before"
-LAYOUT_EXPECTED="$STATE/73-layout-expected"
 LOG="${SESSION_LOG:-$HOME/session.log}"
 DEBUG_CALL=(busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug org.mate.Camino.Debug)
-PACKAGES=(camino-git mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino)
+PACKAGES=(camino-git mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino
+  caja-camino)
 ROOT_PROPS=(_NET_SUPPORTED _NET_NUMBER_OF_DESKTOPS _NET_DESKTOP_NAMES _NET_CURRENT_DESKTOP
   _NET_WORKAREA _GTK_WORKAREAS_D0)
 CAMINO_PID=
@@ -265,8 +262,12 @@ ok() { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
 # running NAME succeeds when this user runs a process of that name.
 running() { pgrep -u "$(id -u)" -x "$1" >/dev/null; }
 # session_log prints what mate-session and what it starts wrote: the file Camino's stderr
-# went to on a tty, and the journal, which has it from a display manager.
+# goes to, which is the display manager's log of the session or the tty's file, and the
+# journal.
 session_log() {
+  local stderr
+  stderr=$(readlink /proc/"${CAMINO_PID:-0}"/fd/2 2>/dev/null || true)
+  [[ -f $stderr && -r $stderr && ! $stderr -ef $LOG ]] && sed 's/\x1b\[[0-9;]*m//g' "$stderr"
   [[ -r $LOG ]] && sed 's/\x1b\[[0-9;]*m//g' "$LOG"
   journalctl --user --since "$SINCE" -o cat --no-pager 2>/dev/null || true
 }
@@ -388,9 +389,8 @@ result() {
   record "$name" "$verdict" "$note"
 }
 
-# start_over forgets a stopped run. A layout tty's stage 6 saved is taken back first.
+# start_over forgets a stopped run.
 start_over() {
-  if [[ $PART == tty ]]; then restore_layout; fi
   rm -f "$PROGRESS" "$SESSION" "$ASKED"
 }
 # load_progress offers to resume from the results a stopped run saved.
@@ -453,8 +453,6 @@ record_stage() {
     IFS='|' read -r name verdict note <<< "$r"
     say "$verdict  $name${note:+ ($note)}"
   done
-  # A run that stopped between stage 8's result and its tidying up.
-  if [[ $PART == tty ]]; then restore_layout; fi
   if confirm "Write these down?"; then
     write_results
     rm -f "$PROGRESS" "$SESSION" "$ASKED"
@@ -474,13 +472,6 @@ record_stage() {
   finish
 }
 
-# restore_layout puts back the saved layout tty's stage 6 replaced, or removes its own.
-restore_layout() {
-  [[ -e $LAYOUT_EXPECTED ]] || return 0
-  if [[ -s $LAYOUT_BEFORE ]]; then mv "$LAYOUT_BEFORE" "$LAYOUT_FILE"; else rm -f "$LAYOUT_FILE" "$LAYOUT_BEFORE"; fi
-  rm -f "$LAYOUT_EXPECTED"
-}
-
 banner "Ticket 73: closing M5, $WHERE"
 load_progress
 
@@ -498,7 +489,7 @@ done
 say "The session runs as caminotest on a spare tty, with Camino's stderr in a file, so"
 say "that Camino logs to the journal, and with its exit status shown afterwards:"
 step "camino --session 2>~/session.log; echo \"camino exited with \$?\""
-# A run that already asked for the logout has no session to find until stage 8.
+# A run that already asked for the logout has no session to find.
 if [[ -e $ASKED ]]; then
   say "This run already asked for the logout; going on from there."
   sleep 1
@@ -581,47 +572,6 @@ result "Shut Down shows mate-session's dialog"
 fi
 
 # ── 6 ─────────────────────────────────────────────────────────────────────
-stage "Checklist: a display layout saved for the next login"
-# After the logout was asked for it's too late to save one: stage 8 says so.
-if ! done_already "msd applies the saved display layout at login" && [[ ! -e $LAYOUT_EXPECTED && ! -e $ASKED ]]; then
-need_session
-say "The outputs now, at Camino's defaults or as an earlier saved layout has them:"
-show in_session wlr-randr
-[[ -e $LAYOUT_FILE ]] && cp "$LAYOUT_FILE" "$LAYOUT_BEFORE"
-# The file as msd saves it (71), with every output in its current mode and transform, left
-# to right, and the first one at a scale it doesn't have now.
-if in_session wlr-randr --json | python3 -c '
-import json, sys
-heads = [h for h in json.load(sys.stdin) if h["enabled"]]
-out, expected, x = open(sys.argv[1], "w"), open(sys.argv[2], "w"), 0
-out.write("<monitors version=\"1\">\n  <configuration>\n")
-for i, head in enumerate(heads):
-    mode = next(m for m in head["modes"] if m["current"])
-    scale = head["scale"]
-    if i == 0:
-        scale = 1.5 if abs(scale - 1.25) < 0.01 else 1.25
-    out.write("      <head name=\"%s\">\n          <enabled>yes</enabled>\n" % head["name"])
-    out.write("          <width>%d</width>\n          <height>%d</height>\n" % (mode["width"], mode["height"]))
-    out.write("          <rate>%d</rate>\n" % round(mode["refresh"] * 1000))
-    out.write("          <x>%d</x>\n          <y>0</y>\n          <scale>%s</scale>\n" % (x, scale))
-    out.write("          <transform>%s</transform>\n      </head>\n" % head["transform"])
-    expected.write("%s %d,0 %s\n" % (head["name"], x, scale))
-    turned = head["transform"] in ("90", "270", "flipped-90", "flipped-270")
-    x += round((mode["height"] if turned else mode["width"]) / scale)
-out.write("  </configuration>\n</monitors>\n")
-' "$LAYOUT_FILE" "$LAYOUT_EXPECTED"; then
-  show cat "$LAYOUT_FILE"
-  say "The next login should have, as name, place and scale:"
-  sed 's/^/    /' "$LAYOUT_EXPECTED"
-else
-  warn "couldn't write $LAYOUT_FILE from wlr-randr --json"
-  restore_layout
-  rm -f "$LAYOUT_EXPECTED" "$LAYOUT_BEFORE"
-fi
-pause
-fi
-
-# ── 7 ─────────────────────────────────────────────────────────────────────
 stage "M5's exit: logging out through the panel"
 if ! done_already "Log Out ends the session, and Camino exits with mate-session's status"; then
 if [[ ! -e $ASKED ]]; then
@@ -650,51 +600,7 @@ note "Out, and of the session's variables only XDG_CURRENT_DESKTOP and XDG_SESSI
 result "Log Out ends the session, and Camino exits with mate-session's status"
 fi
 
-# ── 8 ─────────────────────────────────────────────────────────────────────
-stage "Checklist: msd applies the saved display layout at login"
-if ! done_already "msd applies the saved display layout at login"; then
-if [[ -s $LAYOUT_EXPECTED ]]; then
-  say "Log in again, for the layout that stage 6 saved:"
-  need_session
-  sleep 5
-  show in_session wlr-randr
-  say "DumpState's outputs:"
-  dump outputs | grep -v '^      ' || true
-  say "Saved, as name, place and scale:"
-  sed 's/^/    /' "$LAYOUT_EXPECTED"
-  if in_session wlr-randr --json | python3 -c '
-import json, sys
-heads = {h["name"]: h for h in json.load(sys.stdin)}
-wrong = 0
-for line in open(sys.argv[1]):
-    name, place, scale = line.split()
-    head = heads.get(name)
-    now = head and ("%d,%d" % (head["position"]["x"], head["position"]["y"]), head["scale"])
-    if not now or now[0] != place or abs(now[1] - float(scale)) > 0.01:
-        print("    %s is %s, not at %s at scale %s" % (name, now, place, scale))
-        wrong += 1
-sys.exit(wrong)
-' "$LAYOUT_EXPECTED"; then ok "every output is where the saved layout puts it"; else warn "the outputs aren't as saved"; fi
-  if session_log_has 'Could not apply the display configuration'; then
-    warn "msd logged 'Could not apply the display configuration'"
-  else
-    ok "msd didn't log that it couldn't apply the configuration"
-  fi
-  step "The monitors show the new scale and places: the pointer crosses where they touch."
-  note "Expected (58, 71): msd's wlrandr plugin applies monitors-wayland.xml over"
-  note "wlr-output-management. The outputs may blank once as it does: a known gap (06)."
-  result "msd applies the saved display layout at login"
-  restore_layout
-  say "The saved layout is as it was before stage 6: the next login has it, or the defaults."
-  step "Log out from the panel when you're done."
-  pause
-else
-  warn "stage 6 saved no layout"
-  record "msd applies the saved display layout at login" "not run" "The wizard couldn't write a layout from wlr-randr --json."
-fi
-fi
-
-# ── 9 ─────────────────────────────────────────────────────────────────────
+# ── 7 ─────────────────────────────────────────────────────────────────────
 record_stage
 ;;
 
@@ -730,15 +636,8 @@ journalctl --user --since "$SINCE" -t camino -p warning -o cat --no-pager 2>/dev
 step "The greeter's session list had MATE on Camino."
 step "The desktop came up well inside 30 seconds, with both panels, the window list and"
 step "the workspace switcher, caja's icons, and msd's wallpaper on every output."
-if [[ -s $LAYOUT_FILE ]]; then
-  say "$LAYOUT_FILE, which msd applies at login, and the outputs now:"
-  show grep -E '<(head|x|y|scale)[ >]' "$LAYOUT_FILE"
-  show in_session wlr-randr
-  step "Each output is at the place and scale the file has for it."
-else
-  note "There's no $LAYOUT_FILE, so the outputs are at Camino's defaults:"
-  note "the tty part saves a layout and looks at the next login."
-fi
+say "The outputs, which Camino put where its saved layout or its defaults have them (83):"
+show in_session sh -c "wlr-randr | grep -E '^[^ ]|Position|Scale|current'"
 note "Expected: a logind session of type wayland, and Camino's lines in the journal,"
 note "since its stderr isn't a terminal (14)."
 result "From the display manager, MATE on Camino starts mate-session, the panel, caja's desktop and msd"
@@ -788,7 +687,7 @@ x11)
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Before the checks"
 [[ $(id -un) != caminotest ]] || warn "this is caminotest: the fall-back rule is checked on your own user"
-show pacman -Q mate-session-manager mate-panel mate-settings-daemon
+show pacman -Q mate-session-manager mate-panel mate-settings-daemon caja
 for package in "${PACKAGES[@]:1}"; do
   pacman -Q "$package" >/dev/null 2>&1 || warn "$package isn't installed, so this wouldn't check the Patched packages"
 done
@@ -885,8 +784,8 @@ else
   for process in mate-panel mate-settings-daemon; do
     if pgrep -u "$(id -u)" -f "(^|/)$process( |\$)" >/dev/null; then ok "$process runs"; else warn "$process isn't running"; fi
   done
-  step "The panel, its window list and the wallpaper are as they were with the stock"
-  step "packages, and the session logs out from the panel."
+  step "The panel, its window list, the desktop icons and the wallpaper are as they were"
+  step "with the stock packages (81), and the session logs out from the panel."
   note "Expected (ADR 0011): a patch that turns on under Wayfire is a bug. The panel's own"
   note "patches aren't gated: it tells Wayfire where each button is, and Shut Down goes"
   note "through the session manager when there is one."
