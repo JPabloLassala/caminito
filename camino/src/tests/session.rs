@@ -370,19 +370,35 @@ fn the_command_starts_once_xwayland_is_ready_with_the_names_owned_and_the_enviro
 fn the_activation_environment_has_the_variables_before_the_command_starts() {
     let mut f = fixture();
     let scripts = Scripts::new();
-    // It never takes its name, so the bus never answers the activation, and the command
-    // doesn't wait for an answer.
+    // It never takes its name, so the bus doesn't answer an activation that works before
+    // the test ends, and the command doesn't wait for an answer. One that fails is answered
+    // at once, so the command keeps the answer for the test's failure (77).
     let program = scripts.write("service", &write_environment("activated"));
     let service = ActivatedService::new(&program);
     let command = scripts.session_command(&format!(
-        "dbus-send --session --type=method_call --dest=org.freedesktop.DBus \
+        "dbus-send --session --print-reply --dest=org.freedesktop.DBus \
          /org/freedesktop/DBus \
-         org.freedesktop.DBus.StartServiceByName string:{} uint32:0\n{WAIT}",
+         org.freedesktop.DBus.StartServiceByName string:{} uint32:0 \
+         >\"$dir/answer\" 2>&1 &\n{WAIT}",
         service.name
     ));
 
     let display = start(&mut f, command);
-    f.dispatch_until(|_| scripts.exists("activated"));
+    f.dispatch_until_else(
+        |_| scripts.exists("activated"),
+        || {
+            let answer = match fs::read_to_string(scripts.path("answer")) {
+                Ok(answer) if !answer.is_empty() => answer,
+                Ok(_) => "nothing yet, so the bus is still activating it".into(),
+                Err(_) => "nothing: the command hasn't asked".into(),
+            };
+            format!(
+                "; the activation with {} answered: {}",
+                service.file.display(),
+                answer.trim_end()
+            )
+        },
+    );
 
     let activated = scripts.environment("activated");
     for name in EXPORTED {
