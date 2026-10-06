@@ -27,7 +27,7 @@ All of one output's have the same geometry, so only the top one is seen. Nothing
 ## Acceptance criteria
 
 - [x] The cause is written down in this ticket's notes, with a headless test written before the fix where the cause is Camino's.
-- [ ] After a monitor is unplugged and plugged back, each output has one `mate-background` layer surface in `DumpState`.
+- [x] After a monitor is unplugged and plugged back, each output has one `mate-background` layer surface in `DumpState`.
 
 ## Notes
 
@@ -60,6 +60,16 @@ All of one output's have the same geometry, so only the top one is seen. Nothing
 
 ## Resolution
 
-Resolved on 2026-10-06, with the second criterion unticked until it's seen in the Session. The cause is msd's: a `monitors-changed` that arrives during the roundtrip of a window's `show` re-entered the rebuild of the background's windows, and both rebuilds' windows stayed. `mate-settings-daemon-camino` `pkgrel` 3 carries the fix as `0006`, with no gate. With it, the headless run with the real msd has one `mate-background` surface on each output after each unplug and re-plug.
+Resolved on 2026-10-06. The cause is msd's: a `monitors-changed` that arrives during the roundtrip of a window's `show` re-entered the rebuild of the background's windows, and both rebuilds' windows stayed. `mate-settings-daemon-camino` `pkgrel` 3 carries the fix as `0006`, with no gate. With it, the headless run with the real msd has one `mate-background` surface on each output after each unplug and re-plug.
 
-- **Left for the developer's machine:** install `pkgrel` 3, log in again, and count each output's `mate-background` surfaces in `DumpState` after each monitor's unplug and re-plug. The checklist's *Camino restores the saved layout from the first frame* has the step.
+- **Seen in the Session** on 2026-10-06, in the developer's Session on `camino-git r220.daef32d-1` with `mate-settings-daemon-camino 1.29.1-3`, in each output's `layer_surfaces` in `DumpState`:
+
+  | When | HDMI-A-1 | DP-1 |
+  | --- | --- | --- |
+  | Before, both connected | 1 | 1 |
+  | DP-1 unplugged | 1 | gone |
+  | DP-1 plugged back and HDMI-A-1 unplugged | gone | 1 |
+  | HDMI-A-1 plugged back | 1 | 1 |
+
+  DP-1's re-plug wasn't read on its own, with both connected: the next read was after HDMI-A-1's unplug. The saved layout and the primary output were back at the end, and caja's `desktop` followed the primary output to DP-1 and back ([89](89-desktop-icons-stay-when-the-primary-comes-back.md)).
+- **No panel in any of the reads,** the first one included: no output had a layer surface of mate-panel's. That's [91](91-mate-panel-dies-when-a-monitor-is-lit.md)'s, not this ticket's.
