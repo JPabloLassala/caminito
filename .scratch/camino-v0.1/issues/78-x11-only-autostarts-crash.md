@@ -1,7 +1,7 @@
 # X11-only programs that mate-session autostarts crash in the session
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5
 Blocked by: 69
 Map: [Camino v0.1](../map.md)
@@ -23,8 +23,8 @@ In the first login on a tty ([76](76-tty-login-left-over.md), 2026-10-05, on the
 ## Acceptance criteria
 
 - [x] The decision is recorded, in an ADR if it adds a carried patch.
-- [ ] A login as `caminotest` on a tty, on a machine with `mate-screensaver`, `mate-power-manager` and `mate-utils` installed, leaves no core dump (`coredumpctl list --since` the login).
-- [ ] `mate-screensaver` isn't running in the session, and `org.mate.ScreenSaver` is Camino's.
+- [x] A login as `caminotest` on a tty, on a machine with `mate-screensaver`, `mate-power-manager` and `mate-utils` installed, leaves no core dump (`coredumpctl list --since` the login).
+- [x] `mate-screensaver` isn't running in the session, and `org.mate.ScreenSaver` is Camino's.
 
 ## Notes
 
@@ -47,5 +47,9 @@ In the first login on a tty ([76](76-tty-login-left-over.md), 2026-10-05, on the
   - **`coredumpctl` shows nothing in that machine,** crash or not: the kernel says "core_pattern handlers not supported in namespaces". The script reads the kernel's `coredump:` lines from the journal.
   - **mate-power-manager aborts there with no polkit rule,** as the runs before the script had one showed, with `pkgrel` 1 (on Wayland) and with `pkgrel` 2 (on X11): logind refuses `caminotest` the inhibitor locks it takes as it starts (`Error in dbus - … AccessDenied`, and `systemd-inhibit` as `caminotest` gets the same refusal). The script adds a polkit rule that allows them for the run, and removes it. The login on a tty of 76 had no such abort: there mate-power-manager got as far as its keys.
   - **72's `xvfb-login.sh` said "mate-screensaver running: no" always:** `pgrep -x mate-screensaver` matches nothing, the name being 16 characters. It asks for `mate-screensave` now. 72's own result stands: mate-screensaver wasn't installed in that machine then.
+- **The login on a tty (2026-10-06), on the developer's machine,** as `caminotest` on tty4, with `camino --session` started at 15:36:43, on `camino-git r195.9e4baac-1` and `mate-session-manager-camino 1.28.0.r23.g57a9178-2`, with `mate-screensaver`, `mate-power-manager`, `mate-netbook` and `mate-utils` installed. Read four minutes in, from the developer's own session. Both criteria pass, and the ticket is resolved:
+  - `coredumpctl list --since 15:34` says "No coredumps found", and the kernel's journal has no `coredump` or `segfault` line since the login.
+  - mate-screensaver and mate-maximus aren't among `caminotest`'s processes. mate-power-manager is, with `GDK_BACKEND=x11` and `DISPLAY=:2` in its environment.
+  - `busctl --user status org.mate.ScreenSaver`, as `caminotest`, gives Camino's pid (`camino --session`).
 - **Not looked at still:** which other autostart entries of a full MATE install are X11-only, D-Bus activation of `org.mate.PowerManager`, which starts it on Wayland, and entries of a saved session, which the lists don't match (both in ADR 0014).
 - **Review left as is:** the two patches each spell out the same test of an id against a list, and `is_under_camino` is the third spelling of the gate beside `main.c`'s two; each patch stays readable alone.
