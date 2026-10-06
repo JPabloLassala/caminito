@@ -35,7 +35,7 @@ M5's checklist items and the closing commit ([17](17-milestone-slicing.md)), on 
 ## Notes
 
 - **The nested and tty items of M1 to M4** still apply. 43's, 54's and 59's wizards take the ticket to write to (`TICKET=…`).
-- **[60](60-tty-checks-left-over.md)'s hot-plug** is still open and gates no milestone; the same sitting can run it.
+- **[60](60-tty-checks-left-over.md)'s hot-plug** gates no milestone. It was run on 2026-10-06, and 60 is resolved.
 - **The session can't lock until M7** ([62](62-screensaver-names.md)), so the developer doesn't use it daily yet (17).
 - **Handed on by [70](70-mate-panel-camino.md):** `mate-panel-camino` has master's `libmate-panel-applet-4.so.2`, and Arch's `mate-applets`, `mate-sensors-applet` and `mate-notification-daemon`'s applet are linked to `.so.1`, so they don't start under the patched panel, on X11 too. That is against "X11 MATE on the same machine still works" for anyone who uses those applets. Decide here: build those packages again against the patched panel, or keep the stock library beside the new one.
 - **Not closed (2026-10-05).** The checklist items, the wizard and `namcap` are done. The rest waits: [76](76-tty-login-left-over.md) and [77](77-session-test-times-out-in-ci.md) are open, the Patched packages aren't installed on the developer's machine, and every check of the closing needs a session and the developer. This was an agent's session, which didn't install packages (installing takes the stock MATE packages out) and can't sit at a tty or a greeter. The map's M5 line, the README's status and milestone table, and its `--session` note are the closing commit's, and unchanged.

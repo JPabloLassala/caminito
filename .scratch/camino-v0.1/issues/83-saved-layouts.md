@@ -28,6 +28,7 @@ Camino keeps the Saved layouts itself and restores them, in place of msd's wlran
 ## Notes
 
 - 60's hot-plug check with a real monitor is still open, and this ticket's hot-plug restore needs the same hardware.
+- **The hot-plug restore was seen on hardware (2026-10-06),** in [60](60-tty-checks-left-over.md)'s run: each monitor plugged back came up at its saved mode, place and scale, and the LG as the primary output. The desktop icons didn't follow it back ([89](89-desktop-icons-stay-when-the-primary-comes-back.md)).
 
 ## Resolution
 
