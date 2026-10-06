@@ -239,9 +239,12 @@ session_env() {
   Cancelling it leaves the session as it was. *Log Out* ends the session: the tty is back in text
   mode at the shell prompt, which prints `camino exited with 0`, mate-session's status (61).
   Nothing of the session still runs, and of its variables systemd has only
-  `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` (61, 74). *Shut Down* powers the machine off, and
-  the journal of that boot ends with `the session command exited`. It may also have `systemd
-  didn't unset the environment`, since a systemd that's shutting down may not answer (61).
+  `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` (61, 74). *Shut Down* powers the machine off: the
+  journal of that boot has logind's `requested from client PID … ('mate-session')`, and
+  Camino's last lines are `stopping the session command` or `the session command exited`,
+  since mate-session asks logind before it exits and the machine may go first. It may also
+  have `systemd didn't unset the environment`, since a systemd that's shutting down may not
+  answer (61).
 - **Debug tool:** the exit status, `systemctl --user show-environment`, the journal, and
   `dbus-monitor "interface='org.gnome.SessionManager'"` for the panel's `Logout` and `Shutdown`
   calls.
