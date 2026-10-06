@@ -146,7 +146,40 @@ impl Backend {
             Backend::Tty(tty) => tty.disable_output(camino, output),
             Backend::Winit(_) => {}
             #[cfg(test)]
-            Backend::Headless(_) => camino.disable_output(output),
+            Backend::Headless(headless) => headless.disable(camino, output),
+        }
+    }
+
+    /// The monitors the backend found and added as outputs, and hasn't lit yet: it waits
+    /// for the saved layout, so that each is lit once, in the mode it's to show (87).
+    /// Nested, the host's window is there from the start.
+    pub(crate) fn unlit_outputs(&self) -> Vec<Output> {
+        match self {
+            Backend::Tty(tty) => tty.unlit_outputs(),
+            Backend::Winit(_) => Vec::new(),
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.unlit_outputs(),
+        }
+    }
+
+    /// Lights a monitor the backend found, in the mode its output has, and returns whether
+    /// it did.
+    pub(crate) fn light_output(&mut self, output: &Output) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.light_output(output),
+            Backend::Winit(_) => false,
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.light(output),
+        }
+    }
+
+    /// Forgets a monitor the backend found and can't light, and removes its output.
+    pub(crate) fn remove_unlit_output(&mut self, camino: &mut Camino, output: &Output) {
+        match self {
+            Backend::Tty(tty) => tty.remove_unlit_output(camino, output),
+            Backend::Winit(_) => {}
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.unplug(camino, output),
         }
     }
 

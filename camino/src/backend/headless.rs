@@ -20,8 +20,9 @@ pub struct Headless {
     targets: Vec<Target>,
     /// How many outputs were ever plugged in, which names the next one.
     plugged: usize,
-    /// The modes monitors list but can't show, for tests of a configuration that fails.
-    refused: Vec<(Output, Mode)>,
+    /// The modes monitors list but can't show, by connector, for tests of a configuration
+    /// that fails.
+    refused: Vec<(String, Mode)>,
 }
 
 /// A virtual output and the memory it renders into.
@@ -30,6 +31,11 @@ struct Target {
     buffer: Image<'static, 'static>,
     damage_tracker: OutputDamageTracker,
     rendered: bool,
+    /// Whether it was found and is yet to be lit, as a monitor on the tty is until the
+    /// saved layout had its say (87).
+    unlit: bool,
+    /// The modes it was lit in and switched to, in order.
+    mode_sets: Vec<Mode>,
 }
 
 impl Default for Headless {
@@ -65,7 +71,7 @@ impl Headless {
     }
 
     /// Plugs a virtual monitor in at the connector `name`, as `plug` does at a new one: an
-    /// unplugged monitor plugged in again where it was.
+    /// unplugged monitor plugged in again where it was. It's lit by `light`.
     pub fn plug_at(
         &mut self,
         camino: &mut Camino,
@@ -91,6 +97,8 @@ impl Headless {
             output: output.clone(),
             buffer,
             rendered: false,
+            unlit: true,
+            mode_sets: Vec::new(),
         });
         camino.add_output(output.clone());
         output
@@ -106,23 +114,52 @@ impl Headless {
     }
 
     /// Makes a virtual monitor fail to show its mode of `size`, as a monitor does whose
-    /// mode the GPU can't drive.
+    /// mode the GPU can't drive, and the monitor plugged in again at its connector too.
     pub fn refuse_mode(&mut self, output: &Output, size: Size<i32, Physical>) {
         let mode = Mode {
             size,
             refresh: DEFAULT_REFRESH,
         };
-        self.refused.push((output.clone(), mode));
+        self.refused.push((output.name(), mode));
     }
 
-    /// Switches a virtual monitor to `mode`, and returns whether it did.
+    /// Switches a virtual monitor to `mode`, and returns whether it did. One that isn't
+    /// lit yet only takes note of the mode, as on the tty.
     pub fn set_mode(&mut self, camino: &mut Camino, output: &Output, mode: Mode) -> bool {
-        if !self.resize(output, mode) {
+        let unlit = target_mut(&mut self.targets, output).is_some_and(|target| target.unlit);
+        if !unlit && !self.resize(output, mode) {
             return false;
         }
         output.change_current_state(Some(mode), None, None, None);
         camino.output_mode_changed(output);
         true
+    }
+
+    /// The virtual monitors plugged in and not lit yet.
+    pub(crate) fn unlit_outputs(&self) -> Vec<Output> {
+        let unlit = self.targets.iter().filter(|target| target.unlit);
+        unlit.map(|target| target.output.clone()).collect()
+    }
+
+    /// Lights a virtual monitor that was plugged in, in the mode its output has, and
+    /// returns whether it did.
+    pub(crate) fn light(&mut self, output: &Output) -> bool {
+        let Some(mode) = output.current_mode() else {
+            return false;
+        };
+        if !self.resize(output, mode) {
+            return false;
+        }
+        let target = target_mut(&mut self.targets, output).expect("a headless output");
+        target.unlit = false;
+        true
+    }
+
+    /// Turns a virtual monitor off. One that wasn't lit yet won't be.
+    pub(crate) fn disable(&mut self, camino: &mut Camino, output: &Output) {
+        let target = target_mut(&mut self.targets, output).expect("a headless output");
+        target.unlit = false;
+        camino.disable_output(output);
     }
 
     /// Lights a disabled virtual monitor again in `mode`, and returns whether it did.
@@ -134,9 +171,10 @@ impl Headless {
         true
     }
 
-    /// Gives a virtual monitor the memory for `mode`, unless it refuses the mode.
+    /// Gives a virtual monitor the memory for `mode`, which is a mode set, unless it
+    /// refuses the mode.
     fn resize(&mut self, output: &Output, mode: Mode) -> bool {
-        if self.refused.contains(&(output.clone(), mode)) {
+        if self.refused.contains(&(output.name(), mode)) {
             return false;
         }
         let target = target_mut(&mut self.targets, output).expect("a headless output");
@@ -145,7 +183,14 @@ impl Headless {
             .create_buffer(Fourcc::Argb8888, (mode.size.w, mode.size.h).into())
             .expect("pixman buffer");
         target.rendered = false;
+        target.mode_sets.push(mode);
         true
+    }
+
+    /// The modes a virtual monitor was lit in and switched to since it was plugged in, in
+    /// order.
+    pub(crate) fn mode_sets(&mut self, output: &Output) -> Vec<Mode> {
+        target_mut(&mut self.targets, output).map_or_else(Vec::new, |t| t.mode_sets.clone())
     }
 
     /// Unplugs a virtual monitor.

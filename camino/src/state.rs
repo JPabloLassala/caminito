@@ -339,7 +339,7 @@ impl State {
         };
         let mut state = Self { backend, camino };
         // Before the first frame, which the event loop draws (ADR 0014).
-        state.restore_saved_layout();
+        state.monitors_scanned();
         Ok(state)
     }
 
@@ -390,7 +390,7 @@ impl State {
             self.backend
                 .headless_mut()
                 .plug(&mut self.camino, physical_size, modes, internal);
-        self.restore_saved_layout();
+        self.monitors_scanned();
         output
     }
 
@@ -404,7 +404,7 @@ impl State {
             unplugged.physical_properties().size,
             &modes,
         );
-        self.restore_saved_layout();
+        self.monitors_scanned();
         output
     }
 
@@ -424,7 +424,7 @@ impl State {
     #[cfg(test)]
     pub fn unplug_headless_output(&mut self, output: &Output) {
         self.backend.headless_mut().unplug(&mut self.camino, output);
-        self.restore_saved_layout();
+        self.monitors_scanned();
     }
 
     /// The number of render elements the scene has for `output`.

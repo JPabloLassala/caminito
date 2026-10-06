@@ -353,6 +353,13 @@ impl Fixture {
             .refuse_mode(output, mode.into());
     }
 
+    /// The sizes of the modes a monitor was lit in and switched to since it was plugged
+    /// in, in order.
+    pub fn mode_sets(&mut self, output: &Output) -> Vec<(i32, i32)> {
+        let mode_sets = self.state.backend.headless_mut().mode_sets(output);
+        mode_sets.iter().map(|mode| mode.size.into()).collect()
+    }
+
     /// Unplugs a monitor, and dispatches.
     pub fn unplug(&mut self, output: &Output) {
         self.state.unplug_headless_output(output);

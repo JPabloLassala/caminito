@@ -243,6 +243,95 @@ fn a_saved_mode_that_the_backend_cant_show_leaves_the_rest_of_the_layout_restore
     ");
 }
 
+/// Camino with the AOC and the LG, the LG saved in the smaller of its two modes, and then
+/// unplugged.
+fn start_with_the_lg_saved_in_its_smaller_mode_and_unplugged(dir: &Path) -> (Fixture, Output) {
+    let mut f = Fixture::with_saved_layouts(dir);
+    plug(&mut f, AOC);
+    let lg = f.plug_with_modes(LG.0, &[LG.1, (1920, 1080)]);
+    let client = output_manager(&mut f);
+    let lg_smaller = HeadChange::of("headless-2").mode((1920, 1080)).scale(1.0);
+    apply(&mut f, client, &[lg_smaller]);
+    save(&mut f).unwrap();
+    f.unplug(&lg);
+    (f, lg)
+}
+
+#[test]
+fn a_monitor_plugged_back_is_lit_once_in_its_saved_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, lg) = start_with_the_lg_saved_in_its_smaller_mode_and_unplugged(dir.path());
+
+    let lg = f.replug(&lg);
+
+    // Not in its preferred mode first, and then switched (87).
+    assert_eq!(f.mode_sets(&lg), [(1920, 1080)]);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    headless-2 at 1920,0 1920x1080 scale 1.0
+    primary headless-1
+    ");
+}
+
+#[test]
+fn a_monitor_with_no_saved_layout_is_lit_once_in_its_preferred_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut f = Fixture::with_saved_layouts(dir.path());
+
+    let lg = f.plug_with_modes(LG.0, &[LG.1, (1920, 1080)]);
+
+    assert_eq!(f.mode_sets(&lg), [LG.1]);
+}
+
+#[test]
+fn a_monitor_that_cant_be_lit_in_its_saved_mode_is_lit_in_its_preferred_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, lg) = start_with_the_lg_saved_in_its_smaller_mode_and_unplugged(dir.path());
+    f.refuse_mode(&lg, (1920, 1080));
+
+    let lg = f.replug(&lg);
+
+    // The rest of the layout is still restored: the saved scale.
+    assert_eq!(f.mode_sets(&lg), [LG.1]);
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    headless-2 at 1920,0 3840x2160 scale 1.0
+    primary headless-1
+    ");
+}
+
+#[test]
+fn a_monitor_that_cant_be_lit_at_all_is_left_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, lg) = start_with_the_lg_saved_in_its_smaller_mode_and_unplugged(dir.path());
+    f.refuse_mode(&lg, (1920, 1080));
+    f.refuse_mode(&lg, LG.1);
+
+    f.replug(&lg);
+
+    assert_snapshot!(layout(&f), @"
+    headless-1 at 0,0 1920x1080 scale 1.0
+    primary headless-1
+    ");
+}
+
+#[test]
+fn a_monitor_saved_as_disabled_isnt_lit_when_its_plugged_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut f, _aoc, lg) = start_with_aoc_and_lg(dir.path());
+    let client = output_manager(&mut f);
+    apply(&mut f, client, &[HeadChange::of("headless-2").disable()]);
+    save(&mut f).unwrap();
+    f.unplug(&lg);
+
+    let lg = f.replug(&lg);
+
+    assert!(f.mode_sets(&lg).is_empty());
+    // It's still there for a client to enable, which lights it.
+    apply(&mut f, client, &[HeadChange::of("headless-2").enable()]);
+    assert_eq!(f.mode_sets(&lg), [LG.1]);
+}
+
 #[test]
 fn a_restored_scale_counts_as_set_so_window_scaling_factor_leaves_it() {
     let dir = tempfile::tempdir().unwrap();

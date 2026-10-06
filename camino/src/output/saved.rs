@@ -396,12 +396,43 @@ impl Camino {
 }
 
 impl State {
+    /// Shows the monitors as a scan left them. The backends call it once they've added and
+    /// removed what the scan found: the saved layout is restored first, and the monitors
+    /// found are lit after it, so each is lit once, in the mode it's to show, and the first
+    /// frame of a Session and of a monitor plugged in has the layout (87). One that can't
+    /// be lit in that mode is lit in its preferred one, and one that can't be lit at all is
+    /// left out, as if it wasn't plugged in.
+    pub(crate) fn monitors_scanned(&mut self) {
+        self.restore_saved_layout();
+        let mut left_out = false;
+        for output in self.backend.unlit_outputs() {
+            if self.backend.light_output(&output) {
+                continue;
+            }
+            let preferred = output
+                .preferred_mode()
+                .filter(|&mode| Some(mode) != output.current_mode());
+            if let Some(preferred) = preferred
+                && self
+                    .backend
+                    .set_output_mode(&mut self.camino, &output, preferred)
+                && self.backend.light_output(&output)
+            {
+                continue;
+            }
+            self.backend.remove_unlit_output(&mut self.camino, &output);
+            left_out = true;
+        }
+        // The monitors that are left may have a layout of their own.
+        if left_out {
+            self.restore_saved_layout();
+        }
+    }
+
     /// Restores the layout saved for the connected monitors, if a monitor came or went
-    /// since the last time and one is saved for those there are now. The backends call it
-    /// once they've added and removed what a scan found, so the first frame of a Session
-    /// and of a monitor plugged in has it. Without one, the outputs stay as they are: a
-    /// new one at Camino's defaults (51).
-    pub(crate) fn restore_saved_layout(&mut self) {
+    /// since the last time and one is saved for those there are now. Without one, the
+    /// outputs stay as they are: a new one at Camino's defaults (51).
+    fn restore_saved_layout(&mut self) {
         if !self.camino.monitors_changed {
             return;
         }
