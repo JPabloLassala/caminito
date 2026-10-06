@@ -1,7 +1,7 @@
 # mate-panel dies when a monitor is lit
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6 (proposed)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -24,12 +24,12 @@ mate-panel dies when a monitor is turned on or plugged in, and when two die with
 ## Acceptance criteria
 
 - [x] The cause is named: the event, and whose fault its handling is.
-- [ ] On the developer's machine, `.scratch/camino-v0.1/issues/90-off-on.sh` leaves the mate-panel that was running, running, and `coredumpctl list mate-panel` has no new line.
+- [x] On the developer's machine, `.scratch/camino-v0.1/issues/90-off-on.sh` leaves the mate-panel that was running, running, and `coredumpctl list mate-panel` has no new line.
 - [x] If Camino changes, a headless test written before the change. If a package is patched, ADR 0011's list has it.
 
 ## Resolution
 
-Implemented on 2026-10-06. The check on the developer's machine is still to do: it needs the new `camino-git` installed and a new Session, so the ticket stays open.
+Implemented on 2026-10-06, and checked on the developer's machine the same day (below).
 
 ### The cause
 
@@ -61,3 +61,10 @@ No package is patched, so ADR 0011's list is as it was.
 - **Foreign-toplevel's `output_leave` now comes before the removal too**, by the refresh pass's order, with no test of it. libxfce4windowing's windows take a removed monitor off their own lists, so nothing there depended on it.
 
 The 13 tests that take Camino's names on the session bus fail while a Camino Session runs on it. The suite was run under `dbus-run-session`.
+
+### On the developer's machine (2026-10-06)
+
+On `camino-git r225.c221860-1`, in a Session started at 17:32, the developer unplugged a monitor and plugged it in again, and says mate-panel didn't die. A minute after, the mate-panel that the Session started at 17:32:28 was still running, and `coredumpctl` had no core dump of any program since 17:05, the Qt clients' included.
+
+- **A different check from the ticket's:** the monitor was unplugged and plugged in, and `.scratch/camino-v0.1/issues/90-off-on.sh`, which disables and enables each monitor over output management, wasn't run. Both hide the output through `hide_output`, and the headless tests have both. On r210 and r220 the panel died at a re-plug too (87).
+- **One monitor, once.** Which monitor it was isn't recorded.
