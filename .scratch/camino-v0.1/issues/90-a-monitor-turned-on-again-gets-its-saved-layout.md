@@ -1,7 +1,7 @@
 # A monitor turned off and on again gets its saved layout back
 
 Type: implementation
-Status: implemented, to check on hardware
+Status: resolved
 Milestone: M6 (proposed)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -20,12 +20,12 @@ When a monitor is turned off over output management and turned on again, it come
 ## Acceptance criteria
 
 - [x] Headless tests, written before the code: with a layout saved for two monitors, one disabled over output management and enabled again with no mode, place or scale asked comes up as the layout has it; what a client asks for when it enables a monitor stands.
-- [ ] On the developer's machine, `wlr-randr --output HDMI-A-1 --off` and `--on` leave the two monitors as the saved layout has them, the primary output with them.
+- [x] On the developer's machine, `wlr-randr --output HDMI-A-1 --off` and `--on` leave the two monitors as the saved layout has them, the primary output with them.
 - [x] 58's and 83's decisions that this changes are noted in this ticket's resolution.
 
 ## Resolution
 
-Implemented on 2026-10-06, and not yet run on the developer's machine: the second criterion is open.
+Implemented on 2026-10-06, and checked on the developer's machine the same day (below).
 
 A configuration that enables a disabled monitor and asks no mode, place or scale of it brings back the layout saved for the connected monitors, if that layout has the monitor enabled (`Camino::plan_monitors_return` in `camino/src/output/saved.rs`, applied by `State::apply_with_saved_layout`).
 
@@ -48,3 +48,10 @@ What this changes of earlier decisions:
 Not covered by a test: three monitors, with the layout coming back for the ones enabled while another stays disabled. The places are the saved ones, healed (82).
 
 The 13 tests that take Camino's names on the session bus fail while a Camino Session runs on it. The suite was run under `dbus-run-session`.
+
+### On the developer's machine (2026-10-06)
+
+On `camino-git r220.daef32d-1`, in a Session started at 17:03, `.scratch/camino-v0.1/issues/90-off-on.sh` turned each monitor off for 3 s and on again with a bare `wlr-randr --on`. The developer says the layout was fully restored, and `wlr-randr` and `PrimaryOutput` after it agree with the layout saved then: the LG at 0,0 at a scale of 1.75, the AOC at 2194,0 at a scale of 1, and HDMI-A-1 the primary output.
+
+- **A weaker check than the ticket's:** the layout had been saved again at 17:00, with both monitors in their preferred modes (59.997 Hz and 60 Hz), so the run doesn't show a saved mode that isn't the preferred one coming back. The headless tests do. The place, the scale and the primary output were the layout's and not the defaults: with `window-scaling-factor` at 2, the defaults give a monitor enabled again a scale of 2, as the same script showed on r210 an hour before.
+- **mate-panel died at each monitor's return**, twice within 5 s, and mate-session didn't start it a third time. It's the crash 87 saw, on r210 too, and not this change's: [91](91-mate-panel-dies-when-a-monitor-is-lit.md).
