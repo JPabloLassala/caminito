@@ -17,7 +17,7 @@ When the primary output is unplugged and plugged back, the panels come back to i
 ## Acceptance criteria
 
 - [x] The cause is written down in this ticket's notes, with a headless test written before the fix where the cause is Camino's. (The cause is in `caja-camino`'s patch, so there's no headless test to keep.)
-- [ ] After the primary output is unplugged and plugged back, the `desktop` layer surface is on it, at its size, as the panels are. (Seen with the real caja on the headless Camino. On the two monitors it's the developer's.)
+- [x] After the primary output is unplugged and plugged back, the `desktop` layer surface is on it, at its size, as the panels are. (Seen with the real caja on the headless Camino, and on the two monitors on 2026-10-06, with no panel running to compare: see the resolution.)
 
 ## Notes
 
@@ -34,4 +34,7 @@ Resolved on 2026-10-06, in `caja-camino`, whose `pkgrel` is 2.
 
 - **The fix:** the patch follows the screen's `monitors-changed` in place of the display's `monitor-added` and `monitor-removed`. It comes each time GDK applies what a monitor's events said, its connector among it, and when one is removed. It also comes when a monitor's mode or scale changes, so the desktop's size follows those through the same function.
 - **Seen:** the same throwaway test with the caja built from the patched tree had `desktop` on `headless-2` at 1920,0 and 2259x1271 after the re-plug, and nothing on `headless-1`, in two runs. `caja-camino 1.28.0-2` was then built with `makepkg` from this patch. It wasn't installed, and wasn't run in a Session.
-- **Left for the developer's machine:** install `caja-camino 1.28.0-2`, log in again, and do step 4 of the checklist's *The primary output moves the panel, the desktop icons and RandR's primary*, which asks for that `pkgrel` now.
+- **Seen on the developer's machine (2026-10-06),** in the Session on `camino-git r220.daef32d-1` with `caja-camino 1.28.0-2`, the caja started after the upgrade. The primary output was HDMI-A-1, the LG, at 0,0 and 2194x1234, with `desktop` on it. Its cable was unplugged for 11 s:
+  - 5 s after the unplug, `primary_output` was DP-1, alone at 0,0, with `desktop` on it at 1920x1080.
+  - 5 s after the re-plug, `primary_output` was HDMI-A-1 again, at 0,0, with `desktop` on it at 2194x1234 and none on DP-1, at 2194,0. It was the same 30 s after, with the same caja running and no new core dump.
+- **Not seen:** the panels beside it. mate-panel wasn't running, having died earlier in that Session ([91](91-mate-panel-dies-when-a-monitor-is-lit.md)), so step 4 of the checklist's *The primary output moves the panel, the desktop icons and RandR's primary* has its desktop half seen and its panel half waiting on 91.
