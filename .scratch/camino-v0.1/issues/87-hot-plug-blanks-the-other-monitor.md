@@ -45,3 +45,8 @@ When a monitor is plugged in or unplugged on the tty, the monitor that stays goe
   - **Start-up:** one mode set per monitor, each straight in its saved mode: the LG's surface with the 59.94 Hz mode (clock 593410) and the AOC's with the 144 Hz one (clock 327140), where the preferred ones are 533250 and 148500.
   - **The AOC unplugged at 16:14:53 and plugged back at 16:14:55:** one surface, in the 144 Hz mode, and one `Setting new mode`, 0.26 s after udev's event. No second round, no `can't light` line, and no crash in the kernel's log.
   - **Not yet said or done:** what the LG showed through it, and the LG's own unplug and re-plug.
+- **The developer's report of that run, and the LG's turn (2026-10-06, 16:16):**
+  - **The LG stayed on** through the AOC's unplug and re-plug. So that direction passes on r210.
+  - **The AOC didn't stay on** when the LG was unplugged (16:16:04) and plugged back (16:16:09). Whether it went dark at the unplug, at the re-plug or for the 4.7 s between, and whether the pointer and windows went too, isn't said yet.
+  - **The journal:** at the LG's re-plug one surface, in the 59.94 Hz mode, and one `Setting new mode`: the fix held. At its unplug Camino logs nothing but udev's three events, as before; a frame the AOC couldn't draw or queue is logged only at `debug`.
+  - **mate-panel died again at the LG's re-plug** (16:16:10.03, the same fault in `libxfce4windowing-0.so`), and mate-session logged `respawning too quickly`. A mate-panel is running since. It didn't die at the AOC's re-plug. The LG is the primary output, so its unplug moves the panels, the desktop and every window to the AOC, which the AOC's unplug doesn't do to the LG.
