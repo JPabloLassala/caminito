@@ -24,3 +24,7 @@ A shortcut the user adds in Keyboard Shortcuts runs its command in a Session ([0
 
 - **Adding the shortcut from the capplet** needs Keyboard Shortcuts not to crash, which is [101](101-mate-control-center-camino.md)'s. Until then the check sets the keys with `dconf`.
 - **Not blocked by [99](99-msd-media-keys-and-osd.md):** the two plugins share no code, only the package's series. Whichever lands second rebases its patch number.
+- **From [99](99-msd-media-keys-and-osd.md) (2026-10-07):**
+  - `X11Only` isn't dropped: the daemon loads an `X11Only=true` plugin under Camino when its file also says `Camino=true` (`0007`), so that on Wayfire it isn't loaded at all. This plugin's file needs that line, and its patch the same gate on a display that isn't X11.
+  - The two plugins are one caller to Camino: they share msd's connection. A custom shortcut on a combination a media key has gets the same action id, and one plugin's `UngrabAccelerators` releases it for both.
+  - `AcceleratorRepeated` is new, for a held key. A plugin that doesn't listen for it runs its command once for a press, where X11 runs it at every repeat.
