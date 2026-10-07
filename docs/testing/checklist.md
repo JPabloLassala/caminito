@@ -413,6 +413,39 @@ session_env() {
 - **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
   xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
+### The Show Desktop button and Ctrl+Alt+D show the same desktop
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 7 or later, and open
+     three windows on the first workspace, one of them an X11 app such as `xterm`. In a
+     terminal on the second workspace, follow the property:
+
+     ```sh
+     gdbus monitor --session --dest org.mate.Camino --object-path /org/mate/Camino
+     ```
+
+  2. On the first workspace, click the panel's Show Desktop button, then press Ctrl+Alt+D.
+  3. Press Ctrl+Alt+D, then click the button.
+  4. Click the button, switch to the second workspace and back with the workspace switcher.
+  5. With the desktop still shown, click one window's button in the window list.
+  6. Show the desktop again with either, and start pluma from the panel's menu.
+- **Expected:** in steps 2 and 3 the windows go and come back as they were stacked, with the
+  focus on the one that had it, whichever of the two hid them and whichever brought them back,
+  and the button is pressed in exactly while they're hidden. The window list keeps their
+  buttons, none drawn as minimised. In step 4 the button is out on the second workspace, whose
+  windows stay, and in again back on the first. In step 5 that window comes back alone, and in
+  step 6 pluma opens alone: the button comes out, and the other windows are minimised in the
+  window list, as in Marco. `gdbus monitor` prints one `ShowingDesktop` change for
+  each, and none for a switch between workspaces that agree (94).
+- **Debug tool:** `showing_desktop` in `DumpState`, the `gdbus monitor` of step 1, and to tell
+  the button's side from Camino's:
+
+  ```sh
+  gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
+    --method org.freedesktop.DBus.Properties.Set org.mate.Camino ShowingDesktop '<true>'
+  ```
+
 ### The workspace switcher's preferences set the count and the names
 
 - **Milestone:** M6

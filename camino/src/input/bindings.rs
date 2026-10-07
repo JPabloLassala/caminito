@@ -40,13 +40,14 @@ const CTRL_ALT: Held = Held {
     logo: false,
 };
 
-/// Marco's defaults for the actions M1 binds.
-const BINDINGS: [(Held, Keysym, Action); 5] = [
+/// Marco's defaults for the actions M1 binds, and for `show-desktop` (94).
+const BINDINGS: [(Held, Keysym, Action); 6] = [
     (CTRL_ALT, Keysym::Left, Action::SwitchToWorkspaceLeft),
     (CTRL_ALT, Keysym::Right, Action::SwitchToWorkspaceRight),
     (ALT, Keysym::F4, Action::Close),
     (ALT, Keysym::F10, Action::ToggleMaximized),
     (ALT, Keysym::Tab, Action::SwitchWindows),
+    (CTRL_ALT, Keysym::d, Action::ShowDesktop),
 ];
 
 /// The action bound to `keysym` with exactly `mods` held, if any.
@@ -91,6 +92,7 @@ mod tests {
         assert_eq!(bound(ALT, Keysym::F4), Some(Action::Close));
         assert_eq!(bound(ALT, Keysym::F10), Some(Action::ToggleMaximized));
         assert_eq!(bound(ALT, Keysym::Tab), Some(Action::SwitchWindows));
+        assert_eq!(bound(CTRL_ALT, Keysym::d), Some(Action::ShowDesktop));
     }
 
     #[test]

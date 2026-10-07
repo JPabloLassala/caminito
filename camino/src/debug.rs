@@ -71,6 +71,8 @@ struct StateDump {
     windows: Vec<WindowDump>,
     workspaces: Vec<WorkspaceDump>,
     active_workspace: usize,
+    /// Whether the active workspace shows its desktop (94).
+    showing_desktop: bool,
     outputs: Vec<OutputDump>,
     /// The primary output's name (81): the user's choice, or its stand-in.
     primary_output: Option<String>,
@@ -248,10 +250,10 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 
 impl Camino {
     /// Windows, with the X window, Marco's type, the published frame extents and the
-    /// struts for XWayland windows, workspaces with their names and stacking, outputs with
-    /// their scales, work areas and layer surfaces, the X11 scale, focus, and the
-    /// accelerator grabs with their owners, as pretty-printed JSON. The lock state comes
-    /// with the milestone that makes it.
+    /// struts for XWayland windows, workspaces with their names and stacking, whether the
+    /// active one shows its desktop, outputs with their scales, work areas and layer
+    /// surfaces, the X11 scale, focus, and the accelerator grabs with their owners, as
+    /// pretty-printed JSON. The lock state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -340,6 +342,7 @@ impl Camino {
             windows,
             workspaces,
             active_workspace: policy.active_workspace(),
+            showing_desktop: policy.is_showing_desktop(),
             outputs,
             primary_output: self.primary_output().map(|output| output.name()),
             x11_scale: self.x11_scale(),

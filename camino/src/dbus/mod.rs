@@ -178,7 +178,7 @@ impl Camino {
         };
         tracing::info!("on the bus as {}", dbus.unique_name().unwrap_or_default());
         self.dbus = Some(dbus);
-        self.primary_output_read_from_now_on();
+        self.properties_read_from_now_on();
         Ok(())
     }
 

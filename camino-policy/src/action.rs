@@ -16,4 +16,6 @@ pub enum Action {
     /// `switch-windows`, without the popup until M8: it activates the most recently used
     /// window other than the focused one.
     SwitchWindows,
+    /// `show-desktop`
+    ShowDesktop,
 }

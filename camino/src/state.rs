@@ -225,6 +225,8 @@ pub struct Camino {
     pub(crate) monitors_changed: bool,
     /// The primary output's name as `org.mate.Camino`'s callers last heard it (81).
     pub(crate) primary_output_signalled: Option<String>,
+    /// `ShowingDesktop` as `org.mate.Camino`'s callers last heard it (94).
+    pub(crate) showing_desktop_signalled: Option<bool>,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -757,6 +759,7 @@ impl Camino {
             saved_layouts: SavedLayouts::default(),
             monitors_changed: false,
             primary_output_signalled: None,
+            showing_desktop_signalled: None,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
@@ -946,6 +949,7 @@ impl Camino {
         self.refresh_layers();
         self.refresh_output_management();
         self.refresh_primary_output_property();
+        self.refresh_showing_desktop_property();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
         // On both sides of ext-workspace's refresh: a window leaves a workspace that's
