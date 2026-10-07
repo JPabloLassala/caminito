@@ -131,13 +131,16 @@ impl Camino {
         }
     }
 
-    /// The output a popup of the layer surface `root` is kept on, relative to the layer
-    /// surface's origin.
+    /// The work area a popup of the layer surface `root` is kept in, relative to the layer
+    /// surface's origin. It's the output less the bars, the surface's own among them, as
+    /// GTK keeps a menu in the monitor's work area on X11: a panel's menu that's higher
+    /// than the room between the panels scrolls rather than run under the other panel.
     pub(crate) fn layer_popup_bounds(&self, root: &WlSurface) -> Option<Rectangle<i32, Logical>> {
         let (output, layer) = self.layer_for_surface(root)?;
         let origin = layer_map_for_output(&output).layer_geometry(&layer)?.loc;
-        let mut bounds = Rectangle::from_size(output_geometry(&output).size);
-        bounds.loc -= origin;
+        let mut bounds = self.work_area(&output);
+        // The layer surface's geometry is from its output's origin.
+        bounds.loc -= output_geometry(&output).loc + origin;
         Some(bounds)
     }
 
