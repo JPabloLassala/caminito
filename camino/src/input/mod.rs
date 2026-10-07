@@ -10,7 +10,7 @@ pub(crate) mod keyboard;
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
 
-use camino_policy::{Action, ResizeEdges, WindowId};
+use camino_policy::{ResizeEdges, WindowId};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, Event, InputBackend, InputEvent,
     InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
@@ -27,6 +27,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::X11Surface;
 
 use crate::decoration::control::FrameControl;
+use crate::input::bindings::Binding;
 use crate::output::output_geometry;
 use crate::scene::{self, SceneLayer};
 use crate::state::{Camino, SEAT, State};
@@ -216,7 +217,7 @@ impl State {
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
-        let action = keyboard
+        let binding = keyboard
             .input(
                 self,
                 keycode,
@@ -226,10 +227,14 @@ impl State {
                 |state, mods, keysym| state.bindings_stage(keycode, pressed, mods, &keysym),
             )
             .flatten();
-        if let Some(action) = action {
-            let now = self.camino.now();
-            self.camino.policy.action(SEAT, action, now);
-            self.camino.queue_redraw_all();
+        match binding {
+            Some(Binding::Policy(action)) => {
+                let now = self.camino.now();
+                self.camino.policy.action(SEAT, action, now);
+                self.camino.queue_redraw_all();
+            }
+            Some(Binding::Command(command)) => self.camino.run_command(command),
+            None => {}
         }
     }
 
@@ -251,7 +256,7 @@ impl State {
         pressed: bool,
         mods: &ModifiersState,
         keysym: &KeysymHandle<'_>,
-    ) -> FilterResult<Option<Action>> {
+    ) -> FilterResult<Option<Binding>> {
         if !pressed {
             return if self.camino.suppressed_keys.remove(&keycode) {
                 FilterResult::Intercept(None)
@@ -270,13 +275,13 @@ impl State {
             return FilterResult::Forward;
         }
         // Bindings name keys as the first layout does, whichever layout is active.
-        let action = keysym
+        let binding = keysym
             .raw_latin_sym_or_raw_current_sym()
-            .and_then(|sym| bindings::action_for(mods, sym));
-        match action {
-            Some(action) => {
+            .and_then(|sym| bindings::binding_for(mods, sym));
+        match binding {
+            Some(binding) => {
                 self.camino.suppressed_keys.insert(keycode);
-                FilterResult::Intercept(Some(action))
+                FilterResult::Intercept(Some(binding))
             }
             None => FilterResult::Forward,
         }

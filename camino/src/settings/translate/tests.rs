@@ -29,6 +29,16 @@ fn defaults() -> Reading {
     for n in 1..=36 {
         put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
     }
+    put(
+        MARCO_KEYBINDING_COMMANDS,
+        "command-screenshot",
+        s("mate-screenshot"),
+    );
+    put(
+        MARCO_KEYBINDING_COMMANDS,
+        "command-window-screenshot",
+        s("mate-screenshot --window"),
+    );
     put(INTERFACE, "gtk-theme", s("Menta"));
     put(INTERFACE, "font-name", s("Sans 10"));
     put(INTERFACE, "icon-theme", s("menta"));
@@ -231,6 +241,28 @@ fn the_defaults_give_marcos_frames() {
             right_click: TitlebarAction::Menu,
             attach_modal_dialogs: false,
         }
+    );
+}
+
+#[test]
+fn the_defaults_give_marcos_screenshot_commands() {
+    let commands = settings(&defaults()).commands;
+    assert_eq!(commands.screenshot, "mate-screenshot");
+    assert_eq!(commands.window_screenshot, "mate-screenshot --window");
+    // Marco 1.29.0's schema has no key for it; this is its default in the Marco that has.
+    assert_eq!(commands.area_screenshot, "mate-screenshot --area");
+}
+
+#[test]
+fn the_screenshot_commands_are_read_where_the_schema_has_them() {
+    let reading = with(
+        MARCO_KEYBINDING_COMMANDS,
+        "command-area-screenshot",
+        string("mate-screenshot --area --clipboard"),
+    );
+    assert_eq!(
+        settings(&reading).commands.area_screenshot,
+        "mate-screenshot --area --clipboard"
     );
 }
 

@@ -1,9 +1,11 @@
 //! `org.mate.Camino` (ADR 0002's third channel): what MATE's components and
 //! camino-displays ask of Camino that no protocol carries. So far, the primary output (81)
-//! and saving the layout (83), both ADR 0014's.
+//! and saving the layout (83), both ADR 0014's, and the window a window screenshot is of
+//! (104).
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
+use zbus::message::Header;
 
 use crate::output::{primary, saved};
 use crate::state::Camino;
@@ -21,6 +23,8 @@ pub(crate) enum Request {
     ChoosePrimaryOutput(String, oneshot::Sender<Result<(), primary::Error>>),
     /// Calls `SaveLayout`.
     SaveLayout(oneshot::Sender<Result<(), saved::Error>>),
+    /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
+    ActiveToplevel(Option<u32>, oneshot::Sender<String>),
 }
 
 /// `org.mate.Camino`, as zbus serves it.
@@ -63,6 +67,34 @@ impl CaminoInterface {
             .await?
             .map_err(|err| zbus::fdo::Error::Failed(err.to_string()))
     }
+
+    /// The ext-foreign-toplevel-list identifier of the window a window screenshot is of:
+    /// the window on screen that most recently had the focus and isn't of the caller's
+    /// process, since the caller's own dialog may have it. It's the empty string when
+    /// there's no such window.
+    async fn get_active_toplevel(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        let caller = caller_process(connection, &header).await;
+        let active = |reply| Request::ActiveToplevel(caller, reply);
+        super::ask(&self.requests, active).await
+    }
+}
+
+/// The process that sent the call with `header`, as the bus knows it. Without it, none of
+/// the windows is taken for the caller's.
+async fn caller_process(connection: &zbus::Connection, header: &Header<'_>) -> Option<u32> {
+    let sender = header.sender()?.to_owned();
+    let asked = async {
+        let bus = zbus::fdo::DBusProxy::new(connection).await?;
+        bus.get_connection_unix_process_id(sender.into()).await
+    };
+    asked
+        .await
+        .inspect_err(|err| tracing::debug!("can't ask the bus for a caller's process: {err}"))
+        .ok()
 }
 
 impl Camino {
@@ -82,6 +114,9 @@ impl Camino {
             }
             Request::SaveLayout(reply) => {
                 let _ = reply.send(self.save_layout());
+            }
+            Request::ActiveToplevel(caller, reply) => {
+                let _ = reply.send(self.active_toplevel(caller));
             }
         }
     }

@@ -184,3 +184,25 @@ fn a_window_that_takes_no_input_isnt_focused_when_it_maps_but_is_on_click() {
     policy.click(SEAT, id(2), ms(3));
     assert_eq!(policy.focus(SEAT), Some(id(2)));
 }
+
+#[test]
+fn the_recently_focused_windows_are_those_on_screen_from_the_focused_one() {
+    let mut policy = policy();
+    for w in 1..=4 {
+        policy.map_window(TestWindow::new(w, 400, 300), ms(w));
+    }
+    policy.map_window(
+        TestWindow::new(5, 1920, 30).with_type(WindowType::Dock),
+        ms(5),
+    );
+    policy.click(SEAT, id(5), ms(6));
+    policy.click(SEAT, id(2), ms(7));
+    // Most recently focused first: 2, 5, 4, 3, 1.
+    policy.minimize(id(3));
+    policy.move_to_workspace(id(4), 1);
+
+    let recent: Vec<_> = policy.recently_focused().collect();
+
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(recent, [id(2), id(1)]);
+}

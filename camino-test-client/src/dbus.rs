@@ -47,6 +47,10 @@ pub trait Camino {
 
     /// Saves the layout the connected monitors have now (83).
     fn save_layout(&self) -> zbus::Result<()>;
+
+    /// The ext-foreign-toplevel-list identifier of the window a window screenshot is of,
+    /// or the empty string when there's none (104).
+    fn get_active_toplevel(&self) -> zbus::Result<String>;
 }
 
 /// A proxy for `org.mate.Camino` at `destination`, a unique or well-known name, on a new

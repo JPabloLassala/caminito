@@ -928,6 +928,14 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows.values().map(|m| &m.window)
     }
 
+    /// The windows on screen by when they last had focus, most recent first, so the
+    /// focused one leads. Desktops and docks aren't among them, as Alt+Tab passes them
+    /// over, nor is a window that never had the focus.
+    pub fn recently_focused(&self) -> impl Iterator<Item = WindowId> + '_ {
+        let on_screen = |id: &WindowId| self.is_showing(*id) && !self.is_desktop_or_dock(*id);
+        self.mru.iter().copied().filter(on_screen)
+    }
+
     pub fn workspace_count(&self) -> usize {
         self.stacks.len()
     }

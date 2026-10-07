@@ -64,6 +64,7 @@ pub const KEY_LEFTALT: u32 = 56;
 pub const KEY_F4: u32 = 62;
 pub const KEY_F10: u32 = 68;
 pub const KEY_NUMLOCK: u32 = 69;
+pub const KEY_PRINT: u32 = 99;
 pub const KEY_LEFT: u32 = 105;
 pub const KEY_RIGHT: u32 = 106;
 
@@ -432,6 +433,29 @@ impl Fixture {
             server: server.id(),
         });
         ClientId(self.clients.len() - 1)
+    }
+
+    /// Connects a client that has seen the globals, and that Camino takes for one of the
+    /// process `process`: the fixture's other clients are all of the test's own.
+    pub fn connect_as_process(&mut self, process: u32) -> ClientId {
+        let (server, client) = UnixStream::pair().unwrap();
+        let data = ClientState {
+            process: Some(process),
+            ..ClientState::default()
+        };
+        let server = self
+            .state
+            .camino
+            .display_handle
+            .insert_client(server, Arc::new(data))
+            .unwrap();
+        self.clients.push(TestClient::Wayland {
+            client: Box::new(Client::new(client)),
+            server: server.id(),
+        });
+        let id = ClientId(self.clients.len() - 1);
+        self.roundtrip(id);
+        id
     }
 
     /// Connects a Wayland client that isn't the fixture's to dispatch, and returns its end

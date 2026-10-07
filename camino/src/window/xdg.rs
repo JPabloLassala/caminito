@@ -209,7 +209,15 @@ impl Adapter for ToplevelSurface {
     fn pid(&self) -> Option<u32> {
         let surface = self.wl_surface();
         let dh = DisplayHandle::from(surface.handle().upgrade()?);
-        let credentials = surface.client()?.get_credentials(&dh).ok()?;
+        let client = surface.client()?;
+        #[cfg(test)]
+        if let Some(process) = client
+            .get_data::<crate::state::ClientState>()
+            .and_then(|data| data.process)
+        {
+            return Some(process);
+        }
+        let credentials = client.get_credentials(&dh).ok()?;
         u32::try_from(credentials.pid).ok()
     }
 

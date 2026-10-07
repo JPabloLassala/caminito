@@ -312,6 +312,10 @@ pub struct ClientState {
     pub compositor_state: CompositorClientState,
     /// The security context the client connected through, which makes it sandboxed (68).
     pub(crate) security_context: Option<SecurityContext>,
+    /// The process a test says the client is of, in place of its socket's: a fixture's
+    /// clients are all of the test's own (104).
+    #[cfg(test)]
+    pub(crate) process: Option<u32>,
 }
 
 impl ClientData for ClientState {

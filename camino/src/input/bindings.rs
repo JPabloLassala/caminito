@@ -4,6 +4,8 @@
 use camino_policy::Action;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 
+use crate::commands::Command;
+
 /// The modifiers a binding names. Locks don't count.
 #[derive(PartialEq)]
 struct Held {
@@ -12,6 +14,20 @@ struct Held {
     shift: bool,
     logo: bool,
 }
+
+const NONE: Held = Held {
+    ctrl: false,
+    alt: false,
+    shift: false,
+    logo: false,
+};
+
+const SHIFT: Held = Held {
+    ctrl: false,
+    alt: false,
+    shift: true,
+    logo: false,
+};
 
 const ALT: Held = Held {
     ctrl: false,
@@ -27,17 +43,47 @@ const CTRL_ALT: Held = Held {
     logo: false,
 };
 
-/// Marco's defaults for the actions M1 binds.
-const BINDINGS: [(Held, Keysym, Action); 5] = [
-    (CTRL_ALT, Keysym::Left, Action::SwitchToWorkspaceLeft),
-    (CTRL_ALT, Keysym::Right, Action::SwitchToWorkspaceRight),
-    (ALT, Keysym::F4, Action::Close),
-    (ALT, Keysym::F10, Action::ToggleMaximized),
-    (ALT, Keysym::Tab, Action::SwitchWindows),
+/// What a binding does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Binding {
+    /// Something policy does.
+    Policy(Action),
+    /// A command to run (104).
+    Command(Command),
+}
+
+/// Marco's defaults for the actions M1 binds, and for its three screenshot commands
+/// (104). `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`;
+/// 1.29.0 doesn't bind it.
+const BINDINGS: [(Held, Keysym, Binding); 8] = [
+    (
+        CTRL_ALT,
+        Keysym::Left,
+        Binding::Policy(Action::SwitchToWorkspaceLeft),
+    ),
+    (
+        CTRL_ALT,
+        Keysym::Right,
+        Binding::Policy(Action::SwitchToWorkspaceRight),
+    ),
+    (ALT, Keysym::F4, Binding::Policy(Action::Close)),
+    (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
+    (ALT, Keysym::Tab, Binding::Policy(Action::SwitchWindows)),
+    (NONE, Keysym::Print, Binding::Command(Command::Screenshot)),
+    (
+        ALT,
+        Keysym::Print,
+        Binding::Command(Command::WindowScreenshot),
+    ),
+    (
+        SHIFT,
+        Keysym::Print,
+        Binding::Command(Command::AreaScreenshot),
+    ),
 ];
 
-/// The action bound to `keysym` with exactly `mods` held, if any.
-pub fn action_for(mods: &ModifiersState, keysym: Keysym) -> Option<Action> {
+/// What's bound to `keysym` with exactly `mods` held, if anything.
+pub fn binding_for(mods: &ModifiersState, keysym: Keysym) -> Option<Binding> {
     let held = Held {
         ctrl: mods.ctrl,
         alt: mods.alt,
@@ -47,7 +93,7 @@ pub fn action_for(mods: &ModifiersState, keysym: Keysym) -> Option<Action> {
     BINDINGS
         .iter()
         .find(|(mods, sym, _)| *mods == held && *sym == keysym)
-        .map(|(_, _, action)| *action)
+        .map(|(_, _, binding)| *binding)
 }
 
 #[cfg(test)]
@@ -63,26 +109,47 @@ mod tests {
         }
     }
 
+    const NONE: (bool, bool, bool) = (false, false, false);
+    const SHIFT: (bool, bool, bool) = (false, false, true);
     const ALT: (bool, bool, bool) = (false, true, false);
     const CTRL_ALT: (bool, bool, bool) = (true, true, false);
 
-    fn bound(held: (bool, bool, bool), keysym: Keysym) -> Option<Action> {
-        action_for(&mods(held.0, held.1, held.2), keysym)
+    fn bound(held: (bool, bool, bool), keysym: Keysym) -> Option<Binding> {
+        binding_for(&mods(held.0, held.1, held.2), keysym)
+    }
+
+    fn policy(action: Action) -> Option<Binding> {
+        Some(Binding::Policy(action))
     }
 
     #[test]
     fn marcos_default_bindings() {
         assert_eq!(
             bound(CTRL_ALT, Keysym::Left),
-            Some(Action::SwitchToWorkspaceLeft)
+            policy(Action::SwitchToWorkspaceLeft)
         );
         assert_eq!(
             bound(CTRL_ALT, Keysym::Right),
-            Some(Action::SwitchToWorkspaceRight)
+            policy(Action::SwitchToWorkspaceRight)
         );
-        assert_eq!(bound(ALT, Keysym::F4), Some(Action::Close));
-        assert_eq!(bound(ALT, Keysym::F10), Some(Action::ToggleMaximized));
-        assert_eq!(bound(ALT, Keysym::Tab), Some(Action::SwitchWindows));
+        assert_eq!(bound(ALT, Keysym::F4), policy(Action::Close));
+        assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
+        assert_eq!(bound(ALT, Keysym::Tab), policy(Action::SwitchWindows));
+    }
+
+    #[test]
+    fn marcos_screenshot_bindings() {
+        let command = |command| Some(Binding::Command(command));
+        assert_eq!(bound(NONE, Keysym::Print), command(Command::Screenshot));
+        assert_eq!(
+            bound(ALT, Keysym::Print),
+            command(Command::WindowScreenshot)
+        );
+        assert_eq!(
+            bound(SHIFT, Keysym::Print),
+            command(Command::AreaScreenshot)
+        );
+        assert_eq!(bound(CTRL_ALT, Keysym::Print), None);
     }
 
     #[test]
@@ -101,7 +168,7 @@ mod tests {
             num_lock: true,
             ..ModifiersState::default()
         };
-        assert_eq!(action_for(&held, Keysym::F4), Some(Action::Close));
+        assert_eq!(binding_for(&held, Keysym::F4), policy(Action::Close));
     }
 
     #[test]

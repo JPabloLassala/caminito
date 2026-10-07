@@ -10,6 +10,7 @@ use camino_theme::ButtonLayout;
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
+pub const MARCO_KEYBINDING_COMMANDS: &str = "org.mate.Marco.keybinding-commands";
 pub const INTERFACE: &str = "org.mate.interface";
 pub const FONT_RENDERING: &str = "org.mate.font-rendering";
 pub const MOUSE: &str = "org.mate.peripherals-mouse";
@@ -35,6 +36,10 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: MARCO_WORKSPACE_NAMES,
+        required: true,
+    },
+    Schema {
+        id: MARCO_KEYBINDING_COMMANDS,
         required: true,
     },
     Schema {
@@ -265,6 +270,7 @@ impl Logged {
 pub struct Settings {
     /// Policy's settings: the workspace count and names.
     pub policy: Config,
+    pub commands: Commands,
     pub frames: Frames,
     pub interface: Interface,
     pub font_rendering: FontRendering,
@@ -273,6 +279,17 @@ pub struct Settings {
     pub devices: Devices,
     pub keyboard: Keyboard,
     pub keymap: Keymap,
+}
+
+/// The command lines Marco's `run-command-*` bindings run, from
+/// `org.mate.Marco.keybinding-commands` (104). Only the screenshots' are read until M8
+/// reads the bindings (17).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Commands {
+    pub screenshot: String,
+    pub window_screenshot: String,
+    /// Marco 1.29.0's schema has no key for it, so it's often the default.
+    pub area_screenshot: String,
 }
 
 /// What SSD frames are drawn with and do (05, 07).
@@ -718,8 +735,27 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         attach_modal_dialogs: r.bool(MARCO_GENERAL, "attach-modal-dialogs", false),
     };
 
+    let commands = Commands {
+        screenshot: r.string(
+            MARCO_KEYBINDING_COMMANDS,
+            "command-screenshot",
+            "mate-screenshot",
+        ),
+        window_screenshot: r.string(
+            MARCO_KEYBINDING_COMMANDS,
+            "command-window-screenshot",
+            "mate-screenshot --window",
+        ),
+        area_screenshot: r.string(
+            MARCO_KEYBINDING_COMMANDS,
+            "command-area-screenshot",
+            "mate-screenshot --area",
+        ),
+    };
+
     let settings = Settings {
         policy,
+        commands,
         frames,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),

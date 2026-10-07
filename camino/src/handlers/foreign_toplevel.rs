@@ -166,13 +166,25 @@ impl Camino {
 
     /// The identifier ext-foreign-toplevel-list's clients know a window by, which stays the
     /// same while the window is managed.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "M6's `GetActiveToplevel` names a window by it")
-    )]
     pub(crate) fn toplevel_identifier(&self, id: WindowId) -> Option<String> {
         let handle = self.foreign_toplevel_handles.get(&id)?;
         Some(handle.identifier())
+    }
+
+    /// The identifier of the window a window screenshot is of (104), or the empty string
+    /// when there's none: the window on screen that most recently had the focus, which is
+    /// Marco's active window, passing over those of the process `caller`. mate-screenshot's
+    /// dialog is a window of the caller's, and has the focus when it asks.
+    pub(crate) fn active_toplevel(&self, caller: Option<u32>) -> String {
+        let of_another = |id: &WindowId| {
+            let process = self.policy.window(*id).and_then(|mapped| mapped.pid());
+            caller.is_none() || process != caller
+        };
+        self.policy
+            .recently_focused()
+            .find(of_another)
+            .and_then(|id| self.toplevel_identifier(id))
+            .unwrap_or_default()
     }
 
     /// The window ext-foreign-toplevel-list's clients know by `identifier`.
