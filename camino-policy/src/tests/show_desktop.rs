@@ -330,6 +330,7 @@ fn a_removed_workspace_stops_showing_its_desktop() {
     policy.settings_changed(Config {
         workspace_count: 2,
         workspace_names: Vec::new(),
+        ..Config::default()
     });
     assert!(!policy.is_showing_desktop());
 

@@ -35,6 +35,8 @@ pub struct Workspaces {
 pub struct Workspace {
     proxy: ExtWorkspaceHandleV1,
     pub name: Option<String>,
+    /// Its last `coordinates`: every value the event had.
+    pub coordinates: Vec<u32>,
     /// Whether its last `state` had `active`.
     pub active: bool,
     /// Whether the compositor said it's gone.
@@ -151,6 +153,7 @@ impl Dispatch<ExtWorkspaceManagerV1, ()> for State {
                 workspaces.workspaces.push(Workspace {
                     proxy: workspace,
                     name: None,
+                    coordinates: Vec::new(),
                     active: false,
                     removed: false,
                 });
@@ -242,7 +245,9 @@ impl Dispatch<ExtWorkspaceHandleV1, ()> for State {
             Event::Coordinates { coordinates } => {
                 let (values, _) = coordinates.as_chunks::<4>();
                 let values: Vec<u32> = values.iter().map(|b| u32::from_ne_bytes(*b)).collect();
-                format!("coordinates {values:?}")
+                let text = format!("coordinates {values:?}");
+                workspace.coordinates = values;
+                text
             }
             Event::State {
                 state: WEnum::Value(states),

@@ -7,17 +7,45 @@ use insta::assert_snapshot;
 
 use super::fixture::{ClientId, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind};
 use crate::settings::Value;
-use crate::settings::translate::{MARCO_GENERAL, MARCO_WORKSPACE_NAMES};
+use crate::settings::translate::{CAMINO, MARCO_GENERAL, MARCO_WORKSPACE_NAMES};
 
 /// One output, and a client that has bound the outputs and ext-workspace, as a pager does,
 /// has seen the workspaces there are, and was told nothing since.
 fn pager() -> (Fixture, ClientId) {
-    let (mut f, client) = Fixture::connected(Kind::Xdg);
+    pager_with(Vec::new())
+}
+
+/// A pager, as `pager`, where the workspaces are in two rows (96).
+fn pager_with_two_rows() -> (Fixture, ClientId) {
+    pager_with(vec![(
+        CAMINO,
+        "workspace-layout-rows".into(),
+        Value::Int(2),
+    )])
+}
+
+/// `pager`, with these settings from the start.
+fn pager_with(settings: Vec<(&'static str, String, Value)>) -> (Fixture, ClientId) {
+    let mut f = Fixture::with_settings(settings);
+    f.add_output((1920, 1080), 1.0);
+    let client = f.connect(Kind::Xdg);
     f.client(client).bind_outputs();
     f.client(client).bind_workspaces();
     f.roundtrip(client);
     f.client(client).take_workspace_events();
     (f, client)
+}
+
+/// The coordinates the pager was last sent for each workspace it has, from the first.
+fn coordinates(f: &mut Fixture, pager: ClientId) -> String {
+    f.roundtrip(pager);
+    let workspaces = &f.client(pager).workspaces().workspaces;
+    workspaces
+        .iter()
+        .filter(|workspace| !workspace.removed)
+        .map(|workspace| format!("{:?}", workspace.coordinates))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// What the pager was told since this was last asked.
@@ -47,7 +75,7 @@ fn a_client_gets_one_group_with_the_outputs_and_the_four_workspaces() {
     f.client(client).bind_outputs();
     f.client(client).bind_workspaces();
 
-    // Each workspace is in the one row until M6's layout keys, as column and row.
+    // Each workspace is in the one row of the default layout, as column and row.
     assert_snapshot!(events(&mut f, client), @"
     group 0: new
     group 0: capabilities GroupCapabilities(0x0)
@@ -295,4 +323,84 @@ fn a_client_that_stops_is_told_finished_and_nothing_more() {
 
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
     assert_snapshot!(events(&mut f, pager), @"");
+}
+
+#[test]
+fn four_workspaces_in_two_rows_have_the_grid_s_coordinates() {
+    let (mut f, pager) = pager_with_two_rows();
+
+    assert_snapshot!(
+        coordinates(&mut f, pager),
+        @"[0, 0], [1, 0], [0, 1], [1, 1]"
+    );
+}
+
+#[test]
+fn changing_a_layout_key_sends_the_new_coordinates_with_one_done() {
+    let (mut f, pager) = pager();
+
+    f.set_setting(CAMINO, "workspace-layout-rows", Value::Int(2));
+    f.dispatch_until(|f| {
+        let grid = f.state.camino.policy.workspace_grid();
+        (grid.columns(), grid.rows()) == (2, 2)
+    });
+    // The first two stay where they were.
+    assert_snapshot!(events(&mut f, pager), @"
+    workspace 2: coordinates [0, 1]
+    workspace 3: coordinates [1, 1]
+    done
+    ");
+
+    f.set_setting(
+        CAMINO,
+        "workspace-layout-orientation",
+        Value::Str("vertical".into()),
+    );
+    f.dispatch_until(|f| f.state.camino.policy.workspace_grid().cell(1) == (0, 1));
+    // Down each column now, so the second and third change places.
+    assert_snapshot!(events(&mut f, pager), @"
+    workspace 1: coordinates [0, 1]
+    workspace 2: coordinates [1, 0]
+    done
+    ");
+}
+
+#[test]
+fn the_coordinates_follow_the_number_of_workspaces() {
+    let (mut f, pager) = pager_with_two_rows();
+
+    f.set_setting(MARCO_GENERAL, "num-workspaces", Value::Int(6));
+    f.dispatch_until(|f| f.state.camino.policy.workspace_count() == 6);
+
+    // Two rows of three now, so the third and fourth move, in the one `done` the new
+    // workspaces come in.
+    assert_snapshot!(events(&mut f, pager), @"
+    workspace 2: coordinates [2, 0]
+    workspace 3: coordinates [0, 1]
+    workspace 4: new
+    workspace 4: id 5
+    workspace 4: name Workspace 5
+    workspace 4: coordinates [1, 1]
+    workspace 4: state State(0x0)
+    workspace 4: capabilities WorkspaceCapabilities(Activate)
+    group 0: workspace_enter workspace 4
+    workspace 5: new
+    workspace 5: id 6
+    workspace 5: name Workspace 6
+    workspace 5: coordinates [2, 1]
+    workspace 5: state State(0x0)
+    workspace 5: capabilities WorkspaceCapabilities(Activate)
+    group 0: workspace_enter workspace 5
+    done
+    ");
+}
+
+#[test]
+fn the_binding_for_the_workspace_to_the_right_stops_at_the_end_of_its_row() {
+    let (mut f, pager) = pager_with_two_rows();
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+
+    assert_snapshot!(workspaces(&mut f, pager), @"Workspace 1, Workspace 2*, Workspace 3, Workspace 4");
 }

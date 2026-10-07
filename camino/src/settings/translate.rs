@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::time::Duration;
 
-use camino_policy::{Config, MAX_WORKSPACES, default_workspace_name};
+use camino_policy::{Config, MAX_WORKSPACES, Orientation, WorkspaceLayout, default_workspace_name};
 use camino_theme::ButtonLayout;
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
@@ -17,6 +17,8 @@ pub const TOUCHPAD: &str = "org.mate.peripherals-touchpad";
 pub const KEYBOARD: &str = "org.mate.peripherals-keyboard";
 pub const KEYBOARD_XKB: &str = "org.mate.peripherals-keyboard-xkb.kbd";
 pub const SOUND: &str = "org.mate.sound";
+/// Camino's own schema (09), which Camino installs. A development run may not have it.
+pub const CAMINO: &str = "org.mate.Camino";
 
 /// A schema Camino reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +65,10 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: KEYBOARD_XKB,
+        required: false,
+    },
+    Schema {
+        id: CAMINO,
         required: false,
     },
 ];
@@ -174,6 +180,11 @@ impl Reading {
         self.system_keymap = keymap;
     }
 
+    #[cfg(test)]
+    fn remove(&mut self, schema: &str, key: &str) {
+        self.entries.remove(&(schema.into(), key.into()));
+    }
+
     fn get(&self, schema: &str, key: &str) -> Option<&Entry> {
         self.entries.get(&(schema.into(), key.into()))
     }
@@ -263,7 +274,7 @@ impl Logged {
 /// Camino's settings, typed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
-    /// Policy's settings: the workspace count and names.
+    /// Policy's settings: the workspace count and names, and the grid they're in.
     pub policy: Config,
     pub frames: Frames,
     pub interface: Interface,
@@ -346,6 +357,14 @@ impl Nick for TitlebarAction {
         ("toggle_above", Self::ToggleAbove),
         ("menu", Self::Menu),
         ("none", Self::None),
+    ];
+}
+
+/// `org.mate.Camino.WorkspaceLayoutOrientation`.
+impl Nick for Orientation {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("horizontal", Self::Horizontal),
+        ("vertical", Self::Vertical),
     ];
 }
 
@@ -681,9 +700,21 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             }
         })
         .collect();
+    // A grid has no more rows or columns than there can be workspaces.
+    let most = MAX_WORKSPACES as i32;
+    let workspace_layout = WorkspaceLayout {
+        orientation: r.nick(
+            CAMINO,
+            "workspace-layout-orientation",
+            Orientation::Horizontal,
+        ),
+        rows: r.int_clamped(CAMINO, "workspace-layout-rows", 1, 0, most) as usize,
+        columns: r.int_clamped(CAMINO, "workspace-layout-columns", 0, 0, most) as usize,
+    };
     let policy = Config {
         workspace_count,
         workspace_names,
+        workspace_layout,
     };
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");

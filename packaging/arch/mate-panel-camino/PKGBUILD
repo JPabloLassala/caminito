@@ -26,7 +26,7 @@ _basever=1.28.7
 # weekly job knows this source by its -stock name, and leaves it at the tag.
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=6
+pkgrel=7
 pkgdesc="The MATE Panel, with Camino's carried patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -46,8 +46,12 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # The fifth is an upstream fix, with no gate: the workspace switcher shows a workspace's new
 # name when the compositor renames it. The sixth is active only with MATE_WM_NAME=Camino: the
 # switcher's preferences show the workspace count and names, which they hide on Wayland, and
-# write Marco's keys for them (97). The seventh is active only while org.mate.Camino has an
-# owner: the Show Desktop button is Camino's ShowingDesktop, which Ctrl+Alt+D changes too (94).
+# write Marco's keys for them (97).
+# The seventh has both halves (96): the workspace switcher puts each workspace where its
+# ext-workspace coordinates say, on any compositor that sends them, and writes its rows
+# preference to org.mate.Camino's workspace-layout keys only with MATE_WM_NAME=Camino.
+# The eighth is active only while org.mate.Camino has an owner: the Show Desktop button is
+# Camino's ShowingDesktop, which Ctrl+Alt+D changes too (94).
 source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "${_pkgname}-stock::git+https://github.com/mate-desktop/mate-panel.git#tag=${_stocktag}"
         git+https://github.com/mate-desktop/mate-submodules.git
@@ -57,7 +61,8 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         0004-multimonitor-Put-Camino-s-primary-output-first-on-Wa.patch
         0005-wayland-workspace-Show-a-workspace-s-new-name-when-i.patch
         0006-workspace-switcher-Set-the-workspace-count-and-names.patch
-        0007-showdesktop-Show-Camino-s-desktop-on-Wayland.patch)
+        0007-workspace-switcher-Lay-the-workspaces-out-by-the-com.patch
+        0008-showdesktop-Show-Camino-s-desktop-on-Wayland.patch)
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
@@ -67,6 +72,7 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             'f87ffcfe4fa6ef6f04a8253bb24732bf8203a3bf300a6b090c489eed850a9eb3'
             'c99d52d0765d3a1c3cf7082305f648bfc87e2bdb6a038be45a293467744d56ea'
             '7da2045777ee21fd2801873a820576b497b43811fbaa590de8767d02d3cdc7d6'
+            '74101ec678446601dd1f9e0761be9d07905f51503f528f7355c4d5e72d750ab9'
             '89b7f1b9ca05d6bd4d73c486a1434d7c82ed2220a713020234c3659dff16d7de')
 
 pkgver() {
