@@ -778,3 +778,44 @@ session_env() {
   camino-displays. In X11 MATE it opens the Display capplet (84).
 - **Debug tool:** `gtk-launch mate-display-properties`, and `ls
   /usr/share/camino/xdg/applications`.
+
+## The control center
+
+### Windows and Keyboard Shortcuts open under Camino, and name it
+
+- **Milestone:** M6
+- **Steps:**
+  1. With `mate-control-center-camino` installed, and `camino-git` at a build that has the
+     `50-camino-*.xml` manifests (`ls /usr/share/mate-control-center/keybindings`), log into
+     *MATE on Camino*.
+  2. Open *Windows* from the control center, with a window that Camino decorates beside it.
+     On *Behaviour*, set the titlebar's double-click action to *Toggle Shade*, double-click that
+     window's titlebar, and set it back. On *Placement*, move the titlebar buttons to the
+     left and back.
+  3. Open *Keyboard Shortcuts* from the control center. Find *Window Management*, and
+     *Desktop*'s *Show the panel's "Run Application" dialog box*.
+  4. Click the shortcut of *Maximize window*, press Super+Up, and run:
+
+     ```sh
+     gsettings get org.mate.Marco.window-keybindings maximize
+     ```
+
+     Press Super+Up with a window focused. Then click the shortcut again, press Backspace,
+     and run the command again.
+  5. Log out, log into *MATE*, the X11 session, and open both dialogs there. Then log into the
+     Wayfire session and open both.
+- **Expected:** in step 2 the dialog opens, with no *The current window manager is
+  unsupported*, and it offers Alt and Super for moving a window. The window shades at the
+  double click, and each window's buttons move as the setting does, with the dialog still
+  open (06). In step 3 the dialog opens without a crash, and lists Camino's window management
+  actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
+  Ctrl+Alt+D. In step 4 the key is a string that names Super and Up, `'<Mod4>Up'` or
+  `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. Super+Up maximises nothing: **a shortcut changed in the dialog changes no
+  binding until M8**, when Camino reads `org.mate.Marco.*` keybindings in place of its
+  hard-coded set (17). In X11 MATE both dialogs are as they were, with Marco's shortcuts
+  listed, since the variables aren't read on X11. In the Wayfire session *Windows* says the
+  window manager is unsupported, as the stock one does, and *Keyboard Shortcuts* opens, where
+  the stock one crashed, and lists no window management actions (101, ADR 0011).
+- **Debug tool:** `mate-window-properties` and `mate-keybinding-properties` run from a
+  terminal, `echo "$MATE_WM_NAME $MATE_WM_KEYBINDINGS"` there, `gsettings monitor
+  org.mate.Marco.general`, and `coredumpctl` for a crash.

@@ -10,7 +10,7 @@ rustup toolchain install stable --profile minimal
 # In dependency order: each package is installed as it's built, so the next one builds
 # against it.
 for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
-  caja-camino mate-utils-camino camino-git camino-desktop; do
+  mate-control-center-camino caja-camino mate-utils-camino camino-git camino-desktop; do
   cd "$root/packaging/arch/$package"
   makepkg -si "$@"
 done

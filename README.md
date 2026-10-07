@@ -83,7 +83,7 @@ MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
 for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
-  caja-camino mate-utils-camino camino-git; do
+  mate-control-center-camino caja-camino mate-utils-camino camino-git; do
   (cd packaging/arch/$package && makepkg -si)
 done
 ```
