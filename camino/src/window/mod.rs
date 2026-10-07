@@ -511,6 +511,10 @@ impl PolicyWindow for Mapped {
         self.adapter().app_id()
     }
 
+    fn skips_taskbar(&self) -> bool {
+        self.skips().taskbar
+    }
+
     fn is_ssd(&self) -> bool {
         self.frame.is_ssd()
     }

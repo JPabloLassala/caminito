@@ -14,6 +14,10 @@ use crate::{
     WindowType, WorkspaceLayout,
 };
 
+mod switcher;
+
+pub use switcher::SwitchList;
+
 /// A seat, as the compositor numbers them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SeatId(pub u32);

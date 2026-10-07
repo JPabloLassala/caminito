@@ -24,6 +24,9 @@ pub struct TestWindow {
     pub requested_workspace: Option<usize>,
     pub input: bool,
     pub ssd: bool,
+    pub skip_taskbar: bool,
+    pub pid: Option<u32>,
+    pub app_id: Option<String>,
     pub extents: FrameExtents<i32, Logical>,
     /// The frame's extents while maximised.
     pub maximized_extents: FrameExtents<i32, Logical>,
@@ -48,6 +51,9 @@ impl TestWindow {
             requested_workspace: None,
             input: true,
             ssd: false,
+            skip_taskbar: false,
+            pid: None,
+            app_id: None,
             extents: FrameExtents::default(),
             maximized_extents: FrameExtents::default(),
             unfocused_border: 0,
@@ -108,6 +114,22 @@ impl TestWindow {
     /// Makes the window take no keyboard input.
     pub fn without_input(mut self) -> Self {
         self.input = false;
+        self
+    }
+
+    /// Leaves the window out of the taskbar.
+    pub fn skipping_taskbar(mut self) -> Self {
+        self.skip_taskbar = true;
+        self
+    }
+
+    pub fn with_pid(mut self, pid: u32) -> Self {
+        self.pid = Some(pid);
+        self
+    }
+
+    pub fn with_app_id(mut self, app_id: &str) -> Self {
+        self.app_id = Some(app_id.to_owned());
         self
     }
 
@@ -175,11 +197,15 @@ impl PolicyWindow for TestWindow {
     }
 
     fn pid(&self) -> Option<u32> {
-        None
+        self.pid
     }
 
     fn app_id(&self) -> Option<String> {
-        None
+        self.app_id.clone()
+    }
+
+    fn skips_taskbar(&self) -> bool {
+        self.skip_taskbar
     }
 
     fn is_ssd(&self) -> bool {
