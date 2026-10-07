@@ -809,8 +809,8 @@ session_env() {
   double click, and each window's buttons move as the setting does, with the dialog still
   open (06). In step 3 the dialog opens without a crash, and lists Camino's window management
   actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
-  Ctrl+Alt+D. In step 4 the key reads `['<Mod4>Up']`, and then `['disabled']`: the dialog
-  writes the key. Super+Up maximises nothing: **a shortcut changed in the dialog changes no
+  Ctrl+Alt+D. In step 4 the key is a string that names Super and Up, `'<Mod4>Up'` or
+  `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. Super+Up maximises nothing: **a shortcut changed in the dialog changes no
   binding until M8**, when Camino reads `org.mate.Marco.*` keybindings in place of its
   hard-coded set (17). In X11 MATE both dialogs are as they were, with Marco's shortcuts
   listed, since the variables aren't read on X11. In the Wayfire session *Windows* says the
