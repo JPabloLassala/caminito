@@ -50,10 +50,24 @@ const ALT: Held = Held {
     logo: false,
 };
 
+const ALT_SHIFT: Held = Held {
+    ctrl: false,
+    alt: true,
+    shift: true,
+    logo: false,
+};
+
 const CTRL_ALT: Held = Held {
     ctrl: true,
     alt: true,
     shift: false,
+    logo: false,
+};
+
+const CTRL_ALT_SHIFT: Held = Held {
+    ctrl: true,
+    alt: true,
+    shift: true,
     logo: false,
 };
 
@@ -68,11 +82,19 @@ pub(crate) enum Binding {
     Command(Command),
 }
 
+/// A `switch-*` action's binding (108).
+const fn switch(list: SwitchList, backward: bool) -> Binding {
+    Binding::Policy(Action::Switch { list, backward })
+}
+
 /// Marco's defaults for the actions M1 binds, for `show-desktop` (94), for the panel's two
-/// (95), and for its three screenshot commands (104). `<Shift>Print` is the default of the
-/// Marco that has `run-command-area-screenshot` (`org.mate.marco.gschema.xml:692-693` at
-/// `8522ed1`); 1.29.0 doesn't bind it.
-const BINDINGS: [(Held, Keysym, Binding); 11] = [
+/// (95), for its three screenshot commands (104), and for the `switch-*` actions (108).
+/// `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`
+/// (`org.mate.marco.gschema.xml:692-693` at `8522ed1`); 1.29.0 doesn't bind it.
+///
+/// Marco has no key for a `switch-*-backward` action: Shift with the action's own binding
+/// steps backward, so each is here twice. `switch-windows-all` is unbound.
+const BINDINGS: [(Held, Keysym, Binding); 16] = [
     (
         CTRL_ALT,
         Keysym::Left,
@@ -87,13 +109,15 @@ const BINDINGS: [(Held, Keysym, Binding); 11] = [
     (ALT, Keysym::F2, Binding::Panel(PanelAction::RunDialog)),
     (ALT, Keysym::F4, Binding::Policy(Action::Close)),
     (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
+    (ALT, Keysym::Tab, switch(SwitchList::Windows, false)),
+    (ALT_SHIFT, Keysym::Tab, switch(SwitchList::Windows, true)),
+    (ALT, Keysym::grave, switch(SwitchList::Group, false)),
+    (ALT_SHIFT, Keysym::grave, switch(SwitchList::Group, true)),
+    (CTRL_ALT, Keysym::Tab, switch(SwitchList::Panels, false)),
     (
-        ALT,
+        CTRL_ALT_SHIFT,
         Keysym::Tab,
-        Binding::Policy(Action::Switch {
-            list: SwitchList::Windows,
-            backward: false,
-        }),
+        switch(SwitchList::Panels, true),
     ),
     (CTRL_ALT, Keysym::d, Binding::Policy(Action::ShowDesktop)),
     (NONE, Keysym::Print, Binding::Command(Command::Screenshot)),
@@ -134,7 +158,9 @@ mod tests {
     const NONE: (bool, bool, bool) = (false, false, false);
     const SHIFT: (bool, bool, bool) = (false, false, true);
     const ALT: (bool, bool, bool) = (false, true, false);
+    const ALT_SHIFT: (bool, bool, bool) = (false, true, true);
     const CTRL_ALT: (bool, bool, bool) = (true, true, false);
+    const CTRL_ALT_SHIFT: (bool, bool, bool) = (true, true, true);
 
     fn bound(held: (bool, bool, bool), keysym: Keysym) -> Option<Binding> {
         binding_for(&mods(held.0, held.1, held.2), keysym)
@@ -156,14 +182,49 @@ mod tests {
         );
         assert_eq!(bound(ALT, Keysym::F4), policy(Action::Close));
         assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
-        assert_eq!(
-            bound(ALT, Keysym::Tab),
-            policy(Action::Switch {
-                list: SwitchList::Windows,
-                backward: false
-            })
-        );
         assert_eq!(bound(CTRL_ALT, Keysym::d), policy(Action::ShowDesktop));
+    }
+
+    #[test]
+    fn the_window_switchers_bindings() {
+        let switch = |list, backward| policy(Action::Switch { list, backward });
+        assert_eq!(bound(ALT, Keysym::Tab), switch(SwitchList::Windows, false));
+        assert_eq!(bound(ALT, Keysym::grave), switch(SwitchList::Group, false));
+        assert_eq!(
+            bound(CTRL_ALT, Keysym::Tab),
+            switch(SwitchList::Panels, false)
+        );
+    }
+
+    #[test]
+    fn shift_with_a_window_switcher_binding_steps_backward() {
+        let switch = |list, backward| policy(Action::Switch { list, backward });
+        assert_eq!(
+            bound(ALT_SHIFT, Keysym::Tab),
+            switch(SwitchList::Windows, true)
+        );
+        assert_eq!(
+            bound(ALT_SHIFT, Keysym::grave),
+            switch(SwitchList::Group, true)
+        );
+        assert_eq!(
+            bound(CTRL_ALT_SHIFT, Keysym::Tab),
+            switch(SwitchList::Panels, true)
+        );
+    }
+
+    #[test]
+    fn switch_windows_all_is_unbound() {
+        let all = |binding: &(Held, Keysym, Binding)| {
+            matches!(
+                binding.2,
+                Binding::Policy(Action::Switch {
+                    list: SwitchList::WindowsAll,
+                    ..
+                })
+            )
+        };
+        assert!(!BINDINGS.iter().any(all));
     }
 
     #[test]
@@ -197,7 +258,7 @@ mod tests {
     fn modifiers_must_match_exactly() {
         assert_eq!(bound((false, false, false), Keysym::F4), None);
         assert_eq!(bound((true, true, false), Keysym::F4), None);
-        assert_eq!(bound((false, true, true), Keysym::Tab), None);
+        assert_eq!(bound((false, true, true), Keysym::F4), None);
         assert_eq!(bound(ALT, Keysym::Left), None);
     }
 

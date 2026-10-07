@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use camino_policy::PolicyWindow;
+use camino_policy::{PolicyWindow, SwitchList};
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -81,6 +81,20 @@ struct StateDump {
     focus: Option<u64>,
     /// The accelerators grabbed over `org.mate.Camino` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
+    /// The Window switcher (108), while it's open.
+    switcher: Option<SwitcherDump>,
+}
+
+#[derive(Serialize)]
+struct SwitcherDump {
+    /// The action's list: `windows`, `windows-all`, `group` or `panels`.
+    list: &'static str,
+    /// The windows listed, in order.
+    windows: Vec<u64>,
+    /// The selected window.
+    selected: u64,
+    /// Whether its popup is drawn.
+    visible: bool,
 }
 
 #[derive(Serialize)]
@@ -338,6 +352,17 @@ impl Camino {
                 owner: grab.owner.clone(),
             })
             .collect();
+        let switcher = policy.switcher().map(|switcher| SwitcherDump {
+            list: match switcher.list {
+                SwitchList::Windows => "windows",
+                SwitchList::WindowsAll => "windows-all",
+                SwitchList::Group => "group",
+                SwitchList::Panels => "panels",
+            },
+            windows: switcher.windows.iter().map(|id| id.0).collect(),
+            selected: switcher.windows[switcher.selected].0,
+            visible: false,
+        });
         let dump = StateDump {
             windows,
             workspaces,
@@ -348,6 +373,7 @@ impl Camino {
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
             accelerator_grabs,
+            switcher,
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

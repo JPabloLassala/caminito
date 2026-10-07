@@ -5,10 +5,6 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 /// What a cell shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Task 4 chooses the style from the settings")
-)]
 pub(crate) enum CellStyle {
     /// A thumbnail of the window, with its icon in a corner.
     Thumbnails,
@@ -18,10 +14,6 @@ pub(crate) enum CellStyle {
 
 /// A way an arrow key moves the selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Task 4 maps the arrow keys to them")
-)]
 pub(crate) enum Direction {
     Left,
     Right,
@@ -69,10 +61,6 @@ impl Grid {
     /// popup may grow to the output. Where even that is too small for the rows or the
     /// columns, the minimum goes and the cells tile the output's room, down to one pixel:
     /// the popup is never larger than the output, and every cell has a positive size.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Task 4 opens the popup with it")
-    )]
     pub(crate) fn new(
         count: usize,
         max_columns: usize,
@@ -158,10 +146,6 @@ impl Grid {
     }
 
     /// The entry an arrow key moves the selection to from `from`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Task 4 moves the selection with it")
-    )]
     pub(crate) fn neighbour(&self, from: usize, direction: Direction) -> usize {
         let count = self.cells.len();
         let rows = count.div_ceil(self.columns);

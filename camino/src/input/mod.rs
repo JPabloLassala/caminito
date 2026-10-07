@@ -244,12 +244,11 @@ impl State {
             Some(Some(Bound::Action(action))) => {
                 let now = self.camino.now();
                 self.camino.policy.action(SEAT, action, now);
-                // Task 4 of ticket 108's plan replaces this: the switcher stays open until
-                // the modifier is released. Until then it commits at once.
-                if matches!(action, Action::Switch { .. }) {
-                    self.camino.policy.switcher_commit(now);
-                }
                 self.camino.queue_redraw_all();
+            }
+            Some(Some(Bound::Switch { action, key })) => {
+                let mods = keyboard.modifier_state();
+                self.switch_action(action, key, &mods, time);
             }
             Some(Some(Bound::Panel(action))) => {
                 // The time a client would have for the event.
@@ -291,6 +290,9 @@ impl State {
         keysym: &KeysymHandle<'_>,
     ) -> FilterResult<Option<Bound>> {
         if !pressed {
+            // The release that lets go of the Window switcher's modifier commits it (108),
+            // and goes on to the client, which saw the press.
+            self.camino.switcher_key_released(mods);
             return if self.camino.suppressed_keys.remove(&keycode) {
                 FilterResult::Intercept(None)
             } else {
@@ -304,17 +306,24 @@ impl State {
             self.camino.suppressed_keys.insert(keycode);
             return FilterResult::Intercept(None);
         }
+        // The open Window switcher has the keyboard (108), before an inhibitor has its say:
+        // it never opens under one.
+        if let Some(result) = self.camino.switcher_key_pressed(keycode, mods, keysym) {
+            return result;
+        }
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
         }
         // Bindings name keys as the first layout does, whichever layout is active.
-        let binding = keysym
-            .raw_latin_sym_or_raw_current_sym()
-            .and_then(|sym| bindings::binding_for(mods, sym));
+        let sym = keysym.raw_latin_sym_or_raw_current_sym();
+        let binding = sym.and_then(|sym| Some((sym, bindings::binding_for(mods, sym)?)));
         match binding {
-            Some(binding) => {
+            Some((key, binding)) => {
                 self.camino.suppressed_keys.insert(keycode);
                 let bound = match binding {
+                    Binding::Policy(action @ Action::Switch { .. }) => {
+                        Bound::Switch { action, key }
+                    }
                     Binding::Policy(action) => Bound::Action(action),
                     Binding::Panel(action) => Bound::Panel(action),
                     Binding::Command(command) => Bound::Command(command),
@@ -563,6 +572,8 @@ enum Constraint {
 enum Bound {
     /// One of Camino's bindings: something policy does.
     Action(Action),
+    /// One of Camino's bindings: a `switch-*` action (108), with the key that fired it.
+    Switch { action: Action, key: Keysym },
     /// One of Camino's bindings: something it asks the panel for (95).
     Panel(PanelAction),
     /// One of Camino's bindings: a command to run (104).

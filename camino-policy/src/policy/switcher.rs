@@ -102,8 +102,9 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// A `switch-*` action: steps the open switcher, or opens one over `list` (ruling 1 to 7
-    /// of 108's plan).
+    /// A `switch-*` action: steps the open switcher, or opens one over `list`. Nothing opens
+    /// during a move or resize, nor with no window to list, and one window alone is
+    /// activated with no switcher (108).
     pub(super) fn switch(&mut self, seat: SeatId, list: SwitchList, backward: bool, now: Duration) {
         if self.switcher.is_some() {
             self.switcher_step(backward);

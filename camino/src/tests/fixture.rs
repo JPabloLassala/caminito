@@ -58,10 +58,13 @@ fn test_schemas() -> &'static std::path::Path {
 
 // Linux input event codes.
 pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
+pub const KEY_ESC: u32 = 1;
 pub const KEY_TAB: u32 = 15;
+pub const KEY_ENTER: u32 = 28;
 pub const KEY_LEFTCTRL: u32 = 29;
 pub const KEY_A: u32 = 30;
 pub const KEY_D: u32 = 32;
+pub const KEY_GRAVE: u32 = 41;
 pub const KEY_LEFTSHIFT: u32 = 42;
 pub const KEY_LEFTALT: u32 = 56;
 pub const KEY_F1: u32 = 59;
@@ -71,8 +74,10 @@ pub const KEY_F9: u32 = 67;
 pub const KEY_F10: u32 = 68;
 pub const KEY_NUMLOCK: u32 = 69;
 pub const KEY_PRINT: u32 = 99;
+pub const KEY_UP: u32 = 103;
 pub const KEY_LEFT: u32 = 105;
 pub const KEY_RIGHT: u32 = 106;
+pub const KEY_DOWN: u32 = 108;
 pub const KEY_MUTE: u32 = 113;
 
 /// The colour test windows are filled with.
