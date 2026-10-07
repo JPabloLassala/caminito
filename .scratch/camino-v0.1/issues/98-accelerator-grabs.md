@@ -52,11 +52,14 @@ The code is `camino/src/input/bindings/accelerators.rs` (the parser and the tabl
 
 **What doesn't,** each with its log line: `<Release>`, since only the press is signalled; `<Mod2>`, `<Mod3>` and `<Mod5>`, the lock and the level shifts, which Camino's bindings don't tell apart either; and a key by its code, `0x1f`, which msd writes for a key with no keysym. If 99 or 100 finds one of these in a default or in what Keyboard Shortcuts writes, it's added here.
 
+**A key is matched by its first level,** as Camino's bindings are: `<Shift>1` fires, and `<Shift>exclam`, which GTK can write for the same press, is granted and never does. So with a keypad key that NumLock changes. [100](100-msd-custom-shortcuts.md) finds out what Keyboard Shortcuts writes, and this is fixed there if it writes those.
+
 **Decided here:**
 
 - A grab of a combination Camino binds is granted, and never signalled while Camino binds it. M8 makes the bindings a setting, and a refusal would be out of date when they change.
 - A second caller's grab is refused however the first wrote the combination: `XF86AudioMute` and `xf86audiomute` are one.
-- An active shortcuts inhibitor on the focused surface passes the grabbed keys to the client, as it does Camino's bindings, and as Mutter's does. A remote desktop or a virtual machine then gets the media keys.
+- An active shortcuts inhibitor on the focused surface passes the grabbed keys to the client, as it does Camino's bindings, and as Mutter's does. A remote desktop or a virtual machine then gets the media keys. This is the one place a grabbed key reaches a client, which the ticket's text doesn't allow for: it's the developer's to confirm.
+- Each activation is signalled from a task of its own on zbus's executor, which runs them in the order they were made. Nothing else orders two quick presses, but each signal has its time.
 - The watch for callers that leave the bus was the Screensaver shim's ([62](62-screensaver-names.md)). It's `dbus/mod.rs`'s now, and drops the shim's cookies and the grabs alike.
 
 **Not run in a Session:** nothing calls it until 99's and 100's patches do. Their checklist items are its check.

@@ -236,9 +236,9 @@ impl State {
                 self.camino.policy.action(SEAT, action, now);
                 self.camino.queue_redraw_all();
             }
-            Some(Bound::Accelerator { grabber, action }) => {
+            Some(Bound::Accelerator { owner, action }) => {
                 self.camino
-                    .signal_accelerator(&grabber, action, time.millis());
+                    .signal_accelerator(&owner, action, time.millis());
             }
             None => {}
         }
@@ -313,10 +313,10 @@ impl State {
             .raw_latin_sym_or_raw_current_sym()
             .and_then(|sym| self.camino.accelerator_grabs.pressed(mods, sym));
         match grab {
-            Some((action, grabber)) => {
-                let grabber = grabber.to_owned();
+            Some((action, owner)) => {
+                let owner = owner.to_owned();
                 self.camino.suppressed_keys.insert(keycode);
-                FilterResult::Intercept(Some(Bound::Accelerator { grabber, action }))
+                FilterResult::Intercept(Some(Bound::Accelerator { owner, action }))
             }
             None => FilterResult::Forward,
         }
@@ -528,9 +528,9 @@ enum Constraint {
 enum Bound {
     /// One of Camino's bindings: something policy does.
     Action(Action),
-    /// A grabbed accelerator (98): its grabber's unique name on the bus, and the action
-    /// id to signal it.
-    Accelerator { grabber: String, action: u32 },
+    /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
+    /// to signal it.
+    Accelerator { owner: String, action: u32 },
 }
 
 /// Stage 1, the lock (M7): while locked, only VT and layout switching, AccessX and the

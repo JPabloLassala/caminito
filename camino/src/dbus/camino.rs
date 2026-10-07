@@ -175,23 +175,22 @@ impl Camino {
         }
     }
 
-    /// Signals `AcceleratorActivated` to `grabber`, the unique name of the caller with the
-    /// grab, for a key event at `time`.
-    pub(crate) fn signal_accelerator(&self, grabber: &str, action: u32, time: u32) {
+    /// Signals `AcceleratorActivated` to the grab's `owner`, by its unique name on the bus, for a key event at `time`.
+    pub(crate) fn signal_accelerator(&self, owner: &str, action: u32, time: u32) {
         let Some(dbus) = &self.dbus else {
             return;
         };
         let connection = dbus.connection().clone();
-        let grabber = grabber.to_owned();
+        let owner = owner.to_owned();
         // On zbus's thread: the main thread never waits on the bus (15).
         let signal = async move {
             let signalled = async {
                 let emitter = SignalEmitter::new(&connection, PATH)?
-                    .set_destination(BusName::try_from(grabber.as_str())?);
+                    .set_destination(BusName::try_from(owner.as_str())?);
                 CaminoInterface::accelerator_activated(&emitter, action, time).await
             };
             if let Err(err) = signalled.await {
-                tracing::warn!("can't signal the accelerator {action} to {grabber}: {err}");
+                tracing::warn!("can't signal the accelerator {action} to {owner}: {err}");
             }
         };
         dbus.connection()
