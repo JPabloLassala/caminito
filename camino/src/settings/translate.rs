@@ -735,6 +735,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_count,
         workspace_names,
         workspace_layout,
+        // Read from `alt-tab-raise-windows` by Task 4 of ticket 108's plan.
+        alt_tab_raise_windows: false,
     };
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");

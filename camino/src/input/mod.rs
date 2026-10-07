@@ -244,6 +244,11 @@ impl State {
             Some(Some(Bound::Action(action))) => {
                 let now = self.camino.now();
                 self.camino.policy.action(SEAT, action, now);
+                // Task 4 of ticket 108's plan replaces this: the switcher stays open until
+                // the modifier is released. Until then it commits at once.
+                if matches!(action, Action::Switch { .. }) {
+                    self.camino.policy.switcher_commit(now);
+                }
                 self.camino.queue_redraw_all();
             }
             Some(Some(Bound::Panel(action))) => {

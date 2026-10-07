@@ -1,5 +1,7 @@
 //! Keybinding actions, named after Marco's `org.mate.Marco.*` keybinding keys.
 
+use crate::SwitchList;
+
 /// An action a keybinding triggers. Only the variants M1 binds exist so far; M8 adds the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -13,9 +15,9 @@ pub enum Action {
     Close,
     /// `toggle-maximized`
     ToggleMaximized,
-    /// `switch-windows`, without the popup until M8: it activates the most recently used
-    /// window other than the focused one.
-    SwitchWindows,
+    /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
+    /// that is open, towards the end of the list or `backward`.
+    Switch { list: SwitchList, backward: bool },
     /// `show-desktop`
     ShowDesktop,
 }

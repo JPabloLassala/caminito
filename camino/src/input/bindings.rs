@@ -3,7 +3,7 @@
 
 pub(crate) mod accelerators;
 
-use camino_policy::Action;
+use camino_policy::{Action, SwitchList};
 use smithay::input::keyboard::{Keysym, ModifiersState};
 
 use crate::commands::Command;
@@ -87,7 +87,14 @@ const BINDINGS: [(Held, Keysym, Binding); 11] = [
     (ALT, Keysym::F2, Binding::Panel(PanelAction::RunDialog)),
     (ALT, Keysym::F4, Binding::Policy(Action::Close)),
     (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
-    (ALT, Keysym::Tab, Binding::Policy(Action::SwitchWindows)),
+    (
+        ALT,
+        Keysym::Tab,
+        Binding::Policy(Action::Switch {
+            list: SwitchList::Windows,
+            backward: false,
+        }),
+    ),
     (CTRL_ALT, Keysym::d, Binding::Policy(Action::ShowDesktop)),
     (NONE, Keysym::Print, Binding::Command(Command::Screenshot)),
     (
@@ -149,7 +156,13 @@ mod tests {
         );
         assert_eq!(bound(ALT, Keysym::F4), policy(Action::Close));
         assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
-        assert_eq!(bound(ALT, Keysym::Tab), policy(Action::SwitchWindows));
+        assert_eq!(
+            bound(ALT, Keysym::Tab),
+            policy(Action::Switch {
+                list: SwitchList::Windows,
+                backward: false
+            })
+        );
         assert_eq!(bound(CTRL_ALT, Keysym::d), policy(Action::ShowDesktop));
     }
 

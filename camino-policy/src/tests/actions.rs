@@ -1,6 +1,12 @@
 use super::*;
 
+use crate::SwitchList;
 use crate::test_window::Call;
+
+const SWITCH: Action = Action::Switch {
+    list: SwitchList::Windows,
+    backward: false,
+};
 
 #[test]
 fn close_asks_the_focused_window_to_close() {
@@ -16,23 +22,25 @@ fn close_asks_the_focused_window_to_close() {
 }
 
 #[test]
-fn switch_windows_goes_back_to_the_previously_used_window() {
+fn switching_windows_goes_back_to_the_previously_used_window() {
     let mut policy = policy();
     for w in 1..=3 {
         policy.map_window(TestWindow::new(w, 400, 300), ms(w));
     }
     policy.click(SEAT, id(1), ms(4));
 
-    policy.action(SEAT, Action::SwitchWindows, ms(5));
+    policy.action(SEAT, SWITCH, ms(5));
+    policy.switcher_commit(ms(5));
     assert_eq!(policy.focus(SEAT), Some(id(3)));
     assert_eq!(policy.stacking(0).last(), Some(&id(3)));
 
-    policy.action(SEAT, Action::SwitchWindows, ms(6));
+    policy.action(SEAT, SWITCH, ms(6));
+    policy.switcher_commit(ms(6));
     assert_eq!(policy.focus(SEAT), Some(id(1)));
 }
 
 #[test]
-fn switch_windows_restores_a_minimised_window_and_skips_docks_and_other_workspaces() {
+fn switching_windows_restores_a_minimised_window_and_skips_docks_and_other_workspaces() {
     let mut policy = policy();
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
     policy.map_window(TestWindow::new(2, 400, 300), ms(2));
@@ -45,9 +53,10 @@ fn switch_windows_restores_a_minimised_window_and_skips_docks_and_other_workspac
     );
     policy.click(SEAT, id(4), ms(5));
     policy.click(SEAT, id(1), ms(6));
-    // Most recently used first: 1, 4, 3, 2.
+    // Listed: 1, then 2, which is minimised. The dock and the other workspace's 3 are left out.
 
-    policy.action(SEAT, Action::SwitchWindows, ms(7));
+    policy.action(SEAT, SWITCH, ms(7));
+    policy.switcher_commit(ms(7));
 
     assert_eq!(policy.focus(SEAT), Some(id(2)));
     assert!(!policy.is_minimized(id(2)));

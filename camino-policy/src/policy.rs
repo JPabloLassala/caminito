@@ -16,7 +16,7 @@ use crate::{
 
 mod switcher;
 
-pub use switcher::SwitchList;
+pub use switcher::{SwitchList, Switcher};
 
 /// A seat, as the compositor numbers them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -69,6 +69,9 @@ pub struct Config {
     pub workspace_names: Vec<String>,
     /// The `workspace-layout-*` keys: the grid the workspaces are in.
     pub workspace_layout: WorkspaceLayout,
+    /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
+    /// open (108).
+    pub alt_tab_raise_windows: bool,
 }
 
 impl Default for Config {
@@ -79,6 +82,7 @@ impl Default for Config {
             workspace_count,
             workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
             workspace_layout: WorkspaceLayout::default(),
+            alt_tab_raise_windows: false,
         }
     }
 }
@@ -269,6 +273,10 @@ pub struct Policy<W: PolicyWindow> {
     grabs: BTreeMap<SeatId, Grab>,
     /// Windows by when they last had focus, most recent first, for Alt+Tab.
     mru: Vec<WindowId>,
+    /// The Window switcher (108), while it's open.
+    switcher: Option<switcher::Open>,
+    /// `alt-tab-raise-windows`.
+    alt_tab_raise_windows: bool,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -288,6 +296,8 @@ impl<W: PolicyWindow> Policy<W> {
             last_seat: SeatId(0),
             grabs: BTreeMap::new(),
             mru: Vec::new(),
+            switcher: None,
+            alt_tab_raise_windows: false,
         };
         policy.settings_changed(config);
         policy
@@ -356,6 +366,7 @@ impl<W: PolicyWindow> Policy<W> {
         names.extend((names.len() + 1..=count).map(default_workspace_name));
         self.workspace_names = names;
         self.workspace_layout = config.workspace_layout;
+        self.alt_tab_raise_windows = config.alt_tab_raise_windows;
 
         if count < self.stacks.len() {
             let last = count - 1;
@@ -383,7 +394,6 @@ impl<W: PolicyWindow> Policy<W> {
         let size = window.size();
         let geometry = Rectangle::new(Point::default(), size);
         let window_type = window.window_type();
-        let takes_input = window.takes_input();
         let hints = window.size_hints();
         let ssd = window.is_ssd();
         let parent = window
@@ -430,12 +440,27 @@ impl<W: PolicyWindow> Policy<W> {
         self.place(id);
         self.maximize_if_too_big(id);
         self.adopt_transients(id);
-        // Marco's `window_state_on_map` (window.c:1997-2044). A window mapped on another
-        // workspace isn't shown, so it isn't focused either.
-        if takes_input
-            && workspace == self.active
+        // While the Window switcher is open the focus stays where it is, and the window gets
+        // it when the switcher closes.
+        if self.switcher.is_some() {
+            self.switcher_defer_focus(id, now);
+        } else {
+            self.focus_mapped(id, now);
+        }
+        self.apply();
+    }
+
+    /// Focuses a window that has just mapped, as Marco's `window_state_on_map`
+    /// (window.c:1997-2044) does. A window mapped on another workspace isn't shown, so it
+    /// isn't focused either.
+    fn focus_mapped(&mut self, id: WindowId, now: Duration) {
+        let Some(managed) = self.windows.get(&id) else {
+            return;
+        };
+        if managed.window.takes_input()
+            && managed.workspace == self.active
             && !matches!(
-                window_type,
+                managed.window_type,
                 WindowType::Desktop
                     | WindowType::Dock
                     | WindowType::Splashscreen
@@ -446,7 +471,6 @@ impl<W: PolicyWindow> Policy<W> {
         {
             self.focus_window(self.last_seat, id, now);
         }
-        self.apply();
     }
 
     /// Stops managing a window the client has unmapped or destroyed, and hands it back.
@@ -468,6 +492,7 @@ impl<W: PolicyWindow> Policy<W> {
                 }
             }
         }
+        self.switcher_window_unmapped(id);
         self.apply();
         Some(managed.window)
     }
@@ -555,18 +580,7 @@ impl<W: PolicyWindow> Policy<W> {
                     self.close(id);
                 }
             }
-            Action::SwitchWindows => {
-                let current = self.focus(seat);
-                let next = self.mru.iter().copied().find(|id| {
-                    let managed = &self.windows[id];
-                    Some(*id) != current
-                        && managed.workspace == self.active
-                        && !matches!(managed.window_type, WindowType::Dock | WindowType::Desktop)
-                });
-                if let Some(id) = next {
-                    self.activate(seat, id, now);
-                }
-            }
+            Action::Switch { list, backward } => self.switch(seat, list, backward, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
         }
         self.apply();
@@ -627,6 +641,8 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn switch_workspace(&mut self, workspace: usize) {
         let workspace = workspace.min(self.stacks.len() - 1);
         if workspace != self.active {
+            // The workspace changing under an open switcher closes it (ruling 9 of 108).
+            self.close_switcher(switcher::Close::Dropped);
             self.active = workspace;
             self.focus.clear();
             if let Some(id) = self.default_focus() {
@@ -942,6 +958,7 @@ impl<W: PolicyWindow> Policy<W> {
         pointer: Point<f64, Logical>,
     ) -> bool {
         let movable = self.is_showing(id)
+            && self.switcher.is_none()
             && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat)
             && self.windows.get(&id).is_some_and(|m| {
                 !m.maximized()
