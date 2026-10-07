@@ -41,6 +41,9 @@ jobs:
       - name: Add a build user
         run: |
           useradd -m builder
+          # make runs one job unless makepkg is told otherwise.
+          echo "MAKEFLAGS=-j$(nproc)" >/home/builder/.makepkg.conf
+          chown builder: /home/builder/.makepkg.conf
           echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
           chown -R builder: "$GITHUB_WORKSPACE"
           sudo -u builder rustup toolchain install stable --profile minimal
