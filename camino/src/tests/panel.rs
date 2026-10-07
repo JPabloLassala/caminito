@@ -271,9 +271,11 @@ fn a_panel_whose_call_fails_has_alt_f2_spawn_the_run_dialog() {
 
 #[test]
 fn a_failed_call_ends_the_time_for_the_grab() {
+    // Before the bus: zbus's tasks carry spans, and one made before the capture isn't one
+    // the capture knows.
+    let logs = Logs::capture();
     let (mut f, _dir, bus) = on_its_own_bus();
     let panel = Panel::on(&bus, true);
-    let logs = Logs::capture();
     let id = f.connect(Kind::Xdg);
     let bar = a_bar(&mut f, id);
 
