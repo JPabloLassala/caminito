@@ -163,12 +163,18 @@ Logs go to stderr at `info`; set `RUST_LOG` (for example `RUST_LOG=camino=debug`
 
 The keybindings are a hard-coded set of Marco's defaults until M8 reads them from gsettings:
 
-| Keys                  | Action           |
-| --------------------- | ---------------- |
-| Ctrl+Alt+Left / Right | Switch workspace |
-| Alt+Tab               | Switch windows   |
-| Alt+F4                | Close window     |
-| Alt+F10               | Toggle maximised |
+| Keys                  | Action                                     |
+| --------------------- | ------------------------------------------ |
+| Ctrl+Alt+Left / Right | Switch workspace                           |
+| Alt+Tab               | Switch windows, with the Window switcher   |
+| Alt+\`                | Switch the focused application's windows   |
+| Ctrl+Alt+Tab          | Switch panels and the desktop              |
+| Alt+F4                | Close window                               |
+| Alt+F10               | Toggle maximised                           |
+
+Shift with a switch binding steps backward. While the Window switcher is open, Tab and the
+arrow keys move the selection, releasing the modifier or Enter activates the selected window,
+and Escape cancels.
 
 ### The MATE session
 
