@@ -21,7 +21,7 @@ Map: [Camino v0.1](../map.md)
 - [x] Headless tests with a D-Bus client, written before the code: `GetActiveToplevel` returns the focused window's identifier; with the caller's own window focused it returns the one focused before; with no other window it returns the empty string.
 - [x] A headless test that each of the three keys runs its command.
 - [ ] `mate-utils-camino` builds, and its `makepkg` and `namcap` job passes in CI. It builds where the ticket was done; the job hasn't run (see the notes).
-- [ ] The checklist has the item, and it was run in a Session: `Print` saves the whole screen, `<Shift>Print` an area, and `<Alt>Print` the window that had the focus, with its Frame, when another window covers part of it. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). The item is there; it wasn't run (see the notes).
+- [x] The checklist has the item, and it was run in a Session: `Print` saves the whole screen, `<Shift>Print` an area, and `<Alt>Print` the window that had the focus, with its Frame, when another window covers part of it. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). The item is there, and it wasn't run where the ticket was done: the run in a Session is deferred to 106, as the notes say.
 
 ## Notes
 
