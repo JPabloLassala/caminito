@@ -559,6 +559,46 @@ session_env() {
   mate-screenshot is given, and `WAYLAND_DEBUG=1 mate-screenshot --window 2>&1 | grep
   ext_foreign_toplevel` shows the toplevel it's matched to.
 
+## Media keys
+
+### The volume keys change the volume and show the OSD
+
+- **Milestone:** M6
+- **Steps:**
+  1. With `mate-settings-daemon-camino` 1.29.1-4 or later installed, and a `camino-git` whose
+     `org.mate.Camino` has `AcceleratorRepeated` (`busctl --user introspect org.mate.Camino
+     /org/mate/Camino | grep Accelerator`), log into *MATE on Camino*, with sound playing.
+  2. Press the volume up, volume down and mute keys, once each, and mute again. Then hold
+     volume down for two seconds, and hold mute for two seconds.
+  3. Make a window fullscreen, such as a browser's with F11, and click in a text field in
+     it. Press volume up, and type while the OSD shows.
+  4. Run the first command, press Ctrl+Alt+M, then press the mute key, then run the second:
+
+     ```sh
+     gsettings set org.mate.SettingsDaemon.plugins.media-keys volume-mute '<Control><Alt>m'
+     gsettings reset org.mate.SettingsDaemon.plugins.media-keys volume-mute
+     ```
+
+     With `mate-control-center-camino` installed, change *Volume mute* in *Keyboard
+     Shortcuts* instead.
+  5. On a laptop with a touchpad toggle key, press it twice.
+  6. Log out, log into *MATE*, the X11 session, and repeat step 2. Then log into the Wayfire
+     session and run `mate-settings-daemon --debug --replace 2>&1 | grep -i media` in a
+     terminal.
+- **Expected:** in step 2 each press changes the volume or the mute, and shows the OSD in the
+  lower half of the monitor. The held volume key goes on lowering the volume, and the held mute
+  key toggles once. In step 3 the OSD shows above the fullscreen window, and what's typed goes
+  to the text field. In step 4 Ctrl+Alt+M mutes with no log out, the mute key does nothing
+  while it's set, and works again after the reset. In step 5 the OSD says *Touchpad disabled*,
+  the touchpad stops moving the pointer, and the second press brings it back. In step 6 X11
+  MATE's keys and OSD are as before, and on Wayfire the plugin isn't loaded: `Plugin
+  'Media keys' requires X11; not loading on this display` (ADR 0011).
+- **Debug tool:** `DumpState`'s `accelerator_grabs`, which lists each key msd grabbed with
+  msd's unique name, and its `outputs`' `layer_surfaces`, where the OSD is `mate-osd` on the
+  `overlay` layer with `keyboard_interactivity` `none` while it shows. `dbus-monitor
+  "interface='org.mate.Camino'"` can't see the signals, which go to msd alone: run
+  `mate-settings-daemon --debug --replace` for msd's side.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

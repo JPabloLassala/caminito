@@ -12,7 +12,7 @@ _pkgname=mate-settings-daemon
 # The first tag with the Wayland background and clipboard. Its wlrandr plugin is off under
 # Camino, which keeps the saved layouts itself (0005, ADR 0014).
 pkgver=1.29.1
-pkgrel=3
+pkgrel=4
 pkgdesc="The MATE Settings daemon, with Camino's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-settings-daemon'
@@ -57,10 +57,12 @@ groups=(mate)
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
-# 0001 to 0003 and 0005 are active only when MATE_WM_NAME=Camino (ADR 0011). 0004 isn't
-# Camino's: it takes out the one upstream commit that needs mate-desktop 1.29, which Arch
-# doesn't have. It goes when Arch's mate-desktop is 1.29. 0006 has no gate: it fixes the
-# Wayland background's windows piling up at a hot-plug, on any compositor (88).
+# 0001 to 0003, 0005 and 0007 to 0010 are active only when MATE_WM_NAME=Camino (ADR 0011).
+# 0004 isn't Camino's: it takes out the one upstream commit that needs mate-desktop 1.29,
+# which Arch doesn't have. It goes when Arch's mate-desktop is 1.29. 0006 has no gate: it
+# fixes the Wayland background's windows piling up at a hot-plug, on any compositor (88).
+# 0007 to 0010 are the media keys and their OSD (99): 0007 lets an X11Only plugin that says
+# Camino=true load under Camino, and 0010 is the plugin that says it.
 source=(
   "git+https://github.com/mate-desktop/mate-settings-daemon.git#tag=v$pkgver"
   0001-xsettings-Mirror-to-the-GNOME-settings-only-under-Ca.patch
@@ -69,6 +71,10 @@ source=(
   0004-Revert-xrandr-Handle-hotplug_mode_update-for-VM-gues.patch
   0005-wlrandr-Do-not-start-under-Camino.patch
   0006-background-Do-not-rebuild-the-windows-from-inside-a-.patch
+  0007-plugin-info-Start-an-X11Only-plugin-under-Camino-whe.patch
+  0008-osd-window-Show-on-the-overlay-layer-under-Camino.patch
+  0009-input-helper-Take-a-touchpad-to-be-present-under-Cam.patch
+  0010-media-keys-Grab-the-keys-through-Camino.patch
 )
 b2sums=(
   ce41a546278c85e775bef0efb9da014d822570f93c19532d36ae864453bbb611e36eeea7b6cda68950722e0b50856bafc9884cd6aa2cd5cdf26f1bac6970ff9b
@@ -78,6 +84,10 @@ b2sums=(
   74f95d5b718a8c3c3387ac7f4b36c6fef8a9aacf11f88401d98ae77b3ca2a1574319912b1fbd27670d7dbfa2d56b7837227c1a9a2c95ba8809209c399258f48b
   8c2a188fe44a64cd604f113000f92644e8bb0a782e59e58a2abf46699574470fec7bf36e4ebaa7c31bbfef2e63bccfd4d9bb92420f84f699227a789b844355c0
   661a58aafd33290ed2fed9a6b3bc3a550d935536c083d15304abf27c8e076ef263472fd0e4c92e781e4fa54ce56d05f9e0779e5d680f8fa00377e15d56bcbbf5
+  e122a183f77a3ea6b46460b5ff03eb50c49dfd0a3a1c4d11de18264e09e05b346d15cc8bffe1e2a9155d86c918ac450fcb950343ac3454403779a64c91fc27d4
+  358f29cc1552a2a810e8c89d3daa037637437ecba17446d02f77d088f10e295e78392757ff03f6465f3272af1268fd3e1369ea2c6ab4d7e4fed03296f4222b9a
+  005452bc33c502728ccce7d7c03afa06b8ebc7be7a40aaa855c1f245d27ed6c7cd04d5744db33f0d38fa0b13b9514f21c8b6efe5b04237e7c867bc568065385b
+  d0247bda6f14dca8317e25aef4980823e7a3151251f1de36fd3fb0ba15b9a58ebb21fb14a17495538cd90636d69beca1c3aa05a1433d6af10d0e46309652ce34
 )
 
 prepare() {

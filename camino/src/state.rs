@@ -86,6 +86,7 @@ use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
+use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
@@ -196,6 +197,8 @@ pub struct Camino {
     pub suppressed_keys: HashSet<Keycode>,
     /// The accelerators callers of `org.mate.Camino` have grabbed (98).
     pub(crate) accelerator_grabs: Grabs,
+    /// The grabbed accelerator whose key is held and repeating (99).
+    pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
     pub frame_pointer: FramePointer,
     /// The interactive move or resize the pointer is doing, if any.
@@ -769,6 +772,7 @@ impl Camino {
             keyboard_layer: None,
             suppressed_keys: HashSet::new(),
             accelerator_grabs: Grabs::default(),
+            accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,
             client_cursor: CursorImageStatus::default_named(),

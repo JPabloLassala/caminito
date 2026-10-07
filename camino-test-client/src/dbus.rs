@@ -71,6 +71,11 @@ pub trait Camino {
     /// its grabber is sent it.
     #[zbus(signal)]
     fn accelerator_activated(&self, action: u32, time: u32) -> zbus::Result<()>;
+
+    /// A grabbed accelerator's key is still held, and repeated at `time` (99). Only its
+    /// grabber is sent it.
+    #[zbus(signal)]
+    fn accelerator_repeated(&self, action: u32, time: u32) -> zbus::Result<()>;
 }
 
 /// A proxy for `org.mate.Camino` at `destination`, a unique or well-known name, on a new

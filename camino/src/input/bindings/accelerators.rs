@@ -179,6 +179,11 @@ impl Grabs {
             .map(|(action, grab)| (action, grab.owner.as_str()))
     }
 
+    /// The owner of the grab with this action id, if it's still held.
+    pub(crate) fn owner(&self, action: u32) -> Option<&str> {
+        self.grabs.get(&action).map(|grab| grab.owner.as_str())
+    }
+
     /// Every grab with its action id, in the ids' order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (u32, &Grab)> {
         self.grabs.iter().map(|(action, grab)| (*action, grab))

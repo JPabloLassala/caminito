@@ -1,0 +1,570 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Wed, 7 Oct 2026 00:31:33 -0300
+Subject: [PATCH] media-keys: Grab the keys through Camino
+
+The plugin grabs its keys with XGrabKey on the root window and acts on the
+key presses it filters there, so it is X11Only. Under Camino, the Wayland
+compositor for MATE, there is nothing to grab that way: msd is a Wayland
+client, and a key pressed in a Wayland window never reaches the X server.
+
+Camino grabs key combinations for its callers on the session bus.
+GrabAccelerators on org.mate.Camino takes accelerators as the settings
+store them and returns an action for each, AcceleratorActivated carries
+the action of a key that was pressed, and AcceleratorRepeated that of a
+key that is still held.
+
+When MATE_WM_NAME is Camino and the display is not an X11 one, grab the
+keys through it in place of the X11 grabs. The actions are the same ones:
+the volume, the launchers, eject, the power dialogs, the media player keys
+and rfkill. The keys are grabbed again when a shortcut changes, and when
+org.mate.Camino gets a new owner. Only the volume keys act on a repeat.
+
+The plugin says Camino=true, so that it is loaded there. Without that
+variable, nothing changes.
+---
+ ...media-keys.mate-settings-plugin.desktop.in |   1 +
+ plugins/media-keys/msd-media-keys-manager.c   | 441 +++++++++++++++++-
+ 2 files changed, 433 insertions(+), 9 deletions(-)
+
+diff --git a/plugins/media-keys/media-keys.mate-settings-plugin.desktop.in b/plugins/media-keys/media-keys.mate-settings-plugin.desktop.in
+index 05d2456..4c5b52a 100644
+--- a/plugins/media-keys/media-keys.mate-settings-plugin.desktop.in
++++ b/plugins/media-keys/media-keys.mate-settings-plugin.desktop.in
+@@ -2,6 +2,7 @@
+ Module=media-keys
+ IAge=0
+ X11Only=true
++Camino=true
+ Name=Media keys
+ Description=Media keys plugin
+ Authors=
+diff --git a/plugins/media-keys/msd-media-keys-manager.c b/plugins/media-keys/msd-media-keys-manager.c
+index 85aea84..61af191 100644
+--- a/plugins/media-keys/msd-media-keys-manager.c
++++ b/plugins/media-keys/msd-media-keys-manager.c
+@@ -60,6 +60,11 @@
+ #define SOUND_SCHEMA "org.mate.sound"
+ #define VOLUME_OVERAMPLIFIABLE_KEY "volume-overamplifiable"
+ 
++/* Camino, the Wayland compositor for MATE, grabs keys for its callers */
++#define CAMINO_DBUS_NAME "org.mate.Camino"
++#define CAMINO_DBUS_PATH "/org/mate/Camino"
++#define CAMINO_DBUS_INTERFACE "org.mate.Camino"
++
+ static const gchar introspection_xml[] =
+ "<node name='/org/mate/SettingsDaemon/MediaKeys'>"
+ "  <interface name='org.mate.SettingsDaemon.MediaKeys'>"
+@@ -115,6 +120,16 @@ struct _MsdMediaKeysManagerPrivate
+ 
+         guint             owner_id;
+         guint             notify[HANDLED_KEYS];
++
++        /* The keys grabbed through Camino, in place of the X11 grabs */
++        guint             camino_watch_id;
++        GDBusConnection  *camino_connection;
++        guint             camino_signal_id;
++        gboolean          camino_owned;
++        guint             camino_serial;
++        gboolean          camino_grabbing;
++        gboolean          camino_grab_again;
++        guint32           camino_actions[HANDLED_KEYS];
+ };
+ 
+ G_DEFINE_TYPE_WITH_PRIVATE (MsdMediaKeysManager, msd_media_keys_manager, G_TYPE_OBJECT)
+@@ -122,6 +137,22 @@ G_DEFINE_TYPE_WITH_PRIVATE (MsdMediaKeysManager, msd_media_keys_manager, G_TYPE_
+ static gpointer manager_object = NULL;
+ static void register_manager (MsdMediaKeysManager *manager);
+ 
++/* Under Camino on a Wayland display there are no X11 grabs: the keys are
++ * grabbed with GrabAccelerators on org.mate.Camino, which signals
++ * AcceleratorActivated for a press and AcceleratorRepeated while the key is
++ * held. */
++static gboolean
++grab_through_camino (void)
++{
++        if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Camino") != 0)
++                return FALSE;
++#ifdef GDK_WINDOWING_X11
++        if (GDK_IS_X11_DISPLAY (gdk_display_get_default ()))
++                return FALSE;
++#endif /* GDK_WINDOWING_X11 */
++        return TRUE;
++}
++
+ static void
+ init_screens (MsdMediaKeysManager *manager)
+ {
+@@ -1517,6 +1548,387 @@ acme_filter_events (GdkXEvent           *xevent,
+         return GDK_FILTER_CONTINUE;
+ }
+ 
++/* A GrabAccelerators call that is out: its reply is dropped if Camino got a
++ * new owner, or the manager was stopped, since it was made */
++typedef struct {
++        MsdMediaKeysManager *manager;
++        guint                serial;
++} CaminoGrab;
++
++static void camino_grab_keys (MsdMediaKeysManager *manager);
++
++/* Calls are made only while org.mate.Camino has an owner, and never start
++ * one */
++static void
++camino_ungrab (GDBusConnection *connection,
++               GVariantBuilder *actions)
++{
++        g_dbus_connection_call (connection,
++                                CAMINO_DBUS_NAME,
++                                CAMINO_DBUS_PATH,
++                                CAMINO_DBUS_INTERFACE,
++                                "UngrabAccelerators",
++                                g_variant_new ("(au)", actions),
++                                NULL,
++                                G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
++                                NULL, NULL, NULL);
++}
++
++/* The shortcut of the key at @i as it is now, or NULL if it has none */
++static char *
++camino_shortcut (MsdMediaKeysManager *manager,
++                 int                  i)
++{
++        char *shortcut;
++
++        if (keys[i].settings_key != NULL)
++                shortcut = g_settings_get_string (manager->priv->settings,
++                                                  keys[i].settings_key);
++        else
++                shortcut = g_strdup (keys[i].hard_coded);
++
++        if (!is_valid_shortcut (shortcut))
++                g_clear_pointer (&shortcut, g_free);
++
++        return shortcut;
++}
++
++/* Takes the action of each key from GrabAccelerators' reply, and releases
++ * the grabs that no key has any more. A key that kept its shortcut kept its
++ * action. */
++static void
++camino_take_actions (MsdMediaKeysManager *manager,
++                     GVariant            *actions)
++{
++        GVariantBuilder released;
++        guint32         old[HANDLED_KEYS];
++        gboolean        any_released = FALSE;
++        gboolean        refused = FALSE;
++        int             i, j;
++
++        if (g_variant_n_children (actions) != HANDLED_KEYS) {
++                g_warning ("Camino did not answer for each of the media keys");
++                return;
++        }
++
++        memcpy (old, manager->priv->camino_actions, sizeof (old));
++
++        for (i = 0; i < HANDLED_KEYS; i++) {
++                g_variant_get_child (actions, i, "u", &manager->priv->camino_actions[i]);
++
++                if (manager->priv->camino_actions[i] == 0) {
++                        char *shortcut = camino_shortcut (manager, i);
++
++                        if (shortcut != NULL)
++                                refused = TRUE;
++                        g_free (shortcut);
++                }
++        }
++
++        if (refused)
++                g_warning ("Grab failed for some keys: another application may have them, or Camino cannot read them.");
++
++        g_variant_builder_init (&released, G_VARIANT_TYPE ("au"));
++        for (i = 0; i < HANDLED_KEYS; i++) {
++                if (old[i] == 0)
++                        continue;
++                for (j = 0; j < HANDLED_KEYS; j++) {
++                        if (manager->priv->camino_actions[j] == old[i])
++                                break;
++                }
++                if (j == HANDLED_KEYS) {
++                        g_variant_builder_add (&released, "u", old[i]);
++                        any_released = TRUE;
++                }
++        }
++        if (any_released)
++                camino_ungrab (manager->priv->camino_connection, &released);
++        else
++                g_variant_builder_clear (&released);
++}
++
++/* Releases every grab of a reply that came after the manager was stopped:
++ * no key has them, and msd stays on the bus, so they would stay grabbed */
++static void
++camino_release_actions (GDBusConnection *connection,
++                        GVariant        *actions)
++{
++        GVariantBuilder released;
++        GVariantIter    iter;
++        gboolean        any_released = FALSE;
++        guint32         action;
++
++        g_variant_builder_init (&released, G_VARIANT_TYPE ("au"));
++        g_variant_iter_init (&iter, actions);
++        while (g_variant_iter_next (&iter, "u", &action)) {
++                if (action != 0) {
++                        g_variant_builder_add (&released, "u", action);
++                        any_released = TRUE;
++                }
++        }
++        if (any_released)
++                camino_ungrab (connection, &released);
++        else
++                g_variant_builder_clear (&released);
++}
++
++static void
++camino_grabbed_cb (GObject      *source,
++                   GAsyncResult *result,
++                   gpointer      data)
++{
++        CaminoGrab          *grab = data;
++        MsdMediaKeysManager *manager = grab->manager;
++        GVariant *reply;
++        GVariant *actions = NULL;
++        GError   *error = NULL;
++
++        reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, &error);
++        if (reply != NULL)
++                actions = g_variant_get_child_value (reply, 0);
++
++        if (grab->serial != manager->priv->camino_serial) {
++                /* Stopped: release what it grabbed. Started again since,
++                 * or with a new owner of the name: a later call's reply
++                 * has the actions. */
++                if (actions != NULL && manager->priv->camino_watch_id == 0)
++                        camino_release_actions (G_DBUS_CONNECTION (source), actions);
++        } else {
++                manager->priv->camino_grabbing = FALSE;
++
++                if (actions != NULL)
++                        camino_take_actions (manager, actions);
++                else
++                        g_warning ("Could not grab the media keys through Camino: %s", error->message);
++
++                /* A shortcut changed in the meantime */
++                if (manager->priv->camino_grab_again) {
++                        manager->priv->camino_grab_again = FALSE;
++                        camino_grab_keys (manager);
++                }
++        }
++
++        g_clear_pointer (&actions, g_variant_unref);
++        g_clear_pointer (&reply, g_variant_unref);
++        g_clear_error (&error);
++        g_object_unref (grab->manager);
++        g_free (grab);
++}
++
++/* Grabs every key's shortcut as it is now. One call is made at a time, so
++ * that the actions of one reply are never released by an earlier one. */
++static void
++camino_grab_keys (MsdMediaKeysManager *manager)
++{
++        GVariantBuilder accelerators;
++        CaminoGrab     *grab;
++        int             i;
++
++        if (!manager->priv->camino_owned)
++                return;
++
++        if (manager->priv->camino_grabbing) {
++                manager->priv->camino_grab_again = TRUE;
++                return;
++        }
++
++        g_variant_builder_init (&accelerators, G_VARIANT_TYPE ("as"));
++        for (i = 0; i < HANDLED_KEYS; i++) {
++                char *shortcut = camino_shortcut (manager, i);
++
++                /* The empty string is no shortcut, and gets no action */
++                g_variant_builder_add (&accelerators, "s", shortcut != NULL ? shortcut : "");
++                g_free (shortcut);
++        }
++
++        grab = g_new0 (CaminoGrab, 1);
++        grab->manager = g_object_ref (manager);
++        grab->serial = manager->priv->camino_serial;
++
++        manager->priv->camino_grabbing = TRUE;
++        g_dbus_connection_call (manager->priv->camino_connection,
++                                CAMINO_DBUS_NAME,
++                                CAMINO_DBUS_PATH,
++                                CAMINO_DBUS_INTERFACE,
++                                "GrabAccelerators",
++                                g_variant_new ("(as)", &accelerators),
++                                G_VARIANT_TYPE ("(au)"),
++                                G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
++                                NULL,
++                                camino_grabbed_cb, grab);
++}
++
++static void
++camino_update_kbd_cb (GSettings           *settings G_GNUC_UNUSED,
++                      gchar               *settings_key G_GNUC_UNUSED,
++                      MsdMediaKeysManager *manager)
++{
++        camino_grab_keys (manager);
++}
++
++static void
++camino_signal_cb (GDBusConnection *connection G_GNUC_UNUSED,
++                  const gchar     *sender_name G_GNUC_UNUSED,
++                  const gchar     *object_path G_GNUC_UNUSED,
++                  const gchar     *interface_name G_GNUC_UNUSED,
++                  const gchar     *signal_name,
++                  GVariant        *parameters,
++                  gpointer         data)
++{
++        MsdMediaKeysManager *manager = data;
++        gboolean repeated;
++        guint32  action;
++        int      i;
++
++        if (g_strcmp0 (signal_name, "AcceleratorActivated") == 0)
++                repeated = FALSE;
++        else if (g_strcmp0 (signal_name, "AcceleratorRepeated") == 0)
++                repeated = TRUE;
++        else
++                return;
++
++        if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(uu)")))
++                return;
++        g_variant_get (parameters, "(uu)", &action, NULL);
++        if (action == 0)
++                return;
++
++        /* The first key with the shortcut, as with the X11 grabs */
++        for (i = 0; i < HANDLED_KEYS; i++) {
++                if (manager->priv->camino_actions[i] != action)
++                        continue;
++
++                if (repeated) {
++                        switch (keys[i].key_type) {
++                        case VOLUME_DOWN_KEY:
++                        case VOLUME_UP_KEY:
++                        case VOLUME_DOWN_QUIET_KEY:
++                        case VOLUME_UP_QUIET_KEY:
++                                /* auto-repeatable keys */
++                                break;
++                        default:
++                                return;
++                        }
++                }
++
++                do_action (manager, keys[i].key_type);
++                return;
++        }
++}
++
++static void
++camino_appeared_cb (GDBusConnection *connection,
++                    const gchar     *name G_GNUC_UNUSED,
++                    const gchar     *name_owner G_GNUC_UNUSED,
++                    gpointer         data)
++{
++        MsdMediaKeysManager *manager = data;
++
++        if (manager->priv->camino_connection == NULL) {
++                manager->priv->camino_connection = g_object_ref (connection);
++                manager->priv->camino_signal_id =
++                        g_dbus_connection_signal_subscribe (connection,
++                                                            CAMINO_DBUS_NAME,
++                                                            CAMINO_DBUS_INTERFACE,
++                                                            NULL,
++                                                            CAMINO_DBUS_PATH,
++                                                            NULL,
++                                                            G_DBUS_SIGNAL_FLAGS_NONE,
++                                                            camino_signal_cb,
++                                                            manager, NULL);
++        }
++
++        /* A new owner has none of the grabs, and a reply still to come is
++         * the last owner's */
++        manager->priv->camino_owned = TRUE;
++        manager->priv->camino_serial++;
++        manager->priv->camino_grabbing = FALSE;
++        manager->priv->camino_grab_again = FALSE;
++        memset (manager->priv->camino_actions, 0, sizeof (manager->priv->camino_actions));
++        camino_grab_keys (manager);
++}
++
++static void
++camino_vanished_cb (GDBusConnection *connection G_GNUC_UNUSED,
++                    const gchar     *name G_GNUC_UNUSED,
++                    gpointer         data)
++{
++        MsdMediaKeysManager *manager = data;
++
++        /* The grabs went with their owner */
++        manager->priv->camino_owned = FALSE;
++        memset (manager->priv->camino_actions, 0, sizeof (manager->priv->camino_actions));
++}
++
++/* Grabs the keys through Camino now and whenever a shortcut changes or
++ * org.mate.Camino gets a new owner. */
++static void
++camino_init_kbd (MsdMediaKeysManager *manager)
++{
++        int i;
++
++        for (i = 0; i < HANDLED_KEYS; i++) {
++                gchar *signal_name;
++
++                if (keys[i].settings_key == NULL)
++                        continue;
++
++                signal_name = g_strdup_printf ("changed::%s", keys[i].settings_key);
++                g_signal_connect (manager->priv->settings,
++                                  signal_name,
++                                  G_CALLBACK (camino_update_kbd_cb),
++                                  manager);
++                g_free (signal_name);
++        }
++
++        manager->priv->camino_watch_id = g_bus_watch_name (G_BUS_TYPE_SESSION,
++                                                           CAMINO_DBUS_NAME,
++                                                           G_BUS_NAME_WATCHER_FLAGS_NONE,
++                                                           camino_appeared_cb,
++                                                           camino_vanished_cb,
++                                                           manager, NULL);
++}
++
++static void
++camino_stop (MsdMediaKeysManager *manager)
++{
++        MsdMediaKeysManagerPrivate *priv = manager->priv;
++        GVariantBuilder released;
++        gboolean        any_released = FALSE;
++        int             i;
++
++        if (priv->camino_watch_id > 0) {
++                g_bus_unwatch_name (priv->camino_watch_id);
++                priv->camino_watch_id = 0;
++        }
++
++        /* A call that is out releases its grabs when its reply comes */
++        priv->camino_serial++;
++        priv->camino_owned = FALSE;
++        priv->camino_grabbing = FALSE;
++        priv->camino_grab_again = FALSE;
++
++        if (priv->camino_connection == NULL)
++                return;
++
++        g_variant_builder_init (&released, G_VARIANT_TYPE ("au"));
++        for (i = 0; i < HANDLED_KEYS; i++) {
++                if (priv->camino_actions[i] != 0) {
++                        g_variant_builder_add (&released, "u", priv->camino_actions[i]);
++                        priv->camino_actions[i] = 0;
++                        any_released = TRUE;
++                }
++        }
++        if (any_released)
++                camino_ungrab (priv->camino_connection, &released);
++        else
++                g_variant_builder_clear (&released);
++
++        g_dbus_connection_signal_unsubscribe (priv->camino_connection, priv->camino_signal_id);
++        priv->camino_signal_id = 0;
++        g_clear_object (&priv->camino_connection);
++}
++
+ static void
+ on_rfkill_proxy_ready (GObject      *source,
+                        GAsyncResult *result,
+@@ -1550,13 +1962,15 @@ start_media_keys_idle_cb (MsdMediaKeysManager *manager)
+ {
+         GSList *l;
+         GdkDisplay *dpy;
+-        Display *xdpy;
++        Display *xdpy = NULL;
++        gboolean camino = grab_through_camino ();
+ 
+         g_debug ("Starting media_keys manager");
+         mate_settings_profile_start (NULL);
+ 
+         dpy = gdk_display_get_default ();
+-        xdpy = GDK_DISPLAY_XDISPLAY (dpy);
++        if (!camino)
++                xdpy = GDK_DISPLAY_XDISPLAY (dpy);
+ 
+         manager->priv->volume_monitor = g_volume_monitor_get ();
+         manager->priv->settings = g_settings_new (BINDING_SCHEMA);
+@@ -1565,10 +1979,13 @@ start_media_keys_idle_cb (MsdMediaKeysManager *manager)
+         ensure_cancellable (&manager->priv->rfkill_cancellable);
+ 
+         init_screens (manager);
+-        init_kbd (manager);
++        if (camino)
++                camino_init_kbd (manager);
++        else
++                init_kbd (manager);
+ 
+         /* Start filtering the events */
+-        for (l = manager->priv->screens; l != NULL; l = l->next) {
++        for (l = camino ? NULL : manager->priv->screens; l != NULL; l = l->next) {
+                 GdkWindow *window;
+                 Window xwindow;
+                 XWindowAttributes atts;
+@@ -1614,7 +2031,7 @@ msd_media_keys_manager_start (MsdMediaKeysManager *manager, GError **error)
+         mate_settings_profile_start (NULL);
+ 
+ #ifdef GDK_WINDOWING_X11
+-        if (!GDK_IS_X11_DISPLAY (gdk_display_get_default ())) {
++        if (!GDK_IS_X11_DISPLAY (gdk_display_get_default ()) && !grab_through_camino ()) {
+                 g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                              "X11 display is required for the media_keys plugin");
+                 mate_settings_profile_end (NULL);
+@@ -1672,15 +2089,19 @@ msd_media_keys_manager_stop (MsdMediaKeysManager *manager)
+         GList *l;
+         int i;
+         gboolean need_flush;
++        gboolean camino = grab_through_camino ();
+ 
+         g_debug ("Stopping media_keys manager");
+ 
+ #ifdef GDK_WINDOWING_X11
+-        if (!GDK_IS_X11_DISPLAY (gdk_display_get_default ()))
++        if (!GDK_IS_X11_DISPLAY (gdk_display_get_default ()) && !camino)
+                 return;
+ #endif /* GDK_WINDOWING_X11 */
+ 
+-        for (ls = priv->screens; ls != NULL; ls = ls->next) {
++        if (camino)
++                camino_stop (manager);
++
++        for (ls = camino ? NULL : priv->screens; ls != NULL; ls = ls->next) {
+                 gdk_window_remove_filter (gdk_screen_get_root_window (ls->data),
+                                           (GdkFilterFunc) acme_filter_events,
+                                           manager);
+@@ -1731,7 +2152,8 @@ msd_media_keys_manager_stop (MsdMediaKeysManager *manager)
+ 
+         need_flush = FALSE;
+         dpy = gdk_display_get_default ();
+-        gdk_x11_display_error_trap_push (dpy);
++        if (!camino)
++                gdk_x11_display_error_trap_push (dpy);
+ 
+         for (i = 0; i < HANDLED_KEYS; ++i) {
+                 if (keys[i].key) {
+@@ -1747,7 +2169,8 @@ msd_media_keys_manager_stop (MsdMediaKeysManager *manager)
+         if (need_flush)
+                 gdk_display_flush (dpy);
+ 
+-        gdk_x11_display_error_trap_pop_ignored (dpy);
++        if (!camino)
++                gdk_x11_display_error_trap_pop_ignored (dpy);
+ 
+         g_slist_free (priv->screens);
+         priv->screens = NULL;

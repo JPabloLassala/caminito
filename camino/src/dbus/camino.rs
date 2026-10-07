@@ -181,9 +181,22 @@ impl CaminoInterface {
 
     /// A grabbed accelerator was pressed: its action id, and the key event's time in
     /// milliseconds, as the Wayland clients get it. It's sent to the grabber alone, so no
-    /// other caller learns the keys pressed. Releases and repeats aren't signalled.
+    /// other caller learns the keys pressed. The release isn't signalled, and a repeat is
+    /// `AcceleratorRepeated`.
     #[zbus(signal)]
     async fn accelerator_activated(
+        emitter: &SignalEmitter<'_>,
+        action: u32,
+        time: u32,
+    ) -> zbus::Result<()>;
+
+    /// A grabbed accelerator's key is still held, and repeated (99): its action id, and
+    /// the time a key event would have then. It follows the keyboard's delay and rate, as
+    /// a Wayland client's own repeats do, until the key's release, another key's press or
+    /// the grab's release. It's sent to the grabber alone, which acts on it for a key that
+    /// repeats, as a volume key does, and not for one that toggles.
+    #[zbus(signal)]
+    async fn accelerator_repeated(
         emitter: &SignalEmitter<'_>,
         action: u32,
         time: u32,
@@ -257,8 +270,9 @@ impl Camino {
         }
     }
 
-    /// Signals `AcceleratorActivated` to the grab's `owner`, by its unique name on the bus, for a key event at `time`.
-    pub(crate) fn signal_accelerator(&self, owner: &str, action: u32, time: u32) {
+    /// Signals `AcceleratorActivated` to the grab's `owner`, by its unique name on the bus,
+    /// for a key event at `time`, or `AcceleratorRepeated` for a held key's repeat then.
+    pub(crate) fn signal_accelerator(&self, owner: &str, action: u32, time: u32, repeat: bool) {
         let Some(dbus) = &self.dbus else {
             return;
         };
@@ -269,7 +283,11 @@ impl Camino {
             let signalled = async {
                 let emitter = SignalEmitter::new(&connection, PATH)?
                     .set_destination(BusName::try_from(owner.as_str())?);
-                CaminoInterface::accelerator_activated(&emitter, action, time).await
+                if repeat {
+                    CaminoInterface::accelerator_repeated(&emitter, action, time).await
+                } else {
+                    CaminoInterface::accelerator_activated(&emitter, action, time).await
+                }
             };
             if let Err(err) = signalled.await {
                 tracing::warn!("can't signal the accelerator {action} to {owner}: {err}");

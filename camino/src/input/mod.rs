@@ -6,6 +6,7 @@ mod focus;
 pub mod frame;
 mod grab;
 pub(crate) mod keyboard;
+pub(crate) mod repeat;
 mod serials;
 
 pub use focus::{KeyboardFocus, PointerFocus};
@@ -222,6 +223,12 @@ impl State {
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
+        // A held accelerator repeats until its key's release or another key's press (99).
+        if pressed {
+            self.camino.stop_accelerator_repeat();
+        } else {
+            self.camino.stop_accelerator_repeat_of(keycode);
+        }
         let intercepted = keyboard.input(
             self,
             keycode,
@@ -245,8 +252,10 @@ impl State {
             }
             Some(Some(Bound::Command(command))) => self.camino.run_command(command),
             Some(Some(Bound::Accelerator { owner, action })) => {
+                let time = time.millis();
+                self.camino.signal_accelerator(&owner, action, time, false);
                 self.camino
-                    .signal_accelerator(&owner, action, time.millis());
+                    .start_accelerator_repeat(keycode, &owner, action, time);
             }
             Some(None) => {}
             None => {

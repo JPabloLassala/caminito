@@ -2,8 +2,11 @@
 //! `org.mate.Camino`, with callers on the test binary's private bus. The keys are checked
 //! as a Wayland client sees them, so the windows are xdg toplevels only (45).
 
+use std::time::Duration;
+
 use camino_test_client::dbus::{
-    AcceleratorActivatedIterator, CaminoProxy, camino_proxy, debug_proxy,
+    AcceleratorActivatedIterator, AcceleratorRepeatedIterator, CaminoProxy, camino_proxy,
+    debug_proxy,
 };
 use camino_test_client::format_input;
 use insta::assert_snapshot;
@@ -12,24 +15,29 @@ use super::fixture::{
     ClientId, ClientWindow, Fixture, KEY_A, KEY_F4, KEY_F9, KEY_LEFTALT, KEY_LEFTCTRL, KEY_MUTE,
     Kind, Logs, WindowSpec,
 };
+use crate::settings::Value;
+use crate::settings::translate::KEYBOARD;
 
-/// A caller of `org.mate.Camino` on a connection of its own, and the activations it's
-/// signalled.
+/// A caller of `org.mate.Camino` on a connection of its own, and the activations and
+/// repeats it's signalled.
 struct Caller {
     camino: CaminoProxy<'static>,
     activations: Option<AcceleratorActivatedIterator>,
+    repeats: Option<AcceleratorRepeatedIterator>,
 }
 
 impl Caller {
-    /// Connects to Camino at `bus`, listening for activations from now on.
+    /// Connects to Camino at `bus`, listening for activations and repeats from now on.
     fn new(f: &mut Fixture, bus: &str) -> Self {
         let bus = bus.to_owned();
         f.dbus_call(move || {
             let camino = camino_proxy(&bus).unwrap();
             let activations = camino.receive_accelerator_activated().unwrap();
+            let repeats = camino.receive_accelerator_repeated().unwrap();
             Self {
                 camino,
                 activations: Some(activations),
+                repeats: Some(repeats),
             }
         })
     }
@@ -66,6 +74,46 @@ impl Caller {
         self.activations = Some(activations);
         activation
     }
+
+    /// The next repeat the caller is signalled: its action id and time. It waits for one,
+    /// as `next_activation` does.
+    fn next_repeat(&mut self, f: &mut Fixture) -> (u32, u32) {
+        let mut repeats = self.repeats.take().unwrap();
+        let (repeat, repeats) = f.dbus_call(move || {
+            let signal = repeats.next().unwrap();
+            let args = signal.args().unwrap();
+            ((args.action, args.time), repeats)
+        });
+        self.repeats = Some(repeats);
+        repeat
+    }
+
+    /// Asserts that nothing repeated in the last while. It holds `key`, grabbed as
+    /// `action`, until it repeats: a repeat signalled before that would be read first.
+    fn assert_next_repeat_is(&mut self, f: &mut Fixture, key: u32, action: u32) {
+        f.key(key, true);
+        assert_eq!(self.next_repeat(f).0, action);
+        f.key(key, false);
+    }
+}
+
+/// The repeat the tests of what ends the repeats set: the first comes soon, and the second
+/// half a second after, so there's time to end them between the two.
+const SLOW: (i32, i32) = (30, 2);
+
+/// Long enough for `SLOW`'s second repeat to be signalled, were there one.
+const PAST_THE_SECOND_REPEAT: Duration = Duration::from_millis(600);
+
+/// Sets the keyboard's repeat: the milliseconds a key is held before it repeats, and the
+/// repeats per second, where 0 turns repeat off.
+fn set_repeat(f: &mut Fixture, delay: i32, rate: i32) {
+    f.set_setting(KEYBOARD, "delay", Value::Int(delay));
+    f.set_setting(KEYBOARD, "rate", Value::Int(rate.max(1)));
+    f.set_setting(KEYBOARD, "repeat", Value::Bool(rate > 0));
+    f.dispatch_until(|f| {
+        let keyboard = &f.state.camino.settings.keyboard;
+        (keyboard.repeat_delay, keyboard.repeat_rate) == (delay, rate)
+    });
 }
 
 /// A fixture on the bus, and a client that records its input, with a window that has the
@@ -112,6 +160,97 @@ fn a_grabbed_combination_signals_its_action_once_per_press_and_reaches_no_client
     key 56 released
     key 29 released
     ");
+}
+
+#[test]
+fn a_held_grabbed_key_signals_repeats_at_the_keyboards_delay_and_rate() {
+    let (mut f, id, _, bus) = with_a_focused_window();
+    set_repeat(&mut f, 30, 100);
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
+
+    f.key(KEY_MUTE, true);
+    let (_, pressed) = caller.next_activation(&mut f);
+    let (first, first_time) = caller.next_repeat(&mut f);
+    let (second, second_time) = caller.next_repeat(&mut f);
+    f.key(KEY_MUTE, false);
+
+    assert_eq!([first, second], [actions[0], actions[0]]);
+    // The press's time, then the delay, then the rate's period.
+    assert_eq!([first_time, second_time], [pressed + 30, pressed + 40]);
+    // The press was signalled once, and no client saw the key.
+    f.chord(&[KEY_F9]);
+    assert_eq!(caller.next_activation(&mut f).0, actions[1]);
+    f.roundtrip(id);
+    assert_snapshot!(format_input(&f.client(id).state.input), @"");
+}
+
+#[test]
+fn a_grabbed_keys_release_ends_its_repeats() {
+    let (mut f, _, _, bus) = with_a_focused_window();
+    set_repeat(&mut f, SLOW.0, SLOW.1);
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
+    f.key(KEY_MUTE, true);
+    assert_eq!(caller.next_repeat(&mut f).0, actions[0]);
+
+    f.key(KEY_MUTE, false);
+
+    f.dispatch_for(PAST_THE_SECOND_REPEAT);
+    caller.assert_next_repeat_is(&mut f, KEY_F9, actions[1]);
+}
+
+#[test]
+fn another_keys_press_ends_the_repeats_of_a_held_grabbed_key() {
+    let (mut f, _, _, bus) = with_a_focused_window();
+    set_repeat(&mut f, SLOW.0, SLOW.1);
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
+    f.key(KEY_MUTE, true);
+    assert_eq!(caller.next_repeat(&mut f).0, actions[0]);
+
+    f.key(KEY_A, true);
+
+    f.dispatch_for(PAST_THE_SECOND_REPEAT);
+    f.key(KEY_A, false);
+    f.key(KEY_MUTE, false);
+    caller.assert_next_repeat_is(&mut f, KEY_F9, actions[1]);
+}
+
+#[test]
+fn releasing_the_grab_of_a_held_key_ends_its_repeats() {
+    let (mut f, _, _, bus) = with_a_focused_window();
+    set_repeat(&mut f, SLOW.0, SLOW.1);
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
+    f.key(KEY_MUTE, true);
+    assert_eq!(caller.next_repeat(&mut f).0, actions[0]);
+
+    caller.ungrab(&mut f, &actions[..1]);
+    // Grabbed again, it has another id, and the key held since before isn't its press.
+    let again = caller.grab(&mut f, &["XF86AudioMute"]);
+    assert_ne!(again, actions[..1]);
+
+    f.dispatch_for(PAST_THE_SECOND_REPEAT);
+    caller.assert_next_repeat_is(&mut f, KEY_F9, actions[1]);
+    f.key(KEY_MUTE, false);
+}
+
+#[test]
+fn a_held_grabbed_key_doesnt_repeat_with_the_keyboards_repeat_off() {
+    let (mut f, _, _, bus) = with_a_focused_window();
+    set_repeat(&mut f, 30, 0);
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
+
+    f.key(KEY_MUTE, true);
+    // More than three times the delay: a key that repeated would have by now.
+    f.dispatch_for(Duration::from_millis(100));
+    f.key(KEY_MUTE, false);
+
+    assert_eq!(caller.next_activation(&mut f).0, actions[0]);
+    set_repeat(&mut f, 30, 100);
+    caller.assert_next_repeat_is(&mut f, KEY_F9, actions[1]);
 }
 
 #[test]

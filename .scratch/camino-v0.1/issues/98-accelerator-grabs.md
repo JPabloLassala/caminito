@@ -63,3 +63,16 @@ The code is `camino/src/input/bindings/accelerators.rs` (the parser and the tabl
 - The watch for callers that leave the bus was the Screensaver shim's ([62](62-screensaver-names.md)). It's `dbus/mod.rs`'s now, and drops the shim's cookies and the grabs alike.
 
 **Not run in a Session:** nothing calls it until 99's and 100's patches do. Their checklist items are its check.
+
+## Added by 99 (2026-10-07)
+
+**A held key's repeats are signalled,** as this ticket's notes allowed for: msd's volume keys go on changing the volume while they're held, as on X11.
+
+| Member | Signature | |
+|---|---|---|
+| `AcceleratorRepeated` | signal `uu` | The action id, then the time a key event would have then: the press's time, the keyboard's delay, and a period for each repeat since. It's sent to the grabber's unique name only. |
+
+- **`AcceleratorActivated` is as it was:** once for a press. A caller that wants no repeats doesn't listen for the other signal, which is why it's a signal of its own and not a flag on this one. So [100](100-msd-custom-shortcuts.md) changes nothing.
+- **The delay and the rate are the keyboard's,** `org.mate.peripherals-keyboard`'s `delay` and `rate`, as a Wayland client's own repeats are. With `repeat` off there are none. They're read at the press.
+- **The repeats end** at the key's release, at any other key's press, a modifier's too, and when the grab is released or its owner leaves the bus. One key repeats at a time.
+- **The code** is `camino/src/input/repeat.rs`, a timer in the event loop, and the tests are with the others in `camino/src/tests/accelerators.rs`.
