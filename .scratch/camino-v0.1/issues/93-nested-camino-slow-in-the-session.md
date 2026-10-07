@@ -23,8 +23,8 @@ A Camino started with `tools/dev-nested` inside the Session, so Camino on winit 
 
 ## Acceptance criteria
 
-- [ ] What is slow is described: which input or drawing, with which clients, and on which hosts.
-- [ ] The cause is named, and whether it's the nested Camino's, the host Camino's, or a client's.
+- [x] What is slow is described: which input or drawing, with which clients, and on which hosts. Every frame of the nested Camino, whichever client drew in it, and only with Camino on the tty as its host; by measurement, below. What it looked like by hand wasn't asked.
+- [x] The cause is named, and whether it's the nested Camino's, the host Camino's, or a client's. The host Camino's.
 - [ ] If Camino changes, a test written before the change where a seam can show it, and the nested run with foot and xterm is usable in the Session, by the developer.
 
 ## Measured on other hosts (2026-10-06, night)
@@ -45,3 +45,22 @@ To do, in the Session (`MATE on Camino` from sddm), from this directory:
 
 1. `./93-measure.sh`, and answer its question. A `host` wait near the 100 ms between characters, or commits left unanswered, says the host holds a frame until the next one; a quick `host` and a slow `client` says the nested Camino does.
 2. If the host holds them: the same with the Session's Camino started with `RUST_LOG=info,camino=debug`, for `block_on_dmabuf`'s lines, and with `__NV_DISABLE_EXPLICIT_SYNC=1 ./93-measure.sh`, which takes the acquire points away (checked in Plasma: 83 commits, none with an acquire point).
+
+## Measured in the Session, and the cause (2026-10-06, 23:26)
+
+By Claude with commands alone, in *MATE on Camino* on `camino-git r239.c14283a-1`, with `./93-measure.sh` and the installed build nested. Its question wasn't asked: the script had no terminal.
+
+- **The host is what's slow.** The nested Camino waited for the Session's frame callback 43.6 ms at the median with foot, 134 to 145 ms at the 90th percentile and up to 249.6 ms, where KDE answered in 8.4 ms, 16 ms and 21 ms. foot's own wait for the nested Camino had a median of 3.8 ms, as on KDE, with a 90th percentile of 58 ms that follows from the host's. xterm alone, and both, measured the same as foot, so it isn't the clients.
+- **The client is another one than on KDE.** Camino offers fifo and commit-timing, which KDE doesn't, so NVIDIA's EGL paces itself with them instead of a frame callback. Each swap is two commits: the buffer with its acquire and release points, `wp_fifo_v1.set_barrier` and `wait_barrier`, and `wp_commit_timer_v1.set_timestamp` at the last presentation plus one refresh; then an empty one with `wait_barrier`.
+- **The cause is the host Camino's:** a commit-timing barrier was signalled only in `State::post_render`, after an output is drawn, and a commit that's held back never reaches `CompositorHandler::commit`, so nothing queued a draw for it. The frame waited for the Session to draw for some other reason: its own empty second commit a refresh later when the time had passed by then, and otherwise the pointer, the clock or another client. That's the two or three refreshes at the median and the quarter of a second at worst, with both Caminos idle.
+- **Why pluma, caja and gtk3-demo were usable:** those items were worked with the pointer, and each motion made the Session draw.
+
+Fixed: a timer at each timed commit's timestamp signals the surface's barriers and lets the client's commits through (`State::release_at_commit_time`), beside `post_render`'s. Tested with a headless test written first, a commit timed 30 ms ahead with nothing else drawing, which was never shown before the change. The whole suite passes on a private session bus.
+
+Left as they are:
+
+- **The fifo barrier is still signalled only after a draw.** In this client's sequence the commit that sets it is applied, which queues one. A fifo client whose window is on no output, minimized or on another workspace, is never let through.
+- **A timed frame is let through at its time and drawn after it,** so it's shown a refresh later than a compositor that draws ahead of the time would show it, and the empty second commit costs the tty a refresh with nothing to draw. Whether that holds the nested Camino under the monitor's rate is for the run below.
+- **A timer and its surface live until the timestamp,** however far ahead a client sets it.
+
+To do, for the third criterion: install a build with the fix, log into *MATE on Camino* again, and run `./93-measure.sh` from a terminal. The `host` medians should be near KDE's, and its question records what the developer sees.

@@ -34,6 +34,7 @@ use std::os::unix::fs::FileExt;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use rustix::fs::MemfdFlags;
 use wayland_client::backend::WaylandError;
@@ -53,6 +54,12 @@ use wayland_client::protocol::wl_subcompositor::{self, WlSubcompositor};
 use wayland_client::protocol::wl_subsurface::{self, WlSubsurface};
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
+use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timer_v1::{
+    self, WpCommitTimerV1,
+};
+use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timing_manager_v1::{
+    self, WpCommitTimingManagerV1,
+};
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::{
     self, WpFractionalScaleManagerV1,
 };
@@ -120,6 +127,7 @@ pub struct State {
     seat: Option<WlSeat>,
     decoration_manager: Option<ZxdgDecorationManagerV1>,
     fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
+    commit_timing_manager: Option<WpCommitTimingManagerV1>,
     shortcuts_inhibit_manager: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
     pointer_constraints: Option<ZwpPointerConstraintsV1>,
     /// Whether the pointer lock the client asked for is active.
@@ -745,6 +753,17 @@ impl Client {
     pub fn request_fractional_scale(&mut self, id: WindowId) {
         let manager = self.global(|state| &mut state.fractional_scale_manager, 1);
         manager.get_fractional_scale(&self.window(id).surface, &self.qh, id);
+    }
+
+    /// Holds the window's next commit back until `time` on the presentation clock, with
+    /// commit-timing.
+    pub fn set_commit_time(&mut self, id: WindowId, time: Duration) {
+        let manager = self.global(|state| &mut state.commit_timing_manager, 1);
+        let timer = manager.get_timer(&self.window(id).surface, &self.qh, ());
+        let secs = time.as_secs();
+        timer.set_timestamp((secs >> 32) as u32, secs as u32, time.subsec_nanos());
+        // The timestamp stays with the commit.
+        timer.destroy();
     }
 
     /// Makes the window's xdg-decoration object without asking for a mode.
@@ -1414,6 +1433,8 @@ ignore_events!(
     XdgPositioner => xdg_positioner::Event,
     ZxdgDecorationManagerV1 => zxdg_decoration_manager_v1::Event,
     WpFractionalScaleManagerV1 => wp_fractional_scale_manager_v1::Event,
+    WpCommitTimingManagerV1 => wp_commit_timing_manager_v1::Event,
+    WpCommitTimerV1 => wp_commit_timer_v1::Event,
     ZwpPointerConstraintsV1 => zwp_pointer_constraints_v1::Event,
     ZwpKeyboardShortcutsInhibitManagerV1 => zwp_keyboard_shortcuts_inhibit_manager_v1::Event,
     ZwpKeyboardShortcutsInhibitorV1 => zwp_keyboard_shortcuts_inhibitor_v1::Event,

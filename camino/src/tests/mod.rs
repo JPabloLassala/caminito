@@ -6,6 +6,7 @@ mod bindings;
 mod camino_displays;
 mod client;
 mod commands;
+mod commit_timing;
 mod cursors;
 mod data_control;
 mod debug;
