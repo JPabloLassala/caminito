@@ -152,6 +152,10 @@ _Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
 The rows and columns the workspaces are in, which the workspace switcher shows and the bindings for the workspace to the left or right move through. It comes from `org.mate.Camino`'s three `workspace-layout-*` keys and the number of workspaces, and each workspace's cell is its ext-workspace coordinates.
 _Avoid_: layout (that's the outputs'), pager layout, desktop layout (`_NET_DESKTOP_LAYOUT` is X11's, which Camino doesn't publish)
 
+**Window switcher**:
+The popup that Alt+Tab and Marco's other `switch-*` actions open while the modifier is held: a grid of the windows' thumbnails, most recently used first, from which releasing the modifier activates the selected one. It stands in for Marco's Alt+Tab popup (ADR 0016).
+_Avoid_: task switcher (KDE's term; Camino's unit is the window), Alt+Tab popup or tab popup (Marco's own, which Camino doesn't have), switcher alone (the workspace switcher is the panel's pager)
+
 **Scene**:
 The order in which Camino draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Camino has no retained one), space (Smithay's `desktop::Space`, which Camino doesn't use)

@@ -186,7 +186,7 @@ Shadows wait for M8 with the other effects, since `compositing-manager` governs 
 **Scope:** everything from 05's v0.1 list not done earlier.
 
 - **Policy:** every focus mode with auto-raise, every placement mode, snap-move, edge, corner and keyboard tiling with tile cycling, edge resistance, 1–36 and dynamic workspaces with wrap styles, above, below and sticky, the full window menu, and "Move titlebar on-screen".
-- **Popups:** Alt+Tab with thumbnails and every option, the workspace popup, and switch sounds.
+- **Popups:** the window switcher, a thumbnail grid in place of Marco's Alt+Tab popup by the developer's decision on 2026-10-07 ([108](108-window-switcher.md), ADR 0016), the workspace popup, and switch sounds.
 - **Effects:** shadows, the minimise animation, `compositing-manager` and `reduced-resources` (05, 07).
 - **Bell:** the visual and audible bell.
 - **Focus-stealing prevention:** *smart* and *strict* on xdg-activation tokens, with urgency feeding Alt+Tab and the window list.
