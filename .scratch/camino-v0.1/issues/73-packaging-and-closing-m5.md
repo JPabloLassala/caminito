@@ -1,7 +1,7 @@
 # Packaging and closing M5
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5
 Blocked by: 72, 74, 76, 77, 78, 79
 Map: [Camino v0.1](../map.md)
@@ -24,9 +24,9 @@ M5's checklist items and the closing commit ([17](17-milestone-slicing.md)), on 
 
 ## Acceptance criteria
 
-- [ ] The Packaging job and CI are green on the closing commit's parent.
+- [x] The Packaging job and CI are green on the closing commit's parent.
 - [x] The five checklist items are written.
-- [ ] Closing M5:
+- [x] Closing M5:
   - from the display manager, and as `caminotest` on a tty, "MATE on Camino" starts mate-session; mate-panel shows the window list and the workspace switcher; caja draws the desktop icons; msd sets the wallpaper (the saved display layout is Camino's since ADR 0014, and M6's to check);
   - logging out through the panel ends the session, and Camino exits with mate-session's status;
   - X11 MATE on the same machine still works with the Patched packages installed;
@@ -130,4 +130,4 @@ M5's checklist items and the closing commit ([17](17-milestone-slicing.md)), on 
 - **Shut Down's dialog (2026-10-07):** it's right now, by the developer, and the note of the `tty` part is closed.
 - **The slow nested run** is [93](93-nested-camino-slow-in-the-session.md), filed with what was measured here; it gates no milestone.
 - **The Flatpak item is M9's (2026-10-07),** by the developer: it stays not run here, and [17](17-milestone-slicing.md) has a ninth milestone, Flatpak, that the checklist tags it with.
-- **Still open (2026-10-07):** the push, with CI and the Packaging job green, before the `Close M5 MATE session` commit.
+- **Closed (2026-10-07).** CI and the Packaging job are green on `8b31029` (runs 37552917982 and 37552917988), the closing commit's parent, which gave CI's makepkg a make job for each core: the build step took 16 min 2 s, against 18 min 38 s on `7e2bbf0`. The results above are in the `Close M5 MATE session` commit, with the map's M5 line and the README's status and its note on the session.

@@ -11,11 +11,12 @@ and configuration read from the existing `org.mate.Marco.*` gsettings.
 
 It is written in Rust on [Smithay](https://github.com/Smithay/smithay).
 
-> **Status:** early development. Camino v0.1 is being built in nine milestones. The first four
-> (M1, a nested compositor, M2, Marco frames, M3, XWayland, and M4, on the metal) are done, and
-> M5 (the MATE session) is in progress. Today Camino runs as a window inside another desktop or
-> bare on a tty, drawing Marco frames around Wayland and X11 windows on the machine's monitors,
-> and it starts a MATE session that isn't finished yet. It isn't ready for daily use.
+> **Status:** early development. Camino v0.1 is being built in nine milestones. The first five
+> (M1, a nested compositor, M2, Marco frames, M3, XWayland, M4, on the metal, and M5, the MATE
+> session) are done, and M6 (the MATE integrations) is next. Today Camino runs as a window inside
+> another desktop or bare on a tty, drawing Marco frames around Wayland and X11 windows on the
+> machine's monitors, and _MATE on Camino_ logs in and out with mate-panel, caja's desktop and
+> mate-settings-daemon. The session can't lock yet, so it isn't ready for daily use.
 
 ## Goals for v0.1
 
@@ -172,10 +173,11 @@ package installs the session entry, _MATE on Camino_
 (`/usr/share/wayland-sessions/mate-camino.desktop`), which a display manager lists, and depends
 on the patched MATE packages the session needs.
 
-Until M5 closes, try the session as a second user, not from the display manager as yourself.
-Every login of one user shares one systemd user manager and one session bus, and the session
-changes the environment of both, so it would disturb the desktop you are logged in to. A second
-user has its own:
+The session logs in from a display manager, as _MATE on Camino_. It can't lock the screen until
+M7, so don't leave it unattended. Log out of your other sessions first: every login of one user
+shares one systemd user manager and one session bus, and the session changes the environment of
+both, so it would disturb a desktop you are logged in to. To try it beside your own desktop, use
+a second user, which has its own:
 
 ```sh
 sudo useradd -m caminotest
