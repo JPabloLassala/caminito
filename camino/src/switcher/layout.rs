@@ -131,10 +131,6 @@ impl Grid {
     }
 
     /// The cell at `point`, if it's in one.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Task 5 hit-tests the pointer with it")
-    )]
     pub(crate) fn cell_at(&self, point: Point<f64, Logical>) -> Option<usize> {
         self.cells.iter().position(|cell| {
             let (left, top) = (f64::from(cell.loc.x), f64::from(cell.loc.y));
@@ -160,10 +156,6 @@ impl Grid {
     }
 
     /// The box inside cell `index` that its thumbnail or icon is fitted in.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Task 5 draws the cells with it")
-    )]
     pub(crate) fn content(&self, index: usize) -> Rectangle<i32, Logical> {
         let cell = self.cells[index];
         // The cell's padding, less in the smallest cells so that some content is left.
@@ -176,10 +168,6 @@ impl Grid {
 
     /// Where a window of `source` logical pixels is drawn in cell `index`: scaled to fit
     /// `content(index)` with its aspect kept, never enlarged, and centred.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Task 6 places the thumbnails with it")
-    )]
     pub(crate) fn thumbnail(
         &self,
         index: usize,

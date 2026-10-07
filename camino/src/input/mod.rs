@@ -404,6 +404,9 @@ impl State {
         let pointer = self.camino.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
+        if self.switcher_button(button, state, location) {
+            return;
+        }
         let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
             .then(|| self.camino.under(location))
             .flatten();
@@ -650,7 +653,11 @@ impl Camino {
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
         // M7: nothing but the lock takes the pointer while locked (12).
         scene::LAYERS.into_iter().find_map(|layer| match layer {
-            SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock => None,
+            // The Window switcher's popup takes the pointer for no client, and its
+            // clicks are taken before anything is looked for under them (108).
+            SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock | SceneLayer::Switcher => {
+                None
+            }
             SceneLayer::Overlay
             | SceneLayer::Top
             | SceneLayer::LayerPopups

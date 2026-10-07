@@ -15,6 +15,7 @@ use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, L
 use crate::decoration::memory_buffer;
 use crate::output::{output_geometry, output_id};
 use crate::state::{Camino, SEAT};
+use crate::switcher::layout::CellStyle;
 use crate::window::{Strut, with_x_facts};
 
 /// The debug toggles, and what they draw with.
@@ -95,6 +96,21 @@ struct SwitcherDump {
     selected: u64,
     /// Whether its popup is drawn.
     visible: bool,
+    /// The popup, once it has appeared.
+    #[serde(flatten)]
+    popup: Option<SwitcherPopupDump>,
+}
+
+#[derive(Serialize)]
+struct SwitcherPopupDump {
+    /// The name of the output the popup is on.
+    output: String,
+    /// What a cell shows: `thumbnails` or `icons`.
+    style: &'static str,
+    columns: usize,
+    /// The popup and each window's cell, from the output's top left corner.
+    popup: RectDump,
+    cells: Vec<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -361,7 +377,17 @@ impl Camino {
             },
             windows: switcher.windows.iter().map(|id| id.0).collect(),
             selected: switcher.windows[switcher.selected].0,
-            visible: false,
+            visible: self.visible_switcher().is_some(),
+            popup: self.visible_switcher().map(|popup| SwitcherPopupDump {
+                output: popup.output.name(),
+                style: match popup.grid.style {
+                    CellStyle::Thumbnails => "thumbnails",
+                    CellStyle::Icons { .. } => "icons",
+                },
+                columns: popup.grid.columns,
+                popup: popup.grid.popup.into(),
+                cells: popup.grid.cells.iter().map(|cell| (*cell).into()).collect(),
+            }),
         });
         let dump = StateDump {
             windows,

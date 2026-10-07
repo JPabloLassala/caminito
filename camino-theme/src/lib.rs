@@ -42,4 +42,5 @@ pub use title::{Title, title_context};
 // The versions of pango, cairo and gdk-pixbuf the API takes.
 pub use gdk_pixbuf;
 pub use pango;
+pub use pangocairo;
 pub use pangocairo::cairo;

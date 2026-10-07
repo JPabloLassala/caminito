@@ -428,6 +428,11 @@ impl Mapped {
         self.adapter().urgent()
     }
 
+    /// Where the window's icon comes from.
+    pub(crate) fn icon_source(&self) -> IconSource {
+        self.adapter().icon()
+    }
+
     /// Whether the window is left out of the taskbar and the pager.
     pub(crate) fn skips(&self) -> Skips {
         let adapter = self.adapter();
