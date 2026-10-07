@@ -4,3 +4,5 @@
 /tests/goldens/frames/**/*.diff.png
 # Meson's lock for its subproject directory, helpers/.
 /helpers/.wraplock
+# What insta writes beside a test whose snapshot it didn't accept.
+.*.pending-snap
