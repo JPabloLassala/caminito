@@ -437,6 +437,30 @@ session_env() {
   `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep ext_workspace` for the handles and names
   Camino sends.
 
+### The workspace switcher's rows are Camino's grid
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 6 or later and four
+     workspaces, the switcher on a horizontal panel, and note
+     `gsettings list-recursively org.mate.Camino`.
+  2. Open the workspace switcher's *Preferences*, set the rows to 2, and read the keys again.
+  3. On the first workspace, press Ctrl+Alt+Right twice, then click the third workspace in the
+     switcher and press Ctrl+Alt+Left.
+  4. `gsettings set org.mate.Marco.general num-workspaces 6`, look at the switcher, and set
+     it back to 4.
+  5. Set the rows back to 1 in *Preferences*.
+  6. Log into X11 MATE, set the switcher's rows to 2 and back, and read
+     `gsettings list-recursively org.mate.Camino` before and after.
+- **Expected:** in step 1 the switcher is one row, and the keys are `horizontal`, 1 and 0. In
+  step 2 it shows two rows of two, with the first and second workspaces above the third and
+  fourth, and `workspace-layout-rows` is 2. In step 3 Camino stops at the second workspace, the
+  end of the first row, and stays on the third, the start of the second. In step 4 the switcher
+  is two rows of three. In step 5 it's one row again. In step 6 the switcher's rows change as
+  they always did on X11, and Camino's keys don't (ADR 0011).
+- **Debug tool:** `gsettings monitor org.mate.Camino`, and `WAYLAND_DEBUG=1 mate-panel --replace
+  2>&1 | grep coordinates` for the `ext_workspace_handle_v1.coordinates` events.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

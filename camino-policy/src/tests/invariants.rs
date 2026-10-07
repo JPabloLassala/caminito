@@ -328,6 +328,7 @@ impl Op {
             Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
                 workspace_count,
                 workspace_names: Vec::new(),
+                ..Config::default()
             }),
             Op::RequestGeometry { id, loc, size } => {
                 policy.request_geometry(WindowId(id), loc.map(Point::from), size.map(Size::from))

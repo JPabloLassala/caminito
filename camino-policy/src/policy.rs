@@ -6,11 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
+use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
-    Action, FrameState, Output, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates,
-    WindowType,
+    Action, FrameState, Grid, Output, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates,
+    WindowType, WorkspaceLayout,
 };
 
 /// A seat, as the compositor numbers them.
@@ -62,6 +63,8 @@ pub struct Config {
     /// Each workspace's name, from the first. Policy only holds them, for ext-workspace
     /// and the debug dump; a missing name is Marco's "Workspace N".
     pub workspace_names: Vec<String>,
+    /// The `workspace-layout-*` keys: the grid the workspaces are in.
+    pub workspace_layout: WorkspaceLayout,
 }
 
 impl Default for Config {
@@ -71,6 +74,7 @@ impl Default for Config {
         Self {
             workspace_count,
             workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
+            workspace_layout: WorkspaceLayout::default(),
         }
     }
 }
@@ -242,6 +246,8 @@ pub struct Policy<W: PolicyWindow> {
     active: usize,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
+    /// The grid the settings ask for, which the count makes a `Grid` of.
+    workspace_layout: WorkspaceLayout,
     outputs: Vec<Output>,
     /// The user's primary output, or its stand-in (81), if the compositor has told of one.
     primary_output: Option<OutputId>,
@@ -265,6 +271,7 @@ impl<W: PolicyWindow> Policy<W> {
             stacks: vec![Vec::new()],
             active: 0,
             workspace_names: Vec::new(),
+            workspace_layout: WorkspaceLayout::default(),
             outputs: Vec::new(),
             primary_output: None,
             seats: BTreeSet::new(),
@@ -340,6 +347,7 @@ impl<W: PolicyWindow> Policy<W> {
         names.truncate(count);
         names.extend((names.len() + 1..=count).map(default_workspace_name));
         self.workspace_names = names;
+        self.workspace_layout = config.workspace_layout;
 
         if count < self.stacks.len() {
             let last = count - 1;
@@ -521,10 +529,8 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn action(&mut self, seat: SeatId, action: Action, now: Duration) {
         self.set_last_seat(seat);
         match action {
-            Action::SwitchToWorkspaceLeft => self.switch_workspace(self.active.saturating_sub(1)),
-            Action::SwitchToWorkspaceRight => {
-                self.switch_workspace((self.active + 1).min(self.stacks.len() - 1))
-            }
+            Action::SwitchToWorkspaceLeft => self.switch_workspace_towards(Direction::Left),
+            Action::SwitchToWorkspaceRight => self.switch_workspace_towards(Direction::Right),
             Action::SwitchToWorkspace(workspace) => self.switch_workspace(workspace),
             Action::ToggleMaximized => {
                 // Marco gives the desktop and docks no maximise function.
@@ -551,6 +557,14 @@ impl<W: PolicyWindow> Policy<W> {
             }
         }
         self.apply();
+    }
+
+    /// Switches to the workspace beside the active one in the grid, if there is one. Nothing
+    /// wraps until `wrap-style` is read, in M8 (17).
+    fn switch_workspace_towards(&mut self, direction: Direction) {
+        if let Some(workspace) = self.workspace_grid().neighbour(self.active, direction) {
+            self.switch_workspace(workspace);
+        }
     }
 
     /// Makes `workspace` the active one, and gives every seat its default focus.
@@ -930,6 +944,11 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn workspace_count(&self) -> usize {
         self.stacks.len()
+    }
+
+    /// Where each workspace is: the grid the layout keys give this many workspaces (96).
+    pub fn workspace_grid(&self) -> Grid {
+        Grid::new(self.stacks.len(), self.workspace_layout)
     }
 
     /// Each workspace's name, from the first.
