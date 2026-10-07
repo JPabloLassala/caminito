@@ -29,7 +29,7 @@ jobs:
         run: cargo build --workspace
 
       - name: Test
-        run: cargo test --workspace --exclude camino
+        run: cargo test --workspace --exclude caminito
 
       # The palette helper against the colours Marco recorded, and live gtk-theme changes
       # (28). The colours don't depend on the GDK backend, so it runs on X under Xvfb.
@@ -37,23 +37,23 @@ jobs:
         run: |
           meson setup target/meson
           meson compile -C target/meson
-          CAMINO_GTK_PALETTE=$PWD/target/meson/helpers/camino-gtk-palette/camino-gtk-palette \
-            xvfb-run -a cargo test -p camino-theme --test palette_helper -- --ignored
+          CAMINITO_GTK_PALETTE=$PWD/target/meson/helpers/caminito-gtk-palette/caminito-gtk-palette \
+            xvfb-run -a cargo test -p caminito-theme --test palette_helper -- --ignored
 
-      # A golden case that doesn't match writes Camino's image and a diff beside it.
+      # A golden case that doesn't match writes Caminito's image and a diff beside it.
       - name: Keep golden failures
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: golden-failures
           path: |
-            tests/goldens/frames/**/*.camino.png
+            tests/goldens/frames/**/*.caminito.png
             tests/goldens/frames/**/*.diff.png
           if-no-files-found: ignore
 
       # The headless tier renders with pixman, so it needs no GPU or EGL, and the X11 tier
-      # runs with it. camino's tests get a private session bus (14). The bus takes its home
+      # runs with it. caminito's tests get a private session bus (14). The bus takes its home
       # from the user database (/root), and a container job's HOME is /github/home, so
       # XDG_DATA_HOME makes the bus read the service files that a test writes below HOME.
-      - name: Test camino
-        run: XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p camino
+      - name: Test caminito
+        run: XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito

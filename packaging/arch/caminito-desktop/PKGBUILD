@@ -1,0 +1,25 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+
+pkgname=caminito-desktop
+pkgver=1
+pkgrel=1
+pkgdesc='The whole MATE desktop on Caminito: the compositor, its patched MATE packages and the rest of MATE'
+arch=(any)
+url='https://github.com/JPabloLassala/caminito'
+license=(GPL-2.0-or-later)
+# A package can't depend on a group, so these are the members of Arch's mate and mate-extra
+# groups, by name. The four that Caminito patches (mate-session-manager, mate-panel,
+# mate-settings-daemon and caja) aren't listed: caminito-git depends on their -caminito packages,
+# which replace the stock ones (ADR 0011), and pacman can't build those from here, so
+# tools/bootstrap builds them first.
+#
+# mate-panel-caminito's applet library has a newer soname than Arch's, so the applets of
+# mate-applets, mate-netbook and mate-sensors-applet are installed but don't start until Arch
+# builds them against it (see the README).
+depends=(caminito-git
+  marco mate-backgrounds mate-control-center mate-desktop mate-icon-theme mate-menus
+  mate-notification-daemon mate-polkit mate-themes mate-user-guide
+  atril caja-actions caja-audio-video-properties caja-image-converter caja-open-terminal
+  caja-sendto caja-share caja-wallpaper caja-xattr-tags engrampa eom mate-applets mate-calc
+  mate-media mate-netbook mate-power-manager mate-screensaver mate-sensors-applet
+  mate-system-monitor mate-terminal mate-user-share mate-utils mozo pluma)

@@ -1,0 +1,264 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 12:00:00 -0300
+Subject: [PATCH] workspace-switcher: Set the workspace count and names under
+ Caminito
+
+On X11 the switcher's preferences ask the window manager, through libwnck,
+for a number of workspaces and for a workspace's name. On Wayland nothing
+was asked: ext-workspace can't say either, so the preferences hid both.
+
+Caminito, the Wayland compositor, takes them from Marco's settings, as Marco
+does. Under Caminito (MATE_WM_NAME=Caminito) show the count and the names, and
+write org.mate.Marco.general's num-workspaces and
+org.mate.Marco.workspace-names' name-N from them. The preferences follow
+the workspaces as the compositor adds, removes and renames them, and a
+count that is only on the way to the one asked for isn't written back.
+
+On X11, and on any other Wayland compositor, the preferences are as they
+were.
+---
+ applets/wncklet/wayland-workspace.c  | 30 +++++++++--
+ applets/wncklet/wayland-workspace.h  |  6 +++
+ applets/wncklet/workspace-switcher.c | 80 ++++++++++++++++++++++++++++
+ 3 files changed, 113 insertions(+), 3 deletions(-)
+
+diff --git a/applets/wncklet/wayland-workspace.c b/applets/wncklet/wayland-workspace.c
+index afd2cdf1..eb6a9ccc 100644
+--- a/applets/wncklet/wayland-workspace.c
++++ b/applets/wncklet/wayland-workspace.c
+@@ -45,6 +45,9 @@ struct _WaylandWorkspaceData {
+ 	gboolean display_all;
+ 	gboolean display_names;
+ 	gboolean ignore_toggle;
++
++	WaylandWorkspaceChangedFunc changed_func;
++	gpointer changed_data;
+ };
+ 
+ static void rebuild_ui (WaylandWorkspaceData *data);
+@@ -308,11 +311,20 @@ on_workspace_group_destroyed (XfwWorkspaceManager *manager,
+ 	rebuild_ui (data);
+ }
+ 
++static void
++rebuild_ui_and_tell (WaylandWorkspaceData *data)
++{
++	rebuild_ui (data);
++
++	if (data->changed_func)
++		data->changed_func (data->changed_data);
++}
++
+ static void
+ on_workspace_name_changed (XfwWorkspace *workspace,
+ 			   GtkWidget    *grid)
+ {
+-	rebuild_ui (g_object_get_data (G_OBJECT (grid), "wayland_pager_data"));
++	rebuild_ui_and_tell (g_object_get_data (G_OBJECT (grid), "wayland_pager_data"));
+ }
+ 
+ /* The compositor can rename a workspace that is already there. The handler
+@@ -331,7 +343,7 @@ on_workspace_created (XfwWorkspaceManager *manager,
+ 		      WaylandWorkspaceData *data)
+ {
+ 	watch_workspace_name (data, workspace);
+-	rebuild_ui (data);
++	rebuild_ui_and_tell (data);
+ }
+ 
+ static void
+@@ -339,7 +351,7 @@ on_workspace_destroyed (XfwWorkspaceManager *manager,
+ 			XfwWorkspace        *workspace,
+ 			WaylandWorkspaceData *data)
+ {
+-	rebuild_ui (data);
++	rebuild_ui_and_tell (data);
+ }
+ 
+ /* ---- Cleanup ---- */
+@@ -471,6 +483,18 @@ wayland_workspace_set_show_names (GtkWidget *pager_widget, gboolean show_names)
+ 	rebuild_ui (data);
+ }
+ 
++void
++wayland_workspace_set_changed_func (GtkWidget                   *pager_widget,
++				    WaylandWorkspaceChangedFunc  func,
++				    gpointer                     user_data)
++{
++	WaylandWorkspaceData *data = pager_widget_get_data (pager_widget);
++	g_return_if_fail (data);
++
++	data->changed_func = func;
++	data->changed_data = user_data;
++}
++
+ int
+ wayland_workspace_get_count (GtkWidget *pager_widget)
+ {
+diff --git a/applets/wncklet/wayland-workspace.h b/applets/wncklet/wayland-workspace.h
+index 36d84c47..c63b7c63 100644
+--- a/applets/wncklet/wayland-workspace.h
++++ b/applets/wncklet/wayland-workspace.h
+@@ -29,6 +29,9 @@
+ extern "C" {
+ #endif
+ 
++/* Called when a workspace is added, removed or renamed. */
++typedef void (*WaylandWorkspaceChangedFunc) (gpointer user_data);
++
+ GtkWidget*  wayland_workspace_new            (void);
+ void        wayland_workspace_set_orientation(GtkWidget *pager_widget,
+                                               GtkOrientation orientation);
+@@ -38,6 +41,9 @@ void        wayland_workspace_set_show_all   (GtkWidget *pager_widget,
+                                               gboolean show_all);
+ void        wayland_workspace_set_show_names (GtkWidget *pager_widget,
+                                               gboolean show_names);
++void        wayland_workspace_set_changed_func(GtkWidget *pager_widget,
++                                               WaylandWorkspaceChangedFunc func,
++                                               gpointer user_data);
+ int         wayland_workspace_get_count      (GtkWidget *pager_widget);
+ const char* wayland_workspace_get_name       (GtkWidget *pager_widget,
+                                               int index);
+diff --git a/applets/wncklet/workspace-switcher.c b/applets/wncklet/workspace-switcher.c
+index b4ae493d..cc6681f6 100644
+--- a/applets/wncklet/workspace-switcher.c
++++ b/applets/wncklet/workspace-switcher.c
+@@ -207,6 +207,7 @@ typedef enum {
+ 	PAGER_WM_COMPIZ,
+ 	PAGER_WM_I3,
+ 	PAGER_WM_XMONAD,
++	PAGER_WM_CAMINITO,
+ 	PAGER_WM_UNKNOWN
+ } PagerWM;
+ 
+@@ -254,6 +255,10 @@ static void display_properties_dialog(GtkAction* action, PagerData* pager);
+ static void display_help_dialog(GtkAction* action, PagerData* pager);
+ static void display_about_dialog(GtkAction* action, PagerData* pager);
+ static void destroy_pager(GtkWidget* widget, PagerData* pager);
++#ifdef HAVE_WAYLAND
++static void update_workspaces_model(PagerData* pager);
++static void on_num_workspaces_value_changed(GtkSpinButton* button, PagerData* pager);
++#endif /* HAVE_WAYLAND */
+ 
+ #ifdef HAVE_X11
+ static void pager_update_wnck(PagerData* pager, WnckPager* wnck_pager)
+@@ -300,6 +305,7 @@ static void update_properties_for_wm(PagerData* pager)
+ {
+ 	switch (pager->wm)
+ 	{
++		case PAGER_WM_CAMINITO:
+ 		case PAGER_WM_MARCO:
+ 			if (pager->workspaces_frame)
+ 				gtk_widget_show(pager->workspaces_frame);
+@@ -424,6 +430,16 @@ static void applet_realized(MatePanelApplet* applet, PagerData* pager)
+ #ifdef HAVE_WAYLAND
+ 	if (pager->is_wayland)
+ 	{
++		/* Caminito, the Wayland compositor, takes the workspace count and
++		 * names from Marco's settings, so they can be set as under Marco.
++		 * Elsewhere on Wayland nothing can set them, and they stay hidden. */
++		if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") == 0)
++		{
++			pager->wm = PAGER_WM_CAMINITO;
++			wayland_workspace_set_changed_func (pager->pager, (WaylandWorkspaceChangedFunc) update_workspaces_model, pager);
++			update_properties_for_wm (pager);
++		}
++
+ 		pager_update(pager);
+ 	}
+ #endif /* HAVE_WAYLAND */
+@@ -1075,8 +1091,23 @@ static void update_workspaces_model(PagerData* pager)
+ 		GtkTreeIter iter;
+ 
+ 		if (nr_ws != gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(pager->num_workspaces_spin)))
++		{
++#ifdef HAVE_WAYLAND
++			/* Caminito adds and removes workspaces one at a time, and a
++			 * count on the way to the one asked for must not be written
++			 * back as if the user had asked for it. */
++			if (pager->wm == PAGER_WM_CAMINITO)
++				g_signal_handlers_block_by_func (pager->num_workspaces_spin, on_num_workspaces_value_changed, pager);
++#endif /* HAVE_WAYLAND */
++
+ 			gtk_spin_button_set_value(GTK_SPIN_BUTTON(pager->num_workspaces_spin), nr_ws);
+ 
++#ifdef HAVE_WAYLAND
++			if (pager->wm == PAGER_WM_CAMINITO)
++				g_signal_handlers_unblock_by_func (pager->num_workspaces_spin, on_num_workspaces_value_changed, pager);
++#endif /* HAVE_WAYLAND */
++		}
++
+ 		gtk_list_store_clear(pager->workspaces_store);
+ 
+ 		for (i = 0; i < nr_ws; i++)
+@@ -1128,6 +1159,20 @@ on_num_workspaces_value_changed (GtkSpinButton *button,
+ 			g_settings_set_int (pager->settings, "num-rows", workspace_count);
+ 	}
+ #endif /* HAVE_X11 */
++
++#ifdef HAVE_WAYLAND
++	if (pager->wm == PAGER_WM_CAMINITO && mate_gsettings_schema_exists (MARCO_GENERAL_SCHEMA))
++	{
++		int workspace_count = gtk_spin_button_get_value_as_int (button);
++		GSettings *marco_general_settings = g_settings_new (MARCO_GENERAL_SCHEMA);
++
++		g_settings_set_int (marco_general_settings, NUM_WORKSPACES, workspace_count);
++		g_object_unref (marco_general_settings);
++
++		if (workspace_count < pager->n_rows)
++			g_settings_set_int (pager->settings, "num-rows", workspace_count);
++	}
++#endif /* HAVE_WAYLAND */
+ }
+ 
+ static gboolean workspaces_tree_focused_out(GtkTreeView* treeview, GdkEventFocus* event, PagerData* pager)
+@@ -1168,6 +1213,37 @@ static void workspace_name_edited(GtkCellRendererText* cell_renderer_text, const
+ 		gtk_tree_path_free(p);
+ 	}
+ #endif
++
++#ifdef HAVE_WAYLAND
++	if (pager->wm == PAGER_WM_CAMINITO && mate_gsettings_schema_exists (MARCO_WORKSPACES_SCHEMA))
++	{
++		GtkTreePath* p = gtk_tree_path_new_from_string(path);
++		gchar* key = g_strdup_printf("name-%d", gtk_tree_path_get_indices(p)[0] + 1);
++		GSettings* marco_workspaces_settings = g_settings_new(MARCO_WORKSPACES_SCHEMA);
++		GSettingsSchema* schema = NULL;
++
++		g_object_get(marco_workspaces_settings, "settings-schema", &schema, NULL);
++
++		/* Marco's schema has a key for each workspace it can have. */
++		if (g_settings_schema_has_key(schema, key))
++		{
++			gchar* temp_name = g_strdup(new_text);
++
++			g_settings_set_string(marco_workspaces_settings, key, g_strstrip(temp_name));
++
++			g_free(temp_name);
++		}
++		else
++		{
++			g_warning("Edited name of workspace %d, which Marco's settings have no key for", gtk_tree_path_get_indices(p)[0]);
++		}
++
++		g_settings_schema_unref(schema);
++		g_object_unref(marco_workspaces_settings);
++		g_free(key);
++		gtk_tree_path_free(p);
++	}
++#endif /* HAVE_WAYLAND */
+ }
+ 
+ static void properties_dialog_destroyed(GtkWidget* widget, PagerData* pager)
+@@ -1434,6 +1510,10 @@ static void destroy_pager(GtkWidget* widget, PagerData* pager)
+ #ifdef HAVE_WAYLAND
+ 	/* The Wayland pager widget cleanup is handled by the
+ 	 * destroy notify on the outer_box's g_object_set_data */
++
++	/* Its data can outlive this pager, which the function is called with. */
++	if (pager->is_wayland)
++		wayland_workspace_set_changed_func (pager->pager, NULL, NULL);
+ #endif
+ 
+ 	g_free(pager);

@@ -1,6 +1,0 @@
----
-source: camino/src/tests/xwayland.rs
-expression: text.unwrap()
----
-root: _NET_SUPPORTING_WM_CHECK(WINDOW) = w1
-w1: _NET_SUPPORTING_WM_CHECK(WINDOW) = w1

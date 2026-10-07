@@ -325,14 +325,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "camino"
+name = "caminito"
 version = "0.1.0"
 dependencies = [
- "camino-displays",
- "camino-layout",
- "camino-policy",
- "camino-test-client",
- "camino-theme",
+ "caminito-displays",
+ "caminito-layout",
+ "caminito-policy",
+ "caminito-test-client",
+ "caminito-theme",
  "futures-channel",
  "gio",
  "insta",
@@ -353,10 +353,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "camino-displays"
+name = "caminito-displays"
 version = "0.1.0"
 dependencies = [
- "camino-layout",
+ "caminito-layout",
  "gtk4",
  "pangocairo",
  "proptest",
@@ -367,14 +367,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "camino-layout"
+name = "caminito-layout"
 version = "0.1.0"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
-name = "camino-policy"
+name = "caminito-policy"
 version = "0.1.0"
 dependencies = [
  "proptest",
@@ -382,7 +382,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "camino-test-client"
+name = "caminito-test-client"
 version = "0.1.0"
 dependencies = [
  "rustix 1.1.5",
@@ -396,7 +396,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "camino-theme"
+name = "caminito-theme"
 version = "0.1.0"
 dependencies = [
  "cairo-rs",

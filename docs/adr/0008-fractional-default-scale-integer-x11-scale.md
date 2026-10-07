@@ -5,15 +5,15 @@ Status: Accepted
 
 ## Context
 
-msd's wlrandr plugin persists and applies the output scales the user saves, including fractional ones, but it never picks a scale for an output it has no config for. So Camino's default is what a user sees until they save a layout. MATE's X11 answer, `org.mate.interface window-scaling-factor`, only knows 1 and 2. Its auto mode picks 2 on dense panels, so a typical 14" laptop panel gets 1 and everything is tiny.
+msd's wlrandr plugin persists and applies the output scales the user saves, including fractional ones, but it never picks a scale for an output it has no config for. So Caminito's default is what a user sees until they save a layout. MATE's X11 answer, `org.mate.interface window-scaling-factor`, only knows 1 and 2. Its auto mode picks 2 on dense panels, so a typical 14" laptop panel gets 1 and everything is tiny.
 
-GTK3, which is most of MATE, renders only at an integer scale. It has no fractional-scale-v1 or viewporter support, and it takes the largest integer `wl_output.scale` among the outputs a window is on (`gdkwindow-wayland.c:777-809`). On an output at 1.35, every GTK3 surface, mate-panel included, renders at 2 and is downsampled by the compositor. Camino's frames do the same (07). All X11 apps under XWayland share one X11 scale (ADR 0006, 11), and GTK3 on X11 takes only an integer `Gdk/WindowScalingFactor`.
+GTK3, which is most of MATE, renders only at an integer scale. It has no fractional-scale-v1 or viewporter support, and it takes the largest integer `wl_output.scale` among the outputs a window is on (`gdkwindow-wayland.c:777-809`). On an output at 1.35, every GTK3 surface, mate-panel included, renders at 2 and is downsampled by the compositor. Caminito's frames do the same (07). All X11 apps under XWayland share one X11 scale (ADR 0006, 11), and GTK3 on X11 takes only an integer `Gdk/WindowScalingFactor`.
 
 ## Decision
 
-- **Camino's default output scale is KWin's `chooseScale`, ported as-is.** Target DPI is 125 for a laptop panel, 150 for an internal output with no lid, 30.5 for a TV and 96 for other monitors. At least 800 logical pixels remain, the result is clamped to 1–3 and rounded to 5% steps, anything under 1.20 becomes 1, and anything within 0.06 of an integer snaps to it. Camino's saved layout overrides it.
+- **Caminito's default output scale is KWin's `chooseScale`, ported as-is.** Target DPI is 125 for a laptop panel, 150 for an internal output with no lid, 30.5 for a TV and 96 for other monitors. At least 800 logical pixels remain, the result is clamped to 1–3 and rounded to 5% steps, anything under 1.20 becomes 1, and anything within 0.06 of an integer snaps to it. Caminito's saved layout overrides it.
 - **`window-scaling-factor` 1 or 2 forces that integer** on outputs with no saved config. 0, the default, uses the rule. A live change applies only to outputs no output-management client has set.
-- **A carried mate-control-center patch** makes the Wayland Display capplet offer 1.00–3.00 in 5% steps, so it can show and choose any scale Camino picks.
+- **A carried mate-control-center patch** makes the Wayland Display capplet offer 1.00–3.00 in 5% steps, so it can show and choose any scale Caminito picks.
 - **The X11 scale is the largest rounded-up output scale**, an integer. XSETTINGS DPI uses msd's formulas with `org.mate.font-rendering dpi` (or 96).
 
 ## Consequences

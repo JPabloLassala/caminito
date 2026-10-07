@@ -1,6 +1,6 @@
 # cargo-deny configuration (14).
 #
-# Camino is GPL-2.0-or-later. Dependencies must be under a licence that is
+# Caminito is GPL-2.0-or-later. Dependencies must be under a licence that is
 # compatible with it, plus Apache-2.0, which makes the combined work
 # distributable under GPLv3. A licence missing from `allow` is rejected, so
 # GPL-3.0-only crates and crates with an unknown licence fail the check.

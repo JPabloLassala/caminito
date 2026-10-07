@@ -29,8 +29,8 @@ jobs:
 
       - name: Test
         run: |
-          cargo test --workspace --exclude camino
-          dbus-run-session -- cargo test -p camino
+          cargo test --workspace --exclude caminito
+          dbus-run-session -- cargo test -p caminito
 
   smithay-canary-report:
     needs: smithay-canary
@@ -63,12 +63,12 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - mate-session-manager-camino
-          - mate-panel-camino
-          - mate-settings-daemon-camino
-          - mate-control-center-camino
-          - caja-camino
-          - mate-utils-camino
+          - mate-session-manager-caminito
+          - mate-panel-caminito
+          - mate-settings-daemon-caminito
+          - mate-control-center-caminito
+          - caja-caminito
+          - mate-utils-caminito
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git
@@ -86,7 +86,7 @@ jobs:
           chown -R builder: "$GITHUB_WORKSPACE"
 
       # A pinned commit becomes the default branch's head, and a tag does too. A source
-      # named -stock stays where it is: mate-panel-camino's 1.28 applet library.
+      # named -stock stays where it is: mate-panel-caminito's 1.28 applet library.
       - name: Point the source at upstream's head
         working-directory: packaging/arch/${{ matrix.package }}
         run: |
@@ -134,4 +134,4 @@ jobs:
       - uses: ./.github/actions/arch-setup
 
       - name: Property tests
-        run: cargo test --release -p camino-policy -p camino-layout
+        run: cargo test --release -p caminito-policy -p caminito-layout

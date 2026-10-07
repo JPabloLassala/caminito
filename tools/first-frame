@@ -16,9 +16,9 @@ milliseconds since the program was started:
 What else the program says on its standard error is passed on. With --log, the stamped
 protocol of run N, counted from 0, is kept in <prefix>.N.log, to see what the time between
 two marks went to. The variables are set for the program alone, as in
-`tools/first-frame GSK_RENDERER=cairo camino-displays`.
+`tools/first-frame GSK_RENDERER=cairo caminito-displays`.
 
-A program that hands its start to another instance, as camino-displays does to the one
+A program that hands its start to another instance, as caminito-displays does to the one
 that's running, shows no frame of its own: it's reported with the time it took to exit.
 Only the program that was run is ended. What a launcher such as `gio launch` started stays
 up, and is to be ended by hand before the next run, or that run is handed to it.

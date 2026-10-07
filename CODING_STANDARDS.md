@@ -1,30 +1,30 @@
 # Coding standards
 
-How Camino's code is written. Reviews check a diff against this file, [CONTEXT.md](CONTEXT.md) for naming, and the ADRs in [docs/adr/](docs/adr/) for decisions. Where this file and an ADR disagree, the ADR wins and this file is out of date.
+How Caminito's code is written. Reviews check a diff against this file, [CONTEXT.md](CONTEXT.md) for naming, and the ADRs in [docs/adr/](docs/adr/) for decisions. Where this file and an ADR disagree, the ADR wins and this file is out of date.
 
 ## Enforced by CI
 
 - `cargo fmt --all --check`, with rustfmt's defaults. There is no `rustfmt.toml`.
 - `cargo clippy --workspace --all-targets -- -D warnings`, so every clippy warning fails the build. Fix the code rather than silencing the lint. If an allow is truly needed, use `#[expect(clippy::…, reason = "…")]` on the smallest item.
 - `[workspace.lints]` in [Cargo.toml](Cargo.toml) adds `clippy::undocumented_unsafe_blocks`. Every crate opts in with `lints.workspace = true`.
-- `camino-policy`, `camino-layout` and camino-displays's library are `#![forbid(unsafe_code)]`.
+- `caminito-policy`, `caminito-layout` and caminito-displays's library are `#![forbid(unsafe_code)]`.
 - `cargo deny check` against [deny.toml](deny.toml) for licences and advisories.
 
 ## Crates and modules
 
-The layout is ticket 15's ([.scratch/camino-v0.1/issues/15-crate-and-module-architecture.md](.scratch/camino-v0.1/issues/15-crate-and-module-architecture.md)) and [ADR 0010](docs/adr/0010-one-compositor-crate-with-protocol-free-policy-and-theme.md), with `camino-layout` from [ADR 0015](docs/adr/0015-the-layout-logic-is-a-crate-of-its-own.md).
+The layout is ticket 15's ([.scratch/caminito-v0.1/issues/15-crate-and-module-architecture.md](.scratch/caminito-v0.1/issues/15-crate-and-module-architecture.md)) and [ADR 0010](docs/adr/0010-one-compositor-crate-with-protocol-free-policy-and-theme.md), with `caminito-layout` from [ADR 0015](docs/adr/0015-the-layout-logic-is-a-crate-of-its-own.md).
 
-- A crate exists only where it enforces a dependency rule. Everything else is a module of `camino`.
-- `camino-policy` names no protocol object. It may use Smithay's geometry types and nothing else from Smithay. It reaches windows only through `PolicyWindow`.
-- `camino-theme` knows nothing of Wayland.
-- `camino-layout` has no dependencies, and gets none (ADR 0015). camino-displays depends on it too.
-- `camino-displays` is a program of its own (ADR 0014), and depends on `camino-layout` alone of Camino's crates. Its library, the page's state and its client of output management, names no toolkit, so that Camino's headless tests can drive it. GTK is the binary's.
-- Protocols Camino implements itself go in `camino/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. `output_management` is the first. D-Bus interfaces go in `camino/src/dbus/`.
+- A crate exists only where it enforces a dependency rule. Everything else is a module of `caminito`.
+- `caminito-policy` names no protocol object. It may use Smithay's geometry types and nothing else from Smithay. It reaches windows only through `PolicyWindow`.
+- `caminito-theme` knows nothing of Wayland.
+- `caminito-layout` has no dependencies, and gets none (ADR 0015). caminito-displays depends on it too.
+- `caminito-displays` is a program of its own (ADR 0014), and depends on `caminito-layout` alone of Caminito's crates. Its library, the page's state and its client of output management, names no toolkit, so that Caminito's headless tests can drive it. GTK is the binary's.
+- Protocols Caminito implements itself go in `caminito/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. `output_management` is the first. D-Bus interfaces go in `caminito/src/dbus/`.
 - `scene` is the only code that knows the layer order.
 - Handlers change policy state and mark it dirty. They never update an outward view inline (foreign-toplevel, ext-workspace, EWMH properties, D-Bus properties, the debug dump). The refresh pass after each dispatch does that.
 - Wayland, X11, input, policy and rendering all run on the main thread. A new thread is justified only when a library needs its own loop. It talks to the main loop through a `calloop::channel`, and the main thread never blocks on it.
 - Policy takes time as an argument (`now`) and never reads a clock, so tests and proptest sequences are deterministic.
-- Don't call `std::env::set_var` once other threads are running. Put variables for spawned clients in `Camino::environment`.
+- Don't call `std::env::set_var` once other threads are running. Put variables for spawned clients in `Caminito::environment`.
 - Keep items private. Use `pub(crate)` for crate-internal sharing, and `pub` only for what another crate or `main.rs` uses.
 
 ## Errors
@@ -32,15 +32,15 @@ The layout is ticket 15's ([.scratch/camino-v0.1/issues/15-crate-and-module-arch
 - There is no `anyhow` or `thiserror`. A module that can fail defines its own error enum with a documented variant for each cause, a hand-written `Display` and `impl std::error::Error`. `settings::Error` is the model.
 - `Display` messages are lowercase with no trailing period, and they read as the cause: `can't start the settings thread: {err}`.
 - `?` passes errors up to `run` and `main`, which log them. Returning `Box<dyn Error>` is fine at that top level only.
-- A feature Camino can run without (Xwayland, D-Bus, a helper) logs one `warn!` line when it fails and Camino carries on. It doesn't abort start-up.
-- Use `expect` for invariants Camino holds itself, with a message that states the invariant as a fact: `.expect("the display joins the event loop")`, not `"failed to insert source"`.
+- A feature Caminito can run without (Xwayland, D-Bus, a helper) logs one `warn!` line when it fails and Caminito carries on. It doesn't abort start-up.
+- Use `expect` for invariants Caminito holds itself, with a message that states the invariant as a fact: `.expect("the display joins the event loop")`, not `"failed to insert source"`.
 - A bare `unwrap()` outside tests is acceptable only where the value is guaranteed by construction and a message would add nothing: `seat.get_pointer()` after the seat was built with one, or `Mutex::lock` on a lock that is never poisoned. Anything a client, the user's settings or the environment can cause is handled, not unwrapped.
 
 ## Logging
 
-- Use `tracing`, not `log` or `println!`. camino-displays, which GLib's main loop runs, tells the user in its window and warns through `glib::g_warning!`.
+- Use `tracing`, not `log` or `println!`. caminito-displays, which GLib's main loop runs, tells the user in its window and warns through `glib::g_warning!`.
 - Messages are lowercase phrases. Failures begin `can't …` and end with the error: `tracing::warn!("can't load the icon {}: {err}", name)`.
-- Use `warn!` for a degraded feature, `error!` for what stops Camino, `info!` for a few start-up facts (the socket, `DISPLAY`), and `debug!` or `trace!` for the rest. Nothing in a per-frame path logs above `debug!`.
+- Use `warn!` for a degraded feature, `error!` for what stops Caminito, `info!` for a few start-up facts (the socket, `DISPLAY`), and `debug!` or `trace!` for the rest. Nothing in a per-frame path logs above `debug!`.
 
 ## `unsafe`
 
@@ -61,17 +61,17 @@ Where each tier lives, per ticket 15's test seams:
 
 | What | Where |
 |---|---|
-| Policy, including proptest | `camino-policy/src/tests/`, against `TestWindow` |
-| Docking and healing a layout, including proptest | `camino-layout/src/tests.rs` |
-| camino-displays's page, including proptest | `camino-displays/src/page/tests.rs` |
-| camino-displays's page and client against Camino | `camino/src/tests/camino_displays.rs`, through `Fixture` |
-| Pure logic in `camino` (settings translation, AccessX, scale rules, the lock state machine) | a `tests` module beside the code |
-| Headless integration, X11 tier, D-Bus | `camino/src/tests/`, through `Fixture` |
-| Theme goldens and the palette | `camino-theme/tests/`, with files under `tests/goldens/` (ADR 0009) |
+| Policy, including proptest | `caminito-policy/src/tests/`, against `TestWindow` |
+| Docking and healing a layout, including proptest | `caminito-layout/src/tests.rs` |
+| caminito-displays's page, including proptest | `caminito-displays/src/page/tests.rs` |
+| caminito-displays's page and client against Caminito | `caminito/src/tests/caminito_displays.rs`, through `Fixture` |
+| Pure logic in `caminito` (settings translation, AccessX, scale rules, the lock state machine) | a `tests` module beside the code |
+| Headless integration, X11 tier, D-Bus | `caminito/src/tests/`, through `Fixture` |
+| Theme goldens and the palette | `caminito-theme/tests/`, with files under `tests/goldens/` (ADR 0009) |
 
-- Test names are sentences about behaviour, in snake case: `xwayland_outlives_its_last_client_while_camino_is_attached`.
+- Test names are sentences about behaviour, in snake case: `xwayland_outlives_its_last_client_while_caminito_is_attached`.
 - Test through the seam, the way a client or the user would see it: the Wayland or X11 client, D-Bus, the debug dump. Don't test through `State` internals when a seam can show the same thing.
-- Map windows with `Fixture::map`, and read a window's facts (its geometry, frame extents, button rects, the frame control under the pointer, its `Mapped`) through the fixture's queries, not `state.camino`. `map` returns once the window is managed, its frame is drawn and its client is in sync, so no test dispatches after it to let things settle.
+- Map windows with `Fixture::map`, and read a window's facts (its geometry, frame extents, button rects, the frame control under the pointer, its `Mapped`) through the fixture's queries, not `state.caminito`. `map` returns once the window is managed, its frame is drawn and its client is in sync, so no test dispatches after it to let things settle.
 - A test of behaviour both kinds of window share runs on both, through `on_both_kinds!`, as `<name>::xdg` and `<name>::x11`. A test or module that maps only one kind says why.
 - Text output that's easier to read than to assert goes in an `insta` snapshot. Snapshots are committed, and their diffs are reviewed like code.
 - The headless backend and `renderer_pixman` are `cfg(test)` and dev-dependencies only. Nothing test-only reaches the release binary.

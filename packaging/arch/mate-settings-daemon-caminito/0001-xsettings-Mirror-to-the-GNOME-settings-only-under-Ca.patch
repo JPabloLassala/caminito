@@ -1,0 +1,467 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 09:37:53 -0300
+Subject: [PATCH] xsettings: Mirror to the GNOME settings only under Caminito
+
+Caminito, the Wayland compositor for MATE, is the XSETTINGS manager of its
+XWayland server: it has to keep Xft/DPI and Gdk/WindowScalingFactor in
+step with its X11 scale, and to publish the settings again each time
+XWayland starts. The plugin found that owner of _XSETTINGS_S0 and stopped
+with "You can only run one xsettings manager at a time".
+
+Native Wayland applications get nothing from XSETTINGS in any case. GTK
+reads org.gnome.desktop.interface, .peripherals.mouse, .wm.preferences and
+.sound there, and never an org.mate key, so they ignored the theme, fonts
+and cursor set in the control center.
+
+When MATE_WM_NAME is Caminito, do not take _XSETTINGS_S0, and start only a
+mirror: it copies MATE's settings one way into those GNOME keys, at
+start-up and on every change, and writes a key only when its value
+differs. That also leaves out the X resources and the QT_SCALE_FACTOR
+export, which are wrong on Wayland. Without that variable, nothing changes.
+---
+ plugins/xsettings/Makefile.am             |   2 +
+ plugins/xsettings/msd-gnome-mirror.c      | 329 ++++++++++++++++++++++
+ plugins/xsettings/msd-gnome-mirror.h      |  35 +++
+ plugins/xsettings/msd-xsettings-manager.c |  16 ++
+ 4 files changed, 382 insertions(+)
+ create mode 100644 plugins/xsettings/msd-gnome-mirror.c
+ create mode 100644 plugins/xsettings/msd-gnome-mirror.h
+
+diff --git a/plugins/xsettings/Makefile.am b/plugins/xsettings/Makefile.am
+index e81842f..aa73e98 100644
+--- a/plugins/xsettings/Makefile.am
++++ b/plugins/xsettings/Makefile.am
+@@ -9,6 +9,8 @@ libxsettings_la_SOURCES =	\
+ 	msd-xsettings-plugin.c	\
+ 	msd-xsettings-manager.h	\
+ 	msd-xsettings-manager.c	\
++	msd-gnome-mirror.h	\
++	msd-gnome-mirror.c	\
+ 	xsettings-common.h	\
+ 	xsettings-common.c	\
+ 	xsettings-manager.h	\
+diff --git a/plugins/xsettings/msd-gnome-mirror.c b/plugins/xsettings/msd-gnome-mirror.c
+new file mode 100644
+index 0000000..2cca969
+--- /dev/null
++++ b/plugins/xsettings/msd-gnome-mirror.c
+@@ -0,0 +1,329 @@
++/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
++ *
++ * Copyright (C) 2026 MATE Developers
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++/* GTK on Wayland does not read XSETTINGS. It reads the GNOME schemas
++ * (gdkscreen-wayland.c), and never an org.mate.* key. This copies MATE's
++ * settings one way into the GNOME keys GTK reads, at start-up and on every
++ * change, so native Wayland applications follow the MATE control center.
++ * A key is written only when its value differs, and nothing is read back:
++ * MATE is the source of truth, and a change made on the GNOME side is
++ * overwritten at the next change on the MATE side. */
++
++#include "config.h"
++
++#include <string.h>
++
++#include <glib.h>
++#include <gio/gio.h>
++
++#include "msd-gnome-mirror.h"
++
++#define MATE_INTERFACE_SCHEMA   "org.mate.interface"
++#define MATE_MOUSE_SCHEMA       "org.mate.peripherals-mouse"
++#define MATE_FONT_SCHEMA        "org.mate.font-rendering"
++#define MATE_SOUND_SCHEMA       "org.mate.sound"
++#define MARCO_GENERAL_SCHEMA    "org.mate.Marco.general"
++
++#define GNOME_INTERFACE_SCHEMA  "org.gnome.desktop.interface"
++#define GNOME_MOUSE_SCHEMA      "org.gnome.desktop.peripherals.mouse"
++#define GNOME_WM_SCHEMA         "org.gnome.desktop.wm.preferences"
++#define GNOME_SOUND_SCHEMA      "org.gnome.desktop.sound"
++
++#define DPI_DEFAULT 96.0
++
++typedef GVariant * (* MirrorFunc) (GVariant *value);
++
++typedef struct {
++        const char *mate_schema;
++        const char *mate_key;
++        const char *gnome_schema;
++        const char *gnome_key;
++        /* NULL copies the value as it is */
++        MirrorFunc  translate;
++        /* What the GNOME key gets when it cannot have the value. With NULL,
++         * the key stays as it is. */
++        const char *fallback;
++} MirrorEntry;
++
++struct _MsdGnomeMirror {
++        /* Schema id to GSettings, for the schemas that are installed */
++        GHashTable *settings;
++};
++
++/* MATE has the font resolution, GNOME a factor on 96 DPI. Zero or less is
++ * "let the X server say", which has no meaning on Wayland. The limits are
++ * those of text-scaling-factor. */
++static GVariant *
++translate_dpi (GVariant *value)
++{
++        gdouble dpi = g_variant_get_double (value);
++
++        if (dpi <= 0.0) {
++                return g_variant_new_double (1.0);
++        }
++
++        return g_variant_new_double (CLAMP (dpi / DPI_DEFAULT, 0.5, 3.0));
++}
++
++/* Marco's nicks have underscores ("toggle_maximize"), GNOME's have dashes.
++ * A Marco action GNOME does not have gets the entry's fallback. */
++static GVariant *
++translate_titlebar_action (GVariant *value)
++{
++        char     *action;
++        GVariant *translated;
++
++        action = g_variant_dup_string (value, NULL);
++        g_strdelimit (action, "_", '-');
++        translated = g_variant_new_string (action);
++        g_free (action);
++
++        return translated;
++}
++
++static const MirrorEntry mirror_entries [] = {
++        { MATE_INTERFACE_SCHEMA, "gtk-theme",                GNOME_INTERFACE_SCHEMA, "gtk-theme",                NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "icon-theme",               GNOME_INTERFACE_SCHEMA, "icon-theme",               NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "font-name",                GNOME_INTERFACE_SCHEMA, "font-name",                NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "document-font-name",       GNOME_INTERFACE_SCHEMA, "document-font-name",       NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "monospace-font-name",      GNOME_INTERFACE_SCHEMA, "monospace-font-name",      NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "cursor-blink",             GNOME_INTERFACE_SCHEMA, "cursor-blink",             NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "cursor-blink-time",        GNOME_INTERFACE_SCHEMA, "cursor-blink-time",        NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "gtk-im-module",            GNOME_INTERFACE_SCHEMA, "gtk-im-module",            NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "gtk-enable-animations",    GNOME_INTERFACE_SCHEMA, "enable-animations",        NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "gtk-enable-primary-paste", GNOME_INTERFACE_SCHEMA, "gtk-enable-primary-paste", NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "gtk-overlay-scrolling",    GNOME_INTERFACE_SCHEMA, "overlay-scrolling",        NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "gtk-decoration-layout",    GNOME_WM_SCHEMA,        "button-layout",            NULL, NULL },
++
++        { MATE_MOUSE_SCHEMA,     "cursor-theme",             GNOME_INTERFACE_SCHEMA, "cursor-theme",             NULL, NULL },
++        { MATE_MOUSE_SCHEMA,     "cursor-size",              GNOME_INTERFACE_SCHEMA, "cursor-size",              NULL, NULL },
++        { MATE_MOUSE_SCHEMA,     "double-click",             GNOME_MOUSE_SCHEMA,     "double-click",             NULL, NULL },
++        { MATE_MOUSE_SCHEMA,     "drag-threshold",           GNOME_MOUSE_SCHEMA,     "drag-threshold",           NULL, NULL },
++
++        { MATE_FONT_SCHEMA,      "antialiasing",             GNOME_INTERFACE_SCHEMA, "font-antialiasing",        NULL, NULL },
++        { MATE_FONT_SCHEMA,      "hinting",                  GNOME_INTERFACE_SCHEMA, "font-hinting",             NULL, NULL },
++        { MATE_FONT_SCHEMA,      "rgba-order",               GNOME_INTERFACE_SCHEMA, "font-rgba-order",          NULL, NULL },
++        { MATE_FONT_SCHEMA,      "dpi",                      GNOME_INTERFACE_SCHEMA, "text-scaling-factor",      translate_dpi, NULL },
++
++        { MARCO_GENERAL_SCHEMA,  "action-double-click-titlebar", GNOME_WM_SCHEMA,    "action-double-click-titlebar", translate_titlebar_action, "none" },
++        { MARCO_GENERAL_SCHEMA,  "action-middle-click-titlebar", GNOME_WM_SCHEMA,    "action-middle-click-titlebar", translate_titlebar_action, "none" },
++        { MARCO_GENERAL_SCHEMA,  "action-right-click-titlebar",  GNOME_WM_SCHEMA,    "action-right-click-titlebar",  translate_titlebar_action, "none" },
++
++        { MATE_SOUND_SCHEMA,     "event-sounds",             GNOME_SOUND_SCHEMA,     "event-sounds",             NULL, NULL },
++        { MATE_SOUND_SCHEMA,     "input-feedback-sounds",    GNOME_SOUND_SCHEMA,     "input-feedback-sounds",    NULL, NULL },
++        { MATE_SOUND_SCHEMA,     "theme-name",               GNOME_SOUND_SCHEMA,     "theme-name",               NULL, NULL },
++};
++
++/* g_settings_new() aborts on a schema that is not installed, and
++ * g_settings_get_value() on a key the schema does not have. Marco's schema
++ * and the GNOME ones come from other packages, so both are looked up. */
++static GSettings *
++lookup_settings (MsdGnomeMirror *mirror,
++                 const char     *schema_id,
++                 const char     *key)
++{
++        GSettings       *settings;
++        GSettingsSchema *schema;
++        gboolean         has_key;
++
++        settings = g_hash_table_lookup (mirror->settings, schema_id);
++        if (settings == NULL) {
++                return NULL;
++        }
++
++        g_object_get (settings, "settings-schema", &schema, NULL);
++        has_key = g_settings_schema_has_key (schema, key);
++        g_settings_schema_unref (schema);
++
++        return has_key ? settings : NULL;
++}
++
++static gboolean
++value_fits (GSettingsSchemaKey *schema_key,
++            GVariant           *value)
++{
++        return g_variant_type_equal (g_variant_get_type (value),
++                                     g_settings_schema_key_get_value_type (schema_key)) &&
++               g_settings_schema_key_range_check (schema_key, value);
++}
++
++static void
++mirror_entry (MsdGnomeMirror    *mirror,
++              const MirrorEntry *entry)
++{
++        GSettings          *mate;
++        GSettings          *gnome;
++        GSettingsSchema    *schema;
++        GSettingsSchemaKey *schema_key;
++        GVariant           *value;
++        GVariant           *current;
++
++        mate = lookup_settings (mirror, entry->mate_schema, entry->mate_key);
++        gnome = lookup_settings (mirror, entry->gnome_schema, entry->gnome_key);
++        if (mate == NULL || gnome == NULL) {
++                return;
++        }
++
++        value = g_settings_get_value (mate, entry->mate_key);
++        if (entry->translate != NULL) {
++                GVariant *translated = entry->translate (value);
++
++                g_variant_unref (value);
++                value = g_variant_ref_sink (translated);
++        }
++
++        g_object_get (gnome, "settings-schema", &schema, NULL);
++        schema_key = g_settings_schema_get_key (schema, entry->gnome_key);
++
++        if (!value_fits (schema_key, value) && entry->fallback != NULL) {
++                g_variant_unref (value);
++                value = g_variant_ref_sink (g_variant_new_string (entry->fallback));
++        }
++
++        if (!value_fits (schema_key, value)) {
++                g_debug ("gnome-mirror: %s %s cannot have the value of %s %s",
++                         entry->gnome_schema, entry->gnome_key,
++                         entry->mate_schema, entry->mate_key);
++        } else {
++                current = g_settings_get_value (gnome, entry->gnome_key);
++                if (!g_variant_equal (current, value)) {
++                        g_settings_set_value (gnome, entry->gnome_key, value);
++                }
++                g_variant_unref (current);
++        }
++
++        g_settings_schema_key_unref (schema_key);
++        g_settings_schema_unref (schema);
++        g_variant_unref (value);
++}
++
++static void
++mirror_all (MsdGnomeMirror *mirror)
++{
++        guint i;
++
++        for (i = 0; i < G_N_ELEMENTS (mirror_entries); i++) {
++                mirror_entry (mirror, &mirror_entries[i]);
++        }
++}
++
++/* A change to one mirrored key copies them all, so that a change made on the
++ * GNOME side does not stay after the next change on the MATE side. */
++static void
++mate_settings_changed (GSettings      *settings,
++                       const char     *key,
++                       MsdGnomeMirror *mirror)
++{
++        char  *schema_id;
++        guint  i;
++
++        g_object_get (settings, "schema-id", &schema_id, NULL);
++
++        for (i = 0; i < G_N_ELEMENTS (mirror_entries); i++) {
++                if (g_str_equal (schema_id, mirror_entries[i].mate_schema) &&
++                    g_str_equal (key, mirror_entries[i].mate_key)) {
++                        mirror_all (mirror);
++                        break;
++                }
++        }
++
++        g_free (schema_id);
++}
++
++static void
++unref_settings (gpointer settings)
++{
++        g_clear_object (&settings);
++}
++
++static GSettings *
++add_settings (MsdGnomeMirror *mirror,
++              const char     *schema_id)
++{
++        GSettingsSchema *schema;
++        GSettings       *settings;
++
++        if (g_hash_table_contains (mirror->settings, schema_id)) {
++                return NULL;
++        }
++
++        schema = g_settings_schema_source_lookup (g_settings_schema_source_get_default (),
++                                                  schema_id, TRUE);
++        if (schema == NULL) {
++                g_warning ("gnome-mirror: the schema '%s' is not installed; its keys are not mirrored",
++                           schema_id);
++                /* So that the warning comes once */
++                g_hash_table_insert (mirror->settings, (gpointer) schema_id, NULL);
++                return NULL;
++        }
++        g_settings_schema_unref (schema);
++
++        settings = g_settings_new (schema_id);
++        g_hash_table_insert (mirror->settings, (gpointer) schema_id, settings);
++
++        return settings;
++}
++
++MsdGnomeMirror *
++msd_gnome_mirror_new (void)
++{
++        MsdGnomeMirror *mirror;
++        guint           i;
++
++        mirror = g_new0 (MsdGnomeMirror, 1);
++        mirror->settings = g_hash_table_new_full (g_str_hash, g_str_equal,
++                                                  NULL, unref_settings);
++
++        for (i = 0; i < G_N_ELEMENTS (mirror_entries); i++) {
++                GSettings *mate;
++
++                mate = add_settings (mirror, mirror_entries[i].mate_schema);
++                if (mate != NULL) {
++                        g_signal_connect (mate, "changed",
++                                          G_CALLBACK (mate_settings_changed), mirror);
++                }
++                add_settings (mirror, mirror_entries[i].gnome_schema);
++        }
++
++        mirror_all (mirror);
++
++        return mirror;
++}
++
++void
++msd_gnome_mirror_free (MsdGnomeMirror *mirror)
++{
++        GHashTableIter iter;
++        gpointer       settings;
++
++        if (mirror == NULL) {
++                return;
++        }
++
++        g_hash_table_iter_init (&iter, mirror->settings);
++        while (g_hash_table_iter_next (&iter, NULL, &settings)) {
++                if (settings != NULL) {
++                        g_signal_handlers_disconnect_by_data (settings, mirror);
++                }
++        }
++
++        g_hash_table_destroy (mirror->settings);
++        g_free (mirror);
++}
+diff --git a/plugins/xsettings/msd-gnome-mirror.h b/plugins/xsettings/msd-gnome-mirror.h
+new file mode 100644
+index 0000000..b8af952
+--- /dev/null
++++ b/plugins/xsettings/msd-gnome-mirror.h
+@@ -0,0 +1,35 @@
++/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
++ *
++ * Copyright (C) 2026 MATE Developers
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#ifndef __MSD_GNOME_MIRROR_H
++#define __MSD_GNOME_MIRROR_H
++
++#include <glib.h>
++
++G_BEGIN_DECLS
++
++typedef struct _MsdGnomeMirror MsdGnomeMirror;
++
++MsdGnomeMirror *msd_gnome_mirror_new  (void);
++void            msd_gnome_mirror_free (MsdGnomeMirror *mirror);
++
++G_END_DECLS
++
++#endif /* __MSD_GNOME_MIRROR_H */
+diff --git a/plugins/xsettings/msd-xsettings-manager.c b/plugins/xsettings/msd-xsettings-manager.c
+index 879aa81..90dd839 100644
+--- a/plugins/xsettings/msd-xsettings-manager.c
++++ b/plugins/xsettings/msd-xsettings-manager.c
+@@ -47,6 +47,7 @@
+ 
+ #include "mate-settings-profile.h"
+ #include "msd-xsettings-manager.h"
++#include "msd-gnome-mirror.h"
+ #include "xsettings-manager.h"
+ #include "fontconfig-monitor.h"
+ #include "wm-common.h"
+@@ -119,6 +120,7 @@ struct MateXSettingsManagerPrivate
+         GSettings *plugin_settings;
+         fontconfig_monitor_handle_t *fontconfig_handle;
+         gint window_scale;
++        MsdGnomeMirror *gnome_mirror;
+ };
+ 
+ #define MSD_XSETTINGS_ERROR msd_xsettings_error_quark ()
+@@ -953,6 +955,18 @@ mate_xsettings_manager_start (MateXSettingsManager *manager,
+         g_debug ("Starting xsettings manager");
+         mate_settings_profile_start (NULL);
+ 
++        /* Caminito, the Wayland compositor for MATE, is the XSETTINGS manager of
++         * its XWayland server, so that the settings agree with its X11 scale
++         * and come back when XWayland starts again. What it cannot do for
++         * native Wayland applications is done here: the mirror into the GNOME
++         * keys that GTK reads. Nothing else of the manager starts. */
++        if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") == 0) {
++                g_debug ("Under Caminito: mirroring to the GNOME settings only");
++                manager->priv->gnome_mirror = msd_gnome_mirror_new ();
++                mate_settings_profile_end (NULL);
++                return TRUE;
++        }
++
+         if (!setup_xsettings_managers (manager)) {
+                 g_set_error (error, MSD_XSETTINGS_ERROR,
+                              MSD_XSETTINGS_ERROR_INIT,
+@@ -1041,6 +1055,8 @@ mate_xsettings_manager_stop (MateXSettingsManager *manager)
+ 
+         g_debug ("Stopping xsettings manager");
+ 
++        g_clear_pointer (&p->gnome_mirror, msd_gnome_mirror_free);
++
+         if (p->managers != NULL) {
+                 for (i = 0; p->managers [i]; ++i)
+                         xsettings_manager_destroy (p->managers [i]);

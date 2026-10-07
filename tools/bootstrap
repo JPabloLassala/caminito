@@ -3,14 +3,14 @@ set -euo pipefail
 
 root=$(dirname "$(realpath "$0")")/..
 
-# rustup provides cargo, and camino-git's PKGBUILD builds with RUSTUP_TOOLCHAIN=stable.
+# rustup provides cargo, and caminito-git's PKGBUILD builds with RUSTUP_TOOLCHAIN=stable.
 sudo pacman -S --needed base-devel git rustup
 rustup toolchain install stable --profile minimal
 
 # In dependency order: each package is installed as it's built, so the next one builds
 # against it.
-for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
-  mate-control-center-camino caja-camino mate-utils-camino camino-git camino-desktop; do
+for package in mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito \
+  mate-control-center-caminito caja-caminito mate-utils-caminito caminito-git caminito-desktop; do
   cd "$root/packaging/arch/$package"
   makepkg -si "$@"
 done

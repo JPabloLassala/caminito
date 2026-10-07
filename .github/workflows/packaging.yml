@@ -17,25 +17,25 @@ jobs:
     container: archlinux:latest
     env:
       # In dependency order. Each package is installed as it's built, so the next one builds
-      # against it. The patched packages come before camino-git, which depends on them (16),
-      # and camino-desktop, the meta package, depends on camino-git. mate-utils-camino's
-      # dictionary applet links mate-panel-camino's applet library. tools/bootstrap has the
+      # against it. The patched packages come before caminito-git, which depends on them (16),
+      # and caminito-desktop, the meta package, depends on caminito-git. mate-utils-caminito's
+      # dictionary applet links mate-panel-caminito's applet library. tools/bootstrap has the
       # same order.
       PACKAGES: >-
-        mate-session-manager-camino
-        mate-panel-camino
-        mate-settings-daemon-camino
-        mate-control-center-camino
-        caja-camino
-        mate-utils-camino
-        camino-git
-        camino-desktop
+        mate-session-manager-caminito
+        mate-panel-caminito
+        mate-settings-daemon-caminito
+        mate-control-center-caminito
+        caja-caminito
+        mate-utils-caminito
+        caminito-git
+        caminito-desktop
     steps:
       # rustup provides cargo, so makepkg doesn't pull in the rust package.
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git namcap rustup
 
-      # camino-git's pkgver() needs the history and tags.
+      # caminito-git's pkgver() needs the history and tags.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -53,7 +53,7 @@ jobs:
 
       # namcap exits 0 whatever it finds, so its errors are grepped for. Warnings are
       # printed for review. It reads the PKGBUILD as builder, so git trusts the checkout
-      # that camino-git's source=() reads. makepkg also makes a -debug package for C code, which
+      # that caminito-git's source=() reads. makepkg also makes a -debug package for C code, which
       # isn't checked.
       - name: Build and check each package
         shell: bash

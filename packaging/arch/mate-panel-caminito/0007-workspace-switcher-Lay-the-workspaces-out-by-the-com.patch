@@ -1,0 +1,255 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 12:00:00 -0300
+Subject: [PATCH] workspace-switcher: Lay the workspaces out by the
+ compositor's grid
+
+On X11 the workspace switcher sets _NET_DESKTOP_LAYOUT through libwnck, so
+the window manager knows the grid and its bindings move through it. On
+Wayland the applet laid its buttons out by its own rows preference, which
+the compositor never learnt of, so the workspace to the left or below was
+one thing in the switcher and another to the compositor.
+
+ext-workspace gives each workspace coordinates, a column and a row. Where
+every workspace shown has them, attach its button there, and build the
+buttons again when they change. Where one has none, which is every
+compositor that sends no coordinates, nothing changes.
+
+Caminito, the Wayland compositor, has the grid in its own settings,
+org.mate.Caminito's workspace-layout keys. Under Caminito, which is
+MATE_WM_NAME=Caminito, write the rows preference there: the rows of a
+horizontal panel, the columns of a vertical one. Caminito sends the new
+coordinates back. Elsewhere, and on X11, the preference is written nowhere
+else, as before.
+---
+ applets/wncklet/wayland-workspace.c  | 93 +++++++++++++++++++++++++++-
+ applets/wncklet/workspace-switcher.c | 48 ++++++++++++++
+ 2 files changed, 140 insertions(+), 1 deletion(-)
+
+diff --git a/applets/wncklet/wayland-workspace.c b/applets/wncklet/wayland-workspace.c
+index eb6a9ccc..e06886e0 100644
+--- a/applets/wncklet/wayland-workspace.c
++++ b/applets/wncklet/wayland-workspace.c
+@@ -48,6 +48,7 @@ struct _WaylandWorkspaceData {
+ 
+ 	WaylandWorkspaceChangedFunc changed_func;
+ 	gpointer changed_data;
++	guint rebuild_idle; /* a rebuild queued for when the coordinates settle */
+ };
+ 
+ static void rebuild_ui (WaylandWorkspaceData *data);
+@@ -98,6 +99,42 @@ get_nth_workspace (WaylandWorkspaceData *data, int index)
+ 	return NULL;
+ }
+ 
++/* Whether the compositor gave every workspace shown a place of its own in its
++ * grid: ext-workspace's coordinates, a column and a row. A workspace's
++ * layout-row and layout-column properties are -1 until it has them. */
++static gboolean
++workspaces_have_coordinates (WaylandWorkspaceData *data)
++{
++	GList *workspaces, *l, *other;
++
++	workspaces = xfw_workspace_manager_list_workspaces (data->workspace_manager);
++
++	for (l = workspaces; l != NULL; l = l->next)
++	{
++		XfwWorkspace *ws = l->data;
++		XfwWorkspaceState state = xfw_workspace_get_state (ws);
++		int row = -1;
++		int column = -1;
++
++		if (!data->display_all && (state & XFW_WORKSPACE_STATE_HIDDEN))
++			continue;
++
++		g_object_get (ws, "layout-row", &row, "layout-column", &column, NULL);
++		if (row < 0 || column < 0)
++			return FALSE;
++
++		/* Two in one cell would put one button over the other. */
++		for (other = workspaces; other != l; other = other->next)
++		{
++			if (xfw_workspace_get_layout_row (other->data) == row &&
++			    xfw_workspace_get_layout_column (other->data) == column)
++				return FALSE;
++		}
++	}
++
++	return workspaces != NULL;
++}
++
+ /* ---- Build / rebuild the button grid ---- */
+ 
+ static void
+@@ -138,6 +175,7 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 	GList *children, *l;
+ 	int n_spaces, i, col, row;
+ 	int rows, cols;
++	gboolean by_coordinates;
+ 
+ 	/* Destroy old buttons */
+ 	children = gtk_container_get_children (GTK_CONTAINER (data->grid));
+@@ -147,6 +185,10 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 
+ 	n_spaces = count_visible_workspaces (data);
+ 
++	/* The compositor's grid, where it has one, is the one its bindings move
++	 * through, so the buttons follow it and not the rows set here. */
++	by_coordinates = workspaces_have_coordinates (data);
++
+ 	/* Determine grid dimensions */
+ 	if (data->orientation == GTK_ORIENTATION_HORIZONTAL)
+ 	{
+@@ -204,7 +246,12 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 				  G_CALLBACK (on_button_toggled), data);
+ 
+ 		/* Calculate grid position */
+-		if (data->orientation == GTK_ORIENTATION_HORIZONTAL)
++		if (by_coordinates && ws)
++		{
++			col = xfw_workspace_get_layout_column (ws);
++			row = xfw_workspace_get_layout_row (ws);
++		}
++		else if (data->orientation == GTK_ORIENTATION_HORIZONTAL)
+ 		{
+ 			col = i / rows;
+ 			row = i % rows;
+@@ -221,6 +268,44 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 	gtk_widget_show_all (data->grid);
+ }
+ 
++/* ---- A workspace's place in the compositor's grid ---- */
++
++static gboolean
++rebuild_ui_idle (gpointer user_data)
++{
++	WaylandWorkspaceData *data = user_data;
++
++	data->rebuild_idle = 0;
++	rebuild_ui (data);
++
++	return G_SOURCE_REMOVE;
++}
++
++/* A change of the compositor's grid moves many workspaces, each with a
++ * notify for its row and one for its column, so the buttons are built again
++ * once, when all of them have come. */
++static void
++on_workspace_layout_changed (XfwWorkspace *workspace,
++			     GParamSpec   *pspec,
++			     GtkWidget    *grid)
++{
++	WaylandWorkspaceData *data = g_object_get_data (G_OBJECT (grid), "wayland_pager_data");
++
++	if (data != NULL && data->rebuild_idle == 0)
++		data->rebuild_idle = g_idle_add (rebuild_ui_idle, data);
++}
++
++static void
++watch_workspace_layout (WaylandWorkspaceData *data, XfwWorkspace *workspace)
++{
++	/* Connected to the grid, which holds the data, so that the handlers go
++	 * with it: the workspaces outlive the applet. */
++	g_signal_connect_object (workspace, "notify::layout-row",
++				 G_CALLBACK (on_workspace_layout_changed), data->grid, 0);
++	g_signal_connect_object (workspace, "notify::layout-column",
++				 G_CALLBACK (on_workspace_layout_changed), data->grid, 0);
++}
++
+ /* ---- Signal handlers on workspace groups ---- */
+ 
+ static void
+@@ -343,6 +428,7 @@ on_workspace_created (XfwWorkspaceManager *manager,
+ 		      WaylandWorkspaceData *data)
+ {
+ 	watch_workspace_name (data, workspace);
++	watch_workspace_layout (data, workspace);
+ 	rebuild_ui_and_tell (data);
+ }
+ 
+@@ -360,6 +446,8 @@ static void
+ wayland_pager_data_free (WaylandWorkspaceData *data)
+ {
+ 	disconnect_group_signals (data);
++	if (data->rebuild_idle != 0)
++		g_source_remove (data->rebuild_idle);
+ 	g_free (data);
+ }
+ 
+@@ -415,7 +503,10 @@ wayland_workspace_new (void)
+ 			  G_CALLBACK (on_workspace_destroyed), data);
+ 
+ 	for (GList *l = xfw_workspace_manager_list_workspaces (data->workspace_manager); l != NULL; l = l->next)
++	{
+ 		watch_workspace_name (data, l->data);
++		watch_workspace_layout (data, l->data);
++	}
+ 
+ 	connect_group_signals (data);
+ 	rebuild_ui (data);
+diff --git a/applets/wncklet/workspace-switcher.c b/applets/wncklet/workspace-switcher.c
+index cc6681f6..4ad2a98a 100644
+--- a/applets/wncklet/workspace-switcher.c
++++ b/applets/wncklet/workspace-switcher.c
+@@ -281,6 +281,53 @@ static void pager_update_wnck(PagerData* pager, WnckPager* wnck_pager)
+ }
+ #endif /* HAVE_X11 */
+ 
++#ifdef HAVE_WAYLAND
++#define CAMINITO_SCHEMA "org.mate.Caminito"
++
++static void caminito_set_int(GSettings* caminito, const char* key, int value)
++{
++	if (g_settings_get_int(caminito, key) != value)
++		g_settings_set_int(caminito, key, value);
++}
++
++static void caminito_set_string(GSettings* caminito, const char* key, const char* value)
++{
++	char* current = g_settings_get_string(caminito, key);
++
++	if (g_strcmp0(current, value) != 0)
++		g_settings_set_string(caminito, key, value);
++	g_free(current);
++}
++
++/* On X11 the pager tells the window manager its rows, through libwnck and
++ * _NET_DESKTOP_LAYOUT, and the window manager's bindings move through that
++ * grid. Caminito, the Wayland compositor, has the grid in settings of its own
++ * and sends each workspace's place in it back, so under Caminito the rows
++ * preference is written there. Without Caminito, or without its schema, nothing
++ * is written, and the rows are this applet's alone. */
++static void pager_update_caminito_layout(PagerData* pager)
++{
++	GSettings* caminito;
++	gboolean horizontal;
++
++	if (pager->wm != PAGER_WM_CAMINITO || !mate_gsettings_schema_exists(CAMINITO_SCHEMA))
++		return;
++
++	caminito = g_settings_new(CAMINITO_SCHEMA);
++	horizontal = pager->orientation == GTK_ORIENTATION_HORIZONTAL;
++
++	/* One change for the three keys, and none when they are as wanted
++	 * already. On a vertical panel the preference is the columns. */
++	g_settings_delay(caminito);
++	caminito_set_string(caminito, "workspace-layout-orientation", horizontal ? "horizontal" : "vertical");
++	caminito_set_int(caminito, "workspace-layout-rows", horizontal ? pager->n_rows : 0);
++	caminito_set_int(caminito, "workspace-layout-columns", horizontal ? 0 : pager->n_rows);
++	g_settings_apply(caminito);
++
++	g_object_unref(caminito);
++}
++#endif /* HAVE_WAYLAND */
++
+ static void pager_update(PagerData* pager)
+ {
+ #ifdef HAVE_X11
+@@ -297,6 +344,7 @@ static void pager_update(PagerData* pager)
+ 		wayland_workspace_set_rows(pager->pager, pager->n_rows);
+ 		wayland_workspace_set_show_all(pager->pager, pager->display_all);
+ 		wayland_workspace_set_show_names(pager->pager, pager->display_names);
++		pager_update_caminito_layout(pager);
+ 	}
+ #endif /* HAVE_WAYLAND */
+ }

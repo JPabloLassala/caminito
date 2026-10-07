@@ -1,0 +1,69 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Alexander Epaneshnikov <alex19ep@archlinux.org>
+# Contributor: Brad Fanella <cesura@archlinux.org>
+# Contributor: Martin Wimpress <code@flexion.org>
+
+# Arch's mate-utils PKGBUILD with the smallest diff (16), so a change there shows what to
+# carry over. The differences: the name, the 1.29.1 tag, provides and conflicts in place of
+# replaces, what the tag's Wayland code depends on, --enable-wayland, and the carried patch
+# (ADR 0011).
+
+pkgname=mate-utils-caminito
+_pkgname=mate-utils
+# The first tag whose mate-screenshot captures on Wayland, through ext-image-copy-capture,
+# and picks an area there (05).
+pkgver=1.29.1
+pkgrel=2
+pkgdesc="Common MATE utilities for viewing disk usage, logs and fonts, taking screenshots, managing dictionaries and searching files, with Caminito's carried patch"
+url="http://mate-desktop.org"
+arch=('x86_64')
+license=('GPL-2.0-or-later')
+depends=('mate-desktop' 'gettext' 'libcanberra' 'libgtop' 'libsm' 'udisks2' 'libxml2' 'gtk-layer-shell' 'wayland')
+makedepends=('autoconf-archive' 'git' 'glib2-devel' 'inkscape' 'intltool' 'itstool' 'mate-common' 'mate-panel' 'python' 'yelp-tools' 'wayland-protocols')
+optdepends=('mate-panel: Look up words in dictionaries from the panel')
+groups=('mate-extra')
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}" 'mate-utils-gtk3')
+# 0001 is active only while org.mate.Caminito has an owner (ADR 0011): mate-screenshot's
+# --window captures the window Caminito names (104).
+source=("git+https://github.com/mate-desktop/mate-utils.git#tag=v${pkgver}"
+        git+https://github.com/mate-desktop/mate-submodules.git
+        0001-screenshot-Capture-the-active-window-on-Wayland-with.patch)
+sha256sums=('4dc1726054d2333bb4dda6f0bed8c8ea49eeaf839525b5d5c6d9d46ddfa058e9'
+            'SKIP'
+            '311dd77a7846f77b2d3447ffcecea484cc370719b2ab69190b59ec19347d8a49')
+prepare() {
+	cd "${_pkgname}"
+	git submodule init
+	git config submodule.mate-submodules.url "${srcdir}/mate-submodules"
+	git -c protocol.file.allow=always submodule update
+
+	local src
+	for src in "${source[@]}"; do
+		[[ ${src} = *.patch ]] || continue
+		patch -Np1 -i "${srcdir}/${src}"
+	done
+
+	./autogen.sh
+}
+
+build() {
+    	cd "${_pkgname}"
+	# --enable-wayland makes a missing Wayland library an error. Without it, configure turns
+	# mate-screenshot's Wayland capture off and says nothing. It needs the dictionary applet
+	# built in the panel's process, which is how a Wayland panel loads it.
+    	./configure \
+        	--prefix=/usr \
+        	--libexecdir=/usr/lib/${_pkgname} \
+        	--sysconfdir=/etc \
+        	--disable-maintainer-flags \
+        	--enable-wayland
+    	make
+}
+
+package() {
+    	cd "${_pkgname}"
+    	make DESTDIR="${pkgdir}" install
+}

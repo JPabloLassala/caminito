@@ -1,5 +1,5 @@
 # Every process cargo runs, tests included, sees only the vendored golden font (tests/fonts,
-# ADR 0009), so frame extents in camino's snapshots don't depend on the machine's fonts.
+# ADR 0009), so frame extents in caminito's snapshots don't depend on the machine's fonts.
 # dev-nested runs its build directly, not through cargo, so it keeps the machine's fonts.
 [env]
 FONTCONFIG_FILE = { value = "tests/fonts/fonts.conf", relative = true, force = true }

@@ -1,0 +1,144 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Alexander Epaneshnikov <alex19ep@archlinux.org>
+# Contributor: Brad Fanella <cesura@archlinux.org>
+# Contributor: Martin Wimpress <code@flexion.org>
+
+# Arch's mate-panel PKGBUILD with the smallest diff (16), so a change there shows what to
+# carry over. The differences: the name, the pinned commit and its pkgver(), provides and
+# conflicts, libxfce4windowing and the configure options after --enable-introspection, the
+# carried patches, and the 1.28 branch's applet library, built from a second source and
+# installed beside master's (ADR 0011).
+
+pkgname=mate-panel-caminito
+_pkgname=mate-panel
+# The libxfce4windowing window list and workspace switcher are only on master (16). The
+# commit is pinned, so the package needs no -git suffix. The weekly job builds the patches on
+# master instead.
+_commit=58ac6c101bdf2e2975c0395723ad16e9c9764f5c
+# Master comes from v1.28.1, and the 1.28 branch's tags aren't its ancestors, so git describe
+# gives a version below Arch's. The base is Arch's version, so constraints on mate-panel hold.
+_basever=1.28.7
+# Master's applet library is libmate-panel-applet-4.so.2, and Arch's applets in other packages
+# (mate-applets, mate-media, mate-power-manager and more) are linked to the 1.28 branch's
+# .so.1. An applet that is a program of its own talks to the panel over D-Bus, in a protocol
+# master only added a method to, so the 1.28 library is built from this tag and installed
+# beside master's (73). One the panel loads into its own process can't use it there. The
+# weekly job knows this source by its -stock name, and leaves it at the tag.
+_stocktag=v1.28.7
+pkgver=1.28.7.r111.g58ac6c1
+pkgrel=9
+pkgdesc="The MATE Panel, with Caminito's carried patches"
+url="https://mate-desktop.org"
+arch=('x86_64')
+license=('GPL-2.0-or-later AND LGPL-2.0-or-later')
+depends=('dbus-glib' 'libwnck3' 'libcanberra' 'libmateweather' 'libsm' 'mate-menus' 'mate-desktop' 'gettext' 'gtk-layer-shell' 'dconf-editor' 'libxfce4windowing')
+makedepends=('itstool' 'git' 'glib2-devel' 'gobject-introspection' 'mate-common' 'yelp-tools' 'autoconf-archive')
+groups=('mate')
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}" 'mate-panel-gtk3')
+# The first three aren't gated on Caminito: each is correct on any compositor (ADR 0011). With
+# the third, the window list is as it was where the compositor hasn't Xfce's foreign toplevel
+# protocol, and the choice of workspaces in its preferences can be made there too, to no
+# effect (ADR 0013). The fourth is active only while org.mate.Caminito has an owner: the
+# panel's first monitor is Caminito's primary output, and the panel names its output (81).
+# The fifth is an upstream fix, with no gate: the workspace switcher shows a workspace's new
+# name when the compositor renames it. The sixth is active only with MATE_WM_NAME=Caminito: the
+# switcher's preferences show the workspace count and names, which they hide on Wayland, and
+# write Marco's keys for them (97).
+# The seventh has both halves (96): the workspace switcher puts each workspace where its
+# ext-workspace coordinates say, on any compositor that sends them, and writes its rows
+# preference to org.mate.Caminito's workspace-layout keys only with MATE_WM_NAME=Caminito.
+# The eighth is active only while org.mate.Caminito has an owner: the Show Desktop button is
+# Caminito's ShowingDesktop, which Ctrl+Alt+D changes too (94).
+# The ninth is active only with MATE_WM_NAME=Caminito: the panel owns org.mate.Panel, whose
+# MainMenu and RunDialog Caminito calls for Alt+F1 and Alt+F2 (95).
+source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
+        "${_pkgname}-stock::git+https://github.com/mate-desktop/mate-panel.git#tag=${_stocktag}"
+        git+https://github.com/mate-desktop/mate-submodules.git
+        0001-wayland-tasklist-Tell-the-compositor-where-each-butt.patch
+        0002-action-button-Shut-down-through-the-session-manager-.patch
+        0003-wayland-tasklist-Show-the-active-workspace-s-windows.patch
+        0004-multimonitor-Put-Caminito-s-primary-output-first-on-.patch
+        0005-wayland-workspace-Show-a-workspace-s-new-name-when-i.patch
+        0006-workspace-switcher-Set-the-workspace-count-and-names.patch
+        0007-workspace-switcher-Lay-the-workspaces-out-by-the-com.patch
+        0008-showdesktop-Show-Caminito-s-desktop-on-Wayland.patch
+        0009-main-Export-the-main-menu-and-the-run-dialog-on-D-Bu.patch)
+sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
+            '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
+            'SKIP'
+            '7b33e869a2cd4d4154a0a11fa977f55e7e984ffc41be18e3c2b14885a8ecb490'
+            '94a0dcc1016524880f416370c2a4f419b14f5fe7a539a7ddcf82d8adfd0a934e'
+            '51039efc813e292e5c4e4e201c2824261ebcbc417aa443b1a3381780a60d9f09'
+            'b101a7f11277c7b9868f2e2322bf4d8f40e32485511c02c417850a99bbcdd1f1'
+            'c99d52d0765d3a1c3cf7082305f648bfc87e2bdb6a038be45a293467744d56ea'
+            '9f1c0400028a329e3ba9323155e5fced27ccbd45273e5d150a479cd8962f93e0'
+            '8ca9cda9a75edb8ccda807538a2952083013c18912caf62131386edb2bedb983'
+            'b586f22ceb2c0d77ee9b60a15b4138144628f820dbe2102286c02f55c110725f'
+            '5cabe2cb85e0a569ae4b240be7ffd0652ba62ccadfd6f8e70b66ece3ae8a948a')
+
+pkgver() {
+    cd "${_pkgname}"
+    printf '%s.r%s.g%s' "${_basever}" "$(git rev-list --count v1.28.1..HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+    cd "${_pkgname}"
+    git submodule init
+    git config submodule.mate-submodules.url "${srcdir}/mate-submodules"
+    git -c protocol.file.allow=always submodule update
+
+    # makepkg checks the commit out over the last build's tree, and leaves the files a patch
+    # added there, which patch then refuses to create.
+    git clean -dfq
+
+    local src
+    for src in "${source[@]}"; do
+        [[ ${src} = *.patch ]] || continue
+        patch -Np1 -i "${srcdir}/${src}"
+    done
+
+    ./autogen.sh
+
+    cd "${srcdir}/${_pkgname}-stock"
+    git submodule init
+    git config submodule.mate-panel/mate-submodules.url "${srcdir}/mate-submodules"
+    git -c protocol.file.allow=always submodule update
+    ./autogen.sh
+}
+
+build() {
+    cd "${_pkgname}"
+    # --enable-wayland makes a missing gtk-layer-shell or libxfce4windowing an error. Without
+    # it, configure turns Wayland off and says nothing. The applets are in the panel's
+    # process, because Wayland has nothing to embed another process's applet with. Master's
+    # clock links evolution-data-server when it's installed, which isn't a dependency, so
+    # that's off.
+    ./configure \
+                --prefix=/usr \
+                --libexecdir="/usr/lib/${_pkgname}" \
+                --sysconfdir=/etc \
+                --localstatedir=/var \
+                --enable-introspection \
+                --enable-wayland \
+                --with-in-process-applets=all \
+                --disable-eds
+    make
+
+    # Only the applet library of the 1.28 branch.
+    cd "${srcdir}/${_pkgname}-stock"
+    ./configure --prefix=/usr --disable-introspection
+    make -C libmate-panel-applet libmate-panel-applet-4.la
+}
+
+package() {
+    cd "${_pkgname}"
+    make DESTDIR="${pkgdir}" install
+
+    # The 1.28 library and its soname's link, and not the libmate-panel-applet-4.so that
+    # programs are built against, which stays master's.
+    cd "${srcdir}/${_pkgname}-stock/libmate-panel-applet/.libs"
+    cp -a libmate-panel-applet-4.so.1 libmate-panel-applet-4.so.1.* "${pkgdir}/usr/lib/"
+}

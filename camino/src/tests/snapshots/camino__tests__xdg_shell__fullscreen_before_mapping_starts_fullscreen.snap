@@ -1,6 +1,0 @@
----
-source: camino/src/tests/xdg_shell.rs
-expression: format_configures(&f.client(id).window(window).configures)
----
-size: 1920 × 1080, states: [Fullscreen], bounds: 1920 × 1080, capabilities: [Fullscreen, Maximize, Minimize, WindowMenu]
-size: 1920 × 1080, states: [Activated, Fullscreen]

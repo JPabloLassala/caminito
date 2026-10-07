@@ -14,25 +14,25 @@ Each item has:
 - **Expected:** what counts as passing.
 - **Debug tool:** what shows the result.
 
-Several items read the nested Camino's environment. With it running under `tools/dev-nested`:
+Several items read the nested Caminito's environment. With it running under `tools/dev-nested`:
 
 ```sh
 nested_env() {
-  tr '\0' '\n' </proc/"$(pgrep -n -x camino)"/environ |
+  tr '\0' '\n' </proc/"$(pgrep -n -x caminito)"/environ |
     grep -E '^(DBUS_SESSION_BUS_ADDRESS|XDG_CONFIG_HOME)='
 }
 ```
 
-The items on the tty run bare `camino` as `caminotest`, the second user (14). Log in as
-`caminotest` on a spare tty and run `camino 2>~/camino.log`. Run the commands of each item from a
-second login of `caminotest` (another tty, or `ssh`), which shares the first one's session bus,
+The items on the tty run bare `caminito` as `caminitotest`, the second user (14). Log in as
+`caminitotest` on a spare tty and run `caminito 2>~/caminito.log`. Run the commands of each item from a
+second login of `caminitotest` (another tty, or `ssh`), which shares the first one's session bus,
 with `WAYLAND_DISPLAY` set to the socket in the log's `listening on WAYLAND_DISPLAY=` line, and
 `DISPLAY` to the one in its `Xwayland is ready on DISPLAY=` line for X11 apps. Ctrl+Alt+F<n>
 switches between the ttys.
 
-The items in the session run `camino --session` instead, the same way or from the display
+The items in the session run `caminito --session` instead, the same way or from the display
 manager, and their commands run in a terminal inside the session or from a second login. A
-second login gets the session's displays from systemd, where Camino exports them, as in
+second login gets the session's displays from systemd, where Caminito exports them, as in
 `env $(session_env) wlr-randr`:
 
 ```sh
@@ -49,7 +49,7 @@ session_env() {
 - **Steps:**
   1. Run `tools/dev-nested`.
   2. In another terminal, run `nested_env` and `echo "$DBUS_SESSION_BUS_ADDRESS"`.
-- **Expected:** Camino's `DBUS_SESSION_BUS_ADDRESS` is `dbus-run-session`'s own bus, not the
+- **Expected:** Caminito's `DBUS_SESSION_BUS_ADDRESS` is `dbus-run-session`'s own bus, not the
   host's (`unix:path=/run/user/<uid>/bus`).
 - **Debug tool:** `/proc/<pid>/environ`.
 
@@ -61,13 +61,13 @@ session_env() {
   2. In another terminal, write a key on the nested bus and read it back on both buses:
 
      ```sh
-     env $(nested_env) sh -c 'dconf write /org/camino/checklist true; dconf read /org/camino/checklist; ls "$XDG_CONFIG_HOME/dconf"'
-     dconf read /org/camino/checklist
+     env $(nested_env) sh -c 'dconf write /org/caminito/checklist true; dconf read /org/caminito/checklist; ls "$XDG_CONFIG_HOME/dconf"'
+     dconf read /org/caminito/checklist
      ```
 
-  3. Quit Camino.
+  3. Quit Caminito.
 - **Expected:** the nested read prints `true` and `$XDG_CONFIG_HOME/dconf/user` exists in the
-  scratch directory. The host read prints nothing. The scratch directory is gone after Camino
+  scratch directory. The host read prints nothing. The scratch directory is gone after Caminito
   exits.
 - **Debug tool:** `dconf read`, and the scratch directory's `dconf/user`.
 
@@ -89,9 +89,9 @@ session_env() {
 - **Milestone:** M2
 - **Steps:**
   1. Run `tools/dev-nested`, and a GTK3 app such as pluma in it
-     (`WAYLAND_DISPLAY=<camino's socket> GDK_BACKEND=wayland pluma`).
+     (`WAYLAND_DISPLAY=<caminito's socket> GDK_BACKEND=wayland pluma`).
   2. With `DBUS_SESSION_BUS_ADDRESS` from `nested_env`, run
-     `busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug org.mate.Camino.Debug DumpState`.
+     `busctl --user call org.mate.Caminito.Debug /org/mate/Caminito/Debug org.mate.Caminito.Debug DumpState`.
   3. Run the same with `ToggleFrameDebug` instead of `DumpState`, then again.
 - **Expected:** the dump lists the app's window as `ssd`, with its frame extents and strip scale.
   The first toggle answers `true` and outlines the frame's strips in red, its invisible resize
@@ -132,17 +132,17 @@ session_env() {
      for theme in BlackMATE HighContrast TraditionalOk NoSuchTheme Menta; do
        env $(nested_env) gsettings set org.mate.Marco.general theme "$theme"
        sleep 2
-       env $(nested_env) busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug \
-         org.mate.Camino.Debug DumpState
+       env $(nested_env) busctl --user call org.mate.Caminito.Debug /org/mate/Caminito/Debug \
+         org.mate.Caminito.Debug DumpState
      done
      ```
 
 - **Expected:** each frame changes to the new theme as soon as it's set, with no app restarted
   and no window unmapped. The unmaximised window's client area keeps its size, the maximised
   one and its frame still fill the output, and `frame_extents` follow the theme. `NoSuchTheme` gives the built-in
-  theme and one `can't load the Marco theme NoSuchTheme` line in Camino's log. Back on Menta,
+  theme and one `can't load the Marco theme NoSuchTheme` line in Caminito's log. Back on Menta,
   the frames are Menta's again, and the buttons still prelight, press and act.
-- **Debug tool:** `busctl` and Camino's stderr.
+- **Debug tool:** `busctl` and Caminito's stderr.
 
 ## XWayland
 
@@ -174,10 +174,10 @@ session_env() {
 
 - **Milestone:** M5
 - **Steps:**
-  1. Log into *MATE on Camino*. Before `camino --session`, nothing Camino spawns receives its
+  1. Log into *MATE on Caminito*. Before `caminito --session`, nothing Caminito spawns receives its
      environment, so in M3 the X11 tier's test that `DISPLAY` isn't set until the root properties
      exist (38) stands in.
-  2. Read the `DISPLAY` Camino gave mate-session, the first process it spawns with its
+  2. Read the `DISPLAY` Caminito gave mate-session, the first process it spawns with its
      environment:
 
      ```sh
@@ -195,29 +195,29 @@ session_env() {
 
 ## Session
 
-### Logging into MATE on Camino
+### Logging into MATE on Caminito
 
 - **Milestone:** M5
 - **Steps:**
-  1. On a tty: log in as `caminotest` on a spare tty and run `camino --session 2>~/session.log`.
+  1. On a tty: log in as `caminitotest` on a spare tty and run `caminito --session 2>~/session.log`.
   2. From the display manager: log out of every session of the user first, since its logins
-     share one systemd manager and bus (14). At the greeter, choose *MATE on Camino* in the
+     share one systemd manager and bus (14). At the greeter, choose *MATE on Caminito* in the
      session list and log in.
   3. Each time, look at the desktop, then run:
 
      ```sh
      systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|DISPLAY|MATE_WM_NAME)='
      loginctl show-session "$XDG_SESSION_ID" -p Type -p Desktop -p TTY
-     pgrep -a -u "$USER" -x 'camino|mate-session|mate-panel|caja|mate-settings-d' | sort -k2
-     journalctl --user -b -t camino -p warning
+     pgrep -a -u "$USER" -x 'caminito|mate-session|mate-panel|caja|mate-settings-d' | sort -k2
+     journalctl --user -b -t caminito -p warning
      grep -aiE 'timed out|time-?out' ~/session.log
      ```
 
-- **Expected:** the greeter lists *MATE on Camino*. Both ways the desktop is up well inside 30
+- **Expected:** the greeter lists *MATE on Caminito*. Both ways the desktop is up well inside 30
   seconds, with no mate-session phase timing out (08): both panels, with the window list and the
   workspace switcher, caja's desktop icons, and msd's wallpaper under them on every output.
-  systemd has `WAYLAND_DISPLAY`, `DISPLAY` and `MATE_WM_NAME=Camino`, and the five processes
-  run. From the display manager the logind session's type is `wayland`. Camino's stderr isn't a
+  systemd has `WAYLAND_DISPLAY`, `DISPLAY` and `MATE_WM_NAME=Caminito`, and the five processes
+  run. From the display manager the logind session's type is `wayland`. Caminito's stderr isn't a
   terminal either way, so its lines are in the journal. mate-session and what it starts write to
   that stderr itself (72): `~/session.log` on the tty, and the display manager's log of the
   session otherwise, where the `grep` goes then. Neither has a time-out.
@@ -228,20 +228,20 @@ session_env() {
 
 - **Milestone:** M5
 - **Steps:**
-  1. As `caminotest` on a tty, run `camino --session 2>~/session.log; echo "camino exited with $?"`.
+  1. As `caminitotest` on a tty, run `caminito --session 2>~/session.log; echo "caminito exited with $?"`.
   2. In the panel, choose *System*, *Shut Down…*, look at the dialog, and cancel it.
-  3. Choose *System*, *Log Out caminotest…*, then *Log Out*.
-  4. From a second login, run `systemctl --user show-environment` and `pgrep -a -u caminotest`.
+  3. Choose *System*, *Log Out caminitotest…*, then *Log Out*.
+  4. From a second login, run `systemctl --user show-environment` and `pgrep -a -u caminitotest`.
   5. Log in as yourself, from the display manager, choose *Shut Down…* and then *Shut Down*.
-     After the machine is back, read `journalctl --user -b -1 -t camino | tail`.
+     After the machine is back, read `journalctl --user -b -1 -t caminito | tail`.
 - **Expected:** *Shut Down…* shows mate-session's dialog (*Shut down this system now?*, with its
-  countdown), an XWayland window that Camino frames, not the panel's own *System Shutdown* (70).
+  countdown), an XWayland window that Caminito frames, not the panel's own *System Shutdown* (70).
   Cancelling it leaves the session as it was. *Log Out* ends the session: the tty is back in text
-  mode at the shell prompt, which prints `camino exited with 0`, mate-session's status (61).
+  mode at the shell prompt, which prints `caminito exited with 0`, mate-session's status (61).
   Nothing of the session still runs, and of its variables systemd has only
   `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` (61, 74). *Shut Down* powers the machine off: the
   journal of that boot has logind's `requested from client PID … ('mate-session')`, and
-  Camino's last lines are `stopping the session command` or `the session command exited`,
+  Caminito's last lines are `stopping the session command` or `the session command exited`,
   since mate-session asks logind before it exits and the machine may go first. It may also
   have `systemd didn't unset the environment`, since a systemd that's shutting down may not
   answer (61).
@@ -253,7 +253,7 @@ session_env() {
 
 - **Milestone:** M5
 - **Steps:**
-  1. Log into *MATE on Camino*, with no pluma running: pluma hands a new window to the running
+  1. Log into *MATE on Caminito*, with no pluma running: pluma hands a new window to the running
      instance.
   2. Run `GDK_BACKEND=x11 pluma`, type a line, select it, copy it with Ctrl+C, and quit pluma.
   3. Wait five seconds. Run `pluma`, which is native, paste with Ctrl+V, and quit it.
@@ -272,7 +272,7 @@ session_env() {
 - **Milestone:** M5
 - **Steps:**
   1. As the developer's own user, with the four Patched packages installed
-     (`pacman -Q mate-session-manager mate-panel mate-settings-daemon caja` names the `-camino`
+     (`pacman -Q mate-session-manager mate-panel mate-settings-daemon caja` names the `-caminito`
      ones),
      log into *MATE*, the X11 session, from the display manager.
   2. Run:
@@ -280,7 +280,7 @@ session_env() {
      ```sh
      echo "$XDG_SESSION_TYPE ${MATE_WM_NAME:-unset} ${GDK_BACKEND:-unset}"
      pgrep -a -x marco
-     busctl --user status org.mate.Camino
+     busctl --user status org.mate.Caminito
      theme=$(gsettings get org.mate.interface gtk-theme)
      gsettings get org.gnome.desktop.interface gtk-theme
      gsettings set org.mate.interface gtk-theme TraditionalOk
@@ -296,12 +296,12 @@ session_env() {
   4. Log out, and log into *MATE on Wayfire*. Look at its panel, its desktop icons and its
      wallpaper, and leave it with Super+Escape (`wlogout`), or `pkill wayfire` from a terminal.
 - **Expected:** the session is as it was with the stock packages (the fall-back rule, ADR 0011).
-  It's `x11`, with `MATE_WM_NAME` not Camino's and `GDK_BACKEND` as before, mate-session starts
-  Marco, and nothing owns `org.mate.Camino`. msd serves XSETTINGS, so open apps restyle at the
+  It's `x11`, with `MATE_WM_NAME` not Caminito's and `GDK_BACKEND` as before, mate-session starts
+  Marco, and nothing owns `org.mate.Caminito`. msd serves XSETTINGS, so open apps restyle at the
   theme change, and it doesn't mirror into `org.gnome.desktop.interface`, which keeps its value.
   The panel's buttons, switcher and dialogs work, and no applet is missing from the panel: the
   loop prints nothing, since no installed applet is linked to an applet library that's gone:
-  `mate-panel-camino` installs the 1.28 library beside master's (70, 73). An applet of another
+  `mate-panel-caminito` installs the 1.28 library beside master's (70, 73). An applet of another
   package that was on the panel shows and works, unless it's one the panel loads into its own
   process (`InProcess=true`, as `mate-notification-daemon`'s), where the two libraries can't
   work together. The Wayfire session logs in, with its panel, its desktop icons and its
@@ -311,23 +311,23 @@ session_env() {
 - **Debug tool:** `ldd` on the applets, `busctl`, `gsettings`, and `~/.xsession-errors` or the
   journal for what a missing applet logged.
 
-### Camino restores the saved layout from the first frame
+### Caminito restores the saved layout from the first frame
 
 - **Milestone:** M6
 - **Steps:**
-  1. With `mate-settings-daemon-camino` at `pkgrel` 3 or later, log into *MATE on Camino* with
-     both monitors connected, and note `wlr-randr`'s scales and positions, which are Camino's
+  1. With `mate-settings-daemon-caminito` at `pkgrel` 3 or later, log into *MATE on Caminito* with
+     both monitors connected, and note `wlr-randr`'s scales and positions, which are Caminito's
      defaults (50) unless a layout is saved already. Keep a copy of
-     `~/.config/camino/layouts.json` if there is one.
+     `~/.config/caminito/layouts.json` if there is one.
   2. Apply a layout that isn't the default, choose the other output as the primary one, and
      save it:
 
      ```sh
      wlr-randr --output DP-1 --scale 1.25 --pos 0,0 --output HDMI-A-1 --pos 1536,0
-     gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
-       --method org.freedesktop.DBus.Properties.Set org.mate.Camino PrimaryOutput "<'HDMI-A-1'>"
-     gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
-       --method org.mate.Camino.SaveLayout
+     gdbus call --session --dest org.mate.Caminito --object-path /org/mate/Caminito \
+       --method org.freedesktop.DBus.Properties.Set org.mate.Caminito PrimaryOutput "<'HDMI-A-1'>"
+     gdbus call --session --dest org.mate.Caminito --object-path /org/mate/Caminito \
+       --method org.mate.Caminito.SaveLayout
      ```
 
   3. Apply another scale with `wlr-randr`, and don't save it. Log out and in again, watching
@@ -337,16 +337,16 @@ session_env() {
   5. Run `pgrep -a mate-settings-daemon` and `gdbus introspect --session --dest
      org.mate.SettingsDaemon --object-path /org/mate/SettingsDaemon/WLRANDR`.
   6. Remove `layouts.json`, log out and in once more, and then put the copy back.
-- **Expected:** after step 3 each output has the mode, scale and place of step 2, not Camino's
+- **Expected:** after step 3 each output has the mode, scale and place of step 2, not Caminito's
   default and not the scale of step 3, and the panels are on the output chosen (81). The
   layout is there from the first frame: the outputs don't blank or jump once the session is
   up, as they did while msd applied it (06). In step 4 the monitor that stays is at the
   origin while it's alone, and the saved layout and the primary output are back when the
   other is plugged in, with one `mate-background` layer surface on each output, as before the unplug (88). In step 5 msd runs, and the object has no
-  `org.mate.SettingsDaemon.WLRANDR` interface: the plugin isn't started under Camino, and `~/.config/monitors-wayland.xml` is neither read nor written (ADR
+  `org.mate.SettingsDaemon.WLRANDR` interface: the plugin isn't started under Caminito, and `~/.config/monitors-wayland.xml` is neither read nor written (ADR
   0014). After step 6 the defaults are back.
 - **Debug tool:** `wlr-randr`, the `outputs` and `primary_output` of `DumpState`,
-  `~/.config/camino/layouts.json`, and `can't restore the saved layout` in `~/camino.log`.
+  `~/.config/caminito/layouts.json`, and `can't restore the saved layout` in `~/caminito.log`.
 
 ## Privileged clients
 
@@ -388,7 +388,7 @@ session_env() {
 
 - **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 2 or later, and open two
+  1. Log into *MATE on Caminito*, with `mate-panel-caminito` at `pkgrel` 2 or later, and open two
      windows on the first workspace.
   2. Switch to the second workspace with the workspace switcher, look at the window list, and
      switch back.
@@ -417,7 +417,7 @@ session_env() {
 
 - **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 8 or later, and run
+  1. Log into *MATE on Caminito*, with `mate-panel-caminito` at `pkgrel` 8 or later, and run
      `busctl --user status org.mate.Panel | grep -E '^(PID|Comm)='`.
   2. With a window focused and the pointer over it, press Alt+F1, move through the menu and
      into a submenu with the arrow keys, and press Escape until it has closed. Type in the
@@ -445,23 +445,23 @@ session_env() {
   the calculator starts. In step 6 the menu drops from the button, and without one it opens
   at the pointer over the panel, and from the first panel's corner with the pointer over a
   window, each time with the keyboard. In step 7 nothing opens while the panel is stopped,
-  and Camino neither hangs nor loses a key: the window gets what's typed. The Run dialog
+  and Caminito neither hangs nor loses a key: the window gets what's typed. The Run dialog
   opens once the panel goes on (95).
 - **Debug tool:** `busctl --user status org.mate.Panel`, and
   `busctl --user call org.mate.Panel /org/mate/Panel org.mate.Panel RunDialog u 0`, which is
-  Camino's call without the key. `can't open the panel's main menu` in `~/camino.log` says
+  Caminito's call without the key. `can't open the panel's main menu` in `~/caminito.log` says
   the name had no owner or the call failed.
 
 ### The Show Desktop button and Ctrl+Alt+D show the same desktop
 
 - **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 7 or later, and open
+  1. Log into *MATE on Caminito*, with `mate-panel-caminito` at `pkgrel` 7 or later, and open
      three windows on the first workspace, one of them an X11 app such as `xterm`. In a
      terminal on the second workspace, follow the property:
 
      ```sh
-     gdbus monitor --session --dest org.mate.Camino --object-path /org/mate/Camino
+     gdbus monitor --session --dest org.mate.Caminito --object-path /org/mate/Caminito
      ```
 
   2. On the first workspace, click the panel's Show Desktop button, then press Ctrl+Alt+D.
@@ -478,18 +478,18 @@ session_env() {
   window list, as in Marco. `gdbus monitor` prints one `ShowingDesktop` change for
   each, and none for a switch between workspaces that agree (94).
 - **Debug tool:** `showing_desktop` in `DumpState`, the `gdbus monitor` of step 1, and to tell
-  the button's side from Camino's:
+  the button's side from Caminito's:
 
   ```sh
-  gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
-    --method org.freedesktop.DBus.Properties.Set org.mate.Camino ShowingDesktop '<true>'
+  gdbus call --session --dest org.mate.Caminito --object-path /org/mate/Caminito \
+    --method org.freedesktop.DBus.Properties.Set org.mate.Caminito ShowingDesktop '<true>'
   ```
 
 ### The workspace switcher's preferences set the count and the names
 
 - **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 5 or later, and four
+  1. Log into *MATE on Caminito*, with `mate-panel-caminito` at `pkgrel` 5 or later, and four
      workspaces (`gsettings get org.mate.Marco.general num-workspaces`).
   2. Open the workspace switcher's *Preferences*, and set *Number of workspaces* to 6, then
      to 2. After each, look at the switcher and run the `gsettings get` of step 1.
@@ -499,23 +499,23 @@ session_env() {
   4. Empty that name again, and set the count back to 4.
   5. Log into *MATE*, the X11 session, and do steps 2 to 4 there. Then log into *MATE on
      Wayfire* and open the switcher's *Preferences*.
-- **Expected:** under Camino the preferences have *Number of workspaces* and *Workspace
-  names*. The switcher, which draws what Camino sends, has six buttons, then two, `gsettings`
+- **Expected:** under Caminito the preferences have *Number of workspaces* and *Workspace
+  names*. The switcher, which draws what Caminito sends, has six buttons, then two, `gsettings`
   prints the same count, and the spin button stays at the number that was set. The second
   button and the second row say `Mail`, and `gsettings` prints `'Mail'`. Emptied, both say
   `Workspace 2` again. On X11 the same steps do the same through Marco, as with the stock
   panel, and on Wayfire the preferences have neither control (the gate, ADR 0011).
 - **Debug tool:** the switcher, `gsettings monitor org.mate.Marco.general`, and
   `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep ext_workspace` for the handles and names
-  Camino sends.
+  Caminito sends.
 
-### The workspace switcher's rows are Camino's grid
+### The workspace switcher's rows are Caminito's grid
 
 - **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 6 or later and four
+  1. Log into *MATE on Caminito*, with `mate-panel-caminito` at `pkgrel` 6 or later and four
      workspaces, the switcher on a horizontal panel, and note
-     `gsettings list-recursively org.mate.Camino`.
+     `gsettings list-recursively org.mate.Caminito`.
   2. Open the workspace switcher's *Preferences*, set the rows to 2, and read the keys again.
   3. On the first workspace, press Ctrl+Alt+Right twice, then click the third workspace in the
      switcher and press Ctrl+Alt+Left.
@@ -523,14 +523,14 @@ session_env() {
      it back to 4.
   5. Set the rows back to 1 in *Preferences*.
   6. Log into X11 MATE, set the switcher's rows to 2 and back, and read
-     `gsettings list-recursively org.mate.Camino` before and after.
+     `gsettings list-recursively org.mate.Caminito` before and after.
 - **Expected:** in step 1 the switcher is one row, and the keys are `horizontal`, 1 and 0. In
   step 2 it shows two rows of two, with the first and second workspaces above the third and
-  fourth, and `workspace-layout-rows` is 2. In step 3 Camino stops at the second workspace, the
+  fourth, and `workspace-layout-rows` is 2. In step 3 Caminito stops at the second workspace, the
   end of the first row, and stays on the third, the start of the second. In step 4 the switcher
   is two rows of three. In step 5 it's one row again. In step 6 the switcher's rows change as
-  they always did on X11, and Camino's keys don't (ADR 0011).
-- **Debug tool:** `gsettings monitor org.mate.Camino`, and `WAYLAND_DEBUG=1 mate-panel --replace
+  they always did on X11, and Caminito's keys don't (ADR 0011).
+- **Debug tool:** `gsettings monitor org.mate.Caminito`, and `WAYLAND_DEBUG=1 mate-panel --replace
   2>&1 | grep coordinates` for the `ext_workspace_handle_v1.coordinates` events.
 
 ## Screenshots
@@ -539,7 +539,7 @@ session_env() {
 
 - **Milestone:** M6
 - **Steps:**
-  1. Log into *MATE on Camino*, with `mate-utils-camino` installed. Open a pluma window and a
+  1. Log into *MATE on Caminito*, with `mate-utils-caminito` installed. Open a pluma window and a
      terminal, with pluma focused, and drag pluma down until the bottom panel covers the lower
      part of its window.
   2. Press `Print`, and save the screenshot from the dialog.
@@ -554,8 +554,8 @@ session_env() {
   part under the panel too, and nothing of the panel or the desktop around it. Step 5's is
   the terminal, not mate-screenshot's own dialog. Step 6 prints `Error: window capture is not
   supported on Wayland.`, as stock mate-screenshot does (ADR 0011).
-- **Debug tool:** the saved images. `gdbus call --session --dest org.mate.Camino --object-path
-  /org/mate/Camino --method org.mate.Camino.GetActiveToplevel` prints the identifier
+- **Debug tool:** the saved images. `gdbus call --session --dest org.mate.Caminito --object-path
+  /org/mate/Caminito --method org.mate.Caminito.GetActiveToplevel` prints the identifier
   mate-screenshot is given, and `WAYLAND_DEBUG=1 mate-screenshot --window 2>&1 | grep
   ext_foreign_toplevel` shows the toplevel it's matched to.
 
@@ -565,9 +565,9 @@ session_env() {
 
 - **Milestone:** M6
 - **Steps:**
-  1. With `mate-settings-daemon-camino` 1.29.1-4 or later installed, and a `camino-git` whose
-     `org.mate.Camino` has `AcceleratorRepeated` (`busctl --user introspect org.mate.Camino
-     /org/mate/Camino | grep Accelerator`), log into *MATE on Camino*, with sound playing.
+  1. With `mate-settings-daemon-caminito` 1.29.1-4 or later installed, and a `caminito-git` whose
+     `org.mate.Caminito` has `AcceleratorRepeated` (`busctl --user introspect org.mate.Caminito
+     /org/mate/Caminito | grep Accelerator`), log into *MATE on Caminito*, with sound playing.
   2. Press the volume up, volume down and mute keys, once each, and mute again. Then hold
      volume down for two seconds, and hold mute for two seconds.
   3. Make a window fullscreen, such as a browser's with F11, and click in a text field in
@@ -579,7 +579,7 @@ session_env() {
      gsettings reset org.mate.SettingsDaemon.plugins.media-keys volume-mute
      ```
 
-     With `mate-control-center-camino` installed, change *Volume mute* in *Keyboard
+     With `mate-control-center-caminito` installed, change *Volume mute* in *Keyboard
      Shortcuts* instead.
   5. On a laptop with a touchpad toggle key, press it twice.
   6. Log out, log into *MATE*, the X11 session, and repeat step 2. Then log into the Wayfire
@@ -596,7 +596,7 @@ session_env() {
 - **Debug tool:** `DumpState`'s `accelerator_grabs`, which lists each key msd grabbed with
   msd's unique name, and its `outputs`' `layer_surfaces`, where the OSD is `mate-osd` on the
   `overlay` layer with `keyboard_interactivity` `none` while it shows. `dbus-monitor
-  "interface='org.mate.Camino'"` can't see the signals, which go to msd alone: run
+  "interface='org.mate.Caminito'"` can't see the signals, which go to msd alone: run
   `mate-settings-daemon --debug --replace` for msd's side.
 
 ## Input
@@ -625,10 +625,10 @@ session_env() {
 
 - **Milestone:** M4
 - **Steps:**
-  1. With both monitors connected, run `camino` on the tty.
+  1. With both monitors connected, run `caminito` on the tty.
   2. Start a terminal on it (`foot`), and move it to each monitor.
   3. Run `wlr-randr`, and
-     `busctl --user call org.mate.Camino.Debug /org/mate/Camino/Debug org.mate.Camino.Debug DumpState`.
+     `busctl --user call org.mate.Caminito.Debug /org/mate/Caminito/Debug org.mate.Caminito.Debug DumpState`.
   4. `gsettings set org.mate.interface window-scaling-factor 2`, read the scales again, then
      set it back to 0 and read them once more.
 - **Expected:** each monitor is in its preferred mode at the scale its rule picks (50): the AOC
@@ -644,7 +644,7 @@ session_env() {
 
 - **Milestone:** M4
 - **Steps:**
-  1. With both monitors connected, run `camino` on the tty, and put a GTK3 window (pluma) and
+  1. With both monitors connected, run `caminito` on the tty, and put a GTK3 window (pluma) and
      an X11 one (xterm) on the right-hand monitor. Maximise one of them.
   2. Unplug the right-hand monitor's cable. Run `wlr-randr` and `DumpState`.
   3. Plug it back in, and run them again.
@@ -656,23 +656,23 @@ session_env() {
   monitor back lights it in its preferred mode at its default scale, to the right of the other
   one, whichever side it was on before, unless a layout is saved for the two (83), and the pointer and windows can go to it again. The log
   has no `can't light` line.
-- **Debug tool:** `wlr-randr`, the `outputs` and windows of `DumpState`, and `~/camino.log`.
+- **Debug tool:** `wlr-randr`, the `outputs` and windows of `DumpState`, and `~/caminito.log`.
 
 ### The primary output moves the panel, the desktop icons and RandR's primary
 
 - **Milestone:** M6
 - **Steps:**
-  1. With both monitors connected, and `mate-panel-camino` at `pkgrel` 3 or later and
-     `caja-camino` at `pkgrel` 2 or later, log into *MATE on Camino*. Read the primary output:
+  1. With both monitors connected, and `mate-panel-caminito` at `pkgrel` 3 or later and
+     `caja-caminito` at `pkgrel` 2 or later, log into *MATE on Caminito*. Read the primary output:
 
      ```sh
      primary() {
-       gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
-         --method org.freedesktop.DBus.Properties.Get org.mate.Camino PrimaryOutput
+       gdbus call --session --dest org.mate.Caminito --object-path /org/mate/Caminito \
+         --method org.freedesktop.DBus.Properties.Get org.mate.Caminito PrimaryOutput
      }
      choose() {
-       gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
-         --method org.freedesktop.DBus.Properties.Set org.mate.Camino PrimaryOutput "<'$1'>"
+       gdbus call --session --dest org.mate.Caminito --object-path /org/mate/Caminito \
+         --method org.freedesktop.DBus.Properties.Set org.mate.Caminito PrimaryOutput "<'$1'>"
      }
      primary; xrandr | grep ' connected'
      ```
@@ -689,14 +689,14 @@ session_env() {
   4 the panels and the icons go to the output that's left, and come back with the monitor.
   Step 5 is refused with `isn't an enabled output`, and changes nothing (81).
 - **Debug tool:** `primary_output` and each output's `layer_surfaces` in `DumpState`,
-  `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Camino` for the property's
+  `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Caminito` for the property's
   signal.
 
 ### Turning an output off leaves the others touching
 
 - **Milestone:** M6
 - **Steps:**
-  1. With three monitors connected, run `camino` on the tty, and run `wlr-randr`.
+  1. With three monitors connected, run `caminito` on the tty, and run `wlr-randr`.
   2. `wlr-randr --output A --off`, with A the middle one, and run `wlr-randr` again.
   3. `wlr-randr --output A --on`, then `wlr-randr --output B --pos 5000,300`, with B another
      one, and run `wlr-randr` again.
@@ -712,7 +712,7 @@ session_env() {
 
 - **Milestone:** M4
 - **Steps:**
-  1. With both monitors connected, run `camino` on the tty. Set the LG to 2.0, so the AOC stays
+  1. With both monitors connected, run `caminito` on the tty. Set the LG to 2.0, so the AOC stays
      at 1.0: `wlr-randr --output HDMI-A-1 --scale 2`.
   2. Start pluma on the 1.0 output, type a line of text, and run `ToggleFrameDebug`, as in *The
      debug interface answers on the nested bus*.
@@ -731,14 +731,14 @@ session_env() {
   `WAYLAND_DEBUG=1 pluma 2>&1 | grep -E 'wl_surface.*(enter|leave|set_buffer_scale)'` for the
   outputs pluma is told of and the scale it draws at.
 
-## camino-displays
+## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
 
 - **Milestone:** M6
 - **Steps:**
   1. Run `tools/dev-nested --bin`, and in another terminal, with `WAYLAND_DISPLAY` set to the
-     nested socket, `target/debug/camino-displays --demo`. The demo has three made-up monitors
+     nested socket, `target/debug/caminito-displays --demo`. The demo has three made-up monitors
      and changes nothing outside its window.
   2. Drag a display, choose each resolution of one display and then each of its refresh
      rates, change a scale, turn a display off, press Apply, and let the countdown run out
@@ -755,32 +755,32 @@ session_env() {
 - **Debug tool:** `GTK_DEBUG=interactive`, and `gsettings get org.gnome.desktop.interface
   gtk-theme`, which msd mirrors from MATE's (ADR 0005).
 
-### camino-displays shows its window at once
+### caminito-displays shows its window at once
 
 - **Milestone:** M6
 - **Steps:**
-  1. In the session, with no camino-displays running, run `tools/first-frame -n 5
-     camino-displays`. Each run shows the window and ends it.
+  1. In the session, with no caminito-displays running, run `tools/first-frame -n 5
+     caminito-displays`. Each run shows the window and ends it.
   2. Open *Displays* from the control center, see how long its window takes, leave it open,
-     and run `tools/first-frame camino-displays` again.
+     and run `tools/first-frame caminito-displays` again.
 - **Expected:** in step 1 the first frame is within about 0.3 s of the start, as ticket 86
   measured it on an RTX 3060 with GTK's Vulkan renderer (265 to 313 ms). The first run after a
   login or a driver update may take 1.4 s, while the driver compiles the renderer's shaders. In
   step 2 the window is there as soon from the control center, and the run shows no frame of
   its own and exits with status 0 in well under a second: the window that was open is the one
   there is.
-- **Debug tool:** `tools/first-frame --log /tmp/start camino-displays` keeps the stamped
+- **Debug tool:** `tools/first-frame --log /tmp/start caminito-displays` keeps the stamped
   protocol, to see between which messages the time went. `GSK_RENDERER=cairo` before the
   program takes GTK's GPU renderer out of it. A run that ends after 25 s with `Failed to
   register: Timeout was reached` is waiting for an instance that hangs: `pgrep -a
-  camino-displays`.
+  caminito-displays`.
 
-### camino-displays applies, reverts and keeps a configuration
+### caminito-displays applies, reverts and keeps a configuration
 
 - **Milestone:** M6
 - **Steps:**
-  1. On the tty with two monitors, log into *MATE on Camino*, keep a copy of
-     `~/.config/camino/layouts.json` if there is one, and run `wlr-randr`.
+  1. On the tty with two monitors, log into *MATE on Caminito*, keep a copy of
+     `~/.config/caminito/layouts.json` if there is one, and run `wlr-randr`.
   2. Open *Displays* from the control center. Press Identify.
   3. Drag the second display to the other side of the first, set its scale to another step,
      and press Apply. Let the countdown run out, and run `wlr-randr`.
@@ -792,7 +792,7 @@ session_env() {
   7. Close the window during a countdown.
   8. With the window open and a scale changed but not applied, unplug the second monitor's
      cable, and plug it back in.
-- **Expected:** in step 2 the entry opens camino-displays, not the Display capplet, and each
+- **Expected:** in step 2 the entry opens caminito-displays, not the Display capplet, and each
   monitor shows its own name for two seconds. Nothing changes until Apply. After step 3 and
   after Revert, `wlr-randr` lists the scales and places of step 1. After Keep it lists what
   the window showed, with no gap and no overlap, and `layouts.json` has them (83). In step 5
@@ -801,10 +801,10 @@ session_env() {
   `layouts.json` has the new primary output. In step 7 the old configuration is back. In step
   8 the window shows one display, then two again, and the scale that wasn't applied is gone.
 - **Debug tool:** `wlr-randr`, the `outputs` and `primary_output` of `DumpState`,
-  `~/.config/camino/layouts.json`, and `camino-displays` run from a terminal for GTK's and
+  `~/.config/caminito/layouts.json`, and `caminito-displays` run from a terminal for GTK's and
   its own warnings.
 
-### The control center's Displays is camino-displays, under Camino only
+### The control center's Displays is caminito-displays, under Caminito only
 
 - **Milestone:** M6
 - **Steps:**
@@ -813,22 +813,22 @@ session_env() {
   2. Open the control center and the panel's *System ▸ Preferences ▸ Hardware* menu, and open
      *Displays* from each.
   3. Log out, log into *MATE*, the X11 session, and open *Displays* there.
-- **Expected:** mate-session's `XDG_DATA_DIRS` starts with `/usr/share/camino/xdg:`, and
+- **Expected:** mate-session's `XDG_DATA_DIRS` starts with `/usr/share/caminito/xdg:`, and
   systemd's, if it has one, doesn't name it. Each place has one *Displays*, which opens
-  camino-displays. In X11 MATE it opens the Display capplet (84).
+  caminito-displays. In X11 MATE it opens the Display capplet (84).
 - **Debug tool:** `gtk-launch mate-display-properties`, and `ls
-  /usr/share/camino/xdg/applications`.
+  /usr/share/caminito/xdg/applications`.
 
 ## The control center
 
-### Windows and Keyboard Shortcuts open under Camino, and name it
+### Windows and Keyboard Shortcuts open under Caminito, and name it
 
 - **Milestone:** M6
 - **Steps:**
-  1. With `mate-control-center-camino` installed, and `camino-git` at a build that has the
-     `50-camino-*.xml` manifests (`ls /usr/share/mate-control-center/keybindings`), log into
-     *MATE on Camino*.
-  2. Open *Windows* from the control center, with a window that Camino decorates beside it.
+  1. With `mate-control-center-caminito` installed, and `caminito-git` at a build that has the
+     `50-caminito-*.xml` manifests (`ls /usr/share/mate-control-center/keybindings`), log into
+     *MATE on Caminito*.
+  2. Open *Windows* from the control center, with a window that Caminito decorates beside it.
      On *Behaviour*, set the titlebar's double-click action to *Toggle Shade*, double-click that
      window's titlebar, and set it back. On *Placement*, move the titlebar buttons to the
      left and back.
@@ -847,11 +847,11 @@ session_env() {
 - **Expected:** in step 2 the dialog opens, with no *The current window manager is
   unsupported*, and it offers Alt and Super for moving a window. The window shades at the
   double click, and each window's buttons move as the setting does, with the dialog still
-  open (06). In step 3 the dialog opens without a crash, and lists Camino's window management
+  open (06). In step 3 the dialog opens without a crash, and lists Caminito's window management
   actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
   Ctrl+Alt+D. In step 4 the key is a string that names Super and Up, `'<Mod4>Up'` or
   `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. Super+Up maximises nothing: **a shortcut changed in the dialog changes no
-  binding until M8**, when Camino reads `org.mate.Marco.*` keybindings in place of its
+  binding until M8**, when Caminito reads `org.mate.Marco.*` keybindings in place of its
   hard-coded set (17). In X11 MATE both dialogs are as they were, with Marco's shortcuts
   listed, since the variables aren't read on X11. In the Wayfire session *Windows* says the
   window manager is unsupported, as the stock one does, and *Keyboard Shortcuts* opens, where
@@ -864,7 +864,7 @@ session_env() {
 
 - **Milestone:** M8
 - **Steps:**
-  1. Log into *MATE on Camino*. Open a terminal, a file manager and a video player, and play a
+  1. Log into *MATE on Caminito*. Open a terminal, a file manager and a video player, and play a
      video. Minimise the file manager.
   2. Tap Alt+Tab quickly, twice.
   3. Hold Alt and press Tab. Keep Alt held for a few seconds, then press Tab, Shift+Tab and
@@ -886,6 +886,6 @@ session_env() {
   focused application's windows, and Ctrl+Alt+Tab lists nothing under Wayland's panel, a Layer
   surface, so nothing happens. In step 6 the popup is on the pointer's monitor. In step 7
   the grid shows icons with no thumbnails (108, ADR 0016).
-- **Debug tool:** `org.mate.Camino.Debug`'s state dump, whose `switcher` member has the list,
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `switcher` member has the list,
   the selection, the popup's output and its cells while the popup shows, and `gsettings
   monitor org.mate.Marco.general`.

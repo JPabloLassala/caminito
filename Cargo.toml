@@ -1,19 +1,19 @@
 [workspace]
 resolver = "3"
 members = [
-    "camino",
-    "camino-displays",
-    "camino-layout",
-    "camino-policy",
-    "camino-theme",
-    "camino-test-client",
+    "caminito",
+    "caminito-displays",
+    "caminito-layout",
+    "caminito-policy",
+    "caminito-theme",
+    "caminito-test-client",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "GPL-2.0-or-later"
-repository = "https://github.com/JPabloLassala/camino"
+repository = "https://github.com/JPabloLassala/caminito"
 
 [workspace.dependencies]
 # Pinned by rev and bumped one commit at a time. The weekly canary rewrites this
@@ -22,20 +22,20 @@ smithay = { version = "0.7.0", git = "https://github.com/Smithay/smithay.git", r
 # Smithay's connector scanner, from the same repository and rev, which the canary moves too.
 smithay-drm-extras = { git = "https://github.com/Smithay/smithay.git", rev = "928d4a9b222b2adcd739a2c60caf3e8f304a45a5", default-features = false }
 x11rb = "0.13.2"
-# The Wayland clients: camino-displays, and the tests' one.
+# The Wayland clients: caminito-displays, and the tests' one.
 wayland-client = "0.31.15"
 wayland-protocols = "0.32.13"
 wayland-protocols-wlr = "0.3.12"
 rustix = "1.1.5"
 pangocairo = "0.22.9"
-# The property tests of camino-policy, camino-layout and camino-displays.
+# The property tests of caminito-policy, caminito-layout and caminito-displays.
 proptest = "1.11.0"
 
 # CI runs clippy with -D warnings, so "warn" here fails the build there.
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "warn"
 
-# Camino's tests are bound by the CPU, each one a Camino of its own, so the development
+# Caminito's tests are bound by the CPU, each one a Caminito of its own, so the development
 # build is optimized: the suite runs in a third of the time, and a build after an edit
 # takes as long as before.
 [profile.dev]
@@ -44,7 +44,7 @@ opt-level = 1
 # its link most of a build.
 debug = "line-tables-only"
 
-# The tests spend their time in Camino's crates, not in the dependencies: optimized, those
+# The tests spend their time in Caminito's crates, not in the dependencies: optimized, those
 # doubled a build from nothing and the suite ran no faster. Nobody steps through them
 # either, and without debug info they compile and link sooner.
 [profile.dev.package."*"]

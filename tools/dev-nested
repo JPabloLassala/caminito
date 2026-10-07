@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Runs Camino nested inside the current desktop, on a private session bus and with a
+# Runs Caminito nested inside the current desktop, on a private session bus and with a
 # scratch XDG_CONFIG_HOME, so neither the host's bus nor its dconf database is touched
-# (14). Extra arguments are passed to camino.
+# (14). Extra arguments are passed to caminito.
 #
-#   tools/dev-nested [--bin] [--scale <scale>] [camino arguments...]
+#   tools/dev-nested [--bin] [--scale <scale>] [caminito arguments...]
 #
-# It runs the installed camino, or with --bin the debug build in this checkout's target/,
+# It runs the installed caminito, or with --bin the debug build in this checkout's target/,
 # building it first, with the palette helper built by Meson in target/meson. --scale sets
 # the nested output's scale, 1 by default. Once Xwayland is ready it prints the nested
 # DISPLAY beside WAYLAND_DISPLAY, the two variables a client needs.
 #
-# With --session, Camino logs to the journal, since its stderr here is a pipe and not a
-# terminal (14), so that line isn't printed: read `journalctl -t camino`.
+# With --session, Caminito logs to the journal, since its stderr here is a pipe and not a
+# terminal (14), so that line isn't printed: read `journalctl -t caminito`.
 set -euo pipefail
 
-camino=camino
+caminito=caminito
 checkout=
 while true; do
   case ${1-} in
   --bin) checkout=1; shift ;;
   --scale)
     [[ $# -ge 2 ]] || { echo "dev-nested: --scale needs a value" >&2; exit 1; }
-    export CAMINO_WINIT_SCALE=$2; shift 2
+    export CAMINITO_WINIT_SCALE=$2; shift 2
     ;;
   *) break ;;
   esac
@@ -29,25 +29,25 @@ done
 
 if [[ -n $checkout ]]; then
   root=$(dirname "$(realpath "$0")")/..
-  cargo build --manifest-path "$root/Cargo.toml" -p camino
-  camino=${CARGO_TARGET_DIR:-$root/target}/debug/camino
+  cargo build --manifest-path "$root/Cargo.toml" -p caminito
+  caminito=${CARGO_TARGET_DIR:-$root/target}/debug/caminito
   meson=${CARGO_TARGET_DIR:-$root/target}/meson
   [[ -d $meson ]] || meson setup "$meson" "$root"
   meson compile -C "$meson"
-  export CAMINO_GTK_PALETTE=$meson/helpers/camino-gtk-palette/camino-gtk-palette
+  export CAMINITO_GTK_PALETTE=$meson/helpers/caminito-gtk-palette/caminito-gtk-palette
 fi
 
-if ! command -v "$camino" >/dev/null; then
-  echo "dev-nested: $camino not found; install camino-git or pass --bin" >&2
+if ! command -v "$caminito" >/dev/null; then
+  echo "dev-nested: $caminito not found; install caminito-git or pass --bin" >&2
   exit 1
 fi
 
-config=$(mktemp -d -t camino-config.XXXXXX)
+config=$(mktemp -d -t caminito-config.XXXXXX)
 trap 'rm -rf "$config"' EXIT
 echo "dev-nested: XDG_CONFIG_HOME=$config" >&2
 
-# Camino's stderr passes through unchanged. Ctrl+C reaches the whole pipeline, so the
-# filter ignores it and reads on until Camino exits, keeping its last lines.
+# Caminito's stderr passes through unchanged. Ctrl+C reaches the whole pipeline, so the
+# filter ignores it and reads on until Caminito exits, keeping its last lines.
 relay_stderr() {
   trap '' INT
   local line wayland=
@@ -62,4 +62,4 @@ relay_stderr() {
   done
 }
 
-{ XDG_CONFIG_HOME=$config dbus-run-session -- "$camino" "$@" 2>&1 >&3 3>&- | relay_stderr; } 3>&1
+{ XDG_CONFIG_HOME=$config dbus-run-session -- "$caminito" "$@" 2>&1 >&3 3>&- | relay_stderr; } 3>&1

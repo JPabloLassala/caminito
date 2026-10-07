@@ -1,10 +1,10 @@
 /*
- * marco-frame-dump: the reference side of Camino's theme goldens (14, ADR 0009).
+ * marco-frame-dump: the reference side of Caminito's theme goldens (14, ADR 0009).
  *
  * Marco's own C renders every case in tests/goldens/cases.json through the installed
  * libmarco-private: meta_theme_load, meta_theme_calc_geometry and meta_theme_draw_frame,
  * set up the way Marco's frames.c sets them up. It is run by tools/regenerate-goldens,
- * never by CI, and is not part of Camino's build.
+ * never by CI, and is not part of Caminito's build.
  *
  *   marco-frame-dump frames CASES OUT
  *     Writes OUT/<theme>/<case>@<scale>x.png and .json for every theme and case, at the
@@ -298,7 +298,7 @@ parse_button_layout (const char       *string,
 
 /* Pins GTK's settings to the case list's, then checks that the pango context a frame
  * widget gets has them: a machine whose GTK resolves them differently would otherwise
- * render goldens that nothing on Camino's side reproduces. */
+ * render goldens that nothing on Caminito's side reproduces. */
 static GtkWidget *
 frame_widget_new (JsonObject *cases)
 {
@@ -757,7 +757,7 @@ dump_frames (JsonObject *cases,
 
 /* palette */
 
-/* The states in camino-theme's GtkState::ALL order. */
+/* The states in caminito-theme's GtkState::ALL order. */
 static const char *const states[] = {
   "normal", "prelight", "active", "selected",
   "insensitive", "inconsistent", "focused", "backdrop",

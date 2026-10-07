@@ -1,0 +1,185 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 22:44:54 -0300
+Subject: [PATCH] keybindings: Do not crash on a display that isn't X11
+
+The capplet crashed at start-up on Wayland, in one of two places. With no
+window manager's keybindings to compare against, wm-common's NULL list was
+walked for the first manifest that names a window manager. And each
+binding was parsed and shown through the X server's keymap and modifier
+map, read from a display that isn't X11's.
+
+A manifest that names a window manager is skipped when none is known. Off
+X11 a keyval's keycode comes from GDK's keymap, the virtual modifiers are
+the ones xkeyboard-config's keymaps have (Alt and Meta on Mod1, Num Lock
+on Mod2, Super and Hyper on Mod4, Mode_switch on Mod5), and whether a
+pressed key is a modifier is what GDK's event says.
+
+On X11 every path is the one it was. In a Wayland session whose
+compositor names no window manager the capplet opens and lists the
+shortcuts that aren't a window manager's; under Caminito, which names
+itself, it lists Caminito's too.
+---
+ capplets/keybindings/eggaccelerators.c        | 66 +++++++++++++++----
+ capplets/keybindings/eggcellrendererkeys.c    | 11 +++-
+ .../keybindings/mate-keybinding-properties.c  |  4 ++
+ 3 files changed, 67 insertions(+), 14 deletions(-)
+
+diff --git a/capplets/keybindings/eggaccelerators.c b/capplets/keybindings/eggaccelerators.c
+index 32cbc7b3..5816cac5 100644
+--- a/capplets/keybindings/eggaccelerators.c
++++ b/capplets/keybindings/eggaccelerators.c
+@@ -182,6 +182,27 @@ static inline gboolean is_keycode(const gchar *string)
+ 		(string[1] == 'x'));
+ }
+ 
++/* XKeysymToKeycode, and off X11 the first key GDK's keymap has for the
++ * keyval. 0 when the keyboard has no such key. */
++static guint
++keyval_to_keycode (guint keyval)
++{
++  GdkDisplay *display = gdk_display_get_default ();
++  GdkKeymapKey *keys = NULL;
++  gint n_keys = 0;
++  guint keycode = 0;
++
++  if (GDK_IS_X11_DISPLAY (display))
++    return XKeysymToKeycode (GDK_DISPLAY_XDISPLAY (display), keyval);
++
++  if (gdk_keymap_get_entries_for_keyval (gdk_keymap_get_for_display (display),
++                                         keyval, &keys, &n_keys) && n_keys > 0)
++    keycode = keys[0].keycode;
++  g_free (keys);
++
++  return keycode;
++}
++
+ /**
+  * egg_accelerator_parse_virtual:
+  * @accelerator:      string representing an accelerator
+@@ -360,7 +381,7 @@ egg_accelerator_parse_virtual (const gchar            *accelerator,
+ 	    }
+ 	  else if (keycode != NULL)
+ 	    {
+-	      *keycode = XKeysymToKeycode (GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), keyval);
++	      *keycode = keyval_to_keycode (keyval);
+ 	      if (*keycode == 0)
+ 	 	bad_keyval = TRUE;
+ 	    }
+@@ -521,6 +542,20 @@ egg_keymap_virtualize_modifiers (GdkKeymap              *keymap,
+   *virtual_mods = virtual;
+ }
+ 
++/* Add in the not-really-virtual fixed entries */
++static void
++add_fixed_entries (EggModmap *modmap)
++{
++  modmap->mapping[EGG_MODMAP_ENTRY_SHIFT] |= EGG_VIRTUAL_SHIFT_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_CONTROL] |= EGG_VIRTUAL_CONTROL_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_LOCK] |= EGG_VIRTUAL_LOCK_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_MOD1] |= EGG_VIRTUAL_ALT_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_MOD2] |= EGG_VIRTUAL_MOD2_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_MOD3] |= EGG_VIRTUAL_MOD3_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_MOD4] |= EGG_VIRTUAL_MOD4_MASK;
++  modmap->mapping[EGG_MODMAP_ENTRY_MOD5] |= EGG_VIRTUAL_MOD5_MASK;
++}
++
+ static void
+ reload_modmap (GdkKeymap *keymap,
+                EggModmap *modmap)
+@@ -529,11 +564,26 @@ reload_modmap (GdkKeymap *keymap,
+   int map_size;
+   int i;
+ 
++  memset (modmap->mapping, 0, sizeof (modmap->mapping));
++
++  if (!GDK_IS_X11_DISPLAY (gdk_display_get_default ()))
++    {
++      /* There is no modifier map to read off X11. These are the
++       * modifiers of xkeyboard-config's keymaps, which are what a
++       * Wayland compositor loads, and what the loop below finds in an
++       * X server that has them.
++       */
++      modmap->mapping[EGG_MODMAP_ENTRY_MOD1] |= EGG_VIRTUAL_META_MASK;
++      modmap->mapping[EGG_MODMAP_ENTRY_MOD2] |= EGG_VIRTUAL_NUM_LOCK_MASK;
++      modmap->mapping[EGG_MODMAP_ENTRY_MOD4] |= EGG_VIRTUAL_SUPER_MASK | EGG_VIRTUAL_HYPER_MASK;
++      modmap->mapping[EGG_MODMAP_ENTRY_MOD5] |= EGG_VIRTUAL_MODE_SWITCH_MASK;
++      add_fixed_entries (modmap);
++      return;
++    }
++
+   /* FIXME multihead */
+   xmodmap = XGetModifierMapping (gdk_x11_get_default_xdisplay ());
+ 
+-  memset (modmap->mapping, 0, sizeof (modmap->mapping));
+-
+   /* there are 8 modifiers in the order shift, shift lock,
+    * control, mod1-5 with up to max_keypermod bindings each
+    */
+@@ -588,15 +638,7 @@ reload_modmap (GdkKeymap *keymap,
+       g_free (keys);
+     }
+ 
+-  /* Add in the not-really-virtual fixed entries */
+-  modmap->mapping[EGG_MODMAP_ENTRY_SHIFT] |= EGG_VIRTUAL_SHIFT_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_CONTROL] |= EGG_VIRTUAL_CONTROL_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_LOCK] |= EGG_VIRTUAL_LOCK_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_MOD1] |= EGG_VIRTUAL_ALT_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_MOD2] |= EGG_VIRTUAL_MOD2_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_MOD3] |= EGG_VIRTUAL_MOD3_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_MOD4] |= EGG_VIRTUAL_MOD4_MASK;
+-  modmap->mapping[EGG_MODMAP_ENTRY_MOD5] |= EGG_VIRTUAL_MOD5_MASK;
++  add_fixed_entries (modmap);
+ 
+   XFreeModifiermap (xmodmap);
+ }
+diff --git a/capplets/keybindings/eggcellrendererkeys.c b/capplets/keybindings/eggcellrendererkeys.c
+index 5183fb7c..61b369cd 100644
+--- a/capplets/keybindings/eggcellrendererkeys.c
++++ b/capplets/keybindings/eggcellrendererkeys.c
+@@ -324,13 +324,20 @@ egg_cell_renderer_keys_set_property  (GObject                  *object,
+     }
+ }
+ 
+-static gboolean is_modifier(guint keycode)
++static gboolean is_modifier(GdkEventKey* event)
+ {
++	guint keycode = event->hardware_keycode;
+ 	gint i;
+ 	gint map_size;
+ 	XModifierKeymap* mod_keymap;
+ 	gboolean retval = FALSE;
+ 
++	/* Off X11 there is no modifier map to read, and GDK knows */
++	if (!GDK_IS_X11_DISPLAY(gdk_display_get_default()))
++	{
++		return event->is_modifier;
++	}
++
+ 	mod_keymap = XGetModifierMapping(gdk_x11_display_get_xdisplay(gdk_display_get_default()));
+ 
+ 	map_size = 8 * mod_keymap->max_keypermod;
+@@ -396,7 +403,7 @@ static gboolean grab_key_callback(GtkWidget* widget, GdkEventKey* event, void* d
+ 
+ 	keys = EGG_CELL_RENDERER_KEYS(data);
+ 
+-	if (is_modifier(event->hardware_keycode))
++	if (is_modifier(event))
+ 	{
+ 		return TRUE;
+ 	}
+diff --git a/capplets/keybindings/mate-keybinding-properties.c b/capplets/keybindings/mate-keybinding-properties.c
+index c3027f7a..8bcbe914 100644
+--- a/capplets/keybindings/mate-keybinding-properties.c
++++ b/capplets/keybindings/mate-keybinding-properties.c
+@@ -877,6 +877,10 @@ strv_contains (char **strv,
+ {
+   char **p;
+ 
++  /* No window manager is known off X11, unless the compositor names one */
++  if (strv == NULL)
++    return FALSE;
++
+   for (p = strv; *p; p++)
+     if (strcmp (*p, str) == 0)
+       return TRUE;

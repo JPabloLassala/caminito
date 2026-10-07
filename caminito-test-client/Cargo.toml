@@ -1,0 +1,21 @@
+[package]
+name = "caminito-test-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+rustix = { workspace = true, features = ["fs", "pipe"] }
+wayland-client.workspace = true
+wayland-protocols = { workspace = true, features = ["client", "staging", "unstable"] }
+wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
+wayland-protocols-wlr = { workspace = true, features = ["client"] }
+# gtk_shell1 and Xfce's foreign toplevel protocol, from the XML Caminito vendors (67, 75).
+wayland-scanner = "0.31.11"
+x11rb = { workspace = true, features = ["randr", "shape", "sync"] }
+zbus = "5.19.0"
+
+[lints]
+workspace = true

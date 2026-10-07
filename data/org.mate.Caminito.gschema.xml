@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Caminito's own settings (09). A key belongs here only if it's Wayland-only and no MATE
+  schema already says it. Everything else Caminito reads from MATE's schemas.
+-->
+<schemalist>
+  <enum id="org.mate.Caminito.WorkspaceLayoutOrientation">
+    <value nick="horizontal" value="0"/>
+    <value nick="vertical" value="1"/>
+  </enum>
+
+  <schema id="org.mate.Caminito" path="/org/mate/caminito/">
+    <!--
+      The workspace grid, as _NET_DESKTOP_LAYOUT has it on X11, where the pager sets it and
+      Marco reads it. Under Caminito the workspace switcher's preferences write these keys.
+    -->
+    <key name="workspace-layout-orientation" enum="org.mate.Caminito.WorkspaceLayoutOrientation">
+      <default>'horizontal'</default>
+      <summary>The order workspaces fill the grid in</summary>
+      <description>With "horizontal" the workspaces fill each row from the left, starting with the top row. With "vertical" they fill each column from the top, starting with the left column.</description>
+    </key>
+    <key name="workspace-layout-rows" type="i">
+      <default>1</default>
+      <range min="0" max="36"/>
+      <summary>Rows of workspaces</summary>
+      <description>The number of rows in the workspace grid. 0 derives it from the number of columns and the number of workspaces. If the rows and the columns are both 0, the workspaces are in one row.</description>
+    </key>
+    <key name="workspace-layout-columns" type="i">
+      <default>0</default>
+      <range min="0" max="36"/>
+      <summary>Columns of workspaces</summary>
+      <description>The number of columns in the workspace grid. 0 derives it from the number of rows and the number of workspaces. If the rows and the columns are both set and the grid is too small for the workspaces, a horizontal grid gets more columns and a vertical one more rows.</description>
+    </key>
+  </schema>
+</schemalist>

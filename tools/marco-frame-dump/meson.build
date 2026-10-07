@@ -1,4 +1,4 @@
-# The reference side of the theme goldens (14, ADR 0009). Its own project: Camino's
+# The reference side of the theme goldens (14, ADR 0009). Its own project: Caminito's
 # top-level meson.build doesn't include it and nothing packages it. tools/regenerate-goldens
 # builds and runs it.
 project(

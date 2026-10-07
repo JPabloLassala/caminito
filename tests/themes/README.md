@@ -1,6 +1,6 @@
 # Golden themes
 
-The ten themes Camino's theme engine is tested against (14, ADR 0009), vendored so that CI
+The ten themes Caminito's theme engine is tested against (14, ADR 0009), vendored so that CI
 needs neither Marco nor mate-themes. Only each theme's `metacity-1/` directory is kept.
 
 | Theme | Source | Licence |
@@ -19,4 +19,4 @@ Each is laid out as its build installs it:
   `metacity-theme-1.xml`, and symlinks `metacity-theme-2.xml` and `metacity-theme-3.xml` to it,
   so Marco loads it as format 3.
 
-These are test data only; nothing here is built into Camino.
+These are test data only; nothing here is built into Caminito.

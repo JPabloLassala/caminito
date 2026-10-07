@@ -1,8 +1,8 @@
 # Test schemas
 
-The GSettings schemas Camino's tests read (14), vendored so that CI needs no MATE
+The GSettings schemas Caminito's tests read (14), vendored so that CI needs no MATE
 packages. Tests compile them into a private directory with `glib-compile-schemas`. The
-palette helper's tests point `GSETTINGS_SCHEMA_DIR` at it; camino's headless tests read it
+palette helper's tests point `GSETTINGS_SCHEMA_DIR` at it; caminito's headless tests read it
 as their only schema source, each on a memory backend of its own (the settings thread's
 `Source::Test`).
 
@@ -15,10 +15,10 @@ as their only schema source, each on a memory backend of its own (the settings t
 | `org.mate.peripherals-touchpad`, `org.mate.peripherals-keyboard` | mate-settings-daemon 1.28.0 (`e35462eeefb6d5eabebf76317640ee4fa62ecbb0`), as installed by Arch's `mate-settings-daemon 1.28.0-2` |
 | `org.mate.peripherals-keyboard-xkb` | libmatekbd 1.28.0, as installed by Arch's `libmatekbd 1.28.0-2` |
 | `org.mate.sound` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-2` |
-| `org.mate.Camino` | Camino's own, a link to [data/org.mate.Camino.gschema.xml](../../data/org.mate.Camino.gschema.xml), which Meson installs |
+| `org.mate.Caminito` | Caminito's own, a link to [data/org.mate.Caminito.gschema.xml](../../data/org.mate.Caminito.gschema.xml), which Meson installs |
 
 mate-settings-daemon 1.28.0's mouse schema has no `natural-scroll`, which msd's master reads, so
-Camino reads that key only where a schema has it.
+Caminito reads that key only where a schema has it.
 
 An upstream schema change is a deliberate re-vendor. These are test data only; nothing
-here is installed, and Camino's own schema is installed from `data/`.
+here is installed, and Caminito's own schema is installed from `data/`.

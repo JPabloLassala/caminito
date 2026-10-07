@@ -16,20 +16,20 @@ None of these exist on Wayland. On Wayland, MATE components speak only wlroots/e
 
 ## Decision
 
-For each conversation, Camino uses the first channel that works:
+For each conversation, Caminito uses the first channel that works:
 
 1. **A standard Wayland protocol** that the MATE component already speaks, or can be made to speak through its existing library. Examples are wlr-foreign-toplevel `set_rectangle` and ext-workspace `coordinates`.
-2. **An environment variable** for static facts, such as `MATE_WM_NAME=Camino`.
-3. **D-Bus on the session bus.** Camino owns `org.mate.Camino`; for example it exposes `ShowingDesktop`, `GetActiveToplevel` and `GrabAccelerators`. A patched component may also export its own object, as `org.mate.Panel` does for `MainMenu` and `RunDialog`.
+2. **An environment variable** for static facts, such as `MATE_WM_NAME=Caminito`.
+3. **D-Bus on the session bus.** Caminito owns `org.mate.Caminito`; for example it exposes `ShowingDesktop`, `GetActiveToplevel` and `GrabAccelerators`. A patched component may also export its own object, as `org.mate.Panel` does for `MainMenu` and `RunDialog`.
 
-A Camino-private Wayland protocol is used only when a channel must refer to a particular Wayland surface. None does in v0.1. The MATE side of any non-standard channel is a carried patch, and each patched component falls back to its current behaviour when Camino is absent.
+A Caminito-private Wayland protocol is used only when a channel must refer to a particular Wayland surface. None does in v0.1. The MATE side of any non-standard channel is a carried patch, and each patched component falls back to its current behaviour when Caminito is absent.
 
 ## Consequences
 
 - The patches stay small and GLib-idiomatic: GDBus or `g_getenv`, with no wayland-scanner or protocol XML to rebase.
-- D-Bus isn't tied to the Wayland connection, so any session process can call Camino's methods. That's acceptable for a single-user session, and it's why nothing that exposes other clients' surfaces goes over D-Bus.
-- Where a D-Bus call leads to a Wayland action the client has no input serial for, Camino has to bridge it itself. The Alt+F1 menu needs a one-shot popup-grab allowance.
+- D-Bus isn't tied to the Wayland connection, so any session process can call Caminito's methods. That's acceptable for a single-user session, and it's why nothing that exposes other clients' surfaces goes over D-Bus.
+- Where a D-Bus call leads to a Wayland action the client has no input serial for, Caminito has to bridge it itself. The Alt+F1 menu needs a one-shot popup-grab allowance.
 - Rejected:
   - private Wayland protocols throughout (bigger patches in every component);
   - patching libxfce4windowing (a shared Xfce library);
-  - reimplementing MATE logic such as media keys inside Camino (duplicates msd).
+  - reimplementing MATE logic such as media keys inside Caminito (duplicates msd).

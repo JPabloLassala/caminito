@@ -41,7 +41,7 @@ marco_commit=$(git ls-remote --tags https://github.com/mate-desktop/marco.git \
   "v$marco_version" "v$marco_version^{}" | sort -k2 | tail -n1 | cut -f1)
 [[ -n $marco_commit ]] || die "no v$marco_version tag in mate-desktop/marco"
 
-scratch=$(mktemp -d -t camino-goldens.XXXXXX)
+scratch=$(mktemp -d -t caminito-goldens.XXXXXX)
 trap 'rm -rf "$scratch"' EXIT
 
 meson setup "$scratch/build" "$root/tools/marco-frame-dump" >/dev/null

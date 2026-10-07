@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 18:20:00 -0300
+Subject: [PATCH] wlrandr: Do not start under Caminito
+
+The plugin keeps the display layout in monitors-wayland.xml and applies it
+over wlr-output-management when the session starts. Caminito, the Wayland
+compositor for MATE, keeps the layouts itself, one for each set of
+connected monitors, and restores them before its first frame. With both,
+the plugin would apply its own layout over the one Caminito restored.
+
+When MATE_WM_NAME is Caminito, do not start the manager. Without that
+variable, nothing changes.
+---
+ plugins/wlrandr/msd-wlrandr-plugin.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/plugins/wlrandr/msd-wlrandr-plugin.c b/plugins/wlrandr/msd-wlrandr-plugin.c
+index 522e122..01d763f 100644
+--- a/plugins/wlrandr/msd-wlrandr-plugin.c
++++ b/plugins/wlrandr/msd-wlrandr-plugin.c
+@@ -70,6 +70,14 @@ impl_activate (MateSettingsPlugin *plugin)
+         gboolean res;
+         GError  *error;
+ 
++        /* Caminito, the Wayland compositor for MATE, saves and restores the
++         * display layouts itself, and this plugin's layout would be applied
++         * over the one it restored. */
++        if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") == 0) {
++                g_debug ("Not activating wlrandr plugin under Caminito");
++                return;
++        }
++
+         g_debug ("Activating wlrandr plugin");
+ 
+         error = NULL;

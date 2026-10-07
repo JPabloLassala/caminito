@@ -5,14 +5,14 @@ Status: Accepted
 
 ## Context
 
-Camino draws server-side frames from Marco/Metacity themes. Every existing renderer descends from Metacity's C engine (about 12k lines in Marco's `theme.c` and `theme-parser.c`). The one Wayland port, metacity-decor, vendors that C and replaces every GTK colour with one configured colour, so themes that rely on fg/bg contrast render wrongly.
+Caminito draws server-side frames from Marco/Metacity themes. Every existing renderer descends from Metacity's C engine (about 12k lines in Marco's `theme.c` and `theme-parser.c`). The one Wayland port, metacity-decor, vendors that C and replaces every GTK colour with one configured colour, so themes that rely on fg/bg contrast render wrongly.
 
 Themes take their colours from the GTK3 theme: `window.background` per state, plus `@define-color` names. GTK can't create a style context without a display connection. The theme CSS also isn't simple to read: Menta's colours are mostly `shade()`/`mix()` expressions with GTK-specific HSL semantics, and Adwaita, Arc and Yaru ship their CSS inside gresources.
 
 ## Decision
 
-- Camino ports the engine to Rust as its own crate, drawing through cairo and pango so the output matches Marco pixel for pixel. It's tested with golden images rendered by Marco's C.
-- The GTK palette comes from `camino-gtk-palette`, a small C GTK3 program that Camino starts as a Wayland client of itself. It reports the default and dark palettes and re-reports when the GTK theme changes. Camino caches the last palette on disk.
+- Caminito ports the engine to Rust as its own crate, drawing through cairo and pango so the output matches Marco pixel for pixel. It's tested with golden images rendered by Marco's C.
+- The GTK palette comes from `caminito-gtk-palette`, a small C GTK3 program that Caminito starts as a Wayland client of itself. It reports the default and dark palettes and re-reports when the GTK theme changes. Caminito caches the last palette on disk.
 
 ## Consequences
 

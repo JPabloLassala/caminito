@@ -1,5 +1,5 @@
 name: Arch setup
-description: Install Camino's build dependencies and Rust toolchain in the archlinux container.
+description: Install Caminito's build dependencies and Rust toolchain in the archlinux container.
 
 runs:
   using: composite
@@ -9,10 +9,10 @@ runs:
       shell: bash
       # pixman: the headless backend links it in test builds. The winit build
       # dlopens EGL, Wayland and X11 at run time, so it links nothing new. wayland:
-      # that dlopen mode reaches camino-test-client too, so the fixture's clients
-      # load libwayland-client. dbus: dbus-run-session gives camino's tests a private
-      # bus (14). pango: camino-theme lays out titles with it, and pkgconf finds it and
-      # cairo for their -sys crates. gdk-pixbuf2: camino-theme loads theme images with it,
+      # that dlopen mode reaches caminito-test-client too, so the fixture's clients
+      # load libwayland-client. dbus: dbus-run-session gives caminito's tests a private
+      # bus (14). pango: caminito-theme lays out titles with it, and pkgconf finds it and
+      # cairo for their -sys crates. gdk-pixbuf2: caminito-theme loads theme images with it,
       # through glycin's loaders and librsvg, which it brings; glycin runs them without its
       # bubblewrap sandbox where the container can't make namespaces. meson, gtk3: the
       # palette helper's build. xorg-server-xvfb, xorg-xauth: xvfb-run, which the palette
@@ -20,8 +20,8 @@ runs:
       # the headless fixture (14); it runs rootless on the fixture's socket pair, so it needs
       # no GPU or EGL either. seatd, systemd-libs, mesa, libdisplay-info, libinput:
       # the tty backend links libseat, libudev, libgbm, libdisplay-info (55) and
-      # libinput (56), though nothing in CI drives it. gtk4: camino-displays links it (84),
-      # and camino's tests build camino-displays for its page and its client.
+      # libinput (56), though nothing in CI drives it. gtk4: caminito-displays links it (84),
+      # and caminito's tests build caminito-displays for its page and its client.
       run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd systemd-libs mesa libdisplay-info libinput
 
     - name: Install Rust toolchain

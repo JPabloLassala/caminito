@@ -1,0 +1,500 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 12:00:00 -0300
+Subject: [PATCH] screenshot: Capture the active window on Wayland with Caminito
+
+On Wayland mate-screenshot refuses --window and hides "Grab the current
+window": no protocol tells a client which window is active, so it has no
+window to capture.
+
+Caminito, the Wayland compositor, tells it. GetActiveToplevel of
+org.mate.Caminito on the session bus returns the ext-foreign-toplevel-list
+identifier of the window that last had the focus and isn't one of the
+caller's, so the screenshot dialog itself is never it. While that name has
+an owner, find the toplevel with that identifier in the compositor's list
+and capture it through the ext-image-capture-source toplevel source, which
+Caminito renders alone with its frame, whatever covers it. With no such
+window the shot is of the whole desktop, as on X11.
+
+The window can be closed after Caminito has named it. The compositor then
+stops the capture session, and the window's capture fails where an
+output's only warns.
+
+Without an owner of org.mate.Caminito, which is any other Wayland compositor,
+nothing changes: --window is refused as before, and the toplevel globals
+aren't bound.
+---
+ mate-screenshot/src/mate-screenshot.c    |  29 ++-
+ mate-screenshot/src/wayland-screenshot.c | 285 +++++++++++++++++++++++
+ mate-screenshot/src/wayland-screenshot.h |  19 ++
+ 3 files changed, 328 insertions(+), 5 deletions(-)
+
+diff --git a/mate-screenshot/src/mate-screenshot.c b/mate-screenshot/src/mate-screenshot.c
+index c9d1ac4d..7ab3aa4c 100644
+--- a/mate-screenshot/src/mate-screenshot.c
++++ b/mate-screenshot/src/mate-screenshot.c
+@@ -480,8 +480,8 @@ create_screenshot_frame (GtkWidget   *outer_vbox,
+   window_radio = radio;
+ 
+ #if defined(ENABLE_WAYLAND) && defined(GDK_WINDOWING_WAYLAND)
+-  /** Capturing individual windows currently not available in Wayland **/
+-  if (wayland_screenshot_is_available ())
++  /** Capturing individual windows is only available in Wayland with Caminito **/
++  if (wayland_screenshot_is_available () && !wayland_screenshot_can_capture_window ())
+     gtk_widget_hide (window_radio);
+ #endif
+ 
+@@ -853,9 +853,23 @@ finish_prepare_screenshot (char *initial_uri, GdkWindow *window, GdkRectangle *r
+ {
+   ScreenshotDialog *dialog;
+   gboolean include_mask = (!take_window_shot && !take_area_shot);
++  GdkPixbuf *window_shot = NULL;
++
++#if defined(ENABLE_WAYLAND) && defined(GDK_WINDOWING_WAYLAND)
++  /* Caminito names the active window and captures it with its frame. With no
++   * window to capture, the shot is of the whole desktop, as on X11. */
++  if (take_window_shot && wayland_screenshot_can_capture_window ())
++    {
++      window_shot = wayland_screenshot_capture_window (include_pointer);
++      if (window_shot == NULL)
++        take_window_shot = FALSE;
++    }
++#endif
+ 
+   /* always disable window border for full-desktop or selected-area screenshots */
+-  if (!take_window_shot)
++  if (window_shot != NULL)
++    screenshot = window_shot;
++  else if (!take_window_shot)
+     screenshot = screenshot_get_pixbuf (window, rectangle, include_pointer, FALSE, include_mask);
+   else
+     {
+@@ -1067,7 +1081,12 @@ find_current_window (void)
+   if (!screenshot_grab_lock ())
+     exit (0);
+ 
+-  if (take_window_shot)
++  if (take_window_shot && wayland_screenshot_can_capture_window ())
++    {
++      /* Caminito names the window when it's captured */
++      window = gdk_get_default_root_window ();
++    }
++  else if (take_window_shot)
+     {
+       window = screenshot_find_current_window ();
+       if (!window)
+@@ -1430,7 +1449,7 @@ main (int argc, char *argv[])
+ #if defined(ENABLE_WAYLAND) && defined(GDK_WINDOWING_WAYLAND)
+   if (wayland_screenshot_is_available ())
+     {
+-      if (window_arg)
++      if (window_arg && !wayland_screenshot_can_capture_window ())
+         {
+           g_printerr (_("Error: window capture is not supported on Wayland.\n"));
+           exit (1);
+diff --git a/mate-screenshot/src/wayland-screenshot.c b/mate-screenshot/src/wayland-screenshot.c
+index 6d7a5df2..531cd601 100644
+--- a/mate-screenshot/src/wayland-screenshot.c
++++ b/mate-screenshot/src/wayland-screenshot.c
+@@ -29,6 +29,7 @@
+ #include "wayland-screenshot.h"
+ #include "screenshot-utils.h"
+ #include <glib/gi18n.h>
++#include <gio/gio.h>
+ #include <sys/mman.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+@@ -36,8 +37,13 @@
+ 
+ #include "ext-image-capture-source-client.h"
+ #include "ext-image-copy-capture-client.h"
++#include "ext-foreign-toplevel-list-client.h"
+ #include "wlr-screencopy-client.h"
+ 
++#define CAMINITO_NAME      "org.mate.Caminito"
++#define CAMINITO_PATH      "/org/mate/Caminito"
++#define CAMINITO_INTERFACE "org.mate.Caminito"
++
+ #include <wayland-client.h>
+ 
+ typedef struct {
+@@ -47,8 +53,19 @@ typedef struct {
+   struct zwlr_screencopy_manager_v1 *screencopy_manager;
+   struct ext_output_image_capture_source_manager_v1 *output_image_capture_source_manager;
+   struct ext_image_copy_capture_manager_v1 *image_copy_capture_manager;
++  struct ext_foreign_toplevel_list_v1 *toplevel_list;
++  struct ext_foreign_toplevel_image_capture_source_manager_v1 *toplevel_image_capture_source_manager;
++  /* Whether this is a window capture, which alone binds the two above */
++  gboolean wants_toplevels;
++  /* The toplevels the compositor lists, as ToplevelData */
++  GList *toplevels;
+ } ClientData;
+ 
++typedef struct {
++  struct ext_foreign_toplevel_handle_v1 *handle;
++  char *identifier;
++} ToplevelData;
++
+ typedef struct {
+   ClientData *client_data;
+   GdkMonitor *monitor;
+@@ -65,6 +82,8 @@ typedef struct {
+   gboolean capture_done;
+   gboolean capture_failed;
+   gboolean y_inverted;
++  /* Whether a stopped session fails the capture: a window's, which was closed */
++  gboolean fails_when_stopped;
+   struct ext_image_copy_capture_session_v1 *image_copy_capture_session;
+   struct ext_image_copy_capture_frame_v1 *image_copy_capture_frame;
+ } OutputData;
+@@ -178,6 +197,8 @@ convert_buffer_to_pixbuf (OutputData *output)
+ 
+ /* --- Registry --- */
+ 
++static const struct ext_foreign_toplevel_list_v1_listener toplevel_list_listener;
++
+ static void
+ handle_global (void *data, struct wl_registry *registry, uint32_t name,
+                const char *interface, uint32_t version)
+@@ -195,6 +216,19 @@ handle_global (void *data, struct wl_registry *registry, uint32_t name,
+   else if (g_strcmp0 (interface, ext_image_copy_capture_manager_v1_interface.name) == 0)
+     cd->image_copy_capture_manager = wl_registry_bind (registry, name,
+       &ext_image_copy_capture_manager_v1_interface, 1);
++  else if (cd->wants_toplevels &&
++           g_strcmp0 (interface, ext_foreign_toplevel_list_v1_interface.name) == 0)
++    {
++      cd->toplevel_list = wl_registry_bind (registry, name,
++        &ext_foreign_toplevel_list_v1_interface, 1);
++      /* Before anything else is read: the toplevels follow the bind */
++      ext_foreign_toplevel_list_v1_add_listener (cd->toplevel_list,
++                                                 &toplevel_list_listener, cd);
++    }
++  else if (cd->wants_toplevels &&
++           g_strcmp0 (interface, ext_foreign_toplevel_image_capture_source_manager_v1_interface.name) == 0)
++    cd->toplevel_image_capture_source_manager = wl_registry_bind (registry, name,
++      &ext_foreign_toplevel_image_capture_source_manager_v1_interface, 1);
+ }
+ 
+ static void
+@@ -207,6 +241,68 @@ static const struct wl_registry_listener registry_listener = {
+   .global_remove = handle_global_remove,
+ };
+ 
++/* --- ext-foreign-toplevel-list listeners --- */
++
++static void
++handle_toplevel_closed (void *data, struct ext_foreign_toplevel_handle_v1 *handle) { }
++
++static void
++handle_toplevel_done (void *data, struct ext_foreign_toplevel_handle_v1 *handle) { }
++
++static void
++handle_toplevel_title (void *data, struct ext_foreign_toplevel_handle_v1 *handle,
++                       const char *title) { }
++
++static void
++handle_toplevel_app_id (void *data, struct ext_foreign_toplevel_handle_v1 *handle,
++                        const char *app_id) { }
++
++static void
++handle_toplevel_identifier (void *data, struct ext_foreign_toplevel_handle_v1 *handle,
++                            const char *identifier)
++{
++  ToplevelData *toplevel = data;
++  g_free (toplevel->identifier);
++  toplevel->identifier = g_strdup (identifier);
++}
++
++static const struct ext_foreign_toplevel_handle_v1_listener toplevel_handle_listener = {
++  .closed = handle_toplevel_closed,
++  .done = handle_toplevel_done,
++  .title = handle_toplevel_title,
++  .app_id = handle_toplevel_app_id,
++  .identifier = handle_toplevel_identifier,
++};
++
++static void
++handle_toplevel_list_toplevel (void *data, struct ext_foreign_toplevel_list_v1 *list,
++                               struct ext_foreign_toplevel_handle_v1 *handle)
++{
++  ClientData *cd = data;
++  ToplevelData *toplevel = g_new0 (ToplevelData, 1);
++
++  toplevel->handle = handle;
++  cd->toplevels = g_list_prepend (cd->toplevels, toplevel);
++  ext_foreign_toplevel_handle_v1_add_listener (handle, &toplevel_handle_listener, toplevel);
++}
++
++static void
++handle_toplevel_list_finished (void *data, struct ext_foreign_toplevel_list_v1 *list) { }
++
++static const struct ext_foreign_toplevel_list_v1_listener toplevel_list_listener = {
++  .toplevel = handle_toplevel_list_toplevel,
++  .finished = handle_toplevel_list_finished,
++};
++
++static void
++free_toplevel_data (gpointer data)
++{
++  ToplevelData *toplevel = data;
++  ext_foreign_toplevel_handle_v1_destroy (toplevel->handle);
++  g_free (toplevel->identifier);
++  g_free (toplevel);
++}
++
+ /* --- wlr-screencopy frame listener --- */
+ 
+ static void
+@@ -428,7 +524,11 @@ handle_ext_session_done (void *data, struct ext_image_copy_capture_session_v1 *s
+ static void
+ handle_ext_session_stopped (void *data, struct ext_image_copy_capture_session_v1 *session)
+ {
++  OutputData *output = data;
+   g_warning ("Wayland screenshot: ext session stopped");
++  /* A stopped session gives no more frames: its window was closed */
++  if (output->fails_when_stopped && !output->capture_done)
++    output->capture_failed = TRUE;
+ }
+ 
+ static const struct ext_image_copy_capture_session_v1_listener ext_session_listener = {
+@@ -470,6 +570,11 @@ free_client_data (ClientData *cd)
+     ext_output_image_capture_source_manager_v1_destroy (cd->output_image_capture_source_manager);
+   if (cd->image_copy_capture_manager != NULL)
+     ext_image_copy_capture_manager_v1_destroy (cd->image_copy_capture_manager);
++  g_list_free_full (cd->toplevels, free_toplevel_data);
++  if (cd->toplevel_list != NULL)
++    ext_foreign_toplevel_list_v1_destroy (cd->toplevel_list);
++  if (cd->toplevel_image_capture_source_manager != NULL)
++    ext_foreign_toplevel_image_capture_source_manager_v1_destroy (cd->toplevel_image_capture_source_manager);
+   wl_registry_destroy (cd->registry);
+ }
+ 
+@@ -654,6 +759,131 @@ capture_screenshot (G_GNUC_UNUSED gboolean capture_all_monitors, gboolean show_m
+   return screenshot;
+ }
+ 
++/* --- Window capture, with Caminito --- */
++
++/* Asks Caminito, the Wayland compositor, for the active window: the
++ * ext-foreign-toplevel-list identifier of the window that last had the focus
++ * and isn't one of ours. NULL if nothing owns Caminito's name, and the empty
++ * string if there is no such window. */
++static char *
++get_caminito_active_toplevel (void)
++{
++  GDBusConnection *bus;
++  GVariant *reply;
++  GError *error = NULL;
++  char *identifier = NULL;
++
++  bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
++  if (bus == NULL)
++    return NULL;
++
++  reply = g_dbus_connection_call_sync (bus,
++                                       CAMINITO_NAME, CAMINITO_PATH, CAMINITO_INTERFACE,
++                                       "GetActiveToplevel",
++                                       NULL,
++                                       G_VARIANT_TYPE ("(s)"),
++                                       G_DBUS_CALL_FLAGS_NO_AUTO_START,
++                                       -1, NULL, &error);
++  if (reply != NULL)
++    {
++      g_variant_get (reply, "(s)", &identifier);
++      g_variant_unref (reply);
++    }
++  else
++    {
++      g_warning ("Wayland screenshot: can't ask Caminito for the active window: %s",
++                 error->message);
++      g_error_free (error);
++    }
++  g_object_unref (bus);
++
++  return identifier;
++}
++
++static GdkPixbuf *
++capture_toplevel (const char *identifier, gboolean show_mouse)
++{
++  ClientData client_data = { 0 };
++  OutputData *window;
++  ToplevelData *toplevel = NULL;
++  struct ext_image_capture_source_v1 *source;
++  GdkPixbuf *screenshot = NULL;
++  guint32 options;
++
++  client_data.wants_toplevels = TRUE;
++  client_data.display = gdk_wayland_display_get_wl_display (gdk_display_get_default ());
++  client_data.registry = wl_display_get_registry (client_data.display);
++  wl_registry_add_listener (client_data.registry, &registry_listener, &client_data);
++  wl_display_roundtrip (client_data.display);
++
++  if (client_data.shm == NULL ||
++      client_data.toplevel_list == NULL ||
++      client_data.toplevel_image_capture_source_manager == NULL ||
++      client_data.image_copy_capture_manager == NULL)
++    {
++      g_warning ("Wayland screenshot: no window capture protocol available");
++      free_client_data (&client_data);
++      return NULL;
++    }
++
++  /* The compositor lists the toplevels there are, each with its identifier.
++   * That's all that's wanted of the list, so it's stopped, as it must be
++   * before it's destroyed. */
++  ext_foreign_toplevel_list_v1_stop (client_data.toplevel_list);
++  wl_display_roundtrip (client_data.display);
++
++  for (GList *elem = client_data.toplevels; elem; elem = elem->next)
++    {
++      ToplevelData *td = elem->data;
++      if (g_strcmp0 (td->identifier, identifier) == 0)
++        toplevel = td;
++    }
++
++  if (toplevel == NULL)
++    {
++      g_warning ("Wayland screenshot: the active window is gone");
++      free_client_data (&client_data);
++      return NULL;
++    }
++
++  window = g_new0 (OutputData, 1);
++  window->client_data = &client_data;
++  window->fails_when_stopped = TRUE;
++
++  source = ext_foreign_toplevel_image_capture_source_manager_v1_create_source (
++    client_data.toplevel_image_capture_source_manager, toplevel->handle);
++  options = show_mouse ? EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_OPTIONS_PAINT_CURSORS : 0;
++  window->image_copy_capture_session =
++    ext_image_copy_capture_manager_v1_create_session (
++      client_data.image_copy_capture_manager, source, options);
++  ext_image_copy_capture_session_v1_add_listener (
++    window->image_copy_capture_session, &ext_session_listener, window);
++  ext_image_capture_source_v1_destroy (source);
++
++  while (!window->capture_done && !window->capture_failed)
++    {
++      if (wl_display_dispatch (client_data.display) < 0)
++        window->capture_failed = TRUE;
++    }
++
++  if (!window->capture_failed)
++    {
++      /* The buffer is the window alone, in its own pixels. The pixbuf made
++       * from it doesn't own the pixels, so it's copied. */
++      GdkPixbuf *raw = convert_buffer_to_pixbuf (window);
++      if (raw != NULL)
++        {
++          screenshot = gdk_pixbuf_copy (raw);
++          g_object_unref (raw);
++        }
++    }
++
++  free_output_data (window);
++  free_client_data (&client_data);
++
++  return screenshot;
++}
++
+ /* --- Public API --- */
+ 
+ gboolean
+@@ -722,4 +952,59 @@ wayland_screenshot_capture_region (GdkRectangle *region, gboolean include_pointe
+   return wayland_screenshot_capture_output (monitor, include_pointer);
+ }
+ 
++gboolean
++wayland_screenshot_can_capture_window (void)
++{
++  static gboolean asked = FALSE;
++  static gboolean has_owner = FALSE;
++  GDBusConnection *bus;
++  GVariant *reply;
++
++  if (!wayland_initialized)
++    return FALSE;
++
++  if (asked)
++    return has_owner;
++  asked = TRUE;
++
++  bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
++  if (bus == NULL)
++    return FALSE;
++
++  reply = g_dbus_connection_call_sync (bus,
++                                       "org.freedesktop.DBus",
++                                       "/org/freedesktop/DBus",
++                                       "org.freedesktop.DBus",
++                                       "NameHasOwner",
++                                       g_variant_new ("(s)", CAMINITO_NAME),
++                                       G_VARIANT_TYPE ("(b)"),
++                                       G_DBUS_CALL_FLAGS_NONE,
++                                       -1, NULL, NULL);
++  if (reply != NULL)
++    {
++      g_variant_get (reply, "(b)", &has_owner);
++      g_variant_unref (reply);
++    }
++  g_object_unref (bus);
++
++  return has_owner;
++}
++
++GdkPixbuf *
++wayland_screenshot_capture_window (gboolean include_pointer)
++{
++  GdkPixbuf *screenshot = NULL;
++  char *identifier;
++
++  if (!wayland_screenshot_can_capture_window ())
++    return NULL;
++
++  identifier = get_caminito_active_toplevel ();
++  if (identifier != NULL && identifier[0] != '\0')
++    screenshot = capture_toplevel (identifier, include_pointer);
++  g_free (identifier);
++
++  return screenshot;
++}
++
+ #endif /* ENABLE_WAYLAND && GDK_WINDOWING_WAYLAND */
+diff --git a/mate-screenshot/src/wayland-screenshot.h b/mate-screenshot/src/wayland-screenshot.h
+index 2404429d..a8edbf1a 100644
+--- a/mate-screenshot/src/wayland-screenshot.h
++++ b/mate-screenshot/src/wayland-screenshot.h
+@@ -47,6 +47,13 @@ GdkPixbuf *wayland_screenshot_capture_output (GdkMonitor *monitor, gboolean incl
+ /* Capture a specific region */
+ GdkPixbuf *wayland_screenshot_capture_region (GdkRectangle *region, gboolean include_pointer);
+ 
++/* Whether the active window can be captured: Caminito, the Wayland compositor,
++ * names it. No other compositor does. */
++gboolean wayland_screenshot_can_capture_window (void);
++
++/* Capture the active window with its frame, or NULL if there is none */
++GdkPixbuf *wayland_screenshot_capture_window (gboolean include_pointer);
++
+ #else /* !(ENABLE_WAYLAND && GDK_WINDOWING_WAYLAND) */
+ 
+ /* Stub implementations when Wayland support is disabled */
+@@ -85,6 +92,18 @@ wayland_screenshot_capture_region (GdkRectangle *region, gboolean include_pointe
+   return NULL;
+ }
+ 
++static inline gboolean
++wayland_screenshot_can_capture_window (void)
++{
++  return FALSE;
++}
++
++static inline GdkPixbuf *
++wayland_screenshot_capture_window (gboolean include_pointer)
++{
++  return NULL;
++}
++
+ #endif /* ENABLE_WAYLAND && GDK_WINDOWING_WAYLAND */
+ 
+ G_END_DECLS

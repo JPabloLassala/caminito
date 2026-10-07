@@ -1,0 +1,6 @@
+---
+source: caminito/src/tests/decoration.rs
+expression: "configures(&mut f, id, window)"
+---
+size: 0 × 0, states: [], bounds: 1918 × 1048, capabilities: [Fullscreen, Maximize, Minimize, WindowMenu], decoration: ServerSide
+size: 200 × 100, states: [Activated]

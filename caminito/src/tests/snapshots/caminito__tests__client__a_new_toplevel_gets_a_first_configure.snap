@@ -1,0 +1,5 @@
+---
+source: caminito/src/tests/client.rs
+expression: format_configures(&f.client(id).window(window).configures)
+---
+size: 0 × 0, states: [], bounds: 1920 × 1080, capabilities: [Fullscreen, Maximize, Minimize, WindowMenu]

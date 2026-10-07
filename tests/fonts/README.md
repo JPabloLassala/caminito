@@ -2,7 +2,7 @@
 
 The one font the theme goldens are rendered with (14, ADR 0009). `fonts.conf` is a private
 fontconfig that sees only this directory; both Marco's side (`tools/marco-frame-dump`) and
-Camino's side run with `FONTCONFIG_FILE` pointing at it, and pass the font as an explicit
+Caminito's side run with `FONTCONFIG_FILE` pointing at it, and pass the font as an explicit
 description (`font` in `tests/goldens/cases.json`) rather than reading it from gsettings.
 
 | File | Source | Licence |
