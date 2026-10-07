@@ -209,8 +209,7 @@ impl Adapter for ToplevelSurface {
     fn pid(&self) -> Option<u32> {
         let surface = self.wl_surface();
         let dh = DisplayHandle::from(surface.handle().upgrade()?);
-        let credentials = surface.client()?.get_credentials(&dh).ok()?;
-        u32::try_from(credentials.pid).ok()
+        crate::state::client_process(&surface.client()?, &dh)
     }
 
     /// The last mode it acked from xdg-decoration, or KDE server-decoration's.

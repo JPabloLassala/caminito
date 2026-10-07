@@ -1,9 +1,11 @@
 //! Integration tests on the headless backend (14, 15).
 
 mod accelerators;
+mod active_toplevel;
 mod bindings;
 mod camino_displays;
 mod client;
+mod commands;
 mod cursors;
 mod data_control;
 mod debug;

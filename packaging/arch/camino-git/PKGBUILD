@@ -21,9 +21,10 @@ license=(GPL-2.0-or-later)
 # Xwayland (11, 34); its own X connection is x11rb's pure-Rust one, which links nothing, and
 # the X11 test tier runs the same Xwayland from check().
 #
-# The last line is the session that `camino --session` starts (08, 17). The four patched
-# packages are named by their real names, so the stock ones don't satisfy them (16, ADR
-# 0011); caja draws the desktop, on the primary output (81), and mate-session autostarts the
+# The last two lines are the session that `camino --session` starts (08, 17). The five
+# patched packages are named by their real names, so the stock ones don't satisfy them (16,
+# ADR 0011); caja draws the desktop, on the primary output (81), mate-utils has
+# mate-screenshot, which the screenshot keys run (104), and mate-session autostarts the
 # notification daemon and the polkit agent. camino links none of them.
 #
 # camino-displays (84) links gtk4, and through it cairo, pango and glib2. Its own Wayland
@@ -33,7 +34,7 @@ license=(GPL-2.0-or-later)
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput
   mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino caja-camino
-  mate-notification-daemon mate-polkit)
+  mate-utils-camino mate-notification-daemon mate-polkit)
 makedepends=(cargo git meson)
 # camino's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).

@@ -70,6 +70,7 @@ pub const KEY_F4: u32 = 62;
 pub const KEY_F9: u32 = 67;
 pub const KEY_F10: u32 = 68;
 pub const KEY_NUMLOCK: u32 = 69;
+pub const KEY_PRINT: u32 = 99;
 pub const KEY_LEFT: u32 = 105;
 pub const KEY_RIGHT: u32 = 106;
 pub const KEY_MUTE: u32 = 113;

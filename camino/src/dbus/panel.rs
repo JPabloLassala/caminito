@@ -210,15 +210,7 @@ impl Camino {
 
     /// The process `client` is of, from its socket's credentials.
     fn client_pid(&self, client: &Client) -> Option<u32> {
-        #[cfg(test)]
-        if let Some(pid) = client
-            .get_data::<crate::state::ClientState>()
-            .and_then(|data| data.process)
-        {
-            return Some(pid);
-        }
-        let credentials = client.get_credentials(&self.display_handle).ok()?;
-        u32::try_from(credentials.pid).ok()
+        crate::state::client_process(client, &self.display_handle)
     }
 
     /// Runs `program` in place of `mate-panel` for the Run dialog.

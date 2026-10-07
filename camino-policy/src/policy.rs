@@ -1004,6 +1004,13 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows.values().map(|m| &m.window)
     }
 
+    /// The windows on screen by when they last had focus, most recent first, so the
+    /// focused one leads. A window that never had the focus isn't among them.
+    pub fn recently_focused(&self) -> impl Iterator<Item = WindowId> + '_ {
+        let on_screen = |id: &WindowId| self.is_showing(*id);
+        self.mru.iter().copied().filter(on_screen)
+    }
+
     pub fn workspace_count(&self) -> usize {
         self.stacks.len()
     }
@@ -1459,11 +1466,11 @@ impl<W: PolicyWindow> Policy<W> {
         current
     }
 
-    fn is_desktop_or_dock(&self, id: WindowId) -> bool {
-        matches!(
-            self.windows[&id].window_type,
-            WindowType::Desktop | WindowType::Dock
-        )
+    /// Whether a window is a desktop or a dock, which Marco gives no window functions.
+    pub fn is_desktop_or_dock(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|managed| {
+            matches!(managed.window_type, WindowType::Desktop | WindowType::Dock)
+        })
     }
 
     /// Whether `id` or one of its transient ancestors is the desktop or a dock: the

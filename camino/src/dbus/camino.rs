@@ -1,7 +1,7 @@
 //! `org.mate.Camino` (ADR 0002's third channel): what MATE's components and
 //! camino-displays ask of Camino that no protocol carries. So far, the primary output (81)
-//! and saving the layout (83), both ADR 0014's, showing the desktop (94), and the
-//! accelerator grabs (98).
+//! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
+//! grabs (98), and the window a window screenshot is of (104).
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
@@ -30,6 +30,8 @@ pub(crate) enum Request {
     ShowingDesktop(oneshot::Sender<bool>),
     /// Writes `ShowingDesktop`, with the value written.
     SetShowingDesktop(bool, oneshot::Sender<()>),
+    /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
+    ActiveToplevel(Option<u32>, oneshot::Sender<Option<String>>),
     /// `GrabAccelerators`, from `caller`, answered with an action id for each.
     GrabAccelerators {
         caller: String,
@@ -117,6 +119,23 @@ impl CaminoInterface {
         super::ask(&self.requests, show).await
     }
 
+    /// The ext-foreign-toplevel-list identifier of the window a window screenshot is of:
+    /// the window on screen that most recently had the focus and isn't of the caller's
+    /// process, since the caller's own dialog may have it. It's the empty string when
+    /// there's no such window.
+    async fn get_active_toplevel(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        let caller = caller_process(connection, &header).await;
+        let active = |reply| Request::ActiveToplevel(caller, reply);
+        // The empty string is the method's "none".
+        Ok(super::ask(&self.requests, active)
+            .await?
+            .unwrap_or_default())
+    }
+
     /// Grabs key combinations for the caller, in the style of `org.gnome.Shell`'s. Each
     /// accelerator is a string in GTK's syntax, as MATE's keys store it: `<Control><Alt>t`,
     /// `XF86AudioMute`. The answer has an action id for each, in order, which
@@ -171,6 +190,20 @@ impl CaminoInterface {
     ) -> zbus::Result<()>;
 }
 
+/// The process that sent the call with `header`, as the bus knows it. Without it, none of
+/// the windows is taken for the caller's.
+async fn caller_process(connection: &zbus::Connection, header: &Header<'_>) -> Option<u32> {
+    let sender = header.sender()?.to_owned();
+    let asked = async {
+        let bus = zbus::fdo::DBusProxy::new(connection).await?;
+        bus.get_connection_unix_process_id(sender.into()).await
+    };
+    asked
+        .await
+        .inspect_err(|err| tracing::warn!("can't ask the bus for a caller's process: {err}"))
+        .ok()
+}
+
 impl Camino {
     pub(super) fn camino_request(&mut self, request: Request) {
         // A caller that has gone away doesn't want the answer.
@@ -198,6 +231,9 @@ impl Camino {
                 // zbus signals this one too.
                 self.showing_desktop_signalled = Some(showing);
                 let _ = reply.send(());
+            }
+            Request::ActiveToplevel(caller, reply) => {
+                let _ = reply.send(self.active_toplevel(caller));
             }
             Request::GrabAccelerators {
                 caller,

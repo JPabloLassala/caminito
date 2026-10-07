@@ -6,6 +6,7 @@ pub(crate) mod accelerators;
 use camino_policy::Action;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 
+use crate::commands::Command;
 use crate::dbus::panel::PanelAction;
 
 /// The modifiers a binding names. Locks don't count.
@@ -16,6 +17,20 @@ struct Held {
     shift: bool,
     logo: bool,
 }
+
+const NONE: Held = Held {
+    ctrl: false,
+    alt: false,
+    shift: false,
+    logo: false,
+};
+
+const SHIFT: Held = Held {
+    ctrl: false,
+    alt: false,
+    shift: true,
+    logo: false,
+};
 
 impl From<&ModifiersState> for Held {
     fn from(mods: &ModifiersState) -> Self {
@@ -44,16 +59,20 @@ const CTRL_ALT: Held = Held {
 
 /// What a binding does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Binding {
+pub(crate) enum Binding {
     /// Something policy does.
     Policy(Action),
     /// Something Camino asks the panel for (95).
     Panel(PanelAction),
+    /// A command to run (104).
+    Command(Command),
 }
 
-/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), and for the panel's
-/// two (95).
-const BINDINGS: [(Held, Keysym, Binding); 8] = [
+/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), for the panel's two
+/// (95), and for its three screenshot commands (104). `<Shift>Print` is the default of the
+/// Marco that has `run-command-area-screenshot` (`org.mate.marco.gschema.xml:692-693` at
+/// `8522ed1`); 1.29.0 doesn't bind it.
+const BINDINGS: [(Held, Keysym, Binding); 11] = [
     (
         CTRL_ALT,
         Keysym::Left,
@@ -70,10 +89,21 @@ const BINDINGS: [(Held, Keysym, Binding); 8] = [
     (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
     (ALT, Keysym::Tab, Binding::Policy(Action::SwitchWindows)),
     (CTRL_ALT, Keysym::d, Binding::Policy(Action::ShowDesktop)),
+    (NONE, Keysym::Print, Binding::Command(Command::Screenshot)),
+    (
+        ALT,
+        Keysym::Print,
+        Binding::Command(Command::WindowScreenshot),
+    ),
+    (
+        SHIFT,
+        Keysym::Print,
+        Binding::Command(Command::AreaScreenshot),
+    ),
 ];
 
 /// What's bound to `keysym` with exactly `mods` held, if anything.
-pub fn binding_for(mods: &ModifiersState, keysym: Keysym) -> Option<Binding> {
+pub(crate) fn binding_for(mods: &ModifiersState, keysym: Keysym) -> Option<Binding> {
     let held = Held::from(mods);
     BINDINGS
         .iter()
@@ -94,6 +124,8 @@ mod tests {
         }
     }
 
+    const NONE: (bool, bool, bool) = (false, false, false);
+    const SHIFT: (bool, bool, bool) = (false, false, true);
     const ALT: (bool, bool, bool) = (false, true, false);
     const CTRL_ALT: (bool, bool, bool) = (true, true, false);
 
@@ -119,6 +151,21 @@ mod tests {
         assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
         assert_eq!(bound(ALT, Keysym::Tab), policy(Action::SwitchWindows));
         assert_eq!(bound(CTRL_ALT, Keysym::d), policy(Action::ShowDesktop));
+    }
+
+    #[test]
+    fn marcos_screenshot_bindings() {
+        let command = |command| Some(Binding::Command(command));
+        assert_eq!(bound(NONE, Keysym::Print), command(Command::Screenshot));
+        assert_eq!(
+            bound(ALT, Keysym::Print),
+            command(Command::WindowScreenshot)
+        );
+        assert_eq!(
+            bound(SHIFT, Keysym::Print),
+            command(Command::AreaScreenshot)
+        );
+        assert_eq!(bound(CTRL_ALT, Keysym::Print), None);
     }
 
     #[test]

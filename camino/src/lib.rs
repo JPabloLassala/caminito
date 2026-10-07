@@ -2,6 +2,7 @@
 
 pub mod backend;
 mod capture;
+mod commands;
 pub mod cursor;
 pub mod dbus;
 pub mod debug;

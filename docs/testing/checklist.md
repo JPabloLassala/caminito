@@ -533,6 +533,32 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Camino`, and `WAYLAND_DEBUG=1 mate-panel --replace
   2>&1 | grep coordinates` for the `ext_workspace_handle_v1.coordinates` events.
 
+## Screenshots
+
+### Print, Shift+Print and Alt+Print
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-utils-camino` installed. Open a pluma window and a
+     terminal, with pluma focused, and drag pluma down until the bottom panel covers the lower
+     part of its window.
+  2. Press `Print`, and save the screenshot from the dialog.
+  3. Press `<Shift>Print`, drag over an area that has part of both windows, and save it.
+  4. Press `<Alt>Print`, and save it.
+  5. Focus the terminal, run `mate-screenshot --interactive` from Alt+F2, choose *Grab the
+     current window*, and click *Take Screenshot*.
+  6. Log into the Wayfire session, with the same package, and run `mate-screenshot --window`
+     in a terminal.
+- **Expected:** step 2's image is the whole screen, every monitor. Step 3's is the area that
+  was dragged. Step 4's is pluma's window alone, with its Frame and all of its contents, the
+  part under the panel too, and nothing of the panel or the desktop around it. Step 5's is
+  the terminal, not mate-screenshot's own dialog. Step 6 prints `Error: window capture is not
+  supported on Wayland.`, as stock mate-screenshot does (ADR 0011).
+- **Debug tool:** the saved images. `gdbus call --session --dest org.mate.Camino --object-path
+  /org/mate/Camino --method org.mate.Camino.GetActiveToplevel` prints the identifier
+  mate-screenshot is given, and `WAYLAND_DEBUG=1 mate-screenshot --window 2>&1 | grep
+  ext_foreign_toplevel` shows the toplevel it's matched to.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

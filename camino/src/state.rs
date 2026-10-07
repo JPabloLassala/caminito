@@ -340,6 +340,22 @@ pub struct ClientState {
     pub(crate) process: Option<u32>,
 }
 
+/// The process `client` is of, from its socket's credentials.
+pub(crate) fn client_process(
+    client: &smithay::reexports::wayland_server::Client,
+    display: &DisplayHandle,
+) -> Option<u32> {
+    #[cfg(test)]
+    if let Some(process) = client
+        .get_data::<ClientState>()
+        .and_then(|data| data.process)
+    {
+        return Some(process);
+    }
+    let credentials = client.get_credentials(display).ok()?;
+    u32::try_from(credentials.pid).ok()
+}
+
 impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }

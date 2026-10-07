@@ -29,6 +29,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::X11Surface;
 
 use self::bindings::Binding;
+use crate::commands::Command;
 use crate::dbus::panel::PanelAction;
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
@@ -242,6 +243,7 @@ impl State {
                 // The time a client would have for the event.
                 self.camino.ask_panel(action, time.millis());
             }
+            Some(Some(Bound::Command(command))) => self.camino.run_command(command),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 self.camino
                     .signal_accelerator(&owner, action, time.millis());
@@ -301,6 +303,7 @@ impl State {
                 let bound = match binding {
                     Binding::Policy(action) => Bound::Action(action),
                     Binding::Panel(action) => Bound::Panel(action),
+                    Binding::Command(command) => Bound::Command(command),
                 };
                 FilterResult::Intercept(Some(bound))
             }
@@ -548,6 +551,8 @@ enum Bound {
     Action(Action),
     /// One of Camino's bindings: something it asks the panel for (95).
     Panel(PanelAction),
+    /// One of Camino's bindings: a command to run (104).
+    Command(Command),
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },
