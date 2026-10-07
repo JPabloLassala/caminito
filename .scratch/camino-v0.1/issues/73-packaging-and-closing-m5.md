@@ -129,4 +129,5 @@ M5's checklist items and the closing commit ([17](17-milestone-slicing.md)), on 
   - The scale picked for each of the developer's monitors: pass, for the terminal moved between them. foot got one `preferred_scale` at each crossing, was 699x474 on the LG and 648x496 on the AOC each time, and on `r239` got no configure during the drags. That one change of size at a crossing is foot's own, which keeps its grid at a change of scale; mate-terminal and pluma kept their size, by the developer's eyes. 92 is resolved.
 - **Shut Down's dialog (2026-10-07):** it's right now, by the developer, and the note of the `tty` part is closed.
 - **The slow nested run** is [93](93-nested-camino-slow-in-the-session.md), filed with what was measured here; it gates no milestone.
-- **Still open (2026-10-07):** the Flatpak item, which needs a runtime; and the push, with CI and the Packaging job green, before the `Close M5 MATE session` commit.
+- **The Flatpak item is M9's (2026-10-07),** by the developer: it stays not run here, and [17](17-milestone-slicing.md) has a ninth milestone, Flatpak, that the checklist tags it with.
+- **Still open (2026-10-07):** the push, with CI and the Packaging job green, before the `Close M5 MATE session` commit.

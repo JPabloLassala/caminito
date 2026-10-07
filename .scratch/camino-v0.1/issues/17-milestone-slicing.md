@@ -26,7 +26,8 @@ There's no ADR. The order is cheap to change, since every milestone builds on th
 | M5 | MATE session | `camino --session`, on a tty as `caminotest` and from the display manager | "MATE on Camino" logs in and out, with mate-panel (window list and pager), caja's desktop and msd; three patched packages |
 | M6 | MATE integrations | session | every row of 06's integration table working; the other two patched packages |
 | M7 | Lock, idle and accessibility | session | the lock fails closed, idle, blanking and DPMS work, and Orca and AccessX work; the developer starts using Camino daily |
-| M8 | Marco parity | session | every `org.mate.Marco.*` key and all 103 actions honoured, never implemented, or on the roadmap; then v0.1.0 is tagged |
+| M8 | Marco parity | session | every `org.mate.Marco.*` key and all 103 actions honoured, never implemented, or on the roadmap |
+| M9 | Flatpak | session, and nested | a Flatpak app runs in its sandbox and is offered no privileged global; then v0.1.0 is tagged |
 
 ### How milestones work
 
@@ -37,7 +38,7 @@ There's no ADR. The order is cheap to change, since every milestone builds on th
   3. **Checked:** every checklist item tagged with this milestone or an earlier one that still applies has been run, and the results are recorded in the closing commit message (14).
 - **The closing commit** is titled `Close M<n> <name>`. It also moves the milestone's checklist tags, if any item was deferred, and it's the only commit that says a milestone is done.
 - **Features grow in place.** The policy model, the scene's layer order and the refresh pass are built in M1 in their final shape (15), and later milestones add to them. The only stand-ins are three small ones in M1, each named where it's replaced: hard-coded default bindings (until M8), a fixed workspace count (until M2) and decorations answered client side (until M2).
-- **Checklist tags are `M1` to `M8`.** An item that needs something from a later milestone (msd, logind, Orca, two monitors) is tagged with that milestone, not the one that wrote the code.
+- **Checklist tags are `M1` to `M9`.** An item that needs something from a later milestone (msd, logind, Orca, two monitors) is tagged with that milestone, not the one that wrote the code.
 - **Packaging keeps up from M1.** Every milestone's code is installed through `camino-git` on the developer's machine, never only run from `target/` (16).
 
 ### M1 Nested compositor
@@ -197,11 +198,21 @@ Shadows wait for M8 with the other effects, since `compositing-manager` governs 
 
 **Checklist:** a pass over the parity table's rows that no automated test covers.
 
+### M9 Flatpak
+
+Added on 2026-10-07, by the developer's decision at M5's closing ([73](73-packaging-and-closing-m5.md)): the checklist's Flatpak item was tagged M5 and couldn't be run there, since the developer's machine has no Flatpak runtime, and Flatpak gets a milestone of its own instead of a line left not run.
+
+**Scope:** Flatpak apps under Camino. So far it's the one checklist item, moved here from M5: the security-context protocol and the filter on the privileged globals are M5's ([68](68-data-control-and-privileged-globals.md)), with their headless tests, and what's left is the check with a real sandbox. What else a Flatpak app needs of Camino is found when the milestone starts, as each milestone's tickets are.
+
+**Exit:** with a Flatpak runtime installed, an app in its sandbox shows a window, and the sandbox is offered none of the privileged globals.
+
+**Checklist:** *A Flatpak app's sandbox is offered no privileged global*.
+
 ### v0.1 done
 
 v0.1 is done when all of these hold at one commit:
 
-1. **M1 to M8 are closed**, each with its closing commit.
+1. **M1 to M9 are closed**, each with its closing commit.
 2. **The full checklist** passes on that commit, and the results are recorded in its message.
 3. **CI is green** on push and on the weekly jobs: every test tier, the goldens for all ten themes, and all six packages building with `makepkg` and `namcap`.
 4. **Packaging (16):** `camino-git` and the five patched packages are installed on the developer's machine, and X11 MATE still works on it.

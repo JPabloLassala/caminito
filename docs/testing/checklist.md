@@ -7,7 +7,7 @@ milestone's `Close M<n> <name>` commit message.
 
 Each item has:
 
-- **Milestone:** the milestone that introduces it, `M1` to `M8`. An item that needs something from
+- **Milestone:** the milestone that introduces it, `M1` to `M9`. An item that needs something from
   a later milestone (msd, logind, Orca, two monitors) is tagged with that milestone, not the one
   that wrote the code.
 - **Steps:** what to do.
@@ -362,7 +362,7 @@ session_env() {
 
 ### A Flatpak app's sandbox is offered no privileged global
 
-- **Milestone:** M5
+- **Milestone:** M9
 - **Steps:**
   1. Run `tools/dev-nested`, and set `WAYLAND_DISPLAY` to the nested socket.
   2. Run `wayland-info | grep -c interface:`.

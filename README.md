@@ -11,7 +11,7 @@ and configuration read from the existing `org.mate.Marco.*` gsettings.
 
 It is written in Rust on [Smithay](https://github.com/Smithay/smithay).
 
-> **Status:** early development. Camino v0.1 is being built in eight milestones. The first four
+> **Status:** early development. Camino v0.1 is being built in nine milestones. The first four
 > (M1, a nested compositor, M2, Marco frames, M3, XWayland, and M4, on the metal) are done, and
 > M5 (the MATE session) is in progress. Today Camino runs as a window inside another desktop or
 > bare on a tty, drawing Marco frames around Wayland and X11 windows on the machine's monitors,
@@ -42,7 +42,8 @@ replacing the Wayfire-based MATE Wayland session.
 | M5  | MATE session                 | "MATE on Camino" logs in and out with mate-panel, caja's desktop and msd                              |
 | M6  | MATE integrations            | Alt+F1/F2, pager layout, Show Desktop, mate-control-center dialogs, window screenshots                |
 | M7  | Lock, idle and accessibility | the lock fails closed; idle, blanking, DPMS, Orca and AccessX work                                    |
-| M8  | Marco parity                 | every Marco key and action accounted for; `v0.1.0` is tagged                                          |
+| M8  | Marco parity                 | every Marco key and action accounted for                                                              |
+| M9  | Flatpak                      | a Flatpak app runs in its sandbox, offered no privileged global; `v0.1.0` is tagged                   |
 
 ## Building
 
