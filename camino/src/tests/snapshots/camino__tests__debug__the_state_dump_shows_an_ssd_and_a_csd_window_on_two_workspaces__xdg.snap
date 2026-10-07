@@ -71,6 +71,7 @@ expression: without_x_ids(&dump)
     }
   ],
   "active_workspace": 0,
+  "showing_desktop": false,
   "outputs": [
     {
       "id": 0,

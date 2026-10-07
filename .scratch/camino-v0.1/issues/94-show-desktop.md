@@ -1,7 +1,7 @@
 # Show Desktop, shared by the panel and Ctrl+Alt+D
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -18,12 +18,32 @@ The panel's Show Desktop button and Ctrl+Alt+D show and bring back the same desk
 
 ## Acceptance criteria
 
-- [ ] Policy tests, written before the code: showing the desktop hides one workspace's windows and leaves the others'; it ends on a new window, on activation and on a second toggle; the windows come back in their stacking order with the focus they had.
-- [ ] Headless tests with a D-Bus client: writing the property hides the windows; Ctrl+Alt+D changes the property and signals it once; switching workspace signals the new workspace's value.
-- [ ] `mate-panel-camino` builds with the patch in its series, and its `makepkg` and `namcap` job passes.
-- [ ] The checklist has the item, and it was run in a Session: the button and Ctrl+Alt+D agree in both directions. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md).
+- [x] Policy tests, written before the code: showing the desktop hides one workspace's windows and leaves the others'; it ends on a new window, on activation and on a second toggle; the windows come back in their stacking order with the focus they had.
+- [x] Headless tests with a D-Bus client: writing the property hides the windows; Ctrl+Alt+D changes the property and signals it once; switching workspace signals the new workspace's value.
+- [x] `mate-panel-camino` builds with the patch in its series, and its `makepkg` and `namcap` job passes. (Run by hand as the job runs them, without the install: `makepkg` built `pkgrel` 5 with the five patches, and `namcap` has no error for the PKGBUILD or the package. The job itself runs when this is pushed.)
+- [ ] The checklist has the item, and it was run in a Session: the button and Ctrl+Alt+D agree in both directions. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). (The item is there. It wasn't run: see the resolution.)
 
 ## Notes
 
 - **`show-desktop-skip-list`** is M8's (17).
 - **Windows that never hide** (the desktop, docks) are layer surfaces under Camino and aren't policy's windows, so the rule is only about XWayland windows of those types.
+
+## Resolution
+
+Done on 2026-10-06.
+
+- **Policy** marks each workspace that shows its desktop, as Marco's `showing_desktop` does (`Policy::set_showing_desktop`, `is_showing_desktop`, and `Action::ShowDesktop`, which toggles). The cases are Marco's, at 8522ed1:
+  - **Showing** hides the workspace's windows but for the desktop, docks and their transients, and focuses the desktop if it's a window (`meta_screen_show_desktop`, screen.c:2850-2882, and `meta_window_showing_on_its_workspace`, window.c:1385-1412). The windows aren't minimised, and the window list doesn't show them as minimised.
+  - **Toggling back** brings them back as they were stacked, with the focus they had.
+  - **A window mapped or activated on the workspace** ends it another way: the normal windows and dialogs that were hidden are minimised for good, and that one comes up without them (`maybe_leave_show_desktop_mode`, window.c:183-208). Those are the ones Marco gives a minimise function; a hidden utility window or toolbar comes back. An activation older than the user's last input ends nothing. Alt+Tab and a click in the window list are activations. A transient of the desktop or a dock doesn't end it.
+  - **A workspace switch** leaves each workspace as it was.
+- **Three things aren't Marco's, on purpose**, and the comments on `set_showing_desktop` and `leave_show_desktop` say so. Marco gives its default focus on toggling back, the topmost window, which isn't the one that had the focus if another was raised over it; this ticket asks for the focus they had. Marco ends it on the active workspace whichever workspace the new window is on; Camino ends it on the window's own, as this ticket words it. And Marco minimises a new dialog's parents with the rest, which hides the dialog too; Camino keeps them, as Marco itself does for an activated window.
+- **caja's own dialogs end it.** Marco keeps a transient of the desktop or a dock up without ending it, and so does policy, but caja's desktop is a layer surface under Camino, so a dialog of it has no parent in policy and counts as any new window.
+- **`ShowingDesktop`** is a boolean property of `org.mate.Camino`, read and written, for the active workspace. A write that changes nothing is accepted, and zbus signals it all the same. zbus signals a write, and the refresh pass signals every other change, each once: the key, a window that ends it, and a switch to a workspace whose value differs. The debug dump has `showing_desktop`.
+- **Ctrl+Alt+D** is in the hard-coded bindings, as `d` on the first layout.
+- **`_NET_SHOWING_DESKTOP`** isn't published or honoured for X11 clients. 06's row asks for the D-Bus property only, and that root property is one Smithay keeps to its API (11).
+- **`mate-panel-camino`'s fifth patch** has the Show Desktop applet read, write and follow the property while `org.mate.Camino` has an owner, and use libxfce4windowing as before without one. `pkgrel` is 5.
+
+The tests are `camino-policy/src/tests/show_desktop.rs`, with the proptest sequences given the toggle, and `camino/src/tests/show_desktop.rs`, on both kinds of window where the window matters.
+
+The fourth criterion's run needs a Session with the new package installed, and wasn't done here: it is [106](106-packaging-and-closing-m6.md)'s, as the checklist's *The Show Desktop button and Ctrl+Alt+D show the same desktop*. The patch was compiled and packaged but never run against Camino.

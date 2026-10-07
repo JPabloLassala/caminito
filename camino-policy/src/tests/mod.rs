@@ -9,6 +9,7 @@ mod outputs;
 mod placement;
 mod requests;
 mod shade;
+mod show_desktop;
 mod stacking;
 mod states;
 mod transients;

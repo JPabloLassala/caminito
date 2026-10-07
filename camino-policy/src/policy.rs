@@ -240,6 +240,9 @@ pub struct Policy<W: PolicyWindow> {
     /// Each workspace's windows, bottom to top.
     stacks: Vec<Vec<WindowId>>,
     active: usize,
+    /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
+    /// (workspace.h:79), each with the window every seat focused when it was shown.
+    showing_desktop: BTreeMap<usize, BTreeMap<SeatId, WindowId>>,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
     outputs: Vec<Output>,
@@ -264,6 +267,7 @@ impl<W: PolicyWindow> Policy<W> {
             windows: BTreeMap::new(),
             stacks: vec![Vec::new()],
             active: 0,
+            showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             outputs: Vec::new(),
             primary_output: None,
@@ -352,6 +356,8 @@ impl<W: PolicyWindow> Policy<W> {
             // order of the workspaces they came from, which is only close to that.
             self.stacks[last].extend(removed);
             self.active = self.active.min(last);
+            self.showing_desktop
+                .retain(|workspace, _| *workspace < count);
         } else {
             self.stacks.resize(count, Vec::new());
         }
@@ -407,6 +413,8 @@ impl<W: PolicyWindow> Policy<W> {
             },
         );
         self.stacks[workspace].push(id);
+        // Before it's placed, which is among the windows that show.
+        self.leave_show_desktop(id);
         self.place(id);
         self.maximize_if_too_big(id);
         self.adopt_transients(id);
@@ -549,7 +557,51 @@ impl<W: PolicyWindow> Policy<W> {
                     self.activate(seat, id, now);
                 }
             }
+            Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
         }
+        self.apply();
+    }
+
+    /// Shows the desktop on the active workspace, or stops, as Marco's `show-desktop` and
+    /// `_NET_SHOWING_DESKTOP` do. Showing it hides the workspace's windows, but for the
+    /// desktop, docks and their transients, without minimising them, and focuses the
+    /// desktop if it's a window (`meta_screen_show_desktop`, screen.c:2850-2882). Stopping
+    /// brings them back as they were stacked, each seat with the focus it had. Marco gives
+    /// the default focus there (`handle_show_desktop`, keybindings.c:2902-2917), which is
+    /// the topmost window and so another one if the focused window wasn't on top; 94 asks
+    /// for the focus they had. It also ends, another way, when a window is mapped or
+    /// activated on the workspace: see `leave_show_desktop`.
+    pub fn set_showing_desktop(&mut self, showing: bool) {
+        if showing == self.is_showing_desktop() {
+            return;
+        }
+        if showing {
+            self.showing_desktop.insert(self.active, self.focus.clone());
+            // Marco focuses the most recently used desktop window. One that never had the
+            // focus isn't in `mru`, so the stack is looked through after it.
+            let top_down = self.stacks[self.active].iter().rev();
+            let desktop = self.mru.iter().chain(top_down).copied().find(|id| {
+                self.windows[id].window_type == WindowType::Desktop && self.is_showing(*id)
+            });
+            if let Some(desktop) = desktop {
+                for seat in &self.seats {
+                    self.focus.insert(*seat, desktop);
+                }
+            }
+        } else {
+            let before = self
+                .showing_desktop
+                .remove(&self.active)
+                .unwrap_or_default();
+            let default = self.default_focus();
+            for seat in &self.seats {
+                let had = before.get(seat).copied().filter(|id| self.is_showing(*id));
+                if let Some(id) = had.or(default) {
+                    self.focus.insert(*seat, id);
+                }
+            }
+        }
+        // The seats that focused a window that's hidden now lose it there.
         self.apply();
     }
 
@@ -586,6 +638,11 @@ impl<W: PolicyWindow> Policy<W> {
         };
         self.set_last_seat(seat);
         self.switch_workspace(workspace);
+        // Marco drops an activation older than the user's last input before it looks at
+        // the desktop (window.c:3179-3201), so a stale one hides nothing.
+        if !self.focus_time.get(&seat).is_some_and(|last| now < *last) {
+            self.leave_show_desktop(id);
+        }
         let mut current = Some(id);
         while let Some(w) = current {
             let managed = self.windows.get_mut(&w).unwrap();
@@ -903,6 +960,11 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn active_workspace(&self) -> usize {
         self.active
+    }
+
+    /// Whether the active workspace shows its desktop (94).
+    pub fn is_showing_desktop(&self) -> bool {
+        self.showing_desktop.contains_key(&self.active)
     }
 
     pub fn outputs(&self) -> &[Output] {
@@ -1379,6 +1441,46 @@ impl<W: PolicyWindow> Policy<W> {
         )
     }
 
+    /// Whether `id` or one of its transient ancestors is the desktop or a dock: the
+    /// windows that stay while the desktop is shown, so that the user can work on a file
+    /// of the desktop's through a dialog (window.c:190-200).
+    fn is_desktop_component(&self, id: WindowId) -> bool {
+        let mut current = Some(id);
+        while let Some(w) = current {
+            if self.is_desktop_or_dock(w) {
+                return true;
+            }
+            current = self.windows[&w].parent;
+        }
+        false
+    }
+
+    /// Stops showing the desktop on the workspace of `id`, a window newly mapped or
+    /// activated there, unless it's a desktop component. The windows that were hidden
+    /// are minimised for good, so that `id` comes up alone: Marco's
+    /// `maybe_leave_show_desktop_mode` (window.c:183-208), which minimises those with a
+    /// minimise function, the normal windows and dialogs (window.c:6821-6827).
+    ///
+    /// Two things aren't Marco's, on purpose. Marco looks at the active workspace
+    /// whichever one the window is on, where this looks at the window's own. And Marco
+    /// minimises a new dialog's parents with the rest, which hides the dialog with them;
+    /// here they're kept, as Marco itself keeps an activated window's.
+    fn leave_show_desktop(&mut self, id: WindowId) {
+        let workspace = self.windows[&id].workspace;
+        if !self.showing_desktop.contains_key(&workspace) || self.is_desktop_component(id) {
+            return;
+        }
+        for other in self.stacks[workspace].clone() {
+            let managed = &self.windows[&other];
+            if matches!(managed.window_type, WindowType::Normal | WindowType::Dialog)
+                && !self.is_ancestor(other, id)
+            {
+                self.windows.get_mut(&other).unwrap().minimized = true;
+            }
+        }
+        self.showing_desktop.remove(&workspace);
+    }
+
     /// Whether a window is on screen: managed, and shown on the active workspace.
     pub fn is_showing(&self, id: WindowId) -> bool {
         self.windows
@@ -1388,8 +1490,17 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Whether a window would show if its workspace were active: neither it nor a transient
-    /// ancestor is minimised.
+    /// ancestor is minimised, and its workspace doesn't show its desktop instead, as in
+    /// Marco's `meta_window_showing_on_its_workspace` (window.c:1385-1425).
     fn is_visible_on_workspace(&self, id: WindowId) -> bool {
+        if self
+            .windows
+            .get(&id)
+            .is_some_and(|m| self.showing_desktop.contains_key(&m.workspace))
+            && !self.is_desktop_component(id)
+        {
+            return false;
+        }
         let mut current = Some(id);
         while let Some(w) = current {
             let Some(managed) = self.windows.get(&w) else {

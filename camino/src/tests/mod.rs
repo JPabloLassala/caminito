@@ -34,6 +34,7 @@ mod security_context;
 mod selection;
 mod session;
 mod settings;
+mod show_desktop;
 mod window_properties;
 mod work_area;
 mod x11_scale;
