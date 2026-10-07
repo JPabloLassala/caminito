@@ -16,16 +16,18 @@ and capture it through the ext-image-capture-source toplevel source, which
 Camino renders alone with its frame, whatever covers it. With no such
 window the shot is of the whole desktop, as on X11.
 
-A capture session that the compositor stops now fails the capture, where it
-only warned: the window was closed, and no frame would ever come.
+The window can be closed after Camino has named it. The compositor then
+stops the capture session, and the window's capture fails where an
+output's only warns.
 
 Without an owner of org.mate.Camino, which is any other Wayland compositor,
-nothing changes: --window is refused as before.
+nothing changes: --window is refused as before, and the toplevel globals
+aren't bound.
 ---
  mate-screenshot/src/mate-screenshot.c    |  29 ++-
- mate-screenshot/src/wayland-screenshot.c | 269 +++++++++++++++++++++++
+ mate-screenshot/src/wayland-screenshot.c | 285 +++++++++++++++++++++++
  mate-screenshot/src/wayland-screenshot.h |  19 ++
- 3 files changed, 312 insertions(+), 5 deletions(-)
+ 3 files changed, 328 insertions(+), 5 deletions(-)
 
 diff --git a/mate-screenshot/src/mate-screenshot.c b/mate-screenshot/src/mate-screenshot.c
 index c9d1ac4d..7ab3aa4c 100644
@@ -91,7 +93,7 @@ index c9d1ac4d..7ab3aa4c 100644
            g_printerr (_("Error: window capture is not supported on Wayland.\n"));
            exit (1);
 diff --git a/mate-screenshot/src/wayland-screenshot.c b/mate-screenshot/src/wayland-screenshot.c
-index 6d7a5df2..17c3e30b 100644
+index 6d7a5df2..531cd601 100644
 --- a/mate-screenshot/src/wayland-screenshot.c
 +++ b/mate-screenshot/src/wayland-screenshot.c
 @@ -29,6 +29,7 @@
@@ -116,12 +118,14 @@ index 6d7a5df2..17c3e30b 100644
  #include <wayland-client.h>
  
  typedef struct {
-@@ -47,8 +53,17 @@ typedef struct {
+@@ -47,8 +53,19 @@ typedef struct {
    struct zwlr_screencopy_manager_v1 *screencopy_manager;
    struct ext_output_image_capture_source_manager_v1 *output_image_capture_source_manager;
    struct ext_image_copy_capture_manager_v1 *image_copy_capture_manager;
 +  struct ext_foreign_toplevel_list_v1 *toplevel_list;
 +  struct ext_foreign_toplevel_image_capture_source_manager_v1 *toplevel_image_capture_source_manager;
++  /* Whether this is a window capture, which alone binds the two above */
++  gboolean wants_toplevels;
 +  /* The toplevels the compositor lists, as ToplevelData */
 +  GList *toplevels;
  } ClientData;
@@ -134,20 +138,45 @@ index 6d7a5df2..17c3e30b 100644
  typedef struct {
    ClientData *client_data;
    GdkMonitor *monitor;
-@@ -195,6 +210,12 @@ handle_global (void *data, struct wl_registry *registry, uint32_t name,
+@@ -65,6 +82,8 @@ typedef struct {
+   gboolean capture_done;
+   gboolean capture_failed;
+   gboolean y_inverted;
++  /* Whether a stopped session fails the capture: a window's, which was closed */
++  gboolean fails_when_stopped;
+   struct ext_image_copy_capture_session_v1 *image_copy_capture_session;
+   struct ext_image_copy_capture_frame_v1 *image_copy_capture_frame;
+ } OutputData;
+@@ -178,6 +197,8 @@ convert_buffer_to_pixbuf (OutputData *output)
+ 
+ /* --- Registry --- */
+ 
++static const struct ext_foreign_toplevel_list_v1_listener toplevel_list_listener;
++
+ static void
+ handle_global (void *data, struct wl_registry *registry, uint32_t name,
+                const char *interface, uint32_t version)
+@@ -195,6 +216,19 @@ handle_global (void *data, struct wl_registry *registry, uint32_t name,
    else if (g_strcmp0 (interface, ext_image_copy_capture_manager_v1_interface.name) == 0)
      cd->image_copy_capture_manager = wl_registry_bind (registry, name,
        &ext_image_copy_capture_manager_v1_interface, 1);
-+  else if (g_strcmp0 (interface, ext_foreign_toplevel_list_v1_interface.name) == 0)
-+    cd->toplevel_list = wl_registry_bind (registry, name,
-+      &ext_foreign_toplevel_list_v1_interface, 1);
-+  else if (g_strcmp0 (interface, ext_foreign_toplevel_image_capture_source_manager_v1_interface.name) == 0)
++  else if (cd->wants_toplevels &&
++           g_strcmp0 (interface, ext_foreign_toplevel_list_v1_interface.name) == 0)
++    {
++      cd->toplevel_list = wl_registry_bind (registry, name,
++        &ext_foreign_toplevel_list_v1_interface, 1);
++      /* Before anything else is read: the toplevels follow the bind */
++      ext_foreign_toplevel_list_v1_add_listener (cd->toplevel_list,
++                                                 &toplevel_list_listener, cd);
++    }
++  else if (cd->wants_toplevels &&
++           g_strcmp0 (interface, ext_foreign_toplevel_image_capture_source_manager_v1_interface.name) == 0)
 +    cd->toplevel_image_capture_source_manager = wl_registry_bind (registry, name,
 +      &ext_foreign_toplevel_image_capture_source_manager_v1_interface, 1);
  }
  
  static void
-@@ -207,6 +228,68 @@ static const struct wl_registry_listener registry_listener = {
+@@ -207,6 +241,68 @@ static const struct wl_registry_listener registry_listener = {
    .global_remove = handle_global_remove,
  };
  
@@ -216,19 +245,19 @@ index 6d7a5df2..17c3e30b 100644
  /* --- wlr-screencopy frame listener --- */
  
  static void
-@@ -428,7 +511,11 @@ handle_ext_session_done (void *data, struct ext_image_copy_capture_session_v1 *s
+@@ -428,7 +524,11 @@ handle_ext_session_done (void *data, struct ext_image_copy_capture_session_v1 *s
  static void
  handle_ext_session_stopped (void *data, struct ext_image_copy_capture_session_v1 *session)
  {
 +  OutputData *output = data;
    g_warning ("Wayland screenshot: ext session stopped");
 +  /* A stopped session gives no more frames: its window was closed */
-+  if (!output->capture_done)
++  if (output->fails_when_stopped && !output->capture_done)
 +    output->capture_failed = TRUE;
  }
  
  static const struct ext_image_copy_capture_session_v1_listener ext_session_listener = {
-@@ -470,6 +557,11 @@ free_client_data (ClientData *cd)
+@@ -470,6 +570,11 @@ free_client_data (ClientData *cd)
      ext_output_image_capture_source_manager_v1_destroy (cd->output_image_capture_source_manager);
    if (cd->image_copy_capture_manager != NULL)
      ext_image_copy_capture_manager_v1_destroy (cd->image_copy_capture_manager);
@@ -240,7 +269,7 @@ index 6d7a5df2..17c3e30b 100644
    wl_registry_destroy (cd->registry);
  }
  
-@@ -654,6 +746,128 @@ capture_screenshot (G_GNUC_UNUSED gboolean capture_all_monitors, gboolean show_m
+@@ -654,6 +759,131 @@ capture_screenshot (G_GNUC_UNUSED gboolean capture_all_monitors, gboolean show_m
    return screenshot;
  }
  
@@ -295,6 +324,7 @@ index 6d7a5df2..17c3e30b 100644
 +  GdkPixbuf *screenshot = NULL;
 +  guint32 options;
 +
++  client_data.wants_toplevels = TRUE;
 +  client_data.display = gdk_wayland_display_get_wl_display (gdk_display_get_default ());
 +  client_data.registry = wl_display_get_registry (client_data.display);
 +  wl_registry_add_listener (client_data.registry, &registry_listener, &client_data);
@@ -310,9 +340,10 @@ index 6d7a5df2..17c3e30b 100644
 +      return NULL;
 +    }
 +
-+  /* The compositor lists the toplevels there are, each with its identifier */
-+  ext_foreign_toplevel_list_v1_add_listener (client_data.toplevel_list,
-+                                             &toplevel_list_listener, &client_data);
++  /* The compositor lists the toplevels there are, each with its identifier.
++   * That's all that's wanted of the list, so it's stopped, as it must be
++   * before it's destroyed. */
++  ext_foreign_toplevel_list_v1_stop (client_data.toplevel_list);
 +  wl_display_roundtrip (client_data.display);
 +
 +  for (GList *elem = client_data.toplevels; elem; elem = elem->next)
@@ -331,6 +362,7 @@ index 6d7a5df2..17c3e30b 100644
 +
 +  window = g_new0 (OutputData, 1);
 +  window->client_data = &client_data;
++  window->fails_when_stopped = TRUE;
 +
 +  source = ext_foreign_toplevel_image_capture_source_manager_v1_create_source (
 +    client_data.toplevel_image_capture_source_manager, toplevel->handle);
@@ -369,7 +401,7 @@ index 6d7a5df2..17c3e30b 100644
  /* --- Public API --- */
  
  gboolean
-@@ -722,4 +936,59 @@ wayland_screenshot_capture_region (GdkRectangle *region, gboolean include_pointe
+@@ -722,4 +952,59 @@ wayland_screenshot_capture_region (GdkRectangle *region, gboolean include_pointe
    return wayland_screenshot_capture_output (monitor, include_pointer);
  }
  

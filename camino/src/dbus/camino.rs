@@ -24,7 +24,7 @@ pub(crate) enum Request {
     /// Calls `SaveLayout`.
     SaveLayout(oneshot::Sender<Result<(), saved::Error>>),
     /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
-    ActiveToplevel(Option<u32>, oneshot::Sender<String>),
+    ActiveToplevel(Option<u32>, oneshot::Sender<Option<String>>),
 }
 
 /// `org.mate.Camino`, as zbus serves it.
@@ -79,7 +79,10 @@ impl CaminoInterface {
     ) -> zbus::fdo::Result<String> {
         let caller = caller_process(connection, &header).await;
         let active = |reply| Request::ActiveToplevel(caller, reply);
-        super::ask(&self.requests, active).await
+        // The empty string is the method's "none".
+        Ok(super::ask(&self.requests, active)
+            .await?
+            .unwrap_or_default())
     }
 }
 
@@ -93,7 +96,7 @@ async fn caller_process(connection: &zbus::Connection, header: &Header<'_>) -> O
     };
     asked
         .await
-        .inspect_err(|err| tracing::debug!("can't ask the bus for a caller's process: {err}"))
+        .inspect_err(|err| tracing::warn!("can't ask the bus for a caller's process: {err}"))
         .ok()
 }
 

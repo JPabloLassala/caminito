@@ -195,9 +195,10 @@ fn the_recently_focused_windows_are_those_on_screen_from_the_focused_one() {
         TestWindow::new(5, 1920, 30).with_type(WindowType::Dock),
         ms(5),
     );
+    // A click doesn't give a dock the focus.
     policy.click(SEAT, id(5), ms(6));
     policy.click(SEAT, id(2), ms(7));
-    // Most recently focused first: 2, 5, 4, 3, 1.
+    // Most recently focused first: 2, 4, 3, 1.
     policy.minimize(id(3));
     policy.move_to_workspace(id(4), 1);
 

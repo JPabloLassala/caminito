@@ -286,9 +286,12 @@ pub struct Settings {
 /// reads the bindings (17).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Commands {
+    /// `command-screenshot`.
     pub screenshot: String,
+    /// `command-window-screenshot`.
     pub window_screenshot: String,
-    /// Marco 1.29.0's schema has no key for it, so it's often the default.
+    /// `command-area-screenshot`. Marco 1.29.0's schema has no key for it, so it's often
+    /// the default of the Marco that has (`org.mate.marco.gschema.xml:780-781` at `8522ed1`).
     pub area_screenshot: String,
 }
 

@@ -33,7 +33,7 @@ source=("git+https://github.com/mate-desktop/mate-utils.git#tag=v${pkgver}"
         0001-screenshot-Capture-the-active-window-on-Wayland-with.patch)
 sha256sums=('4dc1726054d2333bb4dda6f0bed8c8ea49eeaf839525b5d5c6d9d46ddfa058e9'
             'SKIP'
-            'dbe298bc14f8beb3d3b500dc2bb13f08de1757de1f4d3bfa766030f7cc89df25')
+            '5dc163f2b239fa6a4a30c12f14d4657fce9dce5a0a31e2484abc943a8ffa81d1')
 prepare() {
 	cd "${_pkgname}"
 	git submodule init

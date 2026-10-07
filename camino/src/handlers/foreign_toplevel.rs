@@ -171,20 +171,22 @@ impl Camino {
         Some(handle.identifier())
     }
 
-    /// The identifier of the window a window screenshot is of (104), or the empty string
-    /// when there's none: the window on screen that most recently had the focus, which is
-    /// Marco's active window, passing over those of the process `caller`. mate-screenshot's
-    /// dialog is a window of the caller's, and has the focus when it asks.
-    pub(crate) fn active_toplevel(&self, caller: Option<u32>) -> String {
+    /// The identifier of the window a window screenshot is of (104), if there's one: the
+    /// window on screen that most recently had the focus, which is Marco's active window,
+    /// passing over those of the process `caller`. mate-screenshot's dialog is a window of
+    /// the caller's, and has the focus when it asks. A desktop or a dock isn't one to
+    /// capture: with one active, mate-screenshot takes the whole screen on X11
+    /// (`screenshot-utils.c`'s `screenshot_find_current_window`).
+    pub(crate) fn active_toplevel(&self, caller: Option<u32>) -> Option<String> {
         let of_another = |id: &WindowId| {
             let process = self.policy.window(*id).and_then(|mapped| mapped.pid());
             caller.is_none() || process != caller
         };
-        self.policy
-            .recently_focused()
-            .find(of_another)
-            .and_then(|id| self.toplevel_identifier(id))
-            .unwrap_or_default()
+        let active = self.policy.recently_focused().find(of_another)?;
+        if self.policy.is_desktop_or_dock(active) {
+            return None;
+        }
+        self.toplevel_identifier(active)
     }
 
     /// The window ext-foreign-toplevel-list's clients know by `identifier`.

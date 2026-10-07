@@ -11,7 +11,7 @@ use crate::state::Camino;
 
 /// A command of `org.mate.Marco.keybinding-commands`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
+pub(crate) enum Command {
     /// `command-screenshot`, of the screen.
     Screenshot,
     /// `command-window-screenshot`, of the active window.
@@ -39,8 +39,8 @@ impl Camino {
 
 /// Spawns `line`, split as a shell splits words, with Camino's own environment under
 /// `environment`, and doesn't wait for it. It's GLib's spawn, as Marco's
-/// (`core/util.c`'s `meta_spawn_command_line_async_on_screen`): the program is a grandchild,
-/// so Camino has no child to reap.
+/// (`core/keybindings.c:2449-2478`, `meta_spawn_command_line_async_on_screen`, at `8522ed1`):
+/// the program is a grandchild, so Camino has no child to reap.
 fn spawn(line: &str, environment: &BTreeMap<OsString, OsString>) -> Result<(), glib::Error> {
     let argv = glib::shell_parse_argv(line)?;
     let argv: Vec<&Path> = argv.iter().map(Path::new).collect();

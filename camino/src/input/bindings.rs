@@ -45,7 +45,7 @@ const CTRL_ALT: Held = Held {
 
 /// What a binding does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Binding {
+pub(crate) enum Binding {
     /// Something policy does.
     Policy(Action),
     /// A command to run (104).
@@ -53,8 +53,8 @@ pub enum Binding {
 }
 
 /// Marco's defaults for the actions M1 binds, and for its three screenshot commands
-/// (104). `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`;
-/// 1.29.0 doesn't bind it.
+/// (104). `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`
+/// (`org.mate.marco.gschema.xml:692-693` at `8522ed1`); 1.29.0 doesn't bind it.
 const BINDINGS: [(Held, Keysym, Binding); 8] = [
     (
         CTRL_ALT,
@@ -83,7 +83,7 @@ const BINDINGS: [(Held, Keysym, Binding); 8] = [
 ];
 
 /// What's bound to `keysym` with exactly `mods` held, if anything.
-pub fn binding_for(mods: &ModifiersState, keysym: Keysym) -> Option<Binding> {
+pub(crate) fn binding_for(mods: &ModifiersState, keysym: Keysym) -> Option<Binding> {
     let held = Held {
         ctrl: mods.ctrl,
         alt: mods.alt,
