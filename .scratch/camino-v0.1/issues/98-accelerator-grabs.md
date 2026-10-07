@@ -1,7 +1,7 @@
 # Accelerator grabs
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -19,17 +19,44 @@ A program on the session bus can ask Camino for a key combination and be told wh
 
 ## Acceptance criteria
 
-- [ ] Headless tests with a D-Bus client, written before the code:
+- [x] Headless tests with a D-Bus client, written before the code:
   - a grabbed combination signals its action id once per press, and the key reaches no client;
   - an ungrabbed combination reaches the focused client as before;
   - a second caller's grab of the same combination is refused with action id 0;
   - the grabs of a caller that leaves the bus are released;
   - a combination Camino binds itself isn't signalled;
   - an accelerator that doesn't parse returns 0.
-- [ ] Unit tests for the accelerator parser: modifiers in any order and case, XF86 keysyms, and the empty and `disabled` strings.
+- [x] Unit tests for the accelerator parser: modifiers in any order and case, XF86 keysyms, and the empty and `disabled` strings.
 
 ## Notes
 
 - **While locked** is M7's: the lock's keyboard path decides which grabs still fire.
 - **Key repeat and release** aren't signalled. If msd's volume keys need repeat, add it here and say so.
 - **Callers in a sandbox** can't reach the session bus's `org.mate.Camino` without a portal, so there's no filter to add.
+
+## Resolution
+
+The code is `camino/src/input/bindings/accelerators.rs` (the parser and the table of grabs), the `grabs_stage` of the keyboard path in `camino/src/input/mod.rs`, and the methods and the signal in `camino/src/dbus/camino.rs`. The headless tests are `camino/src/tests/accelerators.rs`, and the parser's are beside it.
+
+**The signatures,** on `org.mate.Camino` at `/org/mate/Camino`, for [99](99-msd-media-keys-and-osd.md) and [100](100-msd-custom-shortcuts.md):
+
+| Member | Signature | |
+|---|---|---|
+| `GrabAccelerators` | in `as`, out `au` | An action id for each accelerator, in order. 0 is never an id: it's the answer for the empty string and `disabled`, for a string that doesn't parse, and for a combination another caller has. A combination the caller already has gets the id it had. |
+| `UngrabAccelerators` | in `au` | Releases the caller's grabs with those ids. An id that isn't one of the caller's is passed over. |
+| `AcceleratorActivated` | signal `uu` | The action id, then the key event's time in milliseconds, the time Wayland clients get with the key. It's sent to the grabber's unique name only. |
+
+`org.gnome.Shell`'s takes `a(suu)` and signals `(ua{sv})`. The mode and grab flags, and the parameters other than the time, had nothing to carry here.
+
+**What parses:** the modifiers `<Control>`, `<Ctrl>`, `<Ctl>` and `<Primary>`; `<Shift>` and `<Shft>`; `<Alt>`, `<Meta>` and `<Mod1>`; `<Super>`, `<Hyper>` and `<Mod4>`, in any order and case, then a keysym's name as xkbcommon knows it. A letter matches in either case. A grab is of exactly those modifiers, with the locks not counted, as Camino's bindings are.
+
+**What doesn't,** each with its log line: `<Release>`, since only the press is signalled; `<Mod2>`, `<Mod3>` and `<Mod5>`, the lock and the level shifts, which Camino's bindings don't tell apart either; and a key by its code, `0x1f`, which msd writes for a key with no keysym. If 99 or 100 finds one of these in a default or in what Keyboard Shortcuts writes, it's added here.
+
+**Decided here:**
+
+- A grab of a combination Camino binds is granted, and never signalled while Camino binds it. M8 makes the bindings a setting, and a refusal would be out of date when they change.
+- A second caller's grab is refused however the first wrote the combination: `XF86AudioMute` and `xf86audiomute` are one.
+- An active shortcuts inhibitor on the focused surface passes the grabbed keys to the client, as it does Camino's bindings, and as Mutter's does. A remote desktop or a virtual machine then gets the media keys.
+- The watch for callers that leave the bus was the Screensaver shim's ([62](62-screensaver-names.md)). It's `dbus/mod.rs`'s now, and drops the shim's cookies and the grabs alike.
+
+**Not run in a Session:** nothing calls it until 99's and 100's patches do. Their checklist items are its check.

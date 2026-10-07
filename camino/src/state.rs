@@ -78,6 +78,7 @@ use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::handlers::{DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::{GrabKind, PointerFocus};
@@ -178,8 +179,11 @@ pub struct Camino {
     pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
     /// The layer surface a click gave the keyboard, and policy's focus then (63).
     pub(crate) keyboard_layer: Option<(LayerSurface, Option<WindowId>)>,
-    /// Keys whose press ran a binding, so their release is swallowed too.
+    /// Keys whose press ran a binding or a grabbed accelerator, so their release is
+    /// swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
+    /// The accelerators callers of `org.mate.Camino` have grabbed (98).
+    pub(crate) accelerator_grabs: Grabs,
     /// Where the pointer is on the frames, and what it's doing with them.
     pub frame_pointer: FramePointer,
     /// The interactive move or resize the pointer is doing, if any.
@@ -711,6 +715,7 @@ impl Camino {
             pointer_focus: None,
             keyboard_layer: None,
             suppressed_keys: HashSet::new(),
+            accelerator_grabs: Grabs::default(),
             frame_pointer: FramePointer::default(),
             window_grab: None,
             client_cursor: CursorImageStatus::default_named(),

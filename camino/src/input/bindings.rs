@@ -1,16 +1,29 @@
 //! Camino's keybindings: a hard-coded set of Marco's defaults, standing in until M8 reads
-//! `org.mate.Marco.*` (17).
+//! `org.mate.Marco.*` (17). The accelerators other programs grab are `accelerators`' (98).
+
+pub(crate) mod accelerators;
 
 use camino_policy::Action;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 
 /// The modifiers a binding names. Locks don't count.
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Held {
     ctrl: bool,
     alt: bool,
     shift: bool,
     logo: bool,
+}
+
+impl From<&ModifiersState> for Held {
+    fn from(mods: &ModifiersState) -> Self {
+        Self {
+            ctrl: mods.ctrl,
+            alt: mods.alt,
+            shift: mods.shift,
+            logo: mods.logo,
+        }
+    }
 }
 
 const ALT: Held = Held {
@@ -38,12 +51,7 @@ const BINDINGS: [(Held, Keysym, Action); 5] = [
 
 /// The action bound to `keysym` with exactly `mods` held, if any.
 pub fn action_for(mods: &ModifiersState, keysym: Keysym) -> Option<Action> {
-    let held = Held {
-        ctrl: mods.ctrl,
-        alt: mods.alt,
-        shift: mods.shift,
-        logo: mods.logo,
-    };
+    let held = Held::from(mods);
     BINDINGS
         .iter()
         .find(|(mods, sym, _)| *mods == held && *sym == keysym)
