@@ -296,6 +296,8 @@ pub struct WindowSpec {
     /// xdg only: whether it makes a `wp_fractional_scale_v1` before its first commit, as
     /// GTK4 and Qt 6 do.
     pub fractional_scale: bool,
+    /// X11 only: whether it takes `_NET_WM_SYNC_REQUEST`, as toolkits do.
+    pub sync_request: bool,
 }
 
 impl Default for WindowSpec {
@@ -314,6 +316,7 @@ impl Default for WindowSpec {
             cardinals: Vec::new(),
             delete_window: true,
             fractional_scale: false,
+            sync_request: false,
         }
     }
 }
@@ -605,7 +608,8 @@ impl Fixture {
                 && spec.types.is_empty()
                 && spec.states.is_empty()
                 && spec.input.is_none()
-                && spec.cardinals.is_empty(),
+                && spec.cardinals.is_empty()
+                && !spec.sync_request,
             "an xdg toplevel can't ask for X properties: {spec:?}"
         );
         assert!(spec.delete_window, "an xdg toplevel can always be closed");
@@ -677,6 +681,7 @@ impl Fixture {
             background: None,
             override_redirect: false,
             cardinals: spec.cardinals,
+            sync_request: spec.sync_request,
         };
         let window = self
             .x11_call(id, move |x| {

@@ -148,6 +148,9 @@ struct Unflushed {
     modal: Option<bool>,
     /// `_NET_WM_STATE_DEMANDS_ATTENTION`, as the client asked.
     demands_attention: Option<bool>,
+    /// The last geometry was sent with a sync request, which another flush mustn't cancel.
+    /// Unlike the rest, it's kept from one flush to the next.
+    syncing: bool,
 }
 
 /// Runs `f` on what hasn't been flushed yet.
@@ -404,7 +407,9 @@ impl Adapter for X11Surface {
             geometry,
             modal,
             demands_attention,
+            syncing,
         } = unflushed(self, std::mem::take);
+        unflushed(self, |unflushed| unflushed.syncing = syncing);
         let mut set = Ok(());
         if let Some(modal) = modal {
             set = set.and(self.set_modal(modal));
@@ -415,7 +420,20 @@ impl Adapter for X11Surface {
         if let Some((geometry, states)) = geometry {
             set_net_wm_states(self, states.maximized, states.fullscreen);
             set = set.and(self.set_shaded(states.shaded));
-            if let Err(err) = self.configure(x_rect(self, geometry)) {
+            let rect = x_rect(self, geometry);
+            // A window being resized is asked to say when it has drawn at each size, with
+            // `_NET_WM_SYNC_REQUEST`, and keeps the size it last drew at until then: X
+            // resizes it at once, and what it hasn't drawn yet is black. The resize's last
+            // size is waited for too, though the grab is over by then. A window that
+            // doesn't take the request is configured as ever.
+            let sync = states.resizing || (syncing && rect.size != self.last_configure().size);
+            unflushed(self, |unflushed| unflushed.syncing = sync);
+            let configured = if sync {
+                self.configure_with_sync(rect, None)
+            } else {
+                self.configure(rect)
+            };
+            if let Err(err) = configured {
                 tracing::debug!("can't configure an X window: {err}");
             }
         }

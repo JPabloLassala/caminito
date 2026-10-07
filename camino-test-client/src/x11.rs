@@ -62,6 +62,9 @@ pub struct XWindowSpec {
     pub override_redirect: bool,
     /// `CARDINAL` properties set before it's mapped, such as `_NET_WM_DESKTOP`.
     pub cardinals: Vec<(&'static str, Vec<u32>)>,
+    /// Whether it takes `_NET_WM_SYNC_REQUEST`, as toolkits do: a resize waits for
+    /// [`X11Client::ack_sync_requests`].
+    pub sync_request: bool,
 }
 
 /// One connection to Xwayland.
@@ -250,15 +253,33 @@ impl X11Client {
                 value,
             )?;
         }
+        let mut protocols = Vec::new();
         if spec.delete_window {
-            let protocols = self.atom("WM_PROTOCOLS")?;
-            let delete = self.atom("WM_DELETE_WINDOW")?;
+            protocols.push(self.atom("WM_DELETE_WINDOW")?);
+        }
+        if spec.sync_request {
+            use x11rb::protocol::sync::{ConnectionExt as _, Int64};
+            let counter = self.conn.generate_id()?;
+            self.conn
+                .sync_create_counter(counter, Int64 { hi: 0, lo: 0 })?;
+            let property = self.atom("_NET_WM_SYNC_REQUEST_COUNTER")?;
             self.conn.change_property32(
                 PropMode::REPLACE,
                 window,
-                protocols,
+                property,
+                AtomEnum::CARDINAL,
+                &[counter],
+            )?;
+            protocols.push(self.atom("_NET_WM_SYNC_REQUEST")?);
+        }
+        if !protocols.is_empty() {
+            let property = self.atom("WM_PROTOCOLS")?;
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                property,
                 AtomEnum::ATOM,
-                &[delete],
+                &protocols,
             )?;
         }
         self.conn.sync()?;
@@ -451,6 +472,47 @@ impl X11Client {
             events.push(event);
         }
         Ok(events)
+    }
+
+    /// Answers the `_NET_WM_SYNC_REQUEST`s `window` has had since the last call, as a
+    /// toolkit does once it has drawn at the size it was configured with: sets the window's
+    /// counter to the last one's value. Returns how many there were; the other events are
+    /// kept for [`events`](Self::events).
+    pub fn ack_sync_requests(&self, window: Window) -> Result<usize, ReplyError> {
+        use x11rb::protocol::sync::{ConnectionExt as _, Int64};
+        let protocols = self.atom("WM_PROTOCOLS")?;
+        let sync_request = self.atom("_NET_WM_SYNC_REQUEST")?;
+        let mut values = Vec::new();
+        let mut others = Vec::new();
+        for event in self.events()? {
+            match &event {
+                Event::ClientMessage(message)
+                    if message.window == window
+                        && message.type_ == protocols
+                        && message.data.as_data32()[0] == sync_request =>
+                {
+                    let data = message.data.as_data32();
+                    values.push(Int64 {
+                        lo: data[2],
+                        hi: data[3] as i32,
+                    });
+                }
+                _ => others.push(event),
+            }
+        }
+        self.backlog.lock().unwrap().extend(others);
+        if let Some(&value) = values.last() {
+            let counter = match self.property(window, "_NET_WM_SYNC_REQUEST_COUNTER")? {
+                Some(Property {
+                    value: PropertyValue::Cardinals(counters),
+                    ..
+                }) => counters[0],
+                _ => panic!("the window takes no sync requests"),
+            };
+            self.conn.sync_set_counter(counter, value)?;
+            self.conn.sync()?;
+        }
+        Ok(values.len())
     }
 
     /// Blocks until an event `pick` takes arrives, keeping the others for

@@ -154,6 +154,75 @@ on_both_kinds! {
     }
 }
 
+#[test]
+fn an_x_window_that_takes_sync_requests_keeps_its_size_until_it_has_drawn_the_new_one() {
+    let (mut f, client) = Fixture::connected(Kind::X11);
+    let window = f.map(
+        client,
+        WindowSpec {
+            sync_request: true,
+            ..WindowSpec::plain((400, 300))
+        },
+    );
+    let start = f.geometry(window);
+    // Nearer the bottom-right corner than any other.
+    let point = (start.loc + Point::from((380, 270))).to_f64();
+    f.pointer_move(point.x, point.y);
+    f.key(KEY_LEFTALT, true);
+    f.pointer_button(BTN_MIDDLE, true);
+    f.pointer_move(point.x + 100., point.y + 50.);
+    f.sync(window);
+
+    // X has resized the window, which hasn't drawn at its new size yet: Camino shows it,
+    // and its frame, at the size of what it last drew.
+    let x = window.x11();
+    assert_eq!(
+        f.x11_call(client, move |x11| x11.size(x)).unwrap(),
+        (500, 350)
+    );
+    assert_eq!(f.geometry(window), start);
+
+    let acked = f.x11_call(client, move |x11| x11.ack_sync_requests(x));
+    assert_eq!(acked.unwrap(), 1);
+    f.dispatch_until(|f| f.geometry(window).size == (500, 350).into());
+    f.pointer_button(BTN_MIDDLE, false);
+    f.key(KEY_LEFTALT, false);
+    f.sync(window);
+
+    assert_eq!(
+        f.geometry(window),
+        Rectangle::new(start.loc, (500, 350).into())
+    );
+}
+
+#[test]
+fn an_x_window_released_before_it_has_drawn_its_new_size_still_waits_for_it() {
+    let (mut f, client) = Fixture::connected(Kind::X11);
+    let window = f.map(
+        client,
+        WindowSpec {
+            sync_request: true,
+            ..WindowSpec::plain((400, 300))
+        },
+    );
+    let start = f.geometry(window);
+    let point = (start.loc + Point::from((380, 270))).to_f64();
+    f.pointer_move(point.x, point.y);
+    f.key(KEY_LEFTALT, true);
+    f.pointer_button(BTN_MIDDLE, true);
+    f.pointer_move(point.x + 100., point.y + 50.);
+    f.pointer_button(BTN_MIDDLE, false);
+    f.key(KEY_LEFTALT, false);
+    f.sync(window);
+
+    assert_eq!(f.geometry(window), start);
+
+    let x = window.x11();
+    f.x11_call(client, move |x11| x11.ack_sync_requests(x))
+        .unwrap();
+    f.dispatch_until(|f| f.geometry(window).size == (500, 350).into());
+}
+
 on_both_kinds! {
     fn keys_held_when_the_keyboard_is_lost_are_released(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
