@@ -35,6 +35,10 @@ use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
 use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::image_capture_source::{
+    OutputCaptureSourceState, ToplevelCaptureSourceState,
+};
+use smithay::wayland::image_copy_capture::ImageCopyCaptureState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
 use smithay::wayland::output::OutputManagerState;
@@ -76,7 +80,7 @@ use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
-use crate::handlers::{DragIcon, sees_privileged_globals};
+use crate::handlers::{CaptureSession, DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
@@ -154,6 +158,13 @@ pub struct Camino {
     pub ext_workspace_state: ExtWorkspaceState,
     /// The workspace each window is on, as a panel's window list sees it (75).
     pub xfce_foreign_toplevel_state: XfceForeignToplevelState,
+
+    // Image capture, for a screenshot tool (103).
+    pub output_capture_source_state: OutputCaptureSourceState,
+    pub toplevel_capture_source_state: ToplevelCaptureSourceState,
+    pub image_copy_capture_state: ImageCopyCaptureState,
+    /// The capture sessions that are open, with the frames their clients wait for.
+    pub(crate) captures: Vec<CaptureSession>,
 
     // Input (06).
     pub pointer_constraints_state: PointerConstraintsState,
@@ -463,7 +474,8 @@ impl State {
     }
 
     /// The refresh pass, after each loop dispatch: brings the outward views up to date with
-    /// policy, renders the outputs that asked for it, and flushes the clients.
+    /// policy, renders the outputs that asked for it, copies the captures that are due, and
+    /// flushes the clients.
     pub fn refresh_and_flush_clients(&mut self) {
         // x11rb queues the X messages that arrive while Camino waits for a reply, which
         // leaves the socket quiet, so they're read here too.
@@ -476,6 +488,7 @@ impl State {
         self.camino.refresh_frames();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
+        self.refresh_captures();
         if let Err(err) = self.camino.display_handle.flush_clients() {
             tracing::warn!("error flushing clients: {err}");
         }
@@ -693,6 +706,17 @@ impl Camino {
             foreign_toplevel_handles: HashMap::new(),
             ext_workspace_state: ExtWorkspaceState::new::<State, _>(dh, privileged),
             xfce_foreign_toplevel_state: XfceForeignToplevelState::new::<State, _>(dh, privileged),
+
+            output_capture_source_state: OutputCaptureSourceState::new_with_filter::<State, _>(
+                dh, privileged,
+            ),
+            toplevel_capture_source_state: ToplevelCaptureSourceState::new_with_filter::<State, _>(
+                dh, privileged,
+            ),
+            image_copy_capture_state: ImageCopyCaptureState::new_with_filter::<State, _>(
+                dh, privileged,
+            ),
+            captures: Vec::new(),
 
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),

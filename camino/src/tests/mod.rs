@@ -16,6 +16,7 @@ mod frames;
 mod grabs;
 mod gtk_shell;
 mod headless;
+mod image_capture;
 mod input;
 mod input_devices;
 mod keyboard_settings;
