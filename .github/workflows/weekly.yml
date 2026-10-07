@@ -66,6 +66,7 @@ jobs:
           - mate-session-manager-camino
           - mate-panel-camino
           - mate-settings-daemon-camino
+          - mate-control-center-camino
           - caja-camino
     steps:
       - name: Install packages

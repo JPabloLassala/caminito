@@ -31,3 +31,16 @@ install_data(
   rename: 'mate-display-properties.desktop',
   install_dir: get_option('datadir') / 'camino' / 'xdg' / 'applications',
 )
+
+# What the control center's Keyboard Shortcuts dialog lists under Camino (05, 101): Marco's
+# own manifests from marco 1.29.0, with Camino's name in wm_name, which the dialog matches
+# against MATE_WM_KEYBINDINGS. They point at the org.mate.Marco.* keys, and their names are
+# translated from marco's catalogue. No action Camino never implements (05) was in Marco's,
+# so none is left out. The directory is mate-control-center's, where marco installs its own
+# too.
+install_data(
+  'data/keybindings/50-camino-desktop-key.xml',
+  'data/keybindings/50-camino-global-key.xml',
+  'data/keybindings/50-camino-window-key.xml',
+  install_dir: get_option('datadir') / 'mate-control-center' / 'keybindings',
+)

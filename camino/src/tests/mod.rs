@@ -17,6 +17,7 @@ mod gtk_shell;
 mod headless;
 mod input;
 mod input_devices;
+mod keybinding_manifests;
 mod keyboard_settings;
 mod keymap;
 mod layer_shell;

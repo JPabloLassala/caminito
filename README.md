@@ -82,8 +82,8 @@ are correct on any compositor, or only let the baseline build against Arch's lib
 MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
-for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino camino-git \
-  caja-camino; do
+for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
+  mate-control-center-camino caja-camino camino-git; do
   (cd packaging/arch/$package && makepkg -si)
 done
 ```

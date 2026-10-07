@@ -1,0 +1,172 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 22:44:54 -0300
+Subject: [PATCH] windows: Open under Camino
+
+The capplet asked GDK's X11 screen for the window manager's name, which on
+a Wayland display is no name at all, and it opened only for Marco. It asks
+wm-common now, which off X11 knows Camino by MATE_WM_NAME, and it opens
+for Camino too: Camino reads the org.mate.Marco settings the dialog writes.
+
+Two more things were X11's alone. The screen's window_manager_changed
+signal is connected only on an X11 screen. The modifiers offered for
+moving a window came from the X server's modifier map; off X11 they are
+Alt, and Super when the keymap has the key.
+
+On X11 the dialog opens for the window managers it did. wm-common reads
+the name from the window manager's own window there, as it does for the
+Appearance capplet, where GDK read it. Under any other Wayland compositor
+the capplet still says the window manager is unsupported.
+---
+ capplets/windows/mate-window-properties.c | 81 ++++++++++++++++++++---
+ 1 file changed, 71 insertions(+), 10 deletions(-)
+
+diff --git a/capplets/windows/mate-window-properties.c b/capplets/windows/mate-window-properties.c
+index 45bf0062..88b1a0d4 100644
+--- a/capplets/windows/mate-window-properties.c
++++ b/capplets/windows/mate-window-properties.c
+@@ -366,15 +366,26 @@ wm_unsupported (void)
+     gtk_widget_destroy (no_tool_dialog);
+ }
+ 
++/* Camino reads Marco's settings, so the dialog is as much its own. */
++static gboolean
++wm_is_supported (const char *wm)
++{
++    return g_strcmp0 (wm, WM_COMMON_MARCO) == 0 ||
++           g_strcmp0 (wm, WM_COMMON_CAMINO) == 0;
++}
++
+ static void
+ wm_changed_callback (GdkScreen *screen,
+                      void      *data)
+ {
+-    const char *current_wm;
++    char *current_wm;
+ 
+-    current_wm = gdk_x11_screen_get_window_manager_name (screen);
++    wm_common_update_window ();
++    current_wm = wm_common_get_current_window_manager ();
+ 
+-    gtk_widget_set_sensitive (dialog_win, g_strcmp0 (current_wm, WM_COMMON_MARCO) == 0);
++    gtk_widget_set_sensitive (dialog_win, wm_is_supported (current_wm));
++
++    g_free (current_wm);
+ }
+ 
+ static void
+@@ -396,24 +407,29 @@ main (int argc, char **argv)
+     GtkBuilder *builder;
+     GdkScreen  *screen;
+     GtkWidget  *nb;
+-    const char *current_wm;
++    char       *current_wm;
+     int i;
+ 
+     capplet_init (NULL, &argc, &argv);
+ 
+     screen = gdk_display_get_default_screen (gdk_display_get_default ());
+-    current_wm = gdk_x11_screen_get_window_manager_name (screen);
++    wm_common_update_window ();
++    current_wm = wm_common_get_current_window_manager ();
+ 
+     if (g_strcmp0 (current_wm, WM_COMMON_METACITY) == 0) {
++        g_free (current_wm);
+         mate_metacity_config_tool ();
+         return 0;
+     }
+ 
+-    if (g_strcmp0 (current_wm, WM_COMMON_MARCO) != 0) {
++    if (!wm_is_supported (current_wm)) {
++        g_free (current_wm);
+         wm_unsupported ();
+         return 1;
+     }
+ 
++    g_free (current_wm);
++
+     builder = gtk_builder_new_from_resource ("/org/mate/mcc/windows/window-properties.ui");
+ 
+     gtk_builder_add_callback_symbols (builder,
+@@ -551,8 +567,11 @@ main (int argc, char **argv)
+     g_signal_connect (marco_settings, "changed::" MARCO_FOCUS_KEY,
+                       G_CALLBACK (mouse_focus_changed_callback), NULL);
+ 
+-    g_signal_connect (screen, "window_manager_changed",
+-                      G_CALLBACK (wm_changed_callback), NULL);
++    /* Only an X11 screen has the signal: a compositor isn't replaced
++     * while its clients run. */
++    if (GDK_IS_X11_SCREEN (screen))
++        g_signal_connect (screen, "window_manager_changed",
++                          G_CALLBACK (wm_changed_callback), NULL);
+ 
+     i = 0;
+     while (i < n_mouse_modifiers) {
+@@ -591,8 +610,11 @@ fill_radio (GtkRadioButton     *group,
+     gtk_widget_show (modifier->radio);
+ }
+ 
++/* The modifiers the X server's keyboard has beside Alt. */
+ static void
+-reload_mouse_modifiers (void)
++x11_mouse_modifiers (gboolean *meta,
++                     gboolean *hyper,
++                     gboolean *super)
+ {
+     XModifierKeymap *modmap;
+     KeySym *keymap;
+@@ -604,7 +626,6 @@ reload_mouse_modifiers (void)
+     gboolean have_super;
+     int min_keycode, max_keycode;
+     int mod_meta, mod_super, mod_hyper;
+-    AtkObject *label_accessible;
+ 
+     XDisplayKeycodes (gdk_x11_display_get_xdisplay(gdk_display_get_default()),
+                       &min_keycode,
+@@ -662,6 +683,46 @@ reload_mouse_modifiers (void)
+     XFreeModifiermap (modmap);
+     XFree (keymap);
+ 
++    *meta = have_meta;
++    *hyper = have_hyper;
++    *super = have_super;
++}
++
++static gboolean
++keymap_has_key (GdkDisplay *display,
++                guint       keyval)
++{
++    GdkKeymapKey *keys = NULL;
++    gint n_keys = 0;
++    gboolean found;
++
++    found = gdk_keymap_get_entries_for_keyval (gdk_keymap_get_for_display (display),
++                                               keyval, &keys, &n_keys);
++    g_free (keys);
++
++    return found;
++}
++
++static void
++reload_mouse_modifiers (void)
++{
++    GdkDisplay *display = gdk_display_get_default ();
++    gboolean have_meta = FALSE;
++    gboolean have_hyper = FALSE;
++    gboolean have_super = FALSE;
++    int i;
++    AtkObject *label_accessible;
++
++    if (GDK_IS_X11_DISPLAY (display)) {
++        x11_mouse_modifiers (&have_meta, &have_hyper, &have_super);
++    } else {
++        /* No modifier map can be read here. Super is offered when the
++         * keyboard has the key, and Meta and Hyper, which are Alt and
++         * Super again in a Wayland keymap, aren't. */
++        have_super = keymap_has_key (display, GDK_KEY_Super_L) ||
++                     keymap_has_key (display, GDK_KEY_Super_R);
++    }
++
+     i = 0;
+     while (i < n_mouse_modifiers) {
+         g_free (mouse_modifiers[i].name);
