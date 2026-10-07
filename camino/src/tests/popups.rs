@@ -121,3 +121,50 @@ fn a_mapped_popup_is_drawn_over_its_parent() {
     assert_eq!(pixels[(y * 1920 + x) as usize], POPUP_COLOR);
     assert_eq!(pixels[((y + 199) * 1920 + x + 299) as usize], POPUP_COLOR);
 }
+
+#[test]
+fn a_grab_without_the_serial_of_an_input_event_is_refused() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let geometry = f.geometry(window);
+    f.click(geometry.loc.x as f64 + 10., geometry.loc.y as f64 + 10.);
+    f.roundtrip(id);
+    let press = f.client(id).state.last_press_serial.unwrap();
+    let menu = || bottom_right((10, 20, 30, 40), ConstraintAdjustment::None);
+
+    // A serial Camino never sent the client.
+    let refused = f.client(id).create_popup(window.xdg(), menu());
+    f.client(id).grab_popup(refused, press.wrapping_add(1000));
+    let granted = f.client(id).create_popup(window.xdg(), menu());
+    f.client(id).grab_popup(granted, press);
+    f.roundtrip(id);
+
+    assert!(f.client(id).popup(refused).done);
+    assert!(!f.client(id).popup(granted).done);
+}
+
+#[test]
+fn a_submenus_grab_needs_no_serial_of_its_own() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let geometry = f.geometry(window);
+    f.click(geometry.loc.x as f64 + 10., geometry.loc.y as f64 + 10.);
+    f.roundtrip(id);
+    let press = f.client(id).state.last_press_serial.unwrap();
+    let place = || bottom_right((10, 20, 30, 40), ConstraintAdjustment::None);
+    let menu = f.client(id).create_popup(window.xdg(), place());
+    f.client(id).grab_popup(menu, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, POPUP_COLOR);
+    f.roundtrip(id);
+
+    // A serial Camino never sent the client, as one long past is.
+    let stale = press.wrapping_add(1000);
+    let submenu = f.client(id).create_nested_popup(menu, place(), stale);
+    f.roundtrip(id);
+
+    assert!(!f.client(id).popup(menu).done);
+    assert!(!f.client(id).popup(submenu).done);
+}

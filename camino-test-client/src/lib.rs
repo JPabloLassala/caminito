@@ -431,6 +431,40 @@ impl Client {
         id
     }
 
+    /// Creates a popup of the popup `parent` placed by `positioner`, with an explicit grab
+    /// at `grab_serial`, as a menu's submenu has, and commits it without a buffer.
+    pub fn create_nested_popup(
+        &mut self,
+        parent: PopupId,
+        positioner: Positioner,
+        grab_serial: u32,
+    ) -> PopupId {
+        let id = PopupId(self.state.popups.len());
+        let surface = self.compositor().create_surface(&self.qh, ());
+        let xdg_surface = self.wm_base().get_xdg_surface(&surface, &self.qh, id);
+        let xdg_positioner = self.positioner(positioner);
+        let popup = xdg_surface.get_popup(
+            Some(&self.popup(parent).xdg_surface),
+            &xdg_positioner,
+            &self.qh,
+            id,
+        );
+        xdg_positioner.destroy();
+        let seat = self.seat();
+        popup.grab(&seat, grab_serial);
+        surface.commit();
+        self.state.popups.push(Popup {
+            surface,
+            xdg_surface,
+            popup,
+            configures: Vec::new(),
+            pending: PopupConfigure::default(),
+            done: false,
+            buffers: Vec::new(),
+        });
+        id
+    }
+
     pub fn popup(&self, id: PopupId) -> &Popup {
         &self.state.popups[id.0]
     }
@@ -462,10 +496,12 @@ impl Client {
         xdg_positioner.destroy();
     }
 
-    /// Asks for an explicit grab for the popup, as if `serial`'s button press opened it.
+    /// Asks for an explicit grab for the popup, as if `serial`'s button press opened it,
+    /// and commits, which is when the compositor takes the request.
     pub fn grab_popup(&mut self, id: PopupId, serial: u32) {
         let seat = self.seat();
         self.popup(id).popup.grab(&seat, serial);
+        self.popup(id).surface.commit();
     }
 
     fn positioner(&mut self, positioner: Positioner) -> XdgPositioner {
