@@ -275,8 +275,8 @@ impl State {
 }
 
 impl Camino {
-    /// Constrains a popup to the output its toplevel is most on, or its layer surface is
-    /// on, through the positioner's constraint adjustments.
+    /// Constrains a popup to the work area of the output its toplevel is most on, or its
+    /// layer surface is on, through the positioner's constraint adjustments.
     pub(super) fn unconstrain_popup(&self, popup: &PopupSurface) {
         let kind = PopupKind::Xdg(popup.clone());
         let Ok(root) = find_popup_root_surface(&kind) else {
@@ -295,24 +295,27 @@ impl Camino {
         });
     }
 
-    /// The output the toplevel `root` is most on, relative to its window geometry.
+    /// The work area of the output the toplevel `root` is most on, relative to its window
+    /// geometry, so its popups stay clear of the panels. A fullscreen window covers them,
+    /// and has the whole output.
     fn window_popup_bounds(&self, root: &WlSurface) -> Option<Rectangle<i32, Logical>> {
-        let geometry = self
-            .mapped_for_surface(root)
-            .and_then(|id| self.policy.geometry(id))?;
+        let id = self.mapped_for_surface(root)?;
+        let geometry = self.policy.geometry(id)?;
+        let fullscreen = self.policy.is_fullscreen(id);
         let mut target = self
             .policy
             .outputs()
             .iter()
-            .filter_map(|o| {
+            .zip(self.policy.work_areas())
+            .filter_map(|(o, work_area)| {
                 let overlap = o.geometry.intersection(geometry)?;
                 Some((
-                    o.geometry,
+                    if fullscreen { o.geometry } else { work_area },
                     i64::from(overlap.size.w) * i64::from(overlap.size.h),
                 ))
             })
             .max_by_key(|(_, area)| *area)
-            .map(|(output, _)| output)?;
+            .map(|(bounds, _)| bounds)?;
         target.loc -= geometry.loc;
         Some(target)
     }
