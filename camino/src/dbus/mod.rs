@@ -1,4 +1,5 @@
-//! Camino's D-Bus (15): one file per name or peer. `systemd` is the one peer so far.
+//! Camino's D-Bus (15): one file per name or peer. `systemd` and `panel` are the peers so
+//! far.
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
@@ -6,6 +7,7 @@
 
 pub mod camino;
 pub mod debug;
+pub(crate) mod panel;
 pub mod screensaver;
 pub(crate) mod systemd;
 

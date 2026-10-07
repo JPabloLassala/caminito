@@ -413,6 +413,45 @@ session_env() {
 - **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
   xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
+### Alt+F1 opens the main menu, and Alt+F2 the Run dialog
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 5 or later, and run
+     `busctl --user status org.mate.Panel | grep -E '^(PID|Comm)='`.
+  2. With a window focused and the pointer over it, press Alt+F1, move through the menu and
+     into a submenu with the arrow keys, and press Escape until it has closed. Type in the
+     window.
+  3. Press Alt+F1 again, move the pointer along the Menu Bar from *Applications* to
+     *Places* and into a submenu there, and click outside the menu.
+  4. Right-click in the window for its context menu, and press Alt+F1 with it open.
+  5. Press Alt+F2, type `mate-calc` and press Enter.
+  6. Remove the Menu Bar from the panel and add a *Main Menu* button in its place. Press
+     Alt+F1. Remove the button too, and press Alt+F1 with the pointer over the panel, and
+     then with it over a window. Put the Menu Bar back.
+  7. In a terminal, stop the panel answering, press Alt+F2 and type in the window, and then
+     let the panel go on:
+
+     ```sh
+     pkill -STOP -x mate-panel; sleep 10; pkill -CONT -x mate-panel
+     ```
+
+- **Expected:** in step 1 the name's owner is `mate-panel`. In step 2 the menu drops from the
+  Menu Bar's *Applications*, and it has the keyboard: the arrow keys move through it, a
+  submenu opens, and Escape closes it one level at a time, after which the window has the
+  keyboard back. In step 3 *Places* and its submenu open under the pointer, and the click
+  closes the menu. In step 4 the context menu stays, no menu of the panel's opens, and the
+  panel is still there. In step 5 the Run dialog opens with the keyboard in its entry, and
+  the calculator starts. In step 6 the menu drops from the button, and without one it opens
+  at the pointer over the panel, and from the first panel's corner with the pointer over a
+  window, each time with the keyboard. In step 7 nothing opens while the panel is stopped,
+  and Camino neither hangs nor loses a key: the window gets what's typed. The Run dialog
+  opens once the panel goes on (95).
+- **Debug tool:** `busctl --user status org.mate.Panel`, and
+  `busctl --user call org.mate.Panel /org/mate/Panel org.mate.Panel RunDialog u 0`, which is
+  Camino's call without the key. `can't open the panel's main menu` in `~/camino.log` says
+  the name had no owner or the call failed.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps
