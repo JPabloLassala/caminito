@@ -59,6 +59,11 @@ impl Winit {
         })
     }
 
+    /// The window's renderer, for what's drawn off the window: a capture's frame (103).
+    pub(crate) fn renderer(&mut self) -> &mut GlesRenderer {
+        self.backend.renderer()
+    }
+
     /// Draws a frame, unless the host hasn't asked for the next one yet: frames, and so
     /// clients' frame callbacks, are paced by the host's redraw requests.
     pub fn render(&mut self, camino: &mut Camino, output: &Output) -> Option<RenderElementStates> {

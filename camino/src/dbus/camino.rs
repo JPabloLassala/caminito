@@ -1,10 +1,14 @@
 //! `org.mate.Camino` (ADR 0002's third channel): what MATE's components and
 //! camino-displays ask of Camino that no protocol carries. So far, the primary output (81)
-//! and saving the layout (83), both ADR 0014's.
+//! and saving the layout (83), both ADR 0014's, and the accelerator grabs (98).
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
+use zbus::message::Header;
+use zbus::names::BusName;
+use zbus::object_server::SignalEmitter;
 
+use super::{Callers, caller};
 use crate::output::{primary, saved};
 use crate::state::Camino;
 
@@ -21,16 +25,29 @@ pub(crate) enum Request {
     ChoosePrimaryOutput(String, oneshot::Sender<Result<(), primary::Error>>),
     /// Calls `SaveLayout`.
     SaveLayout(oneshot::Sender<Result<(), saved::Error>>),
+    /// `GrabAccelerators`, from `caller`, answered with an action id for each.
+    GrabAccelerators {
+        caller: String,
+        accelerators: Vec<String>,
+        reply: oneshot::Sender<Vec<u32>>,
+    },
+    /// `UngrabAccelerators`, from `caller`.
+    UngrabAccelerators {
+        caller: String,
+        actions: Vec<u32>,
+        reply: oneshot::Sender<()>,
+    },
 }
 
 /// `org.mate.Camino`, as zbus serves it.
 pub(crate) struct CaminoInterface {
     requests: Sender<Request>,
+    callers: Callers,
 }
 
 impl CaminoInterface {
-    pub(crate) fn new(requests: Sender<Request>) -> Self {
-        Self { requests }
+    pub(super) fn new(requests: Sender<Request>, callers: Callers) -> Self {
+        Self { requests, callers }
     }
 }
 
@@ -63,6 +80,59 @@ impl CaminoInterface {
             .await?
             .map_err(|err| zbus::fdo::Error::Failed(err.to_string()))
     }
+
+    /// Grabs key combinations for the caller, in the style of `org.gnome.Shell`'s. Each
+    /// accelerator is a string in GTK's syntax, as MATE's keys store it: `<Control><Alt>t`,
+    /// `XF86AudioMute`. The answer has an action id for each, in order, which
+    /// `AcceleratorActivated` then names. The id is 0 for an accelerator that wasn't
+    /// grabbed: the empty string and `disabled`, one that doesn't parse, and one another
+    /// caller has. An accelerator the caller already has gets the id it had.
+    ///
+    /// A grabbed key reaches no client. Camino's own bindings win over a grab of the same
+    /// combination, which is then never signalled. The grabs last until they're released
+    /// or the caller leaves the bus.
+    async fn grab_accelerators(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+        accelerators: Vec<String>,
+    ) -> zbus::fdo::Result<Vec<u32>> {
+        let caller = caller(&header);
+        let grab = |reply| Request::GrabAccelerators {
+            caller: caller.clone(),
+            accelerators,
+            reply,
+        };
+        let actions = super::ask(&self.requests, grab).await?;
+        self.callers.report_if_gone(connection, caller).await;
+        Ok(actions)
+    }
+
+    /// Releases the caller's grabs with these action ids. An id that isn't one of the
+    /// caller's grabs is passed over.
+    async fn ungrab_accelerators(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        actions: Vec<u32>,
+    ) -> zbus::fdo::Result<()> {
+        let caller = caller(&header);
+        let ungrab = |reply| Request::UngrabAccelerators {
+            caller,
+            actions,
+            reply,
+        };
+        super::ask(&self.requests, ungrab).await
+    }
+
+    /// A grabbed accelerator was pressed: its action id, and the key event's time in
+    /// milliseconds, as the Wayland clients get it. It's sent to the grabber alone, so no
+    /// other caller learns the keys pressed. Releases and repeats aren't signalled.
+    #[zbus(signal)]
+    async fn accelerator_activated(
+        emitter: &SignalEmitter<'_>,
+        action: u32,
+        time: u32,
+    ) -> zbus::Result<()>;
 }
 
 impl Camino {
@@ -83,7 +153,50 @@ impl Camino {
             Request::SaveLayout(reply) => {
                 let _ = reply.send(self.save_layout());
             }
+            Request::GrabAccelerators {
+                caller,
+                accelerators,
+                reply,
+            } => {
+                let grabs = &mut self.accelerator_grabs;
+                let actions = accelerators.iter().map(|it| grabs.grab(&caller, it));
+                let _ = reply.send(actions.collect());
+            }
+            Request::UngrabAccelerators {
+                caller,
+                actions,
+                reply,
+            } => {
+                for action in actions {
+                    self.accelerator_grabs.ungrab(&caller, action);
+                }
+                let _ = reply.send(());
+            }
         }
+    }
+
+    /// Signals `AcceleratorActivated` to the grab's `owner`, by its unique name on the bus, for a key event at `time`.
+    pub(crate) fn signal_accelerator(&self, owner: &str, action: u32, time: u32) {
+        let Some(dbus) = &self.dbus else {
+            return;
+        };
+        let connection = dbus.connection().clone();
+        let owner = owner.to_owned();
+        // On zbus's thread: the main thread never waits on the bus (15).
+        let signal = async move {
+            let signalled = async {
+                let emitter = SignalEmitter::new(&connection, PATH)?
+                    .set_destination(BusName::try_from(owner.as_str())?);
+                CaminoInterface::accelerator_activated(&emitter, action, time).await
+            };
+            if let Err(err) = signalled.await {
+                tracing::warn!("can't signal the accelerator {action} to {owner}: {err}");
+            }
+        };
+        dbus.connection()
+            .executor()
+            .spawn(signal, "accelerator activated")
+            .detach();
     }
 
     /// The interface is served: a caller reads the primary output as it is now, so

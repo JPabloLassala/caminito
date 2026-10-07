@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 6 Oct 2026 12:00:00 -0300
+Subject: [PATCH] wayland-workspace: Show a workspace's new name when it is
+ renamed
+
+The Wayland switcher drew its buttons again when a workspace was added,
+removed or made active, and not when one was renamed. ext-workspace sends a
+workspace's name again when it changes, and libxfce4windowing says so with
+name-changed, but with the names shown the button kept the old one until
+the next change of workspace.
+
+Draw the buttons again on name-changed too.
+---
+ applets/wncklet/wayland-workspace.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/applets/wncklet/wayland-workspace.c b/applets/wncklet/wayland-workspace.c
+index 646ab802..afd2cdf1 100644
+--- a/applets/wncklet/wayland-workspace.c
++++ b/applets/wncklet/wayland-workspace.c
+@@ -308,11 +308,29 @@ on_workspace_group_destroyed (XfwWorkspaceManager *manager,
+ 	rebuild_ui (data);
+ }
+ 
++static void
++on_workspace_name_changed (XfwWorkspace *workspace,
++			   GtkWidget    *grid)
++{
++	rebuild_ui (g_object_get_data (G_OBJECT (grid), "wayland_pager_data"));
++}
++
++/* The compositor can rename a workspace that is already there. The handler
++ * goes with the grid, which is what owns the data. */
++static void
++watch_workspace_name (WaylandWorkspaceData *data,
++		      XfwWorkspace         *workspace)
++{
++	g_signal_connect_object (workspace, "name-changed",
++				 G_CALLBACK (on_workspace_name_changed), data->grid, 0);
++}
++
+ static void
+ on_workspace_created (XfwWorkspaceManager *manager,
+ 		      XfwWorkspace        *workspace,
+ 		      WaylandWorkspaceData *data)
+ {
++	watch_workspace_name (data, workspace);
+ 	rebuild_ui (data);
+ }
+ 
+@@ -384,6 +402,9 @@ wayland_workspace_new (void)
+ 	g_signal_connect (data->workspace_manager, "workspace-destroyed",
+ 			  G_CALLBACK (on_workspace_destroyed), data);
+ 
++	for (GList *l = xfw_workspace_manager_list_workspaces (data->workspace_manager); l != NULL; l = l->next)
++		watch_workspace_name (data, l->data);
++
+ 	connect_group_signals (data);
+ 	rebuild_ui (data);
+ 

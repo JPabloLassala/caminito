@@ -11,11 +11,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
-use zbus::export::ordered_stream::OrderedStreamExt;
 use zbus::fdo::{self, RequestNameFlags, RequestNameReply};
 use zbus::message::Header;
 use zbus::names::BusName;
 
+use super::{Callers, caller};
 use crate::state::Camino;
 
 /// The names mate-screensaver's daemon and X11 applications look for.
@@ -34,7 +34,7 @@ pub(super) enum HoldKind {
     Throttle,
 }
 
-/// A call, or a caller that left the bus, for the event loop to answer.
+/// A call, for the event loop to answer.
 pub(super) enum Request {
     /// `Lock`, from `caller`.
     Lock {
@@ -72,8 +72,6 @@ pub(super) enum Request {
     },
     /// `GetInhibitors`: a description of each.
     GetInhibitors(oneshot::Sender<Vec<String>>),
-    /// The connection with this unique name is gone, and its cookies with it.
-    CallerLeft(String),
 }
 
 /// Why the event loop refused a call.
@@ -143,7 +141,7 @@ impl ScreensaverShim {
     }
 
     /// Drops the cookies of a caller that left the bus.
-    fn caller_left(&mut self, caller: &str) {
+    pub(super) fn caller_left(&mut self, caller: &str) {
         self.holds.retain(|_, hold| hold.caller != caller);
     }
 
@@ -244,21 +242,21 @@ impl Camino {
             Request::GetInhibitors(reply) => {
                 let _ = reply.send(self.screensaver.inhibitors());
             }
-            Request::CallerLeft(caller) => {
-                self.screensaver.caller_left(&caller);
-            }
         }
     }
 }
 
 /// The way into the event loop that both interfaces share.
 #[derive(Clone)]
-struct Requests(Sender<Request>);
+struct Requests {
+    requests: Sender<Request>,
+    callers: Callers,
+}
 
 impl Requests {
     /// Sends the event loop a request, and waits for its reply.
     async fn ask<T>(&self, request: impl FnOnce(oneshot::Sender<T>) -> Request) -> fdo::Result<T> {
-        super::ask(&self.0, request).await
+        super::ask(&self.requests, request).await
     }
 
     /// Hands `header`'s sender a cookie.
@@ -279,12 +277,7 @@ impl Requests {
             reply,
         };
         let cookie = self.ask(hold).await?;
-        // The caller watch is another task, so a caller that left at once can have been
-        // reported before the loop got this call, and its cookie would stay for good. A
-        // caller that's still on the bus now is reported after it.
-        if !on_the_bus(connection, &caller).await {
-            let _ = self.0.send(Request::CallerLeft(caller));
-        }
+        self.callers.report_if_gone(connection, caller).await;
         Ok(cookie)
     }
 
@@ -298,22 +291,6 @@ impl Requests {
         })
         .await
     }
-}
-
-/// The unique name of the connection a call came from. The bus fills it in for every
-/// message it passes on.
-fn caller(header: &Header<'_>) -> String {
-    header.sender().map(ToString::to_string).unwrap_or_default()
-}
-
-/// Whether `name` has an owner. An answer that can't be had counts as yes: the caller
-/// watch still reports it when it leaves.
-async fn on_the_bus(connection: &zbus::Connection, name: &str) -> bool {
-    let has_owner = async {
-        let bus = fdo::DBusProxy::new(connection).await?;
-        zbus::Result::Ok(bus.name_has_owner(BusName::try_from(name)?).await?)
-    };
-    has_owner.await.unwrap_or(true)
 }
 
 /// `org.mate.ScreenSaver`, with mate-screensaver's methods.
@@ -476,8 +453,9 @@ impl FreedesktopInterface {
 pub(super) fn serve<'a>(
     mut builder: zbus::connection::Builder<'a>,
     requests: Sender<Request>,
+    callers: Callers,
 ) -> zbus::Result<zbus::connection::Builder<'a>> {
-    let requests = Requests(requests);
+    let requests = Requests { requests, callers };
     builder = builder.serve_at(
         MATE_PATH,
         MateInterface {
@@ -528,33 +506,6 @@ async fn owner(connection: &zbus::Connection, name: &'static str) -> String {
         Ok(owner) => owner.to_string(),
         Err(_) => "another connection".to_owned(),
     }
-}
-
-/// Tells the event loop of each connection that leaves the bus, until the task is dropped,
-/// so that the caller's cookies go with it. It returns once the bus is sending the changes,
-/// and the future it returns then passes them on.
-pub(super) async fn watch_callers(
-    connection: &zbus::Connection,
-    requests: Sender<Request>,
-) -> zbus::Result<impl Future<Output = ()> + Send + 'static> {
-    let bus = fdo::DBusProxy::new(connection).await?;
-    // An empty new owner: the name has gone.
-    let mut changes = bus.receive_name_owner_changed_with_args(&[(2, "")]).await?;
-    Ok(async move {
-        // The proxy stays with the stream, which borrows nothing from it but needs its
-        // match rule kept.
-        let _bus = bus;
-        while let Some(change) = changes.next().await {
-            let Ok(args) = change.args() else { continue };
-            if let BusName::Unique(name) = args.name()
-                && requests
-                    .send(Request::CallerLeft(name.to_string()))
-                    .is_err()
-            {
-                break;
-            }
-        }
-    })
 }
 
 #[cfg(test)]
