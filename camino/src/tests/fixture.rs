@@ -5,9 +5,11 @@
 //! fixture's queries rather than `state.camino`, so a test of behaviour both kinds share can
 //! run on both through [`on_both_kinds!`] (45).
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -62,6 +64,8 @@ pub const KEY_A: u32 = 30;
 pub const KEY_D: u32 = 32;
 pub const KEY_LEFTSHIFT: u32 = 42;
 pub const KEY_LEFTALT: u32 = 56;
+pub const KEY_F1: u32 = 59;
+pub const KEY_F2: u32 = 60;
 pub const KEY_F4: u32 = 62;
 pub const KEY_F9: u32 = 67;
 pub const KEY_F10: u32 = 68;
@@ -160,6 +164,44 @@ impl Logs {
     /// Every line so far.
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.text.lock().unwrap()).into_owned()
+    }
+}
+
+/// A bus of a test's own, at a socket in its scratch directory. It can stop, and another
+/// can take its address, as the user's bus does when mate-session restarts it (74).
+pub struct Bus {
+    daemon: Child,
+    pub address: String,
+}
+
+impl Bus {
+    /// Starts a bus that listens at `socket`, and returns once it does.
+    pub fn start(socket: &Path) -> Self {
+        let address = format!("unix:path={}", socket.display());
+        let mut daemon = Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--print-address=1"])
+            .arg(format!("--address={address}"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("dbus-daemon is installed, as dbus-run-session is (14)");
+        // It prints its address once it listens there.
+        let mut printed = String::new();
+        BufReader::new(daemon.stdout.take().unwrap())
+            .read_line(&mut printed)
+            .unwrap();
+        assert!(printed.starts_with(&address), "{printed}");
+        Bus { daemon, address }
+    }
+
+    /// Stops the bus, and returns once its connections are closed, as dropping it does.
+    pub fn stop(self) {}
+}
+
+impl Drop for Bus {
+    fn drop(&mut self) {
+        let _ = self.daemon.kill();
+        let _ = self.daemon.wait();
     }
 }
 
@@ -439,11 +481,11 @@ impl Fixture {
     }
 
     /// Connects a client that has seen the globals, and that Camino takes for one of the
-    /// process `process`: the fixture's other clients are all of the test's own.
-    pub fn connect_as_process(&mut self, process: u32) -> ClientId {
+    /// process `pid`: the fixture's other clients are all of the test's own process.
+    pub fn connect_as_process(&mut self, pid: u32) -> ClientId {
         let (server, client) = UnixStream::pair().unwrap();
         let data = ClientState {
-            process: Some(process),
+            process: Some(pid),
             ..ClientState::default()
         };
         let server = self

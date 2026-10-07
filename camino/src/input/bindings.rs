@@ -7,6 +7,7 @@ use camino_policy::Action;
 use smithay::input::keyboard::{Keysym, ModifiersState};
 
 use crate::commands::Command;
+use crate::dbus::panel::PanelAction;
 
 /// The modifiers a binding names. Locks don't count.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,14 +62,17 @@ const CTRL_ALT: Held = Held {
 pub(crate) enum Binding {
     /// Something policy does.
     Policy(Action),
+    /// Something Camino asks the panel for (95).
+    Panel(PanelAction),
     /// A command to run (104).
     Command(Command),
 }
 
-/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), and for its three
-/// screenshot commands (104). `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`
-/// (`org.mate.marco.gschema.xml:692-693` at `8522ed1`); 1.29.0 doesn't bind it.
-const BINDINGS: [(Held, Keysym, Binding); 9] = [
+/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), for the panel's two
+/// (95), and for its three screenshot commands (104). `<Shift>Print` is the default of the
+/// Marco that has `run-command-area-screenshot` (`org.mate.marco.gschema.xml:692-693` at
+/// `8522ed1`); 1.29.0 doesn't bind it.
+const BINDINGS: [(Held, Keysym, Binding); 11] = [
     (
         CTRL_ALT,
         Keysym::Left,
@@ -79,6 +83,8 @@ const BINDINGS: [(Held, Keysym, Binding); 9] = [
         Keysym::Right,
         Binding::Policy(Action::SwitchToWorkspaceRight),
     ),
+    (ALT, Keysym::F1, Binding::Panel(PanelAction::MainMenu)),
+    (ALT, Keysym::F2, Binding::Panel(PanelAction::RunDialog)),
     (ALT, Keysym::F4, Binding::Policy(Action::Close)),
     (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
     (ALT, Keysym::Tab, Binding::Policy(Action::SwitchWindows)),
@@ -160,6 +166,18 @@ mod tests {
             command(Command::AreaScreenshot)
         );
         assert_eq!(bound(CTRL_ALT, Keysym::Print), None);
+    }
+
+    #[test]
+    fn the_panels_bindings() {
+        assert_eq!(
+            bound(ALT, Keysym::F1),
+            Some(Binding::Panel(PanelAction::MainMenu))
+        );
+        assert_eq!(
+            bound(ALT, Keysym::F2),
+            Some(Binding::Panel(PanelAction::RunDialog))
+        );
     }
 
     #[test]

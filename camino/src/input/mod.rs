@@ -6,11 +6,13 @@ mod focus;
 pub mod frame;
 mod grab;
 pub(crate) mod keyboard;
+mod serials;
 
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
+pub(crate) use serials::InputSerials;
 
-use camino_policy::{ResizeEdges, WindowId};
+use camino_policy::{Action, ResizeEdges, WindowId};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, Event, InputBackend, InputEvent,
     InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
@@ -26,8 +28,10 @@ use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_cons
 use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::X11Surface;
 
+use self::bindings::Binding;
+use crate::commands::Command;
+use crate::dbus::panel::PanelAction;
 use crate::decoration::control::FrameControl;
-use crate::input::bindings::Binding;
 use crate::output::output_geometry;
 use crate::scene::{self, SceneLayer};
 use crate::state::{Camino, SEAT, State};
@@ -218,31 +222,38 @@ impl State {
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
-        let bound = keyboard
-            .input(
-                self,
-                keycode,
-                key_state,
-                serial,
-                time,
-                |state, mods, keysym| match state.bindings_stage(keycode, pressed, mods, &keysym) {
-                    FilterResult::Forward => state.grabs_stage(keycode, pressed, mods, &keysym),
-                    intercepted => intercepted,
-                },
-            )
-            .flatten();
-        match bound {
-            Some(Bound::Binding(Binding::Policy(action))) => {
+        let intercepted = keyboard.input(
+            self,
+            keycode,
+            key_state,
+            serial,
+            time,
+            |state, mods, keysym| match state.bindings_stage(keycode, pressed, mods, &keysym) {
+                FilterResult::Forward => state.grabs_stage(keycode, pressed, mods, &keysym),
+                intercepted => intercepted,
+            },
+        );
+        match intercepted {
+            Some(Some(Bound::Action(action))) => {
                 let now = self.camino.now();
                 self.camino.policy.action(SEAT, action, now);
                 self.camino.queue_redraw_all();
             }
-            Some(Bound::Binding(Binding::Command(command))) => self.camino.run_command(command),
-            Some(Bound::Accelerator { owner, action }) => {
+            Some(Some(Bound::Panel(action))) => {
+                // The time a client would have for the event.
+                self.camino.ask_panel(action, time.millis());
+            }
+            Some(Some(Bound::Command(command))) => self.camino.run_command(command),
+            Some(Some(Bound::Accelerator { owner, action })) => {
                 self.camino
                     .signal_accelerator(&owner, action, time.millis());
             }
-            None => {}
+            Some(None) => {}
+            None => {
+                let focus = keyboard.current_focus();
+                let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
+                self.camino.input_serials.sent(serial, surface.as_deref());
+            }
         }
     }
 
@@ -289,7 +300,12 @@ impl State {
         match binding {
             Some(binding) => {
                 self.camino.suppressed_keys.insert(keycode);
-                FilterResult::Intercept(Some(Bound::Binding(binding)))
+                let bound = match binding {
+                    Binding::Policy(action) => Bound::Action(action),
+                    Binding::Panel(action) => Bound::Panel(action),
+                    Binding::Command(command) => Bound::Command(command),
+                };
+                FilterResult::Intercept(Some(bound))
             }
             None => FilterResult::Forward,
         }
@@ -415,6 +431,9 @@ impl State {
             button,
             state,
         };
+        let focus = pointer.current_focus();
+        let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
+        self.camino.input_serials.sent(serial, surface.as_deref());
         pointer.button(self, &event);
         pointer.frame(self);
     }
@@ -528,8 +547,12 @@ enum Constraint {
 
 /// What a key press that reaches no client does instead.
 enum Bound {
-    /// One of Camino's bindings.
-    Binding(Binding),
+    /// One of Camino's bindings: something policy does.
+    Action(Action),
+    /// One of Camino's bindings: something it asks the panel for (95).
+    Panel(PanelAction),
+    /// One of Camino's bindings: a command to run (104).
+    Command(Command),
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },

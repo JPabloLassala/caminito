@@ -76,6 +76,7 @@ use camino_theme::{PaletteCache, ThemeDirs, Variant};
 use crate::backend::{self, Backend};
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
+use crate::dbus::panel::Panel;
 use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
@@ -85,7 +86,7 @@ use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
-use crate::input::{GrabKind, PointerFocus};
+use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
@@ -274,6 +275,10 @@ pub struct Camino {
 
     /// The connection to the session bus, once `start_dbus` has made it.
     pub dbus: Option<Dbus>,
+    /// The calls to the panel for Alt+F1 and Alt+F2, and the popup grab they allow (95).
+    pub(crate) panel: Panel,
+    /// The key and button events clients were last sent, which a popup grab names one of.
+    pub(crate) input_serials: InputSerials,
     /// The cookies the Screensaver shim has handed out (62).
     pub screensaver: ScreensaverShim,
     pub debug: DebugToggles,
@@ -329,10 +334,26 @@ pub struct ClientState {
     pub compositor_state: CompositorClientState,
     /// The security context the client connected through, which makes it sandboxed (68).
     pub(crate) security_context: Option<SecurityContext>,
-    /// The process a test says the client is of, in place of its socket's: a fixture's
-    /// clients are all of the test's own (104).
+    /// The process a test has Camino take the client for, in place of the one its
+    /// socket's credentials name: a fixture's clients are all of the test's process (95).
     #[cfg(test)]
     pub(crate) process: Option<u32>,
+}
+
+/// The process `client` is of, from its socket's credentials.
+pub(crate) fn client_process(
+    client: &smithay::reexports::wayland_server::Client,
+    display: &DisplayHandle,
+) -> Option<u32> {
+    #[cfg(test)]
+    if let Some(process) = client
+        .get_data::<ClientState>()
+        .and_then(|data| data.process)
+    {
+        return Some(process);
+    }
+    let credentials = client.get_credentials(display).ok()?;
+    u32::try_from(credentials.pid).ok()
 }
 
 impl ClientData for ClientState {
@@ -637,6 +658,8 @@ impl Camino {
             })
             .expect("the display joins the event loop");
 
+        let panel = Panel::new(&loop_handle);
+
         let dh = &display_handle;
         let clock = Clock::new();
 
@@ -785,6 +808,8 @@ impl Camino {
             helper_stderr: StderrTarget::Prefixed,
             session: None,
             dbus: None,
+            panel,
+            input_serials: InputSerials::default(),
             screensaver: ScreensaverShim::default(),
             debug: DebugToggles::default(),
         };

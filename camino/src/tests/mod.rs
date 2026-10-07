@@ -28,6 +28,7 @@ mod output_lifecycle;
 mod output_management;
 mod override_redirect;
 mod palette_helper;
+mod panel;
 mod popups;
 mod preferred_scale;
 mod primary_output;

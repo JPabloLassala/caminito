@@ -126,7 +126,7 @@ impl XdgShellHandler for State {
         let Some(seat) = Seat::<State>::from_resource(&seat) else {
             return;
         };
-        let popup = PopupKind::Xdg(surface);
+        let popup = PopupKind::Xdg(surface.clone());
         let Ok(root) = find_popup_root_surface(&popup) else {
             return;
         };
@@ -139,6 +139,32 @@ impl XdgShellHandler for State {
         } else {
             return;
         };
+        // Camino's bindings work while a menu is open, so Alt+F1 can have the panel ask for
+        // a grab then. The open menu keeps its own: Smithay would take the panel's for a
+        // protocol error, and disconnect the panel.
+        let parent = surface.get_parent_surface();
+        let open_menu = seat
+            .get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
+            .and_then(|focus| focus.wl_surface().map(|surface| surface.into_owned()))
+            .filter(|focus| self.camino.popups.find_popup(focus).is_some());
+        if open_menu.is_some() && open_menu != parent {
+            surface.send_popup_done();
+            return;
+        }
+        // A submenu's grab comes with its menu's: GTK opens one under the pointer with
+        // the serial it gave for the menu, which may be long past by then.
+        let nested = parent.is_some_and(|parent| self.camino.popups.find_popup(&parent).is_some())
+            && seat.get_keyboard().is_some_and(|k| k.is_grabbed());
+        let allowed = nested
+            || surface.wl_surface().client().is_some_and(|client| {
+                self.camino.input_serials.has(serial, &client)
+                    || self.camino.take_panel_grab(&client)
+            });
+        if !allowed {
+            surface.send_popup_done();
+            return;
+        }
         let Ok(mut grab) = self.camino.popups.grab_popup(root, popup, &seat, serial) else {
             return;
         };
