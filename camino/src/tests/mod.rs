@@ -1,8 +1,12 @@
 //! Integration tests on the headless backend (14, 15).
 
+mod accelerators;
+mod active_toplevel;
 mod bindings;
 mod camino_displays;
 mod client;
+mod commands;
+mod commit_timing;
 mod cursors;
 mod data_control;
 mod debug;
@@ -15,6 +19,7 @@ mod frames;
 mod grabs;
 mod gtk_shell;
 mod headless;
+mod image_capture;
 mod input;
 mod input_devices;
 mod keybinding_manifests;
@@ -25,6 +30,7 @@ mod output_lifecycle;
 mod output_management;
 mod override_redirect;
 mod palette_helper;
+mod panel;
 mod popups;
 mod preferred_scale;
 mod primary_output;
@@ -35,6 +41,7 @@ mod security_context;
 mod selection;
 mod session;
 mod settings;
+mod show_desktop;
 mod window_properties;
 mod work_area;
 mod x11_scale;

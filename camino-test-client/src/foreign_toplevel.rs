@@ -67,7 +67,7 @@ pub struct Toplevel {
 
 /// A toplevel of `ext_foreign_toplevel_list_v1`.
 pub struct ListedToplevel {
-    proxy: ExtForeignToplevelHandleV1,
+    pub(crate) proxy: ExtForeignToplevelHandleV1,
     pub identifier: Option<String>,
     pub title: Option<String>,
     pub app_id: Option<String>,

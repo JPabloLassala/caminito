@@ -35,6 +35,10 @@ use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
 use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::image_capture_source::{
+    OutputCaptureSourceState, ToplevelCaptureSourceState,
+};
+use smithay::wayland::image_copy_capture::ImageCopyCaptureState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
 use smithay::wayland::output::OutputManagerState;
@@ -72,15 +76,17 @@ use camino_theme::{PaletteCache, ThemeDirs, Variant};
 use crate::backend::{self, Backend};
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
+use crate::dbus::panel::Panel;
 use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
-use crate::handlers::{DragIcon, sees_privileged_globals};
+use crate::handlers::{CaptureSession, DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
-use crate::input::{GrabKind, PointerFocus};
+use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
@@ -154,6 +160,13 @@ pub struct Camino {
     /// The workspace each window is on, as a panel's window list sees it (75).
     pub xfce_foreign_toplevel_state: XfceForeignToplevelState,
 
+    // Image capture, for a screenshot tool (103).
+    pub output_capture_source_state: OutputCaptureSourceState,
+    pub toplevel_capture_source_state: ToplevelCaptureSourceState,
+    pub image_copy_capture_state: ImageCopyCaptureState,
+    /// The capture sessions that are open, with the frames their clients wait for.
+    pub(crate) captures: Vec<CaptureSession>,
+
     // Input (06).
     pub pointer_constraints_state: PointerConstraintsState,
     pub relative_pointer_state: RelativePointerManagerState,
@@ -178,8 +191,11 @@ pub struct Camino {
     pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
     /// The layer surface a click gave the keyboard, and policy's focus then (63).
     pub(crate) keyboard_layer: Option<(LayerSurface, Option<WindowId>)>,
-    /// Keys whose press ran a binding, so their release is swallowed too.
+    /// Keys whose press ran a binding or a grabbed accelerator, so their release is
+    /// swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
+    /// The accelerators callers of `org.mate.Camino` have grabbed (98).
+    pub(crate) accelerator_grabs: Grabs,
     /// Where the pointer is on the frames, and what it's doing with them.
     pub frame_pointer: FramePointer,
     /// The interactive move or resize the pointer is doing, if any.
@@ -210,6 +226,8 @@ pub struct Camino {
     pub(crate) monitors_changed: bool,
     /// The primary output's name as `org.mate.Camino`'s callers last heard it (81).
     pub(crate) primary_output_signalled: Option<String>,
+    /// `ShowingDesktop` as `org.mate.Camino`'s callers last heard it (94).
+    pub(crate) showing_desktop_signalled: Option<bool>,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -257,6 +275,10 @@ pub struct Camino {
 
     /// The connection to the session bus, once `start_dbus` has made it.
     pub dbus: Option<Dbus>,
+    /// The calls to the panel for Alt+F1 and Alt+F2, and the popup grab they allow (95).
+    pub(crate) panel: Panel,
+    /// The key and button events clients were last sent, which a popup grab names one of.
+    pub(crate) input_serials: InputSerials,
     /// The cookies the Screensaver shim has handed out (62).
     pub screensaver: ScreensaverShim,
     pub debug: DebugToggles,
@@ -312,6 +334,26 @@ pub struct ClientState {
     pub compositor_state: CompositorClientState,
     /// The security context the client connected through, which makes it sandboxed (68).
     pub(crate) security_context: Option<SecurityContext>,
+    /// The process a test has Camino take the client for, in place of the one its
+    /// socket's credentials name: a fixture's clients are all of the test's process (95).
+    #[cfg(test)]
+    pub(crate) process: Option<u32>,
+}
+
+/// The process `client` is of, from its socket's credentials.
+pub(crate) fn client_process(
+    client: &smithay::reexports::wayland_server::Client,
+    display: &DisplayHandle,
+) -> Option<u32> {
+    #[cfg(test)]
+    if let Some(process) = client
+        .get_data::<ClientState>()
+        .and_then(|data| data.process)
+    {
+        return Some(process);
+    }
+    let credentials = client.get_credentials(display).ok()?;
+    u32::try_from(credentials.pid).ok()
 }
 
 impl ClientData for ClientState {
@@ -459,7 +501,8 @@ impl State {
     }
 
     /// The refresh pass, after each loop dispatch: brings the outward views up to date with
-    /// policy, renders the outputs that asked for it, and flushes the clients.
+    /// policy, renders the outputs that asked for it, copies the captures that are due, and
+    /// flushes the clients.
     pub fn refresh_and_flush_clients(&mut self) {
         // x11rb queues the X messages that arrive while Camino waits for a reply, which
         // leaves the socket quiet, so they're read here too.
@@ -472,6 +515,7 @@ impl State {
         self.camino.refresh_frames();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
+        self.refresh_captures();
         if let Err(err) = self.camino.display_handle.flush_clients() {
             tracing::warn!("error flushing clients: {err}");
         }
@@ -614,6 +658,8 @@ impl Camino {
             })
             .expect("the display joins the event loop");
 
+        let panel = Panel::new(&loop_handle);
+
         let dh = &display_handle;
         let clock = Clock::new();
 
@@ -690,6 +736,17 @@ impl Camino {
             ext_workspace_state: ExtWorkspaceState::new::<State, _>(dh, privileged),
             xfce_foreign_toplevel_state: XfceForeignToplevelState::new::<State, _>(dh, privileged),
 
+            output_capture_source_state: OutputCaptureSourceState::new_with_filter::<State, _>(
+                dh, privileged,
+            ),
+            toplevel_capture_source_state: ToplevelCaptureSourceState::new_with_filter::<State, _>(
+                dh, privileged,
+            ),
+            image_copy_capture_state: ImageCopyCaptureState::new_with_filter::<State, _>(
+                dh, privileged,
+            ),
+            captures: Vec::new(),
+
             pointer_constraints_state: PointerConstraintsState::new::<State>(dh),
             relative_pointer_state: RelativePointerManagerState::new::<State>(dh),
             pointer_gestures_state: PointerGesturesState::new::<State>(dh),
@@ -711,6 +768,7 @@ impl Camino {
             pointer_focus: None,
             keyboard_layer: None,
             suppressed_keys: HashSet::new(),
+            accelerator_grabs: Grabs::default(),
             frame_pointer: FramePointer::default(),
             window_grab: None,
             client_cursor: CursorImageStatus::default_named(),
@@ -728,6 +786,7 @@ impl Camino {
             saved_layouts: SavedLayouts::default(),
             monitors_changed: false,
             primary_output_signalled: None,
+            showing_desktop_signalled: None,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
@@ -749,6 +808,8 @@ impl Camino {
             helper_stderr: StderrTarget::Prefixed,
             session: None,
             dbus: None,
+            panel,
+            input_serials: InputSerials::default(),
             screensaver: ScreensaverShim::default(),
             debug: DebugToggles::default(),
         };
@@ -917,6 +978,7 @@ impl Camino {
         self.refresh_layers();
         self.refresh_output_management();
         self.refresh_primary_output_property();
+        self.refresh_showing_desktop_property();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
         // On both sides of ext-workspace's refresh: a window leaves a workspace that's

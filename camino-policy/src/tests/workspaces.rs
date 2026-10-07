@@ -42,6 +42,49 @@ fn workspace_switching_doesnt_wrap() {
 }
 
 #[test]
+fn switching_left_and_right_goes_by_the_grid() {
+    // 0 1
+    // 2 3
+    let mut policy = policy();
+    policy.settings_changed(Config {
+        workspace_layout: WorkspaceLayout {
+            rows: 2,
+            ..WorkspaceLayout::default()
+        },
+        ..Config::default()
+    });
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(1));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(2));
+    // The end of the first row, not on to the second.
+    assert_eq!(policy.active_workspace(), 1);
+
+    policy.switch_workspace(2);
+    policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(3));
+    assert_eq!(policy.active_workspace(), 2);
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(4));
+    assert_eq!(policy.active_workspace(), 3);
+}
+
+#[test]
+fn the_grid_follows_the_workspace_count_and_the_layout() {
+    let mut policy = policy();
+    assert_eq!(policy.workspace_grid().cell(3), (3, 0));
+
+    policy.settings_changed(Config {
+        workspace_count: 6,
+        workspace_layout: WorkspaceLayout {
+            rows: 2,
+            ..WorkspaceLayout::default()
+        },
+        ..Config::default()
+    });
+
+    assert_eq!(policy.workspace_grid().cell(3), (0, 1));
+    assert_eq!(policy.workspace_grid().cell(5), (2, 1));
+}
+
+#[test]
 fn a_moved_window_takes_its_transient_family_along() {
     let mut policy = policy();
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
@@ -97,6 +140,7 @@ fn workspaces(count: usize) -> Config {
     Config {
         workspace_count: count,
         workspace_names: (1..=count).map(|n| format!("Desk {n}")).collect(),
+        ..Config::default()
     }
 }
 

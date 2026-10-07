@@ -9,10 +9,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,7 +19,7 @@ use camino_test_client::dbus::session;
 use zbus::blocking::Connection;
 use zbus::blocking::fdo::DBusProxy;
 
-use super::fixture::{Fixture, Logs};
+use super::fixture::{Bus, Fixture, Logs};
 use crate::decoration::palette::PaletteSource;
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::session::SessionCommand;
@@ -224,44 +222,6 @@ impl Systemd {
 
     fn calls(&self) -> Vec<(&'static str, Vec<String>, bool)> {
         self.calls.lock().unwrap().clone()
-    }
-}
-
-/// A bus of a test's own, at a socket in its scratch directory. It can stop, and another
-/// can take its address, as the user's bus does when mate-session restarts it (74).
-struct Bus {
-    daemon: Child,
-    address: String,
-}
-
-impl Bus {
-    /// Starts a bus that listens at `socket`, and returns once it does.
-    fn start(socket: &Path) -> Self {
-        let address = format!("unix:path={}", socket.display());
-        let mut daemon = Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--print-address=1"])
-            .arg(format!("--address={address}"))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon is installed, as dbus-run-session is (14)");
-        // It prints its address once it listens there.
-        let mut printed = String::new();
-        BufReader::new(daemon.stdout.take().unwrap())
-            .read_line(&mut printed)
-            .unwrap();
-        assert!(printed.starts_with(&address), "{printed}");
-        Bus { daemon, address }
-    }
-
-    /// Stops the bus, and returns once its connections are closed, as dropping it does.
-    fn stop(self) {}
-}
-
-impl Drop for Bus {
-    fn drop(&mut self) {
-        let _ = self.daemon.kill();
-        let _ = self.daemon.wait();
     }
 }
 

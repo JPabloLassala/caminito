@@ -9,14 +9,16 @@
 //! [`ext_workspace`] the workspaces as a panel does, [`xfce_foreign_toplevel`] learns each
 //! window's workspace as libxfce4windowing does, [`gtk_shell`] speaks GTK3's own
 //! protocol, [`layer_shell`] makes layer surfaces, [`data_control`] reads and sets the
-//! selections as a clipboard manager does, and [`security_context`] makes the socket a
-//! sandboxed client connects through.
+//! selections as a clipboard manager does, [`security_context`] makes the socket a
+//! sandboxed client connects through, and [`image_capture`] copies an output's or a
+//! window's pixels as a screenshot tool does.
 
 pub mod data_control;
 pub mod dbus;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gtk_shell;
+pub mod image_capture;
 pub mod layer_shell;
 pub mod output_management;
 pub mod security_context;
@@ -32,6 +34,7 @@ use std::os::unix::fs::FileExt;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use rustix::fs::MemfdFlags;
 use wayland_client::backend::WaylandError;
@@ -51,6 +54,12 @@ use wayland_client::protocol::wl_subcompositor::{self, WlSubcompositor};
 use wayland_client::protocol::wl_subsurface::{self, WlSubsurface};
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
+use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timer_v1::{
+    self, WpCommitTimerV1,
+};
+use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timing_manager_v1::{
+    self, WpCommitTimingManagerV1,
+};
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::{
     self, WpFractionalScaleManagerV1,
 };
@@ -118,6 +127,7 @@ pub struct State {
     seat: Option<WlSeat>,
     decoration_manager: Option<ZxdgDecorationManagerV1>,
     fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
+    commit_timing_manager: Option<WpCommitTimingManagerV1>,
     shortcuts_inhibit_manager: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
     pointer_constraints: Option<ZwpPointerConstraintsV1>,
     /// Whether the pointer lock the client asked for is active.
@@ -164,6 +174,8 @@ pub struct State {
     /// The workspaces ext-workspace shows.
     pub workspaces: ext_workspace::Workspaces,
     gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
+    /// The capture sessions the client opened, and their frames.
+    image_capture: image_capture::ImageCapture,
 }
 
 /// A bound `wl_output`.
@@ -427,6 +439,40 @@ impl Client {
         id
     }
 
+    /// Creates a popup of the popup `parent` placed by `positioner`, with an explicit grab
+    /// at `grab_serial`, as a menu's submenu has, and commits it without a buffer.
+    pub fn create_nested_popup(
+        &mut self,
+        parent: PopupId,
+        positioner: Positioner,
+        grab_serial: u32,
+    ) -> PopupId {
+        let id = PopupId(self.state.popups.len());
+        let surface = self.compositor().create_surface(&self.qh, ());
+        let xdg_surface = self.wm_base().get_xdg_surface(&surface, &self.qh, id);
+        let xdg_positioner = self.positioner(positioner);
+        let popup = xdg_surface.get_popup(
+            Some(&self.popup(parent).xdg_surface),
+            &xdg_positioner,
+            &self.qh,
+            id,
+        );
+        xdg_positioner.destroy();
+        let seat = self.seat();
+        popup.grab(&seat, grab_serial);
+        surface.commit();
+        self.state.popups.push(Popup {
+            surface,
+            xdg_surface,
+            popup,
+            configures: Vec::new(),
+            pending: PopupConfigure::default(),
+            done: false,
+            buffers: Vec::new(),
+        });
+        id
+    }
+
     pub fn popup(&self, id: PopupId) -> &Popup {
         &self.state.popups[id.0]
     }
@@ -458,10 +504,12 @@ impl Client {
         xdg_positioner.destroy();
     }
 
-    /// Asks for an explicit grab for the popup, as if `serial`'s button press opened it.
+    /// Asks for an explicit grab for the popup, as if `serial`'s button press opened it,
+    /// and commits, which is when the compositor takes the request.
     pub fn grab_popup(&mut self, id: PopupId, serial: u32) {
         let seat = self.seat();
         self.popup(id).popup.grab(&seat, serial);
+        self.popup(id).surface.commit();
     }
 
     fn positioner(&mut self, positioner: Positioner) -> XdgPositioner {
@@ -500,6 +548,13 @@ impl Client {
 
     /// A new shm buffer of `size` filled with `argb`, and its pool.
     fn shm_buffer(&mut self, size: (i32, i32), argb: u32) -> (WlShmPool, WlBuffer) {
+        let (_, pool, buffer) = self.shm_buffer_file(size, argb);
+        (pool, buffer)
+    }
+
+    /// A new shm buffer of `size` filled with `argb`, its pool, and the file its pixels are
+    /// in, for a buffer the compositor writes.
+    fn shm_buffer_file(&mut self, size: (i32, i32), argb: u32) -> (File, WlShmPool, WlBuffer) {
         let (width, height) = size;
         let stride = width * 4;
         let len = stride * height;
@@ -523,7 +578,7 @@ impl Client {
             &self.qh,
             (),
         );
-        (pool, buffer)
+        (file, pool, buffer)
     }
 
     /// Acks the latest configure, then commits a `size` buffer of `argb`.
@@ -698,6 +753,17 @@ impl Client {
     pub fn request_fractional_scale(&mut self, id: WindowId) {
         let manager = self.global(|state| &mut state.fractional_scale_manager, 1);
         manager.get_fractional_scale(&self.window(id).surface, &self.qh, id);
+    }
+
+    /// Holds the window's next commit back until `time` on the presentation clock, with
+    /// commit-timing.
+    pub fn set_commit_time(&mut self, id: WindowId, time: Duration) {
+        let manager = self.global(|state| &mut state.commit_timing_manager, 1);
+        let timer = manager.get_timer(&self.window(id).surface, &self.qh, ());
+        let secs = time.as_secs();
+        timer.set_timestamp((secs >> 32) as u32, secs as u32, time.subsec_nanos());
+        // The timestamp stays with the commit.
+        timer.destroy();
     }
 
     /// Makes the window's xdg-decoration object without asking for a mode.
@@ -1367,6 +1433,8 @@ ignore_events!(
     XdgPositioner => xdg_positioner::Event,
     ZxdgDecorationManagerV1 => zxdg_decoration_manager_v1::Event,
     WpFractionalScaleManagerV1 => wp_fractional_scale_manager_v1::Event,
+    WpCommitTimingManagerV1 => wp_commit_timing_manager_v1::Event,
+    WpCommitTimerV1 => wp_commit_timer_v1::Event,
     ZwpPointerConstraintsV1 => zwp_pointer_constraints_v1::Event,
     ZwpKeyboardShortcutsInhibitManagerV1 => zwp_keyboard_shortcuts_inhibit_manager_v1::Event,
     ZwpKeyboardShortcutsInhibitorV1 => zwp_keyboard_shortcuts_inhibitor_v1::Event,

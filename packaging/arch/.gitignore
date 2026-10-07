@@ -9,5 +9,6 @@
 */mate-session-manager/
 */mate-settings-daemon/
 */mate-submodules/
+*/mate-utils/
 *.pkg.tar.*
 *.log

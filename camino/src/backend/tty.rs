@@ -259,6 +259,11 @@ impl Tty {
         Ok(tty)
     }
 
+    /// The GPU's renderer, for what's drawn off the monitors: a capture's frame (103).
+    pub(crate) fn renderer(&mut self) -> &mut GlesRenderer {
+        &mut self.gpu.renderer
+    }
+
     /// Switches to VT `vt`, as `XF86Switch_VT_n` asks.
     pub fn change_vt(&mut self, vt: i32) {
         if let Err(err) = self.seat.change_vt(vt) {

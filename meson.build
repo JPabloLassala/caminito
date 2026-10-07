@@ -21,6 +21,13 @@ install_data(
   install_dir: get_option('datadir') / 'wayland-sessions',
 )
 
+# Camino's own settings (09): the workspace grid's three keys (96). The package's hook
+# compiles the schemas (16), so nothing is compiled here.
+install_data(
+  'data/org.mate.Camino.gschema.xml',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
+)
+
 # camino-displays's entry, in the Display capplet's place (84). It has the capplet's id,
 # mate-display-properties.desktop, in a directory that only a Session's programs look in,
 # before the stock packages': Camino puts it first in its session command's XDG_DATA_DIRS.

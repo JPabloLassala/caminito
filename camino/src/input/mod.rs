@@ -6,9 +6,11 @@ mod focus;
 pub mod frame;
 mod grab;
 pub(crate) mod keyboard;
+mod serials;
 
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
+pub(crate) use serials::InputSerials;
 
 use camino_policy::{Action, ResizeEdges, WindowId};
 use smithay::backend::input::{
@@ -26,6 +28,9 @@ use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_cons
 use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::X11Surface;
 
+use self::bindings::Binding;
+use crate::commands::Command;
+use crate::dbus::panel::PanelAction;
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
 use crate::scene::{self, SceneLayer};
@@ -203,33 +208,52 @@ impl State {
     }
 
     /// The keyboard path: one key event through 15's five stages, in order, each deciding
-    /// whether it goes further. Only the bindings and the client stage do anything yet.
+    /// whether it goes further. Only the bindings, the accelerator grabs and the client
+    /// stage do anything yet.
     pub fn on_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         // 1 to 3 see the raw key, before xkbcommon.
         if !(lock_passes(keycode) && accessx_passes(keycode) && keyboard_monitor_passes(keycode)) {
             return;
         }
 
-        // 4. VT switching, then Camino's bindings, inside Smithay's filter so they see xkb's
-        // keysyms; then 5. the keyboard sends whatever the filter forwards to the focused
-        // client.
+        // 4. VT switching, Camino's bindings, then the accelerator grabs (98), inside
+        // Smithay's filter so they see xkb's keysyms; then 5. the keyboard sends whatever
+        // the filter forwards to the focused client.
         let keyboard = self.camino.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
-        let action = keyboard
-            .input(
-                self,
-                keycode,
-                key_state,
-                serial,
-                time,
-                |state, mods, keysym| state.bindings_stage(keycode, pressed, mods, &keysym),
-            )
-            .flatten();
-        if let Some(action) = action {
-            let now = self.camino.now();
-            self.camino.policy.action(SEAT, action, now);
-            self.camino.queue_redraw_all();
+        let intercepted = keyboard.input(
+            self,
+            keycode,
+            key_state,
+            serial,
+            time,
+            |state, mods, keysym| match state.bindings_stage(keycode, pressed, mods, &keysym) {
+                FilterResult::Forward => state.grabs_stage(keycode, pressed, mods, &keysym),
+                intercepted => intercepted,
+            },
+        );
+        match intercepted {
+            Some(Some(Bound::Action(action))) => {
+                let now = self.camino.now();
+                self.camino.policy.action(SEAT, action, now);
+                self.camino.queue_redraw_all();
+            }
+            Some(Some(Bound::Panel(action))) => {
+                // The time a client would have for the event.
+                self.camino.ask_panel(action, time.millis());
+            }
+            Some(Some(Bound::Command(command))) => self.camino.run_command(command),
+            Some(Some(Bound::Accelerator { owner, action })) => {
+                self.camino
+                    .signal_accelerator(&owner, action, time.millis());
+            }
+            Some(None) => {}
+            None => {
+                let focus = keyboard.current_focus();
+                let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
+                self.camino.input_serials.sent(serial, surface.as_deref());
+            }
         }
     }
 
@@ -251,7 +275,7 @@ impl State {
         pressed: bool,
         mods: &ModifiersState,
         keysym: &KeysymHandle<'_>,
-    ) -> FilterResult<Option<Action>> {
+    ) -> FilterResult<Option<Bound>> {
         if !pressed {
             return if self.camino.suppressed_keys.remove(&keycode) {
                 FilterResult::Intercept(None)
@@ -270,13 +294,47 @@ impl State {
             return FilterResult::Forward;
         }
         // Bindings name keys as the first layout does, whichever layout is active.
-        let action = keysym
+        let binding = keysym
             .raw_latin_sym_or_raw_current_sym()
-            .and_then(|sym| bindings::action_for(mods, sym));
-        match action {
-            Some(action) => {
+            .and_then(|sym| bindings::binding_for(mods, sym));
+        match binding {
+            Some(binding) => {
                 self.camino.suppressed_keys.insert(keycode);
-                FilterResult::Intercept(Some(action))
+                let bound = match binding {
+                    Binding::Policy(action) => Bound::Action(action),
+                    Binding::Panel(action) => Bound::Panel(action),
+                    Binding::Command(command) => Bound::Command(command),
+                };
+                FilterResult::Intercept(Some(bound))
+            }
+            None => FilterResult::Forward,
+        }
+    }
+
+    /// The accelerator grabs (98), a stage of their own between Camino's bindings and the
+    /// client: a press that a caller of `org.mate.Camino` grabbed is its grabber's, and
+    /// reaches no client. The bindings stage swallows the release. An active shortcuts
+    /// inhibitor passes the grabs to the client as it does Camino's bindings, as Mutter's
+    /// does.
+    fn grabs_stage(
+        &mut self,
+        keycode: Keycode,
+        pressed: bool,
+        mods: &ModifiersState,
+        keysym: &KeysymHandle<'_>,
+    ) -> FilterResult<Option<Bound>> {
+        if !pressed || self.shortcuts_inhibited() {
+            return FilterResult::Forward;
+        }
+        // Accelerators name keys as the first layout does, like the bindings.
+        let grab = keysym
+            .raw_latin_sym_or_raw_current_sym()
+            .and_then(|sym| self.camino.accelerator_grabs.pressed(mods, sym));
+        match grab {
+            Some((action, owner)) => {
+                let owner = owner.to_owned();
+                self.camino.suppressed_keys.insert(keycode);
+                FilterResult::Intercept(Some(Bound::Accelerator { owner, action }))
             }
             None => FilterResult::Forward,
         }
@@ -373,6 +431,9 @@ impl State {
             button,
             state,
         };
+        let focus = pointer.current_focus();
+        let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
+        self.camino.input_serials.sent(serial, surface.as_deref());
         pointer.button(self, &event);
         pointer.frame(self);
     }
@@ -482,6 +543,19 @@ impl Under {
 enum Constraint {
     Locked,
     Confined,
+}
+
+/// What a key press that reaches no client does instead.
+enum Bound {
+    /// One of Camino's bindings: something policy does.
+    Action(Action),
+    /// One of Camino's bindings: something it asks the panel for (95).
+    Panel(PanelAction),
+    /// One of Camino's bindings: a command to run (104).
+    Command(Command),
+    /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
+    /// to signal it.
+    Accelerator { owner: String, action: u32 },
 }
 
 /// Stage 1, the lock (M7): while locked, only VT and layout switching, AccessX and the

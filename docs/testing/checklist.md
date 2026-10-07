@@ -413,6 +413,152 @@ session_env() {
 - **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
   xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
+### Alt+F1 opens the main menu, and Alt+F2 the Run dialog
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 8 or later, and run
+     `busctl --user status org.mate.Panel | grep -E '^(PID|Comm)='`.
+  2. With a window focused and the pointer over it, press Alt+F1, move through the menu and
+     into a submenu with the arrow keys, and press Escape until it has closed. Type in the
+     window.
+  3. Press Alt+F1 again, move the pointer along the Menu Bar from *Applications* to
+     *Places* and into a submenu there, and click outside the menu.
+  4. Right-click in the window for its context menu, and press Alt+F1 with it open.
+  5. Press Alt+F2, type `mate-calc` and press Enter.
+  6. Remove the Menu Bar from the panel and add a *Main Menu* button in its place. Press
+     Alt+F1. Remove the button too, and press Alt+F1 with the pointer over the panel, and
+     then with it over a window. Put the Menu Bar back.
+  7. In a terminal, stop the panel answering, press Alt+F2 and type in the window, and then
+     let the panel go on:
+
+     ```sh
+     pkill -STOP -x mate-panel; sleep 10; pkill -CONT -x mate-panel
+     ```
+
+- **Expected:** in step 1 the name's owner is `mate-panel`. In step 2 the menu drops from the
+  Menu Bar's *Applications*, and it has the keyboard: the arrow keys move through it, a
+  submenu opens, and Escape closes it one level at a time, after which the window has the
+  keyboard back. In step 3 *Places* and its submenu open under the pointer, and the click
+  closes the menu. In step 4 the context menu stays, no menu of the panel's opens, and the
+  panel is still there. In step 5 the Run dialog opens with the keyboard in its entry, and
+  the calculator starts. In step 6 the menu drops from the button, and without one it opens
+  at the pointer over the panel, and from the first panel's corner with the pointer over a
+  window, each time with the keyboard. In step 7 nothing opens while the panel is stopped,
+  and Camino neither hangs nor loses a key: the window gets what's typed. The Run dialog
+  opens once the panel goes on (95).
+- **Debug tool:** `busctl --user status org.mate.Panel`, and
+  `busctl --user call org.mate.Panel /org/mate/Panel org.mate.Panel RunDialog u 0`, which is
+  Camino's call without the key. `can't open the panel's main menu` in `~/camino.log` says
+  the name had no owner or the call failed.
+
+### The Show Desktop button and Ctrl+Alt+D show the same desktop
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 7 or later, and open
+     three windows on the first workspace, one of them an X11 app such as `xterm`. In a
+     terminal on the second workspace, follow the property:
+
+     ```sh
+     gdbus monitor --session --dest org.mate.Camino --object-path /org/mate/Camino
+     ```
+
+  2. On the first workspace, click the panel's Show Desktop button, then press Ctrl+Alt+D.
+  3. Press Ctrl+Alt+D, then click the button.
+  4. Click the button, switch to the second workspace and back with the workspace switcher.
+  5. With the desktop still shown, click one window's button in the window list.
+  6. Show the desktop again with either, and start pluma from the panel's menu.
+- **Expected:** in steps 2 and 3 the windows go and come back as they were stacked, with the
+  focus on the one that had it, whichever of the two hid them and whichever brought them back,
+  and the button is pressed in exactly while they're hidden. The window list keeps their
+  buttons, none drawn as minimised. In step 4 the button is out on the second workspace, whose
+  windows stay, and in again back on the first. In step 5 that window comes back alone, and in
+  step 6 pluma opens alone: the button comes out, and the other windows are minimised in the
+  window list, as in Marco. `gdbus monitor` prints one `ShowingDesktop` change for
+  each, and none for a switch between workspaces that agree (94).
+- **Debug tool:** `showing_desktop` in `DumpState`, the `gdbus monitor` of step 1, and to tell
+  the button's side from Camino's:
+
+  ```sh
+  gdbus call --session --dest org.mate.Camino --object-path /org/mate/Camino \
+    --method org.freedesktop.DBus.Properties.Set org.mate.Camino ShowingDesktop '<true>'
+  ```
+
+### The workspace switcher's preferences set the count and the names
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 5 or later, and four
+     workspaces (`gsettings get org.mate.Marco.general num-workspaces`).
+  2. Open the workspace switcher's *Preferences*, and set *Number of workspaces* to 6, then
+     to 2. After each, look at the switcher and run the `gsettings get` of step 1.
+  3. Tick *Show workspace names in switcher*. In *Workspace names*, change the second name to
+     `Mail` and press Enter, then run
+     `gsettings get org.mate.Marco.workspace-names name-2`.
+  4. Empty that name again, and set the count back to 4.
+  5. Log into *MATE*, the X11 session, and do steps 2 to 4 there. Then log into *MATE on
+     Wayfire* and open the switcher's *Preferences*.
+- **Expected:** under Camino the preferences have *Number of workspaces* and *Workspace
+  names*. The switcher, which draws what Camino sends, has six buttons, then two, `gsettings`
+  prints the same count, and the spin button stays at the number that was set. The second
+  button and the second row say `Mail`, and `gsettings` prints `'Mail'`. Emptied, both say
+  `Workspace 2` again. On X11 the same steps do the same through Marco, as with the stock
+  panel, and on Wayfire the preferences have neither control (the gate, ADR 0011).
+- **Debug tool:** the switcher, `gsettings monitor org.mate.Marco.general`, and
+  `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep ext_workspace` for the handles and names
+  Camino sends.
+
+### The workspace switcher's rows are Camino's grid
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 6 or later and four
+     workspaces, the switcher on a horizontal panel, and note
+     `gsettings list-recursively org.mate.Camino`.
+  2. Open the workspace switcher's *Preferences*, set the rows to 2, and read the keys again.
+  3. On the first workspace, press Ctrl+Alt+Right twice, then click the third workspace in the
+     switcher and press Ctrl+Alt+Left.
+  4. `gsettings set org.mate.Marco.general num-workspaces 6`, look at the switcher, and set
+     it back to 4.
+  5. Set the rows back to 1 in *Preferences*.
+  6. Log into X11 MATE, set the switcher's rows to 2 and back, and read
+     `gsettings list-recursively org.mate.Camino` before and after.
+- **Expected:** in step 1 the switcher is one row, and the keys are `horizontal`, 1 and 0. In
+  step 2 it shows two rows of two, with the first and second workspaces above the third and
+  fourth, and `workspace-layout-rows` is 2. In step 3 Camino stops at the second workspace, the
+  end of the first row, and stays on the third, the start of the second. In step 4 the switcher
+  is two rows of three. In step 5 it's one row again. In step 6 the switcher's rows change as
+  they always did on X11, and Camino's keys don't (ADR 0011).
+- **Debug tool:** `gsettings monitor org.mate.Camino`, and `WAYLAND_DEBUG=1 mate-panel --replace
+  2>&1 | grep coordinates` for the `ext_workspace_handle_v1.coordinates` events.
+
+## Screenshots
+
+### Print, Shift+Print and Alt+Print
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-utils-camino` installed. Open a pluma window and a
+     terminal, with pluma focused, and drag pluma down until the bottom panel covers the lower
+     part of its window.
+  2. Press `Print`, and save the screenshot from the dialog.
+  3. Press `<Shift>Print`, drag over an area that has part of both windows, and save it.
+  4. Press `<Alt>Print`, and save it.
+  5. Focus the terminal, run `mate-screenshot --interactive` from Alt+F2, choose *Grab the
+     current window*, and click *Take Screenshot*.
+  6. Log into the Wayfire session, with the same package, and run `mate-screenshot --window`
+     in a terminal.
+- **Expected:** step 2's image is the whole screen, every monitor. Step 3's is the area that
+  was dragged. Step 4's is pluma's window alone, with its Frame and all of its contents, the
+  part under the panel too, and nothing of the panel or the desktop around it. Step 5's is
+  the terminal, not mate-screenshot's own dialog. Step 6 prints `Error: window capture is not
+  supported on Wayland.`, as stock mate-screenshot does (ADR 0011).
+- **Debug tool:** the saved images. `gdbus call --session --dest org.mate.Camino --object-path
+  /org/mate/Camino --method org.mate.Camino.GetActiveToplevel` prints the identifier
+  mate-screenshot is given, and `WAYLAND_DEBUG=1 mate-screenshot --window 2>&1 | grep
+  ext_foreign_toplevel` shows the toplevel it's matched to.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

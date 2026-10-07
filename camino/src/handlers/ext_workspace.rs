@@ -1,5 +1,6 @@
-//! ext-workspace (66): policy's workspaces are sent in the refresh pass, and a client's
-//! `activate` switches workspace through policy, as the keybinding does.
+//! ext-workspace (66): policy's workspaces are sent in the refresh pass, each where the grid
+//! has it (96), and a client's `activate` switches workspace through policy, as the
+//! keybinding does.
 
 use camino_policy::Action;
 
@@ -37,18 +38,22 @@ impl ExtWorkspaceHandler for State {
 }
 
 impl Camino {
-    /// Tells ext-workspace's clients of the outputs and workspaces that changed. The
-    /// workspaces are one row until M6's layout keys (09, 17).
+    /// Tells ext-workspace's clients of the outputs and workspaces that changed. Each
+    /// workspace's coordinates are its cell in policy's grid (96).
     pub(crate) fn refresh_ext_workspace(&mut self) {
         let active = self.policy.active_workspace();
+        let grid = self.policy.workspace_grid();
         let names = self.policy.workspace_names().iter();
         let workspaces = names
             .enumerate()
-            .map(|(index, name)| Workspace {
-                id: workspace_id(index),
-                name: name.clone(),
-                coordinates: [index as u32, 0],
-                active: index == active,
+            .map(|(index, name)| {
+                let (column, row) = grid.cell(index);
+                Workspace {
+                    id: workspace_id(index),
+                    name: name.clone(),
+                    coordinates: [column as u32, row as u32],
+                    active: index == active,
+                }
             })
             .collect();
         self.ext_workspace_state.refresh::<State>(

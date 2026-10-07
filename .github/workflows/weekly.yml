@@ -68,6 +68,7 @@ jobs:
           - mate-settings-daemon-camino
           - mate-control-center-camino
           - caja-camino
+          - mate-utils-camino
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git

@@ -83,7 +83,7 @@ MATE stays as it was. Build them before `camino-git`, which depends on them:
 
 ```sh
 for package in mate-session-manager-camino mate-panel-camino mate-settings-daemon-camino \
-  mate-control-center-camino caja-camino camino-git; do
+  mate-control-center-camino caja-camino mate-utils-camino camino-git; do
   (cd packaging/arch/$package && makepkg -si)
 done
 ```
@@ -101,6 +101,11 @@ change to the X11 display plugin for virtual machines that resize the screen).
 
 `caja-camino` is Arch's caja 1.28.0 with one patch, which puts the desktop on Camino's primary
 output.
+
+`mate-utils-camino` is mate-utils 1.29.1, the first whose mate-screenshot captures on Wayland,
+with one patch: `mate-screenshot --window`, which `<Alt>Print` runs, captures the window Camino
+names as the active one. Its dictionary applet is built into the panel's process, as a Wayland
+panel needs it, so it's linked to `mate-panel-camino`'s applet library.
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no

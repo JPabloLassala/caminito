@@ -5,6 +5,7 @@ mod decoration;
 mod ext_workspace;
 mod foreign_toplevel;
 mod gtk_shell;
+mod image_capture;
 mod input;
 mod layer_shell;
 mod output_management;
@@ -15,6 +16,7 @@ mod xdg_shell;
 mod xfce_foreign_toplevel;
 
 pub(crate) use decoration::kde_server_side;
+pub(crate) use image_capture::CaptureSession;
 pub(crate) use security_context::sees_privileged_globals;
 pub(crate) use selection::DragIcon;
 

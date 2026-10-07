@@ -1,4 +1,5 @@
-//! Camino's D-Bus (15): one file per name or peer. `systemd` is the one peer so far.
+//! Camino's D-Bus (15): one file per name or peer. `systemd` and `panel` are the peers so
+//! far.
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
@@ -6,11 +7,15 @@
 
 pub mod camino;
 pub mod debug;
+pub(crate) mod panel;
 pub mod screensaver;
 pub(crate) mod systemd;
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel;
+use zbus::export::ordered_stream::OrderedStreamExt;
+use zbus::message::Header;
+use zbus::names::BusName;
 
 use crate::state::{Camino, State};
 
@@ -37,9 +42,68 @@ async fn ask<R, T>(
     answer.await.map_err(|_| gone())
 }
 
+/// The unique name of the connection a call came from. The bus fills it in for every
+/// message it passes on.
+fn caller(header: &Header<'_>) -> String {
+    header.sender().map(ToString::to_string).unwrap_or_default()
+}
+
+/// Whether `name` has an owner. An answer that can't be had counts as yes: the caller
+/// watch still reports it when it leaves.
+async fn on_the_bus(connection: &zbus::Connection, name: &str) -> bool {
+    let has_owner = async {
+        let bus = zbus::fdo::DBusProxy::new(connection).await?;
+        zbus::Result::Ok(bus.name_has_owner(BusName::try_from(name)?).await?)
+    };
+    has_owner.await.unwrap_or(true)
+}
+
+/// Where the event loop hears of the callers that left the bus, by their unique names, so
+/// that what they held goes with them: the shim's cookies (62) and the accelerator grabs
+/// (98).
+#[derive(Clone)]
+struct Callers(channel::Sender<String>);
+
+impl Callers {
+    /// Reports `caller` if it has left the bus, after a call that gave it something to
+    /// hold. The caller watch is another task, so a caller that left at once can have
+    /// been reported before the loop got its call, and what it holds would stay for good.
+    /// A caller that's still on the bus now is reported after it.
+    async fn report_if_gone(&self, connection: &zbus::Connection, caller: String) {
+        if !on_the_bus(connection, &caller).await {
+            let _ = self.0.send(caller);
+        }
+    }
+
+    /// Reports each connection that leaves the bus, until the task is dropped. It
+    /// returns once the bus is sending the changes, and the future it returns then passes
+    /// them on.
+    async fn watch(
+        self,
+        connection: &zbus::Connection,
+    ) -> zbus::Result<impl Future<Output = ()> + Send + 'static> {
+        let bus = zbus::fdo::DBusProxy::new(connection).await?;
+        // An empty new owner: the name has gone.
+        let mut changes = bus.receive_name_owner_changed_with_args(&[(2, "")]).await?;
+        Ok(async move {
+            // The proxy stays with the stream, which borrows nothing from it but needs its
+            // match rule kept.
+            let _bus = bus;
+            while let Some(change) = changes.next().await {
+                let Ok(args) = change.args() else { continue };
+                if let BusName::Unique(name) = args.name()
+                    && self.0.send(name.to_string()).is_err()
+                {
+                    break;
+                }
+            }
+        })
+    }
+}
+
 /// Camino's connection to the session bus.
 pub struct Dbus {
-    /// Passes on the callers that leave the bus (62). It's before the connection, which
+    /// Passes on the callers that leave the bus (62, 98). It's before the connection, which
     /// it holds, so that it stops first.
     _caller_watch: Option<zbus::Task<()>>,
     connection: zbus::Connection,
@@ -91,11 +155,13 @@ impl Camino {
         let camino_requests = self.dbus_requests(Camino::camino_request);
         let debug_requests = self.dbus_requests(Camino::debug_request);
         let screensaver_requests = self.dbus_requests(Camino::screensaver_request);
+        let callers = Callers(self.dbus_requests(Camino::caller_left));
 
+        let camino = camino::CaminoInterface::new(camino_requests, callers.clone());
         let mut builder = builder(address)?
-            .serve_at(camino::PATH, camino::CaminoInterface::new(camino_requests))?
+            .serve_at(camino::PATH, camino)?
             .serve_at(debug::PATH, debug::DebugInterface::new(debug_requests))?;
-        builder = screensaver::serve(builder, screensaver_requests.clone())?;
+        builder = screensaver::serve(builder, screensaver_requests, callers.clone())?;
         if names == Names::WellKnown {
             builder = builder.name(camino::NAME)?.name(debug::NAME)?;
         }
@@ -103,13 +169,10 @@ impl Camino {
         if names == Names::WellKnown {
             zbus::block_on(screensaver::own_names(&connection));
         }
-        let caller_watch = zbus::block_on(screensaver::watch_callers(
-            &connection,
-            screensaver_requests,
-        ))
-        .inspect_err(|err| tracing::warn!("can't watch for callers that leave the bus: {err}"))
-        .ok()
-        .map(|watch| connection.executor().spawn(watch, "screensaver callers"));
+        let caller_watch = zbus::block_on(callers.watch(&connection))
+            .inspect_err(|err| tracing::warn!("can't watch for callers that leave the bus: {err}"))
+            .ok()
+            .map(|watch| connection.executor().spawn(watch, "callers that leave"));
         let dbus = Dbus {
             _caller_watch: caller_watch,
             connection,
@@ -117,7 +180,7 @@ impl Camino {
         };
         tracing::info!("on the bus as {}", dbus.unique_name().unwrap_or_default());
         self.dbus = Some(dbus);
-        self.primary_output_read_from_now_on();
+        self.properties_read_from_now_on();
         Ok(())
     }
 
@@ -126,6 +189,12 @@ impl Camino {
     /// never holds if `start_dbus` failed: then there are no names to wait for.
     pub fn dbus_ready(&self) -> bool {
         self.dbus.is_some()
+    }
+
+    /// A caller left the bus, and what it held goes with it.
+    fn caller_left(&mut self, caller: String) {
+        self.screensaver.caller_left(&caller);
+        self.accelerator_grabs.owner_left(&caller);
     }
 
     /// A sender for an interface's requests, which `answer` gets in the event loop.
