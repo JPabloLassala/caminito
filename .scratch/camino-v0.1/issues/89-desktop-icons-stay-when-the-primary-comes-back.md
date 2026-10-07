@@ -2,7 +2,7 @@
 
 Type: implementation
 Status: resolved
-Milestone: M6 (proposed)
+Milestone: M6
 Blocked by: none
 Map: [Camino v0.1](../map.md)
 
