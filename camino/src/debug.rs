@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use camino_policy::PolicyWindow;
+use camino_policy::{PolicyWindow, SwitchList};
 use camino_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -15,6 +15,7 @@ use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, L
 use crate::decoration::memory_buffer;
 use crate::output::{output_geometry, output_id};
 use crate::state::{Camino, SEAT};
+use crate::switcher::layout::CellStyle;
 use crate::window::{Strut, with_x_facts};
 
 /// The debug toggles, and what they draw with.
@@ -81,6 +82,35 @@ struct StateDump {
     focus: Option<u64>,
     /// The accelerators grabbed over `org.mate.Camino` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
+    /// The Window switcher (108), while it's open.
+    switcher: Option<SwitcherDump>,
+}
+
+#[derive(Serialize)]
+struct SwitcherDump {
+    /// The action's list: `windows`, `windows-all`, `group` or `panels`.
+    list: &'static str,
+    /// The windows listed, in order.
+    windows: Vec<u64>,
+    /// The selected window.
+    selected: u64,
+    /// Whether its popup is drawn.
+    visible: bool,
+    /// The popup, once it has appeared.
+    #[serde(flatten)]
+    popup: Option<SwitcherPopupDump>,
+}
+
+#[derive(Serialize)]
+struct SwitcherPopupDump {
+    /// The name of the output the popup is on.
+    output: String,
+    /// What a cell shows: `thumbnails` or `icons`.
+    style: &'static str,
+    columns: usize,
+    /// The popup and each window's cell, from the output's top left corner.
+    popup: RectDump,
+    cells: Vec<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -338,6 +368,27 @@ impl Camino {
                 owner: grab.owner.clone(),
             })
             .collect();
+        let switcher = policy.switcher().map(|switcher| SwitcherDump {
+            list: match switcher.list {
+                SwitchList::Windows => "windows",
+                SwitchList::WindowsAll => "windows-all",
+                SwitchList::Group => "group",
+                SwitchList::Panels => "panels",
+            },
+            windows: switcher.windows.iter().map(|id| id.0).collect(),
+            selected: switcher.windows[switcher.selected].0,
+            visible: self.visible_switcher().is_some(),
+            popup: self.visible_switcher().map(|popup| SwitcherPopupDump {
+                output: popup.output.name(),
+                style: match popup.grid.style {
+                    CellStyle::Thumbnails => "thumbnails",
+                    CellStyle::Icons { .. } => "icons",
+                },
+                columns: popup.grid.columns,
+                popup: popup.grid.popup.into(),
+                cells: popup.grid.cells.iter().map(|cell| (*cell).into()).collect(),
+            }),
+        });
         let dump = StateDump {
             windows,
             workspaces,
@@ -348,6 +399,7 @@ impl Camino {
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
             accelerator_grabs,
+            switcher,
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

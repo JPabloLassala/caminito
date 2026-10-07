@@ -19,6 +19,7 @@ pub mod scene;
 pub mod session;
 pub mod settings;
 pub mod state;
+mod switcher;
 pub mod window;
 mod work_area;
 pub mod xwayland;

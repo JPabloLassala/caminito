@@ -246,6 +246,10 @@ impl State {
                 self.camino.policy.action(SEAT, action, now);
                 self.camino.queue_redraw_all();
             }
+            Some(Some(Bound::Switch { action, key })) => {
+                let mods = keyboard.modifier_state();
+                self.switch_action(action, key, &mods, time);
+            }
             Some(Some(Bound::Panel(action))) => {
                 // The time a client would have for the event.
                 self.camino.ask_panel(action, time.millis());
@@ -286,6 +290,9 @@ impl State {
         keysym: &KeysymHandle<'_>,
     ) -> FilterResult<Option<Bound>> {
         if !pressed {
+            // The release that lets go of the Window switcher's modifier commits it (108),
+            // and goes on to the client, which saw the press.
+            self.camino.switcher_key_released(mods);
             return if self.camino.suppressed_keys.remove(&keycode) {
                 FilterResult::Intercept(None)
             } else {
@@ -299,17 +306,24 @@ impl State {
             self.camino.suppressed_keys.insert(keycode);
             return FilterResult::Intercept(None);
         }
+        // The open Window switcher has the keyboard (108), before an inhibitor has its say:
+        // it never opens under one.
+        if let Some(result) = self.camino.switcher_key_pressed(keycode, mods, keysym) {
+            return result;
+        }
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
         }
         // Bindings name keys as the first layout does, whichever layout is active.
-        let binding = keysym
-            .raw_latin_sym_or_raw_current_sym()
-            .and_then(|sym| bindings::binding_for(mods, sym));
+        let sym = keysym.raw_latin_sym_or_raw_current_sym();
+        let binding = sym.and_then(|sym| Some((sym, bindings::binding_for(mods, sym)?)));
         match binding {
-            Some(binding) => {
+            Some((key, binding)) => {
                 self.camino.suppressed_keys.insert(keycode);
                 let bound = match binding {
+                    Binding::Policy(action @ Action::Switch { .. }) => {
+                        Bound::Switch { action, key }
+                    }
                     Binding::Policy(action) => Bound::Action(action),
                     Binding::Panel(action) => Bound::Panel(action),
                     Binding::Command(command) => Bound::Command(command),
@@ -390,6 +404,9 @@ impl State {
         let pointer = self.camino.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
+        if self.switcher_button(button, state, location) {
+            return;
+        }
         let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
             .then(|| self.camino.under(location))
             .flatten();
@@ -558,6 +575,8 @@ enum Constraint {
 enum Bound {
     /// One of Camino's bindings: something policy does.
     Action(Action),
+    /// One of Camino's bindings: a `switch-*` action (108), with the key that fired it.
+    Switch { action: Action, key: Keysym },
     /// One of Camino's bindings: something it asks the panel for (95).
     Panel(PanelAction),
     /// One of Camino's bindings: a command to run (104).
@@ -633,8 +652,14 @@ impl Camino {
     /// by the scene's order.
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
         // M7: nothing but the lock takes the pointer while locked (12).
+        // The Window switcher's popup covers what's under it, for no client (108).
+        if self.switcher_popup_at(location) {
+            return None;
+        }
         scene::LAYERS.into_iter().find_map(|layer| match layer {
-            SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock => None,
+            SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock | SceneLayer::Switcher => {
+                None
+            }
             SceneLayer::Overlay
             | SceneLayer::Top
             | SceneLayer::LayerPopups

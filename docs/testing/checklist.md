@@ -859,3 +859,33 @@ session_env() {
 - **Debug tool:** `mate-window-properties` and `mate-keybinding-properties` run from a
   terminal, `echo "$MATE_WM_NAME $MATE_WM_KEYBINDINGS"` there, `gsettings monitor
   org.mate.Marco.general`, and `coredumpctl` for a crash.
+
+### The Window switcher shows live thumbnails
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Camino*. Open a terminal, a file manager and a video player, and play a
+     video. Minimise the file manager.
+  2. Tap Alt+Tab quickly, twice.
+  3. Hold Alt and press Tab. Keep Alt held for a few seconds, then press Tab, Shift+Tab and
+     the arrow keys. Release Alt with the file manager selected.
+  4. Hold Alt and press Tab, then Escape. Hold Alt and press Tab again, and click a thumbnail.
+  5. Hold Alt and press \`, and then, with Ctrl held too, Tab.
+  6. With two monitors, move the pointer to the other one and hold Alt+Tab.
+  7. Run `gsettings set org.mate.Marco.general compositing-fast-alt-tab true`, hold Alt+Tab,
+     and set the key back.
+- **Expected:** in step 2 the focus goes to the window used before and back, and no popup
+  shows. In step 3 the popup appears in the middle of the output the pointer is on, in the GTK
+  theme's colours and font, with a thumbnail of each window, most recently used first and the
+  minimised file manager last. The video goes on playing in its thumbnail. The file manager's
+  thumbnail shows it as it was when it was minimised. Each thumbnail has its application's
+  icon in a corner, and the selected window's title is under the grid. Each key moves the
+  selection, and nothing shows on the windows themselves. Releasing Alt restores the file
+  manager and gives it the focus. In step 4 Escape leaves the focus and the stacking as they
+  were, and the click gives the focus to the window clicked. In step 5 Alt+\` lists only the
+  focused application's windows, and Ctrl+Alt+Tab lists nothing under Wayland's panel, a Layer
+  surface, so nothing happens. In step 6 the popup is on the pointer's monitor. In step 7
+  the grid shows icons with no thumbnails (108, ADR 0016).
+- **Debug tool:** `org.mate.Camino.Debug`'s state dump, whose `switcher` member has the list,
+  the selection, the popup's output and its cells while the popup shows, and `gsettings
+  monitor org.mate.Marco.general`.

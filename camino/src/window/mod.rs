@@ -309,10 +309,21 @@ impl Mapped {
     /// Picks each surface's main output from the frames just drawn on `rendered`, in
     /// the order they were drawn: another output takes over once it shows at least twice
     /// the pixels (13). Run after rendering, as cosmic-comp does (`state.rs:957-1000`).
+    ///
+    /// Only an output the window is on can be its main output. The Window switcher draws a
+    /// thumbnail of the window on its popup's output with the window's own surfaces (108),
+    /// which mustn't count as the window there: on an output the window isn't on, its
+    /// surfaces are taken as not drawn at all.
     pub(crate) fn update_main_outputs(&mut self, rendered: &[(Output, RenderElementStates)]) {
+        let outputs = &self.outputs;
+        let nothing_drawn = RenderElementStates {
+            states: Default::default(),
+        };
         self.window.with_surfaces(|surface, data| {
             let update = || {
                 for (output, states) in rendered {
+                    let on_it = outputs.contains(&output_id(output));
+                    let states = if on_it { states } else { &nothing_drawn };
                     update_surface_primary_scanout_output(
                         surface,
                         output,
@@ -422,10 +433,16 @@ impl Mapped {
         self.adapter().title()
     }
 
-    /// Whether the window asks for the user's attention, for M8's Alt+Tab and
-    /// focus-stealing prevention. wlr-foreign-toplevel version 3 has no state for it (65).
+    /// Whether the window asks for the user's attention, which the Window switcher marks
+    /// (108), and for M8's focus-stealing prevention. wlr-foreign-toplevel version 3 has no
+    /// state for it (65).
     pub(crate) fn is_urgent(&self) -> bool {
         self.adapter().urgent()
+    }
+
+    /// Where the window's icon comes from.
+    pub(crate) fn icon_source(&self) -> IconSource {
+        self.adapter().icon()
     }
 
     /// Whether the window is left out of the taskbar and the pager.
@@ -509,6 +526,10 @@ impl PolicyWindow for Mapped {
 
     fn app_id(&self) -> Option<String> {
         self.adapter().app_id()
+    }
+
+    fn skips_taskbar(&self) -> bool {
+        self.skips().taskbar
     }
 
     fn is_ssd(&self) -> bool {

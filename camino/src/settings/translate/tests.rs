@@ -26,6 +26,15 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "action-middle-click-titlebar", s("lower"));
     put(MARCO_GENERAL, "action-right-click-titlebar", s("menu"));
     put(MARCO_GENERAL, "num-workspaces", Value::Int(4));
+    put(MARCO_GENERAL, "compositing-manager", Value::Bool(true));
+    put(
+        MARCO_GENERAL,
+        "compositing-fast-alt-tab",
+        Value::Bool(false),
+    );
+    put(MARCO_GENERAL, "icon-size", Value::Int(48));
+    put(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(5));
+    put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
     for n in 1..=36 {
         put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
     }
@@ -470,6 +479,101 @@ fn a_value_of_the_wrong_type_falls_back_to_the_default() {
     assert_eq!(
         problem,
         invalid(MARCO_GENERAL, "titlebar-uses-system-font", "1", "false")
+    );
+}
+
+// The Window switcher.
+
+#[test]
+fn the_defaults_give_a_window_switcher_of_five_columns_of_thumbnails() {
+    let settings = settings(&defaults());
+    assert_eq!(
+        settings.switcher,
+        SwitcherSettings {
+            max_columns: 5,
+            thumbnails: true,
+            icon_size: 48,
+        }
+    );
+    assert!(!settings.policy.alt_tab_raise_windows);
+}
+
+#[test]
+fn without_the_window_switchers_keys_it_has_marcos_defaults() {
+    let settings = settings(&Reading::default());
+    assert_eq!(
+        settings.switcher,
+        SwitcherSettings {
+            max_columns: 5,
+            thumbnails: true,
+            icon_size: 48,
+        }
+    );
+    assert!(!settings.policy.alt_tab_raise_windows);
+}
+
+#[test]
+fn alt_tab_max_columns_sets_the_window_switchers_columns() {
+    let reading = with(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(3));
+    assert_eq!(settings(&reading).switcher.max_columns, 3);
+}
+
+#[test]
+fn alt_tab_max_columns_out_of_range_is_clamped() {
+    let reading = with(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(0));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.switcher.max_columns, 1);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "alt-tab-max-columns", "0", "1")
+    );
+
+    let reading = with(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(65));
+    let (settings, problem) = self::problem(&reading);
+    assert_eq!(settings.switcher.max_columns, 64);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "alt-tab-max-columns", "65", "64")
+    );
+}
+
+#[test]
+fn alt_tab_raise_windows_is_passed_to_policy() {
+    let reading = with(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(true));
+    assert!(settings(&reading).policy.alt_tab_raise_windows);
+}
+
+#[test]
+fn the_window_switcher_shows_icons_alone_without_the_compositing_manager() {
+    let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
+    assert!(!settings(&reading).switcher.thumbnails);
+}
+
+#[test]
+fn the_window_switcher_shows_icons_alone_with_fast_alt_tab() {
+    let reading = with(MARCO_GENERAL, "compositing-fast-alt-tab", Value::Bool(true));
+    assert!(!settings(&reading).switcher.thumbnails);
+}
+
+#[test]
+fn icon_size_sets_the_window_switchers_icons() {
+    let reading = with(MARCO_GENERAL, "icon-size", Value::Int(96));
+    assert_eq!(settings(&reading).switcher.icon_size, 96);
+}
+
+#[test]
+fn icon_size_out_of_range_is_clamped() {
+    let reading = with(MARCO_GENERAL, "icon-size", Value::Int(4));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.switcher.icon_size, 8);
+    assert_eq!(problem, out_of_range(MARCO_GENERAL, "icon-size", "4", "8"));
+
+    let reading = with(MARCO_GENERAL, "icon-size", Value::Int(300));
+    let (settings, problem) = self::problem(&reading);
+    assert_eq!(settings.switcher.icon_size, 256);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "icon-size", "300", "256")
     );
 }
 

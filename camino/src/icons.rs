@@ -1,5 +1,6 @@
 //! Window icons (07, 30): icons found by the freedesktop icon theme spec, and the icons
-//! of desktop entries. Frames use them now; wlr-foreign-toplevel and Alt+Tab later.
+//! of desktop entries. Frames and the Window switcher (108) use them now;
+//! wlr-foreign-toplevel later.
 
 use std::collections::{HashMap, HashSet};
 use std::env;

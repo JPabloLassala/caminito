@@ -10,6 +10,9 @@ use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
+use smithay::backend::renderer::element::utils::{
+    CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
+};
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
@@ -17,13 +20,14 @@ use smithay::desktop::{LayerSurface, PopupManager, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Point, Rectangle, Scale};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
 use crate::output::output_geometry;
 use crate::state::Camino;
+use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
 
 /// What shows where nothing is drawn.
@@ -35,6 +39,20 @@ const RESIZE_BORDER_OUTLINE: Color32F = Color32F::new(0.0, 0.5, 1.0, 1.0);
 const TITLE_OUTLINE: Color32F = Color32F::new(0.0, 1.0, 0.0, 1.0);
 
 render_elements! {
+    /// A part of one window, as a thumbnail draws it smaller (108).
+    pub WindowPart<R> where R: ImportAll + ImportMem;
+    /// One of the window's surfaces.
+    Surface = WaylandSurfaceRenderElement<R>,
+    /// One of its frame's strips.
+    Strip = MemoryRenderBufferRenderElement<R>,
+}
+
+/// A part of a window in a thumbnail of the Window switcher: scaled down, moved into its
+/// cell and cut off at the thumbnail's edge.
+type ThumbnailPart<R> =
+    CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowPart<R>>>>;
+
+render_elements! {
     pub SceneElement<R> where R: ImportAll + ImportMem;
     /// A client's surface: a window's, a layer surface's, the cursor's, or a drag icon's.
     Window = WaylandSurfaceRenderElement<R>,
@@ -42,6 +60,8 @@ render_elements! {
     Frame = MemoryRenderBufferRenderElement<R>,
     /// A side of one of frame debug's outlines.
     Outline = SolidColorRenderElement,
+    /// A part of a window in one of the Window switcher's thumbnails (108).
+    Thumbnail = ThumbnailPart<R>,
 }
 
 /// The scene's layers, top to bottom.
@@ -53,6 +73,9 @@ pub(crate) enum SceneLayer {
     DragIcon,
     /// Lock surfaces, or the solid lock background (M7).
     Lock,
+    /// The Window switcher's popup (108), over everything a client draws: the corner
+    /// icons, then the thumbnails, then the rest of its chrome.
+    Switcher,
     /// The overlay layer-shell layer (63).
     Overlay,
     /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
@@ -83,10 +106,11 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 11] = [
+pub(crate) const LAYERS: [SceneLayer; 12] = [
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
     SceneLayer::Lock,
+    SceneLayer::Switcher,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
     SceneLayer::FullscreenWindows,
@@ -211,6 +235,113 @@ fn layer_elements<R>(
         | SceneLayer::Bottom
         | SceneLayer::Background => layer_shell_elements(layer, renderer, camino, output, elements),
         SceneLayer::Lock => {}
+        SceneLayer::Switcher => switcher_elements(renderer, camino, output, elements),
+    }
+}
+
+/// The Window switcher's popup, if it's on `output`, front to back: the thumbnails'
+/// corner icons, the thumbnails, then the rest of the chrome.
+fn switcher_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let Some(popup) = camino
+        .visible_switcher()
+        .filter(|popup| popup.output == *output)
+    else {
+        return;
+    };
+    let Some(chrome) = &popup.chrome else {
+        return;
+    };
+    let grid = &popup.grid;
+    let scale = output.current_scale().fractional_scale();
+    let chrome_element = |renderer: &mut R, buffer, elements: &mut Vec<SceneElement<R>>| {
+        let location = grid.popup.loc.to_physical_precise_round::<_, i32>(scale);
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location.to_f64(),
+            buffer,
+            None,
+            None,
+            Some(grid.popup.size),
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(element) => elements.push(SceneElement::Frame(element)),
+            // Every frame while the popup shows, so not above `debug!`.
+            Err(err) => tracing::debug!("can't draw the window switcher: {err:?}"),
+        }
+    };
+    if let Some(over) = &chrome.over {
+        chrome_element(renderer, over, elements);
+    }
+    if grid.style == CellStyle::Thumbnails {
+        thumbnail_elements(renderer, camino, grid, scale, elements);
+    }
+    chrome_element(renderer, &chrome.under, elements);
+}
+
+/// Each listed window in its cell of `grid`, as a capture of the window shows it (103): its
+/// surfaces over its frame, whichever workspace it's on and whether or not it's minimised,
+/// since its surfaces keep their buffers. It's drawn from the window's own surfaces at
+/// every frame, so it's live.
+fn thumbnail_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    grid: &Grid,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let policy = &camino.policy;
+    let Some(switcher) = policy.switcher() else {
+        return;
+    };
+    // The grid is laid out again in the refresh pass, so it has a cell for each window.
+    for (index, &id) in switcher.windows.iter().enumerate().take(grid.cells.len()) {
+        let (Some(mapped), Some(geometry), Some(frame)) = (
+            policy.window(id),
+            policy.geometry(id),
+            policy.frame_rect(id),
+        ) else {
+            continue;
+        };
+        if frame.size.w <= 0 || frame.size.h <= 0 {
+            continue;
+        }
+        let mut parts: Vec<WindowPart<R>> = Vec::new();
+        let shown = Rectangle::from_size(frame.size);
+        one_window_elements(
+            renderer,
+            mapped,
+            geometry.loc - frame.loc,
+            shown,
+            scale,
+            &mut parts,
+        );
+        let target = grid.thumbnail(index, frame.size);
+        let factor = Scale::from((
+            f64::from(target.size.w) / f64::from(frame.size.w),
+            f64::from(target.size.h) / f64::from(frame.size.h),
+        ));
+        let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
+        // A window's popups and subsurfaces can reach past its frame.
+        let crop: Rectangle<i32, Physical> = target.to_physical_precise_round(scale);
+        for part in parts {
+            let part = RescaleRenderElement::from_element(part, Point::default(), factor);
+            let part = RelocateRenderElement::from_element(part, location, Relocate::Relative);
+            if let Some(part) = CropRenderElement::from_element(part, scale, crop) {
+                elements.push(SceneElement::Thumbnail(part));
+            }
+        }
     }
 }
 
@@ -556,16 +687,17 @@ fn window_elements<R>(
 /// One window's elements, front to back, at `scale`: its surfaces with their popups, over
 /// its frame's strips. `origin` is where its geometry is from the origin of what's drawn,
 /// and `shown` is the part of that space that's drawn.
-fn one_window_elements<R>(
+fn one_window_elements<R, E>(
     renderer: &mut R,
     mapped: &Mapped,
     origin: Point<i32, Logical>,
     shown: Rectangle<i32, Logical>,
     scale: f64,
-    elements: &mut Vec<SceneElement<R>>,
+    elements: &mut Vec<E>,
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>> + From<MemoryRenderBufferRenderElement<R>>,
 {
     let window = mapped.window();
     // The surface's origin sits the window geometry's offset away from where policy
@@ -595,7 +727,7 @@ fn one_window_elements<R>(
             Kind::Unspecified,
         );
         match element {
-            Ok(element) => elements.push(SceneElement::Frame(element)),
+            Ok(element) => elements.push(E::from(element)),
             Err(err) => tracing::warn!("can't draw a frame strip: {err:?}"),
         }
     }

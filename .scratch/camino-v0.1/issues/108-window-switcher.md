@@ -45,11 +45,11 @@ The popup that Alt+Tab opens: a grid of thumbnails in the style of KDE Plasma's 
 
 ## Acceptance criteria
 
-- [ ] Policy tests, written before the code: each action's list and order, minimised windows last, the modal dialog for its parent, the skip-taskbar windows left out, the starting selection, stepping and wrapping both ways, commit, cancel, a window closing while selected, a window opening meanwhile, none and one window.
-- [ ] Headless tests: a quick Alt+Tab switches with no popup drawn; holding Alt draws it on the pointer's output; arrows, Enter, Escape and a click each do as above; a minimised window is restored on commit; nothing opens during a move or while locked.
-- [ ] A drawing test for the grid: its wrapping at `alt-tab-max-columns`, thumbnails shrinking, the icons-only grid, and the urgent mark.
-- [ ] `docs/parity.md`'s rows for the `switch-*` actions and the keys below, each with its status and ADR 0016 where it's *never*.
-- [ ] Checklist: live thumbnails of a playing video and of a minimised window, in a session.
+- [x] Policy tests, written before the code: each action's list and order, minimised windows last, the modal dialog for its parent, the skip-taskbar windows left out, the starting selection, stepping and wrapping both ways, commit, cancel, a window closing while selected, a window opening meanwhile, none and one window.
+- [x] Headless tests: a quick Alt+Tab switches with no popup drawn; holding Alt draws it on the pointer's output; arrows, Enter, Escape and a click each do as above; a minimised window is restored on commit; nothing opens during a move or while locked. All but "while locked": there's no lock until M7 (see *What was decided*). The tests of the popup, the pointer and the thumbnails were written after their code, not before it.
+- [x] A drawing test for the grid: its wrapping at `alt-tab-max-columns`, thumbnails shrinking, the icons-only grid, and the urgent mark. They read the popup's rectangles from the debug dump and the output's pixels: Marco's popup has no goldens to compare against (ADR 0016).
+- [x] `docs/parity.md`'s rows for the `switch-*` actions and the keys below, each with its status and ADR 0016 where it's *never*. The file is new, with these rows alone until M8's audit.
+- [ ] Checklist: live thumbnails of a playing video and of a minimised window, in a session. The item is in `docs/testing/checklist.md`, tagged M8, and wasn't run: the run in a Session is the developer's.
 
 ## Notes
 
@@ -61,3 +61,41 @@ The popup that Alt+Tab opens: a grid of thumbnails in the style of KDE Plasma's 
 - **Urgency** itself comes with focus-stealing prevention, also M8's (17).
 - **Drawing a window away from its place** is new to the scene, which draws each window once. Capture ([103](103-image-capture.md)) is the nearest thing to it.
 - **Not taken from KDE:** fading or hiding the other windows, closing a window from the switcher, and hover to select.
+
+## What was decided
+
+The ticket left these to the developer, and they were decided when it was done, without them. Each is the developer's to confirm or change.
+
+- **`icon-size`,** as proposed: the size of the icons in the icons-only grid, in logical pixels. A thumbnail's corner icon is a quarter of the thumbnail box's height, kept within 16 to 48.
+- **`alt-tab-expand-to-fit-title`,** as proposed: never, with a title wider than the popup ellipsised at its end.
+- **The selected thumbnail** has its cell filled with the palette's `Selected` background. Where that's the background of everything else, as in the neutral palette, the cell is tinted with a quarter of the text colour, so that the selection always shows.
+- **An urgent window** has a dot, 8 logical pixels across, in its cell's top right corner, in the GTK theme's `warning_color`, or the text colour where the theme has none.
+- **A thumbnail shows the window with its Frame,** as a capture of it does (103).
+- **The lock** is M7's. While locked no binding will reach the bindings stage of the keyboard path, so the switcher has no code for it, and the test that nothing opens while locked is M7's to write.
+- **Windows that never had the focus** are listed after those that had, topmost first. Marco's list has every window; policy's has those that were focused.
+- **The starting selection** is the second entry when the first is the focused window, or the modal dialog that stands for it, and the first entry otherwise, as when `switch-panels` opens from a normal window. Backward starts on the last.
+- **A press of a pointer button outside the cells cancels,** as a click ends Marco's grab. No press reaches a client while the switcher is open.
+- **The workspace changing under an open switcher,** by a pager or another client's activation, closes it and activates nothing.
+- **`switch-group`'s application** is the windows of the focused window's process where both name one, else those with its app id, else the focused window alone.
+- **A modifier pressed while it's open reaches the client,** though no other key does: a client is told of the modifiers with the keys it gets, and would otherwise keep the ones it was last told of.
+
+## What was done
+
+- **The list and the state** are policy's (`camino-policy/src/policy/switcher.rs`): `SwitchList`, `Policy::switch_list`, and `Switcher` with `switcher_step`, `switcher_select`, `switcher_commit` and `switcher_cancel`. `Action::Switch { list, backward }` stands in for `SwitchWindows`. `PolicyWindow` has one new fact, `skips_taskbar`. A window mapped while it's open gets its focus when it closes. `alt-tab-raise-windows` is `Config::alt_tab_raise_windows`, and the stacking the switcher opened with is put back on a cancel and before a commit. The property tests step, select, commit and cancel it.
+- **The settings** (`settings/translate.rs`) are `Settings::switcher`: the columns, the icon size, and whether cells show thumbnails.
+- **The keys** (`camino/src/switcher/mod.rs`): Alt+Tab, Alt+\` and Ctrl+Alt+Tab, each with Shift for backward, join the hard-coded bindings. `switch-windows-all` is unbound. The open switcher has the keyboard before an inhibitor, Camino's other bindings and the accelerator grabs. It commits on the release that lets go of a modifier of its binding, whichever key is still down. A client's xdg popups are dismissed before it opens, with an Xwayland keyboard grab.
+- **The grid** (`switcher/layout.rs`) is pure geometry: the cells, the cell at a point, where an arrow key goes, and a window fitted in a cell. Thumbnails are at most 256 × 160 and shrink by one factor until the popup is within nine tenths of the output.
+- **The popup** appears from a 90 ms timer on the output the pointer is on, and stays there. If that output goes it moves to the pointer's or the primary one, and the switcher is cancelled with none left.
+- **The drawing** is a layer of the scene over everything a client draws (`SceneLayer::Switcher`). `switcher/draw.rs` draws the chrome with cairo, behind and in front of the thumbnails, again only when something it's drawn from changed. A thumbnail is the window's own render elements, rescaled, moved and cropped with Smithay's element wrappers, so it's live with no copy. A window that isn't showing is drawn from the buffers its surfaces still hold.
+- **The debug dump** has a `switcher` member: the list, the windows, the selection, and the popup's output, style, columns and rectangles once it shows.
+
+## What's left
+
+- **The checklist run** in a Session, with a playing video.
+- **A minimised window's thumbnail isn't live,** as the ticket says: it gets no frame callbacks, so its client stops drawing.
+- **`cycle-windows`, `cycle-group` and `cycle-panels`** aren't bound: they're M8's, with the bindings read from gsettings (17).
+- **An urgent xdg toplevel** is never marked, since no protocol Camino has tells it of one (65). M8's focus-stealing prevention makes windows urgent itself (17).
+- **A held Tab doesn't repeat.** Each press steps once: Camino swallows the key, and nothing repeats it as an X server did under Marco.
+- **An X client's open menu stays on screen.** Its keyboard grab through Xwayland is dropped, so the switcher has the keys, but nothing closes the override-redirect window: the X client does at the next click. An xdg popup is dismissed.
+- **At a fractional scale** the chrome, drawn at the next whole scale and scaled down, and a thumbnail, rounded to physical pixels, can differ by a pixel at a thumbnail's edge. Not seen in a test, which samples the cells' middles.
+- **How it was built:** the list, the state and the grid by subagents from a plan (`108-plan.md`), each reviewed, and the rest in one session. A review of the whole branch against this ticket and the coding standards then found three faults, fixed with a test each: a thumbnail on another output took its window's main output, and so its scale; the pointer reached the windows under the popup; and a click could land on a cell laid out before a window closed.

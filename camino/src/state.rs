@@ -98,6 +98,7 @@ use crate::protocols::output_management::OutputManagementState;
 use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
 use crate::settings::{self, Settings, SettingsThread};
+use crate::switcher::OpenSwitcher;
 use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 
@@ -203,6 +204,11 @@ pub struct Camino {
     pub frame_pointer: FramePointer,
     /// The interactive move or resize the pointer is doing, if any.
     pub window_grab: Option<GrabKind>,
+    /// Pointer buttons whose press was the Window switcher's, so their release is
+    /// swallowed too (108).
+    pub(crate) suppressed_buttons: HashSet<u32>,
+    /// The compositor's side of the Window switcher while it's open (108).
+    pub(crate) switcher: Option<OpenSwitcher>,
     /// The cursor the client with pointer focus asked for.
     pub client_cursor: CursorImageStatus,
     /// The icon of the Wayland drag in progress, if it has one (48).
@@ -516,6 +522,7 @@ impl State {
         self.update_pointer_focus();
         self.camino.update_button_states();
         self.camino.refresh_frames();
+        self.camino.refresh_switcher_popup();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
         self.refresh_captures();
@@ -775,6 +782,8 @@ impl Camino {
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,
+            suppressed_buttons: HashSet::new(),
+            switcher: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,
             cursors,

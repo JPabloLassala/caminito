@@ -170,6 +170,26 @@ impl FrameContext {
         &self.button_layout
     }
 
+    /// Counts the changes to anything frames are drawn with, the palette too.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// The pango context text is laid out in, with `org.mate.font-rendering`'s options.
+    pub(crate) fn text_context(&self) -> &pango::Context {
+        &self.title_context
+    }
+
+    /// A window's icon at `size` logical pixels times `scale`, as frames find it (07).
+    pub(crate) fn window_icon(
+        &mut self,
+        source: &IconSource,
+        size: i32,
+        scale: i32,
+    ) -> Option<ImageSurface> {
+        window_icon(&mut self.icons, source, size, scale)
+    }
+
     /// A window's title laid out in the title font, as the frame's style scales it.
     pub fn title(&self, frame_type: FrameType, flags: &FrameFlags, text: &str) -> Title {
         let scale = self.theme.title_scale(frame_type, flags);

@@ -6,7 +6,7 @@ use proptest::prelude::*;
 use super::*;
 use smithay::utils::Size;
 
-use crate::{FrameState, PolicyWindow, ResizeEdges};
+use crate::{FrameState, PolicyWindow, ResizeEdges, SwitchList};
 
 const SEATS: u32 = 2;
 
@@ -120,6 +120,10 @@ enum Op {
         above: bool,
     },
     SetShowingDesktop(bool),
+    SwitcherStep(bool),
+    SwitcherSelect(usize),
+    SwitcherCommit,
+    SwitcherCancel,
 }
 
 fn window_id() -> impl Strategy<Value = u64> {
@@ -185,8 +189,18 @@ fn action() -> impl Strategy<Value = Action> {
         Just(Action::SwitchToWorkspaceRight),
         Just(Action::Close),
         Just(Action::ToggleMaximized),
-        Just(Action::SwitchWindows),
+        (switch_list(), any::<bool>())
+            .prop_map(|(list, backward)| Action::Switch { list, backward }),
         Just(Action::ShowDesktop),
+    ]
+}
+
+fn switch_list() -> impl Strategy<Value = SwitchList> {
+    prop_oneof![
+        Just(SwitchList::Windows),
+        Just(SwitchList::WindowsAll),
+        Just(SwitchList::Group),
+        Just(SwitchList::Panels),
     ]
 }
 
@@ -240,6 +254,10 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(id, loc, size)| Op::RequestGeometry { id, loc, size }),
         1 => (window_id(), any::<bool>()).prop_map(|(id, above)| Op::SetAbove { id, above }),
         1 => any::<bool>().prop_map(Op::SetShowingDesktop),
+        1 => any::<bool>().prop_map(Op::SwitcherStep),
+        1 => (0..10usize).prop_map(Op::SwitcherSelect),
+        1 => Just(Op::SwitcherCommit),
+        1 => Just(Op::SwitcherCancel),
     ]
 }
 
@@ -338,6 +356,10 @@ impl Op {
             }
             Op::SetAbove { id, above } => policy.set_above(WindowId(id), above),
             Op::SetShowingDesktop(showing) => policy.set_showing_desktop(showing),
+            Op::SwitcherStep(backward) => policy.switcher_step(backward),
+            Op::SwitcherSelect(index) => policy.switcher_select(index),
+            Op::SwitcherCommit => policy.switcher_commit(now),
+            Op::SwitcherCancel => policy.switcher_cancel(now),
         }
     }
 }
@@ -471,6 +493,27 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                     "{id:?} is on {output:?}, which policy doesn't have"
                 );
             }
+        }
+    }
+
+    // The Window switcher lists managed windows, once each, and selects one of them.
+    if let Some(switcher) = policy.switcher() {
+        assert!(
+            !switcher.windows.is_empty(),
+            "an open switcher lists windows"
+        );
+        assert!(
+            switcher.selected < switcher.windows.len(),
+            "the selection {} is in the {} listed windows",
+            switcher.selected,
+            switcher.windows.len()
+        );
+        for (place, id) in switcher.windows.iter().enumerate() {
+            assert!(policy.window(*id).is_some(), "{id:?} is listed but gone");
+            assert!(
+                !switcher.windows[..place].contains(id),
+                "{id:?} is listed twice"
+            );
         }
     }
 

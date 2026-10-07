@@ -159,7 +159,15 @@ fn switching_windows_ends_it_as_activating_does() {
     let mut policy = three_windows();
     policy.set_showing_desktop(true);
 
-    policy.action(SEAT, Action::SwitchWindows, ms(4));
+    policy.action(
+        SEAT,
+        Action::Switch {
+            list: crate::SwitchList::Windows,
+            backward: false,
+        },
+        ms(4),
+    );
+    policy.switcher_commit(ms(4));
 
     assert!(!policy.is_showing_desktop());
     assert_eq!(policy.focus(SEAT), Some(id(3)));
