@@ -65,10 +65,10 @@ pub(crate) enum Binding {
     Command(Command),
 }
 
-/// Marco's defaults for the actions M1 binds, and for its three screenshot commands
-/// (104). `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`
+/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), and for its three
+/// screenshot commands (104). `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`
 /// (`org.mate.marco.gschema.xml:692-693` at `8522ed1`); 1.29.0 doesn't bind it.
-const BINDINGS: [(Held, Keysym, Binding); 8] = [
+const BINDINGS: [(Held, Keysym, Binding); 9] = [
     (
         CTRL_ALT,
         Keysym::Left,
@@ -82,6 +82,7 @@ const BINDINGS: [(Held, Keysym, Binding); 8] = [
     (ALT, Keysym::F4, Binding::Policy(Action::Close)),
     (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
     (ALT, Keysym::Tab, Binding::Policy(Action::SwitchWindows)),
+    (CTRL_ALT, Keysym::d, Binding::Policy(Action::ShowDesktop)),
     (NONE, Keysym::Print, Binding::Command(Command::Screenshot)),
     (
         ALT,
@@ -143,6 +144,7 @@ mod tests {
         assert_eq!(bound(ALT, Keysym::F4), policy(Action::Close));
         assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
         assert_eq!(bound(ALT, Keysym::Tab), policy(Action::SwitchWindows));
+        assert_eq!(bound(CTRL_ALT, Keysym::d), policy(Action::ShowDesktop));
     }
 
     #[test]

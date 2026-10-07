@@ -1,7 +1,7 @@
 //! `org.mate.Camino` (ADR 0002's third channel): what MATE's components and
 //! camino-displays ask of Camino that no protocol carries. So far, the primary output (81)
-//! and saving the layout (83), both ADR 0014's, the accelerator grabs (98), and the window a
-//! window screenshot is of (104).
+//! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
+//! grabs (98), and the window a window screenshot is of (104).
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
@@ -26,6 +26,10 @@ pub(crate) enum Request {
     ChoosePrimaryOutput(String, oneshot::Sender<Result<(), primary::Error>>),
     /// Calls `SaveLayout`.
     SaveLayout(oneshot::Sender<Result<(), saved::Error>>),
+    /// Reads `ShowingDesktop`.
+    ShowingDesktop(oneshot::Sender<bool>),
+    /// Writes `ShowingDesktop`, with the value written.
+    SetShowingDesktop(bool, oneshot::Sender<()>),
     /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
     ActiveToplevel(Option<u32>, oneshot::Sender<Option<String>>),
     /// `GrabAccelerators`, from `caller`, answered with an action id for each.
@@ -40,6 +44,22 @@ pub(crate) enum Request {
         actions: Vec<u32>,
         reply: oneshot::Sender<()>,
     },
+}
+
+/// A property Camino signals itself, when it changes without a caller writing it.
+#[derive(Clone, Copy)]
+enum Property {
+    PrimaryOutput,
+    ShowingDesktop,
+}
+
+impl Property {
+    fn name(self) -> &'static str {
+        match self {
+            Self::PrimaryOutput => "PrimaryOutput",
+            Self::ShowingDesktop => "ShowingDesktop",
+        }
+    }
 }
 
 /// `org.mate.Camino`, as zbus serves it.
@@ -82,6 +102,21 @@ impl CaminoInterface {
         super::ask(&self.requests, Request::SaveLayout)
             .await?
             .map_err(|err| zbus::fdo::Error::Failed(err.to_string()))
+    }
+
+    /// Whether the active workspace shows its desktop, with Marco's meaning (94): its
+    /// windows are hidden, not minimised, until this is written false or one of them is
+    /// mapped or activated. It follows the active workspace, and Ctrl+Alt+D changes it too.
+    #[zbus(property)]
+    async fn showing_desktop(&self) -> zbus::fdo::Result<bool> {
+        super::ask(&self.requests, Request::ShowingDesktop).await
+    }
+
+    /// Shows the desktop on the active workspace, or brings its windows back.
+    #[zbus(property)]
+    async fn set_showing_desktop(&self, showing: bool) -> zbus::fdo::Result<()> {
+        let show = |reply| Request::SetShowingDesktop(showing, reply);
+        super::ask(&self.requests, show).await
     }
 
     /// The ext-foreign-toplevel-list identifier of the window a window screenshot is of:
@@ -187,6 +222,16 @@ impl Camino {
             Request::SaveLayout(reply) => {
                 let _ = reply.send(self.save_layout());
             }
+            Request::ShowingDesktop(reply) => {
+                let _ = reply.send(self.policy.is_showing_desktop());
+            }
+            Request::SetShowingDesktop(showing, reply) => {
+                self.policy.set_showing_desktop(showing);
+                self.queue_redraw_all();
+                // zbus signals this one too.
+                self.showing_desktop_signalled = Some(showing);
+                let _ = reply.send(());
+            }
             Request::ActiveToplevel(caller, reply) => {
                 let _ = reply.send(self.active_toplevel(caller));
             }
@@ -236,10 +281,11 @@ impl Camino {
             .detach();
     }
 
-    /// The interface is served: a caller reads the primary output as it is now, so
-    /// nothing is signalled until it changes.
-    pub(super) fn primary_output_read_from_now_on(&mut self) {
+    /// The interface is served: a caller reads the properties as they are now, so nothing
+    /// is signalled until one changes.
+    pub(super) fn properties_read_from_now_on(&mut self) {
         self.primary_output_signalled = Some(self.primary_output_name());
+        self.showing_desktop_signalled = Some(self.policy.is_showing_desktop());
     }
 
     /// The primary output's name as the property has it.
@@ -252,13 +298,31 @@ impl Camino {
     /// Signals `PrimaryOutput` if it's not what the callers last heard: the stand-in went
     /// in, or the choice returned (81).
     pub(crate) fn refresh_primary_output_property(&mut self) {
+        let name = self.primary_output_name();
+        if self.dbus.is_none() || self.primary_output_signalled.as_ref() == Some(&name) {
+            return;
+        }
+        self.signal(Property::PrimaryOutput);
+        self.primary_output_signalled = Some(name);
+    }
+
+    /// Signals `ShowingDesktop` if it's not what the callers last heard (94): the key
+    /// changed it, a window mapped or activated ended it, or the active workspace is
+    /// another, which shows its desktop or doesn't for itself.
+    pub(crate) fn refresh_showing_desktop_property(&mut self) {
+        let showing = self.policy.is_showing_desktop();
+        if self.dbus.is_none() || self.showing_desktop_signalled == Some(showing) {
+            return;
+        }
+        self.signal(Property::ShowingDesktop);
+        self.showing_desktop_signalled = Some(showing);
+    }
+
+    /// Signals that `property` changed.
+    fn signal(&self, property: Property) {
         let Some(dbus) = &self.dbus else {
             return;
         };
-        let name = self.primary_output_name();
-        if self.primary_output_signalled.as_ref() == Some(&name) {
-            return;
-        }
         let connection = dbus.connection().clone();
         // On zbus's thread, which asks the event loop for the value it sends: the main
         // thread never waits on the bus (15).
@@ -269,16 +333,19 @@ impl Camino {
                     .interface::<_, CaminoInterface>(PATH)
                     .await?;
                 let emitter = interface.signal_emitter();
-                interface.get().await.primary_output_changed(emitter).await
+                let interface = interface.get().await;
+                match property {
+                    Property::PrimaryOutput => interface.primary_output_changed(emitter).await,
+                    Property::ShowingDesktop => interface.showing_desktop_changed(emitter).await,
+                }
             };
             if let Err(err) = signalled.await {
-                tracing::warn!("can't signal the primary output on D-Bus: {err}");
+                tracing::warn!("can't signal {} on D-Bus: {err}", property.name());
             }
         };
         dbus.connection()
             .executor()
-            .spawn(signal, "primary output changed")
+            .spawn(signal, "property changed")
             .detach();
-        self.primary_output_signalled = Some(name);
     }
 }

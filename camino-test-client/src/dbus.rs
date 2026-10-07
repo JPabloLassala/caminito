@@ -45,6 +45,14 @@ pub trait Camino {
     #[zbus(property)]
     fn set_primary_output(&self, name: &str) -> zbus::Result<()>;
 
+    /// Whether the active workspace shows its desktop (94).
+    #[zbus(property)]
+    fn showing_desktop(&self) -> zbus::Result<bool>;
+
+    /// Shows the desktop on the active workspace, or brings its windows back.
+    #[zbus(property)]
+    fn set_showing_desktop(&self, showing: bool) -> zbus::Result<()>;
+
     /// Saves the layout the connected monitors have now (83).
     fn save_layout(&self) -> zbus::Result<()>;
 
