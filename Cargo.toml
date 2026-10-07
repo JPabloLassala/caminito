@@ -37,12 +37,16 @@ undocumented_unsafe_blocks = "warn"
 
 # Camino's tests are bound by the CPU, each one a Camino of its own, so the development
 # build is optimized: the suite runs in a third of the time, and a build after an edit
-# takes as long as before. The dependencies compile once, so they get more.
+# takes as long as before.
 [profile.dev]
 opt-level = 1
 # Backtraces keep their files and lines. The full tables made the test binary 380 MB, and
 # its link most of a build.
 debug = "line-tables-only"
 
+# The tests spend their time in Camino's crates, not in the dependencies: optimized, those
+# doubled a build from nothing and the suite ran no faster. Nobody steps through them
+# either, and without debug info they compile and link sooner.
 [profile.dev.package."*"]
-opt-level = 2
+opt-level = 0
+debug = false
