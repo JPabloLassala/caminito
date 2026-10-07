@@ -283,6 +283,7 @@ pub struct Settings {
     pub policy: Config,
     pub commands: Commands,
     pub frames: Frames,
+    pub switcher: SwitcherSettings,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -290,6 +291,18 @@ pub struct Settings {
     pub devices: Devices,
     pub keyboard: Keyboard,
     pub keymap: Keymap,
+}
+
+/// What the Window switcher is drawn with (108), from `org.mate.Marco.general`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitcherSettings {
+    /// `alt-tab-max-columns`, 1 to 64.
+    pub max_columns: usize,
+    /// Whether cells show thumbnails: `compositing-manager` on and
+    /// `compositing-fast-alt-tab` off. Otherwise they show icons alone.
+    pub thumbnails: bool,
+    /// `icon-size`, 8 to 256: the icons of the icons-only grid, in logical pixels.
+    pub icon_size: i32,
 }
 
 /// The command lines Marco's `run-command-*` bindings run, from
@@ -735,8 +748,13 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_count,
         workspace_names,
         workspace_layout,
-        // Read from `alt-tab-raise-windows` by Task 4 of ticket 108's plan.
-        alt_tab_raise_windows: false,
+        alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
+    };
+    let switcher = SwitcherSettings {
+        max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,
+        thumbnails: r.bool(MARCO_GENERAL, "compositing-manager", true)
+            && !r.bool(MARCO_GENERAL, "compositing-fast-alt-tab", false),
+        icon_size: r.int_clamped(MARCO_GENERAL, "icon-size", 48, 8, 256),
     };
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
@@ -793,6 +811,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         policy,
         commands,
         frames,
+        switcher,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,
