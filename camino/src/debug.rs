@@ -79,6 +79,18 @@ struct StateDump {
     /// The one scale of every XWayland window (41).
     x11_scale: u32,
     focus: Option<u64>,
+    /// The accelerators grabbed over `org.mate.Camino` (98), by action id.
+    accelerator_grabs: Vec<AcceleratorGrabDump>,
+}
+
+#[derive(Serialize)]
+struct AcceleratorGrabDump {
+    /// The id `AcceleratorActivated` carries.
+    action: u32,
+    /// As the grabber wrote it.
+    accelerator: String,
+    /// The grabber's unique name on the bus.
+    owner: String,
 }
 
 #[derive(Serialize)]
@@ -239,8 +251,8 @@ impl From<FrameExtents<i32, Logical>> for ExtentsDump {
 impl Camino {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
-    /// active one shows its desktop, outputs with
-    /// their scales, work areas and layer surfaces, the X11 scale, and focus, as
+    /// active one shows its desktop, outputs with their scales, work areas and layer
+    /// surfaces, the X11 scale, focus, and the accelerator grabs with their owners, as
     /// pretty-printed JSON. The lock state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
@@ -317,6 +329,15 @@ impl Camino {
                     .collect(),
             })
             .collect();
+        let accelerator_grabs = self
+            .accelerator_grabs
+            .iter()
+            .map(|(action, grab)| AcceleratorGrabDump {
+                action,
+                accelerator: grab.accelerator.clone(),
+                owner: grab.owner.clone(),
+            })
+            .collect();
         let dump = StateDump {
             windows,
             workspaces,
@@ -326,6 +347,7 @@ impl Camino {
             primary_output: self.primary_output().map(|output| output.name()),
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
+            accelerator_grabs,
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

@@ -20,7 +20,7 @@ The panel's Show Desktop button and Ctrl+Alt+D show and bring back the same desk
 
 - [x] Policy tests, written before the code: showing the desktop hides one workspace's windows and leaves the others'; it ends on a new window, on activation and on a second toggle; the windows come back in their stacking order with the focus they had.
 - [x] Headless tests with a D-Bus client: writing the property hides the windows; Ctrl+Alt+D changes the property and signals it once; switching workspace signals the new workspace's value.
-- [x] `mate-panel-camino` builds with the patch in its series, and its `makepkg` and `namcap` job passes. (Run by hand as the job runs them, without the install: `makepkg` built `pkgrel` 5 with the five patches, and `namcap` has no error for the PKGBUILD or the package. The job itself runs when this is pushed.)
+- [x] `mate-panel-camino` builds with the patch in its series, and its `makepkg` and `namcap` job passes. (Run by hand as the job runs them, without the install: `makepkg` built it with the patch on the first four, before 97's two were merged; after the merge the series of seven was only checked to apply, and `namcap` has no error for the PKGBUILD or the package. The job itself runs when this is pushed.)
 - [ ] The checklist has the item, and it was run in a Session: the button and Ctrl+Alt+D agree in both directions. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). (The item is there. It wasn't run: see the resolution.)
 
 ## Notes
@@ -42,7 +42,7 @@ Done on 2026-10-06.
 - **`ShowingDesktop`** is a boolean property of `org.mate.Camino`, read and written, for the active workspace. A write that changes nothing is accepted, and zbus signals it all the same. zbus signals a write, and the refresh pass signals every other change, each once: the key, a window that ends it, and a switch to a workspace whose value differs. The debug dump has `showing_desktop`.
 - **Ctrl+Alt+D** is in the hard-coded bindings, as `d` on the first layout.
 - **`_NET_SHOWING_DESKTOP`** isn't published or honoured for X11 clients. 06's row asks for the D-Bus property only, and that root property is one Smithay keeps to its API (11).
-- **`mate-panel-camino`'s fifth patch** has the Show Desktop applet read, write and follow the property while `org.mate.Camino` has an owner, and use libxfce4windowing as before without one. `pkgrel` is 5.
+- **`mate-panel-camino`'s seventh patch** has the Show Desktop applet read, write and follow the property while `org.mate.Camino` has an owner, and use libxfce4windowing as before without one. `pkgrel` is 6.
 
 The tests are `camino-policy/src/tests/show_desktop.rs`, with the proptest sequences given the toggle, and `camino/src/tests/show_desktop.rs`, on both kinds of window where the window matters.
 

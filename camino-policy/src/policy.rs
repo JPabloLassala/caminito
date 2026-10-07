@@ -1071,6 +1071,12 @@ impl<W: PolicyWindow> Policy<W> {
         Some(Rectangle::new(managed.geometry.loc, managed.size))
     }
 
+    /// A window's outer rectangle: its geometry with its frame around it, or its frame's
+    /// titlebar alone while it's shaded. What a capture of the window shows (103).
+    pub fn frame_rect(&self, id: WindowId) -> Option<Rectangle<i32, Logical>> {
+        Some(self.windows.get(&id)?.frame())
+    }
+
     /// A window's transient parent, as policy resolved it.
     pub fn parent(&self, id: WindowId) -> Option<WindowId> {
         self.windows.get(&id)?.parent

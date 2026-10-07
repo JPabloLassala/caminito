@@ -9,14 +9,16 @@
 //! [`ext_workspace`] the workspaces as a panel does, [`xfce_foreign_toplevel`] learns each
 //! window's workspace as libxfce4windowing does, [`gtk_shell`] speaks GTK3's own
 //! protocol, [`layer_shell`] makes layer surfaces, [`data_control`] reads and sets the
-//! selections as a clipboard manager does, and [`security_context`] makes the socket a
-//! sandboxed client connects through.
+//! selections as a clipboard manager does, [`security_context`] makes the socket a
+//! sandboxed client connects through, and [`image_capture`] copies an output's or a
+//! window's pixels as a screenshot tool does.
 
 pub mod data_control;
 pub mod dbus;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gtk_shell;
+pub mod image_capture;
 pub mod layer_shell;
 pub mod output_management;
 pub mod security_context;
@@ -164,6 +166,8 @@ pub struct State {
     /// The workspaces ext-workspace shows.
     pub workspaces: ext_workspace::Workspaces,
     gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
+    /// The capture sessions the client opened, and their frames.
+    image_capture: image_capture::ImageCapture,
 }
 
 /// A bound `wl_output`.
@@ -500,6 +504,13 @@ impl Client {
 
     /// A new shm buffer of `size` filled with `argb`, and its pool.
     fn shm_buffer(&mut self, size: (i32, i32), argb: u32) -> (WlShmPool, WlBuffer) {
+        let (_, pool, buffer) = self.shm_buffer_file(size, argb);
+        (pool, buffer)
+    }
+
+    /// A new shm buffer of `size` filled with `argb`, its pool, and the file its pixels are
+    /// in, for a buffer the compositor writes.
+    fn shm_buffer_file(&mut self, size: (i32, i32), argb: u32) -> (File, WlShmPool, WlBuffer) {
         let (width, height) = size;
         let stride = width * 4;
         let len = stride * height;
@@ -523,7 +534,7 @@ impl Client {
             &self.qh,
             (),
         );
-        (pool, buffer)
+        (file, pool, buffer)
     }
 
     /// Acks the latest configure, then commits a `size` buffer of `argb`.

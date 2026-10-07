@@ -112,5 +112,6 @@ expression: without_x_ids(&dump)
   ],
   "primary_output": "headless-1",
   "x11_scale": 2,
-  "focus": 0
+  "focus": 0,
+  "accelerator_grabs": []
 }
