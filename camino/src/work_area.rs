@@ -5,6 +5,7 @@
 
 use camino_policy::ReservedEdges;
 use smithay::desktop::layer_map_for_output;
+use smithay::output::Output;
 use smithay::utils::{Logical, Rectangle};
 
 use crate::output::{output_geometry, output_id};
@@ -177,6 +178,16 @@ impl Camino {
                 }
             })
             .collect()
+    }
+
+    /// The work area policy has for `output`: the output less its reserved edges.
+    pub(crate) fn work_area(&self, output: &Output) -> Rect {
+        let id = output_id(output);
+        let mut areas = self.policy.outputs().iter().zip(self.policy.work_areas());
+        let (_, area) = areas
+            .find(|(output, _)| output.id == id)
+            .expect("policy has every output");
+        area
     }
 
     /// Tells policy what's reserved along the outputs' edges now, if that changed: a layer

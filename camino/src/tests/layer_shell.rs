@@ -466,6 +466,84 @@ fn a_layer_surfaces_popup_maps_and_takes_a_grab() {
     assert!(f.has_keyboard(window));
 }
 
+/// A bar along the bottom edge, as mate-panel's second one is.
+fn bottom_bar(height: u32) -> LayerSpec {
+    LayerSpec {
+        anchor: LayerAnchor::Bottom | LayerAnchor::Left | LayerAnchor::Right,
+        ..LayerSpec::top_bar(height)
+    }
+}
+
+#[test]
+fn a_bars_popup_stays_clear_of_the_other_bar() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let bar = f.map_layer(id, LayerSpec::top_bar(28), BAR_COLOR);
+    f.map_layer(id, bottom_bar(28), BAR_COLOR);
+
+    // A menu hanging below the top bar that's higher than what the bars leave, as
+    // mate-panel's Games menu is.
+    let menu = Positioner {
+        size: (300, 1100),
+        anchor_rect: (90, 0, 20, 28),
+        anchor: Anchor::BottomLeft,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::ResizeY,
+    };
+    let popup = f.client(id).create_layer_popup(bar, menu, None);
+    f.roundtrip(id);
+
+    assert_snapshot!(
+        format_popup_configures(&f.client(id).popup(popup).configures),
+        @"at 90, 28, size: 300 × 1024"
+    );
+}
+
+/// A 300 × 900 popup hanging from low on a window's left edge, too high for the room
+/// below it, which slides to stay where it's kept.
+fn tall_menu() -> Positioner {
+    Positioner {
+        size: (300, 900),
+        anchor_rect: (0, 250, 20, 20),
+        anchor: Anchor::BottomLeft,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::SlideY,
+    }
+}
+
+#[test]
+fn a_windows_popup_stays_clear_of_a_bar() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.map_layer(id, bottom_bar(28), BAR_COLOR);
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let loc = f.geometry(window).loc;
+
+    let popup = f.client(id).create_popup(window.xdg(), tall_menu());
+    f.roundtrip(id);
+
+    // Slid up until its bottom edge meets the bar's top.
+    let configure = f.client(id).popup(popup).configures[0].clone();
+    assert_eq!(loc.y + configure.y + 900, 1080 - 28);
+}
+
+#[test]
+fn a_fullscreen_windows_popup_has_the_whole_output() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.map_layer(id, bottom_bar(28), BAR_COLOR);
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    make_fullscreen(&mut f, window);
+    let menu = Positioner {
+        anchor_rect: (0, 500, 20, 20),
+        ..tall_menu()
+    };
+
+    let popup = f.client(id).create_popup(window.xdg(), menu);
+    f.roundtrip(id);
+
+    // The window covers the bar, so its popup slides up no further than the output's edge.
+    let configure = f.client(id).popup(popup).configures[0].clone();
+    assert_eq!(configure.y + 900, 1080);
+}
+
 /// How far from the window's frame the press that opens the desktop's menu is: to its
 /// right, and below its top.
 const BESIDE: (i32, i32) = (20, 100);
