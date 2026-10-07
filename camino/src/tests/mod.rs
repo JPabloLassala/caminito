@@ -1,5 +1,6 @@
 //! Integration tests on the headless backend (14, 15).
 
+mod accelerators;
 mod bindings;
 mod camino_displays;
 mod client;

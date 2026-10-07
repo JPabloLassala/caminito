@@ -47,6 +47,18 @@ pub trait Camino {
 
     /// Saves the layout the connected monitors have now (83).
     fn save_layout(&self) -> zbus::Result<()>;
+
+    /// Grabs each accelerator, in GTK's syntax, and returns its action id, or 0 for one
+    /// that wasn't grabbed (98).
+    fn grab_accelerators(&self, accelerators: &[&str]) -> zbus::Result<Vec<u32>>;
+
+    /// Releases the caller's grabs with these action ids.
+    fn ungrab_accelerators(&self, actions: &[u32]) -> zbus::Result<()>;
+
+    /// A grabbed accelerator was pressed, at `time` in the key event's milliseconds. Only
+    /// its grabber is sent it.
+    #[zbus(signal)]
+    fn accelerator_activated(&self, action: u32, time: u32) -> zbus::Result<()>;
 }
 
 /// A proxy for `org.mate.Camino` at `destination`, a unique or well-known name, on a new
