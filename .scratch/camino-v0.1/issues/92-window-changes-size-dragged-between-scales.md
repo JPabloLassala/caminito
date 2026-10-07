@@ -1,7 +1,7 @@
 # A window that follows the scale changes size as it's dragged between outputs
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M5 (proposed: it's a failure of M4's scale item in 73's closing run)
 Blocked by: none
 Map: [Camino v0.1](../map.md)
@@ -46,6 +46,8 @@ Bare `camino` as `caminotest` on tty4, `camino-git r238.ea769c7-1`, the LG at 1.
 - **The size no longer walks:** foot is 699x474 at 1.7 and 648x496 at 1.0 throughout, and ends 648x496 on the AOC.
 - **The developer still sees the window change height as it crosses.** That's the one change per crossing, 474 to 496 and back, which is foot's: it keeps its grid, and a cell isn't the same logical size at both scales. The developer confirmed it: one change of height at each crossing, and nothing else. The third criterion is ticked on that and on the log.
 - **One configure with a stale size was left,** at 23:39:36.617: `configure(699, 474)` reached foot at 1.0, foot answered 696x464, and the next configure, `(648, 496)`, 1 ms later, put it back. It was the review's own addition, which owed a configure whenever policy named another size than the pending one: a late commit of foot's and a step of the drag read in one pass of the loop made policy name the size of that commit before the adapter had followed it. The adapter now decides that at the flush, where it knows the size the client draws at, with `a_window_isnt_configured_with_the_size_it_picked_in_the_same_pass_as_a_drag_step` written first. Not yet run on the tty.
+- **The second run (2026-10-07),** on `camino-git r239.c14283a-1`, with that change: three crossings, three `preferred_scale`, foot at 699x474 and 648x496, and no configure during the drags.
+- **The change of size at each crossing is foot's, and stays.** mate-terminal and pluma, dragged the same way, keep their size, as the developer saw. A foot started with `resize-keep-grid=no` changes size too (696x496 at 1.0, 751x474 at 1.7): the option is for changes of font size, not of scale. The developer closed the ticket on that.
 
 ## Notes
 
