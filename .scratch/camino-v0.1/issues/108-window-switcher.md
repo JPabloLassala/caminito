@@ -95,4 +95,7 @@ The ticket left these to the developer, and they were decided when it was done, 
 - **A minimised window's thumbnail isn't live,** as the ticket says: it gets no frame callbacks, so its client stops drawing.
 - **`cycle-windows`, `cycle-group` and `cycle-panels`** aren't bound: they're M8's, with the bindings read from gsettings (17).
 - **An urgent xdg toplevel** is never marked, since no protocol Camino has tells it of one (65). M8's focus-stealing prevention makes windows urgent itself (17).
-- **How it was built:** the first three parts by subagents from a plan (`108-plan.md`), each reviewed, and the rest in one session. The whole branch's review is in the commit that follows the code.
+- **A held Tab doesn't repeat.** Each press steps once: Camino swallows the key, and nothing repeats it as an X server did under Marco.
+- **An X client's open menu stays on screen.** Its keyboard grab through Xwayland is dropped, so the switcher has the keys, but nothing closes the override-redirect window: the X client does at the next click. An xdg popup is dismissed.
+- **At a fractional scale** the chrome, drawn at the next whole scale and scaled down, and a thumbnail, rounded to physical pixels, can differ by a pixel at a thumbnail's edge. Not seen in a test, which samples the cells' middles.
+- **How it was built:** the list, the state and the grid by subagents from a plan (`108-plan.md`), each reviewed, and the rest in one session. A review of the whole branch against this ticket and the coding standards then found three faults, fixed with a test each: a thumbnail on another output took its window's main output, and so its scale; the pointer reached the windows under the popup; and a click could land on a cell laid out before a window closed.

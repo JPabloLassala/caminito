@@ -652,9 +652,11 @@ impl Camino {
     /// by the scene's order.
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
         // M7: nothing but the lock takes the pointer while locked (12).
+        // The Window switcher's popup covers what's under it, for no client (108).
+        if self.switcher_popup_at(location) {
+            return None;
+        }
         scene::LAYERS.into_iter().find_map(|layer| match layer {
-            // The Window switcher's popup takes the pointer for no client, and its
-            // clicks are taken before anything is looked for under them (108).
             SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock | SceneLayer::Switcher => {
                 None
             }

@@ -31,7 +31,9 @@ pub(crate) struct Grid {
     pub cells: Vec<Rectangle<i32, Logical>>,
     /// Where the selected window's title is drawn, under the cells.
     pub title: Rectangle<i32, Logical>,
+    /// How many cells a full row has.
     pub columns: usize,
+    /// What each cell shows.
     pub style: CellStyle,
 }
 

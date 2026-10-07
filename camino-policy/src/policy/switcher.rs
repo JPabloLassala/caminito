@@ -23,7 +23,9 @@ pub enum SwitchList {
 /// The open Window switcher (108): what it lists, and which entry is selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Switcher {
+    /// The seat that opened it, which the selected window is activated for.
     pub seat: SeatId,
+    /// The action's list, which `windows` was made from.
     pub list: SwitchList,
     /// The windows listed, in order. Never empty.
     pub windows: Vec<WindowId>,

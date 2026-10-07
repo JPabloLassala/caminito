@@ -29,9 +29,9 @@ const URGENT_COLOR: &str = "warning_color";
 /// What the chrome shows of one listed window.
 pub(crate) struct Entry {
     /// Whether the window asks for the user's attention.
-    pub urgent: bool,
+    pub(crate) urgent: bool,
     /// The window's icon, [`icon_size`] logical pixels square at the chrome's scale.
-    pub icon: Option<ImageSurface>,
+    pub(crate) icon: Option<ImageSurface>,
 }
 
 /// The popup's chrome for one output, as buffers at the output's scale that cover the
@@ -39,8 +39,8 @@ pub(crate) struct Entry {
 /// marks, the title, and the icons of an icons-only grid), and `over` is in front of them
 /// (the thumbnails' corner icons).
 pub(crate) struct Chrome {
-    pub under: MemoryRenderBuffer,
-    pub over: Option<MemoryRenderBuffer>,
+    pub(crate) under: MemoryRenderBuffer,
+    pub(crate) over: Option<MemoryRenderBuffer>,
 }
 
 /// The size a cell's icon is drawn at, in logical pixels: the cell's whole content box in
@@ -122,11 +122,11 @@ pub(crate) fn draw(
             let cell = cell.to_f64();
             // A theme, or the neutral palette, that gives a selected window the background
             // of any other would hide the selection: the text colour tints the cell then.
-            let (normal, selected) = (GtkState::Normal, GtkState::Selected);
-            if colors.background(selected) == colors.background(normal) {
-                set_color(&cr, colors.text(normal), SELECTION_TINT);
+            let background = colors.background(GtkState::Selected);
+            if background == colors.background(GtkState::Normal) {
+                set_color(&cr, colors.text(GtkState::Normal), SELECTION_TINT);
             } else {
-                set_color(&cr, colors.background(selected), 1.0);
+                set_color(&cr, background, 1.0);
             }
             cr.rectangle(cell.loc.x, cell.loc.y, cell.size.w, cell.size.h);
             cr.fill()?;

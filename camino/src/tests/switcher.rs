@@ -1230,3 +1230,62 @@ on_both_kinds! {
         }
     }
 }
+
+// What the popup must leave alone.
+
+on_both_kinds! {
+    fn the_pointer_reaches_nothing_under_the_popup(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        map_windows(&mut f, id, 3);
+        show(&mut f);
+        // A window fills the output's middle under the popup, or the output is bare there:
+        // either way the popup has the pointer for no client.
+        let under_popup = middle(popup(&f));
+        let over_a_window = f.state.camino.policy.switcher().unwrap().windows[0];
+        let window = f.state.camino.policy.geometry(over_a_window).unwrap();
+        f.state
+            .camino
+            .policy
+            .request_geometry(over_a_window, Some(under_popup - Point::from((50, 50))), None);
+        f.dispatch();
+        assert!(window.size.w >= 100 && window.size.h >= 100);
+
+        f.pointer_move(f64::from(under_popup.x), f64::from(under_popup.y));
+        assert_eq!(f.state.camino.pointer_focus, None);
+        assert_eq!(f.state.camino.window_under(under_popup.to_f64()), None);
+
+        // With the popup gone the pointer is the window's as ever.
+        f.key(KEY_LEFTALT, false);
+        f.pointer_move(f64::from(under_popup.x) + 1., f64::from(under_popup.y));
+        assert!(f.state.camino.pointer_focus.is_some());
+    }
+}
+
+on_both_kinds! {
+    fn a_thumbnail_on_another_output_leaves_its_windows_main_output(kind: Kind) {
+        let mut f = Fixture::new();
+        let first = f.add_output((1920, 1080), 1.0);
+        let second = f.add_output((2560, 1440), 2.0);
+        let id = f.connect(kind);
+        // Small, so that its thumbnail on the output at scale 2 has more than twice the
+        // pixels the window itself has on the first.
+        let small = f.map(id, WindowSpec::plain((200, 150)));
+        f.map(id, WindowSpec::plain((200, 150)));
+        assert_eq!(f.mapped(small).main_output(), Some(&first));
+        let on_second = output_geometry(&second);
+        f.pointer_move(
+            f64::from(on_second.loc.x) + 100.,
+            f64::from(on_second.loc.y) + 100.,
+        );
+
+        show(&mut f);
+        assert_eq!(switcher(&f)["output"], second.name());
+        // A few frames of both outputs, with the thumbnails on the second.
+        for _ in 0..3 {
+            f.draw(&first);
+            f.draw(&second);
+        }
+
+        assert_eq!(f.mapped(small).main_output(), Some(&first));
+    }
+}

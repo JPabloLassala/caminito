@@ -71,10 +71,10 @@ pub(crate) struct OpenSwitcher {
 /// The Window switcher's popup, on the output it appeared on. It doesn't follow the
 /// pointer to another.
 pub(crate) struct Popup {
-    pub output: Output,
-    pub grid: Grid,
+    pub(crate) output: Output,
+    pub(crate) grid: Grid,
     /// The chrome as last drawn, unless cairo couldn't draw it.
-    pub chrome: Option<Chrome>,
+    pub(crate) chrome: Option<Chrome>,
     /// What the chrome was drawn from, to draw it again only when that changes.
     drawn: Option<Drawn>,
 }
@@ -126,6 +126,15 @@ impl Camino {
         };
         let size = output_geometry(output).size;
         Some(Grid::new(count, settings.max_columns, size, style))
+    }
+
+    /// Whether the Window switcher's popup is at `location`, in global logical
+    /// coordinates.
+    pub(crate) fn switcher_popup_at(&self, location: Point<f64, Logical>) -> bool {
+        self.visible_switcher().is_some_and(|popup| {
+            let origin = output_geometry(&popup.output).loc.to_f64();
+            popup.grid.popup.to_f64().contains(location - origin)
+        })
     }
 
     /// The Window switcher's popup, once it has appeared.
@@ -379,7 +388,9 @@ impl State {
         if state == ButtonState::Released {
             return camino.suppressed_buttons.remove(&button);
         }
-        camino.refresh_switcher();
+        // The grid as policy's list is now: a window may have closed since the refresh
+        // pass, and its cell would be the next window's.
+        camino.refresh_switcher_popup();
         if camino.switcher.is_none() {
             return false;
         }

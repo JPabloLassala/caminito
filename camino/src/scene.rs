@@ -274,7 +274,8 @@ fn switcher_elements<R>(
         );
         match element {
             Ok(element) => elements.push(SceneElement::Frame(element)),
-            Err(err) => tracing::warn!("can't draw the window switcher: {err:?}"),
+            // Every frame while the popup shows, so not above `debug!`.
+            Err(err) => tracing::debug!("can't draw the window switcher: {err:?}"),
         }
     };
     if let Some(over) = &chrome.over {

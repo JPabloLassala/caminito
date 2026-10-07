@@ -123,11 +123,13 @@ impl TestWindow {
         self
     }
 
+    /// Makes the window one of the process `pid`.
     pub fn with_pid(mut self, pid: u32) -> Self {
         self.pid = Some(pid);
         self
     }
 
+    /// Gives the window the app id `app_id`.
     pub fn with_app_id(mut self, app_id: &str) -> Self {
         self.app_id = Some(app_id.to_owned());
         self
