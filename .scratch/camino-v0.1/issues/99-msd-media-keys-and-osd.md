@@ -61,3 +61,11 @@ Four patches in `mate-settings-daemon-camino`'s series, `0007` to `0010`, at `pk
   - no test has the grabber leave the bus with its key held: the same check ends the repeats as for a released grab, which has one.
 - **For [100](100-msd-custom-shortcuts.md):** its plugin is in msd's process, on the same connection, so Camino takes the two for one caller. A custom shortcut on a combination a media key has gets the media key's action id, and whichever plugin releases it releases it for both. On X11 the second `XGrabKey` of the two succeeds too, and both plugins act. 100 decides what happens here.
 - **The first criterion is ticked on the local run** of what the job runs. The job runs at the push.
+
+## The keys didn't work in a Session (2026-10-07)
+
+- **The report:** in a Session with `camino-git` r283, the media and volume keys did nothing.
+- **The cause:** the msd installed was still 1.29.1-3, which has none of `0007` to `0010`. Its media-keys plugin file said `X11Only=true` without `Camino=true`, so the daemon didn't load it, and Camino's `DumpState` had no grabs. Nothing in the repo was wrong.
+- **What was done:** the 1.29.1-4 package built above was installed with `pacman -U`, and the running msd was killed, which mate-session started again.
+- **What it showed:** `DumpState` listed 34 grabs owned by the new msd, the volume keys among them. So the plugin is loaded by the daemon itself under Camino, which is `0007`, not run until now.
+- **Still not run:** a key pressed. The checklist item is [106](106-packaging-and-closing-m6.md)'s, as before.
