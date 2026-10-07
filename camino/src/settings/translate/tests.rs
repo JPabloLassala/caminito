@@ -111,6 +111,9 @@ fn defaults() -> Reading {
     put(SOUND, "theme-name", s("freedesktop"));
     put(SOUND, "event-sounds", Value::Bool(false));
     put(SOUND, "input-feedback-sounds", Value::Bool(false));
+    put(CAMINO, "workspace-layout-orientation", s("horizontal"));
+    put(CAMINO, "workspace-layout-rows", Value::Int(1));
+    put(CAMINO, "workspace-layout-columns", Value::Int(0));
     reading
 }
 
@@ -213,6 +216,69 @@ fn workspace_names_are_used_when_set() {
 fn names_beyond_the_count_are_not_passed_on() {
     let reading = with(MARCO_WORKSPACE_NAMES, "name-5", string("Spare"));
     assert_eq!(settings(&reading).policy.workspace_names.len(), 4);
+}
+
+// The workspace grid (96).
+
+#[test]
+fn the_defaults_give_one_row_of_workspaces() {
+    let layout = settings(&defaults()).policy.workspace_layout;
+    assert_eq!(layout, WorkspaceLayout::default());
+    assert_eq!(layout.orientation, Orientation::Horizontal);
+    assert_eq!((layout.rows, layout.columns), (1, 0));
+}
+
+#[test]
+fn the_workspace_layout_keys_are_read() {
+    let reading = with_all(&[
+        (CAMINO, "workspace-layout-orientation", string("vertical")),
+        (CAMINO, "workspace-layout-rows", Value::Int(0)),
+        (CAMINO, "workspace-layout-columns", Value::Int(2)),
+    ]);
+    let layout = settings(&reading).policy.workspace_layout;
+    assert_eq!(layout.orientation, Orientation::Vertical);
+    assert_eq!((layout.rows, layout.columns), (0, 2));
+}
+
+#[test]
+fn an_unknown_workspace_layout_orientation_falls_back_to_the_default() {
+    let key = "workspace-layout-orientation";
+    let (settings, problem) = problem(&with(CAMINO, key, string("diagonal")));
+    assert_eq!(
+        settings.policy.workspace_layout.orientation,
+        Orientation::Horizontal
+    );
+    assert_eq!(problem, invalid(CAMINO, key, "'diagonal'", "'horizontal'"));
+}
+
+#[test]
+fn workspace_layout_rows_and_columns_out_of_range_are_clamped() {
+    let key = "workspace-layout-rows";
+    let (settings, problem) = problem(&with(CAMINO, key, Value::Int(-1)));
+    assert_eq!(settings.policy.workspace_layout.rows, 0);
+    assert_eq!(problem, out_of_range(CAMINO, key, "-1", "0"));
+
+    let key = "workspace-layout-columns";
+    let (settings, problem) = self::problem(&with(CAMINO, key, Value::Int(50)));
+    assert_eq!(settings.policy.workspace_layout.columns, 36);
+    assert_eq!(problem, out_of_range(CAMINO, key, "50", "36"));
+}
+
+#[test]
+fn without_caminos_schema_the_workspaces_are_one_row_and_it_s_said() {
+    // A development run that never installed the schema (96).
+    let mut reading = defaults();
+    reading.set_missing(CAMINO);
+    for key in ["orientation", "rows", "columns"] {
+        reading.remove(CAMINO, &format!("workspace-layout-{key}"));
+    }
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.policy.workspace_layout, WorkspaceLayout::default());
+    assert_eq!(problem, Problem::MissingSchema(CAMINO.into()));
+    assert_eq!(
+        problem.to_string(),
+        "the org.mate.Camino schema isn't installed; using its defaults"
+    );
 }
 
 // Frames.

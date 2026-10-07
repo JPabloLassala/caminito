@@ -119,6 +119,7 @@ enum Op {
         id: u64,
         above: bool,
     },
+    SetShowingDesktop(bool),
 }
 
 fn window_id() -> impl Strategy<Value = u64> {
@@ -185,6 +186,7 @@ fn action() -> impl Strategy<Value = Action> {
         Just(Action::Close),
         Just(Action::ToggleMaximized),
         Just(Action::SwitchWindows),
+        Just(Action::ShowDesktop),
     ]
 }
 
@@ -237,6 +239,7 @@ fn op() -> impl Strategy<Value = Op> {
         )
             .prop_map(|(id, loc, size)| Op::RequestGeometry { id, loc, size }),
         1 => (window_id(), any::<bool>()).prop_map(|(id, above)| Op::SetAbove { id, above }),
+        1 => any::<bool>().prop_map(Op::SetShowingDesktop),
     ]
 }
 
@@ -328,11 +331,13 @@ impl Op {
             Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
                 workspace_count,
                 workspace_names: Vec::new(),
+                ..Config::default()
             }),
             Op::RequestGeometry { id, loc, size } => {
                 policy.request_geometry(WindowId(id), loc.map(Point::from), size.map(Size::from))
             }
             Op::SetAbove { id, above } => policy.set_above(WindowId(id), above),
+            Op::SetShowingDesktop(showing) => policy.set_showing_desktop(showing),
         }
     }
 }

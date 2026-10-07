@@ -51,8 +51,9 @@ pub enum Binding {
     Panel(PanelAction),
 }
 
-/// Marco's defaults for the actions M1 binds, and for the panel's two (95).
-const BINDINGS: [(Held, Keysym, Binding); 7] = [
+/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), and for the panel's
+/// two (95).
+const BINDINGS: [(Held, Keysym, Binding); 8] = [
     (
         CTRL_ALT,
         Keysym::Left,
@@ -68,6 +69,7 @@ const BINDINGS: [(Held, Keysym, Binding); 7] = [
     (ALT, Keysym::F4, Binding::Policy(Action::Close)),
     (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
     (ALT, Keysym::Tab, Binding::Policy(Action::SwitchWindows)),
+    (CTRL_ALT, Keysym::d, Binding::Policy(Action::ShowDesktop)),
 ];
 
 /// What's bound to `keysym` with exactly `mods` held, if anything.
@@ -116,6 +118,7 @@ mod tests {
         assert_eq!(bound(ALT, Keysym::F4), policy(Action::Close));
         assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
         assert_eq!(bound(ALT, Keysym::Tab), policy(Action::SwitchWindows));
+        assert_eq!(bound(CTRL_ALT, Keysym::d), policy(Action::ShowDesktop));
     }
 
     #[test]

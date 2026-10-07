@@ -3,12 +3,14 @@
 mod actions;
 mod commit;
 mod focus;
+mod grid;
 mod interactive;
 mod invariants;
 mod outputs;
 mod placement;
 mod requests;
 mod shade;
+mod show_desktop;
 mod stacking;
 mod states;
 mod transients;
@@ -22,7 +24,7 @@ use smithay::utils::{Logical, Point, Rectangle};
 use crate::test_window::TestWindow;
 use crate::{
     Action, Config, Layer, Output, OutputId, Policy, ReservedEdges, SeatId, WindowId, WindowStates,
-    WindowType,
+    WindowType, WorkspaceLayout,
 };
 
 const SEAT: SeatId = SeatId(0);
