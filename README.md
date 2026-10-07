@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="data/icons/camino.svg" width="128" height="128" alt="The Camino logo">
+  <img src="data/icons/camino.svg" width="106" height="128" alt="The Camino logo">
 </p>
 
 # Camino
