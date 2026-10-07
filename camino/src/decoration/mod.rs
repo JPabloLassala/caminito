@@ -751,11 +751,10 @@ pub(crate) fn memory_buffer(mut surface: ImageSurface, scale: i32) -> Option<Mem
     let stride = surface.stride() as usize;
     let data = surface.data().ok()?;
     let row = width as usize * 4;
-    let pixels: Vec<u8> = data
-        .chunks(stride)
-        .flat_map(|line| &line[..row])
-        .copied()
-        .collect();
+    let mut pixels = Vec::with_capacity(row * height as usize);
+    for line in data.chunks(stride) {
+        pixels.extend_from_slice(&line[..row]);
+    }
     Some(MemoryRenderBuffer::from_slice(
         &pixels,
         Fourcc::Argb8888,
