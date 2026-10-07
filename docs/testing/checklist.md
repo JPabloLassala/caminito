@@ -413,6 +413,30 @@ session_env() {
 - **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
   xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
+### The workspace switcher's preferences set the count and the names
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Camino*, with `mate-panel-camino` at `pkgrel` 5 or later, and four
+     workspaces (`gsettings get org.mate.Marco.general num-workspaces`).
+  2. Open the workspace switcher's *Preferences*, and set *Number of workspaces* to 6, then
+     to 2. After each, look at the switcher and run the `gsettings get` of step 1.
+  3. Tick *Show workspace names in switcher*. In *Workspace names*, change the second name to
+     `Mail` and press Enter, then run
+     `gsettings get org.mate.Marco.workspace-names name-2`.
+  4. Empty that name again, and set the count back to 4.
+  5. Log into *MATE*, the X11 session, and do steps 2 to 4 there. Then log into *MATE on
+     Wayfire* and open the switcher's *Preferences*.
+- **Expected:** under Camino the preferences have *Number of workspaces* and *Workspace
+  names*. The switcher, which draws what Camino sends, has six buttons, then two, `gsettings`
+  prints the same count, and the spin button stays at the number that was set. The second
+  button and the second row say `Mail`, and `gsettings` prints `'Mail'`. Emptied, both say
+  `Workspace 2` again. On X11 the same steps do the same through Marco, as with the stock
+  panel, and on Wayfire the preferences have neither control (the gate, ADR 0011).
+- **Debug tool:** the switcher, `gsettings monitor org.mate.Marco.general`, and
+  `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep ext_workspace` for the handles and names
+  Camino sends.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

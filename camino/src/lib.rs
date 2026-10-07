@@ -1,6 +1,7 @@
 //! Camino, a Wayland compositor for the MATE desktop.
 
 pub mod backend;
+mod capture;
 mod commands;
 pub mod cursor;
 pub mod dbus;

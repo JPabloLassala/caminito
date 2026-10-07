@@ -107,10 +107,62 @@ where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
+    output_capture_elements(renderer, camino, output, true)
+}
+
+/// What a capture of `output` shows, front to back: what the output shows, with the
+/// pointer's cursor or without it (103).
+pub(crate) fn output_capture_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    output: &Output,
+    paint_cursors: bool,
+) -> Vec<SceneElement<R>>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
     let mut elements = Vec::new();
     for layer in LAYERS {
+        if layer == SceneLayer::Cursor && !paint_cursors {
+            continue;
+        }
         layer_elements(layer, renderer, camino, output, &mut elements);
     }
+    elements
+}
+
+/// What a capture of a window shows, front to back, at `scale`: the window alone with its
+/// frame, from the top left corner of policy's frame rect, whatever covers it and
+/// whichever workspace it's on, and the pointer's cursor if it's asked for and is over a
+/// window that's showing (103). A shaded window is its frame's titlebar, as it's drawn.
+pub(crate) fn window_capture_elements<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    id: WindowId,
+    scale: f64,
+    paint_cursors: bool,
+) -> Vec<SceneElement<R>>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let policy = &camino.policy;
+    let mut elements = Vec::new();
+    let (Some(mapped), Some(geometry), Some(frame)) = (
+        policy.window(id),
+        policy.geometry(id),
+        policy.frame_rect(id),
+    ) else {
+        return elements;
+    };
+    let shown = Rectangle::from_size(frame.size);
+    let pointer = camino.seat.get_pointer().unwrap().current_location() - frame.loc.to_f64();
+    if paint_cursors && policy.is_showing(id) && shown.to_f64().contains(pointer) {
+        cursor_elements_at(renderer, camino, pointer, scale, &mut elements);
+    }
+    let origin = geometry.loc - frame.loc;
+    one_window_elements(renderer, mapped, origin, shown, scale, &mut elements);
     elements
 }
 
@@ -325,10 +377,25 @@ fn cursor_elements<R>(
     let Some(pointer) = pointer_on(camino, output) else {
         return;
     };
-    let output_geometry = output_geometry(output);
+    let pointer = pointer - output_geometry(output).loc.to_f64();
     let scale = output.current_scale().fractional_scale();
+    cursor_elements_at(renderer, camino, pointer, scale, elements);
+}
+
+/// The cursor with its hotspot at `pointer`, which is from the origin of what's drawn, at
+/// `scale`.
+fn cursor_elements_at<R>(
+    renderer: &mut R,
+    camino: &Camino,
+    pointer: Point<f64, Logical>,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
     let at = |hotspot: Point<i32, Logical>| {
-        (pointer - hotspot.to_f64() - output_geometry.loc.to_f64()).to_physical_precise_round(scale)
+        (pointer - hotspot.to_f64()).to_physical_precise_round(scale)
     };
     match camino.cursor() {
         CursorImageStatus::Hidden => {}
@@ -480,39 +547,56 @@ fn window_elements<R>(
             frame_debug_elements(renderer, camino, mapped, geometry.loc, output, elements);
         }
 
-        let window = mapped.window();
-        // The surface's origin sits the window geometry's offset away from where policy
-        // placed the geometry. A shaded window's surfaces have left the scene.
-        let mut bbox = window.bbox_with_popups();
-        bbox.loc += geometry.loc - window.geometry().loc;
-        if !mapped.is_shaded() && bbox.overlaps(output_geometry) {
-            let location = (geometry.loc - window.geometry().loc - output_geometry.loc)
-                .to_physical_precise_round(scale);
-            elements.extend(window.render_elements(renderer, location, Scale::from(scale), 1.0));
-        }
+        let origin = geometry.loc - output_geometry.loc;
+        let shown = Rectangle::from_size(output_geometry.size);
+        one_window_elements(renderer, mapped, origin, shown, scale, elements);
+    }
+}
 
-        // The strips lie around the window geometry, behind the window and its popups.
-        for (mut rect, buffer) in mapped.frame().strips() {
-            rect.loc += geometry.loc;
-            if !rect.overlaps(output_geometry) {
-                continue;
-            }
-            let location = (rect.loc - output_geometry.loc)
-                .to_physical_precise_round::<_, i32>(scale)
-                .to_f64();
-            let element = MemoryRenderBufferRenderElement::from_buffer(
-                renderer,
-                location,
-                buffer,
-                None,
-                None,
-                Some(rect.size),
-                Kind::Unspecified,
-            );
-            match element {
-                Ok(element) => elements.push(SceneElement::Frame(element)),
-                Err(err) => tracing::warn!("can't draw a frame strip: {err:?}"),
-            }
+/// One window's elements, front to back, at `scale`: its surfaces with their popups, over
+/// its frame's strips. `origin` is where its geometry is from the origin of what's drawn,
+/// and `shown` is the part of that space that's drawn.
+fn one_window_elements<R>(
+    renderer: &mut R,
+    mapped: &Mapped,
+    origin: Point<i32, Logical>,
+    shown: Rectangle<i32, Logical>,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let window = mapped.window();
+    // The surface's origin sits the window geometry's offset away from where policy
+    // placed the geometry. A shaded window's surfaces have left the scene.
+    let surface_origin = origin - window.geometry().loc;
+    let mut bbox = window.bbox_with_popups();
+    bbox.loc += surface_origin;
+    if !mapped.is_shaded() && bbox.overlaps(shown) {
+        let location = surface_origin.to_physical_precise_round(scale);
+        elements.extend(window.render_elements(renderer, location, Scale::from(scale), 1.0));
+    }
+
+    // The strips lie around the window geometry, behind the window and its popups.
+    for (mut rect, buffer) in mapped.frame().strips() {
+        rect.loc += origin;
+        if !rect.overlaps(shown) {
+            continue;
+        }
+        let location = rect.loc.to_physical_precise_round::<_, i32>(scale).to_f64();
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location,
+            buffer,
+            None,
+            None,
+            Some(rect.size),
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(element) => elements.push(SceneElement::Frame(element)),
+            Err(err) => tracing::warn!("can't draw a frame strip: {err:?}"),
         }
     }
 }

@@ -190,10 +190,6 @@ impl Camino {
     }
 
     /// The window ext-foreign-toplevel-list's clients know by `identifier`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "M6's image capture finds a window by it")
-    )]
     pub(crate) fn window_for_toplevel_identifier(&self, identifier: &str) -> Option<WindowId> {
         self.foreign_toplevel_handles
             .iter()

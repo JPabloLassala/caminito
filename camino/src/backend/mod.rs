@@ -4,11 +4,17 @@ use std::ffi::OsStr;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::element::RenderElementStates;
+use smithay::backend::renderer::gles::GlesTexture;
 use smithay::input::keyboard::LedState;
 use smithay::output::{Mode, Output};
+#[cfg(test)]
+use smithay::reexports::pixman::Image;
+use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
+use smithay::utils::{Buffer, Rectangle};
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
+use crate::capture::{self, Shot};
 use crate::output::OutputChange;
 use crate::state::Camino;
 
@@ -58,6 +64,31 @@ impl Backend {
             Backend::Winit(winit) => winit.render(camino, output),
             #[cfg(test)]
             Backend::Headless(headless) => Some(headless.render(camino, output)),
+        }
+    }
+
+    /// Copies a capture's frame into a client's buffer with the backend's renderer, if what
+    /// it shows changed since the session's last, and returns what changed (103).
+    pub(crate) fn copy_capture(
+        &mut self,
+        camino: &Camino,
+        shot: Shot<'_>,
+        buffer: &WlBuffer,
+    ) -> Result<Option<Vec<Rectangle<i32, Buffer>>>, capture::Error> {
+        match self {
+            Backend::Tty(tty) => {
+                capture::copy::<_, GlesTexture>(tty.renderer(), camino, shot, buffer)
+            }
+            Backend::Winit(winit) => {
+                capture::copy::<_, GlesTexture>(winit.renderer(), camino, shot, buffer)
+            }
+            #[cfg(test)]
+            Backend::Headless(headless) => capture::copy::<_, Image<'static, 'static>>(
+                headless.renderer(),
+                camino,
+                shot,
+                buffer,
+            ),
         }
     }
 
