@@ -11,12 +11,14 @@ and configuration read from the existing `org.mate.Marco.*` gsettings.
 
 It is written in Rust on [Smithay](https://github.com/Smithay/smithay).
 
-> **Status:** early development. Caminito v0.1 is being built in nine milestones. The first five
-> (M1, a nested compositor, M2, Marco frames, M3, XWayland, M4, on the metal, and M5, the MATE
-> session) are done, and M6 (the MATE integrations) is next. Today Caminito runs as a window inside
-> another desktop or bare on a tty, drawing Marco frames around Wayland and X11 windows on the
-> machine's monitors, and _MATE on Caminito_ logs in and out with mate-panel, caja's desktop and
-> mate-settings-daemon. The session can't lock yet, so it isn't ready for daily use.
+> **Status:** early development. Caminito v0.1 is being built in nine milestones. The first six
+> (M1, a nested compositor, M2, Marco frames, M3, XWayland, M4, on the metal, M5, the MATE
+> session, and M6, the MATE integrations) are done, and M7 (lock, idle and accessibility) is next.
+> Today Caminito runs as a window inside another desktop or bare on a tty, drawing Marco frames
+> around Wayland and X11 windows on the machine's monitors, and _MATE on Caminito_ logs in and out
+> with mate-panel, caja's desktop and mate-settings-daemon, with the panel's shortcuts, the
+> workspace switcher, the control center's dialogs and screenshots working in it. The session
+> can't lock yet, so it isn't ready for daily use.
 
 ## Goals for v0.1
 
