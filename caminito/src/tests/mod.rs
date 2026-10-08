@@ -2,6 +2,7 @@
 
 mod accelerators;
 mod active_toplevel;
+mod app_menu_registrar;
 mod bell;
 mod bindings;
 mod caminito_displays;

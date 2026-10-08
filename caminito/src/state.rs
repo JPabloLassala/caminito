@@ -79,6 +79,7 @@ use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
 use crate::dbus::global_menu::GlobalMenu;
 use crate::dbus::panel::Panel;
+use crate::dbus::registrar::Registrations;
 use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
@@ -248,6 +249,8 @@ pub struct Caminito {
     /// Whether a Global menu applet is on the bus, so that the apps give up their own
     /// menubars (ADR 0017).
     pub(crate) global_menu_applet: bool,
+    /// The menus X11 clients registered for their windows (113).
+    pub(crate) app_menu_registrations: Registrations,
     /// Whether the apps are told to give up their own menubars: while an applet is on the
     /// bus, and after it until the registrar's name is given up (112).
     pub(crate) global_menu_offered: bool,
@@ -820,6 +823,7 @@ impl Caminito {
             showing_desktop_signalled: None,
             global_menu_signalled: None,
             global_menu_applet: false,
+            app_menu_registrations: Registrations::default(),
             global_menu_offered: false,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),

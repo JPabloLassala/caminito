@@ -152,6 +152,7 @@ impl State {
         for key in &xwayland_windows {
             caminito.window_destroyed(key);
         }
+        caminito.app_menu_registrations.xwayland_gone();
         // X's selections, which the seat holds as Caminito's, went with it.
         for target in [SelectionTarget::Clipboard, SelectionTarget::Primary] {
             self.x_selection_cleared(target);
