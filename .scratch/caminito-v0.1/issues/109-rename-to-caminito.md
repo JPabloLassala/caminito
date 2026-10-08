@@ -68,3 +68,7 @@ The new logo is the house that is in the tree as the project's icon by then (com
 - **The `research/` and `prototype/` branches keep the old name.** They are reference material and are never merged.
 - **No ADR:** the rename is costly to undo, but nobody will wonder why the project has its name.
 - **`ticket-58-output-management` was dropped** on 2026-10-07, locally and on GitHub, as superseded; its one commit was `0cd91ec`.
+
+## The goldens' title (2026-10-08, from 105)
+
+- **CI was red after the rename:** the replace also changed `tests/goldens/cases.json`'s title, "Camino golden window", which Marco drew into every committed golden, so every case with a titlebar differed in its pixels. The title is back to the old one, which is an input pinned to the goldens rather than the project's name. Regenerating the goldens with the new title, on a machine with Marco, would make the first criterion's search pass there too.
