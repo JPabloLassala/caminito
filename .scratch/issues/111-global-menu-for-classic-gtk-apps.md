@@ -19,7 +19,7 @@ Most of MATE's apps build a classic `GtkMenuBar` and export nothing. `appmenu-gt
 
 - [ ] In a Session with the applet on the panel, pluma, caja, atril and mate-terminal show their menus in the panel, and the items work.
 - [ ] Without the applet, and without the module installed, each keeps its menubar in the window.
-- [ ] The module changes nothing in X11 MATE or the Wayfire session that it didn't change before.
+- [x] The module changes nothing in X11 MATE or the Wayfire session that it didn't change before.
 
 ## Notes
 
@@ -70,5 +70,14 @@ Most of MATE's apps build a classic `GtkMenuBar` and export nothing. `appmenu-gt
   - Not run: the menus in the applet, whether the items work, and whether the menubar leaves the window. Those need 110's applet. Under X11 the patch changes nothing the module does: the X11 branch already runs after the chain-up.
   - Upstream's master has the same order in `hijack.c`, and `platform.c` is unchanged from 25.04. Upstream had commits on 2026-10-07 and 2026-10-08, the Wayfire backend among them, so a fix offered there may land.
   - `run-on-wayland` defaults to true in the schema of 25.04's source, so the override isn't needed.
+- **Checked on 2026-10-08** with [111-checks](111-checks/) and the package at 25.04-2, which has a second fix (below). Not in a Session of its own: the installed Caminito (r320.52e4dca) nested on a private bus, mate-panel with the installed applet (25.04-4), and the module loaded from the built package through `GTK_MODULES`, not installed. It was read through AT-SPI and the debug dump. Nothing drawn was looked at.
+  - With the applet and the module (`run.sh`): pluma, caja, atril and mate-terminal each give Caminito a menubar path, the panel's menubar has the app's menus, the window's own menubar is 0 high, and Help > About activated in the panel opens the app's About window.
+  - The panel has no Tabs menu for mate-terminal, whose window has one. Why wasn't looked at.
+  - With the applet and no module, and with the module and no applet, each keeps its menubar in the window, 27 high. With the applet removed from under a running pluma and mate-terminal, both have theirs back after the grace period.
+  - **A second fix, `0002`.** With the module as it was and nothing owning the registrar's name, pluma and atril never showed a window, so not while no applet is there. Arch's 25.04-3 does the same, under Caminito and under Wayfire. The cause is in `gtk_wayland_window_get_window_data` (`platform.c`): for a `GtkApplicationWindow` it sets the application's menubar to a model it puts each of the window's `GtkMenuBar`s into. Where `gtk-shell-shows-menubar` is off the window makes a `GtkMenuBar` of its own from that model, which goes into the model it was made from, with no end. The fix turns the window's `show-menubar` off where the application had no menubar of its own. It's an upstream fix like `0001`, with no gate, and is still to be sent upstream.
+  - Stock against patched (`elsewhere.sh`), with pluma, caja, atril, mate-terminal and mate-calc, without and with a stand-in owner of the registrar's name. Under X11 (Xvfb) the two are the same: the menubar's height and the window's `_GTK_MENUBAR_OBJECT_PATH` and `_UNITY_OBJECT_PATH`. Under a headless Wayfire the two differ in what the fixes fix and nothing else: pluma and atril show a window with no registrar, and mate-terminal and mate-calc no longer fail the assertion. The third criterion was ticked on that.
+  - The session adds the module only to its own command's `GTK_MODULES`. The package's `80-appmenu-gtk-module.sh` adds it to an X11 login's, as the stock package's does.
+  - Still to do, for the first two criteria: the package installed and a new Session, where the session's own adding of the module to `GTK_MODULES` runs for the first time outside its unit tests, and someone looks at the panel.
+  - The Session this ran in has the AUR's `appmenu-gtk-module-wayland` in its `GTK_MODULES`, from `/etc/profile.d`. A new Session would load both modules. What the two do together wasn't run.
 - The AUR's `appmenu-gtk-module-wayland` 26.08.03 is another project (guiodic's, "PoC: GTK global menu on Plasma Wayland"). It turns the menubar into a dbusmenu with `libdbusmenu-gtk3` and gives it to the surface through `org_kde_kwin_appmenu`, which is [112](112-global-menu-for-qt-apps-and-firefox.md)'s channel and not 110's. It's no fix for this ticket.
 - GTK4 has no modules, so a GTK4 app that isn't a `GtkApplication` with a menubar has no global menu.

@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 12:30:00 -0300
+Subject: [PATCH] platform: Keep a GtkApplicationWindow from making a second
+ menubar
+
+On Wayland the module gives a GtkApplicationWindow's application a
+menubar model, and puts each GtkMenuBar realized in the window into it.
+Where gtk-shell-shows-menubar is off, as it is while nothing owns
+com.canonical.AppMenu.Registrar, the window makes a GtkMenuBar of its own
+from the application's menubar. That one is realized in the same window,
+so it went into the model it was made from, and each item it got became
+another change of the model. The program never got out of showing its
+window: pluma and atril started with the module and no registrar showed
+nothing at all.
+
+Turn the window's show-menubar off where the application had no menubar
+of its own. All the model then has is the window's menubars, and those
+are in the window already.
+---
+ subprojects/appmenu-gtk-module/src/platform.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/subprojects/appmenu-gtk-module/src/platform.c b/subprojects/appmenu-gtk-module/src/platform.c
+index 2e5ff92..b0476ea 100644
+--- a/subprojects/appmenu-gtk-module/src/platform.c
++++ b/subprojects/appmenu-gtk-module/src/platform.c
+@@ -333,6 +333,13 @@ G_GNUC_INTERNAL WindowData *gtk_wayland_window_get_window_data(GtkWindow *window
+ 			gtk_application_set_menubar(GTK_APPLICATION(application),
+ 			                            G_MENU_MODEL(window_data->menu_model));
+ 
++			// Where no shell shows the menubar, the window would make one of its
++			// own from that model, and the model would take that one in as well.
++			if (old_menu_model == NULL)
++				gtk_application_window_set_show_menubar(GTK_APPLICATION_WINDOW(
++				                                            window),
++				                                        FALSE);
++
+ 			g_free(unity_object_path);
+ 		}
+ 		else

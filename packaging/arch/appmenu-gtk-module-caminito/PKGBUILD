@@ -4,14 +4,14 @@
 # Contributor: Kaizhao Zhang <zhangkaizhao@gmail.com>
 
 # Arch's appmenu-gtk-module PKGBUILD with the smallest diff (16), so a change there shows
-# what to carry over. The differences: the name, provides and conflicts, and the one patch,
-# which is an upstream fix and not a carried patch (ADR 0011).
+# what to carry over. The differences: the name, provides and conflicts, and the two patches,
+# which are upstream fixes and not carried patches (ADR 0011).
 
 pkgname=appmenu-gtk-module-caminito
 _pkgname=appmenu-gtk-module
 pkgver=25.04
-pkgrel=1
-pkgdesc="Application Menu GTK Module, with a fix for plain windows on Wayland"
+pkgrel=2
+pkgdesc="Application Menu GTK Module, with fixes for Wayland"
 depends=(bash
          dconf
          gdk-pixbuf2
@@ -30,16 +30,20 @@ provides=("${_pkgname}=${pkgver}")
 conflicts=("${_pkgname}")
 # 0001 has no gate: on any Wayland compositor the module told the compositor nothing of a
 # GtkMenuBar in a window that isn't a GtkApplicationWindow, as most of MATE's apps have
-# theirs (111). Under X11 the module does what the stock one does. It goes when the
-# baseline has the fix.
+# theirs (111). 0002 has none either: on any Wayland compositor a program with a GtkMenuBar
+# in a GtkApplicationWindow, as pluma and atril have theirs, never showed its window while
+# nothing owned the registrar's name, which is while no applet is there (111). Under X11 the
+# module does what the stock one does. Each goes when the baseline has its fix.
 source=(
   git+https://gitlab.com/vala-panel-project/vala-panel-appmenu#tag=$pkgver
   80-appmenu-gtk-module.sh
   0001-hijack-Set-a-plain-window-s-D-Bus-properties-once-it.patch
+  0002-platform-Keep-a-GtkApplicationWindow-from-making-a-s.patch
 )
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
             'e8aff88851145085e24989cc99da9f631c593b506d0224225f3eb347d16c6455'
-            'b5962247b3a485d94051f81ed50fb8c47b8b83f582b1d4001d11e7a9b54d8c55')
+            'b5962247b3a485d94051f81ed50fb8c47b8b83f582b1d4001d11e7a9b54d8c55'
+            '7db9d6fa71821beebcaf6f16cd95ece3062280a27acfbbced82d4217746312d6')
 
 prepare() {
   cd vala-panel-appmenu
