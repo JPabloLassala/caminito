@@ -26,7 +26,7 @@ The global menu extension's first slice, under "The global menu extension" in [t
 - [x] Through the seam: no name is served and no claim is made off Linux, with no owner of `org.mate.Caminito`, or with `GlobalMenuOffered` false; and it starts and stops as they change.
 - [x] With a fake that lacks the tab-groups and notebook APIs, the extension still serves and claims, and logs one line.
 - [x] A failure at activation is logged and doesn't reach the host.
-- [ ] The CI job passes.
+- [x] The CI job passes. (The `extension` job passed in CI on `master` on 2026-10-08, run 37853654941, at `b886f7a`.)
 - [ ] In a nested run with VS Code 1.140, the panel shows the menu, the item runs in the focused one of two windows, and the menu comes back after a reload with nothing refocused.
 
 ## Notes

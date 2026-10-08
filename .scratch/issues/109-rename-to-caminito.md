@@ -58,7 +58,7 @@ The new logo is the house that is in the tree as the project's icon by then (com
 
 - [ ] A case-insensitive search of the tracked files for `caminito` not followed by `ito` finds nothing, file names included.
 - [ ] The rename commit is the replace and what follows from it mechanically (file names, checksums, `pkgrel`s, the lock file) and nothing else.
-- [ ] `cargo test` passes, and CI is green.
+- [x] `cargo test` passes, and CI is green. (CI passed on `master` on 2026-10-08 (run 37853654941, at `b886f7a`), with its `check` job's tests.)
 - [ ] Every package builds and installs, with every carried patch applying.
 - [ ] The logo's file is square, has no `c2pa` metadata, and is installed where `Icon=caminito` finds it.
 - [ ] The developer logs in to "MATE on Caminito" from the display manager: the panel, the desktop and the settings daemon behave as under Caminito (so the gate, the bus name and the patches agree), the saved layout is restored from its new directory, and the greeter shows the logo if it shows icons.

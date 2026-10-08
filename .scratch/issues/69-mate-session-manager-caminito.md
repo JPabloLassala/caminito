@@ -29,7 +29,7 @@ The first Patched package ([16](16-packaging.md), [ADR 0011](../../docs/adr/0011
 - [ ] `namcap` reports nothing unexplained on the PKGBUILD or the package.
 - [ ] With `MATE_WM_NAME=Caminito`, nested under [61](61-session-start-up-and-exit.md)'s `caminito --session`: Marco isn't started, the session reaches the Panel phase without waiting 30 s, and a child of mate-session (`/proc/<pid>/environ` of mate-panel) has no `GDK_BACKEND`.
 - [x] Without `MATE_WM_NAME`, an X11 MATE login starts Marco as before.
-- [ ] The Packaging job and the weekly patch-on-head job are green.
+- [x] The Packaging job and the weekly patch-on-head job are green. (Ticked on 2026-10-08: the Packaging job passed on `master` on 2026-10-08 (run 37823877022, at `88710e2`), and the weekly job's `patches-on-head` passed for this package on 2026-10-05, run 37316303593.)
 
 ## Notes
 

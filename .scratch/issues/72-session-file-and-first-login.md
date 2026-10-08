@@ -18,7 +18,7 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 ## Acceptance criteria
 
-- [ ] `makepkg -si` for `caminito-git` pulls in the three Patched packages, and the Packaging job is green with all four built in order.
+- [x] `makepkg -si` for `caminito-git` pulls in the three Patched packages, and the Packaging job is green with all four built in order. (Ticked on 2026-10-08: [76](76-tty-login-left-over.md) carried it and ticked it, and the Packaging job is still green, run 37823877022 at `88710e2`.)
 - [ ] The display manager lists *MATE on Caminito*.
 - [ ] As `caminitotest` on a tty, `caminito --session`:
   - reaches the desktop without any mate-session phase timing out (30 s, 08), with the phases' order in the journal;
