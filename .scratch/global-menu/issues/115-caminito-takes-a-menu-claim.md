@@ -1,7 +1,7 @@
 # Caminito takes a menu claim
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: none: after v0.1
 Blocked by:
 
@@ -19,14 +19,14 @@ Caminito's side of [ADR 0018](../../../docs/adr/0018-a-menu-claim-ties-a-menu-to
 
 ## Acceptance criteria
 
-- [ ] A headless test: a claim from the client's own process ties its focused toplevel, and `GlobalMenu` carries the caller's unique name and the path.
-- [ ] A headless test: a claim from a child process of the client's ties the same way.
-- [ ] With two toplevels of one client, each claimed by another caller, `GlobalMenu` follows the focus.
-- [ ] A claim from a process with no focused toplevel is dropped, and the reply is the same empty one.
-- [ ] A tie ends when its toplevel is destroyed and when its caller leaves the bus.
-- [ ] A menu set on the surface is shown in place of a claim, and the claim shows again when that menu is unset.
-- [ ] `GlobalMenuOffered` follows the applet's bus name with the grace period, a claim made while it's false is dropped, and the ties are gone after it turns false. No test sleeps.
-- [ ] The global menu applet and its patched package are unchanged.
+- [x] A headless test: a claim from the client's own process ties its focused toplevel, and `GlobalMenu` carries the caller's unique name and the path.
+- [x] A headless test: a claim from a child process of the client's ties the same way.
+- [x] With two toplevels of one client, each claimed by another caller, `GlobalMenu` follows the focus.
+- [x] A claim from a process with no focused toplevel is dropped, and the reply is the same empty one.
+- [x] A tie ends when its toplevel is destroyed and when its caller leaves the bus.
+- [x] A menu set on the surface is shown in place of a claim, and the claim shows again when that menu is unset.
+- [x] `GlobalMenuOffered` follows the applet's bus name with the grace period, a claim made while it's false is dropped, and the ties are gone after it turns false. No test sleeps.
+- [x] The global menu applet and its patched package are unchanged.
 
 ## Notes
 
