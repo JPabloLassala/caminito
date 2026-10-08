@@ -13,6 +13,7 @@ pub mod helpers;
 pub mod icons;
 pub mod input;
 mod layer;
+mod lock;
 pub mod logging;
 pub mod output;
 pub mod protocols;

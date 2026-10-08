@@ -67,7 +67,7 @@ impl Caminito {
     }
 
     /// Ends the repeats, as another key's press does.
-    pub(super) fn stop_accelerator_repeat(&mut self) {
+    pub(crate) fn stop_accelerator_repeat(&mut self) {
         if let Some(repeat) = self.accelerator_repeat.take() {
             self.loop_handle.remove(repeat.timer);
         }

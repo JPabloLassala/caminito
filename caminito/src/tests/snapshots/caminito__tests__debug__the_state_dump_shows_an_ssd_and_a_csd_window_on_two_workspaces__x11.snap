@@ -135,6 +135,7 @@ expression: without_x_ids(&dump)
   "primary_output": "headless-1",
   "x11_scale": 2,
   "focus": 0,
+  "lock": "unlocked",
   "accelerator_grabs": [],
   "switcher": null,
   "global_menu_switch": "off",

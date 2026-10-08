@@ -415,7 +415,7 @@ impl State {
     /// Dismisses the menus clients have open: xdg popups with their grab of the keyboard
     /// and the pointer, and the keyboard grab an override-redirect window took through
     /// Xwayland.
-    fn dismiss_menus(&mut self, time: InputTime) {
+    pub(crate) fn dismiss_menus(&mut self, time: InputTime) {
         let caminito = &self.caminito;
         let windows = caminito
             .policy

@@ -436,15 +436,15 @@ impl Caminito {
 impl XWaylandKeyboardGrabHandler for State {
     /// Only Xwayland sees the global, and it asks only for override-redirect windows. It
     /// asks as the menu maps, before Caminito has heard of the map from X, so the surface
-    /// isn't checked against the windows Caminito shows.
+    /// isn't checked against the windows Caminito shows. While the session is locked the
+    /// grab is refused: a keyboard grab never beats the lock (11, Smithay #1714).
     fn keyboard_focus_for_xsurface(&self, surface: &WlSurface) -> Option<KeyboardFocus> {
-        Some(KeyboardFocus::Surface(surface.clone()))
+        (!self.caminito.lock.is_locked()).then(|| KeyboardFocus::Surface(surface.clone()))
     }
 
     /// The window has the keyboard at once, rather than from the next key as Smithay's grab
     /// would have it.
     fn grab(&mut self, surface: WlSurface, seat: Seat<Self>, grab: XWaylandKeyboardGrab<Self>) {
-        // M7: refused while locked, and released when the lock comes on (12).
         let keyboard = seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         keyboard.set_focus(self, Some(KeyboardFocus::Surface(surface)), serial);

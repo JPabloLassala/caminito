@@ -64,7 +64,9 @@ impl CompositorHandler for State {
                 .is_some_and(|client| client.get_data::<XWaylandClientData>().is_some());
             if xwayland {
                 self.xwayland_commit(surface);
-            } else if !self.caminito.layer_commit(surface) {
+            } else if !self.caminito.layer_commit(surface)
+                && !self.caminito.lock_surface_commit(surface)
+            {
                 self.xdg_shell_commit(surface);
             }
         } else {

@@ -10,8 +10,9 @@
 //! window's workspace as libxfce4windowing does, [`gtk_shell`] speaks GTK3's own
 //! protocol, [`layer_shell`] makes layer surfaces, [`data_control`] reads and sets the
 //! selections as a clipboard manager does, [`security_context`] makes the socket a
-//! sandboxed client connects through, and [`image_capture`] copies an output's or a
-//! window's pixels as a screenshot tool does.
+//! sandboxed client connects through, [`image_capture`] copies an output's or a
+//! window's pixels as a screenshot tool does, and [`session_lock`] locks the session as a
+//! locker does.
 
 pub mod appmenu;
 pub mod data_control;
@@ -24,6 +25,7 @@ pub mod layer_shell;
 pub mod output_management;
 pub mod security_context;
 pub mod selection;
+pub mod session_lock;
 pub mod x11;
 pub mod xfce_foreign_toplevel;
 
@@ -144,6 +146,11 @@ pub struct State {
     popups: Vec<Popup>,
     layer_shell: Option<ZwlrLayerShellV1>,
     layer_surfaces: Vec<layer_shell::LayerSurface>,
+    session_lock: Option<
+        wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1,
+    >,
+    session_locks: Vec<session_lock::SessionLock>,
+    lock_surfaces: Vec<session_lock::LockSurface>,
     pointer: Option<WlPointer>,
     keyboard: Option<WlKeyboard>,
     /// Every pointer and keyboard event received, oldest first.
@@ -243,6 +250,7 @@ pub enum SurfaceRef {
     Window(WindowId),
     Popup(PopupId),
     Layer(layer_shell::LayerId),
+    Lock(session_lock::LockSurfaceId),
     Unknown,
 }
 
@@ -920,6 +928,7 @@ pub fn format_input(events: &[InputEvent]) -> String {
         SurfaceRef::Window(w) => format!("window {}", w.0),
         SurfaceRef::Popup(p) => format!("popup {}", p.0),
         SurfaceRef::Layer(l) => format!("layer surface {}", l.0),
+        SurfaceRef::Lock(l) => format!("lock surface {}", l.0),
         SurfaceRef::Unknown => "unknown surface".to_owned(),
     };
     let press = |pressed: &bool| if *pressed { "pressed" } else { "released" };
@@ -1041,6 +1050,8 @@ impl State {
             SurfaceRef::Popup(PopupId(i))
         } else if let Some(i) = (self.layer_surfaces.iter()).position(|l| l.surface == *surface) {
             SurfaceRef::Layer(layer_shell::LayerId(i))
+        } else if let Some(i) = (self.lock_surfaces.iter()).position(|l| l.surface == *surface) {
+            SurfaceRef::Lock(session_lock::LockSurfaceId(i))
         } else {
             SurfaceRef::Unknown
         }
@@ -1051,7 +1062,7 @@ impl State {
         match self.surface_ref(surface) {
             SurfaceRef::Window(id) => Some(&mut self.windows[id.0].output_events),
             SurfaceRef::Layer(id) => Some(&mut self.layer_surfaces[id.0].output_events),
-            SurfaceRef::Popup(_) | SurfaceRef::Unknown => None,
+            SurfaceRef::Popup(_) | SurfaceRef::Lock(_) | SurfaceRef::Unknown => None,
         }
     }
 }

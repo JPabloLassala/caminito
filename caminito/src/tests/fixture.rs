@@ -802,6 +802,16 @@ impl Fixture {
         }
     }
 
+    /// The lock state, as the debug dump names it.
+    pub fn lock_state(&self) -> String {
+        let dump: serde_json::Value =
+            serde_json::from_str(&self.state.caminito.state_dump()).expect("the dump is JSON");
+        dump["lock"]
+            .as_str()
+            .expect("the dump has the lock state")
+            .to_owned()
+    }
+
     /// Policy's id for a window, if it's managed.
     pub fn policy_id(&self, window: ClientWindow) -> Option<PolicyId> {
         match window {

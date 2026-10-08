@@ -86,7 +86,8 @@ impl Caminito {
 
 impl State {
     /// Starts moving or resizing a window from the pointer as `start_data` found it. Does
-    /// nothing if policy won't move or resize the window.
+    /// nothing if policy won't move or resize the window, or while the session is locked,
+    /// when no client has the pointer (12).
     pub fn begin_window_grab(
         &mut self,
         id: WindowId,
@@ -94,6 +95,9 @@ impl State {
         start_data: GrabStartData<State>,
         serial: Serial,
     ) {
+        if self.caminito.lock.is_locked() {
+            return;
+        }
         if self
             .caminito
             .start_window_grab(id, kind, start_data.location)

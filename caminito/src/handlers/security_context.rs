@@ -16,9 +16,9 @@ use crate::state::{ClientState, State};
 /// Whether `client` is offered the privileged globals, which show or change what belongs to
 /// other clients: layer-shell, the two foreign-toplevel protocols and Xfce's, ext-workspace, output
 /// management, the two data-control protocols, image capture's two source managers and its
-/// copy-capture manager (103), and security-context itself, so that a sandboxed client
-/// can't make a context of its own. Every such global's filter is this function. M7's
-/// session lock joins them.
+/// copy-capture manager (103), the session lock (12), and security-context itself, so that
+/// a sandboxed client can't make a context of its own. Every such global's filter is this
+/// function.
 pub(crate) fn sees_privileged_globals(client: &Client) -> bool {
     match client.get_data::<ClientState>() {
         Some(data) => data.security_context.is_none(),

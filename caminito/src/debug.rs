@@ -80,6 +80,9 @@ struct StateDump {
     /// The one scale of every XWayland window (41).
     x11_scale: u32,
     focus: Option<u64>,
+    /// The lock state (12): `unlocked`, `pending` while Caminito waits for the locker,
+    /// `locked`, or `locker-lost` while the session is locked and its locker is gone.
+    lock: &'static str,
     /// The accelerators grabbed over `org.mate.Caminito` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
@@ -316,9 +319,9 @@ impl Caminito {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
-    /// surfaces, the X11 scale, focus, the accelerator grabs with their owners, the Window
-    /// switcher, and the bells rung with the last one, as pretty-printed JSON. The lock
-    /// state comes with the milestone that makes it.
+    /// surfaces, the X11 scale, focus, the lock state, the accelerator grabs with their
+    /// owners, the Window switcher, and the bells rung with the last one, as pretty-printed
+    /// JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -442,6 +445,7 @@ impl Caminito {
             primary_output: self.primary_output().map(|output| output.name()),
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
+            lock: self.lock.state().name(),
             accelerator_grabs,
             switcher,
             global_menu_switch: self.global_menu_switch.name(),

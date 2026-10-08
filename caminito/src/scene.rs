@@ -33,6 +33,9 @@ use crate::window::Mapped;
 /// What shows where nothing is drawn.
 pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
 
+/// What a locked output shows wherever the locker draws nothing (12).
+const LOCK_BACKGROUND: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
+
 /// Frame debug's outline colours (14).
 const STRIP_OUTLINE: Color32F = Color32F::new(1.0, 0.0, 0.0, 1.0);
 const RESIZE_BORDER_OUTLINE: Color32F = Color32F::new(0.0, 0.5, 1.0, 1.0);
@@ -58,7 +61,7 @@ render_elements! {
     Window = WaylandSurfaceRenderElement<R>,
     /// A frame's strip, one of Caminito's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
-    /// A side of one of frame debug's outlines.
+    /// A side of one of frame debug's outlines, or the lock's background.
     Outline = SolidColorRenderElement,
     /// A part of a window in one of the Window switcher's thumbnails (108).
     Thumbnail = ThumbnailPart<R>,
@@ -71,7 +74,8 @@ pub(crate) enum SceneLayer {
     Cursor,
     /// A Wayland drag's icon, at the pointer (48).
     DragIcon,
-    /// Lock surfaces, or the solid lock background (M7).
+    /// While the session is locked, the output's lock surface over the solid lock
+    /// background, and nothing of the layers below (12).
     Lock,
     /// The Window switcher's popup (108), over everything a client draws: the corner
     /// icons, then the thumbnails, then the rest of its chrome.
@@ -147,13 +151,25 @@ where
     R::TextureId: Send + Clone + 'static,
 {
     let mut elements = Vec::new();
-    for layer in LAYERS {
+    for layer in shown_layers(caminito) {
         if layer == SceneLayer::Cursor && !paint_cursors {
             continue;
         }
         layer_elements(layer, renderer, caminito, output, &mut elements);
     }
     elements
+}
+
+/// The layers that are drawn, top to bottom: all of them, or while the session is locked
+/// the lock and what's above it. The background covers the rest, so they're left out.
+fn shown_layers(caminito: &Caminito) -> impl Iterator<Item = SceneLayer> {
+    let locked = caminito.lock.is_locked();
+    let lock = LAYERS
+        .iter()
+        .position(|layer| *layer == SceneLayer::Lock)
+        .expect("the lock is one of the layers");
+    let shown = if locked { lock + 1 } else { LAYERS.len() };
+    LAYERS.into_iter().take(shown)
 }
 
 /// What a capture of a window shows, front to back, at `scale`: the window alone with its
@@ -203,7 +219,7 @@ where
 {
     let mut elements = Vec::new();
     let mut layers = Vec::new();
-    for layer in LAYERS {
+    for layer in shown_layers(caminito) {
         layer_elements(layer, renderer, caminito, output, &mut elements);
         layers.resize(elements.len(), layer);
     }
@@ -236,9 +252,49 @@ fn layer_elements<R>(
         | SceneLayer::Background => {
             layer_shell_elements(layer, renderer, caminito, output, elements)
         }
-        SceneLayer::Lock => {}
+        SceneLayer::Lock => lock_elements(renderer, caminito, output, elements),
         SceneLayer::Switcher => switcher_elements(renderer, caminito, output, elements),
     }
+}
+
+/// While the session is locked, `output`'s lock surface over the lock background, which
+/// covers the output from the frame after the lock request, whatever the locker does (12).
+fn lock_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let lock = &caminito.lock;
+    if !lock.is_locked() {
+        return;
+    }
+    let scale = output.current_scale().fractional_scale();
+    if let Some(surface) = lock.surface_on(output) {
+        elements.extend(
+            render_elements_from_surface_tree(
+                renderer,
+                surface.wl_surface(),
+                Point::default(),
+                scale,
+                1.0,
+                Kind::Unspecified,
+            )
+            .into_iter()
+            .map(SceneElement::Window),
+        );
+    }
+    let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
+    elements.push(SceneElement::Outline(SolidColorRenderElement::new(
+        lock.background().clone(),
+        covered,
+        CommitCounter::default(),
+        LOCK_BACKGROUND,
+        Kind::Unspecified,
+    )));
 }
 
 /// The Window switcher's popup, if it's on `output`, front to back: the thumbnails'

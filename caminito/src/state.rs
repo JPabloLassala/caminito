@@ -8,7 +8,10 @@ use std::time::Duration;
 
 use caminito_policy::{OutputId, Policy, PolicyWindow, SeatId, WindowId};
 use smithay::desktop::{LayerSurface, PopupManager, layer_map_for_output};
-use smithay::desktop::utils::{OutputPresentationFeedback, send_frames_surface_tree};
+use smithay::desktop::utils::{
+    OutputPresentationFeedback, send_frames_surface_tree, take_presentation_feedback_surface_tree,
+    with_surfaces_surface_tree,
+};
 use smithay::backend::input::Keycode;
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::pointer::CursorImageStatus;
@@ -51,6 +54,7 @@ use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
+use smithay::wayland::session_lock::SessionLockManagerState;
 use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
@@ -92,6 +96,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
+use crate::lock::Lock;
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
@@ -184,6 +189,11 @@ pub struct Caminito {
     pub text_input_state: TextInputManagerState,
     pub input_method_state: InputMethodManagerState,
     pub cursor_shape_state: CursorShapeManagerState,
+
+    /// ext-session-lock, for a locker (12).
+    pub(crate) session_lock_state: SessionLockManagerState,
+    /// The session lock: whether the session is locked, and what the locker shows (12).
+    pub(crate) lock: Lock,
 
     // Rendering (06). linux-dmabuf and drm-syncobj are the tty backend's (57).
     pub viewporter_state: ViewporterState,
@@ -542,6 +552,8 @@ impl State {
         self.x_requests();
         self.caminito.notice_xwayland_died_starting();
         self.caminito.advance_session();
+        // Before the views and the focus, which follow the lock.
+        self.caminito.refresh_lock();
         self.caminito.refresh_views();
         self.update_pointer_focus();
         self.caminito.update_button_states();
@@ -580,8 +592,8 @@ impl State {
     }
 
     /// After `output` is drawn: frame callbacks and presentation feedback for the windows
-    /// whose main output it is and for its layer surfaces, and their fifo and
-    /// commit-timing barriers released.
+    /// whose main output it is, for its layer surfaces and for its lock surface, and their
+    /// fifo and commit-timing barriers released.
     fn post_render(&mut self, output: &Output) {
         let now = self.caminito.clock.now();
         let refresh = output
@@ -628,6 +640,12 @@ impl State {
             layer.with_surfaces(&mut release_barriers);
             layer.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
             layer.take_presentation_feedback(&mut feedback, main, no_flags);
+        }
+        if let Some(surface) = self.caminito.lock.surface_on(output) {
+            let surface = surface.wl_surface();
+            with_surfaces_surface_tree(surface, &mut release_barriers);
+            send_frames_surface_tree(surface, output, now, FRAME_CALLBACK_THROTTLE, main);
+            take_presentation_feedback_surface_tree(surface, &mut feedback, main, no_flags);
         }
         // Override-redirect windows have no main output: they're told of frames on
         // every output they're drawn on.
@@ -790,6 +808,9 @@ impl Caminito {
             text_input_state: TextInputManagerState::new::<State>(dh),
             input_method_state: InputMethodManagerState::new::<State, _>(dh, |_| true),
             cursor_shape_state: CursorShapeManagerState::new::<State>(dh),
+
+            session_lock_state: SessionLockManagerState::new::<State, _>(dh, privileged),
+            lock: Lock::default(),
 
             viewporter_state: ViewporterState::new::<State>(dh),
             fractional_scale_state: FractionalScaleManagerState::new::<State>(dh),

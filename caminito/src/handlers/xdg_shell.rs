@@ -127,6 +127,12 @@ impl XdgShellHandler for State {
         let Some(seat) = Seat::<State>::from_resource(&seat) else {
             return;
         };
+        // No client but the locker has the keyboard or the pointer while the session is
+        // locked (12), and a lock surface has no popups.
+        if self.caminito.lock.is_locked() {
+            surface.send_popup_done();
+            return;
+        }
         let popup = PopupKind::Xdg(surface.clone());
         let Ok(root) = find_popup_root_surface(&popup) else {
             return;

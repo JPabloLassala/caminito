@@ -209,11 +209,14 @@ impl State {
     }
 
     /// The keyboard path: one key event through 15's five stages, in order, each deciding
-    /// whether it goes further. Only the bindings, the accelerator grabs and the client
-    /// stage do anything yet.
+    /// whether it goes further. Only the lock, the bindings, the accelerator grabs and the
+    /// client stage do anything yet.
     pub fn on_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
-        // 1 to 3 see the raw key, before xkbcommon.
-        if !(lock_passes(keycode) && accessx_passes(keycode) && keyboard_monitor_passes(keycode)) {
+        // 1. The lock (12) drops no key, since the locker is typed to: while the session
+        // is locked it's stage 4 that runs nothing but VT switching, and the keyboard
+        // itself that switches layouts, as xkbcommon does for the keymap's `grp` options.
+        // 2 and 3 see the raw key, before xkbcommon.
+        if !(accessx_passes(keycode) && keyboard_monitor_passes(keycode)) {
             return;
         }
 
@@ -307,6 +310,10 @@ impl State {
             self.caminito.suppressed_keys.insert(keycode);
             return FilterResult::Intercept(None);
         }
+        // Nothing else of Caminito's runs while the session is locked (12).
+        if self.caminito.lock.is_locked() {
+            return FilterResult::Forward;
+        }
         // The open Window switcher has the keyboard (108), before an inhibitor has its say:
         // it never opens under one.
         if let Some(result) = self.caminito.switcher_key_pressed(keycode, mods, keysym) {
@@ -339,7 +346,8 @@ impl State {
     /// client: a press that a caller of `org.mate.Caminito` grabbed is its grabber's, and
     /// reaches no client. The bindings stage swallows the release. An active shortcuts
     /// inhibitor passes the grabs to the client as it does Caminito's bindings, as Mutter's
-    /// does.
+    /// does. While the session is locked none is activated, msd's media keys among them, as
+    /// mate-screensaver's keyboard grab keeps msd's from firing on X11 (12).
     fn grabs_stage(
         &mut self,
         keycode: Keycode,
@@ -347,7 +355,7 @@ impl State {
         mods: &ModifiersState,
         keysym: &KeysymHandle<'_>,
     ) -> FilterResult<Option<Bound>> {
-        if !pressed || self.shortcuts_inhibited() {
+        if !pressed || self.caminito.lock.is_locked() || self.shortcuts_inhibited() {
             return FilterResult::Forward;
         }
         // Accelerators name keys as the first layout does, like the bindings, or by the
@@ -470,7 +478,9 @@ impl State {
 
     /// Gives the keyboard to the layer surface that takes it (63), or else to the window
     /// policy focuses, unless a grab holds it. A shaded window keeps the focus, but as in
-    /// Marco it's its frame that has it, so its client gets no keys.
+    /// Marco it's its frame that has it, so its client gets no keys. While the session is
+    /// locked the keyboard is the locker's lock surface's, or no client's (12), and policy's
+    /// focus is kept for the unlock.
     pub fn update_keyboard_focus(&mut self) {
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         // Xwayland destroys its grab when the X client lets go, and Smithay's grab would
@@ -482,6 +492,19 @@ impl State {
             && keyboard.has_grab(serial)
         {
             keyboard.unset_grab(self);
+        }
+        if self.caminito.lock.is_locked() {
+            // Every grab was let go as the lock came on, and none is granted under it. One
+            // that got here anyway doesn't keep the keyboard from the lock.
+            if keyboard.is_grabbed() {
+                keyboard.unset_grab(self);
+            }
+            let focus = self.caminito.lock_surface_with_keyboard();
+            let focus = focus.map(KeyboardFocus::Surface);
+            if keyboard.current_focus() != focus {
+                keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
+            }
+            return;
         }
         if keyboard.is_grabbed() {
             return;
@@ -535,6 +558,8 @@ pub enum Under {
     OverrideRedirect(Box<X11Surface>, Point<f64, Logical>),
     /// One of a layer surface's surfaces, and its origin.
     Layer(LayerSurface, PointerFocus, Point<f64, Logical>),
+    /// One of a lock surface's surfaces, and its origin (12).
+    Lock(PointerFocus, Point<f64, Logical>),
 }
 
 impl Under {
@@ -542,16 +567,16 @@ impl Under {
     pub fn window(&self) -> Option<WindowId> {
         match self {
             Under::Surface(id, ..) | Under::Frame(id, _) => Some(*id),
-            Under::OverrideRedirect(..) | Under::Layer(..) => None,
+            Under::OverrideRedirect(..) | Under::Layer(..) | Under::Lock(..) => None,
         }
     }
 
     /// The pointer focus and its origin.
     pub fn surface(&self) -> Option<(PointerFocus, Point<f64, Logical>)> {
         match self {
-            Under::Surface(_, focus, origin) | Under::Layer(_, focus, origin) => {
-                Some((focus.clone(), *origin))
-            }
+            Under::Surface(_, focus, origin)
+            | Under::Layer(_, focus, origin)
+            | Under::Lock(focus, origin) => Some((focus.clone(), *origin)),
             Under::OverrideRedirect(window, origin) => {
                 Some((PointerFocus::X11(window.clone()), *origin))
             }
@@ -563,7 +588,10 @@ impl Under {
     pub fn frame_control(&self) -> Option<(WindowId, FrameControl)> {
         match self {
             Under::Frame(id, control) => Some((*id, *control)),
-            Under::Surface(..) | Under::OverrideRedirect(..) | Under::Layer(..) => None,
+            Under::Surface(..)
+            | Under::OverrideRedirect(..)
+            | Under::Layer(..)
+            | Under::Lock(..) => None,
         }
     }
 }
@@ -588,12 +616,6 @@ enum Bound {
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },
-}
-
-/// Stage 1, the lock (M7): while locked, only VT and layout switching, AccessX and the
-/// keyboard monitor pass. There's no lock yet.
-fn lock_passes(_keycode: Keycode) -> bool {
-    true
 }
 
 /// The VT an `XF86Switch_VT_n` keysym switches to.
@@ -653,9 +675,11 @@ impl Caminito {
     }
 
     /// What's at `location` in the topmost window or layer surface that takes input there,
-    /// by the scene's order.
+    /// by the scene's order. While the session is locked it's the lock alone (12).
     pub fn under(&self, location: Point<f64, Logical>) -> Option<Under> {
-        // M7: nothing but the lock takes the pointer while locked (12).
+        if self.lock.is_locked() {
+            return self.lock_under(location);
+        }
         // The Window switcher's popup covers what's under it, for no client (108).
         if self.switcher_popup_at(location) {
             return None;
