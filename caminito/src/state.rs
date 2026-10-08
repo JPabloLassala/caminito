@@ -93,6 +93,7 @@ use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
+use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
@@ -145,6 +146,7 @@ pub struct Caminito {
     pub xdg_foreign_state: XdgForeignState,
     pub xdg_dialog_state: XdgDialogState,
     pub gtk_shell_state: GtkShellState,
+    pub appmenu_state: AppmenuState,
     pub xdg_toplevel_icon_manager: XdgToplevelIconManager,
     pub xdg_system_bell_state: XdgSystemBellState,
     pub xdg_decoration_state: XdgDecorationState,
@@ -228,7 +230,7 @@ pub struct Caminito {
     /// What Caminito keeps of each output beside Smithay's state (51).
     pub(crate) output_records: HashMap<OutputId, OutputRecord>,
     /// The `wl_output` globals of the outputs hidden since the last refresh, which the
-    /// clients still see (91).
+    /// clients still see (91), and the appmenu global if it stopped being offered (112).
     pub(crate) globals_to_withdraw: Vec<GlobalId>,
     /// The monitor the user chose as the primary output (81), if they chose one.
     pub(crate) primary_choice: Option<PrimaryChoice>,
@@ -243,9 +245,12 @@ pub struct Caminito {
     pub(crate) showing_desktop_signalled: Option<bool>,
     /// `GlobalMenu` as `org.mate.Caminito`'s callers last heard it (110).
     pub(crate) global_menu_signalled: Option<GlobalMenu>,
-    /// Whether the apps give up their own menubars, which follows the Global menu applet's
-    /// bus name (ADR 0017).
+    /// Whether the apps should give up their own menubars, which follows the Global menu
+    /// applet's bus name and outlasts it by a grace period (ADR 0017, 114).
     pub(crate) global_menu_switch: Switch,
+    /// Whether the apps are told to give up their own menubars: while the switch is on,
+    /// and after it until the registrar's name is given up (112).
+    pub(crate) global_menu_offered: bool,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -742,6 +747,7 @@ impl Caminito {
             xdg_foreign_state: XdgForeignState::new::<State>(dh),
             xdg_dialog_state: XdgDialogState::new::<State>(dh),
             gtk_shell_state: GtkShellState::new::<State>(dh),
+            appmenu_state: AppmenuState::default(),
             xdg_toplevel_icon_manager: XdgToplevelIconManager::new::<State>(dh),
             xdg_system_bell_state: XdgSystemBellState::new::<State>(dh),
             xdg_decoration_state: XdgDecorationState::new::<State>(dh),
@@ -814,6 +820,7 @@ impl Caminito {
             showing_desktop_signalled: None,
             global_menu_signalled: None,
             global_menu_switch: Switch::default(),
+            global_menu_offered: false,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),

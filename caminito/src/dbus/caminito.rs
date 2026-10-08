@@ -132,6 +132,8 @@ impl CaminitoInterface {
     /// The kind is `gtk` for a `GtkApplication`'s `org.gtk.Menus`, with the paths
     /// `menubar` and `app-menu` for the menus, and `window` and `application` for the
     /// `org.gtk.Actions` of the `win.` and `app.` actions, each only if the window has it.
+    /// The kind is `dbusmenu` for a `com.canonical.dbusmenu`, as a Qt app and Firefox
+    /// have, with the one path `menu`.
     /// A focused window with no menu has its transient parent's, and so on up, with that
     /// window's application (114). Where none of them has a menu the kind is empty, with
     /// no bus name and no paths, and the application is the focused window's. With no

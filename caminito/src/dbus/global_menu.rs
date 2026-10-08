@@ -3,9 +3,11 @@
 //! the apps giving up their own menubars.
 //!
 //! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, and
-//! the switch turns `gtk_shell1`'s capability alone. The other channels are tickets 111 to
-//! 113's. A window with no menu has its transient parent's, and the switch stays on for a
-//! grace period after the applet's name loses its owner (114).
+//! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112). The switch turns
+//! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
+//! together, and stays on for a grace period after the applet's name loses its owner (114).
+//! A window with no menu has its transient parent's (114). The registrar's interface is
+//! ticket 113's.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,21 +16,28 @@ use caminito_policy::{PolicyWindow, WindowId};
 use smithay::reexports::calloop::channel;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use zbus::export::ordered_stream::OrderedStreamExt;
+use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
+use zbus::zvariant::ObjectPath;
 
+use crate::protocols::appmenu::{self, Address};
 use crate::protocols::gtk_shell::{self, DbusProperties};
-use crate::state::{Caminito, SEAT};
+use crate::state::{Caminito, SEAT, State};
 
 /// The well-known name the Global menu applet owns while it's on a panel, as its carried
 /// patch has it. The applets of one panel share the one name.
 pub(crate) const APPLET_NAME: &str = "org.mate.Caminito.GlobalMenuApplet";
+
+/// The registrar's name, which Qt, Firefox, Electron and `appmenu-gtk-module` each look for
+/// an owner of before they give up their menubars (ADR 0017).
+pub(crate) const REGISTRAR_NAME: &str = "com.canonical.AppMenu.Registrar";
 
 /// How long the switch stays on after the applet's name loses its owner (ADR 0017): longer
 /// than mate-session takes to restart a panel that was killed, since a Qt app, Firefox or
 /// an Electron app that got its menubar back would keep it until it's restarted itself.
 pub(crate) const GRACE: Duration = Duration::from_secs(10);
 
-/// Whether the apps are told to give up their own menubars, which follows the applet's bus
+/// Whether the apps should give up their own menubars, which follows the applet's bus
 /// name. Like policy, it's given the time as `now` and reads no clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Switch {
@@ -72,7 +81,7 @@ impl Switch {
         None
     }
 
-    /// Whether the apps are told that something shows their menubars.
+    /// Whether something shows the apps' menubars, or did within the grace period.
     pub(crate) fn is_on(self) -> bool {
         self != Self::Off
     }
@@ -89,6 +98,9 @@ impl Switch {
 
 /// The kind of a menu that's `org.gtk.Menus`, with its actions as `org.gtk.Actions`.
 const GTK: &str = "gtk";
+
+/// The kind of a menu that's a `com.canonical.dbusmenu`.
+const DBUSMENU: &str = "dbusmenu";
 
 /// What a [`GlobalMenu`] has of a window's menu: its kind, bus name and paths.
 type Menu = (&'static str, String, HashMap<String, String>);
@@ -132,6 +144,16 @@ impl GlobalMenu {
         Some((GTK, bus_name, paths))
     }
 
+    /// The menu of a window that gave its dbusmenu's address, if that's a bus name and an
+    /// object path: the applet takes what's published to be both, and any client can say
+    /// anything.
+    fn dbusmenu(address: Address) -> Option<Menu> {
+        BusName::try_from(address.service_name.as_str()).ok()?;
+        ObjectPath::try_from(address.object_path.as_str()).ok()?;
+        let paths = HashMap::from([("menu".to_owned(), address.object_path)]);
+        Some((DBUSMENU, address.service_name, paths))
+    }
+
     pub(super) fn published(self) -> Published {
         let kind = self.kind.to_owned();
         (kind, self.bus_name, self.paths, self.application)
@@ -165,10 +187,82 @@ pub(super) async fn watch_applet(
     })
 }
 
+/// Caminito's hold on the registrar's name, which it asks the bus for and gives up without
+/// waiting.
+pub(super) struct Registrar {
+    /// Whether the name was last asked for, and not given up.
+    asked: bool,
+    /// How many times the name was asked for or given up, which tells the last time from
+    /// the ones before it.
+    changes: u64,
+    /// The last asking or giving up, which the next one waits for, so that they reach the
+    /// bus in order.
+    last: Option<zbus::Task<()>>,
+    /// Tells the event loop that the name was given up, and at which change.
+    released: channel::Sender<u64>,
+}
+
+impl Registrar {
+    pub(super) fn new(released: channel::Sender<u64>) -> Self {
+        Self {
+            asked: false,
+            changes: 0,
+            last: None,
+            released,
+        }
+    }
+
+    /// Asks the bus for the name, or gives it up, if that's not what was last done.
+    pub(super) fn set_owned(&mut self, connection: &zbus::Connection, owned: bool) {
+        if self.asked == owned {
+            return;
+        }
+        self.asked = owned;
+        self.changes += 1;
+        let change = self.changes;
+        let last = self.last.take();
+        let released = self.released.clone();
+        let bus = connection.clone();
+        let changed = async move {
+            if let Some(last) = last {
+                let _ = last.await;
+            }
+            if owned {
+                // In the queue behind another registrar, if there is one that won't be
+                // replaced, so that the name comes when that one goes.
+                let flags = RequestNameFlags::ReplaceExisting.into();
+                match bus.request_name_with_flags(REGISTRAR_NAME, flags).await {
+                    Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}
+                    Ok(_) => tracing::warn!("another registrar has {REGISTRAR_NAME}"),
+                    Err(err) => tracing::warn!("can't own {REGISTRAR_NAME}: {err}"),
+                }
+            } else {
+                if let Err(err) = bus.release_name(REGISTRAR_NAME).await {
+                    tracing::warn!("can't give up {REGISTRAR_NAME}: {err}");
+                }
+                // Caminito is stopping if this fails.
+                let _ = released.send(change);
+            }
+        };
+        self.last = Some(connection.executor().spawn(changed, "registrar's name"));
+    }
+
+    /// Whether giving the name up at `change` was the last thing asked of the bus, so that
+    /// the name isn't about to be owned again.
+    pub(super) fn is_given_up(&self, change: u64) -> bool {
+        !self.asked && self.changes == change
+    }
+}
+
 impl Caminito {
-    /// The applet's name got an owner, or lost it, at `now`.
+    /// The applet's name got an owner, or lost it, at `now`. What makes the apps give up
+    /// their menubars comes at once, and goes only after the grace period, once the
+    /// registrar's name is given up.
     pub(super) fn global_menu_applet_changed(&mut self, present: bool, now: Duration) {
         tracing::debug!("the global menu applet is on the bus: {present}");
+        if present {
+            self.global_menu_offered = true;
+        }
         let Some(grace) = self.global_menu_switch.applet_changed(present, now) else {
             return;
         };
@@ -186,6 +280,15 @@ impl Caminito {
             .expect("a timer joins the event loop");
     }
 
+    /// The bus took the registrar's name back, at the registrar's `change`. For an applet
+    /// that came meanwhile the name has been asked for again, or is about to be, and
+    /// nothing goes.
+    pub(super) fn registrar_released(&mut self, change: u64) {
+        if !self.global_menu_switch.is_on() && self.registrar_is_given_up(change) {
+            self.global_menu_offered = false;
+        }
+    }
+
     /// Takes the switch off if the grace period after the applet's name lost its owner is
     /// over at `now`. Returns how long is left of it, if it's still running.
     pub(crate) fn global_menu_time_passed(&mut self, now: Duration) -> Option<Duration> {
@@ -195,8 +298,10 @@ impl Caminito {
     /// The menu `id` says it has, with its application.
     fn menu_of(&self, id: WindowId) -> Option<GlobalMenu> {
         let mapped = self.policy.window(id)?;
-        let properties = gtk_shell::dbus_properties(&mapped.wl_surface()?)?;
-        let (kind, bus_name, paths) = GlobalMenu::gtk(properties)?;
+        let surface = mapped.wl_surface()?;
+        let gtk = gtk_shell::dbus_properties(&surface).and_then(GlobalMenu::gtk);
+        let dbusmenu = || GlobalMenu::dbusmenu(appmenu::address(&surface)?);
+        let (kind, bus_name, paths) = gtk.or_else(dbusmenu)?;
         Some(GlobalMenu {
             kind,
             bus_name,
@@ -214,8 +319,8 @@ impl Caminito {
             return GlobalMenu::default();
         };
         // Policy's parents make no cycle.
-        let ancestors = std::iter::successors(Some(focused), |id| self.policy.parent(*id));
-        if let Some(menu) = ancestors.into_iter().find_map(|id| self.menu_of(id)) {
+        let mut ancestors = std::iter::successors(Some(focused), |id| self.policy.parent(*id));
+        if let Some(menu) = ancestors.find_map(|id| self.menu_of(id)) {
             return menu;
         }
         let application = self.policy.window(focused).and_then(PolicyWindow::app_id);
@@ -225,12 +330,21 @@ impl Caminito {
         }
     }
 
-    /// Tells the GTK apps whether an applet shows their menubars, and signals `GlobalMenu`
+    /// Tells the apps whether an applet shows their menubars, and signals `GlobalMenu`
     /// if it's not what the callers last heard: the focus is another window's, or the
     /// focused window said where its menus are.
+    ///
+    /// The registrar's name is never there without the appmenu global: a Qt app that finds
+    /// the name alone has no menu anywhere (112). So the name is asked for after the global
+    /// is offered, and the global goes after the name is given up.
     pub(crate) fn refresh_global_menu(&mut self) {
-        self.gtk_shell_state
-            .set_global_menu_bar(self.global_menu_switch.is_on());
+        let offered = self.global_menu_offered;
+        self.gtk_shell_state.set_global_menu_bar(offered);
+        let withdrawn = self
+            .appmenu_state
+            .set_offered::<State>(&self.display_handle, offered);
+        self.globals_to_withdraw.extend(withdrawn);
+        self.refresh_registrar(self.global_menu_switch.is_on());
         self.refresh_global_menu_property();
     }
 }

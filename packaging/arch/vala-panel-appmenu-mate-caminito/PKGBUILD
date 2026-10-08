@@ -22,6 +22,9 @@ license=('LGPL-3.0-or-later')
 # applet library the panel has: mate-panel-caminito's libmate-panel-applet-4.so.2 (73).
 depends=('mate-panel-caminito' 'gtk3' 'glib2' 'gdk-pixbuf2' 'libwnck3')
 makedepends=('git' 'glib2-devel' 'gobject-introspection' 'meson' 'vala')
+# Firefox loads both at run time to export its menu (112). Qt needs neither.
+optdepends=('libdbusmenu-glib: the global menu of Firefox'
+            'libdbusmenu-gtk3: the global menu of Firefox')
 # The stock name at the same version, so version constraints on it still hold. No replaces:
 # pacman never swaps stock and patched on its own (ADR 0011). The AUR's translator package
 # has the applet's settings schema and its locale package the translations, which are both
@@ -32,15 +35,16 @@ conflicts=("${_pkgname}-mate" "${_pkgname}-locale" 'appmenu-glib-translator')
 # is correct on any compositor: the applet says it runs on Wayland, without which a Wayland
 # panel doesn't list it. Under Caminito the applet draws the menu Caminito publishes for the
 # focused window, and owns org.mate.Caminito.GlobalMenuApplet, the name that makes Caminito
-# tell the apps to give up their menubars (110). 0002 is active under Caminito only, too:
-# there the application's name before the menus is bold, and the applet's preferences have
-# whether it's shown, in place of whether it's bold (114). Its settings key is in the schema
-# on any desktop, where nothing reads it.
+# tell the apps to give up their menubars (110). The menu is a GtkApplication's or, from a Qt
+# app or Firefox, a dbusmenu (112). 0002 is active under Caminito only, too: there the
+# application's name before the menus is bold, and the applet's preferences have whether it's
+# shown, in place of whether it's bold (114). Its settings key is in the schema on any
+# desktop, where nothing reads it.
 source=("${_pkgname}::git+${url}.git#tag=${pkgver}"
         0001-applet-Add-a-Caminito-backend.patch
         0002-applet-Let-the-application-s-name-be-turned-off-unde.patch)
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
-            '0ef93e9de8fe3a32d8575b84cb2dfee86ff284c4f9291d8ab25481764bc6eefd'
+            'f3c5266093696fe12172e39a035c60ec24f01b72f525990847dc04fa344492ed'
             'e2c3146a9c86064b5aee9d57be2a57355a5e9916533e2bca344693357ad6c902')
 
 prepare() {

@@ -1,7 +1,8 @@
 //! The protocols no crate has, generated with `wayland-scanner` from the XML in `resources/`
 //! (15): GTK's `gtk_shell1` and `gtk_surface1`, from `gtk-shell.xml` (67), and in [`xfce`]
 //! Xfce's extension of foreign toplevel management, from
-//! `xfce-foreign-toplevel-management-private-v1.xml` (75).
+//! `xfce-foreign-toplevel-management-private-v1.xml` (75), and in [`appmenu`] KDE's
+//! `org_kde_kwin_appmenu_manager`, from `appmenu.xml` (112).
 
 #![allow(
     dead_code,
@@ -47,4 +48,19 @@ pub mod xfce {
     wayland_scanner::generate_server_code!(
         "resources/xfce-foreign-toplevel-management-private-v1.xml"
     );
+}
+
+/// `org_kde_kwin_appmenu_manager` and the `org_kde_kwin_appmenu` it makes.
+pub mod appmenu {
+    use smithay::reexports::wayland_server;
+    use smithay::reexports::wayland_server::protocol::*;
+
+    pub mod __interfaces {
+        use smithay::reexports::wayland_server::backend as wayland_backend;
+        use smithay::reexports::wayland_server::protocol::__interfaces::*;
+        wayland_scanner::generate_interfaces!("resources/appmenu.xml");
+    }
+    use self::__interfaces::*;
+
+    wayland_scanner::generate_server_code!("resources/appmenu.xml");
 }

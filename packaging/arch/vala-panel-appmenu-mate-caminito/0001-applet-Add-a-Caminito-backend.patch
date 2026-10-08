@@ -8,7 +8,8 @@ focus and where that window's menu is on the bus, as a Wayland panel
 cannot: the menu is tied to a surface. It publishes the focused window's
 menu as the GlobalMenu property of org.mate.Caminito, with the kind of
 menu, the bus name that serves it, its object paths and the application's
-id.
+id. The kind is gtk for the org.gtk.Menus of a GtkApplication, and
+dbusmenu for the com.canonical.dbusmenu of a Qt app or Firefox.
 
 When org.mate.Caminito has an owner, draw that menu in place of the one
 the window manager backend finds, and ask for no registrar: Caminito
@@ -21,10 +22,10 @@ say so. Without an owner of org.mate.Caminito, nothing else changes.
 ---
  data/appmenu-mate.plugin.desktop.in |   1 +
  lib/appmenu-abstractions.vala       |   7 +-
- lib/appmenu-caminito.vala           | 207 ++++++++++++++++++++++++++++
+ lib/appmenu-caminito.vala           | 226 ++++++++++++++++++++++++++++
  lib/menu-widget.vala                |  26 +++-
  lib/meson.build                     |   1 +
- 5 files changed, 240 insertions(+), 2 deletions(-)
+ 5 files changed, 259 insertions(+), 2 deletions(-)
  create mode 100644 lib/appmenu-caminito.vala
 
 diff --git a/data/appmenu-mate.plugin.desktop.in b/data/appmenu-mate.plugin.desktop.in
@@ -66,10 +67,10 @@ index 13116a6..0ba85e5 100644
                  var con = Bus.get_sync(BusType.SESSION,null);
 diff --git a/lib/appmenu-caminito.vala b/lib/appmenu-caminito.vala
 new file mode 100644
-index 0000000..f8727af
+index 0000000..5e2191b
 --- /dev/null
 +++ b/lib/appmenu-caminito.vala
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,226 @@
 +/*
 + * vala-panel-appmenu
 + *
@@ -94,7 +95,9 @@ index 0000000..f8727af
 +{
 +    /* Caminito, the Wayland compositor for MATE, publishes the focused window's menu
 +     * as the GlobalMenu property of org.mate.Caminito: (ssa{ss}s), the kind of menu,
-+     * the bus name that serves it, its object paths and the application's id. */
++     * the bus name that serves it, its object paths and the application's id. A
++     * GtkApplication's menu is of one kind, and the com.canonical.dbusmenu a Qt app
++     * or Firefox has is of another. */
 +    internal class CaminitoBackend : Backend
 +    {
 +        private const string CAMINITO_NAME = "org.mate.Caminito";
@@ -104,6 +107,8 @@ index 0000000..f8727af
 +        private const string GLOBAL_MENU_TYPE = "(ssa{ss}s)";
 +        /* The kind of an org.gtk.Menus menu, with org.gtk.Actions for its actions */
 +        private const string KIND_GTK = "gtk";
++        /* The kind of a com.canonical.dbusmenu menu */
++        private const string KIND_DBUSMENU = "dbusmenu";
 +        /* While this name has an owner, Caminito tells the apps that something shows
 +         * their menubars */
 +        private const string APPLET_NAME = "org.mate.Caminito.GlobalMenuApplet";
@@ -121,6 +126,7 @@ index 0000000..f8727af
 +        private string? menubar_path = null;
 +        private string? application_path = null;
 +        private string? window_path = null;
++        private string? dbusmenu_path = null;
 +        private string title = "";
 +        private DesktopAppInfo? info = null;
 +
@@ -221,6 +227,7 @@ index 0000000..f8727af
 +            menubar_path = null;
 +            application_path = null;
 +            window_path = null;
++            dbusmenu_path = null;
 +
 +            Variant? menu = caminito.get_cached_property(GLOBAL_MENU);
 +            if (menu != null && menu.is_of_type(new VariantType(GLOBAL_MENU_TYPE)))
@@ -236,6 +243,11 @@ index 0000000..f8727af
 +                    application_path = path_of(paths, "application");
 +                    window_path = path_of(paths, "window");
 +                }
++                else if (kind == KIND_DBUSMENU)
++                {
++                    bus_name = menu.get_child_value(1).get_string();
++                    dbusmenu_path = path_of(menu.get_child_value(2), "menu");
++                }
 +            }
 +
 +            info = find_application(application);
@@ -243,6 +255,8 @@ index 0000000..f8727af
 +
 +            if (bus_name != null && (menubar_path != null || app_menu_path != null))
 +                type = ModelType.MENUMODEL;
++            else if (bus_name != null && dbusmenu_path != null)
++                type = ModelType.DBUSMENU;
 +            else if (application != "")
 +                type = ModelType.STUB;
 +            else
@@ -264,6 +278,12 @@ index 0000000..f8727af
 +                                             menubar_path,
 +                                             title,
 +                                             info);
++            else if (type == ModelType.DBUSMENU)
++                helper = new DBusMenuHelper(widget,
++                                            bus_name,
++                                            new ObjectPath(dbusmenu_path),
++                                            title,
++                                            info);
 +            else if (type == ModelType.STUB)
 +            {
 +                helper = new DBusAppMenu(widget, title, null, info);
