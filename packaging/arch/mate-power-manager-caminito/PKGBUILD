@@ -1,0 +1,65 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Alexander Epaneshnikov <alex19ep@archlinux.org>
+# Contributor: Brad Fanella <cesura@archlinux.org>
+# Contributor: Martin Wimpress <code@flexion.org>
+
+# Arch's mate-power-manager PKGBUILD with the smallest diff (16), so a change there shows what
+# to carry over. The differences: the name, provides and conflicts, the tag's git source and
+# what building from it needs, and the carried patch (ADR 0011). The version is Arch's: the
+# patch needs nothing newer.
+
+pkgname=mate-power-manager-caminito
+_pkgname=mate-power-manager
+pkgver=1.28.1
+pkgrel=1
+pkgdesc="Power management tool for the MATE desktop, with Caminito's carried patch"
+url="https://mate-desktop.org"
+arch=('x86_64')
+license=('GPL-2.0-or-later')
+depends=('dbus-glib' 'gettext' 'libcanberra' 'libnotify' 'upower' 'polkit' 'libsecret')
+# The applets link mate-panel-caminito's applet library, as mate-utils-caminito's does.
+makedepends=('git' 'glib2-devel' 'itstool' 'mate-common' 'mate-panel' 'python' 'yelp-tools')
+optdepends=('mate-panel: Set brightness and inhibit power management from the panel')
+groups=('mate-extra')
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+# 0001 is active only when MATE_WM_NAME=Caminito (ADR 0011): the keys are grabbed through
+# Caminito, since mate-power-manager runs on XWayland there and its own grabs see a key only
+# while an XWayland window has the keyboard (107, ADR 0014).
+source=("git+https://github.com/mate-desktop/mate-power-manager.git#tag=v${pkgver}"
+        0001-button-Grab-the-keys-through-Caminito.patch)
+sha256sums=('b156ce0251f0ef883e69926a5ac0e82e2ae29b82f1e57c7d509295394e2c4fe0'
+            '61c391b97a7dcd7b037845dd1d324148803b5c1ce13f44e8f2fe6c35326d966e')
+
+prepare() {
+	cd "${_pkgname}"
+
+	local src
+	for src in "${source[@]}"; do
+		[[ ${src} = *.patch ]] || continue
+		patch -Np1 -i "${srcdir}/${src}"
+	done
+
+	NOCONFIGURE=1 ./autogen.sh
+}
+
+build() {
+    	cd "${_pkgname}"
+    	./configure \
+        	--prefix=/usr \
+        	--libexecdir=/usr/lib/${_pkgname} \
+        	--sysconfdir=/etc \
+        	--localstatedir=/var \
+        	--sbindir=/usr/bin \
+        	--enable-applets \
+        	--disable-strict \
+        	--without-keyring
+    	make
+}
+
+package() {
+    	cd "${_pkgname}"
+    	make DESTDIR="${pkgdir}" install
+}

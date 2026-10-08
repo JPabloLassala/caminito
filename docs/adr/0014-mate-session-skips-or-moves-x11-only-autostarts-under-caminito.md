@@ -1,7 +1,7 @@
 # 14. mate-session skips X11-only autostart entries under Caminito, or starts them on XWayland
 
 Date: 2026-10-05
-Status: Accepted
+Status: Accepted. Qualified on 2026-10-08 by ticket 107: mate-power-manager's keys are grabbed through Caminito, by a carried patch (ADR 0011), so they work whatever has the focus.
 
 ## Context
 
@@ -32,7 +32,7 @@ An entry goes in the first list when Caminito does its work or the work is the c
 - A new X11-only autostart entry needs a change to the patch and a new `pkgrel`. The lists cover what crashed on the developer's machine; the other entries of a full MATE install weren't audited.
 - Only the autostart path is covered. `org.mate.PowerManager` is also D-Bus activatable, and an activation starts mate-power-manager on Wayland, where it crashes. That needs a caller of the name while it isn't running: after the user has ended it, or before its autostart entry has the name. The second wasn't seen, or looked for.
 - A session saved by mate-session isn't covered either: a saved entry's file is named after its startup id, so it matches neither list. That needs session saving on and the program saved as a client, which wasn't checked.
-- mate-power-manager on XWayland: its key grabs see the keys only while an XWayland window has the focus, and its idle time is XWayland's, which is inaccurate (ADR 0004). Its idle dimming and sleep wait for M7's idle.
+- mate-power-manager on XWayland: its key grabs see the keys only while an XWayland window has the focus (107 grabs them through Caminito instead), and its idle time is XWayland's, which is inaccurate (ADR 0004). Its idle dimming and sleep wait for M7's idle.
 - Rejected:
   - Autostart overrides shipped by `caminito-git` in `/usr/share/mate/autostart`, which mate-session reads before `/etc/xdg/autostart`. No patch, but the override is read in X11 MATE too, so each `Exec` would be a shell test of `MATE_WM_NAME`; it copies the stock entry's keys; and a user's copy in `~/.config/autostart` wins over it.
   - `GDK_BACKEND=x11` for all three. mate-screensaver would find its name taken and exit at every login, and mate-maximus would act on the XWayland windows alone.

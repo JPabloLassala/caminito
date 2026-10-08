@@ -1,0 +1,333 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 00:52:01 -0300
+Subject: [PATCH] button: Grab the keys through Caminito
+
+mate-power-manager grabs its keys with XGrabKey on the root window: the
+power, sleep and hibernate keys, the brightness and keyboard backlight
+keys, the screensaver key and the battery key. Under Caminito, the Wayland
+compositor for MATE, it runs on XWayland, whose grabs see a key only while
+an XWayland window has the keyboard. With a Wayland window focused, the
+keys do nothing.
+
+Caminito grabs key combinations for its callers on the session bus.
+GrabAccelerators on org.mate.Caminito takes accelerators and returns an
+action for each, AcceleratorActivated carries the action of a key that was
+pressed, and AcceleratorRepeated that of a key that is still held.
+
+When MATE_WM_NAME is Caminito, grab the same keys through it in place of
+the X11 grabs, whenever org.mate.Caminito gets an owner, and press the
+same buttons, through the same check for duplicates. The keys that step a
+backlight act on a repeat as well. Without that variable, nothing changes.
+---
+ src/gpm-button.c | 262 +++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 262 insertions(+)
+
+diff --git a/src/gpm-button.c b/src/gpm-button.c
+index 5bfe19d..e3b443c 100644
+--- a/src/gpm-button.c
++++ b/src/gpm-button.c
+@@ -35,6 +35,32 @@
+ #include "gpm-common.h"
+ #include "gpm-button.h"
+ 
++/* Caminito, the Wayland compositor for MATE, grabs keys for its callers */
++#define CAMINITO_DBUS_NAME		"org.mate.Caminito"
++#define CAMINITO_DBUS_PATH		"/org/mate/Caminito"
++#define CAMINITO_DBUS_INTERFACE		"org.mate.Caminito"
++
++/* The keys of the X11 grabs in gpm_button_init, as accelerators. A held key that
++ * steps a backlight repeats; the others act once. */
++static const struct {
++	const gchar	*accelerator;
++	const gchar	*type;
++	gboolean	 repeats;
++} caminito_keys[] = {
++	{ "XF86PowerOff",		GPM_BUTTON_POWER,		FALSE },
++	{ "XF86Suspend",		GPM_BUTTON_HIBERNATE,		FALSE },
++	{ "XF86Sleep",			GPM_BUTTON_SUSPEND,		FALSE },
++	{ "XF86Hibernate",		GPM_BUTTON_HIBERNATE,		FALSE },
++	{ "XF86MonBrightnessUp",	GPM_BUTTON_BRIGHT_UP,		TRUE },
++	{ "XF86MonBrightnessDown",	GPM_BUTTON_BRIGHT_DOWN,		TRUE },
++	{ "XF86ScreenSaver",		GPM_BUTTON_LOCK,		FALSE },
++	{ "XF86Battery",		GPM_BUTTON_BATTERY,		FALSE },
++	{ "XF86KbdBrightnessUp",	GPM_BUTTON_KBD_BRIGHT_UP,	TRUE },
++	{ "XF86KbdBrightnessDown",	GPM_BUTTON_KBD_BRIGHT_DOWN,	TRUE },
++	{ "XF86KbdLightOnOff",		GPM_BUTTON_KBD_BRIGHT_TOGGLE,	FALSE },
++};
++#define CAMINITO_KEYS			G_N_ELEMENTS (caminito_keys)
++
+ static void     gpm_button_finalize   (GObject	      *object);
+ 
+ struct GpmButtonPrivate
+@@ -46,6 +72,12 @@ struct GpmButtonPrivate
+ 	GTimer			*timer;
+ 	gboolean		 lid_is_closed;
+ 	UpClient		*client;
++	/* The keys grabbed through Caminito, in place of the X11 grabs */
++	guint			 caminito_watch_id;
++	GDBusConnection		*caminito_connection;
++	guint			 caminito_signal_id;
++	guint			 caminito_serial;
++	guint32			 caminito_actions[CAMINITO_KEYS];
+ };
+ 
+ enum {
+@@ -196,6 +228,9 @@ gpm_button_xevent_key (GpmButton *button, guint keysym, const gchar *key_name)
+ 	gchar *keycode_str;
+ 	guint keycode;
+ 
++	if (button->priv->caminito_watch_id > 0)
++		return FALSE;
++
+ 	/* convert from keysym to keycode */
+ 	keycode = XKeysymToKeycode (GDK_DISPLAY_XDISPLAY (gdk_display_get_default()), keysym);
+ 	if (keycode == 0) {
+@@ -247,6 +282,221 @@ gpm_button_class_init (GpmButtonClass *klass)
+ 			      G_TYPE_NONE, 1, G_TYPE_STRING);
+ }
+ 
++/**
++ * gpm_button_grab_through_caminito:
++ *
++ * Under Caminito mate-power-manager runs on XWayland, whose grabs see a key
++ * only while an XWayland window has the keyboard. So the keys are grabbed
++ * with GrabAccelerators on org.mate.Caminito instead, which signals
++ * AcceleratorActivated for a press and AcceleratorRepeated while the key is
++ * held.
++ **/
++static gboolean
++gpm_button_grab_through_caminito (void)
++{
++	return g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") == 0;
++}
++
++/* A GrabAccelerators call that is out: its reply is dropped if
++ * org.mate.Caminito got a new owner since it was made */
++typedef struct {
++	GpmButton	*button;
++	guint		 serial;
++} GpmButtonCaminitoGrab;
++
++static void
++gpm_button_caminito_grabbed_cb (GObject *source, GAsyncResult *result, gpointer data)
++{
++	GpmButtonCaminitoGrab *grab = data;
++	GpmButton *button = grab->button;
++	GVariant *reply;
++	GVariant *actions;
++	GError *error = NULL;
++	guint i;
++
++	reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, &error);
++	if (grab->serial != button->priv->caminito_serial) {
++		/* a later call's reply has the new owner's actions */
++	} else if (reply == NULL) {
++		g_warning ("Could not grab the keys through Caminito: %s", error->message);
++	} else {
++		actions = g_variant_get_child_value (reply, 0);
++		if (g_variant_n_children (actions) != CAMINITO_KEYS) {
++			g_warning ("Caminito did not answer for each of the keys");
++		} else {
++			for (i = 0; i < CAMINITO_KEYS; i++) {
++				g_variant_get_child (actions, i, "u", &button->priv->caminito_actions[i]);
++				if (button->priv->caminito_actions[i] == 0)
++					g_warning ("Failed to grab %s: another application may have it",
++						   caminito_keys[i].accelerator);
++			}
++		}
++		g_variant_unref (actions);
++	}
++
++	g_clear_pointer (&reply, g_variant_unref);
++	g_clear_error (&error);
++	g_object_unref (button);
++	g_free (grab);
++}
++
++/* Calls are made only while org.mate.Caminito has an owner, and never start one */
++static void
++gpm_button_caminito_grab_keys (GpmButton *button)
++{
++	GVariantBuilder accelerators;
++	GpmButtonCaminitoGrab *grab;
++	guint i;
++
++	g_variant_builder_init (&accelerators, G_VARIANT_TYPE ("as"));
++	for (i = 0; i < CAMINITO_KEYS; i++)
++		g_variant_builder_add (&accelerators, "s", caminito_keys[i].accelerator);
++
++	grab = g_new0 (GpmButtonCaminitoGrab, 1);
++	grab->button = g_object_ref (button);
++	grab->serial = button->priv->caminito_serial;
++
++	g_dbus_connection_call (button->priv->caminito_connection,
++				CAMINITO_DBUS_NAME,
++				CAMINITO_DBUS_PATH,
++				CAMINITO_DBUS_INTERFACE,
++				"GrabAccelerators",
++				g_variant_new ("(as)", &accelerators),
++				G_VARIANT_TYPE ("(au)"),
++				G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
++				NULL,
++				gpm_button_caminito_grabbed_cb, grab);
++}
++
++static void
++gpm_button_caminito_signal_cb (GDBusConnection *connection,
++			       const gchar     *sender_name,
++			       const gchar     *object_path,
++			       const gchar     *interface_name,
++			       const gchar     *signal_name,
++			       GVariant        *parameters,
++			       gpointer         data)
++{
++	GpmButton *button = GPM_BUTTON (data);
++	gboolean repeated;
++	guint32 action;
++	guint i;
++
++	if (g_strcmp0 (signal_name, "AcceleratorActivated") == 0)
++		repeated = FALSE;
++	else if (g_strcmp0 (signal_name, "AcceleratorRepeated") == 0)
++		repeated = TRUE;
++	else
++		return;
++
++	if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(uu)")))
++		return;
++	g_variant_get (parameters, "(uu)", &action, NULL);
++	if (action == 0)
++		return;
++
++	for (i = 0; i < CAMINITO_KEYS; i++) {
++		if (button->priv->caminito_actions[i] != action)
++			continue;
++		if (repeated && !caminito_keys[i].repeats)
++			return;
++		/* the same duplicate check as for an X11 key press */
++		gpm_button_emit_type (button, caminito_keys[i].type);
++		return;
++	}
++}
++
++static void
++gpm_button_caminito_appeared_cb (GDBusConnection *connection,
++				 const gchar     *name,
++				 const gchar     *name_owner,
++				 gpointer         data)
++{
++	GpmButton *button = GPM_BUTTON (data);
++
++	if (button->priv->caminito_connection == NULL) {
++		button->priv->caminito_connection = g_object_ref (connection);
++		button->priv->caminito_signal_id =
++			g_dbus_connection_signal_subscribe (connection,
++							    CAMINITO_DBUS_NAME,
++							    CAMINITO_DBUS_INTERFACE,
++							    NULL,
++							    CAMINITO_DBUS_PATH,
++							    NULL,
++							    G_DBUS_SIGNAL_FLAGS_NONE,
++							    gpm_button_caminito_signal_cb,
++							    button, NULL);
++	}
++
++	/* a new owner has none of the grabs, and a reply still to come is the
++	 * last owner's */
++	button->priv->caminito_serial++;
++	memset (button->priv->caminito_actions, 0, sizeof (button->priv->caminito_actions));
++	gpm_button_caminito_grab_keys (button);
++}
++
++static void
++gpm_button_caminito_vanished_cb (GDBusConnection *connection,
++				 const gchar     *name,
++				 gpointer         data)
++{
++	GpmButton *button = GPM_BUTTON (data);
++
++	/* the grabs went with their owner */
++	memset (button->priv->caminito_actions, 0, sizeof (button->priv->caminito_actions));
++}
++
++/* With a callback the call holds the connection until its reply, so that it
++ * is sent even if the button had the last reference to the connection */
++static void
++gpm_button_caminito_ungrabbed_cb (GObject *source, GAsyncResult *result, gpointer data)
++{
++	GVariant *reply;
++
++	reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, NULL);
++	g_clear_pointer (&reply, g_variant_unref);
++}
++
++static void
++gpm_button_caminito_stop (GpmButton *button)
++{
++	GVariantBuilder released;
++	gboolean any_released = FALSE;
++	guint i;
++
++	if (button->priv->caminito_watch_id > 0) {
++		g_bus_unwatch_name (button->priv->caminito_watch_id);
++		button->priv->caminito_watch_id = 0;
++	}
++
++	if (button->priv->caminito_connection == NULL)
++		return;
++
++	g_variant_builder_init (&released, G_VARIANT_TYPE ("au"));
++	for (i = 0; i < CAMINITO_KEYS; i++) {
++		if (button->priv->caminito_actions[i] != 0) {
++			g_variant_builder_add (&released, "u", button->priv->caminito_actions[i]);
++			any_released = TRUE;
++		}
++	}
++	if (any_released)
++		g_dbus_connection_call (button->priv->caminito_connection,
++					CAMINITO_DBUS_NAME,
++					CAMINITO_DBUS_PATH,
++					CAMINITO_DBUS_INTERFACE,
++					"UngrabAccelerators",
++					g_variant_new ("(au)", &released),
++					NULL,
++					G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
++					NULL, gpm_button_caminito_ungrabbed_cb, NULL);
++	else
++		g_variant_builder_clear (&released);
++
++	g_dbus_connection_signal_unsubscribe (button->priv->caminito_connection,
++					      button->priv->caminito_signal_id);
++	g_clear_object (&button->priv->caminito_connection);
++}
++
+ /**
+  * gpm_button_is_lid_closed:
+  **/
+@@ -358,6 +608,17 @@ gpm_button_init (GpmButton *button)
+ 	button->priv->last_button = NULL;
+ 	button->priv->timer = g_timer_new ();
+ 
++	/* the keys are grabbed through Caminito, and gpm_button_xevent_key
++	 * grabs none */
++	if (gpm_button_grab_through_caminito ())
++		button->priv->caminito_watch_id =
++			g_bus_watch_name (G_BUS_TYPE_SESSION,
++					  CAMINITO_DBUS_NAME,
++					  G_BUS_NAME_WATCHER_FLAGS_NONE,
++					  gpm_button_caminito_appeared_cb,
++					  gpm_button_caminito_vanished_cb,
++					  button, NULL);
++
+ 	button->priv->client = up_client_new ();
+ 	button->priv->lid_is_closed = up_client_get_lid_is_closed (button->priv->client);
+ 	g_signal_connect (button->priv->client, "notify",
+@@ -399,6 +660,7 @@ gpm_button_finalize (GObject *object)
+ 	button = GPM_BUTTON (object);
+ 	button->priv = gpm_button_get_instance_private (button);
+ 
++	gpm_button_caminito_stop (button);
+ 	g_object_unref (button->priv->client);
+ 	g_free (button->priv->last_button);
+ 	g_timer_destroy (button->priv->timer);

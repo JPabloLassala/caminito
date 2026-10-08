@@ -69,6 +69,7 @@ jobs:
           - mate-control-center-caminito
           - caja-caminito
           - mate-utils-caminito
+          - mate-power-manager-caminito
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git
