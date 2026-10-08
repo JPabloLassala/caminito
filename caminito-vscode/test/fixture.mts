@@ -9,7 +9,7 @@ import type { MessageBus } from '@jellybrick/dbus-next';
 
 import { MENU_PATH, VS_CODE, start } from '../src/global-menu.mts';
 import type { GlobalMenu, Menu } from '../src/global-menu.mts';
-import type { TableItem } from '../src/menu-table.mts';
+import { commandsOf } from '../src/menu-table.mts';
 import { Caminito, FakeEditor, PrivateBus, readMenu, until } from './harness.mts';
 import type { Item, Lacking } from './harness.mts';
 
@@ -30,22 +30,6 @@ export interface Options {
   readonly commands?: readonly string[] | Error;
   /** The editor's `product.json`, or null for none; every annotated key set by default. */
   readonly product?: Record<string, unknown> | null;
-}
-
-/** Every command of the menu's items. */
-export function commandsOf(menu: Menu): string[] {
-  const commands: string[] = [];
-  const walk = (items: readonly TableItem[]) => {
-    for (const item of items) {
-      if ('command' in item) {
-        commands.push(item.command);
-      } else if ('items' in item) {
-        walk(item.items);
-      }
-    }
-  };
-  walk(menu.table.menus);
-  return commands;
 }
 
 /** A `product.json` with every key the menu's annotations gate on. */
@@ -87,7 +71,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
   }
   const served = options.menu ?? VS_CODE;
   const editor = new FakeEditor(options.focused ?? true);
-  const commands = options.commands ?? commandsOf(served);
+  const commands = options.commands ?? commandsOf(served.table.menus);
   editor.listCommands = () =>
     commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
   const appRoot = mkdtempSync(join(tmpdir(), 'caminito-vscode-test-'));

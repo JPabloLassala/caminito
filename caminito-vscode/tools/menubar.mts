@@ -1,7 +1,7 @@
 // What the snapshot command makes of VS Code's `lastKnownMenubarData` (ADR 0019): the table,
 // with what belongs to the run stripped, and the check of the annotations against it.
 
-import { collapse } from '../src/menu-table.mts';
+import { collapse, commandsOf } from '../src/menu-table.mts';
 import type {
   Annotations,
   Table,
@@ -70,17 +70,7 @@ export function tableOf(made: Made, snapshots: readonly MenubarData[]): Table {
 
 /** The commands of annotations that the table has no item of. */
 export function staleAnnotations(table: Table, annotations: Annotations): string[] {
-  const commands = new Set<string>();
-  const walk = (items: readonly TableItem[]) => {
-    for (const item of items) {
-      if ('command' in item) {
-        commands.add(item.command);
-      } else if ('items' in item) {
-        walk(item.items);
-      }
-    }
-  };
-  walk(table.menus);
+  const commands = new Set(commandsOf(table.menus));
   return Object.keys(annotations).filter((command) => !commands.has(command));
 }
 

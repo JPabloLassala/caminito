@@ -16,6 +16,7 @@ export interface MenuEntry {
   readonly children?: readonly MenuNode[];
 }
 
+/** A line between groups of items, served as `type` `separator`. */
 export interface MenuSeparator {
   readonly separator: true;
 }

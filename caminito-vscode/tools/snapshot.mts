@@ -4,7 +4,8 @@
 // `storage.json` stops changing, and writes the merged table to menu/table.json. It fails on
 // an annotation whose command the table lacks.
 //
-//   npm run snapshot -- [--editor <dir>] [--out <file>] [--no-xvfb] [--settle <ms>]
+//   npm run snapshot -- [--editor <dir>] [--out <file>] [--annotations <file>] [--no-xvfb]
+//                       [--settle <ms>] [--timeout <ms>]
 //
 // `--editor` is the directory of Microsoft's build, /usr/share/code by default, as
 // visual-studio-code-bin installs it: the Electron binary `code` and resources/app. The

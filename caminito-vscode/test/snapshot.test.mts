@@ -215,7 +215,9 @@ test("the committed annotations name only the committed table's commands", () =>
 
 /**
  * A stand-in for VS Code's directory: `code` writes FOLDER or WORKSPACE as
- * lastKnownMenubarData, in two steps as the real one does, and waits to be killed.
+ * lastKnownMenubarData, in two steps as the real one does, and waits to be killed. The
+ * second step comes 50 ms after the first and the command waits for 1000 ms without a
+ * change, so it reads the whole data even on a loaded machine.
  */
 function standIn(dir: string, extraHelp: MenubarItem[] = []): void {
   mkdirSync(join(dir, 'resources/app'), { recursive: true });
@@ -236,7 +238,7 @@ const storage = path.join(profile, 'User/globalStorage/storage.json');
 fs.mkdirSync(path.dirname(storage), { recursive: true });
 const half = { ...data, menus: { File: data.menus.File } };
 fs.writeFileSync(storage, JSON.stringify({ lastKnownMenubarData: half }));
-setTimeout(() => fs.writeFileSync(storage, JSON.stringify({ lastKnownMenubarData: data })), 300);
+setTimeout(() => fs.writeFileSync(storage, JSON.stringify({ lastKnownMenubarData: data })), 50);
 setInterval(() => {}, 1000);
 `,
   );
@@ -246,7 +248,7 @@ setInterval(() => {}, 1000);
 function snapshot(editor: string, out: string, annotations: string) {
   const command = new URL('../tools/snapshot.mts', import.meta.url).pathname;
   const args = ['--editor', editor, '--out', out, '--annotations', annotations];
-  return spawnSync(process.execPath, [command, ...args, '--no-xvfb', '--settle', '500'], {
+  return spawnSync(process.execPath, [command, ...args, '--no-xvfb', '--settle', '1000'], {
     encoding: 'utf8',
   });
 }

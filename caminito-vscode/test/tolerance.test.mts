@@ -7,7 +7,8 @@ import { test } from 'node:test';
 
 import type { Menu } from '../src/global-menu.mts';
 import type { TableItem, TableSubmenu } from '../src/menu-table.mts';
-import { commandsOf, fixture } from './fixture.mts';
+import { commandsOf } from '../src/menu-table.mts';
+import { fixture } from './fixture.mts';
 import type { Fixture } from './fixture.mts';
 import type { Item } from './harness.mts';
 
@@ -66,7 +67,9 @@ test('with every command listed, every item and separator is read', async (t) =>
 });
 
 test('an item whose command is missing is gone, then a menu left empty, and no separator is at an end or beside another', async (t) => {
-  const listed = commandsOf(MIXED).filter((command) => !command.startsWith('test.gone'));
+  const listed = commandsOf(MIXED.table.menus).filter(
+    (command) => !command.startsWith('test.gone'),
+  );
   const f = await fixture(t, { menu: MIXED, commands: listed });
   assert.deepEqual(await read(f), [
     { A: ['kept1', '-', { Half: ['kept2'] }, '-', 'kept3'] },

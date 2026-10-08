@@ -13,10 +13,11 @@ export interface Table {
   readonly commit: string;
   /** The menubar's menus, in order. */
   readonly menus: readonly TableSubmenu[];
-  /** The snapshot's keybinding labels, by command id, for ticket 120's fallback. */
+  /** The snapshot's keybinding labels, by command id, for the fallback of keybinding labels (120). */
   readonly keybindings: Readonly<Record<string, TableKeybinding>>;
 }
 
+/** An entry of a menu. */
 export type TableItem = TableAction | TableSubmenu | TableSeparator;
 
 /** An item. Its label has `_` before its mnemonic and `__` for an underscore. */
@@ -34,6 +35,7 @@ export interface TableSubmenu {
   readonly items: readonly TableItem[];
 }
 
+/** A line between groups of items. */
 export interface TableSeparator {
   readonly separator: true;
 }
@@ -54,6 +56,7 @@ export interface Annotation {
   readonly product?: string;
 }
 
+/** The annotations, by command id. */
 export type Annotations = Readonly<Record<string, Annotation>>;
 
 /** What the running editor has, which the table is fitted to. */
@@ -97,6 +100,13 @@ export function fit(
     return collapse(nodes);
   };
   return items(menus);
+}
+
+/** The commands of every item under `items`. */
+export function commandsOf(items: readonly TableItem[]): string[] {
+  return items.flatMap((item) =>
+    'command' in item ? [item.command] : 'items' in item ? commandsOf(item.items) : [],
+  );
 }
 
 /** `items` with no separator first, last or beside another. */
