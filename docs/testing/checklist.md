@@ -917,6 +917,38 @@ session_env() {
   terminal, `echo "$MATE_WM_NAME $MATE_WM_KEYBINDINGS"` there, `gsettings monitor
   org.mate.Marco.general`, and `coredumpctl` for a crash.
 
+### Mouse and Keyboard open under Caminito, and apply live
+
+- **Milestone:** M6
+- **Steps:**
+  1. With `mate-control-center-caminito` installed, on a machine with a touchpad and a mouse,
+     log into *MATE on Caminito*.
+  2. Open *Mouse* from the control center. On *Mouse*, move *Acceleration* to each end and
+     move the mouse after each. On *Touchpad*, turn *Enable mouse clicks with touchpad* off,
+     tap the touchpad, turn it on and tap again. Move the touchpad's *Acceleration* to each end
+     and move a finger on it after each.
+  3. Open *Keyboard* from the control center. On *Layouts*, add *Spanish* beside the layout
+     there, and in *Options…* ▸ *Switching to another layout*, tick *Alt+Shift*. In a native
+     app (`mate-terminal`) and an X11 one (`xterm`), type `;`, press Alt+Shift and type `;`
+     again.
+  4. On *General*, set *Repeat Keys*' *Delay* short and *Speed* fast, and hold a key down in
+     `mate-terminal`; then set them long and slow, and hold it again.
+  5. Log out, log into *MATE*, the X11 session, and open both dialogs there. Then log into the
+     Wayfire session and open both.
+- **Expected:** in steps 2 and 3 each dialog opens, with no warning, on XWayland
+  (`xprop` can pick it), and *Mouse* has a *Touchpad* tab. The pointer and the touchpad
+  speed up and slow down as the sliders move, a tap clicks only while tap-to-click is on,
+  and each change applies with the dialog still open (53). `;` types `;`, then `ñ` after
+  Alt+Shift, in both apps (54). The repeat starts sooner and runs faster in step 4, then later
+  and slower. In X11 MATE both dialogs are as the stock ones, and *Mouse* has *Touchpad* only
+  where the X server lists a touchpad. In the Wayfire session both do what the stock ones do:
+  the gate is `MATE_WM_NAME=Caminito` (102, ADR 0011). On a machine with no touchpad,
+  *Touchpad* is shown under Caminito anyway, and changes nothing (06).
+- **Debug tool:** `mate-mouse-properties` and `mate-keyboard-properties` run from a terminal,
+  `echo "$MATE_WM_NAME $GDK_BACKEND"` there, `gsettings monitor
+  org.mate.peripherals-touchpad`, `gsettings monitor org.mate.peripherals-keyboard-xkb.kbd`,
+  `xkbcomp "$DISPLAY" - | grep xkb_symbols`, and `coredumpctl` for a crash.
+
 ### The Window switcher shows live thumbnails
 
 - **Milestone:** M8

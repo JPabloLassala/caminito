@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 18:14:01 +0000
+Subject: [PATCH] mouse, keyboard: Run on XWayland under Caminito
+
+The two capplets read the input devices and the keyboard through the X
+server: Mouse lists the touchpads with XInput, and Keyboard's layout
+pages are libxklavier's. On a Wayland display they had no X server to
+ask, and both crashed at start-up. Where MATE_WM_NAME says Caminito,
+each allows only GDK's X11 backend before GTK starts, so it runs on
+XWayland as it does on X11. The settings they write are Caminito's to
+apply, as msd's are on X11.
+
+There GDK_BACKEND can only choose X11: with another backend named, the
+capplet says it can't open the display. Caminito's session doesn't set
+it. Under any other Wayland compositor, and on X11, the capplets start
+as they did.
+---
+ capplets/common/wm-common.c                  | 2 +-
+ capplets/common/wm-common.h                  | 4 ++++
+ capplets/keyboard/mate-keyboard-properties.c | 6 ++++++
+ capplets/mouse/mate-mouse-properties.c       | 6 ++++++
+ 4 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/capplets/common/wm-common.c b/capplets/common/wm-common.c
+index 33eb7ee9..331e2325 100644
+--- a/capplets/common/wm-common.c
++++ b/capplets/common/wm-common.c
+@@ -67,7 +67,7 @@ wm_common_get_window_manager_property (Atom atom)
+ /* Caminito, a Wayland compositor, has no window to carry _NET_WM_NAME and
+  * _MATE_WM_KEYBINDINGS. It exports MATE_WM_NAME and MATE_WM_KEYBINDINGS
+  * into its session in their place. */
+-static gboolean
++gboolean
+ wm_common_is_caminito (void)
+ {
+   return g_strcmp0 (g_getenv ("MATE_WM_NAME"), WM_COMMON_CAMINITO) == 0;
+diff --git a/capplets/common/wm-common.h b/capplets/common/wm-common.h
+index ce82d52b..298459e1 100644
+--- a/capplets/common/wm-common.h
++++ b/capplets/common/wm-common.h
+@@ -16,6 +16,10 @@ gchar *wm_common_get_current_window_manager (void);
+  * MATE_WM_KEYBINDINGS environment variable's names. */
+ char **wm_common_get_current_keybindings (void);
+ 
++/* Whether the session is Caminito's, by its MATE_WM_NAME. It reads only
++ * the environment, so it can be asked before gtk_init. */
++gboolean wm_common_is_caminito (void);
++
+ void   wm_common_register_window_manager_change (GFunc    func,
+ 						 gpointer data);
+ void   wm_common_update_window (void);
+diff --git a/capplets/keyboard/mate-keyboard-properties.c b/capplets/keyboard/mate-keyboard-properties.c
+index bb744afb..eba6b136 100644
+--- a/capplets/keyboard/mate-keyboard-properties.c
++++ b/capplets/keyboard/mate-keyboard-properties.c
+@@ -33,6 +33,7 @@
+ 
+ #include "capplet-util.h"
+ #include "activate-settings-daemon.h"
++#include "wm-common.h"
+ 
+ #include "mate-keyboard-properties-a11y.h"
+ #include "mate-keyboard-properties-xkb.h"
+@@ -158,6 +159,11 @@ main (int argc, char **argv)
+ 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, NULL }
+ 	};
+ 
++	/* Under Caminito the capplet runs on XWayland, as it does on X11: its
++	 * layout pages need libxklavier, which reads the X server's keyboard. */
++	if (wm_common_is_caminito ())
++		gdk_set_allowed_backends ("x11");
++
+ 	context = g_option_context_new (_("- MATE Keyboard Preferences"));
+ 	g_option_context_add_main_entries (context, cap_options,
+ 					   GETTEXT_PACKAGE);
+diff --git a/capplets/mouse/mate-mouse-properties.c b/capplets/mouse/mate-mouse-properties.c
+index d6cea0b4..782f2a47 100644
+--- a/capplets/mouse/mate-mouse-properties.c
++++ b/capplets/mouse/mate-mouse-properties.c
+@@ -34,6 +34,7 @@
+ #include "capplet-util.h"
+ #include "activate-settings-daemon.h"
+ #include "msd-input-helper.h"
++#include "wm-common.h"
+ 
+ #include <X11/Xatom.h>
+ #include <X11/extensions/XInput.h>
+@@ -415,6 +416,11 @@ main (int argc, char **argv)
+ 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, NULL }
+ 	};
+ 
++	/* Under Caminito the capplet runs on XWayland, as it does on X11: it
++	 * reads the pointers through XInput. */
++	if (wm_common_is_caminito ())
++		gdk_set_allowed_backends ("x11");
++
+ 	context = g_option_context_new (_("- MATE Mouse Preferences"));
+ 	g_option_context_add_main_entries (context, cap_options, GETTEXT_PACKAGE);
+ 	capplet_init (context, &argc, &argv);

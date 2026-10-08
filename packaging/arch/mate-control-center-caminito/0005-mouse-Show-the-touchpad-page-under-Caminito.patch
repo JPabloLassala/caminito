@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 18:08:46 +0000
+Subject: [PATCH] mouse: Show the touchpad page under Caminito
+
+The page was shown when XInput listed a touchpad. Under Caminito the
+capplet runs on XWayland, whose devices are virtual pointers with no
+libinput or Synaptics properties, so a laptop's touchpad was never
+found there. Where MATE_WM_NAME says Caminito the page is always shown:
+Caminito applies the org.mate.peripherals-touchpad keys to the touchpads
+it has, and to none on a machine without one.
+
+On X11, and under any other Wayland compositor, the page is shown as it
+was.
+---
+ capplets/mouse/msd-input-helper.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/capplets/mouse/msd-input-helper.c b/capplets/mouse/msd-input-helper.c
+index 7dc0d996..e03d44a9 100644
+--- a/capplets/mouse/msd-input-helper.c
++++ b/capplets/mouse/msd-input-helper.c
+@@ -27,6 +27,7 @@
+ #include <X11/Xatom.h>
+ 
+ #include "msd-input-helper.h"
++#include "wm-common.h"
+ 
+ gboolean
+ supports_xinput_devices (void)
+@@ -100,6 +101,12 @@ touchpad_is_present (void)
+         guint i;
+         gboolean retval;
+ 
++        /* Under Caminito the capplet runs on XWayland, whose input devices
++         * are virtual and say nothing of the machine's. Caminito applies
++         * the touchpad keys to the touchpads it has itself. */
++        if (wm_common_is_caminito ())
++                return TRUE;
++
+         if (supports_xinput_devices () == FALSE)
+                 return TRUE;
+ 
