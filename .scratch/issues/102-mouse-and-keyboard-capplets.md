@@ -29,7 +29,7 @@ The control center's Mouse and Keyboard dialogs work in a Session, and what they
 
 ## Resolution
 
-Two patches end `mate-control-center-caminito`'s series, `0004` and `0005`, and `pkgrel` is 3. Caminito's side needed nothing: every key the two dialogs write in `org.mate.peripherals-mouse`, `-touchpad`, `-keyboard` and `-keyboard-xkb.kbd` is one Caminito follows (53, 54) or one 09 put in *never* (`motion-threshold`). The rest are `org.mate.interface`'s, which Caminito serves as XSETTINGS (ADR 0006), and `org.mate.accessibility-keyboard`'s, which are M7's AccessX (17).
+Two patches end `mate-control-center-caminito`'s series, `0004` and `0005`, and `pkgrel` is 3. Caminito's side needed nothing: every key the two dialogs write in `org.mate.peripherals-mouse`, `-touchpad`, `-keyboard` and `-keyboard-xkb.kbd` is one Caminito follows (53, 54) or one 09 put in *never* (`motion-threshold`). The rest are `org.mate.interface`'s, which Caminito serves as XSETTINGS (ADR 0006); `org.mate.Marco.general`'s `visual-bell` and `visual-bell-type`, which it follows; `org.mate.peripherals-keyboard-xkb.general`'s `group-per-window` and `default-group`, unsupported (09, 54), and `load-extra-items`, the dialog's own; `org.mate.typing-break`'s (13); and `org.mate.accessibility-keyboard`'s, which are M7's AccessX (17).
 
 Decided here, on 2026-10-08:
 

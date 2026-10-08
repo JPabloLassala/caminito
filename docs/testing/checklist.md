@@ -927,8 +927,8 @@ session_env() {
      move the mouse after each. On *Touchpad*, turn *Enable mouse clicks with touchpad* off,
      tap the touchpad, turn it on and tap again. Move the touchpad's *Acceleration* to each end
      and move a finger on it after each.
-  3. Open *Keyboard* from the control center. On *Layouts*, add *Spanish* beside the layout
-     there, and in *Options…* ▸ *Switching to another layout*, tick *Alt+Shift*. In a native
+  3. Open *Keyboard* from the control center. On *Layouts*, with *English (US)* there (add it
+     if it isn't), add *Spanish* beside it, and in *Options…* ▸ *Switching to another layout*, tick *Alt+Shift*. In a native
      app (`mate-terminal`) and an X11 one (`xterm`), type `;`, press Alt+Shift and type `;`
      again.
   4. On *General*, set *Repeat Keys*' *Delay* short and *Speed* fast, and hold a key down in
