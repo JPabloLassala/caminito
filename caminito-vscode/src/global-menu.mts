@@ -114,11 +114,10 @@ async function run(
   let commands = await listCommands(editor, log, 'so every item is kept');
   const product = await productOf(editor, log);
   const build = () => {
-    const settings = settingsReader(editor);
     return fit(served.table.menus, served.annotations, {
       hasCommand: (command) => commands?.has(command) ?? true,
       product,
-      setting: settings,
+      setting: settingReader(editor),
       workspace: workspaceOf(editor),
     });
   };
@@ -146,8 +145,8 @@ async function run(
       menu.update(build());
     }
   };
-  const schedule = (andCommands: boolean) => {
-    relist ||= andCommands;
+  const schedule = (reread: 'settings and folders' | 'commands too') => {
+    relist ||= reread === 'commands too';
     pending ??= setTimeout(() => {
       pending = undefined;
       // One at a time, so that an older list of commands never lands last.
@@ -167,13 +166,15 @@ async function run(
     editor.workspace.onDidChangeConfiguration(
       guarded(log, (event: { affectsConfiguration(section: string): boolean }) => {
         if (annotated.some((name) => event.affectsConfiguration(name))) {
-          schedule(false);
+          schedule('settings and folders');
         }
       }),
     ),
   );
-  disposables.add(editor.workspace.onDidChangeWorkspaceFolders(() => schedule(false)));
-  disposables.add(editor.extensions.onDidChange(() => schedule(true)));
+  disposables.add(
+    editor.workspace.onDidChangeWorkspaceFolders(() => schedule('settings and folders')),
+  );
+  disposables.add(editor.extensions.onDidChange(() => schedule('commands too')));
 
   let owner: string | null = null;
   let offered = false;
@@ -336,7 +337,7 @@ async function productOf(editor: Editor, log: Log): Promise<Record<string, unkno
  * The window's settings, read with no resource or language scope (ADR 0020). A setting
  * that can't be read is undefined.
  */
-function settingsReader(editor: Editor): (name: string) => unknown {
+function settingReader(editor: Editor): (name: string) => unknown {
   let configuration: { get(section: string): unknown } | undefined;
   try {
     configuration = editor.workspace.getConfiguration();

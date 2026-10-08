@@ -18,8 +18,14 @@ export interface MenuEntry {
   readonly label: string;
   readonly command?: string;
   readonly args?: readonly unknown[];
-  readonly toggle?: { readonly type: 'checkmark' | 'radio'; readonly state: boolean };
+  readonly toggle?: Toggle;
   readonly children?: readonly MenuNode[];
+}
+
+/** An item's checkmark or radio state. */
+export interface Toggle {
+  readonly type: 'checkmark' | 'radio';
+  readonly state: boolean;
 }
 
 /** A line between groups of items, served as `type` `separator`. */
@@ -120,10 +126,12 @@ export class DbusMenu extends dbusInterface.Interface {
     return false;
   }
 
+  /** The signal that the tree changed, with the new revision and the root as its parent. */
   LayoutUpdated(): [number, number] {
     return [this.#revision, 0];
   }
 
+  /** The signal that properties changed: the new values, and the names that went back to their defaults. */
   ItemsPropertiesUpdated(
     updated: [number, Record<string, Variant>][],
     removed: [number, string[]][],

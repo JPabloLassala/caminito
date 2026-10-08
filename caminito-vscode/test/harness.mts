@@ -10,6 +10,7 @@ import { Message, MessageType, Variant, sessionBus } from '@jellybrick/dbus-next
 import type { MessageBus } from '@jellybrick/dbus-next';
 
 import type { Disposable, Editor } from '../src/editor.mts';
+import type { Workspace } from '../src/menu-table.mts';
 
 const DBUS = {
   destination: 'org.freedesktop.DBus',
@@ -296,15 +297,12 @@ export interface Lacking {
   readonly notebooks?: boolean;
 }
 
-/** A window's workspace: no folder, a folder, or a multi-root workspace with its file. */
-export type FakeWorkspace = 'empty' | 'folder' | 'workspace';
-
 /** A fake of the editor's API, which records the commands run and the lines logged. */
 export class FakeEditor {
   focused: boolean;
   /** The settings, read with no scope; a missing key reads as undefined. */
   settings: Record<string, unknown> = {};
-  workspace: FakeWorkspace = 'folder';
+  workspace: Workspace = 'folder';
   /** How many times `getCommands` was called. */
   commandListings = 0;
   /** The commands run, and what each was run with. */
@@ -346,7 +344,7 @@ export class FakeEditor {
   }
 
   /** Opens another workspace, firing the folders' event. */
-  open(workspace: FakeWorkspace): void {
+  open(workspace: Workspace): void {
     this.workspace = workspace;
     this.workspaceFolders.fire({ added: [], removed: [] });
   }

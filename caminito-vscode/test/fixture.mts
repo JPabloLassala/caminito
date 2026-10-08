@@ -10,8 +10,9 @@ import type { MessageBus } from '@jellybrick/dbus-next';
 import { MENU_PATH, VS_CODE, start } from '../src/global-menu.mts';
 import type { GlobalMenu, Menu } from '../src/global-menu.mts';
 import { commandsOf } from '../src/menu-table.mts';
+import type { Workspace } from '../src/menu-table.mts';
 import { Caminito, FakeEditor, PrivateBus, call, listen, readMenu, until } from './harness.mts';
-import type { FakeWorkspace, Heard, Item, Lacking } from './harness.mts';
+import type { Heard, Item, Lacking } from './harness.mts';
 
 export interface Options {
   /** Whether Caminito is on the bus at activation; true by default. */
@@ -33,7 +34,7 @@ export interface Options {
   /** The settings at activation; none by default, so no setting can be read. */
   readonly settings?: Record<string, unknown>;
   /** The window's workspace at activation; a folder by default. */
-  readonly workspace?: FakeWorkspace;
+  readonly workspace?: Workspace;
 }
 
 /** A `product.json` with every key the menu's annotations gate on. */

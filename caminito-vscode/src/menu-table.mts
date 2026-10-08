@@ -4,7 +4,7 @@
 // committed in menu/table.json. The annotations, written by hand in menu/annotations.json,
 // say what a snapshot can't, keyed by command id.
 
-import type { MenuNode } from './dbusmenu.mts';
+import type { MenuNode, Toggle } from './dbusmenu.mts';
 
 /** The table, as menu/table.json holds it. */
 export interface Table {
@@ -147,12 +147,6 @@ export function fit(
     return collapse(nodes);
   };
   return items(menus);
-}
-
-/** An item's checkmark or radio state. */
-export interface Toggle {
-  readonly type: 'checkmark' | 'radio';
-  readonly state: boolean;
 }
 
 /** Whether `condition` holds, or undefined when a setting it reads can't be read. */
