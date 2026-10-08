@@ -71,7 +71,7 @@ export class PrivateBus {
 }
 
 /** A claim the stand-in was sent: who sent it and its path. */
-export interface Claim {
+interface Claim {
   readonly sender: string;
   readonly path: string;
 }
@@ -228,7 +228,7 @@ export async function until(
 }
 
 /** An event of the fake editor, fired by the test. */
-export class Emitter<T> {
+class Emitter<T> {
   readonly #listeners = new Set<(value: T) => unknown>();
 
   readonly event = (listener: (value: T) => unknown): Disposable => {

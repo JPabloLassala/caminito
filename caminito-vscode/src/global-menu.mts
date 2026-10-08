@@ -60,10 +60,10 @@ export function start(editor: Editor, environment: Environment): GlobalMenu {
   });
   return {
     ready,
-    dispose: () => {
+    dispose: guarded(log, () => {
       disposables.stop();
       log.dispose();
-    },
+    }),
   };
 }
 
@@ -73,8 +73,8 @@ async function run(
   log: Log,
   disposables: Disposables,
 ): Promise<void> {
-  const floorEvents = eventsAboveTheFloor(editor);
-  const missing = floorEvents.filter(([, event]) => event === undefined).map(([name]) => name);
+  const lateEvents = eventsNewerThanOneSixtySix(editor);
+  const missing = lateEvents.filter(([, event]) => event === undefined).map(([name]) => name);
   if (missing.length > 0 || olderThan(editor.version, FLOOR)) {
     const without = missing.length > 0 ? `, so no claim on ${missing.join(' or ')}` : '';
     log.line(`the editor is ${editor.version} and the extension's floor is ${FLOOR}${without}`);
@@ -115,11 +115,11 @@ async function run(
     });
     bus.call(call).catch((err: unknown) => log.line(`can't claim the menu: ${message(err)}`));
   };
-  const claimIfFocused = () => {
+  const claimIfFocused = guarded(log, () => {
     if (open && editor.window.state.focused) {
       claim();
     }
-  };
+  });
 
   // The gate: Linux, an owner of org.mate.Caminito, and GlobalMenuOffered true.
   const update = () => {
@@ -169,39 +169,45 @@ async function run(
 
   // Signals and replies come in the order they were sent, so the last one heard is the
   // state now.
-  bus.on('message', (msg: Message) => {
-    if (msg.type !== MessageType.SIGNAL) {
-      return;
-    }
-    if (msg.sender === DBUS && msg.member === 'NameOwnerChanged' && msg.body[0] === CAMINITO) {
-      setOwner((msg.body[2] as string) || null);
-    } else if (
-      msg.sender === owner &&
-      msg.path === CAMINITO_PATH &&
-      msg.interface === PROPERTIES &&
-      msg.member === 'PropertiesChanged' &&
-      msg.body[0] === CAMINITO
-    ) {
-      const changed = (msg.body[1] as Record<string, Variant>)[OFFERED];
-      if (changed !== undefined) {
-        offered = changed.value === true;
-        update();
-      } else if ((msg.body[2] as string[]).includes(OFFERED) && owner !== null) {
-        readOffered(owner);
+  bus.on(
+    'message',
+    guarded(log, (msg: Message) => {
+      if (msg.type !== MessageType.SIGNAL) {
+        return;
       }
-    }
-  });
-
-  // The claim rule. Focus lost is never acted on: a panel menu taking the keyboard causes it.
-  disposables.add(
-    editor.window.onDidChangeWindowState((state) => {
-      if (state.focused && open) {
-        claim();
+      if (msg.sender === DBUS && msg.member === 'NameOwnerChanged' && msg.body[0] === CAMINITO) {
+        setOwner((msg.body[2] as string) || null);
+      } else if (
+        msg.sender === owner &&
+        msg.path === CAMINITO_PATH &&
+        msg.interface === PROPERTIES &&
+        msg.member === 'PropertiesChanged' &&
+        msg.body[0] === CAMINITO
+      ) {
+        const changed = (msg.body[1] as Record<string, Variant>)[OFFERED];
+        if (changed !== undefined) {
+          offered = changed.value === true;
+          update();
+        } else if ((msg.body[2] as string[]).includes(OFFERED) && owner !== null) {
+          readOffered(owner);
+        }
       }
     }),
   );
+
+  // The claim rule. Focus lost is never acted on: a panel menu taking the keyboard causes it.
+  disposables.add(
+    // The event's own value, since `window.state` may not have caught up with it.
+    editor.window.onDidChangeWindowState(
+      guarded(log, (state: { focused: boolean }) => {
+        if (state.focused && open) {
+          claim();
+        }
+      }),
+    ),
+  );
   disposables.add(editor.window.onDidChangeActiveTextEditor(claimIfFocused));
-  for (const [, event] of floorEvents) {
+  for (const [, event] of lateEvents) {
     if (event !== undefined) {
       disposables.add(event(claimIfFocused));
     }
@@ -224,7 +230,7 @@ async function run(
 type EditorEvent = (listener: () => void) => Disposable;
 
 /** The events of the claim rule that came late (1.67 and 1.68), with what each is for. */
-function eventsAboveTheFloor(editor: Editor): [string, EditorEvent | undefined][] {
+function eventsNewerThanOneSixtySix(editor: Editor): [string, EditorEvent | undefined][] {
   const window = editor.window;
   return [
     ['a change of tab groups', window.tabGroups?.onDidChangeTabGroups],
@@ -242,7 +248,7 @@ function callDbus(bus: MessageBus, member: string, signature: string, body: unkn
 }
 
 /** Whether version `a` is older than `b`, by their numeric parts. */
-export function olderThan(a: string, b: string): boolean {
+function olderThan(a: string, b: string): boolean {
   const parts = (version: string) =>
     version
       .split(/[.-]/)
@@ -289,6 +295,17 @@ class Disposables {
       this.#log.line(`can't stop: ${message(err)}`);
     }
   }
+}
+
+/** `f`, with what it throws logged rather than thrown into the extension host (ADR 0022). */
+function guarded<A extends unknown[]>(log: Log, f: (...args: A) => void): (...args: A) => void {
+  return (...args) => {
+    try {
+      f(...args);
+    } catch (err) {
+      log.line(`can't follow the editor or the bus: ${message(err)}`);
+    }
+  };
 }
 
 interface Log extends Disposable {

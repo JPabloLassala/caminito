@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The session run.sh starts: Caminito nested, the panel with the applet, and two windows of
+# What run.sh runs on its private bus: Caminito nested, the panel with the applet, and two windows of
 # the editor.
 set -u
 root=$1; work=$2; editor=$3; out=$work/out; mkdir -p "$out"

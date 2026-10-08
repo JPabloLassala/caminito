@@ -21,7 +21,7 @@ interface Numbered {
   readonly children: readonly Numbered[];
 }
 
-export const INTERFACE = 'com.canonical.dbusmenu';
+const INTERFACE = 'com.canonical.dbusmenu';
 
 /**
  * Serves a menubar whose top-level items are `menus`. The root is id 0 and the rest are
