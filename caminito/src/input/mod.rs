@@ -212,9 +212,12 @@ impl State {
     /// whether it goes further. Only the lock, the bindings, the accelerator grabs and the
     /// client stage do anything yet.
     pub fn on_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
-        // 1. The lock (12) drops no key, since the locker is typed to: while the session
-        // is locked it's stage 4 that runs nothing but VT switching, and the keyboard
-        // itself that switches layouts, as xkbcommon does for the keymap's `grp` options.
+        // 1. The lock (12). 15 has it as a gate before xkbcommon, but it drops no key,
+        // since the locker is typed to: while the session is locked it's stage 4 that
+        // runs nothing but VT switching, and the keyboard itself that switches layouts, as
+        // xkbcommon does for the keymap's `grp` options. What it does here is see that no
+        // grab has the keys instead of the lock.
+        self.release_keyboard_grab_if_locked();
         // 2 and 3 see the raw key, before xkbcommon.
         if !(accessx_passes(keycode) && keyboard_monitor_passes(keycode)) {
             return;
@@ -494,11 +497,7 @@ impl State {
             keyboard.unset_grab(self);
         }
         if self.caminito.lock.is_locked() {
-            // Every grab was let go as the lock came on, and none is granted under it. One
-            // that got here anyway doesn't keep the keyboard from the lock.
-            if keyboard.is_grabbed() {
-                keyboard.unset_grab(self);
-            }
+            self.release_keyboard_grab_if_locked();
             let focus = self.caminito.lock_surface_with_keyboard();
             let focus = focus.map(KeyboardFocus::Surface);
             if keyboard.current_focus() != focus {
@@ -520,6 +519,16 @@ impl State {
         });
         if keyboard.current_focus() != focus {
             keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
+        }
+    }
+
+    /// Ends a keyboard grab that was taken under the lock. Every grab is let go as the lock
+    /// comes on, and the popup and Xwayland grabs are refused under it, but an input
+    /// method's is Smithay's to grant, with no say of Caminito's.
+    fn release_keyboard_grab_if_locked(&mut self) {
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        if self.caminito.lock.is_locked() && keyboard.is_grabbed() {
+            keyboard.unset_grab(self);
         }
     }
 

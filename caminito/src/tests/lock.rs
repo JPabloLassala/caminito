@@ -63,6 +63,15 @@ fn a_focused_window_and_a_locker() -> (Fixture, ClientWindow, ClientId) {
     (f, window, locker)
 }
 
+/// Whether a client was sent the press of `KEY_A`.
+fn saw_a_pressed(f: &Fixture, client: ClientId) -> bool {
+    let key = InputEvent::Key {
+        key: KEY_A,
+        pressed: true,
+    };
+    f.client_state(client).input.contains(&key)
+}
+
 #[test]
 fn a_lock_gets_locked_and_the_session_is_behind_the_lock_background() {
     let (mut f, client) = Fixture::connected(Kind::Xdg);
@@ -87,8 +96,8 @@ fn no_other_client_has_the_keyboard_or_the_pointer_once_locked() {
     f.roundtrip(client);
     assert!(!f.has_keyboard(window));
     assert_snapshot!(format_input(&f.client(client).state.input), @r"
-    pointer leaves window 0
     keyboard leaves window 0
+    pointer leaves window 0
     ");
 
     f.client(client).state.input.clear();
@@ -98,6 +107,39 @@ fn no_other_client_has_the_keyboard_or_the_pointer_once_locked() {
     f.roundtrip(client);
     assert_eq!(f.client(client).state.input, []);
     assert!(!f.has_keyboard(window));
+}
+
+/// The loop handles a key that's waiting with the `lock` before its refresh pass, which is
+/// what otherwise moves the focus.
+#[test]
+fn the_keyboard_and_the_pointer_leave_the_session_as_the_lock_is_asked_for() {
+    let (mut f, window, locker) = a_focused_window_and_a_locker();
+
+    f.client(locker).lock_session();
+    f.client(locker).flush();
+    f.dispatch_sources_only();
+
+    assert_eq!(f.lock_state(), "locked");
+    assert!(!f.has_keyboard(window));
+    assert!(f.state.caminito.pointer_focus.is_none());
+}
+
+/// ext-session-lock's `locked` says the session's content is hidden, so it waits for a
+/// frame of the lock on every output.
+#[test]
+fn the_locker_hears_locked_once_every_output_has_drawn_the_lock() {
+    let (mut f, _, locker) = a_focused_window_and_a_locker();
+    f.add_output((1280, 720), 1.0);
+    f.dispatch();
+
+    let lock = f.client(locker).lock_session();
+    f.client(locker).flush();
+    f.dispatch_sources_only();
+    f.client(locker).dispatch();
+    assert!(!f.client(locker).session_lock(lock).locked);
+
+    f.roundtrip(locker);
+    assert!(f.client(locker).session_lock(lock).locked);
 }
 
 #[test]
@@ -163,12 +205,8 @@ fn unlock_and_destroy_gives_the_focus_back_to_the_window_that_had_it() {
     let (mut f, window, locker) = a_focused_window_and_a_locker();
     let client = window.client();
     let other = f.map(client, WindowSpec::plain((200, 200)));
-    let focused = f.pid(window);
-    let now = f.state.caminito.now();
-    f.state
-        .caminito
-        .policy
-        .activate(crate::state::SEAT, focused, now);
+    let inside = f.geometry(window).loc + Point::from((10, 10));
+    f.click(f64::from(inside.x), f64::from(inside.y));
     f.roundtrip(client);
     assert!(f.has_keyboard(window) && !f.has_keyboard(other));
     let (lock, _) = lock_with_a_surface(&mut f, locker);
@@ -355,11 +393,7 @@ fn an_open_menu_is_dismissed_as_the_session_locks_and_none_opens_under_the_lock(
     assert!(f.client(client).popup(late).done);
     f.chord(&[KEY_A]);
     f.roundtrip(locker);
-    let key = InputEvent::Key {
-        key: KEY_A,
-        pressed: true,
-    };
-    assert!(f.client(locker).state.input.contains(&key));
+    assert!(saw_a_pressed(&f, locker));
 }
 
 #[test]
@@ -401,11 +435,7 @@ fn an_xwayland_keyboard_grab_that_is_held_is_released_as_the_session_locks() {
             .any(|event| matches!(event, Event::KeyPress(_))),
         "{events:?}"
     );
-    let key = InputEvent::Key {
-        key: KEY_A,
-        pressed: true,
-    };
-    assert!(f.client(locker).state.input.contains(&key));
+    assert!(saw_a_pressed(&f, locker));
     // The grab is gone, not set aside: the unlock gives the keyboard to the window.
     f.client(locker).unlock_and_destroy(lock);
     f.roundtrip(locker);
@@ -437,11 +467,7 @@ fn an_xwayland_keyboard_grab_asked_for_while_locked_is_refused() {
             .any(|event| matches!(event, Event::KeyPress(_))),
         "{events:?}"
     );
-    let key = InputEvent::Key {
-        key: KEY_A,
-        pressed: true,
-    };
-    assert!(f.client(locker).state.input.contains(&key));
+    assert!(saw_a_pressed(&f, locker));
     // It wasn't set aside for the unlock either.
     f.client(locker).unlock_and_destroy(lock);
     f.roundtrip(locker);

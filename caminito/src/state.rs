@@ -571,7 +571,10 @@ impl State {
         let mut rendered = Vec::new();
         for output in self.caminito.take_queued_redraws() {
             match self.backend.render(&mut self.caminito, &output) {
-                Some(states) => rendered.push((output, states)),
+                Some(states) => {
+                    self.caminito.lock.frame_drawn(&output);
+                    rendered.push((output, states));
+                }
                 // The backend can't take a frame yet; it'll be drawn when it can.
                 None => self.caminito.queue_redraw(&output),
             }

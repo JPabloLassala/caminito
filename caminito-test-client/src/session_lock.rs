@@ -34,6 +34,7 @@ pub struct SessionLock {
 
 /// A lock surface.
 pub struct LockSurface {
+    /// The `wl_surface` it's the role of.
     pub surface: WlSurface,
     lock_surface: ExtSessionLockSurfaceV1,
     /// The size of every configure received, oldest first.
@@ -58,6 +59,7 @@ impl Client {
         id
     }
 
+    /// A session lock the client asked for, and its answer.
     pub fn session_lock(&self, id: LockId) -> &SessionLock {
         &self.state.session_locks[id.0]
     }
@@ -80,6 +82,7 @@ impl Client {
         id
     }
 
+    /// A lock surface, and its configures.
     pub fn lock_surface(&self, id: LockSurfaceId) -> &LockSurface {
         &self.state.lock_surfaces[id.0]
     }

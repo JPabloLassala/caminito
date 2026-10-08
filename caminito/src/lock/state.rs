@@ -44,6 +44,8 @@ impl std::fmt::Display for Refused {
     }
 }
 
+impl std::error::Error for Refused {}
+
 impl LockState {
     pub(crate) fn is_locked(self) -> bool {
         self != LockState::Unlocked

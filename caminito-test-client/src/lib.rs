@@ -100,6 +100,7 @@ use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration::{
     self, OrgKdeKwinServerDecoration,
 };
+use wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1;
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1;
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration_manager::{
     self, OrgKdeKwinServerDecorationManager,
@@ -146,9 +147,7 @@ pub struct State {
     popups: Vec<Popup>,
     layer_shell: Option<ZwlrLayerShellV1>,
     layer_surfaces: Vec<layer_shell::LayerSurface>,
-    session_lock: Option<
-        wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1,
-    >,
+    session_lock: Option<ExtSessionLockManagerV1>,
     session_locks: Vec<session_lock::SessionLock>,
     lock_surfaces: Vec<session_lock::LockSurface>,
     pointer: Option<WlPointer>,

@@ -62,7 +62,7 @@ render_elements! {
     /// A frame's strip, one of Caminito's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
     /// A side of one of frame debug's outlines, or the lock's background.
-    Outline = SolidColorRenderElement,
+    Solid = SolidColorRenderElement,
     /// A part of a window in one of the Window switcher's thumbnails (108).
     Thumbnail = ThumbnailPart<R>,
 }
@@ -288,7 +288,7 @@ fn lock_elements<R>(
         );
     }
     let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
-    elements.push(SceneElement::Outline(SolidColorRenderElement::new(
+    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
         lock.background().clone(),
         covered,
         CommitCounter::default(),
@@ -860,7 +860,7 @@ fn frame_debug_elements<R>(
             Rectangle::new(rect.loc + Point::from((w - 1, 0)), (1, h).into()),
         ];
         elements.extend(sides.into_iter().map(|side| {
-            SceneElement::Outline(SolidColorRenderElement::new(
+            SceneElement::Solid(SolidColorRenderElement::new(
                 Id::new(),
                 side,
                 CommitCounter::default(),
