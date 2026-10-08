@@ -83,7 +83,8 @@ MATE stays as it was. Build them before `caminito-git`, which depends on them:
 
 ```sh
 for package in mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito \
-  mate-control-center-caminito caja-caminito mate-utils-caminito caminito-git; do
+  mate-control-center-caminito caja-caminito mate-utils-caminito mate-power-manager-caminito \
+  caminito-git; do
   (cd packaging/arch/$package && makepkg -si)
 done
 ```
@@ -106,6 +107,11 @@ output.
 with one patch: `mate-screenshot --window`, which `<Alt>Print` runs, captures the window Caminito
 names as the active one. Its dictionary applet is built into the panel's process, as a Wayland
 panel needs it, so it's linked to `mate-panel-caminito`'s applet library.
+
+`mate-power-manager-caminito` is Arch's mate-power-manager 1.28.1 with one patch, which grabs
+the brightness, keyboard backlight, power, sleep, hibernate, screensaver and battery keys
+through Caminito. mate-power-manager runs on XWayland in the session, where its own grabs see a
+key only while an XWayland window has the keyboard.
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no

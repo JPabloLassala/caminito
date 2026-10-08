@@ -599,6 +599,27 @@ session_env() {
   "interface='org.mate.Caminito'"` can't see the signals, which go to msd alone: run
   `mate-settings-daemon --debug --replace` for msd's side.
 
+### The brightness keys change the backlight with a Wayland window focused
+
+- **Milestone:** M7
+- **Steps:**
+  1. On a laptop, with `mate-power-manager-caminito` installed, log into *MATE on Caminito*.
+     Open pluma, a native Wayland window, and click in it.
+  2. Press brightness down and brightness up, once each. Then hold brightness down for two
+     seconds.
+  3. If the laptop has keyboard backlight keys, press them, and the backlight toggle key twice.
+  4. Open an xterm, an XWayland window, click in it, and repeat step 2.
+  5. Log out, log into *MATE*, the X11 session, and repeat step 2.
+- **Expected:** in steps 2 and 4 each press changes the backlight by a step and shows
+  mate-power-manager's brightness OSD, and the held key goes on dimming. In step 3 the keyboard
+  backlight changes and the toggle turns it off and on again. The key reaches neither pluma nor
+  xterm. In step 5 X11 MATE's keys and OSD are as before.
+- **Debug tool:** `DumpState`'s `accelerator_grabs`, which lists the eleven keys
+  mate-power-manager grabbed (`XF86MonBrightnessUp`, `XF86PowerOff` and the rest) with its unique
+  name. For mate-power-manager's side, end it with `pkill -x mate-power-manager` and run it
+  in a terminal as mate-session starts it, `GDK_BACKEND=x11 mate-power-manager --verbose`
+  (78): it logs `emitting button-pressed : brightness-up` for each press it acts on.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

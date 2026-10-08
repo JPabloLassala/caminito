@@ -21,11 +21,12 @@ license=(GPL-2.0-or-later)
 # Xwayland (11, 34); its own X connection is x11rb's pure-Rust one, which links nothing, and
 # the X11 test tier runs the same Xwayland from check().
 #
-# The last two lines are the session that `caminito --session` starts (08, 17). The six
+# The last two lines are the session that `caminito --session` starts (08, 17). The seven
 # patched packages are named by their real names, so the stock ones don't satisfy them (16,
 # ADR 0011); caja draws the desktop, on the primary output (81), mate-utils has
-# mate-screenshot, which the screenshot keys run (104), and mate-session autostarts the
-# notification daemon and the polkit agent. caminito links none of them.
+# mate-screenshot, which the screenshot keys run (104), mate-power-manager has the
+# brightness and power keys (107), and mate-session autostarts the notification daemon and
+# the polkit agent. caminito links none of them.
 #
 # caminito-displays (84) links gtk4, and through it cairo, pango and glib2. Its own Wayland
 # connection needs nothing gtk4 doesn't bring. Its entry shadows the Display capplet's, from
@@ -35,7 +36,8 @@ license=(GPL-2.0-or-later)
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput
   mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito caja-caminito
-  mate-control-center-caminito mate-utils-caminito mate-notification-daemon mate-polkit)
+  mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
+  mate-notification-daemon mate-polkit)
 makedepends=(cargo git meson)
 # caminito's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).

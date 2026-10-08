@@ -157,9 +157,11 @@ Shadows wait for M8 with the other effects, since `compositing-manager` governs 
   `caminito-git` now depends on all five.
 - **Data files (05, 09, 16):** the `org.mate.Caminito` schema and the `50-caminito-*.xml` keybinding manifests, installed by the top-level Meson project.
 
-**Exit:** in a session, each of these works: Alt+F1 and Alt+F2; the panel's Show Desktop and Ctrl+Alt+D agreeing; the pager's rows, names and count; the minimise animation target reaching Caminito; volume, brightness and custom shortcuts from msd, with its OSD; mcc's Windows, Keyboard Shortcuts, Mouse, Keyboard and Display dialogs; `Print`, `<Shift>Print` and `<Alt>Print`.
+**Exit:** in a session, each of these works: Alt+F1 and Alt+F2; the panel's Show Desktop and Ctrl+Alt+D agreeing; the pager's rows, names and count; the minimise animation target reaching Caminito; volume and custom shortcuts from msd, with its OSD; mcc's Windows, Keyboard Shortcuts, Mouse, Keyboard and Display dialogs; `Print`, `<Shift>Print` and `<Alt>Print`.
 
 **Checklist:** one item per row of 06's integration table, run in a session.
+
+Brightness was in the exit until 2026-10-08, when 107 found that the brightness keys are mate-power-manager's, not msd's, and the developer placed them in M7, which decides what Caminito's idle and lock do with mate-power-manager anyway.
 
 ### M7 Lock, idle and accessibility
 
@@ -170,6 +172,7 @@ Shadows wait for M8 with the other effects, since `compositing-manager` governs 
 - **Idle (06, 09):** `idle` with `org.mate.session idle-delay`, blanking and DPMS, ext-idle-notify, idle-inhibit, and mate-session's `IsInhibited`.
 - **Accessibility (13):** `input::accessx` with sticky, slow and bounce keys and the toggle-key beeps, and `dbus::a11y`'s Keyboard monitor for Orca. Both keep working while locked.
 - **Capture while locked (12):** image capture shows the lock, never the session behind it.
+- **mate-power-manager's keys (107):** `mate-power-manager-caminito` grabs the brightness, keyboard backlight, power, sleep and battery keys through Caminito, since its X11 grabs on XWayland see them only while an XWayland window has the focus.
 - **Tests (14):** killing the locker while locked, the give-up state, and the Keyboard monitor's allowlist, grabs and lone-modifier rule as headless tests with a D-Bus test client; AccessX as unit tests.
 
 **Exit:**
@@ -177,6 +180,7 @@ Shadows wait for M8 with the other effects, since `compositing-manager` governs 
 - The session locks from the panel, from `org.mate.ScreenSaver`, on idle and before suspend. Killing `caminito-locker` while locked leaves the session locked and brings it back.
 - Idle blanks, then powers the outputs off, and a playing video inhibits both.
 - Orca reads the panel and `caminito-locker`, and sticky keys work.
+- The brightness keys change the backlight on a laptop with a Wayland window focused.
 - **The developer switches to "MATE on Caminito" as their daily session from here.** A session that can't lock isn't safe to leave, so daily use waits for M7, and M8 is built inside a Caminito session.
 
 **Checklist:** the suspend race with a slow locker; `loginctl unlock-session` from a console; how the give-up state looks; Orca with the Keyboard monitor and on the lock screen (12, 13, 14).
