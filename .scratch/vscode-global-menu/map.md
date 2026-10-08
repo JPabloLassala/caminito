@@ -37,8 +37,8 @@ A spec, ready to cut into implementation tickets, for showing VS Code's menubar 
 
 ## Not yet specified
 
-- **The spec's outline:** its sections, and how the work is cut between the extension and Caminito.
-- **The extension's name in the glossary.** "Caminito integration" was the working name. Does it do anything besides the menu?
+- **When a claim is made, and what an unclaimed window shows** ([12](issues/12-when-a-claim-is-made.md)): what ticket 10 found against ADR 0018 and ADR 0021.
+- **The extension's name in the glossary, and the spec's outline** ([13](issues/13-the-extension-s-name-and-the-spec.md)). "Caminito integration" was the working name. Does it do anything besides the menu?
 
 ## Out of scope
 
