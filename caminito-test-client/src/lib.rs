@@ -60,6 +60,9 @@ use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timer_v1::{
 use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timing_manager_v1::{
     self, WpCommitTimingManagerV1,
 };
+use wayland_protocols::xdg::system_bell::v1::client::xdg_system_bell_v1::{
+    self, XdgSystemBellV1,
+};
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::{
     self, WpFractionalScaleManagerV1,
 };
@@ -128,6 +131,7 @@ pub struct State {
     decoration_manager: Option<ZxdgDecorationManagerV1>,
     fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
     commit_timing_manager: Option<WpCommitTimingManagerV1>,
+    system_bell: Option<XdgSystemBellV1>,
     shortcuts_inhibit_manager: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
     pointer_constraints: Option<ZwpPointerConstraintsV1>,
     /// Whether the pointer lock the client asked for is active.
@@ -764,6 +768,24 @@ impl Client {
         timer.set_timestamp((secs >> 32) as u32, secs as u32, time.subsec_nanos());
         // The timestamp stays with the commit.
         timer.destroy();
+    }
+
+    /// Rings the bell with xdg-system-bell, for a window or for none, as GTK4's
+    /// `gdk_surface_beep` and `gdk_display_beep` do.
+    pub fn ring_system_bell(&mut self, id: Option<WindowId>) {
+        let bell = self.global(|state| &mut state.system_bell, 1);
+        bell.ring(id.map(|id| &self.window(id).surface));
+    }
+
+    /// Rings the bell with xdg-system-bell for any surface.
+    pub fn ring_system_bell_for_surface(&mut self, surface: &WlSurface) {
+        self.global(|state| &mut state.system_bell, 1)
+            .ring(Some(surface));
+    }
+
+    /// A surface with no role.
+    pub fn create_bare_surface(&mut self) -> WlSurface {
+        self.compositor().create_surface(&self.qh, ())
     }
 
     /// Makes the window's xdg-decoration object without asking for a mode.
@@ -1435,6 +1457,7 @@ ignore_events!(
     WpFractionalScaleManagerV1 => wp_fractional_scale_manager_v1::Event,
     WpCommitTimingManagerV1 => wp_commit_timing_manager_v1::Event,
     WpCommitTimerV1 => wp_commit_timer_v1::Event,
+    XdgSystemBellV1 => xdg_system_bell_v1::Event,
     ZwpPointerConstraintsV1 => zwp_pointer_constraints_v1::Event,
     ZwpKeyboardShortcutsInhibitManagerV1 => zwp_keyboard_shortcuts_inhibit_manager_v1::Event,
     ZwpKeyboardShortcutsInhibitorV1 => zwp_keyboard_shortcuts_inhibitor_v1::Event,

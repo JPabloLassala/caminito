@@ -36,8 +36,8 @@ pub trait GtkShellHandler: 'static {
     /// `surface` became modal, or stopped being modal. [`is_modal`] has the new hint.
     fn modal_changed(&mut self, surface: &WlSurface);
 
-    /// A client rang the bell, for `surface` or for no window.
-    fn system_bell(&mut self, surface: Option<WlSurface>);
+    /// A client rang the bell for `surface`, which may be gone by now, or for no surface.
+    fn system_bell(&mut self, surface: Option<Weak<WlSurface>>);
 }
 
 /// The `gtk_shell1` global.
@@ -136,10 +136,12 @@ where
                 data_init.init(gtk_surface, data);
             }
             gtk_shell1::Request::SystemBell { surface } => {
+                // A `gtk_surface1` has no destructor at version 1, so its surface can go
+                // before it does, and a bell for it then names a surface that's gone.
                 let surface = surface
                     .as_ref()
                     .and_then(|gtk_surface| gtk_surface.data::<GtkSurfaceData>())
-                    .and_then(|data| data.surface.upgrade().ok());
+                    .map(|data| data.surface.clone());
                 state.system_bell(surface);
             }
             // Startup notification goes through xdg-activation. `notify_launch` is newer

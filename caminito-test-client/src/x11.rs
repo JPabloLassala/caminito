@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use x11rb::connection::Connection;
 use x11rb::errors::{ConnectError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::Event;
+use x11rb::protocol::xkb::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ClipOrdering,
     ConfigureWindowAux, ConnectionExt, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode,
@@ -426,6 +427,33 @@ impl X11Client {
     /// Waits until Xwayland has handled every request this client sent, without reading
     /// its events.
     pub fn sync(&self) -> Result<(), ReplyError> {
+        self.conn.sync()
+    }
+
+    /// Rings the bell for `window` with `XkbBell`, as GDK3's `gdk_window_beep` does, or
+    /// for none with the core `Bell`, as `XBell` does.
+    pub fn bell(&self, window: Option<Window>) -> Result<(), ReplyError> {
+        match window {
+            Some(window) => {
+                // XKB refuses a client's requests until it has said which version it knows.
+                self.conn.xkb_use_extension(1, 0)?.reply()?;
+                self.conn.xkb_bell(
+                    xkb::ID::USE_CORE_KBD.into(),
+                    xkb::BellClass::DFLT_XI_CLASS.into(),
+                    xkb::ID::DFLT_XI_ID.into(),
+                    0,
+                    false,
+                    false,
+                    0,
+                    0,
+                    x11rb::NONE,
+                    window,
+                )?;
+            }
+            None => {
+                self.conn.bell(0)?;
+            }
+        }
         self.conn.sync()
     }
 

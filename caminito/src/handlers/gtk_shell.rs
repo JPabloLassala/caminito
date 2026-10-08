@@ -1,8 +1,10 @@
-//! `gtk_shell1` (67): a GTK3 window's modal hint, which joins xdg-dialog's, and GTK3's bell.
+//! `gtk_shell1` (67): a GTK3 window's modal hint, which joins xdg-dialog's, and GTK3's bell, which
+//! is one of the bell event's sources (105).
 
-use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::Weak;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
+use crate::bell::{BellFor, BellSource};
 use crate::protocols::gtk_shell::GtkShellHandler;
 use crate::state::State;
 
@@ -14,11 +16,16 @@ impl GtkShellHandler for State {
         }
     }
 
-    /// M6 joins it to the one bell event (17).
-    fn system_bell(&mut self, surface: Option<WlSurface>) {
-        match surface {
-            Some(surface) => tracing::debug!("gtk_shell1 rang the bell for {:?}", surface.id()),
-            None => tracing::debug!("gtk_shell1 rang the bell for no window"),
-        }
+    fn system_bell(&mut self, surface: Option<Weak<WlSurface>>) {
+        let bell_for = match surface {
+            Some(surface) => BellFor::Window(
+                surface
+                    .upgrade()
+                    .ok()
+                    .and_then(|surface| self.caminito.bell_window(&surface)),
+            ),
+            None => BellFor::Focus,
+        };
+        self.caminito.ring_bell(BellSource::GtkShell, bell_for);
     }
 }

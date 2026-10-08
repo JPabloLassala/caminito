@@ -96,6 +96,10 @@ pub const SCHEMAS: &[Schema] = &[
 pub const UNSUPPORTED: &[(&str, &str)] = &[
     // Caminito will draw the ripple itself; M8's parity audit decides when (53).
     (MOUSE, "locate-pointer"),
+    // The bell is counted but neither flashes nor plays until M8 (105, 17). Caminito
+    // matches `audible-bell` only when it's off, and `visual-bell-type` only matters with
+    // the visual bell on, so neither is logged.
+    (MARCO_GENERAL, "visual-bell"),
 ];
 
 /// Marco's schemas that aren't installed, which stop Caminito starting (09).
@@ -290,6 +294,7 @@ pub struct Settings {
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
     pub sound: Sound,
+    pub bell: Bell,
     pub devices: Devices,
     pub keyboard: Keyboard,
     pub keymap: Keymap,
@@ -569,6 +574,34 @@ pub struct Sound {
     pub theme_name: String,
     pub event_sounds: bool,
     pub input_feedback_sounds: bool,
+}
+
+/// Marco's bell keys, from `org.mate.Marco.general` (09). The bell event reads them (105),
+/// and M8 acts on them (17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bell {
+    /// `audible-bell`: whether a bell plays the sound theme's bell.
+    pub audible: bool,
+    /// `visual-bell`: whether a bell flashes.
+    pub visual: bool,
+    /// `visual-bell-type`: what flashes.
+    pub visual_type: VisualBellType,
+}
+
+/// `org.mate.Marco.VisualBellType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualBellType {
+    /// The whole screen, or the outputs the window is on.
+    Fullscreen,
+    /// The window's frame.
+    FrameFlash,
+}
+
+impl Nick for VisualBellType {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("fullscreen", Self::Fullscreen),
+        ("frame-flash", Self::FrameFlash),
+    ];
 }
 
 /// What msd's mouse plugin sets on each kind of pointer under X11, which Caminito sets on
@@ -871,6 +904,15 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             theme_name: r.string(SOUND, "theme-name", "freedesktop"),
             event_sounds: r.bool(SOUND, "event-sounds", false),
             input_feedback_sounds: r.bool(SOUND, "input-feedback-sounds", false),
+        },
+        bell: Bell {
+            audible: r.bool(MARCO_GENERAL, "audible-bell", true),
+            visual: r.bool(MARCO_GENERAL, "visual-bell", false),
+            visual_type: r.nick(
+                MARCO_GENERAL,
+                "visual-bell-type",
+                VisualBellType::Fullscreen,
+            ),
         },
         devices: devices(&mut r),
         keyboard: keyboard(&mut r),
