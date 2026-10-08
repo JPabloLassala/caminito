@@ -1,4 +1,5 @@
-//! The protocols Caminito implements itself, each as a state and a handler trait (15).
+//! The protocols Caminito implements itself, each as a state and, where the compositor hears
+//! of something from it, a handler trait (15).
 
 pub mod appmenu;
 pub mod ext_workspace;

@@ -56,7 +56,7 @@ pub struct Address {
 /// A surface's address, in its data map, with the `org_kde_kwin_appmenu` that set it: the
 /// address goes with that object, and not with another the client made for the surface.
 #[derive(Default)]
-struct Menu(Mutex<Option<(ObjectId, Address)>>);
+struct Recorded(Mutex<Option<(ObjectId, Address)>>);
 
 impl AppmenuState {
     /// Offers the global to every client, or stops offering it. It returns the global that
@@ -79,7 +79,7 @@ impl AppmenuState {
 /// menu is on the bus, unless it has released the object since.
 pub fn address(surface: &WlSurface) -> Option<Address> {
     with_states(surface, |states| {
-        let menu = states.data_map.get::<Menu>()?;
+        let menu = states.data_map.get::<Recorded>()?;
         let menu = menu.0.lock().unwrap();
         menu.as_ref().map(|(_, address)| address.clone())
     })
@@ -88,7 +88,7 @@ pub fn address(surface: &WlSurface) -> Option<Address> {
 /// Changes what's recorded of where a surface's menu is.
 fn with_menu(surface: &WlSurface, change: impl FnOnce(&mut Option<(ObjectId, Address)>)) {
     with_states(surface, |states| {
-        let menu = states.data_map.get_or_insert_threadsafe(Menu::default);
+        let menu = states.data_map.get_or_insert_threadsafe(Recorded::default);
         change(&mut menu.0.lock().unwrap());
     });
 }

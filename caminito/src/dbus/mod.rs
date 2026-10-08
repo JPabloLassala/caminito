@@ -212,6 +212,13 @@ impl Caminito {
         }
     }
 
+    /// Whether giving the registrar's name up at `change` was the last thing asked of the
+    /// bus.
+    pub(crate) fn registrar_is_given_up(&self, change: u64) -> bool {
+        let dbus = self.dbus.as_ref();
+        dbus.is_none_or(|dbus| dbus.registrar.is_given_up(change))
+    }
+
     /// A caller left the bus, and what it held goes with it.
     fn caller_left(&mut self, caller: String) {
         self.screensaver.caller_left(&caller);

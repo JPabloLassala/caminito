@@ -429,3 +429,24 @@ fn a_released_appmenu_takes_the_menu_away() {
 
     assert_eq!(global_menu(&mut f, &caller), no_menu("org.kde.dolphin"));
 }
+
+#[test]
+fn an_address_that_is_no_bus_name_and_object_path_is_no_menu() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let _applet = an_applet(&bus);
+    let id = a_qt_client(&mut f);
+    let caller = a_caller(&mut f, &bus);
+    let dolphin = map_with_menu(&mut f, id, "org.kde.dolphin", None);
+
+    f.client(id)
+        .set_appmenu_address(dolphin.xdg(), ":1.77", "MenuBar 1");
+    f.sync(dolphin);
+
+    assert_eq!(global_menu(&mut f, &caller), no_menu("org.kde.dolphin"));
+
+    f.client(id)
+        .set_appmenu_address(dolphin.xdg(), "not a name", "/MenuBar/1");
+    f.sync(dolphin);
+
+    assert_eq!(global_menu(&mut f, &caller), no_menu("org.kde.dolphin"));
+}

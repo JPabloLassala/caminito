@@ -251,7 +251,7 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. Like a Qt
   app, a window follows the applet only from Firefox's next start.
 
-Without the applet on a panel nothing changes: every app keeps its own menubar.
+An app that starts with no applet on a panel keeps its own menubar.
 
 ## Known limitations
 

@@ -15,6 +15,7 @@ use smithay::reexports::calloop::channel;
 use zbus::export::ordered_stream::OrderedStreamExt;
 use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
+use zbus::zvariant::ObjectPath;
 
 use crate::protocols::appmenu::{self, Address};
 use crate::protocols::gtk_shell::{self, DbusProperties};
@@ -76,10 +77,14 @@ impl GlobalMenu {
         Some((GTK, bus_name, paths))
     }
 
-    /// The menu of a window that gave its dbusmenu's address.
-    fn dbusmenu(address: Address) -> Menu {
+    /// The menu of a window that gave its dbusmenu's address, if that's a bus name and an
+    /// object path: the applet takes what's published to be both, and any client can say
+    /// anything.
+    fn dbusmenu(address: Address) -> Option<Menu> {
+        BusName::try_from(address.service_name.as_str()).ok()?;
+        ObjectPath::try_from(address.object_path.as_str()).ok()?;
         let paths = HashMap::from([("menu".to_owned(), address.object_path)]);
-        (DBUSMENU, address.service_name, paths)
+        Some((DBUSMENU, address.service_name, paths))
     }
 
     pub(super) fn published(self) -> Published {
@@ -120,17 +125,21 @@ pub(super) async fn watch_applet(
 pub(super) struct Registrar {
     /// Whether the name was last asked for, and not given up.
     asked: bool,
+    /// How many times the name was asked for or given up, which tells the last time from
+    /// the ones before it.
+    changes: u64,
     /// The last asking or giving up, which the next one waits for, so that they reach the
     /// bus in order.
     last: Option<zbus::Task<()>>,
-    /// Tells the event loop that the name was given up.
-    released: channel::Sender<()>,
+    /// Tells the event loop that the name was given up, and at which change.
+    released: channel::Sender<u64>,
 }
 
 impl Registrar {
-    pub(super) fn new(released: channel::Sender<()>) -> Self {
+    pub(super) fn new(released: channel::Sender<u64>) -> Self {
         Self {
             asked: false,
+            changes: 0,
             last: None,
             released,
         }
@@ -142,10 +151,12 @@ impl Registrar {
             return;
         }
         self.asked = owned;
+        self.changes += 1;
+        let change = self.changes;
         let last = self.last.take();
         let released = self.released.clone();
         let bus = connection.clone();
-        let change = async move {
+        let changed = async move {
             if let Some(last) = last {
                 let _ = last.await;
             }
@@ -163,10 +174,16 @@ impl Registrar {
                     tracing::warn!("can't give up {REGISTRAR_NAME}: {err}");
                 }
                 // Caminito is stopping if this fails.
-                let _ = released.send(());
+                let _ = released.send(change);
             }
         };
-        self.last = Some(connection.executor().spawn(change, "registrar's name"));
+        self.last = Some(connection.executor().spawn(changed, "registrar's name"));
+    }
+
+    /// Whether giving the name up at `change` was the last thing asked of the bus, so that
+    /// the name isn't about to be owned again.
+    pub(super) fn is_given_up(&self, change: u64) -> bool {
+        !self.asked && self.changes == change
     }
 }
 
@@ -181,10 +198,11 @@ impl Caminito {
         }
     }
 
-    /// The bus took the registrar's name back. An applet that came meanwhile has had the
-    /// name asked for again.
-    pub(super) fn registrar_released(&mut self, (): ()) {
-        if !self.global_menu_applet {
+    /// The bus took the registrar's name back, at the registrar's `change`. For an applet
+    /// that came meanwhile the name has been asked for again, or is about to be, and
+    /// nothing goes.
+    pub(super) fn registrar_released(&mut self, change: u64) {
+        if !self.global_menu_applet && self.registrar_is_given_up(change) {
             self.global_menu_offered = false;
         }
     }
@@ -205,7 +223,7 @@ impl Caminito {
             .and_then(GlobalMenu::gtk);
         let dbusmenu = || {
             let address = surface.as_ref().and_then(appmenu::address)?;
-            Some(GlobalMenu::dbusmenu(address))
+            GlobalMenu::dbusmenu(address)
         };
         let menu = gtk.or_else(dbusmenu);
         match menu {
