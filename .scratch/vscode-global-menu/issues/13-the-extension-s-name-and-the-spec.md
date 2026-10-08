@@ -9,7 +9,7 @@ Map: [VS Code's global menu](../map.md)
 
 The map's last fog, and then its destination.
 
-- **The extension's name in the glossary.** "Caminito integration" was the working name. Does it do anything besides the menu, now or as a place for later things? The name decides the extension's id, its directory in this repository, and the name of its own setting from ADR 0021. The package is already `caminito-vscode-git` (ADR 0022) and needn't match.
+- **The extension's name in the glossary.** "Caminito integration" was the working name. Does it do anything besides the menu, now or as a place for later things? The name decides the extension's id, its directory in this repository, the name of its own setting from ADR 0021, and the bus name that makes the offer once ([12](12-when-a-claim-is-made.md)). The package is already `caminito-vscode-git` (ADR 0022) and needn't match.
 - **The spec's outline:** its sections, and how the work is cut between the extension and Caminito, and into tickets that can each be run.
 - **Where the spec lives,** and whether the map is closed when it's written.
 
