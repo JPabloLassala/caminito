@@ -17,11 +17,11 @@ The single Wayland process that owns the displays and input and manages windows.
 _Avoid_: Wayland window manager
 
 **Carried patch**:
-A change to a MATE component that Caminito's packaging applies downstream and never sends upstream. It is gated on Caminito (`MATE_WM_NAME=Caminito`, or an owner of `org.mate.Caminito`), so it falls back to the component's normal behaviour under X11 MATE, the Wayfire session, or anything else that isn't Caminito.
+A change to a MATE component, or to a panel applet from outside MATE, that Caminito's packaging applies downstream and never sends upstream. It is gated on Caminito (`MATE_WM_NAME=Caminito`, or an owner of `org.mate.Caminito`), so it falls back to the component's normal behaviour under X11 MATE, the Wayfire session, or anything else that isn't Caminito.
 _Avoid_: fork, upstream patch
 
 **Patched package**:
-An Arch package named `<pkgname>-caminito` that builds a MATE component with its carried patches and replaces the stock package through `provides` and `conflicts`.
+An Arch package named `<pkgname>-caminito` that builds a MATE component, or a panel applet from outside MATE, with its carried patches and replaces the stock package through `provides` and `conflicts`.
 _Avoid_: fork package, Caminito build of MATE
 
 **Layer surface**:
@@ -155,6 +155,18 @@ _Avoid_: layout (that's the outputs'), pager layout, desktop layout (`_NET_DESKT
 **Window switcher**:
 The popup that Alt+Tab and Marco's other `switch-*` actions open while the modifier is held: a grid of the windows' thumbnails, most recently used first, from which releasing the modifier activates the selected one. It stands in for Marco's Alt+Tab popup (ADR 0016).
 _Avoid_: task switcher (KDE's term; Caminito's unit is the window), Alt+Tab popup or tab popup (Marco's own, which Caminito doesn't have), switcher alone (the workspace switcher is the panel's pager)
+
+**Global menu**:
+The focused window's menubar, shown in the panel instead of inside the window. There is one, whatever the number of panels or outputs, and a window without a menubar has none.
+_Avoid_: app menu (GNOME's single per-application menu, a different thing), main menu (the panel's Alt+F1 menu), menubar alone (that's the one inside a window)
+
+**Global menu applet**:
+The mate-panel applet that draws the global menu, with the focused window's application name before it when the user has that turned on.
+_Avoid_: widget, appmenu (vala-panel's and KDE's name), menu applet (the main menu is one too)
+
+**Menu claim**:
+A program with no window of its own saying that the menu it serves is the menubar of its process's focused window (ADR 0018). It is how VS Code's menubar becomes the global menu.
+_Avoid_: registration (that's an X11 window's menu at the registrar), menu binding
 
 **Scene**:
 The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
