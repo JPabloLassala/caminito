@@ -19,3 +19,8 @@ To measure, from [06](06-channel-between-extension-and-caminito.md) and ADR 0018
 From [07](07-source-of-the-menu-structure.md) and ADR 0019:
 
 - Whether the extension runs in the agent sessions window, and what the ordinary menu does there.
+
+From [09](09-the-in-window-menubar.md) and ADR 0021:
+
+- Whether a press of Alt shows the in-window menubar under `window.menuBarVisibility: toggle` in a Caminito session, and whether Alt+F opens its File menu.
+- Whether two windows' extension hosts, claiming one after the other, can both show the offer to hide the menubar.
