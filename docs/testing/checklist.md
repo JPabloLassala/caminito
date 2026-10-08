@@ -583,21 +583,30 @@ session_env() {
      Shortcuts* instead.
   5. On a laptop with a touchpad toggle key, press it twice.
   6. Log out, log into *MATE*, the X11 session, and repeat step 2. Then log into the Wayfire
-     session and run `mate-settings-daemon --debug --replace 2>&1 | grep -i media` in a
-     terminal.
+     session and run this in a terminal, since the daemon isn't on `PATH`:
+
+     ```sh
+     /usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace 2>&1 | grep -i media
+     ```
 - **Expected:** in step 2 each press changes the volume or the mute, and shows the OSD in the
   lower half of the monitor. The held volume key goes on lowering the volume, and the held mute
   key toggles once. In step 3 the OSD shows above the fullscreen window, and what's typed goes
   to the text field. In step 4 Ctrl+Alt+M mutes with no log out, the mute key does nothing
   while it's set, and works again after the reset. In step 5 the OSD says *Touchpad disabled*,
   the touchpad stops moving the pointer, and the second press brings it back. In step 6 X11
-  MATE's keys and OSD are as before, and on Wayfire the plugin isn't loaded: `Plugin
-  'Media keys' requires X11; not loading on this display` (ADR 0011).
+  MATE's keys and OSD are as before. On Wayfire the daemon run from the terminal is on the
+  Wayland display and doesn't load the plugin (ADR 0011): it prints `Failed to call
+  "GrabMediaPlayerKeys"`, with `Object does not exist at path
+  "/org/mate/SettingsDaemon/MediaKeys"`, which is the stock mpris plugin finding no media-keys
+  plugin. It doesn't print the daemon's own `requires X11; not loading on this display`. That
+  session's own daemon is another matter: `mate-wayland-components.sh` starts it with
+  `GDK_BACKEND=x11` and starts it again when it ends, so it's on XWayland and loads the plugin
+  through its X11 code, with the stock package too.
 - **Debug tool:** `DumpState`'s `accelerator_grabs`, which lists each key msd grabbed with
   msd's unique name, and its `outputs`' `layer_surfaces`, where the OSD is `mate-osd` on the
   `overlay` layer with `keyboard_interactivity` `none` while it shows. `dbus-monitor
   "interface='org.mate.Caminito'"` can't see the signals, which go to msd alone: run
-  `mate-settings-daemon --debug --replace` for msd's side.
+  `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's side.
 
 ### A custom shortcut runs its command
 
@@ -636,7 +645,8 @@ session_env() {
   the stock package too (100).
 - **Debug tool:** `DumpState`'s `accelerator_grabs`, where the shortcut's keys are listed under
   a unique name of msd's that isn't the one the media keys have: the plugin has a connection
-  of its own. `mate-settings-daemon --debug --replace` for msd's side.
+  of its own. `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's
+  side.
 
 ### The brightness keys change the backlight with a Wayland window focused
 
@@ -944,7 +954,8 @@ session_env() {
   and each change applies with the dialog still open (53). `;` types `;`, then `ñ` after
   Alt+Shift, in both apps (54). The repeat starts sooner and runs faster in step 4, then later
   and slower. In X11 MATE both dialogs are as the stock ones, and *Mouse* has *Touchpad* only
-  where the X server lists a touchpad. In the Wayfire session both do what the stock ones do:
+  where the X server lists a touchpad. In the Wayfire session both do what the stock ones do, which is to crash at start with a
+  segmentation fault, in an X11 call on a Wayland display:
   the gate is `MATE_WM_NAME=Caminito` (102, ADR 0011). On a machine with no touchpad,
   *Touchpad* is shown under Caminito anyway, and changes nothing (06).
 - **Debug tool:** `mate-mouse-properties` and `mate-keyboard-properties` run from a terminal,
