@@ -156,6 +156,8 @@ pub struct State {
     pub input: Vec<InputEvent>,
     /// The keyboard's last `repeat_info`, as (rate, delay).
     pub repeat_info: Option<(i32, i32)>,
+    /// The keyboard's last depressed modifiers, as xkb's mask.
+    pub depressed_modifiers: u32,
     /// The keyboard's last locked modifiers, as xkb's mask.
     pub locked_modifiers: u32,
     /// The keyboard's last keymap, as xkb's text.
@@ -1168,8 +1170,12 @@ impl Dispatch<WlKeyboard, ()> for State {
                 return;
             }
             wl_keyboard::Event::Modifiers {
-                mods_locked, group, ..
+                mods_depressed,
+                mods_locked,
+                group,
+                ..
             } => {
+                state.depressed_modifiers = mods_depressed;
                 state.locked_modifiers = mods_locked;
                 state.group = group;
                 return;

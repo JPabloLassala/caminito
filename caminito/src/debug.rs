@@ -107,7 +107,7 @@ struct BellDump {
 
 #[derive(Serialize)]
 struct LastBellDump {
-    /// `gtk_shell1`, `xdg_system_bell` or `xkb`.
+    /// `gtk_shell1`, `xdg_system_bell`, `xkb` or `accessx`.
     source: &'static str,
     /// The window it was for, if any.
     window: Option<u64>,

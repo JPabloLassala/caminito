@@ -1,5 +1,6 @@
 //! Input: the keyboard path, pointer focus, and interactive move and resize (15).
 
+pub(crate) mod accessx;
 pub mod bindings;
 pub mod devices;
 mod focus;
@@ -209,17 +210,23 @@ impl State {
     }
 
     /// The keyboard path: one key event through 15's five stages, in order, each deciding
-    /// whether it goes further. Only the lock, the bindings, the accelerator grabs and the
-    /// client stage do anything yet.
+    /// whether it goes further. The keyboard monitor does nothing yet.
     pub fn on_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         // 1. The lock (12). 15 has it as a gate before xkbcommon, but it drops no key,
         // since the locker is typed to: while the session is locked it's stage 4 that
         // runs nothing but VT switching, and the keyboard itself that switches layouts, as
-        // xkbcommon does for the keymap's `grp` options. What it does here is see that no
-        // grab has the keys instead of the lock.
+        // xkbcommon does for the keymap's `grp` options.
+        // 2. AccessX, while locked too (13): it sends on the keys it lets through, when it
+        // does.
+        self.accessx_stage(keycode, key_state, time);
+    }
+
+    /// The keyboard path past AccessX, for a key event its filter let through or made.
+    fn key_past_accessx(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
+        // No grab has the keys instead of the lock, whenever AccessX sends them on.
         self.release_keyboard_grab_if_locked();
-        // 2 and 3 see the raw key, before xkbcommon.
-        if !(accessx_passes(keycode) && keyboard_monitor_passes(keycode)) {
+        // 3 sees the raw key, before xkbcommon.
+        if !keyboard_monitor_passes(keycode) {
             return;
         }
 
@@ -278,12 +285,14 @@ impl State {
     }
 
     /// Releases every key still down, as when the host takes the keyboard from a nested
-    /// Caminito: the releases will never come, and Alt would otherwise stay held.
+    /// Caminito: the releases will never come, and Alt would otherwise stay held. The keys
+    /// AccessX holds down or back are among them, so its filter forgets them.
     pub fn release_pressed_keys(&mut self) {
+        self.caminito.accessx.clear();
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let time = InputTime::from_micros(self.caminito.now().as_micros() as u64);
         for keycode in keyboard.pressed_keys() {
-            self.on_key(keycode, KeyState::Released, time);
+            self.key_past_accessx(keycode, KeyState::Released, time);
         }
     }
 
@@ -633,11 +642,6 @@ fn vt_switch(keysym: Keysym) -> Option<i32> {
     (first..=Keysym::XF86_Switch_VT_12.raw())
         .contains(&keysym.raw())
         .then(|| (keysym.raw() - first + 1) as i32)
-}
-
-/// Stage 2, AccessX (M7): sticky, slow and bounce keys. Nothing is filtered yet.
-fn accessx_passes(_keycode: Keycode) -> bool {
-    true
 }
 
 /// Stage 3, the keyboard monitor's grabs and watches (M7). There's no monitor yet.

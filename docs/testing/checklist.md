@@ -737,6 +737,36 @@ session_env() {
 - **Debug tool:** the typed text, and `xkbcomp "$DISPLAY" - | grep xkb_symbols` on the nested
   `DISPLAY`.
 
+### Sticky keys from the Keyboard dialog, in both kinds of window and at the lock screen
+
+- **Milestone:** M7
+- **Steps:**
+  1. With `mate-control-center-caminito` installed, log into *MATE on Caminito*. Open `pluma`,
+     a native Wayland window, and `xterm`, an XWayland one.
+  2. Open *Keyboard* from the control center. On *Accessibility*, tick *Simulate simultaneous
+     keypresses*. Leave the dialog open.
+  3. In pluma, press and let go of Shift, then type `aa`. Press and let go of Shift twice, type
+     `aa`, and press and let go of Shift once more. Do the same in xterm.
+  4. With pluma focused, press and let go of Alt, then press F10.
+  5. Lock the screen (*System* ▸ *Lock Screen*). At the unlock dialog, for a password with a
+     capital letter in it, press and let go of Shift before that letter instead of holding it.
+  6. In the dialog, tick *Accessibility features can be toggled with keyboard shortcuts*. Press
+     Shift five times in a row, then press and let go of Shift and type `a` in pluma. Press
+     Shift five times again.
+  7. Tick *Only accept long keypresses*, and in pluma tap `a` quickly, then hold it for a
+     second. Untick it, tick *Ignore fast duplicate keypresses*, and tap `a` twice quickly.
+  8. In *Audio Feedback…*, tick *Beep when a modifier key is pressed*, and press Shift.
+- **Expected:** in step 3 each app gets `Aa`, then `AA`, and lowercase again after the last
+  Shift (134). In step 4 pluma maximises. In step 5 the password is taken. In step 6 a
+  notification says *Sticky Keys turned off* after the first five presses, the `a` is
+  lowercase, a notification says *Sticky Keys turned on* after the second five, and the
+  dialog's tick follows each. In step 7 the quick tap types nothing and the held key types
+  `a` after the delay, then the second quick tap of `a` types nothing. In step 8 the press is
+  logged as a bell, which neither sounds nor flashes until M8 (105, 17).
+- **Debug tool:** `gsettings monitor org.mate.accessibility-keyboard`, `wev` in place of
+  pluma and `xev` in place of xterm for the keys and modifiers each gets, and `DumpState`'s
+  `bell`, whose `source` is `accessx` for one of these beeps.
+
 ## Outputs
 
 ### The scale picked for each of the developer's monitors

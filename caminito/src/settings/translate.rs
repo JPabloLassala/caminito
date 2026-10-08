@@ -20,6 +20,7 @@ pub const TOUCHPAD: &str = "org.mate.peripherals-touchpad";
 pub const KEYBOARD: &str = "org.mate.peripherals-keyboard";
 pub const KEYBOARD_XKB: &str = "org.mate.peripherals-keyboard-xkb.kbd";
 pub const SOUND: &str = "org.mate.sound";
+pub const A11Y_KEYBOARD: &str = "org.mate.accessibility-keyboard";
 /// Caminito's own schema (09), which Caminito installs. A development run may not have it.
 pub const CAMINITO: &str = "org.mate.Caminito";
 
@@ -75,6 +76,10 @@ pub const SCHEMAS: &[Schema] = &[
         required: false,
     },
     Schema {
+        id: A11Y_KEYBOARD,
+        required: false,
+    },
+    Schema {
         id: CAMINITO,
         required: false,
     },
@@ -100,6 +105,13 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // matches `audible-bell` only when it's off, and `visual-bell-type` only matters with
     // the visual bell on, so neither is logged.
     (MARCO_GENERAL, "visual-bell"),
+    // Mouse keys are later (13): they need pointer emulation with msd's acceleration curve.
+    (A11Y_KEYBOARD, "mousekeys-enable"),
+    // 13 has these in v0.1, and the AccessX filter doesn't apply them yet (134).
+    // `timeout` only matters with `timeout-enable` on, so it isn't logged.
+    (A11Y_KEYBOARD, "timeout-enable"),
+    (A11Y_KEYBOARD, "capslock-beep-enable"),
+    (A11Y_KEYBOARD, "feature-state-change-beep"),
 ];
 
 /// Marco's schemas that aren't installed, which stop Caminito starting (09).
@@ -297,6 +309,7 @@ pub struct Settings {
     pub bell: Bell,
     pub devices: Devices,
     pub keyboard: Keyboard,
+    pub accessx: AccessX,
     pub keymap: Keymap,
 }
 
@@ -687,6 +700,41 @@ pub struct Keyboard {
     pub numlock: Option<bool>,
 }
 
+/// `org.mate.accessibility-keyboard`: AccessX, which Caminito's keyboard filter applies as
+/// the X server does under X11 (13, 134). `togglekeys-backend` isn't read: both of its
+/// values mean Caminito's filter. `mousekeys-*` is read by nothing (13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccessX {
+    /// `enable`: whether the keyboard gestures turn sticky and slow keys on and off.
+    pub gestures: bool,
+    /// `stickykeys-enable`.
+    pub sticky_keys: bool,
+    /// `stickykeys-latch-to-lock`: whether a second press of a latched modifier locks it.
+    pub sticky_latch_to_lock: bool,
+    /// `stickykeys-two-key-off`: whether two keys pressed at once turn sticky keys off.
+    pub sticky_two_key_off: bool,
+    /// `stickykeys-modifier-beep`: whether a modifier's press beeps.
+    pub sticky_modifier_beep: bool,
+    /// `slowkeys-enable`.
+    pub slow_keys: bool,
+    /// `slowkeys-delay`: how long a key is held before it counts as pressed.
+    pub slow_delay: Duration,
+    /// `slowkeys-beep-press`.
+    pub slow_beep_press: bool,
+    /// `slowkeys-beep-accept`.
+    pub slow_beep_accept: bool,
+    /// `slowkeys-beep-reject`.
+    pub slow_beep_reject: bool,
+    /// `bouncekeys-enable`.
+    pub bounce_keys: bool,
+    /// `bouncekeys-delay`: how long after a key's release its next press is ignored.
+    pub bounce_delay: Duration,
+    /// `bouncekeys-beep-reject`.
+    pub bounce_beep_reject: bool,
+    /// `togglekeys-enable`: whether a lock key's press beeps.
+    pub toggle_keys: bool,
+}
+
 /// A keymap by its RMLVO names, for xkbcommon with rules `evdev` (09, 54). An empty part is
 /// left to xkbcommon's own default.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -916,6 +964,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         },
         devices: devices(&mut r),
         keyboard: keyboard(&mut r),
+        accessx: accessx(&mut r),
         keymap: keymap(&mut r).or(&reading.system_keymap),
     };
     for schema in &reading.missing {
@@ -1023,6 +1072,36 @@ fn keyboard(r: &mut Reader<'_>) -> Keyboard {
             NumLockState::Off => Some(false),
             NumLockState::Unknown => None,
         },
+    }
+}
+
+/// AccessX's keys, as msd's a11y-keyboard plugin gives them to the X server
+/// (`msd-a11y-keyboard-manager.c:313-405`).
+fn accessx(r: &mut Reader<'_>) -> AccessX {
+    let mut millis = |key: &str| {
+        Duration::from_millis(
+            r.int_at_least(A11Y_KEYBOARD, key, 300, 0)
+                .unsigned_abs()
+                .into(),
+        )
+    };
+    let slow_delay = millis("slowkeys-delay");
+    let bounce_delay = millis("bouncekeys-delay");
+    AccessX {
+        gestures: r.bool(A11Y_KEYBOARD, "enable", false),
+        sticky_keys: r.bool(A11Y_KEYBOARD, "stickykeys-enable", false),
+        sticky_latch_to_lock: r.bool(A11Y_KEYBOARD, "stickykeys-latch-to-lock", true),
+        sticky_two_key_off: r.bool(A11Y_KEYBOARD, "stickykeys-two-key-off", false),
+        sticky_modifier_beep: r.bool(A11Y_KEYBOARD, "stickykeys-modifier-beep", false),
+        slow_keys: r.bool(A11Y_KEYBOARD, "slowkeys-enable", false),
+        slow_delay,
+        slow_beep_press: r.bool(A11Y_KEYBOARD, "slowkeys-beep-press", false),
+        slow_beep_accept: r.bool(A11Y_KEYBOARD, "slowkeys-beep-accept", false),
+        slow_beep_reject: r.bool(A11Y_KEYBOARD, "slowkeys-beep-reject", false),
+        bounce_keys: r.bool(A11Y_KEYBOARD, "bouncekeys-enable", false),
+        bounce_delay,
+        bounce_beep_reject: r.bool(A11Y_KEYBOARD, "bouncekeys-beep-reject", false),
+        toggle_keys: r.bool(A11Y_KEYBOARD, "togglekeys-enable", false),
     }
 }
 
