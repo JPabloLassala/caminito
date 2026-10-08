@@ -1,7 +1,7 @@
 # 19. VS Code's menu table is a snapshot of its own native menubar
 
 Date: 2026-10-08
-Status: Accepted
+Status: Accepted. Qualified on 2026-10-08 by ticket 118: two menubar commands register after `onStartupFinished`, so the rule at start drops Backup and Sync Settings and Report Issue in every window. The developer accepted their loss; the commands aren't read again for them.
 
 ## Context
 
@@ -27,7 +27,7 @@ The menubar moves little: nothing was added or removed between 1.130 and 1.140, 
 
 ## Consequences
 
-- An item added upstream is missing from the panel's menu until the table is remade. An item removed upstream, or missing in a fork, is dropped.
+- An item added upstream is missing from the panel's menu until the table is remade. So is an item whose command registers after the extension starts, as Backup and Sync Settings and Report Issue do in 1.140 (118). An item removed upstream, or missing in a fork, is dropped.
 - An item hidden in both snapshot states is not in the table. The ones known are outside an ordinary editing state: the Zen-mode tabs submenu, Join and Split in Group, the merge-conflict entry.
 - An item a fork adds is never shown. Cursor is untested and gets what the tolerance rule leaves. Forks have no canary.
 - With a language pack installed, the panel's menu is English and the rest of VS Code isn't. A language pack keys its translations by source module and string key, so the table can gain those two columns later; that was read from the source and not run.
