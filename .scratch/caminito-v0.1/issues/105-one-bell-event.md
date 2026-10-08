@@ -1,7 +1,7 @@
 # One bell event
 
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6
 Blocked by: none
 Map: [Caminito v0.1](../map.md)
@@ -19,10 +19,26 @@ Every bell an app rings reaches Caminito as the same event, whatever the app's t
 
 ## Acceptance criteria
 
-- [ ] Headless tests, written before the code: a `gtk_shell1` bell with a surface, one without, and an xdg-system-bell each show in the debug dump with the right window; a bell for a destroyed surface is a bell for no window.
-- [ ] An X11 tier test: an X client's bell shows in the dump with its window.
+- [x] Headless tests, written before the code: a `gtk_shell1` bell with a surface, one without, and an xdg-system-bell each show in the debug dump with the right window; a bell for a destroyed surface is a bell for no window.
+- [x] An X11 tier test: an X client's bell shows in the dump with its window.
 
 ## Notes
 
 - **The visual and audible bell** are M8's (17), with the keys that turn them on.
 - **A bell from a sandboxed client** counts like any other.
+
+## Resolution
+
+The event is `caminito/src/bell.rs`: `Caminito::ring_bell` takes the source and what the bell named, counts it, and keeps the last one's source and window in `Caminito::bells`. The debug dump shows them as `bell`, `{ "count", "last": { "source", "window" } }`, with the source `gtk_shell1`, `xdg_system_bell` or `xkb`. The tests are `caminito/src/tests/bell.rs`, and the settings' are in `caminito/src/settings/translate/tests.rs`.
+
+- **The three sources:** `GtkShellHandler::system_bell` and Smithay's `XdgSystemBellHandler::ring` call it, and so does `XConnection::requests`, which gives `XkbBellNotify` to `Caminito::x_request` as `Request::Bell`.
+- **The window:** a bell that names nothing is for the focused window. One that names a surface is for its root surface's window, so a subsurface's bell is its window's. A surface of no window (a popup's, a layer surface's, one with no role) and a surface that's gone give no window. An X bell that names a window Caminito doesn't manage gives none too, where Marco took the focused window (`bell.c:meta_bell_notify`): the ticket's rule, the same for every source.
+- **`gtk_shell1`'s handler now takes the surface as a `Weak`,** because a `gtk_surface1` has no destructor at version 1 and outlives its surface. Before, a bell for a gone surface came through as a bell for none, which would have been the focused window's.
+- **The settings:** `Settings::bell` reads Marco's `audible-bell`, `visual-bell` and `visual-bell-type`. `ring_bell` logs them at debug level with `org.mate.sound theme-name`, which was already read, and doesn't act on them.
+
+## Notes from the work (2026-10-08)
+
+- **Written before the code:** the bell tests, seen to fail with no `bell` in the dump. The settings' tests were written with their code, so they weren't seen to fail.
+- **`bell-mode` isn't read.** 09 has `off` silence the audible bell, but 53 made the key *never*, and `UNSUPPORTED`'s doc says so. That's for M8 to settle when it plays the bell (17).
+- **The test client** rings xdg-system-bell, and X bells with `XkbBell` for a window, as GDK3 does, and with the core `Bell` for none, as `XBell` does. It enables x11rb's `xkb` feature for that.
+- **The run:** on Ubuntu 24.04 with Xwayland 23.2.6, the bell tests, the settings tests and the debug tests pass. The whole suite has five failures there that the base commit has too: four `keymap` tests and `window_properties::the_pointer_goes_through_an_override_redirect_windows_input_shaped_shadow`, which look like that host's xkeyboard-config and Xwayland. CI runs on Arch. Clippy on that toolchain (1.97) also flags three `manual_range_contains` in `caminito-theme`, which this change doesn't touch.

@@ -74,6 +74,7 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 use caminito_theme::{PaletteCache, ThemeDirs, Variant};
 
 use crate::backend::{self, Backend};
+use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
 use crate::dbus::panel::Panel;
@@ -198,6 +199,8 @@ pub struct Caminito {
     pub suppressed_keys: HashSet<Keycode>,
     /// The accelerators callers of `org.mate.Caminito` have grabbed (98).
     pub(crate) accelerator_grabs: Grabs,
+    /// The bells rung (105).
+    pub bells: Bells,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -781,6 +784,7 @@ impl Caminito {
             keyboard_layer: None,
             suppressed_keys: HashSet::new(),
             accelerator_grabs: Grabs::default(),
+            bells: Bells::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,

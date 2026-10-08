@@ -84,6 +84,23 @@ struct StateDump {
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
     switcher: Option<SwitcherDump>,
+    bell: BellDump,
+}
+
+#[derive(Serialize)]
+struct BellDump {
+    /// How many bells have rung (105).
+    count: u64,
+    /// The last one.
+    last: Option<RungDump>,
+}
+
+#[derive(Serialize)]
+struct RungDump {
+    /// `gtk_shell1`, `xdg_system_bell` or `xkb`.
+    source: &'static str,
+    /// The window it was for, if any.
+    window: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -282,8 +299,8 @@ impl Caminito {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
-    /// surfaces, the X11 scale, focus, and the accelerator grabs with their owners, as
-    /// pretty-printed JSON. The lock state comes with the milestone that makes it.
+    /// surfaces, the X11 scale, focus, the accelerator grabs with their owners, the Window
+    /// switcher, and the bells rung with the last one, as pretty-printed JSON. The lock state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -400,6 +417,13 @@ impl Caminito {
             focus: policy.focus(SEAT).map(|id| id.0),
             accelerator_grabs,
             switcher,
+            bell: BellDump {
+                count: self.bells.count,
+                last: self.bells.last.map(|bell| RungDump {
+                    source: bell.source.name(),
+                    window: bell.window.map(|id| id.0),
+                }),
+            },
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

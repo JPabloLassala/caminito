@@ -32,6 +32,7 @@ use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
 use smithay::wayland::xdg_system_bell::XdgSystemBellHandler;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
 
+use crate::bell::{BellFor, BellSource};
 use crate::input::{GrabKind, KeyboardFocus};
 use crate::output::output_id;
 use crate::state::{Caminito, State};
@@ -333,7 +334,13 @@ impl XdgForeignHandler for State {
 }
 
 impl XdgSystemBellHandler for State {
-    fn ring(&mut self, _surface: Option<WlSurface>) {}
+    fn ring(&mut self, surface: Option<WlSurface>) {
+        let bell_for = match surface {
+            Some(surface) => BellFor::Window(self.caminito.bell_window(&surface)),
+            None => BellFor::Focus,
+        };
+        self.caminito.ring_bell(BellSource::XdgSystemBell, bell_for);
+    }
 }
 
 impl XdgActivationHandler for State {

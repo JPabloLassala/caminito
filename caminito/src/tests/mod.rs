@@ -2,6 +2,7 @@
 
 mod accelerators;
 mod active_toplevel;
+mod bell;
 mod bindings;
 mod caminito_displays;
 mod client;

@@ -266,6 +266,8 @@ pub(super) enum Request {
         taskbar: bool,
         pager: bool,
     },
+    /// XKB's `BellNotify`: an X client rang the bell, for this window or for none (105).
+    Bell { window: Option<Window> },
     /// SHAPE's `ShapeNotify` for a window's input region: read it again, or it has none if
     /// it's no longer shaped.
     InputShape { window: Window, shaped: bool },
@@ -433,8 +435,7 @@ impl XConnection {
         Ok(connection)
     }
 
-    /// The messages X has sent since this was last asked. Bells are only logged until M6
-    /// joins them to the single bell event (06).
+    /// The messages X has sent since this was last asked.
     pub(super) fn requests(&mut self) -> Result<Vec<Request>, Error> {
         let mut requests = Vec::new();
         while let Some(event) = self.conn.poll_for_event()? {
@@ -450,7 +451,9 @@ impl XConnection {
                     continue;
                 }
                 Event::XkbBellNotify(bell) => {
-                    tracing::debug!("an X client rang the bell at {}%", bell.percent);
+                    // `XBell` names no window, and `XkbBell`, which GDK3 rings, may.
+                    let window = (bell.window != x11rb::NONE).then_some(bell.window);
+                    requests.push(Request::Bell { window });
                     continue;
                 }
                 Event::RandrScreenChangeNotify(_) | Event::RandrNotify(_) => {

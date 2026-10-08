@@ -1,6 +1,6 @@
-//! `gtk_shell1` (67): what GTK3 says through it of a window's modality, its bell, and the
-//! requests Caminito takes and ignores. Only xdg toplevels are mapped, because an XWayland window
-//! says it's modal with `_NET_WM_STATE_MODAL`, which `xwayland_windows` tests.
+//! `gtk_shell1` (67): what GTK3 says through it of a window's modality, and the requests
+//! Caminito takes and ignores; `bell` tests its bell. Only xdg toplevels are mapped, because an
+//! XWayland window says it's modal with `_NET_WM_STATE_MODAL`, which `xwayland_windows` tests.
 
 use caminito_policy::{PolicyWindow, WindowType};
 use caminito_theme::FrameType;
@@ -98,18 +98,6 @@ fn the_parent_of_a_modal_dialog_cant_be_focused_over_it() {
     click_corner(&mut f, parent);
 
     assert!(f.has_keyboard(parent));
-}
-
-#[test]
-fn the_bell_is_accepted_for_a_window_and_for_none() {
-    let (mut f, client, _, dialog) = a_dialog();
-
-    f.client(client).system_bell(Some(dialog.xdg()));
-    f.client(client).system_bell(None);
-
-    // A protocol error would end the client here.
-    f.roundtrip(client);
-    assert_eq!(f.mapped(dialog).window_type(), WindowType::Dialog);
 }
 
 #[test]

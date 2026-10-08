@@ -136,5 +136,9 @@ expression: without_x_ids(&dump)
   "x11_scale": 2,
   "focus": 0,
   "accelerator_grabs": [],
-  "switcher": null
+  "switcher": null,
+  "bell": {
+    "count": 0,
+    "last": null
+  }
 }

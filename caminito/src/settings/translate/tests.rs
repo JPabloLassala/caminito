@@ -7,6 +7,9 @@ fn defaults() -> Reading {
         |schema: &str, key: &str, value: Value| reading.insert(schema, key, value.clone(), value);
     let s = |s: &str| Value::Str(s.into());
     put(MARCO_GENERAL, "theme", s("Menta"));
+    put(MARCO_GENERAL, "audible-bell", Value::Bool(true));
+    put(MARCO_GENERAL, "visual-bell", Value::Bool(false));
+    put(MARCO_GENERAL, "visual-bell-type", s("fullscreen"));
     put(MARCO_GENERAL, "titlebar-font", s("Sans Bold 10"));
     put(
         MARCO_GENERAL,
@@ -884,6 +887,52 @@ fn without_the_sound_schema_its_keys_are_defaults() {
     let (settings, problem) = problem(&reading);
     assert_eq!(settings.sound, self::settings(&defaults()).sound);
     assert_eq!(problem, Problem::MissingSchema(SOUND.into()));
+}
+
+// Marco's bell keys.
+
+#[test]
+fn the_defaults_give_marcos_bell() {
+    assert_eq!(
+        settings(&defaults()).bell,
+        Bell {
+            audible: true,
+            visual: false,
+            visual_type: VisualBellType::Fullscreen,
+        }
+    );
+}
+
+#[test]
+fn bell_keys_are_read() {
+    let reading = with_all(&[
+        (MARCO_GENERAL, "audible-bell", Value::Bool(false)),
+        (MARCO_GENERAL, "visual-bell", Value::Bool(true)),
+        (MARCO_GENERAL, "visual-bell-type", string("frame-flash")),
+    ]);
+    assert_eq!(
+        settings(&reading).bell,
+        Bell {
+            audible: false,
+            visual: true,
+            visual_type: VisualBellType::FrameFlash,
+        }
+    );
+}
+
+#[test]
+fn an_unknown_visual_bell_type_is_fullscreen() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "visual-bell-type", string("ripple")));
+    assert_eq!(settings.bell.visual_type, VisualBellType::Fullscreen);
+    assert_eq!(
+        problem,
+        invalid(
+            MARCO_GENERAL,
+            "visual-bell-type",
+            "'ripple'",
+            "'fullscreen'"
+        )
+    );
 }
 
 // org.mate.peripherals-mouse.

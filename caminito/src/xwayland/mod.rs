@@ -37,6 +37,7 @@ use self::scale::X11Scale;
 pub(crate) use self::selection::WaylandSelections;
 use self::stack::RootStack;
 use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XConnection};
+use crate::bell::{BellFor, BellSource};
 use crate::decoration::{NetWmIcon, WindowFacts};
 use crate::helpers;
 use crate::input::GrabKind;
@@ -407,6 +408,16 @@ impl Caminito {
             Request::NumberOfDesktops(_) => {}
             Request::Desktop { window, desktop } => self.x_desktop_request(window, desktop),
             Request::FrameExtents { window } => self.x_frame_extents_request(window),
+            // Marco takes the focused window for an X window it doesn't manage
+            // (`bell.c:meta_bell_notify`); the bell event takes none, as it does for a
+            // surface that isn't a window's (105).
+            Request::Bell { window } => {
+                let bell_for = match window {
+                    Some(window) => BellFor::Window(self.mapped_for_key(&WindowKey::X11(window))),
+                    None => BellFor::Focus,
+                };
+                self.ring_bell(BellSource::Xkb, bell_for);
+            }
             Request::Close { window } => {
                 if let Some(id) = self.mapped_for_key(&WindowKey::X11(window)) {
                     self.policy.close(id);
