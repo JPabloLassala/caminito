@@ -1,6 +1,7 @@
 # Map: VS Code's global menu
 
 Label: wayfinder:map
+Status: closed on 2026-10-08. It reached its destination, [the spec](spec.md).
 
 ## Destination
 
@@ -35,10 +36,11 @@ A spec, ready to cut into implementation tickets, for showing VS Code's menubar 
 - [A thin end-to-end slice](issues/10-thin-end-to-end-slice.md): it works, with two windows, a reload and a restart of the panel, and a claim comes about 10 ms after the focus change; but a window focused when its host starts gets no focus event (its `focused` is already the real value), a floating editor window is claimed only when reached from another window, two hosts can both make the offer within about 300 ms, and the extension reaches the agents window only as a built-in. ADR 0018's claim rule is to reopen.
 - [How the package installs the extension](issues/11-how-the-package-installs-the-extension.md): as a built-in (ADR 0022): `caminito-vscode-git` installs it unpacked in a directory of its own, and an alpm hook links it into the built-in extensions directory of each of five editors that's installed; no `.vsix` ships, nothing is installed for a user, and `caminito-git` lists the package as an optional dependency.
 - [When a claim is made, and what an unclaimed window shows](issues/12-when-a-claim-is-made.md): ADR 0018 and ADR 0021 are amended, and Caminito's side doesn't change: the extension claims at activation when `focused` reads true, and while focused on an active text or notebook editor change or a tab-groups change, which reaches most floating editor windows; an unclaimed toplevel still has no menu of its own and a dropped focus event is lived with; a bus name carrying the main process's pid makes the offer once, and none comes from the agents window.
+- [The extension's name, and the spec](issues/13-the-extension-s-name-and-the-spec.md): the extension does the menu alone and is the **global menu extension**, `caminito.global-menu`, in `caminito-vscode/`; the spec is [spec.md](spec.md), in the repository's template split by side, cut into ten slices to be filed from 115 in the global menu's issues; an editor older than the extension's floor is served with what it has; the map is closed.
 
 ## Not yet specified
 
-- **The extension's name in the glossary, and the spec's outline** ([13](issues/13-the-extension-s-name-and-the-spec.md)). "Caminito integration" was the working name. Does it do anything besides the menu?
+Nothing. What still has to be run is in [the spec](spec.md), under the slice that runs it.
 
 ## Out of scope
 

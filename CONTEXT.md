@@ -168,6 +168,10 @@ _Avoid_: widget, appmenu (vala-panel's and KDE's name), menu applet (the main me
 A program with no window of its own saying that the menu it serves is the menubar of its process's focused window (ADR 0018). It is how VS Code's menubar becomes the global menu.
 _Avoid_: registration (that's an X11 window's menu at the registrar), menu binding
 
+**Global menu extension**:
+Caminito's extension for VS Code and the forks that share its extension API, which rebuilds the editor's menubar, serves it and makes the menu claim for its window. The menu is all it does.
+_Avoid_: Caminito integration (the working name, for an extension that would do more), plugin, VS Code extension alone (any extension is one)
+
 **Scene**:
 The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::Space`, which Caminito doesn't use)
