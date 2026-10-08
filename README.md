@@ -113,6 +113,15 @@ the brightness, keyboard backlight, power, sleep, hibernate, screensaver and bat
 through Caminito. mate-power-manager runs on XWayland in the session, where its own grabs see a
 key only while an XWayland window has the keyboard.
 
+`vala-panel-appmenu-mate-caminito` is the one patched package that isn't a MATE component, and
+nothing depends on it: build it for a global menu in the panel
+([ADR 0017](docs/adr/0017-caminito-brokers-the-global-menu-for-a-patched-appmenu-applet.md)).
+It's the AUR's `vala-panel-appmenu-mate` 25.04, with one patch: under Caminito the *Global
+Application Menu* applet draws the menu Caminito publishes for the focused window, and while
+the applet is on a panel GTK apps leave their menubars to it. So far that's the menu of a
+`GtkApplication`, as GTK 4 apps and some GTK 3 apps have. It's linked to `mate-panel-caminito`'s
+applet library, so build it after that package.
+
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no
 tag. To move a package to a new baseline, rebase its series:

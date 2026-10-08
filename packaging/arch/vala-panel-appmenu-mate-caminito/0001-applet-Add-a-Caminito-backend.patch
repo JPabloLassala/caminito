@@ -1,0 +1,337 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 09:11:12 -0300
+Subject: [PATCH] applet: Add a Caminito backend
+
+Caminito, the Wayland compositor for MATE, knows which window has the
+focus and where that window's menu is on the bus, as a Wayland panel
+cannot: the menu is tied to a surface. It publishes the focused window's
+menu as the GlobalMenu property of org.mate.Caminito, with the kind of
+menu, the bus name that serves it, its object paths and the application's
+id.
+
+When org.mate.Caminito has an owner, draw that menu in place of the one
+the window manager backend finds, and ask for no registrar: Caminito
+tells the apps itself when to give up their menubars. It does so while
+org.mate.Caminito.GlobalMenuApplet has an owner, so own that name from the
+first applet added until the last one is destroyed.
+
+mate-panel loads on Wayland only the applets that say they run there, so
+say so. Without an owner of org.mate.Caminito, nothing else changes.
+---
+ data/appmenu-mate.plugin.desktop.in |   1 +
+ lib/appmenu-abstractions.vala       |   7 +-
+ lib/appmenu-caminito.vala           | 207 ++++++++++++++++++++++++++++
+ lib/menu-widget.vala                |  26 +++-
+ lib/meson.build                     |   1 +
+ 5 files changed, 240 insertions(+), 2 deletions(-)
+ create mode 100644 lib/appmenu-caminito.vala
+
+diff --git a/data/appmenu-mate.plugin.desktop.in b/data/appmenu-mate.plugin.desktop.in
+index cc5b6f0..724f215 100644
+--- a/data/appmenu-mate.plugin.desktop.in
++++ b/data/appmenu-mate.plugin.desktop.in
+@@ -8,3 +8,4 @@ InProcess=true
+ Name=Global Application Menu
+ Description=All menus will hosts here
+ Icon=applications-system
++Platforms=X11;Wayland;
+diff --git a/lib/appmenu-abstractions.vala b/lib/appmenu-abstractions.vala
+index 13116a6..0ba85e5 100644
+--- a/lib/appmenu-abstractions.vala
++++ b/lib/appmenu-abstractions.vala
+@@ -39,10 +39,14 @@ namespace Appmenu
+         protected static DBusMenuRegistrarProxy proxy;
+         static construct
+         {
+-            proxy = new DBusMenuRegistrarProxy();
++            /* Under Caminito nothing here asks for a registrar, and starting one
++             * would make the apps that look for its name hide their menubars */
++            if (!CaminitoBackend.available())
++                proxy = new DBusMenuRegistrarProxy();
+         }
+         construct
+         {
++            if (!CaminitoBackend.available())
+             try
+             {
+                 var con = Bus.get_sync(BusType.SESSION);
+@@ -61,6 +65,7 @@ namespace Appmenu
+         }
+         ~Backend()
+         {
++            if (!CaminitoBackend.available())
+             try
+             {
+                 var con = Bus.get_sync(BusType.SESSION,null);
+diff --git a/lib/appmenu-caminito.vala b/lib/appmenu-caminito.vala
+new file mode 100644
+index 0000000..f8727af
+--- /dev/null
++++ b/lib/appmenu-caminito.vala
+@@ -0,0 +1,207 @@
++/*
++ * vala-panel-appmenu
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++using GLib;
++using Gtk;
++
++namespace Appmenu
++{
++    /* Caminito, the Wayland compositor for MATE, publishes the focused window's menu
++     * as the GlobalMenu property of org.mate.Caminito: (ssa{ss}s), the kind of menu,
++     * the bus name that serves it, its object paths and the application's id. */
++    internal class CaminitoBackend : Backend
++    {
++        private const string CAMINITO_NAME = "org.mate.Caminito";
++        private const string CAMINITO_PATH = "/org/mate/Caminito";
++        private const string CAMINITO_INTERFACE = "org.mate.Caminito";
++        private const string GLOBAL_MENU = "GlobalMenu";
++        private const string GLOBAL_MENU_TYPE = "(ssa{ss}s)";
++        /* The kind of an org.gtk.Menus menu, with org.gtk.Actions for its actions */
++        private const string KIND_GTK = "gtk";
++        /* While this name has an owner, Caminito tells the apps that something shows
++         * their menubars */
++        private const string APPLET_NAME = "org.mate.Caminito.GlobalMenuApplet";
++
++        /* These are read before the class is initialized, so none has an initializer */
++        private static bool looked_for_caminito;
++        private static bool caminito_found;
++        private static uint applets;
++        private static uint applet_name_id;
++
++        private DBusProxy? caminito = null;
++        private Helper? helper = null;
++        private string? bus_name = null;
++        private string? app_menu_path = null;
++        private string? menubar_path = null;
++        private string? application_path = null;
++        private string? window_path = null;
++        private string title = "";
++        private DesktopAppInfo? info = null;
++
++        /* Whether Caminito is the compositor: it owns its name before the session starts */
++        public static bool available()
++        {
++            if (looked_for_caminito)
++                return caminito_found;
++            looked_for_caminito = true;
++            try
++            {
++                var con = Bus.get_sync(BusType.SESSION);
++                var reply = con.call_sync(
++                    "org.freedesktop.DBus",
++                    "/org/freedesktop/DBus",
++                    "org.freedesktop.DBus",
++                    "NameHasOwner",
++                    new Variant("(s)", CAMINITO_NAME),
++                    new VariantType("(b)"),
++                    DBusCallFlags.NONE, -1);
++                caminito_found = reply.get_child_value(0).get_boolean();
++            }
++            catch (Error e)
++            {
++                caminito_found = false;
++            }
++            return caminito_found;
++        }
++        /* The applets of one panel share the one name */
++        public static void applet_added()
++        {
++            if (applets++ == 0)
++                applet_name_id = Bus.own_name(BusType.SESSION, APPLET_NAME, BusNameOwnerFlags.NONE);
++        }
++        public static void applet_removed()
++        {
++            if (applets == 0 || --applets > 0)
++                return;
++            Bus.unown_name(applet_name_id);
++            applet_name_id = 0;
++        }
++        construct
++        {
++            connect_to_caminito.begin();
++        }
++        public CaminitoBackend()
++        {
++            Object();
++        }
++        private async void connect_to_caminito()
++        {
++            try
++            {
++                caminito = yield new DBusProxy.for_bus(
++                    BusType.SESSION,
++                    DBusProxyFlags.DO_NOT_AUTO_START,
++                    null,
++                    CAMINITO_NAME,
++                    CAMINITO_PATH,
++                    CAMINITO_INTERFACE,
++                    null);
++            }
++            catch (Error e)
++            {
++                warning("Cannot reach Caminito: %s", e.message);
++                return;
++            }
++            caminito.g_properties_changed.connect(on_properties_changed);
++            update_menu();
++        }
++        private void on_properties_changed(Variant changed, string[] invalidated)
++        {
++            if (changed.lookup_value(GLOBAL_MENU, null) != null)
++                update_menu();
++        }
++        private static string? path_of(Variant paths, string what)
++        {
++            Variant? path = paths.lookup_value(what, VariantType.STRING);
++            if (path == null)
++                return null;
++            return path.get_string();
++        }
++        private static DesktopAppInfo? find_application(string id)
++        {
++            if (id == "")
++                return null;
++            DesktopAppInfo? found = new DesktopAppInfo(id + ".desktop");
++            if (found == null)
++                found = new DesktopAppInfo(id.down() + ".desktop");
++            return found;
++        }
++        private void update_menu()
++        {
++            string kind = "";
++            string application = "";
++            bus_name = null;
++            app_menu_path = null;
++            menubar_path = null;
++            application_path = null;
++            window_path = null;
++
++            Variant? menu = caminito.get_cached_property(GLOBAL_MENU);
++            if (menu != null && menu.is_of_type(new VariantType(GLOBAL_MENU_TYPE)))
++            {
++                kind = menu.get_child_value(0).get_string();
++                application = menu.get_child_value(3).get_string();
++                if (kind == KIND_GTK)
++                {
++                    Variant paths = menu.get_child_value(2);
++                    bus_name = menu.get_child_value(1).get_string();
++                    app_menu_path = path_of(paths, "app-menu");
++                    menubar_path = path_of(paths, "menubar");
++                    application_path = path_of(paths, "application");
++                    window_path = path_of(paths, "window");
++                }
++            }
++
++            info = find_application(application);
++            title = info != null ? info.get_name() : application;
++
++            if (bus_name != null && (menubar_path != null || app_menu_path != null))
++                type = ModelType.MENUMODEL;
++            else if (application != "")
++                type = ModelType.STUB;
++            else
++                type = ModelType.NONE;
++            active_model_changed();
++        }
++        public override void set_active_window_menu(MenuWidget widget)
++        {
++            helper = null;
++            if (type == ModelType.MENUMODEL)
++                /* appmenu-gtk-module has its actions where its menubar is, as the
++                 * Wayfire backend takes them to be */
++                helper = new MenuModelHelper(widget,
++                                             bus_name,
++                                             app_menu_path,
++                                             menubar_path,
++                                             application_path,
++                                             window_path,
++                                             menubar_path,
++                                             title,
++                                             info);
++            else if (type == ModelType.STUB)
++            {
++                helper = new DBusAppMenu(widget, title, null, info);
++                widget.set_menubar(null);
++            }
++            else
++            {
++                widget.set_appmenu(null);
++                widget.set_menubar(null);
++            }
++        }
++    }
++}
+diff --git a/lib/menu-widget.vala b/lib/menu-widget.vala
+index b88ecba..6e0c836 100644
+--- a/lib/menu-widget.vala
++++ b/lib/menu-widget.vala
+@@ -35,10 +35,17 @@ namespace Appmenu
+         private Gtk.CssProvider provider;
+         private GLib.MenuModel? appmenu = null;
+         private GLib.MenuModel? menubar = null;
+-        private Backend backend = new BackendImpl();
++        private Backend backend = create_backend();
++        private bool announced = false;
+         private Gtk.MenuBar mwidget = new Gtk.MenuBar();
+         private ulong backend_connector = 0;
+         private ulong compact_connector = 0;
++        private static Backend create_backend()
++        {
++            if (CaminitoBackend.available())
++                return new CaminitoBackend();
++            return new BackendImpl();
++        }
+         construct
+         {
+             provider = new Gtk.CssProvider();
+@@ -71,6 +78,23 @@ namespace Appmenu
+             mwidget.show();
+             scroller.show();
+             this.show();
++            if (backend is CaminitoBackend)
++            {
++                CaminitoBackend.applet_added();
++                announced = true;
++            }
++        }
++        public override void destroy()
++        {
++            /* The panel destroys an applet it removes, and may not finalize it */
++            if (announced)
++            {
++                announced = false;
++                CaminitoBackend.applet_removed();
++                backend.disconnect(backend_connector);
++                backend_connector = 0;
++            }
++            base.destroy();
+         }
+         public MenuWidget()
+         {
+diff --git a/lib/meson.build b/lib/meson.build
+index 4c68de2..ab18552 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -1,5 +1,6 @@
+ sources = files(
+     'appmenu-abstractions.vala',
++    'appmenu-caminito.vala',
+     'registrar.vala',
+     'menu-widget.vala',
+     'helper-desktop.vala',

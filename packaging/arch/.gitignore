@@ -10,5 +10,6 @@
 */mate-settings-daemon/
 */mate-submodules/
 */mate-utils/
+*/vala-panel-appmenu/
 *.pkg.tar.*
 *.log

@@ -77,6 +77,7 @@ use crate::backend::{self, Backend};
 use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
+use crate::dbus::global_menu::GlobalMenu;
 use crate::dbus::panel::Panel;
 use crate::dbus::screensaver::ScreensaverShim;
 use crate::debug::DebugToggles;
@@ -240,6 +241,11 @@ pub struct Caminito {
     pub(crate) primary_output_signalled: Option<String>,
     /// `ShowingDesktop` as `org.mate.Caminito`'s callers last heard it (94).
     pub(crate) showing_desktop_signalled: Option<bool>,
+    /// `GlobalMenu` as `org.mate.Caminito`'s callers last heard it (110).
+    pub(crate) global_menu_signalled: Option<GlobalMenu>,
+    /// Whether a Global menu applet is on the bus, so that the apps give up their own
+    /// menubars (ADR 0017).
+    pub(crate) global_menu_applet: bool,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -806,6 +812,8 @@ impl Caminito {
             monitors_changed: false,
             primary_output_signalled: None,
             showing_desktop_signalled: None,
+            global_menu_signalled: None,
+            global_menu_applet: false,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
@@ -998,6 +1006,7 @@ impl Caminito {
         self.refresh_output_management();
         self.refresh_primary_output_property();
         self.refresh_showing_desktop_property();
+        self.refresh_global_menu();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
         // On both sides of ext-workspace's refresh: a window leaves a workspace that's

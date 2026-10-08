@@ -178,6 +178,8 @@ pub struct State {
     /// The workspaces ext-workspace shows.
     pub workspaces: ext_workspace::Workspaces,
     gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
+    /// The capabilities `gtk_shell1` was sent, oldest first.
+    gtk_capabilities: Vec<u32>,
     /// The capture sessions the client opened, and their frames.
     image_capture: image_capture::ImageCapture,
 }

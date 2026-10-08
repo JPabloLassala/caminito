@@ -17,6 +17,7 @@ mod ext_workspace;
 mod fixture;
 mod foreign_toplevel;
 mod frames;
+mod global_menu;
 mod grabs;
 mod gtk_shell;
 mod headless;

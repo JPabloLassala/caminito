@@ -1,6 +1,8 @@
 //! A `gtk_shell1` client, as GTK3 is one (67): it gives its toplevels a `gtk_surface1`, says
-//! through it whether they're modal, and rings the bell. The protocol is generated from the
-//! XML Caminito's own code is generated from.
+//! through it whether they're modal, and rings the bell. As a `GtkApplication` of GTK3 or
+//! GTK4 does, it says where a window's menus are on the bus, and records the capabilities
+//! it's sent (110). The protocol is generated from the XML Caminito's own code is generated
+//! from.
 
 use wayland_client::{Connection, Dispatch, QueueHandle};
 
@@ -34,7 +36,43 @@ pub(crate) mod raw {
     wayland_scanner::generate_client_code!("../caminito/resources/gtk-shell.xml");
 }
 
+/// What a `GtkApplication` says of a window with `gtk_surface1.set_dbus_properties`: where
+/// its menus and its actions are on the bus.
+#[derive(Debug, Clone, Default)]
+pub struct DbusProperties {
+    pub application_id: Option<&'static str>,
+    pub app_menu_path: Option<&'static str>,
+    pub menubar_path: Option<&'static str>,
+    pub window_object_path: Option<&'static str>,
+    pub application_object_path: Option<&'static str>,
+    pub unique_bus_name: Option<&'static str>,
+}
+
 impl Client {
+    /// Binds `gtk_shell1`, as GTK does when it opens the display.
+    pub fn bind_gtk_shell(&mut self) {
+        self.gtk_shell();
+    }
+
+    /// The capabilities `gtk_shell1` was sent, oldest first.
+    pub fn gtk_capabilities(&self) -> &[u32] {
+        &self.state.gtk_capabilities
+    }
+
+    /// Says where the window's menus are on the bus, as `gtk_application_window` does when
+    /// the window is realized.
+    pub fn set_dbus_properties(&mut self, id: WindowId, properties: &DbusProperties) {
+        let owned = |it: Option<&str>| it.map(str::to_owned);
+        self.gtk_surface(id).set_dbus_properties(
+            owned(properties.application_id),
+            owned(properties.app_menu_path),
+            owned(properties.menubar_path),
+            owned(properties.window_object_path),
+            owned(properties.application_object_path),
+            owned(properties.unique_bus_name),
+        );
+    }
+
     /// `gtk_shell1`, bound on first use at the version GTK3 would bind.
     fn gtk_shell(&mut self) -> GtkShell1 {
         self.global(|state| &mut state.gtk_shell, GTK3_VERSION)
@@ -91,13 +129,15 @@ impl Client {
 
 impl Dispatch<GtkShell1, ()> for State {
     fn event(
-        _: &mut Self,
+        state: &mut Self,
         _: &GtkShell1,
-        _: gtk_shell1::Event,
+        event: gtk_shell1::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        let gtk_shell1::Event::Capabilities { capabilities } = event;
+        state.gtk_capabilities.push(capabilities);
     }
 }
 

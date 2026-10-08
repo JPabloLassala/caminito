@@ -5,10 +5,14 @@ use smithay::reexports::wayland_server::Weak;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::bell::{BellFor, BellSource};
-use crate::protocols::gtk_shell::GtkShellHandler;
+use crate::protocols::gtk_shell::{GtkShellHandler, GtkShellState};
 use crate::state::State;
 
 impl GtkShellHandler for State {
+    fn gtk_shell_state(&mut self) -> &mut GtkShellState {
+        &mut self.caminito.gtk_shell_state
+    }
+
     fn modal_changed(&mut self, surface: &WlSurface) {
         // A pending window's hint is read when it maps.
         if let Some(id) = self.caminito.mapped_for_surface(surface) {

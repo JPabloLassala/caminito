@@ -1,0 +1,83 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Yamada Hayao <hayao@fascode.net>
+# Contributor: rilian-la-te <ria.freelander@gmail.com>
+
+# The AUR's vala-panel-appmenu PKGBUILD cut down to its vala-panel-appmenu-mate package
+# (ADR 0017), since Arch has none. The differences: the name, provides and conflicts, only
+# the MATE applet built, the menu translator linked into the applet in place of the AUR's
+# appmenu-glib-translator package, which this one then needs none of, and the carried patch
+# (ADR 0011).
+
+pkgname=vala-panel-appmenu-mate-caminito
+_pkgname=vala-panel-appmenu
+# The AUR's version. Its Wayfire backend came after this tag, so the package has only the
+# libwnck backend beside Caminito's, as the AUR's has it alone.
+pkgver=25.04
+pkgrel=1
+pkgdesc="Global Menu plugin for mate-panel, with Caminito's carried patch"
+url="https://gitlab.com/vala-panel-project/vala-panel-appmenu"
+arch=('x86_64')
+license=('LGPL-3.0-or-later')
+# The panel loads the applet into its own process on Wayland, so the applet links the
+# applet library the panel has: mate-panel-caminito's libmate-panel-applet-4.so.2 (73).
+depends=('mate-panel-caminito' 'gtk3' 'glib2' 'gdk-pixbuf2' 'libwnck3')
+makedepends=('git' 'glib2-devel' 'gobject-introspection' 'meson' 'vala')
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011). The AUR's translator package
+# has the applet's settings schema and its locale package the translations, which are both
+# in this one.
+provides=("${_pkgname}-mate=${pkgver}")
+conflicts=("${_pkgname}-mate" "${_pkgname}-locale" 'appmenu-glib-translator')
+# 0001 is active only while org.mate.Caminito has an owner (ADR 0011), but for one line that
+# is correct on any compositor: the applet says it runs on Wayland, without which a Wayland
+# panel doesn't list it. Under Caminito the applet draws the menu Caminito publishes for the
+# focused window, and owns org.mate.Caminito.GlobalMenuApplet, the name that makes Caminito
+# tell the apps to give up their menubars (110).
+source=("${_pkgname}::git+${url}.git#tag=${pkgver}"
+        0001-applet-Add-a-Caminito-backend.patch)
+sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
+            '0ef93e9de8fe3a32d8575b84cb2dfee86ff284c4f9291d8ab25481764bc6eefd')
+
+prepare() {
+    cd "${_pkgname}"
+
+    # makepkg checks the tag out over the last build's tree, and leaves the files a patch
+    # added there, which patch then refuses to create.
+    git clean -dfq
+
+    local src
+    for src in "${source[@]}"; do
+        [[ ${src} = *.patch ]] || continue
+        patch -Np1 -i "${srcdir}/${src}"
+    done
+}
+
+build() {
+    # Only the MATE applet, on libwnck. The translator from DBusMenu to GMenuModel is the
+    # source's own subproject, built static so that it's part of the applet. Not arch-meson,
+    # which turns every feature on.
+    meson setup "${_pkgname}" build \
+        --prefix=/usr \
+        --libdir=lib \
+        --libexecdir=lib \
+        --buildtype=plain \
+        --wrap-mode=nodownload \
+        -Dauto_features=disabled \
+        -Dmate=enabled \
+        -Dwm_backend=wnck \
+        --force-fallback-for=appmenu-glib-translator \
+        -Dappmenu-glib-translator:default_library=static
+    meson compile -C build
+}
+
+package() {
+    meson install -C build --destdir "${pkgdir}"
+
+    # What the translator installs for programs built against it, which nothing is.
+    rm -r "${pkgdir}"/usr/include \
+        "${pkgdir}"/usr/lib/pkgconfig \
+        "${pkgdir}"/usr/lib/girepository-1.0 \
+        "${pkgdir}"/usr/lib/libappmenu-glib-translator.a \
+        "${pkgdir}"/usr/share/gir-1.0 \
+        "${pkgdir}"/usr/share/vala
+}

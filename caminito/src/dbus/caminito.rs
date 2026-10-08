@@ -1,7 +1,7 @@
 //! `org.mate.Caminito` (ADR 0002's third channel): what MATE's components and
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
-//! grabs (98), and the window a window screenshot is of (104).
+//! grabs (98), the window a window screenshot is of (104), and the global menu (110).
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
@@ -9,6 +9,7 @@ use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
 
+use super::global_menu::{GlobalMenu, Published};
 use super::{Callers, caller};
 use crate::output::{primary, saved};
 use crate::state::Caminito;
@@ -30,6 +31,8 @@ pub(crate) enum Request {
     ShowingDesktop(oneshot::Sender<bool>),
     /// Writes `ShowingDesktop`, with the value written.
     SetShowingDesktop(bool, oneshot::Sender<()>),
+    /// Reads `GlobalMenu`.
+    GlobalMenu(oneshot::Sender<GlobalMenu>),
     /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
     ActiveToplevel(Option<u32>, oneshot::Sender<Option<String>>),
     /// `GrabAccelerators`, from `caller`, answered with an action id for each.
@@ -51,6 +54,7 @@ pub(crate) enum Request {
 enum Property {
     PrimaryOutput,
     ShowingDesktop,
+    GlobalMenu,
 }
 
 impl Property {
@@ -58,6 +62,7 @@ impl Property {
         match self {
             Self::PrimaryOutput => "PrimaryOutput",
             Self::ShowingDesktop => "ShowingDesktop",
+            Self::GlobalMenu => "GlobalMenu",
         }
     }
 }
@@ -117,6 +122,25 @@ impl CaminitoInterface {
     async fn set_showing_desktop(&self, showing: bool) -> zbus::fdo::Result<()> {
         let show = |reply| Request::SetShowingDesktop(showing, reply);
         super::ask(&self.requests, show).await
+    }
+
+    /// The global menu (ADR 0017): the focused window's menu, for the Global menu applet
+    /// to draw. It has the kind of menu, the bus name that serves it, its object paths by
+    /// what each is, and the application's id, as xdg-shell's `app_id` names its desktop
+    /// entry.
+    ///
+    /// The kind is `gtk` for a `GtkApplication`'s `org.gtk.Menus`, with the paths
+    /// `menubar` and `app-menu` for the menus, and `window` and `application` for the
+    /// `org.gtk.Actions` of the `win.` and `app.` actions, each only if the window has it.
+    /// A focused window with no menu has the empty kind, no bus name and no paths, and
+    /// with no window focused the application is the empty string too.
+    ///
+    /// A layer surface that takes the keyboard, as a panel's does for a menu, changes
+    /// nothing. No other window's menu is published.
+    #[zbus(property)]
+    async fn global_menu(&self) -> zbus::fdo::Result<Published> {
+        let menu = super::ask(&self.requests, Request::GlobalMenu).await?;
+        Ok(menu.published())
     }
 
     /// The ext-foreign-toplevel-list identifier of the window a window screenshot is of:
@@ -245,6 +269,9 @@ impl Caminito {
                 self.showing_desktop_signalled = Some(showing);
                 let _ = reply.send(());
             }
+            Request::GlobalMenu(reply) => {
+                let _ = reply.send(self.global_menu());
+            }
             Request::ActiveToplevel(caller, reply) => {
                 let _ = reply.send(self.active_toplevel(caller));
             }
@@ -304,6 +331,7 @@ impl Caminito {
     pub(super) fn properties_read_from_now_on(&mut self) {
         self.primary_output_signalled = Some(self.primary_output_name());
         self.showing_desktop_signalled = Some(self.policy.is_showing_desktop());
+        self.global_menu_signalled = Some(self.global_menu());
     }
 
     /// The primary output's name as the property has it.
@@ -336,6 +364,19 @@ impl Caminito {
         self.showing_desktop_signalled = Some(showing);
     }
 
+    /// Signals `GlobalMenu` if it's not what the callers last heard (110).
+    pub(super) fn refresh_global_menu_property(&mut self) {
+        if self.dbus.is_none() {
+            return;
+        }
+        let menu = self.global_menu();
+        if self.global_menu_signalled.as_ref() == Some(&menu) {
+            return;
+        }
+        self.signal(Property::GlobalMenu);
+        self.global_menu_signalled = Some(menu);
+    }
+
     /// Signals that `property` changed.
     fn signal(&self, property: Property) {
         let Some(dbus) = &self.dbus else {
@@ -355,6 +396,7 @@ impl Caminito {
                 match property {
                     Property::PrimaryOutput => interface.primary_output_changed(emitter).await,
                     Property::ShowingDesktop => interface.showing_desktop_changed(emitter).await,
+                    Property::GlobalMenu => interface.global_menu_changed(emitter).await,
                 }
             };
             if let Err(err) = signalled.await {

@@ -1,5 +1,5 @@
-//! Caminito's D-Bus (15): one file per name or peer. `systemd` and `panel` are the peers so
-//! far.
+//! Caminito's D-Bus (15): one file per name or peer. `systemd`, `panel` and `global_menu`'s
+//! applet are the peers so far.
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
@@ -7,6 +7,7 @@
 
 pub mod caminito;
 pub mod debug;
+pub(crate) mod global_menu;
 pub(crate) mod panel;
 pub mod screensaver;
 pub(crate) mod systemd;
@@ -106,6 +107,8 @@ pub struct Dbus {
     /// Passes on the callers that leave the bus (62, 98). It's before the connection, which
     /// it holds, so that it stops first.
     _caller_watch: Option<zbus::Task<()>>,
+    /// Passes on whether the Global menu applet is on the bus (110).
+    _applet_watch: Option<zbus::Task<()>>,
     connection: zbus::Connection,
     /// The bus's address, if it isn't the session bus's: a test's own bus.
     address: Option<String>,
@@ -173,8 +176,14 @@ impl Caminito {
             .inspect_err(|err| tracing::warn!("can't watch for callers that leave the bus: {err}"))
             .ok()
             .map(|watch| connection.executor().spawn(watch, "callers that leave"));
+        let applet = self.dbus_requests(Caminito::global_menu_applet_changed);
+        let applet_watch = zbus::block_on(global_menu::watch_applet(&connection, applet))
+            .inspect_err(|err| tracing::warn!("can't watch for the global menu applet: {err}"))
+            .ok()
+            .map(|watch| connection.executor().spawn(watch, "global menu applet"));
         let dbus = Dbus {
             _caller_watch: caller_watch,
+            _applet_watch: applet_watch,
             connection,
             address: address.map(str::to_owned),
         };

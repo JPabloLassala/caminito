@@ -19,8 +19,10 @@ jobs:
       # In dependency order. Each package is installed as it's built, so the next one builds
       # against it. The patched packages come before caminito-git, which depends on them (16),
       # and caminito-desktop, the meta package, depends on caminito-git. mate-utils-caminito's
-      # dictionary applet and mate-power-manager-caminito's applets link mate-panel-caminito's
-      # applet library. tools/bootstrap has the same order.
+      # dictionary applet, mate-power-manager-caminito's applets and
+      # vala-panel-appmenu-mate-caminito's link mate-panel-caminito's applet library.
+      # tools/bootstrap has the same order, without vala-panel-appmenu-mate-caminito, which
+      # nothing depends on (ADR 0017).
       PACKAGES: >-
         mate-session-manager-caminito
         mate-panel-caminito
@@ -29,6 +31,7 @@ jobs:
         caja-caminito
         mate-utils-caminito
         mate-power-manager-caminito
+        vala-panel-appmenu-mate-caminito
         caminito-git
         caminito-desktop
     steps:

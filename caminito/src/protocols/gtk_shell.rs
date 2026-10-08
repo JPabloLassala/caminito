@@ -1,15 +1,19 @@
 //! A minimal `gtk_shell1` (06, 67): GTK3 says only through this GNOME protocol that a window
-//! is modal, and rings the bell only through it. GTK4 doesn't bind it, and uses xdg-dialog
-//! and xdg-system-bell.
+//! is modal, and rings the bell only through it. GTK4 has xdg-dialog and xdg-system-bell for
+//! those. Both say through it where a `GtkApplication` window's menus are on the bus, and
+//! both draw no menubar of their own while it has the `global_menu_bar` capability (110,
+//! ADR 0017).
 //!
-//! This module owns the protocol's objects and each surface's modal hint. It knows nothing
-//! of windows: the compositor reads the hint with [`is_modal`], and hears of a change and of
-//! the bell through [`GtkShellHandler`]. Every other request is taken and ignored, and no
-//! event is sent, since GTK3 needs none to start.
+//! This module owns the protocol's objects, each surface's modal hint and each surface's
+//! menus. It knows nothing of windows: the compositor reads them with [`is_modal`] and
+//! [`dbus_properties`], and hears of a change of the hint and of the bell through
+//! [`GtkShellHandler`]. Every other request is taken and ignored, and the one event sent is
+//! `capabilities`, which GTK needs none of to start.
 //!
 //! It isn't offered to make GTK3 drop its client-side decorations: GTK3 asks for a frame
 //! through KDE server-decoration (07).
 
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use smithay::reexports::wayland_server::backend::GlobalId;
@@ -31,8 +35,16 @@ use crate::protocols::raw::gtk_surface1::{self, GtkSurface1};
 /// itself.
 const VERSION: u32 = 1;
 
+/// `gtk_shell1`'s `global_menu_bar` capability. GTK takes the enum's values for bits: with
+/// this one sent, GTK 3.24.52 and GTK 4.22.5 both turn `gtk-shell-shows-menubar` on, and
+/// with 0 off (110).
+const GLOBAL_MENU_BAR: u32 = 2;
+
 /// What the compositor does with what GTK3 says.
 pub trait GtkShellHandler: 'static {
+    /// The global's state, which a new `gtk_shell1` joins.
+    fn gtk_shell_state(&mut self) -> &mut GtkShellState;
+
     /// `surface` became modal, or stopped being modal. [`is_modal`] has the new hint.
     fn modal_changed(&mut self, surface: &WlSurface);
 
@@ -44,6 +56,10 @@ pub trait GtkShellHandler: 'static {
 #[derive(Debug)]
 pub struct GtkShellState {
     _global: GlobalId,
+    /// Every client's `gtk_shell1`, to send a change of the capabilities to.
+    shells: Vec<GtkShell1>,
+    /// Whether the clients are told that something shows their menubars.
+    global_menu_bar: bool,
 }
 
 /// The global's data.
@@ -64,6 +80,26 @@ pub struct GtkSurfaceData {
 /// the protocol has no word for what destroying one undoes.
 struct Modal(AtomicBool);
 
+/// What a `GtkApplication` last said of a surface with `set_dbus_properties`: where its
+/// menus, `org.gtk.Menus`, and their actions, `org.gtk.Actions`, are on the bus. Each is
+/// `None` if the client left it out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DbusProperties {
+    /// The connection that serves them all.
+    pub unique_bus_name: Option<String>,
+    /// Where the app menu is, which GNOME's shell used to show beside its Activities.
+    pub app_menu_path: Option<String>,
+    /// Where the menubar is.
+    pub menubar_path: Option<String>,
+    /// Where the `win.` actions are.
+    pub window_object_path: Option<String>,
+    /// Where the `app.` actions are.
+    pub application_object_path: Option<String>,
+}
+
+/// A surface's menus, in its data map, which outlive the `gtk_surface1` as [`Modal`] does.
+struct Menus(Mutex<DbusProperties>);
+
 impl GtkShellState {
     /// Offers `gtk_shell1` to every client.
     pub fn new<D>(display: &DisplayHandle) -> Self
@@ -71,8 +107,42 @@ impl GtkShellState {
         D: GlobalDispatch<GtkShell1, GtkShellGlobalData> + 'static,
     {
         let global = display.create_global::<D, GtkShell1, _>(VERSION, GtkShellGlobalData);
-        Self { _global: global }
+        Self {
+            _global: global,
+            shells: Vec::new(),
+            global_menu_bar: false,
+        }
     }
+
+    /// Tells every client whether something shows its menubars, now and as it binds. A GTK
+    /// app follows a change while it runs.
+    pub fn set_global_menu_bar(&mut self, shown: bool) {
+        if self.global_menu_bar == shown {
+            return;
+        }
+        self.global_menu_bar = shown;
+        self.shells.retain(Resource::is_alive);
+        for shell in &self.shells {
+            shell.capabilities(self.capabilities());
+        }
+    }
+
+    fn capabilities(&self) -> u32 {
+        if self.global_menu_bar {
+            GLOBAL_MENU_BAR
+        } else {
+            0
+        }
+    }
+}
+
+/// What a client last said, with `gtk_surface1.set_dbus_properties`, of where `surface`'s
+/// menus are on the bus, if it said anything.
+pub fn dbus_properties(surface: &WlSurface) -> Option<DbusProperties> {
+    with_states(surface, |states| {
+        let menus = states.data_map.get::<Menus>()?;
+        Some(menus.0.lock().unwrap().clone())
+    })
 }
 
 /// Whether a client last said, with `gtk_surface1.set_modal`, that `surface` is modal.
@@ -95,20 +165,37 @@ fn set_modal(surface: &WlSurface, modal: bool) -> bool {
     })
 }
 
+/// Records where a surface's menus are on the bus.
+fn set_dbus_properties(surface: &WlSurface, properties: DbusProperties) {
+    with_states(surface, |states| {
+        let menus = states
+            .data_map
+            .get_or_insert_threadsafe(|| Menus(Mutex::default()));
+        *menus.0.lock().unwrap() = properties;
+    });
+}
+
 impl<D> GlobalDispatch2<GtkShell1, D> for GtkShellGlobalData
 where
     D: GtkShellHandler + Dispatch<GtkShell1, GtkShellData>,
 {
     fn bind(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _display: &DisplayHandle,
         _client: &Client,
         resource: New<GtkShell1>,
         data_init: &mut DataInit<'_, D>,
     ) {
-        // No `capabilities` event: Caminito has no global menu and draws no desktop icons.
-        data_init.init(resource, GtkShellData);
+        let shell = data_init.init(resource, GtkShellData);
+        let state = state.gtk_shell_state();
+        // GTK takes the capabilities to be none until it's told, so without a global menu
+        // there's nothing to send: Caminito has no app menu and draws no desktop icons.
+        if state.global_menu_bar {
+            shell.capabilities(state.capabilities());
+        }
+        state.shells.retain(Resource::is_alive);
+        state.shells.push(shell);
     }
 }
 
@@ -165,13 +252,34 @@ impl<D: GtkShellHandler> Dispatch2<GtkSurface1, D> for GtkSurfaceData {
         let modal = match request {
             gtk_surface1::Request::SetModal => true,
             gtk_surface1::Request::UnsetModal => false,
-            // Caminito has no global menu to give the D-Bus names to, activation goes through
-            // xdg-activation, and a titlebar gesture is only made of a client-side titlebar,
-            // whose actions GTK3 then takes itself. The last three are newer than the
-            // version offered, so the Wayland library lets none through; they're here because the
-            // XML has them.
-            gtk_surface1::Request::SetDbusProperties { .. }
-            | gtk_surface1::Request::Present { .. }
+            // The compositor reads the menus when it next publishes the global menu (110), so
+            // there's nothing to tell it. The application id is left: the window has an
+            // `app_id` already.
+            gtk_surface1::Request::SetDbusProperties {
+                application_id: _,
+                app_menu_path,
+                menubar_path,
+                window_object_path,
+                application_object_path,
+                unique_bus_name,
+            } => {
+                if let Ok(surface) = self.surface.upgrade() {
+                    let properties = DbusProperties {
+                        unique_bus_name,
+                        app_menu_path,
+                        menubar_path,
+                        window_object_path,
+                        application_object_path,
+                    };
+                    set_dbus_properties(&surface, properties);
+                }
+                return;
+            }
+            // Activation goes through xdg-activation, and a titlebar gesture is only made of
+            // a client-side titlebar, whose actions GTK3 then takes itself. The last three
+            // are newer than the version offered, so the Wayland library lets none through;
+            // they're here because the XML has them.
+            gtk_surface1::Request::Present { .. }
             | gtk_surface1::Request::RequestFocus { .. }
             | gtk_surface1::Request::TitlebarGesture { .. }
             | gtk_surface1::Request::Release => return,

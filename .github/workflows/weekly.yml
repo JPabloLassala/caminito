@@ -70,6 +70,7 @@ jobs:
           - caja-caminito
           - mate-utils-caminito
           - mate-power-manager-caminito
+          - vala-panel-appmenu-mate-caminito
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git

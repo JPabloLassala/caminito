@@ -3,6 +3,8 @@
 //! The calls block, and Caminito answers them from its event loop, so a test makes them on
 //! another thread while it dispatches the compositor.
 
+use std::collections::HashMap;
+
 /// `org.mate.Caminito.Debug` (14).
 #[zbus::proxy(
     interface = "org.mate.Caminito.Debug",
@@ -28,6 +30,9 @@ pub fn debug_proxy(destination: &str) -> zbus::Result<DebugProxy<'static>> {
         .build()
 }
 
+/// `GlobalMenu` as it is on the bus, `(ssa{ss}s)`.
+pub type GlobalMenu = (String, String, HashMap<String, String>, String);
+
 /// `org.mate.Caminito` (ADR 0002's third channel).
 #[zbus::proxy(
     interface = "org.mate.Caminito",
@@ -52,6 +57,11 @@ pub trait Caminito {
     /// Shows the desktop on the active workspace, or brings its windows back.
     #[zbus(property)]
     fn set_showing_desktop(&self, showing: bool) -> zbus::Result<()>;
+
+    /// The focused window's menu (110): its kind, the bus name that serves it, its object
+    /// paths, and the application's id.
+    #[zbus(property)]
+    fn global_menu(&self) -> zbus::Result<GlobalMenu>;
 
     /// Saves the layout the connected monitors have now (83).
     fn save_layout(&self) -> zbus::Result<()>;
