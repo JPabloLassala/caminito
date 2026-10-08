@@ -97,19 +97,19 @@ fn switch(f: &Fixture) -> String {
 
 /// Dispatches until Caminito has heard that the applet's name lost its owner.
 #[track_caller]
-fn wait_for_the_applet_to_leave(f: &mut Fixture) {
+pub(super) fn wait_for_the_applet_to_leave(f: &mut Fixture) {
     f.dispatch_until(|f| switch(f) == "leaving");
 }
 
 /// The grace period passes: Caminito is given the time its timer would give it when it
 /// fires, with no waiting.
-fn the_grace_period_passes(f: &mut Fixture) {
+pub(super) fn the_grace_period_passes(f: &mut Fixture) {
     let now = f.state.caminito.now() + GRACE;
     f.state.caminito.global_menu_time_passed(now);
 }
 
 /// What pluma's window says of its menus, were pluma a `GtkApplication`.
-fn plumas_menu() -> DbusProperties {
+pub(super) fn plumas_menu() -> DbusProperties {
     DbusProperties {
         application_id: Some("org.mate.pluma"),
         app_menu_path: None,
@@ -121,7 +121,7 @@ fn plumas_menu() -> DbusProperties {
 }
 
 /// `plumas_menu` as the property has it.
-fn plumas_global_menu() -> GlobalMenu {
+pub(super) fn plumas_global_menu() -> GlobalMenu {
     let paths = [
         ("menubar", "/org/mate/pluma/menus/menubar"),
         ("window", "/org/mate/pluma/window/1"),
@@ -173,7 +173,7 @@ pub(super) fn no_menu(application: &str) -> GlobalMenu {
 }
 
 /// Maps a window of the application `app_id` that says `menu` of itself, if any.
-fn map_with_menu(
+pub(super) fn map_with_menu(
     f: &mut Fixture,
     id: ClientId,
     app_id: &'static str,

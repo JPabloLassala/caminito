@@ -88,6 +88,8 @@ struct StateDump {
     /// menu applet is on the bus, `leaving` for the grace period after it left (114), and
     /// `off`.
     global_menu_switch: &'static str,
+    /// The toplevels the menu claims tied to a menu (115), by window id.
+    menu_claims: Vec<MenuClaimDump>,
     /// The bells rung (105).
     bell: BellDump,
 }
@@ -143,6 +145,16 @@ struct AcceleratorGrabDump {
     accelerator: String,
     /// The grabber's unique name on the bus.
     owner: String,
+}
+
+#[derive(Serialize)]
+struct MenuClaimDump {
+    /// The toplevel's id.
+    window: u64,
+    /// The caller's unique name on the bus, which serves the menu.
+    caller: String,
+    /// The dbusmenu's object path.
+    path: String,
 }
 
 #[derive(Serialize)]
@@ -391,6 +403,15 @@ impl Caminito {
                 owner: grab.owner.clone(),
             })
             .collect();
+        let menu_claims = self
+            .menu_claims
+            .iter()
+            .map(|(window, tie)| MenuClaimDump {
+                window: window.0,
+                caller: tie.caller.clone(),
+                path: tie.path.to_string(),
+            })
+            .collect();
         let switcher = policy.switcher().map(|switcher| SwitcherDump {
             list: match switcher.list {
                 SwitchList::Windows => "windows",
@@ -424,6 +445,7 @@ impl Caminito {
             accelerator_grabs,
             switcher,
             global_menu_switch: self.global_menu_switch.name(),
+            menu_claims,
             bell: BellDump {
                 count: self.bells.count,
                 last: self.bells.last.map(|bell| LastBellDump {

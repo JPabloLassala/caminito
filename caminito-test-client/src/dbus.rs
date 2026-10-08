@@ -63,6 +63,14 @@ pub trait Caminito {
     #[zbus(property)]
     fn global_menu(&self) -> zbus::Result<GlobalMenu>;
 
+    /// Whether the global menu is offered, and so whether a menu claim is taken (115).
+    #[zbus(property)]
+    fn global_menu_offered(&self) -> zbus::Result<bool>;
+
+    /// Makes a menu claim (115): the dbusmenu the caller serves at `path` is the menubar
+    /// of its process's focused window.
+    fn claim_global_menu(&self, path: &zbus::zvariant::ObjectPath<'_>) -> zbus::Result<()>;
+
     /// Saves the layout the connected monitors have now (83).
     fn save_layout(&self) -> zbus::Result<()>;
 

@@ -138,6 +138,7 @@ expression: without_x_ids(&dump)
   "accelerator_grabs": [],
   "switcher": null,
   "global_menu_switch": "off",
+  "menu_claims": [],
   "bell": {
     "count": 0,
     "last": null

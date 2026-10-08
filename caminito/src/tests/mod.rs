@@ -29,6 +29,7 @@ mod keybinding_manifests;
 mod keyboard_settings;
 mod keymap;
 mod layer_shell;
+mod menu_claim;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;

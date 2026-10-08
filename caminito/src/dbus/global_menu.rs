@@ -8,7 +8,9 @@
 //! client registered for its window with `registrar` (113). The switch turns
 //! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
 //! together, and stays on for a grace period after the applet's name loses its owner (114).
-//! A window with no menu has its transient parent's (114).
+//! A window that says nothing of a menu has the dbusmenu a `menu_claim` tied it to (115,
+//! ADR 0018), which is taken while the three are offered. A window with no menu has its
+//! transient parent's (114).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -21,6 +23,7 @@ use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
 use zbus::zvariant::ObjectPath;
 
+use super::menu_claim::Tie;
 use super::registrar::Registration;
 use crate::protocols::appmenu::{self, Address};
 use crate::protocols::gtk_shell::{self, DbusProperties};
@@ -164,6 +167,13 @@ impl GlobalMenu {
         (DBUSMENU, registration.owner.clone(), paths)
     }
 
+    /// The dbusmenu a menu claim tied a toplevel to (115). The bus named its caller, and
+    /// the path came as one.
+    fn claimed(tie: &Tie) -> Menu {
+        let paths = HashMap::from([("menu".to_owned(), tie.path.to_string())]);
+        (DBUSMENU, tie.caller.clone(), paths)
+    }
+
     pub(super) fn published(self) -> Published {
         let kind = self.kind.to_owned();
         (kind, self.bus_name, self.paths, self.application)
@@ -292,10 +302,11 @@ impl Caminito {
 
     /// The bus took the registrar's name back, at the registrar's `change`. For an applet
     /// that came meanwhile the name has been asked for again, or is about to be, and
-    /// nothing goes.
+    /// nothing goes. Otherwise the menu claims' ties go with the three (ADR 0018).
     pub(super) fn registrar_released(&mut self, change: u64) {
         if !self.global_menu_switch.is_on() && self.registrar_is_given_up(change) {
             self.global_menu_offered = false;
+            self.menu_claims.forget_all();
         }
     }
 
@@ -321,8 +332,10 @@ impl Caminito {
             let registration = self.app_menu_registrations.menu(mapped.x11_window()?)?;
             Some(GlobalMenu::registered(registration))
         };
+        // A menu the app set on its own surface wins over a claim, which is kept (ADR 0018).
+        let claimed = || Some(GlobalMenu::claimed(self.menu_claims.menu(id)?));
         // Firefox with `appmenu-gtk-module` loaded says both, and its `GtkMenuBar` is empty.
-        let (kind, bus_name, paths) = dbusmenu().or(gtk).or_else(registered)?;
+        let (kind, bus_name, paths) = dbusmenu().or(gtk).or_else(registered).or_else(claimed)?;
         Some(GlobalMenu {
             kind,
             bus_name,
@@ -353,7 +366,7 @@ impl Caminito {
 
     /// Tells the apps whether an applet shows their menubars, and signals `GlobalMenu`
     /// if it's not what the callers last heard: the focus is another window's, or the
-    /// focused window said where its menus are.
+    /// focused window said where its menus are. `GlobalMenuOffered` is signalled likewise.
     ///
     /// The registrar's name is never there without the appmenu global: a Qt app that finds
     /// the name alone has no menu anywhere (112). So the name is asked for after the global
@@ -366,6 +379,7 @@ impl Caminito {
             .set_offered::<State>(&self.display_handle, offered);
         self.globals_to_withdraw.extend(withdrawn);
         self.refresh_registrar(self.global_menu_switch.is_on());
+        self.refresh_global_menu_offered_property();
         self.refresh_global_menu_property();
     }
 }

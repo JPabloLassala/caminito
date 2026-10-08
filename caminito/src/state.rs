@@ -78,6 +78,7 @@ use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
 use crate::dbus::global_menu::{GlobalMenu, Switch};
+use crate::dbus::menu_claim::Claims;
 use crate::dbus::panel::Panel;
 use crate::dbus::registrar::Registrations;
 use crate::dbus::screensaver::ScreensaverShim;
@@ -251,9 +252,13 @@ pub struct Caminito {
     pub(crate) global_menu_switch: Switch,
     /// The menus X11 clients registered for their windows (113).
     pub(crate) app_menu_registrations: Registrations,
+    /// The toplevels the menu claims tied to their callers' menus (115).
+    pub(crate) menu_claims: Claims,
     /// Whether the apps are told to give up their own menubars: while the switch is on,
     /// and after it until the registrar's name is given up (112).
     pub(crate) global_menu_offered: bool,
+    /// `GlobalMenuOffered` as `org.mate.Caminito`'s callers last heard it (115).
+    pub(crate) global_menu_offered_signalled: Option<bool>,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -824,7 +829,9 @@ impl Caminito {
             global_menu_signalled: None,
             global_menu_switch: Switch::default(),
             app_menu_registrations: Registrations::default(),
+            menu_claims: Claims::default(),
             global_menu_offered: false,
+            global_menu_offered_signalled: None,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),

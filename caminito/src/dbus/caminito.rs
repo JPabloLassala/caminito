@@ -1,13 +1,15 @@
 //! `org.mate.Caminito` (ADR 0002's third channel): what MATE's components and
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
-//! grabs (98), the window a window screenshot is of (104), and the global menu (110).
+//! grabs (98), the window a window screenshot is of (104), the global menu (110), and
+//! the menu claim (115).
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
 use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
+use zbus::zvariant::OwnedObjectPath;
 
 use super::global_menu::{GlobalMenu, Published};
 use super::{Callers, caller};
@@ -33,6 +35,15 @@ pub(crate) enum Request {
     SetShowingDesktop(bool, oneshot::Sender<()>),
     /// Reads `GlobalMenu`.
     GlobalMenu(oneshot::Sender<GlobalMenu>),
+    /// Reads `GlobalMenuOffered`.
+    GlobalMenuOffered(oneshot::Sender<bool>),
+    /// `ClaimGlobalMenu`, from `caller`, with its process if the bus knows it.
+    ClaimGlobalMenu {
+        caller: String,
+        path: OwnedObjectPath,
+        process: Option<u32>,
+        reply: oneshot::Sender<()>,
+    },
     /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
     ActiveToplevel(Option<u32>, oneshot::Sender<Option<String>>),
     /// `GrabAccelerators`, from `caller`, answered with an action id for each.
@@ -55,6 +66,7 @@ enum Property {
     PrimaryOutput,
     ShowingDesktop,
     GlobalMenu,
+    GlobalMenuOffered,
 }
 
 impl Property {
@@ -63,6 +75,7 @@ impl Property {
             Self::PrimaryOutput => "PrimaryOutput",
             Self::ShowingDesktop => "ShowingDesktop",
             Self::GlobalMenu => "GlobalMenu",
+            Self::GlobalMenuOffered => "GlobalMenuOffered",
         }
     }
 }
@@ -134,8 +147,9 @@ impl CaminitoInterface {
     /// `org.gtk.Actions` of the `win.` and `app.` actions, each only if the window has it.
     ///
     /// The kind is `dbusmenu` for a `com.canonical.dbusmenu`, with the one path `menu`: a Qt
-    /// app's and Firefox's, and the one an X11 client registered for an XWayland window
-    /// (113).
+    /// app's and Firefox's, the one an X11 client registered for an XWayland window
+    /// (113), and the one a menu claim tied the window to (115), which a menu the window
+    /// said it has itself wins over.
     ///
     /// A focused window with no menu has its transient parent's, and so on up, with that
     /// window's application (114). Where none of them has a menu the kind is empty, with
@@ -148,6 +162,50 @@ impl CaminitoInterface {
     async fn global_menu(&self) -> zbus::fdo::Result<Published> {
         let menu = super::ask(&self.requests, Request::GlobalMenu).await?;
         Ok(menu.published())
+    }
+
+    /// Whether the global menu is offered (ADR 0018): whether Caminito tells the apps to
+    /// give up their own menubars, as it does while a Global menu applet is on the bus and
+    /// for the grace period after it left. A menu claim is taken only while it's true, and
+    /// the ties the claims made are all forgotten when it turns false, so a caller claims
+    /// again when it turns true.
+    #[zbus(property)]
+    async fn global_menu_offered(&self) -> zbus::fdo::Result<bool> {
+        super::ask(&self.requests, Request::GlobalMenuOffered).await
+    }
+
+    /// The menu claim (ADR 0018): the caller, a program with no window of its own, says
+    /// that the `com.canonical.dbusmenu` it serves at `path` on this connection is the
+    /// menubar of its process's focused window. It's the global menu extension's way to
+    /// give its editor's window a global menu, and is promised to no other client: it may
+    /// change with the extension.
+    ///
+    /// The window is the focused one, if its client is of the caller's process or of that
+    /// process's parent. It's then tied to the menu, which `GlobalMenu` has while that
+    /// window has the focus and says nothing of a menu itself. The last claim on a window
+    /// wins, and a caller may hold several windows. A tie lasts until its window is gone,
+    /// the caller leaves the bus, or `GlobalMenuOffered` turns false. Nothing releases one.
+    ///
+    /// A claim is dropped if no such window has the focus, or while `GlobalMenuOffered`
+    /// is false. The reply is empty whatever happened, so a claim tells its caller nothing
+    /// of the windows (ADR 0002).
+    async fn claim_global_menu(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+        path: OwnedObjectPath,
+    ) -> zbus::fdo::Result<()> {
+        let caller = caller(&header);
+        let process = caller_process(connection, &header).await;
+        let claim = |reply| Request::ClaimGlobalMenu {
+            caller: caller.clone(),
+            path,
+            process,
+            reply,
+        };
+        super::ask(&self.requests, claim).await?;
+        self.callers.report_if_gone(connection, caller).await;
+        Ok(())
     }
 
     /// The ext-foreign-toplevel-list identifier of the window a window screenshot is of:
@@ -235,7 +293,7 @@ impl CaminitoInterface {
 }
 
 /// The process that sent the call with `header`, as the bus knows it. Without it, none of
-/// the windows is taken for the caller's.
+/// the windows is taken for the caller's, and a menu claim is dropped.
 async fn caller_process(connection: &zbus::Connection, header: &Header<'_>) -> Option<u32> {
     let sender = header.sender()?.to_owned();
     let asked = async {
@@ -278,6 +336,18 @@ impl Caminito {
             }
             Request::GlobalMenu(reply) => {
                 let _ = reply.send(self.global_menu());
+            }
+            Request::GlobalMenuOffered(reply) => {
+                let _ = reply.send(self.global_menu_offered);
+            }
+            Request::ClaimGlobalMenu {
+                caller,
+                path,
+                process,
+                reply,
+            } => {
+                self.claim_global_menu(caller, path, process);
+                let _ = reply.send(());
             }
             Request::ActiveToplevel(caller, reply) => {
                 let _ = reply.send(self.active_toplevel(caller));
@@ -339,6 +409,7 @@ impl Caminito {
         self.primary_output_signalled = Some(self.primary_output_name());
         self.showing_desktop_signalled = Some(self.policy.is_showing_desktop());
         self.global_menu_signalled = Some(self.global_menu());
+        self.global_menu_offered_signalled = Some(self.global_menu_offered);
     }
 
     /// The primary output's name as the property has it.
@@ -384,6 +455,16 @@ impl Caminito {
         self.global_menu_signalled = Some(menu);
     }
 
+    /// Signals `GlobalMenuOffered` if it's not what the callers last heard (115).
+    pub(super) fn refresh_global_menu_offered_property(&mut self) {
+        let offered = self.global_menu_offered;
+        if self.dbus.is_none() || self.global_menu_offered_signalled == Some(offered) {
+            return;
+        }
+        self.signal(Property::GlobalMenuOffered);
+        self.global_menu_offered_signalled = Some(offered);
+    }
+
     /// Signals that `property` changed.
     fn signal(&self, property: Property) {
         let Some(dbus) = &self.dbus else {
@@ -404,6 +485,9 @@ impl Caminito {
                     Property::PrimaryOutput => interface.primary_output_changed(emitter).await,
                     Property::ShowingDesktop => interface.showing_desktop_changed(emitter).await,
                     Property::GlobalMenu => interface.global_menu_changed(emitter).await,
+                    Property::GlobalMenuOffered => {
+                        interface.global_menu_offered_changed(emitter).await
+                    }
                 }
             };
             if let Err(err) = signalled.await {
