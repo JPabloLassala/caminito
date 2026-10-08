@@ -413,6 +413,28 @@ session_env() {
 - **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
   xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
+### The window list sends each button's rectangle
+
+- **Milestone:** M6
+- **Steps:**
+  1. Log into *MATE on Caminito*, with a pluma window open.
+  2. In a terminal, restart the panel with its Wayland requests printed:
+
+     ```sh
+     WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep set_rectangle
+     ```
+
+  3. Open a second window, and then a third.
+  4. Stop the command with Ctrl+C, and start the panel again from Alt+F2 (`mate-panel`) if the
+     session hasn't.
+- **Expected:** step 2 prints a `zwlr_foreign_toplevel_handle_v1` `set_rectangle` request for
+  pluma and one for the terminal, each with the panel's `wl_surface` and the place and size of
+  that window's button in the window list (06). Step 3 prints one for each new window, and again
+  for the others when their buttons move or shrink. No request is a protocol error: the panel
+  stays up.
+- **Debug tool:** the requests are the check. Caminito keeps the rectangle with the window, and
+  nothing reads it until M8's minimise animation, so the debug dump has no member for it.
+
 ### Alt+F1 opens the main menu, and Alt+F2 the Run dialog
 
 - **Milestone:** M6
