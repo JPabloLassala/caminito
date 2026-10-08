@@ -84,6 +84,10 @@ struct StateDump {
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
     switcher: Option<SwitcherDump>,
+    /// Whether the apps are told to give up their own menubars (110): `on` while a Global
+    /// menu applet is on the bus, `leaving` for the grace period after it left (114), and
+    /// `off`.
+    global_menu_switch: &'static str,
     /// The bells rung (105).
     bell: BellDump,
 }
@@ -419,6 +423,7 @@ impl Caminito {
             focus: policy.focus(SEAT).map(|id| id.0),
             accelerator_grabs,
             switcher,
+            global_menu_switch: self.global_menu_switch.name(),
             bell: BellDump {
                 count: self.bells.count,
                 last: self.bells.last.map(|bell| LastBellDump {

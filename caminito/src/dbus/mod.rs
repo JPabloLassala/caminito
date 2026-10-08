@@ -176,7 +176,10 @@ impl Caminito {
             .inspect_err(|err| tracing::warn!("can't watch for callers that leave the bus: {err}"))
             .ok()
             .map(|watch| connection.executor().spawn(watch, "callers that leave"));
-        let applet = self.dbus_requests(Caminito::global_menu_applet_changed);
+        let applet = self.dbus_requests(|caminito: &mut Caminito, present| {
+            let now = caminito.now();
+            caminito.global_menu_applet_changed(present, now);
+        });
         let applet_watch = zbus::block_on(global_menu::watch_applet(&connection, applet))
             .inspect_err(|err| tracing::warn!("can't watch for the global menu applet: {err}"))
             .ok()

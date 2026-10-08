@@ -115,6 +115,7 @@ expression: without_x_ids(&dump)
   "focus": 0,
   "accelerator_grabs": [],
   "switcher": null,
+  "global_menu_switch": "off",
   "bell": {
     "count": 0,
     "last": null

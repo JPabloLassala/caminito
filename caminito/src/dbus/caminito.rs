@@ -132,8 +132,10 @@ impl CaminitoInterface {
     /// The kind is `gtk` for a `GtkApplication`'s `org.gtk.Menus`, with the paths
     /// `menubar` and `app-menu` for the menus, and `window` and `application` for the
     /// `org.gtk.Actions` of the `win.` and `app.` actions, each only if the window has it.
-    /// A focused window with no menu has the empty kind, no bus name and no paths, and
-    /// with no window focused the application is the empty string too.
+    /// A focused window with no menu has its transient parent's, and so on up, with that
+    /// window's application (114). Where none of them has a menu the kind is empty, with
+    /// no bus name and no paths, and the application is the focused window's. With no
+    /// window focused the application is the empty string too.
     ///
     /// A layer surface that takes the keyboard, as a panel's does for a menu, changes
     /// nothing. No other window's menu is published.

@@ -116,10 +116,13 @@ key only while an XWayland window has the keyboard.
 `vala-panel-appmenu-mate-caminito` is the one patched package that isn't a MATE component, and
 nothing depends on it: build it for a global menu in the panel
 ([ADR 0017](docs/adr/0017-caminito-brokers-the-global-menu-for-a-patched-appmenu-applet.md)).
-It's the AUR's `vala-panel-appmenu-mate` 25.04, with one patch: under Caminito the *Global
+It's the AUR's `vala-panel-appmenu-mate` 25.04, with two patches: under Caminito the *Global
 Application Menu* applet draws the menu Caminito publishes for the focused window, and while
 the applet is on a panel GTK apps leave their menubars to it. So far that's the menu of a
-`GtkApplication`, as GTK 4 apps and some GTK 3 apps have. It's linked to `mate-panel-caminito`'s
+`GtkApplication`, as GTK 4 apps and some GTK 3 apps have. A dialog with no menu shows its
+parent's. The application's name is in bold before the menus, and each applet's *Preferences*
+can turn it off. The apps get their menubars back about ten seconds after the last applet is
+removed, so that a restart of the panel changes nothing. It's linked to `mate-panel-caminito`'s
 applet library, so build it after that package.
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each

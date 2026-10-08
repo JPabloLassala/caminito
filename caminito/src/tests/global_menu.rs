@@ -1,8 +1,9 @@
 //! The global menu (110, ADR 0017): the `GlobalMenu` property of `org.mate.Caminito`, which
 //! follows the focus, and `gtk_shell1`'s `global_menu_bar` capability, which follows the
-//! Global menu applet's bus name. Each test runs a bus of its own, with a stand-in that owns
-//! the applet's name, which only one could on the tests' bus. The windows are xdg toplevels
-//! only: an XWayland window has no `gtk_surface1`, and its menu is ticket 113's.
+//! Global menu applet's bus name and outlasts it by a grace period (114). Each test runs a
+//! bus of its own, with a stand-in that owns the applet's name, which only one could on the
+//! tests' bus. The windows are xdg toplevels only: an XWayland window has no `gtk_surface1`,
+//! and its menu is ticket 113's.
 
 use std::collections::HashMap;
 
@@ -14,7 +15,7 @@ use zbus::blocking::Connection;
 use super::fixture::{
     Bus, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WindowSpec,
 };
-use crate::dbus::global_menu::APPLET_NAME;
+use crate::dbus::global_menu::{APPLET_NAME, GRACE};
 
 /// `gtk_shell1`'s `global_menu_bar` capability.
 const GLOBAL_MENU_BAR: u32 = 2;
@@ -58,6 +59,25 @@ fn a_gtk_client(f: &mut Fixture) -> ClientId {
 #[track_caller]
 fn wait_for_capabilities(f: &mut Fixture, id: ClientId, capabilities: u32) {
     f.dispatch_until_mut(|f| f.client(id).gtk_capabilities().last() == Some(&capabilities));
+}
+
+/// The debug dump's `global_menu_switch` member.
+fn switch(f: &Fixture) -> String {
+    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
+    dump["global_menu_switch"].as_str().unwrap().to_owned()
+}
+
+/// Dispatches until Caminito has heard that the applet's name lost its owner.
+#[track_caller]
+fn wait_for_the_applet_to_leave(f: &mut Fixture) {
+    f.dispatch_until(|f| switch(f) == "leaving");
+}
+
+/// The grace period passes: Caminito is given the time its timer would give it when it
+/// fires, with no waiting.
+fn the_grace_period_passes(f: &mut Fixture) {
+    let now = f.state.caminito.now() + GRACE;
+    f.state.caminito.global_menu_time_passed(now);
 }
 
 /// What pluma's window says of its menus, were pluma a `GtkApplication`.
@@ -167,10 +187,47 @@ fn the_capability_follows_the_applets_bus_name() {
     assert_eq!(f.client(late).gtk_capabilities(), &[GLOBAL_MENU_BAR]);
 
     drop(applet);
+    wait_for_the_applet_to_leave(&mut f);
+    the_grace_period_passes(&mut f);
 
     wait_for_capabilities(&mut f, early, 0);
     wait_for_capabilities(&mut f, late, 0);
     assert_eq!(f.client(early).gtk_capabilities(), &[GLOBAL_MENU_BAR, 0]);
+}
+
+#[test]
+fn the_capability_stays_for_the_grace_period_after_the_applet_leaves() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let applet = an_applet(&bus);
+    let early = a_gtk_client(&mut f);
+    wait_for_capabilities(&mut f, early, GLOBAL_MENU_BAR);
+
+    drop(applet);
+    wait_for_the_applet_to_leave(&mut f);
+
+    f.roundtrip(early);
+    assert_eq!(f.client(early).gtk_capabilities(), &[GLOBAL_MENU_BAR]);
+    // A client that starts meanwhile, as the panel's own does, is told as before.
+    let late = a_gtk_client(&mut f);
+    assert_eq!(f.client(late).gtk_capabilities(), &[GLOBAL_MENU_BAR]);
+}
+
+#[test]
+fn a_restart_of_the_panel_within_the_grace_period_changes_nothing() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let applet = an_applet(&bus);
+    let id = a_gtk_client(&mut f);
+    wait_for_capabilities(&mut f, id, GLOBAL_MENU_BAR);
+    drop(applet);
+    wait_for_the_applet_to_leave(&mut f);
+
+    let _restarted = an_applet(&bus);
+    f.dispatch_until(|f| switch(f) == "on");
+    the_grace_period_passes(&mut f);
+
+    f.roundtrip(id);
+    assert_eq!(switch(&f), "on");
+    assert_eq!(f.client(id).gtk_capabilities(), &[GLOBAL_MENU_BAR]);
 }
 
 #[test]
@@ -268,6 +325,63 @@ fn a_window_that_only_names_its_actions_has_no_menu() {
     map_with_menu(&mut f, id, "mate-calc", Some(&actions_only));
 
     assert_eq!(global_menu(&mut f, &caller), no_menu("mate-calc"));
+}
+
+/// A dialog of `parent`'s application, with no menu of its own.
+fn a_dialog_of(parent: ClientWindow) -> WindowSpec {
+    WindowSpec {
+        app_id: Some("pluma"),
+        parent: Some(parent),
+        ..WindowSpec::default()
+    }
+}
+
+#[test]
+fn a_dialog_without_a_menu_has_its_parents() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let id = f.connect(Kind::Xdg);
+    let caller = a_caller(&mut f, &bus);
+    let pluma = map_with_menu(&mut f, id, "pluma", Some(&plumas_menu()));
+
+    let find = f.map(id, a_dialog_of(pluma));
+
+    assert!(f.has_keyboard(find));
+    assert_eq!(global_menu(&mut f, &caller), plumas_global_menu());
+
+    // And so on up: a dialog of the dialog.
+    let confirm = f.map(id, a_dialog_of(find));
+
+    assert!(f.has_keyboard(confirm));
+    assert_eq!(global_menu(&mut f, &caller), plumas_global_menu());
+}
+
+#[test]
+fn a_dialog_with_a_menu_has_its_own() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let id = f.connect(Kind::Xdg);
+    let caller = a_caller(&mut f, &bus);
+    let pluma = map_with_menu(&mut f, id, "pluma", Some(&plumas_menu()));
+
+    let dialog = f.map(id, a_dialog_of(pluma));
+    f.client(id)
+        .set_dbus_properties(dialog.xdg(), &a_gtk4_menu());
+    f.sync(dialog);
+
+    let (kind, bus_name, _, application) = global_menu(&mut f, &caller);
+    assert_eq!((kind.as_str(), bus_name.as_str()), ("gtk", ":1.57"));
+    assert_eq!(application, "pluma");
+}
+
+#[test]
+fn a_dialog_whose_parent_has_no_menu_has_its_application_alone() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let id = f.connect(Kind::Xdg);
+    let caller = a_caller(&mut f, &bus);
+    let calc = map_with_menu(&mut f, id, "mate-calc", None);
+
+    f.map(id, a_dialog_of(calc));
+
+    assert_eq!(global_menu(&mut f, &caller), no_menu("pluma"));
 }
 
 #[test]

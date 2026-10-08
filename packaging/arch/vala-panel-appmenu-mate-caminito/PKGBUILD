@@ -5,16 +5,16 @@
 # The AUR's vala-panel-appmenu PKGBUILD cut down to its vala-panel-appmenu-mate package
 # (ADR 0017), since Arch has none. The differences: the name, provides and conflicts, only
 # the MATE applet built, the menu translator linked into the applet in place of the AUR's
-# appmenu-glib-translator package, which this one then needs none of, and the carried patch
-# (ADR 0011).
+# appmenu-glib-translator package, which this one then needs none of, and the carried
+# patches (ADR 0011).
 
 pkgname=vala-panel-appmenu-mate-caminito
 _pkgname=vala-panel-appmenu
 # The AUR's version. Its Wayfire backend came after this tag, so the package has only the
 # libwnck backend beside Caminito's, as the AUR's has it alone.
 pkgver=25.04
-pkgrel=1
-pkgdesc="Global Menu plugin for mate-panel, with Caminito's carried patch"
+pkgrel=2
+pkgdesc="Global Menu plugin for mate-panel, with Caminito's carried patches"
 url="https://gitlab.com/vala-panel-project/vala-panel-appmenu"
 arch=('x86_64')
 license=('LGPL-3.0-or-later')
@@ -32,11 +32,16 @@ conflicts=("${_pkgname}-mate" "${_pkgname}-locale" 'appmenu-glib-translator')
 # is correct on any compositor: the applet says it runs on Wayland, without which a Wayland
 # panel doesn't list it. Under Caminito the applet draws the menu Caminito publishes for the
 # focused window, and owns org.mate.Caminito.GlobalMenuApplet, the name that makes Caminito
-# tell the apps to give up their menubars (110).
+# tell the apps to give up their menubars (110). 0002 is active under Caminito only, too:
+# there the application's name before the menus is bold, and the applet's preferences have
+# whether it's shown, in place of whether it's bold (114). Its settings key is in the schema
+# on any desktop, where nothing reads it.
 source=("${_pkgname}::git+${url}.git#tag=${pkgver}"
-        0001-applet-Add-a-Caminito-backend.patch)
+        0001-applet-Add-a-Caminito-backend.patch
+        0002-applet-Let-the-application-s-name-be-turned-off-unde.patch)
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
-            '0ef93e9de8fe3a32d8575b84cb2dfee86ff284c4f9291d8ab25481764bc6eefd')
+            '0ef93e9de8fe3a32d8575b84cb2dfee86ff284c4f9291d8ab25481764bc6eefd'
+            'e2c3146a9c86064b5aee9d57be2a57355a5e9916533e2bca344693357ad6c902')
 
 prepare() {
     cd "${_pkgname}"

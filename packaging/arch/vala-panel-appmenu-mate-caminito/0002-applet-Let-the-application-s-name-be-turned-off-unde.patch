@@ -1,0 +1,136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 09:39:24 -0300
+Subject: [PATCH] applet: Let the application's name be turned off under
+ Caminito
+
+The applet shows the focused window's application as the label of the
+application menu, before the window's menus, and has no way to leave it
+out. Whether it is bold is a preference, off by default.
+
+Under Caminito, the Wayland compositor for MATE, make the name bold and
+give the MATE applet a preference in place of that one, on when the applet
+is first added: whether the name is shown at all. Like the applet's other
+preferences it is each applet's own. With the name off, a window with no
+menu shows nothing.
+
+The name goes with the application menu it labels. Caminito tells no app
+that the shell shows its application menu, so an app that has one still
+draws it itself.
+
+Without an owner of org.mate.Caminito nothing changes: the new key is not
+read, and the preferences are the ones there were.
+---
+ applets/mate-plugin-appmenu.vala       | 16 ++++++++++++++--
+ data/org.valapanel.appmenu.gschema.xml |  3 +++
+ lib/menu-widget.vala                   | 22 +++++++++++++++++-----
+ 3 files changed, 34 insertions(+), 7 deletions(-)
+
+diff --git a/applets/mate-plugin-appmenu.vala b/applets/mate-plugin-appmenu.vala
+index 629f10e..05176ce 100644
+--- a/applets/mate-plugin-appmenu.vala
++++ b/applets/mate-plugin-appmenu.vala
+@@ -29,6 +29,9 @@ private bool factory_callback(MatePanel.Applet applet, string iid)
+     var settings = MatePanel.AppletSettings.@new(applet,"org.valapanel.appmenu");
+     settings.bind(Key.COMPACT_MODE,layout,Key.COMPACT_MODE,SettingsBindFlags.DEFAULT);
+     settings.bind(Key.BOLD_APPLICATION_NAME,layout,Key.BOLD_APPLICATION_NAME,SettingsBindFlags.DEFAULT);
++    /* Under Caminito the name can be turned off, on each applet by itself */
++    if (layout.on_caminito)
++        settings.bind(Key.SHOW_APPLICATION_NAME,layout,Key.SHOW_APPLICATION_NAME,SettingsBindFlags.DEFAULT);
+     applet.add(layout);
+     layout.show();
+     applet.show();
+@@ -45,8 +48,17 @@ private bool factory_callback(MatePanel.Applet applet, string iid)
+         settings.bind(Key.COMPACT_MODE,entry,"active",SettingsBindFlags.DEFAULT);
+         dlg_vbox.pack_start(entry,false,false,2);
+         entry.show();
+-        entry = new CheckButton.with_label(dgettext(Config.GETTEXT_PACKAGE,"Use bold application name"));
+-        settings.bind(Key.BOLD_APPLICATION_NAME,entry,"active",SettingsBindFlags.DEFAULT);
++        if (layout.on_caminito)
++        {
++            /* The name is always bold there */
++            entry = new CheckButton.with_label(dgettext(Config.GETTEXT_PACKAGE,"Show the application's name"));
++            settings.bind(Key.SHOW_APPLICATION_NAME,entry,"active",SettingsBindFlags.DEFAULT);
++        }
++        else
++        {
++            entry = new CheckButton.with_label(dgettext(Config.GETTEXT_PACKAGE,"Use bold application name"));
++            settings.bind(Key.BOLD_APPLICATION_NAME,entry,"active",SettingsBindFlags.DEFAULT);
++        }
+         dlg_vbox.pack_start(entry,false,false,2);
+         entry.show();
+         dlg.show();
+diff --git a/data/org.valapanel.appmenu.gschema.xml b/data/org.valapanel.appmenu.gschema.xml
+index 380b584..ff8dab0 100644
+--- a/data/org.valapanel.appmenu.gschema.xml
++++ b/data/org.valapanel.appmenu.gschema.xml
+@@ -14,5 +14,8 @@
+     <key name="bold-application-name" type="b">
+       <default>false</default>
+     </key>
++    <key name="show-application-name" type="b">
++      <default>true</default>
++    </key>
+   </schema>
+ </schemalist>
+diff --git a/lib/menu-widget.vala b/lib/menu-widget.vala
+index 6e0c836..3a01327 100644
+--- a/lib/menu-widget.vala
++++ b/lib/menu-widget.vala
+@@ -22,6 +22,7 @@ namespace Key
+ {
+     public const string COMPACT_MODE = "compact-mode";
+     public const string BOLD_APPLICATION_NAME = "bold-application-name";
++    public const string SHOW_APPLICATION_NAME = "show-application-name";
+ }
+ 
+ namespace Appmenu
+@@ -30,6 +31,13 @@ namespace Appmenu
+     {
+         public bool compact_mode {get; set; default = false;}
+         public bool bold_application_name {get; set; default = false;}
++        /* Whether the application's name is before the menus. Only an applet under
++         * Caminito lets the user turn it off */
++        public bool show_application_name {get; set; default = true;}
++        /* Whether the menu is the one Caminito publishes */
++        public bool on_caminito {
++            get { return backend is CaminitoBackend; }
++        }
+         private Gtk.Adjustment? scroll_adj = null;
+         private Gtk.ScrolledWindow? scroller = null;
+         private Gtk.CssProvider provider;
+@@ -103,8 +111,10 @@ namespace Appmenu
+         private void restock()
+         {
+             var menu = new GLib.Menu();
+-            if (this.appmenu != null)
+-                menu.append_section(null,this.appmenu);
++            /* The application's name is the label of the application menu */
++            unowned GLib.MenuModel? appmenu = this.show_application_name ? this.appmenu : null;
++            if (appmenu != null)
++                menu.append_section(null,appmenu);
+             if (this.menubar != null)
+                 menu.append_section(null,this.menubar);
+ 
+@@ -127,8 +137,8 @@ namespace Appmenu
+                 }
+                 var compact = new GLib.Menu();
+                 string? name = null;
+-                if(this.appmenu != null)
+-                    this.appmenu.get_item_attribute(0,"label","s",&name);
++                if(appmenu != null)
++                    appmenu.get_item_attribute(0,"label","s",&name);
+                 else
+                     name = GLib.dgettext(Config.GETTEXT_PACKAGE,"Compact Menu");
+                 compact.append_submenu(name,menu);
+@@ -137,7 +147,9 @@ namespace Appmenu
+             else
+                 mwidget.bind_model(menu,null,true);
+             unowned Gtk.StyleContext mcontext = mwidget.get_style_context();
+-            if(bold_application_name)
++            /* Under Caminito the name is always bold, with no preference for it. The
++             * class makes the first item bold, which is a menu when the name is off */
++            if(on_caminito ? appmenu != null : bold_application_name)
+                 mcontext.add_class("-vala-panel-appmenu-bold");
+             else
+                 mcontext.remove_class("-vala-panel-appmenu-bold");
