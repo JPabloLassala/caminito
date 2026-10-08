@@ -92,6 +92,53 @@ fn data_dirs(has: Option<&OsStr>) -> OsString {
     dirs
 }
 
+/// The GTK module that exports a classic `GtkMenuBar`, as most of MATE's apps have theirs,
+/// for the global menu (111, ADR 0017): the name GTK 3 finds it by in its modules
+/// directory.
+const MENU_MODULE: &str = "appmenu-gtk-module";
+
+/// Where pacman keeps a directory for each installed package, named by the package and its
+/// version.
+const PACKAGES: &str = "/var/lib/pacman/local";
+
+/// What the directory of the patched module's package starts with. The stock package has
+/// the same file, and isn't enough: it tells Caminito nothing of a menubar in a window
+/// that isn't a `GtkApplicationWindow`, which then has no menu at all while an applet is
+/// there. The stock one is enough once it has the fix.
+const MENU_MODULE_PACKAGE: &str = "appmenu-gtk-module-caminito-";
+
+/// Whether the patched menu module is installed.
+fn menu_module_is_installed() -> bool {
+    let Ok(packages) = std::fs::read_dir(PACKAGES) else {
+        return false;
+    };
+    let mut names = packages.flatten().map(|package| package.file_name());
+    names.any(|name| name.as_bytes().starts_with(MENU_MODULE_PACKAGE.as_bytes()))
+}
+
+/// The session command's `GTK_MODULES`, if it isn't what Caminito `has`: the menu module
+/// after those, if it's `installed` and not among them already.
+///
+/// It's given to the command alone, which hands it to what it starts: Caminito's own
+/// helpers have no use for it.
+fn gtk_modules(has: Option<&OsStr>, installed: bool) -> Option<OsString> {
+    let has = has.filter(|modules| !modules.is_empty());
+    let listed = has.is_some_and(|modules| {
+        let mut modules = modules.as_bytes().split(|byte| *byte == b':');
+        modules.any(|module| module == MENU_MODULE.as_bytes())
+    });
+    if !installed || listed {
+        return None;
+    }
+    let mut modules = OsString::new();
+    if let Some(has) = has {
+        modules.push(has);
+        modules.push(":");
+    }
+    modules.push(MENU_MODULE);
+    Some(modules)
+}
+
 /// What `--session` runs as Caminito's child.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCommand {
@@ -407,7 +454,8 @@ impl Caminito {
     /// Spawns the command with `Caminito::environment`, and `GDK_BACKEND=x11` for itself
     /// alone: mate-session isn't Wayland-safe, and its carried patch unsets the variable
     /// for what it starts (08). Caminito's data directory is first in its `XDG_DATA_DIRS`,
-    /// and so in those of what it starts (84).
+    /// and so in those of what it starts (84), and the menu module is in its `GTK_MODULES`
+    /// if it's installed (111).
     fn spawn_session_command(&mut self) {
         let sigchld = match self.watch_session_command() {
             Ok(sigchld) => sigchld,
@@ -430,6 +478,10 @@ impl Caminito {
                 data_dirs(std::env::var_os("XDG_DATA_DIRS").as_deref()),
             )
             .stdin(Stdio::null());
+        let has = std::env::var_os("GTK_MODULES");
+        if let Some(modules) = gtk_modules(has.as_deref(), menu_module_is_installed()) {
+            command.env("GTK_MODULES", modules);
+        }
         // A nested run has its host's, which isn't the Session's.
         if !self.environment.contains_key(OsStr::new("DISPLAY")) {
             command.env_remove("DISPLAY");
@@ -719,6 +771,39 @@ mod tests {
         let expected = "/usr/share/caminito/xdg:/usr/local/share:/usr/share";
         assert_eq!(data_dirs(None), expected);
         assert_eq!(data_dirs(Some("".as_ref())), expected);
+    }
+
+    #[test]
+    fn the_menu_module_is_added_to_the_commands_gtk_modules_when_its_installed() {
+        assert_eq!(gtk_modules(None, true).unwrap(), "appmenu-gtk-module");
+        assert_eq!(
+            gtk_modules(Some("".as_ref()), true).unwrap(),
+            "appmenu-gtk-module"
+        );
+        assert_eq!(
+            gtk_modules(Some("canberra-gtk-module".as_ref()), true).unwrap(),
+            "canberra-gtk-module:appmenu-gtk-module"
+        );
+    }
+
+    #[test]
+    fn the_commands_gtk_modules_are_left_alone_without_the_menu_module() {
+        assert_eq!(gtk_modules(None, false), None);
+        assert_eq!(
+            gtk_modules(Some("canberra-gtk-module".as_ref()), false),
+            None
+        );
+    }
+
+    #[test]
+    fn a_menu_module_thats_listed_already_isnt_listed_twice() {
+        let has = "appmenu-gtk-module:canberra-gtk-module";
+        assert_eq!(gtk_modules(Some(has.as_ref()), true), None);
+        // Another module whose name only starts as the menu module's does.
+        assert_eq!(
+            gtk_modules(Some("appmenu-gtk-module-wayland".as_ref()), true).unwrap(),
+            "appmenu-gtk-module-wayland:appmenu-gtk-module"
+        );
     }
 
     #[test]

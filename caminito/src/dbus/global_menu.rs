@@ -2,7 +2,8 @@
 //! window's menu, and the Global menu applet as a peer, whose bus name is the switch for
 //! the apps giving up their own menubars.
 //!
-//! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, and
+//! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, a
+//! classic `GtkMenuBar`'s that `appmenu-gtk-module` exports the same way (111), and
 //! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112). The switch turns
 //! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
 //! together. The registrar's interface is ticket 113's, and the grace period after the

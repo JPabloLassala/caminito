@@ -123,6 +123,13 @@ the applet is on a panel apps leave their menubars to it. So far that's the menu
 it's [set up for it](#the-global-menu). It's linked to `mate-panel-caminito`'s applet library,
 so build it after that package.
 
+`appmenu-gtk-module-caminito` gives the applet the menus of the GTK 3 apps that build a classic
+menubar, as most of MATE's do. Nothing depends on it either. It's Arch's `appmenu-gtk-module`
+25.04 with one fix of an upstream bug: on Wayland the module said nothing of a menubar in a
+window that isn't a `GtkApplicationWindow`, such as mate-terminal's. The session adds the
+module to its `GTK_MODULES` when this package is installed, and not for the stock one, with
+which those apps would have no menu at all while the applet is on a panel.
+
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no
 tag. To move a package to a new baseline, rebase its series:

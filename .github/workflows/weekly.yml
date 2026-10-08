@@ -71,6 +71,7 @@ jobs:
           - mate-utils-caminito
           - mate-power-manager-caminito
           - vala-panel-appmenu-mate-caminito
+          - appmenu-gtk-module-caminito
     steps:
       - name: Install packages
         run: pacman -Syu --noconfirm --needed base-devel git
