@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 10:00:00 -0300
+Subject: [PATCH] hijack: Set a plain window's D-Bus properties once it is
+ realized
+
+On Wayland the window data of a window that is not a GtkApplicationWindow
+was made before the realize was chained up to. Making it calls
+gdk_wayland_window_set_dbus_properties_libgtk_only with the widget's
+GdkWindow, which a widget has only once it is realized, so the call
+failed its GDK_IS_WAYLAND_WINDOW assertion and the compositor was never
+told where the menu is. The data was kept, so nothing tried again. A
+program with a GtkMenuBar in a plain GtkWindow, as mate-terminal and
+mate-calc have, exported a menu that nothing could find.
+
+Make the data after the realize, as the X11 branch does. A
+GtkApplicationWindow keeps its own order: GTK reads the application's
+menubar while it realizes the window.
+---
+ subprojects/appmenu-gtk-module/src/hijack.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/subprojects/appmenu-gtk-module/src/hijack.c b/subprojects/appmenu-gtk-module/src/hijack.c
+index 0bb1d78..98c88b6 100644
+--- a/subprojects/appmenu-gtk-module/src/hijack.c
++++ b/subprojects/appmenu-gtk-module/src/hijack.c
+@@ -78,16 +78,16 @@
+ 	if (visual && (hint == GDK_WINDOW_TYPE_HINT_DND))
+ 		gtk_widget_set_visual(widget, visual);
+ 
+-// In Wayland the DBUS Menu need to be register before realize the window.
++	if (pre_hijacked_window_realize != NULL)
++		pre_hijacked_window_realize(widget);
++
++// A plain GtkWindow has no GdkWindow to set the D-Bus properties on until it's realized.
+ #ifdef GDK_WINDOWING_WAYLAND
+ 	if (GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default()) && is_hint_viable &&
+ 	    (!GTK_IS_APPLICATION_WINDOW(GTK_WINDOW(widget))))
+ 		gtk_window_get_window_data(GTK_WINDOW(widget));
+ #endif
+ 
+-	if (pre_hijacked_window_realize != NULL)
+-		pre_hijacked_window_realize(widget);
+-
+ #ifdef GDK_WINDOWING_X11
+ 	if (is_hint_viable
+ #if GTK_MAJOR_VERSION == 3

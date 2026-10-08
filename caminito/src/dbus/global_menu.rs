@@ -2,9 +2,10 @@
 //! window's menu, and the Global menu applet as a peer, whose bus name is the switch for
 //! the apps giving up their own menubars.
 //!
-//! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, and
-//! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112), and the dbusmenu an
-//! X11 client registered for its window with `registrar` (113). The switch turns
+//! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, a
+//! classic `GtkMenuBar`'s that `appmenu-gtk-module` exports the same way (111), a Qt app's
+//! or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112), and the dbusmenu an X11
+//! client registered for its window with `registrar` (113). The switch turns
 //! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
 //! together. The grace period after the applet's name loses its owner is 114's.
 
