@@ -22,7 +22,7 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 - [x] Headless tests with a D-Bus client, written before the code: `GetActiveToplevel` returns the focused window's identifier; with the caller's own window focused it returns the one focused before; with no other window it returns the empty string.
 - [x] A headless test that each of the three keys runs its command.
 - [x] `mate-utils-caminito` builds, and its `makepkg` and `namcap` job passes in CI. The Packaging job passed on `master` on 2026-10-08 (run 37823877022, at `88710e2`): it built `mate-utils-caminito` 1.29.1-2, and `namcap` on the package had warnings and no error.
-- [x] The checklist has the item, and it was run in a Session: `Print` saves the whole screen, `<Shift>Print` an area, and `<Alt>Print` the window that had the focus, with its Frame, when another window covers part of it. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). The item is there, and it wasn't run where the ticket was done: the run in a Session is deferred to 106, as the notes say.
+- [x] The checklist has the item, and it was run in a Session: `Print` saves the whole screen, `<Shift>Print` an area, and `<Alt>Print` the window that had the focus, with its Frame, when another window covers part of it. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). The item is there, and it wasn't run where the ticket was done: the run in a Session was deferred to 106, as the notes say. (Seen by the developer on 2026-10-08, in a Session: `Print`, `<Shift>Print` and `<Alt>Print` work. What each image had, and the checklist item's steps 5 and 6, weren't reported.)
 
 ## Notes
 
