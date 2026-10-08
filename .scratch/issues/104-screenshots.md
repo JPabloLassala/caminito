@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6
 Blocked by: 103
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -21,7 +21,7 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 - [x] Headless tests with a D-Bus client, written before the code: `GetActiveToplevel` returns the focused window's identifier; with the caller's own window focused it returns the one focused before; with no other window it returns the empty string.
 - [x] A headless test that each of the three keys runs its command.
-- [ ] `mate-utils-caminito` builds, and its `makepkg` and `namcap` job passes in CI. It builds where the ticket was done; the job hasn't run (see the notes).
+- [x] `mate-utils-caminito` builds, and its `makepkg` and `namcap` job passes in CI. The Packaging job passed on `master` on 2026-10-08 (run 37823877022, at `88710e2`): it built `mate-utils-caminito` 1.29.1-2, and `namcap` on the package had warnings and no error.
 - [x] The checklist has the item, and it was run in a Session: `Print` saves the whole screen, `<Shift>Print` an area, and `<Alt>Print` the window that had the focus, with its Frame, when another window covers part of it. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md). The item is there, and it wasn't run where the ticket was done: the run in a Session is deferred to 106, as the notes say.
 
 ## Notes
@@ -50,7 +50,7 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 - **Started with 103 still open,** on a branch of its own, and merged with it once 103 was resolved on `master` (`d3d095c`). Until then only what 103 doesn't block could be tested: the keys, `GetActiveToplevel`, the package and the patch's gate.
 - **The window capture, end to end, nested:** Caminito's debug build of the merge, on winit inside a headless Wayfire, on a private bus with its well-known names. With a foot window focused, `GetActiveToplevel` over `gdbus` printed its identifier, and the packaged `mate-screenshot --window` saved [the window alone, with its Frame](104-checks/window-nested.png), 698x528, with no warning. That's the patch's whole path against Caminito's toplevel source. It isn't the Session check: no key was pressed, nothing covered the window, and `Print` and `<Shift>Print` weren't run. That check stays with 106.
 - **What was run of the patch,** on a headless Wayfire with a private bus, with the patched mate-screenshot built from the series: with no owner of `org.mate.Caminito`, `mate-screenshot --window` prints `Error: window capture is not supported on Wayland.` and exits 1, as stock; with a stand-in owner, it calls `GetActiveToplevel`, finds no toplevel source, warns, and takes the whole screen.
-- **The package was built with `makepkg --nodeps`,** since inkscape, one of Arch's makedepends, isn't installed there; configure only uses it to redraw logview's icons. `namcap PKGBUILD` is clean. `namcap` on the package has one error where it was run, `Dependency mate-utils detected and not included`, for `libmatedict.so.6`: the package's own library, which namcap gives to the stock `mate-utils` installed there. The CI job installs the package before it checks it, as it does `caja-caminito` with its own library, so it shouldn't show there; that's the criterion left unticked.
+- **The package was built with `makepkg --nodeps`,** since inkscape, one of Arch's makedepends, isn't installed there; configure only uses it to redraw logview's icons. `namcap PKGBUILD` is clean. `namcap` on the package has one error where it was run, `Dependency mate-utils detected and not included`, for `libmatedict.so.6`: the package's own library, which namcap gives to the stock `mate-utils` installed there. The CI job installs the package before it checks it, as it does `caja-caminito` with its own library, so it shouldn't show there. It didn't: the job's `namcap` has no error for the package (2026-10-08), and the criterion is ticked.
 - **Written before the code:** the D-Bus tests, the policy test and the tests of the keys were each written before what they test, and the first run of each was with the code in place, so none was seen to fail.
 - **Decided here, beyond what the ticket says:**
   - **The window named is one on screen:** on the active workspace, and neither it nor a parent minimised, since Marco's active window is. A window that never had the focus isn't named. A desktop or a dock that had it gives the empty string, as mate-screenshot takes the whole screen on X11 with the desktop active; policy gives neither the focus on a click or when it maps, so no test reaches that. With none it's the empty string, and mate-screenshot takes the whole screen, as it does on X11 with no current window.
