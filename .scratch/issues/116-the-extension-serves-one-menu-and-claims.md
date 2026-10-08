@@ -21,11 +21,11 @@ The global menu extension's first slice, under "The global menu extension" in [t
 
 ## Acceptance criteria
 
-- [ ] Through the seam: a client on the bus reads the menu, and an `Event` on the item runs its command after the reply is sent.
-- [ ] Through the seam: a claim is made at activation with `focused` true, on focus gained, when `GlobalMenuOffered` turns true or `org.mate.Caminito` gains an owner while focused, and on an editor or tab-groups change while focused; none on focus lost or while unfocused.
-- [ ] Through the seam: no name is served and no claim is made off Linux, with no owner of `org.mate.Caminito`, or with `GlobalMenuOffered` false; and it starts and stops as they change.
-- [ ] With a fake that lacks the tab-groups and notebook APIs, the extension still serves and claims, and logs one line.
-- [ ] A failure at activation is logged and doesn't reach the host.
+- [x] Through the seam: a client on the bus reads the menu, and an `Event` on the item runs its command after the reply is sent.
+- [x] Through the seam: a claim is made at activation with `focused` true, on focus gained, when `GlobalMenuOffered` turns true or `org.mate.Caminito` gains an owner while focused, and on an editor or tab-groups change while focused; none on focus lost or while unfocused.
+- [x] Through the seam: no name is served and no claim is made off Linux, with no owner of `org.mate.Caminito`, or with `GlobalMenuOffered` false; and it starts and stops as they change.
+- [x] With a fake that lacks the tab-groups and notebook APIs, the extension still serves and claims, and logs one line.
+- [x] A failure at activation is logged and doesn't reach the host.
 - [ ] The CI job passes.
 - [ ] In a nested run with VS Code 1.140, the panel shows the menu, the item runs in the focused one of two windows, and the menu comes back after a reload with nothing refocused.
 
@@ -34,3 +34,15 @@ The global menu extension's first slice, under "The global menu extension" in [t
 - Report the `configureMembers()` bug to `JellyBrick/node-dbus-next`.
 - The prototype's `extension.js` is older than its findings in two places; the spec has the rule.
 - The oldest base among the five editors is Cursor's, 1.128.
+
+## Comments
+
+**2026-10-08, the first slice built.** `caminito-vscode/` has the extension: `src/global-menu.mts` is the core (the gate, the claim rule, the rule for an old editor), `src/dbusmenu.mts` the server, `src/editor.mts` the part of the `vscode` API it takes as a value, and `src/extension.mts` the entry that hands it the real one. `npm test` runs node's own test runner on `.mts` files with Node's type stripping, each test on a `dbus-daemon` of its own with a stand-in for `org.mate.Caminito` (`test/harness.mts`). `nested/run.sh` is the run by hand. The CI job is `extension` in `ci.yml`.
+
+- **The floor is 1.68.0,** looked up in `@types/vscode`'s releases: `window.onDidChangeActiveNotebookEditor` came in 1.68 and `window.tabGroups` in 1.67, and everything else used (`window.state`, `onDidChangeWindowState`, `onDidChangeActiveTextEditor`, `createOutputChannel`, `executeCommand`, `version`) is older. The type-check runs against `@types/vscode` 1.68.0, so an API newer than the floor fails it, and the two late events are optional in `Editor`. A test holds the floor to the manifest's `engines.vscode`. The log is a plain output channel, since `LogOutputChannel` would raise the floor to 1.74, and it's opened at its first line so an editor outside a Session shows none.
+- **The prototype's branch isn't on the remote,** so the slice was written from the spec and tickets 04 and 10. The menu is File > New Text File, as the prototype's, served at `/org/mate/Caminito/GlobalMenuExtension/MenuBar`.
+- **`Event` runs the command on the next turn of the loop,** after the reply is written. The tests show the reply comes while a command that never finishes is still running, and that a command that throws is logged. Whether the command begins only after the importer has read the reply isn't shown: the client is in the test's own process.
+- **A bus that can't be reached** leaves dbus-next's calls unanswered, so the start waits for `connect` or `error` and a failure ends it with one line.
+- **Not run here:** the CI job (nothing here runs an Arch container; it ran locally on Node 22.22 with dbus 1.14) and the nested run with VS Code 1.140, which needs a Wayland desktop and the applet's package.
+
+**The `configureMembers()` report, not yet sent** (the session's GitHub access doesn't reach `JellyBrick/node-dbus-next`). Title: *`Interface.configureMembers()` registers nothing: the constructor's own fields hide the prototype's*. Body: In 0.11.4, `Interface`'s constructor defines `$properties`, `$methods` and `$signals` as own properties set to `undefined` (`_defineProperty(this, "$methods", void 0)` in `dist/index.cjs`), while `configureMembers()` puts the members on `this.prototype`. The own fields shadow the prototype's, so an interface configured that way exports no method, property or signal: a call gets `org.freedesktop.DBus.Error.UnknownMethod`. Deleting the three own fields in the subclass's constructor, after `super()`, works around it. A fix would be to declare the fields without initialisers (`declare`) or to have `configureMembers()` not depend on them.

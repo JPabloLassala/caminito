@@ -57,3 +57,30 @@ jobs:
       # XDG_DATA_HOME makes the bus read the service files that a test writes below HOME.
       - name: Test caminito
         run: XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito
+
+  # The global menu extension (116): type-checked, tested on a private dbus-daemon of each
+  # test's own, and bundled.
+  extension:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install git, node and dbus
+        run: pacman -Syu --noconfirm --needed git nodejs npm dbus
+
+      - uses: actions/checkout@v5
+
+      - name: Install the dependencies
+        working-directory: caminito-vscode
+        run: npm ci
+
+      - name: Type-check
+        working-directory: caminito-vscode
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: caminito-vscode
+        run: npm test
+
+      - name: Build the bundle
+        working-directory: caminito-vscode
+        run: npm run build
