@@ -200,7 +200,7 @@ pub struct Caminito {
     /// The accelerators callers of `org.mate.Caminito` have grabbed (98).
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
-    pub bells: Bells,
+    pub(crate) bells: Bells,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.

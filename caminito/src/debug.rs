@@ -84,6 +84,7 @@ struct StateDump {
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
     switcher: Option<SwitcherDump>,
+    /// The bells rung (105).
     bell: BellDump,
 }
 
@@ -92,11 +93,11 @@ struct BellDump {
     /// How many bells have rung (105).
     count: u64,
     /// The last one.
-    last: Option<RungDump>,
+    last: Option<LastBellDump>,
 }
 
 #[derive(Serialize)]
-struct RungDump {
+struct LastBellDump {
     /// `gtk_shell1`, `xdg_system_bell` or `xkb`.
     source: &'static str,
     /// The window it was for, if any.
@@ -300,7 +301,8 @@ impl Caminito {
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the accelerator grabs with their owners, the Window
-    /// switcher, and the bells rung with the last one, as pretty-printed JSON. The lock state comes with the milestone that makes it.
+    /// switcher, and the bells rung with the last one, as pretty-printed JSON. The lock
+    /// state comes with the milestone that makes it.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -419,7 +421,7 @@ impl Caminito {
             switcher,
             bell: BellDump {
                 count: self.bells.count,
-                last: self.bells.last.map(|bell| RungDump {
+                last: self.bells.last.map(|bell| LastBellDump {
                     source: bell.source.name(),
                     window: bell.window.map(|id| id.0),
                 }),

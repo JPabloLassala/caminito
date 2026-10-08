@@ -96,6 +96,10 @@ pub const SCHEMAS: &[Schema] = &[
 pub const UNSUPPORTED: &[(&str, &str)] = &[
     // Caminito will draw the ripple itself; M8's parity audit decides when (53).
     (MOUSE, "locate-pointer"),
+    // The bell is counted but neither flashes nor plays until M8 (105, 17). Caminito
+    // matches `audible-bell` only when it's off, and `visual-bell-type` only matters with
+    // the visual bell on, so neither is logged.
+    (MARCO_GENERAL, "visual-bell"),
 ];
 
 /// Marco's schemas that aren't installed, which stop Caminito starting (09).

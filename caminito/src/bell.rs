@@ -10,7 +10,7 @@ use crate::state::{Caminito, SEAT};
 
 /// Which protocol rang a bell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BellSource {
+pub(crate) enum BellSource {
     /// GTK3's `gtk_shell1.system_bell` (67).
     GtkShell,
     /// xdg-system-bell, which GTK4 and others ring.
@@ -21,7 +21,7 @@ pub enum BellSource {
 
 impl BellSource {
     /// The source as the debug dump names it.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             BellSource::GtkShell => "gtk_shell1",
             BellSource::XdgSystemBell => "xdg_system_bell",
@@ -32,7 +32,7 @@ impl BellSource {
 
 /// What a bell names, which decides its window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BellFor {
+pub(crate) enum BellFor {
     /// Nothing: a display beep, for the focused window (06).
     Focus,
     /// A window beep, for this window, or for none when what the bell named is gone or isn't
@@ -42,28 +42,32 @@ pub enum BellFor {
 
 /// One bell, as the event has it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Bell {
-    pub source: BellSource,
-    pub window: Option<WindowId>,
+pub(crate) struct BellEvent {
+    /// The protocol that rang it.
+    pub(crate) source: BellSource,
+    /// The window it's for, if any.
+    pub(crate) window: Option<WindowId>,
 }
 
 /// The bells rung since Caminito started.
 #[derive(Debug, Default)]
-pub struct Bells {
-    pub count: u64,
-    pub last: Option<Bell>,
+pub(crate) struct Bells {
+    /// How many have rung.
+    pub(crate) count: u64,
+    /// The last one rung.
+    pub(crate) last: Option<BellEvent>,
 }
 
 impl Caminito {
     /// Rings the bell from `source`. M8 shows and plays it here, by the settings it reads
     /// (09, 17).
-    pub fn ring_bell(&mut self, source: BellSource, bell_for: BellFor) {
+    pub(crate) fn ring_bell(&mut self, source: BellSource, bell_for: BellFor) {
         let window = match bell_for {
             BellFor::Focus => self.policy.focus(SEAT),
             BellFor::Window(window) => window,
         };
         self.bells.count += 1;
-        self.bells.last = Some(Bell { source, window });
+        self.bells.last = Some(BellEvent { source, window });
 
         let settings = &self.settings.bell;
         tracing::debug!(
@@ -80,7 +84,7 @@ impl Caminito {
     /// The window a bell for `surface` is for: its root surface's, so a subsurface's bell is
     /// its window's, and none for a surface of no window, such as a popup's or a layer
     /// surface's.
-    pub fn bell_window(&self, surface: &WlSurface) -> Option<WindowId> {
+    pub(crate) fn bell_window(&self, surface: &WlSurface) -> Option<WindowId> {
         let mut root = surface.clone();
         while let Some(parent) = get_parent(&root) {
             root = parent;

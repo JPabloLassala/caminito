@@ -910,8 +910,9 @@ fn bell_keys_are_read() {
         (MARCO_GENERAL, "visual-bell", Value::Bool(true)),
         (MARCO_GENERAL, "visual-bell-type", string("frame-flash")),
     ]);
+    // The visual bell on is also reported as unsupported, which the test below checks.
     assert_eq!(
-        settings(&reading).bell,
+        translate(&reading).settings.bell,
         Bell {
             audible: false,
             visual: true,
@@ -1262,6 +1263,19 @@ fn the_never_keys_change_nothing_and_arent_reported() {
         (KEYBOARD, "bell-duration", Value::Int(10)),
     ]);
     assert_eq!(settings(&reading), settings(&defaults()));
+}
+
+#[test]
+fn the_visual_bell_set_on_is_reported_as_unsupported() {
+    let problems = translate(&with(MARCO_GENERAL, "visual-bell", Value::Bool(true))).problems;
+    assert_eq!(
+        problems,
+        [Problem::Unsupported {
+            schema: MARCO_GENERAL.into(),
+            key: "visual-bell".into(),
+            value: "true".into(),
+        }]
+    );
 }
 
 #[test]
