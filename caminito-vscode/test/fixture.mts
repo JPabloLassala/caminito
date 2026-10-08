@@ -10,8 +10,8 @@ import type { MessageBus } from '@jellybrick/dbus-next';
 import { MENU_PATH, VS_CODE, start } from '../src/global-menu.mts';
 import type { GlobalMenu, Menu } from '../src/global-menu.mts';
 import { commandsOf } from '../src/menu-table.mts';
-import { Caminito, FakeEditor, PrivateBus, readMenu, until } from './harness.mts';
-import type { Item, Lacking } from './harness.mts';
+import { Caminito, FakeEditor, PrivateBus, call, listen, readMenu, until } from './harness.mts';
+import type { FakeWorkspace, Heard, Item, Lacking } from './harness.mts';
 
 export interface Options {
   /** Whether Caminito is on the bus at activation; true by default. */
@@ -30,6 +30,10 @@ export interface Options {
   readonly commands?: readonly string[] | Error;
   /** The editor's `product.json`, or null for none; every annotated key set by default. */
   readonly product?: Record<string, unknown> | null;
+  /** The settings at activation; none by default, so no setting can be read. */
+  readonly settings?: Record<string, unknown>;
+  /** The window's workspace at activation; a folder by default. */
+  readonly workspace?: FakeWorkspace;
 }
 
 /** A `product.json` with every key the menu's annotations gate on. */
@@ -50,10 +54,14 @@ export interface Fixture {
   /** A connection that reads the menu, as the applet's importer does. */
   readonly client: MessageBus;
   readonly extension: GlobalMenu;
+  /** The dbusmenu signals the client has heard, from before activation. */
+  readonly heard: Heard[];
   /** The extension's unique names on the bus: one while it's connected. */
   names(): Promise<string[]>;
   /** The menu the extension serves, or undefined when it serves none. */
   menu(): Promise<Item | undefined>;
+  /** The layout's revision, as `GetLayout` answers it. */
+  revision(): Promise<number>;
   /** Waits until the menu is served, or until it isn't. */
   served(served: boolean): Promise<void>;
   /** Waits until the stand-in has had `count` claims, and fails if it has had more. */
@@ -70,7 +78,10 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     await caminito.own();
   }
   const served = options.menu ?? VS_CODE;
+  const heard = await listen(client, MENU_PATH);
   const editor = new FakeEditor(options.focused ?? true);
+  editor.settings = { ...options.settings };
+  editor.workspace = options.workspace ?? 'folder';
   const commands = options.commands ?? commandsOf(served.table.menus);
   editor.listCommands = () =>
     commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
@@ -104,8 +115,21 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     editor,
     client,
     extension,
+    heard,
     names,
     menu,
+    async revision() {
+      const [name] = await names();
+      const reply = await call(client, {
+        destination: name!,
+        path: MENU_PATH,
+        interface: 'com.canonical.dbusmenu',
+        member: 'GetLayout',
+        signature: 'iias',
+        body: [0, 0, []],
+      });
+      return reply.body[0] as number;
+    },
     async served(served) {
       const what = served ? 'the menu is served' : "the menu isn't served";
       await until(async () => ((await menu()) !== undefined) === served, what);

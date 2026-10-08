@@ -1,5 +1,43 @@
 {
+  "breadcrumbs.toggle": { "check": { "setting": "breadcrumbs.enabled", "is": true } },
+  "editor.action.renderWhitespace.all": { "radio": { "setting": "editor.renderWhitespace", "is": "all" } },
+  "editor.action.renderWhitespace.boundary": { "radio": { "setting": "editor.renderWhitespace", "is": "boundary" } },
+  "editor.action.renderWhitespace.none": { "radio": { "setting": "editor.renderWhitespace", "is": "none" } },
+  "editor.action.renderWhitespace.selection": { "radio": { "setting": "editor.renderWhitespace", "is": "selection" } },
+  "editor.action.renderWhitespace.trailing": { "radio": { "setting": "editor.renderWhitespace", "is": "trailing" } },
+  "editor.action.toggleColumnSelection": { "check": { "setting": "editor.columnSelection", "is": true } },
+  "editor.action.toggleMinimap": { "check": { "setting": "editor.minimap.enabled", "is": true } },
+  "editor.action.toggleRenderControlCharacter": { "check": { "setting": "editor.renderControlCharacters", "is": true } },
+  "editor.action.toggleStickyScroll": { "check": { "setting": "editor.stickyScroll.enabled", "is": true } },
   "update.showCurrentReleaseNotes": { "product": "releaseNotesUrl" },
+  "workbench.action.activityBarLocation.bottom": { "radio": { "setting": "workbench.activityBar.location", "is": "bottom" } },
+  "workbench.action.activityBarLocation.default": { "radio": { "setting": "workbench.activityBar.location", "is": "default" } },
+  "workbench.action.activityBarLocation.hide": { "radio": { "setting": "workbench.activityBar.location", "is": "hidden" } },
+  "workbench.action.activityBarLocation.top": { "radio": { "setting": "workbench.activityBar.location", "is": "top" } },
+  "workbench.action.closeFolder": { "workspace": { "Close _Folder": ["folder"], "Close _Workspace": ["workspace"] } },
+  "workbench.action.editorActionsDefault": {
+    "radio": {
+      "all": [
+        { "setting": "workbench.editor.editorActionsLocation", "is": "default" },
+        { "setting": "workbench.editor.showTabs", "not": "none" }
+      ]
+    }
+  },
+  "workbench.action.editorActionsTitleBar": {
+    "radio": {
+      "any": [
+        { "setting": "workbench.editor.editorActionsLocation", "is": "titleBar" },
+        {
+          "all": [
+            { "setting": "workbench.editor.editorActionsLocation", "is": "default" },
+            { "setting": "workbench.editor.showTabs", "is": "none" }
+          ]
+        }
+      ]
+    }
+  },
+  "workbench.action.hideEditorActions": { "radio": { "setting": "workbench.editor.editorActionsLocation", "is": "hidden" } },
+  "workbench.action.hideEditorTabs": { "radio": { "setting": "workbench.editor.showTabs", "is": "none" } },
   "workbench.action.keybindingsReference": { "product": "keyboardShortcutsUrlLinux" },
   "workbench.action.openDocumentationUrl": { "product": "documentationUrl" },
   "workbench.action.openLicenseUrl": { "product": "licenseUrl" },
@@ -7,5 +45,10 @@
   "workbench.action.openRequestFeatureUrl": { "product": "requestFeatureUrl" },
   "workbench.action.openTipsAndTricksUrl": { "product": "tipsAndTricksUrl" },
   "workbench.action.openVideoTutorialsUrl": { "product": "introductoryVideosUrl" },
-  "workbench.action.openYouTubeUrl": { "product": "youTubeUrl" }
+  "workbench.action.openYouTubeUrl": { "product": "youTubeUrl" },
+  "workbench.action.showEditorTab": { "radio": { "setting": "workbench.editor.showTabs", "is": "single" } },
+  "workbench.action.showMultipleEditorTabs": { "radio": { "setting": "workbench.editor.showTabs", "is": "multiple" } },
+  "workbench.action.toggleAutoSave": { "check": { "setting": "files.autoSave", "not": "off" } },
+  "workbench.action.toggleMenuBar": { "check": { "setting": "window.menuBarVisibility", "in": ["classic", "visible"] } },
+  "workbench.action.toggleStatusbarVisibility": { "check": { "setting": "workbench.statusBar.visible", "is": true } }
 }

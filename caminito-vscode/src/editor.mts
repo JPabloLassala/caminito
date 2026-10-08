@@ -26,6 +26,16 @@ export interface Editor {
     readonly tabGroups?: { readonly onDidChangeTabGroups: Event<unknown> };
     createOutputChannel(name: string): { appendLine(line: string): void; dispose(): void };
   };
+  readonly workspace: {
+    /** Undefined when no folder is open. */
+    readonly workspaceFolders: readonly unknown[] | undefined;
+    /** Defined when a multi-root workspace is open, an untitled one among them. */
+    readonly workspaceFile: unknown;
+    readonly onDidChangeWorkspaceFolders: Event<unknown>;
+    getConfiguration(): { get(section: string): unknown };
+    readonly onDidChangeConfiguration: Event<{ affectsConfiguration(section: string): boolean }>;
+  };
+  readonly extensions: { readonly onDidChange: Event<void> };
   readonly env: {
     /** The editor's own directory, where its `product.json` is. */
     readonly appRoot: string;

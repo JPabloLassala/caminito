@@ -2,7 +2,7 @@
 // with a native title bar and a throwaway profile, once with a folder open and once with a
 // multi-root workspace open, waits each time until `lastKnownMenubarData` in its
 // `storage.json` stops changing, and writes the merged table to menu/table.json. It fails on
-// an annotation whose command the table lacks.
+// an annotation whose command, or whose label of a command, the table lacks.
 //
 //   npm run snapshot -- [--editor <dir>] [--out <file>] [--annotations <file>] [--no-xvfb]
 //                       [--settle <ms>] [--timeout <ms>]
@@ -54,7 +54,9 @@ for (const state of ['folder', 'workspace'] as const) {
 const table = tableOf(made, snapshots);
 const stale = staleAnnotations(table, annotations);
 if (stale.length > 0) {
-  console.error(`snapshot: the table has no item of these annotated commands: ${stale.join(', ')}`);
+  console.error(
+    `snapshot: the table has no item of these annotated commands or labels: ${stale.join(', ')}`,
+  );
   process.exit(1);
 }
 await writeFile(options.out, `${JSON.stringify(table, null, 2)}\n`);

@@ -1,7 +1,7 @@
 // What the snapshot command makes of VS Code's `lastKnownMenubarData` (ADR 0019): the table,
 // with what belongs to the run stripped, and the check of the annotations against it.
 
-import { collapse, commandsOf } from '../src/menu-table.mts';
+import { collapse } from '../src/menu-table.mts';
 import type {
   Annotations,
   Table,
@@ -68,10 +68,31 @@ export function tableOf(made: Made, snapshots: readonly MenubarData[]): Table {
   return { version: made.version, commit: made.commit, menus, keybindings: sorted };
 }
 
-/** The commands of annotations that the table has no item of. */
+/**
+ * The commands of annotations that the table has no item of, and as `<command> "<label>"`
+ * each label a workspace annotation names that none of its command's items has.
+ */
 export function staleAnnotations(table: Table, annotations: Annotations): string[] {
-  const commands = new Set(commandsOf(table.menus));
-  return Object.keys(annotations).filter((command) => !commands.has(command));
+  const labels = new Map<string, Set<string>>();
+  const walk = (items: readonly TableItem[]) => {
+    for (const item of items) {
+      if ('command' in item) {
+        labels.set(item.command, (labels.get(item.command) ?? new Set()).add(item.label));
+      } else if ('items' in item) {
+        walk(item.items);
+      }
+    }
+  };
+  walk(table.menus);
+  return Object.entries(annotations).flatMap(([command, annotation]) => {
+    const has = labels.get(command);
+    if (has === undefined) {
+      return [command];
+    }
+    return Object.keys(annotation.workspace ?? {})
+      .filter((label) => !has.has(label))
+      .map((label) => `${command} ${JSON.stringify(label)}`);
+  });
 }
 
 /** A label with VS Code's `&&` mnemonic as dbusmenu's `_`, and an underscore doubled. */

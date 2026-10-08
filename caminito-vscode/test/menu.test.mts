@@ -42,11 +42,22 @@ function fromTable(item: TableItem): Read {
 }
 
 test("with every command listed, a client reads the table's menus in order", async (t) => {
-  const f = await fixture(t);
+  // In a folder's window, which hasn't the multi-root workspace's Close Workspace.
+  const f = await fixture(t, { workspace: 'folder' });
   const root = (await f.menu())!;
   assert.deepEqual(root.properties, [['children-display', 'submenu']]);
   const menus = root.children.map(read);
-  assert.deepEqual(menus, VS_CODE.table.menus.map(fromTable));
+  const [file, ...rest] = VS_CODE.table.menus.map(fromTable) as {
+    label: string;
+    children: Read[];
+  }[];
+  const folders = {
+    ...file!,
+    children: file!.children.filter(
+      (item) => !('label' in item && item.label === 'Close _Workspace'),
+    ),
+  };
+  assert.deepEqual(menus, [folders, ...rest]);
   assert.deepEqual(
     menus.map((menu) => 'label' in menu && menu.label),
     ['_File', '_Edit', '_Selection', '_View', '_Go', '_Run', '_Terminal', '_Help'],

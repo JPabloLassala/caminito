@@ -11,13 +11,15 @@ import type { MessageBus, Variant } from '@jellybrick/dbus-next';
 import annotations from '../menu/annotations.json' with { type: 'json' };
 import table from '../menu/table.json' with { type: 'json' };
 import { DbusMenu } from './dbusmenu.mts';
-import type { MenuNode } from './dbusmenu.mts';
 import type { Disposable, Editor } from './editor.mts';
-import { fit } from './menu-table.mts';
-import type { Annotations, Table } from './menu-table.mts';
+import { fit, settingsOf } from './menu-table.mts';
+import type { Annotations, Table, Workspace } from './menu-table.mts';
 
 /** The oldest release with every stable API the extension uses, as package.json's `engines.vscode`. */
 export const FLOOR = '1.68.0';
+
+/** How long the menu waits after a change for others, so that they're sent as one update. */
+export const COALESCING_MS = 50;
 
 /** Where the menu is served, on the connection's unique name. */
 export const MENU_PATH = '/org/mate/Caminito/GlobalMenuExtension/MenuBar';
@@ -35,7 +37,7 @@ export interface Menu {
 }
 
 /** VS Code's menu, as menu/table.json and menu/annotations.json have it. */
-export const VS_CODE: Menu = { table: table as Table, annotations };
+export const VS_CODE: Menu = { table: table as Table, annotations: annotations as Annotations };
 
 /** Where the extension runs. */
 export interface Environment {
@@ -102,14 +104,76 @@ async function run(
   errors.removeAllListeners('error');
   errors.on('error', (err: unknown) => log.line(`can't use the session bus: ${message(err)}`));
 
-  const menus = await menusFor(editor, environment.menu ?? VS_CODE, log);
-  const menu = new DbusMenu(menus, async (command, args) => {
+  const served = environment.menu ?? VS_CODE;
+  if (served.table.version !== editor.version) {
+    log.line(
+      `the menu table is VS Code ${served.table.version}'s and the editor is ${editor.version}`,
+    );
+  }
+  // A list of commands that can't be read keeps every item.
+  let commands = await listCommands(editor, log, 'so every item is kept');
+  const product = await productOf(editor, log);
+  const build = () => {
+    const settings = settingsReader(editor);
+    return fit(served.table.menus, served.annotations, {
+      hasCommand: (command) => commands?.has(command) ?? true,
+      product,
+      setting: settings,
+      workspace: workspaceOf(editor),
+    });
+  };
+  const menu = new DbusMenu(build(), async (command, args) => {
     try {
       await editor.commands.executeCommand(command, ...args);
     } catch (err) {
       log.line(`can't run ${command}: ${message(err)}`);
     }
   });
+
+  // Updates (ADR 0020): an event marks what to re-read, and the menu is built again once
+  // the changes that came with it are in. Nothing else re-reads, so there's no timer.
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  let relist = false;
+  let updating = Promise.resolve();
+  let stopped = false;
+  const apply = async () => {
+    if (relist) {
+      relist = false;
+      // A list that can't be read again keeps the last one.
+      commands = (await listCommands(editor, log, 'so the last list is kept')) ?? commands;
+    }
+    if (!stopped) {
+      menu.update(build());
+    }
+  };
+  const schedule = (andCommands: boolean) => {
+    relist ||= andCommands;
+    pending ??= setTimeout(() => {
+      pending = undefined;
+      // One at a time, so that an older list of commands never lands last.
+      updating = updating
+        .then(apply)
+        .catch((err: unknown) => log.line(`can't update the menu: ${message(err)}`));
+    }, COALESCING_MS);
+  };
+  disposables.add({
+    dispose: () => {
+      stopped = true;
+      clearTimeout(pending);
+    },
+  });
+  const annotated = settingsOf(served.annotations);
+  disposables.add(
+    editor.workspace.onDidChangeConfiguration(
+      guarded(log, (event: { affectsConfiguration(section: string): boolean }) => {
+        if (annotated.some((name) => event.affectsConfiguration(name))) {
+          schedule(false);
+        }
+      }),
+    ),
+  );
+  disposables.add(editor.workspace.onDidChangeWorkspaceFolders(() => schedule(false)));
+  disposables.add(editor.extensions.onDidChange(() => schedule(true)));
 
   let owner: string | null = null;
   let offered = false;
@@ -238,36 +302,62 @@ async function run(
   await reading;
 }
 
-/**
- * The table fitted to the editor (ADR 0019), with one line when it was made from another
- * version. A list of commands that can't be read keeps every item, and a `product.json`
- * that can't be read drops the items gated on it.
- */
-async function menusFor(editor: Editor, menu: Menu, log: Log): Promise<MenuNode[]> {
-  if (menu.table.version !== editor.version) {
-    log.line(
-      `the menu table is VS Code ${menu.table.version}'s and the editor is ${editor.version}`,
-    );
-  }
-  let commands: Set<string> | undefined;
+/** The commands the editor lists, or undefined with a line saying `otherwise` when it can't. */
+async function listCommands(
+  editor: Editor,
+  log: Log,
+  otherwise: string,
+): Promise<Set<string> | undefined> {
   try {
-    commands = new Set(await editor.commands.getCommands());
+    return new Set(await editor.commands.getCommands());
   } catch (err) {
-    log.line(`can't list the commands, so every item is kept: ${message(err)}`);
+    log.line(`can't list the commands, ${otherwise}: ${message(err)}`);
+    return undefined;
   }
-  let product: Record<string, unknown> = {};
+}
+
+/**
+ * The editor's own `product.json` (ADR 0019). One that can't be read drops the items gated
+ * on it.
+ */
+async function productOf(editor: Editor, log: Log): Promise<Record<string, unknown>> {
   try {
     const file = join(editor.env.appRoot, 'product.json');
-    product = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+    return JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
   } catch (err) {
     log.line(
       `can't read the editor's product.json, so the items gated on it are left out: ${message(err)}`,
     );
+    return {};
   }
-  return fit(menu.table.menus, menu.annotations, {
-    hasCommand: (command) => commands?.has(command) ?? true,
-    product,
-  });
+}
+
+/**
+ * The window's settings, read with no resource or language scope (ADR 0020). A setting
+ * that can't be read is undefined.
+ */
+function settingsReader(editor: Editor): (name: string) => unknown {
+  let configuration: { get(section: string): unknown } | undefined;
+  try {
+    configuration = editor.workspace.getConfiguration();
+  } catch {
+    return () => undefined;
+  }
+  return (name) => {
+    try {
+      return configuration.get(name);
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+/** The window's workspace: a workspace file, else a folder, else none. */
+function workspaceOf(editor: Editor): Workspace {
+  if (editor.workspace.workspaceFile !== undefined) {
+    return 'workspace';
+  }
+  return (editor.workspace.workspaceFolders?.length ?? 0) > 0 ? 'folder' : 'empty';
 }
 
 type EditorEvent = (listener: () => void) => Disposable;

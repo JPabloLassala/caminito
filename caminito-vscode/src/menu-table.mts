@@ -54,7 +54,30 @@ export interface TableKeybinding {
 export interface Annotation {
   /** A `product.json` key the items are shown only with. */
   readonly product?: string;
+  /** The setting the items' checkmark mirrors. */
+  readonly check?: Condition;
+  /** The setting that puts the items on in their radio group. */
+  readonly radio?: Condition;
+  /** The workspaces each of the items is shown in, by its label. An item not named is always shown. */
+  readonly workspace?: Readonly<Record<string, readonly Workspace[]>>;
 }
+
+/**
+ * A window's workspace, as VS Code's `workbenchState` context key names it: no folder, a
+ * folder, or a multi-root workspace.
+ */
+export type Workspace = 'empty' | 'folder' | 'workspace';
+
+/**
+ * What a checkmark or radio item is on for: a setting's value is, isn't or is one of
+ * values, or all or any of other conditions.
+ */
+export type Condition =
+  | { readonly setting: string; readonly is: unknown }
+  | { readonly setting: string; readonly not: unknown }
+  | { readonly setting: string; readonly in: readonly unknown[] }
+  | { readonly all: readonly Condition[] }
+  | { readonly any: readonly Condition[] };
 
 /** The annotations, by command id. */
 export type Annotations = Readonly<Record<string, Annotation>>;
@@ -65,12 +88,19 @@ export interface Running {
   hasCommand(command: string): boolean;
   /** The editor's own `product.json`. */
   readonly product: Readonly<Record<string, unknown>>;
+  /** A setting's value, or undefined when it can't be read. */
+  setting(name: string): unknown;
+  readonly workspace: Workspace;
 }
 
 /**
- * The menus the running editor gets: each item whose command it doesn't list or whose
- * `product.json` key it lacks is dropped, then each menu left empty, and then the
- * separators are collapsed, so that none is first, last or beside another.
+ * The menus the running editor gets: each item whose command it doesn't list, whose
+ * `product.json` key it lacks or whose workspace isn't the window's is dropped, then each
+ * menu left empty, and then the separators are collapsed, so that none is first, last or
+ * beside another. An item whose setting can be read has its checkmark or radio state.
+ *
+ * Every entry of the table has the same id whatever is dropped: the root is 0 and the rest
+ * are numbered depth first.
  */
 export function fit(
   menus: readonly TableSubmenu[],
@@ -78,28 +108,97 @@ export function fit(
   running: Running,
 ): MenuNode[] {
   const shown = (item: TableAction) => {
-    const product = annotations[item.command]?.product;
+    const annotation = annotations[item.command];
+    const product = annotation?.product;
+    const workspaces = annotation?.workspace?.[item.label];
     return (
-      running.hasCommand(item.command) && (product === undefined || !!running.product[product])
+      running.hasCommand(item.command) &&
+      (product === undefined || !!running.product[product]) &&
+      (workspaces === undefined || workspaces.includes(running.workspace))
     );
   };
+  const toggle = (item: TableAction): Toggle | undefined => {
+    const annotation = annotations[item.command];
+    const [type, condition] = annotation?.check
+      ? (['checkmark', annotation.check] as const)
+      : annotation?.radio
+        ? (['radio', annotation.radio] as const)
+        : [];
+    const state = condition && holds(condition, running.setting);
+    return type && state !== undefined ? { type, state } : undefined;
+  };
+  let next = 1;
   const items = (from: readonly TableItem[]): MenuNode[] => {
     const nodes: MenuNode[] = [];
     for (const item of from) {
+      const id = next++;
       if ('separator' in item) {
-        nodes.push({ separator: true });
+        nodes.push({ id, separator: true });
       } else if ('submenu' in item) {
         const children = items(item.items);
         if (children.length > 0) {
-          nodes.push({ label: item.label, children });
+          nodes.push({ id, label: item.label, children });
         }
       } else if (shown(item)) {
-        nodes.push(item);
+        const state = toggle(item);
+        nodes.push({ id, ...item, ...(state && { toggle: state }) });
       }
     }
     return collapse(nodes);
   };
   return items(menus);
+}
+
+/** An item's checkmark or radio state. */
+export interface Toggle {
+  readonly type: 'checkmark' | 'radio';
+  readonly state: boolean;
+}
+
+/** Whether `condition` holds, or undefined when a setting it reads can't be read. */
+function holds(condition: Condition, setting: (name: string) => unknown): boolean | undefined {
+  if ('all' in condition || 'any' in condition) {
+    const parts = 'all' in condition ? condition.all : condition.any;
+    const results = parts.map((part) => holds(part, setting));
+    if (results.includes(undefined)) {
+      return undefined;
+    }
+    return 'all' in condition ? results.every(Boolean) : results.some(Boolean);
+  }
+  const value = setting(condition.setting);
+  // A value of another type than the condition's is one that can't be read.
+  const expected =
+    'is' in condition ? [condition.is] : 'not' in condition ? [condition.not] : condition.in;
+  if (value === undefined || !expected.some((other) => typeof other === typeof value)) {
+    return undefined;
+  }
+  return 'is' in condition
+    ? value === condition.is
+    : 'not' in condition
+      ? value !== condition.not
+      : condition.in.includes(value);
+}
+
+/** The settings the annotations' checkmarks and radio items read. */
+export function settingsOf(annotations: Annotations): string[] {
+  const names = new Set<string>();
+  const walk = (condition: Condition) => {
+    if ('all' in condition) {
+      condition.all.forEach(walk);
+    } else if ('any' in condition) {
+      condition.any.forEach(walk);
+    } else {
+      names.add(condition.setting);
+    }
+  };
+  for (const annotation of Object.values(annotations)) {
+    for (const condition of [annotation.check, annotation.radio]) {
+      if (condition) {
+        walk(condition);
+      }
+    }
+  }
+  return [...names].sort();
 }
 
 /** The commands of every item under `items`. */

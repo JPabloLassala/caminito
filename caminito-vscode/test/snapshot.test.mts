@@ -209,6 +209,16 @@ test('an annotation whose command the table lacks is stale', () => {
   );
 });
 
+test("an annotation naming a label its command's items lack is stale", () => {
+  const table = tableOf(MADE, [FOLDER]);
+  assert.deepEqual(
+    staleAnnotations(table, {
+      'workbench.action.quit': { workspace: { E_xit: ['folder'], _Quit: ['workspace'] } },
+    }),
+    ['workbench.action.quit "_Quit"'],
+  );
+});
+
 test("the committed annotations name only the committed table's commands", () => {
   assert.deepEqual(staleAnnotations(VS_CODE.table, VS_CODE.annotations), []);
 });
@@ -295,7 +305,7 @@ test('the command fails on an annotation whose command the snapshot lacks', (t) 
   assert.equal(run.status, 1);
   assert.match(
     run.stderr,
-    /no item of these annotated commands: workbench\.action\.openDocumentationUrl/,
+    /no item of these annotated commands or labels: workbench\.action\.openDocumentationUrl/,
   );
   assert.throws(() => readFileSync(out));
 });
