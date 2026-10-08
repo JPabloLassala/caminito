@@ -118,9 +118,10 @@ nothing depends on it: build it for a global menu in the panel
 ([ADR 0017](docs/adr/0017-caminito-brokers-the-global-menu-for-a-patched-appmenu-applet.md)).
 It's the AUR's `vala-panel-appmenu-mate` 25.04, with one patch: under Caminito the *Global
 Application Menu* applet draws the menu Caminito publishes for the focused window, and while
-the applet is on a panel GTK apps leave their menubars to it. So far that's the menu of a
-`GtkApplication`, as GTK 4 apps and some GTK 3 apps have. It's linked to `mate-panel-caminito`'s
-applet library, so build it after that package.
+the applet is on a panel apps leave their menubars to it. So far that's the menu of a
+`GtkApplication`, as GTK 4 apps and some GTK 3 apps have, of a Qt 6 app, and of Firefox once
+it's [set up for it](#the-global-menu). It's linked to `mate-panel-caminito`'s applet library,
+so build it after that package.
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no
@@ -233,6 +234,24 @@ display manager sends that.
 On a tty Caminito's stderr is the terminal, so all of it goes there. To have Caminito's logs in the
 journal, and those of mate-session's programs in a file, send stderr to the file:
 `caminito --session 2>~/session.log`.
+
+### The global menu
+
+With `vala-panel-appmenu-mate-caminito` installed, add the *Global Application Menu* applet to a
+panel, and the focused window's menubar is drawn there instead of in the window.
+
+- **A `GtkApplication`'s window** follows the applet at once: its menubar moves to the panel
+  when the applet is added, and back when it's removed.
+- **A Qt 6 app** needs no setting up, but looks for the global menu once, when it starts. One
+  that was already running when the applet was added keeps its menubar in its window until it's
+  started again, and one that was running when the applet was removed has no menubar until
+  it's started again.
+- **Firefox** has it off by default. Set both `widget.gtk.global-menu.enabled` and
+  `widget.gtk.global-menu.wayland.enabled` to `true` in `about:config`, and install
+  `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. Like a Qt
+  app, a window follows the applet only from Firefox's next start.
+
+An app that starts with no applet on a panel keeps its own menubar.
 
 ## Known limitations
 

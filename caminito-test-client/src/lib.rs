@@ -13,6 +13,7 @@
 //! sandboxed client connects through, and [`image_capture`] copies an output's or a
 //! window's pixels as a screenshot tool does.
 
+pub mod appmenu;
 pub mod data_control;
 pub mod dbus;
 pub mod ext_workspace;
@@ -180,6 +181,7 @@ pub struct State {
     gtk_shell: Option<gtk_shell::raw::gtk_shell1::GtkShell1>,
     /// The capabilities `gtk_shell1` was sent, oldest first.
     gtk_capabilities: Vec<u32>,
+    appmenu_manager: Option<appmenu::raw::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager>,
     /// The capture sessions the client opened, and their frames.
     image_capture: image_capture::ImageCapture,
 }
@@ -229,6 +231,7 @@ pub struct Window {
     xdg_decoration: Option<ZxdgToplevelDecorationV1>,
     kde_decoration: Option<OrgKdeKwinServerDecoration>,
     gtk_surface: Option<gtk_shell::raw::gtk_surface1::GtkSurface1>,
+    appmenu: Option<appmenu::raw::org_kde_kwin_appmenu::OrgKdeKwinAppmenu>,
     subsurfaces: Vec<WlSubsurface>,
     /// The buffers attached so far, kept alive until the window is dropped.
     buffers: Vec<Buffer>,
@@ -404,6 +407,7 @@ impl Client {
             xdg_decoration: None,
             kde_decoration: None,
             gtk_surface: None,
+            appmenu: None,
             subsurfaces: Vec::new(),
             buffers: Vec::new(),
         });
