@@ -27,7 +27,7 @@ mate-panel as a Patched package ([16](16-packaging.md)), on a pinned master comm
 - [ ] Nested, with [63](63-layer-shell.md), [65](65-foreign-toplevel.md) and [66](66-ext-workspace.md) in: the panel is a layer surface on its edge; the window list shows a button per window with its icon, and a click focuses or minimises it; the workspace switcher shows the workspaces and switches on click.
 - [ ] With `WAYLAND_DEBUG=1`, the panel sends `set_rectangle` for a window's button.
 - [ ] In a nested run with mate-session, *Shut Down* from the panel's menu shows mate-session's confirm dialog. (Cancel it.)
-- [ ] Under X11 MATE, the patched panel behaves as stock: window list, pager, Log Out and Shut Down.
+- [x] Under X11 MATE, the patched panel behaves as stock: window list, pager, Log Out and Shut Down. (Seen by the developer on 2026-10-08, in the X11 session with `mate-panel-caminito` 1.28.7.r111.g58ac6c1-10.)
 
 ## Notes
 

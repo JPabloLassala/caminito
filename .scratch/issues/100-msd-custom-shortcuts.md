@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6
 Blocked by: 98
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -19,7 +19,7 @@ A shortcut the user adds in Keyboard Shortcuts runs its command in a Session ([0
 
 - [x] `mate-settings-daemon-caminito` builds with the patch in its series, and its `makepkg` and `namcap` job passes.
 - [x] The checklist has the item, and it was run in a Session: a custom shortcut runs its command; changing its keys moves the grab; removing it releases the keys to the focused app. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md).
-- [ ] On X11 MATE custom shortcuts work as before (the gate).
+- [x] On X11 MATE custom shortcuts work as before (the gate). (Seen by the developer on 2026-10-08, in the X11 session with `mate-settings-daemon-caminito` 1.29.1-6: Ctrl+Alt+K ran `mate-calc`, and with the shortcut changed to Super+1, Super+1 ran it and Ctrl+Alt+K ran nothing. Removing the shortcut wasn't reported. Shift+Super+1 does nothing there, as with stock msd: the last note.)
 
 ## Notes
 
@@ -66,3 +66,4 @@ One patch in `mate-settings-daemon-caminito`'s series, `0011`, at `pkgrel` 6, an
 - **A `GrabAccelerators` call that fails,** or a reply of the wrong length, leaves the bindings with no action and the grabs of before with Caminito: those keys reach no client and run nothing, until the next change under the directory or a new owner of the name. `0010` has the same. Nothing was seen to cause one.
 - **Still not grabbed:** a key by its code, `0x1f`, which Keyboard Shortcuts writes for a key with no keysym, and `<Mod2>`, `<Mod3>` and `<Mod5>`, which it doesn't write for a lock. They're refused with a log line, as in 98.
 - **Two grabs can be of one press now,** as `<Shift>1` and `<Shift>exclam` from two callers: they're different combinations to the refusal, and the one grabbed first gets the press.
+- **On X11 a shortcut whose keysym needs Shift is never grabbed, with stock msd too** (found by the developer on 2026-10-08, in the X11 session with 1.29.1-6). Keyboard Shortcuts saved Shift+Super+1 as `<Shift><Mod4>exclam`, and the keys did nothing. `egg_accelerator_parse_virtual` (`plugins/common/eggaccelerators.c`) keeps only the keycodes that have the keysym at level 0, finds none for `exclam`, and calls the binding invalid, so `binding_register_keys` grabs nothing; a probe `XGrabKey` of Shift+Mod4 on keycode 10 succeeded, so nobody held it. No patch of the series touches that file or `msd-keygrab.c`. So the note above that says msd's X11 `match_key` finds those is right of `match_key` and wrong of X11: the binding never gets that far. Under Caminito the same shortcut works, which is one more place it isn't as X11. The checklist item's step 7 now uses Super+1 on X11.

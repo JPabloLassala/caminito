@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open
+Status: resolved
 Milestone: M6
 Blocked by: 98
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -23,7 +23,7 @@ The volume, brightness and other media keys work in a Session, and msd shows its
 
 - [x] `mate-settings-daemon-caminito` builds with the patches in its series, and its `makepkg` and `namcap` job passes.
 - [x] The checklist has the item, and it was run in a Session: volume up, down and mute change the volume and show the OSD above a fullscreen window; the OSD takes no focus; a key changed in Keyboard Shortcuts is grabbed at once. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md).
-- [ ] On X11 MATE the media keys and the OSD work as before (the gate).
+- [x] On X11 MATE the media keys and the OSD work as before (the gate). (Seen by the developer on 2026-10-08, in the X11 session with `mate-settings-daemon-caminito` 1.29.1-6: the volume keys work.)
 
 ## Notes
 

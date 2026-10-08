@@ -624,13 +624,16 @@ session_env() {
      Shift+Super+1 in a terminal running `wev`.
   6. Add the shortcut again as in step 2, with `XF86AudioMute` for its keys, which the mute
      key has, and press the mute key. Then remove the shortcut.
-  7. Log out, log into *MATE*, the X11 session, and repeat steps 2 to 5 with `xev` for `wev`.
+  7. Log out, log into *MATE*, the X11 session, and repeat steps 2 to 5 with `xev` for `wev`,
+     and Super+1 (`<Mod4>1`) for Shift+Super+1.
 - **Expected:** in step 3 the calculator opens with no log out, the editor gets no `k`, and
   the held keys open one calculator, where X11's open one at every repeat. In step 4
   Ctrl+Alt+K opens nothing and Shift+Super+1 opens the calculator. In step 5 `wev` shows the
   press of `1`: the keys are the focused window's again. In step 6 the mute key mutes and no
   calculator opens, and msd's log has `Grab failed for the key binding (XF86AudioMute)`: on
-  X11 both would happen. In step 7 X11 MATE's shortcuts are as before (ADR 0011).
+  X11 both would happen. In step 7 X11 MATE's shortcuts are as before (ADR 0011). Shift+Super+1
+  isn't tried there: msd's X11 code grabs nothing for a shortcut whose keysym needs Shift, with
+  the stock package too (100).
 - **Debug tool:** `DumpState`'s `accelerator_grabs`, where the shortcut's keys are listed under
   a unique name of msd's that isn't the one the media keys have: the plugin has a connection
   of its own. `mate-settings-daemon --debug --replace` for msd's side.

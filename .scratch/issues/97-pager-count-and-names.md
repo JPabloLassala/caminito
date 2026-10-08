@@ -19,7 +19,7 @@ The workspace switcher's preferences set how many workspaces there are and what 
 
 - [x] `mate-panel-caminito` builds with the patch in its series, and its `makepkg` and `namcap` job passes.
 - [ ] The checklist has the item, and it was run in a Session: the count goes from 4 to 6 and back to 2 in the preferences, and the pager and Caminito follow; a workspace renamed there shows its name in the pager and in `gsettings`. If it can't be run where the ticket is done, say so in the notes and leave it to [106](106-packaging-and-closing-m6.md).
-- [ ] On X11 MATE the preferences work as before (the gate, ADR 0011).
+- [x] On X11 MATE the preferences work as before (the gate, ADR 0011). (Seen by the developer on 2026-10-08, in the X11 session with `mate-panel-caminito` 1.28.7.r111.g58ac6c1-10: the count set to 6 and then 2, and a workspace renamed.)
 
 ## Notes
 
