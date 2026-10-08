@@ -1,0 +1,64 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Antonio Rojas <arojas@archlinux.org>
+# Contributor: rilian-la-te <ria.freelander@gmail.com>
+# Contributor: Kaizhao Zhang <zhangkaizhao@gmail.com>
+
+# Arch's appmenu-gtk-module PKGBUILD with the smallest diff (16), so a change there shows
+# what to carry over. The differences: the name, provides and conflicts, and the one patch,
+# which is an upstream fix and not a carried patch (ADR 0011).
+
+pkgname=appmenu-gtk-module-caminito
+_pkgname=appmenu-gtk-module
+pkgver=25.04
+pkgrel=1
+pkgdesc="Application Menu GTK Module, with a fix for plain windows on Wayland"
+depends=(bash
+         dconf
+         gdk-pixbuf2
+         glib2
+         glibc
+         libgcc
+         gtk3)
+makedepends=(git
+             meson)
+url="https://gitlab.com/vala-panel-project/vala-panel-appmenu/"
+arch=(x86_64)
+license=(LGPL-3.0-only)
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+# 0001 has no gate: on any Wayland compositor the module told the compositor nothing of a
+# GtkMenuBar in a window that isn't a GtkApplicationWindow, as most of MATE's apps have
+# theirs (111). Under X11 the module does what the stock one does. It goes when the
+# baseline has the fix.
+source=(
+  git+https://gitlab.com/vala-panel-project/vala-panel-appmenu#tag=$pkgver
+  80-appmenu-gtk-module.sh
+  0001-hijack-Set-a-plain-window-s-D-Bus-properties-once-it.patch
+)
+sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
+            'e8aff88851145085e24989cc99da9f631c593b506d0224225f3eb347d16c6455'
+            'b5962247b3a485d94051f81ed50fb8c47b8b83f582b1d4001d11e7a9b54d8c55')
+
+prepare() {
+  cd vala-panel-appmenu
+
+  local src
+  for src in "${source[@]}"; do
+    [[ ${src} = *.patch ]] || continue
+    patch -Np1 -i "${srcdir}/${src}"
+  done
+}
+
+build() {
+  meson build vala-panel-appmenu/subprojects/$_pkgname \
+    --prefix=/usr \
+    -D gtk=3
+  ninja -C build
+}
+
+package() {
+  DESTDIR="$pkgdir" ninja install -C build
+  install -Dm755 80-appmenu-gtk-module.sh -t "$pkgdir"/etc/X11/xinit/xinitrc.d/
+}

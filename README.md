@@ -119,12 +119,19 @@ nothing depends on it: build it for a global menu in the panel
 It's the AUR's `vala-panel-appmenu-mate` 25.04, with two patches: under Caminito the *Global
 Application Menu* applet draws the menu Caminito publishes for the focused window, and while
 the applet is on a panel apps leave their menubars to it. So far that's the menu of a
-`GtkApplication`, as GTK 4 apps and some GTK 3 apps have, of a Qt 6 app, and of Firefox once
-it's [set up for it](#the-global-menu). A dialog with no menu shows its parent's. The
-application's name is in bold before the menus, and each applet's *Preferences* can turn it
-off. GTK apps get their menubars back about ten seconds after the last applet is removed, so
-that a restart of the panel changes nothing. It's linked to `mate-panel-caminito`'s applet
-library, so build it after that package.
+`GtkApplication`, as GTK 4 apps and some GTK 3 apps have, of a Qt 6 app, and of Firefox and
+VS Code once they're [set up for it](#the-global-menu). A dialog with no menu shows its
+parent's. The application's name is in bold before the menus, and each applet's
+*Preferences* can turn it off. GTK apps get their menubars back about ten seconds after the
+last applet is removed, so that a restart of the panel changes nothing. It's linked to
+`mate-panel-caminito`'s applet library, so build it after that package.
+
+`appmenu-gtk-module-caminito` gives the applet the menus of the GTK 3 apps that build a classic
+menubar, as most of MATE's do. Nothing depends on it either. It's Arch's `appmenu-gtk-module`
+25.04 with one fix of an upstream bug: on Wayland the module said nothing of a menubar in a
+window that isn't a `GtkApplicationWindow`, such as mate-terminal's. The session adds the
+module to its `GTK_MODULES` when this package is installed, and not for the stock one, with
+which those apps would have no menu at all while the applet is on a panel.
 
 The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
 series applies to a baseline: an upstream tag, or a pinned commit where the component has no
@@ -253,6 +260,13 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   `widget.gtk.global-menu.wayland.enabled` to `true` in `about:config`, and install
   `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. Like a Qt
   app, a window follows the applet only from Firefox's next start.
+- **VS Code** has a global menu only as an XWayland window, since an Electron app says where
+  its menu is by an X window's id alone. Put `--ozone-platform=x11` in
+  `~/.config/code-flags.conf`, and set `window.titleBarStyle` to `native` in its settings. It's
+  then drawn at the X11 scale
+  ([ADR 0008](docs/adr/0008-fractional-default-scale-integer-x11-scale.md)), so it's soft on
+  an output with a fractional scale. Like a Qt app, it follows the applet only from its next
+  start.
 
 An app that starts with no applet on a panel keeps its own menubar.
 

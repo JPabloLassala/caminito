@@ -2,12 +2,13 @@
 //! window's menu, and the Global menu applet as a peer, whose bus name is the switch for
 //! the apps giving up their own menubars.
 //!
-//! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, and
-//! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112). The switch turns
+//! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, a
+//! classic `GtkMenuBar`'s that `appmenu-gtk-module` exports the same way (111), a Qt app's
+//! or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112), and the dbusmenu an X11
+//! client registered for its window with `registrar` (113). The switch turns
 //! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
 //! together, and stays on for a grace period after the applet's name loses its owner (114).
-//! A window with no menu has its transient parent's (114). The registrar's interface is
-//! ticket 113's.
+//! A window with no menu has its transient parent's (114).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -20,6 +21,7 @@ use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
 use zbus::zvariant::ObjectPath;
 
+use super::registrar::Registration;
 use crate::protocols::appmenu::{self, Address};
 use crate::protocols::gtk_shell::{self, DbusProperties};
 use crate::state::{Caminito, SEAT, State};
@@ -152,6 +154,14 @@ impl GlobalMenu {
         ObjectPath::try_from(address.object_path.as_str()).ok()?;
         let paths = HashMap::from([("menu".to_owned(), address.object_path)]);
         Some((DBUSMENU, address.service_name, paths))
+    }
+
+    /// The dbusmenu an X11 client registered for its window (113). The bus named its
+    /// owner, and the path came as one.
+    fn registered(registration: &Registration) -> Menu {
+        let path = registration.path.to_string();
+        let paths = HashMap::from([("menu".to_owned(), path)]);
+        (DBUSMENU, registration.owner.clone(), paths)
     }
 
     pub(super) fn published(self) -> Published {
@@ -298,10 +308,20 @@ impl Caminito {
     /// The menu `id` says it has, with its application.
     fn menu_of(&self, id: WindowId) -> Option<GlobalMenu> {
         let mapped = self.policy.window(id)?;
-        let surface = mapped.wl_surface()?;
-        let gtk = gtk_shell::dbus_properties(&surface).and_then(GlobalMenu::gtk);
-        let dbusmenu = || GlobalMenu::dbusmenu(appmenu::address(&surface)?);
-        let (kind, bus_name, paths) = gtk.or_else(dbusmenu)?;
+        let surface = mapped.wl_surface();
+        let gtk = surface
+            .as_ref()
+            .and_then(gtk_shell::dbus_properties)
+            .and_then(GlobalMenu::gtk);
+        let dbusmenu = || {
+            let address = surface.as_ref().and_then(appmenu::address)?;
+            GlobalMenu::dbusmenu(address)
+        };
+        let registered = || {
+            let registration = self.app_menu_registrations.menu(mapped.x11_window()?)?;
+            Some(GlobalMenu::registered(registration))
+        };
+        let (kind, bus_name, paths) = gtk.or_else(dbusmenu).or_else(registered)?;
         Some(GlobalMenu {
             kind,
             bus_name,
