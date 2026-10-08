@@ -1,6 +1,7 @@
 //! Integration tests on the headless backend (14, 15).
 
 mod accelerators;
+mod accessx;
 mod active_toplevel;
 mod app_menu_registrar;
 mod bell;

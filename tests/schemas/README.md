@@ -14,6 +14,7 @@ as their only schema source, each on a memory backend of its own (the settings t
 | `org.mate.peripherals-mouse` | mate-settings-daemon 1.28.0 (`e35462eeefb6d5eabebf76317640ee4fa62ecbb0`), as installed by Arch's `mate-settings-daemon 1.28.0-2` |
 | `org.mate.peripherals-touchpad`, `org.mate.peripherals-keyboard` | mate-settings-daemon 1.28.0 (`e35462eeefb6d5eabebf76317640ee4fa62ecbb0`), as installed by Arch's `mate-settings-daemon 1.28.0-2` |
 | `org.mate.peripherals-keyboard-xkb` | libmatekbd 1.28.0, as installed by Arch's `libmatekbd 1.28.0-2` |
+| `org.mate.accessibility-keyboard` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-3` |
 | `org.mate.sound` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-2` |
 | `org.mate.Caminito` | Caminito's own, a link to [data/org.mate.Caminito.gschema.xml](../../data/org.mate.Caminito.gschema.xml), which Meson installs |
 

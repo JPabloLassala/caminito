@@ -87,6 +87,7 @@ use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::handlers::{CaptureSession, DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::input::accessx;
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
@@ -279,6 +280,9 @@ pub struct Caminito {
     pub(crate) input_devices: InputDevices,
     /// NumLock's state when the refresh pass last looked, so a change is written back once.
     pub(crate) numlock_seen: bool,
+    /// AccessX's filter, stage 2 of the keyboard path (134), and the timer for its deadline.
+    pub(crate) accessx: accessx::Filter,
+    pub(crate) accessx_wake: Option<accessx::Wake>,
 
     /// Xwayland, from its spawn until it fails (11).
     pub xwayland: Option<RunningXwayland>,
@@ -452,6 +456,8 @@ impl State {
         if settings.keymap != self.caminito.settings.keymap {
             self.keymap_changed(&settings.keymap);
         }
+        // Here too: the modifiers sticky keys let go of are keys for the keyboard.
+        self.accessx_settings_changed(settings.accessx);
         self.caminito.settings_changed(settings);
     }
 
@@ -840,6 +846,8 @@ impl Caminito {
             frame_context,
             input_devices: InputDevices::new(settings.devices),
             numlock_seen,
+            accessx: accessx::Filter::new(settings.accessx),
+            accessx_wake: None,
             settings,
             settings_thread,
             xwayland: None,

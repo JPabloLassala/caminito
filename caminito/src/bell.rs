@@ -1,6 +1,6 @@
-//! The one bell event (105): `gtk_shell1`'s, xdg-system-bell's and XKB's bells, made one
-//! event for the window it's for (06). Until M8 shows and plays it (17), the event is counted
-//! and the last one kept for the debug dump.
+//! The one bell event (105): `gtk_shell1`'s, xdg-system-bell's and XKB's bells, and AccessX's
+//! beeps (134), made one event for the window it's for (06). Until M8 shows and plays it
+//! (17), the event is counted and the last one kept for the debug dump.
 
 use caminito_policy::WindowId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -17,6 +17,8 @@ pub(crate) enum BellSource {
     XdgSystemBell,
     /// `XkbBellNotify` on Caminito's X connection, for every X client (38).
     Xkb,
+    /// One of AccessX's beeps, from Caminito's own keyboard filter (134).
+    AccessX,
 }
 
 impl BellSource {
@@ -26,6 +28,7 @@ impl BellSource {
             BellSource::GtkShell => "gtk_shell1",
             BellSource::XdgSystemBell => "xdg_system_bell",
             BellSource::Xkb => "xkb",
+            BellSource::AccessX => "accessx",
         }
     }
 }

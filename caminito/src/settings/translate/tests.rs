@@ -127,6 +127,30 @@ fn defaults() -> Reading {
     put(KEYBOARD, "bell-custom-file", s(""));
     put(KEYBOARD, "remember-numlock-state", Value::Bool(true));
     put(KEYBOARD, "numlock-state", s("unknown"));
+    for key in [
+        "enable",
+        "feature-state-change-beep",
+        "timeout-enable",
+        "bouncekeys-enable",
+        "bouncekeys-beep-reject",
+        "mousekeys-enable",
+        "slowkeys-enable",
+        "slowkeys-beep-press",
+        "slowkeys-beep-accept",
+        "slowkeys-beep-reject",
+        "stickykeys-enable",
+        "stickykeys-two-key-off",
+        "stickykeys-modifier-beep",
+        "togglekeys-enable",
+        "capslock-beep-enable",
+    ] {
+        put(A11Y_KEYBOARD, key, Value::Bool(false));
+    }
+    put(A11Y_KEYBOARD, "stickykeys-latch-to-lock", Value::Bool(true));
+    put(A11Y_KEYBOARD, "timeout", Value::Int(200));
+    put(A11Y_KEYBOARD, "bouncekeys-delay", Value::Int(300));
+    put(A11Y_KEYBOARD, "slowkeys-delay", Value::Int(300));
+    put(A11Y_KEYBOARD, "togglekeys-backend", s("xkb"));
     put(KEYBOARD_XKB, "model", s(""));
     put(KEYBOARD_XKB, "layouts", Value::StrList(Vec::new()));
     put(KEYBOARD_XKB, "options", Value::StrList(Vec::new()));
@@ -1289,6 +1313,100 @@ fn locate_pointer_set_on_is_reported_as_unsupported() {
             value: "true".into(),
         }]
     );
+}
+
+// org.mate.accessibility-keyboard (134).
+
+#[test]
+fn the_defaults_turn_every_accessx_feature_off() {
+    let millis = Duration::from_millis;
+    assert_eq!(
+        settings(&defaults()).accessx,
+        AccessX {
+            gestures: false,
+            sticky_keys: false,
+            sticky_latch_to_lock: true,
+            sticky_two_key_off: false,
+            sticky_modifier_beep: false,
+            slow_keys: false,
+            slow_delay: millis(300),
+            slow_beep_press: false,
+            slow_beep_accept: false,
+            slow_beep_reject: false,
+            bounce_keys: false,
+            bounce_delay: millis(300),
+            bounce_beep_reject: false,
+            toggle_keys: false,
+        }
+    );
+}
+
+#[test]
+fn each_accessx_key_sets_its_own_setting() {
+    let on = |key: &str| settings(&with(A11Y_KEYBOARD, key, Value::Bool(true))).accessx;
+    assert!(on("enable").gestures);
+    assert!(on("stickykeys-enable").sticky_keys);
+    assert!(on("stickykeys-two-key-off").sticky_two_key_off);
+    assert!(on("stickykeys-modifier-beep").sticky_modifier_beep);
+    assert!(on("slowkeys-enable").slow_keys);
+    assert!(on("slowkeys-beep-press").slow_beep_press);
+    assert!(on("slowkeys-beep-accept").slow_beep_accept);
+    assert!(on("slowkeys-beep-reject").slow_beep_reject);
+    assert!(on("bouncekeys-enable").bounce_keys);
+    assert!(on("bouncekeys-beep-reject").bounce_beep_reject);
+    assert!(on("togglekeys-enable").toggle_keys);
+    let latch = with(
+        A11Y_KEYBOARD,
+        "stickykeys-latch-to-lock",
+        Value::Bool(false),
+    );
+    assert!(!settings(&latch).accessx.sticky_latch_to_lock);
+
+    let reading = with_all(&[
+        (A11Y_KEYBOARD, "slowkeys-delay", Value::Int(120)),
+        (A11Y_KEYBOARD, "bouncekeys-delay", Value::Int(80)),
+    ]);
+    let accessx = settings(&reading).accessx;
+    assert_eq!(accessx.slow_delay, Duration::from_millis(120));
+    assert_eq!(accessx.bounce_delay, Duration::from_millis(80));
+}
+
+#[test]
+fn a_negative_accessx_delay_takes_the_default() {
+    let translation = translate(&with(A11Y_KEYBOARD, "slowkeys-delay", Value::Int(-1)));
+    assert_eq!(
+        translation.settings.accessx.slow_delay,
+        Duration::from_millis(300)
+    );
+    assert_eq!(
+        translation.problems,
+        [Problem::Invalid {
+            schema: A11Y_KEYBOARD.into(),
+            key: "slowkeys-delay".into(),
+            value: "-1".into(),
+            used: "300".into(),
+        }]
+    );
+}
+
+#[test]
+fn the_accessx_keys_the_filter_doesnt_apply_are_reported_as_unsupported_when_on() {
+    for key in [
+        "mousekeys-enable",
+        "timeout-enable",
+        "capslock-beep-enable",
+        "feature-state-change-beep",
+    ] {
+        let problems = translate(&with(A11Y_KEYBOARD, key, Value::Bool(true))).problems;
+        assert_eq!(
+            problems,
+            [Problem::Unsupported {
+                schema: A11Y_KEYBOARD.into(),
+                key: key.into(),
+                value: "true".into(),
+            }]
+        );
+    }
 }
 
 // org.mate.peripherals-keyboard (53).
