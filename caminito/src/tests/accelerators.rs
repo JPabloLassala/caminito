@@ -12,8 +12,8 @@ use caminito_test_client::format_input;
 use insta::assert_snapshot;
 
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_A, KEY_F4, KEY_F9, KEY_LEFTALT, KEY_LEFTCTRL, KEY_MUTE,
-    Kind, Logs, WindowSpec,
+    ClientId, ClientWindow, Fixture, KEY_1, KEY_A, KEY_F4, KEY_F9, KEY_KP1, KEY_LEFTALT,
+    KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_MUTE, KEY_NUMLOCK, Kind, Logs, WindowSpec,
 };
 use crate::settings::Value;
 use crate::settings::translate::KEYBOARD;
@@ -160,6 +160,70 @@ fn a_grabbed_combination_signals_its_action_once_per_press_and_reaches_no_client
     key 56 released
     key 29 released
     ");
+}
+
+/// Keyboard Shortcuts writes the keysym the press typed, with Shift beside it: Shift and 1
+/// is `<Shift>exclam` (100). msd's X11 grabs find the key by that keysym.
+#[test]
+fn a_combination_named_by_the_keysym_its_press_types_signals_its_action() {
+    let (mut f, id, _, bus) = with_a_focused_window();
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["<Shift>exclam", "F9"]);
+
+    f.chord(&[KEY_LEFTSHIFT, KEY_1]);
+    // Without Shift the key types another keysym, and isn't the combination.
+    f.chord(&[KEY_1]);
+    f.chord(&[KEY_F9]);
+
+    assert_eq!(caller.next_activation(&mut f).0, actions[0]);
+    assert_eq!(caller.next_activation(&mut f).0, actions[1]);
+    f.roundtrip(id);
+    assert_snapshot!(format_input(&f.client(id).state.input), @r"
+    key 42 pressed
+    key 42 released
+    key 2 pressed
+    key 2 released
+    ");
+}
+
+/// msd's X11 `match_key` doesn't take Shift for consumed by the keysym it types, so
+/// `exclam` with no Shift named is no press at all.
+#[test]
+fn a_typed_keysym_without_the_modifier_that_types_it_is_no_press() {
+    let (mut f, id, _, bus) = with_a_focused_window();
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["exclam", "<Shift>1", "F9"]);
+
+    f.chord(&[KEY_LEFTSHIFT, KEY_1]);
+    f.chord(&[KEY_F9]);
+
+    // The key's first level names it still, and `exclam` wasn't signalled before it.
+    assert_eq!(caller.next_activation(&mut f).0, actions[1]);
+    assert_eq!(caller.next_activation(&mut f).0, actions[2]);
+    f.roundtrip(id);
+    assert_snapshot!(format_input(&f.client(id).state.input), @r"
+    key 42 pressed
+    key 42 released
+    ");
+}
+
+/// With NumLock on, Keyboard Shortcuts writes a keypad key as the digit it types.
+#[test]
+fn a_keypad_key_is_named_by_what_it_types_with_numlock_on() {
+    let (mut f, _, _, bus) = with_a_focused_window();
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["KP_1", "KP_End", "F9"]);
+
+    f.chord(&[KEY_KP1]);
+    f.chord(&[KEY_NUMLOCK]);
+    f.chord(&[KEY_KP1]);
+    f.chord(&[KEY_F9]);
+
+    // Its first level, `KP_End`, names it with NumLock off and on: the grab made first
+    // has the press that both name.
+    assert_eq!(caller.next_activation(&mut f).0, actions[1]);
+    assert_eq!(caller.next_activation(&mut f).0, actions[0]);
+    assert_eq!(caller.next_activation(&mut f).0, actions[2]);
 }
 
 #[test]

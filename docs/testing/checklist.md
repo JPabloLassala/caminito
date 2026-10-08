@@ -599,6 +599,42 @@ session_env() {
   "interface='org.mate.Caminito'"` can't see the signals, which go to msd alone: run
   `mate-settings-daemon --debug --replace` for msd's side.
 
+### A custom shortcut runs its command
+
+- **Milestone:** M6
+- **Steps:**
+  1. With `mate-settings-daemon-caminito` 1.29.1-6 or later installed, and a `caminito-git` with
+     ticket 100's change (a grab named by the keysym its press types), log into *MATE on
+     Caminito*.
+  2. Add a shortcut for `mate-calc` on Ctrl+Alt+K. With `mate-control-center-caminito`
+     installed, use *Add* in *Keyboard Shortcuts* and press the keys there. Without it:
+
+     ```sh
+     d=/org/mate/desktop/keybindings/custom-check
+     dconf write $d/name "'Calculator'"
+     dconf write $d/action "'mate-calc'"
+     dconf write $d/binding "'<Primary><Alt>k'"
+     ```
+
+  3. Click in a text editor's window, and press Ctrl+Alt+K. Close the calculator, then hold
+     Ctrl+Alt+K for two seconds.
+  4. Change the shortcut's keys to Shift+Super+1, in *Keyboard Shortcuts* or with `dconf
+     write $d/binding "'<Shift><Mod4>exclam'"`. Press Ctrl+Alt+K, then Shift+Super+1.
+  5. Remove the shortcut, in *Keyboard Shortcuts* or with `dconf reset -f $d/`. Press
+     Shift+Super+1 in a terminal running `wev`.
+  6. Add the shortcut again as in step 2, with `XF86AudioMute` for its keys, which the mute
+     key has, and press the mute key. Then remove the shortcut.
+  7. Log out, log into *MATE*, the X11 session, and repeat steps 2 to 5 with `xev` for `wev`.
+- **Expected:** in step 3 the calculator opens with no log out, the editor gets no `k`, and
+  the held keys open one calculator, where X11's open one at every repeat. In step 4
+  Ctrl+Alt+K opens nothing and Shift+Super+1 opens the calculator. In step 5 `wev` shows the
+  press of `1`: the keys are the focused window's again. In step 6 the mute key mutes and no
+  calculator opens, and msd's log has `Grab failed for the key binding (XF86AudioMute)`: on
+  X11 both would happen. In step 7 X11 MATE's shortcuts are as before (ADR 0011).
+- **Debug tool:** `DumpState`'s `accelerator_grabs`, where the shortcut's keys are listed under
+  a unique name of msd's that isn't the one the media keys have: the plugin has a connection
+  of its own. `mate-settings-daemon --debug --replace` for msd's side.
+
 ### The brightness keys change the backlight with a Wayland window focused
 
 - **Milestone:** M7

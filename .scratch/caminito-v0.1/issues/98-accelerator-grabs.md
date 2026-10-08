@@ -76,3 +76,12 @@ The code is `caminito/src/input/bindings/accelerators.rs` (the parser and the ta
 - **The delay and the rate are the keyboard's,** `org.mate.peripherals-keyboard`'s `delay` and `rate`, as a Wayland client's own repeats are. With `repeat` off there are none. They're read at the press.
 - **The repeats end** at the key's release, at any other key's press, a modifier's too, and when the grab is released or its owner leaves the bus. One key repeats at a time.
 - **The code** is `caminito/src/input/repeat.rs`, a timer in the event loop, and the tests are with the others in `caminito/src/tests/accelerators.rs`.
+
+## Added by 100 (2026-10-07)
+
+**A grab is also matched by the keysym its press types,** which changes *A key is matched by its first level* above. Keyboard Shortcuts writes the keysym the press gave, with Shift kept beside it, so Shift and 1 is `<Shift>exclam`, and a keypad key with NumLock on is `KP_1`.
+
+- **A press is a grab's** when exactly the grab's modifiers are held and its keysym is either the key's first level's, as before, or the one the press types. `<Shift>1` and `<Shift>exclam` both fire for Shift and 1, and `exclam` alone for neither, as with msd's X11 `match_key`.
+- **The refusal doesn't know the two are one press:** a second caller's `<Shift>exclam` is granted beside the first's `<Shift>1`, and the one grabbed first gets the press.
+- **msd's two plugins are two callers:** [100](100-msd-custom-shortcuts.md)'s has a connection of its own, so a custom shortcut on a media key's combination is refused.
+- **The test** is with the others in `caminito/src/tests/accelerators.rs`.

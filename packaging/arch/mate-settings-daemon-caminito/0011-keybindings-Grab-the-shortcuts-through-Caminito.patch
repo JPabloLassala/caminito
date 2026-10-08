@@ -1,0 +1,566 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Wed, 7 Oct 2026 22:23:03 -0300
+Subject: [PATCH] keybindings: Grab the shortcuts through Caminito
+
+The plugin grabs the custom shortcuts with XGrabKey on the root window and
+runs a shortcut's command at the key press it filters there, so it is
+X11Only. Under Caminito, the Wayland compositor for MATE, there is nothing
+to grab that way: msd is a Wayland client, and a key pressed in a Wayland
+window never reaches the X server.
+
+Caminito grabs key combinations for its callers on the session bus.
+GrabAccelerators on org.mate.Caminito takes accelerators as the settings
+store them and returns an action for each, and AcceleratorActivated
+carries the action of a key that was pressed.
+
+When MATE_WM_NAME is Caminito and the display is not an X11 one, grab the
+shortcuts through it in place of the X11 grabs, and run a shortcut's
+command when its action is signalled. The shortcuts are grabbed again when
+one is added, changed or removed, and when org.mate.Caminito gets a new
+owner. Caminito parses the shortcuts, since there is no X11 keymap to find
+their keys in. A command runs once for a press: the signal for a key that
+is still held is not listened for.
+
+The plugin calls Caminito on a connection of its own. Caminito knows a
+caller by its connection, and the media-keys plugin grabs its keys on the
+one the daemon shares: with one connection for both, either would release
+a grab the other still has when the two have the same shortcut.
+
+The plugin says Caminito=true, so that it is loaded there. Without that
+variable, nothing changes.
+---
+ ...eybindings.mate-settings-plugin.desktop.in |   1 +
+ plugins/keybindings/msd-keybindings-manager.c | 459 ++++++++++++++++++
+ 2 files changed, 460 insertions(+)
+
+diff --git a/plugins/keybindings/keybindings.mate-settings-plugin.desktop.in b/plugins/keybindings/keybindings.mate-settings-plugin.desktop.in
+index dbed8b9..d9537c9 100644
+--- a/plugins/keybindings/keybindings.mate-settings-plugin.desktop.in
++++ b/plugins/keybindings/keybindings.mate-settings-plugin.desktop.in
+@@ -2,6 +2,7 @@
+ Module=keybindings
+ IAge=0
+ X11Only=true
++Caminito=true
+ Name=Keybindings
+ Description=Keybindings plugin
+ Authors=AUTHOR
+diff --git a/plugins/keybindings/msd-keybindings-manager.c b/plugins/keybindings/msd-keybindings-manager.c
+index 324a976..a87e919 100644
+--- a/plugins/keybindings/msd-keybindings-manager.c
++++ b/plugins/keybindings/msd-keybindings-manager.c
+@@ -52,12 +52,19 @@
+ #define GSETTINGS_KEYBINDINGS_DIR "/org/mate/desktop/keybindings/"
+ #define CUSTOM_KEYBINDING_SCHEMA "org.mate.control-center.keybinding"
+ 
++/* Caminito, the Wayland compositor for MATE, grabs keys for its callers */
++#define CAMINITO_DBUS_NAME "org.mate.Caminito"
++#define CAMINITO_DBUS_PATH "/org/mate/Caminito"
++#define CAMINITO_DBUS_INTERFACE "org.mate.Caminito"
++
+ typedef struct {
+         char *binding_str;
+         char *action;
+         char *settings_path;
+         Key   key;
+         Key   previous_key;
++        /* The grab's action under Caminito, or 0 */
++        guint32 caminito_action;
+ } Binding;
+ 
+ struct MsdKeybindingsManagerPrivate
+@@ -65,6 +72,16 @@ struct MsdKeybindingsManagerPrivate
+         DConfClient *client;
+         GSList      *binding_list;
+         GSList      *screens;
++
++        /* The shortcuts grabbed through Caminito, in place of the X11 grabs */
++        GDBusConnection *caminito_connection;
++        guint            caminito_watch_id;
++        guint            caminito_signal_id;
++        gboolean         caminito_owned;
++        guint            caminito_serial;
++        gboolean         caminito_grabbing;
++        gboolean         caminito_grab_again;
++        GArray          *caminito_actions;
+ };
+ 
+ static void     msd_keybindings_manager_finalize    (GObject *object);
+@@ -73,6 +90,21 @@ G_DEFINE_TYPE_WITH_PRIVATE (MsdKeybindingsManager, msd_keybindings_manager, G_TY
+ 
+ static gpointer manager_object = NULL;
+ 
++/* Under Caminito on a Wayland display there are no X11 grabs: the shortcuts
++ * are grabbed with GrabAccelerators on org.mate.Caminito, which signals
++ * AcceleratorActivated for a press. */
++static gboolean
++grab_through_caminito (void)
++{
++        if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") != 0)
++                return FALSE;
++#ifdef GDK_WINDOWING_X11
++        if (GDK_IS_X11_DISPLAY (gdk_display_get_default ()))
++                return FALSE;
++#endif /* GDK_WINDOWING_X11 */
++        return TRUE;
++}
++
+ static GSList *
+ get_screens_list (void)
+ {
+@@ -102,6 +134,10 @@ parse_binding (Binding *binding)
+                 return FALSE;
+         }
+ 
++        /* Caminito parses it: there is no X11 keymap to find its keys in */
++        if (grab_through_caminito ())
++                return TRUE;
++
+         success = egg_accelerator_parse_virtual (binding->binding_str,
+                                                  &binding->key.keysym,
+                                                  &binding->key.keycodes,
+@@ -517,6 +553,417 @@ bindings_callback (DConfClient           *client G_GNUC_UNUSED,
+         binding_register_keys (manager);
+ }
+ 
++/* A GrabAccelerators call that is out, with the shortcuts it asked for: its
++ * reply is dropped if Caminito got a new owner, or the manager was stopped,
++ * since it was made */
++typedef struct {
++        MsdKeybindingsManager *manager;
++        guint                  serial;
++        gchar                **accelerators;
++} CaminitoGrab;
++
++static void caminito_grab_bindings (MsdKeybindingsManager *manager);
++
++static gboolean
++caminito_has_action (GArray  *actions,
++                     guint32  action)
++{
++        guint i;
++
++        for (i = 0; i < actions->len; i++) {
++                if (g_array_index (actions, guint32, i) == action)
++                        return TRUE;
++        }
++        return FALSE;
++}
++
++/* None of the grabs is held any more: Caminito has a new owner, or none */
++static void
++caminito_forget_actions (MsdKeybindingsManager *manager)
++{
++        GSList *li;
++
++        g_array_set_size (manager->priv->caminito_actions, 0);
++        for (li = manager->priv->binding_list; li != NULL; li = li->next)
++                ((Binding *) li->data)->caminito_action = 0;
++}
++
++/* Takes the action of each shortcut from GrabAccelerators' reply, and
++ * releases the grabs that no shortcut has any more. A shortcut that kept its
++ * keys kept its action. The bindings are the ones there are now, which a
++ * change since the call may have made others than it asked for: the call
++ * made after this one grabs those. */
++static void
++caminito_take_actions (MsdKeybindingsManager *manager,
++                       gchar                **accelerators,
++                       GVariant              *actions)
++{
++        MsdKeybindingsManagerPrivate *priv = manager->priv;
++        GVariantBuilder released;
++        GArray         *held;
++        gboolean        any_released = FALSE;
++        GSList         *li;
++        guint           i;
++
++        if (g_variant_n_children (actions) != g_strv_length (accelerators)) {
++                g_warning ("Caminito did not answer for each of the key bindings");
++                return;
++        }
++
++        for (li = priv->binding_list; li != NULL; li = li->next)
++                ((Binding *) li->data)->caminito_action = 0;
++
++        held = g_array_new (FALSE, FALSE, sizeof (guint32));
++        for (i = 0; accelerators[i] != NULL; i++) {
++                guint32 action;
++
++                g_variant_get_child (actions, i, "u", &action);
++                if (action == 0) {
++                        g_warning ("Grab failed for the key binding (%s): another application may have it, or Caminito cannot read it.",
++                                   accelerators[i]);
++                        continue;
++                }
++
++                if (!caminito_has_action (held, action))
++                        g_array_append_val (held, action);
++                for (li = priv->binding_list; li != NULL; li = li->next) {
++                        Binding *binding = (Binding *) li->data;
++
++                        if (g_strcmp0 (binding->binding_str, accelerators[i]) == 0)
++                                binding->caminito_action = action;
++                }
++        }
++
++        g_variant_builder_init (&released, G_VARIANT_TYPE ("au"));
++        for (i = 0; i < priv->caminito_actions->len; i++) {
++                guint32 action = g_array_index (priv->caminito_actions, guint32, i);
++
++                if (!caminito_has_action (held, action)) {
++                        g_variant_builder_add (&released, "u", action);
++                        any_released = TRUE;
++                }
++        }
++        /* Calls are made only while org.mate.Caminito has an owner, and
++         * never start one */
++        if (any_released)
++                g_dbus_connection_call (priv->caminito_connection,
++                                        CAMINITO_DBUS_NAME,
++                                        CAMINITO_DBUS_PATH,
++                                        CAMINITO_DBUS_INTERFACE,
++                                        "UngrabAccelerators",
++                                        g_variant_new ("(au)", &released),
++                                        NULL,
++                                        G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
++                                        NULL, NULL, NULL);
++        else
++                g_variant_builder_clear (&released);
++
++        g_array_unref (priv->caminito_actions);
++        priv->caminito_actions = held;
++}
++
++static void
++caminito_grabbed_cb (GObject      *source,
++                     GAsyncResult *result,
++                     gpointer      data)
++{
++        CaminitoGrab          *grab = data;
++        MsdKeybindingsManager *manager = grab->manager;
++        GVariant *reply;
++        GError   *error = NULL;
++
++        reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, &error);
++
++        /* Otherwise the manager was stopped, and the grabs went with its
++         * connection, or the name has a new owner, and a later call's reply
++         * has the actions */
++        if (grab->serial == manager->priv->caminito_serial) {
++                manager->priv->caminito_grabbing = FALSE;
++
++                if (reply != NULL) {
++                        GVariant *actions = g_variant_get_child_value (reply, 0);
++
++                        caminito_take_actions (manager, grab->accelerators, actions);
++                        g_variant_unref (actions);
++                } else {
++                        g_warning ("Could not grab the key bindings through Caminito: %s", error->message);
++                }
++
++                /* A binding changed in the meantime */
++                if (manager->priv->caminito_grab_again) {
++                        manager->priv->caminito_grab_again = FALSE;
++                        caminito_grab_bindings (manager);
++                }
++        }
++
++        g_clear_pointer (&reply, g_variant_unref);
++        g_clear_error (&error);
++        g_strfreev (grab->accelerators);
++        g_object_unref (grab->manager);
++        g_free (grab);
++}
++
++/* Grabs every binding's shortcut as it is now. One call is made at a time, so
++ * that the actions of one reply are never released by an earlier one. */
++static void
++caminito_grab_bindings (MsdKeybindingsManager *manager)
++{
++        MsdKeybindingsManagerPrivate *priv = manager->priv;
++        GVariantBuilder accelerators;
++        CaminitoGrab   *grab;
++        GSList         *li;
++        guint           i = 0;
++
++        if (!priv->caminito_owned)
++                return;
++
++        if (priv->caminito_grabbing) {
++                priv->caminito_grab_again = TRUE;
++                return;
++        }
++
++        grab = g_new0 (CaminitoGrab, 1);
++        grab->manager = g_object_ref (manager);
++        grab->serial = priv->caminito_serial;
++        grab->accelerators = g_new0 (gchar *, g_slist_length (priv->binding_list) + 1);
++
++        g_variant_builder_init (&accelerators, G_VARIANT_TYPE ("as"));
++        for (li = priv->binding_list; li != NULL; li = li->next) {
++                Binding *binding = (Binding *) li->data;
++
++                g_variant_builder_add (&accelerators, "s", binding->binding_str);
++                grab->accelerators[i++] = g_strdup (binding->binding_str);
++        }
++
++        priv->caminito_grabbing = TRUE;
++        g_dbus_connection_call (priv->caminito_connection,
++                                CAMINITO_DBUS_NAME,
++                                CAMINITO_DBUS_PATH,
++                                CAMINITO_DBUS_INTERFACE,
++                                "GrabAccelerators",
++                                g_variant_new ("(as)", &accelerators),
++                                G_VARIANT_TYPE ("(au)"),
++                                G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
++                                NULL,
++                                caminito_grabbed_cb, grab);
++}
++
++/* Runs the binding's command, as keybindings_filter does for an X11 key
++ * press. The command inherits the environment: there is no X11 screen to
++ * name in it. */
++static void
++caminito_run_binding (Binding *binding)
++{
++        GError  *error = NULL;
++        gboolean retval;
++        gchar  **argv = NULL;
++
++        g_return_if_fail (binding->action != NULL);
++
++        if (!g_shell_parse_argv (binding->action,
++                                 NULL, &argv,
++                                 &error)) {
++                g_clear_error (&error);
++                return;
++        }
++
++        retval = g_spawn_async (NULL,
++                                argv,
++                                NULL,
++                                G_SPAWN_SEARCH_PATH,
++                                NULL,
++                                NULL,
++                                NULL,
++                                &error);
++        g_strfreev (argv);
++        g_clear_error (&error);
++
++        if (!retval) {
++                GtkWidget *dialog = gtk_message_dialog_new (NULL, 0, GTK_MESSAGE_WARNING,
++                                                            GTK_BUTTONS_CLOSE,
++                                                            _("Error while trying to run (%s)\n"\
++                                                              "which is linked to the key (%s)"),
++                                                            binding->action,
++                                                            binding->binding_str);
++                g_signal_connect (dialog,
++                                  "response",
++                                  G_CALLBACK (gtk_widget_destroy),
++                                  NULL);
++                gtk_widget_show (dialog);
++        }
++}
++
++/* AcceleratorRepeated, for a key that is still held, is not listened for: a
++ * command runs once for a press */
++static void
++caminito_activated_cb (GDBusConnection *connection G_GNUC_UNUSED,
++                       const gchar     *sender_name G_GNUC_UNUSED,
++                       const gchar     *object_path G_GNUC_UNUSED,
++                       const gchar     *interface_name G_GNUC_UNUSED,
++                       const gchar     *signal_name G_GNUC_UNUSED,
++                       GVariant        *parameters,
++                       gpointer         data)
++{
++        MsdKeybindingsManager *manager = data;
++        guint32 action;
++        GSList *li;
++
++        if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(uu)")))
++                return;
++        g_variant_get (parameters, "(uu)", &action, NULL);
++        if (action == 0)
++                return;
++
++        /* The first binding with the shortcut, as with the X11 grabs */
++        for (li = manager->priv->binding_list; li != NULL; li = li->next) {
++                Binding *binding = (Binding *) li->data;
++
++                if (binding->caminito_action == action) {
++                        caminito_run_binding (binding);
++                        return;
++                }
++        }
++}
++
++static void
++caminito_appeared_cb (GDBusConnection *connection G_GNUC_UNUSED,
++                      const gchar     *name G_GNUC_UNUSED,
++                      const gchar     *name_owner G_GNUC_UNUSED,
++                      gpointer         data)
++{
++        MsdKeybindingsManager *manager = data;
++
++        /* A new owner has none of the grabs, and a reply still to come is
++         * the last owner's */
++        manager->priv->caminito_owned = TRUE;
++        manager->priv->caminito_serial++;
++        manager->priv->caminito_grabbing = FALSE;
++        manager->priv->caminito_grab_again = FALSE;
++        caminito_forget_actions (manager);
++        caminito_grab_bindings (manager);
++}
++
++static void
++caminito_vanished_cb (GDBusConnection *connection G_GNUC_UNUSED,
++                      const gchar     *name G_GNUC_UNUSED,
++                      gpointer         data)
++{
++        MsdKeybindingsManager *manager = data;
++
++        /* The grabs went with their owner */
++        manager->priv->caminito_owned = FALSE;
++        caminito_forget_actions (manager);
++}
++
++static void
++caminito_bindings_callback (DConfClient           *client G_GNUC_UNUSED,
++                            gchar                 *prefix G_GNUC_UNUSED,
++                            GStrv                  changes G_GNUC_UNUSED,
++                            gchar                 *tag G_GNUC_UNUSED,
++                            MsdKeybindingsManager *manager)
++{
++        g_debug ("keybindings: received 'changed' signal from dconf");
++
++        /* The new bindings have no action until the reply gives each its
++         * own: the grabs are still held, and are released by then if no
++         * binding has them */
++        bindings_get_entries (manager);
++        caminito_grab_bindings (manager);
++}
++
++/* Grabs the shortcuts through Caminito now and whenever a binding changes or
++ * org.mate.Caminito gets a new owner.
++ *
++ * The connection is the manager's own, and not the one the rest of the
++ * daemon shares. Caminito knows a caller by its connection, and the
++ * media-keys plugin grabs its keys on the shared one: with one connection
++ * for both, either would release a grab the other still has when the two
++ * have the same shortcut. With two, Caminito refuses the second of them.
++ * And the grabs go with the connection when the manager stops. */
++static gboolean
++caminito_start (MsdKeybindingsManager *manager,
++                GError               **error)
++{
++        MsdKeybindingsManagerPrivate *priv = manager->priv;
++        gchar *address;
++
++        address = g_dbus_address_get_for_bus_sync (G_BUS_TYPE_SESSION, NULL, error);
++        if (address == NULL)
++                return FALSE;
++
++        priv->caminito_connection =
++                g_dbus_connection_new_for_address_sync (address,
++                                                        G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
++                                                        G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION,
++                                                        NULL, NULL, error);
++        g_free (address);
++        if (priv->caminito_connection == NULL)
++                return FALSE;
++
++        priv->caminito_actions = g_array_new (FALSE, FALSE, sizeof (guint32));
++        priv->binding_list = NULL;
++        bindings_get_entries (manager);
++
++        priv->client = dconf_client_new ();
++        dconf_client_watch_fast (priv->client, GSETTINGS_KEYBINDINGS_DIR);
++        g_signal_connect (priv->client, "changed", G_CALLBACK (caminito_bindings_callback), manager);
++
++        priv->caminito_signal_id =
++                g_dbus_connection_signal_subscribe (priv->caminito_connection,
++                                                    CAMINITO_DBUS_NAME,
++                                                    CAMINITO_DBUS_INTERFACE,
++                                                    "AcceleratorActivated",
++                                                    CAMINITO_DBUS_PATH,
++                                                    NULL,
++                                                    G_DBUS_SIGNAL_FLAGS_NONE,
++                                                    caminito_activated_cb,
++                                                    manager, NULL);
++        priv->caminito_watch_id =
++                g_bus_watch_name_on_connection (priv->caminito_connection,
++                                                CAMINITO_DBUS_NAME,
++                                                G_BUS_NAME_WATCHER_FLAGS_NONE,
++                                                caminito_appeared_cb,
++                                                caminito_vanished_cb,
++                                                manager, NULL);
++
++        return TRUE;
++}
++
++static void
++caminito_stop (MsdKeybindingsManager *manager)
++{
++        MsdKeybindingsManagerPrivate *priv = manager->priv;
++
++        if (priv->client != NULL) {
++                g_signal_handlers_disconnect_by_func (priv->client,
++                                                      caminito_bindings_callback,
++                                                      manager);
++                g_clear_object (&priv->client);
++        }
++
++        /* The reply of a call that is out is dropped */
++        priv->caminito_serial++;
++        priv->caminito_owned = FALSE;
++        priv->caminito_grabbing = FALSE;
++        priv->caminito_grab_again = FALSE;
++
++        if (priv->caminito_connection != NULL) {
++                g_bus_unwatch_name (priv->caminito_watch_id);
++                priv->caminito_watch_id = 0;
++                g_dbus_connection_signal_unsubscribe (priv->caminito_connection,
++                                                      priv->caminito_signal_id);
++                priv->caminito_signal_id = 0;
++
++                /* Caminito releases the grabs of a caller that leaves the
++                 * bus */
++                g_dbus_connection_close (priv->caminito_connection, NULL, NULL, NULL);
++                g_clear_object (&priv->caminito_connection);
++        }
++
++        bindings_clear (manager);
++        g_clear_pointer (&priv->caminito_actions, g_array_unref);
++}
++
+ gboolean
+ msd_keybindings_manager_start (MsdKeybindingsManager *manager,
+                                GError               **error)
+@@ -534,6 +981,13 @@ msd_keybindings_manager_start (MsdKeybindingsManager *manager,
+ 
+         dpy = gdk_display_get_default ();
+ 
++        if (grab_through_caminito ()) {
++                gboolean started = caminito_start (manager, error);
++
++                mate_settings_profile_end (NULL);
++                return started;
++        }
++
+         if (!GDK_IS_X11_DISPLAY (dpy)) {
+                 g_set_error (error,
+                              G_IO_ERROR,
+@@ -588,6 +1042,11 @@ msd_keybindings_manager_stop (MsdKeybindingsManager *manager)
+ 
+         g_debug ("Stopping keybindings manager");
+ 
++        if (grab_through_caminito ()) {
++                caminito_stop (manager);
++                return;
++        }
++
+ #ifdef GDK_WINDOWING_X11
+         if (!GDK_IS_X11_DISPLAY (gdk_display_get_default ()))
+                 return;

@@ -16,9 +16,10 @@ struct Accelerator {
 }
 
 impl Accelerator {
-    /// Whether a press of `keysym` with `mods` held is this combination.
-    fn matches(&self, mods: &ModifiersState, keysym: Keysym) -> bool {
-        self.held == Held::from(mods) && self.keysym == keysym
+    /// Whether a press with `mods` held is this combination, where `keysyms` are the ones
+    /// that name the key pressed.
+    fn matches(&self, mods: &ModifiersState, keysyms: &[Keysym]) -> bool {
+        self.held == Held::from(mods) && keysyms.contains(&self.keysym)
     }
 }
 
@@ -91,8 +92,8 @@ fn parse(accelerator: &str) -> Result<Option<Accelerator>, ParseError> {
     let keysym = named(xkb::KEYSYM_NO_FLAGS)
         .or_else(|| named(xkb::KEYSYM_CASE_INSENSITIVE))
         .ok_or_else(|| ParseError::UnknownKey(rest.to_owned()))?;
-    // GTK lowercases the key, and the keyboard path matches a key's first level, where
-    // the letters are lowercase.
+    // GTK lowercases the key, and the keyboard path matches a letter by its key's first
+    // level, where the letters are lowercase.
     let keysym = match keysym.raw() {
         upper @ 0x41..=0x5a => Keysym::new(upper + 0x20),
         _ => keysym,
@@ -171,11 +172,14 @@ impl Grabs {
         self.grabs.retain(|_, grab| grab.owner != owner);
     }
 
-    /// The grab of a press of `keysym` with `mods` held, if there is one: its action id
-    /// and its owner.
-    pub(crate) fn pressed(&self, mods: &ModifiersState, keysym: Keysym) -> Option<(u32, &str)> {
+    /// The grab of a press with `mods` held, if there is one: its action id and its owner.
+    /// `keysyms` are the ones that name the key pressed: the one on its first level, and
+    /// the one the press types, which is how Keyboard Shortcuts writes a key that Shift or
+    /// NumLock changes (100). Two grabs can then be of one press, as `<Shift>1` and
+    /// `<Shift>exclam`: the one grabbed first has it.
+    pub(crate) fn pressed(&self, mods: &ModifiersState, keysyms: &[Keysym]) -> Option<(u32, &str)> {
         self.iter()
-            .find(|(_, grab)| grab.combination.matches(mods, keysym))
+            .find(|(_, grab)| grab.combination.matches(mods, keysyms))
             .map(|(action, grab)| (action, grab.owner.as_str()))
     }
 
@@ -213,7 +217,7 @@ mod tests {
 
     fn matches(accelerator: &str, mods: ModifiersState, keysym: Keysym) -> bool {
         let parsed = parse(accelerator).unwrap().unwrap();
-        parsed.matches(&mods, keysym)
+        parsed.matches(&mods, &[keysym])
     }
 
     #[test]
@@ -281,7 +285,7 @@ mod tests {
 
     #[test]
     fn a_letter_is_the_key_that_types_it_in_either_case() {
-        // GTK lowercases the key, and the keyboard path matches the key's first level.
+        // GTK lowercases the key, and the first level of a letter's key is its lowercase.
         let shift = ModifiersState {
             shift: true,
             ..NONE

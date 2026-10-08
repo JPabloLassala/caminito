@@ -350,10 +350,13 @@ impl State {
         if !pressed || self.shortcuts_inhibited() {
             return FilterResult::Forward;
         }
-        // Accelerators name keys as the first layout does, like the bindings.
-        let grab = keysym
-            .raw_latin_sym_or_raw_current_sym()
-            .and_then(|sym| self.caminito.accelerator_grabs.pressed(mods, sym));
+        // Accelerators name keys as the first layout does, like the bindings, or by the
+        // keysym the press types, as Keyboard Shortcuts writes `<Shift>exclam` (100).
+        let typed = keysym.modified_sym();
+        let first_level = keysym.raw_latin_sym_or_raw_current_sym();
+        let grabs = &self.caminito.accelerator_grabs;
+        // A key with nothing on its first level is named by what it types alone.
+        let grab = grabs.pressed(mods, &[first_level.unwrap_or(typed), typed]);
         match grab {
             Some((action, owner)) => {
                 let owner = owner.to_owned();
