@@ -234,7 +234,7 @@ Nobody has run these. Each is listed under the slice that runs it, and a result 
 
 ## The cut into tickets
 
-Ten slices, filed in `.scratch/global-menu/issues/` from 115 by a later run. Each is run by itself once the ones it's blocked by are in.
+Ten slices, filed in `.scratch/global-menu/issues/` as tickets 115 to 124: slice 1 is [115](../global-menu/issues/115-caminito-takes-a-menu-claim.md), and so on to slice 10, [124](../global-menu/issues/124-vs-code-in-a-real-session.md). Each is run by itself once the ones it's blocked by are in.
 
 | | Slice | Blocked by |
 | --- | --- | --- |
