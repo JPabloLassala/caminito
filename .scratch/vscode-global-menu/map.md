@@ -29,10 +29,11 @@ A spec, ready to cut into implementation tickets, for showing VS Code's menubar 
 - [Whether keybinding labels and recent files can be had](issues/02-keybinding-labels-and-recent-files.md): both can, through internals (a virtual defaults file and `_workbench.getRecentlyOpened`), run on 1.140; the window's profile isn't told, neither has a change event, and the applet shows only a chord's first press.
 - [How an extension host can serve a dbusmenu](issues/04-serving-dbusmenu-from-an-extension.md): a bundled JavaScript library (`@jellybrick/dbus-next`, with one workaround) served the applet's importer in runs outside a live extension host; the importer's calls block the panel, so a busy extension host freezes it.
 - [The channel between the extension and Caminito](issues/06-channel-between-extension-and-caminito.md): a menu claim (ADR 0018): the extension calls `ClaimGlobalMenu` on `org.mate.Caminito` when its window gains focus, and Caminito ties the caller to its parent process's focused toplevel; it follows the applet's switch through a `GlobalMenuOffered` property, and a reload empties the menu until the new host claims.
+- [Where the menu's structure comes from and how it's kept current](issues/07-source-of-the-menu-structure.md): a committed table (ADR 0019), a snapshot of what VS Code with a native title bar writes as `lastKnownMenubarData`, plus hand-written annotations; one table for every version and fork, with items whose command is missing dropped; a weekly canary snapshots the newest release and opens an issue on a difference; titles are English.
 
 ## Not yet specified
 
-- **The spec's outline:** its sections, and how the work is cut between the extension and Caminito. Waits on the menu's source.
+- **The spec's outline:** its sections, and how the work is cut between the extension and Caminito.
 - **The extension's name in the glossary.** "Caminito integration" was the working name. Does it do anything besides the menu?
 
 ## Out of scope

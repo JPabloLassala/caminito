@@ -15,3 +15,7 @@ To measure, from [06](06-channel-between-extension-and-caminito.md) and ADR 0018
 - Whether the first real value of `focused` comes with an `onDidChangeWindowState` event, so that a window already focused when its host starts, or reloads, gets its menu without being refocused.
 - Whether focusing a floating editor window gives its host a focus event, and so a claim.
 - How long the panel stalls while the extension host is busy.
+
+From [07](07-source-of-the-menu-structure.md) and ADR 0019:
+
+- Whether the extension runs in the agent sessions window, and what the ordinary menu does there.
