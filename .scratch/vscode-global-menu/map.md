@@ -16,7 +16,7 @@ A spec, ready to cut into implementation tickets, for showing VS Code's menubar 
 - **Settled while charting** (these are fixed; don't reopen them in tickets):
   - It serves VS Code and the forks that share its extension API (VSCodium, Code - OSS, Cursor), as long as a fork costs no more than not hard-coding names. No other Electron app.
   - The first version's bar: the same top-level menus and items as the in-window menubar in an ordinary editing state, every item runs its command, keybinding labels and recent files are there. Items needn't grey out, context-only items may be always or never there, and a checkmark is needed only where it mirrors a setting.
-  - The extension lives in this repository, in its own top-level directory, and is installed from a `.vsix` that an Arch package ships.
+  - The extension lives in this repository, in its own top-level directory, and an Arch package ships it, installed unpacked (ADR 0022).
   - A window attached to SSH, a container or WSL must work: the extension runs on the local side.
 
 ## Decisions so far
@@ -33,6 +33,7 @@ A spec, ready to cut into implementation tickets, for showing VS Code's menubar 
 - [What the menu shows beyond structure](issues/08-what-the-menu-shows-beyond-structure.md): only the state the extension can read (ADR 0020): checkmarks where they mirror a setting and none elsewhere, every item enabled, keybinding labels computed from the default keybindings and the user's file with the snapshot's as fallback, no shortcut for a chord, Open Recent as VS Code's own; changes are pushed on events, never built on `AboutToShow` or a timer.
 - [What happens to the in-window menubar](issues/09-the-in-window-menubar.md): it stays the user's (ADR 0021): the extension never writes `window.menuBarVisibility` on its own and offers once for a machine to set it to `toggle`, where Alt shows it again; nothing brings it back when the applet goes, and only the panel's menu follows `GlobalMenuOffered`.
 - [A thin end-to-end slice](issues/10-thin-end-to-end-slice.md): it works, with two windows, a reload and a restart of the panel, and a claim comes about 10 ms after the focus change; but a window focused when its host starts gets no focus event (its `focused` is already the real value), a floating editor window is claimed only when reached from another window, two hosts can both make the offer within about 300 ms, and the extension reaches the agents window only as a built-in. ADR 0018's claim rule is to reopen.
+- [How the package installs the extension](issues/11-how-the-package-installs-the-extension.md): as a built-in (ADR 0022): `caminito-vscode-git` installs it unpacked in a directory of its own, and an alpm hook links it into the built-in extensions directory of each of five editors that's installed; no `.vsix` ships, nothing is installed for a user, and `caminito-git` lists the package as an optional dependency.
 
 ## Not yet specified
 
