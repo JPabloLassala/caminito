@@ -1,0 +1,129 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 12:00:00 -0300
+Subject: [PATCH] panel: Let an object held by a pixel position move left
+
+With the pack model, an object's place is its pack and its index there, and
+its old pixel position still applies while it's past that place, so a layout
+from before the model keeps its gaps. "Add to Panel" writes that position
+for a new object too. A move changes only the pack and the index, so an
+object held by its position couldn't be moved to the left of it: the first
+object of the start pack had nothing to be swapped with, and one swapped
+with the object before it was drawn where it was. The position was never
+written again either, so an object taken to another pack and back was at
+its old position when the panel started again.
+
+Give the position up when the object is moved left past half of the gap
+before it, which is how far a move to the pack before goes, and write the
+position's key when it's given up.
+---
+ mate-panel/applet.c       |  9 ++++++++
+ mate-panel/panel-widget.c | 55 +++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 64 insertions(+)
+
+diff --git a/mate-panel/applet.c b/mate-panel/applet.c
+index 9f666392..5beef960 100644
+--- a/mate-panel/applet.c
++++ b/mate-panel/applet.c
+@@ -1153,6 +1153,15 @@ mate_panel_applet_save_position (AppletInfo *applet_info,
+ 		g_settings_set_int (applet_info->settings,
+ 				    PANEL_OBJECT_PACK_INDEX_KEY,
+ 				    applet_data->pack_index);
++
++	/* A move that gave the object's pixel position up (to another pack, or
++	 * to the left) has to hold after the panel starts again */
++	if (applet_data->pos == 0 &&
++	    g_settings_get_int (applet_info->settings, PANEL_OBJECT_POSITION_KEY) != 0 &&
++	    g_settings_is_writable (applet_info->settings, PANEL_OBJECT_POSITION_KEY))
++		g_settings_set_int (applet_info->settings,
++				    PANEL_OBJECT_POSITION_KEY,
++				    0);
+ }
+ 
+ const char *
+diff --git a/mate-panel/panel-widget.c b/mate-panel/panel-widget.c
+index 6b52b99a..904ea8ec 100644
+--- a/mate-panel/panel-widget.c
++++ b/mate-panel/panel-widget.c
+@@ -788,6 +788,51 @@ panel_widget_switch_applet_right (PanelWidget *panel,
+ 	return FALSE;
+ }
+ 
++/* An object added at a pixel position, or one from a layout older than the
++ * pack model, is drawn at that position while it's past its place in the
++ * pack (see panel_widget_update_positions()). Nothing can be swapped with it
++ * there, so a move to the left gives the position up, and the object goes to
++ * its place in the pack. Returns FALSE if the object isn't held by a position;
++ * moved says whether it was released. */
++static gboolean
++panel_widget_release_position_left (PanelWidget *panel,
++				    GList       *list,
++				    int          moveby,
++				    gboolean     force_switch,
++				    gboolean    *moved)
++{
++	AppletData *ad;
++	AppletData *pad;
++	int         packed_pos;
++
++	ad = list->data;
++
++	if (panel->packed || ad->pack_type != PANEL_OBJECT_PACK_START)
++		return FALSE;
++
++	pad = list->prev ? list->prev->data : NULL;
++	packed_pos = pad ? pad->constrained + pad->cells : 0;
++
++	if (ad->pos <= packed_pos || ad->constrained <= packed_pos)
++		return FALSE;
++
++	/* count moveby from start of object => add distance to go there */
++	moveby += ad->cells / 2;
++
++	*moved = force_switch ||
++		 (moveby <= - ((ad->constrained - packed_pos) / 2));
++
++	if (*moved) {
++		ad->pos = 0;
++		emit_applet_moved (panel, ad);
++
++		panel_widget_update_positions (panel);
++		gtk_widget_queue_resize (GTK_WIDGET (panel));
++	}
++
++	return TRUE;
++}
++
+ /* if force_switch is set, moveby will be ignored */
+ static gboolean
+ panel_widget_switch_applet_left (PanelWidget *panel,
+@@ -799,9 +844,14 @@ panel_widget_switch_applet_left (PanelWidget *panel,
+ 	AppletData *pad;
+ 	int         swap_index;
+ 	int         prev_pos;
++	gboolean    released;
+ 
+ 	ad = list->data;
+ 
++	if (panel_widget_release_position_left (panel, list, moveby,
++						force_switch, &released))
++		return released;
++
+ 	if (panel->packed && !list->prev)
+ 		return FALSE;
+ 
+@@ -953,9 +1003,14 @@ panel_widget_push_applet_left (PanelWidget *panel,
+ 	GList *l;
+ 	GList *first_in_pack;
+ 	int prev_pos;
++	gboolean released;
+ 
+ 	ad = list->data;
+ 
++	if (panel_widget_release_position_left (panel, list, moveby,
++						force_switch, &released))
++		return released;
++
+ 	if (ad->pack_type == PANEL_OBJECT_PACK_START)
+ 		return FALSE;
+ 
