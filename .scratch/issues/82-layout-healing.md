@@ -1,0 +1,50 @@
+# Docking and healing a layout
+
+Epic: caminito-v0.1
+Type: implementation
+Status: resolved
+Milestone: M6
+Blocked by: none
+Map: [Caminito v0.1](../caminito-v0.1/map.md)
+
+## What to build
+
+Every Layout is contiguous (CONTEXT.md, [ADR 0014](../../docs/adr/0014-caminito-keeps-the-layouts-and-caminito-displays-edits-them.md)): no gaps, no overlaps, and each output touches another along at least 100 logical pixels, or along the whole of the shorter edge when that is less. This ticket is the logic that keeps it so, with no protocol and no toolkit in it, for Caminito and for caminito-displays ([84](84-caminito-displays.md)) alike. The prototype's `Layout` module is the model to port.
+
+- **Dock:** the place nearest to a wanted one where an output of a given size lies against the outline of the others, sharing enough edge with one and on top of none. With a snap distance, it takes the place where its edge lines up with the matching edge of an output it lies against (top with top, bottom with bottom, left with left, right with right). Outputs it doesn't touch don't pull, and centres don't.
+- **Heal:** makes a layout contiguous, moving each output as little as it can, with one output held still. A contiguous layout comes back unchanged.
+- **Resize:** when an output changes size, those to its right and below keep their side of it, and then the layout is healed.
+- **The origin:** a healed layout's top-left corner is at 0,0.
+- **Where Caminito heals:** on hot-plug, when an output is enabled or disabled, and when a mode or a scale changes an output's logical size. Today `wlr-randr --output A --off` leaves a gap (58's notes); after this it doesn't.
+- **A configuration that isn't contiguous:** whether Caminito heals what a wlr-output-management client asks for, or fails it, is to decide here. Healing is the proposal, since `wlr-randr` and kanshi users write places by hand.
+- **A new output with no saved layout** goes to the right of the rightmost, with its top at the layout's top.
+
+## Acceptance criteria
+
+- [x] Property tests in the crate, written before the code: a healed layout has no gap, no overlap and no output cut off; healing it again changes nothing; a docked output leaves the layout contiguous.
+- [x] Unit tests for the snap: it takes the matching edge of an output it lies against, and not that of one it doesn't touch.
+- [x] Headless tests: unplugging the middle output of three closes the gap; a scale change that grows an output pushes its right-hand neighbour along.
+- [ ] Nested or on the tty, `wlr-randr --output A --off` with three outputs leaves the other two touching.
+
+## Notes
+
+- **Which crate:** `caminito-policy` is the proposal, since it is already free of protocols (ADR 0010) and caminito-displays can depend on it. A crate of its own is the other way, if policy pulls in too much for a settings program. To decide here.
+- **Logical pixels and rounding:** an output's logical size is its mode over its scale, rounded. The prototype rounds to whole pixels; Caminito's own rounding (51) is what to match.
+- The prototype that settled the design is `.scratch/caminito-displays-prototype/index.html` on the branch `prototype/caminito-displays` (8a4981d), with its verdicts in the commit message. It is a source, not code to keep.
+
+## Resolution
+
+The logic is the crate `caminito-layout`: `dock`, `heal`, `resized`, `at_origin`, `at_the_right` and `is_contiguous`, over a `Rect` of its own, with its tests in `caminito-layout/src/tests.rs`. Caminito's side is `heal_layout` in `caminito/src/output.rs`, which every change to the outputs goes through, with its tests in `caminito/src/tests/output_lifecycle.rs` and `output_management.rs`.
+
+- **Which crate (decided here):** one of its own, with no dependencies ([ADR 0015](../../docs/adr/0015-the-layout-logic-is-a-crate-of-its-own.md)). `caminito-policy` would have brought Smithay, pinned by git revision, into caminito-displays.
+- **A configuration that isn't contiguous (decided here):** Caminito heals it and answers `succeeded`. The client is then sent the places the outputs took, which may not be the ones it asked for. A place beyond 2^24 on either axis fails the configuration, as a scale of no use does, so that the sums of places and sizes stay within an `i32`.
+- **A place is no longer marked as set.** 58's `ChosenBy` stays for the scale alone. 51's rule, the outputs at the default place laid left to right after the placed ones, is gone: an output is given a place once, when it's shown, and after that only healing moves it. So an output a client placed goes to the origin when it's the only one left, and `wlr-randr --output A --off` closes the gap though it sends the others' places back. [83](83-saved-layouts.md)'s "a restored place counts as set" has nothing to set, for the place.
+- **The output held still** is the first one, in the order the outputs were shown. [81](81-primary-output.md) should hold the primary output instead, as the prototype does. (81 does, since its merge.)
+- **The order within one configuration:** the modes and the outputs turned on and off first, each healed as it happens (58's order). Then the scales, whose changes of size push the neighbours. Then the places the configuration gives, and one last heal. A place the configuration gives that is the one the output already has is no new place: `wlr-randr` sends every head's place back, and without this an output that grew would leave its neighbour under it, to be moved off by the shortest way, which is often above it. So a resize pushes every output the configuration doesn't move.
+- **A new output** goes right of the rightmost at the layout's top, and is then healed, so where it would touch no other output it is docked: beside a wider output below the first one, it ends 100 pixels down that output's side.
+- **Logical sizes:** the crate takes them and doesn't work them out. Caminito's is `output_geometry`'s: the mode over the scale, each axis rounded half away from zero, at a scale already snapped to 120ths. caminito-displays ([84](84-caminito-displays.md)) has to round the same way.
+- **Snapping** is in the crate and tested there, but nothing in Caminito calls `dock` with a snap distance: that's caminito-displays's drag.
+- **Differences from the prototype:** distances are compared as squared integers, not floats, and where two places are equally near, the one beside an output wins over the one above or below it.
+- **Not tested:** more than one output changing size in one configuration. And an enabled output with no mode, whose logical size is 0 by 0, touches nothing, so healing leaves it where it is; no backend makes one.
+
+The fourth criterion needs three monitors on the tty, and is the developer's. It's in [the checklist](../../docs/testing/checklist.md) as "Turning an output off leaves the others touching". Its headless stand-in is `disabling_the_middle_output_of_three_leaves_the_other_two_touching`, whose client sends every other head's place back as `wlr-randr` does.

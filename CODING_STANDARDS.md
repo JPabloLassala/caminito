@@ -12,7 +12,7 @@ How Caminito's code is written. Reviews check a diff against this file, [CONTEXT
 
 ## Crates and modules
 
-The layout is ticket 15's ([.scratch/caminito-v0.1/issues/15-crate-and-module-architecture.md](.scratch/caminito-v0.1/issues/15-crate-and-module-architecture.md)) and [ADR 0010](docs/adr/0010-one-compositor-crate-with-protocol-free-policy-and-theme.md), with `caminito-layout` from [ADR 0015](docs/adr/0015-the-layout-logic-is-a-crate-of-its-own.md).
+The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md](.scratch/issues/15-crate-and-module-architecture.md)) and [ADR 0010](docs/adr/0010-one-compositor-crate-with-protocol-free-policy-and-theme.md), with `caminito-layout` from [ADR 0015](docs/adr/0015-the-layout-logic-is-a-crate-of-its-own.md).
 
 - A crate exists only where it enforces a dependency rule. Everything else is a module of `caminito`.
 - `caminito-policy` names no protocol object. It may use Smithay's geometry types and nothing else from Smithay. It reaches windows only through `PolicyWindow`.

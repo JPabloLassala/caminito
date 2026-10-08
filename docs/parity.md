@@ -1,6 +1,6 @@
 # Parity with Marco
 
-Each of Marco's `org.mate.Marco.*` keys and keybinding actions, with what Caminito does with it. M8's audit fills this table from ticket 01's inventory, and M8 closes when no row is still to do ([17](../.scratch/caminito-v0.1/issues/17-milestone-slicing.md)). Until then it has only the rows a ticket has settled.
+Each of Marco's `org.mate.Marco.*` keys and keybinding actions, with what Caminito does with it. M8's audit fills this table from ticket 01's inventory, and M8 closes when no row is still to do ([17](../.scratch/issues/17-milestone-slicing.md)). Until then it has only the rows a ticket has settled.
 
 A row's status is one of:
 
@@ -11,7 +11,7 @@ A row's status is one of:
 
 ## The Window switcher
 
-Caminito has one Window switcher, a grid of thumbnails, in place of Marco's Alt+Tab popup ([ADR 0016](adr/0016-one-window-switcher-in-place-of-marcos-alt-tab-popup.md), ticket [108](../.scratch/caminito-v0.1/issues/108-window-switcher.md)). Which windows an action lists, their order, and what a quick Alt+Tab goes to are Marco's.
+Caminito has one Window switcher, a grid of thumbnails, in place of Marco's Alt+Tab popup ([ADR 0016](adr/0016-one-window-switcher-in-place-of-marcos-alt-tab-popup.md), ticket [108](../.scratch/issues/108-window-switcher.md)). Which windows an action lists, their order, and what a quick Alt+Tab goes to are Marco's.
 
 ### Actions (`org.mate.Marco.global-keybindings`)
 

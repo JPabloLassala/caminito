@@ -47,7 +47,7 @@ The **global menu extension**, installed by a package as a built-in of each edit
 
 ### The global menu extension
 
-**Names.** Decided in [ticket 13](issues/13-the-extension-s-name-and-the-spec.md).
+**Names.** Decided in [ticket 13](../issues/13-the-extension-s-name-and-the-spec.md).
 
 - **The glossary term is global menu extension.** The menu is all it does.
 - **It lives in `caminito-vscode/`,** at the top level of this repository.
@@ -55,7 +55,7 @@ The **global menu extension**, installed by a package as a built-in of each edit
 
 **The build.** It's written in TypeScript and bundled with esbuild into plain files, with npm and a committed lockfile. Nothing native is in it.
 
-**The manifest.** From [ticket 04](issues/04-serving-dbusmenu-from-an-extension.md) and [ticket 05](issues/05-installing-an-extension-from-a-package.md).
+**The manifest.** From [ticket 04](../issues/04-serving-dbusmenu-from-an-extension.md) and [ticket 05](../issues/05-installing-an-extension-from-a-package.md).
 
 - `extensionKind: ["ui"]` alone, so it runs on the local side of a remote window.
 - `capabilities.untrustedWorkspaces.supported: true`, or it's off in Restricted Mode.
@@ -113,7 +113,7 @@ The **global menu extension**, installed by a package as a built-in of each edit
 - **Keybinding labels** are computed from the default keybindings (`vscode://defaultsettings/keybindings.json`) and the user's file: the user's removals first; a binding whose keys a later entry with no `when` gives to another command stops counting; then the only binding, else the last with no `when`, else the last.
 - **The fallback** when the defaults can't be read is the snapshot's labels, with the user's own bindings over them.
 - **The user's file is found through `storage.json`:** the profile tied to the window's folder or workspace file; for a window with no entry, the profile `window.newWindowProfile` names; else the default profile's. A profile that uses the default's keybindings has the default profile's file, and so has every window if `storage.json` can't be read or isn't shaped as expected. The file is read and watched, never opened in a tab.
-- **dbusmenu's `shortcut`** is an array for each press, the modifiers `Control`, `Alt`, `Shift`, `Super` and then a GDK key name. The table from VS Code's key names to GDK's is in the research for [ticket 02](issues/02-keybinding-labels-and-recent-files.md), on branch `research/vscode-keybinding-labels-and-recent-files`. A chord has no shortcut, nor has a key with no GDK name.
+- **dbusmenu's `shortcut`** is an array for each press, the modifiers `Control`, `Alt`, `Shift`, `Super` and then a GDK key name. The table from VS Code's key names to GDK's is in the research for [ticket 02](../issues/02-keybinding-labels-and-recent-files.md), on branch `research/vscode-keybinding-labels-and-recent-files`. A chord has no shortcut, nor has a key with no GDK name.
 - **Open Recent** is Reopen Closed Editor, the first ten folders and workspaces, the first ten files, More… and Clear Recently Opened, from `_workbench.getRecentlyOpened`. A label is the path with the home directory as `~`, a workspace and a remote marked as VS Code marks them, cut in the middle at 120 characters, with each underscore doubled so that it isn't read as a mnemonic.
 - **A recent folder or workspace opens with `vscode.openFolder`,** a file with `_files.windowOpen`, and with `vscode.open` if that fails. If the list can't be read, the submenu keeps its fixed items.
 - **Changes are pushed.** The extension re-reads on these events and sends an update only if the result differs:
@@ -234,7 +234,7 @@ Nobody has run these. Each is listed under the slice that runs it, and a result 
 
 ## The cut into tickets
 
-Ten slices, filed in `.scratch/global-menu/issues/` as tickets 115 to 124: slice 1 is [115](../global-menu/issues/115-caminito-takes-a-menu-claim.md), and so on to slice 10, [124](../global-menu/issues/124-vs-code-in-a-real-session.md). Each is run by itself once the ones it's blocked by are in.
+Ten slices, filed in `.scratch/issues/` as tickets 115 to 124: slice 1 is [115](../issues/115-caminito-takes-a-menu-claim.md), and so on to slice 10, [124](../issues/124-vs-code-in-a-real-session.md). Each is run by itself once the ones it's blocked by are in.
 
 | | Slice | Blocked by |
 | --- | --- | --- |
