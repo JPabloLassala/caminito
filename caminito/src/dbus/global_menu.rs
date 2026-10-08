@@ -3,10 +3,10 @@
 //! the apps giving up their own menubars.
 //!
 //! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, and
-//! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112). The switch turns
+//! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112), and the dbusmenu an
+//! X11 client registered for its window with `registrar` (113). The switch turns
 //! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
-//! together. The registrar's interface is ticket 113's, and the grace period after the
-//! applet's name loses its owner is 114's.
+//! together. The grace period after the applet's name loses its owner is 114's.
 
 use std::collections::HashMap;
 
@@ -17,6 +17,7 @@ use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
 use zbus::zvariant::ObjectPath;
 
+use super::registrar::Registration;
 use crate::protocols::appmenu::{self, Address};
 use crate::protocols::gtk_shell::{self, DbusProperties};
 use crate::state::{Caminito, SEAT, State};
@@ -85,6 +86,14 @@ impl GlobalMenu {
         ObjectPath::try_from(address.object_path.as_str()).ok()?;
         let paths = HashMap::from([("menu".to_owned(), address.object_path)]);
         Some((DBUSMENU, address.service_name, paths))
+    }
+
+    /// The dbusmenu an X11 client registered for its window (113). The bus named its
+    /// owner, and the path came as one.
+    fn registered(registration: &Registration) -> Menu {
+        let path = registration.path.to_string();
+        let paths = HashMap::from([("menu".to_owned(), path)]);
+        (DBUSMENU, registration.owner.clone(), paths)
     }
 
     pub(super) fn published(self) -> Published {
@@ -225,7 +234,11 @@ impl Caminito {
             let address = surface.as_ref().and_then(appmenu::address)?;
             GlobalMenu::dbusmenu(address)
         };
-        let menu = gtk.or_else(dbusmenu);
+        let registered = || {
+            let registration = self.app_menu_registrations.menu(mapped.x11_window()?)?;
+            Some(GlobalMenu::registered(registration))
+        };
+        let menu = gtk.or_else(dbusmenu).or_else(registered);
         match menu {
             Some((kind, bus_name, paths)) => GlobalMenu {
                 kind,

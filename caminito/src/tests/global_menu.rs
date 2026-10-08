@@ -4,7 +4,7 @@
 //! Each test runs a bus of its own, with a stand-in that owns
 //! the applet's name, which only one could on the tests' bus. The windows are xdg toplevels
 //! only: an XWayland window has no `gtk_surface1` and no `org_kde_kwin_appmenu`, and its menu
-//! is ticket 113's.
+//! is `app_menu_registrar`'s.
 
 use std::collections::HashMap;
 
@@ -23,7 +23,7 @@ const GLOBAL_MENU_BAR: u32 = 2;
 
 /// Caminito with one output on a bus of the test's own, which lasts as long as the directory
 /// and the bus do.
-fn on_its_own_bus() -> (Fixture, tempfile::TempDir, Bus) {
+pub(super) fn on_its_own_bus() -> (Fixture, tempfile::TempDir, Bus) {
     let dir = tempfile::tempdir().unwrap();
     let bus = Bus::start(&dir.path().join("bus"));
     let mut f = Fixture::new();
@@ -33,7 +33,7 @@ fn on_its_own_bus() -> (Fixture, tempfile::TempDir, Bus) {
 }
 
 /// A connection to the test's bus.
-fn connect(bus: &Bus) -> Connection {
+pub(super) fn connect(bus: &Bus) -> Connection {
     zbus::blocking::connection::Builder::address(bus.address.as_str())
         .unwrap()
         .build()
@@ -42,7 +42,7 @@ fn connect(bus: &Bus) -> Connection {
 
 /// A stand-in for the Global menu applet: a connection that owns its name until it's
 /// dropped.
-fn an_applet(bus: &Bus) -> Connection {
+pub(super) fn an_applet(bus: &Bus) -> Connection {
     let applet = connect(bus);
     applet.request_name(APPLET_NAME).unwrap();
     applet
@@ -74,7 +74,7 @@ fn wait_for_appmenu_manager(f: &mut Fixture, id: ClientId, offered: bool) {
 }
 
 /// Whether the registrar's name has an owner.
-fn registrar_is_owned(f: &mut Fixture, bus: &Bus) -> bool {
+pub(super) fn registrar_is_owned(f: &mut Fixture, bus: &Bus) -> bool {
     let connection = connect(bus);
     f.dbus_call(move || {
         let bus = zbus::blocking::fdo::DBusProxy::new(&connection).unwrap();
@@ -144,7 +144,7 @@ fn dbusmenu(bus_name: &str, path: &str, application: &str) -> GlobalMenu {
 }
 
 /// The `GlobalMenu` of a focused window that has no menu.
-fn no_menu(application: &str) -> GlobalMenu {
+pub(super) fn no_menu(application: &str) -> GlobalMenu {
     (
         String::new(),
         String::new(),
@@ -175,7 +175,7 @@ fn map_with_menu(
 }
 
 /// A caller that reads `GlobalMenu`, on a connection of its own.
-fn a_caller(f: &mut Fixture, bus: &Bus) -> CaminitoProxy<'static> {
+pub(super) fn a_caller(f: &mut Fixture, bus: &Bus) -> CaminitoProxy<'static> {
     let connection = connect(bus);
     // Without a cache, so that each read asks Caminito.
     f.dbus_call(move || {
@@ -187,7 +187,7 @@ fn a_caller(f: &mut Fixture, bus: &Bus) -> CaminitoProxy<'static> {
 }
 
 /// Reads `GlobalMenu`.
-fn global_menu(f: &mut Fixture, caller: &CaminitoProxy<'static>) -> GlobalMenu {
+pub(super) fn global_menu(f: &mut Fixture, caller: &CaminitoProxy<'static>) -> GlobalMenu {
     let caller = caller.clone();
     f.dbus_call(move || caller.global_menu().unwrap())
 }

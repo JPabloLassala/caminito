@@ -97,6 +97,44 @@ pub fn caminito_proxy(destination: &str) -> zbus::Result<CaminitoProxy<'static>>
         .build()
 }
 
+/// `com.canonical.AppMenu.Registrar` (113), where an X11 client says which dbusmenu is a
+/// window's.
+#[zbus::proxy(
+    interface = "com.canonical.AppMenu.Registrar",
+    default_service = "com.canonical.AppMenu.Registrar",
+    default_path = "/com/canonical/AppMenu/Registrar",
+    gen_async = false,
+    blocking_name = "RegistrarProxy"
+)]
+pub trait Registrar {
+    /// Says that the caller serves the X window's menu at `menu_object_path`.
+    fn register_window(
+        &self,
+        window_id: u32,
+        menu_object_path: &zbus::zvariant::ObjectPath<'_>,
+    ) -> zbus::Result<()>;
+
+    /// Takes the X window's menu back.
+    fn unregister_window(&self, window_id: u32) -> zbus::Result<()>;
+
+    /// The bus name and the object path of the X window's menu.
+    fn get_menu_for_window(
+        &self,
+        window_id: u32,
+    ) -> zbus::Result<(String, zbus::zvariant::OwnedObjectPath)>;
+}
+
+/// A proxy for `com.canonical.AppMenu.Registrar` at `destination` on `connection`. The
+/// caller it is to Caminito lasts as long as `connection` does.
+pub fn registrar_proxy(
+    connection: &zbus::blocking::Connection,
+    destination: &str,
+) -> zbus::Result<RegistrarProxy<'static>> {
+    RegistrarProxy::builder(connection)
+        .destination(destination.to_owned())?
+        .build()
+}
+
 /// `org.mate.ScreenSaver`, the Screensaver shim (12), with mate-screensaver's methods.
 #[zbus::proxy(
     interface = "org.mate.ScreenSaver",

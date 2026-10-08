@@ -104,6 +104,9 @@ impl XwmHandler for State {
         caminito.with_root_stack(|stack| stack.destroyed(window.window_id()));
         caminito.override_redirect_unmapped(&window);
         caminito.window_destroyed(&key(&window));
+        caminito
+            .app_menu_registrations
+            .window_destroyed(window.window_id());
     }
 
     /// Policy decides for a managed window, whose stacking is Caminito's alone. Any other is
