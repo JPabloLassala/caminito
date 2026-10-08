@@ -1,0 +1,11 @@
+{
+  "update.showCurrentReleaseNotes": { "product": "releaseNotesUrl" },
+  "workbench.action.keybindingsReference": { "product": "keyboardShortcutsUrlLinux" },
+  "workbench.action.openDocumentationUrl": { "product": "documentationUrl" },
+  "workbench.action.openLicenseUrl": { "product": "licenseUrl" },
+  "workbench.action.openPrivacyStatementUrl": { "product": "privacyStatementUrl" },
+  "workbench.action.openRequestFeatureUrl": { "product": "requestFeatureUrl" },
+  "workbench.action.openTipsAndTricksUrl": { "product": "tipsAndTricksUrl" },
+  "workbench.action.openVideoTutorialsUrl": { "product": "introductoryVideosUrl" },
+  "workbench.action.openYouTubeUrl": { "product": "youTubeUrl" }
+}

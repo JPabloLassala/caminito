@@ -252,7 +252,9 @@ export interface Lacking {
 /** A fake of the editor's API, which records the commands run and the lines logged. */
 export class FakeEditor {
   focused: boolean;
+  /** The commands run, and what each was run with. */
   readonly commands: string[] = [];
+  readonly args: unknown[][] = [];
   readonly logged: string[] = [];
   readonly windowState = new Emitter<{ focused: boolean }>();
   readonly textEditor = new Emitter<unknown>();
@@ -260,6 +262,10 @@ export class FakeEditor {
   readonly tabGroups = new Emitter<unknown>();
   /** What `executeCommand` does once it has recorded the command. */
   onCommand: () => PromiseLike<unknown> = () => Promise.resolve();
+  /** What `getCommands` answers. */
+  listCommands: () => PromiseLike<string[]> = () => Promise.resolve([]);
+  /** `env.appRoot`, where the editor's `product.json` is. */
+  appRoot = '/nonexistent';
 
   constructor(focused: boolean) {
     this.focused = focused;
@@ -294,9 +300,16 @@ export class FakeEditor {
     return {
       version,
       window: window as unknown as Editor['window'],
+      env: {
+        get appRoot() {
+          return fake.appRoot;
+        },
+      },
       commands: {
-        executeCommand: (command: string) => {
+        getCommands: () => fake.listCommands(),
+        executeCommand: (command: string, ...args: unknown[]) => {
           fake.commands.push(command);
+          fake.args.push(args);
           return fake.onCommand();
         },
       },

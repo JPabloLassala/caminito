@@ -2,12 +2,19 @@
 // window while Caminito offers the global menu. It takes the editor's API as a value, which
 // is the seam its tests use (116).
 
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { Message, MessageType, sessionBus } from '@jellybrick/dbus-next';
 import type { MessageBus, Variant } from '@jellybrick/dbus-next';
 
+import annotations from '../menu/annotations.json' with { type: 'json' };
+import table from '../menu/table.json' with { type: 'json' };
 import { DbusMenu } from './dbusmenu.mts';
 import type { MenuNode } from './dbusmenu.mts';
 import type { Disposable, Editor } from './editor.mts';
+import { fit } from './menu-table.mts';
+import type { Annotations, Table } from './menu-table.mts';
 
 /** The oldest release with every stable API the extension uses, as package.json's `engines.vscode`. */
 export const FLOOR = '1.68.0';
@@ -21,19 +28,22 @@ const OFFERED = 'GlobalMenuOffered';
 const DBUS = 'org.freedesktop.DBus';
 const PROPERTIES = 'org.freedesktop.DBus.Properties';
 
-/** The one fixed menu of this slice. Ticket 118 makes it VS Code's. */
-const MENUS: readonly MenuNode[] = [
-  {
-    label: '_File',
-    children: [{ label: '_New Text File', command: 'workbench.action.files.newUntitledFile' }],
-  },
-];
+/** A menu table and its annotations (ADR 0019). */
+export interface Menu {
+  readonly table: Table;
+  readonly annotations: Annotations;
+}
+
+/** VS Code's menu, as menu/table.json and menu/annotations.json have it. */
+export const VS_CODE: Menu = { table: table as Table, annotations };
 
 /** Where the extension runs. */
 export interface Environment {
   readonly platform: string;
   /** The session bus's address, or `DBUS_SESSION_BUS_ADDRESS`'s when there's none. */
   readonly busAddress?: string;
+  /** The menu to serve, VS Code's by default. */
+  readonly menu?: Menu;
 }
 
 /** The running extension. */
@@ -92,9 +102,10 @@ async function run(
   errors.removeAllListeners('error');
   errors.on('error', (err: unknown) => log.line(`can't use the session bus: ${message(err)}`));
 
-  const menu = new DbusMenu(MENUS, async (command) => {
+  const menus = await menusFor(editor, environment.menu ?? VS_CODE, log);
+  const menu = new DbusMenu(menus, async (command, args) => {
     try {
-      await editor.commands.executeCommand(command);
+      await editor.commands.executeCommand(command, ...args);
     } catch (err) {
       log.line(`can't run ${command}: ${message(err)}`);
     }
@@ -225,6 +236,38 @@ async function run(
   const reply = await callDbus(bus, 'GetNameOwner', 's', [CAMINITO]).catch(() => null);
   setOwner((reply?.body[0] as string | undefined) ?? null);
   await reading;
+}
+
+/**
+ * The table fitted to the editor (ADR 0019), with one line when it was made from another
+ * version. A list of commands that can't be read keeps every item, and a `product.json`
+ * that can't be read drops the items gated on it.
+ */
+async function menusFor(editor: Editor, menu: Menu, log: Log): Promise<MenuNode[]> {
+  if (menu.table.version !== editor.version) {
+    log.line(
+      `the menu table is VS Code ${menu.table.version}'s and the editor is ${editor.version}`,
+    );
+  }
+  let commands: Set<string> | undefined;
+  try {
+    commands = new Set(await editor.commands.getCommands());
+  } catch (err) {
+    log.line(`can't list the commands, so every item is kept: ${message(err)}`);
+  }
+  let product: Record<string, unknown> = {};
+  try {
+    const file = join(editor.env.appRoot, 'product.json');
+    product = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+  } catch (err) {
+    log.line(
+      `can't read the editor's product.json, so the items gated on it are left out: ${message(err)}`,
+    );
+  }
+  return fit(menu.table.menus, menu.annotations, {
+    hasCommand: (command) => commands?.has(command) ?? true,
+    product,
+  });
 }
 
 type EditorEvent = (listener: () => void) => Disposable;

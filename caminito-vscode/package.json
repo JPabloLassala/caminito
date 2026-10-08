@@ -28,7 +28,8 @@
   "scripts": {
     "typecheck": "tsc",
     "test": "node --test --test-concurrency=1 'test/**/*.test.mts'",
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "snapshot": "node tools/snapshot.mts"
   },
   "dependencies": {
     "@jellybrick/dbus-next": "0.11.4"

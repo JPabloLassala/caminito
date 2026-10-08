@@ -1,11 +1,15 @@
 // One extension on a private bus with a stand-in Caminito and a client, for a test.
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 
 import type { MessageBus } from '@jellybrick/dbus-next';
 
-import { MENU_PATH, start } from '../src/global-menu.mts';
-import type { GlobalMenu } from '../src/global-menu.mts';
+import { MENU_PATH, VS_CODE, start } from '../src/global-menu.mts';
+import type { GlobalMenu, Menu } from '../src/global-menu.mts';
+import type { TableItem } from '../src/menu-table.mts';
 import { Caminito, FakeEditor, PrivateBus, readMenu, until } from './harness.mts';
 import type { Item, Lacking } from './harness.mts';
 
@@ -20,6 +24,39 @@ export interface Options {
   readonly version?: string;
   readonly lacking?: Lacking;
   readonly busAddress?: string;
+  /** The menu served; VS Code's by default. */
+  readonly menu?: Menu;
+  /** The commands the editor lists, or what listing them fails with; every command of the menu by default. */
+  readonly commands?: readonly string[] | Error;
+  /** The editor's `product.json`, or null for none; every annotated key set by default. */
+  readonly product?: Record<string, unknown> | null;
+}
+
+/** Every command of the menu's items. */
+export function commandsOf(menu: Menu): string[] {
+  const commands: string[] = [];
+  const walk = (items: readonly TableItem[]) => {
+    for (const item of items) {
+      if ('command' in item) {
+        commands.push(item.command);
+      } else if ('items' in item) {
+        walk(item.items);
+      }
+    }
+  };
+  walk(menu.table.menus);
+  return commands;
+}
+
+/** A `product.json` with every key the menu's annotations gate on. */
+function fullProduct(menu: Menu): Record<string, unknown> {
+  const product: Record<string, unknown> = {};
+  for (const annotation of Object.values(menu.annotations)) {
+    if (annotation.product !== undefined) {
+      product[annotation.product] = 'https://example.com/';
+    }
+  }
+  return product;
 }
 
 export interface Fixture {
@@ -48,14 +85,26 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
   if (options.owned ?? true) {
     await caminito.own();
   }
+  const served = options.menu ?? VS_CODE;
   const editor = new FakeEditor(options.focused ?? true);
+  const commands = options.commands ?? commandsOf(served);
+  editor.listCommands = () =>
+    commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
+  const appRoot = mkdtempSync(join(tmpdir(), 'caminito-vscode-test-'));
+  editor.appRoot = appRoot;
+  const product = options.product === undefined ? fullProduct(served) : options.product;
+  if (product !== null) {
+    writeFileSync(join(appRoot, 'product.json'), JSON.stringify(product));
+  }
   const extension = start(editor.api(options.version, options.lacking), {
     platform: options.platform ?? 'linux',
     busAddress: options.busAddress ?? bus.address,
+    menu: served,
   });
   t.after(() => {
     extension.dispose();
     bus.close();
+    rmSync(appRoot, { recursive: true, force: true });
   });
   await extension.ready;
   const names = () => bus.othersThan(caminitoBus, client);

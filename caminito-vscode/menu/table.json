@@ -1,0 +1,1651 @@
+{
+  "version": "1.140.0",
+  "commit": "07f806f999227108933c2e30515b26eecc1fda74",
+  "menus": [
+    {
+      "label": "_File",
+      "submenu": "File",
+      "items": [
+        {
+          "label": "_New Text File",
+          "command": "workbench.action.files.newUntitledFile"
+        },
+        {
+          "label": "New File...",
+          "command": "welcome.showNewFileEntries"
+        },
+        {
+          "label": "New _Window",
+          "command": "workbench.action.newWindow"
+        },
+        {
+          "label": "New Window with Profile",
+          "submenu": "submenuitem.OpenProfile",
+          "items": [
+            {
+              "label": "New Profile...",
+              "command": "workbench.profiles.actions.createProfile"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Open File...",
+          "command": "workbench.action.files.openFile"
+        },
+        {
+          "label": "Open _Folder...",
+          "command": "workbench.action.files.openFolder"
+        },
+        {
+          "label": "Open Wor_kspace from File...",
+          "command": "workbench.action.openWorkspace"
+        },
+        {
+          "label": "Open _Recent",
+          "submenu": "submenuitem.MenubarRecentMenu",
+          "items": [
+            {
+              "label": "_Reopen Closed Editor",
+              "command": "workbench.action.reopenClosedEditor"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_More...",
+              "command": "workbench.action.openRecent"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Clear Recently Opened...",
+              "command": "workbench.action.clearRecentFiles"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "A_dd Folder to Workspace...",
+          "command": "addRootFolder"
+        },
+        {
+          "label": "Save Workspace As...",
+          "command": "workbench.action.saveWorkspaceAs"
+        },
+        {
+          "label": "Duplicate Workspace",
+          "command": "workbench.action.duplicateWorkspaceInNewWindow"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Save",
+          "command": "workbench.action.files.save"
+        },
+        {
+          "label": "Save _As...",
+          "command": "workbench.action.files.saveAs"
+        },
+        {
+          "label": "Save A_ll",
+          "command": "saveAll"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Share",
+          "submenu": "submenuitem.MenubarShare",
+          "items": [
+            {
+              "label": "Export Profile...",
+              "command": "workbench.profiles.actions.exportProfile"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "A_uto Save",
+          "command": "workbench.action.toggleAutoSave"
+        },
+        {
+          "label": "_Preferences",
+          "submenu": "submenuitem.MenubarPreferencesMenu",
+          "items": [
+            {
+              "label": "_Profiles",
+              "command": "workbench.profiles.actions.manageProfiles"
+            },
+            {
+              "label": "_Settings",
+              "command": "workbench.action.openSettings"
+            },
+            {
+              "label": "_Extensions",
+              "command": "workbench.view.extensions"
+            },
+            {
+              "label": "Keyboard Shortcuts",
+              "command": "workbench.action.openGlobalKeybindings"
+            },
+            {
+              "label": "Configure Snippets",
+              "command": "workbench.action.openSnippets"
+            },
+            {
+              "label": "Tasks",
+              "command": "workbench.action.tasks.openUserTasks"
+            },
+            {
+              "label": "_Themes",
+              "submenu": "submenuitem.ThemesSubMenu",
+              "items": [
+                {
+                  "label": "Color Theme",
+                  "command": "workbench.action.selectTheme"
+                },
+                {
+                  "label": "File Icon Theme",
+                  "command": "workbench.action.selectIconTheme"
+                },
+                {
+                  "label": "Product Icon Theme",
+                  "command": "workbench.action.selectProductIconTheme"
+                }
+              ]
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "Backup and Sync Settings...",
+              "command": "workbench.userDataSync.actions.turnOn"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Online Services Settings",
+              "command": "settings.filterByOnline"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Re_vert File",
+          "command": "workbench.action.files.revert"
+        },
+        {
+          "label": "_Close Editor",
+          "command": "workbench.action.closeActiveEditor"
+        },
+        {
+          "label": "Close _Folder",
+          "command": "workbench.action.closeFolder"
+        },
+        {
+          "label": "Close _Workspace",
+          "command": "workbench.action.closeFolder"
+        },
+        {
+          "label": "Clos_e Window",
+          "command": "workbench.action.closeWindow"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "E_xit",
+          "command": "workbench.action.quit"
+        }
+      ]
+    },
+    {
+      "label": "_Edit",
+      "submenu": "Edit",
+      "items": [
+        {
+          "label": "_Undo",
+          "command": "undo"
+        },
+        {
+          "label": "_Redo",
+          "command": "redo"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Cu_t",
+          "command": "editor.action.clipboardCutAction"
+        },
+        {
+          "label": "_Copy",
+          "command": "editor.action.clipboardCopyAction"
+        },
+        {
+          "label": "_Paste",
+          "command": "editor.action.clipboardPasteAction"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Find",
+          "command": "actions.find"
+        },
+        {
+          "label": "_Replace",
+          "command": "editor.action.startFindReplaceAction"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Find _in Files",
+          "command": "workbench.action.findInFiles"
+        },
+        {
+          "label": "Replace in Files",
+          "command": "workbench.action.replaceInFiles"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Toggle Line Comment",
+          "command": "editor.action.commentLine"
+        },
+        {
+          "label": "Toggle _Block Comment",
+          "command": "editor.action.blockComment"
+        },
+        {
+          "label": "Emmet: E_xpand Abbreviation",
+          "command": "editor.emmet.action.expandAbbreviation"
+        }
+      ]
+    },
+    {
+      "label": "_Selection",
+      "submenu": "Selection",
+      "items": [
+        {
+          "label": "_Select All",
+          "command": "editor.action.selectAll"
+        },
+        {
+          "label": "_Expand Selection",
+          "command": "editor.action.smartSelect.expand"
+        },
+        {
+          "label": "_Shrink Selection",
+          "command": "editor.action.smartSelect.shrink"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Copy Line Up",
+          "command": "editor.action.copyLinesUpAction"
+        },
+        {
+          "label": "Co_py Line Down",
+          "command": "editor.action.copyLinesDownAction"
+        },
+        {
+          "label": "Mo_ve Line Up",
+          "command": "editor.action.moveLinesUpAction"
+        },
+        {
+          "label": "Move _Line Down",
+          "command": "editor.action.moveLinesDownAction"
+        },
+        {
+          "label": "_Duplicate Selection",
+          "command": "editor.action.duplicateSelection"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Add Cursor Above",
+          "command": "editor.action.insertCursorAbove"
+        },
+        {
+          "label": "A_dd Cursor Below",
+          "command": "editor.action.insertCursorBelow"
+        },
+        {
+          "label": "Add C_ursors to Line Ends",
+          "command": "editor.action.insertCursorAtEndOfEachLineSelected"
+        },
+        {
+          "label": "Add _Next Occurrence",
+          "command": "editor.action.addSelectionToNextFindMatch"
+        },
+        {
+          "label": "Add P_revious Occurrence",
+          "command": "editor.action.addSelectionToPreviousFindMatch"
+        },
+        {
+          "label": "Select All _Occurrences",
+          "command": "editor.action.selectHighlights"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Switch to Ctrl+Click for Multi-Cursor",
+          "command": "workbench.action.toggleMultiCursorModifier"
+        },
+        {
+          "label": "Column _Selection Mode",
+          "command": "editor.action.toggleColumnSelection"
+        }
+      ]
+    },
+    {
+      "label": "_View",
+      "submenu": "View",
+      "items": [
+        {
+          "label": "_Command Palette...",
+          "command": "workbench.action.showCommands"
+        },
+        {
+          "label": "_Open View...",
+          "command": "workbench.action.openView"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Appearance",
+          "submenu": "submenuitem.MenubarAppearanceMenu",
+          "items": [
+            {
+              "label": "_Full Screen",
+              "command": "workbench.action.toggleFullScreen"
+            },
+            {
+              "label": "Zen Mode",
+              "command": "workbench.action.toggleZenMode"
+            },
+            {
+              "label": "_Centered Layout",
+              "command": "workbench.action.toggleCenteredLayout"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "Menu _Bar",
+              "command": "workbench.action.toggleMenuBar"
+            },
+            {
+              "label": "_Primary Side Bar",
+              "command": "workbench.action.toggleSidebarVisibility"
+            },
+            {
+              "label": "_Secondary Side Bar",
+              "command": "workbench.action.toggleAuxiliaryBar"
+            },
+            {
+              "label": "S_tatus Bar",
+              "command": "workbench.action.toggleStatusbarVisibility"
+            },
+            {
+              "label": "_Panel",
+              "command": "workbench.action.togglePanel"
+            },
+            {
+              "label": "Custom Title Bar",
+              "command": "toggle.toggleCustomTitleBar"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Move Primary Side Bar Right",
+              "command": "workbench.action.toggleSidebarPosition"
+            },
+            {
+              "label": "Activity Bar Position",
+              "submenu": "submenuitem.ActivityBarPositionMenu",
+              "items": [
+                {
+                  "label": "_Default",
+                  "command": "workbench.action.activityBarLocation.default"
+                },
+                {
+                  "label": "_Top",
+                  "command": "workbench.action.activityBarLocation.top"
+                },
+                {
+                  "label": "_Bottom",
+                  "command": "workbench.action.activityBarLocation.bottom"
+                },
+                {
+                  "label": "_Hidden",
+                  "command": "workbench.action.activityBarLocation.hide"
+                }
+              ]
+            },
+            {
+              "label": "Panel Position",
+              "submenu": "submenuitem.PanelPositionMenu",
+              "items": [
+                {
+                  "label": "Top",
+                  "command": "workbench.action.positionPanelTop"
+                },
+                {
+                  "label": "Left",
+                  "command": "workbench.action.positionPanelLeft"
+                },
+                {
+                  "label": "Right",
+                  "command": "workbench.action.positionPanelRight"
+                },
+                {
+                  "label": "Bottom",
+                  "command": "workbench.action.positionPanelBottom"
+                }
+              ]
+            },
+            {
+              "label": "Align Panel",
+              "submenu": "submenuitem.PanelAlignmentMenu",
+              "items": [
+                {
+                  "label": "Center",
+                  "command": "workbench.action.alignPanelCenter"
+                },
+                {
+                  "label": "Justify",
+                  "command": "workbench.action.alignPanelJustify"
+                },
+                {
+                  "label": "Left",
+                  "command": "workbench.action.alignPanelLeft"
+                },
+                {
+                  "label": "Right",
+                  "command": "workbench.action.alignPanelRight"
+                }
+              ]
+            },
+            {
+              "label": "Tab Bar",
+              "submenu": "submenuitem.EditorTabsBarShowTabsSubmenu",
+              "items": [
+                {
+                  "label": "Multiple Tabs",
+                  "command": "workbench.action.showMultipleEditorTabs"
+                },
+                {
+                  "label": "Single Tab",
+                  "command": "workbench.action.showEditorTab"
+                },
+                {
+                  "label": "Hidden",
+                  "command": "workbench.action.hideEditorTabs"
+                }
+              ]
+            },
+            {
+              "label": "Editor Actions Position",
+              "submenu": "submenuitem.EditorActionsPositionSubmenu",
+              "items": [
+                {
+                  "label": "Tab Bar",
+                  "command": "workbench.action.editorActionsDefault"
+                },
+                {
+                  "label": "Title Bar",
+                  "command": "workbench.action.editorActionsTitleBar"
+                },
+                {
+                  "label": "Hidden",
+                  "command": "workbench.action.hideEditorActions"
+                }
+              ]
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Minimap",
+              "command": "editor.action.toggleMinimap"
+            },
+            {
+              "label": "_Breadcrumbs",
+              "command": "breadcrumbs.toggle"
+            },
+            {
+              "label": "_Sticky Scroll",
+              "command": "editor.action.toggleStickyScroll"
+            },
+            {
+              "label": "Render Whitespace",
+              "submenu": "submenuitem.EditorRenderWhitespaceSubmenu",
+              "items": [
+                {
+                  "label": "Set Render Whitespace to None",
+                  "command": "editor.action.renderWhitespace.none"
+                },
+                {
+                  "label": "Set Render Whitespace to Boundary",
+                  "command": "editor.action.renderWhitespace.boundary"
+                },
+                {
+                  "label": "Set Render Whitespace to Selection",
+                  "command": "editor.action.renderWhitespace.selection"
+                },
+                {
+                  "label": "Set Render Whitespace to Trailing",
+                  "command": "editor.action.renderWhitespace.trailing"
+                },
+                {
+                  "label": "Set Render Whitespace to All",
+                  "command": "editor.action.renderWhitespace.all"
+                }
+              ]
+            },
+            {
+              "label": "Render _Control Characters",
+              "command": "editor.action.toggleRenderControlCharacter"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Zoom In",
+              "command": "workbench.action.zoomIn"
+            },
+            {
+              "label": "_Zoom Out",
+              "command": "workbench.action.zoomOut"
+            },
+            {
+              "label": "_Reset Zoom",
+              "command": "workbench.action.zoomReset"
+            }
+          ]
+        },
+        {
+          "label": "Editor _Layout",
+          "submenu": "submenuitem.MenubarLayoutMenu",
+          "items": [
+            {
+              "label": "Split _Up",
+              "command": "workbench.action.splitEditorUp"
+            },
+            {
+              "label": "Split _Down",
+              "command": "workbench.action.splitEditorDown"
+            },
+            {
+              "label": "Split _Left",
+              "command": "workbench.action.splitEditorLeft"
+            },
+            {
+              "label": "Split _Right",
+              "command": "workbench.action.splitEditorRight"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "Split in _Group",
+              "command": "workbench.action.splitEditorInGroup"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Move Editor into New Window",
+              "command": "workbench.action.moveEditorToNewWindow"
+            },
+            {
+              "label": "_Copy Editor into New Window",
+              "command": "workbench.action.copyEditorToNewWindow"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Single",
+              "command": "workbench.action.editorLayoutSingle"
+            },
+            {
+              "label": "_Two Columns",
+              "command": "workbench.action.editorLayoutTwoColumns"
+            },
+            {
+              "label": "T_hree Columns",
+              "command": "workbench.action.editorLayoutThreeColumns"
+            },
+            {
+              "label": "T_wo Rows",
+              "command": "workbench.action.editorLayoutTwoRows"
+            },
+            {
+              "label": "Three _Rows",
+              "command": "workbench.action.editorLayoutThreeRows"
+            },
+            {
+              "label": "_Grid (2x2)",
+              "command": "workbench.action.editorLayoutTwoByTwoGrid"
+            },
+            {
+              "label": "Two R_ows Right",
+              "command": "workbench.action.editorLayoutTwoRowsRight"
+            },
+            {
+              "label": "Two _Columns Bottom",
+              "command": "workbench.action.editorLayoutTwoColumnsBottom"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "Flip _Layout",
+              "command": "workbench.action.toggleEditorGroupLayout"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Explorer",
+          "command": "workbench.view.explorer"
+        },
+        {
+          "label": "_Search",
+          "command": "workbench.view.search"
+        },
+        {
+          "label": "Source _Control",
+          "command": "workbench.view.scm"
+        },
+        {
+          "label": "_Run",
+          "command": "workbench.view.debug"
+        },
+        {
+          "label": "E_xtensions",
+          "command": "workbench.view.extensions"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Chat",
+          "command": "workbench.panel.chat"
+        },
+        {
+          "label": "_Browser",
+          "command": "workbench.action.browser.openOrList"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Problems",
+          "command": "workbench.actions.view.problems"
+        },
+        {
+          "label": "_Output",
+          "command": "workbench.action.output.toggleOutput"
+        },
+        {
+          "label": "De_bug Console",
+          "command": "workbench.debug.action.toggleRepl"
+        },
+        {
+          "label": "_Terminal",
+          "command": "workbench.action.terminal.toggleTerminal"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Word Wrap",
+          "command": "editor.action.toggleWordWrap"
+        }
+      ]
+    },
+    {
+      "label": "_Go",
+      "submenu": "Go",
+      "items": [
+        {
+          "label": "_Back",
+          "command": "workbench.action.navigateBack"
+        },
+        {
+          "label": "_Forward",
+          "command": "workbench.action.navigateForward"
+        },
+        {
+          "label": "_Last Edit Location",
+          "command": "workbench.action.navigateToLastEditLocation"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Switch _Editor",
+          "submenu": "submenuitem.MenubarSwitchEditorMenu",
+          "items": [
+            {
+              "label": "_Next Editor",
+              "command": "workbench.action.nextEditor"
+            },
+            {
+              "label": "_Previous Editor",
+              "command": "workbench.action.previousEditor"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Next Used Editor",
+              "command": "workbench.action.openNextRecentlyUsedEditor"
+            },
+            {
+              "label": "_Previous Used Editor",
+              "command": "workbench.action.openPreviousRecentlyUsedEditor"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Next Editor in Group",
+              "command": "workbench.action.nextEditorInGroup"
+            },
+            {
+              "label": "_Previous Editor in Group",
+              "command": "workbench.action.previousEditorInGroup"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Next Used Editor in Group",
+              "command": "workbench.action.openNextRecentlyUsedEditorInGroup"
+            },
+            {
+              "label": "_Previous Used Editor in Group",
+              "command": "workbench.action.openPreviousRecentlyUsedEditorInGroup"
+            }
+          ]
+        },
+        {
+          "label": "Switch _Group",
+          "submenu": "submenuitem.MenubarSwitchGroupMenu",
+          "items": [
+            {
+              "label": "Group _1",
+              "command": "workbench.action.focusFirstEditorGroup"
+            },
+            {
+              "label": "Group _2",
+              "command": "workbench.action.focusSecondEditorGroup"
+            },
+            {
+              "label": "Group _3",
+              "command": "workbench.action.focusThirdEditorGroup"
+            },
+            {
+              "label": "Group _4",
+              "command": "workbench.action.focusFourthEditorGroup"
+            },
+            {
+              "label": "Group _5",
+              "command": "workbench.action.focusFifthEditorGroup"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "_Next Group",
+              "command": "workbench.action.focusNextGroup"
+            },
+            {
+              "label": "_Previous Group",
+              "command": "workbench.action.focusPreviousGroup"
+            },
+            {
+              "separator": true
+            },
+            {
+              "label": "Group _Left",
+              "command": "workbench.action.focusLeftGroup"
+            },
+            {
+              "label": "Group _Right",
+              "command": "workbench.action.focusRightGroup"
+            },
+            {
+              "label": "Group _Above",
+              "command": "workbench.action.focusAboveGroup"
+            },
+            {
+              "label": "Group _Below",
+              "command": "workbench.action.focusBelowGroup"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Go to _File...",
+          "command": "workbench.action.quickOpen"
+        },
+        {
+          "label": "Go to Symbol in _Workspace...",
+          "command": "workbench.action.showAllSymbols"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Go to _Symbol in Editor...",
+          "command": "workbench.action.gotoSymbol"
+        },
+        {
+          "label": "Go to _Definition",
+          "command": "editor.action.revealDefinition"
+        },
+        {
+          "label": "Go to _Declaration",
+          "command": "editor.action.revealDeclaration"
+        },
+        {
+          "label": "Go to _Type Definition",
+          "command": "editor.action.goToTypeDefinition"
+        },
+        {
+          "label": "Go to _Implementations",
+          "command": "editor.action.goToImplementation"
+        },
+        {
+          "label": "Go to _References",
+          "command": "editor.action.goToReferences"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Go to _Line/Column...",
+          "command": "workbench.action.gotoLine"
+        },
+        {
+          "label": "Go to _Bracket",
+          "command": "editor.action.jumpToBracket"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Next _Problem",
+          "command": "editor.action.marker.nextInFiles"
+        },
+        {
+          "label": "Previous _Problem",
+          "command": "editor.action.marker.prevInFiles"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Next _Change",
+          "command": "editor.action.dirtydiff.next"
+        },
+        {
+          "label": "Previous _Change",
+          "command": "editor.action.dirtydiff.previous"
+        }
+      ]
+    },
+    {
+      "label": "_Run",
+      "submenu": "Run",
+      "items": [
+        {
+          "label": "_Start Debugging",
+          "command": "workbench.action.debug.start"
+        },
+        {
+          "label": "Run _Without Debugging",
+          "command": "workbench.action.debug.run"
+        },
+        {
+          "label": "_Stop Debugging",
+          "command": "workbench.action.debug.stop"
+        },
+        {
+          "label": "_Restart Debugging",
+          "command": "workbench.action.debug.restart"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Open _Configurations",
+          "command": "workbench.action.debug.configure"
+        },
+        {
+          "label": "A_dd Configuration...",
+          "command": "debug.addConfiguration"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Step _Over",
+          "command": "workbench.action.debug.stepOver"
+        },
+        {
+          "label": "Step _Into",
+          "command": "workbench.action.debug.stepInto"
+        },
+        {
+          "label": "Step O_ut",
+          "command": "workbench.action.debug.stepOut"
+        },
+        {
+          "label": "_Continue",
+          "command": "workbench.action.debug.continue"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Toggle _Breakpoint",
+          "command": "editor.debug.action.toggleBreakpoint"
+        },
+        {
+          "label": "_New Breakpoint",
+          "submenu": "submenuitem.MenubarNewBreakpointMenu",
+          "items": [
+            {
+              "label": "_Conditional Breakpoint...",
+              "command": "editor.debug.action.conditionalBreakpoint"
+            },
+            {
+              "label": "_Edit Breakpoint",
+              "command": "editor.debug.action.editBreakpoint"
+            },
+            {
+              "label": "Inline Breakp_oint",
+              "command": "editor.debug.action.toggleInlineBreakpoint"
+            },
+            {
+              "label": "_Function Breakpoint...",
+              "command": "workbench.debug.viewlet.action.addFunctionBreakpointAction"
+            },
+            {
+              "label": "_Logpoint...",
+              "command": "editor.debug.action.addLogPoint"
+            },
+            {
+              "label": "_Triggered Breakpoint...",
+              "command": "editor.debug.action.triggerByBreakpoint"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Enable All Breakpoints",
+          "command": "workbench.debug.viewlet.action.enableAllBreakpoints"
+        },
+        {
+          "label": "Disable A_ll Breakpoints",
+          "command": "workbench.debug.viewlet.action.disableAllBreakpoints"
+        },
+        {
+          "label": "Remove _All Breakpoints",
+          "command": "workbench.debug.viewlet.action.removeAllBreakpoints"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Install Additional Debuggers...",
+          "command": "debug.installAdditionalDebuggers"
+        }
+      ]
+    },
+    {
+      "label": "_Terminal",
+      "submenu": "Terminal",
+      "items": [
+        {
+          "label": "_New Terminal",
+          "command": "workbench.action.terminal.new"
+        },
+        {
+          "label": "_Split Terminal",
+          "command": "workbench.action.terminal.split"
+        },
+        {
+          "label": "New Terminal _Window",
+          "command": "workbench.action.terminal.newInNewWindow"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Run Task...",
+          "command": "workbench.action.tasks.runTask"
+        },
+        {
+          "label": "Run _Build Task...",
+          "command": "workbench.action.tasks.build"
+        },
+        {
+          "label": "Run _Active File",
+          "command": "workbench.action.terminal.runActiveFile"
+        },
+        {
+          "label": "Run _Selected Text",
+          "command": "workbench.action.terminal.runSelectedText"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Show Runnin_g Tasks...",
+          "command": "workbench.action.tasks.showTasks"
+        },
+        {
+          "label": "R_estart Running Task...",
+          "command": "workbench.action.tasks.restartTask"
+        },
+        {
+          "label": "_Terminate Task...",
+          "command": "workbench.action.tasks.terminate"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Configure Tasks...",
+          "command": "workbench.action.tasks.configureTaskRunner"
+        },
+        {
+          "label": "Configure De_fault Build Task...",
+          "command": "workbench.action.tasks.configureDefaultBuildTask"
+        }
+      ]
+    },
+    {
+      "label": "_Help",
+      "submenu": "Help",
+      "items": [
+        {
+          "label": "Welcome",
+          "command": "workbench.action.openWalkthrough"
+        },
+        {
+          "label": "Show All Commands",
+          "command": "workbench.action.showCommands"
+        },
+        {
+          "label": "_Documentation",
+          "command": "workbench.action.openDocumentationUrl"
+        },
+        {
+          "label": "Editor Playgrou_nd",
+          "command": "workbench.action.showInteractivePlayground"
+        },
+        {
+          "label": "Open Walkthrough...",
+          "command": "welcome.showAllWalkthroughs"
+        },
+        {
+          "label": "Show _Release Notes",
+          "command": "update.showCurrentReleaseNotes"
+        },
+        {
+          "label": "Get Started with Accessibility Features",
+          "command": "workbench.action.getStartedWithAccessibilityFeatures"
+        },
+        {
+          "label": "Ask @vscode",
+          "command": "workbench.action.askVScode"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Keyboard Shortcuts Reference",
+          "command": "workbench.action.keybindingsReference"
+        },
+        {
+          "label": "_Video Tutorials",
+          "command": "workbench.action.openVideoTutorialsUrl"
+        },
+        {
+          "label": "Tips and Tri_cks",
+          "command": "workbench.action.openTipsAndTricksUrl"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_Join Us on YouTube",
+          "command": "workbench.action.openYouTubeUrl"
+        },
+        {
+          "label": "_Search Feature Requests",
+          "command": "workbench.action.openRequestFeatureUrl"
+        },
+        {
+          "label": "Report _Issue",
+          "command": "workbench.action.openIssueReporter"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "View _License",
+          "command": "workbench.action.openLicenseUrl"
+        },
+        {
+          "label": "Privac_y Statement",
+          "command": "workbench.action.openPrivacyStatementUrl"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "Toggle Developer Tools",
+          "command": "workbench.action.toggleDevTools"
+        },
+        {
+          "label": "Open _Process Explorer",
+          "command": "workbench.action.openProcessExplorer"
+        },
+        {
+          "separator": true
+        },
+        {
+          "label": "_About",
+          "command": "workbench.action.showAboutDialog"
+        }
+      ]
+    }
+  ],
+  "keybindings": {
+    "actions.find": {
+      "label": "Ctrl+F",
+      "userSettingsLabel": "ctrl+f"
+    },
+    "editor.action.addSelectionToNextFindMatch": {
+      "label": "Ctrl+D",
+      "userSettingsLabel": "ctrl+d"
+    },
+    "editor.action.blockComment": {
+      "label": "Ctrl+Shift+A",
+      "userSettingsLabel": "ctrl+shift+a"
+    },
+    "editor.action.clipboardCopyAction": {
+      "label": "Ctrl+C",
+      "userSettingsLabel": "ctrl+c"
+    },
+    "editor.action.clipboardCutAction": {
+      "label": "Ctrl+X",
+      "userSettingsLabel": "ctrl+x"
+    },
+    "editor.action.clipboardPasteAction": {
+      "label": "Ctrl+V",
+      "userSettingsLabel": "ctrl+v"
+    },
+    "editor.action.commentLine": {
+      "label": "Ctrl+/",
+      "userSettingsLabel": "ctrl+/"
+    },
+    "editor.action.copyLinesDownAction": {
+      "label": "Ctrl+Shift+Alt+Down",
+      "userSettingsLabel": "ctrl+shift+alt+down"
+    },
+    "editor.action.copyLinesUpAction": {
+      "label": "Ctrl+Shift+Alt+Up",
+      "userSettingsLabel": "ctrl+shift+alt+up"
+    },
+    "editor.action.dirtydiff.next": {
+      "label": "Alt+F3",
+      "userSettingsLabel": "alt+f3"
+    },
+    "editor.action.dirtydiff.previous": {
+      "label": "Shift+Alt+F3",
+      "userSettingsLabel": "shift+alt+f3"
+    },
+    "editor.action.goToImplementation": {
+      "label": "Ctrl+F12",
+      "userSettingsLabel": "ctrl+f12"
+    },
+    "editor.action.goToReferences": {
+      "label": "Shift+F12",
+      "userSettingsLabel": "shift+f12"
+    },
+    "editor.action.insertCursorAbove": {
+      "label": "Shift+Alt+Up",
+      "userSettingsLabel": "shift+alt+up"
+    },
+    "editor.action.insertCursorAtEndOfEachLineSelected": {
+      "label": "Shift+Alt+I",
+      "userSettingsLabel": "shift+alt+i"
+    },
+    "editor.action.insertCursorBelow": {
+      "label": "Shift+Alt+Down",
+      "userSettingsLabel": "shift+alt+down"
+    },
+    "editor.action.jumpToBracket": {
+      "label": "Ctrl+Shift+\\",
+      "userSettingsLabel": "ctrl+shift+\\"
+    },
+    "editor.action.marker.nextInFiles": {
+      "label": "F8",
+      "userSettingsLabel": "f8"
+    },
+    "editor.action.marker.prevInFiles": {
+      "label": "Shift+F8",
+      "userSettingsLabel": "shift+f8"
+    },
+    "editor.action.moveLinesDownAction": {
+      "label": "Alt+Down",
+      "userSettingsLabel": "alt+down"
+    },
+    "editor.action.moveLinesUpAction": {
+      "label": "Alt+Up",
+      "userSettingsLabel": "alt+up"
+    },
+    "editor.action.revealDefinition": {
+      "label": "F12",
+      "userSettingsLabel": "f12"
+    },
+    "editor.action.selectAll": {
+      "label": "Ctrl+A",
+      "userSettingsLabel": "ctrl+a"
+    },
+    "editor.action.selectHighlights": {
+      "label": "Ctrl+Shift+L",
+      "userSettingsLabel": "ctrl+shift+l"
+    },
+    "editor.action.smartSelect.expand": {
+      "label": "Shift+Alt+Right",
+      "userSettingsLabel": "shift+alt+right"
+    },
+    "editor.action.smartSelect.shrink": {
+      "label": "Shift+Alt+Left",
+      "userSettingsLabel": "shift+alt+left"
+    },
+    "editor.action.startFindReplaceAction": {
+      "label": "Ctrl+H",
+      "userSettingsLabel": "ctrl+h"
+    },
+    "editor.action.toggleWordWrap": {
+      "label": "Alt+Z",
+      "userSettingsLabel": "alt+z"
+    },
+    "editor.debug.action.toggleBreakpoint": {
+      "label": "F9",
+      "userSettingsLabel": "f9"
+    },
+    "editor.debug.action.toggleInlineBreakpoint": {
+      "label": "Shift+F9",
+      "userSettingsLabel": "shift+f9"
+    },
+    "editor.emmet.action.expandAbbreviation": {
+      "label": "Tab",
+      "userSettingsLabel": "tab"
+    },
+    "redo": {
+      "label": "Ctrl+Y",
+      "userSettingsLabel": "ctrl+y"
+    },
+    "undo": {
+      "label": "Ctrl+Z",
+      "userSettingsLabel": "ctrl+z"
+    },
+    "welcome.showNewFileEntries": {
+      "label": "Ctrl+Alt+Super+N",
+      "userSettingsLabel": "ctrl+alt+meta+n"
+    },
+    "workbench.action.browser.openOrList": {
+      "label": "Ctrl+Alt+/",
+      "userSettingsLabel": "ctrl+alt+/"
+    },
+    "workbench.action.closeActiveEditor": {
+      "label": "Ctrl+W",
+      "userSettingsLabel": "ctrl+w"
+    },
+    "workbench.action.closeFolder": {
+      "label": "Ctrl+K F",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k f"
+    },
+    "workbench.action.closeWindow": {
+      "label": "Alt+F4",
+      "userSettingsLabel": "alt+f4"
+    },
+    "workbench.action.copyEditorToNewWindow": {
+      "label": "Ctrl+K O",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k o"
+    },
+    "workbench.action.debug.continue": {
+      "label": "F5",
+      "userSettingsLabel": "f5"
+    },
+    "workbench.action.debug.restart": {
+      "label": "Ctrl+Shift+F5",
+      "userSettingsLabel": "ctrl+shift+f5"
+    },
+    "workbench.action.debug.run": {
+      "label": "Ctrl+F5",
+      "userSettingsLabel": "ctrl+f5"
+    },
+    "workbench.action.debug.start": {
+      "label": "F5",
+      "userSettingsLabel": "f5"
+    },
+    "workbench.action.debug.stepInto": {
+      "label": "F11",
+      "userSettingsLabel": "f11"
+    },
+    "workbench.action.debug.stepOut": {
+      "label": "Shift+F11",
+      "userSettingsLabel": "shift+f11"
+    },
+    "workbench.action.debug.stepOver": {
+      "label": "F10",
+      "userSettingsLabel": "f10"
+    },
+    "workbench.action.debug.stop": {
+      "label": "Shift+F5",
+      "userSettingsLabel": "shift+f5"
+    },
+    "workbench.action.files.newUntitledFile": {
+      "label": "Ctrl+N",
+      "userSettingsLabel": "ctrl+n"
+    },
+    "workbench.action.files.openFile": {
+      "label": "Ctrl+O",
+      "userSettingsLabel": "ctrl+o"
+    },
+    "workbench.action.files.openFolder": {
+      "label": "Ctrl+K Ctrl+O",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+o"
+    },
+    "workbench.action.files.save": {
+      "label": "Ctrl+S",
+      "userSettingsLabel": "ctrl+s"
+    },
+    "workbench.action.files.saveAs": {
+      "label": "Ctrl+Shift+S",
+      "userSettingsLabel": "ctrl+shift+s"
+    },
+    "workbench.action.findInFiles": {
+      "label": "Ctrl+Shift+F",
+      "userSettingsLabel": "ctrl+shift+f"
+    },
+    "workbench.action.focusAboveGroup": {
+      "label": "Ctrl+K Ctrl+UpArrow",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+up"
+    },
+    "workbench.action.focusBelowGroup": {
+      "label": "Ctrl+K Ctrl+DownArrow",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+down"
+    },
+    "workbench.action.focusFifthEditorGroup": {
+      "label": "Ctrl+5",
+      "userSettingsLabel": "ctrl+5"
+    },
+    "workbench.action.focusFirstEditorGroup": {
+      "label": "Ctrl+1",
+      "userSettingsLabel": "ctrl+1"
+    },
+    "workbench.action.focusFourthEditorGroup": {
+      "label": "Ctrl+4",
+      "userSettingsLabel": "ctrl+4"
+    },
+    "workbench.action.focusLeftGroup": {
+      "label": "Ctrl+K Ctrl+LeftArrow",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+left"
+    },
+    "workbench.action.focusRightGroup": {
+      "label": "Ctrl+K Ctrl+RightArrow",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+right"
+    },
+    "workbench.action.focusSecondEditorGroup": {
+      "label": "Ctrl+2",
+      "userSettingsLabel": "ctrl+2"
+    },
+    "workbench.action.focusThirdEditorGroup": {
+      "label": "Ctrl+3",
+      "userSettingsLabel": "ctrl+3"
+    },
+    "workbench.action.gotoLine": {
+      "label": "Ctrl+G",
+      "userSettingsLabel": "ctrl+g"
+    },
+    "workbench.action.gotoSymbol": {
+      "label": "Ctrl+Shift+O",
+      "userSettingsLabel": "ctrl+shift+o"
+    },
+    "workbench.action.keybindingsReference": {
+      "label": "Ctrl+K Ctrl+R",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+r"
+    },
+    "workbench.action.navigateBack": {
+      "label": "Ctrl+Alt+-",
+      "userSettingsLabel": "ctrl+alt+-"
+    },
+    "workbench.action.navigateForward": {
+      "label": "Ctrl+Shift+-",
+      "userSettingsLabel": "ctrl+shift+-"
+    },
+    "workbench.action.navigateToLastEditLocation": {
+      "label": "Ctrl+K Ctrl+Q",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+q"
+    },
+    "workbench.action.newWindow": {
+      "label": "Ctrl+Shift+N",
+      "userSettingsLabel": "ctrl+shift+n"
+    },
+    "workbench.action.nextEditor": {
+      "label": "Ctrl+PageDown",
+      "userSettingsLabel": "ctrl+pagedown"
+    },
+    "workbench.action.nextEditorInGroup": {
+      "label": "Ctrl+K Ctrl+PageDown",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+pagedown"
+    },
+    "workbench.action.openGlobalKeybindings": {
+      "label": "Ctrl+K Ctrl+S",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+s"
+    },
+    "workbench.action.openRecent": {
+      "label": "Ctrl+R",
+      "userSettingsLabel": "ctrl+r"
+    },
+    "workbench.action.openSettings": {
+      "label": "Ctrl+,",
+      "userSettingsLabel": "ctrl+,"
+    },
+    "workbench.action.output.toggleOutput": {
+      "label": "Ctrl+K Ctrl+H",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+h"
+    },
+    "workbench.action.previousEditor": {
+      "label": "Ctrl+PageUp",
+      "userSettingsLabel": "ctrl+pageup"
+    },
+    "workbench.action.previousEditorInGroup": {
+      "label": "Ctrl+K Ctrl+PageUp",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+pageup"
+    },
+    "workbench.action.quickOpen": {
+      "label": "Ctrl+P",
+      "userSettingsLabel": "ctrl+p"
+    },
+    "workbench.action.quit": {
+      "label": "Ctrl+Q",
+      "userSettingsLabel": "ctrl+q"
+    },
+    "workbench.action.reopenClosedEditor": {
+      "label": "Ctrl+Shift+T",
+      "userSettingsLabel": "ctrl+shift+t"
+    },
+    "workbench.action.replaceInFiles": {
+      "label": "Ctrl+Shift+H",
+      "userSettingsLabel": "ctrl+shift+h"
+    },
+    "workbench.action.selectTheme": {
+      "label": "Ctrl+K Ctrl+T",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+t"
+    },
+    "workbench.action.showAllSymbols": {
+      "label": "Ctrl+T",
+      "userSettingsLabel": "ctrl+t"
+    },
+    "workbench.action.showCommands": {
+      "label": "Ctrl+Shift+P",
+      "userSettingsLabel": "ctrl+shift+p"
+    },
+    "workbench.action.splitEditorInGroup": {
+      "label": "Ctrl+K Ctrl+Shift+\\",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+shift+\\"
+    },
+    "workbench.action.splitEditorUp": {
+      "label": "Ctrl+K Ctrl+\\",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k ctrl+\\"
+    },
+    "workbench.action.tasks.build": {
+      "label": "Ctrl+Shift+B",
+      "userSettingsLabel": "ctrl+shift+b"
+    },
+    "workbench.action.terminal.new": {
+      "label": "Ctrl+Shift+`",
+      "userSettingsLabel": "ctrl+shift+`"
+    },
+    "workbench.action.terminal.newInNewWindow": {
+      "label": "Ctrl+Shift+Alt+`",
+      "userSettingsLabel": "ctrl+shift+alt+`"
+    },
+    "workbench.action.terminal.split": {
+      "label": "Ctrl+Shift+5",
+      "userSettingsLabel": "ctrl+shift+5"
+    },
+    "workbench.action.terminal.toggleTerminal": {
+      "label": "Ctrl+`",
+      "userSettingsLabel": "ctrl+`"
+    },
+    "workbench.action.toggleAuxiliaryBar": {
+      "label": "Ctrl+Alt+B",
+      "userSettingsLabel": "ctrl+alt+b"
+    },
+    "workbench.action.toggleEditorGroupLayout": {
+      "label": "Shift+Alt+0",
+      "userSettingsLabel": "shift+alt+0"
+    },
+    "workbench.action.toggleFullScreen": {
+      "label": "F11",
+      "userSettingsLabel": "f11"
+    },
+    "workbench.action.togglePanel": {
+      "label": "Ctrl+J",
+      "userSettingsLabel": "ctrl+j"
+    },
+    "workbench.action.toggleSidebarVisibility": {
+      "label": "Ctrl+B",
+      "userSettingsLabel": "ctrl+b"
+    },
+    "workbench.action.toggleZenMode": {
+      "label": "Ctrl+K Z",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+k z"
+    },
+    "workbench.action.zoomIn": {
+      "label": "Ctrl+=",
+      "userSettingsLabel": "ctrl+="
+    },
+    "workbench.action.zoomOut": {
+      "label": "Ctrl+-",
+      "userSettingsLabel": "ctrl+-"
+    },
+    "workbench.action.zoomReset": {
+      "label": "Ctrl+NumPad0",
+      "isNative": false,
+      "userSettingsLabel": "ctrl+numpad0"
+    },
+    "workbench.actions.view.problems": {
+      "label": "Ctrl+Shift+M",
+      "userSettingsLabel": "ctrl+shift+m"
+    },
+    "workbench.debug.action.toggleRepl": {
+      "label": "Ctrl+Shift+Y",
+      "userSettingsLabel": "ctrl+shift+y"
+    },
+    "workbench.panel.chat": {
+      "label": "Ctrl+Alt+I",
+      "userSettingsLabel": "ctrl+alt+i"
+    },
+    "workbench.view.debug": {
+      "label": "Ctrl+Shift+D",
+      "userSettingsLabel": "ctrl+shift+d"
+    },
+    "workbench.view.explorer": {
+      "label": "Ctrl+Shift+E",
+      "userSettingsLabel": "ctrl+shift+e"
+    },
+    "workbench.view.extensions": {
+      "label": "Ctrl+Shift+X",
+      "userSettingsLabel": "ctrl+shift+x"
+    },
+    "workbench.view.scm": {
+      "label": "Ctrl+Shift+G",
+      "userSettingsLabel": "ctrl+shift+g"
+    },
+    "workbench.view.search": {
+      "label": "Ctrl+Shift+F",
+      "userSettingsLabel": "ctrl+shift+f"
+    }
+  }
+}

@@ -4,12 +4,20 @@
 
 import { DBusError, Variant, interface as dbusInterface } from '@jellybrick/dbus-next';
 
-/** A menu or an item, as the menu is written. A menu has `children`, an item a `command`. */
-export interface MenuNode {
-  /** The label, with `_` before its mnemonic. */
+/** A menu, an item or a separator, as the menu is written. */
+export type MenuNode = MenuEntry | MenuSeparator;
+
+/** A menu or an item. A menu has `children`, an item a `command` and maybe its arguments. */
+export interface MenuEntry {
+  /** The label, with `_` before its mnemonic and `__` for an underscore. */
   readonly label: string;
   readonly command?: string;
+  readonly args?: readonly unknown[];
   readonly children?: readonly MenuNode[];
+}
+
+export interface MenuSeparator {
+  readonly separator: true;
 }
 
 /** An item of the served layout: `(ia{sv}av)`. */
@@ -25,14 +33,17 @@ const INTERFACE = 'com.canonical.dbusmenu';
 
 /**
  * Serves a menubar whose top-level items are `menus`. The root is id 0 and the rest are
- * numbered depth first. `run` is given an item's command when the item is clicked, after
- * the reply to `Event` is sent.
+ * numbered depth first. `run` is given an item's command and arguments when the item is
+ * clicked, after the reply to `Event` is sent.
  */
 export class DbusMenu extends dbusInterface.Interface {
   readonly #byId = new Map<number, Numbered>();
-  readonly #run: (command: string) => void;
+  readonly #run: (command: string, args: readonly unknown[]) => void;
 
-  constructor(menus: readonly MenuNode[], run: (command: string) => void) {
+  constructor(
+    menus: readonly MenuNode[],
+    run: (command: string, args: readonly unknown[]) => void,
+  ) {
     super(INTERFACE);
     // In 0.11.4 the base class's constructor sets these as own fields, which hide what
     // `configureMembers()` put on the prototype, so nothing would be served. Deleting
@@ -43,7 +54,8 @@ export class DbusMenu extends dbusInterface.Interface {
     let next = 0;
     const number = (node: MenuNode): Numbered => {
       const id = next++;
-      const numbered = { id, node, children: (node.children ?? []).map(number) };
+      const children = 'separator' in node ? [] : (node.children ?? []);
+      const numbered = { id, node, children: children.map(number) };
       this.#byId.set(id, numbered);
       return numbered;
     };
@@ -62,9 +74,12 @@ export class DbusMenu extends dbusInterface.Interface {
 
   /** Answered before the command runs, since the panel waits for the reply. */
   Event(id: number, eventId: string, _data: Variant, _timestamp: number): void {
-    const command = this.#byId.get(id)?.node.command;
-    if (eventId === 'clicked' && command !== undefined) {
-      setImmediate(() => this.#run(command));
+    const node = this.#byId.get(id)?.node;
+    if (eventId === 'clicked' && node !== undefined && 'command' in node) {
+      const { command, args = [] } = node;
+      if (command !== undefined) {
+        setImmediate(() => this.#run(command, args));
+      }
     }
   }
 
@@ -98,7 +113,9 @@ function properties(item: Numbered, propertyNames: string[]): Record<string, Var
   if (item.children.length > 0) {
     all['children-display'] = new Variant('s', 'submenu');
   }
-  if (item.id !== 0) {
+  if ('separator' in item.node) {
+    all['type'] = new Variant('s', 'separator');
+  } else if (item.id !== 0) {
     all['label'] = new Variant('s', item.node.label);
   }
   const sorted: Record<string, Variant> = {};

@@ -26,7 +26,12 @@ export interface Editor {
     readonly tabGroups?: { readonly onDidChangeTabGroups: Event<unknown> };
     createOutputChannel(name: string): { appendLine(line: string): void; dispose(): void };
   };
+  readonly env: {
+    /** The editor's own directory, where its `product.json` is. */
+    readonly appRoot: string;
+  };
   readonly commands: {
-    executeCommand(command: string): PromiseLike<unknown>;
+    getCommands(filterInternal?: boolean): PromiseLike<string[]>;
+    executeCommand(command: string, ...args: unknown[]): PromiseLike<unknown>;
   };
 }

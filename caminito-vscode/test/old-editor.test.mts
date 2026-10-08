@@ -2,7 +2,9 @@
 // line says so, and nothing throws into the extension host (116).
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { FLOOR, start } from '../src/global-menu.mts';
@@ -25,13 +27,17 @@ test('an editor without the tab-groups and notebook APIs is served and claimed, 
   await f.claimed(3);
   assert.deepEqual(f.editor.logged, [
     "the editor is 1.66.2 and the extension's floor is 1.68.0, so no claim on a change of tab groups or a change of the notebook editor",
+    "the menu table is VS Code 1.140.0's and the editor is 1.66.2",
   ]);
 });
 
 test('an editor older than the floor with every API it uses logs both versions', async (t) => {
   const f = await fixture(t, { version: '1.67.0' });
   await f.claimed(1);
-  assert.deepEqual(f.editor.logged, ["the editor is 1.67.0 and the extension's floor is 1.68.0"]);
+  assert.deepEqual(f.editor.logged, [
+    "the editor is 1.67.0 and the extension's floor is 1.68.0",
+    "the menu table is VS Code 1.140.0's and the editor is 1.67.0",
+  ]);
 });
 
 test("a session bus that can't be reached is logged, and the start settles", async (t) => {
@@ -47,6 +53,9 @@ test('an API that throws at activation is logged, and nothing is left on the bus
   const caminito = new Caminito(caminitoBus, true);
   await caminito.own();
   const editor = new FakeEditor(true);
+  editor.appRoot = mkdtempSync(join(tmpdir(), 'caminito-vscode-test-'));
+  writeFileSync(join(editor.appRoot, 'product.json'), '{}');
+  t.after(() => rmSync(editor.appRoot, { recursive: true, force: true }));
   const api = editor.api();
   const broken = {
     ...api,
