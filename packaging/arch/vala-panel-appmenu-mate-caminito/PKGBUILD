@@ -13,7 +13,7 @@ _pkgname=vala-panel-appmenu
 # The AUR's version. Its Wayfire backend came after this tag, so the package has only the
 # libwnck backend beside Caminito's, as the AUR's has it alone.
 pkgver=25.04
-pkgrel=2
+pkgrel=4
 pkgdesc="Global Menu plugin for mate-panel, with Caminito's carried patches"
 url="https://gitlab.com/vala-panel-project/vala-panel-appmenu"
 arch=('x86_64')
@@ -39,13 +39,19 @@ conflicts=("${_pkgname}-mate" "${_pkgname}-locale" 'appmenu-glib-translator')
 # app or Firefox, a dbusmenu (112). 0002 is active under Caminito only, too: there the
 # application's name before the menus is bold, and the applet's preferences have whether it's
 # shown, in place of whether it's bold (114). Its settings key is in the schema on any
-# desktop, where nothing reads it.
+# desktop, where nothing reads it. 0003 is in the menu translator and active everywhere:
+# Firefox makes its whole menubar again, every item with a new id, when a menu changes, and
+# the translator answered by making the menubar on screen again, which closed the open menu,
+# and by telling Firefox its menus were opened, which changes them. So a menu opened from the
+# panel flickered. A submenu that only has a new id now stays the item it was.
 source=("${_pkgname}::git+${url}.git#tag=${pkgver}"
         0001-applet-Add-a-Caminito-backend.patch
-        0002-applet-Let-the-application-s-name-be-turned-off-unde.patch)
+        0002-applet-Let-the-application-s-name-be-turned-off-unde.patch
+        0003-translator-Keep-a-menu-open-while-Firefox-makes-its-.patch)
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
             'f3c5266093696fe12172e39a035c60ec24f01b72f525990847dc04fa344492ed'
-            'e2c3146a9c86064b5aee9d57be2a57355a5e9916533e2bca344693357ad6c902')
+            'e2c3146a9c86064b5aee9d57be2a57355a5e9916533e2bca344693357ad6c902'
+            'ba7ebae29ae9be19213d5c0f00bb2965158dce85f14957ad5ddf6dd86cb96636')
 
 prepare() {
     cd "${_pkgname}"

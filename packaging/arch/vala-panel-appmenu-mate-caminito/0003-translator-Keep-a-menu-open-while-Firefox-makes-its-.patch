@@ -1,0 +1,290 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 8 Oct 2026 11:45:00 -0300
+Subject: [PATCH] translator: Keep a menu open while Firefox makes its menubar
+ again
+
+Firefox serves its menubar as a dbusmenu, and makes the whole of it again,
+every item with a new id, whenever one of its menus changes. That is many
+times a minute while a page loads, and each time some of its menus are
+told they were opened: History, Bookmarks, New Container Tab.
+
+The translator replaced every item whose id changed, and after any layout
+it said that all of the menu had changed. So each time, the menubar on
+screen was made again, which closed the submenu the user had open. The
+pointer resting on its item opened it again, Firefox was told "closed" and
+"opened", and made its menubar again: the menu opened and closed several
+times a second. And each new item's submenu was preloaded, which sends
+"opened" too, so with a Firefox window focused the two sent each other
+hundreds of messages a second with no menu open.
+
+Let a submenu that only has a new id stay the item it was. Its action
+keeps its name, which has the old id, and finds the id to use on its
+model, as it did. The submenu gets its layout again and is not preloaded
+again.
+
+Say that a menu changed only if it did.
+
+And tell the application that a submenu was closed half a second late,
+and not at all if it is opened again before: for the application it was
+open all along. An item that is not a submenu is still replaced when its
+id changes, which makes the items of an open menu again and closes a
+submenu of it.
+
+An application that keeps its items' ids, as Qt's do, hears "closed" half
+a second later than before, and its menus are no longer made again on
+screen by a layout that changes nothing.
+---
+ subprojects/appmenu-glib-translator/item.c  | 36 +++++++++++++++
+ subprojects/appmenu-glib-translator/item.h  |  2 +
+ subprojects/appmenu-glib-translator/model.c | 34 ++++++++++++--
+ subprojects/appmenu-glib-translator/utils.c | 70 +++++++++++++++++++++++++----
+ 4 files changed, 130 insertions(+), 12 deletions(-)
+
+diff --git a/subprojects/appmenu-glib-translator/item.c b/subprojects/appmenu-glib-translator/item.c
+index 47f210f..104c14a 100644
+--- a/subprojects/appmenu-glib-translator/item.c
++++ b/subprojects/appmenu-glib-translator/item.c
+@@ -249,6 +249,42 @@ G_GNUC_INTERNAL void dbus_menu_item_preload(DBusMenuItem *item)
+ 		dbus_menu_model_update_layout(submenu);
+ }
+ 
++/* Makes a submenu the one with the id of src, if both are submenus and differ in nothing
++ * else that cannot change. Returns whether it did.
++ */
++G_GNUC_INTERNAL bool dbus_menu_item_take_id(DBusMenuItem *dst, DBusMenuItem *src)
++{
++	if (dst->action_type != DBUS_MENU_ACTION_SUBMENU ||
++	    src->action_type != DBUS_MENU_ACTION_SUBMENU)
++		return false;
++	if (dst->ref_action_group != src->ref_action_group)
++		return false;
++	DBusMenuModel *submenu =
++	    DBUS_MENU_MODEL(g_hash_table_lookup(dst->links, submenu_str(dst->enabled)));
++	if (!submenu || !DBUS_MENU_IS_MODEL(submenu))
++		return false;
++	dst->id = src->id;
++	g_object_set(submenu, "parent-id", dst->id, NULL);
++	return true;
++}
++
++/* Fetches the layout of a submenu again, where it has to be, and tells the application
++ * nothing: for a submenu that was preloaded already and only has another id.
++ */
++G_GNUC_INTERNAL void dbus_menu_item_reload(DBusMenuItem *item)
++{
++	if (!item_check_magic(item))
++		return;
++	if (item->action_type != DBUS_MENU_ACTION_SUBMENU)
++		return;
++	DBusMenuModel *submenu =
++	    DBUS_MENU_MODEL(g_hash_table_lookup(item->links, submenu_str(item->enabled)));
++	if (!submenu || !DBUS_MENU_IS_MODEL(submenu))
++		return;
++	if (dbus_menu_model_is_layout_update_required(submenu))
++		dbus_menu_model_update_layout(submenu);
++}
++
+ G_GNUC_INTERNAL bool dbus_menu_item_copy_attrs(DBusMenuItem *src, DBusMenuItem *dst)
+ {
+ 	GHashTableIter iter;
+diff --git a/subprojects/appmenu-glib-translator/item.h b/subprojects/appmenu-glib-translator/item.h
+index 9861d7a..336b1c6 100644
+--- a/subprojects/appmenu-glib-translator/item.h
++++ b/subprojects/appmenu-glib-translator/item.h
+@@ -68,6 +68,8 @@ G_GNUC_INTERNAL bool dbus_menu_item_copy_submenu(DBusMenuItem *src, DBusMenuItem
+ G_GNUC_INTERNAL void dbus_menu_item_generate_action(DBusMenuItem *item, DBusMenuModel *parent);
+ 
+ G_GNUC_INTERNAL void dbus_menu_item_preload(DBusMenuItem *item);
++G_GNUC_INTERNAL void dbus_menu_item_reload(DBusMenuItem *item);
++G_GNUC_INTERNAL bool dbus_menu_item_take_id(DBusMenuItem *dst, DBusMenuItem *src);
+ 
+ G_GNUC_INTERNAL int dbus_menu_item_id_compare_func(const DBusMenuItem *a, gconstpointer b,
+                                                    gpointer user_data);
+diff --git a/subprojects/appmenu-glib-translator/model.c b/subprojects/appmenu-glib-translator/model.c
+index a3f0038..9fd2d15 100644
+--- a/subprojects/appmenu-glib-translator/model.c
++++ b/subprojects/appmenu-glib-translator/model.c
+@@ -241,6 +241,8 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 	uint old_sections           = g_menu_model_get_n_items(G_MENU_MODEL(menu));
+ 	uint added                  = 0;
+ 	int change_pos              = -1;
++	// Whether anything of the menu is different from what it was
++	bool changed                = false;
+ 	GSequenceIter *current_iter = g_sequence_get_begin_iter(menu->items);
+ 	g_variant_iter_init(&iter, items);
+ 	while ((child = g_variant_iter_next_value(&iter)))
+@@ -273,6 +275,7 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 				                      NULL);
+ 				if (!old_iter)
+ 				{
++					changed = true;
+ 					g_hash_table_insert(
+ 					    new_item->links,
+ 					    G_MENU_LINK_SECTION,
+@@ -292,7 +295,10 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 				// Cleanup all items in prev section (if there is more items than
+ 				// current)
+ 				if (delta > 0)
++				{
++					changed = true;
+ 					g_sequence_remove_range(place_iter, old_iter);
++				}
+ 				// Section signal will do it for us, do not send additional one
+ 				// Update current_section and reset current_iter and added to new
+ 				// section
+@@ -318,6 +324,7 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 			{
+ 				if (!added)
+ 					change_pos = change_pos < 0 ? place : change_pos;
++				changed = true;
+ 				menu_item_copy_and_load(menu, NULL, new_item);
+ 				current_iter = g_sequence_insert_sorted(menu->items,
+ 				                                        new_item,
+@@ -331,9 +338,23 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 				old = (DBusMenuItem *)g_sequence_get(old_iter);
+ 				// We should compare properties of old and new item
+ 				bool diff    = !dbus_menu_item_compare_immutable(old, new_item);
+-				dbus_menu_item_update_props(old, cprops);
+-				if (diff)
++				changed      = dbus_menu_item_update_props(old, cprops) || changed;
++				/* Firefox makes its whole menu again, every item with a new
++				 * id, whenever one of its menus changes, which is many times
++				 * a minute while a page loads. A submenu that only has a new
++				 * id stays the item it was, so that the menu it is in is not
++				 * made again on screen, which would close the submenu if it
++				 * is open. Its action keeps its name, and finds the id on
++				 * its model.
++				 */
++				if (diff && dbus_menu_item_take_id(old, new_item))
+ 				{
++					dbus_menu_item_reload(old);
++					dbus_menu_item_free(new_item);
++				}
++				else if (diff)
++				{
++					changed = true;
+ 					// Immutable properties was different, replace menu item
+ 					menu_item_copy_and_load(menu, old, new_item);
+ 					g_sequence_remove(old_iter);
+@@ -363,6 +384,7 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 	int secdiff = old_sections - section_num;
+ 	if (secdiff > 0)
+ 	{
++		changed                     = true;
+ 		GSequenceIter *section_iter = dbus_menu_model_find_place(menu, section_num, -1);
+ 		g_sequence_remove_range(section_iter, g_sequence_get_end_iter(menu->items));
+ 	}
+@@ -379,11 +401,15 @@ static void layout_parse(DBusMenuModel *menu, GVariant *layout)
+ 		// Cleanup all items in prev section (if there is more items than
+ 		// current)
+ 		if (delta > 0)
++		{
++			changed = true;
+ 			g_sequence_remove_range(place_iter, last_iter);
++		}
+ 	}
+ 	g_variant_unref(items);
+-	// Update all layout
+-	g_menu_model_items_changed(G_MENU_MODEL(menu), 0, old_sections, section_num);
++	// Update all layout, if it is not the one there was
++	if (changed || old_sections != section_num)
++		g_menu_model_items_changed(G_MENU_MODEL(menu), 0, old_sections, section_num);
+ }
+ 
+ static bool get_layout_idle(DBusMenuModel *self)
+diff --git a/subprojects/appmenu-glib-translator/utils.c b/subprojects/appmenu-glib-translator/utils.c
+index 10be1c7..84620fc 100644
+--- a/subprojects/appmenu-glib-translator/utils.c
++++ b/subprojects/appmenu-glib-translator/utils.c
+@@ -108,6 +108,42 @@ static GAction *dbus_menu_action_new(DBusMenuXml *xml, u_int32_t id, DBusMenuAct
+ //	return true;
+ //}
+ 
++/* How long a submenu that was closed is still open for the application, in milliseconds. */
++#define CLOSED_DELAY 500
++/* The source that will tell the application a submenu was closed, kept on its model. */
++#define PENDING_CLOSED_STR "submenu-pending-closed"
++
++static gboolean submenu_closed_cb(gpointer user_data)
++{
++	DBusMenuModel *model = DBUS_MENU_MODEL(user_data);
++	DBusMenuXml *xml     = NULL;
++	u_int32_t id;
++	g_object_set_data(G_OBJECT(model), PENDING_CLOSED_STR, NULL);
++	g_object_get(model, "parent-id", &id, "xml", &xml, NULL);
++	if (!xml)
++		return G_SOURCE_REMOVE;
++	dbus_menu_xml_call_event_sync(xml,
++	                              id,
++	                              "closed",
++	                              g_variant_new("v", g_variant_new_int32(0)),
++	                              CURRENT_TIME,
++	                              NULL,
++	                              NULL);
++	g_object_unref(xml);
++	return G_SOURCE_REMOVE;
++}
++
++/* Whether the application was about to be told the submenu was closed. If so, it isn't. */
++static bool submenu_cancel_closed(DBusMenuModel *model)
++{
++	guint pending = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(model), PENDING_CLOSED_STR));
++	if (!pending)
++		return false;
++	g_object_set_data(G_OBJECT(model), PENDING_CLOSED_STR, NULL);
++	g_source_remove(pending);
++	return true;
++}
++
+ static void state_submenu_cb(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+ {
+ 	g_return_if_fail(DBUS_MENU_IS_MODEL(user_data));
+@@ -120,7 +156,21 @@ static void state_submenu_cb(GSimpleAction *action, GVariant *parameter, gpointe
+ 	bool opened       = g_variant_get_boolean(statev);
+ 	g_variant_unref(statev);
+ 	bool need_update = true;
+-	if (request_open && !opened)
++	/* Firefox makes its whole menu again, every item with a new id, when one of its menus
++	 * changes, and some change each time they are told they were opened. Every item of the
++	 * menu on screen is then replaced, which closes the submenu that was just opened, and
++	 * the pointer resting on its item opens it again. Telling Firefox so would make its
++	 * menu change again, and the submenu would open and close without an end. So a submenu
++	 * that is opened again shortly after it was closed was open all along for the
++	 * application.
++	 */
++	if (request_open && !opened && submenu_cancel_closed(model))
++	{
++		g_simple_action_set_state(action, g_variant_new_boolean(true));
++		if (dbus_menu_model_is_layout_update_required(model))
++			dbus_menu_model_update_layout(model);
++	}
++	else if (request_open && !opened)
+ 	{
+ 		// Use opened before actual open. For Firefox.
+ 		dbus_menu_xml_call_event_sync(xml,
+@@ -161,13 +211,17 @@ static void state_submenu_cb(GSimpleAction *action, GVariant *parameter, gpointe
+ 	}
+ 	else
+ 	{
+-		dbus_menu_xml_call_event_sync(xml,
+-		                              id,
+-		                              "closed",
+-		                              g_variant_new("v", g_variant_new_int32(0)),
+-		                              CURRENT_TIME,
+-		                              NULL,
+-		                              NULL);
++		if (!g_object_get_data(G_OBJECT(model), PENDING_CLOSED_STR))
++		{
++			guint pending = g_timeout_add_full(G_PRIORITY_DEFAULT,
++			                                   CLOSED_DELAY,
++			                                   submenu_closed_cb,
++			                                   g_object_ref(model),
++			                                   g_object_unref);
++			g_object_set_data(G_OBJECT(model),
++			                  PENDING_CLOSED_STR,
++			                  GUINT_TO_POINTER(pending));
++		}
+ 		g_simple_action_set_state(action, g_variant_new_boolean(false));
+ 	}
+ }
