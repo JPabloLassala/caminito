@@ -109,6 +109,8 @@ pub struct Dbus {
     _caller_watch: Option<zbus::Task<()>>,
     /// Passes on whether the Global menu applet is on the bus (110).
     _applet_watch: Option<zbus::Task<()>>,
+    /// The registrar's name, which follows the applet (112).
+    registrar: global_menu::Registrar,
     connection: zbus::Connection,
     /// The bus's address, if it isn't the session bus's: a test's own bus.
     address: Option<String>,
@@ -181,9 +183,11 @@ impl Caminito {
             .inspect_err(|err| tracing::warn!("can't watch for the global menu applet: {err}"))
             .ok()
             .map(|watch| connection.executor().spawn(watch, "global menu applet"));
+        let registrar_released = self.dbus_requests(Caminito::registrar_released);
         let dbus = Dbus {
             _caller_watch: caller_watch,
             _applet_watch: applet_watch,
+            registrar: global_menu::Registrar::new(registrar_released),
             connection,
             address: address.map(str::to_owned),
         };
@@ -198,6 +202,14 @@ impl Caminito {
     /// never holds if `start_dbus` failed: then there are no names to wait for.
     pub fn dbus_ready(&self) -> bool {
         self.dbus.is_some()
+    }
+
+    /// Asks the bus for the registrar's name, or gives it up, if that's not what was last
+    /// done.
+    pub(crate) fn refresh_registrar(&mut self, owned: bool) {
+        if let Some(dbus) = &mut self.dbus {
+            dbus.registrar.set_owned(&dbus.connection, owned);
+        }
     }
 
     /// A caller left the bus, and what it held goes with it.

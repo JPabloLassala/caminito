@@ -3,25 +3,36 @@
 //! the apps giving up their own menubars.
 //!
 //! So far the menus are a `GtkApplication`'s, from `gtk_surface1.set_dbus_properties`, and
-//! the switch turns `gtk_shell1`'s capability alone. The other channels are tickets 111 to
-//! 113's, and the grace period after the applet's name loses its owner is 114's.
+//! a Qt app's or Firefox's dbusmenu, from `org_kde_kwin_appmenu` (112). The switch turns
+//! `gtk_shell1`'s capability, the appmenu global and the registrar's name, the three
+//! together. The registrar's interface is ticket 113's, and the grace period after the
+//! applet's name loses its owner is 114's.
 
 use std::collections::HashMap;
 
 use caminito_policy::PolicyWindow;
 use smithay::reexports::calloop::channel;
 use zbus::export::ordered_stream::OrderedStreamExt;
+use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
 
+use crate::protocols::appmenu::{self, Address};
 use crate::protocols::gtk_shell::{self, DbusProperties};
-use crate::state::{Caminito, SEAT};
+use crate::state::{Caminito, SEAT, State};
 
 /// The well-known name the Global menu applet owns while it's on a panel, as its carried
 /// patch has it. The applets of one panel share the one name.
 pub(crate) const APPLET_NAME: &str = "org.mate.Caminito.GlobalMenuApplet";
 
+/// The registrar's name, which Qt, Firefox, Electron and `appmenu-gtk-module` each look for
+/// an owner of before they give up their menubars (ADR 0017).
+pub(crate) const REGISTRAR_NAME: &str = "com.canonical.AppMenu.Registrar";
+
 /// The kind of a menu that's `org.gtk.Menus`, with its actions as `org.gtk.Actions`.
 const GTK: &str = "gtk";
+
+/// The kind of a menu that's a `com.canonical.dbusmenu`.
+const DBUSMENU: &str = "dbusmenu";
 
 /// What a [`GlobalMenu`] has of a window's menu: its kind, bus name and paths.
 type Menu = (&'static str, String, HashMap<String, String>);
@@ -65,6 +76,12 @@ impl GlobalMenu {
         Some((GTK, bus_name, paths))
     }
 
+    /// The menu of a window that gave its dbusmenu's address.
+    fn dbusmenu(address: Address) -> Menu {
+        let paths = HashMap::from([("menu".to_owned(), address.object_path)]);
+        (DBUSMENU, address.service_name, paths)
+    }
+
     pub(super) fn published(self) -> Published {
         let kind = self.kind.to_owned();
         (kind, self.bus_name, self.paths, self.application)
@@ -98,11 +115,78 @@ pub(super) async fn watch_applet(
     })
 }
 
+/// Caminito's hold on the registrar's name, which it asks the bus for and gives up without
+/// waiting.
+pub(super) struct Registrar {
+    /// Whether the name was last asked for, and not given up.
+    asked: bool,
+    /// The last asking or giving up, which the next one waits for, so that they reach the
+    /// bus in order.
+    last: Option<zbus::Task<()>>,
+    /// Tells the event loop that the name was given up.
+    released: channel::Sender<()>,
+}
+
+impl Registrar {
+    pub(super) fn new(released: channel::Sender<()>) -> Self {
+        Self {
+            asked: false,
+            last: None,
+            released,
+        }
+    }
+
+    /// Asks the bus for the name, or gives it up, if that's not what was last done.
+    pub(super) fn set_owned(&mut self, connection: &zbus::Connection, owned: bool) {
+        if self.asked == owned {
+            return;
+        }
+        self.asked = owned;
+        let last = self.last.take();
+        let released = self.released.clone();
+        let bus = connection.clone();
+        let change = async move {
+            if let Some(last) = last {
+                let _ = last.await;
+            }
+            if owned {
+                // In the queue behind another registrar, if there is one that won't be
+                // replaced, so that the name comes when that one goes.
+                let flags = RequestNameFlags::ReplaceExisting.into();
+                match bus.request_name_with_flags(REGISTRAR_NAME, flags).await {
+                    Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}
+                    Ok(_) => tracing::warn!("another registrar has {REGISTRAR_NAME}"),
+                    Err(err) => tracing::warn!("can't own {REGISTRAR_NAME}: {err}"),
+                }
+            } else {
+                if let Err(err) = bus.release_name(REGISTRAR_NAME).await {
+                    tracing::warn!("can't give up {REGISTRAR_NAME}: {err}");
+                }
+                // Caminito is stopping if this fails.
+                let _ = released.send(());
+            }
+        };
+        self.last = Some(connection.executor().spawn(change, "registrar's name"));
+    }
+}
+
 impl Caminito {
-    /// The applet's name got an owner, or lost it.
+    /// The applet's name got an owner, or lost it. What makes the apps give up their
+    /// menubars comes at once, and goes only once the registrar's name is given up.
     pub(super) fn global_menu_applet_changed(&mut self, present: bool) {
         tracing::debug!("the global menu applet is on the bus: {present}");
         self.global_menu_applet = present;
+        if present {
+            self.global_menu_offered = true;
+        }
+    }
+
+    /// The bus took the registrar's name back. An applet that came meanwhile has had the
+    /// name asked for again.
+    pub(super) fn registrar_released(&mut self, (): ()) {
+        if !self.global_menu_applet {
+            self.global_menu_offered = false;
+        }
     }
 
     /// The focused window's menu, as the property has it.
@@ -114,10 +198,16 @@ impl Caminito {
             return GlobalMenu::default();
         };
         let application = mapped.app_id().unwrap_or_default();
-        let menu = mapped
-            .wl_surface()
-            .and_then(|surface| gtk_shell::dbus_properties(&surface))
+        let surface = mapped.wl_surface();
+        let gtk = surface
+            .as_ref()
+            .and_then(gtk_shell::dbus_properties)
             .and_then(GlobalMenu::gtk);
+        let dbusmenu = || {
+            let address = surface.as_ref().and_then(appmenu::address)?;
+            Some(GlobalMenu::dbusmenu(address))
+        };
+        let menu = gtk.or_else(dbusmenu);
         match menu {
             Some((kind, bus_name, paths)) => GlobalMenu {
                 kind,
@@ -132,12 +222,21 @@ impl Caminito {
         }
     }
 
-    /// Tells the GTK apps whether an applet shows their menubars, and signals `GlobalMenu`
+    /// Tells the apps whether an applet shows their menubars, and signals `GlobalMenu`
     /// if it's not what the callers last heard: the focus is another window's, or the
     /// focused window said where its menus are.
+    ///
+    /// The registrar's name is never there without the appmenu global: a Qt app that finds
+    /// the name alone has no menu anywhere (112). So the name is asked for after the global
+    /// is offered, and the global goes after the name is given up.
     pub(crate) fn refresh_global_menu(&mut self) {
-        self.gtk_shell_state
-            .set_global_menu_bar(self.global_menu_applet);
+        let offered = self.global_menu_offered;
+        self.gtk_shell_state.set_global_menu_bar(offered);
+        let withdrawn = self
+            .appmenu_state
+            .set_offered::<State>(&self.display_handle, offered);
+        self.globals_to_withdraw.extend(withdrawn);
+        self.refresh_registrar(self.global_menu_applet);
         self.refresh_global_menu_property();
     }
 }

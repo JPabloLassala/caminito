@@ -344,7 +344,8 @@ impl Caminito {
     /// Tells the clients that the globals of the outputs hidden since the last refresh
     /// are gone. It's after the views that name a `wl_output` said the output left:
     /// libxfce4windowing can't take a monitor out of a workspace group once the global
-    /// is removed, and reads it, freed, at the group's next change (91).
+    /// is removed, and reads it, freed, at the group's next change (91). The appmenu
+    /// global goes the same way when it stops being offered (112).
     pub(crate) fn refresh_output_globals(&mut self) {
         for global in std::mem::take(&mut self.globals_to_withdraw) {
             self.display_handle.disable_global::<State>(global.clone());

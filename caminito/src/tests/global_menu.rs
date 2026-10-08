@@ -1,8 +1,10 @@
 //! The global menu (110, ADR 0017): the `GlobalMenu` property of `org.mate.Caminito`, which
 //! follows the focus, and `gtk_shell1`'s `global_menu_bar` capability, which follows the
-//! Global menu applet's bus name. Each test runs a bus of its own, with a stand-in that owns
+//! Global menu applet's bus name, as the appmenu global and the registrar's name do (112).
+//! Each test runs a bus of its own, with a stand-in that owns
 //! the applet's name, which only one could on the tests' bus. The windows are xdg toplevels
-//! only: an XWayland window has no `gtk_surface1`, and its menu is ticket 113's.
+//! only: an XWayland window has no `gtk_surface1` and no `org_kde_kwin_appmenu`, and its menu
+//! is ticket 113's.
 
 use std::collections::HashMap;
 
@@ -14,7 +16,7 @@ use zbus::blocking::Connection;
 use super::fixture::{
     Bus, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WindowSpec,
 };
-use crate::dbus::global_menu::APPLET_NAME;
+use crate::dbus::global_menu::{APPLET_NAME, REGISTRAR_NAME};
 
 /// `gtk_shell1`'s `global_menu_bar` capability.
 const GLOBAL_MENU_BAR: u32 = 2;
@@ -52,6 +54,33 @@ fn a_gtk_client(f: &mut Fixture) -> ClientId {
     f.client(id).bind_gtk_shell();
     f.roundtrip(id);
     id
+}
+
+/// A client that has found the appmenu global, as a Qt app or Firefox does that starts
+/// while the applet is there.
+fn a_qt_client(f: &mut Fixture) -> ClientId {
+    let id = f.connect(Kind::Xdg);
+    wait_for_appmenu_manager(f, id, true);
+    id
+}
+
+/// Dispatches until `id` is offered the appmenu global, or isn't any more.
+#[track_caller]
+fn wait_for_appmenu_manager(f: &mut Fixture, id: ClientId, offered: bool) {
+    f.dispatch_until_mut(|f| {
+        f.roundtrip(id);
+        f.client(id).has_appmenu_manager() == offered
+    });
+}
+
+/// Whether the registrar's name has an owner.
+fn registrar_is_owned(f: &mut Fixture, bus: &Bus) -> bool {
+    let connection = connect(bus);
+    f.dbus_call(move || {
+        let bus = zbus::blocking::fdo::DBusProxy::new(&connection).unwrap();
+        bus.name_has_owner(REGISTRAR_NAME.try_into().unwrap())
+            .unwrap()
+    })
 }
 
 /// Dispatches until `id` was last sent `capabilities`.
@@ -101,6 +130,17 @@ fn gtk_menu(bus_name: &str, paths: &[(&str, &str)], application: &str) -> Global
         .map(|(key, path)| ((*key).to_owned(), (*path).to_owned()))
         .collect();
     ("gtk".into(), bus_name.into(), paths, application.into())
+}
+
+/// A `GlobalMenu` of the `dbusmenu` kind.
+fn dbusmenu(bus_name: &str, path: &str, application: &str) -> GlobalMenu {
+    let paths = HashMap::from([("menu".to_owned(), path.to_owned())]);
+    (
+        "dbusmenu".into(),
+        bus_name.into(),
+        paths,
+        application.into(),
+    )
 }
 
 /// The `GlobalMenu` of a focused window that has no menu.
@@ -303,4 +343,89 @@ fn the_panel_taking_the_keyboard_leaves_the_menu() {
 
     assert!(!f.has_keyboard(pluma));
     assert_eq!(global_menu(&mut f, &caller), plumas_global_menu());
+}
+
+#[test]
+fn the_appmenu_global_and_the_registrars_name_follow_the_applets_bus_name() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let early = f.connect(Kind::Xdg);
+    f.roundtrip(early);
+    // No applet: a Qt app and Firefox find neither, and keep their menubars.
+    assert!(!f.client(early).has_appmenu_manager());
+    assert!(!registrar_is_owned(&mut f, &bus));
+
+    let applet = an_applet(&bus);
+
+    f.dispatch_until_mut(|f| registrar_is_owned(f, &bus));
+    // The name is never there without the global, so there's no waiting for this.
+    let late = f.connect(Kind::Xdg);
+    f.roundtrip(late);
+    assert!(f.client(late).has_appmenu_manager());
+    wait_for_appmenu_manager(&mut f, early, true);
+
+    drop(applet);
+
+    wait_for_appmenu_manager(&mut f, early, false);
+    // Nor is there for this: the name went first.
+    assert!(!registrar_is_owned(&mut f, &bus));
+    wait_for_appmenu_manager(&mut f, late, false);
+}
+
+#[test]
+fn a_dbusmenu_address_reaches_the_property_when_its_window_has_the_focus() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let _applet = an_applet(&bus);
+    let id = a_qt_client(&mut f);
+    let caller = a_caller(&mut f, &bus);
+    let dolphin = map_with_menu(&mut f, id, "org.kde.dolphin", None);
+
+    f.client(id)
+        .set_appmenu_address(dolphin.xdg(), ":1.77", "/MenuBar/1");
+    f.sync(dolphin);
+
+    let dolphins = dbusmenu(":1.77", "/MenuBar/1", "org.kde.dolphin");
+    assert_eq!(global_menu(&mut f, &caller), dolphins);
+
+    map_with_menu(&mut f, id, "mate-calc", None);
+
+    assert_eq!(global_menu(&mut f, &caller), no_menu("mate-calc"));
+
+    f.chord(&[KEY_LEFTALT, KEY_TAB]);
+
+    assert_eq!(global_menu(&mut f, &caller), dolphins);
+}
+
+#[test]
+fn an_address_set_again_replaces_the_first() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let _applet = an_applet(&bus);
+    let id = a_qt_client(&mut f);
+    let caller = a_caller(&mut f, &bus);
+    let dolphin = map_with_menu(&mut f, id, "org.kde.dolphin", None);
+    f.client(id)
+        .set_appmenu_address(dolphin.xdg(), ":1.77", "/MenuBar/1");
+
+    f.client(id)
+        .set_appmenu_address(dolphin.xdg(), ":1.77", "/MenuBar/2");
+    f.sync(dolphin);
+
+    let dolphins = dbusmenu(":1.77", "/MenuBar/2", "org.kde.dolphin");
+    assert_eq!(global_menu(&mut f, &caller), dolphins);
+}
+
+#[test]
+fn a_released_appmenu_takes_the_menu_away() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let _applet = an_applet(&bus);
+    let id = a_qt_client(&mut f);
+    let caller = a_caller(&mut f, &bus);
+    let dolphin = map_with_menu(&mut f, id, "org.kde.dolphin", None);
+    f.client(id)
+        .set_appmenu_address(dolphin.xdg(), ":1.77", "/MenuBar/1");
+    f.sync(dolphin);
+
+    f.client(id).release_appmenu(dolphin.xdg());
+    f.sync(dolphin);
+
+    assert_eq!(global_menu(&mut f, &caller), no_menu("org.kde.dolphin"));
 }
