@@ -4,3 +4,4 @@ Name=MATE on Caminito
 Comment=The MATE desktop on the Caminito Wayland compositor
 Exec=caminito --session
 DesktopNames=MATE
+Icon=caminito

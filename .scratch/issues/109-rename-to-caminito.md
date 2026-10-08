@@ -73,3 +73,8 @@ The new logo is the house that is in the tree as the project's icon by then (com
 ## The goldens' title (2026-10-08, from 105)
 
 - **CI was red after the rename:** the replace also changed `tests/goldens/cases.json`'s title, "Camino golden window", which Marco drew into every committed golden, so every case with a titlebar differed in its pixels. The title is back to the old one, which is an input pinned to the goldens rather than the project's name. Regenerating the goldens with the new title, on a machine with Marco, would make the first criterion's search pass there too.
+
+## The logo (2026-10-08)
+
+- **The second commit is in:** the canvas is 551 by 551 with the drawing centred (`viewBox="239.5 33 551 551"`), the C2PA block and its namespace are gone, Meson installs the file in hicolor's scalable apps, the session entry has `Icon=caminito`, and the README shows it at 128 by 128, which draws the house at its old 106 by 128. `caminito-git` depends on `hicolor-icon-theme`, which owns the directory, as the patched packages that install icons do. `tests/logo.rs` checks the square, the missing credentials and the entry's icon.
+- **Not run here:** Meson, makepkg and the X11 tier, as the container this was done in has no Meson and its Xwayland doesn't start. The installed path and the greeter's icon are for the developer's package build and login.

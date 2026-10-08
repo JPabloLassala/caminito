@@ -37,13 +37,14 @@ license=(GPL-2.0-or-later)
 # connection needs nothing gtk4 doesn't bring. Its entry shadows the Display capplet's, from
 # /usr/share/caminito/xdg. The control center's Windows and Keyboard Shortcuts dialogs are the
 # patched package's (101), and Meson installs the keybinding manifests they list into its
-# keybindings directory, which marco's own are in too.
+# keybindings directory, which marco's own are in too. The logo (109) is in hicolor's
+# scalable apps, a directory hicolor-icon-theme owns.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput
   gtk-session-lock mate-desktop pam mate-screensaver
   mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
-  mate-notification-daemon mate-polkit)
+  mate-notification-daemon mate-polkit hicolor-icon-theme)
 makedepends=(cargo git meson)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds in pacman's database (111). It's named by its real name, as the patched

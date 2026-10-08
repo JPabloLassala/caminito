@@ -37,6 +37,7 @@ mod layer_shell;
 mod lock;
 mod locker;
 mod logind;
+mod logo;
 mod menu_claim;
 mod output_lifecycle;
 mod output_management;

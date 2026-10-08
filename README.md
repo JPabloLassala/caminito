@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="data/icons/caminito.svg" width="106" height="128" alt="The Caminito logo">
+  <img src="data/icons/caminito.svg" width="128" height="128" alt="The Caminito logo">
 </p>
 
 # Caminito

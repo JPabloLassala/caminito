@@ -22,6 +22,13 @@ install_data(
   install_dir: get_option('datadir') / 'wayland-sessions',
 )
 
+# The logo (109), the session entry's icon: Icon=caminito finds it in the hicolor theme,
+# which every icon theme falls back to.
+install_data(
+  'data/icons/caminito.svg',
+  install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
+)
+
 # Caminito's own settings (09): the workspace grid's three keys (96). The package's hook
 # compiles the schemas (16), so nothing is compiled here.
 install_data(
