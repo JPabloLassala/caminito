@@ -513,6 +513,26 @@ fn a_dbusmenu_address_reaches_the_property_when_its_window_has_the_focus() {
     assert_eq!(global_menu(&mut f, &caller), dolphins);
 }
 
+/// Firefox with `appmenu-gtk-module` loaded: the module says where the menubar of
+/// Firefox's hidden `GtkMenuBar` is, which has nothing in it.
+#[test]
+fn a_dbusmenu_address_wins_over_the_gtk_menus_of_the_same_window() {
+    let (mut f, _dir, bus) = on_its_own_bus();
+    let _applet = an_applet(&bus);
+    let id = a_qt_client(&mut f);
+    f.client(id).bind_gtk_shell();
+    f.roundtrip(id);
+    let caller = a_caller(&mut f, &bus);
+    let firefox = map_with_menu(&mut f, id, "firefox", Some(&plumas_menu()));
+
+    f.client(id)
+        .set_appmenu_address(firefox.xdg(), ":1.77", "/MenuBar/1");
+    f.sync(firefox);
+
+    let firefoxs = dbusmenu(":1.77", "/MenuBar/1", "firefox");
+    assert_eq!(global_menu(&mut f, &caller), firefoxs);
+}
+
 #[test]
 fn an_address_set_again_replaces_the_first() {
     let (mut f, _dir, bus) = on_its_own_bus();

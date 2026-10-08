@@ -321,7 +321,8 @@ impl Caminito {
             let registration = self.app_menu_registrations.menu(mapped.x11_window()?)?;
             Some(GlobalMenu::registered(registration))
         };
-        let (kind, bus_name, paths) = gtk.or_else(dbusmenu).or_else(registered)?;
+        // Firefox with `appmenu-gtk-module` loaded says both, and its `GtkMenuBar` is empty.
+        let (kind, bus_name, paths) = dbusmenu().or(gtk).or_else(registered)?;
         Some(GlobalMenu {
             kind,
             bus_name,
