@@ -12,8 +12,8 @@
 //! stage 3 calls, and the `KeyEvent`s are sent from zbus's thread in the order they're
 //! decided, so the key path never waits on the bus (15).
 //!
-//! The rules on keys are niri's (`src/dbus/freedesktop_a11y.rs`, `1f03391`), with the held
-//! keys known by their codes rather than their keysyms.
+//! The rules on keys are niri's (`src/dbus/freedesktop_a11y.rs:254-405` on its `main` of
+//! 2026-10-09), with the held keys known by their codes rather than their keysyms.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -448,7 +448,7 @@ pub(super) async fn own_name(connection: &zbus::Connection) {
     match reply {
         Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}
         Ok(RequestNameReply::Exists | RequestNameReply::InQueue) | Err(zbus::Error::NameTaken) => {
-            let owner = super::screensaver::owner(connection, NAME).await;
+            let owner = super::owner(connection, NAME).await;
             tracing::warn!("can't own {NAME}: {owner} has it");
         }
         Err(err) => tracing::warn!("can't own {NAME}: {err}"),

@@ -66,6 +66,19 @@ async fn on_the_bus(connection: &zbus::Connection, name: &str) -> bool {
     has_owner.await.unwrap_or(true)
 }
 
+/// Who has `name`, for the log.
+async fn owner(connection: &zbus::Connection, name: &'static str) -> String {
+    let owner = async {
+        let bus = zbus::fdo::DBusProxy::new(connection).await?;
+        let name = BusName::from_static_str(name)?;
+        zbus::Result::Ok(bus.get_name_owner(name).await?)
+    };
+    match owner.await {
+        Ok(owner) => owner.to_string(),
+        Err(_) => "another connection".to_owned(),
+    }
+}
+
 /// Where the event loop hears of the callers that left the bus, by their unique names, so
 /// that what they held goes with them: the shim's cookies (62), the accelerator grabs
 /// (98), the menus registered for XWayland windows (113), the menu claims' ties (115) and

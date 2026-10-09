@@ -13,7 +13,6 @@ use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
 use zbus::fdo::{self, RequestNameFlags, RequestNameReply};
 use zbus::message::Header;
-use zbus::names::BusName;
 
 use super::{Callers, caller};
 use crate::state::Caminito;
@@ -485,26 +484,13 @@ pub(super) async fn own_names(connection: &zbus::Connection) {
             Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}
             Ok(RequestNameReply::Exists | RequestNameReply::InQueue)
             | Err(zbus::Error::NameTaken) => {
-                let owner = owner(connection, name).await;
+                let owner = super::owner(connection, name).await;
                 // An error, though Caminito carries on: the session can then get an X11
                 // lock that Caminito can't show (62).
                 tracing::error!("can't own {name}: {owner} has it");
             }
             Err(err) => tracing::error!("can't own {name}: {err}"),
         }
-    }
-}
-
-/// Who has `name`, for the log.
-pub(super) async fn owner(connection: &zbus::Connection, name: &'static str) -> String {
-    let owner = async {
-        let bus = fdo::DBusProxy::new(connection).await?;
-        let name = BusName::from_static_str(name)?;
-        zbus::Result::Ok(bus.get_name_owner(name).await?)
-    };
-    match owner.await {
-        Ok(owner) => owner.to_string(),
-        Err(_) => "another connection".to_owned(),
     }
 }
 

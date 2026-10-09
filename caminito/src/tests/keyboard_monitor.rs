@@ -42,7 +42,7 @@ struct KeyEvent {
 struct Orca {
     monitor: KeyboardMonitorProxy<'static>,
     events: Option<KeyEventIterator>,
-    _name: Option<MutexGuard<'static, ()>>,
+    turn: Option<MutexGuard<'static, ()>>,
 }
 
 impl Orca {
@@ -68,7 +68,7 @@ impl Orca {
             );
             std::thread::yield_now();
         }
-        orca._name = Some(turn);
+        orca.turn = Some(turn);
         orca
     }
 
@@ -84,7 +84,7 @@ impl Orca {
         Self {
             monitor,
             events: Some(events),
-            _name: None,
+            turn: None,
         }
     }
 
@@ -149,7 +149,7 @@ impl Drop for Orca {
     /// Gives Orca's name up before the next test's turn: a test that failed waiting for an
     /// event leaves the connection open, with a thread still waiting on it.
     fn drop(&mut self) {
-        if self._name.is_some() {
+        if self.turn.is_some() {
             let _ = self.monitor.inner().connection().release_name(ORCA_NAME);
         }
     }
