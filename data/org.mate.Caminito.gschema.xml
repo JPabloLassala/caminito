@@ -31,5 +31,14 @@
       <summary>Columns of workspaces</summary>
       <description>The number of columns in the workspace grid. 0 derives it from the number of rows and the number of workspaces. If the rows and the columns are both set and the grid is too small for the workspaces, a horizontal grid gets more columns and a vertical one more rows.</description>
     </key>
+    <!--
+      The screen locker (12, 126). mate-screensaver's own keys don't say which program locks,
+      as it is its own locker.
+    -->
+    <key name="locker-command" type="as">
+      <default>['caminito-locker']</default>
+      <summary>The screen locker's command</summary>
+      <description>The program that draws the lock screen and unlocks the session, and its arguments, run without a shell. Any locker that speaks ext-session-lock works, such as ['swaylock'], as long as it doesn't fork into the background. The session stays locked whatever the locker does: one that exits is started again, and after five failed starts within a minute the screen says how to unlock from a text console.</description>
+    </key>
   </schema>
 </schemalist>

@@ -62,10 +62,6 @@ impl LockState {
     }
 
     /// Caminito asks for the lock itself. A session that's locked stays as it is.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "126's request seam is its first caller")
-    )]
     pub(crate) fn requested(self) -> Self {
         match self {
             LockState::Unlocked => LockState::Pending,

@@ -32,6 +32,7 @@ mod keyboard_settings;
 mod keymap;
 mod layer_shell;
 mod lock;
+mod locker;
 mod menu_claim;
 mod output_lifecycle;
 mod output_management;
