@@ -5,7 +5,7 @@
 // loaded below its floor all the same (ADR 0022), so what came late is optional here, and
 // the extension looks for it before using it.
 
-import type { Event, WindowState } from 'vscode';
+import type { Event, Uri, WindowState } from 'vscode';
 
 /** Something to undo, as the editor's `Disposable`. */
 export interface Disposable {
@@ -31,13 +31,16 @@ export interface Editor {
   };
   readonly workspace: {
     /** Undefined when no folder is open. */
-    readonly workspaceFolders: readonly unknown[] | undefined;
+    readonly workspaceFolders: readonly { readonly uri: { toString(): string } }[] | undefined;
     /** Defined when a multi-root workspace is open, an untitled one among them. */
-    readonly workspaceFile: unknown;
+    readonly workspaceFile: { toString(): string } | undefined;
     readonly onDidChangeWorkspaceFolders: Event<unknown>;
     getConfiguration(): { get(section: string): unknown };
     readonly onDidChangeConfiguration: Event<{ affectsConfiguration(section: string): boolean }>;
+    /** Reads the default keybindings, at `vscode://defaultsettings/keybindings.json`. */
+    readonly fs: { readFile(uri: Uri): PromiseLike<Uint8Array> };
   };
+  readonly Uri: { parse(value: string): Uri };
   readonly extensions: { readonly onDidChange: Event<void> };
   readonly env: {
     /** The editor's own directory, where its `product.json` is. */

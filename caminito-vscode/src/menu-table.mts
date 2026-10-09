@@ -5,6 +5,7 @@
 // say what a snapshot can't, keyed by command id.
 
 import type { MenuNode, Toggle } from './dbusmenu.mts';
+import type { Shortcut } from './keybindings.mts';
 
 /** The table, as menu/table.json holds it. */
 export interface Table {
@@ -91,6 +92,8 @@ export interface Running {
   /** A setting's value, or undefined when it can't be read. */
   setting(name: string): unknown;
   readonly workspace: Workspace;
+  /** A command's shortcut, or undefined for none. */
+  shortcut(command: string): Shortcut | undefined;
   /** What's put before the table's item of `command`, whether that item is shown or not. */
   before?(command: string): readonly MenuNode[];
 }
@@ -99,8 +102,9 @@ export interface Running {
  * The menus the running editor gets: each item whose command it doesn't list, whose
  * `product.json` key it lacks or whose workspace isn't the window's is dropped, then each
  * menu left empty, and then the separators are collapsed, so that none is first, last or
- * beside another. An item whose setting can be read has its checkmark or radio state.
- * What `running.before` gives is put in first, so its separators are collapsed too.
+ * beside another. An item whose setting can be read has its checkmark or radio state, and
+ * an item whose command has a shortcut has it. What `running.before` gives is put in
+ * first, so its separators are collapsed too.
  *
  * Every entry of the table has the same id whatever is dropped: the root is 0 and the rest
  * are numbered depth first.
@@ -146,7 +150,13 @@ export function fit(
         nodes.push(...(running.before?.(item.command) ?? []));
         if (shown(item)) {
           const state = toggle(item);
-          nodes.push({ id, ...item, ...(state && { toggle: state }) });
+          const shortcut = running.shortcut(item.command);
+          nodes.push({
+            id,
+            ...item,
+            ...(state && { toggle: state }),
+            ...(shortcut && { shortcut }),
+          });
         }
       }
     }

@@ -35,6 +35,10 @@ export interface Options {
   readonly settings?: Record<string, unknown>;
   /** The window's workspace at activation; a folder by default. */
   readonly workspace?: Workspace;
+  /** The default keybindings' text, or what reading them fails with; none by default. */
+  readonly defaultKeybindings?: string | Error;
+  /** The default profile's directory, `<user data>/User`; none by default, so no user file is read. */
+  readonly userDir?: string;
   /** What `_workbench.getRecentlyOpened` answers at activation, or fails with; an empty list by default. */
   readonly recent?: unknown;
   /** The home directory; `/home/ana` by default. */
@@ -92,6 +96,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     editor.recent = () =>
       recent instanceof Error ? Promise.reject(recent) : Promise.resolve(recent);
   }
+  editor.defaultKeybindings = options.defaultKeybindings ?? '[]';
   const commands = options.commands ?? commandsOf(served.table.menus);
   editor.listCommands = () =>
     commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
@@ -105,6 +110,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     platform: options.platform ?? 'linux',
     busAddress: options.busAddress ?? bus.address,
     menu: served,
+    ...(options.userDir !== undefined && { userDir: options.userDir }),
     home: options.home ?? '/home/ana',
   });
   t.after(() => {

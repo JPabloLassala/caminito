@@ -2,9 +2,11 @@
 // window while Caminito offers the global menu. It takes the editor's API as a value, which
 // is the seam its tests use (116).
 
+import { watch } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { Message, MessageType, sessionBus } from '@jellybrick/dbus-next';
 import type { MessageBus, Variant } from '@jellybrick/dbus-next';
@@ -13,8 +15,11 @@ import annotations from '../menu/annotations.json' with { type: 'json' };
 import table from '../menu/table.json' with { type: 'json' };
 import { DbusMenu } from './dbusmenu.mts';
 import type { Disposable, Editor } from './editor.mts';
+import { bindingsOf, fallbackLabelsOf, labelsOf, parseJsonc, shortcutOf } from './keybindings.mts';
+import type { Binding, Shortcut } from './keybindings.mts';
 import { entriesIn, fit, settingsOf } from './menu-table.mts';
 import type { Annotations, Table, Workspace } from './menu-table.mts';
+import { keybindingsFileOf, storageFileOf } from './profiles.mts';
 import {
   CHANGES_THE_LIST,
   GET_RECENTLY_OPENED,
@@ -30,6 +35,9 @@ export const FLOOR = '1.68.0';
 
 /** How long the menu waits after a change for others, so that they're sent as one update. */
 export const COALESCING_MS = 50;
+
+/** The default keybindings, as VS Code serves them to an extension (ADR 0020). */
+export const DEFAULT_KEYBINDINGS = 'vscode://defaultsettings/keybindings.json';
 
 /** Where the menu is served, on the connection's unique name. */
 export const MENU_PATH = '/org/mate/Caminito/GlobalMenuExtension/MenuBar';
@@ -56,6 +64,11 @@ export interface Environment {
   readonly busAddress?: string;
   /** The menu to serve, VS Code's by default. */
   readonly menu?: Menu;
+  /**
+   * The default profile's directory, `<user data>/User`, where `storage.json` and the
+   * user's keybindings files are found; none are read without it.
+   */
+  readonly userDir?: string;
   /** The home directory, shown as `~` in Open Recent; the user's by default. */
   readonly home?: string;
 }
@@ -125,6 +138,11 @@ async function run(
   // A list of commands that can't be read keeps every item.
   let commands = await listCommands(editor, log, 'so every item is kept');
   const product = await productOf(editor, log);
+  const keys = new Keybindings(editor, environment.userDir, served.table, log);
+  await keys.readDefaults();
+  await keys.readProfile();
+  await keys.readUser();
+  disposables.add(keys);
   // Open Recent's entries follow the table's own entries, whose ids `fit` gives.
   const recentItems = new RecentItems(
     entriesIn(served.table.menus) + 1,
@@ -138,6 +156,7 @@ async function run(
       product,
       setting: settingReader(editor),
       workspace: workspaceOf(editor),
+      shortcut: (command) => keys.shortcut(command),
       before: (command) => (command === MORE && recent ? recentItems.items(recent) : []),
     });
   };
@@ -158,35 +177,40 @@ async function run(
     await runCommand(command, args);
     // The list moved or emptied once the command returns, opened or cleared.
     if (CHANGES_THE_LIST.includes(command)) {
-      schedule({ recent: true });
+      schedule('recent');
     }
   });
 
   // Updates (ADR 0020): an event marks what to re-read, and the menu is built again once
   // the changes that came with it are in. Nothing else re-reads, so there's no timer.
+  // Settings and folders are read again on every update; the rest only when marked.
   let pending: ReturnType<typeof setTimeout> | undefined;
-  let relist = false;
-  let reread = false;
+  const stale = new Set<Reread>();
   let updating = Promise.resolve();
   let stopped = false;
   const apply = async () => {
-    if (relist) {
-      relist = false;
+    const reread = new Set(stale);
+    stale.clear();
+    if (reread.has('commands')) {
       // A list that can't be read again keeps the last one.
       commands = (await listCommands(editor, log, 'so the last list is kept')) ?? commands;
     }
-    if (reread) {
-      reread = false;
+    if (reread.has('defaults')) {
+      await keys.readDefaults();
+    }
+    // A window whose profile changed has another file to read and watch.
+    if ((reread.has('profile') && (await keys.readProfile())) || reread.has('keybindings')) {
+      await keys.readUser();
+    }
+    if (reread.has('recent')) {
       recent = await recentReader.read();
     }
     if (!stopped) {
       menu.update(build());
     }
   };
-  /** Settings and folders are always read again; the commands and the recent list when asked. */
-  const schedule = (also: { commands?: boolean; recent?: boolean } = {}) => {
-    relist ||= also.commands === true;
-    reread ||= also.recent === true;
+  const schedule = (...reread: Reread[]) => {
+    reread.forEach((what) => stale.add(what));
     pending ??= setTimeout(() => {
       pending = undefined;
       // One at a time, so that an older list of commands never lands last.
@@ -212,21 +236,14 @@ async function run(
     ),
   );
   disposables.add(editor.workspace.onDidChangeWorkspaceFolders(() => schedule()));
-  disposables.add(editor.extensions.onDidChange(() => schedule({ commands: true })));
-  // The recent list has no event of its own. Focus lost isn't one: a panel menu opening
-  // takes the focus, and the menu would be replaced as it opens.
-  disposables.add(
-    editor.window.onDidChangeWindowState(
-      guarded(log, (state: { focused: boolean }) => {
-        if (state.focused) {
-          schedule({ recent: true });
-        }
-      }),
-    ),
-  );
+  // The defaults hold the extensions' own bindings.
+  disposables.add(editor.extensions.onDidChange(() => schedule('commands', 'defaults')));
+  keys.onChange = () => schedule('keybindings');
+  // The recent list has no event of its own: it's read again on focus gained, below, and
+  // on a change of the tabs.
   const tabs = editor.window.tabGroups?.onDidChangeTabs;
   if (tabs !== undefined) {
-    disposables.add(tabs(() => schedule({ recent: true })));
+    disposables.add(tabs(() => schedule('recent')));
   }
 
   let owner: string | null = null;
@@ -332,6 +349,9 @@ async function run(
         if (state.focused && open) {
           claim();
         }
+        if (state.focused) {
+          schedule('profile', 'recent');
+        }
       }),
     ),
   );
@@ -355,6 +375,138 @@ async function run(
   setOwner((reply?.body[0] as string | undefined) ?? null);
   await reading;
 }
+
+/**
+ * The keybinding labels (ADR 0020): the default keybindings, the window's keybindings file
+ * and what it holds, and the shortcut each command gets from them. The file is watched, and
+ * a change of it calls `onChange`.
+ */
+class Keybindings implements Disposable {
+  onChange: () => void = () => {};
+  readonly #editor: Editor;
+  readonly #userDir: string | undefined;
+  readonly #table: Table;
+  readonly #log: Log;
+  /** Undefined while they can't be read, so that the snapshot's labels are used. */
+  #defaults: Binding[] | undefined;
+  #file: string | undefined;
+  #watcher: FSWatcher | undefined;
+  #user: Binding[] = [];
+  /** Why `storage.json` couldn't be read last, so that it's logged once and not at every focus. */
+  #storageError: string | undefined;
+  #shortcuts = new Map<string, Shortcut | undefined>();
+
+  constructor(editor: Editor, userDir: string | undefined, table: Table, log: Log) {
+    this.#editor = editor;
+    this.#userDir = userDir;
+    this.#table = table;
+    this.#log = log;
+  }
+
+  shortcut(command: string): Shortcut | undefined {
+    return this.#shortcuts.get(command);
+  }
+
+  /** Reads the default keybindings. Ones that can't be read again keep the last read. */
+  async readDefaults(): Promise<void> {
+    try {
+      const uri = this.#editor.Uri.parse(DEFAULT_KEYBINDINGS);
+      const text = new TextDecoder().decode(await this.#editor.workspace.fs.readFile(uri));
+      const parsed = parseJsonc(text);
+      if (!Array.isArray(parsed)) {
+        throw new Error('they are not a list');
+      }
+      this.#defaults = bindingsOf(parsed);
+    } catch (err) {
+      const otherwise = this.#defaults
+        ? 'so the last are kept'
+        : "so the snapshot's labels are used";
+      this.#log.line(`can't read the default keybindings, ${otherwise}: ${message(err)}`);
+    }
+    this.#relabel();
+  }
+
+  /** Finds the window's keybindings file and watches it; true when it's to be read again. */
+  async readProfile(): Promise<boolean> {
+    if (this.#userDir === undefined) {
+      return false;
+    }
+    let storage: unknown;
+    try {
+      storage = JSON.parse(await readFile(storageFileOf(this.#userDir), 'utf8'));
+      this.#storageError = undefined;
+    } catch (err) {
+      if (this.#storageError !== message(err)) {
+        this.#storageError = message(err);
+        this.#log.line(
+          `can't read storage.json, so the default profile's keybindings are used: ${this.#storageError}`,
+        );
+      }
+    }
+    const file = keybindingsFileOf(
+      this.#userDir,
+      storage,
+      workspaceUriOf(this.#editor),
+      settingReader(this.#editor)('window.newWindowProfile'),
+    );
+    // A file not watched yet, its directory not there at the last try, is tried again, and
+    // read again since it may have come with its directory. The failure is logged once.
+    const moved = file !== this.#file;
+    if (!moved && this.#watcher !== undefined) {
+      return false;
+    }
+    this.#file = file;
+    this.#watcher?.close();
+    this.#watcher = undefined;
+    const failed = (err: unknown) => {
+      if (moved) {
+        this.#log.line(`can't watch ${file}: ${message(err)}`);
+      }
+    };
+    try {
+      // The directory, since an editor replaces the file rather than writing it in place.
+      const watcher = watch(dirname(file), (_event, name) => {
+        if (name === null || name === basename(file)) {
+          this.onChange();
+        }
+      });
+      watcher.on('error', failed);
+      this.#watcher = watcher;
+    } catch (err) {
+      failed(err);
+    }
+    return true;
+  }
+
+  /** Reads the window's keybindings file. One that isn't there holds nothing. */
+  async readUser(): Promise<void> {
+    this.#user = [];
+    if (this.#file !== undefined) {
+      try {
+        this.#user = bindingsOf(parseJsonc(await readFile(this.#file, 'utf8')));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          this.#log.line(`can't read ${this.#file}, so it's left out: ${message(err)}`);
+        }
+      }
+    }
+    this.#relabel();
+  }
+
+  dispose(): void {
+    this.#watcher?.close();
+  }
+
+  #relabel(): void {
+    const labels = this.#defaults
+      ? labelsOf(this.#defaults, this.#user)
+      : fallbackLabelsOf(this.#table.keybindings, this.#user);
+    this.#shortcuts = new Map([...labels].map(([command, key]) => [command, shortcutOf(key)]));
+  }
+}
+
+/** What an update reads again besides the settings and folders, which it always does. */
+type Reread = 'commands' | 'defaults' | 'profile' | 'keybindings' | 'recent';
 
 /**
  * Reads the recently opened list (ADR 0020). A list that can't be read is undefined, and
@@ -435,6 +587,12 @@ function settingReader(editor: Editor): (name: string) => unknown {
       return undefined;
     }
   };
+}
+
+/** The window's workspace file, else its first folder, as a URI's string; undefined for neither. */
+function workspaceUriOf(editor: Editor): string | undefined {
+  const workspace = editor.workspace.workspaceFile ?? editor.workspace.workspaceFolders?.[0]?.uri;
+  return workspace?.toString();
 }
 
 /** The window's workspace: a workspace file, else a folder, else none. */
