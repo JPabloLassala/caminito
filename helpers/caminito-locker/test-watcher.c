@@ -198,16 +198,13 @@ test_status_text_at_start (void)
 {
   Presence presence = { 0 };
   GSWatcher *watcher;
-  char *text;
 
   start_bus (&presence);
   own_presence (&presence, "Back at 3");
 
   watcher = gs_watcher_new ();
-  text = status_message (watcher);
-  g_assert_cmpstr (text, ==, "Back at 3");
+  wait_for_status_message (watcher, "Back at 3");
 
-  g_free (text);
   g_object_unref (watcher);
   stop_bus (&presence);
 }
@@ -250,11 +247,28 @@ test_no_presence (void)
 
   start_bus (&presence);
 
-  g_test_expect_message (G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "Couldn't get presence status text: *");
   watcher = gs_watcher_new ();
-  g_test_assert_expected_messages ();
+  while (g_main_context_iteration (NULL, FALSE))
+    ;
   text = status_message (watcher);
   g_assert_null (text);
+
+  g_object_unref (watcher);
+  stop_bus (&presence);
+}
+
+/* mate-session started after the locker, or again: its status text is read then. */
+static void
+test_presence_that_comes_later (void)
+{
+  Presence presence = { 0 };
+  GSWatcher *watcher;
+
+  start_bus (&presence);
+
+  watcher = gs_watcher_new ();
+  own_presence (&presence, "Back soon");
+  wait_for_status_message (watcher, "Back soon");
 
   g_object_unref (watcher);
   stop_bus (&presence);
@@ -268,6 +282,7 @@ main (int argc, char **argv)
   g_test_add_func ("/watcher/status-text-at-start", test_status_text_at_start);
   g_test_add_func ("/watcher/status-text-changed", test_status_text_changed);
   g_test_add_func ("/watcher/no-presence", test_no_presence);
+  g_test_add_func ("/watcher/presence-that-comes-later", test_presence_that_comes_later);
 
   return g_test_run ();
 }

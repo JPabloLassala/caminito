@@ -23,9 +23,11 @@
  * Caminito watches idleness, so only the session's status message is left: mate-session's
  * presence status-text, which mate-screensaver's monitor puts in the dialog when
  * status-message-enabled is on (gs-monitor.c). dbus-glib is gone, so the presence is a
- * GDBusProxy on the well-known name, which also follows mate-session to a new owner, where
- * dbus_g_proxy_new_for_name_owner stayed with the first. The status, idle and away, isn't
- * read, as the dialog shows none of it.
+ * GDBusProxy on the well-known name, which also follows mate-session to a new owner and
+ * reads its status text then, where dbus_g_proxy_new_for_name_owner stayed with the first
+ * and warned without one. The status text is read asynchronously, as the locker makes its
+ * lock windows meanwhile, where mate-screensaver's daemon read it at its own start. The
+ * status, idle and away, isn't read, as the dialog shows none of it.
  */
 
 #include <gio/gio.h>
@@ -39,6 +41,8 @@ struct GSWatcherPrivate
 	char           *status_message;
 
 	GDBusProxy     *presence_proxy;
+	/* The read of the status text in flight, cancelled with the watcher. */
+	GCancellable   *cancellable;
 };
 
 enum
@@ -138,11 +142,77 @@ on_presence_signal (GDBusProxy *presence_proxy G_GNUC_UNUSED,
 	set_status_text (watcher, status_text);
 }
 
+static void
+got_status_text (GObject      *source,
+                 GAsyncResult *result,
+                 gpointer      data)
+{
+	GSWatcher *watcher;
+	GError    *error;
+	GVariant  *reply;
+	GVariant  *value;
+
+	error = NULL;
+	reply = g_dbus_proxy_call_finish (G_DBUS_PROXY (source), result, &error);
+
+	if (reply == NULL)
+	{
+		if (! g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		{
+			g_warning ("Couldn't get presence status text: %s", error->message);
+		}
+		g_error_free (error);
+		return;
+	}
+
+	watcher = GS_WATCHER (data);
+
+	g_variant_get (reply, "(v)", &value);
+	if (g_variant_is_of_type (value, G_VARIANT_TYPE_STRING))
+	{
+		set_status_text (watcher, g_variant_get_string (value, NULL));
+	}
+	g_variant_unref (value);
+	g_variant_unref (reply);
+}
+
+/* The presence's status text, once mate-session owns its name. */
+static void
+get_status_text (GSWatcher *watcher)
+{
+	char *owner;
+
+	owner = g_dbus_proxy_get_name_owner (watcher->priv->presence_proxy);
+	if (owner == NULL)
+	{
+		return;
+	}
+	g_free (owner);
+
+	g_dbus_proxy_call (watcher->priv->presence_proxy,
+	                   "org.freedesktop.DBus.Properties.Get",
+	                   g_variant_new ("(ss)",
+	                                  "org.gnome.SessionManager.Presence",
+	                                  "status-text"),
+	                   G_DBUS_CALL_FLAGS_NONE,
+	                   -1,
+	                   watcher->priv->cancellable,
+	                   got_status_text,
+	                   watcher);
+}
+
+static void
+on_presence_name_owner_changed (GDBusProxy *presence_proxy G_GNUC_UNUSED,
+                                GParamSpec *pspec G_GNUC_UNUSED,
+                                GSWatcher  *watcher)
+{
+	get_status_text (watcher);
+}
+
 static gboolean
 connect_presence_watcher (GSWatcher *watcher)
 {
 	GError            *error;
-	GVariant          *reply;
 	gboolean           ret;
 
 	ret = FALSE;
@@ -168,35 +238,12 @@ connect_presence_watcher (GSWatcher *watcher)
 	                  "g-signal",
 	                  G_CALLBACK (on_presence_signal),
 	                  watcher);
+	g_signal_connect (watcher->priv->presence_proxy,
+	                  "notify::g-name-owner",
+	                  G_CALLBACK (on_presence_name_owner_changed),
+	                  watcher);
 
-	error = NULL;
-	reply = g_dbus_proxy_call_sync (watcher->priv->presence_proxy,
-	                                "org.freedesktop.DBus.Properties.Get",
-	                                g_variant_new ("(ss)",
-	                                               "org.gnome.SessionManager.Presence",
-	                                               "status-text"),
-	                                G_DBUS_CALL_FLAGS_NONE,
-	                                -1,
-	                                NULL,
-	                                &error);
-
-	if (error != NULL)
-	{
-		g_warning ("Couldn't get presence status text: %s", error->message);
-		g_error_free (error);
-	}
-	else
-	{
-		GVariant *value;
-
-		g_variant_get (reply, "(v)", &value);
-		if (g_variant_is_of_type (value, G_VARIANT_TYPE_STRING))
-		{
-			set_status_text (watcher, g_variant_get_string (value, NULL));
-		}
-		g_variant_unref (value);
-		g_variant_unref (reply);
-	}
+	get_status_text (watcher);
 
 	ret = TRUE;
 
@@ -208,6 +255,7 @@ static void
 gs_watcher_init (GSWatcher *watcher)
 {
 	watcher->priv = gs_watcher_get_instance_private (watcher);
+	watcher->priv->cancellable = g_cancellable_new ();
 
 	connect_presence_watcher (watcher);
 }
@@ -224,8 +272,12 @@ gs_watcher_finalize (GObject *object)
 
 	g_return_if_fail (watcher->priv != NULL);
 
+	g_cancellable_cancel (watcher->priv->cancellable);
+	g_object_unref (watcher->priv->cancellable);
+
 	if (watcher->priv->presence_proxy != NULL)
 	{
+		g_signal_handlers_disconnect_by_data (watcher->priv->presence_proxy, watcher);
 		g_object_unref (watcher->priv->presence_proxy);
 	}
 

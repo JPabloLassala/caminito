@@ -268,6 +268,17 @@ const PICTURE: [u8; 69] = [
     0x44, 0xae, 0x42, 0x60, 0x82,
 ];
 
+/// `SOLID_BACKGROUND`, with mate-screensaver's `picture-filename` set to `path`.
+fn with_picture_filename(path: &Path) -> String {
+    SOLID_BACKGROUND.replace(
+        "[org/mate/screensaver]\npicture-filename=''",
+        &format!(
+            "[org/mate/screensaver]\npicture-filename='{}'",
+            path.display()
+        ),
+    )
+}
+
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
 fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
@@ -277,25 +288,13 @@ fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
     let missing = dir.path().join("missing.png");
 
     // A picture-filename that isn't there leaves the desktop's.
-    let keyfile = SOLID_BACKGROUND.replace(
-        "[org/mate/screensaver]\npicture-filename=''",
-        &format!(
-            "[org/mate/screensaver]\npicture-filename='{}'",
-            missing.display()
-        ),
-    );
+    let keyfile = with_picture_filename(&missing);
     let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
     f.wait_for_pixel(100, 100, 0x608040);
     drop((f, locker));
 
-    let keyfile = SOLID_BACKGROUND.replace(
-        "[org/mate/screensaver]\npicture-filename=''",
-        &format!(
-            "[org/mate/screensaver]\npicture-filename='{}'",
-            picture.display()
-        ),
-    );
+    let keyfile = with_picture_filename(&picture);
     let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
     f.wait_for_pixel(100, 100, 0x406080);

@@ -338,7 +338,7 @@ static gboolean auth_check_idle(gpointer data)
 	return G_SOURCE_REMOVE;
 }
 
-static gboolean update_logout(gpointer data);
+static gboolean logout_delay_passed_cb(gpointer data);
 
 /* gs-window-x11.c's is_logout_enabled, asked again when the delay will have passed: the
  * dialog lasts the whole lock, where the daemon asked once per dialog. */
@@ -359,11 +359,11 @@ static void update_logout_enabled(void)
 
 	if (enabled && ! shown)
 	{
-		logout_timeout_id = g_timeout_add(prefs->logout_timeout - (guint) (elapsed * 1000) + 1, update_logout, NULL);
+		logout_timeout_id = g_timeout_add(prefs->logout_timeout - (guint) (elapsed * 1000) + 1, logout_delay_passed_cb, NULL);
 	}
 }
 
-static gboolean update_logout(gpointer data G_GNUC_UNUSED)
+static gboolean logout_delay_passed_cb(gpointer data G_GNUC_UNUSED)
 {
 	logout_timeout_id = 0;
 	update_logout_enabled();
@@ -409,14 +409,28 @@ static void on_watcher_status_message_changed(GSWatcher* changed_watcher G_GNUC_
 	update_status_message();
 }
 
+/* A lock window's background, at the size it was made for. */
+typedef struct
+{
+	cairo_surface_t *surface;
+	int              width;
+	int              height;
+} Background;
+
+static void background_free(Background* background)
+{
+	cairo_surface_destroy(background->surface);
+	g_free(background);
+}
+
 /* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
  * background, read again for each, with picture-filename in its place when that file
  * exists. */
-static void apply_background_to_window(GtkWidget* window, int width, int height)
+static Background* apply_background_to_window(GtkWidget* window, int width, int height)
 {
 	GSettings       *settings;
 	char            *filename;
-	cairo_surface_t *surface;
+	Background      *background;
 
 	mate_bg_load_from_preferences(bg);
 
@@ -430,37 +444,37 @@ static void apply_background_to_window(GtkWidget* window, int width, int height)
 	g_object_unref (settings);
 
 	gs_debug ("Creating background w:%d h:%d", width, height);
-	surface = mate_bg_create_surface (bg,
-	                                  gtk_widget_get_window (window),
-	                                  width,
-	                                  height,
-	                                  FALSE);
-	g_object_set_data_full(G_OBJECT(window), "background", surface, (GDestroyNotify) cairo_surface_destroy);
+	background = g_new(Background, 1);
+	background->surface = mate_bg_create_surface (bg,
+	                                              gtk_widget_get_window (window),
+	                                              width,
+	                                              height,
+	                                              FALSE);
+	background->width = width;
+	background->height = height;
+	g_object_set_data_full(G_OBJECT(window), "background", background, (GDestroyNotify) background_free);
+
+	return background;
 }
 
 /* gs-window-x11.c's gs_window_real_draw, under the window's content. The background is
  * made at the first draw at a size, as the window has its size from Caminito only then. */
 static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_GNUC_UNUSED)
 {
-	cairo_surface_t *bg_surface;
+	Background *background;
 	int width = gtk_widget_get_allocated_width(window);
 	int height = gtk_widget_get_allocated_height(window);
 
-	bg_surface = g_object_get_data(G_OBJECT(window), "background");
-	if (bg_surface == NULL
-	    || GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "background-width")) != width
-	    || GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "background-height")) != height)
+	background = g_object_get_data(G_OBJECT(window), "background");
+	if (background == NULL || background->width != width || background->height != height)
 	{
-		apply_background_to_window(window, width, height);
-		g_object_set_data(G_OBJECT(window), "background-width", GINT_TO_POINTER(width));
-		g_object_set_data(G_OBJECT(window), "background-height", GINT_TO_POINTER(height));
-		bg_surface = g_object_get_data(G_OBJECT(window), "background");
+		background = apply_background_to_window(window, width, height);
 	}
 
 	cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
-	if (bg_surface != NULL)
+	if (background->surface != NULL)
 	{
-		cairo_set_source_surface (cr, bg_surface, 0, 0);
+		cairo_set_source_surface (cr, background->surface, 0, 0);
 		/* MateBG makes a solid colour's surface 1x1, which X tiled as the window's
 		 * background pixmap, and which cairo has to be told to. */
 		cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
