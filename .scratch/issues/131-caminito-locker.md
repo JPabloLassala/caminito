@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in, the first two criteria wait on CI, and the checklist item is 136's
+Status: open: the code is in, the first criterion waits on the Packaging job, and the checklist item is 136's
 Milestone: M7
 Blocked by: 125
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -21,7 +21,7 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 ## Acceptance criteria
 
 - [ ] It builds without warnings, and `caminito-git` builds, installs it and passes `namcap`.
-- [ ] A headless test with the real `caminito-locker` as `locker-command`, where CI has GTK and gtk-session-lock: it takes the lock and makes a lock surface for each output.
+- [x] A headless test with the real `caminito-locker` as `locker-command`, where CI has GTK and gtk-session-lock: it takes the lock and makes a lock surface for each output.
 - [x] The PAM conversation is tested against a stand-in service where the test can install one, or the ticket says why not.
 - [ ] The checklist has an item, tagged M7, and it was run nested and in a Session: the dialog is MATE's with the GTK theme, a wrong password says so and asks again, the right one unlocks, the dialog follows the pointer's monitor, and a change of `lock-dialog-theme` shows at the next lock. If it can't be run where the ticket is done, say so in the notes and leave it to [136](136-packaging-and-closing-m7.md).
 
@@ -50,3 +50,4 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
   - The strings are mate-screensaver's, translated by its catalogue: the locker binds the `mate-screensaver` text domain.
   - The Switch User and Log Out buttons' code and the status message's property are ported, but nothing sets them: they're [132](132-caminito-locker-background-and-buttons.md)'s, with the background.
 - **The test schemas** have mate-screensaver's `org.mate.screensaver`, from `60b2db3`, which the locker's tests run on.
+- **CI's check job passed both locker tests on 2026-10-09** ([run 128](https://github.com/JPabloLassala/camino/actions/runs/37942915304), on `7a60e5d`): *Test the helpers* and *Test caminito-locker against caminito*. That ticks the second criterion. The run before it had failed in 132's watcher test, which counted the first read's reply as a notification; the test now waits for that read. The first criterion still waits on the Packaging job for `caminito-git` and `namcap`.
