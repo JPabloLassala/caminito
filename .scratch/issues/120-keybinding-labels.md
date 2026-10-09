@@ -64,3 +64,4 @@ VS Code 1.140.0 and the applet's package 25.04-4 in a nested debug build of Cami
 ## Resolved (2026-10-09)
 
 - **Closed by the developer** after the nested run, with the keyboard layout handed to [124](124-vs-code-in-a-real-session.md).
+- **The chord's decision was reversed the same day.** Above, the run says a chord goes on having no shortcut and ADR 0020 stands. The developer then asked for the chord in the panel. ADR 0020 is amended, and [145](145-a-chord-s-shortcut-in-the-panel-s-menu.md) is the work.

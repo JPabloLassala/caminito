@@ -4,7 +4,7 @@ Epic: global-menu
 Type: verification
 Status: open
 Milestone: none: after v0.1
-Blocked by: [117](117-the-package-installs-the-extension.md), [119](119-checkmarks-and-workspace-items.md), [120](120-keybinding-labels.md), [121](121-open-recent.md), [122](122-the-offer-to-hide-the-menubar.md)
+Blocked by: [117](117-the-package-installs-the-extension.md), [119](119-checkmarks-and-workspace-items.md), [120](120-keybinding-labels.md), [121](121-open-recent.md), [122](122-the-offer-to-hide-the-menubar.md), [145](145-a-chord-s-shortcut-in-the-panel-s-menu.md)
 
 ## What to check
 

@@ -113,7 +113,7 @@ The **global menu extension**, installed by a package as a built-in of each edit
 - **Keybinding labels** are computed from the default keybindings (`vscode://defaultsettings/keybindings.json`) and the user's file: the user's removals first; a binding whose keys a later entry with no `when` gives to another command stops counting; then the only binding, else the last with no `when`, else the last.
 - **The fallback** when the defaults can't be read is the snapshot's labels, with the user's own bindings over them.
 - **The user's file is found through `storage.json`:** the profile tied to the window's folder or workspace file; for a window with no entry, the profile `window.newWindowProfile` names; else the default profile's. A profile that uses the default's keybindings has the default profile's file, and so has every window if `storage.json` can't be read or isn't shaped as expected. The file is read and watched, never opened in a tab.
-- **dbusmenu's `shortcut`** is an array for each press, the modifiers `Control`, `Alt`, `Shift`, `Super` and then a GDK key name. The table from VS Code's key names to GDK's is in the research for [ticket 02](../issues/02-keybinding-labels-and-recent-files.md), on branch `research/vscode-keybinding-labels-and-recent-files`. A chord has no shortcut, nor has a key with no GDK name.
+- **dbusmenu's `shortcut`** is an array for each press, the modifiers `Control`, `Alt`, `Shift`, `Super` and then a GDK key name. The table from VS Code's key names to GDK's is in the research for [ticket 02](../issues/02-keybinding-labels-and-recent-files.md), on branch `research/vscode-keybinding-labels-and-recent-files`. A chord's is every press of it, which a carried patch to the applet's translator draws ([ticket 145](../issues/145-a-chord-s-shortcut-in-the-panel-s-menu.md)); a key with no GDK name has none.
 - **Open Recent** is Reopen Closed Editor, the first ten folders and workspaces, the first ten files, More… and Clear Recently Opened, from `_workbench.getRecentlyOpened`. A label is the path with the home directory as `~`, a workspace and a remote marked as VS Code marks them, cut in the middle at 120 characters, with each underscore doubled so that it isn't read as a mnemonic.
 - **A recent folder or workspace opens with `vscode.openFolder`,** a file with `_files.windowOpen`, and with `vscode.open` if that fails. If the list can't be read, the submenu keeps its fixed items.
 - **Changes are pushed.** The extension re-reads on these events and sends an update only if the result differs:
@@ -161,7 +161,7 @@ In the README's section on the global menu, where ADR 0017's settings are.
 - **VS Code's paragraph is rewritten.** With `caminito-vscode-git` installed, VS Code, VSCodium, Code - OSS and Cursor on native Wayland with the custom title bar have their menu in the panel, and follow the applet while they run. XWayland with a native title bar stays as the way without the package.
 - **The settings:** `window.menuBarVisibility` and what `toggle` does; `caminito.globalMenu.offerToHideMenuBar`, and that turning it on brings the offer back; `settingsSync.ignoredSettings` for a user who wants the menubar hidden on this machine only. And that the Menu Bar item never goes back to `toggle`, so a user who brought the menubar back with it sets the setting by hand.
 - **Linking an editor the hook doesn't reach,** a tarball in the user's home say: one `ln -s` line from the package's directory into the editor's `resources/app/extensions`.
-- **What it doesn't do:** a Flatpak editor, items greyed out, checkmarks for a state it can't read, a chord's shortcut, other extensions' items, a translated menu, Alt+F opening the panel's menu.
+- **What it doesn't do:** a Flatpak editor, items greyed out, checkmarks for a state it can't read, other extensions' items, a translated menu, Alt+F opening the panel's menu.
 
 ## Testing decisions
 
@@ -251,7 +251,6 @@ Slices 5 to 7 each add their own events to the update path, and whichever comes 
 
 - **The menu Electron registers under a native title bar on native Wayland,** which is ticket 113's open question.
 - **Alt+F and F10 opening the panel's menu** (ADR 0017).
-- **A carried patch that draws a chord's shortcut** in the applet's translator, a later ticket.
 - **A carried patch that makes the importer's calls asynchronous.** It's the fix if slice 4 finds the panel's stall too long.
 - **A Flatpak editor.**
 - **Other extensions' items, greying out, a translated menu,** and any proposed API.
