@@ -1885,3 +1885,75 @@ fn a_bad_value_falls_back_to_the_schemas_own_default() {
         ]
     );
 }
+
+// Night Light (137).
+
+#[test]
+fn night_light_is_off_on_the_sun_schedule_by_default() {
+    assert_eq!(
+        settings(&defaults()).night_light,
+        NightLightSettings {
+            enabled: false,
+            schedule: Schedule::Sun,
+            noon_temperature: 5500,
+            night_temperature: 3400,
+            constant_temperature: 4000,
+            paused_until: 0,
+            last_location: None,
+        }
+    );
+}
+
+#[test]
+fn night_lights_keys_are_read() {
+    let mut reading = defaults();
+    let mut set = |key: &str, value: Value| reading.insert(CAMINITO, key, value.clone(), value);
+    set("night-light-enabled", Value::Bool(true));
+    set("night-light-schedule", string("constant"));
+    set("night-light-noon-temperature", Value::Uint(6000));
+    set("night-light-night-temperature", Value::Uint(2700));
+    set("night-light-constant-temperature", Value::Uint(3500));
+    set("night-light-paused-until", Value::Int64(1_800_000_000));
+    set(
+        "night-light-last-location",
+        Value::MaybePair(Some((52.37, 4.89))),
+    );
+    assert_eq!(
+        settings(&reading).night_light,
+        NightLightSettings {
+            enabled: true,
+            schedule: Schedule::Constant,
+            noon_temperature: 6000,
+            night_temperature: 2700,
+            constant_temperature: 3500,
+            paused_until: 1_800_000_000,
+            last_location: Some((52.37, 4.89)),
+        }
+    );
+}
+
+#[test]
+fn a_night_light_temperature_out_of_range_is_clamped() {
+    let reading = with(
+        CAMINITO,
+        "night-light-constant-temperature",
+        Value::Uint(500),
+    );
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.night_light.constant_temperature, 1000);
+    assert_eq!(
+        problem,
+        out_of_range(CAMINITO, "night-light-constant-temperature", "500", "1000")
+    );
+}
+
+#[test]
+fn an_unknown_night_light_schedule_is_the_sun() {
+    let reading = with(CAMINITO, "night-light-schedule", string("moon"));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.night_light.schedule, Schedule::Sun);
+    assert_eq!(
+        problem,
+        invalid(CAMINITO, "night-light-schedule", "'moon'", "'sun'")
+    );
+}

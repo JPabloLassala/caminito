@@ -133,5 +133,23 @@ expression: without_x_ids(&dump)
   "bell": {
     "count": 0,
     "last": null
+  },
+  "night_light": {
+    "enabled": false,
+    "schedule": "sun",
+    "paused_until": 0,
+    "location": null,
+    "location_source": "none",
+    "target_temperature": 6500,
+    "outputs": [
+      {
+        "output": "headless-1",
+        "temperature": 6500
+      },
+      {
+        "output": "headless-2",
+        "temperature": 6500
+      }
+    ]
   }
 }

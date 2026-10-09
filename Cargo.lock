@@ -333,6 +333,7 @@ dependencies = [
  "caminito-policy",
  "caminito-test-client",
  "caminito-theme",
+ "drm-ffi",
  "futures-channel",
  "gio",
  "insta",

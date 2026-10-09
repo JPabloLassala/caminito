@@ -298,6 +298,7 @@ impl Caminito {
             },
         );
         self.outputs.push(output);
+        self.night_light_output_added(id);
         self.lay_out_outputs();
     }
 
@@ -324,6 +325,7 @@ impl Caminito {
         let id = self.output_id(output);
         self.outputs.retain(|o| o != output);
         self.redraws.remove(&id);
+        self.night_light_output_removed(id);
         let record = self
             .output_records
             .remove(&id)

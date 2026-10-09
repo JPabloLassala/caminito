@@ -67,6 +67,13 @@ pub trait Caminito {
     #[zbus(property)]
     fn global_menu_offered(&self) -> zbus::Result<bool>;
 
+    /// Night Light (137): `temperature`, `location-source` and `next-sunrise`.
+    #[zbus(property)]
+    fn night_light(&self) -> zbus::Result<HashMap<String, zbus::zvariant::OwnedValue>>;
+
+    /// Flips `night-light-enabled` (137).
+    fn toggle_night_light(&self) -> zbus::Result<()>;
+
     /// Makes a menu claim (115): the dbusmenu the caller serves at `path` is the menubar
     /// of its process's focused window.
     fn claim_global_menu(&self, path: &zbus::zvariant::ObjectPath<'_>) -> zbus::Result<()>;

@@ -1,18 +1,21 @@
 //! `org.mate.Caminito` (ADR 0002's third channel): what MATE's components and
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
-//! grabs (98), the window a window screenshot is of (104), the global menu (110), and
-//! the menu claim (115).
+//! grabs (98), the window a window screenshot is of (104), the global menu (110), the
+//! menu claim (115), and Night Light (137).
+
+use std::collections::HashMap;
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
 use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue, Str};
 
 use super::global_menu::{GlobalMenu, Published};
 use super::{Callers, caller};
+use crate::night_light;
 use crate::output::{primary, saved};
 use crate::state::Caminito;
 
@@ -58,6 +61,10 @@ pub(crate) enum Request {
         actions: Vec<u32>,
         reply: oneshot::Sender<()>,
     },
+    /// Reads `NightLight`.
+    NightLight(oneshot::Sender<night_light::Published>),
+    /// Calls `ToggleNightLight`.
+    ToggleNightLight(oneshot::Sender<()>),
 }
 
 /// A property Caminito signals itself, when it changes without a caller writing it.
@@ -67,6 +74,7 @@ enum Property {
     ShowingDesktop,
     GlobalMenu,
     GlobalMenuOffered,
+    NightLight,
 }
 
 impl Property {
@@ -76,6 +84,7 @@ impl Property {
             Self::ShowingDesktop => "ShowingDesktop",
             Self::GlobalMenu => "GlobalMenu",
             Self::GlobalMenuOffered => "GlobalMenuOffered",
+            Self::NightLight => "NightLight",
         }
     }
 }
@@ -268,6 +277,36 @@ impl CaminitoInterface {
         super::ask(&self.requests, ungrab).await
     }
 
+    /// Night Light (ADR 0023), as caminito-displays's tab shows it:
+    ///
+    /// - `temperature` (`u`): the temperature the outputs are to have, in kelvin, which they
+    ///   fade to over about 2 s. It's 6500, neutral, while Night Light is off.
+    /// - `location-source` (`s`): where the sun schedule's location comes from. It's `none`
+    ///   until Caminito looks for one (138).
+    /// - `next-sunrise` (`x`): the Unix time the sun next climbs past −6°, or 0 while it
+    ///   isn't known, as it isn't until 138.
+    ///
+    /// Its settings are `org.mate.Caminito`'s `night-light-*` keys.
+    #[zbus(property)]
+    async fn night_light(&self) -> zbus::fdo::Result<HashMap<String, OwnedValue>> {
+        let published = super::ask(&self.requests, Request::NightLight).await?;
+        Ok(HashMap::from([
+            ("temperature".into(), published.temperature.into()),
+            (
+                "location-source".into(),
+                Str::from_static(published.location_source).into(),
+            ),
+            ("next-sunrise".into(), published.next_sunrise.into()),
+        ]))
+    }
+
+    /// Turns Night Light on if it's off, and off if it's on, by writing
+    /// `night-light-enabled`. It's what a shortcut the user binds to
+    /// `caminito-displays --toggle-night-light` calls.
+    async fn toggle_night_light(&self) -> zbus::fdo::Result<()> {
+        super::ask(&self.requests, Request::ToggleNightLight).await
+    }
+
     /// A grabbed accelerator was pressed: its action id, and the key event's time in
     /// milliseconds, as the Wayland clients get it. It's sent to the grabber alone, so no
     /// other caller learns the keys pressed. The release isn't signalled, and a repeat is
@@ -371,6 +410,13 @@ impl Caminito {
                 }
                 let _ = reply.send(());
             }
+            Request::NightLight(reply) => {
+                let _ = reply.send(self.night_light.published());
+            }
+            Request::ToggleNightLight(reply) => {
+                self.toggle_night_light();
+                let _ = reply.send(());
+            }
         }
     }
 
@@ -410,6 +456,7 @@ impl Caminito {
         self.showing_desktop_signalled = Some(self.policy.is_showing_desktop());
         self.global_menu_signalled = Some(self.global_menu());
         self.global_menu_offered_signalled = Some(self.global_menu_offered);
+        self.night_light_signalled = Some(self.night_light.published());
     }
 
     /// The primary output's name as the property has it.
@@ -465,6 +512,19 @@ impl Caminito {
         self.global_menu_offered_signalled = Some(offered);
     }
 
+    /// Signals `NightLight` if it's not what the callers last heard (137).
+    pub(crate) fn refresh_night_light_property(&mut self) {
+        if self.dbus.is_none() {
+            return;
+        }
+        let published = self.night_light.published();
+        if self.night_light_signalled.as_ref() == Some(&published) {
+            return;
+        }
+        self.signal(Property::NightLight);
+        self.night_light_signalled = Some(published);
+    }
+
     /// Signals that `property` changed.
     fn signal(&self, property: Property) {
         let Some(dbus) = &self.dbus else {
@@ -488,6 +548,7 @@ impl Caminito {
                     Property::GlobalMenuOffered => {
                         interface.global_menu_offered_changed(emitter).await
                     }
+                    Property::NightLight => interface.night_light_changed(emitter).await,
                 }
             };
             if let Err(err) = signalled.await {

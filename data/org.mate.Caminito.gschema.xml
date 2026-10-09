@@ -9,6 +9,11 @@
     <value nick="vertical" value="1"/>
   </enum>
 
+  <enum id="org.mate.Caminito.NightLightSchedule">
+    <value nick="sun" value="0"/>
+    <value nick="constant" value="1"/>
+  </enum>
+
   <schema id="org.mate.Caminito" path="/org/mate/caminito/">
     <!--
       The workspace grid, as _NET_DESKTOP_LAYOUT has it on X11, where the pager sets it and
@@ -39,6 +44,48 @@
       <default>['caminito-locker']</default>
       <summary>The screen locker's command</summary>
       <description>The program that draws the lock screen and unlocks the session, and its arguments, run without a shell. Any locker that speaks ext-session-lock works, such as ['swaylock'], as long as it doesn't fork into the background. The session stays locked whatever the locker does: one that exits is started again, and after five failed starts within a minute the screen says how to unlock from a text console.</description>
+    </key>
+    <!--
+      Night Light (ADR 0023): Caminito warms every output toward a lower colour temperature
+      through its gamma table.
+    -->
+    <key name="night-light-enabled" type="b">
+      <default>false</default>
+      <summary>Whether Night Light is on</summary>
+      <description>Whether every output is warmed toward a lower colour temperature, on the schedule "night-light-schedule" names.</description>
+    </key>
+    <key name="night-light-schedule" enum="org.mate.Caminito.NightLightSchedule">
+      <default>'sun'</default>
+      <summary>Night Light's schedule</summary>
+      <description>With "sun" the temperature follows the sun's elevation where the user is: "night-light-night-temperature" while the sun is below the horizon's civil twilight, rising to "night-light-noon-temperature" at the day's highest. With "constant" it's "night-light-constant-temperature" all the time.</description>
+    </key>
+    <key name="night-light-noon-temperature" type="u">
+      <default>5500</default>
+      <range min="1000" max="6500"/>
+      <summary>The temperature at noon</summary>
+      <description>The colour temperature, in kelvin, that the sun schedule reaches when the sun is at its highest. 6500 is neutral.</description>
+    </key>
+    <key name="night-light-night-temperature" type="u">
+      <default>3400</default>
+      <range min="1000" max="6500"/>
+      <summary>The temperature at night</summary>
+      <description>The colour temperature, in kelvin, that the sun schedule holds while the sun is more than 6 degrees below the horizon.</description>
+    </key>
+    <key name="night-light-constant-temperature" type="u">
+      <default>4000</default>
+      <range min="1000" max="6500"/>
+      <summary>The constant temperature</summary>
+      <description>The colour temperature, in kelvin, that the constant schedule holds.</description>
+    </key>
+    <key name="night-light-paused-until" type="x">
+      <default>0</default>
+      <summary>When Night Light's pause ends</summary>
+      <description>The Unix time until which Night Light is paused, and the outputs are neutral. 0 is not paused. Pausing sets it to the next sunrise, and turning Night Light on or off sets it to 0.</description>
+    </key>
+    <key name="night-light-last-location" type="m(dd)">
+      <default>nothing</default>
+      <summary>The last location geoclue gave</summary>
+      <description>The latitude and longitude, in degrees, that geoclue last gave Caminito, which the sun schedule follows while geoclue gives none. Caminito writes it.</description>
     </key>
   </schema>
 </schemalist>
