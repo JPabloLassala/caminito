@@ -31,7 +31,7 @@ const DBUS = 'org.freedesktop.DBus';
 const PROPERTIES = 'org.freedesktop.DBus.Properties';
 
 /** Whether the offer to hide the in-window menubar is still to be made (ADR 0021). */
-export const OFFER_SETTING = 'caminito.globalMenu.offerToHideMenuBar';
+const OFFER_SETTING = 'caminito.globalMenu.offerToHideMenuBar';
 const VISIBILITY = 'window.menuBarVisibility';
 const OFFER_TEXT =
   "The panel now shows this window's menus. Hide the menu bar in the window? Pressing Alt shows it again.";
@@ -39,6 +39,7 @@ const HIDE = 'Hide Menu Bar';
 const KEEP = 'Keep Menu Bar';
 /** The agents window's workspace file, in the user's settings directory. */
 const AGENTS_WORKSPACE = 'agent-sessions.code-workspace';
+// RequestName's flag and its replies that grant the name.
 const DO_NOT_QUEUE = 4;
 const PRIMARY_OWNER = 1;
 const ALREADY_OWNER = 4;
@@ -210,19 +211,22 @@ async function run(
   };
   const offer = offerer(editor, environment, bus, log);
   disposables.add(offer);
-  // A claim that may bring the offer waits until the offer is settled, and the claims after
-  // it wait their turn, so they're sent in order.
+  // A claim that may bring the offer waits until the offer is due or passed over, and the
+  // claims after it wait their turn, so they're sent in order. A failed check still claims.
   let claiming = Promise.resolve();
   const claim = () => {
     claiming = claiming
       .then(() => offer.due())
+      .catch((err: unknown) => {
+        log.line(`can't offer to hide the menubar: ${message(err)}`);
+        return false;
+      })
       .then((due) => {
         sendClaim();
         if (due) {
-          return offer.make();
+          offer.show();
         }
-      })
-      .catch((err: unknown) => log.line(`can't offer to hide the menu bar: ${message(err)}`));
+      });
   };
   const claimIfFocused = guarded(log, () => {
     if (open && editor.window.state.focused) {
@@ -339,8 +343,8 @@ async function run(
 interface Offerer extends Disposable {
   /** Whether a claim now brings the offer, with the bus name taken if it does. */
   due(): Promise<boolean>;
-  /** Shows the offer and turns it off. */
-  make(): Promise<void>;
+  /** Shows the offer and turns it off, without waiting for either. */
+  show(): void;
 }
 
 /**
@@ -385,17 +389,21 @@ function offerer(editor: Editor, environment: Environment, bus: MessageBus, log:
       const granted = reply?.body[0];
       return granted === PRIMARY_OWNER || granted === ALREADY_OWNER;
     },
-    async make() {
+    show() {
+      // This host offers no more even if the setting can't be written.
       made = true;
       const settings = editor.workspace.getConfiguration();
-      void Promise.resolve(editor.window.showInformationMessage(OFFER_TEXT, HIDE, KEEP))
+      const failed = (what: string) => (err: unknown) => log.line(`can't ${what}: ${message(err)}`);
+      Promise.resolve(editor.window.showInformationMessage(OFFER_TEXT, HIDE, KEEP))
         .then(async (answer) => {
           if (answer === HIDE) {
-            await editor.workspace.getConfiguration().update(VISIBILITY, 'toggle', true);
+            await settings.update(VISIBILITY, 'toggle', true);
           }
         })
-        .catch((err: unknown) => log.line(`can't hide the menu bar: ${message(err)}`));
-      await settings.update(OFFER_SETTING, false, true);
+        .catch(failed('hide the menubar'));
+      Promise.resolve(settings.update(OFFER_SETTING, false, true)).catch(
+        failed('turn the offer off'),
+      );
     },
     dispose: () => watching.dispose(),
   };

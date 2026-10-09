@@ -82,6 +82,7 @@ test('two windows of one editor claiming together make one offer', async (t) => 
   f.editor.focus(true);
   other.editor.focus(true);
   await f.claimed(2);
+  await settle();
   assert.equal(f.editor.notifications.length + other.editor.notifications.length, 1);
 });
 

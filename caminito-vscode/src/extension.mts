@@ -13,8 +13,8 @@ export function activate(context: vscode.ExtensionContext): void {
   running = start(vscode, {
     platform: process.platform,
     parentPid: process.ppid,
-    // The default profile's global storage, `<user data>/User/globalStorage/<extension>`,
-    // whatever the window's profile is.
+    // `<user data>/User/globalStorage/<extension>`, the default profile's whatever the
+    // window's profile is, as ticket 12 read VS Code's source. It hasn't been run (122).
     settingsDirectory: dirname(dirname(context.globalStorageUri.fsPath)),
   });
 }
