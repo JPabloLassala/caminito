@@ -45,6 +45,13 @@ type Properties = Record<string, [string, unknown]>;
 const INTERFACE = 'com.canonical.dbusmenu';
 
 /**
+ * How long after a menu's `GetLayout` its items' properties are sent again. The importer
+ * drops an `ItemsPropertiesUpdated` for 100 ms after a menu's layout reply reaches it, and
+ * reads nothing again afterwards (119).
+ */
+export const DROPPED_MS = 200;
+
+/**
  * Serves a menubar whose top-level items are `menus`, under a root of id 0. `run` is given
  * an item's command and arguments when the item is clicked, after the reply to `Event` is
  * sent.
@@ -52,6 +59,11 @@ const INTERFACE = 'com.canonical.dbusmenu';
 export class DbusMenu extends dbusInterface.Interface {
   #byId = new Map<number, MenuNode>();
   #revision = 1;
+  /** When each menu's layout was last asked for, by the menu's id. */
+  #answered = new Map<number, number>();
+  /** The properties to send again, by item, and the one-shot that sends them. */
+  #late = new Map<number, Set<string>>();
+  #resending: ReturnType<typeof setTimeout> | undefined;
   readonly #run: (command: string, args: readonly unknown[]) => void;
 
   constructor(
@@ -70,29 +82,93 @@ export class DbusMenu extends dbusInterface.Interface {
   }
 
   /**
-   * Serves `menus` from now on, and tells the client what changed: `LayoutUpdated` with a
-   * new revision when an item came or went or moved, else `ItemsPropertiesUpdated` when
-   * only properties changed, else nothing.
+   * Serves `menus` from now on, and tells the client what changed: `ItemsPropertiesUpdated`
+   * for the properties of the items that stay, then a `LayoutUpdated` with a new revision
+   * for each menu whose own items came, went or moved. The importer fetches again only the
+   * menu a `LayoutUpdated` names, and none under it.
    */
   update(menus: readonly MenuNode[]): void {
     const before = this.#byId;
     const after = byId(menus);
     this.#byId = after;
-    if (shape(before.get(0)!) !== shape(after.get(0)!)) {
-      this.#revision++;
-      this.LayoutUpdated();
-      return;
-    }
     const updated: [number, Record<string, Variant>][] = [];
     const removed: [number, string[]][] = [];
+    const relaid: number[] = [];
+    const parents = parentsOf(after);
+    const now = performance.now();
     for (const [id, node] of after) {
-      const [old, now] = [properties(before.get(id)!), properties(node)];
-      const changed = Object.keys(now).filter(
-        (name) => JSON.stringify(old[name]) !== JSON.stringify(now[name]),
+      const was = before.get(id);
+      // A new item comes with its menu's layout.
+      if (was === undefined) {
+        continue;
+      }
+      if (idsOf(was) !== idsOf(node)) {
+        relaid.push(id);
+      }
+      const [old, current] = [properties(was), properties(node)];
+      const changed = Object.keys(current).filter(
+        (name) => JSON.stringify(old[name]) !== JSON.stringify(current[name]),
       );
-      const gone = Object.keys(old).filter((name) => !(name in now));
+      const gone = Object.keys(old).filter((name) => !(name in current));
       if (changed.length > 0) {
-        updated.push([id, variants(now, changed)]);
+        updated.push([id, variants(current, changed)]);
+      }
+      if (gone.length > 0) {
+        removed.push([id, gone.sort()]);
+      }
+      // The importer may drop this one: its menu's layout was asked for a moment ago.
+      const answered = this.#answered.get(parents.get(id) ?? 0);
+      if (changed.length + gone.length > 0 && answered !== undefined) {
+        if (now - answered < DROPPED_MS) {
+          const names = this.#late.get(id) ?? new Set();
+          [...changed, ...gone].forEach((name) => names.add(name));
+          this.#late.set(id, names);
+          this.#resending ??= setTimeout(() => this.#resend(), answered + DROPPED_MS - now);
+        }
+      }
+    }
+    if (updated.length > 0 || removed.length > 0) {
+      this.ItemsPropertiesUpdated(updated, removed);
+    }
+    if (relaid.length > 0) {
+      this.#revision++;
+      relaid.forEach((parent) => this.LayoutUpdated(parent));
+    }
+  }
+
+  /** Sends no more: the one-shot that sends properties again is dropped. */
+  dispose(): void {
+    clearTimeout(this.#resending);
+    this.#late.clear();
+  }
+
+  /** Sends the properties held back as they are now, or waits again for a menu asked for since. */
+  #resend(): void {
+    this.#resending = undefined;
+    const parents = parentsOf(this.#byId);
+    const now = performance.now();
+    const updated: [number, Record<string, Variant>][] = [];
+    const removed: [number, string[]][] = [];
+    let wait = 0;
+    for (const [id, names] of this.#late) {
+      const node = this.#byId.get(id);
+      if (node === undefined) {
+        this.#late.delete(id);
+        continue;
+      }
+      const left = (this.#answered.get(parents.get(id) ?? 0) ?? -Infinity) + DROPPED_MS - now;
+      if (left > 0) {
+        wait = Math.max(wait, left);
+        continue;
+      }
+      this.#late.delete(id);
+      const current = properties(node);
+      const [there, gone] = [
+        [...names].filter((name) => name in current),
+        [...names].filter((name) => !(name in current)),
+      ];
+      if (there.length > 0) {
+        updated.push([id, variants(current, there)]);
       }
       if (gone.length > 0) {
         removed.push([id, gone.sort()]);
@@ -100,6 +176,9 @@ export class DbusMenu extends dbusInterface.Interface {
     }
     if (updated.length > 0 || removed.length > 0) {
       this.ItemsPropertiesUpdated(updated, removed);
+    }
+    if (this.#late.size > 0) {
+      this.#resending = setTimeout(() => this.#resend(), wait);
     }
   }
 
@@ -109,6 +188,7 @@ export class DbusMenu extends dbusInterface.Interface {
     if (!parent) {
       throw new DBusError('org.freedesktop.DBus.Error.InvalidArgs', `no item ${parentId}`);
     }
+    this.#answered.set(parentId, performance.now());
     return [this.#revision, layout(parent, propertyNames)];
   }
 
@@ -128,9 +208,9 @@ export class DbusMenu extends dbusInterface.Interface {
     return false;
   }
 
-  /** The signal that the tree changed, with the new revision and the root as its parent. */
-  LayoutUpdated(): [number, number] {
-    return [this.#revision, 0];
+  /** The signal that the items of the menu `parent` changed, with the new revision. */
+  LayoutUpdated(parent: number): [number, number] {
+    return [this.#revision, parent];
   }
 
   /** The signal that properties changed: the new values, and the names that went back to their defaults. */
@@ -169,9 +249,20 @@ function childrenOf(node: MenuNode): readonly MenuNode[] {
   return 'separator' in node ? [] : (node.children ?? []);
 }
 
-/** The tree's ids, which a layout reply has to be sent again for when they change. */
-function shape(node: MenuNode): string {
-  return `${node.id}(${childrenOf(node).map(shape).join(',')})`;
+/** Each node's parent, by id. */
+function parentsOf(all: Map<number, MenuNode>): Map<number, number> {
+  const parents = new Map<number, number>();
+  for (const [id, node] of all) {
+    childrenOf(node).forEach((child) => parents.set(child.id, id));
+  }
+  return parents;
+}
+
+/** The ids of a node's own children, in order. */
+function idsOf(node: MenuNode): string {
+  return childrenOf(node)
+    .map((child) => child.id)
+    .join(',');
 }
 
 function layout(node: MenuNode, propertyNames: string[]): Layout {

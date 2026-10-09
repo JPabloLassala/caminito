@@ -40,7 +40,8 @@ glib-compile-schemas "$work/schemas"
 
 # The editor's own built-ins and the extension, linked as the package will link it.
 for dir in "$builtins"/*/; do ln -s "$dir" "$work/builtin/"; done
-ln -s "$extension" "$work/builtin/caminito.global-menu"
+# -f: an installed caminito-vscode-git has its own link among the built-ins.
+ln -sfn "$extension" "$work/builtin/caminito.global-menu"
 cat >"$work/user/User/settings.json" <<'JSON'
 {
   "window.titleBarStyle": "custom",

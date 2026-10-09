@@ -47,3 +47,12 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 - **Not handled:** an untitled workspace in the list, which VS Code labels "Untitled (Workspace)". It shows here as its path plus ` (Workspace)`. As read, VS Code doesn't add untitled workspaces to the list, which hasn't been run either.
 - **Focus gained re-reads only the recent list.** The window's profile in the spec's "focus gained" line is [120](120-keybinding-labels.md)'s.
 - **Not run here:** both questions under "To run". They need VS Code, a Wayland desktop and the applet, and none is in this container. They're this slice's in the spec's "What has to be run", so they stay here and aren't handed to [124](124-vs-code-in-a-real-session.md).
+
+## From 119's nested run (2026-10-09)
+
+VS Code 1.140.0 and the applet's package 25.04-4 in a nested Caminito, with the scripts in [119-checks](119-checks/). The two questions under "To run" are still open.
+
+- **A change of the list never reached the panel, and it's fixed.** The `LayoutUpdated` named parent 0, and the importer fetches again only the menu the signal names, so the panel's Open Recent kept an entry the served menu had dropped. It now names Open Recent ([119](119-checkmarks-and-workspace-items.md), branch `ticket-119`), and the panel's list was the served one after `vscode.removeFromRecentlyOpened` and a change of tabs. The test of the focus-gained read pins the parent.
+- **An open Open Recent keeps its old entries.** Held open by hand while an entry was taken out, the submenu stayed open and went on showing it. Opened again, it didn't have it.
+- **Toward the first question, one case:** a file opened with `showTextDocument` brought a change of tabs and the claims that follow it, and no `LayoutUpdated` in the 2 s after. Whether the list had the file by then wasn't looked at.
+- **The list isn't the profile's alone.** With a new `--user-data-dir`, Open Recent listed folders of the developer's own editor and of other nested runs. `vscode.removeFromRecentlyOpened` from the scratch editor took entries out of that list, about a dozen of old `/tmp` runs. Where the list is kept wasn't looked into.

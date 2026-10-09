@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: the code is in; the four questions under "To run" are a nested run's, and whether ADR 0020 and the spec should say a change of workspace state restarts the extension host is the developer's
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [118](118-the-menu-is-vs-codes.md)
 
@@ -29,10 +29,10 @@ Blocked by: [118](118-the-menu-is-vs-codes.md)
 
 Nobody has run these. A result that contradicts an ADR reopens it.
 
-- [ ] Whether a setting read with no scope is what VS Code's `config.*` key holds.
-- [ ] How the applet draws a radio item.
-- [ ] What a `LayoutUpdated` does to a panel menu that's open.
-- [ ] Whether an `ItemsPropertiesUpdated` sent within 100 ms of a layout reply has to be sent again. The importer drops them for that long.
+- [x] Whether a setting read with no scope is what VS Code's `config.*` key holds. It is (2026-10-09, below).
+- [x] How the applet draws a radio item. As a checkmark: it's a radio menu item to AT-SPI, with the right one checked, and on screen it looks like a check item (2026-10-09).
+- [x] What a `LayoutUpdated` does to a panel menu that's open. The menu stays open with its old items, and has the new ones when it's opened again (2026-10-09, below).
+- [x] Whether an `ItemsPropertiesUpdated` sent within 100 ms of a layout reply has to be sent again. The importer drops them for that long. It has to, and now is (2026-10-09, below).
 
 ## Comments
 
@@ -56,3 +56,25 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 - **The Rust workspace's suite wasn't run:** as for 118, `pango-sys` won't build without pango's development files, which this container lacks. Ticket 119 changes nothing outside `caminito-vscode/` and this file.
 - **The nested run wasn't done here.** There's no VS Code, no Wayland compositor and no applet, so the four questions under "To run" stay unanswered. The same run should check the restart that review found: a folder window that becomes a multi-root workspace gets a new extension host, which claims the menu again.
 - **Left open on the developer's call:** the folders criterion holds through the seam, but in a real editor the change comes as a restart, not a `LayoutUpdated`. Whether ADR 0020 and the spec should say so isn't decided here.
+
+## The nested run (2026-10-09)
+
+VS Code 1.140.0 and the applet's package 25.04-4 in a nested debug build of Caminito, driven by the scripts in [119-checks](119-checks/): `up.sh` leaves the session up, a driver extension runs timed calls of the editor's API in the extension host, and `look.py` reads the served menu and, through AT-SPI, the panel's.
+
+- **A `LayoutUpdated` with parent 0 reached no submenu, and it's fixed.** The importer has one model for each menu, and a model fetches its layout again only when the signal names its own menu. For parent 0 it called `GetLayout(0, 1)` and nothing else, so the panel's Open Recent kept an entry the served menu had dropped. `DbusMenu.update` now sends one `LayoutUpdated` for each menu whose own items came, went or moved, all with the one new revision. With it the importer called `GetLayout(11, 0)` and `GetLayout(11, 1)` for Open Recent, and the panel's list was the served one. This was [121](121-open-recent.md)'s too.
+- **A change of structure no longer covers the properties changed with it.** The menus not named aren't fetched again, so the same update sends an `ItemsPropertiesUpdated` first for the items that stay. The test that asked for one `LayoutUpdated` alone now asks for both.
+- **An `ItemsPropertiesUpdated` soon after a layout reply is lost, and is now sent again.** `119-checks/dropped.sh` took an entry out of Open Recent and then gave Reopen Closed Editor, an item of that menu, another keybinding. Signals 91 ms and 98 ms after the importer's `GetLayout` never reached the panel's item; ones 116 ms, 154 ms, 212 ms and 438 ms after did. The drop is each model's own, for 100 ms after its own layout reply, and nothing reads the item again. `DbusMenu` now notes when each menu's layout was asked for, and a property that changes within 200 ms of it (`DROPPED_MS`) is sent a second time at the end of that time, as it is then. It's a one-shot after a change, like the coalescing. With it, signals 81 ms and 96 ms after reached the panel.
+- **Radio items.** AT-SPI gives the four groups' items the role "radio menu item", with the served one checked, and the checks "check menu item". By eye, the developer's, the mark beside Activity Bar Position's Top is the same as the one beside Sticky Scroll.
+- **The setting's scope, by eye.** A folder window with a text file in front, where the user's settings and the folder's give plain text the opposite value of Minimap, Sticky Scroll and Render Control Characters, and the folder's set Auto Save, Breadcrumbs and Render Whitespace over the user's. The panel's menu and the window's own menubar agreed on all of them, with Status Bar: what's read with no scope is what `config.*` holds, not the front editor's value. A folder's settings in a multi-root workspace weren't tried. `119-checks/scope.sh`, which was to compare the served toggles with `lastKnownMenubarData` of a native title bar, failed three times on its own waits and leftovers and gave no result.
+- **An open menu, by hand.** A menu clicked through AT-SPI isn't mapped (`Failed to create popup because parent is not mapped`), so the developer held the panel's Open Recent open while an entry was taken out of the list. The `LayoutUpdated` for it went out 5 s after it opened and the importer fetched its layout at once. The submenu stayed open and went on showing the entry. Opened again, it didn't have it.
+- **A change of workspace state restarts the host, as review found.** `updateWorkspaceFolders` added a second folder to the folder window. A new extension host started 1.2 s later and claimed, with no `LayoutUpdated` from the old one. The panel had no menu of the window 1 s after the call and had Close Workspace 2 s after.
+- **Seen and not looked into:** with a new `--user-data-dir`, Open Recent listed folders of other profiles' runs. It may be [121](121-open-recent.md)'s to explain.
+- **`nested/run.sh`** failed on a machine with `caminito-vscode-git` installed, whose link is among the built-ins it copies; its `ln` now replaces it.
+
+At this point `npm run typecheck` is clean and `npm test` passes all 136 tests.
+
+## Resolved (2026-10-09)
+
+- **Closed by the developer** after the nested run: the four questions under "To run" are answered, and the two fixes are on branch `ticket-119`.
+- **ADR 0020 and the spec aren't amended.** They still say the folders event drives the change from Close Folder to Close Workspace. In a real editor that change comes as a restart of the extension host and a new claim, which the run saw. No ticket is filed for it.
+- **Not tried, and handed to nobody:** a folder's own settings in a multi-root workspace, for the setting's scope.
