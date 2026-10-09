@@ -1,0 +1,90 @@
+#!/bin/sh
+# Links the global menu extension into each editor's built-in extensions directory, or
+# unlinks it (ADR 0022). The alpm hooks and the package's install script run it.
+#
+#   caminito-vscode-link link                 link in each of the five directories that exists
+#   caminito-vscode-link unlink               remove the link from each of them
+#   caminito-vscode-link unlink --targets     remove it only from the directories that the
+#                                             paths on stdin, a hook's targets, lie in
+#   caminito-vscode-link directories          print the five, from which the PKGBUILD writes
+#                                             the hooks' targets
+#
+# A path that holds anything but this package's own link is left alone, so a user's own link
+# or copy survives. pacman doesn't own the links. CAMINITO_VSCODE_ROOT is put before each
+# directory, for the tests (117).
+set -eu
+
+extension=/usr/share/caminito-vscode/global-menu
+name=caminito.global-menu
+
+# The one list of the editors' built-in directories: visual-studio-code-bin's, code's,
+# vscodium-bin's, vscodium's and cursor-bin's.
+directories() {
+  cat <<'EOF'
+/usr/share/code/resources/app/extensions
+/usr/lib/code/extensions
+/opt/vscodium-bin/resources/app/extensions
+/usr/share/vscodium/resources/app/extensions
+/usr/share/cursor/resources/app/extensions
+EOF
+}
+
+root=${CAMINITO_VSCODE_ROOT:-}
+
+make_link() {
+  path=$root$1/$name
+  if [ -L "$path" ] && [ "$(readlink "$path")" = "$extension" ]; then
+    return
+  fi
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    echo "caminito-vscode-link: $path is not this package's, so it's left as it is" >&2
+    return
+  fi
+  ln -s "$extension" "$path"
+}
+
+remove_link() {
+  path=$root$1/$name
+  if [ -L "$path" ] && [ "$(readlink "$path")" = "$extension" ]; then
+    rm "$path"
+  fi
+}
+
+# The directories that one of a hook's targets on stdin lies in. pacman gives the targets with
+# no leading slash, and a directory with a trailing one.
+targeted() {
+  targets=$(cat)
+  directories | while read -r directory; do
+    if printf '%s\n' "$targets" |
+      awk -v prefix="${directory#/}/" 'index($0, prefix) == 1 { found = 1 } END { exit !found }'; then
+      echo "$directory"
+    fi
+  done
+}
+
+case ${1-} in
+link)
+  directories | while read -r directory; do
+    if [ -d "$root$directory" ]; then
+      make_link "$directory"
+    fi
+  done
+  ;;
+unlink)
+  if [ "${2-}" = --targets ]; then
+    list=targeted
+  else
+    list=directories
+  fi
+  $list | while read -r directory; do
+    remove_link "$directory"
+  done
+  ;;
+directories)
+  directories
+  ;;
+*)
+  echo "usage: caminito-vscode-link link | unlink [--targets] | directories" >&2
+  exit 2
+  ;;
+esac

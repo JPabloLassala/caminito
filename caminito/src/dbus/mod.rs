@@ -2,7 +2,8 @@
 //! `global_menu`'s applet and `session_manager`, mate-session, are the peers so far, and
 //! `registrar` is an interface the apps look for.
 //! `menu_claim` is a method of `caminito`'s that has a module of its own, and `a11y` is the
-//! Keyboard monitor for Orca (135). `logind` is Caminito's session on the system bus (130).
+//! Keyboard monitor for Orca (135). `logind` is Caminito's session on the system bus (130),
+//! and `upower` says there whether the machine runs on its battery (129).
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
@@ -20,6 +21,7 @@ pub(crate) mod registrar;
 pub mod screensaver;
 mod session_manager;
 pub(crate) mod systemd;
+mod upower;
 
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel;

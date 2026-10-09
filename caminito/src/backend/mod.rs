@@ -67,7 +67,9 @@ impl Backend {
             Backend::Tty(tty) => tty.render(caminito, output),
             Backend::Winit(winit) => winit.render(caminito, output),
             #[cfg(test)]
-            Backend::Headless(headless) => Some(headless.render(caminito, output)),
+            Backend::Headless(headless) => {
+                (!headless.is_powered_off()).then(|| headless.render(caminito, output))
+            }
         }
     }
 
@@ -187,6 +189,18 @@ impl Backend {
             Backend::Winit(_) => {}
             #[cfg(test)]
             Backend::Headless(headless) => headless.disable(caminito, output),
+        }
+    }
+
+    /// Powers every lit monitor off, or on again in the mode it had and with a new frame,
+    /// with no output going or coming (129). Nested, powering off is the blank, which the
+    /// scene draws, and nothing more.
+    pub(crate) fn set_outputs_powered(&mut self, caminito: &mut Caminito, on: bool) {
+        match self {
+            Backend::Tty(tty) => tty.set_powered(caminito, on),
+            Backend::Winit(_) => {}
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.set_powered(on),
         }
     }
 

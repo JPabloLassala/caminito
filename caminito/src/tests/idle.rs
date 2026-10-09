@@ -22,7 +22,7 @@ use super::fixture::{
 };
 use crate::scene::SceneLayer;
 use crate::settings::Value;
-use crate::settings::translate::{CAMINITO, SCREENSAVER, SESSION};
+use crate::settings::translate::{CAMINITO, POWER_MANAGER, SCREENSAVER, SESSION};
 
 const MINUTE: Duration = Duration::from_secs(60);
 const SECOND: Duration = Duration::from_secs(1);
@@ -38,12 +38,14 @@ fn setting(schema: &'static str, key: &str, value: Value) -> (&'static str, Stri
     (schema, key.into(), value)
 }
 
-/// One minute to idle, blanking, no lock, and `more`.
+/// One minute to idle, blanking, no lock, the outputs never powered off (129's), and
+/// `more`.
 fn settings(more: Vec<(&'static str, String, Value)>) -> Vec<(&'static str, String, Value)> {
     let mut settings = vec![
         setting(SESSION, "idle-delay", Value::Int(1)),
         setting(SCREENSAVER, "idle-activation-enabled", Value::Bool(true)),
         setting(SCREENSAVER, "lock-enabled", Value::Bool(false)),
+        setting(POWER_MANAGER, "sleep-display-ac", Value::Int(0)),
         // A locker that runs until its stdin closes, as the fixture's drop does.
         setting(
             CAMINITO,

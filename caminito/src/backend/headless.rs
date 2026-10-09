@@ -23,6 +23,9 @@ pub struct Headless {
     /// The modes monitors list but can't show, by connector, for tests of a configuration
     /// that fails.
     refused: Vec<(String, Mode)>,
+    /// Whether the monitors are powered off, as the tty's DPMS would have them (129). As on
+    /// the tty, no frame is drawn meanwhile.
+    powered_off: bool,
 }
 
 /// A virtual output and the memory it renders into.
@@ -45,6 +48,7 @@ impl Default for Headless {
             targets: Vec::new(),
             plugged: 0,
             refused: Vec::new(),
+            powered_off: false,
         }
     }
 }
@@ -196,6 +200,16 @@ impl Headless {
     /// order.
     pub(crate) fn mode_sets(&mut self, output: &Output) -> Vec<Mode> {
         target_mut(&mut self.targets, output).map_or_else(Vec::new, |t| t.mode_sets.clone())
+    }
+
+    /// Powers every virtual monitor off or on, keeping its mode (129).
+    pub(crate) fn set_powered(&mut self, on: bool) {
+        self.powered_off = !on;
+    }
+
+    /// Whether the monitors are powered off.
+    pub(crate) fn is_powered_off(&self) -> bool {
+        self.powered_off
     }
 
     /// Unplugs a virtual monitor.
