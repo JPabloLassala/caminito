@@ -896,6 +896,31 @@ session_env() {
   `inhibitors` has mpv's surface with its window and `shown`, and its `lock`. `--verbose`
   logs `the session is idle; blanking the outputs` and `activity; unblanking the outputs`.
 
+### The panel's *Lock Screen* and `mate-screensaver-command`
+
+- **Milestone:** M7
+- **Steps:**
+  1. Log into *MATE on Caminito*, and choose *Lock Screen* in the panel's *System* menu. Unlock
+     with the password.
+  2. In a terminal, run `mate-screensaver-command --query`, then
+     `mate-screensaver-command --lock`, unlock, and run `mate-screensaver-command --query`
+     again.
+  3. Run `gsettings set org.mate.screensaver lock-delay 1`, as the default of 0 locks with
+     the blank. Run `mate-screensaver-command --activate`, wait for the screens to go black,
+     then leave everything alone for ten seconds and press Shift. Run
+     `mate-screensaver-command --query`, and `gsettings reset org.mate.screensaver lock-delay`.
+  4. Set `org.mate.session idle-delay` to 1, run `mate-screensaver-command --inhibit &`, then
+     `mate-screensaver-command --query`, and leave everything alone for two minutes. Kill the
+     background command and leave everything alone for a minute more. Reset `idle-delay`.
+- **Expected:** step 1 locks with caminito-locker's dialog, and the password unlocks. In step
+  2 the queries say "The screensaver is inactive", and `--lock` locks as the panel did. In
+  step 3 the screens go black at once, Shift brings the desktop back, unlocked, and the query
+  says it's inactive. In step 4 the query lists the inhibitor, the screens stay on while it
+  runs, and they go black a minute after it's killed (127).
+- **Debug tool:** `DumpState`'s `idle`, whose `inhibitors` has a `screensaver` entry for the
+  command while it runs, and its `lock`. `dbus-monitor "interface='org.mate.ScreenSaver'"`
+  shows `ActiveChanged` once at each blank or lock, and once as each ends.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

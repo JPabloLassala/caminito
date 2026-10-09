@@ -1,21 +1,24 @@
-//! The Screensaver shim's shell (12, 62): `org.mate.ScreenSaver` and
+//! The Screensaver shim (12, 62, 127): `org.mate.ScreenSaver` and
 //! `org.freedesktop.ScreenSaver`, owned so that mate-screensaver's daemon finds its name
-//! taken and exits. M7 gives it the lock, idle and inhibit state (17). Until then `Lock` is
-//! refused, the session is never active, and the cookies are kept but not read.
+//! taken and exits, and so that the panel's *Lock Screen*, mate-power-manager and X11
+//! applications reach Caminito's lock and idle. `Lock` locks, `SetActive` and
+//! `SimulateUserActivity` drive idle's blank, the session is active while it's blanked or
+//! locked, and the inhibitors hold idle off with idle's own.
 //!
 //! The methods are mate-screensaver 1.28.0's (`gs-listener-dbus.c:1373-1417`), without
 //! `Quit` (12).
 
 use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use futures_channel::oneshot;
+use futures_channel::{mpsc, oneshot};
 use smithay::reexports::calloop::channel::Sender;
 use zbus::fdo::{self, RequestNameFlags, RequestNameReply};
 use zbus::message::Header;
+use zbus::object_server::SignalEmitter;
 
 use super::{Callers, caller};
-use crate::state::Caminito;
+use crate::state::{Caminito, State};
 
 /// The names mate-screensaver's daemon and X11 applications look for.
 pub(crate) const NAMES: [&str; 2] = ["org.mate.ScreenSaver", "org.freedesktop.ScreenSaver"];
@@ -27,7 +30,7 @@ const FREEDESKTOP_PATHS: [&str; 2] = ["/org/freedesktop/ScreenSaver", "/ScreenSa
 /// What a cookie holds back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HoldKind {
-    /// Idle, from M7.
+    /// Idle.
     Inhibit,
     /// Nothing: throttling only slows screensaver themes (12).
     Throttle,
@@ -50,6 +53,8 @@ pub(super) enum Request {
         active: bool,
         reply: oneshot::Sender<()>,
     },
+    /// `SimulateUserActivity`.
+    SimulateUserActivity(oneshot::Sender<()>),
     /// `GetActive`: whether the session is blanked or locked.
     GetActive(oneshot::Sender<bool>),
     /// `GetActiveTime`: for how many seconds it has been.
@@ -76,9 +81,9 @@ pub(super) enum Request {
 /// Why the event loop refused a call.
 #[derive(Debug)]
 pub(super) enum Refused {
-    /// The session can't lock until M7. A caller told that it locked would be wrong in
-    /// the unsafe direction (62).
-    NoLockYet,
+    /// `org.mate.lockdown disable-lock-screen` is on (12). A caller told that the session
+    /// locked would be wrong in the unsafe direction (62).
+    LockDisabled,
     /// Only the locker or logind unlocks (12).
     UnlockIsTheLockers,
 }
@@ -86,7 +91,9 @@ pub(super) enum Refused {
 impl From<Refused> for fdo::Error {
     fn from(refused: Refused) -> Self {
         match refused {
-            Refused::NoLockYet => Self::NotSupported("Caminito can't lock the session yet".into()),
+            Refused::LockDisabled => {
+                Self::AccessDenied("org.mate.lockdown disable-lock-screen is on".into())
+            }
             Refused::UnlockIsTheLockers => {
                 Self::AccessDenied("only the locker or logind unlocks the session".into())
             }
@@ -105,11 +112,15 @@ struct Hold {
     since: u64,
 }
 
-/// The Screensaver shim's state: the cookies it has handed out.
+/// The Screensaver shim's state: the cookies it has handed out, and since when the session
+/// has been active.
 #[derive(Default)]
 pub struct ScreensaverShim {
     holds: BTreeMap<u32, Hold>,
     last_cookie: u32,
+    /// When the refresh pass last found the session blanked or locked, on Caminito's clock,
+    /// while it still is.
+    active_since: Option<Duration>,
 }
 
 impl ScreensaverShim {
@@ -142,6 +153,26 @@ impl ScreensaverShim {
     /// Drops the cookies of a caller that left the bus.
     pub(super) fn caller_left(&mut self, caller: &str) {
         self.holds.retain(|_, hold| hold.caller != caller);
+    }
+
+    /// The applications that hold idle off, by the name each gave.
+    pub(crate) fn inhibitor_applications(&self) -> impl Iterator<Item = &str> {
+        let holds = self.holds.values();
+        let inhibitors = holds.filter(|hold| hold.kind == HoldKind::Inhibit);
+        inhibitors.map(|hold| hold.application.as_str())
+    }
+
+    /// For how many whole seconds the session has been active at `now`, or 0 if it isn't.
+    fn active_seconds(&self, now: Duration) -> u32 {
+        self.active_since.map_or(0, |since| {
+            let seconds = now.saturating_sub(since).as_secs();
+            u32::try_from(seconds).unwrap_or(u32::MAX)
+        })
+    }
+
+    /// Whether any caller holds idle off.
+    pub(crate) fn is_inhibiting(&self) -> bool {
+        self.inhibitor_applications().next().is_some()
     }
 
     /// The inhibitors as mate-screensaver describes them (`gs-listener-dbus.c:840`).
@@ -188,27 +219,47 @@ fn iso8601(seconds: u64) -> String {
     )
 }
 
-impl Caminito {
+impl State {
     pub(super) fn screensaver_request(&mut self, request: Request) {
         // A caller that has gone away doesn't want the answer.
         match request {
             Request::Lock { caller, reply } => {
-                tracing::warn!("can't lock the session for {caller}: the lock comes with M7");
-                let _ = reply.send(Err(Refused::NoLockYet));
+                tracing::debug!("{caller} locks the session");
+                // A refusal is logged there.
+                let locked = self.request_lock();
+                let _ = reply.send(if locked {
+                    Ok(())
+                } else {
+                    Err(Refused::LockDisabled)
+                });
             }
             Request::Unlock { caller, reply } => {
                 tracing::warn!("can't unlock the session for {caller}: only the locker does");
                 let _ = reply.send(Err(Refused::UnlockIsTheLockers));
             }
             Request::SetActive { active, reply } => {
-                tracing::warn!("can't set the session active to {active}: blanking comes with M7");
+                if active {
+                    self.idle_blank_now();
+                } else if self.caminito.lock.is_locked() {
+                    // A blank over the lock stays: only activity shows the lock (12).
+                    tracing::debug!("the session is locked, so SetActive(false) leaves it");
+                } else {
+                    // As activity, which starts the count again: a blank ended without it
+                    // would be due again at once.
+                    self.idle_activity();
+                }
+                let _ = reply.send(());
+            }
+            Request::SimulateUserActivity(reply) => {
+                self.idle_activity();
                 let _ = reply.send(());
             }
             Request::GetActive(reply) => {
-                let _ = reply.send(false);
+                let _ = reply.send(self.caminito.screensaver_is_active());
             }
             Request::GetActiveTime(reply) => {
-                let _ = reply.send(0);
+                let now = self.caminito.now();
+                let _ = reply.send(self.caminito.screensaver.active_seconds(now));
             }
             Request::Hold {
                 kind,
@@ -220,7 +271,7 @@ impl Caminito {
                 let since = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .map_or(0, |since| since.as_secs());
-                let cookie = self.screensaver.hold(Hold {
+                let cookie = self.caminito.screensaver.hold(Hold {
                     kind,
                     caller,
                     application,
@@ -235,12 +286,51 @@ impl Caminito {
                 cookie,
                 reply,
             } => {
-                self.screensaver.release(kind, &caller, cookie);
+                self.caminito.screensaver.release(kind, &caller, cookie);
                 let _ = reply.send(());
             }
             Request::GetInhibitors(reply) => {
-                let _ = reply.send(self.screensaver.inhibitors());
+                let _ = reply.send(self.caminito.screensaver.inhibitors());
             }
+        }
+    }
+}
+
+impl Caminito {
+    /// Whether the session is active, in mate-screensaver's word: blanked or locked.
+    fn screensaver_is_active(&self) -> bool {
+        self.idle.is_blanked() || self.lock.is_locked()
+    }
+
+    /// The refresh pass's part of the shim: `ActiveChanged` once for each change of whether
+    /// the session is active, and the time it's been active counted from then. A blank
+    /// over the lock, or the lock that shows as a blank ends, isn't a change.
+    pub(crate) fn refresh_screensaver(&mut self) {
+        let active = self.screensaver_is_active();
+        if active == self.screensaver.active_since.is_some() {
+            return;
+        }
+        self.screensaver.active_since = active.then(|| self.now());
+        if let Some(dbus) = &self.dbus {
+            // The task has ended if this fails, and with it the connection.
+            let _ = dbus.active_changes.unbounded_send(active);
+        }
+    }
+}
+
+/// Signals each change of whether the session is active that comes on `changes`, in the
+/// order they come, so that a caller never hears them the wrong way round.
+pub(super) async fn signal_active_changes(
+    connection: zbus::Connection,
+    mut changes: mpsc::UnboundedReceiver<bool>,
+) {
+    while let Ok(active) = changes.recv().await {
+        let signalled = async {
+            let emitter = SignalEmitter::new(&connection, MATE_PATH)?;
+            MateInterface::active_changed(&emitter, active).await
+        };
+        if let Err(err) = signalled.await {
+            tracing::warn!("can't signal ActiveChanged({active}): {err}");
         }
     }
 }
@@ -299,7 +389,8 @@ struct MateInterface {
 
 #[zbus::interface(name = "org.mate.ScreenSaver")]
 impl MateInterface {
-    /// Refused until M7.
+    /// Locks, and returns at once: the locker comes after. Refused with
+    /// `disable-lock-screen`.
     async fn lock(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
         let caller = caller(&header);
         let locked = self.requests.ask(|reply| Request::Lock { caller, reply });
@@ -316,8 +407,10 @@ impl MateInterface {
     /// Accepted, with no effect: there are no screensaver themes to cycle.
     async fn cycle(&self) {}
 
-    /// Accepted, with no effect until M7's idle.
-    async fn simulate_user_activity(&self) {}
+    /// Ends a blank and starts idle's count again. Never unlocks (12).
+    async fn simulate_user_activity(&self) -> fdo::Result<()> {
+        self.requests.ask(Request::SimulateUserActivity).await
+    }
 
     #[zbus(out_args("cookie"))]
     async fn inhibit(
@@ -379,18 +472,20 @@ impl MateInterface {
             .await
     }
 
-    /// False until M7: the session neither blanks nor locks.
+    /// Whether the session is blanked or locked.
     #[zbus(out_args("value"))]
     async fn get_active(&self) -> fdo::Result<bool> {
         self.requests.ask(Request::GetActive).await
     }
 
+    /// For how many seconds the session has been blanked or locked, or 0.
     #[zbus(out_args("seconds"))]
     async fn get_active_time(&self) -> fdo::Result<u32> {
         self.requests.ask(Request::GetActiveTime).await
     }
 
-    /// Logged, with no effect until M7.
+    /// `true` blanks now and starts the lock delay. `false` ends the blank of a session that
+    /// isn't locked, and never unlocks (12).
     async fn set_active(&self, value: bool) -> fdo::Result<()> {
         self.requests
             .ask(|reply| Request::SetActive {
@@ -406,12 +501,10 @@ impl MateInterface {
         let _ = (summary, body, icon);
     }
 
-    /// Never sent until M7, but declared, so that a caller that connects to it finds it.
+    /// The session was blanked or locked, or is neither any more. mate-session's presence
+    /// follows it (128).
     #[zbus(signal)]
-    async fn active_changed(
-        emitter: &zbus::object_server::SignalEmitter<'_>,
-        new_value: bool,
-    ) -> zbus::Result<()>;
+    async fn active_changed(emitter: &SignalEmitter<'_>, new_value: bool) -> zbus::Result<()>;
 }
 
 /// `org.freedesktop.ScreenSaver`: the inhibitors only, the same set as

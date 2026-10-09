@@ -6,8 +6,9 @@
 //!
 //! The timers are `state`'s pure type, which this applies with one loop timer for its
 //! deadline, on Caminito's clock. Inhibitors hold idle off: an idle-inhibit surface while
-//! it's visible, and mate-session's `IsInhibited` (`dbus::session_manager`). Neither applies
-//! while the session is locked, when no client surface is visible (12).
+//! it's visible, mate-session's `IsInhibited` (`dbus::session_manager`), and the Screensaver
+//! shim's (127). None applies while the session is locked, when no client surface is
+//! visible (12).
 //!
 //! The blank is `scene`'s top layer: black, with nothing under it drawn. Powering the
 //! outputs off is 129's.
@@ -103,6 +104,14 @@ impl State {
         self.idle_effects(effects);
     }
 
+    /// The Screensaver shim's `SetActive(true)` (127): the outputs blank now, and the lock
+    /// delay counts from now.
+    pub(crate) fn idle_blank_now(&mut self) {
+        let now = self.caminito.now();
+        let effects = self.caminito.idle.state.blank_now(now);
+        self.idle_effects(effects);
+    }
+
     /// New idle settings, which apply at once.
     pub(crate) fn idle_settings_changed(&mut self, settings: IdleSettings) {
         let now = self.caminito.now();
@@ -117,6 +126,7 @@ impl State {
         caminito.idle.inhibitors.retain(Resource::is_alive);
         let inhibited = !caminito.lock.is_locked()
             && (caminito.idle.session_inhibited
+                || caminito.screensaver.is_inhibiting()
                 || caminito
                     .idle
                     .inhibitors

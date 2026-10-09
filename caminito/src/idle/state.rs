@@ -106,6 +106,20 @@ impl<N: Clone + PartialEq> IdleState<N> {
         effects
     }
 
+    /// Blanks now, as if the session had gone idle, and counts the lock delay from now:
+    /// `SetActive(true)` (12). It's asked for, so neither `idle-activation-enabled` nor an
+    /// inhibitor holds it off. A blank that's on stays as it is.
+    pub(crate) fn blank_now(&mut self, now: Duration) -> Vec<Effect<N>> {
+        if self.blanked_at.is_some() {
+            return Vec::new();
+        }
+        self.blanked_at = Some(now);
+        self.lock_asked = false;
+        let mut effects = vec![Effect::Blank];
+        effects.extend(self.elapse(now));
+        effects
+    }
+
     /// Whether an inhibitor holds idle off. One that comes resumes the notifications it
     /// holds off, as Smithay's ext-idle-notify does (`idle_notify/mod.rs:138-165` at 928d4a9), and leaves a blank as it is; once the
     /// last goes, the count starts again.
@@ -363,6 +377,42 @@ mod tests {
         idle.elapse(at(5, 0));
         idle.activity(at(6, 0));
         assert_eq!(idle.elapse(at(11, 0)), [Blank, Lock]);
+    }
+
+    /// `SetActive(true)` (127): as if the session had gone idle now.
+    #[test]
+    fn blanking_now_counts_the_lock_delay_from_now() {
+        let mut idle = idle(locking_after(2 * MINUTE));
+        assert_eq!(idle.blank_now(at(1, 0)), [Blank]);
+        assert!(idle.is_blanked());
+        assert_eq!(idle.deadline(), Some(at(3, 0)));
+        assert_eq!(idle.elapse(at(3, 0)), [Lock]);
+    }
+
+    #[test]
+    fn blanking_now_with_a_lock_delay_of_0_locks_at_once() {
+        let mut idle = idle(locking_after(Duration::ZERO));
+        assert_eq!(idle.blank_now(at(1, 0)), [Blank, Lock]);
+    }
+
+    /// It's asked for, so neither the settings nor an inhibitor hold it off.
+    #[test]
+    fn blanking_now_blanks_with_idle_activation_off_and_an_inhibitor() {
+        let mut idle = idle(IdleSettings {
+            blank: false,
+            ..blanking()
+        });
+        idle.set_inhibited(true, at(0, 30));
+        assert_eq!(idle.blank_now(at(1, 0)), [Blank]);
+        assert_eq!(idle.activity(at(2, 0)), [Unblank]);
+    }
+
+    #[test]
+    fn blanking_now_while_blanked_changes_nothing() {
+        let mut idle = idle(locking_after(2 * MINUTE));
+        idle.elapse(at(5, 0));
+        assert_eq!(idle.blank_now(at(6, 0)), []);
+        assert_eq!(idle.elapse(at(7, 0)), [Lock]);
     }
 
     #[test]

@@ -168,6 +168,10 @@ pub trait ScreenSaver {
     fn get_active_time(&self) -> zbus::Result<u32>;
     fn set_active(&self, value: bool) -> zbus::Result<()>;
     fn show_message(&self, summary: &str, body: &str, icon: &str) -> zbus::Result<()>;
+
+    /// The session was blanked or locked, or is neither any more (127).
+    #[zbus(signal)]
+    fn active_changed(&self, new_value: bool) -> zbus::Result<()>;
 }
 
 /// `org.freedesktop.ScreenSaver`, the Screensaver shim's other name (12).

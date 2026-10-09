@@ -587,6 +587,8 @@ impl State {
         self.caminito.refresh_views();
         // After the views, which show and hide the windows an inhibitor is on.
         self.refresh_idle();
+        // After idle and the lock, whose changes it signals.
+        self.caminito.refresh_screensaver();
         self.update_pointer_focus();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
