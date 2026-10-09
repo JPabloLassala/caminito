@@ -347,11 +347,9 @@ The tests are layered:
   drive it with a real `wayland-client` test client, asserting with [insta](https://insta.rs)
   snapshots.
 
-CI runs rustfmt, clippy (`-D warnings`), cargo-deny and the tests in an Arch container on every
-push, and builds each PKGBUILD with `makepkg` and `namcap` when `packaging/arch/` changes. A
-weekly job builds against Smithay master, since Smithay is pinned by commit and bumped one
-commit at a time. Another weekly job builds each patched package's series on its component's
-upstream head. A failure of either opens an issue.
+`tools/check` runs rustfmt, clippy (`-D warnings`), cargo-deny, the tests and the extension's
+checks, on the developer's Arch machine; `tools/check --deps` installs what they need first.
+There's no hosted CI: GitHub Actions' metered minutes ran out, so every check runs locally.
 
 Some checks need a real desktop and are run by hand before a milestone closes. They're listed in
 [docs/testing/checklist.md](docs/testing/checklist.md).

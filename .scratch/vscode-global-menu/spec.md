@@ -103,7 +103,7 @@ The **global menu extension**, installed by a package as a built-in of each edit
 - **The tolerance rule, at start:** drop each item whose command `commands.getCommands()` doesn't list, then each submenu left empty, then collapse the separators. Gate product-dependent items on the running editor's own `product.json`, read at `vscode.env.appRoot`.
 - **A VS Code newer than the table is served silently,** with one log line naming both versions. An older one gets what the tolerance rule leaves.
 - **Titles are English.** There's no list of profiles, no profile name in Export Profile, and no update item.
-- **The weekly canary** is a job in the weekly workflow. It downloads the newest stable build, takes the snapshot, compares its structure with the committed table, and on a difference fails and opens or updates an issue with the diff. Nothing commits by itself. If Electron can't run under Xvfb in the workflow's container, the command is run locally when the package updates, and the spec is amended to say so.
+- **The canary** is the snapshot command with `--check`, run locally by the developer when the package updates: it takes the snapshot of the new build, compares its structure with the committed table, and on a difference fails with the diff. Nothing commits by itself. (It was a job in a weekly hosted workflow until hosted CI was removed.)
 
 **What the menu shows.** [ADR 0020](../../docs/adr/0020-vs-code-s-menu-shows-only-the-state-its-extension-can-read.md).
 
@@ -152,7 +152,7 @@ ADR 0022.
 - **An alpm hook runs it:** to link after an install or upgrade that touches one of the five directories, and to unlink before a removal that does.
 - **The package's install script runs it too:** to link after the package's own install and upgrade, and to unlink before its removal. pacman doesn't own the links.
 - **`caminito-git` gains an `optdepends` line** for `caminito-vscode-git`, beside `appmenu-gtk-module-caminito`'s. Nothing depends on it.
-- **The packaging workflow builds it** with the other packages.
+- **The developer's `makepkg`** builds it, like the other packages.
 
 ### Documentation
 
@@ -170,8 +170,8 @@ A good test here drives the same wire the real peers use and asserts what they'd
 - **Caminito:** headless tests on a bus of the test's own, as `caminito/src/tests/global_menu.rs` has them, with a test client that calls `ClaimGlobalMenu` and reads `GlobalMenu` and `GlobalMenuOffered`. The parent step needs a claim made from a child process of the client's.
 - **The extension has one seam.** Its core takes the `vscode` API as a value. A test hands it a fake of the part it uses and runs it on a private `dbus-daemon` with a stand-in for `org.mate.Caminito`. It asserts the dbusmenu a client reads from the bus, the signals sent, the claims made, the name asked for and what was written to the fake's settings.
 - **The rules with many cases** (the tolerance rule, the label rule, the key names, a recent entry's label, the `storage.json` lookup) are tested through that seam where it's cheap, and directly, as functions of their inputs, where the cases are many.
-- **Node's own test runner.** A job in `ci.yml` type-checks, runs the tests and builds the bundle.
-- **No editor is started in CI.** A run under `--extensionTestsPath` isn't real use either: confirmation dialogs confirm themselves there, and `_files.windowOpen` opens a new window.
+- **Node's own test runner.** `tools/check` type-checks, runs the tests and builds the bundle.
+- **No editor is started by `tools/check`.** A run under `--extensionTestsPath` isn't real use either: confirmation dialogs confirm themselves there, and `_files.windowOpen` opens a new window.
 - **The developer command and the canary** are tested by running them.
 - **The packaging script** is tested against directories under a temporary root, and the package with `namcap` as the others are.
 - **A real editor is the last ticket's,** by hand, in a Session.
@@ -215,10 +215,6 @@ Nobody has run these. Each is listed under the slice that runs it, and a result 
 - Two windows focused 50 ms apart, with the bus name.
 - `workspace.workspaceFile` in the agents window.
 - That the offer isn't made again in another profile.
-
-**With the canary** (slice 9):
-
-- Whether Electron runs under Xvfb in the weekly workflow's container, with its sandbox on or off.
 
 **In a real Session, by hand** (slice 10):
 

@@ -1,8 +1,8 @@
 //! caminito-locker against Caminito (131, ADR 0007): the real locker, as `locker-command`
 //! (126), takes the lock Caminito asks for, puts a lock surface on every output, and the
 //! password typed at its dialog unlocks. It needs the locker Meson builds, named by
-//! `CAMINITO_LOCKER`, and GTK with gtk-session-lock, so these are ignored by default and CI
-//! runs them after the helpers' build.
+//! `CAMINITO_LOCKER`, and GTK with gtk-session-lock, so these are ignored by default and
+//! `tools/check` runs them after the helpers' build.
 //!
 //! The fixture has no Wayland socket of its own, so `locker-command` is a shell that notes
 //! its process and execs the locker on a socket of the test's, whose connections the test
@@ -202,7 +202,7 @@ fn type_and_enter(f: &mut Fixture, text: &str) {
 }
 
 #[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn caminito_locker_locks_with_a_lock_surface_on_every_output() {
     let (mut f, locker) = locked_by_caminito_locker(&[(1920, 1080), (2560, 1440)]);
 
@@ -213,7 +213,7 @@ fn caminito_locker_locks_with_a_lock_surface_on_every_output() {
 }
 
 #[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
     let (mut f, locker) = locked_by_caminito_locker(&[(1920, 1080)]);
     let seen = || locker.seen();
@@ -246,7 +246,7 @@ picture-filename=''
 ";
 
 #[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn caminito_lockers_windows_show_the_desktop_background_on_every_output() {
     let (mut f, locker) =
         locked_by_caminito_locker_with(&[(1920, 1080), (2560, 1440)], SOLID_BACKGROUND);
@@ -280,7 +280,7 @@ fn with_picture_filename(path: &Path) -> String {
 }
 
 #[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
     let dir = tempfile::tempdir().unwrap();
     let picture = dir.path().join("picture.png");
@@ -301,7 +301,7 @@ fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
 }
 
 #[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn caminito_locker_follows_the_keys_of_its_buttons_and_status_message() {
     let keyfile = "\
 [org/mate/screensaver]

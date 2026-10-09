@@ -145,7 +145,7 @@ A reference rendering of one frame case (theme, frame type, state, button states
 _Avoid_: snapshot (that's a text assertion in the integration tests), reference image
 
 **Milestone**:
-One of the nine slices of Caminito v0.1, M1 to M9. It closes when its scenario runs, CI is green with its tests, and its checklist items pass, recorded in a `Close M<n>` commit.
+One of the nine slices of Caminito v0.1, M1 to M9. It closes when its scenario runs, `tools/check` passes on the developer's machine with its tests, and its checklist items pass, recorded in a `Close M<n>` commit.
 _Avoid_: phase, sprint, release (only v0.1.0 is a release)
 
 **Policy**:

@@ -1,6 +1,6 @@
 # Test schemas
 
-The GSettings schemas Caminito's tests read (14), vendored so that CI needs no MATE
+The GSettings schemas Caminito's tests read (14), vendored so that the tests need no MATE
 packages. Tests compile them into a private directory with `glib-compile-schemas`. The
 palette helper's and caminito-locker's tests point `GSETTINGS_SCHEMA_DIR` at it; caminito's
 headless tests read it as their only schema source, each on a memory backend of its own (the settings thread's

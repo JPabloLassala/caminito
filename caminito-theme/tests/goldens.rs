@@ -4,7 +4,7 @@
 //!
 //! Geometry has to match exactly (26). Pixels have to match within the tolerance below
 //! (27), and a case that doesn't writes Caminito's image and a diff beside the golden, as
-//! `<case>@<scale>x.caminito.png` and `.diff.png`, for CI to keep. The four strips of each
+//! `<case>@<scale>x.caminito.png` and `.diff.png`. The four strips of each
 //! case, joined, have to give the whole frame's pixels, to within one step in a channel
 //! (see `STRIP_CHANNEL`).
 //!

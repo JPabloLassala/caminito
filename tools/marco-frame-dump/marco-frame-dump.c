@@ -4,7 +4,7 @@
  * Marco's own C renders every case in tests/goldens/cases.json through the installed
  * libmarco-private: meta_theme_load, meta_theme_calc_geometry and meta_theme_draw_frame,
  * set up the way Marco's frames.c sets them up. It is run by tools/regenerate-goldens,
- * never by CI, and is not part of Caminito's build.
+ * never by the tests, and is not part of Caminito's build.
  *
  *   marco-frame-dump frames CASES OUT
  *     Writes OUT/<theme>/<case>@<scale>x.png and .json for every theme and case, at the

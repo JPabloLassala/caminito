@@ -12,14 +12,14 @@ Frame pixels depend on the GTK theme's colours, the title font, pango, freetype 
 ## Decision
 
 - **A small C harness, `marco-frame-dump`, lives in the Caminito repo.** It links the installed `libmarco-private`, runs under `xvfb-run`, and writes a PNG and a JSON file of geometry for each case.
-- **The goldens are committed**, with the Marco version and commit and the GTK theme recorded beside them. A script regenerates them on the developer's machine when Marco is bumped or a case is added. CI compares Caminito's output with the committed files and never runs Marco.
+- **The goldens are committed**, with the Marco version and commit and the GTK theme recorded beside them. A script regenerates them on the developer's machine when Marco is bumped or a case is added. The tests compare Caminito's output with the committed files and never run Marco.
 - **Both sides get the same pinned inputs:** a vendored font behind a private fontconfig, grayscale antialiasing, slight hinting, 96 DPI, ASCII titles, and a fixed GTK and icon theme.
 - **Geometry must match exactly. Pixels must match within a small tolerance**, title text included. The palette is compared exactly in a separate test.
 - **The set is** Menta, ClearlooksRe, Atlanta, eOS, HighContrast, BlackMATE and TraditionalOk, plus Arc, Mint-Y and Yaru vendored under `tests/themes/` at a recorded commit.
 
 ## Consequences
 
-- Golden changes show up as reviewable diffs, CI needs neither Marco nor Xvfb, and a distribution's Marco update can't break CI with no change in Caminito.
+- Golden changes show up as reviewable diffs, the tests need neither Marco nor Xvfb, and a distribution's Marco update can't break them with no change in Caminito.
 - The goldens can drift from current Marco until someone regenerates them. The recorded version makes that visible.
 - The repo carries a C program that exists only to produce test data, plus three vendored theme directories.
 - Rejected:

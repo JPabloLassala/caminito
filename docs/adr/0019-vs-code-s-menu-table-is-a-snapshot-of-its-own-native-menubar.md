@@ -22,7 +22,7 @@ The menubar moves little: nothing was added or removed between 1.130 and 1.140, 
 - **The table is committed,** in the extension's directory, with the version and commit it was made from. Nothing makes it while a package builds or on the user's machine.
 - **One table serves every version and fork.** At start the extension drops each item whose command `commands.getCommands()` doesn't list, then each submenu left empty, and collapses the separators. It gates product-dependent items on the running editor's own `product.json`, never on its name.
 - **A newer VS Code is served silently.** The extension writes one line to its log with both versions and tells the user nothing.
-- **A weekly canary notices a release.** It downloads the newest stable build, takes the snapshot and compares its structure with the committed table. A difference fails the job and opens or updates an issue with the diff. The table is remade by hand; nothing commits by itself.
+- **A check notices a release.** When the package updates, the developer runs the snapshot command with `--check` against the new build, which compares its structure with the committed table and prints the diff. The table is remade by hand; nothing commits by itself. (A weekly hosted canary was planned, and dropped with hosted CI.)
 - **Titles are English.**
 
 ## Consequences
@@ -34,7 +34,6 @@ The menubar moves little: nothing was added or removed between 1.130 and 1.140, 
 - The table doesn't list the user's profiles under New Window with Profile, shows "Export Profile..." without the profile's name, and has no update item.
 - The agent sessions window gets the ordinary menu. An extension can't tell it's in one, and some items may do nothing there.
 - `lastKnownMenubarData` is internal. If VS Code stops writing it, the committed table stays and is edited by hand until another route exists.
-- Electron under Xvfb in the workflow's container may need its sandbox turned off. If it can't run there, the same command is run locally when the package updates.
 - Rejected:
   - Type-checked extraction from the source (a second tool and its special cases, for expressions the extension can't evaluate; the thirty or so items they decide need a hand-made mapping either way).
   - Extraction with the snapshot as its check (both tools for the same table).

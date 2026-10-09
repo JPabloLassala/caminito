@@ -2,7 +2,7 @@
 # Rewrites the theme goldens in tests/goldens/ with Marco's own rendering (14, ADR 0009):
 # builds tools/marco-frame-dump against the installed libmarco-private and runs it under
 # xvfb-run at each scale, then records what rendered them in metadata.json. Run it when
-# Marco is bumped or a case is added; CI only reads what it wrote.
+# Marco is bumped or a case is added; the tests only read what it wrote.
 #
 #   tools/regenerate-goldens
 #

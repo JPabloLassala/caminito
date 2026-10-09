@@ -2,7 +2,7 @@
 
 Marco's own rendering of every frame case, for Caminito's theme engine to match (14,
 ADR 0009). `tools/regenerate-goldens` writes everything here except `cases.json`,
-`icons/` and this file, on an Arch machine with Marco installed; CI only reads them, and
+`icons/` and this file, on an Arch machine with Marco installed; the tests only read them, and
 `caminito-theme/tests/golden_files.rs` checks that none is missing or left over. Regenerate when Marco is bumped or a case is
 added, and commit the result.
 
@@ -10,8 +10,7 @@ added, and commit the result.
 case with the same pinned inputs. Its geometry has to match Marco's exactly, and its
 pixels too, except in the ops Caminito approximates, within the tolerances written there.
 A case whose pixels don't match writes Caminito's image and a diff beside the golden, as
-`<case>@<scale>x.caminito.png` and `<case>@<scale>x.diff.png`. Git ignores them, and CI
-keeps them as an artifact.
+`<case>@<scale>x.caminito.png` and `<case>@<scale>x.diff.png`. Git ignores them.
 
 ## Inputs
 

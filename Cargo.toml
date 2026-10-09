@@ -31,7 +31,7 @@ pangocairo = "0.22.9"
 # The property tests of caminito-policy, caminito-layout and caminito-displays.
 proptest = "1.11.0"
 
-# CI runs clippy with -D warnings, so "warn" here fails the build there.
+# tools/check runs clippy with -D warnings, so "warn" here fails the check there.
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "warn"
 
