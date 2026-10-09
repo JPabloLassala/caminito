@@ -45,7 +45,8 @@ The decision on a chord was reversed on 2026-10-09. A chord at first had no shor
 - `storage.json`, the defaults file, `_workbench.getRecentlyOpened` and `_files.windowOpen` are internals. Each has a fallback that keeps the menu, with less in it.
 - An empty window opened in a profile by hand shows another profile's labels, and so does a window whose profile was switched until it's next focused.
 - The default keybindings are written for the keyboard layout in use when they're read. A change of layout shows in the labels only at the next change of extensions or reload.
-- That a change of tabs comes with every change of the recent list, the applet's limits in the patched package (they were read at upstream's tag), and the `storage.json` lookup for a workspace file haven't been run.
+- A change of tabs doesn't come with every change of the recent list: an entry taken out of it brings none, and shows at the next change of tabs or focus gained (run for ticket 121).
+- The applet's limits in the patched package (they were read at upstream's tag) and the `storage.json` lookup for a workspace file haven't been run.
 - A file opened in another VS Code window joins the list when this window is next focused. The list isn't re-read while a panel menu is open.
 - Ctrl-clicking a recent entry to open it in a new window, as the in-window menu allows, isn't possible from the panel.
 - The Menu Bar checkmark mirrors `window.menuBarVisibility`, which the decision on the in-window menubar may change the meaning of.

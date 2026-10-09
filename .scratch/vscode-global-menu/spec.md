@@ -207,8 +207,8 @@ Nobody has run these. Each is listed under the slice that runs it, and a result 
 
 **With Open Recent** (slice 7):
 
-- Whether a change of tabs comes with every change of the recent list.
-- Whether the window regains focus, and so re-reads, when a panel menu closes.
+- Whether a change of tabs comes with every change of the recent list. Run ([121](../issues/121-open-recent.md)): not with an entry taken out or another window's change, which show at the next change of tabs or focus gained.
+- Whether the window regains focus, and so re-reads, when a panel menu closes. Run (121): it does, and with a submenu it regains it as the submenu opens ([146](../issues/146-a-panel-submenu-gives-the-keyboard-back.md)).
 
 **With the offer** (slice 8):
 
