@@ -1,6 +1,6 @@
 //! Idle's timers as a pure type (15, 128): when the session goes idle and the outputs blank,
-//! when the lock is asked for after that, and when each ext-idle-notify client is told it's
-//! idle. It reads no clock: every call takes `now`, and [`IdleState::deadline`] says when it
+//! when the lock is asked for after that, when the outputs are powered off (129), and when
+//! each ext-idle-notify client is told it's idle. It reads no clock: every call takes `now`, and [`IdleState::deadline`] says when it
 //! next needs [`IdleState::elapse`].
 
 use std::time::Duration;
@@ -20,6 +20,10 @@ pub(crate) enum Effect<N> {
     Idled(N),
     /// One that was idle no longer is.
     Resumed(N),
+    /// The session has gone `sleep-display` without activity: the outputs are powered off.
+    PowerOff,
+    /// Activity powered them on again.
+    PowerOn,
 }
 
 /// The timers, and what they've brought.
@@ -37,6 +41,11 @@ pub(crate) struct IdleState<N> {
     blanked_at: Option<Duration>,
     /// Whether this blank has asked for the lock.
     lock_asked: bool,
+    /// Whether UPower says the machine runs on its battery, which picks the `sleep-display`
+    /// key (129).
+    on_battery: bool,
+    /// Whether the outputs are powered off.
+    powered_off: bool,
     notifications: Vec<Notification<N>>,
 }
 
@@ -57,6 +66,7 @@ struct Notification<N> {
 enum Timer {
     Blank,
     Lock,
+    PowerOff,
     /// The notification at this index.
     Notification(usize),
 }
@@ -70,12 +80,18 @@ impl<N: Clone + PartialEq> IdleState<N> {
             inhibited: false,
             blanked_at: None,
             lock_asked: false,
+            on_battery: false,
+            powered_off: false,
             notifications: Vec::new(),
         }
     }
 
     pub(crate) fn is_blanked(&self) -> bool {
         self.blanked_at.is_some()
+    }
+
+    pub(crate) fn is_powered_off(&self) -> bool {
+        self.powered_off
     }
 
     pub(crate) fn is_inhibited(&self) -> bool {
@@ -87,8 +103,8 @@ impl<N: Clone + PartialEq> IdleState<N> {
         self.notifications.len()
     }
 
-    /// Input on any device: the blank ends and every count starts again. It never unlocks
-    /// (12).
+    /// Input on any device: the blank ends, the outputs are powered on, and every count
+    /// starts again. It never unlocks (12).
     pub(crate) fn activity(&mut self, now: Duration) -> Vec<Effect<N>> {
         self.quiet_since = now;
         self.input_since = now;
@@ -96,6 +112,10 @@ impl<N: Clone + PartialEq> IdleState<N> {
         if self.blanked_at.take().is_some() {
             self.lock_asked = false;
             effects.push(Effect::Unblank);
+        }
+        if self.powered_off {
+            self.powered_off = false;
+            effects.push(Effect::PowerOn);
         }
         for notification in &mut self.notifications {
             if notification.idle {
@@ -108,7 +128,8 @@ impl<N: Clone + PartialEq> IdleState<N> {
 
     /// Blanks now, as if the session had gone idle, and counts the lock delay from now:
     /// `SetActive(true)` (12). It's asked for, so neither `idle-activation-enabled` nor an
-    /// inhibitor holds it off. A blank that's on stays as it is.
+    /// inhibitor holds it off. A blank that's on stays as it is. The outputs stay lit until
+    /// their own time: the shim's call is mate-screensaver's, and the power-off isn't.
     pub(crate) fn blank_now(&mut self, now: Duration) -> Vec<Effect<N>> {
         if self.blanked_at.is_some() {
             return Vec::new();
@@ -149,6 +170,13 @@ impl<N: Clone + PartialEq> IdleState<N> {
         now: Duration,
     ) -> Vec<Effect<N>> {
         self.settings = settings;
+        self.elapse(now)
+    }
+
+    /// Whether UPower says the machine runs on its battery: the other `sleep-display` key
+    /// applies at once, counted from the same activity.
+    pub(crate) fn set_on_battery(&mut self, on_battery: bool, now: Duration) -> Vec<Effect<N>> {
+        self.on_battery = on_battery;
         self.elapse(now)
     }
 
@@ -193,6 +221,10 @@ impl<N: Clone + PartialEq> IdleState<N> {
                     self.lock_asked = true;
                     effects.push(Effect::Lock);
                 }
+                Timer::PowerOff => {
+                    self.powered_off = true;
+                    effects.push(Effect::PowerOff);
+                }
                 Timer::Notification(index) => {
                     let notification = &mut self.notifications[index];
                     notification.idle = true;
@@ -203,8 +235,8 @@ impl<N: Clone + PartialEq> IdleState<N> {
         effects
     }
 
-    /// The timer due first, and when. On a tie the blank comes before its lock, and both
-    /// before the notifications, in the order they were made.
+    /// The timer due first, and when. On a tie the blank comes before its lock, then the
+    /// power-off, and all of them before the notifications, in the order they were made.
     fn next(&self) -> Option<(Duration, Timer)> {
         let settings = &self.settings;
         let blank = (self.blanked_at.is_none()
@@ -218,6 +250,16 @@ impl<N: Clone + PartialEq> IdleState<N> {
             }
             _ => None,
         };
+        let sleep = if self.on_battery {
+            settings.sleep_display.battery
+        } else {
+            settings.sleep_display.ac
+        };
+        // Counted from the activity the blank's count is, as mate-power-manager's blank
+        // timer is from the idle time, which its inhibitors cancel (`gpm-idle.c:186-230` at
+        // 1.28.1).
+        let power_off = (!self.powered_off && !sleep.is_zero() && !self.inhibited)
+            .then(|| (self.quiet_since + sleep, Timer::PowerOff));
         let notifications = self
             .notifications
             .iter()
@@ -237,6 +279,7 @@ impl<N: Clone + PartialEq> IdleState<N> {
         blank
             .into_iter()
             .chain(lock)
+            .chain(power_off)
             .chain(notifications)
             .min_by_key(|(due, _)| *due)
     }
@@ -244,8 +287,9 @@ impl<N: Clone + PartialEq> IdleState<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::Effect::{Blank, Idled, Lock, Resumed, Unblank};
+    use super::Effect::{Blank, Idled, Lock, PowerOff, PowerOn, Resumed, Unblank};
     use super::*;
+    use crate::settings::translate::SleepDisplay;
 
     const SECOND: Duration = Duration::from_secs(1);
     const MINUTE: Duration = Duration::from_secs(60);
@@ -255,12 +299,26 @@ mod tests {
         Duration::from_secs(minutes * 60 + seconds)
     }
 
-    /// Five minutes to idle, as MATE's default, blanking, and no lock.
+    /// Five minutes to idle, as MATE's default, blanking, no lock, and the outputs never
+    /// powered off.
     fn blanking() -> IdleSettings {
         IdleSettings {
             delay: 5 * MINUTE,
             blank: true,
             lock: None,
+            sleep_display: SleepDisplay {
+                ac: Duration::ZERO,
+                battery: Duration::ZERO,
+            },
+        }
+    }
+
+    /// [`blanking`], with the outputs powered off after `ac` on AC and `battery` on
+    /// battery.
+    fn powering_off_after(ac: Duration, battery: Duration) -> IdleSettings {
+        IdleSettings {
+            sleep_display: SleepDisplay { ac, battery },
+            ..blanking()
         }
     }
 
@@ -549,5 +607,126 @@ mod tests {
         idle.elapse(at(5, 0));
         assert_eq!(idle.settings_changed(locking_after(MINUTE), at(5, 30)), []);
         assert_eq!(idle.elapse(at(6, 0)), [Lock]);
+    }
+
+    // Powering the outputs off (129).
+
+    #[test]
+    fn the_outputs_power_off_at_the_sleep_display_of_ac() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        assert_eq!(idle.elapse(at(5, 0)), [Blank]);
+        assert_eq!(idle.deadline(), Some(at(30, 0)));
+        assert_eq!(idle.elapse(at(29, 59)), []);
+
+        assert_eq!(idle.elapse(at(30, 0)), [PowerOff]);
+        assert!(idle.is_powered_off());
+        assert!(idle.is_blanked());
+        assert_eq!(idle.deadline(), None);
+        assert_eq!(idle.elapse(at(90, 0)), []);
+    }
+
+    #[test]
+    fn on_battery_the_outputs_power_off_at_the_sleep_display_of_battery() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        assert_eq!(idle.set_on_battery(true, at(1, 0)), []);
+        assert_eq!(idle.elapse(at(5, 0)), [Blank]);
+        assert_eq!(idle.deadline(), Some(at(10, 0)));
+        assert_eq!(idle.elapse(at(10, 0)), [PowerOff]);
+    }
+
+    /// Unplugged after the battery's time without activity: the outputs go off then.
+    #[test]
+    fn going_on_battery_past_its_sleep_display_powers_off_at_once() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        idle.elapse(at(5, 0));
+        assert_eq!(idle.set_on_battery(true, at(12, 0)), [PowerOff]);
+    }
+
+    #[test]
+    fn back_on_ac_the_sleep_display_of_ac_applies_again() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        idle.set_on_battery(true, at(1, 0));
+        assert_eq!(idle.set_on_battery(false, at(2, 0)), []);
+        assert_eq!(idle.elapse(at(10, 0)), [Blank]);
+        assert_eq!(idle.deadline(), Some(at(30, 0)));
+    }
+
+    #[test]
+    fn a_sleep_display_of_0_never_powers_off() {
+        let mut idle = idle(powering_off_after(Duration::ZERO, 10 * MINUTE));
+        assert_eq!(idle.elapse(at(5, 0)), [Blank]);
+        assert_eq!(idle.deadline(), None);
+        assert_eq!(idle.elapse(at(600, 0)), []);
+        assert!(!idle.is_powered_off());
+    }
+
+    /// The outputs power off whatever `idle-activation-enabled` says, as mate-power-manager's
+    /// DPMS does on X11: it's another program's key.
+    #[test]
+    fn the_outputs_power_off_with_idle_activation_off() {
+        let mut idle = idle(IdleSettings {
+            blank: false,
+            ..powering_off_after(30 * MINUTE, 10 * MINUTE)
+        });
+        assert_eq!(idle.elapse(at(30, 0)), [PowerOff]);
+        assert!(!idle.is_blanked());
+    }
+
+    /// A power-off shorter than the blank's delay comes first, and the blank after it.
+    #[test]
+    fn a_sleep_display_shorter_than_the_idle_delay_powers_off_first() {
+        let mut idle = idle(powering_off_after(2 * MINUTE, 2 * MINUTE));
+        assert_eq!(idle.elapse(at(2, 0)), [PowerOff]);
+        assert_eq!(idle.elapse(at(5, 0)), [Blank]);
+    }
+
+    #[test]
+    fn activity_powers_the_outputs_on_and_restarts_the_count() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        idle.elapse(at(30, 0));
+
+        assert_eq!(idle.activity(at(31, 0)), [Unblank, PowerOn]);
+        assert!(!idle.is_powered_off());
+        assert_eq!(idle.elapse(at(36, 0)), [Blank]);
+        assert_eq!(idle.elapse(at(60, 59)), []);
+        assert_eq!(idle.elapse(at(61, 0)), [PowerOff]);
+    }
+
+    #[test]
+    fn an_inhibitor_holds_the_power_off_off() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        idle.set_inhibited(true, at(1, 0));
+        assert_eq!(idle.deadline(), None);
+        assert_eq!(idle.elapse(at(600, 0)), []);
+        assert!(!idle.is_powered_off());
+
+        idle.set_inhibited(false, at(600, 0));
+        assert_eq!(idle.elapse(at(630, 0)), [Blank, PowerOff]);
+    }
+
+    /// As with the blank: inhibitors keep the session from going idle, and don't light it.
+    #[test]
+    fn an_inhibitor_that_comes_while_powered_off_leaves_it_off() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        idle.elapse(at(30, 0));
+        assert_eq!(idle.set_inhibited(true, at(31, 0)), []);
+        assert!(idle.is_powered_off());
+    }
+
+    /// `SetActive(true)` blanks, and the outputs stay lit until their own time.
+    #[test]
+    fn blanking_now_leaves_the_outputs_on() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        assert_eq!(idle.blank_now(at(1, 0)), [Blank]);
+        assert!(!idle.is_powered_off());
+        assert_eq!(idle.deadline(), Some(at(30, 0)));
+    }
+
+    #[test]
+    fn a_shorter_sleep_display_applies_at_once() {
+        let mut idle = idle(powering_off_after(30 * MINUTE, 10 * MINUTE));
+        idle.elapse(at(5, 0));
+        let shorter = powering_off_after(6 * MINUTE, 10 * MINUTE);
+        assert_eq!(idle.settings_changed(shorter, at(7, 0)), [PowerOff]);
     }
 }

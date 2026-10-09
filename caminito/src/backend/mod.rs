@@ -190,6 +190,18 @@ impl Backend {
         }
     }
 
+    /// Powers every lit monitor off, or on again in the mode it had and with a new frame,
+    /// with no output going or coming (129). Nested, powering off is the blank, which the
+    /// scene draws, and nothing more.
+    pub(crate) fn set_outputs_powered(&mut self, caminito: &mut Caminito, on: bool) {
+        match self {
+            Backend::Tty(tty) => tty.set_powered(caminito, on),
+            Backend::Winit(_) => {}
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.set_powered(on),
+        }
+    }
+
     /// The monitors the backend found and added as outputs, and hasn't lit yet: it waits
     /// for the saved layout, so that each is lit once, in the mode it's to show (87).
     /// Nested, the host's window is there from the start.

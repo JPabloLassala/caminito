@@ -339,6 +339,9 @@ pub struct Caminito {
     /// Caminito's session in logind, on the system bus, once `start_logind` has found it
     /// (130).
     pub(crate) logind: Option<Logind>,
+    /// The task that follows UPower's `OnBattery` on the system bus, once `start_upower`
+    /// has made it (129).
+    pub(crate) upower: Option<zbus::Task<()>>,
     /// The calls to the panel for Alt+F1 and Alt+F2, and the popup grab they allow (95).
     pub(crate) panel: Panel,
     /// The key and button events clients were last sent, which a popup grab names one of.
@@ -922,6 +925,7 @@ impl Caminito {
             session: None,
             dbus: None,
             logind: None,
+            upower: None,
             panel,
             input_serials: InputSerials::default(),
             screensaver: ScreensaverShim::default(),

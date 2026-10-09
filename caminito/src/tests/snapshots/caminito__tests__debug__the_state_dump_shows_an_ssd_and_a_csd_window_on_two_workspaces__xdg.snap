@@ -122,6 +122,8 @@ expression: without_x_ids(&dump)
   },
   "idle": {
     "blanked": false,
+    "powered_off": false,
+    "on_battery": false,
     "inhibited": false,
     "inhibitors": [],
     "notifications": 0
