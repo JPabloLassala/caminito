@@ -67,7 +67,9 @@ impl Backend {
             Backend::Tty(tty) => tty.render(caminito, output),
             Backend::Winit(winit) => winit.render(caminito, output),
             #[cfg(test)]
-            Backend::Headless(headless) => Some(headless.render(caminito, output)),
+            Backend::Headless(headless) => {
+                (!headless.is_powered_off()).then(|| headless.render(caminito, output))
+            }
         }
     }
 

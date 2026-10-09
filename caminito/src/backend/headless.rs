@@ -23,8 +23,8 @@ pub struct Headless {
     /// The modes monitors list but can't show, by connector, for tests of a configuration
     /// that fails.
     refused: Vec<(String, Mode)>,
-    /// Whether the monitors are powered off, as the tty's DPMS would have them (129). They're
-    /// still rendered, so a test sees what a nested run shows: the blank.
+    /// Whether the monitors are powered off, as the tty's DPMS would have them (129). As on
+    /// the tty, no frame is drawn meanwhile.
     powered_off: bool,
 }
 

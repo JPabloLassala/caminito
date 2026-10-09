@@ -400,8 +400,8 @@ impl Tty {
         }
     }
 
-    /// Powers the lit monitors off, or on again (129). On, each is drawn anew, and its
-    /// first frame sets its mode again.
+    /// Powers the lit monitors off, or on again (129). On, each is drawn anew once idle
+    /// queues the redraw, and its first frame sets its mode again.
     pub(crate) fn set_powered(&mut self, caminito: &mut Caminito, on: bool) {
         let gpu = &mut self.gpu;
         if gpu.powered_off != on {
@@ -414,7 +414,6 @@ impl Tty {
                 monitor.stop_waiting(&caminito.loop_handle);
                 monitor.drm_output.reset_buffers();
             }
-            caminito.queue_redraw_all();
         } else if self.seat.is_active() {
             // Switched away, the CRTCs aren't Caminito's: switching back powers them off.
             tracing::debug!("powering the monitors off");

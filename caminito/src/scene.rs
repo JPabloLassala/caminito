@@ -169,8 +169,8 @@ where
 
 /// The layers that are drawn, top to bottom: all of them, while the session is locked the
 /// lock and what's above it, and while the outputs are blanked or powered off the blank
-/// alone (128, 129). The lock's
-/// background and the blank cover the rest, so they're left out.
+/// alone (128, 129). The lock's background and the blank cover the rest, so they're left
+/// out.
 fn shown_layers(caminito: &Caminito) -> impl Iterator<Item = SceneLayer> {
     let position = |shown: SceneLayer| {
         LAYERS

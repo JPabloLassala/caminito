@@ -614,6 +614,12 @@ impl State {
                     self.caminito.lock.frame_drawn(&output);
                     rendered.push((output, states));
                 }
+                // While the outputs are powered off no frame is drawn, and none shows the
+                // session: the lock is on screen as far as a locker and logind can tell, as
+                // under the blank (129).
+                None if self.caminito.idle.is_powered_off() => {
+                    self.caminito.lock.frame_drawn(&output);
+                }
                 // The backend can't take a frame yet; it'll be drawn when it can.
                 None => self.caminito.queue_redraw(&output),
             }

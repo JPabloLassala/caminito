@@ -2,7 +2,8 @@
 //! `sleep-display-battery` while a stand-in UPower says `OnBattery`, never at 0, and not
 //! while an inhibitor holds idle off, unless the session is locked. Activity powers them on,
 //! and no client sees an output go or come. The headless backend stands in for the tty's
-//! DPMS: it records whether the monitors are powered, and keeps their modes as they were.
+//! DPMS: it records whether the monitors are powered, draws no frame meanwhile, and keeps
+//! their modes as they were.
 //! Each test moves Caminito's clock on itself.
 
 use std::time::Duration;
@@ -17,9 +18,8 @@ use crate::settings::translate::{CAMINITO, POWER_MANAGER, SCREENSAVER, SESSION};
 const MINUTE: Duration = Duration::from_secs(60);
 const SECOND: Duration = Duration::from_secs(1);
 
-/// What an empty output shows, and a blanked or powered-off one.
+/// What an empty output shows.
 const CLEAR: u32 = 0x333333;
-const BLACK: u32 = 0x000000;
 
 /// Where the tests look at the output: where no window is, away from the cursor.
 const EMPTY_SPOT: (i32, i32) = (1800, 1000);
@@ -135,8 +135,7 @@ fn a_sleep_display_of_0_never_powers_off() {
     assert!(!powered_off(&mut f));
 }
 
-/// mate-power-manager's DPMS doesn't ask whether the screensaver blanks: the outputs go off
-/// with nothing but the clear colour on them made black.
+/// mate-power-manager's DPMS doesn't ask whether the screensaver blanks.
 #[test]
 fn the_outputs_power_off_with_idle_activation_off() {
     let mut f = fixture(vec![setting(
@@ -152,7 +151,22 @@ fn the_outputs_power_off_with_idle_activation_off() {
     assert_eq!(idle(&f)["blanked"], false);
     // Nested, powering off is the blank and nothing more (129).
     assert_eq!(f.state.scene_layers(&output), [SceneLayer::Blank]);
-    f.wait_for_pixel(EMPTY_SPOT.0, EMPTY_SPOT.1, BLACK);
+}
+
+/// No frame is drawn while the outputs are off, and none shows the session: a lock asked
+/// for then is confirmed at once, as under the blank (128).
+#[test]
+fn a_lock_taken_while_powered_off_is_confirmed() {
+    let mut f = fixture(Vec::new());
+    f.advance_clock(2 * MINUTE);
+    assert!(powered_off(&mut f));
+
+    let locker = f.connect(Kind::Xdg);
+    f.client(locker).bind_outputs();
+    let lock = f.client(locker).lock_session();
+    f.roundtrip(locker);
+
+    assert!(f.client(locker).session_lock(lock).locked);
 }
 
 #[test]

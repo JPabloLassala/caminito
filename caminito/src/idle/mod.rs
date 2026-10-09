@@ -46,8 +46,6 @@ pub(crate) struct Idle {
     inhibitors: Vec<WlSurface>,
     /// Whether mate-session last said an inhibitor of its own holds idle off.
     session_inhibited: bool,
-    /// Whether UPower last said the machine runs on its battery (129).
-    on_battery: bool,
     /// The blank's id in every output's scene, so it's damaged once and not at every
     /// frame.
     blank: Id,
@@ -66,7 +64,6 @@ impl Idle {
             wake: None,
             inhibitors: Vec::new(),
             session_inhibited: false,
-            on_battery: false,
             blank: Id::new(),
         }
     }
@@ -89,7 +86,7 @@ impl Idle {
 
     /// Whether UPower last said the machine runs on its battery.
     pub(crate) fn on_battery(&self) -> bool {
-        self.on_battery
+        self.state.is_on_battery()
     }
 
     /// Whether inhibitors hold idle off now.
@@ -145,11 +142,10 @@ impl State {
     /// UPower said whether the machine runs on its battery, which picks the `sleep-display`
     /// key (129).
     pub(crate) fn idle_on_battery(&mut self, on_battery: bool) {
-        if on_battery == self.caminito.idle.on_battery {
+        if on_battery == self.caminito.idle.on_battery() {
             return;
         }
         tracing::debug!("on battery: {on_battery}");
-        self.caminito.idle.on_battery = on_battery;
         let now = self.caminito.now();
         let effects = self.caminito.idle.state.set_on_battery(on_battery, now);
         self.idle_effects(effects);

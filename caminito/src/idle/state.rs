@@ -1,7 +1,7 @@
 //! Idle's timers as a pure type (15, 128): when the session goes idle and the outputs blank,
 //! when the lock is asked for after that, when the outputs are powered off (129), and when
-//! each ext-idle-notify client is told it's idle. It reads no clock: every call takes `now`, and [`IdleState::deadline`] says when it
-//! next needs [`IdleState::elapse`].
+//! each ext-idle-notify client is told it's idle. It reads no clock: every call takes `now`,
+//! and [`IdleState::deadline`] says when it next needs [`IdleState::elapse`].
 
 use std::time::Duration;
 
@@ -92,6 +92,10 @@ impl<N: Clone + PartialEq> IdleState<N> {
 
     pub(crate) fn is_powered_off(&self) -> bool {
         self.powered_off
+    }
+
+    pub(crate) fn is_on_battery(&self) -> bool {
+        self.on_battery
     }
 
     pub(crate) fn is_inhibited(&self) -> bool {
@@ -250,7 +254,7 @@ impl<N: Clone + PartialEq> IdleState<N> {
             }
             _ => None,
         };
-        let sleep = if self.on_battery {
+        let power_off_after = if self.on_battery {
             settings.sleep_display.battery
         } else {
             settings.sleep_display.ac
@@ -258,8 +262,8 @@ impl<N: Clone + PartialEq> IdleState<N> {
         // Counted from the activity the blank's count is, as mate-power-manager's blank
         // timer is from the idle time, which its inhibitors cancel (`gpm-idle.c:186-230` at
         // 1.28.1).
-        let power_off = (!self.powered_off && !sleep.is_zero() && !self.inhibited)
-            .then(|| (self.quiet_since + sleep, Timer::PowerOff));
+        let power_off = (!self.powered_off && !power_off_after.is_zero() && !self.inhibited)
+            .then(|| (self.quiet_since + power_off_after, Timer::PowerOff));
         let notifications = self
             .notifications
             .iter()
