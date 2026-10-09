@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open
+Status: open: the code is in; the four questions under "To run" are a nested run's, and whether ADR 0020 and the spec should say a change of workspace state restarts the extension host is the developer's
 Milestone: none: after v0.1
 Blocked by: [118](118-the-menu-is-vs-codes.md)
 
@@ -49,3 +49,10 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 
 **Not run here:** the four questions above need the nested run with the applet.
 
+
+## Done (2026-10-09)
+
+- **The code was already on `master`** (`e468cae`, `62a64f5`), so shipping it added nothing to `caminito-vscode/`. At `f6e3003`, `npm run typecheck` is clean and `npm test` passes all 68 tests, on Node 22 here.
+- **The Rust workspace's suite wasn't run:** as for 118, `pango-sys` won't build without pango's development files, which this container lacks. Ticket 119 changes nothing outside `caminito-vscode/` and this file.
+- **The nested run wasn't done here.** There's no VS Code, no Wayland compositor and no applet, so the four questions under "To run" stay unanswered. The same run should check the restart that review found: a folder window that becomes a multi-root workspace gets a new extension host, which claims the menu again.
+- **Left open on the developer's call:** the folders criterion holds through the seam, but in a real editor the change comes as a restart, not a `LayoutUpdated`. Whether ADR 0020 and the spec should say so isn't decided here.
