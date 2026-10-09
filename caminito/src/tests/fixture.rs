@@ -39,7 +39,7 @@ use crate::window::Mapped;
 
 /// The vendored schemas under `tests/schemas/` (14), compiled once per test run beside the
 /// test binary.
-fn test_schemas() -> &'static std::path::Path {
+pub(crate) fn test_schemas() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
         let exe = std::env::current_exe().unwrap();
@@ -523,6 +523,16 @@ impl Fixture {
             .insert_client(server, Arc::new(ClientState::default()))
             .unwrap();
         client
+    }
+
+    /// Takes Caminito's end of a Wayland connection that a program of the test's made to a
+    /// socket of the test's own, as a program Caminito spawns connects to Caminito's.
+    pub fn insert_stream(&mut self, stream: UnixStream) {
+        self.state
+            .caminito
+            .display_handle
+            .insert_client(stream, Arc::new(ClientState::default()))
+            .unwrap();
     }
 
     /// Connects a Wayland client through a security context that `engine` makes, as Flatpak

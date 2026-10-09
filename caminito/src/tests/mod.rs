@@ -7,6 +7,7 @@ mod app_menu_registrar;
 mod bell;
 mod bindings;
 mod caminito_displays;
+mod caminito_locker;
 mod client;
 mod commands;
 mod commit_timing;

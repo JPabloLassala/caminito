@@ -720,6 +720,47 @@ session_env() {
 - **Debug tool:** `DumpState`'s `lock`: `unlocked`, `locked`, and `locker-lost` after the
   `pkill`. Caminito logs `can't give a client the session lock` for each refused `lock`.
 
+### caminito-locker shows MATE's unlock dialog, and the password unlocks
+
+- **Milestone:** M7
+- **Steps:**
+  1. With `caminito-git` installed, run `tools/dev-nested` and start a GTK3 app in it. From a
+     terminal outside the nested Caminito, with its `WAYLAND_DISPLAY`, run
+     `caminito-locker --verbose`.
+  2. Type a wrong password and press Enter. Then type the right one and press Enter.
+  3. Make a theme of the default one with red labels, and lock with it, then with a theme
+     that isn't installed:
+
+     ```sh
+     cd /usr/share/mate-screensaver
+     sudo cp lock-dialog-default.ui lock-dialog-red.ui
+     echo 'label { color: #c00; }' | sudo tee lock-dialog-red.css
+     gsettings set org.mate.screensaver lock-dialog-theme red
+     ```
+
+     Run `caminito-locker` and unlock. Then `gsettings set org.mate.screensaver
+     lock-dialog-theme nonexistent`, run `caminito-locker` and unlock. Then `gsettings reset
+     org.mate.screensaver lock-dialog-theme` and `sudo rm lock-dialog-red.*`.
+  4. Log into *MATE on Caminito* with both monitors connected. Until 126 spawns it, run
+     `caminito-locker` from a terminal.
+  5. Move the pointer from one monitor to the other and back, and type a letter on each.
+     Unlock.
+  6. In *Appearance*, pick another GTK theme, such as *TraditionalOk*, and lock again with
+     `caminito-locker`. Unlock, and set the theme back.
+- **Expected:** in step 1 the session is behind the lock, and the dialog is mate-screensaver's
+  as X11 MATE shows it: the clock and date, the user's face (`~/.face`, if there is one) and
+  real name, *user on host*, the *Password:* prompt, and *Cancel* and *Unlock*, in the GTK
+  theme's colours, on a plain background (132 adds MATE's). No tooltip shows over the
+  prompt's eye icon. In step 2 the dialog says *Incorrect password.* and asks again, and the
+  right password unlocks: `caminito-locker` exits and the app has the keyboard again. In
+  step 3 the first lock's labels are red, and the second's dialog is the default one again,
+  from caminito-locker's own copy of it. In
+  step 5 the dialog goes to the monitor the pointer is on, and the letters typed there
+  reach its prompt. In step 6 the dialog is in the other theme's colours.
+- **Debug tool:** `DumpState`'s `lock` and each output's `lock_surface`. `--verbose` logs the
+  PAM conversation (`Got message style 1: 'Password: '`), `No theme at …` for step 3, and
+  `Moving the dialog` for step 5.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

@@ -1,0 +1,5 @@
+# The stand-in mate-screensaver service of the conversation's test: pam_chatty says a
+# line of its own, and pam_matrix checks the password against the test's file.
+auth     optional @MODULES@/pam_chatty.so info
+auth     required @MODULES@/pam_matrix.so passdb=@PASSDB@
+account  required @MODULES@/pam_matrix.so passdb=@PASSDB@
