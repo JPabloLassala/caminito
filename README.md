@@ -262,8 +262,38 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   `widget.gtk.global-menu.wayland.enabled` to `true` in `about:config`, and install
   `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. Like a Qt
   app, a window follows the applet only from Firefox's next start.
-- **VS Code** has a global menu only as an XWayland window, since an Electron app says where
-  its menu is by an X window's id alone. Put `--ozone-platform=x11` in
+- **VS Code, VSCodium, Code - OSS and Cursor** have their menus in the panel on native Wayland
+  with their own title bar, the default, once `caminito-vscode-git` is installed (build it
+  from `packaging/arch/caminito-vscode-git` as `caminito-git` is built). The package links its
+  extension, *Caminito Global Menu*, into each of these editors that's installed, for every
+  profile, and pacman updates and removes it with the package or the editor
+  ([ADR 0022](docs/adr/0022-vs-code-s-extension-is-a-built-in-linked-by-an-alpm-hook.md)).
+  Nothing is set up in the editor, and each window, local or attached to SSH, a container or
+  WSL, follows the applet while the editor runs. The first time a window's menu goes to
+  the panel, the editor asks once: *The panel now shows this window's menus. Hide the menu bar
+  in the window? Pressing Alt shows it again.* **Hide Menu Bar** sets
+  `window.menuBarVisibility` to `toggle`, which hides the menubar until Alt is pressed, and
+  **Keep Menu Bar** changes nothing. Either way the question isn't asked again:
+  - `caminito.globalMenu.offerToHideMenuBar` turned back on asks it again.
+  - With Settings Sync on, the choice goes to your other machines. To hide the menubar on this
+    one only, add `window.menuBarVisibility` to `settingsSync.ignoredSettings`.
+  - *View > Appearance > Menu Bar* in the editor's menu never sets `toggle` again, so once the
+    menubar is back through it, set `window.menuBarVisibility` to `toggle` by hand to hide it.
+
+  An editor the package doesn't reach, such as one unpacked in your home directory, gets the
+  extension from one link into its `resources/app/extensions`:
+
+  ```sh
+  ln -s /usr/share/caminito-vscode/global-menu ~/VSCode-linux-x64/resources/app/extensions/caminito.global-menu
+  ```
+
+  The menu is VS Code's own, with your key bindings. It doesn't reach a Flatpak
+  editor, never greys an item out, shows a checkmark only for a setting it can read, shows no
+  shortcut for a chord, leaves out other extensions' items, and isn't translated. Alt+F
+  doesn't open the panel's menu.
+
+  Without the package, VS Code has a global menu only as an XWayland window, since an Electron
+  app says where its menu is by an X window's id alone. Put `--ozone-platform=x11` in
   `~/.config/code-flags.conf`, and set `window.titleBarStyle` to `native` in its settings. It's
   then drawn at the X11 scale
   ([ADR 0008](docs/adr/0008-fractional-default-scale-integer-x11-scale.md)), so it's soft on

@@ -1,0 +1,75 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+
+# The global menu extension (ADR 0022), built from this repository's caminito-vscode/ and
+# installed unpacked as a built-in of each editor that's installed. It isn't a patched package
+# in ADR 0011's sense: it replaces nothing and carries no patch. No .vsix ships.
+pkgname=caminito-vscode-git
+_pkgname=caminito
+pkgver=r401.74f31a4
+pkgrel=1
+pkgdesc="Caminito's global menu for VS Code, VSCodium, Code - OSS and Cursor"
+arch=(any)
+url='https://github.com/JPabloLassala/caminito'
+license=(GPL-2.0-or-later)
+# The extension runs in the editor's own Node and links nothing. The link script, which the
+# hooks and the install script run, is sh with readlink and awk.
+depends=(bash coreutils gawk)
+# esbuild's binary is the bundler's alone: the bundle is plain JavaScript (116).
+makedepends=(git nodejs npm)
+# The extension's tests run on a private dbus-daemon of each test's own.
+checkdepends=(dbus)
+install=caminito-vscode-git.install
+# The local checkout's committed HEAD, as caminito-git's is.
+source=("$_pkgname::git+file://$(git rev-parse --show-toplevel)")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_pkgname"
+  (
+    set -o pipefail
+    git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+      printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+  )
+}
+
+prepare() {
+  cd "$_pkgname/caminito-vscode"
+  npm ci --cache "$srcdir/npm-cache" --no-audit --no-fund
+}
+
+build() {
+  cd "$_pkgname/caminito-vscode"
+  npm run build
+}
+
+check() {
+  cd "$_pkgname/caminito-vscode"
+  npm test
+}
+
+package() {
+  cd "$_pkgname"
+  # What the editor loads: the manifest and the bundle. The source map is left out; it maps to
+  # sources the package doesn't ship.
+  local extension="$pkgdir/usr/share/caminito-vscode/global-menu"
+  install -Dm644 caminito-vscode/package.json -t "$extension"
+  install -Dm644 caminito-vscode/dist/extension.js -t "$extension/dist"
+
+  cd packaging/arch/caminito-vscode-git
+  install -Dm755 caminito-vscode-link -t "$pkgdir/usr/share/libalpm/scripts"
+  # The hooks' targets come from the script's list, so the five directories are written once.
+  # pacman's targets have no leading slash.
+  local targets hook line
+  targets=$(sh caminito-vscode-link directories | sed 's|^/\(.*\)$|Target = \1/*|')
+  install -dm755 "$pkgdir/usr/share/libalpm/hooks"
+  for hook in caminito-vscode-link.hook caminito-vscode-unlink.hook; do
+    while IFS= read -r line; do
+      if [[ $line = @TARGETS@ ]]; then
+        printf '%s\n' "$targets"
+      else
+        printf '%s\n' "$line"
+      fi
+    done <"$hook" >"$pkgdir/usr/share/libalpm/hooks/$hook"
+    chmod 644 "$pkgdir/usr/share/libalpm/hooks/$hook"
+  done
+}
