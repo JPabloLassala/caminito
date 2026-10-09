@@ -1,0 +1,12 @@
+{
+  "name": "checks-driver-122",
+  "publisher": "caminito",
+  "displayName": "Ticket 122's checks driver",
+  "description": "Runs what the nested check asks for inside the extension host. Never installed.",
+  "version": "0.0.1",
+  "private": true,
+  "engines": { "vscode": "^1.68.0" },
+  "extensionKind": ["ui"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js"
+}

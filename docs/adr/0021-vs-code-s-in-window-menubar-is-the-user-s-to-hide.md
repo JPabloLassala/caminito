@@ -34,9 +34,9 @@ The offer's wording, the setting's name and the bus name's spelling were added o
 - VS Code's command doesn't go back to `toggle`: with the custom title bar it switches `classic` and `visible` to `compact` and anything else to `classic`. A user who brings the menubar back from the panel's item and wants it gone again sets the setting by hand.
 - A notification closed without an answer isn't shown again. The documentation is then the only place that tells of the setting.
 - That the extension's stored state is kept for each profile is from VS Code's documentation of profiles and wasn't run.
-- With several windows open, each window's extension host reads the same setting, so the first to show the offer turns it off for the others. Without the bus name, two hosts claiming within 300 ms of each other both made the offer in 12 of 15 tries. The name hasn't been run.
+- With several windows open, each window's extension host reads the same setting, so the first to show the offer turns it off for the others. Without the bus name, two hosts claiming within 300 ms of each other both made the offer in 12 of 15 tries. With the name, two windows focused 50 ms apart made one offer in 15 tries of 15 (run for ticket 122).
 - A user who turns the extension's setting on again gets the offer from the window whose host holds the name, or from any window once that one is closed or reloaded.
-- A user who only ever opens the agents window gets no offer. That the workspace file's path reaches the extension as VS Code's source has it hasn't been run.
+- A user who only ever opens the agents window gets no offer. The workspace file's path reaches the extension as VS Code's source has it (run for ticket 122).
 - That Alt shows a `toggle` menubar in a Caminito session, and that Alt+F opens its File menu, haven't been run there.
 - Rejected:
   - Setting `window.menuBarVisibility` when the extension starts serving (a user's setting changed with nobody asking, and synced to machines with no global menu).

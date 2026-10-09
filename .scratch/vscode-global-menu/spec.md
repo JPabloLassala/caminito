@@ -212,9 +212,9 @@ Nobody has run these. Each is listed under the slice that runs it, and a result 
 
 **With the offer** (slice 8):
 
-- Two windows focused 50 ms apart, with the bus name.
-- `workspace.workspaceFile` in the agents window.
-- That the offer isn't made again in another profile.
+- Two windows focused 50 ms apart, with the bus name. Run ([122](../issues/122-the-offer-to-hide-the-menubar.md)): one notification in 15 tries of 15, with both hosts asking for the name in 13.
+- `workspace.workspaceFile` in the agents window. Run (122): it's `agent-sessions.code-workspace` in the user's settings directory, and that window claims and doesn't offer.
+- That the offer isn't made again in another profile. Run (122): it isn't.
 
 **In a real Session, by hand** (slice 10):
 
