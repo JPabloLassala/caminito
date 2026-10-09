@@ -896,6 +896,33 @@ session_env() {
   `inhibitors` has mpv's surface with its window and `shown`, and its `lock`. `--verbose`
   logs `the session is idle; blanking the outputs` and `activity; unblanking the outputs`.
 
+### Idle powers both monitors off, a key lights them in their layout, and a video keeps them on
+
+- **Milestone:** M7
+- **Steps:**
+  1. On the tty, with both of the developer's monitors (the AOC and the LG) plugged in, log
+     into *MATE on Caminito*, and run:
+
+     ```sh
+     gsettings set org.mate.session idle-delay 1
+     gsettings set org.mate.screensaver lock-enabled false
+     gsettings set org.mate.power-manager sleep-display-ac 120
+     gsettings set org.mate.power-manager sleep-display-battery 120
+     ```
+
+  2. Leave the keyboard and the mouse alone for three minutes, then press Shift.
+  3. Play a video in `mpv` and leave everything alone for three minutes.
+  4. Set the four keys back with `gsettings reset`.
+- **Expected:** in step 2 both monitors go black after a minute, and a minute later each
+  says it has no signal and goes to standby (129). Shift lights both in the saved layout,
+  each in its mode, with the windows where they were: no window moves to the other monitor,
+  and the panel stays where it was. Whether the AOC goes black once more as the LG comes
+  back, as it does when the LG is turned off or on (87), is written in 129. In step 3 both
+  stay on.
+- **Debug tool:** `DumpState`'s `idle`, whose `powered_off` follows the monitors, and whose
+  `on_battery` says which key applies. `--verbose` logs `the session is idle; powering the
+  outputs off`, `powering the monitors off`, and their `on` lines.
+
 ### The panel's *Lock Screen* and `mate-screensaver-command`
 
 - **Milestone:** M7

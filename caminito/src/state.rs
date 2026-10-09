@@ -339,6 +339,9 @@ pub struct Caminito {
     /// Caminito's session in logind, on the system bus, once `start_logind` has found it
     /// (130).
     pub(crate) logind: Option<Logind>,
+    /// The task that follows UPower's `OnBattery` on the system bus, once `start_upower`
+    /// has made it (129).
+    pub(crate) upower: Option<zbus::Task<()>>,
     /// The calls to the panel for Alt+F1 and Alt+F2, and the popup grab they allow (95).
     pub(crate) panel: Panel,
     /// The key and button events clients were last sent, which a popup grab names one of.
@@ -610,6 +613,12 @@ impl State {
                 Some(states) => {
                     self.caminito.lock.frame_drawn(&output);
                     rendered.push((output, states));
+                }
+                // While the outputs are powered off no frame is drawn, and none shows the
+                // session: the lock is on screen as far as a locker and logind can tell, as
+                // under the blank (129).
+                None if self.caminito.idle.is_powered_off() => {
+                    self.caminito.lock.frame_drawn(&output);
                 }
                 // The backend can't take a frame yet; it'll be drawn when it can.
                 None => self.caminito.queue_redraw(&output),
@@ -922,6 +931,7 @@ impl Caminito {
             session: None,
             dbus: None,
             logind: None,
+            upower: None,
             panel,
             input_serials: InputSerials::default(),
             screensaver: ScreensaverShim::default(),

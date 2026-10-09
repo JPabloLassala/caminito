@@ -10,8 +10,12 @@
 //! shim's (127). None applies while the session is locked, when no client surface is
 //! visible (12).
 //!
-//! The blank is `scene`'s top layer: black, with nothing under it drawn. Powering the
-//! outputs off is 129's.
+//! The blank is `scene`'s top layer: black, with nothing under it drawn.
+//!
+//! After mate-power-manager's `sleep-display-ac`, or `sleep-display-battery` while UPower
+//! says `OnBattery` (`dbus::upower`), the outputs are powered off, held off by the same
+//! inhibitors, and activity powers them on (129). On the tty that's DPMS, through the
+//! backend; nested it's the blank and nothing more. No output goes or comes.
 
 mod state;
 
@@ -69,6 +73,22 @@ impl Idle {
         self.state.is_blanked()
     }
 
+    /// Whether the outputs are powered off (129).
+    pub(crate) fn is_powered_off(&self) -> bool {
+        self.state.is_powered_off()
+    }
+
+    /// Whether the scene is the blank alone: blanked, or powered off, which nested is the
+    /// blank (129).
+    pub(crate) fn shows_blank(&self) -> bool {
+        self.is_blanked() || self.is_powered_off()
+    }
+
+    /// Whether UPower last said the machine runs on its battery.
+    pub(crate) fn on_battery(&self) -> bool {
+        self.state.is_on_battery()
+    }
+
     /// Whether inhibitors hold idle off now.
     pub(crate) fn is_inhibited(&self) -> bool {
         self.state.is_inhibited()
@@ -119,6 +139,18 @@ impl State {
         self.idle_effects(effects);
     }
 
+    /// UPower said whether the machine runs on its battery, which picks the `sleep-display`
+    /// key (129).
+    pub(crate) fn idle_on_battery(&mut self, on_battery: bool) {
+        if on_battery == self.caminito.idle.on_battery() {
+            return;
+        }
+        tracing::debug!("on battery: {on_battery}");
+        let now = self.caminito.now();
+        let effects = self.caminito.idle.state.set_on_battery(on_battery, now);
+        self.idle_effects(effects);
+    }
+
     /// The refresh pass's part of idle: whether inhibitors hold it off now, as the windows
     /// they're on show and hide, and as the session locks and unlocks.
     pub(crate) fn refresh_idle(&mut self) {
@@ -163,6 +195,16 @@ impl State {
                 // A lock that's refused, as with `disable-lock-screen`, is logged there.
                 Effect::Lock => {
                     self.request_lock();
+                }
+                Effect::PowerOff => {
+                    tracing::debug!("the session is idle; powering the outputs off");
+                    self.backend.set_outputs_powered(&mut self.caminito, false);
+                    self.caminito.queue_redraw_all();
+                }
+                Effect::PowerOn => {
+                    tracing::debug!("activity; powering the outputs on");
+                    self.backend.set_outputs_powered(&mut self.caminito, true);
+                    self.caminito.queue_redraw_all();
                 }
                 Effect::Idled(notification) => notification.idled(),
                 Effect::Resumed(notification) => notification.resumed(),

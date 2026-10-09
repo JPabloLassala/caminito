@@ -73,8 +73,8 @@ render_elements! {
 /// The scene's layers, top to bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SceneLayer {
-    /// While the outputs are blanked, black over everything, the cursor and the lock too,
-    /// and nothing of the layers below (128).
+    /// While the outputs are blanked or powered off, black over everything, the cursor and
+    /// the lock too, and nothing of the layers below (128, 129).
     Blank,
     /// The pointer's cursor, over everything else.
     Cursor,
@@ -168,8 +168,9 @@ where
 }
 
 /// The layers that are drawn, top to bottom: all of them, while the session is locked the
-/// lock and what's above it, and while the outputs are blanked the blank alone. The lock's
-/// background and the blank cover the rest, so they're left out.
+/// lock and what's above it, and while the outputs are blanked or powered off the blank
+/// alone (128, 129). The lock's background and the blank cover the rest, so they're left
+/// out.
 fn shown_layers(caminito: &Caminito) -> impl Iterator<Item = SceneLayer> {
     let position = |shown: SceneLayer| {
         LAYERS
@@ -177,7 +178,7 @@ fn shown_layers(caminito: &Caminito) -> impl Iterator<Item = SceneLayer> {
             .position(|layer| *layer == shown)
             .expect("every layer is one of the layers")
     };
-    let shown = if caminito.idle.is_blanked() {
+    let shown = if caminito.idle.shows_blank() {
         position(SceneLayer::Blank) + 1
     } else if caminito.lock.is_locked() {
         position(SceneLayer::Lock) + 1
@@ -280,13 +281,13 @@ fn layer_elements<R>(
     }
 }
 
-/// While the outputs are blanked, black over all of `output`.
+/// While the outputs are blanked or powered off, black over all of `output`.
 fn blank_elements<R>(caminito: &Caminito, output: &Output, elements: &mut Vec<SceneElement<R>>)
 where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    if !caminito.idle.is_blanked() {
+    if !caminito.idle.shows_blank() {
         return;
     }
     let scale = output.current_scale().fractional_scale();

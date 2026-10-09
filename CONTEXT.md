@@ -88,6 +88,10 @@ _Avoid_: mate-screensaver (the X11 program)
 A monitor Caminito is drawing on, with a mode, a place in the layout and an output scale. A monitor that is turned off is a disabled output.
 _Avoid_: display (that's the word the user reads in caminito-displays, and nowhere else), screen, head (the protocol's word)
 
+**Powered off**:
+An output whose monitor idle has put to standby (DPMS) after mate-power-manager's `sleep-display` time. It keeps its mode, its place and its output scale, and clients see no change; activity powers it on. It isn't a disabled output.
+_Avoid_: DPMS (the mechanism, on the tty only), asleep
+
 **Primary output**:
 The one output the user chooses as primary. The panel and caja's desktop go there, new windows open there when nothing says otherwise, and X11 apps see it as the RandR primary. When it is unplugged or disabled, the built-in panel stands in, else the leftmost output, until it returns.
 _Avoid_: main output, default output

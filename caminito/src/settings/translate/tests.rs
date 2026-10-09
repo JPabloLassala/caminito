@@ -170,6 +170,9 @@ fn defaults() -> Reading {
     put(SCREENSAVER, "idle-activation-enabled", Value::Bool(true));
     put(SCREENSAVER, "lock-enabled", Value::Bool(true));
     put(SCREENSAVER, "lock-delay", Value::Int(0));
+    put(POWER_MANAGER, "sleep-display-ac", Value::Int(1800));
+    put(POWER_MANAGER, "sleep-display-battery", Value::Int(600));
+    put(POWER_MANAGER, "sleep-display-ups", Value::Int(600));
     reading
 }
 
@@ -420,6 +423,72 @@ fn without_the_session_and_screensaver_schemas_idle_has_their_defaults() {
     }
     reading.set_missing(SESSION);
     reading.set_missing(SCREENSAVER);
+    let idle = translate(&reading).settings.idle;
+    assert_eq!(idle, settings(&defaults()).idle);
+}
+
+#[test]
+fn the_outputs_power_off_after_half_an_hour_on_ac_and_ten_minutes_on_battery() {
+    let sleep = settings(&defaults()).idle.sleep_display;
+    assert_eq!(sleep.ac, Duration::from_secs(30 * 60));
+    assert_eq!(sleep.battery, Duration::from_secs(10 * 60));
+}
+
+#[test]
+fn sleep_display_is_in_seconds() {
+    let reading = with(POWER_MANAGER, "sleep-display-ac", Value::Int(90));
+    assert_eq!(
+        settings(&reading).idle.sleep_display.ac,
+        Duration::from_secs(90)
+    );
+    let reading = with(POWER_MANAGER, "sleep-display-battery", Value::Int(45));
+    assert_eq!(
+        settings(&reading).idle.sleep_display.battery,
+        Duration::from_secs(45)
+    );
+}
+
+#[test]
+fn a_sleep_display_of_0_is_kept_as_never() {
+    let reading = with(POWER_MANAGER, "sleep-display-ac", Value::Int(0));
+    assert_eq!(settings(&reading).idle.sleep_display.ac, Duration::ZERO);
+}
+
+#[test]
+fn a_negative_sleep_display_is_the_default() {
+    let (settings, problem) = problem(&with(
+        POWER_MANAGER,
+        "sleep-display-battery",
+        Value::Int(-1),
+    ));
+    assert_eq!(
+        settings.idle.sleep_display.battery,
+        Duration::from_secs(600)
+    );
+    assert_eq!(
+        problem,
+        invalid(POWER_MANAGER, "sleep-display-battery", "-1", "600")
+    );
+}
+
+/// A UPS counts as AC (09): its key is never read, so it's no problem either.
+#[test]
+fn sleep_display_ups_is_never_read() {
+    let reading = with(POWER_MANAGER, "sleep-display-ups", Value::Int(5));
+    assert_eq!(settings(&reading).idle, settings(&defaults()).idle);
+}
+
+#[test]
+fn without_the_power_manager_schema_the_outputs_power_off_at_its_defaults() {
+    let mut reading = defaults();
+    for key in [
+        "sleep-display-ac",
+        "sleep-display-battery",
+        "sleep-display-ups",
+    ] {
+        reading.remove(POWER_MANAGER, key);
+    }
+    reading.set_missing(POWER_MANAGER);
     let idle = translate(&reading).settings.idle;
     assert_eq!(idle, settings(&defaults()).idle);
 }
