@@ -99,6 +99,33 @@ struct StateDump {
     menu_claims: Vec<MenuClaimDump>,
     /// The bells rung (105).
     bell: BellDump,
+    /// Night Light (137).
+    night_light: NightLightDump,
+}
+
+#[derive(Serialize)]
+struct NightLightDump {
+    /// `night-light-enabled`.
+    enabled: bool,
+    /// `sun` or `constant`.
+    schedule: &'static str,
+    /// `night-light-paused-until`: the Unix time a pause ends, or 0.
+    paused_until: i64,
+    /// The sun schedule's latitude and longitude, while it has one.
+    location: Option<(f64, f64)>,
+    /// Where the location comes from: `none` until 138.
+    location_source: &'static str,
+    /// The temperature the outputs are to have, in kelvin.
+    target_temperature: u32,
+    /// Each output's temperature now, partway through a fade or not. Only the tty writes it
+    /// to a gamma table.
+    outputs: Vec<NightLightOutputDump>,
+}
+
+#[derive(Serialize)]
+struct NightLightOutputDump {
+    output: String,
+    temperature: u32,
 }
 
 #[derive(Serialize)]
@@ -368,8 +395,8 @@ impl Caminito {
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the accelerator
-    /// grabs with their owners, the Window switcher, and the bells rung with the last one,
-    /// as pretty-printed JSON.
+    /// grabs with their owners, the Window switcher, the bells rung with the last one, and
+    /// Night Light, as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -511,8 +538,31 @@ impl Caminito {
                     window: bell.window.map(|id| id.0),
                 }),
             },
+            night_light: self.night_light_dump(),
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
+    }
+
+    fn night_light_dump(&self) -> NightLightDump {
+        let night_light = &self.night_light;
+        let settings = night_light.settings();
+        let now = self.now();
+        NightLightDump {
+            enabled: settings.enabled,
+            schedule: settings.schedule.name(),
+            paused_until: settings.paused_until,
+            location: None,
+            location_source: night_light.location_source(),
+            target_temperature: night_light.target(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|output| NightLightOutputDump {
+                    output: output.name(),
+                    temperature: night_light.temperature(output, now),
+                })
+                .collect(),
+        }
     }
 
     fn idle_dump(&self) -> IdleDump {

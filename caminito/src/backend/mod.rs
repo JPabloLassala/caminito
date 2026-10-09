@@ -105,6 +105,14 @@ impl Backend {
         }
     }
 
+    /// Sets `output`'s gamma table to Night Light's `kelvin` (ADR 0023). Only the tty has
+    /// gamma tables: nested and headless, Night Light tints nothing.
+    pub(crate) fn set_temperature(&mut self, output: &Output, kelvin: u32) {
+        if let Backend::Tty(tty) = self {
+            tty.set_temperature(output, kelvin);
+        }
+    }
+
     /// Shows the seat's lock LEDs on the keyboards. Nested, the host's keyboard shows its
     /// own.
     pub fn update_leds(&mut self, leds: LedState) {

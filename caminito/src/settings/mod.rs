@@ -356,12 +356,18 @@ fn from_variant(variant: &glib::Variant) -> Value {
         Value::Bool(b)
     } else if let Some(i) = variant.get::<i32>() {
         Value::Int(i)
+    } else if let Some(u) = variant.get::<u32>() {
+        Value::Uint(u)
+    } else if let Some(i) = variant.get::<i64>() {
+        Value::Int64(i)
     } else if let Some(d) = variant.get::<f64>() {
         Value::Double(d)
     } else if let Some(s) = variant.get::<String>() {
         Value::Str(s)
     } else if let Some(list) = variant.get::<Vec<String>>() {
         Value::StrList(list)
+    } else if let Some(pair) = variant.get::<Option<(f64, f64)>>() {
+        Value::MaybePair(pair)
     } else {
         Value::Other(variant.print(true).into())
     }
@@ -371,9 +377,12 @@ fn to_variant(value: &Value) -> Result<glib::Variant, glib::BoolError> {
     Ok(match value {
         Value::Bool(b) => b.to_variant(),
         Value::Int(i) => i.to_variant(),
+        Value::Uint(u) => u.to_variant(),
+        Value::Int64(i) => i.to_variant(),
         Value::Double(d) => d.to_variant(),
         Value::Str(s) => s.to_variant(),
         Value::StrList(list) => list.to_variant(),
+        Value::MaybePair(pair) => pair.to_variant(),
         Value::Other(text) => glib::Variant::parse(None, text)
             .map_err(|err| glib::bool_error!("not GVariant text: {err}"))?,
     })

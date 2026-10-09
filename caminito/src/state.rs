@@ -102,6 +102,7 @@ use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
+use crate::night_light::{self, NightLight};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
@@ -207,6 +208,10 @@ pub struct Caminito {
     pub idle_inhibit_state: IdleInhibitManagerState,
     /// Idle's timers, the blank and what holds them off (128).
     pub(crate) idle: Idle,
+    /// Night Light's temperatures and fades (ADR 0023).
+    pub(crate) night_light: NightLight,
+    /// `NightLight` as `org.mate.Caminito`'s callers last heard it (137).
+    pub(crate) night_light_signalled: Option<night_light::Published>,
     /// How far a test has moved Caminito's clock on, so that idle's timers come due
     /// without waiting for them (128).
     #[cfg(test)]
@@ -592,6 +597,7 @@ impl State {
         self.refresh_idle();
         // After idle and the lock, whose changes it signals.
         self.caminito.refresh_screensaver();
+        self.refresh_night_light();
         self.update_pointer_focus();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
@@ -863,6 +869,8 @@ impl Caminito {
             idle_notify_state: IdleNotifyState::new::<State>(dh),
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),
+            night_light: NightLight::new(settings.night_light),
+            night_light_signalled: None,
             #[cfg(test)]
             clock_offset: Duration::ZERO,
 
@@ -973,6 +981,7 @@ impl Caminito {
         }
         self.input_devices.settings_changed(settings.devices);
         self.keyboard_settings_changed(&settings.keyboard);
+        self.night_light_settings_changed(settings.night_light);
         let factor = settings.interface.window_scaling_factor;
         let factor_changed = factor != self.settings.interface.window_scaling_factor;
         self.settings = settings;
@@ -1107,6 +1116,7 @@ impl Caminito {
         self.refresh_output_management();
         self.refresh_primary_output_property();
         self.refresh_showing_desktop_property();
+        self.refresh_night_light_property();
         self.refresh_global_menu();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();

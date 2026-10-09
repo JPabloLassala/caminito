@@ -39,6 +39,7 @@ mod locker;
 mod logind;
 mod logo;
 mod menu_claim;
+mod night_light;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;

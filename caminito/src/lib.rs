@@ -16,6 +16,7 @@ pub mod input;
 mod layer;
 mod lock;
 pub mod logging;
+mod night_light;
 pub mod output;
 pub mod protocols;
 pub mod scene;
