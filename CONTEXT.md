@@ -179,3 +179,19 @@ _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
 _Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift
+
+**Schedule**:
+What decides Night Light's colour temperature at each moment: the sun schedule or the constant schedule.
+_Avoid_: mode
+
+**Sun schedule**:
+The schedule that follows the sun's elevation at the user's location: warmest at night, coolest at solar noon, changing gradually in between. It has a noon temperature and a night temperature. The UI calls it "Follow the sun".
+_Avoid_: natural light, True Tone, sunset to sunrise (that's Plasma's schedule of two flat temperatures)
+
+**Constant schedule**:
+The schedule that holds one temperature for as long as Night Light is on.
+_Avoid_: always on, manual mode
+
+**Gamma client**:
+An outside program, such as gammastep, that holds an output's gamma table through `wlr-gamma-control`. Night Light steps back from that output while it does and resumes when the table is released.
+_Avoid_: gamma tool, redshift client
