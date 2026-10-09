@@ -34,7 +34,7 @@ use crate::window::Mapped;
 pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
 
 /// What a locked output shows wherever the locker draws nothing (12).
-const LOCK_BACKGROUND: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
+pub(crate) const LOCK_BACKGROUND: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
 
 /// Frame debug's outline colours (14).
 const STRIP_OUTLINE: Color32F = Color32F::new(1.0, 0.0, 0.0, 1.0);
@@ -176,6 +176,8 @@ fn shown_layers(caminito: &Caminito) -> impl Iterator<Item = SceneLayer> {
 /// frame, from the top left corner of policy's frame rect, whatever covers it and
 /// whichever workspace it's on, and the pointer's cursor if it's asked for and is over a
 /// window that's showing (103). A shaded window is its frame's titlebar, as it's drawn.
+/// While the session is locked it's the lock background alone, of the same size, since
+/// the window isn't shown to anyone (133).
 pub(crate) fn window_capture_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -197,6 +199,11 @@ where
         return elements;
     };
     let shown = Rectangle::from_size(frame.size);
+    if caminito.lock.is_locked() {
+        let covered = shown.to_physical_precise_up(scale);
+        elements.push(lock_background(caminito, covered));
+        return elements;
+    }
     let pointer = caminito.seat.get_pointer().unwrap().current_location() - frame.loc.to_f64();
     if paint_cursors && policy.is_showing(id) && shown.to_f64().contains(pointer) {
         cursor_elements_at(renderer, caminito, pointer, scale, &mut elements);
@@ -288,13 +295,22 @@ fn lock_elements<R>(
         );
     }
     let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
-    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
-        lock.background().clone(),
+    elements.push(lock_background(caminito, covered));
+}
+
+/// The lock background over `covered`.
+fn lock_background<R>(caminito: &Caminito, covered: Rectangle<i32, Physical>) -> SceneElement<R>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    SceneElement::Solid(SolidColorRenderElement::new(
+        caminito.lock.background().clone(),
         covered,
         CommitCounter::default(),
         LOCK_BACKGROUND,
         Kind::Unspecified,
-    )));
+    ))
 }
 
 /// The Window switcher's popup, if it's on `output`, front to back: the thumbnails'

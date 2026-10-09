@@ -12,7 +12,7 @@ use super::fixture::{
     WINDOW_COLOR, WindowSpec, on_both_kinds,
 };
 use crate::backend::headless::argb8888;
-use crate::scene::CLEAR_COLOR;
+use crate::scene::{CLEAR_COLOR, LOCK_BACKGROUND};
 use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
 
@@ -570,4 +570,52 @@ fn a_tool_that_quits_with_a_frame_waiting_is_forgotten() {
     resize(&mut f, window, (500, 350));
 
     assert!(f.state.caminito.captures.is_empty());
+}
+
+on_both_kinds! {
+    /// While the session is locked (133), an output's capture is what the lock shows and a
+    /// window's is the lock background alone, without the cursor, before the locker's first
+    /// frame and after it. The sessions go on, and after the unlock have the window again.
+    fn a_capture_shows_the_lock_never_the_session(kind: Kind) {
+        const LOCKER_COLOR: u32 = 0xff12_3456;
+        let lock_background = argb8888(LOCK_BACKGROUND);
+        let (mut f, client) = Fixture::connected(kind);
+        let window = f.map(client, WindowSpec::default());
+        let inside = center(f.geometry(window));
+        pointer_to(&mut f, inside);
+        let tool = screenshot_tool(&mut f);
+        let of_output = output_session(&mut f, tool, false);
+        let of_window = window_session(&mut f, tool, window, true);
+        assert!(frame(&mut f, tool, of_output).pixels.contains(&WINDOW_COLOR));
+        let unlocked = frame(&mut f, tool, of_window);
+        assert!(unlocked.pixels.contains(&WINDOW_COLOR));
+        let locker = f.connect(Kind::Xdg);
+        f.client(locker).bind_outputs();
+
+        let lock = f.client(locker).lock_session();
+        f.roundtrip(locker);
+        assert_eq!(f.lock_state(), "locked");
+        let output = frame(&mut f, tool, of_output);
+        assert!(output.pixels.iter().all(|p| *p == lock_background));
+        let captured = frame(&mut f, tool, of_window);
+        assert_eq!(captured.size, unlocked.size);
+        assert!(captured.pixels.iter().all(|p| *p == lock_background));
+
+        let surface = f.client(locker).create_lock_surface(lock, 0);
+        f.roundtrip(locker);
+        f.client(locker).map_lock_surface(surface, LOCKER_COLOR);
+        f.roundtrip(locker);
+        f.wait_for_pixel(0, 0, LOCKER_COLOR & 0xff_ffff);
+        let output = frame(&mut f, tool, of_output);
+        assert!(output.pixels.iter().all(|p| *p == LOCKER_COLOR));
+        // The window's session has nothing new to show, so a new one is asked.
+        let captured = capture_window(&mut f, tool, window, true);
+        assert!(captured.pixels.iter().all(|p| *p == lock_background));
+
+        f.client(locker).unlock_and_destroy(lock);
+        f.roundtrip(locker);
+        assert_eq!(f.lock_state(), "unlocked");
+        assert!(frame(&mut f, tool, of_output).pixels.contains(&WINDOW_COLOR));
+        assert!(frame(&mut f, tool, of_window).pixels.contains(&WINDOW_COLOR));
+    }
 }
