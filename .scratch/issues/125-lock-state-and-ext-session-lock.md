@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in, and the rest of the swaylock check (an overlay surface, a menu, the bindings on the tty) is 136's
+Status: open: the code is in, and the swaylock check's step on the tty, with the bindings, is 136's
 Milestone: M7
 Blocked by: none
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -42,7 +42,9 @@ Caminito locks the session itself, and a locker only draws on it ([12](12-screen
 - **The checklist item** is *swaylock locks the session, over everything, and its password unlocks*, tagged M7. It was run nested in part on 2026-10-08, with swaylock 1.8 on a build of `master`:
   - `swaylock` locked it and the dump's `lock` went from `unlocked` to `locked`; a second `swaylock` was refused and exited; with the first killed the dump had `locker-lost` and the next `swaylock` was refused too, with the log's line for each.
   - The developer saw swaylock with no window of the session over it, typed to its indicator, and unlocked with the password: the dump was `unlocked` again, and pluma was back with the text typed in it before the lock.
-  - Not run, and left to [136](136-packaging-and-closing-m7.md): an `overlay` layer surface and a menu left open under the lock (no overlay client was installed), and the item's step on the tty, where the bindings are pressed while locked.
+  - With a menu of pluma's open, the lock showed swaylock alone, and the menu was closed after the unlock.
+  - With `wob` showing its bar on the `overlay` layer under the lock (the dump had the surface, and `lock` as `locked`), the developer saw swaylock alone. `fuzzel`, whose overlay surface has the keyboard, lost it to the lock and quit, as it does when the keyboard leaves it.
+  - Not run, and left to [136](136-packaging-and-closing-m7.md): the item's step on the tty, where the bindings are pressed while locked.
 - **The bindings can't be pressed in a nested run:** the host's compositor has them, and its Alt+F4 closed the nested Caminito. The item's nested steps press none, and its last step has them on the tty.
 - **Test first:** the state type's unit tests were red before its transitions were written, and so were the first headless test and the two the review asked for. The other headless tests were written after the code they cover, against the criterion. Each was then checked by taking its line of the code out and seeing the test fail. The one that survived is the refusal of an Xwayland keyboard grab under the lock: the grab is also ended at the next key and the next refresh pass, so the test passes on either.
 - **The states:** `pending` is the session locked at Caminito's own request before the locker has taken the lock. Only a locker Caminito spawned takes a pending lock, as with a lost one, so nothing else can attach to it and unlock. [126](126-the-locker-command.md)'s request seam is `LockState::requested`'s first caller, and its spawn sets `Lock::spawned_locker`.
