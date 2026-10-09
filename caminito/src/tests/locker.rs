@@ -59,14 +59,13 @@ impl Lockers {
         vec![path.to_string_lossy().into_owned()]
     }
 
-    /// The process ID of each run of the locker `name`, oldest first.
+    /// The process ID of each run of the locker `name`, oldest first. A line that a run is
+    /// still writing has no newline yet, and isn't one.
     fn runs(&self, name: &str) -> Vec<u32> {
         let path: PathBuf = self.dir.path().join(format!("{name}.runs"));
-        fs::read_to_string(path)
-            .unwrap_or_default()
-            .lines()
-            .map(|pid| pid.parse().unwrap())
-            .collect()
+        let text = fs::read_to_string(path).unwrap_or_default();
+        let complete = text.rfind('\n').map_or("", |end| &text[..end]);
+        complete.lines().map(|pid| pid.parse().unwrap()).collect()
     }
 }
 
