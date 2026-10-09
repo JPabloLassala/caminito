@@ -274,6 +274,20 @@ impl XwmHandler for State {
         self.x11_interactive_request(&window, GrabKind::Move);
     }
 
+    /// `_NET_ACTIVE_WINDOW`: a launcher's utility window, which isn't focused as it maps,
+    /// gets the keyboard this way. X's timestamp isn't on Caminito's clock, so the request
+    /// counts as made now.
+    fn active_window_request(
+        &mut self,
+        _xwm: XwmId,
+        window: X11Surface,
+        _timestamp: u32,
+        _currently_active_window: Option<X11Surface>,
+    ) {
+        self.caminito
+            .window_state_request(&key(&window), StateRequest::Active);
+    }
+
     fn allow_selection_access(&mut self, _xwm: XwmId, _selection: SelectionTarget) -> bool {
         self.allow_x_selection_access()
     }
