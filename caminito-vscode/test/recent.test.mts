@@ -28,10 +28,15 @@ async function openRecent(f: Fixture): Promise<string[]> {
 }
 
 async function recentItems(f: Fixture): Promise<Item[]> {
+  return (await recentMenu(f)).children;
+}
+
+/** Open Recent itself. */
+async function recentMenu(f: Fixture): Promise<Item> {
   const label = (item: Item) => Object.fromEntries(item.properties)['label'];
   const root = (await f.menu())!;
   const fileMenu = root.children.find((item) => label(item) === '_File')!;
-  return fileMenu.children.find((item) => label(item) === 'Open _Recent')!.children;
+  return fileMenu.children.find((item) => label(item) === 'Open _Recent')!;
 }
 
 /** The id of the item labelled `label` in Open Recent. */
@@ -169,10 +174,9 @@ test('the list is read again on focus gained, and not on focus lost', async (t) 
   f.editor.recent = () => Promise.resolve({ workspaces: [folder('b'), folder('a')], files: [] });
   f.editor.focus(true);
   await until(() => f.heard.length === 1, 'an update was sent');
-  assert.deepEqual(
-    f.heard.map((signal) => signal.signal),
-    ['LayoutUpdated'],
-  );
+  // Open Recent is the menu named, since the importer fetches no other again.
+  const [signal] = f.heard;
+  assert.ok(signal!.signal === 'LayoutUpdated' && signal!.parent === (await recentMenu(f)).id);
   assert.deepEqual((await openRecent(f)).slice(2, 4), ['~/b', '~/a']);
 });
 

@@ -147,15 +147,20 @@ export interface Item {
   readonly children: Item[];
 }
 
-/** Reads the menu `name` serves at `path`, as `GetLayout(0, -1, [])`. */
-export async function readMenu(bus: MessageBus, name: string, path: string): Promise<Item> {
+/** Reads the menu `name` serves at `path` under the item `parent`, the root's by default. */
+export async function readMenu(
+  bus: MessageBus,
+  name: string,
+  path: string,
+  parent = 0,
+): Promise<Item> {
   const reply = await call(bus, {
     destination: name,
     path,
     interface: 'com.canonical.dbusmenu',
     member: 'GetLayout',
     signature: 'iias',
-    body: [0, -1, []],
+    body: [parent, -1, []],
   });
   return item(reply.body[1] as RawItem);
 }

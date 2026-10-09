@@ -10,7 +10,7 @@ import type { Menu } from '../src/global-menu.mts';
 import { commandsOf } from '../src/menu-table.mts';
 import { fixture } from './fixture.mts';
 import type { Fixture } from './fixture.mts';
-import { aboutToShow, until } from './harness.mts';
+import { aboutToShow, readMenu, until } from './harness.mts';
 import type { Heard, Item } from './harness.mts';
 
 /** VS Code's defaults for the twelve annotated settings. */
@@ -269,6 +269,27 @@ test('several changes at once are sent as one update', async (t) => {
   ]);
 });
 
+test("a checkmark that changes just after its menu's layout was read is sent again", async (t) => {
+  const f = await fixture(t, { settings: DEFAULTS });
+  const root = await read(f);
+  const minimap = idOf(root, `${APPEARANCE} > _Minimap`);
+  const [name] = await f.names();
+  // As the importer reads a menu, after which it drops what comes within 100 ms.
+  await readMenu(f.client, name!, MENU_PATH, idOf(root, APPEARANCE));
+  f.editor.set({ 'editor.minimap.enabled': false });
+  const sent = {
+    signal: 'ItemsPropertiesUpdated',
+    updated: [[minimap, [['toggle-state', 0]]]],
+    removed: [],
+  };
+  await until(() => f.heard.length >= 1, 'the change was sent');
+  const first = performance.now();
+  await until(() => f.heard.length >= 2, 'it was sent again');
+  assert.ok(performance.now() - first >= 100);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.deepEqual(f.heard, [sent, sent]);
+});
+
 const CLOSE_FOLDER = '_File > Close _Folder';
 const CLOSE_WORKSPACE = '_File > Close _Workspace';
 
@@ -287,13 +308,15 @@ test("a window's workspace decides between Close Folder and Close Workspace", as
 test('adding a second folder shows the multi-root items with one LayoutUpdated, whose revision grows', async (t) => {
   const f = await fixture(t, { workspace: 'folder' });
   const revision = await f.revision();
+  // The importer fetches again only the menu the signal names.
+  const file = idOf(await read(f), '_File');
   f.editor.open('workspace');
   const signals = await heard(f, 1);
   assert.equal(signals.length, 1);
   const [signal] = signals;
   assert.equal(signal!.signal, 'LayoutUpdated');
   assert.ok(signal!.signal === 'LayoutUpdated' && signal!.revision > revision);
-  assert.equal(signal!.signal === 'LayoutUpdated' && signal!.parent, 0);
+  assert.equal(signal!.signal === 'LayoutUpdated' && signal!.parent, file);
   assert.equal(await f.revision(), signal!.signal === 'LayoutUpdated' && signal!.revision);
   const shown = labels(await read(f));
   assert.ok(shown.includes(CLOSE_WORKSPACE));
@@ -310,15 +333,22 @@ test('an item keeps its id when the layout changes around it', async (t) => {
   assert.equal(idOf(after, '_Help > _About'), idOf(before, '_Help > _About'));
 });
 
-test('a change of structure and of a checkmark at once is one LayoutUpdated', async (t) => {
+test('a change of structure and of a checkmark at once sends the checkmark too', async (t) => {
   const f = await fixture(t, { settings: DEFAULTS, workspace: 'folder' });
+  const minimap = idOf(await read(f), `${APPEARANCE} > _Minimap`);
   f.editor.set({ 'editor.minimap.enabled': false });
   f.editor.open('workspace');
-  const signals = await heard(f, 1);
+  // Minimap's menu isn't the one fetched again, so its checkmark has to be sent.
+  const signals = await heard(f, 2);
   assert.deepEqual(
     signals.map((signal) => signal.signal),
-    ['LayoutUpdated'],
+    ['ItemsPropertiesUpdated', 'LayoutUpdated'],
   );
+  assert.deepEqual(signals[0], {
+    signal: 'ItemsPropertiesUpdated',
+    updated: [[minimap, [['toggle-state', 0]]]],
+    removed: [],
+  });
   assert.equal(toggles(await read(f))[`${APPEARANCE} > _Minimap`], 'checkmark off');
 });
 

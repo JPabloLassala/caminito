@@ -197,6 +197,7 @@ async function run(
       schedule('recent');
     }
   });
+  disposables.add(menu);
 
   // Updates (ADR 0020): an event marks what to re-read, and the menu is built again once
   // the changes that came with it are in. Nothing else re-reads, so there's no timer.
