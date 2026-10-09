@@ -39,10 +39,29 @@ export interface Options {
   readonly defaultKeybindings?: string | Error;
   /** The default profile's directory, `<user data>/User`; none by default, so no user file is read. */
   readonly userDir?: string;
+  /** The path of the window's workspace file on disk, as the agents window has; none by default. */
+  readonly workspaceFile?: string;
+  /** The pid of the editor's main process; `PARENT` by default. */
+  readonly parentPid?: number;
   /** What `_workbench.getRecentlyOpened` answers at activation, or fails with; an empty list by default. */
   readonly recent?: unknown;
   /** The home directory; `/home/ana` by default. */
   readonly home?: string;
+}
+
+/** The pid of the editor's main process, unless a test says otherwise. */
+export const PARENT = 4242;
+
+/** A `userDir` for a test that reads none of its files. */
+export const USER_DIR = '/home/user/.config/Code/User';
+
+/** The agents window's workspace file, under `USER_DIR`. */
+export const AGENTS_WORKSPACE = join(USER_DIR, 'agent-sessions.code-workspace');
+
+/** Another window's core on the fixture's bus. */
+export interface Core {
+  readonly editor: FakeEditor;
+  readonly extension: GlobalMenu;
 }
 
 /** A `product.json` with every key the menu's annotations gate on. */
@@ -75,6 +94,8 @@ export interface Fixture {
   served(served: boolean): Promise<void>;
   /** Waits until the stand-in has had `count` claims, and fails if it has had more. */
   claimed(count: number): Promise<void>;
+  /** Starts another core on the bus, as another window's extension host. */
+  another(options?: Options): Promise<Core>;
 }
 
 /** Starts the extension, after Caminito if it's owned, and returns once activation has been acted on. */
@@ -86,39 +107,50 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
   if (options.owned ?? true) {
     await caminito.own();
   }
-  const served = options.menu ?? VS_CODE;
   const heard = await listen(client, MENU_PATH);
-  const editor = new FakeEditor(options.focused ?? true);
-  editor.settings = { ...options.settings };
-  editor.workspace = options.workspace ?? 'folder';
-  if (options.recent !== undefined) {
-    const recent = options.recent;
-    editor.recent = () =>
-      recent instanceof Error ? Promise.reject(recent) : Promise.resolve(recent);
-  }
-  editor.defaultKeybindings = options.defaultKeybindings ?? '[]';
-  const commands = options.commands ?? commandsOf(served.table.menus);
-  editor.listCommands = () =>
-    commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
   const appRoot = mkdtempSync(join(tmpdir(), 'caminito-vscode-test-'));
-  editor.appRoot = appRoot;
-  const product = options.product === undefined ? fullProduct(served) : options.product;
-  if (product !== null) {
-    writeFileSync(join(appRoot, 'product.json'), JSON.stringify(product));
-  }
-  const extension = start(editor.api(options.version, options.lacking), {
-    platform: options.platform ?? 'linux',
-    busAddress: options.busAddress ?? bus.address,
-    menu: served,
-    ...(options.userDir !== undefined && { userDir: options.userDir }),
-    home: options.home ?? '/home/ana',
-  });
+  const extensions: GlobalMenu[] = [];
   t.after(() => {
-    extension.dispose();
+    for (const extension of extensions) {
+      extension.dispose();
+    }
     bus.close();
     rmSync(appRoot, { recursive: true, force: true });
   });
-  await extension.ready;
+  const core = async (options: Options): Promise<Core> => {
+    const menu = options.menu ?? VS_CODE;
+    const editor = new FakeEditor(options.focused ?? true);
+    editor.settings = { ...options.settings };
+    editor.workspace = options.workspace ?? 'folder';
+    editor.workspaceFile = options.workspaceFile;
+    editor.defaultKeybindings = options.defaultKeybindings ?? '[]';
+    if (options.recent !== undefined) {
+      const recent = options.recent;
+      editor.recent = () =>
+        recent instanceof Error ? Promise.reject(recent) : Promise.resolve(recent);
+    }
+    const commands = options.commands ?? commandsOf(menu.table.menus);
+    editor.listCommands = () =>
+      commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
+    const root = mkdtempSync(join(appRoot, 'editor-'));
+    editor.appRoot = root;
+    const product = options.product === undefined ? fullProduct(menu) : options.product;
+    if (product !== null) {
+      writeFileSync(join(root, 'product.json'), JSON.stringify(product));
+    }
+    const extension = start(editor.api(options.version, options.lacking), {
+      platform: options.platform ?? 'linux',
+      busAddress: options.busAddress ?? bus.address,
+      menu,
+      parentPid: options.parentPid ?? PARENT,
+      ...(options.userDir !== undefined && { userDir: options.userDir }),
+      home: options.home ?? '/home/ana',
+    });
+    extensions.push(extension);
+    await extension.ready;
+    return { editor, extension };
+  };
+  const { editor, extension } = await core(options);
   const names = () => bus.othersThan(caminitoBus, client);
   const menu = async () => {
     const [name] = await names();
@@ -157,5 +189,6 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
         throw new Error(`${caminito.claims.length} claims were made, not ${count}`);
       }
     },
+    another: (options = {}) => core(options),
   };
 }
