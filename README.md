@@ -287,6 +287,10 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   ln -s /usr/share/caminito-vscode/global-menu ~/VSCode-linux-x64/resources/app/extensions/caminito.global-menu
   ```
 
+  To turn it off in one profile, find *Caminito Global Menu* under `@builtin` in the editor's
+  Extensions view and disable it there. `--disable-extension caminito.global-menu` on the
+  editor's command line turns it off for that run.
+
   The menu is VS Code's own, with your key bindings. It doesn't reach a Flatpak
   editor, never greys an item out, shows a checkmark only for a setting it can read, shows no
   shortcut for a chord, leaves out other extensions' items, and isn't translated. Alt+F
