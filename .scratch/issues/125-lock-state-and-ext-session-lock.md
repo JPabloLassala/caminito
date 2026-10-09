@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in, and the nested run with swaylock is 136's
+Status: open: the code is in, and the rest of the swaylock check (an overlay surface, a menu, the bindings on the tty) is 136's
 Milestone: M7
 Blocked by: none
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -39,7 +39,11 @@ Caminito locks the session itself, and a locker only draws on it ([12](12-screen
 
 ## Done (2026-10-08)
 
-- **The checklist item** is *swaylock locks the session, over everything, and its password unlocks*, tagged M7. It wasn't run: `swaylock` isn't installed where the ticket was done, and the run needs the developer at the keyboard. It's left to [136](136-packaging-and-closing-m7.md).
+- **The checklist item** is *swaylock locks the session, over everything, and its password unlocks*, tagged M7. It was run nested in part on 2026-10-08, with swaylock 1.8 on a build of `master`:
+  - `swaylock` locked it and the dump's `lock` went from `unlocked` to `locked`; a second `swaylock` was refused and exited; with the first killed the dump had `locker-lost` and the next `swaylock` was refused too, with the log's line for each.
+  - The developer saw swaylock with no window of the session over it, typed to its indicator, and unlocked with the password: the dump was `unlocked` again, and pluma was back with the text typed in it before the lock.
+  - Not run, and left to [136](136-packaging-and-closing-m7.md): an `overlay` layer surface and a menu left open under the lock (no overlay client was installed), and the item's step on the tty, where the bindings are pressed while locked.
+- **The bindings can't be pressed in a nested run:** the host's compositor has them, and its Alt+F4 closed the nested Caminito. The item's nested steps press none, and its last step has them on the tty.
 - **Test first:** the state type's unit tests were red before its transitions were written, and so were the first headless test and the two the review asked for. The other headless tests were written after the code they cover, against the criterion. Each was then checked by taking its line of the code out and seeing the test fail. The one that survived is the refusal of an Xwayland keyboard grab under the lock: the grab is also ended at the next key and the next refresh pass, so the test passes on either.
 - **The states:** `pending` is the session locked at Caminito's own request before the locker has taken the lock. Only a locker Caminito spawned takes a pending lock, as with a lost one, so nothing else can attach to it and unlock. [126](126-the-locker-command.md)'s request seam is `LockState::requested`'s first caller, and its spawn sets `Lock::spawned_locker`.
 - **`locked` waits for a frame of the lock on every output**, as ext-session-lock has it. The session is locked at the request all the same: the keyboard and the pointer leave it in the handler, and no frame drawn from then shows it. An output that can't draw, as on another VT, holds `locked` back until it can. [130](130-logind-lock-unlock-and-sleep.md)'s sleep delay can wait on the same thing.
