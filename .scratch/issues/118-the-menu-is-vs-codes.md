@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: the code is in, and the nested run with `nested/run.sh` (the eight menus, an item of each, the stall and the stray `action`) is the developer's, by hand
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [116](116-the-extension-serves-one-menu-and-claims.md)
 
@@ -24,14 +24,14 @@ Blocked by: [116](116-the-extension-serves-one-menu-and-claims.md)
 - [x] Through the seam: an item whose command is missing is gone, a submenu left empty is gone, and no two separators are together or at an end.
 - [x] Through the seam: an item gated on a `product.json` key is there only when the fake's `product.json` has it.
 - [x] Through the seam: an `Event` on any item runs its command, with its arguments if the table has them.
-- [ ] In a nested run with VS Code 1.140, the panel shows the eight menus and an item of each runs.
+- [x] In a nested run with VS Code 1.140, the panel shows the eight menus and an item of each runs.
 
 ## To run, and to answer here
 
-Nobody has run these. A result that contradicts an ADR reopens it.
+The developer ran these by hand; see "Resolved" below. A result that contradicts an ADR reopens it.
 
-- [ ] A menu of more than one submenu, and how long the panel stalls while the importer preloads the real menu's submenus. If it's too long, say so here: the fix is a carried patch that makes the importer's calls asynchronous, a ticket of its own.
-- [ ] How GTK draws the stray `action` of a submenu whose `label` is sent first, to confirm that alphabetical order is what avoids it.
+- [x] A menu of more than one submenu, and how long the panel stalls while the importer preloads the real menu's submenus. If it's too long, say so here: the fix is a carried patch that makes the importer's calls asynchronous, a ticket of its own.
+- [x] How GTK draws the stray `action` of a submenu whose `label` is sent first, to confirm that alphabetical order is what avoids it.
 - [x] The snapshot route from the command itself. The earlier run's output wasn't kept.
 
 ## Notes
@@ -65,3 +65,9 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 - **The Rust workspace's suite wasn't run:** `pango-sys` won't build without pango's development files, which this container lacks. Ticket 118 changes nothing outside `caminito-vscode/` and this file.
 - **The nested run wasn't done here.** There's no VS Code and no Wayland compositor, and the applet's package isn't installed. 116's run by hand on 2026-10-09 served this table, but it tried only File > New Text File. So the last criterion and the first two items under "To run" are left to a run with `nested/run.sh`: the eight menus, an item of each, how long the panel stalls on a menu of more than one submenu, and how GTK draws a submenu's stray `action`.
 - **Left open, not handed to 124:** 124 checks a Session with a person at the keyboard, and these checks are a nested run's, as 116's were.
+
+## Resolved (2026-10-09)
+
+- **The nested run, by the developer, by hand,** with `nested/run.sh`: it passed. The panel showed the eight menus and an item of each ran, which is the last criterion.
+- **The stall and the stray `action`** passed in the same run, so there's no ticket for a patch that makes the importer's calls asynchronous, and ADR 0019 stands. The run's figures weren't written down: how long the panel stalled on a menu of more than one submenu, how GTK drew a submenu's `action`, and the build it ran on.
+- **Unblocked:** [119](119-checkmarks-and-workspace-items.md), [120](120-keybinding-labels.md), [121](121-open-recent.md) and [123](123-the-weekly-canary.md).
