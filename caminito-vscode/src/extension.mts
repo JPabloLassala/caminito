@@ -11,7 +11,7 @@ let running: GlobalMenu | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   // The extension's global storage is the default profile's whatever the window's, at
-  // `<user data>/User/globalStorage/caminito.global-menu`.
+  // `<user data>/User/globalStorage/caminito.global-menu`, as ticket 02 found in 1.140.
   const userDir = dirname(dirname(context.globalStorageUri.fsPath));
   running = start(vscode, { platform: process.platform, userDir });
 }

@@ -6,6 +6,7 @@
 // modifiers `ctrl`, `shift`, `alt` and `meta` (or `win` or `cmd`), each followed by `+` or
 // `-`, then the key, and a space before each further press of a chord.
 
+import type { MenuEntry } from './dbusmenu.mts';
 import type { TableKeybinding } from './menu-table.mts';
 
 /** An entry of a keybindings file. A command that starts with `-` is a removal. */
@@ -27,11 +28,12 @@ interface Press {
 }
 
 /** A shortcut as dbusmenu's `shortcut` has it: for each press, its modifiers and a GDK key name. */
-export type Shortcut = readonly (readonly string[])[];
+export type Shortcut = NonNullable<MenuEntry['shortcut']>;
 
 /**
- * The GDK key name of each key VS Code 1.140 can bind (`KeyCodeUtils` in its
- * `src/vs/base/common/keyCodes.ts`), by the name keybindings.json gives it.
+ * The GDK key name of each key VS Code 1.140 can bind, by the name keybindings.json gives
+ * it: the user settings labels of `mappings` in VS Code's `src/vs/base/common/keyCodes.ts`,
+ * line 495 at the 1.140.0 tag.
  */
 export const GDK_KEYS: Readonly<Record<string, string>> = {
   ...Object.fromEntries([...'abcdefghijklmnopqrstuvwxyz0123456789'].map((key) => [key, key])),
@@ -139,7 +141,9 @@ export function labelsOf(
       if (removal.command.slice(1) !== binding.command) {
         return false;
       }
-      // As VS Code: a removal's presses match the binding's first ones.
+      // A removal's presses match the binding's first ones, as `_isTargetedForRemoval` has
+      // it in VS Code's `src/vs/platform/keybinding/common/keybindingResolver.ts`, line 91
+      // at the 1.140.0 tag.
       const keys = removal.key === '' ? [] : parse(removal.key);
       const presses = parse(binding.key);
       if (keys === undefined || presses === undefined) {
@@ -161,10 +165,11 @@ export function labelsOf(
       continue;
     }
     if (normal(binding.when) === undefined) {
-      // A key and a chord that starts with it take each other's place too, as in VS Code.
+      // A key and a chord that starts with it take each other's place too, as
+      // `_addKeyPress` has it in keybindingResolver.ts, line 177 at the 1.140.0 tag.
       for (let i = live.length - 1; i >= 0; i--) {
         const other = live[i]!;
-        if (other.binding.command !== binding.command && prefixed(other.presses, presses)) {
+        if (other.binding.command !== binding.command && eitherPrefixes(other.presses, presses)) {
           live.splice(i, 1);
         }
       }
@@ -302,7 +307,7 @@ function normal(when: string | undefined): string | undefined {
 }
 
 /** Whether one of two sequences of presses starts with the other. */
-function prefixed(a: readonly Press[], b: readonly Press[]): boolean {
+function eitherPrefixes(a: readonly Press[], b: readonly Press[]): boolean {
   const length = Math.min(a.length, b.length);
   return a.slice(0, length).every((press, i) => same(press, b[i]!));
 }
@@ -317,7 +322,11 @@ function same(a: Press, b: Press): boolean {
   );
 }
 
-/** The presses of keys as keybindings.json writes them, or undefined for keys VS Code can't read. */
+/**
+ * The presses of keys as keybindings.json writes them, or undefined for keys VS Code can't
+ * read. As `_readModifiers` reads them in VS Code's `src/vs/base/common/keybindingParser.ts`,
+ * line 11 at the 1.140.0 tag.
+ */
 function parse(keys: string): Press[] | undefined {
   const presses: Press[] = [];
   let rest = keys.toLowerCase().trim();

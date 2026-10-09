@@ -82,7 +82,15 @@ function idOf(root: Item, path: string): number {
   return id!;
 }
 
-/** Waits until the client has heard `count` signals, then a little longer for a stray one. */
+/** Waits long enough that a change the extension heard would have been sent: six times its coalescing. */
+function quiet(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 300));
+}
+
+/**
+ * Waits until the client has heard `count` signals, then a little longer for a stray one:
+ * 200 ms is four times the extension's coalescing, and a file's change reaches it in less.
+ */
 async function heard(f: Fixture, count: number): Promise<Heard[]> {
   await until(() => f.heard.length >= count, `${count} signals were heard`);
   await new Promise((resolve) => setTimeout(resolve, 200));
@@ -137,7 +145,7 @@ test("a change of the user's file sends one ItemsPropertiesUpdated", async (t) =
     { key: 'ctrl+alt+f', command: 'actions.find' },
     { key: 'ctrl+s', command: '-workbench.action.files.save' },
   ]);
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await quiet();
   assert.equal(f.heard.length, 1);
 });
 
@@ -186,7 +194,7 @@ test("focus gained finds the window's profile again, and its file is the one wat
     userDataProfiles: [profile],
     profileAssociations: { workspaces: { 'file:///a': 'rust' } },
   });
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  await quiet();
   assert.deepEqual(f.heard, []);
   f.editor.focus(true);
   assert.deepEqual(await heard(f, 1), [
@@ -199,7 +207,7 @@ test("focus gained finds the window's profile again, and its file is the one wat
 
   // The default profile's file is no longer followed, and the profile's is.
   write(dir, 'keybindings.json', [{ key: 'ctrl+1', command: 'workbench.action.files.save' }]);
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await quiet();
   assert.equal(f.heard.length, 1);
   write(dir, 'profiles/rust/keybindings.json', [
     { key: 'ctrl+2', command: 'workbench.action.files.save' },
@@ -227,6 +235,36 @@ test('a change of the installed extensions reads the default keybindings again',
   // Defaults that can't be read again keep the last read.
   f.editor.defaultKeybindings = new Error('gone');
   f.editor.install(commandsOf(VS_CODE.table.menus));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await quiet();
   assert.equal(f.heard.length, 1);
+});
+
+test("a profile's file whose directory comes later is watched from the next focus", async (t) => {
+  const dir = userDir(t);
+  const location = { path: join(dir, 'profiles/rust'), scheme: 'file' };
+  write(dir, 'globalStorage/storage.json', {
+    userDataProfiles: [{ location, name: 'Rust' }],
+    profileAssociations: { workspaces: { 'file:///a': 'rust' } },
+  });
+  const f = await fixture(t, { defaultKeybindings: DEFAULTS, userDir: dir });
+  const save = idOf((await f.menu())!, SAVE);
+  assert.equal(f.editor.logged.filter((line) => line.startsWith("can't watch")).length, 1);
+
+  write(dir, 'profiles/rust/keybindings.json', [
+    { key: 'ctrl+3', command: 'workbench.action.files.save' },
+  ]);
+  f.editor.focus(true);
+  assert.deepEqual((await heard(f, 1))[0], {
+    signal: 'ItemsPropertiesUpdated',
+    updated: [[save, [['shortcut', [['Control', '3']]]]]],
+    removed: [],
+  });
+  write(dir, 'profiles/rust/keybindings.json', [
+    { key: 'ctrl+4', command: 'workbench.action.files.save' },
+  ]);
+  assert.deepEqual((await heard(f, 2))[1], {
+    signal: 'ItemsPropertiesUpdated',
+    updated: [[save, [['shortcut', [['Control', '4']]]]]],
+    removed: [],
+  });
 });

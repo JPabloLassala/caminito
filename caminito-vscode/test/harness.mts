@@ -12,6 +12,7 @@ import type { MessageBus } from '@jellybrick/dbus-next';
 import type { Uri } from 'vscode';
 
 import type { Disposable, Editor } from '../src/editor.mts';
+import { DEFAULT_KEYBINDINGS } from '../src/global-menu.mts';
 import type { Workspace } from '../src/menu-table.mts';
 
 const DBUS = {
@@ -404,7 +405,7 @@ export class FakeEditor {
         onDidChangeConfiguration: this.configuration.event,
         fs: {
           readFile: (uri: unknown) => {
-            if (String(uri) !== 'vscode://defaultsettings/keybindings.json') {
+            if (String(uri) !== DEFAULT_KEYBINDINGS) {
               return Promise.reject(new Error(`no file ${String(uri)}`));
             }
             const text = fake.defaultKeybindings;

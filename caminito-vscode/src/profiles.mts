@@ -61,12 +61,12 @@ export function keybindingsFileOf(
     ];
   });
   const tied = workspace === undefined ? undefined : workspaces[workspace];
+  // A tie to a profile that's gone, or that VS Code skips, is no tie.
   const profile =
     tied === DEFAULT_PROFILE
       ? undefined
-      : typeof tied === 'string' && profiles.some((profile) => profile.id === tied)
-        ? profiles.find((profile) => profile.id === tied)
-        : profiles.find((profile) => profile.name === newWindowProfile);
+      : (profiles.find((profile) => profile.id === tied) ??
+        profiles.find((profile) => profile.name === newWindowProfile));
   if (profile === undefined || profile.defaultKeybindings || profile.id === AGENTS_PROFILE) {
     return fallback;
   }

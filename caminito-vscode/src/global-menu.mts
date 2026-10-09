@@ -351,7 +351,7 @@ class Keybindings implements Disposable {
   #watcher: FSWatcher | undefined;
   #user: Binding[] = [];
   /** Why `storage.json` couldn't be read last, so that it's logged once and not at every focus. */
-  #unread: string | undefined;
+  #storageError: string | undefined;
   #shortcuts = new Map<string, Shortcut | undefined>();
 
   constructor(editor: Editor, userDir: string | undefined, table: Table, log: Log) {
@@ -381,10 +381,10 @@ class Keybindings implements Disposable {
         : "so the snapshot's labels are used";
       this.#log.line(`can't read the default keybindings, ${otherwise}: ${message(err)}`);
     }
-    this.#label();
+    this.#relabel();
   }
 
-  /** Finds the window's keybindings file and watches it; true when it's another file than before. */
+  /** Finds the window's keybindings file and watches it; true when it's to be read again. */
   async readProfile(): Promise<boolean> {
     if (this.#userDir === undefined) {
       return false;
@@ -392,12 +392,12 @@ class Keybindings implements Disposable {
     let storage: unknown;
     try {
       storage = JSON.parse(await readFile(storageFileOf(this.#userDir), 'utf8'));
-      this.#unread = undefined;
+      this.#storageError = undefined;
     } catch (err) {
-      if (this.#unread !== message(err)) {
-        this.#unread = message(err);
+      if (this.#storageError !== message(err)) {
+        this.#storageError = message(err);
         this.#log.line(
-          `can't read storage.json, so the default profile's keybindings are used: ${this.#unread}`,
+          `can't read storage.json, so the default profile's keybindings are used: ${this.#storageError}`,
         );
       }
     }
@@ -407,12 +407,20 @@ class Keybindings implements Disposable {
       workspaceUriOf(this.#editor),
       settingReader(this.#editor)('window.newWindowProfile'),
     );
-    if (file === this.#file) {
+    // A file not watched yet, its directory not there at the last try, is tried again, and
+    // read again since it may have come with its directory. The failure is logged once.
+    const moved = file !== this.#file;
+    if (!moved && this.#watcher !== undefined) {
       return false;
     }
     this.#file = file;
     this.#watcher?.close();
     this.#watcher = undefined;
+    const failed = (err: unknown) => {
+      if (moved) {
+        this.#log.line(`can't watch ${file}: ${message(err)}`);
+      }
+    };
     try {
       // The directory, since an editor replaces the file rather than writing it in place.
       const watcher = watch(dirname(file), (_event, name) => {
@@ -420,10 +428,10 @@ class Keybindings implements Disposable {
           this.onChange();
         }
       });
-      watcher.on('error', (err) => this.#log.line(`can't watch ${file}: ${message(err)}`));
+      watcher.on('error', failed);
       this.#watcher = watcher;
     } catch (err) {
-      this.#log.line(`can't watch ${file}: ${message(err)}`);
+      failed(err);
     }
     return true;
   }
@@ -440,14 +448,14 @@ class Keybindings implements Disposable {
         }
       }
     }
-    this.#label();
+    this.#relabel();
   }
 
   dispose(): void {
     this.#watcher?.close();
   }
 
-  #label(): void {
+  #relabel(): void {
     const labels = this.#defaults
       ? labelsOf(this.#defaults, this.#user)
       : fallbackLabelsOf(this.#table.keybindings, this.#user);
