@@ -22,6 +22,10 @@
 //!   window covers it there, as the capture itself ignores the cover.
 //! - **Cursor sessions aren't offered,** since Smithay's state leaves their frames and the
 //!   cursor's position to the compositor.
+//! - **While the session is locked** (133), an output's capture is what the output shows,
+//!   the lock, and a window's is the lock background alone, at the window's size and with
+//!   no cursor, as the window isn't shown to anyone. Its sessions go on, and have the
+//!   window again after the unlock.
 
 use std::fmt;
 

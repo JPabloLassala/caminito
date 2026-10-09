@@ -700,7 +700,10 @@ session_env() {
   1. Run `tools/dev-nested`, then start a GTK3 app and `xterm` in it. Start something on the
      `overlay` layer too, such as `wob` or `fuzzel`, and leave it open.
   2. Open a menu of the GTK3 app and leave it open. From a terminal outside the nested
-     Caminito, with its `WAYLAND_DISPLAY`, run `sleep 3; swaylock`.
+     Caminito, with its `WAYLAND_DISPLAY`, run `sleep 3; swaylock`. From a second one, with
+     the same `WAYLAND_DISPLAY`, run `sleep 6; grim /tmp/locked.png` at the same time (grim
+     1.5 or later, which has ext-image-copy-capture). Or instead, within the 3 seconds before
+     swaylock starts, run `mate-screenshot --delay=6` from the nested `xterm`.
   3. Once it locks, move the pointer, click and type a few letters. Press no binding: in a
      nested run the host's compositor has them, and its Alt+F4 closes the nested Caminito.
   4. From the outside terminal run `swaylock` again, with the same `WAYLAND_DISPLAY`.
@@ -709,9 +712,11 @@ session_env() {
   7. On the tty, run bare `caminito`, start a terminal in it, and run `swaylock` from the
      second login. Press Alt+F4, Alt+Tab, Ctrl+Alt+Right and a volume key, then unlock.
 - **Expected:** in step 2 the output goes dark, then shows swaylock, and neither the menu,
-  the overlay surface nor any window shows over it. In step 3 nothing of the session reacts,
-  and swaylock's indicator shows the letters. In step 4 the second swaylock exits at once, as
-  its lock is refused. In step 5 the session is back with the window that had the keyboard
+  the overlay surface nor any window shows over it. The screenshot taken in step 2 is what
+  swaylock shows, with nothing of the session in it: grim's file at once, mate-screenshot's
+  in its save dialog after step 5. In step 3 nothing of the session reacts, and swaylock's
+  indicator shows the letters. In step 4 the second swaylock exits at once, as its lock is
+  refused. In step 5 the session is back with the window that had the keyboard
   having it, and the menu closed. In step 6 the output stays dark with the session locked,
   and the second swaylock is refused: until 126's locker and 130's `loginctl unlock-session`,
   the nested Caminito is ended from outside. In step 7 no window closes, no switcher opens,
