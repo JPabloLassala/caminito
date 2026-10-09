@@ -1,5 +1,6 @@
 // What the snapshot command makes of VS Code's `lastKnownMenubarData` (ADR 0019): the table,
-// with what belongs to the run stripped, and the check of the annotations against it.
+// with what belongs to the run stripped, the check of the annotations against it, and the
+// weekly canary's diff of two tables' structure (123).
 
 import { collapse } from '../src/menu-table.mts';
 import type {
@@ -180,4 +181,69 @@ function key(item: TableItem): string {
     return `menu ${item.submenu}`;
   }
   return `item ${(item as TableAction).command} ${item.label}`;
+}
+
+/** The lines around a difference that `structureDiff` shows. */
+const DIFF_CONTEXT_LINES = 3;
+
+/**
+ * What differs between the menus of two tables, as a unified diff of their outlines, or ''
+ * when they have the same structure. Their versions, commits and keybinding labels aren't
+ * structure. A hunk starts with a bare `@@`.
+ */
+export function structureDiff(committed: Table, fresh: Table): string {
+  const [a, b] = [outline(committed.menus), outline(fresh.menus)];
+  // lcs[i][j] is the length of the longest common run of a[i..] and b[j..].
+  const lcs = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      lcs[i]![j] =
+        a[i] === b[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+    }
+  }
+  const lines: string[] = [];
+  let [i, j] = [0, 0];
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      lines.push(` ${a[i++]}`);
+      j++;
+    } else if (j >= b.length || (i < a.length && lcs[i + 1]![j]! >= lcs[i]![j + 1]!)) {
+      lines.push(`-${a[i++]}`);
+    } else {
+      lines.push(`+${b[j++]}`);
+    }
+  }
+  const changed = lines.flatMap((line, at) => (line.startsWith(' ') ? [] : [at]));
+  if (changed.length === 0) {
+    return '';
+  }
+  const diff = [
+    `--- committed table (VS Code ${committed.version})`,
+    `+++ snapshot (VS Code ${fresh.version})`,
+  ];
+  // The index after the last line shown; a change past it and its context starts a hunk.
+  let shown = 0;
+  for (const at of changed) {
+    const start = Math.max(at - DIFF_CONTEXT_LINES, shown);
+    if (shown === 0 || start > shown) {
+      diff.push('@@');
+    }
+    shown = Math.min(at + DIFF_CONTEXT_LINES + 1, lines.length);
+    diff.push(...lines.slice(start, shown));
+  }
+  return `${diff.join('\n')}\n`;
+}
+
+/** A line for each menu and item, indented by its depth: its label and its id. */
+function outline(items: readonly TableItem[], depth = 0): string[] {
+  const indent = '  '.repeat(depth);
+  return items.flatMap((item) => {
+    if ('separator' in item) {
+      return [`${indent}---`];
+    }
+    if ('items' in item) {
+      return [`${indent}${item.label}  > ${item.submenu}`, ...outline(item.items, depth + 1)];
+    }
+    return [`${indent}${item.label}  ${item.command}`];
+  });
 }

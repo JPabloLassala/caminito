@@ -5,7 +5,10 @@
 // an annotation whose command, or whose label of a command, the table lacks.
 //
 //   npm run snapshot -- [--editor <dir>] [--out <file>] [--annotations <file>] [--no-xvfb]
-//                       [--settle <ms>] [--timeout <ms>]
+//                       [--settle <ms>] [--timeout <ms>] [--check]
+//
+// `--check` is the weekly canary's (123): it writes nothing, compares the structure of the
+// snapshot with the table at `--out`, and on a difference prints the diff and exits with 1.
 //
 // `--editor` is the directory of Microsoft's build, /usr/share/code by default, as
 // visual-studio-code-bin installs it: the Electron binary `code` and resources/app. The
@@ -17,8 +20,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import type { Annotations } from '../src/menu-table.mts';
-import { staleAnnotations, tableOf } from './menubar.mts';
+import type { Annotations, Table } from '../src/menu-table.mts';
+import { staleAnnotations, structureDiff, tableOf } from './menubar.mts';
 import type { MenubarData } from './menubar.mts';
 
 const here = dirname(new URL(import.meta.url).pathname);
@@ -30,6 +33,7 @@ const { values: options } = parseArgs({
     'no-xvfb': { type: 'boolean', default: false },
     settle: { type: 'string', default: '3000' },
     timeout: { type: 'string', default: '90000' },
+    check: { type: 'boolean', default: false },
   },
 });
 const editor = resolve(options.editor);
@@ -52,6 +56,17 @@ for (const state of ['folder', 'workspace'] as const) {
   snapshots.push(await snapshot(state));
 }
 const table = tableOf(made, snapshots);
+if (options.check) {
+  const committed = JSON.parse(await readFile(options.out, 'utf8')) as Table;
+  const diff = structureDiff(committed, table);
+  if (diff !== '') {
+    process.stdout.write(diff);
+    console.error(`snapshot: VS Code ${made.version}'s menubar differs from ${options.out}`);
+    process.exit(1);
+  }
+  console.error(`snapshot: VS Code ${made.version}'s menubar is the table's`);
+  process.exit(0);
+}
 const stale = staleAnnotations(table, annotations);
 if (stale.length > 0) {
   console.error(
