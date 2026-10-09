@@ -67,7 +67,7 @@ test('an API that throws at activation is logged, and nothing is left on the bus
       },
     },
   };
-  const extension = start(broken, { platform: 'linux', busAddress: bus.address });
+  const extension = start(broken, { platform: 'linux', busAddress: bus.address, parentPid: 1 });
   t.after(() => extension.dispose());
   await extension.ready;
   assert.deepEqual(editor.logged, ["can't start: no window events"]);
