@@ -9,6 +9,8 @@ import { createInterface } from 'node:readline';
 import { Message, MessageType, Variant, sessionBus } from '@jellybrick/dbus-next';
 import type { MessageBus } from '@jellybrick/dbus-next';
 
+import type { Uri } from 'vscode';
+
 import type { Disposable, Editor } from '../src/editor.mts';
 import type { Workspace } from '../src/menu-table.mts';
 
@@ -322,6 +324,8 @@ export class FakeEditor {
   listCommands: () => PromiseLike<string[]> = () => Promise.resolve([]);
   /** `env.appRoot`, where the editor's `product.json` is. */
   appRoot = '/nonexistent';
+  /** The default keybindings' text, or what reading them fails with. */
+  defaultKeybindings: string | Error = '[]';
 
   constructor(focused: boolean) {
     this.focused = focused;
@@ -398,7 +402,20 @@ export class FakeEditor {
         onDidChangeWorkspaceFolders: this.workspaceFolders.event,
         getConfiguration: () => ({ get: (section: string) => fake.settings[section] }),
         onDidChangeConfiguration: this.configuration.event,
+        fs: {
+          readFile: (uri: unknown) => {
+            if (String(uri) !== 'vscode://defaultsettings/keybindings.json') {
+              return Promise.reject(new Error(`no file ${String(uri)}`));
+            }
+            const text = fake.defaultKeybindings;
+            return text instanceof Error
+              ? Promise.reject(text)
+              : Promise.resolve(new TextEncoder().encode(text));
+          },
+        },
       },
+      // A URI is its string here.
+      Uri: { parse: (value: string) => value as unknown as Uri },
       extensions: { onDidChange: this.extensions.event },
       commands: {
         getCommands: () => {
