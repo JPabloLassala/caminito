@@ -1,0 +1,14 @@
+# pacman doesn't own the links, so the package's own install, upgrade and removal make and
+# remove them (ADR 0022). An editor installed or removed later is the hooks'.
+
+post_install() {
+  /usr/share/libalpm/scripts/caminito-vscode-link link
+}
+
+post_upgrade() {
+  post_install
+}
+
+pre_remove() {
+  /usr/share/libalpm/scripts/caminito-vscode-link unlink
+}

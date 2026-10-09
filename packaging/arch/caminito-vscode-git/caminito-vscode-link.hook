@@ -1,0 +1,12 @@
+# Links the global menu extension into an editor's built-in directory once the editor is
+# installed or upgraded (ADR 0022). The package's PKGBUILD writes the targets.
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+@TARGETS@
+
+[Action]
+Description = Linking the global menu extension into the editors...
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/caminito-vscode-link link

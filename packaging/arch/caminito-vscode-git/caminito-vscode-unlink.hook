@@ -1,0 +1,14 @@
+# Unlinks the global menu extension from an editor's built-in directory before the editor is
+# removed, so pacman can remove the directory (ADR 0022). pacman also counts as removed a file
+# that an upgrade drops, and the link hook then links again. The package's PKGBUILD writes the
+# targets.
+[Trigger]
+Type = Path
+Operation = Remove
+@TARGETS@
+
+[Action]
+Description = Unlinking the global menu extension from the editors...
+When = PreTransaction
+Exec = /usr/share/libalpm/scripts/caminito-vscode-link unlink --targets
+NeedsTargets
