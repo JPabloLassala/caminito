@@ -28,6 +28,9 @@ pub const SESSION: &str = "org.mate.session";
 /// mate-screensaver's, of which Caminito reads the keys of idle and the lock after it (09,
 /// 128). caminito-locker reads the rest itself (12).
 pub const SCREENSAVER: &str = "org.mate.screensaver";
+/// mate-power-manager's, of which Caminito reads the outputs' power-off, `sleep-display-ac`
+/// and `sleep-display-battery` (09, 129).
+pub const POWER_MANAGER: &str = "org.mate.power-manager";
 /// Caminito's own schema (09), which Caminito installs. A development run may not have it.
 pub const CAMINITO: &str = "org.mate.Caminito";
 
@@ -96,6 +99,10 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: SCREENSAVER,
+        required: false,
+    },
+    Schema {
+        id: POWER_MANAGER,
         required: false,
     },
     Schema {
@@ -355,6 +362,19 @@ pub struct IdleSettings {
     /// `org.mate.screensaver lock-delay`, while `lock-enabled` is on: how long after the
     /// blank starts the session is locked.
     pub lock: Option<Duration>,
+    /// When the outputs are powered off (129).
+    pub sleep_display: SleepDisplay,
+}
+
+/// How long the session goes without activity before the outputs are powered off, on each
+/// power source (09, 129). Zero is never, as in mate-power-manager. UPower's `OnBattery`
+/// picks one; a UPS counts as AC, so `sleep-display-ups` is never read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SleepDisplay {
+    /// `org.mate.power-manager sleep-display-ac`.
+    pub ac: Duration,
+    /// `org.mate.power-manager sleep-display-battery`.
+    pub battery: Duration,
 }
 
 /// What the Window switcher is drawn with (108), from `org.mate.Marco.general`.
@@ -1020,6 +1040,10 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             lock: r
                 .bool(SCREENSAVER, "lock-enabled", true)
                 .then(|| minutes(r.int_at_least(SCREENSAVER, "lock-delay", 0, 0))),
+            sleep_display: SleepDisplay {
+                ac: seconds(r.int_at_least(POWER_MANAGER, "sleep-display-ac", 1800, 0)),
+                battery: seconds(r.int_at_least(POWER_MANAGER, "sleep-display-battery", 600, 0)),
+            },
         },
     };
     for schema in &reading.missing {
@@ -1045,6 +1069,11 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
 /// A key's `minutes`, which `int_at_least` has kept from being negative.
 fn minutes(minutes: i32) -> Duration {
     Duration::from_secs(60 * minutes as u64)
+}
+
+/// A key's `seconds`, which `int_at_least` has kept from being negative.
+fn seconds(seconds: i32) -> Duration {
+    Duration::from_secs(seconds as u64)
 }
 
 /// The pointers' settings, as msd's mouse plugin applies them to libinput devices

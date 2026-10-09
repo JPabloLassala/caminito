@@ -85,7 +85,7 @@ struct StateDump {
     lock: &'static str,
     /// The locker Caminito spawns (126).
     locker: LockerDump,
-    /// Idle, the blank and what holds them off (128).
+    /// Idle, the blank, the power-off and what holds them off (128, 129).
     idle: IdleDump,
     /// The accelerators grabbed over `org.mate.Caminito` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
@@ -114,6 +114,11 @@ struct LockerDump {
 struct IdleDump {
     /// Whether the outputs are blanked.
     blanked: bool,
+    /// Whether they're powered off (129).
+    powered_off: bool,
+    /// Whether UPower says the machine runs on its battery, which picks the `sleep-display`
+    /// key.
+    on_battery: bool,
     /// Whether inhibitors hold idle off now. None do while the session is locked (12).
     inhibited: bool,
     /// What asks to hold idle off: each idle-inhibit surface, mate-session while it says
@@ -535,6 +540,8 @@ impl Caminito {
             });
         IdleDump {
             blanked: idle.is_blanked(),
+            powered_off: idle.is_powered_off(),
+            on_battery: idle.on_battery(),
             inhibited: idle.is_inhibited(),
             inhibitors: surfaces.chain(session).chain(screensaver).collect(),
             notifications: idle.notification_count(),

@@ -1214,6 +1214,11 @@ impl Fixture {
         self.state.caminito.start_logind(Some(address));
     }
 
+    /// Follows `OnBattery` of the stand-in UPower on the bus at `address` (129).
+    pub fn start_upower_at(&mut self, address: &str) {
+        self.state.caminito.start_upower(Some(address));
+    }
+
     /// Keeps Caminito's well-known names for this fixture until it's dropped, for a test that
     /// owns one itself before Caminito starts.
     pub fn reserve_names(&mut self) {

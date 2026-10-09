@@ -10,6 +10,10 @@
 //! `run_udev` (`:294-320`), and its keyboards' LEDs kept as `update_led_state` does
 //! (`:212-216`). linux-dmabuf and drm-syncobj are offered as `run_udev` does (`:451-498`),
 //! and dmabufs imported as `dmabuf_imported` does (`:170-185`), on the primary GPU (57).
+//!
+//! Idle powers the monitors off by turning their CRTCs off, as niri's `deactivate_monitors`
+//! does (`src/backend/tty.rs`), and on again with the next frame, which sets their modes
+//! anew (129). Their outputs stay as they are, so no client sees one go or come.
 
 mod libinput;
 
@@ -144,6 +148,9 @@ struct Gpu {
     /// Each monitor a scan found, by the CRTC that will drive it, until the saved layout
     /// has said which mode it's lit in, if at all (87).
     unlit: HashMap<crtc::Handle, DarkMonitor>,
+    /// Whether idle has powered the lit monitors off (129). No frame is drawn meanwhile:
+    /// the first would light them.
+    powered_off: bool,
 }
 
 /// One lit monitor's output, and the swapchain it's shown from.
@@ -393,6 +400,30 @@ impl Tty {
         }
     }
 
+    /// Powers the lit monitors off, or on again (129). On, each is drawn anew once idle
+    /// queues the redraw, and its first frame sets its mode again.
+    pub(crate) fn set_powered(&mut self, caminito: &mut Caminito, on: bool) {
+        let gpu = &mut self.gpu;
+        if gpu.powered_off != on {
+            return;
+        }
+        gpu.powered_off = !on;
+        if on {
+            tracing::debug!("powering the monitors on");
+            for monitor in gpu.monitors.values_mut() {
+                monitor.stop_waiting(&caminito.loop_handle);
+                monitor.drm_output.reset_buffers();
+            }
+        } else if self.seat.is_active() {
+            // Switched away, the CRTCs aren't Caminito's: switching back powers them off.
+            tracing::debug!("powering the monitors off");
+            for monitor in gpu.monitors.values_mut() {
+                monitor.stop_waiting(&caminito.loop_handle);
+                monitor.power_off();
+            }
+        }
+    }
+
     /// The outputs of the monitors a scan found, which aren't lit yet.
     pub(crate) fn unlit_outputs(&self) -> Vec<Output> {
         let unlit = self.gpu.unlit.values();
@@ -457,7 +488,7 @@ impl Tty {
         caminito: &mut Caminito,
         output: &Output,
     ) -> Option<RenderElementStates> {
-        if !self.seat.is_active() {
+        if !self.seat.is_active() || self.gpu.powered_off {
             return None;
         }
         let gpu = &mut self.gpu;
@@ -526,6 +557,9 @@ impl Tty {
                 // Activating reset every CRTC, so no frame is still on its way.
                 for monitor in self.gpu.monitors.values_mut() {
                     monitor.stop_waiting(&caminito.loop_handle);
+                    if self.gpu.powered_off {
+                        monitor.power_off();
+                    }
                 }
                 self.scan_connectors(caminito);
                 caminito.queue_redraw_all();
@@ -643,6 +677,7 @@ impl Gpu {
             monitors: HashMap::new(),
             dark: HashMap::new(),
             unlit: HashMap::new(),
+            powered_off: false,
         })
     }
 
@@ -779,15 +814,17 @@ impl Gpu {
             Ok(drm_output) => {
                 tracing::debug!("lit {name}");
                 let DarkMonitor { output, connector } = monitor;
-                self.monitors.insert(
-                    crtc,
-                    LitMonitor {
-                        output,
-                        connector,
-                        drm_output,
-                        frame: Frame::Shown,
-                    },
-                );
+                let mut monitor = LitMonitor {
+                    output,
+                    connector,
+                    drm_output,
+                    frame: Frame::Shown,
+                };
+                // One plugged in while the others are powered off joins them.
+                if self.powered_off {
+                    monitor.power_off();
+                }
+                self.monitors.insert(crtc, monitor);
                 Ok(())
             }
             Err(err) => {
@@ -820,6 +857,17 @@ impl LitMonitor {
             loop_handle.remove(token);
         }
         self.frame = Frame::Shown;
+    }
+
+    /// Turns the monitor's CRTC off, keeping its mode for the next frame to set again. No
+    /// frame is on its way: `stop_waiting` has forgotten it.
+    fn power_off(&mut self) {
+        let cleared = self
+            .drm_output
+            .with_compositor(|compositor| compositor.clear());
+        if let Err(err) = cleared {
+            tracing::warn!("can't power {} off: {err}", self.output.name());
+        }
     }
 }
 
