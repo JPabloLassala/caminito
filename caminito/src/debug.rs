@@ -116,8 +116,8 @@ struct IdleDump {
     blanked: bool,
     /// Whether inhibitors hold idle off now. None do while the session is locked (12).
     inhibited: bool,
-    /// What asks to hold idle off: each idle-inhibit surface, and mate-session while it
-    /// says one of its own does.
+    /// What asks to hold idle off: each idle-inhibit surface, mate-session while it says
+    /// one of its own does, and each of the Screensaver shim's inhibitors (127).
     inhibitors: Vec<InhibitorDump>,
     /// How many ext-idle-notify notifications clients have.
     notifications: usize,
@@ -125,8 +125,11 @@ struct IdleDump {
 
 #[derive(Serialize)]
 struct InhibitorDump {
-    /// `idle-inhibit` or `mate-session`.
+    /// `idle-inhibit`, `mate-session` or `screensaver`.
     source: &'static str,
+    /// The application a Screensaver shim's inhibitor is for, by the name it gave.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    application: Option<String>,
     /// The window an idle-inhibit surface is part of, if it's a window's.
     #[serde(skip_serializing_if = "Option::is_none")]
     window: Option<u64>,
@@ -511,18 +514,29 @@ impl Caminito {
         let idle = &self.idle;
         let surfaces = idle.inhibitor_surfaces().map(|surface| InhibitorDump {
             source: "idle-inhibit",
+            application: None,
             window: self.window_of_surface(surface).map(|id| id.0),
             shown: Some(self.shows_surface(surface)),
         });
         let session = idle.session_inhibited().then_some(InhibitorDump {
             source: "mate-session",
+            application: None,
             window: None,
             shown: None,
         });
+        let screensaver = self
+            .screensaver
+            .inhibitor_applications()
+            .map(|application| InhibitorDump {
+                source: "screensaver",
+                application: Some(application.to_owned()),
+                window: None,
+                shown: None,
+            });
         IdleDump {
             blanked: idle.is_blanked(),
             inhibited: idle.is_inhibited(),
-            inhibitors: surfaces.chain(session).collect(),
+            inhibitors: surfaces.chain(session).chain(screensaver).collect(),
             notifications: idle.notification_count(),
         }
     }

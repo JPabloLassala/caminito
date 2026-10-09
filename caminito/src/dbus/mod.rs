@@ -137,6 +137,8 @@ pub struct Dbus {
     _session_inhibitors_watch: Option<zbus::Task<()>>,
     /// The registrar's name, which follows the applet (112).
     registrar: global_menu::Registrar,
+    /// The Screensaver shim's `ActiveChanged`, which a task sends in order (127).
+    active_changes: futures_channel::mpsc::UnboundedSender<bool>,
     /// The Keyboard monitor's `KeyEvent`s, which a task sends in order (135).
     key_events: futures_channel::mpsc::UnboundedSender<(String, a11y::Key)>,
     connection: zbus::Connection,
@@ -187,7 +189,7 @@ impl Caminito {
     ) -> zbus::Result<()> {
         let caminito_requests = self.dbus_requests(Caminito::caminito_request);
         let debug_requests = self.dbus_requests(Caminito::debug_request);
-        let screensaver_requests = self.dbus_requests(Caminito::screensaver_request);
+        let screensaver_requests = self.dbus_state_requests(State::screensaver_request);
         let registrar_requests = self.dbus_requests(Caminito::registrar_request);
         let a11y_requests = self.dbus_requests(Caminito::a11y_request);
         let callers = Callers(self.dbus_requests(Caminito::caller_left));
@@ -209,6 +211,13 @@ impl Caminito {
             zbus::block_on(screensaver::own_names(&connection));
             zbus::block_on(a11y::own_name(&connection));
         }
+        let (active_changes, to_signal) = futures_channel::mpsc::unbounded();
+        let active_change_signals =
+            screensaver::signal_active_changes(connection.clone(), to_signal);
+        connection
+            .executor()
+            .spawn(active_change_signals, "screensaver active changes")
+            .detach();
         let (key_events, to_signal) = futures_channel::mpsc::unbounded();
         let key_event_signals = a11y::signal_key_events(connection.clone(), to_signal);
         connection
@@ -243,6 +252,7 @@ impl Caminito {
             _applet_watch: applet_watch,
             _session_inhibitors_watch: session_inhibitors_watch,
             registrar: global_menu::Registrar::new(registrar_released),
+            active_changes,
             key_events,
             connection,
             address: address.map(str::to_owned),
@@ -284,15 +294,24 @@ impl Caminito {
         self.keyboard_monitor.caller_left(&caller);
     }
 
-    /// A sender for an interface's requests, which `answer` gets in the event loop.
-    fn dbus_requests<R: 'static>(&self, answer: fn(&mut Caminito, R)) -> channel::Sender<R> {
+    /// A sender for an interface's requests, which `answer` gets in the event loop with the
+    /// whole of Caminito's state, for the requests that lock or reach idle's timers.
+    fn dbus_state_requests<R: 'static>(
+        &self,
+        answer: impl Fn(&mut State, R) + 'static,
+    ) -> channel::Sender<R> {
         let (sender, requests) = channel::channel();
         self.loop_handle
             .insert_source(requests, move |event, _, state: &mut State| match event {
-                channel::Event::Msg(request) => answer(&mut state.caminito, request),
+                channel::Event::Msg(request) => answer(state, request),
                 channel::Event::Closed => {}
             })
             .expect("a D-Bus channel joins the event loop");
         sender
+    }
+
+    /// A sender for an interface's requests, which `answer` gets in the event loop.
+    fn dbus_requests<R: 'static>(&self, answer: fn(&mut Caminito, R)) -> channel::Sender<R> {
+        self.dbus_state_requests(move |state, request| answer(&mut state.caminito, request))
     }
 }
