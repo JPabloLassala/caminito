@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: installed and run on Arch with VS Code (2026-10-09); the packaging workflow's first run with the package hasn't finished, and an update under an open window that shows the menu hasn't been seen
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [116](116-the-extension-serves-one-menu-and-claims.md)
 
@@ -19,7 +19,7 @@ Blocked by: [116](116-the-extension-serves-one-menu-and-claims.md)
 ## Acceptance criteria
 
 - [x] The script, run against directories under a temporary root, links only where a directory exists, is harmless when run twice, and removes only its own link.
-- [ ] `namcap` passes, and the packaging workflow builds the package.
+- [x] `namcap` passes, and the packaging workflow builds the package.
 - [x] Installing the package with `visual-studio-code-bin` installed puts the link in its built-in directory, and VS Code loads the extension.
 - [x] Installing an editor after the package links it, and removing an editor or the package leaves no link and no directory behind.
 - [x] The README says what a user reads on screen, and its XWayland route stays as the way without the package.
@@ -30,7 +30,7 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 
 - [x] A link in an editor's real built-in directory, for each of the five that can be installed. Seen for `visual-studio-code-bin` alone, which jpablo accepted (2026-10-09).
 - [x] Whether a user can disable a built-in extension. The README then says so, or says there's no way.
-- [ ] What an open window shows after an update changes the files under it.
+- [ ] What an open window shows after an update changes the files under it. Not seen here, and now [124](124-vs-code-in-a-real-session.md)'s.
 
 ## Notes
 
@@ -50,10 +50,11 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 
 On jpablo's machine, at `79fd9fe`, with `visual-studio-code-bin` 1.140.0 and none of the other four editors.
 
-- **namcap and makepkg, locally.** `namcap PKGBUILD` prints nothing. `makepkg` builds `caminito-vscode-git-r408.79fd9fe-1-any.pkg.tar.zst` and its `check()` passes 68 tests. namcap on the package prints two warnings and no error: `coreutils` and `gawk` "may not be needed". The workflow's run on master (37940721930) was still in progress, so that criterion stays open.
+- **namcap and makepkg, locally.** `namcap PKGBUILD` prints nothing. `makepkg` builds `caminito-vscode-git-r408.79fd9fe-1-any.pkg.tar.zst` and its `check()` passes 68 tests. namcap on the package prints two warnings and no error: `coreutils` and `gawk` "may not be needed". The workflow's run on master at the same commit (37940721930) passed: it built the package, the 68 tests passed, and namcap in the bare container printed no error and two more warnings, that `sh` is "an uninstalled dependency" of the link script and that `bash` "may not be needed".
 - **Installing the package** made `/usr/share/code/resources/app/extensions/caminito.global-menu`, which no package owns. A VS Code window on a fresh `--user-data-dir` logged `ExtensionService#_doActivateExtension caminito.global-menu, startup: false, activationEvent: 'onStartupFinished'`.
 - **The menu itself wasn't seen.** The extension logged `can't read GlobalMenuOffered: Unknown property 'GlobalMenuOffered'`: the running compositor is `caminito-git` r333, from before 115. That's the gate working, and it's 116's to see with a current `caminito-git`.
 - **An editor installed after the package,** with a throwaway package that owns one file under `/opt/vscodium-bin/resources/app/extensions` standing in for `vscodium-bin` (`code` conflicts with `visual-studio-code-bin`, and the other three are in the AUR). Installing it ran the link hook and made the link. Removing it ran the unlink hook, pacman removed `/opt/vscodium-bin` whole, and VS Code's link stayed. With both installed, removing `caminito-vscode-git` took both links and `/usr/share/caminito-vscode`, and installing it again made both.
 - **A built-in can be disabled.** With `[{"id":"caminito.global-menu"}]` under `extensionsIdentifiers/disabled` in the profile's `state.vscdb`, which is where the Extensions view's *Disable* is kept, the window didn't activate it, and neither did one started with `--disable-extension caminito.global-menu`. Nobody clicked *Disable* in the view. The README now says both.
-- **An update under an open window:** reinstalling the same package under an open window left it running with nothing new in its logs. That's the same files and no menu on screen, so the item stays open.
+- **An update under an open window:** reinstalling the same package under an open window left it running with nothing new in its logs. That's the same files and no menu on screen, so the item went to [124](124-vs-code-in-a-real-session.md), which runs with the menu on screen.
 - **The link in a real built-in directory** is seen for `visual-studio-code-bin` alone. jpablo accepted that for the ticket, so `code`'s, `vscodium-bin`'s, `vscodium`'s and `cursor-bin`'s paths are as their packages list them and nobody has seen a link in one.
+- **Closed on jpablo's word (2026-10-09),** with every acceptance criterion met.
