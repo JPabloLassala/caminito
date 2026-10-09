@@ -274,7 +274,9 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   Hide the menu bar in the window? Pressing Alt shows it again.* **Hide Menu Bar** sets
   `window.menuBarVisibility` to `toggle`, which hides the menubar until Alt is pressed, and
   **Keep Menu Bar** changes nothing. Either way the question isn't asked again:
-  - `caminito.globalMenu.offerToHideMenuBar` turned back on asks it again.
+  - `caminito.globalMenu.offerToHideMenuBar` turned back on asks it again, the next time a
+    window's menu goes to the panel. It's kept for this machine, and Settings Sync leaves it
+    out.
   - With Settings Sync on, the choice goes to your other machines. To hide the menubar on this
     one only, add `window.menuBarVisibility` to `settingsSync.ignoredSettings`.
   - *View > Appearance > Menu Bar* in the editor's menu never sets `toggle` again, so once the

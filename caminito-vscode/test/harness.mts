@@ -297,12 +297,25 @@ export interface Lacking {
   readonly notebooks?: boolean;
 }
 
+/** A notification the fake editor shows, which the test answers. */
+export interface Notification {
+  readonly message: string;
+  readonly items: string[];
+  /** Picks `item`, or closes the notification with no answer when it's undefined. */
+  answer(item: string | undefined): void;
+}
+
 /** A fake of the editor's API, which records the commands run and the lines logged. */
 export class FakeEditor {
   focused: boolean;
   /** The settings, read with no scope; a missing key reads as undefined. */
   settings: Record<string, unknown> = {};
+  /** What was written to the settings: the setting, its value, and whether to the user's. */
+  readonly written: [string, unknown, boolean][] = [];
+  readonly notifications: Notification[] = [];
   workspace: Workspace = 'folder';
+  /** The path of the window's workspace file, when it's one on disk; a multi-root workspace. */
+  workspaceFile: string | undefined;
   /** How many times `getCommands` was called. */
   commandListings = 0;
   /** The commands run, and what each was run with. */
@@ -331,6 +344,14 @@ export class FakeEditor {
   focus(focused: boolean): void {
     this.focused = focused;
     this.windowState.fire({ focused });
+  }
+
+  /** Waits until `count` notifications have been shown, and fails if more have. */
+  async notified(count: number): Promise<void> {
+    await until(() => this.notifications.length >= count, `${count} notifications were shown`);
+    if (this.notifications.length !== count) {
+      throw new Error(`${this.notifications.length} notifications were shown, not ${count}`);
+    }
   }
 
   /** Changes settings, firing the configuration event once for them all. */
@@ -368,6 +389,10 @@ export class FakeEditor {
         appendLine: (line: string) => fake.logged.push(line),
         dispose: () => {},
       }),
+      showInformationMessage: (message: string, ...items: string[]) =>
+        new Promise<string | undefined>((answer) => {
+          fake.notifications.push({ message, items, answer });
+        }),
     };
     if (!lacking.notebooks) {
       window['onDidChangeActiveNotebookEditor'] = this.notebookEditor.event;
@@ -386,6 +411,9 @@ export class FakeEditor {
       workspace: {
         get workspaceFolders() {
           const folder = (name: string, index: number) => ({ uri: `file:///${name}`, name, index });
+          if (fake.workspaceFile !== undefined) {
+            return [folder('a', 0), folder('b', 1)];
+          }
           return {
             empty: undefined,
             folder: [folder('a', 0)],
@@ -393,10 +421,22 @@ export class FakeEditor {
           }[fake.workspace];
         },
         get workspaceFile() {
-          return fake.workspace === 'workspace' ? 'untitled:Untitled-1.code-workspace' : undefined;
+          if (fake.workspaceFile !== undefined) {
+            return { scheme: 'file', fsPath: fake.workspaceFile };
+          }
+          return fake.workspace === 'workspace'
+            ? { scheme: 'untitled', fsPath: 'Untitled-1.code-workspace' }
+            : undefined;
         },
         onDidChangeWorkspaceFolders: this.workspaceFolders.event,
-        getConfiguration: () => ({ get: (section: string) => fake.settings[section] }),
+        getConfiguration: () => ({
+          get: (section: string) => fake.settings[section],
+          update: (section: string, value: unknown, global: boolean) => {
+            fake.written.push([section, value, global]);
+            fake.set({ [section]: value });
+            return Promise.resolve();
+          },
+        }),
         onDidChangeConfiguration: this.configuration.event,
       },
       extensions: { onDidChange: this.extensions.event },
