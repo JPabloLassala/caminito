@@ -23,6 +23,11 @@ pub const SOUND: &str = "org.mate.sound";
 pub const A11Y_KEYBOARD: &str = "org.mate.accessibility-keyboard";
 /// mate-desktop's lockdown keys, of which Caminito reads `disable-lock-screen` (126).
 pub const LOCKDOWN: &str = "org.mate.lockdown";
+/// mate-session's, of which Caminito reads `idle-delay` (128).
+pub const SESSION: &str = "org.mate.session";
+/// mate-screensaver's, of which Caminito reads the keys of idle and the lock after it (09,
+/// 128). caminito-locker reads the rest itself (12).
+pub const SCREENSAVER: &str = "org.mate.screensaver";
 /// Caminito's own schema (09), which Caminito installs. A development run may not have it.
 pub const CAMINITO: &str = "org.mate.Caminito";
 
@@ -83,6 +88,14 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: LOCKDOWN,
+        required: false,
+    },
+    Schema {
+        id: SESSION,
+        required: false,
+    },
+    Schema {
+        id: SCREENSAVER,
         required: false,
     },
     Schema {
@@ -318,6 +331,7 @@ pub struct Settings {
     pub accessx: AccessX,
     pub keymap: Keymap,
     pub locker: LockerSettings,
+    pub idle: IdleSettings,
 }
 
 /// The screen locker (12, 126).
@@ -328,6 +342,19 @@ pub struct LockerSettings {
     pub command: Vec<String>,
     /// `org.mate.lockdown disable-lock-screen`: no lock request is accepted.
     pub lock_disabled: bool,
+}
+
+/// Idle, the blank it brings and the lock after it (09, 128).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdleSettings {
+    /// `org.mate.session idle-delay`: how long the session goes without activity before
+    /// it's idle. Zero is never, as in mate-session.
+    pub delay: Duration,
+    /// `org.mate.screensaver idle-activation-enabled`: whether idle blanks the outputs.
+    pub blank: bool,
+    /// `org.mate.screensaver lock-delay`, while `lock-enabled` is on: how long after the
+    /// blank starts the session is locked.
+    pub lock: Option<Duration>,
 }
 
 /// What the Window switcher is drawn with (108), from `org.mate.Marco.general`.
@@ -987,6 +1014,13 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             command: r.strings_or(CAMINITO, "locker-command", &["caminito-locker"]),
             lock_disabled: r.bool(LOCKDOWN, "disable-lock-screen", false),
         },
+        idle: IdleSettings {
+            delay: minutes(r.int_at_least(SESSION, "idle-delay", 5, 0)),
+            blank: r.bool(SCREENSAVER, "idle-activation-enabled", true),
+            lock: r
+                .bool(SCREENSAVER, "lock-enabled", true)
+                .then(|| minutes(r.int_at_least(SCREENSAVER, "lock-delay", 0, 0))),
+        },
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -1006,6 +1040,11 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         settings,
         problems: r.problems,
     }
+}
+
+/// A key's `minutes`, which `int_at_least` has kept from being negative.
+fn minutes(minutes: i32) -> Duration {
+    Duration::from_secs(60 * minutes as u64)
 }
 
 /// The pointers' settings, as msd's mouse plugin applies them to libinput devices

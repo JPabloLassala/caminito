@@ -166,6 +166,10 @@ fn defaults() -> Reading {
         Value::StrList(vec!["caminito-locker".into()]),
     );
     put(LOCKDOWN, "disable-lock-screen", Value::Bool(false));
+    put(SESSION, "idle-delay", Value::Int(5));
+    put(SCREENSAVER, "idle-activation-enabled", Value::Bool(true));
+    put(SCREENSAVER, "lock-enabled", Value::Bool(true));
+    put(SCREENSAVER, "lock-delay", Value::Int(0));
     reading
 }
 
@@ -349,6 +353,75 @@ fn an_empty_locker_command_is_kept_empty() {
 fn disable_lock_screen_is_read() {
     let reading = with(LOCKDOWN, "disable-lock-screen", Value::Bool(true));
     assert!(settings(&reading).locker.lock_disabled);
+}
+
+// Idle, blanking and the lock after it (128).
+
+#[test]
+fn the_defaults_blank_after_five_minutes_and_lock_at_once() {
+    let idle = settings(&defaults()).idle;
+    assert_eq!(idle.delay, Duration::from_secs(5 * 60));
+    assert!(idle.blank);
+    assert_eq!(idle.lock, Some(Duration::ZERO));
+}
+
+#[test]
+fn idle_delay_is_in_minutes() {
+    let idle = settings(&with(SESSION, "idle-delay", Value::Int(1))).idle;
+    assert_eq!(idle.delay, Duration::from_secs(60));
+}
+
+/// As in mate-session, which watches for idle only with a delay above 0
+/// (`gsm-presence.c:170-172`).
+#[test]
+fn an_idle_delay_of_0_is_never_idle() {
+    let idle = settings(&with(SESSION, "idle-delay", Value::Int(0))).idle;
+    assert_eq!(idle.delay, Duration::ZERO);
+}
+
+#[test]
+fn a_negative_idle_delay_is_the_default() {
+    let (settings, problem) = problem(&with(SESSION, "idle-delay", Value::Int(-1)));
+    assert_eq!(settings.idle.delay, Duration::from_secs(5 * 60));
+    assert_eq!(problem, invalid(SESSION, "idle-delay", "-1", "5"));
+}
+
+#[test]
+fn idle_activation_enabled_off_doesnt_blank() {
+    let reading = with(SCREENSAVER, "idle-activation-enabled", Value::Bool(false));
+    assert!(!settings(&reading).idle.blank);
+}
+
+#[test]
+fn lock_enabled_off_asks_for_no_lock() {
+    let reading = with(SCREENSAVER, "lock-enabled", Value::Bool(false));
+    assert_eq!(settings(&reading).idle.lock, None);
+}
+
+#[test]
+fn lock_delay_is_in_minutes() {
+    let reading = with(SCREENSAVER, "lock-delay", Value::Int(2));
+    assert_eq!(settings(&reading).idle.lock, Some(Duration::from_secs(120)));
+}
+
+#[test]
+fn a_negative_lock_delay_is_the_default() {
+    let (settings, problem) = problem(&with(SCREENSAVER, "lock-delay", Value::Int(-3)));
+    assert_eq!(settings.idle.lock, Some(Duration::ZERO));
+    assert_eq!(problem, invalid(SCREENSAVER, "lock-delay", "-3", "0"));
+}
+
+#[test]
+fn without_the_session_and_screensaver_schemas_idle_has_their_defaults() {
+    let mut reading = defaults();
+    reading.remove(SESSION, "idle-delay");
+    for key in ["idle-activation-enabled", "lock-enabled", "lock-delay"] {
+        reading.remove(SCREENSAVER, key);
+    }
+    reading.set_missing(SESSION);
+    reading.set_missing(SCREENSAVER);
+    let idle = translate(&reading).settings.idle;
+    assert_eq!(idle, settings(&defaults()).idle);
 }
 
 #[test]

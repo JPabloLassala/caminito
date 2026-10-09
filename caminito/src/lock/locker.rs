@@ -233,10 +233,6 @@ impl State {
     /// idle's and logind's. The session is locked at once, and the locker is spawned to take
     /// the lock. Returns whether the request was accepted: `org.mate.lockdown
     /// disable-lock-screen` refuses every one, as mate-screensaver does.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "127, 128 and 130 are its callers")
-    )]
     pub(crate) fn request_lock(&mut self) -> bool {
         let caminito = &mut self.caminito;
         if caminito.settings.locker.lock_disabled {

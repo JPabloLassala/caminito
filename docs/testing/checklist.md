@@ -785,6 +785,34 @@ session_env() {
   it's given up on`. `DumpState`'s `lock` is `pending`, and its `locker` has `state` `gave-up`
   and the `message`.
 
+### Idle blanks, a key brings it back, a playing video holds it off, and the lock follows
+
+- **Milestone:** M7
+- **Steps:**
+  1. Log into *MATE on Caminito*, and run:
+
+     ```sh
+     gsettings set org.mate.session idle-delay 1
+     gsettings set org.mate.screensaver idle-activation-enabled true
+     gsettings set org.mate.screensaver lock-enabled true
+     gsettings set org.mate.screensaver lock-delay 1
+     ```
+
+  2. Leave the keyboard and the mouse alone. Once the screens go black, press Shift.
+  3. Play a video in `mpv`, a native Wayland player that holds idle off while it plays, and
+     leave everything alone for two minutes.
+  4. Minimise mpv's window and leave everything alone for two minutes more, then move the
+     mouse and type the password.
+  5. Set the four keys back with `gsettings reset`.
+- **Expected:** in step 2 every monitor goes black a minute after the last input, the cursor
+  too, and Shift brings the desktop back, unlocked, as the lock delay hadn't passed (128). In
+  step 3 the screens stay on. In step 4 they go black a minute after the window is minimised,
+  and a minute later the session locks under the blank: the mouse brings up
+  `caminito-locker`'s dialog, not the desktop, and the password unlocks.
+- **Debug tool:** `DumpState`'s `idle`, whose `blanked` follows the screens and whose
+  `inhibitors` has mpv's surface with its window and `shown`, and its `lock`. `--verbose`
+  logs `the session is idle; blanking the outputs` and `activity; unblanking the outputs`.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

@@ -75,7 +75,13 @@ impl State {
                     .scrolls_horizontally(&event.device().id());
                 self.on_pointer_axis::<I>(&event, horizontal);
             }
-            _ => {}
+            InputEvent::DeviceAdded { .. }
+            | InputEvent::DeviceRemoved { .. }
+            | InputEvent::SwitchToggle { .. }
+            | InputEvent::Special(_) => {}
+            // Gestures, touch and tablets, which Caminito passes on to no client yet, are
+            // activity all the same (128).
+            _ => self.idle_activity(),
         }
     }
 
@@ -86,6 +92,8 @@ impl State {
         delta_unaccel: Point<f64, Logical>,
         time: InputTime,
     ) {
+        // A locked pointer still moves the mouse (128).
+        self.idle_activity();
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let location = pointer.current_location();
         let constraint = self.active_constraint(location);
@@ -95,7 +103,7 @@ impl State {
             let escapes = constraint == Some(Constraint::Confined)
                 && self.pointer_constraint_at(target).is_none();
             if !escapes {
-                self.on_pointer_motion(target, time);
+                self.pointer_motion(target, time);
             }
         }
 
@@ -174,6 +182,7 @@ impl State {
     /// Scrolling, sent to whatever has the pointer. Without `horizontal`, the horizontal
     /// axis is dropped, as the device's settings ask (53).
     fn on_pointer_axis<I: InputBackend>(&mut self, event: &I::PointerAxisEvent, horizontal: bool) {
+        self.idle_activity();
         let mut frame = AxisFrame::new(event.time()).source(event.source());
         let mut sent = false;
         let axes: &[Axis] = if horizontal {
@@ -213,6 +222,8 @@ impl State {
     /// The keyboard path: one key event through 15's five stages, in order, each deciding
     /// whether it goes further.
     pub fn on_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
+        // 0. Any key is activity, which ends a blank (128); the key goes on all the same.
+        self.idle_activity();
         // 1. The lock (12). 15 has it as a gate before xkbcommon, but it drops no key,
         // since the locker is typed to: while the session is locked it's stage 4 that
         // runs nothing but VT switching, and the keyboard itself that switches layouts, as
@@ -434,6 +445,14 @@ impl State {
     /// gets pointer focus, unless a grab decides otherwise, and a frame under it lights up
     /// its button.
     pub fn on_pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime) {
+        self.idle_activity();
+        self.pointer_motion(location, time);
+    }
+
+    /// The pointer is at `location`: what [`State::on_pointer_motion`] does but count as
+    /// activity, for the refresh pass to give the focus to what's now under a pointer that
+    /// didn't move. A window that maps there doesn't end a blank (128).
+    fn pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime) {
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let target = self.caminito.under(location);
         let under = target.as_ref().and_then(Under::surface);
@@ -458,6 +477,7 @@ impl State {
     /// window focuses and raises it through policy before the client sees the press. The
     /// client never sees an Alt press or a press on the frame.
     pub fn on_pointer_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
+        self.idle_activity();
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
@@ -592,7 +612,7 @@ impl State {
             || self.caminito.frame_pointer.hover != hover;
         if stale {
             let time = InputTime::from_micros(self.caminito.now().as_micros() as u64);
-            self.on_pointer_motion(location, time);
+            self.pointer_motion(location, time);
         }
     }
 }
@@ -726,9 +746,11 @@ impl Caminito {
             return None;
         }
         scene::LAYERS.into_iter().find_map(|layer| match layer {
-            SceneLayer::Cursor | SceneLayer::DragIcon | SceneLayer::Lock | SceneLayer::Switcher => {
-                None
-            }
+            SceneLayer::Blank
+            | SceneLayer::Cursor
+            | SceneLayer::DragIcon
+            | SceneLayer::Lock
+            | SceneLayer::Switcher => None,
             SceneLayer::Overlay
             | SceneLayer::Top
             | SceneLayer::LayerPopups
