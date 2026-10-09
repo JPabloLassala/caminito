@@ -90,7 +90,7 @@ impl CrtcGamma {
         self.written = Some(self.wanted);
         if let Way::None = self.way {
             if !self.said_none {
-                tracing::info!("{name} has no gamma table, so Night Light can't tint it");
+                tracing::warn!("{name} has no gamma table, so Night Light can't tint it");
                 self.said_none = true;
             }
             return;
@@ -111,7 +111,10 @@ impl CrtcGamma {
                 property,
                 size,
                 blob,
-            } => set_lut(device, crtc, *property, blob, &ramp(kelvin, *size)),
+            } => {
+                let table = (kelvin != NEUTRAL).then(|| ramp(kelvin, *size));
+                set_lut(device, crtc, *property, blob, table.as_deref())
+            }
             Way::Legacy { size } => {
                 let table = ramp(kelvin, *size);
                 let (red, rest) = table.split_at(*size);
@@ -154,19 +157,16 @@ fn way(device: &DrmDevice, crtc: crtc::Handle) -> io::Result<Way> {
 }
 
 /// Sets `GAMMA_LUT` to a new blob of `table`, red's entries then green's then blue's, and
-/// destroys the blob it had. The identity needs no blob: 0 is the kernel's linear ramp.
+/// destroys the blob it had. Neutral, `None`, needs no blob: 0 is the kernel's linear ramp.
 fn set_lut(
     device: &DrmDevice,
     crtc: crtc::Handle,
     property: property::Handle,
     blob: &mut Option<u64>,
-    table: &[u16],
+    table: Option<&[u16]>,
 ) -> io::Result<()> {
-    let size = table.len() / 3;
-    let identity = ramp(NEUTRAL, size);
-    let new = if table == identity.as_slice() {
-        None
-    } else {
+    let new = if let Some(table) = table {
+        let size = table.len() / 3;
         // `struct drm_color_lut`: red, green, blue and a reserved u16, each in the
         // machine's byte order.
         let (red, rest) = table.split_at(size);
@@ -179,6 +179,8 @@ fn set_lut(
         }
         let created = drm_ffi::mode::create_property_blob(device.as_fd(), &mut data)?;
         Some(u64::from(created.blob_id))
+    } else {
+        None
     };
     let set = device.set_property(
         crtc,

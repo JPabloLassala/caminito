@@ -1095,7 +1095,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
 
 /// The coldest and warmest temperatures Night Light's keys take, in kelvin. 6500 is
 /// neutral.
-pub const TEMPERATURES: (u32, u32) = (1000, 6500);
+const TEMPERATURES: (u32, u32) = (1000, 6500);
 
 fn night_light(r: &mut Reader<'_>) -> NightLightSettings {
     let (min, max) = TEMPERATURES;

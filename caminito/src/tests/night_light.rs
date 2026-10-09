@@ -159,11 +159,11 @@ fn toggle_night_light_flips_the_key() {
     let bus = f.start_dbus();
 
     toggle(&mut f, &bus);
-    f.dispatch_until(|f| f.state.caminito.settings.night_light.enabled);
+    f.dispatch_until(|f| dump(f)["enabled"] == true);
     assert_eq!(target(&f), 4000);
 
     toggle(&mut f, &bus);
-    f.dispatch_until(|f| !f.state.caminito.settings.night_light.enabled);
+    f.dispatch_until(|f| dump(f)["enabled"] == false);
     assert_eq!(target(&f), 6500);
 }
 

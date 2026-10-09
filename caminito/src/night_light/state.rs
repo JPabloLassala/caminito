@@ -8,7 +8,7 @@ use super::ramp::NEUTRAL;
 use crate::settings::translate::{NightLightSettings, Schedule};
 
 /// How long a change takes to fade in.
-pub(crate) const FADE: Duration = Duration::from_secs(2);
+const FADE: Duration = Duration::from_secs(2);
 
 /// The target and each output's temperature, by `K`, the output's id.
 #[derive(Debug)]
