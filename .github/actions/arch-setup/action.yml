@@ -22,7 +22,9 @@ runs:
       # the tty backend links libseat, libudev, libgbm, libdisplay-info (55) and
       # libinput (56), though nothing in CI drives it. gtk4: caminito-displays links it (84),
       # and caminito's tests build caminito-displays for its page and its client.
-      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd systemd-libs mesa libdisplay-info libinput
+      # gtk-session-lock, mate-desktop, pam: caminito-locker's build (131). pam_wrapper: the
+      # stand-in PAM service its tests check passwords against.
+      run: pacman -Syu --noconfirm --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper
 
     - name: Install Rust toolchain
       shell: bash

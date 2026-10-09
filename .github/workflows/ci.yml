@@ -40,6 +40,10 @@ jobs:
           CAMINITO_GTK_PALETTE=$PWD/target/meson/helpers/caminito-gtk-palette/caminito-gtk-palette \
             xvfb-run -a cargo test -p caminito-theme --test palette_helper -- --ignored
 
+      # caminito-locker's PAM conversation (131), against pam_wrapper's stand-in service.
+      - name: Test the helpers
+        run: meson test -C target/meson --print-errorlogs
+
       # A golden case that doesn't match writes Caminito's image and a diff beside it.
       - name: Keep golden failures
         if: failure()
@@ -57,6 +61,15 @@ jobs:
       # XDG_DATA_HOME makes the bus read the service files that a test writes below HOME.
       - name: Test caminito
         run: XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito
+
+      # The real caminito-locker against the headless fixture (131), which the palette step's
+      # Meson build has built. Its password is checked by pam_wrapper's stand-in service.
+      - name: Test caminito-locker against caminito
+        run: |
+          export CAMINITO_LOCKER=$PWD/target/meson/helpers/caminito-locker/caminito-locker
+          export PAM_WRAPPER_MODULES=$(pkg-config --variable=modules pam_wrapper)
+          XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- \
+            cargo test -p caminito tests::caminito_locker -- --ignored
 
   # The global menu extension (116): type-checked, tested on a private dbus-daemon of each
   # test's own, and bundled.

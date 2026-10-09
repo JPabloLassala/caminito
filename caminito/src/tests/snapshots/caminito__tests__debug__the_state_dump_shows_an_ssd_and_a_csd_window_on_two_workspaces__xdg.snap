@@ -89,7 +89,8 @@ expression: without_x_ids(&dump)
         "width": 1920,
         "height": 1080
       },
-      "layer_surfaces": []
+      "layer_surfaces": [],
+      "lock_surface": false
     },
     {
       "id": 1,
@@ -107,7 +108,8 @@ expression: without_x_ids(&dump)
         "width": 1280,
         "height": 720
       },
-      "layer_surfaces": []
+      "layer_surfaces": [],
+      "lock_surface": false
     }
   ],
   "primary_output": "headless-1",

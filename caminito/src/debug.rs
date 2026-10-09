@@ -236,6 +236,8 @@ struct OutputDump {
     work_area: RectDump,
     /// In the order they were made.
     layer_surfaces: Vec<LayerSurfaceDump>,
+    /// Whether the locker that holds the lock has a lock surface on it (12).
+    lock_surface: bool,
 }
 
 #[derive(Serialize)]
@@ -395,6 +397,7 @@ impl Caminito {
                     .iter()
                     .map(|(layer, geometry)| LayerSurfaceDump::new(layer, *geometry))
                     .collect(),
+                lock_surface: self.lock.surface_on(output).is_some(),
             })
             .collect();
         let accelerator_grabs = self

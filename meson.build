@@ -13,6 +13,7 @@ project(
 )
 
 subproject('caminito-gtk-palette')
+subproject('caminito-locker')
 
 # The display manager's entry for the session (08). Its name isn't the Wayfire session's
 # MATE.desktop, and it needs no wrapper script and no systemd unit.

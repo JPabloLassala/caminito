@@ -2,8 +2,8 @@
 
 The GSettings schemas Caminito's tests read (14), vendored so that CI needs no MATE
 packages. Tests compile them into a private directory with `glib-compile-schemas`. The
-palette helper's tests point `GSETTINGS_SCHEMA_DIR` at it; caminito's headless tests read it
-as their only schema source, each on a memory backend of its own (the settings thread's
+palette helper's and caminito-locker's tests point `GSETTINGS_SCHEMA_DIR` at it; caminito's
+headless tests read it as their only schema source, each on a memory backend of its own (the settings thread's
 `Source::Test`).
 
 | Schema | Source |
@@ -16,6 +16,7 @@ as their only schema source, each on a memory backend of its own (the settings t
 | `org.mate.peripherals-keyboard-xkb` | libmatekbd 1.28.0, as installed by Arch's `libmatekbd 1.28.0-2` |
 | `org.mate.accessibility-keyboard` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-3` |
 | `org.mate.sound` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-2` |
+| `org.mate.screensaver` | mate-screensaver `60b2db3`, the source caminito-locker is ported from (131), with `@datadir@` as `/usr/share` |
 | `org.mate.Caminito` | Caminito's own, a link to [data/org.mate.Caminito.gschema.xml](../../data/org.mate.Caminito.gschema.xml), which Meson installs |
 
 mate-settings-daemon 1.28.0's mouse schema has no `natural-scroll`, which msd's master reads, so
