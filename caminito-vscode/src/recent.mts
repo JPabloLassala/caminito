@@ -9,24 +9,25 @@ export const GET_RECENTLY_OPENED = '_workbench.getRecentlyOpened';
 /** The table's item the entries are put before: More…. */
 export const MORE = 'workbench.action.openRecent';
 
+const OPEN_FOLDER = 'vscode.openFolder';
+const WINDOW_OPEN = '_files.windowOpen';
+const OPEN = 'vscode.open';
+
 /** The commands that open an entry or clear the list, after whose return the list is read again. */
 export const CHANGES_THE_LIST: readonly string[] = [
-  'vscode.openFolder',
-  '_files.windowOpen',
-  'vscode.open',
+  OPEN_FOLDER,
+  WINDOW_OPEN,
   'workbench.action.clearRecentFiles',
 ];
 
 /** How many folders and workspaces, and how many files, the menu shows. */
-export const MAX_ENTRIES = 10;
+const MAX_ENTRIES = 10;
 
 /** The longest label, cut in the middle beyond it. */
 export const MAX_LABEL = 120;
 
-const OPEN_FOLDER = 'vscode.openFolder';
-const WINDOW_OPEN = '_files.windowOpen';
-const OPEN = 'vscode.open';
 const WORKSPACE_EXTENSION = '.code-workspace';
+const REMOTE = 'vscode-remote';
 
 /** A URI, as the editor hands one over: the parts of it a label is made of. */
 export interface Uri {
@@ -42,18 +43,22 @@ interface Recent {
   readonly remoteAuthority?: string;
 }
 
+/** A folder of the list. */
 export interface RecentFolder extends Recent {
   readonly folderUri: Uri;
 }
 
+/** A multi-root workspace of the list, by its workspace file. */
 export interface RecentWorkspace extends Recent {
   readonly workspace: { readonly configPath: Uri };
 }
 
+/** A file of the list. */
 export interface RecentFile extends Recent {
   readonly fileUri: Uri;
 }
 
+/** An entry of the list. */
 export type RecentEntry = RecentFolder | RecentWorkspace | RecentFile;
 
 /** The list, the most recent first, as `_workbench.getRecentlyOpened` answers it. */
@@ -91,33 +96,45 @@ function isUri(value: unknown): value is Uri {
 
 /**
  * An entry's label: the path with `home` as `~`, a workspace and a remote marked as VS Code
- * marks them, cut in the middle at 120 characters, with each underscore doubled so that it
- * isn't read as a mnemonic.
+ * marks them, cut in the middle at `MAX_LABEL` characters, with each underscore doubled so
+ * that it isn't read as a mnemonic.
  */
 export function recentLabel(entry: RecentEntry, home: string): string {
   const text = entry.label || describe(entry, home);
   return cutMiddle(text, MAX_LABEL).replaceAll('_', '__');
 }
 
-function describe(entry: RecentEntry, home: string): string {
-  let label: string;
-  let uri: Uri;
+/** What an entry is, and the URI it opens. */
+function placeOf(entry: RecentEntry): { kind: 'folder' | 'workspace' | 'file'; uri: Uri } {
+  if ('folderUri' in entry) {
+    return { kind: 'folder', uri: entry.folderUri };
+  }
   if ('workspace' in entry) {
-    uri = entry.workspace.configPath;
+    return { kind: 'workspace', uri: entry.workspace.configPath };
+  }
+  return { kind: 'file', uri: entry.fileUri };
+}
+
+function describe(entry: RecentEntry, home: string): string {
+  const { kind, uri } = placeOf(entry);
+  let label: string;
+  if (kind === 'workspace') {
     // VS Code's own: the file's path less its extension, then "(Workspace)".
     const path = uri.path.endsWith(WORKSPACE_EXTENSION)
       ? uri.path.slice(0, -WORKSPACE_EXTENSION.length)
       : uri.path;
     label = `${pathLabel({ ...uri, path }, home)} (Workspace)`;
   } else {
-    uri = 'folderUri' in entry ? entry.folderUri : entry.fileUri;
     label = pathLabel(uri, home);
   }
   const remote = entry.remoteAuthority ?? (uri.scheme === REMOTE ? uri.authority : undefined);
   return remote ? `${label} [${remoteName(remote)}]` : label;
 }
 
-const REMOTE = 'vscode-remote';
+/** A URI written out whole. */
+function uriText(uri: Uri): string {
+  return `${uri.scheme}://${uri.authority}${uri.path}`;
+}
 
 /** A local path with `home` as `~`; a remote's path as it is, since its home isn't known here. */
 function pathLabel(uri: Uri, home: string): string {
@@ -136,7 +153,7 @@ function pathLabel(uri: Uri, home: string): string {
   if (uri.scheme === REMOTE) {
     return uri.path;
   }
-  return `${uri.scheme}://${uri.authority}${uri.path}`;
+  return uriText(uri);
 }
 
 /**
@@ -174,8 +191,8 @@ function cutMiddle(text: string, max: number): string {
 }
 
 /**
- * Open Recent's entries as items: the first ten folders and workspaces, a separator, the
- * first ten files and a separator. An entry has the same id for as long as the extension
+ * Open Recent's entries as items: the first `MAX_ENTRIES` folders and workspaces, a
+ * separator, the first `MAX_ENTRIES` files and a separator. An entry has the same id for as long as the extension
  * runs, so a click on an id from an older layout opens that entry or nothing.
  */
 export class RecentItems {
@@ -191,16 +208,17 @@ export class RecentItems {
     this.#next = firstId + 2;
   }
 
+  /** The items for `list`, with the two separators. */
   items(list: RecentlyOpened): MenuNode[] {
     // An entry the list has twice is shown once, since its id is its own.
     const seen = new Set<number>();
-    const firstTen = (entries: readonly RecentEntry[]) =>
+    const shownOf = (entries: readonly RecentEntry[]) =>
       entries
         .slice(0, MAX_ENTRIES)
         .map((entry) => this.#item(entry))
         .filter((item) => !seen.has(item.id) && seen.add(item.id));
-    const workspaces = firstTen(list.workspaces);
-    const files = firstTen(list.files);
+    const workspaces = shownOf(list.workspaces);
+    const files = shownOf(list.files);
     const [afterWorkspaces, afterFiles] = this.#separators;
     return [
       ...workspaces,
@@ -211,23 +229,12 @@ export class RecentItems {
   }
 
   #item(entry: RecentEntry): MenuNode {
-    const [kind, uri, command, args] =
-      'folderUri' in entry
-        ? (['folder', entry.folderUri, OPEN_FOLDER, [entry.folderUri]] as const)
-        : 'workspace' in entry
-          ? ([
-              'workspace',
-              entry.workspace.configPath,
-              OPEN_FOLDER,
-              [entry.workspace.configPath],
-            ] as const)
-          : ([
-              'file',
-              entry.fileUri,
-              WINDOW_OPEN,
-              [[{ fileUri: entry.fileUri }], { remoteAuthority: entry.remoteAuthority ?? null }],
-            ] as const);
-    const key = `${kind} ${uri.scheme}://${uri.authority}${uri.path}`;
+    const { kind, uri } = placeOf(entry);
+    const [command, args] =
+      kind === 'file'
+        ? [WINDOW_OPEN, windowOpenArgs(uri, entry.remoteAuthority)]
+        : [OPEN_FOLDER, [uri]];
+    const key = `${kind} ${uriText(uri)}`;
     let id = this.#ids.get(key);
     if (id === undefined) {
       id = this.#next++;
@@ -235,6 +242,11 @@ export class RecentItems {
     }
     return { id, label: recentLabel(entry, this.#home), command, args };
   }
+}
+
+/** `_files.windowOpen`'s arguments for a file, as VS Code's own menubar opens one. */
+function windowOpenArgs(uri: Uri, remoteAuthority: string | undefined): unknown[] {
+  return [[{ fileUri: uri }], { remoteAuthority: remoteAuthority ?? null }];
 }
 
 /**
@@ -248,6 +260,7 @@ export function fallbackOf(
   if (command !== WINDOW_OPEN) {
     return undefined;
   }
+  // The file is the first of what `windowOpenArgs` gives to open.
   const uri = (args[0] as { fileUri?: unknown }[] | undefined)?.[0]?.fileUri;
   return uri === undefined ? undefined : [OPEN, [uri]];
 }
