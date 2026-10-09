@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
+    inputs:
+      vscode-version:
+        description: "The VS Code the menubar canary snapshots: a version such as 1.140.0, or latest"
+        default: latest
 
 jobs:
   smithay-canary:
@@ -121,6 +125,94 @@ jobs:
             gh issue comment "$number" --body "$body"
           else
             gh issue create --title "$title" --body "$body"
+          fi
+
+  # VS Code's menubar against the extension's menu table (ADR 0019, 123): the newest stable
+  # build's snapshot, compared in structure with the committed table. The table is remade by
+  # hand with `npm run snapshot`; nothing here commits.
+  vscode-menubar-canary:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      # Docker's 64 MB /dev/shm is known to crash Chromium's renderers.
+      options: --shm-size=1g
+    steps:
+      # Electron's libraries, as visual-studio-code-bin depends on them, and Xvfb.
+      - name: Install packages
+        run: >-
+          pacman -Syu --noconfirm --needed git curl nodejs npm xorg-server-xvfb xorg-xauth
+          gtk3 nss alsa-lib libxkbfile libsecret libxss libnotify mesa
+
+      - uses: actions/checkout@v5
+
+      # A scheduled run has no inputs. A dispatch can name the table's version, to check the job.
+      - name: Download VS Code
+        env:
+          VERSION: ${{ inputs.vscode-version || 'latest' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/vscode"
+          curl -fsSL "https://update.code.visualstudio.com/$VERSION/linux-x64/stable" \
+            | tar -xz -C "$RUNNER_TEMP/vscode" --strip-components=1
+
+      - name: Install the dependencies
+        working-directory: caminito-vscode
+        run: npm ci
+
+      # The diff goes to the report job's issue.
+      - name: Snapshot and compare
+        working-directory: caminito-vscode
+        shell: bash
+        run: |
+          set -o pipefail
+          node tools/snapshot.mts --editor "$RUNNER_TEMP/vscode" --check \
+            | tee "$RUNNER_TEMP/menubar.diff"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: menubar-diff
+          path: ${{ runner.temp }}/menubar.diff
+          if-no-files-found: ignore
+
+  vscode-menubar-canary-report:
+    needs: vscode-menubar-canary
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      # None when the snapshot didn't get as far as comparing.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: menubar-diff
+
+      - name: Open or update the menubar issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="VS Code menubar canary failing"
+          {
+            echo "The weekly snapshot of VS Code's newest stable build failed: $RUN_URL"
+            echo
+            if [ -s menubar.diff ]; then
+              echo "Its menubar differs from \`caminito-vscode/menu/table.json\`. Remake the table with \`npm run snapshot\` (ADR 0019)."
+              echo
+              echo '```diff'
+              head -c 60000 menubar.diff
+              echo
+              echo '```'
+            else
+              echo "It didn't get as far as comparing, so there's no diff."
+            fi
+          } >body.md
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
           fi
 
   proptest:
