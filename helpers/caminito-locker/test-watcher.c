@@ -28,8 +28,8 @@ static const char presence_xml[] =
 typedef struct
 {
   GTestDBus       *bus;
-  /* The stand-in's connection, served by its thread, as the watcher's first read blocks
-     the test's. */
+  /* The stand-in's connection, served by its thread, so that the test can wait on the
+     watcher's own. */
   GDBusConnection *connection;
   GMainContext    *context;
   GMainLoop       *loop;
@@ -228,6 +228,8 @@ test_status_text_changed (void)
   own_presence (&presence, "");
 
   watcher = gs_watcher_new ();
+  /* The first read is asynchronous, and its reply would be a notification of its own. */
+  wait_for_status_message (watcher, "");
   g_signal_connect (watcher, "notify::status-message", G_CALLBACK (notified), &notifications);
   change_status_text (&presence, "In a meeting");
   wait_for_status_message (watcher, "In a meeting");
