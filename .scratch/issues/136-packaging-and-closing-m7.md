@@ -33,3 +33,4 @@ M7's exit criterion holds on the developer's machine, and the closing commit say
 ## Notes
 
 - **The laptop:** 107's check needs one. If the developer has none at hand, the closing says so and the item moves.
+- **125's swaylock item** was run nested but for its last step, the bindings pressed while locked, which a nested run can't do: the host's compositor has them. That step is on the tty, and its result ticks [125](125-lock-state-and-ext-session-lock.md)'s last criterion and resolves it.
