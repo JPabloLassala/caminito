@@ -175,3 +175,27 @@ _Avoid_: Caminito integration (the working name, for an extension that would do 
 **Scene**:
 The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::Space`, which Caminito doesn't use)
+
+**Night Light**:
+Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
+_Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift
+
+**Schedule**:
+What decides Night Light's colour temperature at each moment: the sun schedule or the constant schedule.
+_Avoid_: mode
+
+**Sun schedule**:
+The schedule that follows the sun's elevation at the user's location: warmest at night, coolest at solar noon, changing gradually in between. It has a noon temperature and a night temperature. The UI calls it "Follow the sun".
+_Avoid_: natural light, True Tone, sunset to sunrise (that's Plasma's schedule of two flat temperatures)
+
+**Constant schedule**:
+The schedule that holds one temperature for as long as Night Light is on.
+_Avoid_: always on, manual mode
+
+**Gamma client**:
+An outside program, such as gammastep, that holds an output's gamma table through `wlr-gamma-control`. Night Light steps back from that output while it does and resumes when the table is released.
+_Avoid_: gamma tool, redshift client
+
+**Pause**:
+Holding Night Light off until the next sunrise while it stays enabled. It ends by itself at sunrise and the schedule takes over again.
+_Avoid_: inhibit (that's an app holding it off, which Caminito doesn't offer), suspend, disable (that's turning Night Light off)

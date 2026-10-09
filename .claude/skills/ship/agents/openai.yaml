@@ -1,0 +1,5 @@
+interface:
+  display_name: "Ship"
+  short_description: "Build a ticket in a worktree, merge it, resolve it"
+policy:
+  allow_implicit_invocation: false
