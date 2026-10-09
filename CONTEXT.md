@@ -195,3 +195,7 @@ _Avoid_: always on, manual mode
 **Gamma client**:
 An outside program, such as gammastep, that holds an output's gamma table through `wlr-gamma-control`. Night Light steps back from that output while it does and resumes when the table is released.
 _Avoid_: gamma tool, redshift client
+
+**Pause**:
+Holding Night Light off until the next sunrise while it stays enabled. It ends by itself at sunrise and the schedule takes over again.
+_Avoid_: inhibit (that's an app holding it off, which Caminito doesn't offer), suspend, disable (that's turning Night Light off)
