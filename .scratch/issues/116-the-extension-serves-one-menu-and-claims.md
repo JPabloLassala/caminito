@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [115](115-caminito-takes-a-menu-claim.md)
 
@@ -27,7 +27,7 @@ The global menu extension's first slice, under "The global menu extension" in [t
 - [x] With a fake that lacks the tab-groups and notebook APIs, the extension still serves and claims, and logs one line.
 - [x] A failure at activation is logged and doesn't reach the host.
 - [x] The CI job passes. (The `extension` job passed in CI on `master` on 2026-10-08, run 37853654941, at `b886f7a`.)
-- [ ] In a nested run with VS Code 1.140, the panel shows the menu, the item runs in the focused one of two windows, and the menu comes back after a reload with nothing refocused.
+- [x] In a nested run with VS Code 1.140, the panel shows the menu, the item runs in the focused one of two windows, and the menu comes back after a reload with nothing refocused. (Checked by hand on 2026-10-09 with `nested/run.sh`, VS Code 1.140.0, at `c6da8cc`.)
 
 ## Notes
 
@@ -46,3 +46,5 @@ The global menu extension's first slice, under "The global menu extension" in [t
 - **Not run here:** the CI job (nothing here runs an Arch container; it ran locally on Node 22.22 with dbus 1.14) and the nested run with VS Code 1.140, which needs a Wayland desktop and the applet's package.
 
 **The `configureMembers()` report, not yet sent** (the session's GitHub access doesn't reach `JellyBrick/node-dbus-next`). Title: *`Interface.configureMembers()` registers nothing: the constructor's own fields hide the prototype's*. Body: In 0.11.4, `Interface`'s constructor defines `$properties`, `$methods` and `$signals` as own properties set to `undefined` (`_defineProperty(this, "$methods", void 0)` in `dist/index.cjs`), while `configureMembers()` puts the members on `this.prototype`. The own fields shadow the prototype's, so an interface configured that way exports no method, property or signal: a call gets `org.freedesktop.DBus.Error.UnknownMethod`. Deleting the three own fields in the subclass's constructor, after `super()`, works around it. A fix would be to declare the fields without initialisers (`declare`) or to have `configureMembers()` not depend on them.
+
+**2026-10-09, the nested run by hand.** `nested/run.sh` with VS Code 1.140.0 and the applet's package 25.04-4, on a debug build of `master` at `c6da8cc`. The panel showed the menu, File > New Text File opened its editor in the focused one of the two windows, and the menu came back after Developer: Reload Window. The menu was VS Code's own, since 118 is on `master`, and not the one item of this slice. The claims Caminito logged and the extension's log weren't kept.

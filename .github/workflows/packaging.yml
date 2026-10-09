@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - "packaging/arch/**"
+      - "caminito-vscode/**"
       - ".github/workflows/packaging.yml"
   pull_request:
     paths:
       - "packaging/arch/**"
+      - "caminito-vscode/**"
       - ".github/workflows/packaging.yml"
   workflow_dispatch:
 
@@ -21,8 +23,9 @@ jobs:
       # and caminito-desktop, the meta package, depends on caminito-git. mate-utils-caminito's
       # dictionary applet, mate-power-manager-caminito's applets and
       # vala-panel-appmenu-mate-caminito's link mate-panel-caminito's applet library.
-      # tools/bootstrap has the same order, without vala-panel-appmenu-mate-caminito and
-      # appmenu-gtk-module-caminito, which nothing depends on (ADR 0017).
+      # tools/bootstrap has the same order, without vala-panel-appmenu-mate-caminito,
+      # appmenu-gtk-module-caminito and caminito-vscode-git, which nothing depends on (ADR 0017,
+      # ADR 0022).
       PACKAGES: >-
         mate-session-manager-caminito
         mate-panel-caminito
@@ -33,6 +36,7 @@ jobs:
         mate-power-manager-caminito
         vala-panel-appmenu-mate-caminito
         appmenu-gtk-module-caminito
+        caminito-vscode-git
         caminito-git
         caminito-desktop
     steps:
