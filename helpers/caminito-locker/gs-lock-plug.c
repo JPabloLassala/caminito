@@ -1106,10 +1106,15 @@ toplevel_key_press (GtkWidget   *toplevel,
  * keyboard focus on the prompt. */
 static void
 gs_lock_plug_hierarchy_changed (GtkWidget *widget,
-                                GtkWidget *previous_toplevel G_GNUC_UNUSED)
+                                GtkWidget *previous_toplevel)
 {
 	GSLockPlug *plug = GS_LOCK_PLUG (widget);
 	GtkWidget  *toplevel;
+
+	if (GTK_WIDGET_CLASS (gs_lock_plug_parent_class)->hierarchy_changed)
+	{
+		GTK_WIDGET_CLASS (gs_lock_plug_parent_class)->hierarchy_changed (widget, previous_toplevel);
+	}
 
 	toplevel = gtk_widget_get_toplevel (widget);
 	if (! gtk_widget_is_toplevel (toplevel))
@@ -1811,9 +1816,10 @@ gs_lock_plug_init (GSLockPlug *plug)
 	load_theme (plug);
 	plug->priv->datetime_timeout_id = g_timeout_add_seconds (1, G_SOURCE_FUNC (date_time_update), plug);
 
-	/* Layout indicator: libmatekbd's, on X11 alone. */
+	/* Layout indicator: libmatekbd's, on X11 alone. No show_all of a lock window's shows it. */
 	if (plug->priv->auth_prompt_kbd_layout_indicator != NULL)
 	{
+		gtk_widget_set_no_show_all (plug->priv->auth_prompt_kbd_layout_indicator, TRUE);
 		gtk_widget_hide (plug->priv->auth_prompt_kbd_layout_indicator);
 	}
 
@@ -1858,6 +1864,9 @@ gs_lock_plug_init (GSLockPlug *plug)
 	/* button press handler used to inhibit popup menu */
 	g_signal_connect (plug->priv->auth_prompt_entry, "button_press_event",
 	                  G_CALLBACK (entry_button_press), NULL);
+	/* and the menu the Menu key and Shift+F10 open */
+	g_signal_connect (plug->priv->auth_prompt_entry, "popup-menu",
+	                  G_CALLBACK (gtk_true), NULL);
 	/* capture text on Enter before default button activation */
 	g_signal_connect (plug->priv->auth_prompt_entry, "activate",
 	                  G_CALLBACK (entry_activate_handler), plug);

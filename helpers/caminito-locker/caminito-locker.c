@@ -36,6 +36,7 @@
 #include "config.h"
 
 #include <locale.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -141,10 +142,8 @@ static const char* maybe_translate_message(const char* msg)
 	}
 }
 
-/* Whether the last prompt was cancelled, so its conversation's end is no failure, and
- * whether the conversation had an answer, so the next can start at once. */
+/* Whether the last prompt was cancelled, so its conversation's end is no failure. */
 static gboolean cancelled = FALSE;
-static gboolean answered = FALSE;
 
 static gboolean auth_message_handler(GSAuthMessageStyle style, const char* msg, char** response, gpointer data)
 {
@@ -198,7 +197,6 @@ static gboolean auth_message_handler(GSAuthMessageStyle style, const char* msg, 
 	}
 	else
 	{
-		answered = TRUE;
 		gs_lock_plug_show_message(plug, _("Checking..."));
 		gs_lock_plug_set_sensitive(plug, FALSE);
 	}
@@ -214,10 +212,15 @@ static gboolean auth_message_handler(GSAuthMessageStyle style, const char* msg, 
 	return ret;
 }
 
+static gboolean auth_check_idle(gpointer data);
+
+/* After a failure: the next conversation starts once the failure's message has shown for
+ * 3 s, so nothing of the last round's reset lands on the next one's messages. */
 static gboolean reset_idle_cb(GSLockPlug* plug)
 {
 	gs_lock_plug_set_sensitive(plug, TRUE);
 	gs_lock_plug_show_message(plug, NULL);
+	g_idle_add(auth_check_idle, plug);
 
 	return FALSE;
 }
@@ -278,7 +281,6 @@ static gboolean auth_check_idle(gpointer data)
 	gboolean res;
 
 	cancelled = FALSE;
-	answered = FALSE;
 	res = do_auth_check(plug);
 
 	if (res)
@@ -295,22 +297,16 @@ static gboolean auth_check_idle(gpointer data)
 	{
 		gs_debug ("Prompt cancelled, starting again");
 		gs_lock_plug_show_message(plug, NULL);
-		return G_SOURCE_CONTINUE;
+		g_idle_add(auth_check_idle, plug);
+		return G_SOURCE_REMOVE;
 	}
 
 	/* mate-screensaver-dialog.c ends its run here after five failures, and the daemon
 	 * starts another dialog at the next key: here the conversation starts again however
-	 * many failed. The failure's message stays for 3 s, as there. A conversation that
-	 * failed before any answer, as a service that denies everyone does, waits as long
-	 * before the next rather than going round at once. */
+	 * many failed, once the failure's message has shown for its 3 s. That also keeps a
+	 * service that denies everyone from going round at once. */
 	gs_debug ("Authentication failed, retrying");
 	g_timeout_add (3000, (GSourceFunc) reset_idle_cb, plug);
-	if (answered)
-	{
-		return G_SOURCE_CONTINUE;
-	}
-
-	g_timeout_add (3000, auth_check_idle, plug);
 	return G_SOURCE_REMOVE;
 }
 
@@ -318,14 +314,18 @@ static gboolean auth_check_idle(gpointer data)
  * the monitor under the pointer, where Caminito gives the keyboard (12). */
 static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
-	if (gtk_widget_get_parent(plug) != window)
+	GtkWidget* parent = gtk_widget_get_parent(plug);
+
+	if (parent != window)
 	{
 		gs_debug("Moving the dialog");
 
-		g_object_ref(plug);
-		gtk_container_remove(GTK_CONTAINER(gtk_widget_get_parent(plug)), plug);
+		/* With its monitor's window gone and none left, the dialog has no window. */
+		if (parent != NULL)
+		{
+			gtk_container_remove(GTK_CONTAINER(parent), plug);
+		}
 		gtk_container_add(GTK_CONTAINER(window), plug);
-		g_object_unref(plug);
 	}
 
 	return FALSE;
@@ -395,7 +395,7 @@ static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* mo
 	g_hash_table_remove(lock_windows, monitor);
 }
 
-static void locked_cb(GtkSessionLockLock* lock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+static void locked_cb(GtkSessionLockLock* session_lock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
 	gs_debug("Locked");
 
@@ -408,11 +408,11 @@ static void locked_cb(GtkSessionLockLock* lock G_GNUC_UNUSED, gpointer data G_GN
 
 /* Caminito refused the lock: another locker holds it, or only one Caminito spawned may
  * take it (12). */
-static void finished_cb(GtkSessionLockLock* lock, gpointer data G_GNUC_UNUSED)
+static void finished_cb(GtkSessionLockLock* session_lock, gpointer data G_GNUC_UNUSED)
 {
 	g_printerr("caminito-locker: the compositor refused the lock\n");
 
-	gtk_session_lock_lock_destroy(lock);
+	gtk_session_lock_lock_destroy(session_lock);
 	gdk_display_sync(gdk_display_get_default());
 	exit(1);
 }

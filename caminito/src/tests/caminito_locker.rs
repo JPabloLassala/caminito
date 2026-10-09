@@ -119,8 +119,8 @@ impl Locker {
         self.seen().matches(line).count()
     }
 
-    /// Whether caminito-locker has exited, and with success.
-    fn exited_successfully(&mut self) -> Option<bool> {
+    /// Whether caminito-locker exited with success, or `None` while it runs.
+    fn exit_success(&mut self) -> Option<bool> {
         let status = self.child.try_wait().unwrap();
         status.map(|status| status.success())
     }
@@ -202,13 +202,6 @@ fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
     assert_eq!(f.lock_state(), "locked");
 
     type_and_enter(&mut f, PASSWORD);
-    f.dispatch_until_mut(|f| {
-        f.lock_state() == "unlocked" && locker.exited_successfully().is_some()
-    });
-    assert_eq!(
-        locker.exited_successfully(),
-        Some(true),
-        "{}",
-        locker.seen()
-    );
+    f.dispatch_until_mut(|f| f.lock_state() == "unlocked" && locker.exit_success().is_some());
+    assert_eq!(locker.exit_success(), Some(true), "{}", locker.seen());
 }

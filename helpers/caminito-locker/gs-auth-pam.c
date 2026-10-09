@@ -481,25 +481,27 @@ set_pam_error (GError **error,
    helper a PAM module forks, such as unix_chkpwd, is taken by a handler of the main
    thread's. */
 static sigset_t
-block_sigchld (void)
+mask_sigchld (int how)
 {
 	sigset_t child_set;
 	sigemptyset (&child_set);
 	sigaddset (&child_set, SIGCHLD);
 	sigaddset (&child_set, SIGPIPE);
-	pthread_sigmask (SIG_BLOCK, &child_set, NULL);
+	pthread_sigmask (how, &child_set, NULL);
 
 	return child_set;
+}
+
+static sigset_t
+block_sigchld (void)
+{
+	return mask_sigchld (SIG_BLOCK);
 }
 
 static void
 unblock_sigchld (void)
 {
-	sigset_t child_set;
-	sigemptyset (&child_set);
-	sigaddset (&child_set, SIGCHLD);
-	sigaddset (&child_set, SIGPIPE);
-	pthread_sigmask (SIG_UNBLOCK, &child_set, NULL);
+	mask_sigchld (SIG_UNBLOCK);
 }
 
 static gpointer
