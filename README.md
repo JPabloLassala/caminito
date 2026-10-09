@@ -263,15 +263,15 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. Like a Qt
   app, a window follows the applet only from Firefox's next start.
 - **VS Code, VSCodium, Code - OSS and Cursor** have their menus in the panel on native Wayland
-  with their own title bar, the default, once `caminito-vscode-git` is installed (build it
+  with the custom title bar, the default, once `caminito-vscode-git` is installed (build it
   from `packaging/arch/caminito-vscode-git` as `caminito-git` is built). The package links its
   extension, *Caminito Global Menu*, into each of these editors that's installed, for every
   profile, and pacman updates and removes it with the package or the editor
   ([ADR 0022](docs/adr/0022-vs-code-s-extension-is-a-built-in-linked-by-an-alpm-hook.md)).
-  Nothing is set up in the editor, and each window, local or attached to SSH, a container or
-  WSL, follows the applet while the editor runs. The first time a window's menu goes to
-  the panel, the editor asks once: *The panel now shows this window's menus. Hide the menu bar
-  in the window? Pressing Alt shows it again.* **Hide Menu Bar** sets
+  Nothing is set up in the editor, and each window, local or attached to SSH or a container,
+  follows the applet while the editor runs. The first time a window's menu goes to the panel
+  while its menubar shows, the editor asks once: *The panel now shows this window's menus.
+  Hide the menu bar in the window? Pressing Alt shows it again.* **Hide Menu Bar** sets
   `window.menuBarVisibility` to `toggle`, which hides the menubar until Alt is pressed, and
   **Keep Menu Bar** changes nothing. Either way the question isn't asked again:
   - `caminito.globalMenu.offerToHideMenuBar` turned back on asks it again.

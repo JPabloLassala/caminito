@@ -19,7 +19,8 @@ makedepends=(git nodejs npm)
 # The extension's tests run on a private dbus-daemon of each test's own.
 checkdepends=(dbus)
 install=caminito-vscode-git.install
-# The local checkout's committed HEAD, as caminito-git's is.
+# The local checkout's committed HEAD, as caminito-git's is, so uncommitted work is never
+# packaged. This becomes the GitHub URL if the package is ever published (16).
 source=("$_pkgname::git+file://$(git rev-parse --show-toplevel)")
 sha256sums=('SKIP')
 
