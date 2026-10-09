@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: the code is in, with two fixes from the nested run of 2026-10-09, uncommitted; the four questions under "To run" are answered; whether ADR 0020 and the spec should say a change of workspace state restarts the extension host, which the run saw, is the developer's
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [118](118-the-menu-is-vs-codes.md)
 
@@ -71,4 +71,10 @@ VS Code 1.140.0 and the applet's package 25.04-4 in a nested debug build of Cami
 - **Seen and not looked into:** with a new `--user-data-dir`, Open Recent listed folders of other profiles' runs. It may be [121](121-open-recent.md)'s to explain.
 - **`nested/run.sh`** failed on a machine with `caminito-vscode-git` installed, whose link is among the built-ins it copies; its `ln` now replaces it.
 
-At this point `npm run typecheck` is clean and `npm test` passes all 136 tests. Nothing is committed.
+At this point `npm run typecheck` is clean and `npm test` passes all 136 tests.
+
+## Resolved (2026-10-09)
+
+- **Closed by the developer** after the nested run: the four questions under "To run" are answered, and the two fixes are on branch `ticket-119`.
+- **ADR 0020 and the spec aren't amended.** They still say the folders event drives the change from Close Folder to Close Workspace. In a real editor that change comes as a restart of the extension host and a new claim, which the run saw. No ticket is filed for it.
+- **Not tried, and handed to nobody:** a folder's own settings in a multi-root workspace, for the setting's scope.
