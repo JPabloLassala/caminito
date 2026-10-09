@@ -1,5 +1,5 @@
-//! The supervisor for Caminito's helper processes (15): the palette helper now, and the
-//! locker in M7.
+//! The supervisor for Caminito's helper processes (15): the palette helper and the locker
+//! (126).
 //!
 //! A helper is spawned with its stdin and stdout piped to Caminito. Its stdout is a calloop
 //! fd source, and its stderr goes to the journal under the helper's own identifier, or to
@@ -7,7 +7,7 @@
 //! through a `SIGCHLD` source: signal-hook's pipe, which, unlike a signalfd, doesn't need
 //! the signal blocked in every thread. A helper that exits is restarted with backoff
 //! ([`RestartPolicy`]), until it has exited too often, when it's left stopped with one
-//! log line.
+//! log line, or until it's finished ([`Helper::finish`]).
 //!
 //! Xwayland, the third helper, is spawned by Smithay, so only its stderr goes through here
 //! ([`stderr_to`]), and its restarts are counted with [`Restarts`] (42).
@@ -33,6 +33,7 @@ pub struct HelperCommand {
     /// The name its stderr is logged under.
     identifier: String,
     program: PathBuf,
+    args: Vec<OsString>,
     env: Vec<(OsString, OsString)>,
 }
 
@@ -41,8 +42,15 @@ impl HelperCommand {
         HelperCommand {
             identifier: identifier.into(),
             program: program.into(),
+            args: Vec::new(),
             env: Vec::new(),
         }
+    }
+
+    /// Adds arguments for the helper, after its program.
+    pub fn args(mut self, args: impl IntoIterator<Item = impl Into<OsString>>) -> Self {
+        self.args.extend(args.into_iter().map(Into::into));
+        self
     }
 
     /// Sets an environment variable for the helper, on top of Caminito's own.
@@ -87,6 +95,8 @@ pub struct Helper<D: 'static> {
     running: Option<Running>,
     sigchld: Option<(signal_hook::SigId, RegistrationToken)>,
     restart_timer: Option<RegistrationToken>,
+    /// Whether it's finished: it's not started again.
+    finished: bool,
 }
 
 /// A spawned helper.
@@ -118,6 +128,7 @@ impl<D: 'static> Helper<D> {
             running: None,
             sigchld: None,
             restart_timer: None,
+            finished: false,
         }
     }
 
@@ -160,6 +171,21 @@ impl<D: 'static> Helper<D> {
         }
     }
 
+    /// Lets the helper be: the one that runs is left running and reaped when it exits, and
+    /// none is started again. It's how a helper whose work is done ends, as the locker after
+    /// the unlock (126).
+    pub fn finish(&mut self) {
+        self.finished = true;
+        if let Some(token) = self.restart_timer.take() {
+            self.handle.remove(token);
+        }
+    }
+
+    /// The process of the helper that runs, if one does.
+    pub fn process(&self) -> Option<u32> {
+        self.running.as_ref().map(|running| running.child.id())
+    }
+
     /// Writes to the helper's stdin, which never blocks: a full pipe is an error. A write of
     /// at most `PIPE_BUF` (4096) bytes is all or nothing, so a request that size is never
     /// left half written.
@@ -192,8 +218,9 @@ impl<D: 'static> Helper<D> {
     fn spawn(data: &mut D, access: fn(&mut D) -> &mut Helper<D>) {
         let helper = access(data);
         helper.restart_timer = None;
-        // It was stopped between `start` and the loop's next run.
-        if helper.sigchld.is_none() {
+        // It was stopped or finished between `start` and the loop's next run, or the loop
+        // data has another helper there now, which runs already.
+        if helper.sigchld.is_none() || helper.finished || helper.running.is_some() {
             return;
         }
         match helper.try_spawn() {
@@ -216,6 +243,7 @@ impl<D: 'static> Helper<D> {
     fn try_spawn(&mut self) -> io::Result<Running> {
         let stderr = stderr_to(&self.handle, &self.command.identifier, self.stderr)?;
         let mut child = Command::new(&self.command.program)
+            .args(&self.command.args)
             .envs(self.command.env.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -309,6 +337,10 @@ impl<D: 'static> Helper<D> {
     fn exited(data: &mut D, access: fn(&mut D) -> &mut Helper<D>) {
         let helper = access(data);
         let on_event = helper.on_event;
+        if helper.finished {
+            on_event(data, HelperEvent::Exited);
+            return;
+        }
         match helper.restarts.exited(Instant::now(), &helper.policy) {
             Some(delay) => {
                 let timer =

@@ -746,12 +746,12 @@ session_env() {
      Run `caminito-locker` and unlock. Then `gsettings set org.mate.screensaver
      lock-dialog-theme nonexistent`, run `caminito-locker` and unlock. Then `gsettings reset
      org.mate.screensaver lock-dialog-theme` and `sudo rm lock-dialog-red.*`.
-  4. Log into *MATE on Caminito* with both monitors connected. Until 126 spawns it, run
-     `caminito-locker` from a terminal.
+  4. Log into *MATE on Caminito* with both monitors connected, and lock with *System* ▸
+     *Lock Screen*: Caminito spawns `caminito-locker`, its default `locker-command` (126).
   5. Move the pointer from one monitor to the other and back, and type a letter on each.
      Unlock.
-  6. In *Appearance*, pick another GTK theme, such as *TraditionalOk*, and lock again with
-     `caminito-locker`. Unlock, and set the theme back.
+  6. In *Appearance*, pick another GTK theme, such as *TraditionalOk*, and lock again. Unlock,
+     and set the theme back.
 - **Expected:** in step 1 the session is behind the lock, and the dialog is mate-screensaver's
   as X11 MATE shows it: the clock and date, the user's face (`~/.face`, if there is one) and
   real name, *user on host*, the *Password:* prompt, and *Cancel* and *Unlock*, in the GTK
@@ -765,6 +765,25 @@ session_env() {
 - **Debug tool:** `DumpState`'s `lock` and each output's `lock_surface`. `--verbose` logs the
   PAM conversation (`Got message style 1: 'Password: '`), `No theme at …` for step 3, and
   `Moving the dialog` for step 5.
+
+### How the give-up state looks
+
+- **Milestone:** M7
+- **Steps:**
+  1. Run `tools/dev-nested`, then start a GTK3 app in it. On the nested bus, run
+     `gsettings set org.mate.Caminito locker-command "['false']"`.
+  2. Lock with `mate-screensaver-command --lock` on the nested bus, which reaches Caminito's
+     Screensaver shim (127).
+  3. Wait ten seconds, and read Caminito's log and `DumpState`.
+  4. Set the window's scale with `--scale 2` on another run, and repeat steps 1 to 3.
+- **Expected:** in step 2 the output goes dark at once, and nothing of the session shows from
+  then on. Within ten seconds a line in the interface font is in the middle of the dark output:
+  *To unlock, switch to a text console and run: loginctl unlock-session* and the ID of the
+  session the nested Caminito is in, the host's `$XDG_SESSION_ID`. It's sharp at scale 2 too.
+  Nothing of the session reacts to the pointer or the keys.
+- **Debug tool:** the log has five `exited` lines for `false`, then `can't start the locker, so
+  it's given up on`. `DumpState`'s `lock` is `pending`, and its `locker` has `state` `gave-up`
+  and the `message`.
 
 ## Input
 

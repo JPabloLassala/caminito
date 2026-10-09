@@ -160,6 +160,12 @@ fn defaults() -> Reading {
     put(CAMINITO, "workspace-layout-orientation", s("horizontal"));
     put(CAMINITO, "workspace-layout-rows", Value::Int(1));
     put(CAMINITO, "workspace-layout-columns", Value::Int(0));
+    put(
+        CAMINITO,
+        "locker-command",
+        Value::StrList(vec!["caminito-locker".into()]),
+    );
+    put(LOCKDOWN, "disable-lock-screen", Value::Bool(false));
     reading
 }
 
@@ -311,6 +317,49 @@ fn workspace_layout_rows_and_columns_out_of_range_are_clamped() {
     let (settings, problem) = self::problem(&with(CAMINITO, key, Value::Int(50)));
     assert_eq!(settings.policy.workspace_layout.columns, 36);
     assert_eq!(problem, out_of_range(CAMINITO, key, "50", "36"));
+}
+
+#[test]
+fn the_default_locker_is_caminito_locker_and_locking_is_allowed() {
+    let locker = settings(&defaults()).locker;
+    assert_eq!(locker.command, ["caminito-locker"]);
+    assert!(!locker.lock_disabled);
+}
+
+#[test]
+fn the_locker_command_is_an_argv() {
+    let argv = Value::StrList(vec!["swaylock".into(), "-c".into(), "000000".into()]);
+    let locker = settings(&with(CAMINITO, "locker-command", argv)).locker;
+    assert_eq!(locker.command, ["swaylock", "-c", "000000"]);
+}
+
+/// An empty command is a failed start, which ends in the give-up state (126).
+#[test]
+fn an_empty_locker_command_is_kept_empty() {
+    let locker = settings(&with(
+        CAMINITO,
+        "locker-command",
+        Value::StrList(Vec::new()),
+    ))
+    .locker;
+    assert!(locker.command.is_empty());
+}
+
+#[test]
+fn disable_lock_screen_is_read() {
+    let reading = with(LOCKDOWN, "disable-lock-screen", Value::Bool(true));
+    assert!(settings(&reading).locker.lock_disabled);
+}
+
+#[test]
+fn without_caminitos_schema_the_locker_is_caminito_locker() {
+    let mut reading = defaults();
+    reading.remove(CAMINITO, "locker-command");
+    reading.set_missing(CAMINITO);
+    assert_eq!(
+        translate(&reading).settings.locker.command,
+        ["caminito-locker"]
+    );
 }
 
 #[test]

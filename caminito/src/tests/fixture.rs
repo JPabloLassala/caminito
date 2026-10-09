@@ -527,12 +527,17 @@ impl Fixture {
     }
 
     /// Takes Caminito's end of a Wayland connection that a program of the test's made to a
-    /// socket of the test's own, as a program Caminito spawns connects to Caminito's.
-    pub fn insert_stream(&mut self, stream: UnixStream) {
+    /// socket of the test's own, as a program Caminito spawns connects to Caminito's. Caminito
+    /// takes it for the process `process`, as it reads a client's credentials.
+    pub fn insert_stream(&mut self, stream: UnixStream, process: Option<u32>) {
+        let data = ClientState {
+            process,
+            ..ClientState::default()
+        };
         self.state
             .caminito
             .display_handle
-            .insert_client(stream, Arc::new(ClientState::default()))
+            .insert_client(stream, Arc::new(data))
             .unwrap();
     }
 

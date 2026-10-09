@@ -586,6 +586,7 @@ impl Caminito {
         let wait = session.wait;
 
         self.palette.stop();
+        self.locker.stop();
         self.end_xwayland();
         self.close_socket();
 

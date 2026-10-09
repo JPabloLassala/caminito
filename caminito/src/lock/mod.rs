@@ -3,9 +3,12 @@
 //! session is locked, `scene` draws nothing under the lock, the pointer and the keyboard
 //! reach only the locker's lock surfaces, and the keyboard path runs no binding but VT
 //! switching. ext-session-lock is how a locker takes the lock, draws on it and unlocks.
+//! `locker` spawns the locker for Caminito's own lock requests.
 
+mod locker;
 mod state;
 
+pub(crate) use locker::Locker;
 pub(crate) use state::LockState;
 
 use smithay::backend::input::InputTime;
@@ -41,9 +44,6 @@ pub(crate) struct Lock {
     /// the lock, and the outputs that haven't yet.
     confirmation: Option<SessionLocker>,
     undrawn: Vec<Output>,
-    /// The process of the locker Caminito spawned, which alone takes over a lock that no
-    /// locker holds. Nothing spawns one until 126.
-    pub(crate) spawned_locker: Option<u32>,
     /// The background's id in every output's scene, so it's damaged once and not at
     /// every frame.
     background: Id,
@@ -57,7 +57,6 @@ impl Default for Lock {
             surfaces: Vec::new(),
             confirmation: None,
             undrawn: Vec::new(),
-            spawned_locker: None,
             background: Id::new(),
         }
     }
@@ -94,6 +93,11 @@ impl Lock {
         self.surfaces.clear();
         self.confirmation = Some(confirmation);
         self.undrawn = outputs.to_vec();
+    }
+
+    /// Caminito asks for the lock itself (126).
+    fn request(&mut self) {
+        self.state = self.state.requested();
     }
 
     /// The locker that holds the lock unlocked.
@@ -170,6 +174,7 @@ impl SessionLockHandler for State {
     /// what's under the pointer.
     fn unlock(&mut self) {
         self.caminito.lock.release();
+        self.caminito.locker.finish();
         self.caminito.queue_redraw_all();
     }
 
@@ -243,7 +248,7 @@ impl Caminito {
         let process = lock
             .client()
             .and_then(|client| client_process(&client, &self.display_handle));
-        match self.lock.spawned_locker {
+        match self.locker.process() {
             Some(spawned) if process == Some(spawned) => Asker::SpawnedLocker,
             _ => Asker::Other,
         }
@@ -265,6 +270,7 @@ impl Caminito {
     /// away isn't waited for to draw the lock.
     pub(crate) fn refresh_lock(&mut self) {
         self.notice_locker_gone();
+        self.refresh_locker_message();
         let outputs = &self.outputs;
         self.lock.undrawn.retain(|output| outputs.contains(output));
         self.lock.confirm_if_drawn();

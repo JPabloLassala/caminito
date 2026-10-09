@@ -83,6 +83,8 @@ struct StateDump {
     /// The lock state (12): `unlocked`, `pending` while Caminito waits for the locker,
     /// `locked`, or `locker-lost` while the session is locked and its locker is gone.
     lock: &'static str,
+    /// The locker Caminito spawns (126).
+    locker: LockerDump,
     /// The accelerators grabbed over `org.mate.Caminito` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
@@ -95,6 +97,15 @@ struct StateDump {
     menu_claims: Vec<MenuClaimDump>,
     /// The bells rung (105).
     bell: BellDump,
+}
+
+#[derive(Serialize)]
+struct LockerDump {
+    /// `idle` while Caminito keeps no locker running, `starting` before one is spawned or
+    /// spawned again, `running`, or `gave-up` once it failed to start too often.
+    state: &'static str,
+    /// The line drawn on the lock once Caminito gave up on the locker.
+    message: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -321,7 +332,7 @@ impl Caminito {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
-    /// surfaces, the X11 scale, focus, the lock state, the accelerator grabs with their
+    /// surfaces, the X11 scale, focus, the lock state and the locker, the accelerator grabs with their
     /// owners, the Window switcher, and the bells rung with the last one, as pretty-printed
     /// JSON.
     pub fn state_dump(&self) -> String {
@@ -449,6 +460,10 @@ impl Caminito {
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
             lock: self.lock.state().name(),
+            locker: LockerDump {
+                state: self.locker.state_name(),
+                message: self.locker.gave_up().then(|| self.locker.message()),
+            },
             accelerator_grabs,
             switcher,
             global_menu_switch: self.global_menu_switch.name(),

@@ -21,6 +21,8 @@ pub const KEYBOARD: &str = "org.mate.peripherals-keyboard";
 pub const KEYBOARD_XKB: &str = "org.mate.peripherals-keyboard-xkb.kbd";
 pub const SOUND: &str = "org.mate.sound";
 pub const A11Y_KEYBOARD: &str = "org.mate.accessibility-keyboard";
+/// mate-desktop's lockdown keys, of which Caminito reads `disable-lock-screen` (126).
+pub const LOCKDOWN: &str = "org.mate.lockdown";
 /// Caminito's own schema (09), which Caminito installs. A development run may not have it.
 pub const CAMINITO: &str = "org.mate.Caminito";
 
@@ -77,6 +79,10 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: A11Y_KEYBOARD,
+        required: false,
+    },
+    Schema {
+        id: LOCKDOWN,
         required: false,
     },
     Schema {
@@ -311,6 +317,17 @@ pub struct Settings {
     pub keyboard: Keyboard,
     pub accessx: AccessX,
     pub keymap: Keymap,
+    pub locker: LockerSettings,
+}
+
+/// The screen locker (12, 126).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockerSettings {
+    /// `org.mate.Caminito locker-command`: the locker's argv, run without a shell. It may
+    /// be empty, which is a failed start.
+    pub command: Vec<String>,
+    /// `org.mate.lockdown disable-lock-screen`: no lock request is accepted.
+    pub lock_disabled: bool,
 }
 
 /// What the Window switcher is drawn with (108), from `org.mate.Marco.general`.
@@ -966,6 +983,10 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         keyboard: keyboard(&mut r),
         accessx: accessx(&mut r),
         keymap: keymap(&mut r).or(&reading.system_keymap),
+        locker: LockerSettings {
+            command: r.strings_or(CAMINITO, "locker-command", &["caminito-locker"]),
+            lock_disabled: r.bool(LOCKDOWN, "disable-lock-screen", false),
+        },
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -1207,11 +1228,17 @@ impl Reader<'_> {
 
     /// A list of strings, empty by default.
     fn strings(&mut self, schema: &str, key: &str) -> Vec<String> {
+        self.strings_or(schema, key, &[])
+    }
+
+    /// A list of strings, `builtin` by default.
+    fn strings_or(&mut self, schema: &str, key: &str, builtin: &[&str]) -> Vec<String> {
         let accept = |v: &Value| match v {
             Value::StrList(list) => Some(list.clone()),
             _ => None,
         };
-        self.read(schema, key, Vec::new(), accept, |list| {
+        let builtin = builtin.iter().map(|s| (*s).to_owned()).collect();
+        self.read(schema, key, builtin, accept, |list| {
             Value::StrList(list.clone())
         })
     }
