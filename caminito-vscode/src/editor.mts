@@ -25,14 +25,20 @@ export interface Editor {
     /** 1.67. */
     readonly tabGroups?: { readonly onDidChangeTabGroups: Event<unknown> };
     createOutputChannel(name: string): { appendLine(line: string): void; dispose(): void };
+    /** Settles on the item chosen, or undefined when the notification is closed with none. */
+    showInformationMessage(message: string, ...items: string[]): PromiseLike<string | undefined>;
   };
   readonly workspace: {
     /** Undefined when no folder is open. */
     readonly workspaceFolders: readonly unknown[] | undefined;
     /** Defined when a multi-root workspace is open, an untitled one among them. */
-    readonly workspaceFile: unknown;
+    readonly workspaceFile: { readonly scheme: string; readonly fsPath: string } | undefined;
     readonly onDidChangeWorkspaceFolders: Event<unknown>;
-    getConfiguration(): { get(section: string): unknown };
+    getConfiguration(): {
+      get(section: string): unknown;
+      /** `global` true writes the user's settings. */
+      update(section: string, value: unknown, global: boolean): PromiseLike<void>;
+    };
     readonly onDidChangeConfiguration: Event<{ affectsConfiguration(section: string): boolean }>;
   };
   readonly extensions: { readonly onDidChange: Event<void> };

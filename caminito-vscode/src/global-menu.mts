@@ -30,6 +30,19 @@ const OFFERED = 'GlobalMenuOffered';
 const DBUS = 'org.freedesktop.DBus';
 const PROPERTIES = 'org.freedesktop.DBus.Properties';
 
+/** Whether the offer to hide the in-window menubar is still to be made (ADR 0021). */
+export const OFFER_SETTING = 'caminito.globalMenu.offerToHideMenuBar';
+const VISIBILITY = 'window.menuBarVisibility';
+const OFFER_TEXT =
+  "The panel now shows this window's menus. Hide the menu bar in the window? Pressing Alt shows it again.";
+const HIDE = 'Hide Menu Bar';
+const KEEP = 'Keep Menu Bar';
+/** The agents window's workspace file, in the user's settings directory. */
+const AGENTS_WORKSPACE = 'agent-sessions.code-workspace';
+const DO_NOT_QUEUE = 4;
+const PRIMARY_OWNER = 1;
+const ALREADY_OWNER = 4;
+
 /** A menu table and its annotations (ADR 0019). */
 export interface Menu {
   readonly table: Table;
@@ -46,6 +59,10 @@ export interface Environment {
   readonly busAddress?: string;
   /** The menu to serve, VS Code's by default. */
   readonly menu?: Menu;
+  /** The pid of the editor's main process, the extension host's parent. */
+  readonly parentPid: number;
+  /** The user's settings directory, where the agents window's workspace file is. */
+  readonly settingsDirectory?: string;
 }
 
 /** The running extension. */
@@ -180,7 +197,7 @@ async function run(
   let offered = false;
   let open = false;
 
-  const claim = () => {
+  const sendClaim = () => {
     const call = new Message({
       destination: CAMINITO,
       path: CAMINITO_PATH,
@@ -190,6 +207,22 @@ async function run(
       body: [MENU_PATH],
     });
     bus.call(call).catch((err: unknown) => log.line(`can't claim the menu: ${message(err)}`));
+  };
+  const offer = offerer(editor, environment, bus, log);
+  disposables.add(offer);
+  // A claim that may bring the offer waits until the offer is settled, and the claims after
+  // it wait their turn, so they're sent in order.
+  let claiming = Promise.resolve();
+  const claim = () => {
+    claiming = claiming
+      .then(() => offer.due())
+      .then((due) => {
+        sendClaim();
+        if (due) {
+          return offer.make();
+        }
+      })
+      .catch((err: unknown) => log.line(`can't offer to hide the menu bar: ${message(err)}`));
   };
   const claimIfFocused = guarded(log, () => {
     if (open && editor.window.state.focused) {
@@ -301,6 +334,71 @@ async function run(
   const reply = await callDbus(bus, 'GetNameOwner', 's', [CAMINITO]).catch(() => null);
   setOwner((reply?.body[0] as string | undefined) ?? null);
   await reading;
+}
+
+interface Offerer extends Disposable {
+  /** Whether a claim now brings the offer, with the bus name taken if it does. */
+  due(): Promise<boolean>;
+  /** Shows the offer and turns it off. */
+  make(): Promise<void>;
+}
+
+/**
+ * The offer to hide the in-window menubar (ADR 0021). It's made on a claim while the menubar
+ * shows and the extension's setting is on, from one host of an editor, and never from the
+ * agents window.
+ */
+function offerer(editor: Editor, environment: Environment, bus: MessageBus, log: Log): Offerer {
+  const name = `org.mate.Caminito.GlobalMenuExtension.pid${environment.parentPid}`;
+  // Set once this host has made the offer, until the setting is seen turned on again: a
+  // write that failed doesn't bring the offer at every claim.
+  let made = false;
+  const watching = editor.workspace.onDidChangeConfiguration(
+    guarded(log, (event: { affectsConfiguration(section: string): boolean }) => {
+      if (event.affectsConfiguration(OFFER_SETTING)) {
+        made &&= editor.workspace.getConfiguration().get(OFFER_SETTING) !== true;
+      }
+    }),
+  );
+  const agentsWindow = () => {
+    const file = editor.workspace.workspaceFile;
+    return (
+      environment.settingsDirectory !== undefined &&
+      file?.scheme === 'file' &&
+      file.fsPath === join(environment.settingsDirectory, AGENTS_WORKSPACE)
+    );
+  };
+  return {
+    async due() {
+      const settings = editor.workspace.getConfiguration();
+      const visibility = settings.get(VISIBILITY);
+      if (
+        made ||
+        settings.get(OFFER_SETTING) !== true ||
+        (visibility !== 'classic' && visibility !== 'visible') ||
+        agentsWindow()
+      ) {
+        return false;
+      }
+      // The host that gets the name offers, and it keeps it while it lives.
+      const reply = await callDbus(bus, 'RequestName', 'su', [name, DO_NOT_QUEUE]);
+      const granted = reply?.body[0];
+      return granted === PRIMARY_OWNER || granted === ALREADY_OWNER;
+    },
+    async make() {
+      made = true;
+      const settings = editor.workspace.getConfiguration();
+      void Promise.resolve(editor.window.showInformationMessage(OFFER_TEXT, HIDE, KEEP))
+        .then(async (answer) => {
+          if (answer === HIDE) {
+            await editor.workspace.getConfiguration().update(VISIBILITY, 'toggle', true);
+          }
+        })
+        .catch((err: unknown) => log.line(`can't hide the menu bar: ${message(err)}`));
+      await settings.update(OFFER_SETTING, false, true);
+    },
+    dispose: () => watching.dispose(),
+  };
 }
 
 /** The commands the editor lists, or undefined with a line saying `otherwise` when it can't. */

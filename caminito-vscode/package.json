@@ -25,6 +25,20 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Caminito Global Menu",
+      "properties": {
+        "caminito.globalMenu.offerToHideMenuBar": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "ignoreSync": true,
+          "markdownDescription": "Whether to offer, at the next window whose menus go to the panel, to hide the menu bar in the window by setting `#window.menuBarVisibility#` to `toggle`. It's turned off once the offer is made, whatever the answer."
+        }
+      }
+    }
+  },
   "scripts": {
     "typecheck": "tsc",
     "test": "node --test --test-concurrency=1 'test/**/*.test.mts'",
