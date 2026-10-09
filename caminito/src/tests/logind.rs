@@ -256,15 +256,22 @@ fn the_sleep_delay_is_released_once_the_pending_lock_is_drawn_and_taken_again_on
     f.roundtrip(locker);
     assert_eq!(f.lock_state(), "locked");
 
+    let asked = Instant::now();
     login1.prepare_for_sleep(true);
 
-    // Nothing is to happen until the locker draws: the wait is well short of the 2 s limit.
+    // Nothing is to happen until the locker draws. The signal and the refresh pass after it
+    // take a few milliseconds, and the wait leaves the 2 s limit well ahead.
     f.dispatch_for(Duration::from_millis(500));
     assert!(login1.sleep_delay_held());
     let surface = f.client(locker).create_lock_surface(lock, 0);
     f.roundtrip(locker);
     f.client(locker).map_lock_surface(surface, 0xff12_3456);
     f.dispatch_until(|_| !login1.sleep_delay_held());
+    assert!(
+        asked.elapsed() < Duration::from_millis(1500),
+        "{:?}",
+        asked.elapsed()
+    );
 
     login1.prepare_for_sleep(false);
 
@@ -277,7 +284,11 @@ fn the_sleep_delay_is_released_after_2_s_with_a_locker_that_never_draws() {
     let lockers = Lockers::new();
     let (mut f, _bus, login1, _dir) = with_logind(lockers.waiting("locker"));
     login1.lock();
-    connect_as_run(&mut f, &lockers, "locker", 0);
+    let locker = connect_as_run(&mut f, &lockers, "locker", 0);
+    f.client(locker).bind_outputs();
+    f.client(locker).lock_session();
+    f.roundtrip(locker);
+    assert_eq!(f.lock_state(), "locked");
 
     let asked = Instant::now();
     login1.prepare_for_sleep(true);
@@ -288,7 +299,7 @@ fn the_sleep_delay_is_released_after_2_s_with_a_locker_that_never_draws() {
         "{:?}",
         asked.elapsed()
     );
-    assert_eq!(f.lock_state(), "pending");
+    assert_eq!(f.lock_state(), "locked");
 }
 
 #[test]

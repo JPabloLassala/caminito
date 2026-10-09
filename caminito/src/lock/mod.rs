@@ -322,8 +322,6 @@ impl Caminito {
         }
     }
 
-    /// Queues a redraw of the output `surface` is the lock surface's root of, and returns
-    /// whether it's one.
     /// logind's `Unlock` (130): the lock ends whatever holds it, and the locker Caminito
     /// keeps for it is stopped, from the give-up state too (126). The refresh pass gives the
     /// keyboard and the pointer back, as at the locker's unlock.
@@ -331,12 +329,14 @@ impl Caminito {
         if !self.lock.is_locked() {
             return;
         }
-        tracing::info!("logind unlocked the session");
+        tracing::debug!("logind unlocked the session");
         self.lock.end();
         self.locker.end();
         self.queue_redraw_all();
     }
 
+    /// Queues a redraw of the output `surface` is the lock surface's root of, and returns
+    /// whether it's one.
     pub(crate) fn lock_surface_commit(&mut self, surface: &WlSurface) -> bool {
         let output = self.lock.surfaces().find_map(|(output, lock_surface)| {
             (lock_surface.wl_surface() == surface).then(|| output.clone())

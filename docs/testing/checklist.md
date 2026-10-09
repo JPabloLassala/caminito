@@ -821,7 +821,7 @@ session_env() {
   `LockedHint=no`. In step 3 the console's command unlocks: back on Caminito's VT the desktop is
   there, and the next lock gets caminito-locker again. In step 4 the dialog goes, and the
   desktop is back.
-- **Debug tool:** Caminito's journal has `logind unlocked the session` for steps 3 and 4.
+- **Debug tool:** `loginctl show-session` with `-p LockedHint` after each step.
   `DumpState`'s `lock` is `unlocked` and its `locker` `idle` after each.
 
 ## Input

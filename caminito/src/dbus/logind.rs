@@ -59,8 +59,28 @@ pub(crate) struct Logind {
     hint: bool,
     /// The `sleep` delay inhibitor, while it's held.
     sleep_delay: Option<OwnedFd>,
-    /// While the machine is about to sleep, the timer that lets the delay go at the latest.
-    sleeping: Option<RegistrationToken>,
+    /// Whether the machine is about to sleep: from `PrepareForSleep(true)` to the resume.
+    preparing: bool,
+    /// While it's about to sleep, the timer that lets the delay go at the latest.
+    deadline: Option<RegistrationToken>,
+}
+
+impl Logind {
+    /// Lets the sleep delay go, so the machine sleeps.
+    fn release_sleep_delay(&mut self, handle: &LoopHandle<'static, State>) {
+        if let Some(token) = self.deadline.take() {
+            handle.remove(token);
+        }
+        self.sleep_delay = None;
+    }
+
+    /// A `sleep` delay inhibitor from logind. One that comes after the deadline of a sleep
+    /// that's under way is let go at once, or the machine would wait for logind's own limit.
+    fn sleep_delay_taken(&mut self, fd: OwnedFd) {
+        if !(self.preparing && self.deadline.is_none()) {
+            self.sleep_delay = Some(fd);
+        }
+    }
 }
 
 impl Caminito {
@@ -102,7 +122,8 @@ impl Caminito {
             _task: connection.executor().spawn(task, "logind"),
             hint: false,
             sleep_delay: None,
-            sleeping: None,
+            preparing: false,
+            deadline: None,
         });
     }
 
@@ -110,6 +131,7 @@ impl Caminito {
     /// delay is let go once the machine may sleep.
     pub(crate) fn refresh_logind(&mut self) {
         let locked = self.lock.is_locked();
+        let may_sleep = self.may_sleep();
         let Some(logind) = &mut self.logind else {
             return;
         };
@@ -118,8 +140,8 @@ impl Caminito {
             // The task has ended if this fails, and then there's no session to tell.
             let _ = logind.hints.unbounded_send(locked);
         }
-        if logind.sleeping.is_some() && self.may_sleep() {
-            self.release_sleep_delay();
+        if logind.preparing && logind.sleep_delay.is_some() && may_sleep {
+            logind.release_sleep_delay(&self.loop_handle);
         }
     }
 
@@ -130,56 +152,42 @@ impl Caminito {
         !self.lock.is_locked() || self.lock.is_shown_on(&self.outputs)
     }
 
-    /// The machine is about to sleep: the delay is let go once it may, or after
-    /// [`SLEEP_DELAY`].
+    /// The machine is about to sleep: the refresh pass lets the delay go once it may, and
+    /// the timer after [`SLEEP_DELAY`] at the latest.
     fn prepare_for_sleep(&mut self) {
-        let handle: &LoopHandle<'static, State> = &self.loop_handle;
         let Some(logind) = &mut self.logind else {
             return;
         };
-        if logind.sleep_delay.is_none() || logind.sleeping.is_some() {
+        if logind.preparing {
             return;
         }
+        logind.preparing = true;
         let timer = Timer::from_duration(SLEEP_DELAY);
-        let token = handle
+        let token = self
+            .loop_handle
             .insert_source(timer, |_, _, state: &mut State| {
-                let caminito = &mut state.caminito;
-                if let Some(logind) = &mut caminito.logind {
+                if let Some(logind) = &mut state.caminito.logind {
                     // The timer is dropped as it returns.
-                    logind.sleeping = None;
-                    tracing::warn!(
-                        "the lock isn't on screen {} s after logind asked to sleep, so the \
-                         machine sleeps without it",
-                        SLEEP_DELAY.as_secs()
-                    );
-                    logind.sleep_delay = None;
+                    logind.deadline = None;
+                    if logind.sleep_delay.take().is_some() {
+                        tracing::warn!(
+                            "the lock isn't on screen {} s after logind asked to sleep, so the \
+                             machine sleeps without it",
+                            SLEEP_DELAY.as_secs()
+                        );
+                    }
                 }
                 TimeoutAction::Drop
             })
             .expect("the sleep delay's timer joins the event loop");
-        logind.sleeping = Some(token);
-        if self.may_sleep() {
-            self.release_sleep_delay();
-        }
-    }
-
-    /// Lets the sleep delay go, so the machine sleeps.
-    fn release_sleep_delay(&mut self) {
-        let Some(logind) = &mut self.logind else {
-            return;
-        };
-        if let Some(token) = logind.sleeping.take() {
-            self.loop_handle.remove(token);
-        }
-        logind.sleep_delay = None;
+        logind.deadline = Some(token);
     }
 
     /// The machine has resumed. The task takes the delay again.
     fn resumed(&mut self) {
-        if let Some(logind) = &mut self.logind
-            && let Some(token) = logind.sleeping.take()
-        {
-            self.loop_handle.remove(token);
+        if let Some(logind) = &mut self.logind {
+            logind.preparing = false;
+            logind.release_sleep_delay(&self.loop_handle);
         }
     }
 }
@@ -200,7 +208,7 @@ impl State {
                     tracing::warn!("can't keep logind's sleep delay from the helpers: {err}");
                 }
                 if let Some(logind) = &mut self.caminito.logind {
-                    logind.sleep_delay = Some(fd);
+                    logind.sleep_delay_taken(fd);
                 }
             }
             Event::Failed(what, err) => tracing::warn!("can't {what}: {err}"),
@@ -218,7 +226,11 @@ async fn run(
     let failed = |what, err| {
         let _ = events.send(Event::Failed(what, err));
     };
-    let session = match find_session(&connection, session_id.as_deref()).await {
+    let manager = match zbus::Proxy::new(&connection, NAME, MANAGER_PATH, MANAGER).await {
+        Ok(manager) => manager,
+        Err(err) => return failed("reach logind", err),
+    };
+    let session = match find_session(&manager, session_id.as_deref()).await {
         Ok(session) => session,
         Err(err) => {
             return failed(
@@ -228,13 +240,8 @@ async fn run(
             );
         }
     };
-    let proxies = async {
-        let manager = zbus::Proxy::new(&connection, NAME, MANAGER_PATH, MANAGER).await?;
-        let session = zbus::Proxy::new(&connection, NAME, session, SESSION).await?;
-        zbus::Result::Ok((manager, session))
-    };
-    let (manager, session) = match proxies.await {
-        Ok(proxies) => proxies,
+    let session = match zbus::Proxy::new(&connection, NAME, session, SESSION).await {
+        Ok(session) => session,
         Err(err) => return failed("follow caminito's session in logind", err),
     };
     let signals = async {
@@ -300,10 +307,9 @@ async fn run(
 
 /// The session's object: `XDG_SESSION_ID`'s, or else the one Caminito's process is in.
 async fn find_session(
-    connection: &zbus::Connection,
+    manager: &zbus::Proxy<'_>,
     id: Option<&str>,
 ) -> zbus::Result<OwnedObjectPath> {
-    let manager = zbus::Proxy::new(connection, NAME, MANAGER_PATH, MANAGER).await?;
     match id {
         Some(id) => manager.call("GetSession", &(id,)).await,
         None => {
