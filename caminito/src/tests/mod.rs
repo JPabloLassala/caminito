@@ -27,6 +27,7 @@ mod image_capture;
 mod input;
 mod input_devices;
 mod keybinding_manifests;
+mod keyboard_monitor;
 mod keyboard_settings;
 mod keymap;
 mod layer_shell;

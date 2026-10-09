@@ -496,7 +496,7 @@ pub(super) async fn own_names(connection: &zbus::Connection) {
 }
 
 /// Who has `name`, for the log.
-async fn owner(connection: &zbus::Connection, name: &'static str) -> String {
+pub(super) async fn owner(connection: &zbus::Connection, name: &'static str) -> String {
     let owner = async {
         let bus = fdo::DBusProxy::new(connection).await?;
         let name = BusName::from_static_str(name)?;

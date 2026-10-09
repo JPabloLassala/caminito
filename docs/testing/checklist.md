@@ -770,6 +770,30 @@ session_env() {
   pluma and `xev` in place of xterm for the keys and modifiers each gets, and `DumpState`'s
   `bell`, whose `source` is `accessx` for one of these beeps.
 
+### Orca with the Keyboard monitor and on the lock screen
+
+- **Milestone:** M7
+- **Steps:**
+  1. With `orca` and at-spi2-core 2.55 or later installed, run
+     `gsettings set org.mate.applications-at-visual startup true` and log into *MATE on
+     Caminito*.
+  2. Press Alt+F1, and walk the panel's menus with the arrow keys. Open pluma, a native
+     Wayland window, and type a line.
+  3. Click the desktop, so that no window has the keyboard. Press Insert+H, Orca's help,
+     then Escape. Press Insert+T, which reads the time.
+  4. Press Insert twice quickly in pluma.
+  5. Lock the screen (*System* ▸ *Lock Screen*), and type the password at
+     `caminito-locker`'s dialog, then Enter.
+- **Expected:** Orca speaks from step 1 on. In step 2 it reads each menu item and the line
+  typed. In step 3 Orca's help opens and closes and the time is read, with the focus on the
+  desktop: the keys reach Orca through the Keyboard monitor, not through an app (135). In step
+  4 pluma gets one Insert, which toggles overwrite. In step 5 Orca reads the dialog's label
+  and field, says *star* or nothing for each letter of the password, never the letter, and
+  the session unlocks.
+- **Debug tool:** `busctl --user status org.freedesktop.a11y.Manager`, which is Caminito,
+  `dbus-monitor --session "interface='org.freedesktop.a11y.KeyboardMonitor'"` for the calls
+  Orca makes and the `KeyEvent`s it gets, and `orca --debug` for what it heard.
+
 ## Outputs
 
 ### The scale picked for each of the developer's monitors

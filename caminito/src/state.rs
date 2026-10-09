@@ -81,6 +81,7 @@ use crate::backend::{self, Backend};
 use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
+use crate::dbus::a11y::KeyboardMonitor;
 use crate::dbus::global_menu::{GlobalMenu, Switch};
 use crate::dbus::menu_claim::Claims;
 use crate::dbus::panel::Panel;
@@ -326,6 +327,8 @@ pub struct Caminito {
     pub(crate) input_serials: InputSerials,
     /// The cookies the Screensaver shim has handed out (62).
     pub screensaver: ScreensaverShim,
+    /// The Keyboard monitor's callers, and the keys it holds back (135).
+    pub(crate) keyboard_monitor: KeyboardMonitor,
     pub debug: DebugToggles,
 }
 
@@ -888,6 +891,7 @@ impl Caminito {
             panel,
             input_serials: InputSerials::default(),
             screensaver: ScreensaverShim::default(),
+            keyboard_monitor: KeyboardMonitor::default(),
             debug: DebugToggles::default(),
         };
         caminito.ask_palette_for_theme_colors();

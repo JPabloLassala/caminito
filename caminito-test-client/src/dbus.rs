@@ -207,6 +207,45 @@ pub fn freedesktop_screensaver_proxy(
         .build()
 }
 
+/// `org.freedesktop.a11y.KeyboardMonitor`, the Keyboard monitor for Orca (135), as Mutter
+/// has it (`data/dbus-interfaces/org.freedesktop.a11y.xml`).
+#[zbus::proxy(
+    interface = "org.freedesktop.a11y.KeyboardMonitor",
+    default_service = "org.freedesktop.a11y.Manager",
+    default_path = "/org/freedesktop/a11y/Manager",
+    gen_async = false,
+    blocking_name = "KeyboardMonitorProxy"
+)]
+pub trait KeyboardMonitor {
+    fn grab_keyboard(&self) -> zbus::Result<()>;
+    fn ungrab_keyboard(&self) -> zbus::Result<()>;
+    fn watch_keyboard(&self) -> zbus::Result<()>;
+    fn unwatch_keyboard(&self) -> zbus::Result<()>;
+    /// `modifiers` are keysyms, and each keystroke is a keysym and a modifier mask.
+    fn set_key_grabs(&self, modifiers: &[u32], keystrokes: &[(u32, u32)]) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn key_event(
+        &self,
+        released: bool,
+        state: u32,
+        keysym: u32,
+        unichar: u32,
+        keycode: u16,
+    ) -> zbus::Result<()>;
+}
+
+/// A proxy for the Keyboard monitor at `destination` on `connection`. The caller it is to
+/// Caminito lasts as long as `connection` does.
+pub fn keyboard_monitor_proxy(
+    connection: &zbus::blocking::Connection,
+    destination: &str,
+) -> zbus::Result<KeyboardMonitorProxy<'static>> {
+    KeyboardMonitorProxy::builder(connection)
+        .destination(destination.to_owned())?
+        .build()
+}
+
 /// A new connection to the session bus.
 pub fn session() -> zbus::Result<zbus::blocking::Connection> {
     zbus::blocking::Connection::session()
