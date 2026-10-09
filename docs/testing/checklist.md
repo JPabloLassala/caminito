@@ -755,7 +755,7 @@ session_env() {
 - **Expected:** in step 1 the session is behind the lock, and the dialog is mate-screensaver's
   as X11 MATE shows it: the clock and date, the user's face (`~/.face`, if there is one) and
   real name, *user on host*, the *Password:* prompt, and *Cancel* and *Unlock*, in the GTK
-  theme's colours, on a plain background (132 adds MATE's). No tooltip shows over the
+  theme's colours, on the desktop's background (132). No tooltip shows over the
   prompt's eye icon. In step 2 the dialog says *Incorrect password.* and asks again, and the
   right password unlocks: `caminito-locker` exits and the app has the keyboard again. In
   step 3 the first lock's labels are red, and the second's dialog is the default one again,
@@ -765,6 +765,50 @@ session_env() {
 - **Debug tool:** `DumpState`'s `lock` and each output's `lock_surface`. `--verbose` logs the
   PAM conversation (`Got message style 1: 'Password: '`), `No theme at …` for step 3, and
   `Moving the dialog` for step 5.
+
+### caminito-locker's background, status message, Switch User and Log Out
+
+- **Milestone:** M7
+- **Steps:**
+  1. Log into *MATE on Caminito* with both monitors connected and a picture as the desktop
+     background, and on the session bus run `gsettings set org.mate.Caminito locker-command
+     "['caminito-locker', '--verbose']"`. Lock with *System* ▸ *Lock Screen*, and unlock.
+  2. Run `gsettings set org.mate.screensaver picture-filename` with the path of another
+     image, and lock. Unlock, and do it again with a path that doesn't exist. Unlock, and
+     `gsettings reset org.mate.screensaver picture-filename`.
+  3. Set a status message, as mate-panel's status applets do, and lock:
+
+     ```sh
+     dbus-send --session --dest=org.gnome.SessionManager --type=method_call \
+       /org/gnome/SessionManager/Presence \
+       org.gnome.SessionManager.Presence.SetStatusText string:'Back at three'
+     ```
+
+     While locked, from another tty, set it to `'Back at four'` in the same way, with the
+     session's `DBUS_SESSION_BUS_ADDRESS`. Unlock, run `gsettings set org.mate.screensaver
+     status-message-enabled false` and lock. Unlock, and reset the key.
+  4. Lock, and click *Switch User*. In the display manager's greeter, go back to the
+     session: pick it in the greeter, or press Ctrl+Alt+F<n> for its tty. Then unlock.
+  5. Run `gsettings set org.mate.lockdown disable-user-switching true` and lock. Unlock, and
+     reset the key.
+  6. Run `gsettings set org.mate.screensaver logout-enabled true`, `gsettings set
+     org.mate.screensaver logout-delay 1` and `gsettings set org.mate.screensaver
+     logout-command 'mate-session-save --logout'`, and lock. Wait a minute and a half, then
+     click *Log Out*. Log in again, reset the three keys and `locker-command`.
+- **Expected:** in step 1 both monitors show the desktop background, as X11 MATE's lock
+  screen does, and the dialog has the GTK theme's background, on the monitor under the
+  pointer. In step 2 both show the other image, then the desktop background again. In step 3
+  the dialog shows *Back at three* above its buttons, then *Back at four*, and no message
+  with the key off. In step 4 the display manager's greeter shows, and the session is still
+  locked when it's back. With sddm, mate-screensaver's LightDM path reaches it: sddm sets
+  `XDG_SEAT_PATH` and has `SwitchToGreeter` on its seat. In step 5 there's no *Switch User*.
+  In step 6 *Log Out* appears a minute after the lock, and the session logs out.
+- **Debug tool:** the journal's `caminito-locker` lines: `Creating background w:… h:…` for each
+  monitor, `Status message: …`, `Switch User: enabled` or `disabled` (and `Warning: Unknown DM
+  for switch button` where no display manager's path applies), and `Log Out: after its delay`
+  then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
+  "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the greeter can
+  be reached that way.
 
 ### How the give-up state looks
 

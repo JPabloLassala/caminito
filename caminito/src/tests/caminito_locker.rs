@@ -7,7 +7,8 @@
 //! The fixture has no Wayland socket of its own, so `locker-command` is a shell that notes
 //! its process and execs the locker on a socket of the test's, whose connections the test
 //! hands to Caminito as that process's. The locker reads none of the user's settings:
-//! GSettings is a memory backend on the test schemas, mate-screensaver's among them. Its
+//! GSettings is a keyfile backend in the test's directory, on the test schemas,
+//! mate-screensaver's and MateBG's among them, so a test can set keys and change them. Its
 //! password is checked by a stand-in mate-screensaver service on pam_wrapper's pam_matrix,
 //! from the modules directory `PAM_WRAPPER_MODULES` names, as in the conversation's own test
 //! (helpers/caminito-locker/test-auth-pam.c). What the dialog shows is the checklist's: here
@@ -75,7 +76,8 @@ impl Locker {
             ("XDG_RUNTIME_DIR", quoted(self.dir.path())),
             ("WAYLAND_DISPLAY", "wayland-test".into()),
             ("GDK_BACKEND", "wayland".into()),
-            ("GSETTINGS_BACKEND", "memory".into()),
+            ("GSETTINGS_BACKEND", "keyfile".into()),
+            ("XDG_CONFIG_HOME", quoted(&self.path("config"))),
             ("GSETTINGS_SCHEMA_DIR", quoted(test_schemas())),
             ("NO_AT_BRIDGE", "1".into()),
             ("GIO_USE_VFS", "local".into()),
@@ -94,6 +96,14 @@ impl Locker {
             log = quoted(&self.path("log")),
         );
         vec!["sh".into(), "-c".into(), script]
+    }
+
+    /// Sets the locker's GSettings to `keyfile`, a keyfile backend's file, at the start or
+    /// while it runs.
+    fn set_settings(&self, keyfile: &str) {
+        let dir = self.path("config").join("glib-2.0").join("settings");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("keyfile"), keyfile).unwrap();
     }
 
     /// The process caminito-locker runs in, once it's started.
@@ -150,7 +160,13 @@ fn users_name() -> String {
 /// Caminito with `outputs` and caminito-locker as its `locker-command`, asked to lock, with
 /// the locker connected.
 fn locked_by_caminito_locker(outputs: &[(i32, i32)]) -> (Fixture, Locker) {
+    locked_by_caminito_locker_with(outputs, "")
+}
+
+/// As `locked_by_caminito_locker`, with the locker's GSettings set to `keyfile`.
+fn locked_by_caminito_locker_with(outputs: &[(i32, i32)], keyfile: &str) -> (Fixture, Locker) {
     let locker = Locker::new();
+    locker.set_settings(keyfile);
     let command = Value::StrList(locker.command());
     let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
     for &size in outputs {
@@ -216,4 +232,114 @@ fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
         |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
         seen,
     );
+}
+
+/// A background of one colour, `0x608040`, as MateBG has it with `solid` shading.
+const SOLID_BACKGROUND: &str = "\
+[org/mate/desktop/background]
+picture-filename=''
+color-shading-type='solid'
+primary-color='#608040'
+
+[org/mate/screensaver]
+picture-filename=''
+";
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+fn caminito_lockers_windows_show_the_desktop_background_on_every_output() {
+    let (mut f, locker) =
+        locked_by_caminito_locker_with(&[(1920, 1080), (2560, 1440)], SOLID_BACKGROUND);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    // Away from the dialog, in the middle of one output, and the pointer, at the origin.
+    let outputs = f.state.caminito.outputs.clone();
+    for output in &outputs {
+        f.wait_for_pixel_on(output, 100, 100, 0x608040);
+    }
+}
+
+/// A PNG of one pixel, `0x406080`.
+const PICTURE: [u8; 69] = [
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x70, 0x48, 0x68, 0x00,
+    0x00, 0x02, 0x04, 0x01, 0x21, 0xcb, 0xd7, 0x94, 0xa2, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+    0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let picture = dir.path().join("picture.png");
+    std::fs::write(&picture, PICTURE).unwrap();
+    let missing = dir.path().join("missing.png");
+
+    // A picture-filename that isn't there leaves the desktop's.
+    let keyfile = SOLID_BACKGROUND.replace(
+        "[org/mate/screensaver]\npicture-filename=''",
+        &format!(
+            "[org/mate/screensaver]\npicture-filename='{}'",
+            missing.display()
+        ),
+    );
+    let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.wait_for_pixel(100, 100, 0x608040);
+    drop((f, locker));
+
+    let keyfile = SOLID_BACKGROUND.replace(
+        "[org/mate/screensaver]\npicture-filename=''",
+        &format!(
+            "[org/mate/screensaver]\npicture-filename='{}'",
+            picture.display()
+        ),
+    );
+    let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.wait_for_pixel(100, 100, 0x406080);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; CI runs it"]
+fn caminito_locker_follows_the_keys_of_its_buttons_and_status_message() {
+    let keyfile = "\
+[org/mate/screensaver]
+user-switch-enabled=true
+logout-enabled=true
+logout-delay=0
+logout-command='true'
+
+[org/mate/desktop/lockdown]
+disable-user-switching=true
+";
+    let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], keyfile);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count("Switch User: disabled") == 1, seen);
+    assert!(
+        locker.seen().contains("Log Out: shown"),
+        "{}",
+        locker.seen()
+    );
+    // No mate-session on the test's bus, so no message.
+    assert!(
+        locker.seen().contains("Status message: (none)"),
+        "{}",
+        locker.seen()
+    );
+
+    // The keys are followed while locked, as mate-screensaver's daemon follows them.
+    locker.set_settings(
+        "\
+[org/mate/screensaver]
+user-switch-enabled=true
+logout-enabled=true
+logout-delay=0
+logout-command=''
+",
+    );
+    f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
+    f.dispatch_until_explained(|_| locker.count("Log Out: hidden") >= 1, seen);
 }

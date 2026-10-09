@@ -13,6 +13,7 @@ project(
 gnome = import('gnome')
 
 glib = dependency('glib-2.0')
+gio = dependency('gio-2.0')
 pam = dependency('pam')
 
 # What mate-screensaver's configure defines for the ported files. The dialog's themes are
@@ -35,21 +36,32 @@ auth = static_library(
   dependencies: [glib, pam],
 )
 
+# The session's status message, from mate-session's presence (132).
+watcher = static_library('gs-watcher', 'gs-watcher.c', dependencies: gio)
+
 # gtk-session-lock is barely maintained (ADR 0007); it builds at 16's baseline as it is, so
-# it isn't vendored. libmate-desktop has the user switch's spawn. There's no libmatekbd: the
-# layout indicator is X11's alone.
+# it isn't vendored. libmate-desktop has MateBG, for the background (132), and the user
+# switch's spawn. There's no libmatekbd: the layout indicator is X11's alone.
 executable(
   'caminito-locker',
   'caminito-locker.c',
   'gs-lock-plug.c',
+  'gs-prefs.c',
   gnome.compile_resources('caminito-locker-resources', 'caminito-locker.gresource.xml'),
-  link_with: auth,
+  link_with: [auth, watcher],
   dependencies: [
+    gio,
     dependency('gtk+-3.0'),
     dependency('gtk-session-lock-0'),
     dependency('mate-desktop-2.0'),
   ],
   install: true,
+)
+
+# The status message against a stand-in presence, on a bus of the test's own.
+test(
+  'watcher',
+  executable('test-watcher', 'test-watcher.c', link_with: watcher, dependencies: gio),
 )
 
 # The conversation against a stand-in service, where pam_wrapper is installed to put one

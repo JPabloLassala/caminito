@@ -29,6 +29,11 @@
  *  - tooltips and the entry's menu, as a lock surface can't show a popup;
  *  - the keyboard layout indicator, which is libmatekbd's on X11;
  *  - the note, which needs libnotify, as a mate-screensaver built without it has none.
+ * The status message's label is no-show-all, as the Switch User and Log Out buttons are,
+ * since a lock window's show_all would show it without a message (132). The plug draws
+ * what it drew as a window, with a window's CSS node and its background class, so the
+ * theme's background is behind the dialog and the lock window's is the desktop's (132),
+ * and the clipboards it clears are the display's, as it has no screen of its own (132).
  */
 
 #include "config.h"
@@ -1154,6 +1159,23 @@ gs_lock_plug_hierarchy_changed (GtkWidget *widget,
 	}
 }
 
+/* What the plug drew as a window: the theme's window background and frame, the
+ * lock-dialog class's among them, behind the dialog. The lock window around it has the
+ * desktop background. */
+static gboolean
+gs_lock_plug_draw (GtkWidget *widget,
+                   cairo_t   *cr)
+{
+	GtkStyleContext *context = gtk_widget_get_style_context (widget);
+	int width = gtk_widget_get_allocated_width (widget);
+	int height = gtk_widget_get_allocated_height (widget);
+
+	gtk_render_background (context, cr, 0, 0, width, height);
+	gtk_render_frame (context, cr, 0, 0, width, height);
+
+	return GTK_WIDGET_CLASS (gs_lock_plug_parent_class)->draw (widget, cr);
+}
+
 static void
 gs_lock_plug_class_init (GSLockPlugClass *klass)
 {
@@ -1168,6 +1190,10 @@ gs_lock_plug_class_init (GSLockPlugClass *klass)
 	widget_class->show                           = gs_lock_plug_show;
 	widget_class->hide                           = gs_lock_plug_hide;
 	widget_class->hierarchy_changed              = gs_lock_plug_hierarchy_changed;
+	widget_class->draw                           = gs_lock_plug_draw;
+
+	/* The theme's rules for a window, and a window.lock-dialog, still apply to it. */
+	gtk_widget_class_set_css_name (widget_class, "window");
 
 	klass->close = gs_lock_plug_close;
 
@@ -1223,14 +1249,15 @@ gs_lock_plug_class_init (GSLockPlugClass *klass)
 }
 
 static void
-clear_clipboards (GSLockPlug *plug)
+clear_clipboards (GSLockPlug *plug G_GNUC_UNUSED)
 {
 	GtkClipboard *clipboard;
 
-	clipboard = gtk_widget_get_clipboard (GTK_WIDGET (plug), GDK_SELECTION_PRIMARY);
+	/* The display's, as the plug, made outside a window, has no screen to ask. */
+	clipboard = gtk_clipboard_get_for_display (gdk_display_get_default (), GDK_SELECTION_PRIMARY);
 	gtk_clipboard_clear (clipboard);
 	gtk_clipboard_set_text (clipboard, "", -1);
-	clipboard = gtk_widget_get_clipboard (GTK_WIDGET (plug), GDK_SELECTION_CLIPBOARD);
+	clipboard = gtk_clipboard_get_for_display (gdk_display_get_default (), GDK_SELECTION_CLIPBOARD);
 	gtk_clipboard_clear (clipboard);
 	gtk_clipboard_set_text (clipboard, "", -1);
 }
@@ -1770,6 +1797,11 @@ load_theme (GSLockPlug *plug)
 	gtk_widget_show_all (lock_dialog);
 
 	plug->priv->status_message_label = GTK_WIDGET (gtk_builder_get_object(builder, "status-message-label"));
+	/* Hidden without a message, so a lock window's show_all mustn't show it. */
+	if (plug->priv->status_message_label != NULL)
+	{
+		gtk_widget_set_no_show_all (plug->priv->status_message_label, TRUE);
+	}
 
 	g_object_unref(builder);
 }
@@ -1807,6 +1839,7 @@ gs_lock_plug_init (GSLockPlug *plug)
 	GtkStyleContext *context;
 
 	context = gtk_widget_get_style_context (GTK_WIDGET (plug));
+	gtk_style_context_add_class (context, GTK_STYLE_CLASS_BACKGROUND);
 	gtk_style_context_add_class (context, "lock-dialog");
 
 	/* The dialog's size, in the middle of the lock window, as in mate-screensaver's. */

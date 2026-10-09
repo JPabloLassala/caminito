@@ -801,12 +801,18 @@ impl Fixture {
     #[track_caller]
     pub fn wait_for_pixel(&mut self, x: i32, y: i32, color: u32) {
         let output = self.state.caminito.outputs[0].clone();
+        self.wait_for_pixel_on(&output, x, y, color);
+    }
+
+    /// As `wait_for_pixel`, on `output`, with `(x, y)` in its own logical space.
+    #[track_caller]
+    pub fn wait_for_pixel_on(&mut self, output: &Output, x: i32, y: i32, color: u32) {
         let scale = output.current_scale().fractional_scale();
         let at = Point::<i32, Logical>::from((x, y)).to_physical_precise_round(scale);
         let expected = 0xff00_0000 | color;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
-            let pixel = self.state.backend.headless_mut().pixel(&output, at);
+            let pixel = self.state.backend.headless_mut().pixel(output, at);
             if pixel == Some(expected) {
                 return;
             }

@@ -31,6 +31,20 @@
  * neither a cancel nor the fifth failure ends it, as mate-screensaver's daemon would end its
  * dialog. Each starts the conversation again. The dialog isn't setuid, so hack_uid and the
  * privileged start-up are gone.
+ *
+ * What the daemon gave the dialog, the locker finds itself (132), where the daemon did:
+ *  - the background, as gs-manager.c's apply_background_to_window: the desktop's through
+ *    MateBG, replaced by picture-filename when that file exists, drawn under each lock
+ *    window's content as gs-window-x11.c's gs_window_real_draw does;
+ *  - the buttons and the status message, from gs-prefs.c's keys as gs-monitor.c's
+ *    _gs_monitor_update_from_prefs gives them to the windows, and the status message from
+ *    gs-watcher.c, as gs-monitor.c's on_watcher_status_message_changed;
+ *  - Log Out only once logout-delay has passed, as gs-window-x11.c's is_logout_enabled. The
+ *    daemon asks when it starts a dialog, and its timer starts when its windows show; the
+ *    locker's dialog lasts the whole lock, so the button shows once the delay has passed
+ *    since the locker started.
+ * mate-screensaver applies a new status message even with status-message-enabled off,
+ * which is its bug: here the key holds for a new message too.
  */
 
 #include "config.h"
@@ -44,7 +58,12 @@
 #include <gtk/gtk.h>
 #include <gtk-session-lock.h>
 
+#define MATE_DESKTOP_USE_UNSTABLE_API
+#include <libmate-desktop/mate-bg.h>
+
 #include "gs-lock-plug.h"
+#include "gs-prefs.h"
+#include "gs-watcher.h"
 
 #include "gs-auth.h"
 
@@ -67,6 +86,15 @@ static GtkWidget *plug = NULL;
  * the user has authenticated, which may come first. */
 static gboolean is_locked = FALSE;
 static gboolean authenticated = FALSE;
+
+/* What the daemon had: the keys, the session's status message, the background, and the
+ * time since the lock windows showed, with the timeout that shows Log Out once the delay
+ * has passed. */
+static GSPrefs *prefs = NULL;
+static GSWatcher *watcher = NULL;
+static MateBG *bg = NULL;
+static GTimer *timer = NULL;
+static guint logout_timeout_id = 0;
 
 static char* request_response(GSLockPlug* plug, const char* prompt, gboolean visible)
 {
@@ -310,6 +338,142 @@ static gboolean auth_check_idle(gpointer data)
 	return G_SOURCE_REMOVE;
 }
 
+static gboolean update_logout(gpointer data);
+
+/* gs-window-x11.c's is_logout_enabled, asked again when the delay will have passed: the
+ * dialog lasts the whole lock, where the daemon asked once per dialog. */
+static void update_logout_enabled(void)
+{
+	gboolean enabled;
+	gboolean shown;
+	double elapsed;
+
+	g_clear_handle_id(&logout_timeout_id, g_source_remove);
+
+	enabled = prefs->logout_enabled && prefs->logout_command != NULL;
+	elapsed = g_timer_elapsed(timer, NULL);
+	shown = enabled && prefs->logout_timeout < (elapsed * 1000);
+
+	g_object_set(plug, "logout-command", prefs->logout_command, "logout-enabled", shown, NULL);
+	gs_debug("Log Out: %s", shown ? "shown" : enabled ? "after its delay" : "hidden");
+
+	if (enabled && ! shown)
+	{
+		logout_timeout_id = g_timeout_add(prefs->logout_timeout - (guint) (elapsed * 1000) + 1, update_logout, NULL);
+	}
+}
+
+static gboolean update_logout(gpointer data G_GNUC_UNUSED)
+{
+	logout_timeout_id = 0;
+	update_logout_enabled();
+
+	return G_SOURCE_REMOVE;
+}
+
+static void update_status_message(void)
+{
+	char* text = NULL;
+
+	if (prefs->status_message_enabled)
+	{
+		g_object_get(watcher, "status-message", &text, NULL);
+	}
+
+	g_object_set(plug, "status-message", text, NULL);
+	gs_debug("Status message: %s", text != NULL ? text : "(none)");
+	g_free(text);
+}
+
+/* gs-monitor.c's _gs_monitor_update_from_prefs, of the keys the dialog shows. */
+static void update_from_prefs(void)
+{
+	gboolean user_switch_enabled;
+
+	user_switch_enabled = (prefs->user_switch_enabled && !prefs->user_switch_disabled);
+
+	g_object_set(plug, "switch-enabled", user_switch_enabled, NULL);
+	gs_debug("Switch User: %s", user_switch_enabled ? "enabled" : "disabled");
+
+	update_logout_enabled();
+	update_status_message();
+}
+
+static void prefs_changed_cb(GSPrefs* changed_prefs G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+	update_from_prefs();
+}
+
+static void on_watcher_status_message_changed(GSWatcher* changed_watcher G_GNUC_UNUSED, GParamSpec* pspec G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+	update_status_message();
+}
+
+/* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
+ * background, read again for each, with picture-filename in its place when that file
+ * exists. */
+static void apply_background_to_window(GtkWidget* window, int width, int height)
+{
+	GSettings       *settings;
+	char            *filename;
+	cairo_surface_t *surface;
+
+	mate_bg_load_from_preferences(bg);
+
+	settings = g_settings_new ("org.mate.screensaver");
+	filename = g_settings_get_string (settings, "picture-filename");
+
+	if (g_file_test (filename, G_FILE_TEST_EXISTS)) {
+		mate_bg_set_filename (bg, filename);
+	}
+	g_free (filename);
+	g_object_unref (settings);
+
+	gs_debug ("Creating background w:%d h:%d", width, height);
+	surface = mate_bg_create_surface (bg,
+	                                  gtk_widget_get_window (window),
+	                                  width,
+	                                  height,
+	                                  FALSE);
+	g_object_set_data_full(G_OBJECT(window), "background", surface, (GDestroyNotify) cairo_surface_destroy);
+}
+
+/* gs-window-x11.c's gs_window_real_draw, under the window's content. The background is
+ * made at the first draw at a size, as the window has its size from Caminito only then. */
+static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_GNUC_UNUSED)
+{
+	cairo_surface_t *bg_surface;
+	int width = gtk_widget_get_allocated_width(window);
+	int height = gtk_widget_get_allocated_height(window);
+
+	bg_surface = g_object_get_data(G_OBJECT(window), "background");
+	if (bg_surface == NULL
+	    || GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "background-width")) != width
+	    || GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "background-height")) != height)
+	{
+		apply_background_to_window(window, width, height);
+		g_object_set_data(G_OBJECT(window), "background-width", GINT_TO_POINTER(width));
+		g_object_set_data(G_OBJECT(window), "background-height", GINT_TO_POINTER(height));
+		bg_surface = g_object_get_data(G_OBJECT(window), "background");
+	}
+
+	cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
+	if (bg_surface != NULL)
+	{
+		cairo_set_source_surface (cr, bg_surface, 0, 0);
+		/* MateBG makes a solid colour's surface 1x1, which X tiled as the window's
+		 * background pixmap, and which cairo has to be told to. */
+		cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
+	}
+	else
+	{
+		cairo_set_source_rgb (cr, 0, 0, 0);
+	}
+	cairo_paint (cr);
+
+	return FALSE;
+}
+
 /* The dialog moves to the lock window the pointer or the keyboard is in, so it shows on
  * the monitor under the pointer, where Caminito gives the keyboard (12). */
 static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
@@ -336,6 +500,9 @@ static void add_lock_window(GdkMonitor* monitor)
 	GtkWidget* window;
 
 	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	/* The background is drawn instead of the theme's. */
+	gtk_widget_set_app_paintable(window, TRUE);
+	g_signal_connect(window, "draw", G_CALLBACK(draw_background), NULL);
 	gtk_widget_add_events(window, GDK_ENTER_NOTIFY_MASK | GDK_POINTER_MOTION_MASK);
 	g_signal_connect(window, "enter-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "motion-notify-event", G_CALLBACK(move_dialog), NULL);
@@ -465,6 +632,14 @@ int main(int argc, char** argv)
 	plug = gs_lock_plug_new();
 	g_object_ref_sink(plug);
 	g_signal_connect(plug, "response", G_CALLBACK(response_cb), NULL);
+
+	bg = mate_bg_new();
+	prefs = gs_prefs_new();
+	g_signal_connect(prefs, "changed", G_CALLBACK(prefs_changed_cb), NULL);
+	watcher = gs_watcher_new();
+	g_signal_connect(watcher, "notify::status-message", G_CALLBACK(on_watcher_status_message_changed), NULL);
+	timer = g_timer_new();
+	update_from_prefs();
 
 	lock_windows = g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify) gtk_widget_destroy);
 	display = gdk_display_get_default();

@@ -16,6 +16,7 @@ headless tests read it as their only schema source, each on a memory backend of 
 | `org.mate.peripherals-keyboard-xkb` | libmatekbd 1.28.0, as installed by Arch's `libmatekbd 1.28.0-2` |
 | `org.mate.accessibility-keyboard` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-3` |
 | `org.mate.lockdown` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`) |
+| `org.mate.background` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), with `@datadir@` as `/usr/share`: caminito-locker's MateBG reads it (132) |
 | `org.mate.sound` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-2` |
 | `org.mate.screensaver` | mate-screensaver `60b2db3`, the source caminito-locker is ported from (131), with `@datadir@` as `/usr/share` |
 | `org.mate.Caminito` | Caminito's own, a link to [data/org.mate.Caminito.gschema.xml](../../data/org.mate.Caminito.gschema.xml), which Meson installs |
