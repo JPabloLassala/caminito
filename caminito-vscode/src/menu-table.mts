@@ -91,6 +91,8 @@ export interface Running {
   /** A setting's value, or undefined when it can't be read. */
   setting(name: string): unknown;
   readonly workspace: Workspace;
+  /** What's put before the table's item of `command`, whether that item is shown or not. */
+  before?(command: string): readonly MenuNode[];
 }
 
 /**
@@ -98,6 +100,7 @@ export interface Running {
  * `product.json` key it lacks or whose workspace isn't the window's is dropped, then each
  * menu left empty, and then the separators are collapsed, so that none is first, last or
  * beside another. An item whose setting can be read has its checkmark or radio state.
+ * What `running.before` gives is put in first, so its separators are collapsed too.
  *
  * Every entry of the table has the same id whatever is dropped: the root is 0 and the rest
  * are numbered depth first.
@@ -139,9 +142,12 @@ export function fit(
         if (children.length > 0) {
           nodes.push({ id, label: item.label, children });
         }
-      } else if (shown(item)) {
-        const state = toggle(item);
-        nodes.push({ id, ...item, ...(state && { toggle: state }) });
+      } else {
+        nodes.push(...(running.before?.(item.command) ?? []));
+        if (shown(item)) {
+          const state = toggle(item);
+          nodes.push({ id, ...item, ...(state && { toggle: state }) });
+        }
       }
     }
     return collapse(nodes);
@@ -171,6 +177,14 @@ function holds(condition: Condition, setting: (name: string) => unknown): boolea
     : 'not' in condition
       ? value !== condition.not
       : condition.in.includes(value);
+}
+
+/** How many entries `menus` has in all, which is the highest id `fit` gives. */
+export function entriesIn(menus: readonly TableItem[]): number {
+  return menus.reduce(
+    (count, item) => count + 1 + ('items' in item ? entriesIn(item.items) : 0),
+    0,
+  );
 }
 
 /** The settings the annotations' checkmarks and radio items read. */

@@ -3,6 +3,7 @@
 // is the seam its tests use (116).
 
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { Message, MessageType, sessionBus } from '@jellybrick/dbus-next';
@@ -12,8 +13,17 @@ import annotations from '../menu/annotations.json' with { type: 'json' };
 import table from '../menu/table.json' with { type: 'json' };
 import { DbusMenu } from './dbusmenu.mts';
 import type { Disposable, Editor } from './editor.mts';
-import { fit, settingsOf } from './menu-table.mts';
+import { entriesIn, fit, settingsOf } from './menu-table.mts';
 import type { Annotations, Table, Workspace } from './menu-table.mts';
+import {
+  CHANGES_THE_LIST,
+  GET_RECENTLY_OPENED,
+  MORE,
+  RecentItems,
+  fallbackOf,
+  parseRecent,
+} from './recent.mts';
+import type { RecentlyOpened } from './recent.mts';
 
 /** The oldest release with every stable API the extension uses, as package.json's `engines.vscode`. */
 export const FLOOR = '1.68.0';
@@ -46,6 +56,8 @@ export interface Environment {
   readonly busAddress?: string;
   /** The menu to serve, VS Code's by default. */
   readonly menu?: Menu;
+  /** The home directory, shown as `~` in Open Recent; the user's by default. */
+  readonly home?: string;
 }
 
 /** The running extension. */
@@ -113,19 +125,40 @@ async function run(
   // A list of commands that can't be read keeps every item.
   let commands = await listCommands(editor, log, 'so every item is kept');
   const product = await productOf(editor, log);
+  // Open Recent's entries follow the table's own entries, whose ids `fit` gives.
+  const recentItems = new RecentItems(
+    entriesIn(served.table.menus) + 1,
+    environment.home ?? homedir(),
+  );
+  const recentReader = new RecentReader(editor, log);
+  let recent = await recentReader.read();
   const build = () => {
     return fit(served.table.menus, served.annotations, {
       hasCommand: (command) => commands?.has(command) ?? true,
       product,
       setting: settingReader(editor),
       workspace: workspaceOf(editor),
+      before: (command) => (command === MORE && recent ? recentItems.items(recent) : []),
     });
   };
-  const menu = new DbusMenu(build(), async (command, args) => {
+  const runCommand = async (command: string, args: readonly unknown[]) => {
     try {
       await editor.commands.executeCommand(command, ...args);
     } catch (err) {
-      log.line(`can't run ${command}: ${message(err)}`);
+      const fallback = fallbackOf(command, args);
+      if (fallback === undefined) {
+        log.line(`can't run ${command}: ${message(err)}`);
+        return;
+      }
+      log.line(`can't run ${command}, so ${fallback[0]} is run: ${message(err)}`);
+      await runCommand(...fallback);
+    }
+  };
+  const menu = new DbusMenu(build(), async (command, args) => {
+    await runCommand(command, args);
+    // The list moved or emptied once the command returns, opened or cleared.
+    if (CHANGES_THE_LIST.includes(command)) {
+      schedule({ recent: true });
     }
   });
 
@@ -133,6 +166,7 @@ async function run(
   // the changes that came with it are in. Nothing else re-reads, so there's no timer.
   let pending: ReturnType<typeof setTimeout> | undefined;
   let relist = false;
+  let reread = false;
   let updating = Promise.resolve();
   let stopped = false;
   const apply = async () => {
@@ -141,12 +175,18 @@ async function run(
       // A list that can't be read again keeps the last one.
       commands = (await listCommands(editor, log, 'so the last list is kept')) ?? commands;
     }
+    if (reread) {
+      reread = false;
+      recent = await recentReader.read();
+    }
     if (!stopped) {
       menu.update(build());
     }
   };
-  const schedule = (reread: 'settings and folders' | 'commands too') => {
-    relist ||= reread === 'commands too';
+  /** Settings and folders are always read again; the commands and the recent list when asked. */
+  const schedule = (also: { commands?: boolean; recent?: boolean } = {}) => {
+    relist ||= also.commands === true;
+    reread ||= also.recent === true;
     pending ??= setTimeout(() => {
       pending = undefined;
       // One at a time, so that an older list of commands never lands last.
@@ -166,15 +206,28 @@ async function run(
     editor.workspace.onDidChangeConfiguration(
       guarded(log, (event: { affectsConfiguration(section: string): boolean }) => {
         if (annotated.some((name) => event.affectsConfiguration(name))) {
-          schedule('settings and folders');
+          schedule();
         }
       }),
     ),
   );
+  disposables.add(editor.workspace.onDidChangeWorkspaceFolders(() => schedule()));
+  disposables.add(editor.extensions.onDidChange(() => schedule({ commands: true })));
+  // The recent list has no event of its own. Focus lost isn't one: a panel menu opening
+  // takes the focus, and the menu would be replaced as it opens.
   disposables.add(
-    editor.workspace.onDidChangeWorkspaceFolders(() => schedule('settings and folders')),
+    editor.window.onDidChangeWindowState(
+      guarded(log, (state: { focused: boolean }) => {
+        if (state.focused) {
+          schedule({ recent: true });
+        }
+      }),
+    ),
   );
-  disposables.add(editor.extensions.onDidChange(() => schedule('commands too')));
+  const tabs = editor.window.tabGroups?.onDidChangeTabs;
+  if (tabs !== undefined) {
+    disposables.add(tabs(() => schedule({ recent: true })));
+  }
 
   let owner: string | null = null;
   let offered = false;
@@ -301,6 +354,37 @@ async function run(
   const reply = await callDbus(bus, 'GetNameOwner', 's', [CAMINITO]).catch(() => null);
   setOwner((reply?.body[0] as string | undefined) ?? null);
   await reading;
+}
+
+/**
+ * Reads the recently opened list (ADR 0020). A list that can't be read is undefined, and
+ * Open Recent then has its fixed items; that it can't is logged once until it can again.
+ */
+class RecentReader {
+  readonly #editor: Editor;
+  readonly #log: Log;
+  #failing = false;
+
+  constructor(editor: Editor, log: Log) {
+    this.#editor = editor;
+    this.#log = log;
+  }
+
+  async read(): Promise<RecentlyOpened | undefined> {
+    try {
+      const list = parseRecent(await this.#editor.commands.executeCommand(GET_RECENTLY_OPENED));
+      this.#failing = false;
+      return list;
+    } catch (err) {
+      if (!this.#failing) {
+        this.#log.line(
+          `can't read the recently opened list, so Open Recent has its fixed items: ${message(err)}`,
+        );
+      }
+      this.#failing = true;
+      return undefined;
+    }
+  }
 }
 
 /** The commands the editor lists, or undefined with a line saying `otherwise` when it can't. */

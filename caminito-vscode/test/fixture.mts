@@ -35,6 +35,10 @@ export interface Options {
   readonly settings?: Record<string, unknown>;
   /** The window's workspace at activation; a folder by default. */
   readonly workspace?: Workspace;
+  /** What `_workbench.getRecentlyOpened` answers at activation, or fails with; an empty list by default. */
+  readonly recent?: unknown;
+  /** The home directory; `/home/ana` by default. */
+  readonly home?: string;
 }
 
 /** A `product.json` with every key the menu's annotations gate on. */
@@ -83,6 +87,11 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
   const editor = new FakeEditor(options.focused ?? true);
   editor.settings = { ...options.settings };
   editor.workspace = options.workspace ?? 'folder';
+  if (options.recent !== undefined) {
+    const recent = options.recent;
+    editor.recent = () =>
+      recent instanceof Error ? Promise.reject(recent) : Promise.resolve(recent);
+  }
   const commands = options.commands ?? commandsOf(served.table.menus);
   editor.listCommands = () =>
     commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
@@ -96,6 +105,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     platform: options.platform ?? 'linux',
     busAddress: options.busAddress ?? bus.address,
     menu: served,
+    home: options.home ?? '/home/ana',
   });
   t.after(() => {
     extension.dispose();

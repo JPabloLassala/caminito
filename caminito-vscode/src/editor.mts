@@ -23,7 +23,10 @@ export interface Editor {
     /** 1.68. */
     readonly onDidChangeActiveNotebookEditor?: Event<unknown>;
     /** 1.67. */
-    readonly tabGroups?: { readonly onDidChangeTabGroups: Event<unknown> };
+    readonly tabGroups?: {
+      readonly onDidChangeTabGroups: Event<unknown>;
+      readonly onDidChangeTabs: Event<unknown>;
+    };
     createOutputChannel(name: string): { appendLine(line: string): void; dispose(): void };
   };
   readonly workspace: {
