@@ -35,6 +35,10 @@ export interface Options {
   readonly settings?: Record<string, unknown>;
   /** The window's workspace at activation; a folder by default. */
   readonly workspace?: Workspace;
+  /** The default keybindings' text, or what reading them fails with; none by default. */
+  readonly defaultKeybindings?: string | Error;
+  /** The default profile's directory, `<user data>/User`; none by default, so no user file is read. */
+  readonly userDir?: string;
 }
 
 /** A `product.json` with every key the menu's annotations gate on. */
@@ -83,6 +87,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
   const editor = new FakeEditor(options.focused ?? true);
   editor.settings = { ...options.settings };
   editor.workspace = options.workspace ?? 'folder';
+  editor.defaultKeybindings = options.defaultKeybindings ?? '[]';
   const commands = options.commands ?? commandsOf(served.table.menus);
   editor.listCommands = () =>
     commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
@@ -96,6 +101,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     platform: options.platform ?? 'linux',
     busAddress: options.busAddress ?? bus.address,
     menu: served,
+    ...(options.userDir !== undefined && { userDir: options.userDir }),
   });
   t.after(() => {
     extension.dispose();
