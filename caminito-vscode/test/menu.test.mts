@@ -64,7 +64,7 @@ test("with every command listed, a client reads the table's menus in order", asy
   );
 });
 
-test('Open Recent has its fixed items only', async (t) => {
+test('with an empty recent list, Open Recent has its fixed items only', async (t) => {
   const f = await fixture(t);
   const [file] = (await f.menu())!.children.map(read);
   const recent = (file as { children: Read[] }).children.find(

@@ -313,11 +313,16 @@ export class FakeEditor {
   readonly textEditor = new Emitter<unknown>();
   readonly notebookEditor = new Emitter<unknown>();
   readonly tabGroups = new Emitter<unknown>();
+  readonly tabs = new Emitter<unknown>();
   readonly configuration = new Emitter<{ affectsConfiguration(section: string): boolean }>();
   readonly workspaceFolders = new Emitter<unknown>();
   readonly extensions = new Emitter<void>();
   /** What `executeCommand` does once it has recorded the command. */
-  onCommand: () => PromiseLike<unknown> = () => Promise.resolve();
+  onCommand: (command: string) => PromiseLike<unknown> = () => Promise.resolve();
+  /** What `_workbench.getRecentlyOpened` answers; it isn't recorded with the commands run. */
+  recent: () => PromiseLike<unknown> = () => Promise.resolve({ workspaces: [], files: [] });
+  /** How many times the recent list was read. */
+  recentReads = 0;
   /** What `getCommands` answers. */
   listCommands: () => PromiseLike<string[]> = () => Promise.resolve([]);
   /** `env.appRoot`, where the editor's `product.json` is. */
@@ -373,7 +378,10 @@ export class FakeEditor {
       window['onDidChangeActiveNotebookEditor'] = this.notebookEditor.event;
     }
     if (!lacking.tabGroups) {
-      window['tabGroups'] = { onDidChangeTabGroups: this.tabGroups.event };
+      window['tabGroups'] = {
+        onDidChangeTabGroups: this.tabGroups.event,
+        onDidChangeTabs: this.tabs.event,
+      };
     }
     return {
       version,
@@ -406,9 +414,13 @@ export class FakeEditor {
           return fake.listCommands();
         },
         executeCommand: (command: string, ...args: unknown[]) => {
+          if (command === '_workbench.getRecentlyOpened') {
+            fake.recentReads++;
+            return fake.recent();
+          }
           fake.commands.push(command);
           fake.args.push(args);
-          return fake.onCommand();
+          return fake.onCommand(command);
         },
       },
     };
