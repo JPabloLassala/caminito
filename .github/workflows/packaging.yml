@@ -1,17 +1,26 @@
 name: Packaging
 
+# The longest workflow, about 30 minutes of metered Actions time a run. It runs when a
+# PKGBUILD reaches master or a pull request, by hand, and weekly, which catches what the
+# packages build from outside packaging/arch (caminito-git's and caminito-vscode-git's
+# sources, Arch's own packages).
 on:
   push:
+    branches: [master]
     paths:
       - "packaging/arch/**"
-      - "caminito-vscode/**"
       - ".github/workflows/packaging.yml"
   pull_request:
     paths:
       - "packaging/arch/**"
-      - "caminito-vscode/**"
       - ".github/workflows/packaging.yml"
+  schedule:
+    - cron: "0 7 * * 1"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   packages:
