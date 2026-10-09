@@ -169,9 +169,13 @@ pub fn check_schemas(installed: impl Fn(&str) -> bool) -> Result<(), MissingSche
 pub enum Value {
     Bool(bool),
     Int(i32),
+    Uint(u32),
+    Int64(i64),
     Double(f64),
     Str(String),
     StrList(Vec<String>),
+    /// A maybe pair of doubles, `m(dd)`.
+    MaybePair(Option<(f64, f64)>),
     /// Any other type, printed as GVariant text.
     Other(String),
 }
@@ -181,9 +185,13 @@ impl fmt::Display for Value {
         match self {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Int(i) => write!(f, "{i}"),
+            Value::Uint(u) => write!(f, "{u}"),
+            Value::Int64(i) => write!(f, "{i}"),
             Value::Double(d) => write!(f, "{d}"),
             Value::Str(s) => write!(f, "'{s}'"),
             Value::StrList(list) => write!(f, "{list:?}"),
+            Value::MaybePair(None) => f.write_str("nothing"),
+            Value::MaybePair(Some((a, b))) => write!(f, "({a}, {b})"),
             Value::Other(text) => f.write_str(text),
         }
     }
@@ -332,6 +340,42 @@ pub struct Settings {
     pub keymap: Keymap,
     pub locker: LockerSettings,
     pub idle: IdleSettings,
+    pub night_light: NightLightSettings,
+}
+
+/// Night Light (ADR 0023), from `org.mate.Caminito`'s `night-light-*` keys.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NightLightSettings {
+    /// `night-light-enabled`.
+    pub enabled: bool,
+    /// `night-light-schedule`.
+    pub schedule: Schedule,
+    /// `night-light-noon-temperature`, in kelvin, 1000 to 6500.
+    pub noon_temperature: u32,
+    /// `night-light-night-temperature`, in kelvin, 1000 to 6500.
+    pub night_temperature: u32,
+    /// `night-light-constant-temperature`, in kelvin, 1000 to 6500.
+    pub constant_temperature: u32,
+    /// `night-light-paused-until`: the Unix time a pause ends, or 0 when there's none.
+    pub paused_until: i64,
+    /// `night-light-last-location`: the latitude and longitude geoclue last gave.
+    pub last_location: Option<(f64, f64)>,
+}
+
+/// Night Light's schedule (`org.mate.Caminito.NightLightSchedule`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Schedule {
+    /// "Follow the sun": the temperature follows the sun's elevation.
+    Sun,
+    /// One temperature all the time.
+    Constant,
+}
+
+impl Schedule {
+    /// The schedule's nick, as the schema and the state dump name it.
+    pub fn name(self) -> &'static str {
+        self.nick()
+    }
 }
 
 /// The screen locker (12, 126).
@@ -455,6 +499,12 @@ impl Nick for TitlebarAction {
         ("menu", Self::Menu),
         ("none", Self::None),
     ];
+}
+
+/// `org.mate.Caminito.NightLightSchedule`.
+impl Nick for Schedule {
+    const NICKS: &'static [(&'static str, Self)] =
+        &[("sun", Self::Sun), ("constant", Self::Constant)];
 }
 
 /// `org.mate.Caminito.WorkspaceLayoutOrientation`.
@@ -1021,6 +1071,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
                 .bool(SCREENSAVER, "lock-enabled", true)
                 .then(|| minutes(r.int_at_least(SCREENSAVER, "lock-delay", 0, 0))),
         },
+        night_light: night_light(&mut r),
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -1039,6 +1090,27 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     Translation {
         settings,
         problems: r.problems,
+    }
+}
+
+/// The coldest and warmest temperatures Night Light's keys take, in kelvin. 6500 is
+/// neutral.
+pub const TEMPERATURES: (u32, u32) = (1000, 6500);
+
+fn night_light(r: &mut Reader<'_>) -> NightLightSettings {
+    let (min, max) = TEMPERATURES;
+    let mut temperature = |key, builtin| r.uint_clamped(CAMINITO, key, builtin, min, max);
+    let noon_temperature = temperature("night-light-noon-temperature", 5500);
+    let night_temperature = temperature("night-light-night-temperature", 3400);
+    let constant_temperature = temperature("night-light-constant-temperature", 4000);
+    NightLightSettings {
+        enabled: r.bool(CAMINITO, "night-light-enabled", false),
+        schedule: r.nick(CAMINITO, "night-light-schedule", Schedule::Sun),
+        noon_temperature,
+        night_temperature,
+        constant_temperature,
+        paused_until: r.int64(CAMINITO, "night-light-paused-until", 0),
+        last_location: r.maybe_pair(CAMINITO, "night-light-last-location"),
     }
 }
 
@@ -1257,6 +1329,31 @@ impl Reader<'_> {
         self.read(schema, key, builtin, accept, |i| Value::Int(*i))
     }
 
+    fn uint(&mut self, schema: &str, key: &str, builtin: u32) -> u32 {
+        let accept = |v: &Value| match v {
+            Value::Uint(u) => Some(*u),
+            _ => None,
+        };
+        self.read(schema, key, builtin, accept, |u| Value::Uint(*u))
+    }
+
+    fn int64(&mut self, schema: &str, key: &str, builtin: i64) -> i64 {
+        let accept = |v: &Value| match v {
+            Value::Int64(i) => Some(*i),
+            _ => None,
+        };
+        self.read(schema, key, builtin, accept, |i| Value::Int64(*i))
+    }
+
+    /// A maybe pair of doubles, nothing by default.
+    fn maybe_pair(&mut self, schema: &str, key: &str) -> Option<(f64, f64)> {
+        let accept = |v: &Value| match v {
+            Value::MaybePair(pair) => Some(*pair),
+            _ => None,
+        };
+        self.read(schema, key, None, accept, |pair| Value::MaybePair(*pair))
+    }
+
     fn double(&mut self, schema: &str, key: &str, builtin: f64) -> f64 {
         let accept = |v: &Value| match v {
             Value::Double(d) => Some(*d),
@@ -1306,6 +1403,21 @@ impl Reader<'_> {
     /// An integer, clamped to `min..=max`.
     fn int_clamped(&mut self, schema: &str, key: &str, builtin: i32, min: i32, max: i32) -> i32 {
         let value = self.int(schema, key, builtin);
+        let clamped = value.clamp(min, max);
+        if clamped != value {
+            self.problems.push(Problem::OutOfRange {
+                schema: schema.into(),
+                key: key.into(),
+                value: value.to_string(),
+                used: clamped.to_string(),
+            });
+        }
+        clamped
+    }
+
+    /// An unsigned integer, clamped to `min..=max`.
+    fn uint_clamped(&mut self, schema: &str, key: &str, builtin: u32, min: u32, max: u32) -> u32 {
+        let value = self.uint(schema, key, builtin);
         let clamped = value.clamp(min, max);
         if clamped != value {
             self.problems.push(Problem::OutOfRange {

@@ -11,6 +11,7 @@
 //! (`:212-216`). linux-dmabuf and drm-syncobj are offered as `run_udev` does (`:451-498`),
 //! and dmabufs imported as `dmabuf_imported` does (`:170-185`), on the primary GPU (57).
 
+mod gamma;
 mod libinput;
 
 use std::collections::HashMap;
@@ -37,7 +38,9 @@ use smithay::input::keyboard::LedState;
 use smithay::output::{Mode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
-use smithay::reexports::drm::control::{Mode as DrmMode, ModeTypeFlags, connector, crtc};
+use smithay::reexports::drm::control::{
+    Device as _, Mode as DrmMode, ModeTypeFlags, connector, crtc,
+};
 use smithay::reexports::input::event::{DeviceEvent, EventTrait, KeyboardEvent, PointerEvent};
 use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
@@ -47,6 +50,7 @@ use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
 use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 
+use self::gamma::CrtcGamma;
 use crate::backend::Backend;
 use crate::input::devices::ConfigurableDevice;
 use crate::output::{DEFAULT_REFRESH, UNKNOWN_EDID_TEXT};
@@ -144,6 +148,8 @@ struct Gpu {
     /// Each monitor a scan found, by the CRTC that will drive it, until the saved layout
     /// has said which mode it's lit in, if at all (87).
     unlit: HashMap<crtc::Handle, DarkMonitor>,
+    /// Every CRTC's gamma table, which Night Light writes (137).
+    gamma: HashMap<crtc::Handle, CrtcGamma>,
 }
 
 /// One lit monitor's output, and the swapchain it's shown from.
@@ -152,6 +158,9 @@ struct LitMonitor {
     connector: Connector,
     drm_output: TtyOutput,
     frame: Frame,
+    /// Whether Night Light's table is written again once the next frame is shown: the mode
+    /// is set with a frame, and a modeset may take the table with it (137).
+    gamma_due: bool,
 }
 
 /// A connected monitor that isn't lit: one output management turned off, or one on its way
@@ -337,6 +346,7 @@ impl Tty {
         }
         // A frame on its way is still shown, and its vblank still comes: the mode is set
         // with the next frame.
+        monitor.gamma_due = true;
         output.change_current_state(Some(mode), None, None, None);
         caminito.output_mode_changed(output);
         true
@@ -433,6 +443,22 @@ impl Tty {
         }
     }
 
+    /// Night Light wants `kelvin` on `output` (137). Its table is written while the monitor
+    /// is lit and the session is active; otherwise it's kept for when it is.
+    pub fn set_temperature(&mut self, output: &Output, kelvin: u32) {
+        let Some(&crtc) = output.user_data().get::<crtc::Handle>() else {
+            return;
+        };
+        let gpu = &mut self.gpu;
+        let Some(gamma) = gpu.gamma.get_mut(&crtc) else {
+            return;
+        };
+        gamma.want(kelvin);
+        if self.seat.is_active() && gpu.monitors.contains_key(&crtc) {
+            gamma.write(gpu.manager.device(), crtc, &output.name());
+        }
+    }
+
     /// A keyboard was plugged in: it shows `leds` now, and the seat's on each change.
     fn add_keyboard(&mut self, mut keyboard: input::Device, leds: LedState) {
         keyboard.led_update(leds.into());
@@ -523,9 +549,15 @@ impl Tty {
                 if let Err(err) = self.gpu.manager.lock().activate(false) {
                     tracing::warn!("can't take the GPU back: {err}");
                 }
-                // Activating reset every CRTC, so no frame is still on its way.
+                // Activating reset every CRTC, so no frame is still on its way. Another
+                // compositor may have left its gamma tables meanwhile, and the next frames
+                // set the modes again.
                 for monitor in self.gpu.monitors.values_mut() {
                     monitor.stop_waiting(&caminito.loop_handle);
+                    monitor.gamma_due = true;
+                }
+                for gamma in self.gpu.gamma.values_mut() {
+                    gamma.forget_written();
                 }
                 self.scan_connectors(caminito);
                 caminito.queue_redraw_all();
@@ -630,6 +662,19 @@ impl Gpu {
             })
             .expect("the GPU's events join the loop");
 
+        // Before any monitor is lit, so none shows a previous compositor's table.
+        let gamma = match manager.device().resource_handles() {
+            Ok(resources) => resources
+                .crtcs()
+                .iter()
+                .map(|&crtc| (crtc, CrtcGamma::take(manager.device(), crtc)))
+                .collect(),
+            Err(err) => {
+                tracing::warn!("can't list the GPU's CRTCs for Night Light: {err}");
+                HashMap::new()
+            }
+        };
+
         let render_node = node
             .node_with_type(NodeType::Render)
             .and_then(Result::ok)
@@ -643,6 +688,7 @@ impl Gpu {
             monitors: HashMap::new(),
             dark: HashMap::new(),
             unlit: HashMap::new(),
+            gamma,
         })
     }
 
@@ -693,6 +739,10 @@ impl Gpu {
             tracing::debug!("can't finish a frame of {}: {err}", monitor.output.name());
         }
         monitor.frame = Frame::Shown;
+        if std::mem::take(&mut monitor.gamma_due) {
+            // The refresh pass after this writes it.
+            self.forget_gamma(crtc);
+        }
     }
 
     /// A frame with no damage waited out its refresh.
@@ -786,6 +836,7 @@ impl Gpu {
                         connector,
                         drm_output,
                         frame: Frame::Shown,
+                        gamma_due: true,
                     },
                 );
                 Ok(())
@@ -794,6 +845,13 @@ impl Gpu {
                 tracing::warn!("can't light {name}: {err}");
                 Err(monitor)
             }
+        }
+    }
+
+    /// `crtc`'s table may no longer be Night Light's: the refresh pass writes it again.
+    fn forget_gamma(&mut self, crtc: crtc::Handle) {
+        if let Some(gamma) = self.gamma.get_mut(&crtc) {
+            gamma.forget_written();
         }
     }
 
