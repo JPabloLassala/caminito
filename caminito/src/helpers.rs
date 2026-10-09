@@ -99,6 +99,14 @@ pub struct Helper<D: 'static> {
     finished: bool,
 }
 
+/// Sends `child` SIGTERM.
+fn terminate(child: &Child, identifier: &str) {
+    let pid = rustix::process::Pid::from_child(child);
+    if let Err(err) = rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
+        tracing::warn!("{identifier}: can't send it SIGTERM: {err}");
+    }
+}
+
 /// A spawned helper.
 struct Running {
     child: Child,
@@ -157,10 +165,7 @@ impl<D: 'static> Helper<D> {
             for token in running.sources {
                 self.handle.remove(token);
             }
-            let pid = rustix::process::Pid::from_child(&running.child);
-            if let Err(err) = rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
-                tracing::warn!("{}: can't send it SIGTERM: {err}", self.command.identifier);
-            }
+            terminate(&running.child, &self.command.identifier);
         }
         if let Some((id, token)) = self.sigchld.take() {
             signal_hook::low_level::unregister(id);
@@ -178,6 +183,15 @@ impl<D: 'static> Helper<D> {
         self.finished = true;
         if let Some(token) = self.restart_timer.take() {
             self.handle.remove(token);
+        }
+    }
+
+    /// Finishes the helper, and sends the one that runs SIGTERM. Unlike [`Helper::stop`], it's
+    /// still watched, so it's reaped when it exits.
+    pub fn terminate(&mut self) {
+        self.finish();
+        if let Some(running) = &self.running {
+            terminate(&running.child, &self.command.identifier);
         }
     }
 

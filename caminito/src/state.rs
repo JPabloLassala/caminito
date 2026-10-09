@@ -83,6 +83,7 @@ use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
 use crate::dbus::a11y::KeyboardMonitor;
 use crate::dbus::global_menu::{GlobalMenu, Switch};
+use crate::dbus::logind::Logind;
 use crate::dbus::menu_claim::Claims;
 use crate::dbus::panel::Panel;
 use crate::dbus::registrar::Registrations;
@@ -323,6 +324,9 @@ pub struct Caminito {
 
     /// The connection to the session bus, once `start_dbus` has made it.
     pub dbus: Option<Dbus>,
+    /// Caminito's session in logind, on the system bus, once `start_logind` has found it
+    /// (130).
+    pub(crate) logind: Option<Logind>,
     /// The calls to the panel for Alt+F1 and Alt+F2, and the popup grab they allow (95).
     pub(crate) panel: Panel,
     /// The key and button events clients were last sent, which a popup grab names one of.
@@ -572,6 +576,8 @@ impl State {
         self.caminito.refresh_switcher_popup();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
+        // After the frames, which may show the lock that logind's sleep waits for.
+        self.caminito.refresh_logind();
         self.refresh_captures();
         if let Err(err) = self.caminito.display_handle.flush_clients() {
             tracing::warn!("error flushing clients: {err}");
@@ -891,6 +897,7 @@ impl Caminito {
             helper_stderr: StderrTarget::Prefixed,
             session: None,
             dbus: None,
+            logind: None,
             panel,
             input_serials: InputSerials::default(),
             screensaver: ScreensaverShim::default(),

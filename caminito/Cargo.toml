@@ -50,6 +50,8 @@ zbus = "5.19.0"
 caminito-displays = { path = "../caminito-displays" }
 caminito-test-client = { path = "../caminito-test-client" }
 insta = "1.48.0"
+# The stand-in logind's inhibitor pipes, and whether Caminito closed its end (130).
+rustix = { workspace = true, features = ["event", "pipe"] }
 tempfile = "3.27.0"
 # The headless backend is `cfg(test)` (15), so pixman stays out of the release build.
 smithay = { workspace = true, features = ["renderer_pixman"] }

@@ -1,7 +1,7 @@
 //! Caminito's D-Bus (15): one file per name or peer. `systemd`, `panel`, `notifications` and
 //! `global_menu`'s applet are the peers so far, and `registrar` is an interface the apps look for.
 //! `menu_claim` is a method of `caminito`'s that has a module of its own, and `a11y` is the
-//! Keyboard monitor for Orca (135).
+//! Keyboard monitor for Orca (135). `logind` is Caminito's session on the system bus (130).
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
@@ -11,6 +11,7 @@ pub(crate) mod a11y;
 pub mod caminito;
 pub mod debug;
 pub(crate) mod global_menu;
+pub(crate) mod logind;
 pub(crate) mod menu_claim;
 mod notifications;
 pub(crate) mod panel;

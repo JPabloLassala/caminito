@@ -59,6 +59,15 @@ pub fn run(
     if let Err(err) = state.caminito.start_dbus(dbus::Names::WellKnown) {
         tracing::warn!("can't serve Caminito's D-Bus interfaces: {err}");
     }
+    match kind {
+        backend::Kind::Tty => state.caminito.start_logind(None),
+        // The session it would find is the desktop's it's nested in (130).
+        backend::Kind::Winit => {
+            tracing::info!(
+                "nested, with no logind session of its own: caminito locks without logind"
+            );
+        }
+    }
     if let Some(command) = session {
         state.caminito.start_session(command, socket);
     }
