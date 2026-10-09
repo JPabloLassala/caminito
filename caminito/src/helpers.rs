@@ -181,6 +181,18 @@ impl<D: 'static> Helper<D> {
         }
     }
 
+    /// Finishes the helper, and sends the one that runs SIGTERM. Unlike [`Helper::stop`], it's
+    /// still watched, so it's reaped when it exits.
+    pub fn terminate(&mut self) {
+        self.finish();
+        if let Some(running) = &self.running {
+            let pid = rustix::process::Pid::from_child(&running.child);
+            if let Err(err) = rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
+                tracing::warn!("{}: can't send it SIGTERM: {err}", self.command.identifier);
+            }
+        }
+    }
+
     /// The process of the helper that runs, if one does.
     pub fn process(&self) -> Option<u32> {
         self.running.as_ref().map(|running| running.child.id())

@@ -1203,6 +1203,11 @@ impl Fixture {
             .expect("the test's bus runs");
     }
 
+    /// Follows Caminito's session in the stand-in logind on the bus at `address` (130).
+    pub fn start_logind_at(&mut self, address: &str) {
+        self.state.caminito.start_logind(Some(address));
+    }
+
     /// Keeps Caminito's well-known names for this fixture until it's dropped, for a test that
     /// owns one itself before Caminito starts.
     pub fn reserve_names(&mut self) {

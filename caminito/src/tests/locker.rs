@@ -18,10 +18,10 @@ use crate::settings::translate::{CAMINITO, LOCKDOWN};
 const LOCKER_COLOR: u32 = 0xff12_3456;
 
 /// The session ID the give-up message names.
-const SESSION_ID: &str = "c7";
+pub(super) const SESSION_ID: &str = "c7";
 
 /// Restarts quick enough for a test, with the supervisor's give-up rule.
-fn quick_restarts() -> RestartPolicy {
+pub(super) fn quick_restarts() -> RestartPolicy {
     RestartPolicy {
         first_delay: Duration::from_millis(10),
         max_delay: Duration::from_millis(40),
@@ -30,24 +30,24 @@ fn quick_restarts() -> RestartPolicy {
 }
 
 /// Test lockers in a scratch directory. Each run appends its process ID to `runs`.
-struct Lockers {
+pub(super) struct Lockers {
     dir: tempfile::TempDir,
 }
 
 impl Lockers {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Lockers {
             dir: tempfile::tempdir().unwrap(),
         }
     }
 
     /// A locker that waits for its stdin to close, as a locker runs until it unlocks.
-    fn waiting(&self, name: &str) -> Vec<String> {
+    pub(super) fn waiting(&self, name: &str) -> Vec<String> {
         self.write(name, "exec cat >/dev/null")
     }
 
     /// A locker that fails at once.
-    fn failing(&self, name: &str) -> Vec<String> {
+    pub(super) fn failing(&self, name: &str) -> Vec<String> {
         self.write(name, "exit 1")
     }
 
@@ -61,7 +61,7 @@ impl Lockers {
 
     /// The process ID of each run of the locker `name`, oldest first. A line that a run is
     /// still writing has no newline yet, and isn't one.
-    fn runs(&self, name: &str) -> Vec<u32> {
+    pub(super) fn runs(&self, name: &str) -> Vec<u32> {
         let path: PathBuf = self.dir.path().join(format!("{name}.runs"));
         let text = fs::read_to_string(path).unwrap_or_default();
         let complete = text.rfind('\n').map_or("", |end| &text[..end]);
@@ -70,7 +70,10 @@ impl Lockers {
 }
 
 /// Caminito with one output and `locker-command` set to `command`, restarting it quickly.
-fn fixture_with(command: Vec<String>, more: Vec<(&'static str, String, Value)>) -> Fixture {
+pub(super) fn fixture_with(
+    command: Vec<String>,
+    more: Vec<(&'static str, String, Value)>,
+) -> Fixture {
     let mut settings = vec![(CAMINITO, "locker-command".into(), Value::StrList(command))];
     settings.extend(more);
     let mut f = Fixture::with_settings(settings);
@@ -82,14 +85,19 @@ fn fixture_with(command: Vec<String>, more: Vec<(&'static str, String, Value)>) 
 }
 
 /// The dump's `locker`.
-fn locker_dump(f: &Fixture) -> serde_json::Value {
+pub(super) fn locker_dump(f: &Fixture) -> serde_json::Value {
     let dump: serde_json::Value =
         serde_json::from_str(&f.state.caminito.state_dump()).expect("the dump is JSON");
     dump["locker"].clone()
 }
 
 /// Waits for run `run` of the locker `name`, and connects a client as its process.
-fn connect_as_run(f: &mut Fixture, lockers: &Lockers, name: &str, run: usize) -> ClientId {
+pub(super) fn connect_as_run(
+    f: &mut Fixture,
+    lockers: &Lockers,
+    name: &str,
+    run: usize,
+) -> ClientId {
     f.dispatch_until(|_| lockers.runs(name).len() > run);
     let pid = lockers.runs(name)[run];
     f.connect_as_process(pid)
@@ -97,7 +105,7 @@ fn connect_as_run(f: &mut Fixture, lockers: &Lockers, name: &str, run: usize) ->
 
 /// Asks for the lock as `client`, with a lock surface on the output, and returns whether
 /// the lock was accepted.
-fn take_the_lock(f: &mut Fixture, client: ClientId) -> bool {
+pub(super) fn take_the_lock(f: &mut Fixture, client: ClientId) -> bool {
     f.client(client).bind_outputs();
     let lock = f.client(client).lock_session();
     f.roundtrip(client);
@@ -125,7 +133,7 @@ fn light_pixels_across_the_middle(f: &mut Fixture) -> usize {
         .count()
 }
 
-fn kill(pid: u32) {
+pub(super) fn kill(pid: u32) {
     let pid = rustix::process::Pid::from_raw(pid as i32).unwrap();
     rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
 }

@@ -785,6 +785,45 @@ session_env() {
   it's given up on`. `DumpState`'s `lock` is `pending`, and its `locker` has `state` `gave-up`
   and the `message`.
 
+### The suspend race with a slow locker
+
+- **Milestone:** M7
+- **Steps:**
+  1. Log into MATE on Caminito (a Session, on the tty), with mate-power-manager's
+     `lock-suspend` on. Run `systemd-inhibit --list` and find Caminito's `sleep` delay.
+  2. Make the locker slow: `gsettings set org.mate.Caminito locker-command "['sh', '-c', 'sleep
+     5; exec caminito-locker']"`. Suspend from the panel's Shut Down dialog, and wake the
+     machine with a key once it sleeps.
+  3. Set `locker-command` to `"['sleep', 'infinity']"`, a locker that never draws, and repeat
+     step 2.
+  4. Reset `locker-command`, and repeat step 2 with the default locker.
+- **Expected:** after each resume the lock is what shows, never the desktop, not even for a
+  frame. In step 2 the machine sleeps about 2 s after the request with the dark lock on screen,
+  and in step 3 likewise; caminito-locker's dialog is there on resume in step 4. Caminito's
+  `sleep` delay is in `systemd-inhibit --list` again after each resume.
+- **Debug tool:** `journalctl --user -b -t caminito -p warning` has `the lock isn't on screen 2 s
+  after logind asked to sleep` for steps 2 and 3, and not for 4. `journalctl -b -u
+  systemd-logind` has the suspend and how long it was delayed.
+
+### `loginctl unlock-session` from a console
+
+- **Milestone:** M7
+- **Steps:**
+  1. In a Session, run `loginctl lock-session` from a terminal, then
+     `loginctl show-session $XDG_SESSION_ID -p LockedHint` from another tty.
+  2. Unlock with the password, and read `LockedHint` again.
+  3. Set `locker-command` to `"['false']"`, run `loginctl lock-session`, and wait for the
+     give-up line. Switch to a text console, log in, and run the command the line names. Switch
+     back.
+  4. Reset `locker-command`, lock with `loginctl lock-session`, and unlock from a console with
+     `loginctl unlock-session` and the session's ID while caminito-locker shows.
+- **Expected:** step 1 locks with caminito-locker's dialog, and `LockedHint=yes`; step 2 gives
+  `LockedHint=no`. In step 3 the console's command unlocks: back on Caminito's VT the desktop is
+  there, and the next lock gets caminito-locker again. In step 4 the dialog goes, and the
+  desktop is back.
+- **Debug tool:** Caminito's journal has `logind unlocked the session` for steps 3 and 4.
+  `DumpState`'s `lock` is `unlocked` and its `locker` `idle` after each.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

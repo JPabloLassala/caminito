@@ -13,6 +13,7 @@ pub(crate) use state::LockState;
 
 use smithay::backend::input::InputTime;
 use smithay::backend::renderer::element::Id;
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::WindowSurfaceType;
 use smithay::desktop::utils::under_from_surface_tree;
 use smithay::output::Output;
@@ -44,6 +45,9 @@ pub(crate) struct Lock {
     /// the lock, and the outputs that haven't yet.
     confirmation: Option<SessionLocker>,
     undrawn: Vec<Output>,
+    /// The outputs that have drawn a frame with the locker's lock surface on them, which
+    /// logind's sleep delay waits for (130).
+    shown: Vec<Output>,
     /// The background's id in every output's scene, so it's damaged once and not at
     /// every frame.
     background: Id,
@@ -57,6 +61,7 @@ impl Default for Lock {
             surfaces: Vec::new(),
             confirmation: None,
             undrawn: Vec::new(),
+            shown: Vec::new(),
             background: Id::new(),
         }
     }
@@ -93,6 +98,7 @@ impl Lock {
         self.surfaces.clear();
         self.confirmation = Some(confirmation);
         self.undrawn = outputs.to_vec();
+        self.shown.clear();
     }
 
     /// Caminito asks for the lock itself (126).
@@ -103,6 +109,19 @@ impl Lock {
     /// The locker that holds the lock unlocked.
     fn release(&mut self) {
         self.state = self.state.unlocked();
+        self.forget_locker();
+    }
+
+    /// logind's `Unlock` ends the lock (130). A locker that holds it hears `finished`, which
+    /// ext-session-lock allows for a lock the compositor unlocked some other way.
+    fn end(&mut self) {
+        self.state = self.state.ended();
+        // A locker not told `locked` yet hears `finished` as its confirmation is dropped.
+        if self.confirmation.is_none()
+            && let Some(held) = &self.held
+        {
+            held.finished();
+        }
         self.forget_locker();
     }
 
@@ -119,12 +138,26 @@ impl Lock {
         self.surfaces.clear();
         self.confirmation = None;
         self.undrawn.clear();
+        self.shown.clear();
     }
 
     /// `output` drew a frame, which shows the lock if the session is locked.
     pub(crate) fn frame_drawn(&mut self, output: &Output) {
         self.undrawn.retain(|undrawn| undrawn != output);
         self.confirm_if_drawn();
+        let drawn = self.surface_on(output).is_some_and(|surface| {
+            with_renderer_surface_state(surface.wl_surface(), |state| state.buffer().is_some())
+                .unwrap_or(false)
+        });
+        if drawn && !self.shown.contains(output) {
+            self.shown.push(output.clone());
+        }
+    }
+
+    /// Whether a locker holds the lock and each of `outputs` has drawn its lock surface:
+    /// what's on screen is the locker's, not the background alone (130).
+    pub(crate) fn is_shown_on(&self, outputs: &[Output]) -> bool {
+        self.state == LockState::Locked && outputs.iter().all(|output| self.shown.contains(output))
     }
 
     /// Tells the locker `locked` if no output is left to draw the lock.
@@ -173,6 +206,12 @@ impl SessionLockHandler for State {
     /// refresh pass gives the keyboard and the pointer back to what policy focuses and
     /// what's under the pointer.
     fn unlock(&mut self) {
+        // Smithay takes the locker of a lock that logind ended (130) for the one that holds
+        // the lock until another is told `locked`. Its unlock mustn't end a later lock.
+        let lock = &self.caminito.lock;
+        if lock.state() != LockState::Locked || lock.confirmation.is_some() {
+            return;
+        }
         self.caminito.lock.release();
         self.caminito.locker.finish();
         self.caminito.queue_redraw_all();
@@ -276,6 +315,8 @@ impl Caminito {
         self.lock.confirm_if_drawn();
         let surfaces = &mut self.lock.surfaces;
         surfaces.retain(|(output, surface)| surface.alive() && outputs.contains(output));
+        let shown = &mut self.lock.shown;
+        shown.retain(|output| surfaces.iter().any(|(on, _)| on == output));
         for (output, surface) in surfaces.iter() {
             configure_lock_surface(surface, output);
         }
@@ -283,6 +324,19 @@ impl Caminito {
 
     /// Queues a redraw of the output `surface` is the lock surface's root of, and returns
     /// whether it's one.
+    /// logind's `Unlock` (130): the lock ends whatever holds it, and the locker Caminito
+    /// keeps for it is stopped, from the give-up state too (126). The refresh pass gives the
+    /// keyboard and the pointer back, as at the locker's unlock.
+    pub(crate) fn end_lock(&mut self) {
+        if !self.lock.is_locked() {
+            return;
+        }
+        tracing::info!("logind unlocked the session");
+        self.lock.end();
+        self.locker.end();
+        self.queue_redraw_all();
+    }
+
     pub(crate) fn lock_surface_commit(&mut self, surface: &WlSurface) -> bool {
         let output = self.lock.surfaces().find_map(|(output, lock_surface)| {
             (lock_surface.wl_surface() == surface).then(|| output.clone())

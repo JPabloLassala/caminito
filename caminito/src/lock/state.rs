@@ -1,5 +1,5 @@
 //! The lock state machine, as a pure type (12, 15): which lock requests are accepted, and
-//! what the session is left in when the locker unlocks or goes away.
+//! what the session is left in when the locker unlocks or goes away, or logind unlocks.
 
 /// Whether the session is locked, and who holds the lock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -91,6 +91,12 @@ impl LockState {
         }
     }
 
+    /// logind's `Unlock` ends the lock, whoever holds it or none does (130): the
+    /// text-console recovery from a locker Caminito gave up on (126).
+    pub(crate) fn ended(self) -> Self {
+        LockState::Unlocked
+    }
+
     /// The locker that holds the lock went away without unlocking.
     pub(crate) fn locker_gone(self) -> Self {
         match self {
@@ -174,6 +180,13 @@ mod tests {
         for state in [Unlocked, Pending, LockerLost] {
             assert_eq!(state.unlocked(), state);
             assert_eq!(state.locker_gone(), state);
+        }
+    }
+
+    #[test]
+    fn loginds_unlock_unlocks_from_every_state() {
+        for state in [Unlocked, Pending, Locked, LockerLost] {
+            assert_eq!(state.ended(), Unlocked, "{state:?}");
         }
     }
 
