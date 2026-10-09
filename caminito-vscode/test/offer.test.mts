@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AGENTS_WORKSPACE, fixture } from './fixture.mts';
+import { AGENTS_WORKSPACE, USER_DIR, fixture } from './fixture.mts';
 import type { FakeEditor } from './harness.mts';
 
 const OFFER = 'caminito.globalMenu.offerToHideMenuBar';
@@ -101,6 +101,7 @@ test('the agents window claims and offers nothing', async (t) => {
   const f = await fixture(t, {
     settings: { [VISIBILITY]: 'classic', [OFFER]: true },
     workspaceFile: AGENTS_WORKSPACE,
+    userDir: USER_DIR,
   });
   await f.claimed(1);
   await f.editor.notified(0);
@@ -111,6 +112,7 @@ test('a workspace file of that name elsewhere is no agents window', async (t) =>
   const f = await fixture(t, {
     settings: { [VISIBILITY]: 'classic', [OFFER]: true },
     workspaceFile: '/home/user/projects/agent-sessions.code-workspace',
+    userDir: USER_DIR,
   });
   await f.claimed(1);
   await f.editor.notified(1);

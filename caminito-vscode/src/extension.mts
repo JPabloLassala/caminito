@@ -10,13 +10,10 @@ import type { GlobalMenu } from './global-menu.mts';
 let running: GlobalMenu | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  running = start(vscode, {
-    platform: process.platform,
-    parentPid: process.ppid,
-    // `<user data>/User/globalStorage/<extension>`, the default profile's whatever the
-    // window's profile is, as ticket 12 read VS Code's source. It hasn't been run (122).
-    settingsDirectory: dirname(dirname(context.globalStorageUri.fsPath)),
-  });
+  // The extension's global storage is the default profile's whatever the window's, at
+  // `<user data>/User/globalStorage/caminito.global-menu`, as ticket 02 found in 1.140.
+  const userDir = dirname(dirname(context.globalStorageUri.fsPath));
+  running = start(vscode, { platform: process.platform, parentPid: process.ppid, userDir });
 }
 
 export function deactivate(): void {

@@ -35,6 +35,10 @@ export interface Options {
   readonly settings?: Record<string, unknown>;
   /** The window's workspace at activation; a folder by default. */
   readonly workspace?: Workspace;
+  /** The default keybindings' text, or what reading them fails with; none by default. */
+  readonly defaultKeybindings?: string | Error;
+  /** The default profile's directory, `<user data>/User`; none by default, so no user file is read. */
+  readonly userDir?: string;
   /** The path of the window's workspace file on disk, as the agents window has; none by default. */
   readonly workspaceFile?: string;
   /** The pid of the editor's main process; `PARENT` by default. */
@@ -44,11 +48,11 @@ export interface Options {
 /** The pid of the editor's main process, unless a test says otherwise. */
 export const PARENT = 4242;
 
-/** The user's settings directory, as the extension is told it. */
-export const SETTINGS_DIRECTORY = '/home/user/.config/Code/User';
+/** A `userDir` for a test that reads none of its files. */
+export const USER_DIR = '/home/user/.config/Code/User';
 
-/** The agents window's workspace file. */
-export const AGENTS_WORKSPACE = join(SETTINGS_DIRECTORY, 'agent-sessions.code-workspace');
+/** The agents window's workspace file, under `USER_DIR`. */
+export const AGENTS_WORKSPACE = join(USER_DIR, 'agent-sessions.code-workspace');
 
 /** Another window's core on the fixture's bus. */
 export interface Core {
@@ -115,6 +119,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
     editor.settings = { ...options.settings };
     editor.workspace = options.workspace ?? 'folder';
     editor.workspaceFile = options.workspaceFile;
+    editor.defaultKeybindings = options.defaultKeybindings ?? '[]';
     const commands = options.commands ?? commandsOf(menu.table.menus);
     editor.listCommands = () =>
       commands instanceof Error ? Promise.reject(commands) : Promise.resolve([...commands]);
@@ -129,7 +134,7 @@ export async function fixture(t: TestContext, options: Options = {}): Promise<Fi
       busAddress: options.busAddress ?? bus.address,
       menu,
       parentPid: options.parentPid ?? PARENT,
-      settingsDirectory: SETTINGS_DIRECTORY,
+      ...(options.userDir !== undefined && { userDir: options.userDir }),
     });
     extensions.push(extension);
     await extension.ready;
