@@ -1,6 +1,6 @@
 # Manual checklist
 
-The checks CI can't run: anything that needs a real desktop, real logind, real hardware, msd or
+The checks `tools/check` can't run: anything that needs a real desktop, real logind, real hardware, msd or
 Orca. Before a milestone closes, run every item tagged with that milestone, and every item from
 an earlier milestone that still applies, on the installed package. Record the results in the
 milestone's `Close M<n> <name>` commit message.

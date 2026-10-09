@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Every check Caminito's code has to pass, run on the developer's Arch machine. There's no
+# hosted CI: a ticket's or a milestone's "tools/check passes" is this script, run here.
+#
+#   tools/check [--deps]
+#
+# --deps first installs the packages the checks need, and the toolchain rust-toolchain.toml
+# names. A missing package fails its step rather than skipping it.
+set -euo pipefail
+
+cd "$(dirname "$(realpath "$0")")/.."
+
+if [ "${1-}" = --deps ]; then
+  # pixman: the headless backend links it in test builds. wayland: the fixture's clients load
+  # libwayland-client. dbus: dbus-run-session gives caminito's tests a private bus (14).
+  # pango, gdk-pixbuf2: caminito-theme lays out titles and loads theme images with them.
+  # meson, gtk3: the palette helper's build. xorg-server-xvfb, xorg-xauth: xvfb-run, which
+  # the palette helper's test runs under. xorg-xwayland: the X11 tier spawns a real Xwayland
+  # from the headless fixture (14). seatd, systemd-libs, mesa, libdisplay-info, libinput: the
+  # tty backend links them. gtk4: caminito-displays (84). gtk-session-lock, mate-desktop, pam:
+  # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
+  # passwords against. nodejs, npm: the global menu extension (116).
+  sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus \
+    pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
+    systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
+    nodejs npm
+  rustup toolchain install
+fi
+
+step() {
+  echo "==> $*"
+}
+
+step rustfmt
+cargo fmt --all --check
+
+step clippy
+cargo clippy --workspace --all-targets -- -D warnings
+
+step cargo-deny
+cargo deny check
+
+step build
+cargo build --workspace
+
+step "tests but caminito's"
+cargo test --workspace --exclude caminito
+
+# The palette helper against the colours Marco recorded, and live gtk-theme changes (28).
+# The colours don't depend on the GDK backend, so it runs on X under Xvfb.
+step "the palette helper"
+[ -d target/meson ] || meson setup target/meson
+meson compile -C target/meson
+CAMINITO_GTK_PALETTE=$PWD/target/meson/helpers/caminito-gtk-palette/caminito-gtk-palette \
+  xvfb-run -a cargo test -p caminito-theme --test palette_helper -- --ignored
+
+# caminito-locker's PAM conversation (131), against pam_wrapper's stand-in service.
+step "the helpers' tests"
+meson test -C target/meson --print-errorlogs
+
+# The headless tier renders with pixman, so it needs no GPU or EGL, and the X11 tier runs
+# with it. caminito's tests get a private session bus (14), which reads the service files a
+# test writes below HOME.
+step "caminito's tests"
+XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito
+
+# The real caminito-locker against the headless fixture (131). Its password is checked by
+# pam_wrapper's stand-in service.
+step "caminito-locker against caminito"
+CAMINITO_LOCKER=$PWD/target/meson/helpers/caminito-locker/caminito-locker \
+  PAM_WRAPPER_MODULES=$(pkg-config --variable=modules pam_wrapper) \
+  XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- \
+  cargo test -p caminito tests::caminito_locker -- --ignored
+
+# The global menu extension (116): type-checked, tested on a private dbus-daemon of each
+# test's own, and bundled.
+step "the extension"
+(
+  cd caminito-vscode
+  npm ci
+  npm run typecheck
+  npm test
+  npm run build
+)
+
+step "all checks passed"

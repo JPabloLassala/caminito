@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: the code is in; the workflow's first runs on GitHub (the first two criteria) and the Xvfb question are the developer's
+Status: wontfix
 Milestone: none: after v0.1
 Blocked by: [118](118-the-menu-is-vs-codes.md)
 
@@ -39,3 +39,4 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 - **A dispatch input `vscode-version`** (default `latest`) lets the job run against the table's own 1.140.0, which is how the first criterion gets checked.
 - **Not run here:** VS Code's download is blocked by this container's proxy, so neither Electron nor the workflow ran. Still to do by the developer on GitHub: dispatch Weekly with `vscode-version: 1.140.0` (first criterion); then do it twice on a branch with an item cut from `menu/table.json` (second criterion). The first of those runs answers the Xvfb question with the sandbox off, which is how `snapshot.mts` already runs it. The sandbox-on case needs `--no-sandbox` dropped by hand. If Electron won't run, the spec and ADR 0019 are amended as the ticket says.
 - **The Rust suite wasn't run:** `pango-sys` won't build here. Nothing outside `caminito-vscode/` and the workflow changed.
+- **Won't fix (2026-10-09):** hosted CI was removed, so there's no weekly workflow to run the job in, and `weekly.yml` went with it. As ADR 0019 and the spec now say, the developer runs `node tools/snapshot.mts --editor <vscode> --check` in `caminito-vscode/` when the package updates; that command is still this ticket's.

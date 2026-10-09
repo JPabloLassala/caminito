@@ -22,7 +22,7 @@
 - No new dependency.
 - Exact values from the ticket: the popup appears **90 ms** after the key. The selection starts on the **second** entry. Honoured keys of `org.mate.Marco.general`: `alt-tab-max-columns` (1 to 64, default 5), `alt-tab-raise-windows` (default false), `compositing-manager` (default true), `compositing-fast-alt-tab` (default false), `icon-size` (8 to 256, default 48). Never honoured: `show-tab-border`, `alt-tab-expand-to-fit-title`.
 - Default bindings (hard-coded until M8 reads `org.mate.Marco.*`): `switch-windows` Alt+Tab, `switch-group` Alt+grave, `switch-panels` Ctrl+Alt+Tab; `switch-windows-all` is unbound. Shift with any of them steps backward.
-- CI must pass: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and the tests.
+- `tools/check` must pass: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and the tests.
 - Commits: imperative subject that names the ticket, for example `List the windows a switch action shows (ticket 108)`. The body is prose: what changed and why, what is left, how it was tested. End each commit message with the line `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`. Do not push.
 
 ### How to build and test

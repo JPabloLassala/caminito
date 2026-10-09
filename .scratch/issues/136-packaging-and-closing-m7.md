@@ -19,7 +19,7 @@ M7's exit criterion holds on the developer's machine, and the closing commit say
 
 ## Acceptance criteria
 
-- [ ] CI is green on push, and the Packaging job with `caminito-locker` in `caminito-git`.
+- [ ] `tools/check` passes on the developer's machine.
 - [ ] 17's exit, run by hand in a Session:
   - the session locks from the panel, from `org.mate.ScreenSaver`, on idle and before suspend;
   - killing `caminito-locker` while locked leaves the session locked and brings it back;

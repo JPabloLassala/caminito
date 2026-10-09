@@ -2,7 +2,7 @@
 
 How Caminito's code is written. Reviews check a diff against this file, [CONTEXT.md](CONTEXT.md) for naming, and the ADRs in [docs/adr/](docs/adr/) for decisions. Where this file and an ADR disagree, the ADR wins and this file is out of date.
 
-## Enforced by CI
+## Enforced by `tools/check`
 
 - `cargo fmt --all --check`, with rustfmt's defaults. There is no `rustfmt.toml`.
 - `cargo clippy --workspace --all-targets -- -D warnings`, so every clippy warning fails the build. Fix the code rather than silencing the lint. If an allow is truly needed, use `#[expect(clippy::…, reason = "…")]` on the smallest item.

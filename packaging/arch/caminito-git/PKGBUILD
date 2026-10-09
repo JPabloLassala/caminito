@@ -97,7 +97,7 @@ check() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   # In release, so the tests reuse build()'s dependencies instead of compiling them again
-  # in debug. CI runs them in debug.
+  # in debug. tools/check runs them in debug.
   dbus-run-session -- cargo test --frozen --release
 }
 

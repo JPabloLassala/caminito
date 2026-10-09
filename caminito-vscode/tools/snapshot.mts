@@ -7,7 +7,7 @@
 //   npm run snapshot -- [--editor <dir>] [--out <file>] [--annotations <file>] [--no-xvfb]
 //                       [--settle <ms>] [--timeout <ms>] [--check]
 //
-// `--check` is the weekly canary's (123): it writes nothing, compares the structure of the
+// `--check` is the canary's (123), run by hand when the package updates: it writes nothing, compares the structure of the
 // snapshot with the table at `--out`, and on a difference prints the diff and exits with 1.
 //
 // `--editor` is the directory of Microsoft's build, /usr/share/code by default, as

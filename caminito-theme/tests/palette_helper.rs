@@ -1,7 +1,7 @@
 //! `caminito-gtk-palette` itself (28), run for the fixed GTK theme.
 //!
 //! These need the helper built by Meson, named by `CAMINITO_GTK_PALETTE`, and an X display,
-//! so they're ignored by default. CI runs them under `xvfb-run` with `GDK_BACKEND=x11`:
+//! so they're ignored by default. `tools/check` runs them under `xvfb-run` with `GDK_BACKEND=x11`:
 //! the colours don't depend on the GDK backend.
 
 use std::collections::BTreeMap;
@@ -181,7 +181,7 @@ fn recorded_names(recorded: &Value) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "needs CAMINITO_GTK_PALETTE and an X display; CI runs it under xvfb-run"]
+#[ignore = "needs CAMINITO_GTK_PALETTE and an X display; tools/check runs it under xvfb-run"]
 fn the_helper_reports_the_colours_marco_renders() {
     let recorded = goldens_palette();
     let gtk_theme = recorded["gtk_theme"].as_str().unwrap();
@@ -206,7 +206,7 @@ fn the_helper_reports_the_colours_marco_renders() {
 }
 
 #[test]
-#[ignore = "needs CAMINITO_GTK_PALETTE and an X display; CI runs it under xvfb-run"]
+#[ignore = "needs CAMINITO_GTK_PALETTE and an X display; tools/check runs it under xvfb-run"]
 fn changing_gtk_theme_reports_the_new_themes_palette() {
     let environment = Environment::new();
     environment.set_gtk_theme("Adwaita");
