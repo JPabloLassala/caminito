@@ -199,7 +199,7 @@ fn a_locker_that_unlocks_and_exits_isnt_started_again() {
     // Nothing is to happen: the wait is several of the restart's longest delays.
     f.dispatch_for(quick_restarts().max_delay * 5);
     assert_eq!(lockers.runs("locker").len(), 1);
-    assert_eq!(locker_dump(&f)["state"], "none");
+    assert_eq!(locker_dump(&f)["state"], "idle");
 }
 
 #[test]

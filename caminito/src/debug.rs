@@ -101,7 +101,7 @@ struct StateDump {
 
 #[derive(Serialize)]
 struct LockerDump {
-    /// `none` while Caminito keeps no locker running, `starting` before one is spawned or
+    /// `idle` while Caminito keeps no locker running, `starting` before one is spawned or
     /// spawned again, `running`, or `gave-up` once it failed to start too often.
     state: &'static str,
     /// The line drawn on the lock once Caminito gave up on the locker.

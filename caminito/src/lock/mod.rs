@@ -44,9 +44,6 @@ pub(crate) struct Lock {
     /// the lock, and the outputs that haven't yet.
     confirmation: Option<SessionLocker>,
     undrawn: Vec<Output>,
-    /// The process of the locker Caminito spawned, which alone takes over a lock that no
-    /// locker holds (126).
-    pub(crate) spawned_locker: Option<u32>,
     /// The background's id in every output's scene, so it's damaged once and not at
     /// every frame.
     background: Id,
@@ -60,7 +57,6 @@ impl Default for Lock {
             surfaces: Vec::new(),
             confirmation: None,
             undrawn: Vec::new(),
-            spawned_locker: None,
             background: Id::new(),
         }
     }
@@ -97,6 +93,11 @@ impl Lock {
         self.surfaces.clear();
         self.confirmation = Some(confirmation);
         self.undrawn = outputs.to_vec();
+    }
+
+    /// Caminito asks for the lock itself (126).
+    fn request(&mut self) {
+        self.state = self.state.requested();
     }
 
     /// The locker that holds the lock unlocked.
@@ -173,7 +174,6 @@ impl SessionLockHandler for State {
     /// what's under the pointer.
     fn unlock(&mut self) {
         self.caminito.lock.release();
-        self.caminito.lock.spawned_locker = None;
         self.caminito.locker.finish();
         self.caminito.queue_redraw_all();
     }
@@ -248,7 +248,7 @@ impl Caminito {
         let process = lock
             .client()
             .and_then(|client| client_process(&client, &self.display_handle));
-        match self.lock.spawned_locker {
+        match self.locker.process() {
             Some(spawned) if process == Some(spawned) => Asker::SpawnedLocker,
             _ => Asker::Other,
         }

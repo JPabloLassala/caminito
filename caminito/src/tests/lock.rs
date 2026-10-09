@@ -257,24 +257,6 @@ fn a_second_clients_lock_is_refused_once_the_locker_is_gone() {
     assert!(!f.has_keyboard(window));
 }
 
-/// 126 spawns the locker; until then a test names the process itself.
-#[test]
-fn a_locker_caminito_spawned_takes_the_lock_over_once_the_locker_is_gone() {
-    let (mut f, _, locker) = a_focused_window_and_a_locker();
-    lock_with_a_surface(&mut f, locker);
-    f.disconnect(locker);
-    f.state.caminito.lock.spawned_locker = Some(4242);
-    let other = f.connect_as_process(4243);
-    let spawned = f.connect_as_process(4242);
-
-    let refused = lock(&mut f, other);
-    let taken = lock(&mut f, spawned);
-
-    assert!(f.client(other).session_lock(refused).finished);
-    assert!(f.client(spawned).session_lock(taken).locked);
-    assert_eq!(f.lock_state(), "locked");
-}
-
 #[test]
 fn a_second_lock_is_refused_while_a_locker_holds_the_lock() {
     let (mut f, _, locker) = a_focused_window_and_a_locker();

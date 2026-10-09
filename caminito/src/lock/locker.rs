@@ -45,7 +45,7 @@ pub(crate) struct Locker {
     /// The logind session's ID, `XDG_SESSION_ID`, which the give-up message names.
     pub(crate) session_id: Option<String>,
     /// Caminito's Wayland socket, the locker's `WAYLAND_DISPLAY`.
-    pub(crate) socket: Option<OsString>,
+    socket: Option<OsString>,
     /// The give-up message as each output shows it, with the scale it's drawn at and its
     /// size.
     messages: Vec<Message>,
@@ -55,7 +55,7 @@ pub(crate) struct Locker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Supervision {
     /// No: none was asked for, or the session unlocked.
-    None,
+    Idle,
     /// One is about to be spawned, the first or again.
     Starting,
     /// One runs.
@@ -82,7 +82,7 @@ impl Locker {
                 RestartPolicy::default(),
                 StderrTarget::Prefixed,
             ),
-            supervision: Supervision::None,
+            supervision: Supervision::Idle,
             policy: RestartPolicy::default(),
             session_id: std::env::var("XDG_SESSION_ID")
                 .ok()
@@ -95,11 +95,25 @@ impl Locker {
     /// The supervision's name in the debug dump.
     pub(crate) fn state_name(&self) -> &'static str {
         match self.supervision {
-            Supervision::None => "none",
+            Supervision::Idle => "idle",
             Supervision::Starting => "starting",
             Supervision::Running => "running",
             Supervision::GaveUp => "gave-up",
         }
+    }
+
+    /// The process of the locker Caminito keeps for the lock, which alone takes over a
+    /// lock that no locker holds (125). One that unlocked isn't.
+    pub(crate) fn process(&self) -> Option<u32> {
+        match self.supervision {
+            Supervision::Starting | Supervision::Running => self.helper.process(),
+            Supervision::Idle | Supervision::GaveUp => None,
+        }
+    }
+
+    /// Sets the socket the locker connects to, the one `add_socket` opened.
+    pub(crate) fn set_socket(&mut self, socket: OsString) {
+        self.socket = Some(socket);
     }
 
     pub(crate) fn gave_up(&self) -> bool {
@@ -114,9 +128,7 @@ impl Locker {
             Some(id) => format!("loginctl unlock-session {id}"),
             None => "loginctl unlock-sessions".to_owned(),
         };
-        format!(
-            "The screen locker can't start. To unlock, switch to a text console and run: {command}"
-        )
+        format!("To unlock, switch to a text console and run: {command}")
     }
 
     /// The give-up message on `output`, with its size, if it's drawn.
@@ -132,14 +144,14 @@ impl Locker {
     /// The session unlocked: the locker that ran is let be, and none is started again.
     pub(crate) fn finish(&mut self) {
         self.helper.finish();
-        self.supervision = Supervision::None;
+        self.supervision = Supervision::Idle;
         self.messages.clear();
     }
 
     /// Stops the locker for good, as Caminito tears down (08).
     pub(crate) fn stop(&mut self) {
         self.helper.stop();
-        self.supervision = Supervision::None;
+        self.supervision = Supervision::Idle;
     }
 }
 
@@ -193,7 +205,6 @@ fn locker_event(state: &mut State, event: HelperEvent<'_>) {
     let locker = &mut caminito.locker;
     match event {
         HelperEvent::Started => {
-            caminito.lock.spawned_locker = locker.helper.process();
             if locker.supervision == Supervision::Starting {
                 locker.supervision = Supervision::Running;
             }
@@ -202,15 +213,14 @@ fn locker_event(state: &mut State, event: HelperEvent<'_>) {
             tracing::debug!("locker: {}", String::from_utf8_lossy(bytes).trim_end());
         }
         HelperEvent::Exited => {
-            caminito.lock.spawned_locker = None;
             if locker.supervision == Supervision::Running {
                 locker.supervision = Supervision::Starting;
             }
         }
         HelperEvent::GaveUp => {
             locker.supervision = Supervision::GaveUp;
-            tracing::error!(
-                "gave up on the locker; the session stays locked: {}",
+            tracing::warn!(
+                "can't start the locker, so it's given up on and the session stays locked: {}",
                 locker.message()
             );
             caminito.queue_redraw_all();
@@ -229,14 +239,14 @@ impl State {
     )]
     pub(crate) fn request_lock(&mut self) -> bool {
         let caminito = &mut self.caminito;
-        if caminito.settings.locker.disabled {
+        if caminito.settings.locker.lock_disabled {
             tracing::warn!("can't lock the session: org.mate.lockdown disable-lock-screen is on");
             return false;
         }
         // The locker that held the lock may have gone in this same dispatch.
         caminito.notice_locker_gone();
         let was_locked = caminito.lock.is_locked();
-        caminito.lock.state = caminito.lock.state.requested();
+        caminito.lock.request();
         if !was_locked {
             caminito.queue_redraw_all();
             self.session_locked();
@@ -255,12 +265,12 @@ impl Caminito {
     /// now, unless one runs or is coming for it, or Caminito gave up on it.
     fn spawn_locker(&mut self) {
         let locker = &mut self.locker;
-        if locker.supervision != Supervision::None {
+        if locker.supervision != Supervision::Idle {
             return;
         }
         let settings = &self.settings.locker;
         if settings.command.is_empty() {
-            tracing::warn!("org.mate.Caminito locker-command is empty, so no locker can start");
+            tracing::warn!("can't start the locker: org.mate.Caminito locker-command is empty");
         }
         let command = command(settings, &self.environment, locker.socket.as_ref());
         // The locker of an earlier lock that's still exiting is ended here.
@@ -271,7 +281,6 @@ impl Caminito {
             self.helper_stderr,
         );
         locker.supervision = Supervision::Starting;
-        self.lock.spawned_locker = None;
         locker.helper.start();
     }
 

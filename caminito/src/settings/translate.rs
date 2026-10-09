@@ -327,7 +327,7 @@ pub struct LockerSettings {
     /// be empty, which is a failed start.
     pub command: Vec<String>,
     /// `org.mate.lockdown disable-lock-screen`: no lock request is accepted.
-    pub disabled: bool,
+    pub lock_disabled: bool,
 }
 
 /// What the Window switcher is drawn with (108), from `org.mate.Marco.general`.
@@ -985,7 +985,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         keymap: keymap(&mut r).or(&reading.system_keymap),
         locker: LockerSettings {
             command: r.strings_or(CAMINITO, "locker-command", &["caminito-locker"]),
-            disabled: r.bool(LOCKDOWN, "disable-lock-screen", false),
+            lock_disabled: r.bool(LOCKDOWN, "disable-lock-screen", false),
         },
     };
     for schema in &reading.missing {

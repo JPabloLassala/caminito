@@ -323,7 +323,7 @@ fn workspace_layout_rows_and_columns_out_of_range_are_clamped() {
 fn the_default_locker_is_caminito_locker_and_locking_is_allowed() {
     let locker = settings(&defaults()).locker;
     assert_eq!(locker.command, ["caminito-locker"]);
-    assert!(!locker.disabled);
+    assert!(!locker.lock_disabled);
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn an_empty_locker_command_is_kept_empty() {
 #[test]
 fn disable_lock_screen_is_read() {
     let reading = with(LOCKDOWN, "disable-lock-screen", Value::Bool(true));
-    assert!(settings(&reading).locker.disabled);
+    assert!(settings(&reading).locker.lock_disabled);
 }
 
 #[test]
