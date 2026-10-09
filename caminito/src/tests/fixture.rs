@@ -1266,6 +1266,15 @@ impl Fixture {
         self.state.caminito.display_handle.flush_clients().unwrap();
     }
 
+    /// Moves Caminito's clock on by `duration`, as a user who leaves it alone lets time pass,
+    /// runs idle's timers that are due by then, as their loop timer would, and dispatches
+    /// (128). Nothing waits for the time to pass.
+    pub fn advance_clock(&mut self, duration: Duration) {
+        self.state.caminito.clock_offset += duration;
+        self.state.idle_elapse();
+        self.dispatch();
+    }
+
     /// Dispatches for `duration`, as time passes in a running Caminito.
     pub fn dispatch_for(&mut self, duration: Duration) {
         let end = std::time::Instant::now() + duration;

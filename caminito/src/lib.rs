@@ -11,6 +11,7 @@ pub mod decoration;
 mod handlers;
 pub mod helpers;
 pub mod icons;
+mod idle;
 pub mod input;
 mod layer;
 mod lock;

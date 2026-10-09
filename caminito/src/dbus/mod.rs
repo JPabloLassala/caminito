@@ -1,5 +1,6 @@
-//! Caminito's D-Bus (15): one file per name or peer. `systemd`, `panel`, `notifications` and
-//! `global_menu`'s applet are the peers so far, and `registrar` is an interface the apps look for.
+//! Caminito's D-Bus (15): one file per name or peer. `systemd`, `panel`, `notifications`,
+//! `global_menu`'s applet and `session_manager`, mate-session, are the peers so far, and
+//! `registrar` is an interface the apps look for.
 //! `menu_claim` is a method of `caminito`'s that has a module of its own, and `a11y` is the
 //! Keyboard monitor for Orca (135). `logind` is Caminito's session on the system bus (130).
 //!
@@ -17,6 +18,7 @@ mod notifications;
 pub(crate) mod panel;
 pub(crate) mod registrar;
 pub mod screensaver;
+mod session_manager;
 pub(crate) mod systemd;
 
 use futures_channel::oneshot;
@@ -131,6 +133,8 @@ pub struct Dbus {
     _caller_watch: Option<zbus::Task<()>>,
     /// Passes on whether the Global menu applet is on the bus (110).
     _applet_watch: Option<zbus::Task<()>>,
+    /// Passes on whether mate-session holds idle off (128).
+    _session_inhibitors_watch: Option<zbus::Task<()>>,
     /// The registrar's name, which follows the applet (112).
     registrar: global_menu::Registrar,
     /// The Keyboard monitor's `KeyEvent`s, which a task sends in order (135).
@@ -223,10 +227,21 @@ impl Caminito {
             .inspect_err(|err| tracing::warn!("can't watch for the global menu applet: {err}"))
             .ok()
             .map(|watch| connection.executor().spawn(watch, "global menu applet"));
+        let session_inhibited = self.dbus_requests(Caminito::session_inhibited_changed);
+        let session_inhibitors_watch =
+            zbus::block_on(session_manager::watch(&connection, session_inhibited))
+                .inspect_err(|err| tracing::warn!("can't watch mate-session's inhibitors: {err}"))
+                .ok()
+                .map(|watch| {
+                    connection
+                        .executor()
+                        .spawn(watch, "mate-session's inhibitors")
+                });
         let registrar_released = self.dbus_requests(Caminito::registrar_released);
         let dbus = Dbus {
             _caller_watch: caller_watch,
             _applet_watch: applet_watch,
+            _session_inhibitors_watch: session_inhibitors_watch,
             registrar: global_menu::Registrar::new(registrar_released),
             key_events,
             connection,

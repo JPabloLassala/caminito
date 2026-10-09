@@ -151,7 +151,11 @@ fn a_drag_icon_is_drawn_over_everything_but_the_cursor() {
             SceneLayer::Windows
         ]
     );
-    assert_eq!(LAYERS[..2], [SceneLayer::Cursor, SceneLayer::DragIcon]);
+    // Only the blank is above the cursor (128).
+    assert_eq!(
+        LAYERS[..3],
+        [SceneLayer::Blank, SceneLayer::Cursor, SceneLayer::DragIcon]
+    );
 }
 
 #[test]

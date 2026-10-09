@@ -85,6 +85,8 @@ struct StateDump {
     lock: &'static str,
     /// The locker Caminito spawns (126).
     locker: LockerDump,
+    /// Idle, the blank and what holds them off (128).
+    idle: IdleDump,
     /// The accelerators grabbed over `org.mate.Caminito` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
@@ -106,6 +108,31 @@ struct LockerDump {
     state: &'static str,
     /// The line drawn on the lock once Caminito gave up on the locker.
     message: Option<String>,
+}
+
+#[derive(Serialize)]
+struct IdleDump {
+    /// Whether the outputs are blanked.
+    blanked: bool,
+    /// Whether inhibitors hold idle off now. None do while the session is locked (12).
+    inhibited: bool,
+    /// What asks to hold idle off: each idle-inhibit surface, and mate-session while it
+    /// says one of its own does.
+    inhibitors: Vec<InhibitorDump>,
+    /// How many ext-idle-notify notifications clients have.
+    notifications: usize,
+}
+
+#[derive(Serialize)]
+struct InhibitorDump {
+    /// `idle-inhibit` or `mate-session`.
+    source: &'static str,
+    /// The window an idle-inhibit surface is part of, if it's a window's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    window: Option<u64>,
+    /// Whether an idle-inhibit surface is on screen, which it counts only while it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shown: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -332,9 +359,9 @@ impl Caminito {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
-    /// surfaces, the X11 scale, focus, the lock state and the locker, the accelerator grabs with their
-    /// owners, the Window switcher, and the bells rung with the last one, as pretty-printed
-    /// JSON.
+    /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the accelerator
+    /// grabs with their owners, the Window switcher, and the bells rung with the last one,
+    /// as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -464,6 +491,7 @@ impl Caminito {
                 state: self.locker.state_name(),
                 message: self.locker.gave_up().then(|| self.locker.message()),
             },
+            idle: self.idle_dump(),
             accelerator_grabs,
             switcher,
             global_menu_switch: self.global_menu_switch.name(),
@@ -477,6 +505,26 @@ impl Caminito {
             },
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
+    }
+
+    fn idle_dump(&self) -> IdleDump {
+        let idle = &self.idle;
+        let surfaces = idle.inhibitor_surfaces().map(|surface| InhibitorDump {
+            source: "idle-inhibit",
+            window: self.window_of_surface(surface).map(|id| id.0),
+            shown: Some(self.shows_surface(surface)),
+        });
+        let session = idle.session_inhibited().then_some(InhibitorDump {
+            source: "mate-session",
+            window: None,
+            shown: None,
+        });
+        IdleDump {
+            blanked: idle.is_blanked(),
+            inhibited: idle.is_inhibited(),
+            inhibitors: surfaces.chain(session).collect(),
+            notifications: idle.notification_count(),
+        }
     }
 
     /// Turns frame debug on or off, and returns whether it's now on.

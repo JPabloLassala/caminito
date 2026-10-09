@@ -11,8 +11,8 @@
 //! protocol, [`layer_shell`] makes layer surfaces, [`data_control`] reads and sets the
 //! selections as a clipboard manager does, [`security_context`] makes the socket a
 //! sandboxed client connects through, [`image_capture`] copies an output's or a
-//! window's pixels as a screenshot tool does, and [`session_lock`] locks the session as a
-//! locker does.
+//! window's pixels as a screenshot tool does, [`session_lock`] locks the session as a
+//! locker does, and [`idle`] hears of idle and holds it off.
 
 pub mod appmenu;
 pub mod data_control;
@@ -20,6 +20,7 @@ pub mod dbus;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gtk_shell;
+pub mod idle;
 pub mod image_capture;
 pub mod layer_shell;
 pub mod output_management;
@@ -100,7 +101,10 @@ use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration::{
     self, OrgKdeKwinServerDecoration,
 };
+use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1;
+use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
+use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1;
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration_manager::{
     self, OrgKdeKwinServerDecorationManager,
@@ -150,6 +154,10 @@ pub struct State {
     session_lock: Option<ExtSessionLockManagerV1>,
     session_locks: Vec<session_lock::SessionLock>,
     lock_surfaces: Vec<session_lock::LockSurface>,
+    idle_notifier: Option<ExtIdleNotifierV1>,
+    idle_notifications: Vec<idle::IdleNotification>,
+    idle_inhibit_manager: Option<ZwpIdleInhibitManagerV1>,
+    idle_inhibitors: Vec<ZwpIdleInhibitorV1>,
     pointer: Option<WlPointer>,
     keyboard: Option<WlKeyboard>,
     /// Every pointer and keyboard event received, oldest first.

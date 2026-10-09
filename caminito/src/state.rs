@@ -38,6 +38,7 @@ use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
 use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::image_capture_source::{
     OutputCaptureSourceState, ToplevelCaptureSourceState,
 };
@@ -93,6 +94,7 @@ use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::handlers::{CaptureSession, DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::idle::Idle;
 use crate::input::accessx;
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
@@ -107,6 +109,7 @@ use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gtk_shell::GtkShellState;
+use crate::protocols::idle_notify::IdleNotifyState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
@@ -199,6 +202,15 @@ pub struct Caminito {
     pub(crate) lock: Lock,
     /// The locker Caminito spawns for its own lock requests (126).
     pub(crate) locker: Locker,
+    /// ext-idle-notify and idle-inhibit, which `idle` times and counts (128).
+    pub idle_notify_state: IdleNotifyState,
+    pub idle_inhibit_state: IdleInhibitManagerState,
+    /// Idle's timers, the blank and what holds them off (128).
+    pub(crate) idle: Idle,
+    /// How far a test has moved Caminito's clock on, so that idle's timers come due
+    /// without waiting for them (128).
+    #[cfg(test)]
+    pub(crate) clock_offset: Duration,
 
     // Rendering (06). linux-dmabuf and drm-syncobj are the tty backend's (57).
     pub viewporter_state: ViewporterState,
@@ -477,7 +489,10 @@ impl State {
         }
         // Here too: the modifiers sticky keys let go of are keys for the keyboard.
         self.accessx_settings_changed(settings.accessx);
+        let idle = settings.idle;
         self.caminito.settings_changed(settings);
+        // And here, as a lock may come of it, with the new `disable-lock-screen`.
+        self.idle_settings_changed(idle);
     }
 
     /// Plugs in a headless monitor whose EDID says it's `physical_size` millimetres, with
@@ -570,6 +585,8 @@ impl State {
         // Before the views and the focus, which follow the lock.
         self.caminito.refresh_lock();
         self.caminito.refresh_views();
+        // After the views, which show and hide the windows an inhibitor is on.
+        self.refresh_idle();
         self.update_pointer_focus();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
@@ -832,6 +849,11 @@ impl Caminito {
             session_lock_state: SessionLockManagerState::new::<State, _>(dh, privileged),
             lock: Lock::default(),
             locker: Locker::new(loop_handle.clone()),
+            idle_notify_state: IdleNotifyState::new::<State>(dh),
+            idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
+            idle: Idle::new(settings.idle, clock.now().into()),
+            #[cfg(test)]
+            clock_offset: Duration::ZERO,
 
             viewporter_state: ViewporterState::new::<State>(dh),
             fractional_scale_state: FractionalScaleManagerState::new::<State>(dh),
@@ -1053,7 +1075,10 @@ impl Caminito {
 
     /// The time policy is given as `now`.
     pub fn now(&self) -> Duration {
-        self.clock.now().into()
+        let now: Duration = self.clock.now().into();
+        #[cfg(test)]
+        let now = now + self.clock_offset;
+        now
     }
 
     /// Sends the outward views of policy state whatever changed since they last sent.

@@ -1,0 +1,258 @@
+//! Idle (06, 09, 128): Caminito owns it. After `idle-delay` without activity the outputs are
+//! blanked, if `idle-activation-enabled` is on, and with `lock-enabled` the lock is asked
+//! for `lock-delay` after the blank starts. Activity on any input device ends the blank and
+//! starts the count again; it never unlocks. ext-idle-notify's clients are told whatever
+//! `idle-activation-enabled` says.
+//!
+//! The timers are `state`'s pure type, which this applies with one loop timer for its
+//! deadline, on Caminito's clock. Inhibitors hold idle off: an idle-inhibit surface while
+//! it's visible, and mate-session's `IsInhibited` (`dbus::session_manager`). Neither applies
+//! while the session is locked, when no client surface is visible (12).
+//!
+//! The blank is `scene`'s top layer: black, with nothing under it drawn. Powering the
+//! outputs off is 129's.
+
+mod state;
+
+use std::time::Duration;
+
+use smithay::backend::renderer::element::Id;
+use smithay::reexports::calloop::RegistrationToken;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::wayland_protocols::ext::idle_notify::v1::server::ext_idle_notification_v1::ExtIdleNotificationV1;
+use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::wayland::compositor::get_parent;
+use smithay::wayland::idle_inhibit::IdleInhibitHandler;
+
+use caminito_policy::WindowId;
+
+use self::state::{Effect, IdleState};
+use crate::protocols::idle_notify::IdleNotifyHandler;
+use crate::settings::translate::IdleSettings;
+use crate::state::{Caminito, State};
+
+/// Idle's timers, what holds them off, and the blank.
+pub(crate) struct Idle {
+    state: IdleState<ExtIdleNotificationV1>,
+    /// The loop timer for the state's deadline, while it has one.
+    wake: Option<Wake>,
+    /// The surfaces an idle-inhibit client asked to hold idle off while they're visible.
+    inhibitors: Vec<WlSurface>,
+    /// Whether mate-session last said an inhibitor of its own holds idle off.
+    session_inhibited: bool,
+    /// The blank's id in every output's scene, so it's damaged once and not at every
+    /// frame.
+    blank: Id,
+}
+
+/// The loop timer for a deadline.
+struct Wake {
+    due: Duration,
+    timer: RegistrationToken,
+}
+
+impl Idle {
+    pub(crate) fn new(settings: IdleSettings, now: Duration) -> Self {
+        Idle {
+            state: IdleState::new(settings, now),
+            wake: None,
+            inhibitors: Vec::new(),
+            session_inhibited: false,
+            blank: Id::new(),
+        }
+    }
+
+    /// Whether the outputs are blanked.
+    pub(crate) fn is_blanked(&self) -> bool {
+        self.state.is_blanked()
+    }
+
+    /// Whether inhibitors hold idle off now.
+    pub(crate) fn is_inhibited(&self) -> bool {
+        self.state.is_inhibited()
+    }
+
+    /// The idle-inhibit surfaces that are still there.
+    pub(crate) fn inhibitor_surfaces(&self) -> impl Iterator<Item = &WlSurface> {
+        self.inhibitors.iter().filter(|surface| surface.is_alive())
+    }
+
+    /// Whether mate-session holds idle off.
+    pub(crate) fn session_inhibited(&self) -> bool {
+        self.session_inhibited
+    }
+
+    /// How many ext-idle-notify notifications there are.
+    pub(crate) fn notification_count(&self) -> usize {
+        self.state.notification_count()
+    }
+
+    /// The id of the blank `scene` draws on every output while blanked.
+    pub(crate) fn blank_id(&self) -> &Id {
+        &self.blank
+    }
+}
+
+impl State {
+    /// Input on any device: the blank ends, and the count starts again (12: it never
+    /// unlocks).
+    pub(crate) fn idle_activity(&mut self) {
+        let now = self.caminito.now();
+        let effects = self.caminito.idle.state.activity(now);
+        self.idle_effects(effects);
+    }
+
+    /// New idle settings, which apply at once.
+    pub(crate) fn idle_settings_changed(&mut self, settings: IdleSettings) {
+        let now = self.caminito.now();
+        let effects = self.caminito.idle.state.settings_changed(settings, now);
+        self.idle_effects(effects);
+    }
+
+    /// The refresh pass's part of idle: whether inhibitors hold it off now, as the windows
+    /// they're on show and hide, and as the session locks and unlocks.
+    pub(crate) fn refresh_idle(&mut self) {
+        let caminito = &mut self.caminito;
+        caminito.idle.inhibitors.retain(Resource::is_alive);
+        let inhibited = !caminito.lock.is_locked()
+            && (caminito.idle.session_inhibited
+                || caminito
+                    .idle
+                    .inhibitors
+                    .iter()
+                    .any(|surface| caminito.shows_surface(surface)));
+        if inhibited == caminito.idle.is_inhibited() {
+            return;
+        }
+        let now = caminito.now();
+        let effects = caminito.idle.state.set_inhibited(inhibited, now);
+        self.idle_effects(effects);
+    }
+
+    /// Runs the timers that are due, as the loop timer does when it fires, and as a test
+    /// does once it has moved Caminito's clock on.
+    pub(crate) fn idle_elapse(&mut self) {
+        let now = self.caminito.now();
+        let effects = self.caminito.idle.state.elapse(now);
+        self.idle_effects(effects);
+    }
+
+    /// Does what the timers asked, and sets the loop timer for what they're waiting on.
+    fn idle_effects(&mut self, effects: Vec<Effect<ExtIdleNotificationV1>>) {
+        for effect in effects {
+            match effect {
+                Effect::Blank => {
+                    tracing::debug!("the session is idle; blanking the outputs");
+                    self.caminito.queue_redraw_all();
+                }
+                Effect::Unblank => {
+                    tracing::debug!("activity; unblanking the outputs");
+                    self.caminito.queue_redraw_all();
+                }
+                // A lock that's refused, as with `disable-lock-screen`, is logged there.
+                Effect::Lock => {
+                    self.request_lock();
+                }
+                Effect::Idled(notification) => notification.idled(),
+                Effect::Resumed(notification) => notification.resumed(),
+            }
+        }
+        self.caminito.wake_idle();
+    }
+}
+
+impl Caminito {
+    /// mate-session said whether an inhibitor of its own holds idle off. The refresh pass
+    /// applies it.
+    pub(crate) fn session_inhibited_changed(&mut self, inhibited: bool) {
+        self.idle.session_inhibited = inhibited;
+    }
+
+    /// Sets the loop timer for the timers' deadline. Activity only ever moves the deadline
+    /// later, so a timer that's due before it is kept: it finds nothing to do, and sets the
+    /// next. Input then doesn't set a timer at every event.
+    fn wake_idle(&mut self) {
+        let deadline = self.idle.state.deadline();
+        if let Some(wake) = &self.idle.wake
+            && deadline.is_some_and(|deadline| wake.due <= deadline)
+        {
+            return;
+        }
+        if let Some(wake) = self.idle.wake.take() {
+            self.loop_handle.remove(wake.timer);
+        }
+        let Some(due) = deadline else {
+            return;
+        };
+        let timer = Timer::from_duration(due.saturating_sub(self.now()));
+        let timer = self.loop_handle.insert_source(timer, |_, _, state| {
+            // This timer is done, and the next deadline gets another.
+            state.caminito.idle.wake = None;
+            state.idle_elapse();
+            TimeoutAction::Drop
+        });
+        match timer {
+            Ok(timer) => self.idle.wake = Some(Wake { due, timer }),
+            Err(err) => tracing::warn!("can't set idle's timer: {}", err.error),
+        }
+    }
+
+    /// Whether `surface` is on screen as part of a window that shows, or of a layer
+    /// surface: an idle inhibitor counts only then (128). A window on another workspace or
+    /// minimised doesn't show.
+    pub(crate) fn shows_surface(&self, surface: &WlSurface) -> bool {
+        let root = root(surface);
+        match self.mapped_for_surface(&root) {
+            Some(id) => self.policy.is_showing(id),
+            None => self.layer_for_surface(&root).is_some(),
+        }
+    }
+
+    /// The window `surface` is part of, if it's a window's.
+    pub(crate) fn window_of_surface(&self, surface: &WlSurface) -> Option<WindowId> {
+        self.mapped_for_surface(&root(surface))
+    }
+}
+
+/// The root of `surface`'s tree of subsurfaces.
+fn root(surface: &WlSurface) -> WlSurface {
+    let mut root = surface.clone();
+    while let Some(parent) = get_parent(&root) {
+        root = parent;
+    }
+    root
+}
+
+impl IdleInhibitHandler for State {
+    fn inhibit(&mut self, surface: WlSurface) {
+        self.caminito.idle.inhibitors.push(surface);
+    }
+
+    fn uninhibit(&mut self, surface: WlSurface) {
+        let inhibitors = &mut self.caminito.idle.inhibitors;
+        // A surface may have more than one inhibitor, of which one goes.
+        if let Some(index) = inhibitors.iter().position(|held| *held == surface) {
+            inhibitors.remove(index);
+        }
+    }
+}
+
+impl IdleNotifyHandler for State {
+    fn new_idle_notification(
+        &mut self,
+        notification: ExtIdleNotificationV1,
+        timeout: Duration,
+        input_only: bool,
+    ) {
+        let now = self.caminito.now();
+        let idle = &mut self.caminito.idle.state;
+        let effects = idle.add_notification(notification, timeout, input_only, now);
+        self.idle_effects(effects);
+    }
+
+    fn idle_notification_destroyed(&mut self, notification: &ExtIdleNotificationV1) {
+        self.caminito.idle.state.remove_notification(notification);
+        self.caminito.wake_idle();
+    }
+}

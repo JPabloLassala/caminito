@@ -24,6 +24,7 @@ mod global_menu;
 mod grabs;
 mod gtk_shell;
 mod headless;
+mod idle;
 mod image_capture;
 mod input;
 mod input_devices;

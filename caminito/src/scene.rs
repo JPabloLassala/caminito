@@ -33,6 +33,9 @@ use crate::window::Mapped;
 /// What shows where nothing is drawn.
 pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
 
+/// What a blanked output shows (128).
+pub(crate) const BLANK: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
+
 /// What a locked output shows wherever the locker draws nothing (12).
 pub(crate) const LOCK_BACKGROUND: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
 
@@ -61,7 +64,7 @@ render_elements! {
     Window = WaylandSurfaceRenderElement<R>,
     /// A frame's strip, one of Caminito's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
-    /// A side of one of frame debug's outlines, or the lock's background.
+    /// A side of one of frame debug's outlines, the lock's background, or the blank.
     Solid = SolidColorRenderElement,
     /// A part of a window in one of the Window switcher's thumbnails (108).
     Thumbnail = ThumbnailPart<R>,
@@ -70,7 +73,10 @@ render_elements! {
 /// The scene's layers, top to bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SceneLayer {
-    /// The pointer's cursor, over everything.
+    /// While the outputs are blanked, black over everything, the cursor and the lock too,
+    /// and nothing of the layers below (128).
+    Blank,
+    /// The pointer's cursor, over everything else.
     Cursor,
     /// A Wayland drag's icon, at the pointer (48).
     DragIcon,
@@ -110,7 +116,8 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 12] = [
+pub(crate) const LAYERS: [SceneLayer; 13] = [
+    SceneLayer::Blank,
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
     SceneLayer::Lock,
@@ -160,15 +167,23 @@ where
     elements
 }
 
-/// The layers that are drawn, top to bottom: all of them, or while the session is locked
-/// the lock and what's above it. The background covers the rest, so they're left out.
+/// The layers that are drawn, top to bottom: all of them, while the session is locked the
+/// lock and what's above it, and while the outputs are blanked the blank alone. The lock's
+/// background and the blank cover the rest, so they're left out.
 fn shown_layers(caminito: &Caminito) -> impl Iterator<Item = SceneLayer> {
-    let locked = caminito.lock.is_locked();
-    let lock = LAYERS
-        .iter()
-        .position(|layer| *layer == SceneLayer::Lock)
-        .expect("the lock is one of the layers");
-    let shown = if locked { lock + 1 } else { LAYERS.len() };
+    let position = |shown: SceneLayer| {
+        LAYERS
+            .iter()
+            .position(|layer| *layer == shown)
+            .expect("every layer is one of the layers")
+    };
+    let shown = if caminito.idle.is_blanked() {
+        position(SceneLayer::Blank) + 1
+    } else if caminito.lock.is_locked() {
+        position(SceneLayer::Lock) + 1
+    } else {
+        LAYERS.len()
+    };
     LAYERS.into_iter().take(shown)
 }
 
@@ -244,6 +259,7 @@ fn layer_elements<R>(
     R::TextureId: Send + Clone + 'static,
 {
     match layer {
+        SceneLayer::Blank => blank_elements(caminito, output, elements),
         SceneLayer::Cursor => cursor_elements(renderer, caminito, output, elements),
         SceneLayer::DragIcon => drag_icon_elements(renderer, caminito, output, elements),
         SceneLayer::OverrideRedirect => {
@@ -262,6 +278,26 @@ fn layer_elements<R>(
         SceneLayer::Lock => lock_elements(renderer, caminito, output, elements),
         SceneLayer::Switcher => switcher_elements(renderer, caminito, output, elements),
     }
+}
+
+/// While the outputs are blanked, black over all of `output`.
+fn blank_elements<R>(caminito: &Caminito, output: &Output, elements: &mut Vec<SceneElement<R>>)
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    if !caminito.idle.is_blanked() {
+        return;
+    }
+    let scale = output.current_scale().fractional_scale();
+    let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
+    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+        caminito.idle.blank_id().clone(),
+        covered,
+        CommitCounter::default(),
+        BLANK,
+        Kind::Unspecified,
+    )));
 }
 
 /// While the session is locked, `output`'s lock surface, or the message Caminito shows once
