@@ -394,3 +394,54 @@ fn a_dialog_that_asks_to_be_modal_becomes_a_modal_dialog_and_x_is_told() {
         .unwrap();
     assert!(states.contains("_NET_WM_STATE_MODAL"), "{states}");
 }
+
+/// A launcher such as Albert maps a utility window, which isn't focused as it maps, and
+/// asks for the focus itself, as Qt's `requestActivate` does.
+#[test]
+fn a_utility_window_that_asks_to_be_active_takes_the_focus() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let editor = f.map(x, spec(400, 300));
+    let launcher = f.map(
+        x,
+        WindowSpec {
+            types: vec!["_NET_WM_WINDOW_TYPE_UTILITY"],
+            states: vec!["_NET_WM_STATE_ABOVE"],
+            ..spec(600, 100)
+        },
+    );
+    assert_eq!(x_focus(&mut f, x), editor.x11());
+
+    // EWMH: the source is 1 for an application, then its timestamp and its active window.
+    let (id, active) = (launcher.x11(), editor.x11());
+    f.x11_call(x, move |x| {
+        x.send_client_message(id, "_NET_ACTIVE_WINDOW", [1, 0, active, 0, 0])
+    })
+    .unwrap();
+
+    f.dispatch_until_mut(|f| x_focus(f, x) == launcher.x11());
+    let policy = &f.state.caminito.policy;
+    assert_eq!(policy.stacking(0).last(), Some(&f.pid(launcher)));
+}
+
+/// Qt asks as soon as X has mapped the window, before its first buffer reaches Caminito.
+#[test]
+fn a_utility_window_that_asks_to_be_active_while_pending_maps_focused() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let editor = f.map(x, spec(400, 300));
+
+    let active = editor.x11();
+    let launcher = f
+        .x11_call(x, move |x| {
+            let window = x.create_window(&XWindowSpec {
+                size: (600, 100),
+                types: vec!["_NET_WM_WINDOW_TYPE_UTILITY"],
+                ..XWindowSpec::default()
+            })?;
+            x.map(window)?;
+            x.send_client_message(window, "_NET_ACTIVE_WINDOW", [1, 0, active, 0, 0])?;
+            Ok::<_, x11rb::errors::ReplyOrIdError>(window)
+        })
+        .unwrap();
+
+    f.dispatch_until_mut(|f| x_focus(f, x) == launcher);
+}

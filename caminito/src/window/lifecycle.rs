@@ -13,7 +13,7 @@ use smithay::wayland::seat::WaylandFocus;
 
 use super::{Mapped, PreMapConfigure, WindowKey, adapter, send_preferred_scale};
 use crate::decoration::WindowFacts;
-use crate::state::Caminito;
+use crate::state::{Caminito, SEAT};
 
 /// A window its client has asked to show, which Caminito doesn't manage until it has
 /// content, and the states it has asked for meanwhile, which it maps with.
@@ -26,6 +26,8 @@ struct Pending {
     above: bool,
     below: bool,
     sticky: bool,
+    /// It asked to be the active window, which it becomes as it maps.
+    active: bool,
 }
 
 /// The pending windows.
@@ -65,6 +67,9 @@ pub(crate) enum StateRequest {
     Above(bool),
     Below(bool),
     Sticky(bool),
+    /// The active window, as `_NET_ACTIVE_WINDOW` asks: policy switches to its workspace,
+    /// unminimises it, raises it and focuses it.
+    Active,
 }
 
 impl Caminito {
@@ -78,6 +83,7 @@ impl Caminito {
             above: false,
             below: false,
             sticky: false,
+            active: false,
         });
     }
 
@@ -86,6 +92,7 @@ impl Caminito {
     /// is managed.
     pub(crate) fn window_state_request(&mut self, key: &WindowKey, request: StateRequest) -> bool {
         if let Some(id) = self.mapped_for_key(key) {
+            let now = self.now();
             let policy = &mut self.policy;
             match request {
                 StateRequest::Maximized(maximized) => policy.set_maximized(id, maximized),
@@ -95,6 +102,7 @@ impl Caminito {
                 StateRequest::Above(above) => policy.set_above(id, above),
                 StateRequest::Below(below) => policy.set_below(id, below),
                 StateRequest::Sticky(sticky) => policy.set_sticky(id, sticky),
+                StateRequest::Active => policy.activate(SEAT, id, now),
             }
             self.queue_redraw_all();
             return true;
@@ -120,6 +128,10 @@ impl Caminito {
             }
             StateRequest::Sticky(sticky) => {
                 pending.sticky = sticky;
+                return false;
+            }
+            StateRequest::Active => {
+                pending.active = true;
                 return false;
             }
         }
@@ -213,6 +225,7 @@ impl Caminito {
             above,
             below,
             sticky,
+            active,
         } = pending;
         let mut mapped = Mapped::new(id, window);
         mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
@@ -227,6 +240,9 @@ impl Caminito {
         self.policy.set_above(id, above);
         self.policy.set_below(id, below);
         self.policy.set_sticky(id, sticky);
+        if active {
+            self.policy.activate(SEAT, id, now);
+        }
         self.queue_redraw_all();
         id
     }
