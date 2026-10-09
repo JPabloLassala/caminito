@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: the code is in, and the two questions under "To run" are a nested run's, by hand
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [118](118-the-menu-is-vs-codes.md)
 
@@ -26,10 +26,10 @@ Blocked by: [118](118-the-menu-is-vs-codes.md)
 
 ## To run, and to answer here
 
-Nobody has run these. A result that contradicts an ADR reopens it.
+Both were run on 2026-10-09, under "From 121's nested run". Neither result contradicts an ADR.
 
-- [ ] Whether a change of tabs comes with every change of the recent list.
-- [ ] Whether the window regains focus, and so re-reads, when a panel menu closes.
+- [x] Whether a change of tabs comes with every change of the recent list. **No.** It comes with a file opened through `_files.windowOpen` or from the command line. It doesn't come with an entry taken out of the list or with another window's change, and those show at the next change of tabs or focus gained.
+- [x] Whether the window regains focus, and so re-reads, when a panel menu closes. **Yes,** on Escape and on a click away. With a submenu open it regains it earlier, as the submenu opens, and not again at the close ([146](146-a-panel-submenu-gives-the-keyboard-back.md)).
 
 ## Notes
 
@@ -56,3 +56,24 @@ VS Code 1.140.0 and the applet's package 25.04-4 in a nested Caminito, with the 
 - **An open Open Recent keeps its old entries.** Held open by hand while an entry was taken out, the submenu stayed open and went on showing it. Opened again, it didn't have it.
 - **Toward the first question, one case:** a file opened with `showTextDocument` brought a change of tabs and the claims that follow it, and no `LayoutUpdated` in the 2 s after. Whether the list had the file by then wasn't looked at.
 - **The list isn't the profile's alone.** With a new `--user-data-dir`, Open Recent listed folders of the developer's own editor and of other nested runs. `vscode.removeFromRecentlyOpened` from the scratch editor took entries out of that list, about a dozen of old `/tmp` runs. Where the list is kept wasn't looked into.
+
+## From 121's nested run (2026-10-09)
+
+VS Code 1.140.0 and the applet's package 25.04-4 in a nested Caminito, with the scripts in [121-checks](121-checks/). Its driver logs each change of the tabs and of the window's focus, and a poller in the extension host logged each change of the list. The panel's menus were opened by hand: GTK doesn't pop a menu up from an accessibility click ("no trigger event for menu popup"), and nothing here injects a pointer.
+
+**A change of tabs and the list:**
+
+- **A file opened in the editor doesn't join the list.** `vscode.open`, a pinned tab, an edit and save, and closing the editor each changed the tabs and left the list as it was.
+- **A file opened through `_files.windowOpen` joins it, and the menu had it 32 times out of 32.** The tabs change first and the list 12 to 474 ms later, which is after the 50 ms of coalescing more often than not. The read still returns the new list, because the editor answers it after the open: a read made as the command returned took 44 to 182 ms and had the file. So the read on the command's return is safe too.
+- **`code --reuse-window <file>` is the same:** tabs, then the list, then a `LayoutUpdated` naming Open Recent.
+- **An entry taken out with `vscode.removeFromRecentlyOpened` brings no change of tabs.** The served menu kept it until the next change of the active tab. This is what the remove button of More…'s picker does, as read; the button itself wasn't pressed.
+- **A second window opening a folder changed the list and the first window's menu didn't have it** until that window was clicked: focus gained, and a `LayoutUpdated` 120 ms later.
+- **Not run:** Clear Recently Opened from the command palette, which would bring no change of tabs either. The list is shared with the developer's own editor (below), so it wasn't cleared.
+
+**Focus and the panel's menu:**
+
+- **The window loses focus as a panel menu opens,** 15 to 130 ms after its `opened`, and regains it when the menu closes, on Escape and on a click on the editor. Five menus, five times.
+- **End to end:** with File open, an entry among the ten shown was taken out. On Escape the window gained focus, a `LayoutUpdated` naming Open Recent followed 110 ms later, and the panel's list was the served one, without the entry.
+- **With a submenu the focus comes back early.** As Open Recent opened, and once as another submenu did, the window regained focus within 30 ms, with the menus still up, and nothing more came at the close. Escape then didn't close the menus. Three times out of three. It's [146](146-a-panel-submenu-gives-the-keyboard-back.md)'s. For this ticket it means the re-read happens as the submenu opens, and an entry clicked in it is covered by the read on its command's return.
+
+**Left behind:** the run's own entries were taken out of the list at the end. Those of the earlier run under `/tmp/caminito-121.lx2jEp` are still in it.
