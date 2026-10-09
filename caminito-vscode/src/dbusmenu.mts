@@ -8,8 +8,8 @@ import { DBusError, Variant, interface as dbusInterface } from '@jellybrick/dbus
 export type MenuNode = MenuEntry | MenuSeparator;
 
 /**
- * A menu or an item. A menu has `children`, an item a `command` and maybe its arguments
- * and its checkmark or radio state.
+ * A menu or an item. A menu has `children`, an item a `command` and maybe its arguments,
+ * its checkmark or radio state and its shortcut.
  */
 export interface MenuEntry {
   /** The item's id, which stays the same while it's there. The root's is 0. */
@@ -19,6 +19,8 @@ export interface MenuEntry {
   readonly command?: string;
   readonly args?: readonly unknown[];
   readonly toggle?: Toggle;
+  /** dbusmenu's `shortcut`: for each press, its modifiers and then a GDK key name. */
+  readonly shortcut?: readonly (readonly string[])[];
   readonly children?: readonly MenuNode[];
 }
 
@@ -198,6 +200,9 @@ function properties(node: MenuNode): Properties {
     if (node.toggle) {
       all['toggle-type'] = ['s', node.toggle.type];
       all['toggle-state'] = ['i', node.toggle.state ? 1 : 0];
+    }
+    if (node.shortcut) {
+      all['shortcut'] = ['aas', node.shortcut];
     }
   }
   return all;
