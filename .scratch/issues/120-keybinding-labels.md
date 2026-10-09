@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open: the code is in, and the three checks under "To run" need VS Code and the patched applet in a Session; the developer's
+Status: resolved
 Milestone: none: after v0.1
 Blocked by: [118](118-the-menu-is-vs-codes.md)
 
@@ -28,9 +28,9 @@ Blocked by: [118](118-the-menu-is-vs-codes.md)
 
 Nobody has run these. A result that contradicts an ADR reopens it.
 
-- [ ] Whether the patched applet cuts a chord to its first press, as upstream's 25.04 does.
-- [ ] The `storage.json` lookup for a window on a `.code-workspace` file.
-- [ ] The developer's own keyboard layout.
+- [x] Whether the patched applet cuts a chord to its first press, as upstream's 25.04 does. It does (2026-10-09, below).
+- [x] The `storage.json` lookup for a window on a `.code-workspace` file. It found no profile of 1.140 at all, which is fixed, and finds the window's now (2026-10-09, below).
+- [ ] The developer's own keyboard layout. Not a nested run's: handed to [124](124-vs-code-in-a-real-session.md).
 
 ## Notes
 
@@ -48,3 +48,19 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 - **The default profile's directory comes from the extension's global storage,** two levels up, which ticket 02 found is the default profile's in every window. A profile's file whose directory isn't there yet is watched again at the next focus.
 - **Not run here:** the three checks under "To run". They need VS Code and the patched applet in a Session.
 
+## The nested run (2026-10-09)
+
+VS Code 1.140.0 and the applet's package 25.04-4 in a nested debug build of Caminito, with [119](119-checkmarks-and-workspace-items.md)'s scripts in [119-checks](119-checks/), and the developer at the pointer.
+
+- **No profile of 1.140 was ever found, and it's fixed.** VS Code 1.140 writes a profile's `location` in `storage.json` as its name under `<user data>/User/profiles`: `"7631fe1b"` for a profile made by hand, `"builtin/agents"` for the agents profile. `keybindingsFileOf` took a string for a URI's and skipped the profile when it wasn't one, so every window had the default profile's keybindings. A string with no scheme is now a path under the profiles' directory, and a URI or its string is read as before. The tests' `storage.json` said it was 1.140's shape and wasn't; a test now has the shape read here.
+- **The lookup for a workspace-file window.** A window on `cd.code-workspace` was switched to a new profile, P. VS Code wrote `"file:///tmp/…/k/cd.code-workspace": "7631fe1b"` under `profileAssociations.workspaces`, the key the extension asks for, `workspace.workspaceFile` as a string. P's `keybindings.json` then got `ctrl+alt+7` for Reopen Closed Editor, and within 2 s the panel's item had `<Primary><Alt>7`, read through AT-SPI.
+- **What the lookup can't find.** A temporary profile isn't written to `storage.json`. An empty window's profile is tied under `emptyWindows` by a window id an extension isn't told. Both get `window.newWindowProfile`'s profile or the default's.
+- **A chord is cut to its first press.** A throwaway build that serves every press of a chord, never committed, served Open Folder... as `[['Control', 'k'], ['Control', 'o']]`. The panel drew "Ctrl+K" beside it, where the window's own menubar has "Ctrl+K Ctrl+O". So a chord goes on having no shortcut, and ADR 0020 stands.
+- **The keyboard layout isn't a nested run's.** The nested Caminito gives its clients the default keymap (`XkbConfig { layout: "" }`), and the developer's desktop has `us intl`. The check is [124](124-vs-code-in-a-real-session.md)'s now.
+- **Seen in 119's run:** a change of the user's file reached the panel's item, and one sent within 100 ms of the menu's layout reply was lost until 119's fix.
+
+`npm run typecheck` is clean and `npm test` passes all 137 tests.
+
+## Resolved (2026-10-09)
+
+- **Closed by the developer** after the nested run, with the keyboard layout handed to [124](124-vs-code-in-a-real-session.md).

@@ -46,7 +46,7 @@ export function keybindingsFileOf(
     if (!isRecord(profile) || typeof profile['name'] !== 'string' || profile['name'] === '') {
       return [];
     }
-    const location = pathOf(profile['location']);
+    const location = pathOf(userDir, profile['location']);
     if (location === undefined) {
       return [];
     }
@@ -78,9 +78,15 @@ export function storageFileOf(userDir: string): string {
   return join(userDir, 'globalStorage', 'storage.json');
 }
 
-/** The path of a profile's `location`: a URI as VS Code stores one, or its string. */
-function pathOf(location: unknown): string | undefined {
+/**
+ * The path of a profile's `location`. VS Code 1.140 writes its name under the profiles'
+ * directory, `<user data>/User/profiles`; older ones wrote a URI, or its string.
+ */
+function pathOf(userDir: string, location: unknown): string | undefined {
   if (typeof location === 'string') {
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(location)) {
+      return location === '' ? undefined : join(userDir, 'profiles', location);
+    }
     try {
       return fileURLToPath(location);
     } catch {

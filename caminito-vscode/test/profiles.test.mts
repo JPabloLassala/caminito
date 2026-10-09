@@ -8,7 +8,7 @@ import { keybindingsFileOf } from '../src/profiles.mts';
 const USER = '/home/u/.config/Code/User';
 const DEFAULT = `${USER}/keybindings.json`;
 
-/** `storage.json` as VS Code 1.140 writes it, with a location as it stores a URI. */
+/** `storage.json` with each profile's location as a URI, as older releases wrote it. */
 const STORAGE = {
   userDataProfiles: [
     {
@@ -41,6 +41,31 @@ const STORAGE = {
 };
 
 const RUST = `${USER}/profiles/-5a1b2c3d/keybindings.json`;
+
+test("a location as VS Code 1.140 writes it is the profile's name under the profiles' directory", () => {
+  // As read from a 1.140.0's storage.json (120's nested run).
+  const storage = {
+    userDataProfiles: [
+      { location: '7631fe1b', name: 'P' },
+      { location: 'builtin/agents', name: 'Agents', useDefaultFlags: { keybindings: true } },
+    ],
+    profileAssociations: {
+      workspaces: {
+        'file:///home/u/cd.code-workspace': '7631fe1b',
+        'file:///home/u/agents.code-workspace': 'agents',
+      },
+      emptyWindows: {},
+    },
+  };
+  assert.equal(
+    keybindingsFileOf(USER, storage, 'file:///home/u/cd.code-workspace', 'Default'),
+    `${USER}/profiles/7631fe1b/keybindings.json`,
+  );
+  assert.equal(
+    keybindingsFileOf(USER, storage, 'file:///home/u/agents.code-workspace', 'Default'),
+    DEFAULT,
+  );
+});
 
 test("a folder window has its folder's profile's file", () => {
   assert.equal(keybindingsFileOf(USER, STORAGE, 'file:///home/u/rust', undefined), RUST);

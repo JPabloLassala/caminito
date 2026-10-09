@@ -25,6 +25,7 @@ A result that contradicts an ADR reopens it from here, with a ticket of its own 
 - [ ] Whether a window ever closes by itself soon after a reload, as one did once, 0.7 s after, in the prototype's runs.
 - [ ] The first version's bar, by eye: the same top-level menus and items as the in-window menubar in an ordinary editing state, every item tried runs, shortcuts and recent files are there.
 - [ ] What an open window shows after an update of `caminito-vscode-git` changes the files under it, from [117](117-the-package-installs-the-extension.md), where a reinstall of the same files with no menu on screen changed nothing.
+- [ ] The developer's own keyboard layout, `us intl`, from [120](120-keybinding-labels.md): the shortcuts of keys the layout moves or makes dead (View > Terminal, Edit > Toggle Line Comment, Terminal > New Terminal) beside the window's own menubar's. A nested run has the default keymap.
 - [ ] The README reads right against what was seen.
 
 ## Notes
