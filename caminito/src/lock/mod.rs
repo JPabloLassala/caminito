@@ -3,9 +3,12 @@
 //! session is locked, `scene` draws nothing under the lock, the pointer and the keyboard
 //! reach only the locker's lock surfaces, and the keyboard path runs no binding but VT
 //! switching. ext-session-lock is how a locker takes the lock, draws on it and unlocks.
+//! `locker` spawns the locker for Caminito's own lock requests.
 
+mod locker;
 mod state;
 
+pub(crate) use locker::Locker;
 pub(crate) use state::LockState;
 
 use smithay::backend::input::InputTime;
@@ -42,7 +45,7 @@ pub(crate) struct Lock {
     confirmation: Option<SessionLocker>,
     undrawn: Vec<Output>,
     /// The process of the locker Caminito spawned, which alone takes over a lock that no
-    /// locker holds. Nothing spawns one until 126.
+    /// locker holds (126).
     pub(crate) spawned_locker: Option<u32>,
     /// The background's id in every output's scene, so it's damaged once and not at
     /// every frame.
@@ -170,6 +173,8 @@ impl SessionLockHandler for State {
     /// what's under the pointer.
     fn unlock(&mut self) {
         self.caminito.lock.release();
+        self.caminito.lock.spawned_locker = None;
+        self.caminito.locker.finish();
         self.caminito.queue_redraw_all();
     }
 
@@ -265,6 +270,7 @@ impl Caminito {
     /// away isn't waited for to draw the lock.
     pub(crate) fn refresh_lock(&mut self) {
         self.notice_locker_gone();
+        self.refresh_locker_message();
         let outputs = &self.outputs;
         self.lock.undrawn.retain(|output| outputs.contains(output));
         self.lock.confirm_if_drawn();

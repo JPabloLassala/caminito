@@ -51,6 +51,7 @@ pub fn run(
 
     let socket = state.caminito.add_socket()?;
     tracing::info!("listening on WAYLAND_DISPLAY={}", socket.to_string_lossy());
+    state.caminito.locker.socket = Some(socket.clone());
     state.caminito.start_xwayland();
     state.caminito.start_palette_helper(&socket);
     // It returns with the Screensaver shim's names owned or refused (62), which a Session's

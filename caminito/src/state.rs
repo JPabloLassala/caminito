@@ -97,7 +97,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
-use crate::lock::Lock;
+use crate::lock::{Lock, Locker};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
@@ -195,6 +195,8 @@ pub struct Caminito {
     pub(crate) session_lock_state: SessionLockManagerState,
     /// The session lock: whether the session is locked, and what the locker shows (12).
     pub(crate) lock: Lock,
+    /// The locker Caminito spawns for its own lock requests (126).
+    pub(crate) locker: Locker,
 
     // Rendering (06). linux-dmabuf and drm-syncobj are the tty backend's (57).
     pub viewporter_state: ViewporterState,
@@ -820,6 +822,7 @@ impl Caminito {
 
             session_lock_state: SessionLockManagerState::new::<State, _>(dh, privileged),
             lock: Lock::default(),
+            locker: Locker::new(loop_handle.clone()),
 
             viewporter_state: ViewporterState::new::<State>(dh),
             fractional_scale_state: FractionalScaleManagerState::new::<State>(dh),

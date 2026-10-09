@@ -720,6 +720,26 @@ session_env() {
 - **Debug tool:** `DumpState`'s `lock`: `unlocked`, `locked`, and `locker-lost` after the
   `pkill`. Caminito logs `can't give a client the session lock` for each refused `lock`.
 
+### How the give-up state looks
+
+- **Milestone:** M7
+- **Steps:**
+  1. Run `tools/dev-nested`, then start a GTK3 app in it. On the nested bus, run
+     `gsettings set org.mate.Caminito locker-command "['false']"`.
+  2. Lock with `mate-screensaver-command --lock` on the nested bus, which reaches Caminito's
+     Screensaver shim (127).
+  3. Wait ten seconds, and read Caminito's log and `DumpState`.
+  4. Set the window's scale with `--scale 2` on another run, and repeat steps 1 to 3.
+- **Expected:** in step 2 the output goes dark at once, and nothing of the session shows from
+  then on. Within ten seconds a line in the interface font is in the middle of the dark output:
+  *The screen locker can't start. To unlock, switch to a text console and run: loginctl
+  unlock-session* and the ID of the session the nested Caminito is in, the host's
+  `$XDG_SESSION_ID`. It's sharp at scale 2 too. Nothing of the session reacts to the pointer or
+  the keys.
+- **Debug tool:** the log has five `can't start` or `exited` lines for `false`, then `gave up on
+  the locker`. `DumpState`'s `lock` is `pending`, and its `locker` has `state` `gave-up` and the
+  `message`.
+
 ## Input
 
 ### Switching keyboard layouts in native and X11 apps

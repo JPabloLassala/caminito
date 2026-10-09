@@ -257,8 +257,9 @@ fn layer_elements<R>(
     }
 }
 
-/// While the session is locked, `output`'s lock surface over the lock background, which
-/// covers the output from the frame after the lock request, whatever the locker does (12).
+/// While the session is locked, `output`'s lock surface, or the message Caminito shows once
+/// it gave up on the locker, over the lock background, which covers the output from the
+/// frame after the lock request, whatever the locker does (12).
 fn lock_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -286,6 +287,24 @@ fn lock_elements<R>(
             .into_iter()
             .map(SceneElement::Window),
         );
+    }
+    // Once Caminito gave up on the locker (126), what to do about it.
+    if let Some((buffer, size)) = caminito.locker.message_on(output) {
+        let area = output_geometry(output).size;
+        let location = Point::<i32, Logical>::from(((area.w - size.w) / 2, (area.h - size.h) / 2));
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location.to_physical_precise_round::<_, i32>(scale).to_f64(),
+            buffer,
+            None,
+            None,
+            Some(size),
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(element) => elements.push(SceneElement::Frame(element)),
+            Err(err) => tracing::debug!("can't draw the locker's give-up message: {err:?}"),
+        }
     }
     let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
     elements.push(SceneElement::Solid(SolidColorRenderElement::new(
