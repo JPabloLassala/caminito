@@ -878,6 +878,63 @@ impl<W: PolicyWindow> Policy<W> {
         self.begin_grab(seat, id, Some(edges), pointer)
     }
 
+    /// Starts moving a window from a titlebar drag that's crossed the drag threshold, with
+    /// `seat`'s pointer at `at_press` (where the titlebar was first pressed) and now at
+    /// `pointer`. If the window is maximised either way, unmaximises it first, keeping
+    /// `pointer`'s position across the titlebar's width the same fraction it was across the
+    /// maximised one, as Marco and KDE Plasma's drag-to-unmaximise both do (144). Returns
+    /// false if the window can't be moved.
+    pub fn begin_titlebar_move(
+        &mut self,
+        seat: SeatId,
+        id: WindowId,
+        at_press: Point<f64, Logical>,
+        pointer: Point<f64, Logical>,
+    ) -> bool {
+        if self
+            .windows
+            .get(&id)
+            .is_some_and(|m| m.maximized_horizontally || m.maximized_vertically)
+        {
+            self.unmaximize_for_drag(id, at_press, pointer);
+        }
+        self.begin_move(seat, id, at_press)
+    }
+
+    /// Unmaximises `id` both ways for `begin_titlebar_move`, keeping `pointer`'s fraction
+    /// across the still-maximised titlebar the same across the one it's restored to. The
+    /// window's vertical position is left to `relayout`'s floating restore, and to the catch
+    /// up `begin_move`'s caller applies for the distance dragged since `at_press`.
+    ///
+    /// Built from `geometry`, policy's own requested rectangle, rather than `Managed::frame`
+    /// (which lags behind it until the client commits a matching size): a drag must track
+    /// where the frame is asked to be right now, the same as `grab_motion` already does.
+    fn unmaximize_for_drag(
+        &mut self,
+        id: WindowId,
+        at_press: Point<f64, Logical>,
+        pointer: Point<f64, Logical>,
+    ) {
+        let Some(managed) = self.windows.get(&id) else {
+            return;
+        };
+        let before = frame_around(managed.geometry, managed.visible_extents());
+        let fraction = if before.size.w > 0 {
+            ((pointer.x - f64::from(before.loc.x)) / f64::from(before.size.w)).clamp(0., 1.)
+        } else {
+            0.5
+        };
+        self.set_maximized(id, false);
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        let e = managed.visible_extents();
+        let after_width = f64::from(managed.geometry.size.w + e.left + e.right);
+        let frame_x = (at_press.x - fraction * after_width).round() as i32;
+        managed.geometry.loc.x = frame_x + e.left;
+        self.apply();
+    }
+
     /// The seat's pointer moved during a grab.
     pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>) {
         let Some(grab) = self.grabs.get(&seat) else {

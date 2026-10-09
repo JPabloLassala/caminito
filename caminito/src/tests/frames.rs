@@ -263,6 +263,54 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
+    fn dragging_a_maximised_titlebar_past_the_threshold_unmaximises_it(kind: Kind) {
+        let (mut f, window) = titlebar_with(kind, "double-click", "toggle_maximize");
+        let pid = f.pid(window);
+        double_click_title(&mut f, window);
+        assert!(policy(&f).is_maximized(pid));
+
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+        f.pointer_button(BTN_LEFT, true);
+
+        // Within the drag threshold: still maximised.
+        move_to(&mut f, title + Point::from((8., 0.)));
+        assert!(policy(&f).is_maximized(pid));
+
+        // Past it: unmaximised, and the same grab keeps following the pointer.
+        move_to(&mut f, title + Point::from((100., 20.)));
+        let p = policy(&f);
+        assert!(!p.is_maximized_horizontally(pid) && !p.is_maximized_vertically(pid));
+        let after_threshold = f.geometry(window).loc;
+
+        move_to(&mut f, title + Point::from((150., 20.)));
+        assert_eq!(f.geometry(window).loc, after_threshold + Point::from((50, 0)));
+
+        f.pointer_button(BTN_LEFT, false);
+    }
+}
+
+on_both_kinds! {
+    fn a_half_maximised_titlebar_drag_unmaximises_both_axes(kind: Kind) {
+        let (mut f, window) = titlebar_with(kind, "double-click", "toggle_maximize_horizontally");
+        let pid = f.pid(window);
+        double_click_title(&mut f, window);
+        assert!(policy(&f).is_maximized_horizontally(pid));
+        assert!(!policy(&f).is_maximized_vertically(pid));
+
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+        f.pointer_button(BTN_LEFT, true);
+        move_to(&mut f, title + Point::from((100., 20.)));
+
+        let p = policy(&f);
+        assert!(!p.is_maximized_horizontally(pid) && !p.is_maximized_vertically(pid));
+
+        f.pointer_button(BTN_LEFT, false);
+    }
+}
+
+on_both_kinds! {
     fn pressing_the_titlebar_focuses_and_raises_the_window(kind: Kind) {
         let (mut f, window) = framed(kind);
         let pid = f.pid(window);

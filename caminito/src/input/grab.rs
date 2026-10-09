@@ -82,6 +82,23 @@ impl Caminito {
         }
         started
     }
+
+    /// Starts a move grab from a titlebar drag that's crossed the drag threshold, with the
+    /// pointer as it was `at_press` and now at `pointer`. Unmaximises the window first if
+    /// it's maximised either way, keeping `pointer`'s position across the titlebar the same
+    /// fraction it was across the maximised one (144).
+    fn start_titlebar_move_grab(
+        &mut self,
+        id: WindowId,
+        at_press: Point<f64, Logical>,
+        pointer: Point<f64, Logical>,
+    ) -> bool {
+        let started = self.policy.begin_titlebar_move(SEAT, id, at_press, pointer);
+        if started {
+            self.window_grab = Some(GrabKind::Move);
+        }
+        started
+    }
 }
 
 impl State {
@@ -145,12 +162,13 @@ impl PointerGrab<State> for Grab {
             let threshold = f64::from(caminito.settings.mouse.drag_threshold);
             let distance = event.location - start;
             if distance.x.abs() > threshold || distance.y.abs() > threshold {
-                self.purpose =
-                    if can_move && caminito.start_window_grab(window, GrabKind::Move, start) {
-                        Purpose::Window
-                    } else {
-                        Purpose::Frame(FrameHold::Held)
-                    };
+                self.purpose = if can_move
+                    && caminito.start_titlebar_move_grab(window, start, event.location)
+                {
+                    Purpose::Window
+                } else {
+                    Purpose::Frame(FrameHold::Held)
+                };
             }
         }
         if let Purpose::Window = self.purpose {
