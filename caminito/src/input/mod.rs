@@ -32,6 +32,7 @@ use smithay::xwayland::X11Surface;
 
 use self::bindings::Binding;
 use crate::commands::Command;
+use crate::dbus::a11y;
 use crate::dbus::panel::PanelAction;
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
@@ -210,7 +211,7 @@ impl State {
     }
 
     /// The keyboard path: one key event through 15's five stages, in order, each deciding
-    /// whether it goes further. The keyboard monitor does nothing yet.
+    /// whether it goes further.
     pub fn on_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         // 1. The lock (12). 15 has it as a gate before xkbcommon, but it drops no key,
         // since the locker is typed to: while the session is locked it's stage 4 that
@@ -225,8 +226,9 @@ impl State {
     fn key_past_accessx(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         // No grab has the keys instead of the lock, whenever AccessX sends them on.
         self.release_keyboard_grab_if_locked();
-        // 3 sees the raw key, before xkbcommon.
-        if !keyboard_monitor_passes(keycode) {
+        // 3. The Keyboard monitor (135), while locked too (13). It sees the key before
+        // xkbcommon does, so a key it takes changes no state, CapsLock's among them.
+        if !self.keyboard_monitor_stage(keycode, key_state, time) {
             return;
         }
 
@@ -289,11 +291,42 @@ impl State {
     /// AccessX holds down or back are among them, so its filter forgets them.
     pub fn release_pressed_keys(&mut self) {
         self.caminito.accessx.clear();
+        self.caminito.keyboard_monitor.clear();
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let time = InputTime::from_micros(self.caminito.now().as_micros() as u64);
         for keycode in keyboard.pressed_keys() {
             self.key_past_accessx(keycode, KeyState::Released, time);
         }
+    }
+
+    /// Stage 3, the Keyboard monitor's watches and grabs (135): its callers are told of the
+    /// key, and it says whether the key goes further.
+    fn keyboard_monitor_stage(
+        &mut self,
+        keycode: Keycode,
+        key_state: KeyState,
+        time: InputTime,
+    ) -> bool {
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        let mods = keyboard.modifier_state().serialized;
+        let (keysym, unichar) = keyboard.with_xkb_state(self, |context| {
+            let xkb = context.xkb().lock().unwrap();
+            // Safety: the state is only read, and no reference to it outlives the lock.
+            let state = unsafe { xkb.state() };
+            (state.key_get_one_sym(keycode), state.key_get_utf32(keycode))
+        });
+        let key = a11y::Key {
+            keycode,
+            pressed: key_state == KeyState::Pressed,
+            time: time.millis(),
+            state: mods.depressed | mods.latched | mods.locked,
+            keysym: keysym.raw(),
+            unichar,
+        };
+        let repeat_delay = u32::try_from(self.caminito.settings.keyboard.repeat_delay).unwrap_or(0);
+        let verdict = self.caminito.keyboard_monitor.key(&key, repeat_delay);
+        self.caminito.signal_key_event(&key, verdict.told);
+        verdict.passes
     }
 
     /// Stage 4: VT switching (55) and Caminito's own bindings. A key whose press switched VTs
@@ -642,11 +675,6 @@ fn vt_switch(keysym: Keysym) -> Option<i32> {
     (first..=Keysym::XF86_Switch_VT_12.raw())
         .contains(&keysym.raw())
         .then(|| (keysym.raw() - first + 1) as i32)
-}
-
-/// Stage 3, the keyboard monitor's grabs and watches (M7). There's no monitor yet.
-fn keyboard_monitor_passes(_keycode: Keycode) -> bool {
-    true
 }
 
 impl Caminito {

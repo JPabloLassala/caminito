@@ -80,6 +80,7 @@ pub const KEY_UP: u32 = 103;
 pub const KEY_LEFT: u32 = 105;
 pub const KEY_RIGHT: u32 = 106;
 pub const KEY_DOWN: u32 = 108;
+pub const KEY_INSERT: u32 = 110;
 pub const KEY_MUTE: u32 = 113;
 
 /// The colour test windows are filled with.
@@ -977,6 +978,12 @@ impl Fixture {
         InputTime::from_millis(self.input_millis)
     }
 
+    /// Lets `millis` pass on the input events' clock before the next one, as a user who
+    /// waits does. The compositor's own clock isn't moved.
+    pub fn wait_between_inputs(&mut self, millis: u32) {
+        self.input_millis += millis;
+    }
+
     /// Moves the pointer to `(x, y)` in global logical coordinates.
     pub fn pointer_move(&mut self, x: f64, y: f64) {
         let time = self.input_time();
@@ -1196,6 +1203,7 @@ impl Fixture {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !(free(crate::dbus::debug::NAME)
             && free(crate::dbus::caminito::NAME)
+            && free(crate::dbus::a11y::NAME)
             && crate::dbus::screensaver::NAMES.into_iter().all(free))
         {
             assert!(

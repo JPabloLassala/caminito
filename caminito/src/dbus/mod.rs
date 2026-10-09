@@ -1,11 +1,13 @@
 //! Caminito's D-Bus (15): one file per name or peer. `systemd`, `panel`, `notifications` and
 //! `global_menu`'s applet are the peers so far, and `registrar` is an interface the apps look for.
-//! `menu_claim` is a method of `caminito`'s that has a module of its own.
+//! `menu_claim` is a method of `caminito`'s that has a module of its own, and `a11y` is the
+//! Keyboard monitor for Orca (135).
 //!
 //! zbus runs async on its own executor thread. Interface methods send a request with a
 //! reply sender into the event loop over a `calloop::channel` and await the reply, so the
 //! main thread never waits on the bus.
 
+pub(crate) mod a11y;
 pub mod caminito;
 pub mod debug;
 pub(crate) mod global_menu;
@@ -28,7 +30,8 @@ use crate::state::{Caminito, State};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Names {
     /// Its well-known names: `org.mate.Caminito`, which carried patches look for an owner of
-    /// (ADR 0011), `org.mate.Caminito.Debug`, and the Screensaver shim's two (62).
+    /// (ADR 0011), `org.mate.Caminito.Debug`, the Screensaver shim's two (62), and the
+    /// Keyboard monitor's (135).
     WellKnown,
     /// None: it's reached at its unique name. Tests share one bus, so they can't all own
     /// the well-known names.
@@ -63,9 +66,23 @@ async fn on_the_bus(connection: &zbus::Connection, name: &str) -> bool {
     has_owner.await.unwrap_or(true)
 }
 
+/// Who has `name`, for the log.
+async fn owner(connection: &zbus::Connection, name: &'static str) -> String {
+    let owner = async {
+        let bus = zbus::fdo::DBusProxy::new(connection).await?;
+        let name = BusName::from_static_str(name)?;
+        zbus::Result::Ok(bus.get_name_owner(name).await?)
+    };
+    match owner.await {
+        Ok(owner) => owner.to_string(),
+        Err(_) => "another connection".to_owned(),
+    }
+}
+
 /// Where the event loop hears of the callers that left the bus, by their unique names, so
 /// that what they held goes with them: the shim's cookies (62), the accelerator grabs
-/// (98), the menus registered for XWayland windows (113) and the menu claims' ties (115).
+/// (98), the menus registered for XWayland windows (113), the menu claims' ties (115) and
+/// the Keyboard monitor's watches and grabs (135).
 #[derive(Clone)]
 struct Callers(channel::Sender<String>);
 
@@ -115,6 +132,8 @@ pub struct Dbus {
     _applet_watch: Option<zbus::Task<()>>,
     /// The registrar's name, which follows the applet (112).
     registrar: global_menu::Registrar,
+    /// The Keyboard monitor's `KeyEvent`s, which a task sends in order (135).
+    key_events: futures_channel::mpsc::UnboundedSender<(String, a11y::Key)>,
     connection: zbus::Connection,
     /// The bus's address, if it isn't the session bus's: a test's own bus.
     address: Option<String>,
@@ -165,6 +184,7 @@ impl Caminito {
         let debug_requests = self.dbus_requests(Caminito::debug_request);
         let screensaver_requests = self.dbus_requests(Caminito::screensaver_request);
         let registrar_requests = self.dbus_requests(Caminito::registrar_request);
+        let a11y_requests = self.dbus_requests(Caminito::a11y_request);
         let callers = Callers(self.dbus_requests(Caminito::caller_left));
 
         let caminito = caminito::CaminitoInterface::new(caminito_requests, callers.clone());
@@ -174,13 +194,22 @@ impl Caminito {
         builder = screensaver::serve(builder, screensaver_requests, callers.clone())?;
         let registrar = registrar::RegistrarInterface::new(registrar_requests, callers.clone());
         builder = builder.serve_at(registrar::PATH, registrar)?;
+        let monitor = a11y::KeyboardMonitorInterface::new(a11y_requests, callers.clone());
+        builder = builder.serve_at(a11y::PATH, monitor)?;
         if names == Names::WellKnown {
             builder = builder.name(caminito::NAME)?.name(debug::NAME)?;
         }
         let connection = zbus::block_on(builder.build())?;
         if names == Names::WellKnown {
             zbus::block_on(screensaver::own_names(&connection));
+            zbus::block_on(a11y::own_name(&connection));
         }
+        let (key_events, to_signal) = futures_channel::mpsc::unbounded();
+        let key_event_signals = a11y::signal_key_events(connection.clone(), to_signal);
+        connection
+            .executor()
+            .spawn(key_event_signals, "key events")
+            .detach();
         let caller_watch = zbus::block_on(callers.watch(&connection))
             .inspect_err(|err| tracing::warn!("can't watch for callers that leave the bus: {err}"))
             .ok()
@@ -198,6 +227,7 @@ impl Caminito {
             _caller_watch: caller_watch,
             _applet_watch: applet_watch,
             registrar: global_menu::Registrar::new(registrar_released),
+            key_events,
             connection,
             address: address.map(str::to_owned),
         };
@@ -235,6 +265,7 @@ impl Caminito {
         self.accelerator_grabs.owner_left(&caller);
         self.app_menu_registrations.owner_left(&caller);
         self.menu_claims.caller_left(&caller);
+        self.keyboard_monitor.caller_left(&caller);
     }
 
     /// A sender for an interface's requests, which `answer` gets in the event loop.
