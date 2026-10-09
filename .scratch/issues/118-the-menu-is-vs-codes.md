@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open
+Status: open: the code is in, and the nested run with `nested/run.sh` (the eight menus, an item of each, the stall and the stray `action`) is the developer's, by hand
 Milestone: none: after v0.1
 Blocked by: [116](116-the-extension-serves-one-menu-and-claims.md)
 
@@ -58,3 +58,10 @@ Nobody has run these. A result that contradicts an ADR reopens it.
 
 **Not run here:** the nested run with the panel, and so the panel's stall while the importer preloads the submenus and how GTK draws a stray `action`. They need a Wayland desktop and the applet's package.
 
+
+## Done (2026-10-09)
+
+- **The code was already on `master`** (`03fa7d5`, `9c6ba0b`, `f52c1f6`), so shipping it added nothing to `caminito-vscode/`. At `74f31a4`, `npm run typecheck` is clean and `npm test` passes all 62 tests, on Node 22 here.
+- **The Rust workspace's suite wasn't run:** `pango-sys` won't build without pango's development files, which this container lacks. Ticket 118 changes nothing outside `caminito-vscode/` and this file.
+- **The nested run wasn't done here.** There's no VS Code and no Wayland compositor, and the applet's package isn't installed. 116's run by hand on 2026-10-09 served this table, but it tried only File > New Text File. So the last criterion and the first two items under "To run" are left to a run with `nested/run.sh`: the eight menus, an item of each, how long the panel stalls on a menu of more than one submenu, and how GTK draws a submenu's stray `action`.
+- **Left open, not handed to 124:** 124 checks a Session with a person at the keyboard, and these checks are a nested run's, as 116's were.
