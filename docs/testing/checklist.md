@@ -555,6 +555,29 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Caminito`, and `WAYLAND_DEBUG=1 mate-panel --replace
   2>&1 | grep coordinates` for the `ext_workspace_handle_v1.coordinates` events.
 
+### Dynamic workspaces grow and shrink the switcher
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with no window open and the workspace switcher on the panel.
+     Run `gsettings range org.mate.Marco.general dynamic-workspaces`. If it prints `No such
+     key`, the installed Marco is 1.29.0 or older, which has no key for it: skip the item and
+     say so in the closing run's results.
+  2. `gsettings set org.mate.Marco.general dynamic-workspaces true`, and run
+     `gsettings get org.mate.Marco.general num-workspaces`.
+  3. Open a terminal, then a second one on the second workspace, by clicking it in the
+     switcher first. Run the `gsettings get` of step 2 after each.
+  4. Close the terminal on the first workspace, then the other one.
+  5. `gsettings set org.mate.Marco.general dynamic-workspaces false`, open and close a
+     terminal, and set `num-workspaces` back to 4.
+- **Expected:** in step 2 the switcher shrinks to one workspace and `num-workspaces` is 1. In
+  step 3 it grows by one after each terminal, to three, the last always empty, and
+  `num-workspaces` follows. In step 4 the second terminal moves to the first workspace with
+  the view and the focus, the switcher has two workspaces, then one. In step 5 the count
+  stays as it is while windows come and go, then goes back to 4.
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `WAYLAND_DEBUG=1 mate-panel
+  --replace 2>&1 | grep ext_workspace` for the workspaces Caminito adds and removes.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

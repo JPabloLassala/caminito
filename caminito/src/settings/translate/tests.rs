@@ -277,6 +277,24 @@ fn names_beyond_the_count_are_not_passed_on() {
     assert_eq!(settings(&reading).policy.workspace_names.len(), 4);
 }
 
+#[test]
+fn dynamic_workspaces_is_off_where_the_schema_has_no_key_for_it() {
+    // Marco 1.29.0's schema, which `defaults` reads, has no `dynamic-workspaces`.
+    assert!(!settings(&defaults()).policy.dynamic_workspaces);
+}
+
+#[test]
+fn dynamic_workspaces_is_read_where_the_schema_has_it_and_then_every_name_is_passed_on() {
+    let mut reading = with(MARCO_GENERAL, "dynamic-workspaces", Value::Bool(true));
+    reading.insert(MARCO_WORKSPACE_NAMES, "name-9", string("Spare"), string(""));
+    let config = settings(&reading).policy;
+    assert!(config.dynamic_workspaces);
+    // The count is Caminito's then, and can reach any of them (151).
+    assert_eq!(config.workspace_names.len(), 36);
+    assert_eq!(config.workspace_names[8], "Spare");
+    assert_eq!(config.workspace_names[35], "Workspace 36");
+}
+
 // The workspace grid (96).
 
 #[test]

@@ -38,7 +38,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `titlebar-uses-system-font` | honoured | On, the title is in `org.mate.interface font-name`. | `caminito/src/settings/translate/tests.rs` |
 | `titlebar-font` | honoured | The title's font. | the same |
 | `num-workspaces` | honoured | 1 to 36 workspaces, live, as M2 and 97 settled. | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/settings.rs`, `caminito/src/tests/ext_workspace.rs` |
-| `dynamic-workspaces` | to do (151) | Master's key: off, and read nowhere yet. | |
+| `dynamic-workspaces` | honoured | Master's key, read where the installed schema has it, and off where it hasn't. On, one empty workspace follows those with windows, as in Marco's master: an emptied one is closed up by moving the windows of those after it down one, the view and the focus with them, and `num-workspaces` is written back with the count (151). | `caminito-policy/src/tests/dynamic_workspaces.rs`, `caminito/src/tests/dynamic_workspaces.rs`, `caminito/src/settings/translate/tests.rs`, the checklist's *Dynamic workspaces grow and shrink the switcher* |
 | `wrap-style` | to do (150) | The Workspace grid doesn't wrap, Marco's default `no wrap`. | |
 | `visual-bell` | to do (169) | A bell is counted and logged, and nothing flashes (105). | `caminito/src/tests/bell.rs` |
 | `audible-bell` | to do (170) | Read; nothing plays (105). | the same |

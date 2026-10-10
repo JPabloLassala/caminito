@@ -14,6 +14,7 @@ use crate::{
     WindowType, WorkspaceLayout,
 };
 
+mod dynamic_workspaces;
 mod switcher;
 
 pub use switcher::{SwitchList, Switcher};
@@ -62,11 +63,15 @@ pub const MAX_WORKSPACES: usize = 36;
 /// Policy's settings, from GSettings (09).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
-    /// `num-workspaces`, which policy keeps within 1 to `MAX_WORKSPACES`.
+    /// `num-workspaces`, which policy keeps within 1 to `MAX_WORKSPACES`. Policy doesn't
+    /// read it while `dynamic_workspaces` is on.
     pub workspace_count: usize,
     /// Each workspace's name, from the first. Policy only holds them, for ext-workspace
     /// and the debug dump; a missing name is Marco's "Workspace N".
     pub workspace_names: Vec<String>,
+    /// Marco master's `dynamic-workspaces` (151): policy adds and removes workspaces as
+    /// windows come and go, and the count is its own.
+    pub dynamic_workspaces: bool,
     /// The `workspace-layout-*` keys: the grid the workspaces are in.
     pub workspace_layout: WorkspaceLayout,
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
@@ -82,6 +87,7 @@ impl Default for Config {
             workspace_count,
             workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
             workspace_layout: WorkspaceLayout::default(),
+            dynamic_workspaces: false,
             alt_tab_raise_windows: false,
         }
     }
@@ -257,6 +263,10 @@ pub struct Policy<W: PolicyWindow> {
     showing_desktop: BTreeMap<usize, BTreeMap<SeatId, WindowId>>,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
+    /// The names the settings give, which may be fewer or more than the workspaces.
+    configured_names: Vec<String>,
+    /// `dynamic-workspaces` (151).
+    dynamic_workspaces: bool,
     /// The grid the settings ask for, which the count makes a `Grid` of.
     workspace_layout: WorkspaceLayout,
     outputs: Vec<Output>,
@@ -287,6 +297,8 @@ impl<W: PolicyWindow> Policy<W> {
             active: 0,
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
+            configured_names: Vec::new(),
+            dynamic_workspaces: false,
             workspace_layout: WorkspaceLayout::default(),
             outputs: Vec::new(),
             primary_output: None,
@@ -358,16 +370,25 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// The settings changed. A smaller workspace count moves the windows on the removed
     /// workspaces to the new last one, and the active workspace with them, as Marco's
-    /// `update_num_workspaces` does; a larger one adds empty workspaces at the end.
+    /// `update_num_workspaces` does; a larger one adds empty workspaces at the end. With
+    /// `dynamic-workspaces` on, the count is policy's own and `num-workspaces` is left
+    /// unread (151).
     pub fn settings_changed(&mut self, config: Config) {
-        let count = config.workspace_count.clamp(1, MAX_WORKSPACES);
-        let mut names = config.workspace_names;
-        names.truncate(count);
-        names.extend((names.len() + 1..=count).map(default_workspace_name));
-        self.workspace_names = names;
+        self.configured_names = config.workspace_names;
+        self.dynamic_workspaces = config.dynamic_workspaces;
         self.workspace_layout = config.workspace_layout;
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
+        if !self.dynamic_workspaces {
+            self.set_workspace_count(config.workspace_count);
+        }
+        self.name_workspaces();
+        // The active workspace may have been removed, so every seat's focus is checked.
+        self.apply();
+    }
 
+    /// Makes `count` workspaces, within 1 to `MAX_WORKSPACES`, as `num-workspaces` asks.
+    fn set_workspace_count(&mut self, count: usize) {
+        let count = count.clamp(1, MAX_WORKSPACES);
         if count < self.stacks.len() {
             let last = count - 1;
             let removed: Vec<WindowId> = self.stacks.drain(count..).flatten().collect();
@@ -384,8 +405,19 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             self.stacks.resize(count, Vec::new());
         }
-        // The active workspace may have been removed, so every seat's focus is checked.
-        self.apply();
+    }
+
+    /// Gives each workspace its name from the settings, or Marco's default. A name is the
+    /// number's, not the workspace's, as Marco keeps them (prefs.c:2200-2268).
+    fn name_workspaces(&mut self) {
+        self.workspace_names = (0..self.stacks.len())
+            .map(|index| {
+                self.configured_names
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| default_workspace_name(index + 1))
+            })
+            .collect();
     }
 
     /// Starts managing a window the client has mapped.
@@ -1673,6 +1705,8 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Sends each window whatever policy now wants of it that it hasn't been sent.
     fn apply(&mut self) {
+        // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
+        self.update_dynamic_workspaces();
         self.end_stale_grabs();
         self.fix_focus();
         self.mru.retain(|id| self.windows.contains_key(id));
