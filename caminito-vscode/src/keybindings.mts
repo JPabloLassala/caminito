@@ -218,28 +218,32 @@ export function fallbackLabelsOf(
 }
 
 /**
- * dbusmenu's `shortcut` for keys as keybindings.json writes them: the modifiers in the
- * order `Control`, `Alt`, `Shift`, `Super`, then the key's GDK name. A chord has none, as
- * the applet draws only its first press, and nor has a key with no GDK name, a bare scan
- * code among them.
+ * dbusmenu's `shortcut` for keys as keybindings.json writes them: for each press, in order,
+ * the modifiers in the order `Control`, `Alt`, `Shift`, `Super`, then the key's GDK name. A
+ * chord has one entry per press, which the applet's carried patch draws one after another
+ * (145, ADR 0020). A key with no GDK name, a bare scan code among them, has none, and nor has
+ * a chord with such a press.
  */
 export function shortcutOf(key: string): Shortcut | undefined {
   const presses = parse(key);
-  if (presses?.length !== 1) {
+  if (presses === undefined) {
     return undefined;
   }
-  const [press] = presses as [Press];
-  const name = GDK_KEYS[press.key];
-  if (name === undefined) {
-    return undefined;
+  const shortcut: string[][] = [];
+  for (const press of presses) {
+    const name = GDK_KEYS[press.key];
+    if (name === undefined) {
+      return undefined;
+    }
+    const modifiers = [
+      press.ctrl && 'Control',
+      press.alt && 'Alt',
+      press.shift && 'Shift',
+      press.meta && 'Super',
+    ].filter((modifier) => modifier !== false);
+    shortcut.push([...modifiers, name]);
   }
-  const modifiers = [
-    press.ctrl && 'Control',
-    press.alt && 'Alt',
-    press.shift && 'Shift',
-    press.meta && 'Super',
-  ].filter((modifier) => modifier !== false);
-  return [[...modifiers, name]];
+  return shortcut;
 }
 
 /** The bindings of a parsed keybindings file. An entry not shaped as one is skipped. */
