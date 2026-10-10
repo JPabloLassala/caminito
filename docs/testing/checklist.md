@@ -578,6 +578,34 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `WAYLAND_DEBUG=1 mate-panel
   --replace 2>&1 | grep ext_workspace` for the workspaces Caminito adds and removes.
 
+### The four directions in a 2 × 2 grid, with each wrap style
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with four workspaces, and set the workspace switcher's rows
+     to 2 in its *Preferences*, so that the first and second workspaces are above the third
+     and fourth.
+  2. With `gsettings set org.mate.Marco.general wrap-style 'no wrap'`, on the first
+     workspace, press Ctrl+Alt+Up, Ctrl+Alt+Left, then Ctrl+Alt+Right, Down, Left and Up.
+  3. `gsettings set org.mate.Marco.general wrap-style classic`, then on the first workspace
+     press Ctrl+Alt+Up, and on the first again Ctrl+Alt+Left; on the fourth, Ctrl+Alt+Right,
+     and on the fourth again Ctrl+Alt+Down.
+  4. `gsettings set org.mate.Marco.general wrap-style toroidal`, and press the keys of step 3
+     from the same workspaces.
+  5. Open a terminal on the first workspace and press Ctrl+Shift+Alt+Down, then
+     Ctrl+Shift+Alt+Up.
+  6. `gsettings set org.mate.Marco.global-keybindings switch-to-workspace-prev
+     '<Super>p'`, click the fourth workspace in the switcher, then press Super+P twice.
+  7. Reset `wrap-style` and `switch-to-workspace-prev`, and set the rows back to 1.
+- **Expected:** in step 2 the first two keys do nothing, and the four after go to the second,
+  fourth, third and first workspaces. In step 3 classic goes to the fourth, the fourth, the
+  first and the first. In step 4 toroidal goes to the third, the second, the third and the
+  second. In step 5 the terminal goes to the third workspace and back, the view with it, and it
+  keeps the focus. In step 6 Super+P goes back to the workspace the click left, then to the
+  fourth again. The switcher shows each switch as it happens.
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and the debug dump's `bindings`
+  for the combinations in force.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print
@@ -1453,6 +1481,25 @@ session_env() {
   `gsettings monitor org.mate.Marco.window-keybindings`; and `journalctl --user -b | grep
   caminito` for the empty command.
 
+### `show-desktop-skip-list` keeps a native and an X11 window on screen
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `mate-terminal` (native), `xterm` (X11) and `pluma`
+     on the first workspace.
+  2. Run `gsettings set org.mate.Marco.general show-desktop-skip-list 'mate-terminal, XTerm'`
+     in the terminal, and focus `xterm`.
+  3. Click the panel's Show Desktop button, then click it again. Press Ctrl+Alt+D, then
+     press it again.
+  4. Show the desktop, run `gsettings set org.mate.Marco.general show-desktop-skip-list ''`
+     from the terminal, then stop showing it and show it again.
+- **Expected:** in step 3 the terminal and `xterm` stay where they are while `pluma` is
+  hidden, `xterm` keeps the keyboard, and the second press brings `pluma` back under them,
+  with no change to the two listed windows. The button and the key behave alike. In step 4
+  the change does nothing until the desktop is shown again, which then hides all three (164).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for `showing_desktop` and each
+  window's app id, `xprop WM_CLASS` on `xterm`, and `gsettings monitor org.mate.Marco.general`.
+
 ### The parity table's rows that no test covers
 
 - **Milestone:** M8
@@ -1471,3 +1518,33 @@ session_env() {
   a word (09). No row is *to do* (173).
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, Caminito's log, and
   `org.mate.Caminito.Debug`'s state dump.
+
+### The focus modes and auto-raise
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open a terminal (a native window) and an X11 app, such as
+     `xterm`, side by side, with some desktop showing between them and the panel at the top.
+  2. Run `gsettings set org.mate.Marco.general focus-mode sloppy`. Move the pointer into the
+     terminal, then the X11 app, then onto the desktop, then onto the panel, typing a letter
+     at each stop.
+  3. Run `gsettings set org.mate.Marco.general focus-mode mouse` and do the same.
+  4. Hold Alt and press Tab with the pointer over one window, move the pointer over the
+     other, and release Alt on the first.
+  5. Run `gsettings set org.mate.Marco.general auto-raise true`, overlap the two windows,
+     and move the pointer from the one on top into the part of the other that shows. Then
+     do it again and leave it before half a second.
+  6. Run `gsettings set org.mate.Marco.general focus-mode click`, then `gsettings set
+     org.mate.Marco.general raise-on-click false`, and click the lower window's body, then its
+     titlebar. Reset the four keys with `gsettings reset`.
+- **Expected:** in step 2 each window takes the focus, and the letter, as the pointer enters
+  it, without being raised, and on the desktop and the panel the last window keeps the
+  focus. In step 3 the same, but on the desktop no window has the focus and the letter goes
+  nowhere, and on the panel the last window keeps it. Each key change applies at once. In
+  step 4 the focus stays put while the switcher is open, and goes to the window released on.
+  In step 5 the lower window is focused at once and raised after half a second, Marco's
+  default `auto-raise-delay`, and not raised the second time. In step 6 the click on the body
+  focuses the window and leaves it below; the click on the titlebar raises it (153).
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `org.mate.Caminito.Debug`'s
+  state dump, whose `focus` and workspaces' `stacking` members show which window has the focus
+  and which is on top.

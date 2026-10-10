@@ -11,6 +11,7 @@ mod invariants;
 mod outputs;
 mod placement;
 mod placement_modes;
+mod pointer_focus;
 mod requests;
 mod shade;
 mod show_desktop;
@@ -20,6 +21,7 @@ mod switcher;
 mod transients;
 mod window_actions;
 mod work_area;
+mod workspace_moves;
 mod workspaces;
 
 use std::time::Duration;

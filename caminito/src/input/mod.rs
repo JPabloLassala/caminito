@@ -15,7 +15,7 @@ pub use grab::GrabKind;
 use grab::PlacementKey;
 pub(crate) use serials::InputSerials;
 
-use caminito_policy::{Action, ResizeEdges, WindowId};
+use caminito_policy::{Action, Crossing, PointerTarget, ResizeEdges, WindowId};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, Event, InputBackend, InputEvent,
     InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
@@ -26,9 +26,12 @@ use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersStat
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
+use smithay::wayland::compositor::get_role;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
 use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_constraint};
 use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::shell::wlr_layer::Layer;
+use smithay::wayland::shell::xdg::XDG_POPUP_ROLE;
 use smithay::xwayland::X11Surface;
 
 use self::bindings::Binding;
@@ -104,7 +107,7 @@ impl State {
             let escapes = constraint == Some(Constraint::Confined)
                 && self.pointer_constraint_at(target).is_none();
             if !escapes {
-                self.pointer_motion(target, time);
+                self.pointer_motion(target, time, Crossing::Motion);
             }
         }
 
@@ -456,19 +459,30 @@ impl State {
     /// its button.
     pub fn on_pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime) {
         self.idle_activity();
-        self.pointer_motion(location, time);
+        self.pointer_motion(location, time, Crossing::Motion);
     }
 
     /// The pointer is at `location`: what [`State::on_pointer_motion`] does but count as
     /// activity, for the refresh pass to give the focus to what's now under a pointer that
-    /// didn't move. A window that maps there doesn't end a blank (128).
-    fn pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime) {
+    /// didn't move. A window that maps there doesn't end a blank (128). Policy hears what
+    /// the pointer is over, for the pointer focus modes (153), unless a grab has the pointer.
+    fn pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime, why: Crossing) {
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let target = self.caminito.under(location);
         let under = target.as_ref().and_then(Under::surface);
         let hover = target.as_ref().and_then(Under::frame_control);
         self.caminito.pointer_focus = under.clone();
         self.caminito.frame_pointer.hover = hover;
+        if !pointer.is_grabbed() {
+            let crossed = self.caminito.pointer_target(location, target.as_ref());
+            let caminito = &mut self.caminito;
+            let focus = caminito.policy.focus(SEAT);
+            let now = caminito.now();
+            caminito.policy.pointer_entered(SEAT, crossed, why, now);
+            if caminito.policy.focus(SEAT) != focus {
+                self.update_keyboard_focus();
+            }
+        }
         let event = MotionEvent {
             location,
             serial: SERIAL_COUNTER.next_serial(),
@@ -622,7 +636,7 @@ impl State {
             || self.caminito.frame_pointer.hover != hover;
         if stale {
             let time = InputTime::from_micros(self.caminito.now().as_micros() as u64);
-            self.pointer_motion(location, time);
+            self.pointer_motion(location, time, Crossing::Scene);
         }
     }
 }
@@ -875,5 +889,33 @@ impl Caminito {
     /// The window under `location`.
     pub fn window_under(&self, location: Point<f64, Logical>) -> Option<WindowId> {
         self.under(location)?.window()
+    }
+
+    /// What policy is told the pointer is over at `location`, where `under` is (153). A
+    /// Layer surface below the windows, such as caja's desktop, is the desktop, and its
+    /// popups aren't, as Marco ignores an override-redirect menu's crossings.
+    fn pointer_target(
+        &self,
+        location: Point<f64, Logical>,
+        under: Option<&Under>,
+    ) -> PointerTarget {
+        if self.lock.is_locked() || self.switcher_popup_at(location) {
+            return PointerTarget::Other;
+        }
+        match under {
+            None => PointerTarget::Desktop,
+            Some(Under::Surface(id, ..) | Under::Frame(id, _)) => PointerTarget::Window(*id),
+            Some(Under::Layer(layer, focus, _))
+                if matches!(layer.layer(), Layer::Bottom | Layer::Background)
+                    && focus
+                        .wl_surface()
+                        .is_none_or(|surface| get_role(&surface) != Some(XDG_POPUP_ROLE)) =>
+            {
+                PointerTarget::Desktop
+            }
+            Some(Under::Layer(..) | Under::OverrideRedirect(..) | Under::Lock(..)) => {
+                PointerTarget::Other
+            }
+        }
     }
 }

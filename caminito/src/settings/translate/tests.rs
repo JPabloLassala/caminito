@@ -39,8 +39,14 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "icon-size", Value::Int(48));
     put(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(5));
     put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
+    put(MARCO_GENERAL, "focus-mode", s("click"));
+    put(MARCO_GENERAL, "raise-on-click", Value::Bool(true));
+    put(MARCO_GENERAL, "auto-raise", Value::Bool(false));
+    put(MARCO_GENERAL, "auto-raise-delay", Value::Int(500));
     put(MARCO_GENERAL, "placement-mode", s("automatic"));
     put(MARCO_GENERAL, "center-new-windows", Value::Bool(true));
+    put(MARCO_GENERAL, "wrap-style", s("no wrap"));
+    put(MARCO_GENERAL, "show-desktop-skip-list", s(""));
     for n in 1..=36 {
         put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
     }
@@ -345,6 +351,35 @@ fn workspace_layout_rows_and_columns_out_of_range_are_clamped() {
     let (settings, problem) = self::problem(&with(CAMINITO, key, Value::Int(50)));
     assert_eq!(settings.policy.workspace_layout.columns, 36);
     assert_eq!(problem, out_of_range(CAMINITO, key, "50", "36"));
+}
+
+#[test]
+fn the_default_wrap_style_is_no_wrap() {
+    for reading in [defaults(), Reading::default()] {
+        assert_eq!(settings(&reading).policy.wrap_style, WrapStyle::NoWrap);
+    }
+}
+
+#[test]
+fn wrap_style_is_passed_to_policy() {
+    for (nick, wrap) in [
+        ("classic", WrapStyle::Classic),
+        ("toroidal", WrapStyle::Toroidal),
+    ] {
+        let reading = with(MARCO_GENERAL, "wrap-style", string(nick));
+        // And with no problem: it isn't unsupported any more (150).
+        assert_eq!(settings(&reading).policy.wrap_style, wrap);
+    }
+}
+
+#[test]
+fn an_unknown_wrap_style_falls_back_to_no_wrap() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "wrap-style", string("spiral")));
+    assert_eq!(settings.policy.wrap_style, WrapStyle::NoWrap);
+    assert_eq!(
+        problem,
+        invalid(MARCO_GENERAL, "wrap-style", "'spiral'", "'no wrap'")
+    );
 }
 
 #[test]
@@ -782,6 +817,69 @@ fn a_value_of_the_wrong_type_falls_back_to_the_default() {
     );
 }
 
+// The focus modes and auto-raise (153).
+
+#[test]
+fn the_defaults_give_click_focus_raise_on_click_and_no_auto_raise() {
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.focus_mode, FocusMode::Click);
+        assert!(policy.raise_on_click);
+        assert!(!policy.auto_raise);
+        assert_eq!(policy.auto_raise_delay, Duration::from_millis(500));
+    }
+}
+
+#[test]
+fn focus_mode_is_passed_to_policy() {
+    for (nick, mode) in [("sloppy", FocusMode::Sloppy), ("mouse", FocusMode::Mouse)] {
+        let reading = with(MARCO_GENERAL, "focus-mode", string(nick));
+        assert_eq!(settings(&reading).policy.focus_mode, mode);
+    }
+}
+
+#[test]
+fn an_unknown_focus_mode_falls_back_to_click() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "focus-mode", string("lazy")));
+    assert_eq!(settings.policy.focus_mode, FocusMode::Click);
+    assert_eq!(
+        problem,
+        invalid(MARCO_GENERAL, "focus-mode", "'lazy'", "'click'")
+    );
+}
+
+#[test]
+fn raise_on_click_and_auto_raise_are_passed_to_policy() {
+    let reading = with(MARCO_GENERAL, "raise-on-click", Value::Bool(false));
+    assert!(!settings(&reading).policy.raise_on_click);
+    let reading = with(MARCO_GENERAL, "auto-raise", Value::Bool(true));
+    assert!(settings(&reading).policy.auto_raise);
+    let reading = with(MARCO_GENERAL, "auto-raise-delay", Value::Int(250));
+    assert_eq!(
+        settings(&reading).policy.auto_raise_delay,
+        Duration::from_millis(250)
+    );
+}
+
+#[test]
+fn auto_raise_delay_out_of_range_is_clamped_to_marcos_bounds() {
+    let reading = with(MARCO_GENERAL, "auto-raise-delay", Value::Int(-1));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.policy.auto_raise_delay, Duration::ZERO);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "auto-raise-delay", "-1", "0")
+    );
+
+    let reading = with(MARCO_GENERAL, "auto-raise-delay", Value::Int(10_001));
+    let (settings, problem) = self::problem(&reading);
+    assert_eq!(settings.policy.auto_raise_delay, Duration::from_secs(10));
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "auto-raise-delay", "10001", "10000")
+    );
+}
+
 // The Window switcher.
 
 #[test]
@@ -870,6 +968,22 @@ fn every_placement_mode_nick_is_known() {
 fn center_new_windows_off_is_passed_to_policy() {
     let reading = with(MARCO_GENERAL, "center-new-windows", Value::Bool(false));
     assert!(!settings(&reading).policy.center_new_windows);
+}
+
+// `show-desktop-skip-list` (164).
+
+/// Set, it isn't reported as unsupported, which `settings` checks.
+#[test]
+fn the_show_desktop_skip_list_is_passed_to_policy() {
+    let reading = with(
+        MARCO_GENERAL,
+        "show-desktop-skip-list",
+        string("Conky, xclock"),
+    );
+    assert_eq!(
+        settings(&reading).policy.show_desktop_skip_list,
+        ShowDesktopSkipList::parse("Conky,xclock")
+    );
 }
 
 #[test]
@@ -1931,7 +2045,8 @@ fn without_the_device_schemas_their_keys_are_defaults() {
 
 // Unsupported keys, logging once, and missing schemas.
 
-const TEST_UNSUPPORTED: &[(&str, &str)] = &[(MARCO_GENERAL, "wrap-style")];
+/// A made-up key, so that no ticket that honours a key takes the example away.
+const TEST_UNSUPPORTED: &[(&str, &str)] = &[(MARCO_GENERAL, "test-style")];
 
 fn unsupported_problems(reading: &Reading) -> Vec<Problem> {
     translate_with(reading, TEST_UNSUPPORTED).problems
@@ -1939,7 +2054,13 @@ fn unsupported_problems(reading: &Reading) -> Vec<Problem> {
 
 #[test]
 fn an_unsupported_key_at_its_default_is_not_reported() {
-    let reading = with(MARCO_GENERAL, "wrap-style", string("no wrap"));
+    let mut reading = defaults();
+    reading.insert(
+        MARCO_GENERAL,
+        "test-style",
+        string("plain"),
+        string("plain"),
+    );
     assert_eq!(unsupported_problems(&reading), []);
 }
 
@@ -1948,16 +2069,16 @@ fn an_unsupported_key_set_away_from_its_default_is_reported() {
     let mut reading = defaults();
     reading.insert(
         MARCO_GENERAL,
-        "wrap-style",
-        string("toroidal"),
-        string("no wrap"),
+        "test-style",
+        string("fancy"),
+        string("plain"),
     );
     assert_eq!(
         unsupported_problems(&reading),
         [Problem::Unsupported {
             schema: MARCO_GENERAL.into(),
-            key: "wrap-style".into(),
-            value: "'toroidal'".into(),
+            key: "test-style".into(),
+            value: "'fancy'".into(),
         }]
     );
 }
@@ -1971,15 +2092,15 @@ fn an_unsupported_key_that_isnt_installed_is_not_reported() {
 fn an_unsupported_key_is_logged_once_whatever_its_values() {
     let unsupported = |value: &str| Problem::Unsupported {
         schema: MARCO_GENERAL.into(),
-        key: "wrap-style".into(),
+        key: "test-style".into(),
         value: value.into(),
     };
     let mut logged = Logged::default();
     assert_eq!(
-        logged.first_time(vec![unsupported("'toroidal'")]),
-        [unsupported("'toroidal'")]
+        logged.first_time(vec![unsupported("'fancy'")]),
+        [unsupported("'fancy'")]
     );
-    assert_eq!(logged.first_time(vec![unsupported("'classic'")]), []);
+    assert_eq!(logged.first_time(vec![unsupported("'fancier'")]), []);
 }
 
 #[test]

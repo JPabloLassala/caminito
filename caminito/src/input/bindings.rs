@@ -130,9 +130,10 @@ const fn command(command: Command) -> Does {
 /// The actions that have a behaviour, in Marco's order (`src/include/all-keybindings.h`
 /// at 1.29.0, the global actions before the window ones), which is the order its
 /// `process_event` tries them in (`core/keybindings.c:1203-1260`), so of two keys with one
-/// combination the first wins. `move-to-workspace-left` and `-right` are among the global
-/// ones there, though their keys are in `window-keybindings`. Every other action's key is
-/// read and parsed, and binds nothing until its ticket gives it a behaviour (147).
+/// combination the first wins. The moves to the workspace beside are among the global
+/// ones there, after the switches, though their keys are in `window-keybindings`;
+/// `switch-to-workspace-prev` is last (150). Every other action's key is read and parsed,
+/// and binds nothing until its ticket gives it a behaviour (147).
 /// `run-command-area-screenshot` is master's (`8522ed1`), after the window screenshot as
 /// there; where the installed schema hasn't the key, it has master's default.
 fn bindable() -> impl Iterator<Item = Bindable> {
@@ -157,6 +158,16 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "<Control><Alt>Right",
                 policy(Action::SwitchToWorkspaceRight),
             ),
+            global(
+                "switch-to-workspace-up",
+                "<Control><Alt>Up",
+                policy(Action::SwitchToWorkspaceUp),
+            ),
+            global(
+                "switch-to-workspace-down",
+                "<Control><Alt>Down",
+                policy(Action::SwitchToWorkspaceDown),
+            ),
             window(
                 "move-to-workspace-left",
                 "<Control><Shift><Alt>Left",
@@ -166,6 +177,16 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "move-to-workspace-right",
                 "<Control><Shift><Alt>Right",
                 policy(Action::MoveToWorkspaceRight),
+            ),
+            window(
+                "move-to-workspace-up",
+                "<Control><Shift><Alt>Up",
+                policy(Action::MoveToWorkspaceUp),
+            ),
+            window(
+                "move-to-workspace-down",
+                "<Control><Shift><Alt>Down",
+                policy(Action::MoveToWorkspaceDown),
             ),
             global(
                 "switch-group",
@@ -275,6 +296,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "maximize-horizontally",
                 "disabled",
                 policy(Action::ToggleMaximizedHorizontally),
+            ),
+            global(
+                "switch-to-workspace-prev",
+                "disabled",
+                policy(Action::SwitchToWorkspacePrev),
             ),
         ])
 }

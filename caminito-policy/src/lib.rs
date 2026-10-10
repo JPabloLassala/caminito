@@ -10,6 +10,7 @@ mod grid;
 mod output;
 mod placement;
 mod policy;
+mod skip_list;
 mod stack;
 mod window;
 
@@ -19,12 +20,13 @@ mod test_window;
 mod tests;
 
 pub use action::Action;
-pub use grid::{Grid, Orientation, WorkspaceLayout};
+pub use grid::{Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
-    Config, MAX_WORKSPACES, MapStates, Policy, ResizeEdges, SeatId, SwitchList, Switcher,
-    default_workspace_name,
+    Config, Crossing, FocusMode, MAX_WORKSPACES, MapStates, PointerTarget, Policy, ResizeEdges,
+    SeatId, SwitchList, Switcher, default_workspace_name,
 };
+pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;
 pub use window::{FrameState, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};

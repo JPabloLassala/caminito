@@ -68,6 +68,14 @@ impl<W: PolicyWindow> Policy<W> {
         }
         self.stacks = stacks;
 
+        // The previous workspace follows its windows too (150), or is kept as the active one
+        // is, and forgotten if it's gone.
+        if let Some(to) = self
+            .previous
+            .and_then(|previous| occupied.iter().position(|from| *from == previous))
+        {
+            self.previous = Some(to);
+        }
         // The active workspace follows its windows, and the focus with them. Marco keeps the
         // index, which shows the next workspace's windows instead. An empty one stays if it
         // can, as in Marco.
@@ -89,6 +97,7 @@ impl<W: PolicyWindow> Policy<W> {
                 }
             }
         }
+        self.forget_removed_previous();
         self.name_workspaces();
     }
 }

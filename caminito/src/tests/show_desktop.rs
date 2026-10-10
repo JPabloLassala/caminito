@@ -7,6 +7,7 @@
 use std::sync::mpsc;
 use std::thread;
 
+use caminito_policy::ShowDesktopSkipList;
 use caminito_test_client::dbus::caminito_proxy;
 use smithay::output::Output;
 
@@ -15,6 +16,8 @@ use super::fixture::{
     on_both_kinds,
 };
 use crate::dbus::caminito::PATH;
+use crate::settings::Value;
+use crate::settings::translate::MARCO_GENERAL;
 
 /// A window of `kind` on the first workspace, with Caminito on the bus at the name returned.
 fn one_window(kind: Kind) -> (Fixture, ClientWindow, Output, String) {
@@ -194,4 +197,136 @@ fn switching_between_workspaces_that_agree_signals_nothing() {
 
     // The switch sent none, or it would be heard first, as `false`.
     assert_eq!(heard(&mut f, listener), [true]);
+}
+
+// `show-desktop-skip-list` (164): a native window listed by its app id, and an X11 one by
+// `WM_CLASS`'s class, stay whichever way the desktop is shown. Policy's tests cover the
+// list's other cases.
+
+/// A window of `kind` that `show-desktop-skip-list` lists, mapped and focused over one it
+/// doesn't, with Caminito on the bus at the name returned.
+struct Skipping {
+    f: Fixture,
+    listed: ClientWindow,
+    unlisted: ClientWindow,
+    output: Output,
+    bus: String,
+    /// The scene's element count with both windows showing.
+    both: usize,
+}
+
+fn skipping(kind: Kind) -> Skipping {
+    let mut f = Fixture::with_settings(vec![(
+        MARCO_GENERAL,
+        "show-desktop-skip-list".into(),
+        Value::Str("caja, Conky".into()),
+    )]);
+    f.add_output((1920, 1080), 1.0);
+    let client = f.connect(kind);
+    let unlisted = f.map(
+        client,
+        WindowSpec {
+            app_id: Some("mate-terminal"),
+            ..WindowSpec::plain((400, 300))
+        },
+    );
+    let listed = f.map(
+        client,
+        WindowSpec {
+            app_id: Some("conky"),
+            ..WindowSpec::plain((300, 200))
+        },
+    );
+    let output = f.state.caminito.outputs[0].clone();
+    let bus = f.start_dbus();
+    let both = f.state.scene_element_count(&output);
+    Skipping {
+        f,
+        listed,
+        unlisted,
+        output,
+        bus,
+        both,
+    }
+}
+
+fn showing(f: &Fixture, window: ClientWindow) -> bool {
+    f.state.caminito.policy.is_showing(f.pid(window))
+}
+
+impl Skipping {
+    /// That only the listed window shows, with the keyboard, as the scene draws it.
+    fn assert_only_the_listed_window_shows(&mut self) {
+        let Self {
+            f,
+            listed,
+            unlisted,
+            output,
+            ..
+        } = self;
+        assert!(showing(f, *listed));
+        assert!(!showing(f, *unlisted));
+        assert!(f.has_keyboard(*listed));
+        let count = f.state.scene_element_count(output);
+        assert!(1 < count && count < self.both, "{count} of {}", self.both);
+    }
+
+    /// That both windows show again, the listed one with the keyboard.
+    fn assert_both_show(&mut self) {
+        let Self {
+            f,
+            listed,
+            unlisted,
+            output,
+            ..
+        } = self;
+        assert!(showing(f, *listed) && showing(f, *unlisted));
+        assert!(f.has_keyboard(*listed));
+        assert_eq!(f.state.scene_element_count(output), self.both);
+    }
+}
+
+on_both_kinds! {
+    fn a_listed_window_stays_through_ctrl_alt_d(kind: Kind) {
+        let mut s = skipping(kind);
+
+        s.f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_D]);
+        assert!(read(&mut s.f, &s.bus));
+        s.assert_only_the_listed_window_shows();
+
+        s.f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_D]);
+        assert!(!read(&mut s.f, &s.bus));
+        s.assert_both_show();
+    }
+}
+
+on_both_kinds! {
+    fn a_listed_window_stays_through_the_property(kind: Kind) {
+        let mut s = skipping(kind);
+
+        write(&mut s.f, &s.bus, true);
+        s.assert_only_the_listed_window_shows();
+
+        write(&mut s.f, &s.bus, false);
+        s.assert_both_show();
+    }
+}
+
+/// The key is read live, and the same for both kinds of window, so this maps one.
+#[test]
+fn a_change_of_the_list_applies_at_the_next_show_desktop() {
+    let mut s = skipping(Kind::Xdg);
+    s.f.set_setting(
+        MARCO_GENERAL,
+        "show-desktop-skip-list",
+        Value::Str(String::new()),
+    );
+    s.f.dispatch_until(|f| {
+        f.state.caminito.settings.policy.show_desktop_skip_list == ShowDesktopSkipList::default()
+    });
+
+    write(&mut s.f, &s.bus, true);
+
+    assert!(desktop_is_bare(&mut s.f, &s.output));
+    assert!(!s.f.has_keyboard(s.listed));
 }

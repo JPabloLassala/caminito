@@ -2,10 +2,7 @@
 //! workspace, each as Marco's handler in `core/keybindings.c` (1.29.0) does it, and only
 //! where Marco gives the window the function (`recalc_window_features`).
 
-use std::time::Duration;
-
-use crate::grid::Direction;
-use crate::{Action, PolicyWindow, SeatId, SizeHints, WindowId, WindowType};
+use crate::{Action, PolicyWindow, SizeHints, WindowId, WindowType};
 
 use super::Policy;
 
@@ -21,14 +18,9 @@ struct Functions {
 }
 
 impl<W: PolicyWindow> Policy<W> {
-    /// Runs a window action on `id`, the focused window of `seat`.
-    pub(super) fn window_action(
-        &mut self,
-        seat: SeatId,
-        id: WindowId,
-        action: Action,
-        now: Duration,
-    ) {
+    /// Runs a window action on `id`, a seat's focused window. The moves to the workspace
+    /// beside are `move_to_workspace_towards`'s (150).
+    pub(super) fn window_action(&mut self, id: WindowId, action: Action) {
         let functions = self.functions(id);
         let managed = &self.windows[&id];
         let (horizontally, vertically) =
@@ -58,12 +50,6 @@ impl<W: PolicyWindow> Policy<W> {
             Action::Lower => self.lower_in_layer(id),
             Action::RaiseOrLower => self.raise_or_lower(id),
             Action::MoveToWorkspace(workspace) => self.move_to_numbered_workspace(id, workspace),
-            Action::MoveToWorkspaceLeft => {
-                self.move_to_workspace_towards(seat, id, Direction::Left, now)
-            }
-            Action::MoveToWorkspaceRight => {
-                self.move_to_workspace_towards(seat, id, Direction::Right, now);
-            }
             _ => {}
         }
     }
@@ -126,27 +112,5 @@ impl<W: PolicyWindow> Policy<W> {
         if workspace < self.stacks.len() && !self.is_desktop_or_dock(id) {
             self.move_to_workspace(id, workspace);
         }
-    }
-
-    /// `move-to-workspace-left` and `-right`: the window goes to the workspace beside the
-    /// active one in the grid, and the active workspace and the focus go with it
-    /// (`handle_workspace_switch_or_move`, keybindings.c:3499-3579). With none there,
-    /// nothing happens.
-    fn move_to_workspace_towards(
-        &mut self,
-        seat: SeatId,
-        id: WindowId,
-        direction: Direction,
-        now: Duration,
-    ) {
-        if self.is_desktop_or_dock(id) {
-            return;
-        }
-        let Some(workspace) = self.workspace_grid().neighbour(self.active, direction) else {
-            return;
-        };
-        self.move_to_workspace(id, workspace);
-        self.switch_workspace(workspace);
-        self.focus_window(seat, id, now);
     }
 }

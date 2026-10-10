@@ -10,6 +10,12 @@ pub enum Action {
     SwitchToWorkspaceLeft,
     /// `switch-to-workspace-right`
     SwitchToWorkspaceRight,
+    /// `switch-to-workspace-up`
+    SwitchToWorkspaceUp,
+    /// `switch-to-workspace-down`
+    SwitchToWorkspaceDown,
+    /// `switch-to-workspace-prev`: back to the workspace active before this one (150).
+    SwitchToWorkspacePrev,
     /// `switch-to-workspace-N`, numbered from 0 here.
     SwitchToWorkspace(usize),
     /// `move-to-workspace-left`
@@ -18,6 +24,11 @@ pub enum Action {
     MoveToWorkspaceRight,
     /// `move-to-workspace-N`, numbered from 0 here.
     MoveToWorkspace(usize),
+    /// `move-to-workspace-up`: the focused window to the workspace above, which becomes
+    /// the active one, the window keeping the focus.
+    MoveToWorkspaceUp,
+    /// `move-to-workspace-down`, as `move-to-workspace-up`.
+    MoveToWorkspaceDown,
     /// `close`
     Close,
     /// `toggle-maximized`

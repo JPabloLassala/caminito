@@ -11,14 +11,16 @@ use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
-    Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, SizeHints, WindowId,
-    WindowStates, WindowType, WorkspaceLayout,
+    Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, ShowDesktopSkipList,
+    SizeHints, WindowId, WindowStates, WindowType, WorkspaceLayout, WrapStyle,
 };
 
 mod dynamic_workspaces;
+mod pointer;
 mod switcher;
 mod window_actions;
 
+pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
 
 /// A seat, as the compositor numbers them.
@@ -62,7 +64,14 @@ struct Grab {
     initial: Point<i32, Logical>,
     /// A manual placement of a new window (154), which the keys move, put down and cancel.
     placing: bool,
+    /// Whether the pointer has gone Marco's 8 pixels from where the grab began
+    /// (display.c:3995-3997), past which it isn't a click.
+    moved: bool,
 }
+
+/// How far, on either axis, the pointer goes from where a grab began before it's no longer
+/// a click, as Marco has it (display.c:3995-3997).
+const CLICK_DISTANCE: f64 = 8.;
 
 /// Marco's `MAX_REASONABLE_WORKSPACES`, the schema's upper bound on `num-workspaces`.
 pub const MAX_WORKSPACES: usize = 36;
@@ -81,6 +90,8 @@ pub struct Config {
     pub dynamic_workspaces: bool,
     /// The `workspace-layout-*` keys: the grid the workspaces are in.
     pub workspace_layout: WorkspaceLayout,
+    /// `wrap-style`: where a move past an edge of the grid goes (150).
+    pub wrap_style: WrapStyle,
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
     /// open (108).
     pub alt_tab_raise_windows: bool,
@@ -89,6 +100,18 @@ pub struct Config {
     /// `center-new-windows`: the automatic mode puts a new window in the middle of the work
     /// area (154).
     pub center_new_windows: bool,
+    /// `show-desktop-skip-list` (164).
+    pub show_desktop_skip_list: ShowDesktopSkipList,
+    /// `focus-mode` (153).
+    pub focus_mode: FocusMode,
+    /// `raise-on-click`: off, a click on a window's body focuses it without raising it. A
+    /// click on its Frame always raises it (153).
+    pub raise_on_click: bool,
+    /// `auto-raise`: with a pointer focus mode, a window the pointer focuses is raised
+    /// after `auto_raise_delay`, if the pointer is still in it (153).
+    pub auto_raise: bool,
+    /// `auto-raise-delay`.
+    pub auto_raise_delay: Duration,
 }
 
 impl Default for Config {
@@ -101,10 +124,17 @@ impl Default for Config {
             workspace_count,
             workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
             workspace_layout: WorkspaceLayout::default(),
+            wrap_style: WrapStyle::NoWrap,
             dynamic_workspaces: false,
             alt_tab_raise_windows: false,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
+            show_desktop_skip_list: ShowDesktopSkipList::default(),
+            // Marco's defaults.
+            focus_mode: FocusMode::Click,
+            raise_on_click: true,
+            auto_raise: false,
+            auto_raise_delay: Duration::from_millis(500),
         }
     }
 }
@@ -121,6 +151,14 @@ pub struct MapStates {
 /// Marco's name for a workspace with none set, numbered from 1.
 pub fn default_workspace_name(number: usize) -> String {
     format!("Workspace {number}")
+}
+
+/// A workspace showing its desktop (94).
+struct ShownDesktop {
+    /// The window every seat focused when it was shown.
+    focus: BTreeMap<SeatId, WindowId>,
+    /// `show-desktop-skip-list` when it was shown: a change waits for the next time.
+    skip_list: ShowDesktopSkipList,
 }
 
 /// What policy has last asked of a window, so each request is sent only when it changes.
@@ -288,9 +326,13 @@ pub struct Policy<W: PolicyWindow> {
     /// Each workspace's windows, bottom to top.
     stacks: Vec<Vec<WindowId>>,
     active: usize,
+    /// The workspace active before `active`, which `switch-to-workspace-prev` goes back to
+    /// (150). Every switch sets it, as Marco's `meta_workspace_activate_with_focus` does
+    /// (workspace.c:399-400), and it's forgotten when its workspace is removed.
+    previous: Option<usize>,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
-    /// (workspace.h:79), each with the window every seat focused when it was shown.
-    showing_desktop: BTreeMap<usize, BTreeMap<SeatId, WindowId>>,
+    /// (workspace.h:79).
+    showing_desktop: BTreeMap<usize, ShownDesktop>,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
     /// The names the settings give, which may be fewer or more than the workspaces.
@@ -299,6 +341,8 @@ pub struct Policy<W: PolicyWindow> {
     dynamic_workspaces: bool,
     /// The grid the settings ask for, which the count makes a `Grid` of.
     workspace_layout: WorkspaceLayout,
+    /// `wrap-style` (150).
+    wrap_style: WrapStyle,
     outputs: Vec<Output>,
     /// The user's primary output, or its stand-in (81), if the compositor has told of one.
     primary_output: Option<OutputId>,
@@ -319,9 +363,13 @@ pub struct Policy<W: PolicyWindow> {
     alt_tab_raise_windows: bool,
     placement_mode: PlacementMode,
     center_new_windows: bool,
+    /// `show-desktop-skip-list`, which the next Show Desktop takes.
+    show_desktop_skip_list: ShowDesktopSkipList,
     /// Where the pointer was when the compositor last said, which `pointer` and `manual`
     /// placement put a new window at.
     pointer: Option<Point<f64, Logical>>,
+    /// The pointer focus modes, `raise-on-click` and auto-raise (153).
+    pointer_focus: pointer::PointerFocus,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -330,11 +378,13 @@ impl<W: PolicyWindow> Policy<W> {
             windows: BTreeMap::new(),
             stacks: vec![Vec::new()],
             active: 0,
+            previous: None,
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             configured_names: Vec::new(),
             dynamic_workspaces: false,
             workspace_layout: WorkspaceLayout::default(),
+            wrap_style: WrapStyle::NoWrap,
             outputs: Vec::new(),
             primary_output: None,
             seats: BTreeSet::new(),
@@ -347,7 +397,9 @@ impl<W: PolicyWindow> Policy<W> {
             alt_tab_raise_windows: false,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
+            show_desktop_skip_list: ShowDesktopSkipList::default(),
             pointer: None,
+            pointer_focus: pointer::PointerFocus::default(),
         };
         policy.settings_changed(config);
         policy
@@ -412,12 +464,15 @@ impl<W: PolicyWindow> Policy<W> {
     /// `dynamic-workspaces` on, the count is policy's own and `num-workspaces` is left
     /// unread (151).
     pub fn settings_changed(&mut self, config: Config) {
+        self.pointer_focus.settings_changed(&config);
         self.configured_names = config.workspace_names;
         self.dynamic_workspaces = config.dynamic_workspaces;
         self.workspace_layout = config.workspace_layout;
+        self.wrap_style = config.wrap_style;
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
         self.placement_mode = config.placement_mode;
         self.center_new_windows = config.center_new_windows;
+        self.show_desktop_skip_list = config.show_desktop_skip_list;
         if !self.dynamic_workspaces {
             self.set_workspace_count(config.workspace_count);
         }
@@ -440,11 +495,22 @@ impl<W: PolicyWindow> Policy<W> {
             // order of the workspaces they came from, which is only close to that.
             self.stacks[last].extend(removed);
             self.active = self.active.min(last);
+            self.forget_removed_previous();
             self.showing_desktop
                 .retain(|workspace, _| *workspace < count);
         } else {
             self.stacks.resize(count, Vec::new());
         }
+    }
+
+    /// Forgets the previous workspace once it's no longer there, or it's the active one
+    /// since the count changed. `switch-to-workspace-prev` then does nothing until the
+    /// next switch. Marco keeps a pointer to the removed workspace.
+    fn forget_removed_previous(&mut self) {
+        let count = self.stacks.len();
+        self.previous = self
+            .previous
+            .filter(|previous| *previous < count && *previous != self.active);
     }
 
     /// Gives each workspace its name from the settings, or Marco's default. A name is the
@@ -666,15 +732,28 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// A button press on a window: click focus, and Marco's raise on click. Marco raises a
-    /// dock but doesn't focus it, since panels ask for focus themselves (display.c:1937-1946).
+    /// A button press on a window, its body or its Frame: click focus, and Marco's raise on
+    /// click, which `raise-on-click` turns off (153). Marco raises a dock but doesn't
+    /// focus it, since panels ask for focus themselves (display.c:1923-1946). With the key
+    /// off, a press that starts a move or resize, or the titlebar's, raises the window if it
+    /// ends as a click: see `end_grab` and `titlebar_released`.
     pub fn click(&mut self, seat: SeatId, id: WindowId, now: Duration) {
         self.set_last_seat(seat);
         if self.is_showing(id) {
             let dock = self.windows[&id].window_type == WindowType::Dock;
-            if dock || self.focus_window(seat, id, now) {
+            if (dock || self.focus_window(seat, id, now)) && self.pointer_focus.raise_on_click() {
                 self.raise_family(id);
             }
+        }
+        self.apply();
+    }
+
+    /// A press on a window's titlebar ended without dragging it. With `raise-on-click` off
+    /// that raises the window, as Marco raises one it was about to move when the pointer
+    /// hardly moved (display.c:3857-3870); with it on, the press raised it already (153).
+    pub fn titlebar_released(&mut self, id: WindowId) {
+        if !self.pointer_focus.raise_on_click() && self.is_showing(id) {
+            self.raise_family(id);
         }
         self.apply();
     }
@@ -685,6 +764,23 @@ impl<W: PolicyWindow> Policy<W> {
         match action {
             Action::SwitchToWorkspaceLeft => self.switch_workspace_towards(Direction::Left),
             Action::SwitchToWorkspaceRight => self.switch_workspace_towards(Direction::Right),
+            Action::SwitchToWorkspaceUp => self.switch_workspace_towards(Direction::Up),
+            Action::SwitchToWorkspaceDown => self.switch_workspace_towards(Direction::Down),
+            Action::SwitchToWorkspacePrev => {
+                if let Some(previous) = self.previous {
+                    self.switch_workspace(previous);
+                }
+            }
+            Action::MoveToWorkspaceLeft => {
+                self.move_to_workspace_towards(seat, Direction::Left, now);
+            }
+            Action::MoveToWorkspaceRight => {
+                self.move_to_workspace_towards(seat, Direction::Right, now);
+            }
+            Action::MoveToWorkspaceUp => self.move_to_workspace_towards(seat, Direction::Up, now),
+            Action::MoveToWorkspaceDown => {
+                self.move_to_workspace_towards(seat, Direction::Down, now);
+            }
             // A number past the count does nothing (`handle_switch_to_workspace`).
             Action::SwitchToWorkspace(workspace) if workspace < self.stacks.len() => {
                 self.switch_workspace(workspace);
@@ -694,7 +790,7 @@ impl<W: PolicyWindow> Policy<W> {
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
             action => {
                 if let Some(id) = self.focus(seat) {
-                    self.window_action(seat, id, action, now);
+                    self.window_action(id, action);
                 }
             }
         }
@@ -715,7 +811,13 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         }
         if showing {
-            self.showing_desktop.insert(self.active, self.focus.clone());
+            self.showing_desktop.insert(
+                self.active,
+                ShownDesktop {
+                    focus: self.focus.clone(),
+                    skip_list: self.show_desktop_skip_list.clone(),
+                },
+            );
             // Marco focuses the most recently used desktop window. One that never had the
             // focus isn't in `mru`, so the stack is looked through after it.
             let top_down = self.stacks[self.active].iter().rev();
@@ -724,13 +826,18 @@ impl<W: PolicyWindow> Policy<W> {
             });
             if let Some(desktop) = desktop {
                 for seat in &self.seats {
-                    self.focus.insert(*seat, desktop);
+                    // A seat on a listed window keeps it, which Marco's focusing of the
+                    // desktop takes away.
+                    if !self.focus.get(seat).is_some_and(|id| self.is_skipped(*id)) {
+                        self.focus.insert(*seat, desktop);
+                    }
                 }
             }
         } else {
             let before = self
                 .showing_desktop
                 .remove(&self.active)
+                .map(|shown| shown.focus)
                 .unwrap_or_default();
             let default = self.default_focus();
             for seat in &self.seats {
@@ -744,11 +851,35 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Switches to the workspace beside the active one in the grid, if there is one. Nothing
-    /// wraps until `wrap-style` is read, in M8 (17).
+    /// The workspace beside the active one in the grid, where `wrap-style` takes a move past
+    /// its edge, if the move goes anywhere.
+    fn workspace_towards(&self, direction: Direction) -> Option<usize> {
+        self.workspace_grid()
+            .neighbour(self.active, direction, self.wrap_style)
+    }
+
+    /// Switches to the workspace beside the active one in the grid, if there is one.
     fn switch_workspace_towards(&mut self, direction: Direction) {
-        if let Some(workspace) = self.workspace_grid().neighbour(self.active, direction) {
+        if let Some(workspace) = self.workspace_towards(direction) {
             self.switch_workspace(workspace);
+        }
+    }
+
+    /// Moves `seat`'s focused window to the workspace beside the active one, with its
+    /// transient family, and switches there with the window focused and raised, as Marco's
+    /// `handle_workspace_switch_or_move` does (keybindings.c:3560-3576). Marco gives the
+    /// desktop and docks no such move: they're on every workspace.
+    fn move_to_workspace_towards(&mut self, seat: SeatId, direction: Direction, now: Duration) {
+        let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) else {
+            return;
+        };
+        let Some(workspace) = self.workspace_towards(direction) else {
+            return;
+        };
+        self.move_tree(self.root(id), workspace);
+        self.switch_workspace(workspace);
+        if self.focus_window(seat, id, now) {
+            self.raise_family(id);
         }
     }
 
@@ -758,6 +889,7 @@ impl<W: PolicyWindow> Policy<W> {
         if workspace != self.active {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
             self.close_switcher(switcher::Close::Dropped);
+            self.previous = Some(self.active);
             self.active = workspace;
             self.focus.clear();
             if let Some(id) = self.default_focus() {
@@ -1053,14 +1185,16 @@ impl<W: PolicyWindow> Policy<W> {
     /// The seat's pointer moved during a grab. With `snap` (Shift held), the window snaps to
     /// the nearest edges; otherwise it resists at the edges it meets (157).
     pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
-        let Some(grab) = self.grabs.get(&seat) else {
+        let Some(grab) = self.grabs.get_mut(&seat) else {
             return;
         };
         let delta = pointer - grab.start_pointer;
+        grab.moved |= delta.x.abs() >= CLICK_DISTANCE || delta.y.abs() >= CLICK_DISTANCE;
         let start = grab.start;
         let resize = grab.resize;
-        let edges = self.edges_for(grab.window);
-        let managed = self.windows.get_mut(&grab.window).unwrap();
+        let window = grab.window;
+        let edges = self.edges_for(window);
+        let managed = self.windows.get_mut(&window).unwrap();
         let current = managed.geometry;
         // Edges hold back the frame, measured from where policy last asked the window to
         // be, as `unmaximize_for_drag` measures it.
@@ -1138,12 +1272,16 @@ impl<W: PolicyWindow> Policy<W> {
         self.end_grab(seat);
     }
 
-    /// Ends the seat's grab, if it has one.
+    /// Ends the seat's grab, if it has one. With `raise-on-click` off, one that ends as a
+    /// click raises its window, as Marco's does (display.c:3857-3870) (153).
     pub fn end_grab(&mut self, seat: SeatId) {
         if let Some(grab) = self.grabs.remove(&seat)
             && let Some(managed) = self.windows.get_mut(&grab.window)
         {
             managed.resize = None;
+            if !self.pointer_focus.raise_on_click() && !grab.moved {
+                self.raise_family(grab.window);
+            }
         }
         self.apply();
     }
@@ -1235,6 +1373,7 @@ impl<W: PolicyWindow> Policy<W> {
                 start,
                 initial: start.loc,
                 placing: false,
+                moved: false,
             },
         );
         self.apply();
@@ -1814,6 +1953,30 @@ impl<W: PolicyWindow> Policy<W> {
         false
     }
 
+    /// Whether a window shows while its workspace shows the desktop: a desktop component, or
+    /// a window `show-desktop-skip-list` lists.
+    fn stays_on_desktop(&self, id: WindowId) -> bool {
+        self.is_desktop_component(id) || self.is_skipped(id)
+    }
+
+    /// Whether the skip list its workspace took when it showed the desktop lists a window,
+    /// or a transient ancestor, so that a listed app's dialogs stay with it. Marco matches
+    /// each window by its own class, which a toolkit gives its dialogs too.
+    fn is_skipped(&self, id: WindowId) -> bool {
+        let Some(shown) = self.showing_desktop.get(&self.windows[&id].workspace) else {
+            return false;
+        };
+        let mut current = Some(id);
+        while let Some(w) = current {
+            let managed = &self.windows[&w];
+            if shown.skip_list.matches(managed.window.app_id().as_deref()) {
+                return true;
+            }
+            current = managed.parent;
+        }
+        false
+    }
+
     /// Stops showing the desktop on the workspace of `id`, a window newly mapped or
     /// activated there, unless it's a desktop component. The windows that were hidden
     /// are minimised for good, so that `id` comes up alone: Marco's
@@ -1826,13 +1989,14 @@ impl<W: PolicyWindow> Policy<W> {
     /// here they're kept, as Marco itself keeps an activated window's.
     fn leave_show_desktop(&mut self, id: WindowId) {
         let workspace = self.windows[&id].workspace;
-        if !self.showing_desktop.contains_key(&workspace) || self.is_desktop_component(id) {
+        if !self.showing_desktop.contains_key(&workspace) || self.stays_on_desktop(id) {
             return;
         }
         for other in self.stacks[workspace].clone() {
             let managed = &self.windows[&other];
             if matches!(managed.window_type, WindowType::Normal | WindowType::Dialog)
                 && !self.is_ancestor(other, id)
+                && !self.is_skipped(other)
             {
                 self.windows.get_mut(&other).unwrap().minimized = true;
             }
@@ -1856,7 +2020,7 @@ impl<W: PolicyWindow> Policy<W> {
             .windows
             .get(&id)
             .is_some_and(|m| self.showing_desktop.contains_key(&m.workspace))
-            && !self.is_desktop_component(id)
+            && !self.stays_on_desktop(id)
         {
             return false;
         }

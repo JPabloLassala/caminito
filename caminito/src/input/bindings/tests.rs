@@ -139,6 +139,14 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
     let defaults = [
         (GLOBAL, "switch-to-workspace-left", "<Control><Alt>Left"),
         (GLOBAL, "switch-to-workspace-right", "<Control><Alt>Right"),
+        (GLOBAL, "switch-to-workspace-up", "<Control><Alt>Up"),
+        (GLOBAL, "switch-to-workspace-down", "<Control><Alt>Down"),
+        (WINDOW, "move-to-workspace-up", "<Control><Shift><Alt>Up"),
+        (
+            WINDOW,
+            "move-to-workspace-down",
+            "<Control><Shift><Alt>Down",
+        ),
         (GLOBAL, "switch-group", "<Alt>grave"),
         (GLOBAL, "switch-group-backward", "disabled"),
         (GLOBAL, "switch-windows", "<Alt>Tab"),
@@ -167,9 +175,39 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
         (WINDOW, "unmaximize", "<Alt>F5"),
         (WINDOW, "minimize", "<Alt>F9"),
         (WINDOW, "close", "<Alt>F4"),
+        (GLOBAL, "switch-to-workspace-prev", "disabled"),
     ];
     assert_eq!(table(&defaults), table(&[]));
     assert_eq!(Bindings::default(), table(&[]));
+}
+
+#[test]
+fn up_down_and_prev_have_marcos_defaults() {
+    // 150's: prev is unbound by default, as in Marco.
+    let t = table(&[]);
+    assert_eq!(
+        bound(&t, CTRL_ALT, Keysym::Up),
+        policy(Action::SwitchToWorkspaceUp)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT, Keysym::Down),
+        policy(Action::SwitchToWorkspaceDown)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT_SHIFT, Keysym::Up),
+        policy(Action::MoveToWorkspaceUp)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT_SHIFT, Keysym::Down),
+        policy(Action::MoveToWorkspaceDown)
+    );
+    assert!(!t.iter().any(|(key, _)| key == "switch-to-workspace-prev"));
+
+    let t = table(&[(GLOBAL, "switch-to-workspace-prev", "<Super>Tab")]);
+    assert_eq!(
+        bound(&t, SUPER, Keysym::Tab),
+        policy(Action::SwitchToWorkspacePrev)
+    );
 }
 
 #[test]
@@ -290,7 +328,7 @@ fn an_action_with_no_behaviour_yet_binds_nothing() {
     let t = table(&[
         (GLOBAL, "cycle-windows", "<Alt>Escape"),
         (WINDOW, "toggle-above", "<Super>Up"),
-        (GLOBAL, "switch-to-workspace-up", "<Super>Down"),
+        (WINDOW, "begin-move", "<Super>Down"),
     ]);
     assert_eq!(bound(&t, ALT, Keysym::Escape), None);
     assert_eq!(bound(&t, SUPER, Keysym::Up), None);
@@ -485,5 +523,5 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 20, "{rows:?}");
+    assert_eq!(rows.len(), 24, "{rows:?}");
 }

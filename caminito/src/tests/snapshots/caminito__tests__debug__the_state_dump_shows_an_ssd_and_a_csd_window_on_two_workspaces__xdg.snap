@@ -138,12 +138,28 @@ expression: without_x_ids(&dump)
       "combination": "<Control><Alt>Right"
     },
     {
+      "key": "switch-to-workspace-up",
+      "combination": "<Control><Alt>Up"
+    },
+    {
+      "key": "switch-to-workspace-down",
+      "combination": "<Control><Alt>Down"
+    },
+    {
       "key": "move-to-workspace-left",
       "combination": "<Control><Shift><Alt>Left"
     },
     {
       "key": "move-to-workspace-right",
       "combination": "<Control><Shift><Alt>Right"
+    },
+    {
+      "key": "move-to-workspace-up",
+      "combination": "<Control><Shift><Alt>Up"
+    },
+    {
+      "key": "move-to-workspace-down",
+      "combination": "<Control><Shift><Alt>Down"
     },
     {
       "key": "switch-group",
