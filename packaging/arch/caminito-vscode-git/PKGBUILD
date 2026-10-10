@@ -18,6 +18,10 @@ depends=(bash coreutils gawk)
 makedepends=(git nodejs npm)
 # The extension's tests run on a private dbus-daemon of each test's own.
 checkdepends=(dbus)
+# The extension serves every press of a chord's shortcut, and an applet older than the one
+# with the patch that draws them draws the first press alone, a wrong shortcut on a dozen
+# items (145). The applet isn't needed, only kept from being older.
+conflicts=('vala-panel-appmenu-mate-caminito<25.04-5')
 install=caminito-vscode-git.install
 # The local checkout's committed HEAD, as caminito-git's is, so uncommitted work is never
 # packaged. This becomes the GitHub URL if the package is ever published (16).

@@ -132,15 +132,36 @@ test('a binding whose keys a later entry with no when gives to another command s
   );
 });
 
-test('a chord has no shortcut, even beside a single press with a when', () => {
+test("a chord's shortcut is each of its presses, in order", () => {
+  assert.deepEqual(shortcutOf('ctrl+k ctrl+o'), [
+    ['Control', 'k'],
+    ['Control', 'o'],
+  ]);
+  assert.deepEqual(shortcutOf('ctrl+k shift+alt+f12'), [
+    ['Control', 'k'],
+    ['Alt', 'Shift', 'F12'],
+  ]);
+  // Beside a one-press key with a when, each chord keeps its own presses.
   assert.deepEqual(
     shortcuts([
       { key: 'ctrl+k ctrl+o', command: 'openFolder' },
       { key: 'ctrl+o', command: 'open', when: 'x' },
-      { key: 'ctrl+k ctrl+s', command: 'open' },
+      { key: 'ctrl+k f', command: 'closeFolder' },
     ]),
-    { openFolder: undefined, open: undefined },
+    {
+      openFolder: [
+        ['Control', 'k'],
+        ['Control', 'o'],
+      ],
+      open: [['Control', 'o']],
+      closeFolder: [['Control', 'k'], ['f']],
+    },
   );
+});
+
+test('a chord with a press that has no GDK name has no shortcut', () => {
+  assert.equal(shortcutOf('ctrl+k ctrl+[KeyA]'), undefined);
+  assert.equal(shortcutOf('ctrl+oem_102 ctrl+o'), undefined);
 });
 
 test('a key with no GDK name has no shortcut', () => {
@@ -205,11 +226,11 @@ test('every key VS Code 1.140 can bind has a GDK name or is knowingly left witho
   assert.equal(shortcutOf('ctrl+[Backquote]'), undefined);
 });
 
-test("every label of the snapshot that isn't a chord has a shortcut", () => {
+test('every label of the snapshot has a shortcut, a press for each of its keys', () => {
   for (const [command, keybinding] of Object.entries(VS_CODE.table.keybindings)) {
     const label = keybinding.userSettingsLabel!;
     // Ctrl+NumPad0 among them, which Electron has no accelerator for.
-    assert.equal(shortcutOf(label) !== undefined, !label.includes(' '), command);
+    assert.equal(shortcutOf(label)?.length, label.split(' ').length, command);
   }
 });
 
