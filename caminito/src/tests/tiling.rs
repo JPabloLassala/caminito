@@ -1,8 +1,9 @@
 //! Edge and corner tiling (158) through a titlebar drag, as a user tiles a window: the tile
 //! preview in the debug dump while the pointer is at an edge or a corner, the window tiled
-//! there on release, what each kind of client is told of it, and a drag back out. Each
-//! test that both kinds of window share runs on both (45); the xdg `tiled_*` states are
-//! xdg-shell's, X's refused configure request X's, and the preview's pixels are the
+//! there on release, what each kind of client is told of it, and a drag back out. Then
+//! the tiling keybindings (159), each set in the test, as Marco's defaults are `disabled`.
+//! Each test that both kinds of window share runs on both (45); the xdg `tiled_*` states
+//! are xdg-shell's, X's refused configure request X's, and the preview's pixels are the
 //! Scene's, whatever the window under it.
 
 use serde_json::{Value, json};
@@ -11,9 +12,14 @@ use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_toplevel;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::WindowSpec;
-use super::fixture::{BTN_LEFT, ClientWindow, Fixture, Kind, WINDOW_COLOR, on_both_kinds};
+use super::fixture::{
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_A, KEY_E, KEY_LEFTMETA, KEY_Q, KEY_R, KEY_T,
+    KEY_W, Kind, WINDOW_COLOR, on_both_kinds,
+};
 use crate::backend::headless::argb8888;
 use crate::scene::CLEAR_COLOR;
+use crate::settings::Value as Setting;
+use crate::settings::translate::MARCO_WINDOW_KEYBINDINGS;
 
 /// The dump, parsed.
 fn dump(f: &Fixture) -> Value {
@@ -158,26 +164,33 @@ on_both_kinds! {
     }
 }
 
+/// The `tiled_*` states of the last configure the xdg `window` of `client` was sent.
+fn tiled_states(
+    f: &mut Fixture,
+    client: ClientId,
+    window: ClientWindow,
+) -> Vec<xdg_toplevel::State> {
+    let configures = &f.client(client).window(window.xdg()).configures;
+    let mut states = configures.last().unwrap().states.clone();
+    states.retain(|state| {
+        matches!(
+            state,
+            xdg_toplevel::State::TiledLeft
+                | xdg_toplevel::State::TiledRight
+                | xdg_toplevel::State::TiledTop
+                | xdg_toplevel::State::TiledBottom
+        )
+    });
+    states.sort_by_key(|state| *state as u32);
+    states
+}
+
 /// xdg-shell's alone.
 #[test]
 fn a_tiled_xdg_toplevel_is_told_the_edges_it_lies_along() {
     let (mut f, client) = Fixture::connected(Kind::Xdg);
     let window = f.map(client, WindowSpec::default());
-    let states = |f: &mut Fixture| {
-        let configures = &f.client(client).window(window.xdg()).configures;
-        let mut states = configures.last().unwrap().states.clone();
-        states.retain(|state| {
-            matches!(
-                state,
-                xdg_toplevel::State::TiledLeft
-                    | xdg_toplevel::State::TiledRight
-                    | xdg_toplevel::State::TiledTop
-                    | xdg_toplevel::State::TiledBottom
-            )
-        });
-        states.sort_by_key(|state| *state as u32);
-        states
-    };
+    let states = |f: &mut Fixture| tiled_states(f, client, window);
 
     grab_title(&mut f, window);
     drag_to(&mut f, window, 0., 1079.);
@@ -214,6 +227,109 @@ fn an_x11_configure_request_is_refused_while_the_window_is_tiled() {
 
     assert_eq!(f.geometry(window), tiled);
     assert_eq!(tile(&f, window), json!("right"));
+}
+
+/// The six tiling keybindings, on Super with Q, W, E, R, T and A, and what each tiles to.
+const TILE_KEYS: [(&str, u32, &str); 6] = [
+    ("tile-to-side-w", KEY_Q, "left"),
+    ("tile-to-side-e", KEY_W, "right"),
+    ("tile-to-corner-nw", KEY_E, "top-left"),
+    ("tile-to-corner-ne", KEY_R, "top-right"),
+    ("tile-to-corner-sw", KEY_T, "bottom-left"),
+    ("tile-to-corner-se", KEY_A, "bottom-right"),
+];
+
+/// One 1920 × 1080 output and a connected client of `kind`, with the six tiling
+/// keybindings set as `TILE_KEYS` has them.
+fn tile_keys_bound(kind: Kind) -> (Fixture, ClientId) {
+    let letters = ["q", "w", "e", "r", "t", "a"];
+    let initial = TILE_KEYS
+        .iter()
+        .zip(letters)
+        .map(|((key, _, _), letter)| {
+            (
+                MARCO_WINDOW_KEYBINDINGS,
+                (*key).to_owned(),
+                Setting::Str(format!("<Super>{letter}")),
+            )
+        })
+        .collect();
+    let mut f = Fixture::with_settings(initial);
+    f.add_output((1920, 1080), 1.0);
+    let client = f.connect(kind);
+    (f, client)
+}
+
+/// Presses Super with `key`, and has the window's client draw as it was asked.
+fn press_tile_key(f: &mut Fixture, window: ClientWindow, key: u32) {
+    f.chord(&[KEY_LEFTMETA, key]);
+    f.sync(window);
+    draw_as_asked(f, window);
+}
+
+on_both_kinds! {
+    fn each_tiling_binding_once_set_tiles_the_focused_window(kind: Kind) {
+        let areas = [
+            rect(0, 0, 960, 1080),
+            rect(960, 0, 960, 1080),
+            rect(0, 0, 960, 540),
+            rect(960, 0, 960, 540),
+            rect(0, 540, 960, 540),
+            rect(960, 540, 960, 540),
+        ];
+        let (mut f, client) = tile_keys_bound(kind);
+        let window = f.map(client, WindowSpec::default());
+        for ((binding, key, name), area) in TILE_KEYS.into_iter().zip(areas) {
+            press_tile_key(&mut f, window, key);
+
+            assert_eq!(tile(&f, window), json!(name), "{binding}");
+            assert_eq!(as_rect(f.visible_frame(window)), area, "{binding}");
+        }
+    }
+}
+
+on_both_kinds! {
+    fn a_sides_binding_pressed_again_cycles_its_width_then_untiles(kind: Kind) {
+        let (mut f, client) = tile_keys_bound(kind);
+        let window = f.map(client, WindowSpec::default());
+        let floating = f.visible_frame(window);
+        // Half, a third, a quarter, all, three quarters and two thirds of 1920.
+        for width in [960, 640, 480, 1920, 1440, 1280] {
+            press_tile_key(&mut f, window, KEY_W);
+            assert_eq!(as_rect(f.visible_frame(window)), rect(1920 - width, 0, width, 1080));
+        }
+
+        press_tile_key(&mut f, window, KEY_W);
+
+        assert_eq!(tile(&f, window), Value::Null);
+        assert_eq!(f.visible_frame(window), floating);
+    }
+}
+
+/// xdg-shell's alone.
+#[test]
+fn a_window_tiled_by_a_binding_is_told_the_edges_it_lies_along() {
+    let (mut f, client) = tile_keys_bound(Kind::Xdg);
+    let window = f.map(client, WindowSpec::default());
+
+    press_tile_key(&mut f, window, KEY_A);
+    assert_eq!(
+        tiled_states(&mut f, client, window),
+        [
+            xdg_toplevel::State::TiledRight,
+            xdg_toplevel::State::TiledBottom
+        ]
+    );
+
+    press_tile_key(&mut f, window, KEY_Q);
+    assert_eq!(
+        tiled_states(&mut f, client, window),
+        [
+            xdg_toplevel::State::TiledLeft,
+            xdg_toplevel::State::TiledTop,
+            xdg_toplevel::State::TiledBottom
+        ]
+    );
 }
 
 /// `output`'s pixel at the global point `at`, as `0xRRGGBB`.

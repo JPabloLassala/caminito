@@ -2,16 +2,18 @@
 //! workspace, each as Marco's handler in `core/keybindings.c` (1.29.0) does it, and only
 //! where Marco gives the window the function (`recalc_window_features`).
 
-use crate::{Action, PolicyWindow, SizeHints, WindowId, WindowType};
+use smithay::utils::{Logical, Rectangle};
 
-use super::Policy;
+use crate::{Action, PolicyWindow, SizeHints, Tile, WindowId, WindowType};
+
+use super::{Policy, TileSize, Tiled};
 
 /// The functions Marco gives a window that the actions need, from its type and size hints
 /// (`recalc_window_features`, window.c:6670-6830). An SSD window's frame shows the same
 /// through its buttons (`decoration::style`).
-struct Functions {
+pub(super) struct Functions {
     minimize: bool,
-    maximize: bool,
+    pub(super) maximize: bool,
     /// Resizing, which maximising one way needs.
     resize: bool,
     fullscreen: bool,
@@ -50,11 +52,12 @@ impl<W: PolicyWindow> Policy<W> {
             Action::Lower => self.lower_in_layer(id),
             Action::RaiseOrLower => self.raise_or_lower(id),
             Action::MoveToWorkspace(workspace) => self.move_to_numbered_workspace(id, workspace),
+            Action::Tile(tile) => self.toggle_tile(id, tile),
             _ => {}
         }
     }
 
-    fn functions(&self, id: WindowId) -> Functions {
+    pub(super) fn functions(&self, id: WindowId) -> Functions {
         let managed = &self.windows[&id];
         let SizeHints { min, max } = managed.hints;
         // A zero maximum is unbounded.
@@ -74,6 +77,62 @@ impl<W: PolicyWindow> Policy<W> {
             resize: resizable && !managed.fullscreen,
             fullscreen: normal_or_dialog && resizable,
         }
+    }
+
+    /// Whether `id` can be tiled in work area `area`, as `meta_window_can_tile` has it
+    /// (window.c:2745-2770): it can be maximised and isn't shaded, and its least size fits
+    /// half the work area's width and all its height, frame and all. Marco checks a corner's
+    /// quarter, or a third, no harder (158, 159).
+    pub(super) fn can_tile(&self, id: WindowId, area: Rectangle<i32, Logical>) -> bool {
+        let managed = &self.windows[&id];
+        let e = managed.floating_extents();
+        let min = managed.hints.min;
+        self.functions(id).maximize
+            && !managed.shaded
+            && area.size.w / 2 - e.left - e.right >= min.w
+            && area.size.h - e.top - e.bottom >= min.h
+    }
+
+    /// `tile-to-side-*` and `tile-to-corner-*` (159), as `handle_toggle_tiled` has them
+    /// (keybindings.c:3177-3254). With `allow-tile-cycling`, a press tiles the window to
+    /// `tile` at half the width, and each press after it on the same tile steps the width
+    /// through `TileSize::next` and then untiles. Without it, a press tiles an untiled
+    /// window, and untiles a tiled one, or tiles it to `tile` at half the width if it's
+    /// tiled elsewhere. The window is tiled on the output it's most on, and a maximised one
+    /// is unmaximised, keeping the geometry it had floating.
+    fn toggle_tile(&mut self, id: WindowId, tile: Tile) {
+        let current = self.windows[&id].tile;
+        let same = current.is_some_and(|tiled| tiled.tile == tile);
+        let next = match current {
+            Some(tiled) if self.allow_tile_cycling && same => tiled.size.next(),
+            Some(_) if !self.allow_tile_cycling => None,
+            _ => Some(TileSize::Half),
+        };
+        if same && next.is_none() {
+            self.set_maximized(id, false);
+            return;
+        }
+        let managed = &self.windows[&id];
+        let Some(output) = self
+            .output_of(managed.frame())
+            .or(self.primary_output())
+            .copied()
+        else {
+            return;
+        };
+        if !self.can_tile(id, Self::work_area(&output)) {
+            return;
+        }
+        let managed = self.windows.get_mut(&id).unwrap();
+        managed.save_floating();
+        managed.tile = Some(Tiled::new(
+            tile,
+            output.id,
+            next.unwrap_or(TileSize::Uncycled),
+        ));
+        managed.maximized_horizontally = false;
+        managed.maximized_vertically = false;
+        self.relayout(id);
     }
 
     /// Lowers a window to the bottom of its layer, as Marco's `meta_window_lower` does: the

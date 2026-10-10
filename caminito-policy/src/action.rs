@@ -1,6 +1,6 @@
 //! Keybinding actions, named after Marco's `org.mate.Marco.*` keybinding keys.
 
-use crate::SwitchList;
+use crate::{SwitchList, Tile};
 
 /// An action a keybinding triggers: those with a behaviour in policy. The window actions act
 /// on the seat's focused window, and do nothing without one.
@@ -53,6 +53,9 @@ pub enum Action {
     Lower,
     /// `raise-or-lower`
     RaiseOrLower,
+    /// `tile-to-side-e` and `-w`, and `tile-to-corner-ne`, `-nw`, `-se` and `-sw` (159):
+    /// tiles the focused window there, cycles its size, or untiles it.
+    Tile(Tile),
     /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
     /// that is open, towards the end of the list or `backward`.
     Switch { list: SwitchList, backward: bool },

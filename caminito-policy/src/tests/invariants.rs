@@ -237,6 +237,19 @@ fn action() -> impl Strategy<Value = Action> {
         (switch_list(), any::<bool>())
             .prop_map(|(list, backward)| Action::Switch { list, backward }),
         Just(Action::ShowDesktop),
+        tile().prop_map(Action::Tile),
+    ]
+}
+
+fn tile() -> impl Strategy<Value = crate::Tile> {
+    use crate::Tile;
+    prop_oneof![
+        Just(Tile::Left),
+        Just(Tile::Right),
+        Just(Tile::TopLeft),
+        Just(Tile::TopRight),
+        Just(Tile::BottomLeft),
+        Just(Tile::BottomRight),
     ]
 }
 
