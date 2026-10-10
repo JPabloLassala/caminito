@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
-use crate::edges::{EdgeWindow, Edges};
+use crate::edges::{By, EdgeWindow, Edges};
 use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
@@ -16,10 +16,12 @@ use crate::{
 };
 
 mod dynamic_workspaces;
+mod keyboard_grab;
 mod pointer;
 mod switcher;
 mod window_actions;
 
+pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
 
@@ -57,13 +59,18 @@ struct Grab {
     /// The edges being resized, or `None` for a move.
     resize: Option<ResizeEdges>,
     start_pointer: Point<f64, Logical>,
-    /// The window geometry when the grab began, at its committed size, moved by any nudge
-    /// since.
+    /// The window geometry when the grab began, at its committed size, or when a key last
+    /// stepped it.
     start: Rectangle<i32, Logical>,
-    /// Where the window geometry was when the grab began, which a cancel goes back to.
-    initial: Point<i32, Logical>,
-    /// A manual placement of a new window (154), which the keys move, put down and cancel.
+    /// The window geometry when the grab began, which Escape puts it back to.
+    initial: Rectangle<i32, Logical>,
+    /// A keyboard move or resize (156), which the keys step, put down and put back.
+    keyboard: bool,
+    /// A manual placement of a new window (154): a keyboard move that doesn't warp the
+    /// pointer.
     placing: bool,
+    /// Where the pointer is to be warped to, for the compositor to take (156).
+    warp: Option<Point<i32, Logical>>,
     /// Whether the pointer has gone Marco's 8 pixels from where the grab began
     /// (display.c:3995-3997), past which it isn't a click.
     moved: bool,
@@ -279,6 +286,59 @@ impl<W: PolicyWindow> Managed<W> {
             frame.size.h = e.top;
         }
         frame
+    }
+
+    /// Moves the window geometry towards `loc`, its frame held back by `edges` from where
+    /// policy last asked the window to be, as `unmaximize_for_drag` measures it (157).
+    fn move_within(&mut self, loc: Point<i32, Logical>, edges: &Edges, snap: bool, by: By) {
+        let current = self.geometry;
+        let old_frame = self.frame_of(current);
+        let proposed = self.frame_of(Rectangle::new(loc, current.size));
+        let frame_loc = edges.for_move(old_frame, proposed, snap, by);
+        self.geometry.loc = loc + (frame_loc - proposed.loc);
+    }
+
+    /// Resizes the window geometry from `start` towards `size` within its hints, its
+    /// `moving` edges moving and the others staying, the moving ones held back by `edges`.
+    fn resize_within(
+        &mut self,
+        start: Rectangle<i32, Logical>,
+        moving: ResizeEdges,
+        size: Size<i32, Logical>,
+        edges: &Edges,
+        snap: bool,
+        by: By,
+    ) {
+        let before = self.geometry;
+        let old_frame = self.frame_of(before);
+        let hints = self.hints;
+        let proposed = |size| {
+            let size = hints.clamp(size);
+            let mut loc = start.loc;
+            if moving.left {
+                loc.x = start.loc.x + start.size.w - size.w;
+            }
+            if moving.top {
+                loc.y = start.loc.y + start.size.h - size.h;
+            }
+            Rectangle::new(loc, size)
+        };
+        let unresisted = proposed(size);
+        let proposed_frame = self.frame_of(unresisted);
+        let (w, h) = edges.for_resize(old_frame, proposed_frame, snap, by);
+        let resisted = Size::new(
+            (unresisted.size.w + w - proposed_frame.size.w).max(0),
+            (unresisted.size.h + h - proposed_frame.size.h).max(0),
+        );
+        self.geometry = proposed(resisted);
+        // A tile resizes by its inner sides alone, and keeps that size (159).
+        if let Some(tiled) = &mut self.tile {
+            if tiled.resizes_by(moving) {
+                tiled.resized = true;
+            } else {
+                self.geometry = before;
+            }
+        }
     }
 }
 
@@ -780,7 +840,9 @@ impl<W: PolicyWindow> Policy<W> {
         if self.grabs.contains_key(&seat) || !self.begin_grab(seat, id, None, pointer) {
             return;
         }
-        self.grabs.get_mut(&seat).unwrap().placing = true;
+        let grab = self.grabs.get_mut(&seat).unwrap();
+        grab.keyboard = true;
+        grab.placing = true;
     }
 
     /// Focuses a window that has just mapped, as Marco's `window_state_on_map`
@@ -938,6 +1000,11 @@ impl<W: PolicyWindow> Policy<W> {
             Action::SwitchToWorkspace(_) => {}
             Action::Switch { list, backward } => self.switch(seat, list, backward, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
+            Action::BeginMove | Action::BeginResize => {
+                if let Some(id) = self.focus(seat) {
+                    self.begin_keyboard_grab(seat, id, action == Action::BeginResize);
+                }
+            }
             action => {
                 if let Some(id) = self.focus(seat) {
                     self.window_action(id, action);
@@ -1350,19 +1417,24 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The seat's pointer moved during a grab. With `snap` (Shift held), the window snaps to
-    /// the nearest edges; otherwise it resists at the edges it meets (157).
+    /// the nearest edges; otherwise it resists at the edges it meets (157). A keyboard
+    /// resize that has no edge yet takes the one the pointer goes towards (156).
     ///
     /// As in Marco's `update_move` (window.c:7380-7445), a move holds a tiled window where
     /// it is until the pointer is twice the drag threshold from where the move began, then
     /// untiles it under the pointer, as a titlebar drag does at once (144). The pointer's
     /// place then picks where letting go tiles the window, before edge resistance moves
-    /// it, and a snapping move tiles nowhere (158).
+    /// it, and a snapping move tiles nowhere (158), nor does a keyboard move (156).
     pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
         let Some(grab) = self.grabs.get_mut(&seat) else {
             return;
         };
         let delta = pointer - grab.start_pointer;
         grab.moved |= delta.x.abs() >= CLICK_DISTANCE || delta.y.abs() >= CLICK_DISTANCE;
+        if grab.keyboard && grab.resize == Some(ResizeEdges::default()) {
+            self.pick_resize_edges(seat, delta.to_i32_round());
+            return;
+        }
         if grab.resize.is_none() {
             let (window, start_pointer) = (grab.window, grab.start_pointer);
             if self.tile(window).is_some() {
@@ -1374,10 +1446,10 @@ impl<W: PolicyWindow> Policy<W> {
                 let loc = self.windows[&window].geometry.loc;
                 let grab = self.grabs.get_mut(&seat).unwrap();
                 grab.start.loc = loc;
-                grab.initial = loc;
+                grab.initial.loc = loc;
             }
             let grab = &self.grabs[&seat];
-            let target = if snap || grab.placing {
+            let target = if snap || grab.keyboard {
                 None
             } else {
                 self.tile_target(grab.window, pointer)
@@ -1391,87 +1463,41 @@ impl<W: PolicyWindow> Policy<W> {
         let edges = self.edges_for(window);
         let managed = self.windows.get_mut(&window).unwrap();
         let current = managed.geometry;
-        // Edges hold back the frame, measured from where policy last asked the window to
-        // be, as `unmaximize_for_drag` measures it.
-        let old_frame = managed.frame_of(current);
         match resize {
             None => {
                 let loc = (start.loc.to_f64() + delta).to_i32_round();
-                let proposed = managed.frame_of(Rectangle::new(loc, current.size));
-                let frame_loc = edges.for_move(old_frame, proposed, snap);
-                managed.geometry.loc = loc + (frame_loc - proposed.loc);
+                managed.move_within(loc, &edges, snap, By::Pointer);
             }
-            Some(edges_moved) => {
+            Some(moving) => {
                 let (dx, dy) = (delta.x.round() as i32, delta.y.round() as i32);
                 let mut size = start.size;
-                if edges_moved.left {
+                if moving.left {
                     size.w -= dx;
-                } else if edges_moved.right {
+                } else if moving.right {
                     size.w += dx;
                 }
-                if edges_moved.top {
+                if moving.top {
                     size.h -= dy;
-                } else if edges_moved.bottom {
+                } else if moving.bottom {
                     size.h += dy;
                 }
-                let hints = managed.hints;
-                let proposed = |size| {
-                    let size = hints.clamp(size);
-                    let mut loc = start.loc;
-                    if edges_moved.left {
-                        loc.x = start.loc.x + start.size.w - size.w;
-                    }
-                    if edges_moved.top {
-                        loc.y = start.loc.y + start.size.h - size.h;
-                    }
-                    Rectangle::new(loc, size)
-                };
-                let unresisted = proposed(size);
-                let proposed_frame = managed.frame_of(unresisted);
-                let (w, h) = edges.for_resize(old_frame, proposed_frame, snap);
-                let resisted = Size::new(
-                    (unresisted.size.w + w - proposed_frame.size.w).max(0),
-                    (unresisted.size.h + h - proposed_frame.size.h).max(0),
-                );
-                managed.geometry = proposed(resisted);
-                // A tile resizes by its inner sides alone, and keeps that size (159).
-                if let Some(tiled) = &mut managed.tile {
-                    if tiled.resizes_by(edges_moved) {
-                        tiled.resized = true;
-                    } else {
-                        managed.geometry = current;
-                    }
-                }
+                managed.resize_within(start, moving, size, &edges, snap, By::Pointer);
             }
         }
         managed.pin_maximized_axes(current);
         self.apply();
     }
 
-    /// Moves the window of the seat's move grab by `delta`, as a key does, and goes on
-    /// following the pointer from there.
-    pub fn nudge_grab(&mut self, seat: SeatId, delta: Point<i32, Logical>) {
-        let Some(grab) = self.grabs.get_mut(&seat) else {
-            return;
-        };
-        if grab.resize.is_some() {
-            return;
-        }
-        grab.start.loc += delta;
-        let managed = self.windows.get_mut(&grab.window).unwrap();
-        managed.geometry.loc += delta;
-        self.apply();
-    }
-
-    /// Ends the seat's move grab with its window back where it began, as Escape does in
-    /// Marco's keyboard move (keybindings.c:1523-1545).
+    /// Ends the seat's grab with its window back as it began, as Escape does in Marco's
+    /// keyboard move and resize (keybindings.c:1523-1545, 1786-1806). It tiles nothing.
     pub fn cancel_grab(&mut self, seat: SeatId) {
-        if let Some(grab) = self.grabs.get_mut(&seat)
-            && grab.resize.is_none()
-        {
+        if let Some(grab) = self.grabs.get_mut(&seat) {
             grab.tile_target = None;
             let managed = self.windows.get_mut(&grab.window).unwrap();
-            managed.geometry.loc = grab.initial;
+            match grab.resize {
+                None => managed.geometry.loc = grab.initial.loc,
+                Some(_) => managed.geometry = grab.initial,
+            }
         }
         self.end_grab(seat);
     }
@@ -1493,7 +1519,8 @@ impl<W: PolicyWindow> Policy<W> {
             if let Some(target) = grab.tile_target {
                 // A window maximised one way keeps the floating geometry it had before.
                 if managed.floating.is_none() {
-                    managed.floating = Some(Rectangle::new(grab.initial, managed.geometry.size));
+                    managed.floating =
+                        Some(Rectangle::new(grab.initial.loc, managed.geometry.size));
                 }
                 match target {
                     TileTarget::Tile(tile, output) => {
@@ -1592,13 +1619,20 @@ impl<W: PolicyWindow> Policy<W> {
                 })
             })
             .collect();
-        let screen = self
-            .outputs
+        Edges::new(
+            self.outputs.iter().map(Self::work_area),
+            &windows,
+            self.screen(),
+        )
+    }
+
+    /// The outputs' bounding box, Marco's screen.
+    fn screen(&self) -> Rectangle<i32, Logical> {
+        self.outputs
             .iter()
             .map(|o| o.geometry)
             .reduce(|a, b| a.merge(b))
-            .unwrap_or_default();
-        Edges::new(self.outputs.iter().map(Self::work_area), &windows, screen)
+            .unwrap_or_default()
     }
 
     fn begin_grab(
@@ -1632,8 +1666,10 @@ impl<W: PolicyWindow> Policy<W> {
                 resize,
                 start_pointer: pointer,
                 start,
-                initial: start.loc,
+                initial: start,
+                keyboard: false,
                 placing: false,
+                warp: None,
                 moved: false,
                 tile_target: None,
             },

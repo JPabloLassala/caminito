@@ -281,6 +281,8 @@ fn bindable() -> impl Iterator<Item = Bindable> {
             window("toggle-shaded", "disabled", policy(Action::ToggleShaded)),
             window("minimize", "<Alt>F9", policy(Action::Minimize)),
             window("close", "<Alt>F4", policy(Action::Close)),
+            window("begin-move", "<Alt>F7", policy(Action::BeginMove)),
+            window("begin-resize", "<Alt>F8", policy(Action::BeginResize)),
         ])
         .chain(move_to_workspace)
         .chain([

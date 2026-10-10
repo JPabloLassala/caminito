@@ -61,4 +61,8 @@ pub enum Action {
     Switch { list: SwitchList, backward: bool },
     /// `show-desktop`
     ShowDesktop,
+    /// `begin-move`: a keyboard move of the focused window (156).
+    BeginMove,
+    /// `begin-resize`: a keyboard resize of the focused window (156).
+    BeginResize,
 }

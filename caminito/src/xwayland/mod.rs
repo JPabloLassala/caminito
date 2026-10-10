@@ -18,9 +18,8 @@ use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::process::Stdio;
 
-use caminito_policy::{Action, FrameState, MAX_WORKSPACES, PolicyWindow, ResizeEdges, SizeHints};
+use caminito_policy::{Action, FrameState, MAX_WORKSPACES, PolicyWindow, SizeHints};
 use smithay::backend::input::InputTime;
-use smithay::input::pointer::GrabStartData;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -40,7 +39,6 @@ use self::xconn::{Request, RootProperties, WindowProperties, WindowProperty, XCo
 use crate::bell::{BellFor, BellSource};
 use crate::decoration::{NetWmIcon, WindowFacts};
 use crate::helpers;
-use crate::input::GrabKind;
 use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, Mouse};
 use crate::state::{Caminito, SEAT, State};
@@ -705,30 +703,23 @@ impl State {
         }
     }
 
-    /// `_NET_WM_MOVERESIZE`'s keyboard move or resize (05, 11): policy moves the window, or
-    /// resizes it from its bottom right corner, with the pointer from where it is, until a
-    /// click. The arrow keys, Return and Escape come with M8's `begin-move` and
-    /// `begin-resize`.
+    /// `_NET_WM_MOVERESIZE`'s keyboard move (10) or resize (9): the keyboard grab of
+    /// `begin-move` and `begin-resize` (156), as Marco's `meta_window_begin_grab_op` starts
+    /// for them (window.c:5415-5450). The refresh pass holds the pointer for it.
     fn x_keyboard_move_resize(&mut self, window: X11Window, resize: bool) {
-        let Some(id) = self.caminito.mapped_for_key(&WindowKey::X11(window)) else {
+        let caminito = &mut self.caminito;
+        let Some(id) = caminito.mapped_for_key(&WindowKey::X11(window)) else {
             return;
         };
-        let kind = if resize {
-            GrabKind::Resize(ResizeEdges {
-                bottom: true,
-                right: true,
-                ..ResizeEdges::default()
-            })
+        if caminito.lock.is_locked() {
+            return;
+        }
+        if resize {
+            caminito.policy.begin_keyboard_resize(SEAT, id);
         } else {
-            GrabKind::Move
-        };
-        let pointer = self.caminito.seat.get_pointer().unwrap();
-        let start_data = GrabStartData {
-            focus: None,
-            button: 0,
-            location: pointer.current_location(),
-        };
-        self.begin_window_grab(id, kind, start_data, SERIAL_COUNTER.next_serial());
+            caminito.policy.begin_keyboard_move(SEAT, id);
+        }
+        caminito.queue_redraw_all();
     }
 
     /// `_NET_WM_MOVERESIZE`'s cancel: ends the move or resize of the window, if one is in

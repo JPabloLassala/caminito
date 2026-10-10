@@ -15,7 +15,7 @@ pub(super) struct Functions {
     minimize: bool,
     pub(super) maximize: bool,
     /// Resizing, which maximising one way needs.
-    resize: bool,
+    pub(super) resize: bool,
     fullscreen: bool,
 }
 

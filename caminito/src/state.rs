@@ -612,8 +612,9 @@ impl State {
         // Before the views and the focus, which follow the lock.
         self.caminito.refresh_lock();
         self.caminito.refresh_views();
-        // Before the pointer's focus, which a manual placement takes (154).
-        self.refresh_manual_placement();
+        // Before the pointer's focus, which a keyboard move or resize (156) and a manual
+        // placement (154) take.
+        self.refresh_keyboard_grab();
         // After the views, which show and hide the windows an inhibitor is on.
         self.refresh_idle();
         // After idle and the lock, whose changes it signals.

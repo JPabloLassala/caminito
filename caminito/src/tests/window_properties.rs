@@ -7,7 +7,8 @@ use insta::assert_snapshot;
 use smithay::utils::Point;
 
 use super::fixture::{
-    ClientId, ClientWindow, Decoration, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WindowSpec,
+    ClientId, ClientWindow, Decoration, Fixture, KEY_DOWN, KEY_ESC, KEY_LEFTALT, KEY_RIGHT,
+    KEY_TAB, Kind, WindowSpec,
 };
 use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
@@ -267,35 +268,67 @@ fn grabbed(f: &Fixture) -> Option<caminito_policy::WindowId> {
     f.state.caminito.policy.grab(crate::state::SEAT)
 }
 
+/// Presses and releases `key`.
+fn tap(f: &mut Fixture, key: u32) {
+    f.key(key, true);
+    f.key(key, false);
+}
+
 #[test]
-fn a_keyboard_move_request_moves_the_window_with_the_pointer_until_it_is_cancelled() {
+fn a_keyboard_move_request_moves_the_window_with_the_keys_and_the_pointer_until_it_is_cancelled() {
     let (mut f, x) = Fixture::connected(Kind::X11);
     let window = f.map(x, WindowSpec::default());
     let start = f.geometry(window);
     f.pointer_move(f64::from(start.loc.x) + 50., f64::from(start.loc.y) + 50.);
 
+    // The keyboard grab of `begin-move` (156).
     moveresize(&mut f, window, 10);
     f.dispatch_until(|f| grabbed(f) == Some(f.pid(window)));
+    tap(&mut f, KEY_RIGHT);
+    f.sync(window);
+    assert_eq!(f.geometry(window).loc, start.loc + Point::from((10, 0)));
     f.pointer_move_by(40., 30.);
-    assert_eq!(f.geometry(window).loc, start.loc + Point::from((40, 30)));
+    assert_eq!(f.geometry(window).loc, start.loc + Point::from((50, 30)));
 
     moveresize(&mut f, window, 11);
     f.dispatch_until(|f| grabbed(f).is_none());
     f.pointer_move_by(40., 30.);
-    assert_eq!(f.geometry(window).loc, start.loc + Point::from((40, 30)));
+    assert_eq!(f.geometry(window).loc, start.loc + Point::from((50, 30)));
 }
 
 #[test]
-fn a_keyboard_resize_request_resizes_the_window_with_the_pointer_until_a_click() {
+fn escape_puts_back_a_window_a_keyboard_move_request_moved() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let window = f.map(x, WindowSpec::default());
+    let start = f.geometry(window);
+    moveresize(&mut f, window, 10);
+    f.dispatch_until(|f| grabbed(f) == Some(f.pid(window)));
+    tap(&mut f, KEY_RIGHT);
+    f.pointer_move_by(40., 30.);
+
+    tap(&mut f, KEY_ESC);
+    f.sync(window);
+
+    assert_eq!(grabbed(&f), None);
+    assert_eq!(f.geometry(window).loc, start.loc);
+}
+
+#[test]
+fn a_keyboard_resize_request_resizes_the_window_with_the_pointer_and_the_keys_until_a_click() {
     let (mut f, x) = Fixture::connected(Kind::X11);
     let window = f.map(x, WindowSpec::default());
     let start = f.geometry(window);
     f.pointer_move(f64::from(start.loc.x) + 50., f64::from(start.loc.y) + 50.);
 
+    // The keyboard grab of `begin-resize` (156): the pointer's first motion picks the
+    // corner it goes towards, and warps the pointer there.
     moveresize(&mut f, window, 9);
     f.dispatch_until(|f| grabbed(f) == Some(f.pid(window)));
+    f.pointer_move_by(5., 5.);
     f.pointer_move_by(40., 30.);
     f.draw_at_asked_size(window, (440, 330));
+    tap(&mut f, KEY_DOWN);
+    f.draw_at_asked_size(window, (440, 340));
     assert_eq!(f.geometry(window).loc, start.loc);
 
     f.pointer_button(super::fixture::BTN_LEFT, true);

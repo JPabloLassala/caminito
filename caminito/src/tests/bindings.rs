@@ -327,7 +327,7 @@ fn the_state_dump_lists_the_bindings_in_force_with_their_keys() {
     );
     let rows = bindings_in_force(&f);
     let row = |key: &str, combination: &str| (key.to_owned(), combination.to_owned());
-    assert_eq!(rows.len(), 24, "{rows:?}");
+    assert_eq!(rows.len(), 26, "{rows:?}");
     assert_eq!(
         rows[0],
         row("switch-to-workspace-left", "<Control><Alt>Left")

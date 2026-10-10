@@ -1606,3 +1606,27 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `org.mate.Caminito.Debug`'s
   state dump, whose `focus` and workspaces' `stacking` members show which window has the focus
   and which is on top.
+
+### Alt+F7 and Alt+F8 move and resize a window by the keys
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open pluma (a native window) and `xterm` (X11), apart.
+  2. Focus pluma, press Alt+F7, press Right three times, Down once, and Ctrl+Right once, move
+     the mouse a little, and press Return. Note where the pointer is after each key.
+  3. Press Alt+F7 again, move pluma with the arrows and the mouse, and press Escape.
+  4. Press Alt+F8, press Right, then Right twice more, then Down, then Down twice more, and
+     press Return. Then press Alt+F8, Left twice, and Escape.
+  5. Repeat steps 2 to 4 with `xterm`, then from `xterm`'s own keyboard move and resize if
+     it has them, and compare with Marco under *MATE*, the X11 session.
+- **Expected:** in step 2 the pointer jumps to the middle of pluma when Alt+F7 is pressed and
+  stays in its middle as each arrow moves it 10 pixels (Ctrl+Right 1); the mouse moves it
+  too; Return leaves it there, and nothing typed reaches pluma during the move. In step 3
+  Escape puts pluma back where it was before Alt+F7. In step 4 the first Right moves the
+  pointer to the middle of pluma's right edge without resizing it, the next two widen it by
+  10 pixels each with the pointer on the edge, and Down moves the pointer to the bottom edge
+  to grow it from there; Escape after the second Alt+F8 puts the size back. `xterm` does the
+  same. A step that would take a side past a monitor's edge, the panel's or another
+  window's stops there, and the next key goes on, as in Marco (156).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
+  bindings in force.

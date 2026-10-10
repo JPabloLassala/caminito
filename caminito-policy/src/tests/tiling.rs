@@ -521,3 +521,26 @@ fn at_an_edge_between_two_outputs_the_pointers_output_decides() {
     policy.grab_motion(SEAT, at(1920., 500.), false);
     assert_eq!(policy.tile_preview(SEAT), Some(rect(1920, 0, 640, 1024)));
 }
+
+#[test]
+fn a_keyboard_move_untiles_a_tiled_window_round_the_pointer_and_tiles_nothing() {
+    let mut policy = tiling();
+    drop_at(&mut policy, 0., 500.);
+    assert!(policy.begin_keyboard_move(SEAT, id(1)));
+    // The middle of the left half.
+    assert_eq!(policy.take_pointer_warp(SEAT), Some(at(480., 540.)));
+
+    policy.grab_key(
+        SEAT,
+        crate::GrabKey::Arrow {
+            x: 1,
+            y: 0,
+            step: crate::GrabStep::Normal,
+        },
+    );
+
+    assert_eq!(policy.tile(id(1)), None);
+    assert_eq!(last(&policy).0, rect(290, 390, 400, 300));
+    policy.grab_motion(SEAT, at(0., 500.), false);
+    assert_eq!(policy.tile_preview(SEAT), None);
+}
