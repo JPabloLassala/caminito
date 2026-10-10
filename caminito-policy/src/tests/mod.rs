@@ -1,5 +1,6 @@
 //! Example tests for each behaviour of `Policy`, through `TestWindow`.
 
+mod above_below_and_sticky;
 mod actions;
 mod commit;
 mod dynamic_workspaces;

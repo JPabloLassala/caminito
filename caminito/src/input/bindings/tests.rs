@@ -162,7 +162,9 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
         (GLOBAL, "run-command-window-screenshot", "<Alt>Print"),
         (GLOBAL, "run-command-area-screenshot", "<Shift>Print"),
         (WINDOW, "toggle-maximized", "<Alt>F10"),
+        (WINDOW, "toggle-above", "disabled"),
         (WINDOW, "close", "<Alt>F4"),
+        (WINDOW, "toggle-on-all-workspaces", "disabled"),
         (GLOBAL, "switch-to-workspace-prev", "disabled"),
     ];
     assert_eq!(table(&defaults), table(&[]));
@@ -195,6 +197,26 @@ fn up_down_and_prev_have_marcos_defaults() {
     assert_eq!(
         bound(&t, SUPER, Keysym::Tab),
         policy(Action::SwitchToWorkspacePrev)
+    );
+}
+
+#[test]
+fn toggle_above_and_toggle_on_all_workspaces_are_unbound_by_default_and_bindable() {
+    // 155's, unbound by default, as in Marco.
+    let t = table(&[]);
+    assert!(
+        !t.iter()
+            .any(|(key, _)| key == "toggle-above" || key == "toggle-on-all-workspaces")
+    );
+
+    let t = table(&[
+        (WINDOW, "toggle-above", "<Super>a"),
+        (WINDOW, "toggle-on-all-workspaces", "<Super>s"),
+    ]);
+    assert_eq!(bound(&t, SUPER, Keysym::a), policy(Action::ToggleAbove));
+    assert_eq!(
+        bound(&t, SUPER, Keysym::s),
+        policy(Action::ToggleOnAllWorkspaces)
     );
 }
 

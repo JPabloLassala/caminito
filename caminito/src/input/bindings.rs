@@ -99,7 +99,7 @@ const fn switch(list: SwitchList, reversed: bool) -> Does {
 /// nothing until its ticket gives it a behaviour (147). `run-command-area-screenshot` is
 /// master's (`8522ed1`), after the window screenshot as there; where the installed schema
 /// hasn't the key, it has master's default.
-const BINDABLE: [Bindable; 23] = [
+const BINDABLE: [Bindable; 25] = [
     global(
         "switch-to-workspace-left",
         "<Control><Alt>Left",
@@ -205,7 +205,13 @@ const BINDABLE: [Bindable; 23] = [
         "<Alt>F10",
         policy(Action::ToggleMaximized),
     ),
+    window("toggle-above", "disabled", policy(Action::ToggleAbove)),
     window("close", "<Alt>F4", policy(Action::Close)),
+    window(
+        "toggle-on-all-workspaces",
+        "disabled",
+        policy(Action::ToggleOnAllWorkspaces),
+    ),
     global(
         "switch-to-workspace-prev",
         "disabled",

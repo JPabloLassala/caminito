@@ -27,7 +27,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `focus-mode` | honoured | `click`, `sloppy` and `mouse`, live, for xdg and XWayland windows alike. The pointer entering a window focuses it, or its modal dialog, and a dock, the panel or another Layer surface never; leaving it for the desktop (nothing, or a Layer surface below the windows, such as caja's) takes the focus away under `mouse`. A crossing of a still pointer, as a window maps, goes or restacks under it, counts only until the keyboard moves the focus, as Marco's `mouse_mode` has it. The Window switcher and a move or resize hold the modes off. Layer surfaces take the keyboard by their own keyboard interactivity (153). | `caminito-policy/src/tests/pointer_focus.rs`, `caminito/src/tests/focus_modes.rs`, the checklist's *The focus modes and auto-raise* |
 | `focus-new-windows` | to do (165) | A new window takes the focus; xdg-activation requests activate nothing. | |
 | `raise-on-click` | honoured | Off, a click on a window's body focuses it, or its modal dialog, without raising anything. A click on its titlebar raises it once released, and a move or resize, by the Frame or with Alt, raises it only if the pointer went less than 8 pixels, as in Marco; a drag doesn't. | the same |
-| `action-double-click-titlebar` | honoured | An SSD titlebar's double click, by `double-click`'s time (05: SSD frames only). | `caminito/src/tests/frames.rs` (`double_clicking_the_titlebar_runs_its_action`) |
+| `action-double-click-titlebar` | honoured | An SSD titlebar's double click, by `double-click`'s time (05: SSD frames only). `toggle_above` and `toggle_stick`, here and on the two keys below, keep the window above and make it sticky, or stop, by what the Frame shows (155). | `caminito/src/tests/frames.rs` (`double_clicking_the_titlebar_runs_its_action`, `the_titlebar_actions_toggle_above_and_sticky`) |
 | `action-middle-click-titlebar` | honoured | An SSD titlebar's middle click. | `caminito/src/tests/frames.rs` (`middle_and_right_clicks_on_the_titlebar_run_their_actions`) |
 | `action-right-click-titlebar` | honoured | An SSD titlebar's right click. `menu` logs and does nothing until the window menu (161). | the same |
 | `action-scroll-up-titlebar` | to do (162) | A scroll on the titlebar does nothing, Marco's default `none`. | |
@@ -121,7 +121,7 @@ Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybin
 | `activate-window-menu` | to do (161) | Alt+Space reaches the focused client. | |
 | `toggle-fullscreen` | to do (149) | Unbound, as by default. | |
 | `toggle-maximized` | honoured | Alt+F10 maximises the focused window, or restores it (M1). | `caminito/src/tests/bindings.rs` (`alt_f10_toggles_maximised`) |
-| `toggle-above` | to do (155) | Unbound, as by default. | |
+| `toggle-above` | honoured | Unbound by default, as in Marco. Bound, it keeps the focused window above the normal windows, as Marco's layers do, or lets it go, raising it either way (155). | `caminito-policy/src/tests/above_below_and_sticky.rs`, `caminito/src/input/bindings/tests.rs`, `caminito/src/tests/bindings.rs` (`toggle_above_and_toggle_on_all_workspaces_toggle_the_focused_window`) |
 | `maximize` | to do (149) | Unbound, as by default. | |
 | `unmaximize` | to do (149) | Alt+F5 reaches the focused client. | |
 | `toggle-shaded` | to do (149) | Unbound, as by default. | |
@@ -129,7 +129,7 @@ Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybin
 | `close` | honoured | Alt+F4 asks the focused window to close (M1). | `caminito/src/tests/bindings.rs` (`alt_f4_asks_the_focused_window_to_close`) |
 | `begin-move` | to do (156) | Alt+F7 reaches the focused client. | |
 | `begin-resize` | to do (156) | Alt+F8 reaches the focused client. | |
-| `toggle-on-all-workspaces` | to do (155) | Unbound, as by default. | |
+| `toggle-on-all-workspaces` | honoured | Unbound by default, as in Marco. Bound, it puts the focused window, with its transients, on every workspace in its place, or back on the active one only (155). | the same |
 | `move-to-workspace-1` to `-12` | to do (149) | Unbound, as by default. | |
 | `move-to-workspace-left` | to do (149) | Ctrl+Shift+Alt+Left reaches the focused client. | |
 | `move-to-workspace-right` | to do (149) | Ctrl+Shift+Alt+Right reaches the focused client. | |

@@ -203,13 +203,13 @@ impl State {
             }
             ButtonFunction::Shade => policy.set_shaded(window, true),
             ButtonFunction::Unshade => policy.set_shaded(window, false),
-            // The window menu, keeping above and sticking come in M8.
-            ButtonFunction::Menu
-            | ButtonFunction::Appmenu
-            | ButtonFunction::Above
-            | ButtonFunction::Unabove
-            | ButtonFunction::Stick
-            | ButtonFunction::Unstick => {
+            // As Marco's `meta_frames_button_release_event` (155).
+            ButtonFunction::Above => policy.set_above(window, true),
+            ButtonFunction::Unabove => policy.set_above(window, false),
+            ButtonFunction::Stick => policy.set_sticky(window, true),
+            ButtonFunction::Unstick => policy.set_sticky(window, false),
+            // The window menu comes in M8 (161).
+            ButtonFunction::Menu | ButtonFunction::Appmenu => {
                 tracing::debug!("the {function:?} button does nothing yet");
             }
         }
@@ -245,8 +245,12 @@ impl State {
             TitlebarAction::Close if flags.allows_delete => policy.close(window),
             TitlebarAction::Lower => policy.lower(SEAT, window, now),
             TitlebarAction::Raise => policy.raise(window),
-            // The window menu, keeping above and sticking come in M8.
-            TitlebarAction::Menu | TitlebarAction::ToggleAbove | TitlebarAction::ToggleStick => {
+            // By the frame's flags, as Marco's `meta_frame_titlebar_event` toggles them
+            // (frames.c:1614-1642) (155).
+            TitlebarAction::ToggleAbove => policy.set_above(window, !flags.above),
+            TitlebarAction::ToggleStick => policy.set_sticky(window, !flags.stuck),
+            // The window menu comes in M8 (161).
+            TitlebarAction::Menu => {
                 tracing::debug!("the titlebar action {action:?} does nothing yet");
             }
             _ => {}

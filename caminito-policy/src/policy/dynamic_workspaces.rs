@@ -23,26 +23,21 @@ impl<W: PolicyWindow> Policy<W> {
         }
         // The workspaces with windows, in order. Marco fills each empty workspace with the
         // windows of the next one that has any, from the first, so they close up in order.
-        let occupied: Vec<usize> = (0..self.stacks.len())
+        let occupied: Vec<usize> = (0..self.workspace_count)
             .filter(|workspace| {
-                self.stacks[*workspace]
-                    .iter()
-                    .any(|id| self.keeps_workspace(*id))
+                self.windows.iter().any(|(id, managed)| {
+                    managed.workspace == *workspace && self.keeps_workspace(*id)
+                })
             })
             .collect();
         let count = (occupied.len() + 1).min(MAX_WORKSPACES);
         let closed_up = occupied.iter().enumerate().all(|(to, from)| to == *from);
-        if closed_up && count == self.stacks.len() {
+        if closed_up && count == self.workspace_count {
             return;
         }
 
-        let mut stacks = std::mem::take(&mut self.stacks);
         let mut showing_desktop = std::mem::take(&mut self.showing_desktop);
         for (to, &from) in occupied.iter().enumerate() {
-            if from != to {
-                let moved = std::mem::take(&mut stacks[from]);
-                stacks[to].extend(moved);
-            }
             if let Some(focus) = showing_desktop.remove(&from) {
                 self.showing_desktop.insert(to, focus);
             }
@@ -54,19 +49,19 @@ impl<W: PolicyWindow> Policy<W> {
         {
             self.showing_desktop.insert(spare, focus);
         }
-        // What's left on a removed workspace is on every workspace, and goes to the first,
-        // Marco's `safe_target` when there are windows, as it is when there are none.
-        if stacks.len() > count {
-            let left: Vec<WindowId> = stacks.drain(count..).flatten().collect();
-            stacks[0].extend(left);
+        // A workspace with windows takes its place in order. What's left on a removed
+        // workspace is on every workspace, and goes to the first, Marco's `safe_target` when
+        // there are windows, as it is when there are none. The stacking order is one across
+        // workspaces, and stays as it is.
+        for managed in self.windows.values_mut() {
+            let from = managed.workspace;
+            managed.workspace = match occupied.iter().position(|o| *o == from) {
+                Some(to) => to,
+                None if from < count => from,
+                None => 0,
+            };
         }
-        stacks.resize(count, Vec::new());
-        for (workspace, stack) in stacks.iter().enumerate() {
-            for id in stack {
-                self.windows.get_mut(id).unwrap().workspace = workspace;
-            }
-        }
-        self.stacks = stacks;
+        self.workspace_count = count;
 
         // The previous workspace follows its windows too (150), or is kept as the active one
         // is, and forgotten if it's gone.

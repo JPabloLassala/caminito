@@ -26,6 +26,11 @@ pub enum Action {
     Close,
     /// `toggle-maximized`
     ToggleMaximized,
+    /// `toggle-above`: keeps the focused window above the others, or stops (155).
+    ToggleAbove,
+    /// `toggle-on-all-workspaces`: shows the focused window on every workspace, or only on
+    /// the active one (155).
+    ToggleOnAllWorkspaces,
     /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
     /// that is open, towards the end of the list or `backward`.
     Switch { list: SwitchList, backward: bool },

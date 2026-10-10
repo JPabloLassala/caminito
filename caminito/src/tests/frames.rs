@@ -216,28 +216,73 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
-    fn menu_above_and_stick_light_up_but_do_nothing_yet(kind: Kind) {
+    fn menu_lights_up_but_does_nothing_yet(kind: Kind) {
         let (mut f, window) = every_button(kind);
         let before = f.geometry(window);
 
-        for function in [
-            ButtonFunction::Menu,
-            ButtonFunction::Above,
-            ButtonFunction::Stick,
-        ] {
-            let point = center(f.button_rect(window, function));
-            move_to(&mut f, point);
-            assert_eq!(f.button_state(window, function), ButtonState::Prelight);
-            f.pointer_button(BTN_LEFT, true);
-            assert_eq!(f.button_state(window, function), ButtonState::Pressed);
-            f.pointer_button(BTN_LEFT, false);
-        }
+        let point = center(f.button_rect(window, ButtonFunction::Menu));
+        move_to(&mut f, point);
+        assert_eq!(f.button_state(window, ButtonFunction::Menu), ButtonState::Prelight);
+        f.pointer_button(BTN_LEFT, true);
+        assert_eq!(f.button_state(window, ButtonFunction::Menu), ButtonState::Pressed);
+        f.pointer_button(BTN_LEFT, false);
         f.sync(window);
 
         let pid = f.pid(window);
         assert!(!policy(&f).is_minimized(pid) && !policy(&f).is_maximized(pid));
         assert_eq!(f.geometry(window), before);
         assert!(!f.close_requested(window));
+    }
+}
+
+on_both_kinds! {
+    fn above_keeps_the_window_above_and_unabove_lets_it_go(kind: Kind) {
+        let (mut f, window) = every_button(kind);
+        let pid = f.pid(window);
+
+        click_button(&mut f, window, ButtonFunction::Above, BTN_LEFT);
+        assert!(policy(&f).is_above(pid));
+        // The frame shows the button that undoes it in its place (155).
+        assert!(f.frame_flags(window).above);
+        click_button(&mut f, window, ButtonFunction::Unabove, BTN_LEFT);
+        assert!(!policy(&f).is_above(pid));
+        assert!(!f.frame_flags(window).above);
+    }
+}
+
+on_both_kinds! {
+    fn stick_puts_the_window_on_every_workspace_and_unstick_on_one(kind: Kind) {
+        let (mut f, window) = every_button(kind);
+        let pid = f.pid(window);
+
+        click_button(&mut f, window, ButtonFunction::Stick, BTN_LEFT);
+        assert!(policy(&f).is_sticky(pid));
+        assert!(f.frame_flags(window).stuck);
+        f.state.caminito.policy.switch_workspace(2);
+        f.sync(window);
+        assert!(policy(&f).is_showing(pid));
+
+        click_button(&mut f, window, ButtonFunction::Unstick, BTN_LEFT);
+        assert!(!policy(&f).is_sticky(pid));
+        assert_eq!(policy(&f).workspace_of(pid), Some(2));
+    }
+}
+
+on_both_kinds! {
+    fn the_titlebar_actions_toggle_above_and_sticky(kind: Kind) {
+        let (mut f, window) = titlebar_with(kind, "double-click", "toggle_above");
+        let pid = f.pid(window);
+        double_click_title(&mut f, window);
+        assert!(policy(&f).is_above(pid));
+        double_click_title(&mut f, window);
+        assert!(!policy(&f).is_above(pid));
+
+        let (mut f, window) = titlebar_with(kind, "double-click", "toggle_stick");
+        let pid = f.pid(window);
+        double_click_title(&mut f, window);
+        assert!(policy(&f).is_sticky(pid));
+        double_click_title(&mut f, window);
+        assert!(!policy(&f).is_sticky(pid));
     }
 }
 

@@ -539,6 +539,37 @@ fn above_below_and_sticky_go_back_into_net_wm_state() {
     assert!(states(&mut f, above).is_empty());
 }
 
+#[test]
+fn a_state_caminito_changes_is_written_back_and_a_requested_one_takes_effect() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let window = f.map(x, WindowSpec::default());
+    let other = f.map(x, WindowSpec::default());
+    let pid = f.pid(window);
+
+    // Kept above by its request, it stays over the window raised after it (155).
+    net_wm_state(&mut f, window, 1, "_NET_WM_STATE_ABOVE");
+    f.dispatch_until(|f| f.state.caminito.policy.is_above(f.pid(window)));
+    f.state.caminito.policy.raise(f.pid(other));
+    assert_eq!(f.state.caminito.policy.stacking(0).last(), Some(&pid));
+
+    // Stuck and let go by Caminito, as the Frame's buttons and the bindings do.
+    f.state.caminito.policy.set_sticky(pid, true);
+    f.state.caminito.policy.set_above(pid, false);
+    f.dispatch();
+    f.sync(window);
+    let states = property(&mut f, window, "_NET_WM_STATE");
+    assert!(states.contains("_NET_WM_STATE_STICKY"), "{states}");
+    assert!(!states.contains("_NET_WM_STATE_ABOVE"), "{states}");
+    assert_snapshot!(property(&mut f, window, "_NET_WM_DESKTOP"), @"_NET_WM_DESKTOP(CARDINAL) = 4294967295");
+
+    f.state.caminito.policy.switch_workspace(1);
+    f.state.caminito.policy.set_sticky(pid, false);
+    f.dispatch();
+    f.sync(window);
+    assert!(!property(&mut f, window, "_NET_WM_STATE").contains("_NET_WM_STATE_STICKY"));
+    assert_snapshot!(property(&mut f, window, "_NET_WM_DESKTOP"), @"_NET_WM_DESKTOP(CARDINAL) = 1");
+}
+
 /// The debug dump's skip-taskbar and skip-pager for a window.
 fn dumped_skips(f: &Fixture, window: ClientWindow) -> (bool, bool) {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();

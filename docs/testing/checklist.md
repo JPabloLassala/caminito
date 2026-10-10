@@ -1470,6 +1470,34 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for `showing_desktop` and each
   window's app id, `xprop WM_CLASS` on `xterm`, and `gsettings monitor org.mate.Marco.general`.
 
+### A window kept above and a sticky window, from the Frame, a binding and the window list
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with four workspaces and the panel's Workspace Switcher.
+     Run `gsettings set org.mate.Marco.general button-layout 'menu,above,stick:minimize,maximize,close'`,
+     `gsettings set org.mate.Marco.window-keybindings toggle-above '<Super>a'` and
+     `gsettings set org.mate.Marco.window-keybindings toggle-on-all-workspaces '<Super>s'`.
+  2. Open `pluma` and `caja`. Click `pluma`'s above button, then click `caja`'s body.
+     Click the button again, which is now unabove.
+  3. Click `caja`'s stick button, then switch through the four workspaces with
+     Ctrl+Alt+Right, watching the pager. Back on the first, click its unstick button.
+  4. Repeat steps 2 and 3 with Super+A and Super+S on the focused window.
+  5. Right-click `pluma`'s button in the window list and pick *Always on Visible Workspace*,
+     if the menu has it, and switch workspaces.
+  6. Open `xterm` and run `wmctrl -r :ACTIVE: -b add,above` in it, then click `pluma`; run
+     `wmctrl -r :ACTIVE: -b add,sticky`, switch workspaces, and run `xprop _NET_WM_STATE
+     _NET_WM_DESKTOP` in it.
+- **Expected:** a window kept above stays over `caja` when `caja` is clicked, and goes back
+  among the others when let go; the Frame shows unabove while it's kept above. A sticky
+  window shows on every workspace at the same place, the pager draws it on each, and its
+  button in the window list stays on every workspace; unsticking it leaves it on the
+  workspace it was unstuck on. The keys and the window list do the same as the Frame. For
+  `xterm`, `wmctrl` takes effect, and `xprop` shows `_NET_WM_STATE_ABOVE`,
+  `_NET_WM_STATE_STICKY` and `_NET_WM_DESKTOP(CARDINAL) = 4294967295` (155).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each workspace's stacking,
+  and `xprop` on the X11 window.
+
 ### The parity table's rows that no test covers
 
 - **Milestone:** M8

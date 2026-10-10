@@ -10,10 +10,11 @@
 //! [`XfceForeignToplevelState::refresh`], and it finds the client's objects in the other
 //! two protocols' states.
 //!
-//! The rest of the protocol isn't Caminito's to offer yet. No extra state is sent, so a
-//! toplevel has no icon of its own and libxfce4windowing finds one by its app id, as it
-//! did. The requests that change a toplevel are taken and ignored, and an icon's pixels
-//! always fail.
+//! It says too whether a toplevel is sticky, kept above or kept below, and takes a
+//! client's requests to change those, which it hands the compositor (155). The rest of the
+//! protocol isn't Caminito's to offer yet. No icon is sent, so libxfce4windowing finds one by
+//! the toplevel's app id, as it did. The other requests that change a toplevel are taken and
+//! ignored, and an icon's pixels always fail.
 //!
 //! Written from the protocol's XML.
 
@@ -39,10 +40,56 @@ use super::raw::xfce::xfce_foreign_toplevel_manager_private_v1::{
 /// The version of the protocol Caminito offers, which is the only one there is.
 const VERSION: u32 = 1;
 
-/// Where the compositor keeps the protocol's state. There are no requests for it to answer.
+/// Where the compositor keeps the protocol's state, and what it does with the requests it
+/// honours.
 pub trait XfceForeignToplevelHandler: 'static {
     /// The compositor's state for Xfce's foreign toplevel protocol.
     fn xfce_foreign_toplevel_state(&mut self) -> &mut XfceForeignToplevelState;
+
+    /// A client asks to set or unset a state of the toplevel of `toplevel`, a foreign
+    /// toplevel handle, which may be one whose toplevel is gone.
+    fn set_toplevel_state(
+        &mut self,
+        toplevel: &ZwlrForeignToplevelHandleV1,
+        state: XfceState,
+        set: bool,
+    );
+}
+
+/// The states of a toplevel's this protocol says, and a client can ask to change (155).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XfceState {
+    /// On every workspace, which libxfce4windowing calls pinned.
+    Sticky,
+    Above,
+    Below,
+}
+
+/// What a client is told of a toplevel through its Xfce handle.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct XfceToplevel {
+    /// The id ext-workspace knows the toplevel's workspace by.
+    pub workspace: Option<String>,
+    pub sticky: bool,
+    pub above: bool,
+    pub below: bool,
+}
+
+impl XfceToplevel {
+    /// The states as the `state` event's array.
+    fn state_array(&self) -> Vec<u8> {
+        use xfce_foreign_toplevel_handle_v1::State;
+
+        [
+            (self.sticky, State::Sticky),
+            (self.above, State::Above),
+            (self.below, State::Below),
+        ]
+        .into_iter()
+        .filter(|(set, _)| *set)
+        .flat_map(|(_, state)| (state as u32).to_ne_bytes())
+        .collect()
+    }
 }
 
 /// The manager's global and every client's Xfce handles.
@@ -59,6 +106,8 @@ struct Handle {
     toplevel: ZwlrForeignToplevelHandleV1,
     /// The client's workspace handle it has entered.
     workspace: Option<ExtWorkspaceHandleV1>,
+    /// The states it was last sent, as the `state` event's array: none until it's sent one.
+    states: Vec<u8>,
     /// Whether its first details were ended with `done`.
     announced: bool,
 }
@@ -98,9 +147,10 @@ impl XfceForeignToplevelState {
         }
     }
 
-    /// Tells every client of the toplevels that changed workspace, each ended with the
-    /// foreign toplevel handle's `done`, and ends a new handle's first details with one.
-    /// `workspace_of` gives the id ext-workspace knows a toplevel's workspace by.
+    /// Tells every client of the toplevels that changed workspace or state, each ended with
+    /// the foreign toplevel handle's `done`, and ends a new handle's first details with one.
+    /// `describe` says what there is to tell of a toplevel. A state is sent only once
+    /// there's one to say, so a toplevel with none is sent no `state`.
     ///
     /// A client is told only of a workspace it has a handle for in `workspaces`. So this is
     /// for the compositor to call both before ext-workspace's own refresh, while a client
@@ -110,18 +160,24 @@ impl XfceForeignToplevelState {
         &mut self,
         toplevels: &ForeignToplevelState,
         workspaces: &ExtWorkspaceState,
-        workspace_of: impl Fn(ToplevelId) -> Option<String>,
+        describe: impl Fn(ToplevelId) -> XfceToplevel,
     ) {
         for handle in &mut self.handles {
             // A handle whose toplevel's was sent `closed` is inert, as that one is.
             let Some(toplevel) = toplevels.toplevel(&handle.toplevel) else {
                 continue;
             };
-            let workspace = handle
-                .resource
-                .client()
-                .and_then(|client| workspaces.workspace_handle(&client, &workspace_of(toplevel)?));
+            let details = describe(toplevel);
+            let workspace = handle.resource.client().and_then(|client| {
+                workspaces.workspace_handle(&client, details.workspace.as_ref()?)
+            });
             let mut changed = !handle.announced;
+            let states = details.state_array();
+            if states != handle.states {
+                handle.resource.state(states.clone());
+                handle.states = states;
+                changed = true;
+            }
             if workspace != handle.workspace {
                 // A workspace handle the client destroyed needs no leave.
                 if let Some(left) = handle.workspace.take()
@@ -196,6 +252,7 @@ where
                     resource: data_init.init(id, HandleData),
                     toplevel,
                     workspace: None,
+                    states: Vec::new(),
                     announced: false,
                 });
             }
@@ -211,9 +268,9 @@ where
 {
     fn request(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
-        _resource: &XfceForeignToplevelHandleV1,
+        resource: &XfceForeignToplevelHandleV1,
         request: xfce_foreign_toplevel_handle_v1::Request,
         _display: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
@@ -222,16 +279,17 @@ where
         use xfce_foreign_toplevel_icon_pixels_v1::FailureReason;
 
         match request {
-            // Caminito says where a toplevel is, and no more (ADR 0013). What a window list
-            // asks of a window, it asks through foreign toplevel management.
+            Request::SetSticky => ask_state(state, resource, XfceState::Sticky, true),
+            Request::UnsetSticky => ask_state(state, resource, XfceState::Sticky, false),
+            Request::SetAbove => ask_state(state, resource, XfceState::Above, true),
+            Request::UnsetAbove => ask_state(state, resource, XfceState::Above, false),
+            Request::SetBelow => ask_state(state, resource, XfceState::Below, true),
+            Request::UnsetBelow => ask_state(state, resource, XfceState::Below, false),
+            // Caminito says where a toplevel is and the states above, and no more (ADR 0013,
+            // 155). What else a window list asks of a window, it asks through foreign
+            // toplevel management.
             Request::SetShaded
             | Request::UnsetShaded
-            | Request::SetSticky
-            | Request::UnsetSticky
-            | Request::SetAbove
-            | Request::UnsetAbove
-            | Request::SetBelow
-            | Request::UnsetBelow
             | Request::Highlight { .. }
             | Request::Unhighlight
             | Request::Move { .. }
@@ -252,6 +310,24 @@ where
     fn destroyed(&self, state: &mut D, _client: ClientId, resource: &XfceForeignToplevelHandleV1) {
         let handles = &mut state.xfce_foreign_toplevel_state().handles;
         handles.retain(|handle| handle.resource != *resource);
+    }
+}
+
+/// Hands the compositor a client's request to set or unset a state of the toplevel of its
+/// Xfce handle `resource`.
+fn ask_state<D: XfceForeignToplevelHandler>(
+    state: &mut D,
+    resource: &XfceForeignToplevelHandleV1,
+    xfce_state: XfceState,
+    set: bool,
+) {
+    let handles = &state.xfce_foreign_toplevel_state().handles;
+    let toplevel = handles
+        .iter()
+        .find(|handle| handle.resource == *resource)
+        .map(|handle| handle.toplevel.clone());
+    if let Some(toplevel) = toplevel {
+        state.set_toplevel_state(&toplevel, xfce_state, set);
     }
 }
 
