@@ -373,6 +373,25 @@ impl Fixture {
         fixture
     }
 
+    /// Caminito as `new` has it, whose monitors have gamma tables of `size` entries a ramp,
+    /// as the tty's CRTCs do, so it offers wlr-gamma-control (141).
+    pub fn with_gamma(size: u32) -> Self {
+        let mut fixture = Self::new();
+        fixture.state.backend.headless_mut().give_gamma(Some(size));
+        fixture.state.caminito.offer_gamma_control();
+        fixture
+    }
+
+    /// Makes the monitors plugged in from now on have no gamma table, as a CRTC may not.
+    pub fn take_gamma_away(&mut self) {
+        self.state.backend.headless_mut().give_gamma(None);
+    }
+
+    /// The gamma client's table on `output`.
+    pub fn client_gamma(&mut self, output: &Output) -> Option<Vec<u16>> {
+        self.state.backend.headless_mut().client_gamma(output)
+    }
+
     /// Adds an output of `size` pixels at `scale`, as output management would set it, at
     /// the default place.
     pub fn add_output(&mut self, size: impl Into<Size<i32, Physical>>, scale: f64) -> Output {

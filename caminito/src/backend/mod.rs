@@ -113,6 +113,29 @@ impl Backend {
         }
     }
 
+    /// The number of entries in each of `output`'s gamma ramps, or `None` if it has no
+    /// gamma table: nested, it never has (141).
+    pub(crate) fn gamma_size(&self, output: &Output) -> Option<u32> {
+        match self {
+            Backend::Tty(tty) => tty.gamma_size(output),
+            Backend::Winit(_) => None,
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.gamma_size(output),
+        }
+    }
+
+    /// Puts a gamma client's `table` on `output` at once, or, with `None`, gives the table
+    /// back to Night Light, which the refresh pass writes from neutral. Returns whether it
+    /// was set (141).
+    pub(crate) fn set_gamma(&mut self, output: &Output, table: Option<Vec<u16>>) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.set_gamma(output, table),
+            Backend::Winit(_) => false,
+            #[cfg(test)]
+            Backend::Headless(headless) => headless.set_gamma(output, table),
+        }
+    }
+
     /// Shows the seat's lock LEDs on the keyboards. Nested, the host's keyboard shows its
     /// own.
     pub fn update_leds(&mut self, leds: LedState) {

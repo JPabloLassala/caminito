@@ -230,6 +230,9 @@ impl Tty {
             .udev_assign_seat(&seat_name)
             .map_err(|()| Error::Libinput)?;
 
+        // Only here do the outputs have gamma tables (ADR 0023).
+        caminito.offer_gamma_control();
+
         let mut dmabuf = DmabufState::new();
         let syncobj = if gpu.offer_dmabuf(caminito, &mut dmabuf) {
             gpu.offer_syncobj(caminito)
@@ -488,6 +491,36 @@ impl Tty {
         if self.seat.is_active() && gpu.monitors.contains_key(&crtc) {
             gamma.write(gpu.manager.device(), crtc, &output.name());
         }
+    }
+
+    /// The number of entries in each of `output`'s gamma ramps, or `None` if its CRTC has
+    /// no gamma (141).
+    pub(crate) fn gamma_size(&self, output: &Output) -> Option<u32> {
+        let crtc = output.user_data().get::<crtc::Handle>()?;
+        let size = self.gpu.gamma.get(crtc)?.size()?;
+        u32::try_from(size).ok()
+    }
+
+    /// Puts a gamma client's `table` on `output`, written at once if the monitor is lit
+    /// and the session active, and kept for when it is otherwise; or, with `None`, gives
+    /// the table back to Night Light, which the refresh pass writes. Returns whether it was
+    /// set (141).
+    pub(crate) fn set_gamma(&mut self, output: &Output, table: Option<Vec<u16>>) -> bool {
+        let Some(&crtc) = output.user_data().get::<crtc::Handle>() else {
+            return false;
+        };
+        let gpu = &mut self.gpu;
+        let Some(gamma) = gpu.gamma.get_mut(&crtc) else {
+            return false;
+        };
+        let to_client = table.is_some();
+        if !gamma.hand_to_client(table) {
+            return false;
+        }
+        if to_client && self.seat.is_active() && gpu.monitors.contains_key(&crtc) {
+            return gamma.write(gpu.manager.device(), crtc, &output.name());
+        }
+        true
     }
 
     /// A keyboard was plugged in: it shows `leds` now, and the seat's on each change.
@@ -885,7 +918,8 @@ impl Gpu {
         }
     }
 
-    /// `crtc`'s table may no longer be Night Light's: the refresh pass writes it again.
+    /// `crtc`'s table may no longer be Night Light's or the gamma client's: the refresh
+    /// pass writes it again.
     fn forget_gamma(&mut self, crtc: crtc::Handle) {
         if let Some(gamma) = self.gamma.get_mut(&crtc) {
             gamma.forget_written();

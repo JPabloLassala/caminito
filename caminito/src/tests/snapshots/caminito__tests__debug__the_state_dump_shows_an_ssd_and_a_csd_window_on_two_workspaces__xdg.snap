@@ -146,11 +146,13 @@ expression: without_x_ids(&dump)
     "outputs": [
       {
         "output": "headless-1",
-        "temperature": 6500
+        "temperature": 6500,
+        "gamma_client": false
       },
       {
         "output": "headless-2",
-        "temperature": 6500
+        "temperature": 6500,
+        "gamma_client": false
       }
     ]
   }
