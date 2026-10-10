@@ -26,6 +26,9 @@ pub struct Headless {
     /// Whether the monitors are powered off, as the tty's DPMS would have them (129). As on
     /// the tty, no frame is drawn meanwhile.
     powered_off: bool,
+    /// The gamma size of the monitors plugged in from now on, standing in for the tty's
+    /// CRTCs in tests of wlr-gamma-control (141). `None`, as at first: no gamma table.
+    gamma_size: Option<u32>,
 }
 
 /// A virtual output and the memory it renders into.
@@ -39,6 +42,10 @@ struct Target {
     unlit: bool,
     /// The modes it was lit in and switched to, in order.
     mode_sets: Vec<Mode>,
+    /// The number of entries in each of its gamma ramps, if it has a table.
+    gamma_size: Option<u32>,
+    /// The gamma client's table on it.
+    gamma: Option<Vec<u16>>,
 }
 
 impl Default for Headless {
@@ -49,6 +56,7 @@ impl Default for Headless {
             plugged: 0,
             refused: Vec::new(),
             powered_off: false,
+            gamma_size: None,
         }
     }
 }
@@ -103,6 +111,8 @@ impl Headless {
             rendered: false,
             unlit: true,
             mode_sets: Vec::new(),
+            gamma_size: self.gamma_size,
+            gamma: None,
         });
         caminito.add_output(output.clone());
         output
@@ -210,6 +220,41 @@ impl Headless {
     /// Whether the monitors are powered off.
     pub(crate) fn is_powered_off(&self) -> bool {
         self.powered_off
+    }
+
+    /// Gives the virtual monitors plugged in from now on gamma tables of `size` entries a
+    /// ramp, or none.
+    pub(crate) fn give_gamma(&mut self, size: Option<u32>) {
+        self.gamma_size = size;
+    }
+
+    /// The number of entries in each of `output`'s gamma ramps, if it has a table.
+    pub(crate) fn gamma_size(&self, output: &Output) -> Option<u32> {
+        let target = self.targets.iter().find(|t| t.output == *output)?;
+        target.gamma_size
+    }
+
+    /// Puts a gamma client's table on `output`, or takes it off. Night Light's tables
+    /// aren't kept: the dump shows them.
+    pub(crate) fn set_gamma(&mut self, output: &Output, table: Option<Vec<u16>>) -> bool {
+        let Some(target) = target_mut(&mut self.targets, output) else {
+            return false;
+        };
+        let size = target.gamma_size.map(|size| size as usize * 3);
+        if table
+            .as_ref()
+            .is_some_and(|table| Some(table.len()) != size)
+        {
+            return false;
+        }
+        target.gamma = table;
+        true
+    }
+
+    /// The gamma client's table on `output`.
+    pub(crate) fn client_gamma(&self, output: &Output) -> Option<Vec<u16>> {
+        let target = self.targets.iter().find(|t| t.output == *output)?;
+        target.gamma.clone()
     }
 
     /// Unplugs a virtual monitor.

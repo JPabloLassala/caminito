@@ -19,6 +19,7 @@ pub mod data_control;
 pub mod dbus;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
+pub mod gamma_control;
 pub mod gtk_shell;
 pub mod idle;
 pub mod image_capture;
@@ -105,6 +106,7 @@ use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtId
 use wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1;
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
+use wayland_protocols_wlr::gamma_control::v1::client::zwlr_gamma_control_manager_v1::ZwlrGammaControlManagerV1;
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1;
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration_manager::{
     self, OrgKdeKwinServerDecorationManager,
@@ -200,6 +202,9 @@ pub struct State {
     appmenu_manager: Option<appmenu::raw::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager>,
     /// The capture sessions the client opened, and their frames.
     image_capture: image_capture::ImageCapture,
+    gamma_control_manager: Option<ZwlrGammaControlManagerV1>,
+    /// The gamma controls the client asked for, and what each was told.
+    gamma_controls: Vec<gamma_control::GammaControl>,
 }
 
 /// A bound `wl_output`.
