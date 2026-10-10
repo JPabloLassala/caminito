@@ -194,7 +194,8 @@ DISPLAY=:1 xterm
 
 Logs go to stderr at `info`; set `RUST_LOG` (for example `RUST_LOG=caminito=debug`) for more.
 
-The keybindings are a hard-coded set of Marco's defaults until M8 reads them from gsettings:
+The keybindings are read from Marco's `org.mate.Marco.global-keybindings` and
+`org.mate.Marco.window-keybindings`, and a change applies at once. Marco's defaults bind:
 
 | Keys                  | Action                                     |
 | --------------------- | ------------------------------------------ |

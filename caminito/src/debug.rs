@@ -87,6 +87,8 @@ struct StateDump {
     locker: LockerDump,
     /// Idle, the blank, the power-off and what holds them off (128, 129).
     idle: IdleDump,
+    /// The keybindings in force (148), in the order they're tried.
+    bindings: Vec<BindingDump>,
     /// The accelerators grabbed over `org.mate.Caminito` (98), by action id.
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
@@ -220,6 +222,14 @@ struct SwitcherPopupDump {
     /// The popup and each window's cell, from the output's top left corner.
     popup: RectDump,
     cells: Vec<RectDump>,
+}
+
+#[derive(Serialize)]
+struct BindingDump {
+    /// The key of `org.mate.Marco.global-keybindings` or `window-keybindings` it came from.
+    key: &'static str,
+    /// The combination, in GTK's syntax.
+    combination: String,
 }
 
 #[derive(Serialize)]
@@ -403,9 +413,9 @@ impl Caminito {
     /// Windows, with the X window, Marco's type, the published frame extents and the
     /// struts for XWayland windows, workspaces with their names and stacking, whether the
     /// active one shows its desktop, outputs with their scales, work areas and layer
-    /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the accelerator
-    /// grabs with their owners, the Window switcher, the bells rung with the last one, and
-    /// Night Light, as pretty-printed JSON.
+    /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
+    /// with their keys, the accelerator grabs with their owners, the Window switcher, the
+    /// bells rung with the last one, and Night Light, as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -482,6 +492,12 @@ impl Caminito {
                 lock_surface: self.lock.surface_on(output).is_some(),
             })
             .collect();
+        let bindings = self
+            .settings
+            .bindings
+            .iter()
+            .map(|(key, combination)| BindingDump { key, combination })
+            .collect();
         let accelerator_grabs = self
             .accelerator_grabs
             .iter()
@@ -536,6 +552,7 @@ impl Caminito {
                 message: self.locker.gave_up().then(|| self.locker.message()),
             },
             idle: self.idle_dump(),
+            bindings,
             accelerator_grabs,
             switcher,
             global_menu_switch: self.global_menu_switch.name(),

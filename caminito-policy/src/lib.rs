@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod action;
+mod edges;
 mod grid;
 mod output;
 mod placement;
@@ -20,8 +21,9 @@ mod tests;
 pub use action::Action;
 pub use grid::{Grid, Orientation, WorkspaceLayout};
 pub use output::{Output, OutputId, ReservedEdges};
+pub use placement::PlacementMode;
 pub use policy::{
-    Config, MAX_WORKSPACES, Policy, ResizeEdges, SeatId, SwitchList, Switcher,
+    Config, MAX_WORKSPACES, MapStates, Policy, ResizeEdges, SeatId, SwitchList, Switcher,
     default_workspace_name,
 };
 pub use stack::Layer;

@@ -4,7 +4,7 @@
 //! into this module's: created, pending state request, committed content, withdrawn and
 //! destroyed.
 
-use caminito_policy::{FrameState, OutputId, SizeHints, WindowId};
+use caminito_policy::{FrameState, MapStates, OutputId, SizeHints, WindowId};
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -231,12 +231,14 @@ impl Caminito {
         mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
 
         let now = self.now();
-        self.policy.map_window(mapped, now);
-        if let Some(output) = fullscreen {
-            self.policy.set_fullscreen(id, true, output);
-        } else if maximized {
-            self.policy.set_maximized(id, true);
-        }
+        // For the placement modes that put a new window at the pointer (154).
+        let pointer = self.seat.get_pointer().unwrap().current_location();
+        self.policy.set_pointer(pointer);
+        let states = MapStates {
+            maximized,
+            fullscreen,
+        };
+        self.policy.map_window_with(mapped, states, now);
         self.policy.set_above(id, above);
         self.policy.set_below(id, below);
         self.policy.set_sticky(id, sticky);

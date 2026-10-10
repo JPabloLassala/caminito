@@ -255,13 +255,13 @@ fn a_window_maximised_one_way_moves_and_resizes_only_the_other_way() {
     policy.set_maximized_horizontally(id(1), true);
 
     assert!(policy.begin_move(SEAT, id(1), Point::new(500., 210.)));
-    policy.grab_motion(SEAT, Point::new(560., 250.));
+    policy.grab_motion(SEAT, Point::new(560., 250.), false);
     policy.end_grab(SEAT);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(geometry, rect(0, 240, 1920, 300));
 
     assert!(policy.begin_resize(SEAT, id(1), ResizeEdges::BOTTOM_RIGHT, Point::new(0., 0.)));
-    policy.grab_motion(SEAT, Point::new(70., 50.));
+    policy.grab_motion(SEAT, Point::new(70., 50.), false);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(geometry, rect(0, 240, 1920, 350));
     policy.window_mut(id(1)).unwrap().size = (1920, 350).into();

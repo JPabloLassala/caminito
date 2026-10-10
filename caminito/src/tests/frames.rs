@@ -7,8 +7,8 @@ use caminito_theme::{ButtonFunction, ButtonState};
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
-    BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, ClientWindow, Decoration, Fixture, Kind, WINDOW_COLOR,
-    WindowSpec, on_both_kinds,
+    BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, ClientWindow, Decoration, Fixture, KEY_LEFTALT, Kind,
+    WINDOW_COLOR, WindowSpec, on_both_kinds,
 };
 use crate::backend::headless::argb8888;
 use crate::decoration::control::FrameControl;
@@ -428,6 +428,16 @@ on_both_kinds! {
 on_both_kinds! {
     fn dragging_each_border_and_corner_resizes_from_it(kind: Kind) {
         let (mut f, window) = framed(kind);
+        // Alt+dragged into the middle of the output first, so that no border's drag ends
+        // near an edge that resists it (157).
+        let grip = (f.visible_frame(window).loc + Point::from((50, 50))).to_f64();
+        move_to(&mut f, grip);
+        f.key(KEY_LEFTALT, true);
+        f.pointer_button(BTN_LEFT, true);
+        move_to(&mut f, grip + Point::from((400., 300.)));
+        f.pointer_button(BTN_LEFT, false);
+        f.key(KEY_LEFTALT, false);
+        f.sync(window);
         // Each edge as (dx, dy): where on the frame, and which way it grows.
         let edges = [
             (0, -1),
