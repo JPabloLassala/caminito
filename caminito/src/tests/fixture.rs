@@ -62,6 +62,7 @@ pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub const KEY_ESC: u32 = 1;
 pub const KEY_1: u32 = 2;
 pub const KEY_TAB: u32 = 15;
+pub const KEY_Q: u32 = 16;
 pub const KEY_ENTER: u32 = 28;
 pub const KEY_LEFTCTRL: u32 = 29;
 pub const KEY_A: u32 = 30;
@@ -83,6 +84,7 @@ pub const KEY_RIGHT: u32 = 106;
 pub const KEY_DOWN: u32 = 108;
 pub const KEY_INSERT: u32 = 110;
 pub const KEY_MUTE: u32 = 113;
+pub const KEY_LEFTMETA: u32 = 125;
 
 /// The colour test windows are filled with.
 pub const WINDOW_COLOR: u32 = 0xff00ff00;

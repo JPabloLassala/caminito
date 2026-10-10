@@ -388,11 +388,12 @@ impl State {
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
         }
-        // Bindings name keys as the first layout does, whichever layout is active.
-        let sym = keysym.raw_latin_sym_or_raw_current_sym();
-        let binding = sym.and_then(|sym| Some((sym, bindings::binding_for(mods, sym)?)));
+        // Bindings name keys as the accelerator grabs do (148).
+        let keysyms = press_keysyms(keysym);
+        let key = keysyms[0];
+        let binding = self.caminito.settings.bindings.binding_for(mods, &keysyms);
         match binding {
-            Some((key, binding)) => {
+            Some(binding) => {
                 self.caminito.suppressed_keys.insert(keycode);
                 let bound = match binding {
                     Binding::Policy(action @ Action::Switch { .. }) => {
@@ -426,11 +427,8 @@ impl State {
         }
         // Accelerators name keys as the first layout does, like the bindings, or by the
         // keysym the press types, as Keyboard Shortcuts writes `<Shift>exclam` (100).
-        let typed = keysym.modified_sym();
-        let first_level = keysym.raw_latin_sym_or_raw_current_sym();
         let grabs = &self.caminito.accelerator_grabs;
-        // A key with nothing on its first level is named by what it types alone.
-        let grab = grabs.pressed(mods, &[first_level.unwrap_or(typed), typed]);
+        let grab = grabs.pressed(mods, &press_keysyms(keysym));
         match grab {
             Some((action, owner)) => {
                 let owner = owner.to_owned();
@@ -702,6 +700,16 @@ enum Bound {
 }
 
 /// The VT an `XF86Switch_VT_n` keysym switches to.
+/// The keysyms that name a pressed key: the first layout's on its first level, whichever
+/// layout is active, and the one the press types, as Keyboard Shortcuts writes
+/// `<Shift>exclam` (100). A key with nothing on its first level is named by what it types
+/// alone.
+fn press_keysyms(keysym: &KeysymHandle<'_>) -> [Keysym; 2] {
+    let typed = keysym.modified_sym();
+    let first_level = keysym.raw_latin_sym_or_raw_current_sym();
+    [first_level.unwrap_or(typed), typed]
+}
+
 fn vt_switch(keysym: Keysym) -> Option<i32> {
     let first = Keysym::XF86_Switch_VT_1.raw();
     (first..=Keysym::XF86_Switch_VT_12.raw())
