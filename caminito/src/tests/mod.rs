@@ -48,6 +48,7 @@ mod override_redirect;
 mod palette_helper;
 mod panel;
 mod parity;
+mod placement;
 mod popups;
 mod preferred_scale;
 mod primary_output;

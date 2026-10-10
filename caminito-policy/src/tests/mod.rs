@@ -9,6 +9,7 @@ mod interactive;
 mod invariants;
 mod outputs;
 mod placement;
+mod placement_modes;
 mod requests;
 mod shade;
 mod show_desktop;

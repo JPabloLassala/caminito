@@ -1350,6 +1350,30 @@ session_env() {
 
 ## Marco parity
 
+### Each placement mode places a native and an X11 window on two outputs
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors. Run `gsettings set org.mate.Marco.general
+     center-new-windows false`.
+  2. For each of `automatic`, `pointer` and `manual`, run `gsettings set
+     org.mate.Marco.general placement-mode <mode>`. Then, with the pointer on each monitor in
+     turn, once in the middle and once near a corner, open `pluma` (native) and `xterm`
+     (X11) from a terminal on the other monitor.
+  3. In `manual`, put one window down with a click, move one with the arrow keys and put it
+     down with Return, drag one onto the other monitor, and press Escape on one.
+  4. Run `gsettings set org.mate.Marco.general center-new-windows true` (Marco's default)
+     and repeat step 2 with `automatic` only, focusing a window on each monitor in turn.
+- **Expected:** in step 2 `automatic` puts each window beside the others on the monitor of
+  the focused window, `pointer` centres each on the pointer, and near a corner keeps it
+  within that monitor and clear of the panel. In `manual` each window shows on the pointer
+  and follows it, with the keyboard and pointer taken from the apps, until step 3 puts it
+  down; the arrows move it in small steps, it can go onto the other monitor, and Escape
+  puts it back where it showed. In step 4 each window opens in the middle of the focused
+  window's monitor, over the others. Native and X11 windows behave alike (154).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
+  `gsettings monitor org.mate.Marco.general`.
+
 ### The parity table's rows that no test covers
 
 - **Milestone:** M8
