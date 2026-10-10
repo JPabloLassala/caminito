@@ -12,7 +12,8 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::get_parent;
 
-use crate::output::{output_geometry, output_id};
+use crate::output::output_id;
+use crate::scene::pointer_on;
 use crate::settings::translate::VisualBellType;
 use crate::state::{Caminito, SEAT};
 
@@ -79,6 +80,7 @@ enum Flashed {
 /// The visual bell's flash, while one shows.
 #[derive(Debug)]
 struct Flash {
+    /// What it flashes.
     flashed: Flashed,
     /// When it's over, on Caminito's clock.
     until: Duration,
@@ -95,6 +97,7 @@ pub(crate) struct Bells {
     pub(crate) count: u64,
     /// The last one rung.
     pub(crate) last: Option<BellEvent>,
+    /// The visual bell's flash of the last, while it shows (169).
     flash: Option<Flash>,
 }
 
@@ -110,7 +113,7 @@ impl Bells {
     }
 
     /// Whether the visual bell flashes `window`'s frame, which is then drawn in the other
-    /// focus state, as Marco flashes it (`frames.c`'s `META_FRAME_IS_FLASHING`).
+    /// focus state, as Marco flashes it (`frame.c:meta_frame_get_flags`'s `META_FRAME_IS_FLASHING`).
     pub(crate) fn flashes_frame(&self, window: WindowId) -> bool {
         self.flash
             .as_ref()
@@ -178,16 +181,16 @@ impl Caminito {
     }
 
     /// The output a `frame_flash` bell with no frame to flash flashes: `window`'s, or the
-    /// pointer's.
+    /// pointer's, as Marco flashes the screen where there's no frame
+    /// (`bell.c:bell_visual_notify`).
     fn bell_output(&self, window: Option<WindowId>) -> Option<OutputId> {
         let window_output = window
             .and_then(|id| self.policy.window(id))
             .and_then(|mapped| mapped.main_output());
-        let pointer = self.seat.get_pointer().unwrap().current_location();
         let output = window_output.or_else(|| {
             self.outputs
                 .iter()
-                .find(|output| output_geometry(output).to_f64().contains(pointer))
+                .find(|output| pointer_on(self, output).is_some())
         })?;
         Some(output_id(output))
     }

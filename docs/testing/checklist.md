@@ -1338,6 +1338,7 @@ session_env() {
      in each terminal again. Run `sleep 2; printf '\a'` in xterm and focus mate-terminal
      before it rings.
   4. Run `gsettings set org.mate.Marco.general visual-bell false`, and `printf '\a'` in each.
+  5. Run as part of M8's closing run (173).
 - **Expected:** in step 2 every monitor flashes white, briefly, at each bell. In step 3 the
   terminal's own frame flashes, drawn for a moment as though its focus had changed, and
   nothing else does, the delayed bell flashing xterm's frame though it's unfocused; a

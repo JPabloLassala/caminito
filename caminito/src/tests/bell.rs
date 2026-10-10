@@ -366,10 +366,10 @@ on_both_kinds! {
         ];
         let (mut f, client, first, second) = two_outputs(kind, settings);
         let unfocused = f.map(client, WindowSpec::default());
-        let _focused = f.map(client, WindowSpec::default());
+        let focused = f.map(client, WindowSpec::default());
         let edge = frame_edge(&f, unfocused);
         let on = output_at([&first, &second], edge);
-        let empty = empty_spot(&f, &on, &[unfocused, _focused]);
+        let empty = empty_spot(&f, &on, &[unfocused, focused]);
         let before = pixel(&mut f, &on, edge);
 
         ring(&mut f, client, unfocused);
