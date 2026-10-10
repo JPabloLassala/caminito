@@ -1423,6 +1423,25 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
   `gsettings monitor org.mate.Marco.general`.
 
+### `show-desktop-skip-list` keeps a native and an X11 window on screen
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `mate-terminal` (native), `xterm` (X11) and `pluma`
+     on the first workspace.
+  2. Run `gsettings set org.mate.Marco.general show-desktop-skip-list 'mate-terminal, XTerm'`
+     in the terminal, and focus `xterm`.
+  3. Click the panel's Show Desktop button, then click it again. Press Ctrl+Alt+D, then
+     press it again.
+  4. Show the desktop, run `gsettings set org.mate.Marco.general show-desktop-skip-list ''`
+     from the terminal, then stop showing it and show it again.
+- **Expected:** in step 3 the terminal and `xterm` stay where they are while `pluma` is
+  hidden, `xterm` keeps the keyboard, and the second press brings `pluma` back under them,
+  with no change to the two listed windows. The button and the key behave alike. In step 4
+  the change does nothing until the desktop is shown again, which then hides all three (164).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for `showing_desktop` and each
+  window's app id, `xprop WM_CLASS` on `xterm`, and `gsettings monitor org.mate.Marco.general`.
+
 ### The parity table's rows that no test covers
 
 - **Milestone:** M8

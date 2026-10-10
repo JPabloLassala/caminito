@@ -10,6 +10,7 @@ mod grid;
 mod output;
 mod placement;
 mod policy;
+mod skip_list;
 mod stack;
 mod window;
 
@@ -26,5 +27,6 @@ pub use policy::{
     Config, Crossing, FocusMode, MAX_WORKSPACES, MapStates, PointerTarget, Policy, ResizeEdges,
     SeatId, SwitchList, Switcher, default_workspace_name,
 };
+pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;
 pub use window::{FrameState, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
