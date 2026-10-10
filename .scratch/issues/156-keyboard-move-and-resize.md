@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: ready-for-agent
+Status: open: the code is in and its xdg tests pass; the X11 variants of the headless tests need a run where Xwayland starts, and the checklist item is 173's closing run
 Milestone: M8
 Blocked by: 148
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -19,10 +19,10 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 ## Acceptance criteria
 
-- [ ] Policy tests, written before the code: a move and a resize stepped with each arrow; Return; Escape putting the window back; a maximised window refused.
+- [x] Policy tests, written before the code: a move and a resize stepped with each arrow; Return; Escape putting the window back; a maximised window refused.
 - [ ] Headless tests through the fixture, on xdg and XWayland windows: Alt+F7 and Alt+F8 and the arrows; a `_NET_WM_MOVERESIZE` with direction 9 and 10; the keys not reaching the client during the grab.
-- [ ] The two actions' rows in `docs/parity.md` say honoured, with the tests above.
-- [ ] The checklist has an item, tagged M8: Alt+F7 and Alt+F8 on a native and an X11 window, ended with Return and with Escape, and the pointer's place after each. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
+- [x] The two actions' rows in `docs/parity.md` say honoured, with the tests above.
+- [x] The checklist has an item, tagged M8: Alt+F7 and Alt+F8 on a native and an X11 window, ended with Return and with Escape, and the pointer's place after each. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
 ## Open questions
 
@@ -32,3 +32,17 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 - **With the Window switcher:** whether Alt+Tab during a keyboard grab is refused, as during a pointer grab ([108](108-window-switcher.md)).
 - **With keyboard-shortcuts-inhibit:** proposed, a client that inhibits shortcuts gets Alt+F7 too, as with every other binding, and a grab already started keeps the keys.
+
+## Done (2026-10-10)
+
+- **Tests first:** `caminito-policy/src/tests/keyboard_grab.rs` was written before the code, against an API that didn't exist yet (`begin_keyboard_move`, `begin_keyboard_resize`, `grab_key`, `GrabKey`, `GrabStep`, `take_pointer_warp`, `keyboard_grab`, `grab_edges`, `Action::BeginMove` and `BeginResize`), then made to pass. The invariants proptest now takes the two actions and the grab's keys. The headless tests are `caminito/src/tests/keyboard_grab.rs`, through `on_both_kinds!`, and the `_NET_WM_MOVERESIZE` 9 and 10 tests in `window_properties.rs`, which are X11 only. Their xdg variants pass; the X11 ones fail here only because Xwayland doesn't start, and need a run on the developer's machine. That the keys don't reach the client is checked on an xdg window alone, since only a Wayland test client reports the keys it gets.
+- **Steps, from `process_keyboard_move_grab` and `process_keyboard_resize_grab` (keybindings.c:1480-2015):** 10 pixels (`NORMAL_INCREMENT`), 1 with Ctrl (`SMALL_INCREMENT`). Shift is Marco's snap: a 1-pixel step that goes on to the next edge the window meets its way (`find_nearest_position` with `only_forward`), or nowhere if there's none. Marco's size increments don't arise, as policy's size hints have none.
+- **Edges (157's note):** a key's step stops at any edge of the work areas or the other windows it would cross, whatever way it holds, and the next key goes on past it, as `apply_edge_resistance`'s `keyboard_op` branch; `Edges::for_move` and `for_resize` now take `By::Pointer` or `By::Keys`.
+- **Which edge a resize starts on:** none. The first arrow picks the edge it points at (Up the top, Down the bottom, Left the left, Right the right), and an arrow across the edge being resized later picks its own edge in place of it, as `process_keyboard_resize_grab_op_change`. The pointer's first motion picks the edge or corner it goes towards, as `update_resize`. A keypad diagonal, which Marco's resize doesn't take, puts the window down.
+- **The pointer:** warped as `warp_grab_pointer` does it, onto the screen: to the middle of the window's frame at the start of a move or resize, after each step of a move, and to the middle of the edge or the corner being resized once one is picked and after each step. The grab goes on from the warp, so the pointer moves or resizes the window from there. Unlike Marco, the motion that picks a resize's edge doesn't also resize the window: Marco warps the pointer to the edge and loses that change at its next motion anyway.
+- **What ends it:** Return or any other key but a modifier puts the window down, Escape puts it back as it was (place and size), and a click puts it down, as a button press ends Marco's keyboard grab. Caminito ends it on the button's release, as its other window grabs, and the press reaches no client. Modifiers reach the client as in 154; every other key is the grab's.
+- **Refused:** a maximised or fullscreen window, a desktop or a dock, as `begin_move` refuses them, and for a resize a window Marco gives no `has_resize_func` (a fixed size). A keyboard grab doesn't start over another grab of the seat.
+- **Manual placement (154) is a keyboard move**, as in Marco (window.c:2323), so its keys go through `grab_key` and get the edges and Shift's snap; it keeps 154's choice not to warp the pointer, since the window is already centred on it. `nudge_grab`, `cancel_grab` and `PlacementKey` are gone.
+- **For the developer to confirm:** *with the Window switcher*, Alt+Tab during a keyboard grab is refused: Tab is a key of the grab, which puts the window down, and the switcher doesn't open, as during a pointer grab (108) and as Marco's grab takes every key. *With keyboard-shortcuts-inhibit*, as proposed: a client that inhibits shortcuts gets Alt+F7 and Alt+F8, as every other binding, and a grab already started keeps the keys.
+- **Not run:** the full suite (by instruction); the X11 headless variants; the checklist item, which goes to 173's closing run. Run: `caminito-policy`'s `tests::keyboard_grab`, `placement_modes`, `interactive`, `edge_resistance`, `invariants`, `states`, `shade`, `pointer_focus`, `window_actions`, `actions` and `switcher`; `caminito`'s `tests::keyboard_grab`, `tests::placement`, `tests::bindings`, `input::bindings`, `tests::window_properties`, `tests::grabs`, `tests::edge_resistance` and `tests::parity`. `clippy` is clean apart from caminito-theme's three pre-existing `manual_range_contains` lints.
+- **Triage:** the ticket was `ready-for-agent`; the questions for the implementing agent were settled from Marco's source as above, and the two for the developer take the proposed or recommended answer, with no human asked.
