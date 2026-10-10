@@ -20,7 +20,7 @@ fn attribute<'a>(element: &'a str, name: &str) -> Option<&'a str> {
 }
 
 /// The names of the keys of one schema in the vendored `org.mate.marco.gschema.xml`.
-fn schema_keys(id: &str) -> Vec<String> {
+pub(super) fn schema_keys(id: &str) -> Vec<String> {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../tests/schemas/org.mate.marco.gschema.xml"
