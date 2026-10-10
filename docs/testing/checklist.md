@@ -993,7 +993,7 @@ session_env() {
   lowercase, a notification says *Sticky Keys turned on* after the second five, and the
   dialog's tick follows each. In step 7 the quick tap types nothing and the held key types
   `a` after the delay, then the second quick tap of `a` types nothing. In step 8 the press is
-  logged as a bell, which neither sounds nor flashes until M8 (105, 17).
+  logged as a bell, which flashes as the visual bell says (169) and doesn't sound until 170.
 - **Debug tool:** `gsettings monitor org.mate.accessibility-keyboard`, `wev` in place of
   pluma and `xev` in place of xterm for the keys and modifiers each gets, and `DumpState`'s
   `bell`, whose `source` is `accessx` for one of these beeps.
@@ -1325,6 +1325,26 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `switcher` member has the list,
   the selection, the popup's output and its cells while the popup shows, and `gsettings
   monitor org.mate.Marco.general`.
+
+### The visual bell flashes
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `mate-terminal`, a native Wayland window, and `xterm`,
+     an XWayland one, side by side, with two monitors if there are.
+  2. Run `gsettings set org.mate.Marco.general visual-bell true` and `gsettings set
+     org.mate.Marco.general visual-bell-type fullscreen`. Run `printf '\a'` in each terminal.
+  3. Run `gsettings set org.mate.Marco.general visual-bell-type frame_flash`, and `printf '\a'`
+     in each terminal again. Run `sleep 2; printf '\a'` in xterm and focus mate-terminal
+     before it rings.
+  4. Run `gsettings set org.mate.Marco.general visual-bell false`, and `printf '\a'` in each.
+- **Expected:** in step 2 every monitor flashes white, briefly, at each bell. In step 3 the
+  terminal's own frame flashes, drawn for a moment as though its focus had changed, and
+  nothing else does, the delayed bell flashing xterm's frame though it's unfocused; a
+  terminal drawing its own titlebar flashes the monitor it's on instead. In step 4 nothing
+  flashes (169).
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `DumpState`'s `bell`, whose
+  `count` goes up at each bell and whose `last` names its source and window.
 
 ## Marco parity
 

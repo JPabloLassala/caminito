@@ -127,18 +127,14 @@ pub const SCHEMAS: &[Schema] = &[
 pub const UNSUPPORTED: &[(&str, &str)] = &[
     // Caminito will draw the ripple itself (53); 147 put it on the later roadmap.
     (MOUSE, "locate-pointer"),
-    // The bell is counted but neither flashes nor plays until 169 and 170 (105). Caminito
-    // matches `audible-bell` only when it's off, and `visual-bell-type` only matters with
-    // the visual bell on, so neither is logged.
-    (MARCO_GENERAL, "visual-bell"),
     // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
     // ticket that honours it. Caminito does what each one's default asks, except
     // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
     // values it matches none of. A key whose other value is what Caminito already does
     // (`audible-bell`, `center-new-windows`, `allow-tiling`, `allow-top-tiling`,
     // `allow-tile-cycling`, `reduced-resources`) isn't here, nor is one that only matters
-    // with another key set (`auto-raise-delay`, `visual-bell-type`, and `command-1` to
-    // `-12`, whose bindings aren't read until 148). Master's keys are logged only where the
+    // with another key set (`auto-raise-delay`, and `command-1` to `-12`, whose bindings
+    // aren't read until 148). Master's keys are logged only where the
     // installed schema has them.
     // 153.
     (MARCO_GENERAL, "focus-mode"),
@@ -736,7 +732,7 @@ pub struct Sound {
 }
 
 /// Marco's bell keys, from `org.mate.Marco.general` (09). The bell event reads them (105),
-/// and M8 acts on them (17).
+/// and flashes by the visual bell's (169).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bell {
     /// `audible-bell`: whether a bell plays the sound theme's bell.
@@ -750,16 +746,16 @@ pub struct Bell {
 /// `org.mate.Marco.VisualBellType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisualBellType {
-    /// The whole screen, or the outputs the window is on.
+    /// Every output.
     Fullscreen,
-    /// The window's frame.
+    /// The window's frame, or an output where there's none.
     FrameFlash,
 }
 
 impl Nick for VisualBellType {
     const NICKS: &'static [(&'static str, Self)] = &[
         ("fullscreen", Self::Fullscreen),
-        ("frame-flash", Self::FrameFlash),
+        ("frame_flash", Self::FrameFlash),
     ];
 }
 
