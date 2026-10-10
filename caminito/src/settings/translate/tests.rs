@@ -994,6 +994,7 @@ fn the_defaults_tile_at_the_sides_and_corners_and_maximise_at_the_top() {
         let policy = settings(&reading).policy;
         assert!(policy.allow_tiling);
         assert!(policy.allow_top_tiling);
+        assert!(policy.allow_tile_cycling);
         assert_eq!(policy.drag_threshold, 8);
     }
 }
@@ -1002,15 +1003,13 @@ fn the_defaults_tile_at_the_sides_and_corners_and_maximise_at_the_top() {
 #[test]
 fn the_tiling_keys_set_off_are_passed_to_policy() {
     let mut reading = with(MARCO_GENERAL, "allow-tiling", Value::Bool(false));
-    reading.insert(
-        MARCO_GENERAL,
-        "allow-top-tiling",
-        Value::Bool(false),
-        Value::Bool(true),
-    );
+    for key in ["allow-top-tiling", "allow-tile-cycling"] {
+        reading.insert(MARCO_GENERAL, key, Value::Bool(false), Value::Bool(true));
+    }
     let policy = settings(&reading).policy;
     assert!(!policy.allow_tiling);
     assert!(!policy.allow_top_tiling);
+    assert!(!policy.allow_tile_cycling);
 }
 
 #[test]

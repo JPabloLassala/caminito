@@ -136,6 +136,9 @@ pub struct Config {
     /// `allow-top-tiling`: with `allow-tiling`, a window dragged to an output's top is
     /// maximised (158).
     pub allow_top_tiling: bool,
+    /// `allow-tile-cycling`: repeated presses of a tiling keybinding cycle the tile's width
+    /// through Marco's sizes before untiling it (159).
+    pub allow_tile_cycling: bool,
     /// `org.mate.peripherals-mouse drag-threshold`, in logical pixels: twice it is how far
     /// into the work area a side's and a corner's tiling zones reach, as in Marco (158).
     pub drag_threshold: i32,
@@ -164,6 +167,7 @@ impl Default for Config {
             auto_raise_delay: Duration::from_millis(500),
             allow_tiling: false,
             allow_top_tiling: true,
+            allow_tile_cycling: true,
             // msd's default.
             drag_threshold: 8,
         }
@@ -229,8 +233,9 @@ struct Managed<W> {
     above: bool,
     below: bool,
     sticky: bool,
-    /// The half or quarter it's tiled to, and on which output's work area (158).
-    tile: Option<(Tile, OutputId)>,
+    /// The half or quarter it's tiled to, on which output's work area (158), and how wide
+    /// (159).
+    tile: Option<Tiled>,
     /// The geometry to go back to, while maximised, tiled or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
     sent: Sent,
@@ -304,7 +309,8 @@ impl<W: PolicyWindow> Managed<W> {
         snap: bool,
         by: By,
     ) {
-        let old_frame = self.frame_of(self.geometry);
+        let before = self.geometry;
+        let old_frame = self.frame_of(before);
         let hints = self.hints;
         let proposed = |size| {
             let size = hints.clamp(size);
@@ -325,6 +331,14 @@ impl<W: PolicyWindow> Managed<W> {
             (unresisted.size.h + h - proposed_frame.size.h).max(0),
         );
         self.geometry = proposed(resisted);
+        // A tile resizes by its inner sides alone, and keeps that size (159).
+        if let Some(tiled) = &mut self.tile {
+            if tiled.resizes_by(moving) {
+                tiled.resized = true;
+            } else {
+                self.geometry = before;
+            }
+        }
     }
 }
 
@@ -343,7 +357,7 @@ impl<W> Managed<W> {
     }
 
     fn tiled(&self) -> Option<Tile> {
-        self.tile.map(|(tile, _)| tile)
+        self.tile.map(|tiled| tiled.tile)
     }
 
     /// Undoes a grab's change to the ways the window is maximised, from its geometry
@@ -389,13 +403,94 @@ impl<W> Managed<W> {
     }
 }
 
-/// The part of work area `area` that a window tiled to `tile` fills, frame and all, as
-/// Marco's `meta_window_get_current_tile_area` has it (window.c:8205-8282): half its width,
-/// rounded down, and for a corner half its height too.
-fn tile_area(area: Rectangle<i32, Logical>, tile: Tile) -> Rectangle<i32, Logical> {
+/// A window's tile: which half or quarter of which output's work area (158), and how wide
+/// (159).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Tiled {
+    tile: Tile,
+    output: OutputId,
+    size: TileSize,
+    /// Resized by its inner sides, so it keeps the geometry it was resized to rather than
+    /// its share of the work area, as Marco's `tile_resized` has it (constraints.c:947-965).
+    resized: bool,
+}
+
+impl Tiled {
+    fn new(tile: Tile, output: OutputId, size: TileSize) -> Self {
+        Self {
+            tile,
+            output,
+            size,
+            resized: false,
+        }
+    }
+
+    /// Whether an interactive resize moving `edges` resizes the tile: only its inner sides
+    /// move, those not along its work area's edges, alone or together, as Marco's
+    /// `can_resize_tiled` has it (constraints.c:986-1060).
+    fn resizes_by(self, edges: ResizeEdges) -> bool {
+        let along = self.tile.edges();
+        (edges.left || edges.right || edges.top || edges.bottom)
+            && !(edges.left && along.left)
+            && !(edges.right && along.right)
+            && !(edges.top && along.top)
+            && !(edges.bottom && along.bottom)
+    }
+}
+
+/// A tile's width, as a share of its work area's: Marco's `MetaTileCycle`
+/// (window-private.h:87-96), which the tiling keybindings step through with
+/// `allow-tile-cycling` (159). A drag tiles a window `Uncycled`, Marco's
+/// `META_TILE_CYCLE_NONE`, which is as wide as `Half`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TileSize {
+    Uncycled,
+    Half,
+    Third,
+    Quarter,
+    Full,
+    ThreeQuarters,
+    TwoThirds,
+}
+
+impl TileSize {
+    /// The share of the work area's width, as `meta_window_get_current_tile_area` has it
+    /// (window.c:8238-8261).
+    fn ratio(self) -> f64 {
+        match self {
+            TileSize::Uncycled | TileSize::Half => 1. / 2.,
+            TileSize::Third => 1. / 3.,
+            TileSize::Quarter => 1. / 4.,
+            TileSize::Full => 1.,
+            TileSize::ThreeQuarters => 3. / 4.,
+            TileSize::TwoThirds => 2. / 3.,
+        }
+    }
+
+    /// The size the next press of the same binding gives, or `None` for none, which
+    /// untiles: 1/2, 1/3, 1/4, 1/1, 3/4, 2/3, then untiled, as `handle_toggle_tiled` has it
+    /// (keybindings.c:3196-3225).
+    fn next(self) -> Option<TileSize> {
+        match self {
+            TileSize::Uncycled => Some(TileSize::Half),
+            TileSize::Half => Some(TileSize::Third),
+            TileSize::Third => Some(TileSize::Quarter),
+            TileSize::Quarter => Some(TileSize::Full),
+            TileSize::Full => Some(TileSize::ThreeQuarters),
+            TileSize::ThreeQuarters => Some(TileSize::TwoThirds),
+            TileSize::TwoThirds => None,
+        }
+    }
+}
+
+/// The part of work area `area` that a window tiled to `tile` at `size` fills, frame and
+/// all, as Marco's `meta_window_get_current_tile_area` has it (window.c:8205-8282): that
+/// share of its width, rounded down, and for a corner half its height too.
+fn tile_area(area: Rectangle<i32, Logical>, tile: Tile, size: TileSize) -> Rectangle<i32, Logical> {
     let edges = tile.edges();
     let mut frame = area;
-    frame.size.w = area.size.w / 2;
+    // In floating point as Marco's, so a third of an odd width rounds as there.
+    frame.size.w = (f64::from(area.size.w) * size.ratio()) as i32;
     if !(edges.top && edges.bottom) {
         frame.size.h = area.size.h / 2;
     }
@@ -467,6 +562,7 @@ pub struct Policy<W: PolicyWindow> {
     center_new_windows: bool,
     allow_tiling: bool,
     allow_top_tiling: bool,
+    allow_tile_cycling: bool,
     drag_threshold: i32,
     /// `show-desktop-skip-list`, which the next Show Desktop takes.
     show_desktop_skip_list: ShowDesktopSkipList,
@@ -505,6 +601,7 @@ impl<W: PolicyWindow> Policy<W> {
             show_desktop_skip_list: ShowDesktopSkipList::default(),
             allow_tiling: false,
             allow_top_tiling: false,
+            allow_tile_cycling: true,
             drag_threshold: 0,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
@@ -582,6 +679,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.center_new_windows = config.center_new_windows;
         self.allow_tiling = config.allow_tiling;
         self.allow_top_tiling = config.allow_top_tiling;
+        self.allow_tile_cycling = config.allow_tile_cycling;
         self.drag_threshold = config.drag_threshold;
         self.show_desktop_skip_list = config.show_desktop_skip_list;
         if !self.dynamic_workspaces {
@@ -1426,7 +1524,7 @@ impl<W: PolicyWindow> Policy<W> {
                 }
                 match target {
                     TileTarget::Tile(tile, output) => {
-                        managed.tile = Some((tile, output));
+                        managed.tile = Some(Tiled::new(tile, output, TileSize::Uncycled));
                         managed.maximized_horizontally = false;
                         managed.maximized_vertically = false;
                         self.relayout(grab.window);
@@ -1447,27 +1545,12 @@ impl<W: PolicyWindow> Policy<W> {
         if !self.allow_tiling {
             return None;
         }
-        let managed = &self.windows[&id];
         let p = Point::<i32, Logical>::new(pointer.x.floor() as i32, pointer.y.floor() as i32);
         let output = self.outputs.iter().find(|o| o.geometry.contains(p))?;
         let (o, area) = (output.geometry, Self::work_area(output));
         let zone = 2 * self.drag_threshold;
-        // Marco's `has_maximize_func`: normal windows and dialogs that can be resized
-        // (window.c:6695-6772).
-        let hints = managed.hints;
-        let fixed_size = hints.max.w > 0
-            && hints.max.w == hints.min.w
-            && hints.max.h > 0
-            && hints.max.h == hints.min.h;
-        let can_maximize =
-            matches!(managed.window_type, WindowType::Normal | WindowType::Dialog) && !fixed_size;
-        // `meta_window_can_tile` (window.c:2745-2770): the window's least size fits half the
-        // work area's width and all its height. Marco checks a corner's quarter no harder.
-        let e = managed.floating_extents();
-        let can_tile = can_maximize
-            && !managed.shaded
-            && area.size.w / 2 - e.left - e.right >= hints.min.w
-            && area.size.h - e.top - e.bottom >= hints.min.h;
+        let can_maximize = self.functions(id).maximize;
+        let can_tile = self.can_tile(id, area);
         let corner = |top, bottom, side| {
             if p.y >= o.loc.y && p.y < area.loc.y + zone {
                 top
@@ -1574,12 +1657,6 @@ impl<W: PolicyWindow> Policy<W> {
         self.set_last_seat(seat);
         self.end_grab(seat);
         let managed = self.windows.get_mut(&id).unwrap();
-        // A tiled window resized is a floating one of its tiled size from then on. Marco
-        // keeps it tiled and lets its free side move (constraints.c:947-956); that's left
-        // to a later ticket.
-        if resize.is_some() && managed.tile.take().is_some() {
-            managed.floating = None;
-        }
         let start = Rectangle::new(managed.geometry.loc, managed.size);
         managed.resize = resize.map(|edges| (edges, start));
         self.grabs.insert(
@@ -1689,7 +1766,7 @@ impl<W: PolicyWindow> Policy<W> {
             TileTarget::Tile(tile, output) => (self.work_area_of(output)?, Some(tile)),
             TileTarget::Maximize(output) => (self.work_area_of(output)?, None),
         };
-        Some(tile.map_or(area, |tile| tile_area(area, tile)))
+        Some(tile.map_or(area, |tile| tile_area(area, tile, TileSize::Uncycled)))
     }
 
     fn work_area_of(&self, output: OutputId) -> Option<Rectangle<i32, Logical>> {
@@ -1921,7 +1998,7 @@ impl<W: PolicyWindow> Policy<W> {
         let output = managed
             .fullscreen_output
             .filter(|_| managed.fullscreen)
-            .or(managed.tile.map(|(_, output)| output))
+            .or(managed.tile.map(|tiled| tiled.output))
             .and_then(|o| self.outputs.iter().find(|output| output.id == o))
             .or_else(|| self.output_of(managed.frame()))
             .or(self.primary_output());
@@ -1930,11 +2007,13 @@ impl<W: PolicyWindow> Policy<W> {
         };
         let geometry = if managed.fullscreen {
             output.geometry
-        } else if let Some((tile, _)) = managed.tile {
+        } else if managed.tile.is_some_and(|tiled| tiled.resized) {
+            managed.geometry
+        } else if let Some(tiled) = managed.tile {
             // Marco ignores the size hints but the least size, as it does for a maximised
             // window (constraints.c:928-934).
             let e = managed.visible_extents();
-            let frame = tile_area(Self::work_area(output), tile);
+            let frame = tile_area(Self::work_area(output), tiled.tile, tiled.size);
             let size: Size<i32, Logical> = Size::new(
                 frame.size.w - e.left - e.right,
                 frame.size.h - e.top - e.bottom,
@@ -1959,7 +2038,10 @@ impl<W: PolicyWindow> Policy<W> {
             geometry
         };
         // A tiled window whose output went away is tiled on the one it's on now.
-        let tile = managed.tile.map(|(tile, _)| (tile, output.id));
+        let tile = managed.tile.map(|tiled| Tiled {
+            output: output.id,
+            ..tiled
+        });
         let managed = self.windows.get_mut(&id).unwrap();
         managed.geometry = geometry;
         managed.tile = tile;

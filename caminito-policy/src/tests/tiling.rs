@@ -372,30 +372,115 @@ fn an_untiled_window_can_be_tiled_again_in_the_same_move() {
     assert_eq!(last(&policy).0, rect(960, 0, 960, 1080));
 }
 
+/// Resizes window 1, tiled and drawn at its tile's size, by `edges`, from `from` to `to`.
+fn resize_tiled(
+    policy: &mut Policy<TestWindow>,
+    edges: ResizeEdges,
+    from: (f64, f64),
+    to: (f64, f64),
+) {
+    let size = last(policy).0.size;
+    policy.window_mut(id(1)).unwrap().size = size;
+    policy.commit(id(1));
+    assert!(policy.begin_resize(SEAT, id(1), edges, at(from.0, from.1)));
+    policy.grab_motion(SEAT, at(to.0, to.1), false);
+    policy.end_grab(SEAT);
+}
+
+const RIGHT: ResizeEdges = ResizeEdges {
+    right: true,
+    top: false,
+    bottom: false,
+    left: false,
+};
+
+const BOTTOM: ResizeEdges = ResizeEdges {
+    bottom: true,
+    top: false,
+    left: false,
+    right: false,
+};
+
 #[test]
-fn resizing_a_tiled_window_leaves_it_floating_at_its_tiled_size() {
+fn a_tiled_window_resized_by_its_free_side_stays_tiled_at_the_new_width() {
     let mut policy = tiling();
     drop_at(&mut policy, 0., 500.);
-    policy.window_mut(id(1)).unwrap().size = (960, 1080).into();
-    policy.commit(id(1));
 
-    assert!(policy.begin_resize(
-        SEAT,
-        id(1),
+    resize_tiled(&mut policy, RIGHT, (960., 500.), (900., 500.));
+
+    assert_eq!(policy.tile(id(1)), Some(Tile::Left));
+    let (geometry, states) = last(&policy);
+    assert_eq!(geometry, rect(0, 0, 900, 1080));
+    assert_eq!(states.tile, Some(Tile::Left));
+}
+
+#[test]
+fn a_tiled_window_resized_by_a_side_along_the_work_area_doesnt_change() {
+    // Marco's `can_resize_tiled` (constraints.c:986-1060) frees only a tile's inner sides:
+    // a side tile's left or right, and a corner's and its top or bottom, alone or together.
+    let cases = [
+        ((0., 500.), BOTTOM, (500., 1079.), (500., 900.)),
+        (
+            (0., 500.),
+            ResizeEdges::BOTTOM_RIGHT,
+            (959., 1079.),
+            (900., 900.),
+        ),
+        ((0., 0.), ResizeEdges::TOP_LEFT, (0., 0.), (50., 50.)),
+    ];
+    for (drop, edges, from, to) in cases {
+        let mut policy = tiling();
+        drop_at(&mut policy, drop.0, drop.1);
+        let tiled = last(&policy).0;
+
+        resize_tiled(&mut policy, edges, from, to);
+
+        assert_eq!(last(&policy).0, tiled, "{edges:?}");
+        assert!(policy.tile(id(1)).is_some());
+    }
+}
+
+#[test]
+fn a_corner_tile_resizes_by_its_inner_side_and_its_inner_corner() {
+    let mut policy = tiling();
+    drop_at(&mut policy, 0., 0.);
+
+    resize_tiled(
+        &mut policy,
+        ResizeEdges::BOTTOM_RIGHT,
+        (959., 539.),
+        (1059., 439.),
+    );
+
+    assert_eq!(policy.tile(id(1)), Some(Tile::TopLeft));
+    assert_eq!(last(&policy).0, rect(0, 0, 1060, 440));
+}
+
+#[test]
+fn a_resized_tile_keeps_its_size_until_it_is_tiled_again() {
+    let mut policy = tiling();
+    drop_at(&mut policy, 1919., 500.);
+    resize_tiled(
+        &mut policy,
         ResizeEdges {
-            right: true,
+            left: true,
             ..ResizeEdges::default()
         },
-        at(960., 500.)
-    ));
-    policy.grab_motion(SEAT, at(900., 500.), false);
-    policy.end_grab(SEAT);
-
-    assert_eq!(policy.tile(id(1)), None);
-    assert_eq!(
-        last(&policy),
-        (rect(0, 0, 900, 1080), WindowStates::default())
+        (960., 500.),
+        (1060., 500.),
     );
+    assert_eq!(last(&policy).0, rect(1060, 0, 860, 1080));
+
+    // As Marco's `tile_resized` keeps it (constraints.c:958-965).
+    policy.add_output(reserving(output(1, 0, 0, 1920, 1080), 0, 0, 28, 0));
+    assert_eq!(last(&policy).0, rect(1060, 0, 860, 1080));
+
+    // A drag to the same side tiles it afresh.
+    assert!(policy.begin_move(SEAT, id(1), at(1500., 410.)));
+    policy.grab_motion(SEAT, at(1000., 500.), false);
+    policy.grab_motion(SEAT, at(1919., 500.), false);
+    policy.end_grab(SEAT);
+    assert_eq!(last(&policy).0, rect(960, 28, 960, 1052));
 }
 
 #[test]

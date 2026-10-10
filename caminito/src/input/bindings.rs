@@ -6,7 +6,7 @@ pub(crate) mod accelerators;
 
 use std::fmt;
 
-use caminito_policy::{Action, SwitchList};
+use caminito_policy::{Action, SwitchList, Tile};
 use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
 
 use self::accelerators::{Accelerator, parse};
@@ -298,6 +298,36 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "maximize-horizontally",
                 "disabled",
                 policy(Action::ToggleMaximizedHorizontally),
+            ),
+            window(
+                "tile-to-side-e",
+                "disabled",
+                policy(Action::Tile(Tile::Right)),
+            ),
+            window(
+                "tile-to-side-w",
+                "disabled",
+                policy(Action::Tile(Tile::Left)),
+            ),
+            window(
+                "tile-to-corner-nw",
+                "disabled",
+                policy(Action::Tile(Tile::TopLeft)),
+            ),
+            window(
+                "tile-to-corner-ne",
+                "disabled",
+                policy(Action::Tile(Tile::TopRight)),
+            ),
+            window(
+                "tile-to-corner-se",
+                "disabled",
+                policy(Action::Tile(Tile::BottomRight)),
+            ),
+            window(
+                "tile-to-corner-sw",
+                "disabled",
+                policy(Action::Tile(Tile::BottomLeft)),
             ),
             global(
                 "switch-to-workspace-prev",
