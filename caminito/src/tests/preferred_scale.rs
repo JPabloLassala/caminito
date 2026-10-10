@@ -276,12 +276,14 @@ fn a_window_that_resizes_with_its_scale_gets_each_scale_once_as_its_dragged_acro
     f.pointer_button(BTN_LEFT, false);
     f.key(KEY_LEFTALT, false);
 
+    // At 1300 the window's right side, and at 1900 its left, is 20 past the outputs' shared
+    // edge, where edge resistance holds it until the next step (157).
     assert_snapshot!(log.join("\n"), @"
     mapped at 319: fractional scale 1, enter headless-1
-    at 1300: enter headless-2
+    at 1400: enter headless-2
     at 1600: buffer scale 2, fractional scale 1.7
     at 2000: leave headless-1
-    at 1900: enter headless-1
+    at 1800: enter headless-1
     at 1300: buffer scale 1, fractional scale 1
     at 319: leave headless-2
     ");
