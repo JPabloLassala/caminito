@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open
+Status: open: the code is in, and the checklist run in a Session and the decisions under *What was decided* are the developer's
 Milestone: M8
 Blocked by: none
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -47,7 +47,7 @@ The popup that Alt+Tab opens: a grid of thumbnails in the style of KDE Plasma's 
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code: each action's list and order, minimised windows last, the modal dialog for its parent, the skip-taskbar windows left out, the starting selection, stepping and wrapping both ways, commit, cancel, a window closing while selected, a window opening meanwhile, none and one window.
-- [x] Headless tests: a quick Alt+Tab switches with no popup drawn; holding Alt draws it on the pointer's output; arrows, Enter, Escape and a click each do as above; a minimised window is restored on commit; nothing opens during a move or while locked. All but "while locked": there's no lock until M7 (see *What was decided*). The tests of the popup, the pointer and the thumbnails were written after their code, not before it.
+- [x] Headless tests: a quick Alt+Tab switches with no popup drawn; holding Alt draws it on the pointer's output; arrows, Enter, Escape and a click each do as above; a minimised window is restored on commit; nothing opens during a move or while locked. The two "while locked" tests came with the Done section below, after 125's lock, and an open switcher being cancelled as the session locks is tested too. The tests of the popup, the pointer and the thumbnails were written after their code, not before it.
 - [x] A drawing test for the grid: its wrapping at `alt-tab-max-columns`, thumbnails shrinking, the icons-only grid, and the urgent mark. They read the popup's rectangles from the debug dump and the output's pixels: Marco's popup has no goldens to compare against (ADR 0016).
 - [x] `docs/parity.md`'s rows for the `switch-*` actions and the keys below, each with its status and ADR 0016 where it's *never*. The file is new, with these rows alone until M8's audit.
 - [ ] Checklist: live thumbnails of a playing video and of a minimised window, in a session. The item is in `docs/testing/checklist.md`, tagged M8, and wasn't run: the run in a Session is the developer's.
@@ -72,7 +72,7 @@ The ticket left these to the developer, and they were decided when it was done, 
 - **The selected thumbnail** has its cell filled with the palette's `Selected` background. Where that's the background of everything else, as in the neutral palette, the cell is tinted with a quarter of the text colour, so that the selection always shows.
 - **An urgent window** has a dot, 8 logical pixels across, in its cell's top right corner, in the GTK theme's `warning_color`, or the text colour where the theme has none.
 - **A thumbnail shows the window with its Frame,** as a capture of it does (103).
-- **The lock** is M7's. While locked no binding will reach the bindings stage of the keyboard path, so the switcher has no code for it, and the test that nothing opens while locked is M7's to write.
+- **The lock** is 125's. While locked no binding reaches the bindings stage of the keyboard path, so the switcher has no code of its own for it; 125 cancels an open switcher as the session locks.
 - **Windows that never had the focus** are listed after those that had, topmost first. Marco's list has every window; policy's has those that were focused.
 - **The starting selection** is the second entry when the first is the focused window, or the modal dialog that stands for it, and the first entry otherwise, as when `switch-panels` opens from a normal window. Backward starts on the last.
 - **A press of a pointer button outside the cells cancels,** as a click ends Marco's grab. No press reaches a client while the switcher is open.
@@ -100,3 +100,10 @@ The ticket left these to the developer, and they were decided when it was done, 
 - **An X client's open menu stays on screen.** Its keyboard grab through Xwayland is dropped, so the switcher has the keys, but nothing closes the override-redirect window: the X client does at the next click. An xdg popup is dismissed.
 - **At a fractional scale** the chrome, drawn at the next whole scale and scaled down, and a thumbnail, rounded to physical pixels, can differ by a pixel at a thumbnail's edge. Not seen in a test, which samples the cells' middles.
 - **How it was built:** the list, the state and the grid by subagents from a plan (`108-plan.md`), each reviewed, and the rest in one session. A review of the whole branch against this ticket and the coding standards then found three faults, fixed with a test each: a thumbnail on another output took its window's main output, and so its scale; the pointer reached the windows under the popup; and a click could land on a cell laid out before a window closed.
+
+## Done (2026-10-10)
+
+- **The code was already on trunk** when the ticket was shipped, with everything under *What was done*. Shipping it added what had waited on the lock and set the status.
+- **"Nothing opens while locked" is tested now,** since 125 brought the lock: `nothing_opens_while_the_session_is_locked` and `an_open_switcher_is_cancelled_as_the_session_locks`, on both kinds of window, in `caminito/src/tests/switcher.rs`. They were written after the code they cover, 125's, and passed at once: the keyboard path's lock stage keeps Alt+Tab from the bindings, and 125 cancels an open switcher as the session locks. The locker is an xdg client whatever the windows' kind, as Xwayland has no session lock.
+- **The status stays open** for the checklist run in a Session, with a playing video, and for the developer's word on *What was decided*. Neither can be done here.
+- **Checked in a cloud container,** not on the developer's machine: `cargo fmt --all --check`, clippy on `caminito` and `caminito-policy`, `cargo test -p caminito-policy`, and `cargo test -p caminito` under `dbus-run-session`. Clippy's newer `manual_range_contains` lint fails in `caminito-theme`, which this ticket doesn't touch, so it was allowed for the run. Of `caminito`'s 1245 tests, 5 outside the switcher fail in this container whatever the branch, as this ticket changes no code they run: four in `tests::keymap` (its xkeyboard-config) and `the_pointer_goes_through_an_override_redirect_windows_input_shaped_shadow` (its Xwayland). The rest of `tools/check` (cargo-deny, the palette helper, the helpers' tests, the extension) wasn't run.

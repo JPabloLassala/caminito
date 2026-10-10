@@ -1,7 +1,7 @@
 # 17. Caminito brokers the global menu, and a patched vala-panel-appmenu draws it
 
 Date: 2026-10-07
-Status: Accepted
+Status: Accepted. Qualified on 2026-10-10 by ticket 111: classic GTK apps need the patched `appmenu-gtk-module-caminito`, not the stock module, and no gschema override.
 
 ## Context
 
@@ -24,7 +24,7 @@ On Wayland mate-panel loads in-process applets only.
 - **The focused window is never the panel or one of its popups.** A window with no menu of its own shows its transient parent's.
 - **A global menu applet on a panel is the switch.** The applet owns a well-known bus name, and Caminito watches it. While it has an owner Caminito owns the registrar's name, offers the appmenu global and sends the capability, always the three together. The menu claim, a fourth channel added by ADR 0018, follows the same switch. When the owner goes Caminito waits about ten seconds for it to come back, so that a restart of the panel changes nothing, and then takes all three away.
 - **The applet is vala-panel-appmenu's MATE applet with a carried patch** that adds a Caminito backend beside its Wayfire one, in a patched package `vala-panel-appmenu-mate-caminito` (ADR 0011). The backend is used when `org.mate.Caminito` has an owner.
-- **Classic GTK apps come through `appmenu-gtk-module`,** an optional dependency. The session adds it to `GTK_MODULES` when it's installed, and the packaging turns its `run-on-wayland` key on.
+- **Classic GTK apps come through `appmenu-gtk-module`,** as a patched package `appmenu-gtk-module-caminito` (ADR 0011), an optional dependency. The stock module tells a Wayland compositor nothing for most of MATE's apps, and keeps pluma and atril from showing a window while nothing owns the registrar's name (111). The session adds the module to its command's `GTK_MODULES` when the patched package is installed. The module's `run-on-wayland` key is on by default, so the packaging doesn't set it.
 - **Firefox's two prefs and VS Code's settings are the user's to set,** and documented. VS Code has a global menu only on XWayland (`--ozone-platform=x11`) with `window.titleBarStyle` set to `native`. On native Wayland with the custom title bar it needs an extension and the menu claim (ADR 0018).
 - **Every applet shows the one focused window's menu,** whatever panel or output it's on. Whether the application's name is shown before the menus is a preference of the applet, on by default.
 

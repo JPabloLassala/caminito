@@ -1,7 +1,8 @@
 //! The Window switcher (108): the keys that open, step, commit and cancel it, the pointer
-//! in it, and what's drawn.
+//! in it, what's drawn, and the session lock it gives way to (125).
 
 use caminito_policy::WindowId;
+use caminito_test_client::session_lock::LockId;
 use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner, format_input};
 use insta::assert_snapshot;
 use smithay::output::Output;
@@ -387,6 +388,56 @@ on_both_kinds! {
         f.sync(window);
         assert_eq!(focus(&f), f.policy_id(window));
         assert_eq!(f.geometry(window).loc, start.loc + Point::from((200, 50)));
+    }
+}
+
+/// Locks the session as a new client's ext-session-lock: an xdg client whatever kind the
+/// windows are, as Xwayland has no session lock. Returns the locker and its lock.
+fn lock_the_session(f: &mut Fixture) -> (ClientId, LockId) {
+    let locker = f.connect(Kind::Xdg);
+    let lock = f.client(locker).lock_session();
+    f.roundtrip(locker);
+    assert_eq!(f.lock_state(), "locked");
+    (locker, lock)
+}
+
+on_both_kinds! {
+    fn nothing_opens_while_the_session_is_locked(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_windows(&mut f, id, 2);
+        let (locker, lock) = lock_the_session(&mut f);
+
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_TAB);
+        assert!(!is_open(&f));
+        f.key(KEY_LEFTALT, false);
+        assert_eq!(focus(&f), Some(windows[1]));
+
+        // And Alt+Tab switches again once it's unlocked.
+        f.client(locker).unlock_and_destroy(lock);
+        f.roundtrip(locker);
+        f.chord(&[KEY_LEFTALT, KEY_TAB]);
+        assert_eq!(focus(&f), Some(windows[0]));
+    }
+}
+
+on_both_kinds! {
+    fn an_open_switcher_is_cancelled_as_the_session_locks(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_windows(&mut f, id, 3);
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_TAB);
+        assert!(is_open(&f));
+
+        let (locker, lock) = lock_the_session(&mut f);
+
+        assert!(!is_open(&f));
+        // Releasing Alt under the lock commits nothing.
+        f.key(KEY_LEFTALT, false);
+        f.client(locker).unlock_and_destroy(lock);
+        f.roundtrip(locker);
+        assert!(!is_open(&f));
+        assert_eq!(focus(&f), Some(windows[2]));
     }
 }
 
