@@ -569,7 +569,9 @@ fn a_tool_that_quits_with_a_frame_waiting_is_forgotten() {
     f.disconnect(tool);
     resize(&mut f, window, (500, 350));
 
-    assert!(f.state.caminito.captures.is_empty());
+    // Caminito hears of the hang-up when it next reads the socket, which a loaded machine
+    // can put after the resize's dispatch.
+    f.dispatch_until(|f| f.state.caminito.captures.is_empty());
 }
 
 on_both_kinds! {
