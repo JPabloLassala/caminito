@@ -8,13 +8,13 @@ use crate::WindowId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layer {
     Desktop,
-    /// Windows kept below, from M8 (17). X11's `_NET_WM_STATE_BELOW` is only recorded until
-    /// then.
+    /// Windows kept below (155).
     Bottom,
     Normal,
     /// Docks, and windows kept above.
     Top,
-    /// A fullscreen window while it or one of its transients has focus.
+    /// A fullscreen window while it or one of its transients has focus, unless it's kept
+    /// below.
     Fullscreen,
 }
 

@@ -317,6 +317,10 @@ pub struct FrameContent {
     pub scale: i32,
     /// Whether the visual bell flashes the frame (169).
     pub flashing: bool,
+    /// Whether the window is kept above, and sticky, which show in the buttons the frame has
+    /// (155).
+    pub above: bool,
+    pub stuck: bool,
 }
 
 /// What a window's strips are drawn from, besides [`FrameContext`].
@@ -433,8 +437,12 @@ impl WindowFrame {
             icon,
             scale,
             flashing,
+            above,
+            stuck,
         } = content;
         flags.is_flashing = flashing;
+        flags.above = above;
+        flags.stuck = stuck;
         let inputs = FrameInputs {
             frame_type,
             flags,

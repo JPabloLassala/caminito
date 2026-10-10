@@ -267,6 +267,59 @@ fn a_closed_window_s_xfce_handle_is_told_nothing_more() {
     assert_snapshot!(events(&mut f, panel), @"toplevel 0: closed");
 }
 
+on_both_kinds! {
+    fn a_panel_is_told_when_a_window_is_sticky_kept_above_or_kept_below(kind: Kind) {
+        let (mut f, caja, panel) = a_window_and_a_panel(kind);
+        let id = f.pid(caja);
+
+        f.state.caminito.policy.set_sticky(id, true);
+        f.state.caminito.policy.set_above(id, true);
+        f.dispatch();
+
+        // libxfce4windowing reads sticky as pinned (155).
+        allow_duplicates! {
+            assert_snapshot!(events(&mut f, panel), @"
+            toplevel 0: xfce state [Sticky, Above]
+            toplevel 0: done
+            ");
+        }
+
+        f.state.caminito.policy.set_above(id, false);
+        f.state.caminito.policy.set_below(id, true);
+        f.dispatch();
+        allow_duplicates! {
+            assert_snapshot!(events(&mut f, panel), @"
+            toplevel 0: xfce state [Sticky, Below]
+            toplevel 0: done
+            ");
+        }
+    }
+}
+
+on_both_kinds! {
+    fn a_panel_s_request_for_a_state_is_honoured(kind: Kind) {
+        let (mut f, caja, panel) = a_window_and_a_panel(kind);
+        let id = f.pid(caja);
+
+        f.client(panel).set_xfce_states(0, Some(true), Some(true), None);
+        f.roundtrip(panel);
+
+        let policy = &f.state.caminito.policy;
+        assert!(policy.is_sticky(id) && policy.is_above(id) && !policy.is_below(id));
+        allow_duplicates! {
+            assert_snapshot!(events(&mut f, panel), @"
+            toplevel 0: xfce state [Sticky, Above]
+            toplevel 0: done
+            ");
+        }
+
+        f.client(panel).set_xfce_states(0, Some(false), Some(false), Some(true));
+        f.roundtrip(panel);
+        let policy = &f.state.caminito.policy;
+        assert!(!policy.is_sticky(id) && !policy.is_above(id) && policy.is_below(id));
+    }
+}
+
 #[test]
 fn the_requests_caminito_ignores_change_nothing_and_an_icon_s_pixels_fail() {
     let (mut f, caja, panel) = a_window_and_a_panel(Kind::Xdg);

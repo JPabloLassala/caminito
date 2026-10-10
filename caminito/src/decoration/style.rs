@@ -23,7 +23,8 @@ pub struct FrameFacts {
 
 /// The frame type and flags Marco draws a window with, or `None` for a type it never frames.
 ///
-/// Sticking and keeping above come in M8, so their flags stay off.
+/// Whether the window is sticky or kept above isn't a fact here: those flags are set as the
+/// frame is drawn (155), and its extents don't depend on them.
 pub fn frame_style(
     facts: &FrameFacts,
     attach_modal_dialogs: bool,

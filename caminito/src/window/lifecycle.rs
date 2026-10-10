@@ -63,7 +63,7 @@ pub(crate) enum StateRequest {
     Fullscreen(Option<OutputId>),
     Unfullscreen,
     Minimized,
-    /// Kept above others, or not. Recorded only until M8 (17), as are the two below.
+    /// Kept above others, or not (155).
     Above(bool),
     Below(bool),
     Sticky(bool),

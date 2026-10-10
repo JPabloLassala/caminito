@@ -296,6 +296,13 @@ fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
         ),
         (WINDOW, "maximize", policy(Action::Maximize)),
         (WINDOW, "toggle-shaded", policy(Action::ToggleShaded)),
+        // 155's.
+        (WINDOW, "toggle-above", policy(Action::ToggleAbove)),
+        (
+            WINDOW,
+            "toggle-on-all-workspaces",
+            policy(Action::ToggleOnAllWorkspaces),
+        ),
         (
             WINDOW,
             "move-to-workspace-1",
@@ -353,8 +360,8 @@ fn an_action_with_no_behaviour_yet_binds_nothing() {
     // `cycle-windows`'s default, and values set by the user.
     let t = table(&[
         (GLOBAL, "cycle-windows", "<Alt>Escape"),
-        (WINDOW, "toggle-above", "<Super>Up"),
-        (WINDOW, "toggle-on-all-workspaces", "<Super>Down"),
+        (WINDOW, "activate-window-menu", "<Super>Up"),
+        (WINDOW, "move-to-center", "<Super>Down"),
     ]);
     assert_eq!(bound(&t, ALT, Keysym::Escape), None);
     assert_eq!(bound(&t, SUPER, Keysym::Up), None);

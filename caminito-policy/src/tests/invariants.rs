@@ -136,6 +136,14 @@ enum Op {
         id: u64,
         above: bool,
     },
+    SetBelow {
+        id: u64,
+        below: bool,
+    },
+    SetSticky {
+        id: u64,
+        sticky: bool,
+    },
     SetShowingDesktop(bool),
     SwitcherStep(bool),
     SwitcherSelect(usize),
@@ -343,6 +351,8 @@ fn op() -> impl Strategy<Value = Op> {
         )
             .prop_map(|(id, loc, size)| Op::RequestGeometry { id, loc, size }),
         1 => (window_id(), any::<bool>()).prop_map(|(id, above)| Op::SetAbove { id, above }),
+        1 => (window_id(), any::<bool>()).prop_map(|(id, below)| Op::SetBelow { id, below }),
+        1 => (window_id(), any::<bool>()).prop_map(|(id, sticky)| Op::SetSticky { id, sticky }),
         1 => any::<bool>().prop_map(Op::SetShowingDesktop),
         1 => any::<bool>().prop_map(Op::SwitcherStep),
         1 => (0..10usize).prop_map(Op::SwitcherSelect),
@@ -488,6 +498,8 @@ impl Op {
                 policy.request_geometry(WindowId(id), loc.map(Point::from), size.map(Size::from))
             }
             Op::SetAbove { id, above } => policy.set_above(WindowId(id), above),
+            Op::SetBelow { id, below } => policy.set_below(WindowId(id), below),
+            Op::SetSticky { id, sticky } => policy.set_sticky(WindowId(id), sticky),
             Op::SetShowingDesktop(showing) => policy.set_showing_desktop(showing),
             Op::SwitcherStep(backward) => policy.switcher_step(backward),
             Op::SwitcherSelect(index) => policy.switcher_select(index),
@@ -541,32 +553,54 @@ fn left_to_right(sizes: Vec<(u64, i32, i32)>) -> Vec<Output> {
 
 fn verify_invariants(policy: &Policy<TestWindow>) {
     let windows: Vec<WindowId> = policy.windows().map(|w| w.id).collect();
-    let stacks: Vec<&[WindowId]> = (0..policy.workspace_count())
+    let stacks: Vec<Vec<WindowId>> = (0..policy.workspace_count())
         .map(|ws| policy.stacking(ws))
         .collect();
 
-    // Stacking is a permutation of the managed windows, and every window is on exactly one
-    // workspace: the one policy says it's on. The active workspace is one of them.
+    // The stack holds every managed window once. A sticky window is on every workspace,
+    // and any other on exactly one: the one policy says it's on. A transient family is on
+    // one workspace, or on all. The active workspace is one of them.
     assert!(
         policy.active_workspace() < stacks.len(),
         "the active workspace exists"
     );
-    let stacked: usize = stacks.iter().map(|s| s.len()).sum();
-    assert_eq!(stacked, windows.len(), "stacks hold every window once");
+    let mut all = policy.stacking_all().to_vec();
+    all.sort();
+    let mut managed = windows.clone();
+    managed.sort();
+    assert_eq!(all, managed, "the stack holds every window once");
     for &id in &windows {
         let on: Vec<usize> = (0..stacks.len())
             .filter(|ws| stacks[*ws].contains(&id))
             .collect();
-        assert_eq!(
-            on,
-            [policy.workspace_of(id).unwrap()],
-            "{id:?} should be on exactly one workspace"
-        );
+        let workspace = policy.workspace_of(id).unwrap();
+        assert!(workspace < stacks.len(), "{id:?}'s workspace exists");
+        if policy.is_sticky(id) {
+            assert_eq!(
+                on.len(),
+                stacks.len(),
+                "sticky {id:?} is on every workspace"
+            );
+        } else {
+            assert_eq!(on, [workspace], "{id:?} should be on exactly one workspace");
+        }
+        if let Some(parent) = policy.parent(id) {
+            assert_eq!(
+                policy.is_sticky(id),
+                policy.is_sticky(parent),
+                "{id:?}'s family"
+            );
+            assert_eq!(
+                policy.workspace_of(parent),
+                Some(workspace),
+                "{id:?}'s family"
+            );
+        }
     }
 
     for (ws, stack) in stacks.iter().enumerate() {
         let position = |id: WindowId| stack.iter().position(|w| *w == id);
-        for &id in *stack {
+        for &id in stack {
             // Transients are above their parents.
             if let Some(parent) = policy.parent(id) {
                 assert!(

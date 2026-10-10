@@ -70,8 +70,36 @@ impl Client {
             .get_xfce_foreign_toplevel_handle(&foreign.toplevels[index].proxy, &self.qh, ());
     }
 
-    /// Makes every request of a toplevel's Xfce handle that changes the toplevel, which a
-    /// compositor that only says where its toplevels are ignores, and asks for an icon's
+    /// Asks through a toplevel's Xfce handle for it to be sticky, kept above and kept below,
+    /// each as `set` has it, or left as it is for `None`.
+    pub fn set_xfce_states(
+        &mut self,
+        index: usize,
+        sticky: Option<bool>,
+        above: Option<bool>,
+        below: Option<bool>,
+    ) {
+        let xfce = self.state.foreign_toplevels.toplevels[index].xfce.clone();
+        let xfce = xfce.expect("bind_toplevel_workspaces first");
+        match sticky {
+            Some(true) => xfce.set_sticky(),
+            Some(false) => xfce.unset_sticky(),
+            None => {}
+        }
+        match above {
+            Some(true) => xfce.set_above(),
+            Some(false) => xfce.unset_above(),
+            None => {}
+        }
+        match below {
+            Some(true) => xfce.set_below(),
+            Some(false) => xfce.unset_below(),
+            None => {}
+        }
+    }
+
+    /// Makes every request of a toplevel's Xfce handle that changes the toplevel but for its
+    /// sticky, above and below states, which Caminito ignores, and asks for an icon's
     /// pixels, which it hasn't.
     pub fn send_other_xfce_requests(&mut self, index: usize) {
         let seat = self.seat();
@@ -86,12 +114,6 @@ impl Client {
         let xfce = xfce.expect("bind_toplevel_workspaces first");
         xfce.set_shaded();
         xfce.unset_shaded();
-        xfce.set_sticky();
-        xfce.unset_sticky();
-        xfce.set_above();
-        xfce.unset_above();
-        xfce.set_below();
-        xfce.unset_below();
         xfce.highlight(&seat);
         xfce.unhighlight();
         xfce._move(&seat);
@@ -152,6 +174,8 @@ impl Dispatch<XfceForeignToplevelHandleV1, ()> for State {
                 (format!("workspace_leave {}", name(workspace(&left))), None)
             }
             Event::State { state: states } => {
+                let states: Vec<xfce_foreign_toplevel_handle_v1::State> =
+                    crate::decode_enums(&states);
                 (format!("xfce state {states:?}"), toplevels[index].workspace)
             }
             Event::IconName { name } => (format!("icon_name {name}"), toplevels[index].workspace),

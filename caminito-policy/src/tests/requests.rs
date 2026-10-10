@@ -116,19 +116,3 @@ fn a_request_is_ignored_while_the_window_is_moved_or_resized() {
 
     assert_eq!(geometry(&policy, 1), before);
 }
-
-#[test]
-fn above_below_and_sticky_are_recorded() {
-    let mut policy = policy();
-    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
-
-    policy.set_above(id(1), true);
-    policy.set_below(id(1), true);
-    policy.set_sticky(id(1), true);
-    assert!(policy.is_above(id(1)) && policy.is_below(id(1)) && policy.is_sticky(id(1)));
-
-    policy.set_above(id(1), false);
-    assert!(!policy.is_above(id(1)));
-    // They take effect in M8 (17).
-    assert_eq!(policy.layer(id(1)), Some(Layer::Normal));
-}

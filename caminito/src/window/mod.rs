@@ -407,12 +407,15 @@ impl Mapped {
     /// Draws the frame's strips again if anything they're drawn from changed, or drops them
     /// if the window shows no frame. They're drawn in the state policy last sent, the one
     /// it laid the window out in (ADR 0012), in the other focus state while the visual bell
-    /// flashes it (169). Returns whether the strips changed.
+    /// flashes it (169), with the buttons of a window kept `above` and `sticky` or not
+    /// (155). Returns whether the strips changed.
     pub fn refresh_frame(
         &mut self,
         frame_context: &mut FrameContext,
         colors: &PaletteColors,
         flashing: bool,
+        above: bool,
+        sticky: bool,
     ) -> bool {
         if self.states.fullscreen {
             return self.frame.clear();
@@ -424,6 +427,8 @@ impl Mapped {
             icon: self.adapter().icon(),
             scale: self.frame_scale,
             flashing,
+            above,
+            stuck: sticky,
         };
         self.frame.refresh(frame_context, colors, state, content)
     }

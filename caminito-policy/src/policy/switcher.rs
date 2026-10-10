@@ -36,9 +36,9 @@ pub struct Switcher {
 /// The open Window switcher, with what policy keeps beside it.
 pub(super) struct Open {
     switcher: Switcher,
-    /// Each workspace's stacking when the switcher opened, to put back what raising the
-    /// selected window changed.
-    stacks: Vec<Vec<WindowId>>,
+    /// The stacking when the switcher opened, to put back what raising the selected window
+    /// changed.
+    stack: Vec<WindowId>,
     /// Whether the switcher has raised a window, so the stacking is put back on closing.
     raised: bool,
     /// The windows mapped while it's open, and when, in the order they mapped. They get the
@@ -139,7 +139,7 @@ impl<W: PolicyWindow> Policy<W> {
                         windows,
                         selected,
                     },
-                    stacks: self.stacks.clone(),
+                    stack: self.stack.clone(),
                     raised: false,
                     mapped: Vec::new(),
                 });
@@ -154,7 +154,7 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         if open.raised {
-            self.restore_stacking(&open.stacks);
+            self.restore_stacking(&open.stack);
         }
         let time = match how {
             Close::Commit(now) => {
@@ -214,24 +214,23 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(mut open) = self.switcher.take() else {
             return;
         };
-        self.restore_stacking(&open.stacks);
+        self.restore_stacking(&open.stack);
         self.raise_family(open.switcher.windows[open.switcher.selected]);
         open.raised = true;
         self.switcher = Some(open);
     }
 
-    /// Puts each workspace's stacking back as `saved` has it. A window that's gone is left
-    /// out and one that wasn't there goes on top, in the order it has now.
-    fn restore_stacking(&mut self, saved: &[Vec<WindowId>]) {
-        for (stack, before) in self.stacks.iter_mut().zip(saved) {
-            let mut restored: Vec<WindowId> = before
-                .iter()
-                .copied()
-                .filter(|id| stack.contains(id))
-                .collect();
-            restored.extend(stack.iter().copied().filter(|id| !before.contains(id)));
-            *stack = restored;
-        }
+    /// Puts the stacking back as `saved` has it. A window that's gone is left out and one
+    /// that wasn't there goes on top, in the order it has now.
+    fn restore_stacking(&mut self, saved: &[WindowId]) {
+        let stack = &self.stack;
+        let mut restored: Vec<WindowId> = saved
+            .iter()
+            .copied()
+            .filter(|id| stack.contains(id))
+            .collect();
+        restored.extend(stack.iter().copied().filter(|id| !saved.contains(id)));
+        self.stack = restored;
     }
 
     /// The windows `list` shows `seat`, in the Window switcher's order.
@@ -245,10 +244,18 @@ impl<W: PolicyWindow> Policy<W> {
         };
 
         // Every window in the fallback order: stacking, from the top, the active
-        // workspace's stack first and then the others from the first.
-        let stacks = std::iter::once(self.active)
-            .chain((0..self.stacks.len()).filter(|w| *w != self.active));
-        let in_stacking_order = stacks.flat_map(|w| self.stacks[w].iter().rev().copied());
+        // workspace's windows first, sticky ones among them, and then the others' from the
+        // first.
+        let top_down = || self.stack.iter().rev().copied();
+        let on_active = top_down().filter(|id| self.is_on_workspace(*id, self.active));
+        let others = (0..self.workspace_count)
+            .filter(|w| *w != self.active)
+            .flat_map(|w| {
+                top_down().filter(move |id| {
+                    !self.is_on_workspace(*id, self.active) && self.windows[id].workspace == w
+                })
+            });
+        let in_stacking_order = on_active.chain(others);
 
         let mut entries: Vec<_> = in_stacking_order
             .filter(|id| self.is_switch_candidate(*id, list, group))
@@ -277,7 +284,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// for their parents. `group` is the root of the focused window, for `Group`.
     fn is_switch_candidate(&self, id: WindowId, list: SwitchList, group: Option<WindowId>) -> bool {
         let managed = &self.windows[&id];
-        let on_workspace = managed.workspace == self.active;
+        let on_workspace = self.is_on_workspace(id, self.active);
         let panel = matches!(managed.window_type, WindowType::Dock | WindowType::Desktop);
         match list {
             SwitchList::Panels => on_workspace && panel,

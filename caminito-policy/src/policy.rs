@@ -229,9 +229,12 @@ struct Managed<W> {
     /// The output a client asked to be fullscreen on.
     fullscreen_output: Option<OutputId>,
     minimized: bool,
-    /// Kept above, kept below and sticky, as the client asked; they take effect in M8 (17).
+    /// Kept above the windows of the normal layer (155).
     above: bool,
+    /// Kept below them.
     below: bool,
+    /// On every workspace, as Marco's `on_all_workspaces` (155). `workspace` is kept, as
+    /// Marco keeps the window's own, though unsticking puts the window on the active one.
     sticky: bool,
     /// The half or quarter it's tiled to, on which output's work area (158), and how wide
     /// (159).
@@ -520,8 +523,11 @@ fn frame_around(
 
 pub struct Policy<W: PolicyWindow> {
     windows: BTreeMap<WindowId, Managed<W>>,
-    /// Each workspace's windows, bottom to top.
-    stacks: Vec<Vec<WindowId>>,
+    /// Every window, bottom to top: one stack, as Marco keeps it, which each workspace's
+    /// stacking is the windows on it of (ADR 0024).
+    stack: Vec<WindowId>,
+    /// How many workspaces there are, never 0.
+    workspace_count: usize,
     active: usize,
     /// The workspace active before `active`, which `switch-to-workspace-prev` goes back to
     /// (150). Every switch sets it, as Marco's `meta_workspace_activate_with_focus` does
@@ -577,7 +583,8 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn new(config: Config) -> Self {
         let mut policy = Self {
             windows: BTreeMap::new(),
-            stacks: vec![Vec::new()],
+            stack: Vec::new(),
+            workspace_count: 1,
             active: 0,
             previous: None,
             showing_desktop: BTreeMap::new(),
@@ -693,22 +700,20 @@ impl<W: PolicyWindow> Policy<W> {
     /// Makes `count` workspaces, within 1 to `MAX_WORKSPACES`, as `num-workspaces` asks.
     fn set_workspace_count(&mut self, count: usize) {
         let count = count.clamp(1, MAX_WORKSPACES);
-        if count < self.stacks.len() {
+        if count < self.workspace_count {
             let last = count - 1;
-            let removed: Vec<WindowId> = self.stacks.drain(count..).flatten().collect();
-            for id in &removed {
-                self.windows.get_mut(id).unwrap().workspace = last;
+            // The stacking order is one across workspaces, which moving leaves alone, as in
+            // Marco.
+            for managed in self.windows.values_mut() {
+                managed.workspace = managed.workspace.min(last);
             }
-            // Marco keeps one stacking order across workspaces, which moving leaves alone.
-            // With a stack per workspace, the moved windows go above the kept ones, in the
-            // order of the workspaces they came from, which is only close to that.
-            self.stacks[last].extend(removed);
+            self.workspace_count = count;
             self.active = self.active.min(last);
             self.forget_removed_previous();
             self.showing_desktop
                 .retain(|workspace, _| *workspace < count);
         } else {
-            self.stacks.resize(count, Vec::new());
+            self.workspace_count = count;
         }
     }
 
@@ -716,7 +721,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// since the count changed. `switch-to-workspace-prev` then does nothing until the
     /// next switch. Marco keeps a pointer to the removed workspace.
     fn forget_removed_previous(&mut self) {
-        let count = self.stacks.len();
+        let count = self.workspace_count;
         self.previous = self
             .previous
             .filter(|previous| *previous < count && *previous != self.active);
@@ -726,7 +731,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// number's, not the workspace's, as Marco keeps them (`meta_prefs_get_workspace_name`,
     /// prefs.c:2257-2268).
     fn name_workspaces(&mut self) {
-        self.workspace_names = (0..self.stacks.len())
+        self.workspace_names = (0..self.workspace_count)
             .map(|index| {
                 self.configured_names
                     .get(index)
@@ -771,13 +776,20 @@ impl<W: PolicyWindow> Policy<W> {
             .transient_parent()
             .filter(|p| self.windows.contains_key(p));
         // Marco honours `_NET_WM_DESKTOP` for a desktop it has. A transient goes with its
-        // parent, since policy keeps a transient family on one workspace.
-        let workspace = match parent {
-            Some(parent) => self.windows[&parent].workspace,
-            None => window
-                .requested_workspace()
-                .filter(|workspace| *workspace < self.stacks.len())
-                .unwrap_or(self.active),
+        // parent, sticky if it is, since policy keeps a transient family on one workspace,
+        // or on all of them (window.c:747-768).
+        let (workspace, sticky) = match parent {
+            Some(parent) => {
+                let parent = &self.windows[&parent];
+                (parent.workspace, parent.sticky)
+            }
+            None => (
+                window
+                    .requested_workspace()
+                    .filter(|workspace| *workspace < self.workspace_count)
+                    .unwrap_or(self.active),
+                false,
+            ),
         };
         self.windows.insert(
             id,
@@ -800,13 +812,13 @@ impl<W: PolicyWindow> Policy<W> {
                 minimized: false,
                 above: false,
                 below: false,
-                sticky: false,
+                sticky,
                 tile: None,
                 floating: None,
                 sent: Sent::default(),
             },
         );
-        self.stacks[workspace].push(id);
+        self.stack.push(id);
         // Before it's placed, which is among the windows that show.
         self.leave_show_desktop(id);
         let constrained = states.maximized || states.fullscreen.is_some();
@@ -853,7 +865,7 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         if managed.window.takes_input()
-            && managed.workspace == self.active
+            && self.is_on_workspace(id, self.active)
             && !matches!(
                 managed.window_type,
                 WindowType::Desktop
@@ -871,7 +883,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// Stops managing a window the client has unmapped or destroyed, and hands it back.
     pub fn unmap_window(&mut self, id: WindowId) -> Option<W> {
         let managed = self.windows.remove(&id)?;
-        self.stacks[managed.workspace].retain(|w| *w != id);
+        self.stack.retain(|w| *w != id);
         self.grabs.retain(|_, grab| grab.window != id);
         for other in self.windows.values_mut() {
             if other.parent == Some(id) {
@@ -926,7 +938,7 @@ impl<W: PolicyWindow> Policy<W> {
                 requested.filter(|p| self.windows.contains_key(p) && !self.is_ancestor(id, *p));
             self.windows.get_mut(&id).unwrap().parent = parent;
             if let Some(parent) = parent {
-                self.move_tree(id, self.windows[&parent].workspace);
+                self.join_parent(id, parent);
             }
         }
         self.relayout(id);
@@ -994,7 +1006,7 @@ impl<W: PolicyWindow> Policy<W> {
                 self.move_to_workspace_towards(seat, Direction::Down, now);
             }
             // A number past the count does nothing (`handle_switch_to_workspace`).
-            Action::SwitchToWorkspace(workspace) if workspace < self.stacks.len() => {
+            Action::SwitchToWorkspace(workspace) if workspace < self.workspace_count => {
                 self.switch_workspace(workspace);
             }
             Action::SwitchToWorkspace(_) => {}
@@ -1037,8 +1049,8 @@ impl<W: PolicyWindow> Policy<W> {
             );
             // Marco focuses the most recently used desktop window. One that never had the
             // focus isn't in `mru`, so the stack is looked through after it.
-            let top_down = self.stacks[self.active].iter().rev();
-            let desktop = self.mru.iter().chain(top_down).copied().find(|id| {
+            let top_down = self.stacking(self.active).into_iter().rev();
+            let desktop = self.mru.iter().copied().chain(top_down).find(|id| {
                 self.windows[id].window_type == WindowType::Desktop && self.is_showing(*id)
             });
             if let Some(desktop) = desktop {
@@ -1102,7 +1114,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Makes `workspace` the active one, and gives every seat its default focus.
     pub fn switch_workspace(&mut self, workspace: usize) {
-        let workspace = workspace.min(self.stacks.len() - 1);
+        let workspace = workspace.min(self.workspace_count - 1);
         if workspace != self.active {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
             self.close_switcher(switcher::Close::Dropped);
@@ -1118,12 +1130,14 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Moves a window to `workspace`, with every window in its transient tree.
+    /// Moves a window to `workspace`, with every window in its transient tree. A sticky
+    /// window stops being sticky, as in Marco's `meta_window_change_workspace`
+    /// (window.c:4515-4554).
     pub fn move_to_workspace(&mut self, id: WindowId, workspace: usize) {
         if !self.windows.contains_key(&id) {
             return;
         }
-        let workspace = workspace.min(self.stacks.len() - 1);
+        let workspace = workspace.min(self.workspace_count - 1);
         self.move_tree(self.root(id), workspace);
         self.apply();
     }
@@ -1135,7 +1149,11 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         self.set_last_seat(seat);
-        self.switch_workspace(workspace);
+        // A sticky window is on the active workspace already, which Marco's
+        // `meta_window_activate` then stays on (window.c:3246-3258).
+        if !self.is_on_workspace(id, self.active) {
+            self.switch_workspace(workspace);
+        }
         // Marco drops an activation older than the user's last input before it looks at
         // the desktop (window.c:3179-3201), so a stale one hides nothing.
         if !self.focus_time.get(&seat).is_some_and(|last| now < *last) {
@@ -1261,25 +1279,46 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Keeps the window above others, or stops. Recorded only until M8 (17).
+    /// Keeps the window above the normal layer, or stops, and raises it either way, as
+    /// Marco's `meta_window_make_above` and `meta_window_unmake_above` do
+    /// (window.c:2951-2971).
     pub fn set_above(&mut self, id: WindowId, above: bool) {
-        if let Some(managed) = self.windows.get_mut(&id) {
+        let Some(managed) = self.windows.get_mut(&id) else {
+            return;
+        };
+        if managed.above != above {
             managed.above = above;
+            self.raise_family(id);
         }
+        self.apply();
     }
 
-    /// Keeps the window below others, or stops. Recorded only until M8 (17).
+    /// Keeps the window below the normal layer, or stops. Marco only changes its layer.
     pub fn set_below(&mut self, id: WindowId, below: bool) {
         if let Some(managed) = self.windows.get_mut(&id) {
             managed.below = below;
         }
+        self.apply();
     }
 
-    /// Shows the window on every workspace, or stops. Recorded only until M8 (17).
+    /// Shows the window on every workspace, or only on one, with its transient family, as
+    /// Marco's `meta_window_stick` and `meta_window_unstick` take its transients along
+    /// (window.c:4646-4666). Policy keeps a family on one workspace or on all, so the
+    /// whole family goes, from its root. Unsticking leaves it on the active workspace,
+    /// where it's showing, as Marco's `window_unstick_impl` does (window.c:4615-4624).
     pub fn set_sticky(&mut self, id: WindowId, sticky: bool) {
-        if let Some(managed) = self.windows.get_mut(&id) {
+        if !self.windows.contains_key(&id) {
+            return;
+        }
+        let active = self.active;
+        for w in self.tree(self.root(id)) {
+            let managed = self.windows.get_mut(&w).unwrap();
+            if managed.sticky && !sticky {
+                managed.workspace = active;
+            }
             managed.sticky = sticky;
         }
+        self.apply();
     }
 
     pub fn minimize(&mut self, id: WindowId) {
@@ -1308,13 +1347,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// (`meta_core_user_lower_and_unfocus`) does: it goes last in the Alt+Tab order, and
     /// if the seat focused it, the seat focuses the default window instead.
     pub fn lower(&mut self, seat: SeatId, id: WindowId, now: Duration) {
-        let Some(workspace) = self.workspace_of(id) else {
+        if !self.windows.contains_key(&id) {
             return;
-        };
+        }
         self.set_last_seat(seat);
-        let stack = &mut self.stacks[workspace];
-        stack.retain(|w| *w != id);
-        stack.insert(0, id);
+        self.stack.retain(|w| *w != id);
+        self.stack.insert(0, id);
         self.mru.retain(|w| *w != id);
         self.mru.push(id);
         if self.focus(seat) == Some(id) {
@@ -1601,11 +1639,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// windows showing on the workspace whose edges Marco counts, all but desktops, menus
     /// and splash screens (edge-resistance.c:33-39).
     fn edges_for(&self, grabbed: WindowId) -> Edges {
-        let windows: Vec<EdgeWindow> = self.stacks[self.active]
-            .iter()
-            .filter(|id| **id != grabbed && self.is_showing(**id))
+        let windows: Vec<EdgeWindow> = self
+            .stacking(self.active)
+            .into_iter()
+            .filter(|id| *id != grabbed && self.is_showing(*id))
             .filter_map(|id| {
-                let managed = &self.windows[id];
+                let managed = &self.windows[&id];
                 let has_edges = match managed.window_type {
                     WindowType::Desktop | WindowType::Menu | WindowType::Splashscreen => {
                         return None;
@@ -1703,9 +1742,18 @@ impl<W: PolicyWindow> Policy<W> {
         self.outputs.iter().map(Self::work_area)
     }
 
-    /// A workspace's windows, bottom to top.
-    pub fn stacking(&self, workspace: usize) -> &[WindowId] {
-        &self.stacks[workspace]
+    /// The windows on a workspace, sticky ones too, bottom to top.
+    pub fn stacking(&self, workspace: usize) -> Vec<WindowId> {
+        self.stack
+            .iter()
+            .copied()
+            .filter(|id| self.is_on_workspace(*id, workspace))
+            .collect()
+    }
+
+    /// Every window, bottom to top, whatever workspace it's on.
+    pub fn stacking_all(&self) -> &[WindowId] {
+        &self.stack
     }
 
     pub fn focus(&self, seat: SeatId) -> Option<WindowId> {
@@ -1724,12 +1772,12 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     pub fn workspace_count(&self) -> usize {
-        self.stacks.len()
+        self.workspace_count
     }
 
     /// Where each workspace is: the grid the layout keys give this many workspaces (96).
     pub fn workspace_grid(&self) -> Grid {
-        Grid::new(self.stacks.len(), self.workspace_layout)
+        Grid::new(self.workspace_count, self.workspace_layout)
     }
 
     /// Each workspace's name, from the first.
@@ -1814,21 +1862,22 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows.get(&id).is_some_and(|m| m.minimized)
     }
 
-    /// Whether the client asked to keep the window above others.
+    /// Whether the window is kept above the normal layer.
     pub fn is_above(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.above)
     }
 
-    /// Whether the client asked to keep the window below others.
+    /// Whether the window is kept below the normal layer.
     pub fn is_below(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.below)
     }
 
-    /// Whether the client asked to show the window on every workspace.
+    /// Whether the window is on every workspace.
     pub fn is_sticky(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|m| m.sticky)
     }
 
+    /// The workspace a window is on, or for a sticky one the workspace it was on before.
     pub fn workspace_of(&self, id: WindowId) -> Option<usize> {
         Some(self.windows.get(&id)?.workspace)
     }
@@ -1852,12 +1901,16 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn layer(&self, id: WindowId) -> Option<Layer> {
         let managed = self.windows.get(&id)?;
+        // Marco's `get_standalone_layer` (stack.c:272-315): kept below wins over
+        // fullscreen, which wins over kept above, and a dock kept below goes down too.
         let own = match managed.window_type {
             WindowType::Desktop => Layer::Desktop,
+            _ if managed.below => Layer::Bottom,
             WindowType::Dock => Layer::Top,
             _ if managed.fullscreen && self.focus.values().any(|f| self.is_ancestor(id, *f)) => {
                 Layer::Fullscreen
             }
+            _ if managed.above => Layer::Top,
             _ => Layer::Normal,
         };
         // Marco promotes a transient into its parent's layer.
@@ -1892,12 +1945,24 @@ impl<W: PolicyWindow> Policy<W> {
             .filter(|(_, m)| m.parent.is_none() && m.window.transient_parent() == Some(parent))
             .map(|(id, _)| *id)
             .collect();
-        let workspace = self.windows[&parent].workspace;
         for id in orphans {
             if !self.is_ancestor(id, parent) {
                 self.windows.get_mut(&id).unwrap().parent = Some(parent);
-                self.move_tree(id, workspace);
+                self.join_parent(id, parent);
             }
+        }
+    }
+
+    /// Puts a window that's become transient for `parent` where the parent is, with its
+    /// own transients: on its workspace, and sticky if it is.
+    fn join_parent(&mut self, id: WindowId, parent: WindowId) {
+        let (workspace, sticky) = {
+            let parent = &self.windows[&parent];
+            (parent.workspace, parent.sticky)
+        };
+        self.move_tree(id, workspace);
+        for w in self.tree(id) {
+            self.windows.get_mut(&w).unwrap().sticky = sticky;
         }
     }
 
@@ -1918,16 +1983,17 @@ impl<W: PolicyWindow> Policy<W> {
         tree
     }
 
-    /// Moves a window and its transient descendants to `workspace`, keeping their order.
+    /// Moves a window and its transient descendants to `workspace`, on top of its windows,
+    /// keeping their order. None of them is sticky after.
     fn move_tree(&mut self, id: WindowId, workspace: usize) {
         let tree = self.tree(id);
-        for stack in &mut self.stacks {
-            stack.retain(|w| !tree.contains(w));
-        }
+        self.stack.retain(|w| !tree.contains(w));
         for w in &tree {
-            self.windows.get_mut(w).unwrap().workspace = workspace;
+            let managed = self.windows.get_mut(w).unwrap();
+            managed.workspace = workspace;
+            managed.sticky = false;
         }
-        self.stacks[workspace].extend(&tree);
+        self.stack.extend(&tree);
     }
 
     /// The root of a window's transient tree.
@@ -2208,7 +2274,6 @@ impl<W: PolicyWindow> Policy<W> {
         (left, top): (i32, i32),
         center: bool,
     ) -> Point<i32, Logical> {
-        let managed = &self.windows[&id];
         let area = Self::work_area(output);
         let frame_loc = if center {
             // A frame that doesn't fit the middle doesn't fit beside another window either,
@@ -2216,10 +2281,12 @@ impl<W: PolicyWindow> Policy<W> {
             // (place.c:606-628, 941), which the work area moves it into.
             placement::center(frame_size, area).unwrap_or(output.geometry.loc)
         } else {
-            let others: Vec<Obstacle> = self.stacks[managed.workspace]
-                .iter()
-                .filter(|other| **other != id && self.is_visible_on_workspace(**other))
-                .map(|other| &self.windows[other])
+            let workspace = self.workspace_shown_on(id);
+            let others: Vec<Obstacle> = self
+                .stacking(workspace)
+                .into_iter()
+                .filter(|other| *other != id && self.is_visible_on_workspace(*other))
+                .map(|other| &self.windows[&other])
                 .filter(|m| self.output_of(m.frame()).map(|o| o.id) == Some(output.id))
                 .map(|m| Obstacle {
                     frame: m.frame(),
@@ -2308,7 +2375,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// or a transient ancestor, so that a listed app's dialogs stay with it. Marco matches
     /// each window by its own class, which a toolkit gives its dialogs too.
     fn is_skipped(&self, id: WindowId) -> bool {
-        let Some(shown) = self.showing_desktop.get(&self.windows[&id].workspace) else {
+        let Some(shown) = self.showing_desktop.get(&self.workspace_shown_on(id)) else {
             return false;
         };
         let mut current = Some(id);
@@ -2333,11 +2400,11 @@ impl<W: PolicyWindow> Policy<W> {
     /// minimises a new dialog's parents with the rest, which hides the dialog with them;
     /// here they're kept, as Marco itself keeps an activated window's.
     fn leave_show_desktop(&mut self, id: WindowId) {
-        let workspace = self.windows[&id].workspace;
+        let workspace = self.workspace_shown_on(id);
         if !self.showing_desktop.contains_key(&workspace) || self.stays_on_desktop(id) {
             return;
         }
-        for other in self.stacks[workspace].clone() {
+        for other in self.stacking(workspace) {
             let managed = &self.windows[&other];
             if matches!(managed.window_type, WindowType::Normal | WindowType::Dialog)
                 && !self.is_ancestor(other, id)
@@ -2351,20 +2418,37 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Whether a window is on screen: managed, and shown on the active workspace.
     pub fn is_showing(&self, id: WindowId) -> bool {
+        self.is_on_workspace(id, self.active) && self.is_visible_on_workspace(id)
+    }
+
+    /// Whether a managed window is on `workspace`: it's sticky, or that's its workspace, as
+    /// Marco's `meta_window_located_on_workspace` has it (window.c:1346-1351).
+    fn is_on_workspace(&self, id: WindowId, workspace: usize) -> bool {
         self.windows
             .get(&id)
-            .is_some_and(|m| m.workspace == self.active)
-            && self.is_visible_on_workspace(id)
+            .is_some_and(|m| m.sticky || m.workspace == workspace)
+    }
+
+    /// The workspace whose desktop showing hides a window: its own, or the active one for a
+    /// sticky window, as in Marco's `meta_window_showing_on_its_workspace`
+    /// (window.c:1395-1401).
+    fn workspace_shown_on(&self, id: WindowId) -> usize {
+        let managed = &self.windows[&id];
+        if managed.sticky {
+            self.active
+        } else {
+            managed.workspace
+        }
     }
 
     /// Whether a window would show if its workspace were active: neither it nor a transient
     /// ancestor is minimised, and its workspace doesn't show its desktop instead, as in
     /// Marco's `meta_window_showing_on_its_workspace` (window.c:1385-1425).
     fn is_visible_on_workspace(&self, id: WindowId) -> bool {
-        if self
-            .windows
-            .get(&id)
-            .is_some_and(|m| self.showing_desktop.contains_key(&m.workspace))
+        if self.windows.contains_key(&id)
+            && self
+                .showing_desktop
+                .contains_key(&self.workspace_shown_on(id))
             && !self.stays_on_desktop(id)
         {
             return false;
@@ -2386,7 +2470,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// the active workspace's stack that isn't a dock, or failing that the desktop.
     fn default_focus(&self) -> Option<WindowId> {
         let candidates = || {
-            self.stacks[self.active]
+            self.stack
                 .iter()
                 .rev()
                 .copied()
@@ -2420,11 +2504,10 @@ impl<W: PolicyWindow> Policy<W> {
         self.move_to_top(id);
     }
 
-    /// Moves a window to the top of its workspace's stack.
+    /// Moves a window to the top of the stack.
     fn move_to_top(&mut self, id: WindowId) {
-        let stack = &mut self.stacks[self.windows[&id].workspace];
-        stack.retain(|w| *w != id);
-        stack.push(id);
+        self.stack.retain(|w| *w != id);
+        self.stack.push(id);
     }
 
     // Applying decisions.
@@ -2440,11 +2523,13 @@ impl<W: PolicyWindow> Policy<W> {
             self.mru.retain(|id| *id != focused);
             self.mru.insert(0, focused);
         }
-        let mut stacks = std::mem::take(&mut self.stacks);
-        for stack in &mut stacks {
-            stack::restack(stack, |id| self.layer(id).unwrap(), |id| self.parent(id));
-        }
-        self.stacks = stacks;
+        let mut stack = std::mem::take(&mut self.stack);
+        stack::restack(
+            &mut stack,
+            |id| self.layer(id).unwrap(),
+            |id| self.parent(id),
+        );
+        self.stack = stack;
 
         let focused: Vec<WindowId> = self.focus.values().copied().collect();
         // A window's frame extents can change with its focus (ADR 0012).

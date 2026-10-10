@@ -53,6 +53,11 @@ impl<W: PolicyWindow> Policy<W> {
             Action::RaiseOrLower => self.raise_or_lower(id),
             Action::MoveToWorkspace(workspace) => self.move_to_numbered_workspace(id, workspace),
             Action::Tile(tile) => self.toggle_tile(id, tile),
+            // `handle_toggle_above` and `handle_toggle_on_all_workspaces`
+            // (keybindings.c:3172-3182, 3387-3397), which ask nothing of the window's type
+            // (155).
+            Action::ToggleAbove => self.set_above(id, !managed.above),
+            Action::ToggleOnAllWorkspaces => self.set_sticky(id, !managed.sticky),
             _ => {}
         }
     }
@@ -138,9 +143,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// Lowers a window to the bottom of its layer, as Marco's `meta_window_lower` does: the
     /// focus stays where it is, unlike the titlebar's `lower`.
     pub(super) fn lower_in_layer(&mut self, id: WindowId) {
-        let stack = &mut self.stacks[self.windows[&id].workspace];
-        stack.retain(|w| *w != id);
-        stack.insert(0, id);
+        self.stack.retain(|w| *w != id);
+        self.stack.insert(0, id);
     }
 
     /// Raises a window if a showing window in its own layer above it overlaps its frame,
@@ -150,12 +154,16 @@ impl<W: PolicyWindow> Policy<W> {
     fn raise_or_lower(&mut self, id: WindowId) {
         let frame = self.windows[&id].frame();
         let layer = self.layer(id);
-        let stack = &self.stacks[self.windows[&id].workspace];
-        let overlapped = stack.iter().skip_while(|w| **w != id).skip(1).any(|w| {
-            self.layer(*w) == layer
-                && self.is_showing(*w)
-                && self.windows[w].frame().overlaps(frame)
-        });
+        let overlapped = self
+            .stack
+            .iter()
+            .skip_while(|w| **w != id)
+            .skip(1)
+            .any(|w| {
+                self.layer(*w) == layer
+                    && self.is_showing(*w)
+                    && self.windows[w].frame().overlaps(frame)
+            });
         if overlapped {
             self.raise_family(id);
         } else {
@@ -168,7 +176,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// default window. A number past the count does nothing. The desktop and docks are
     /// always on every workspace in Marco (`always_sticky`), so they don't move.
     fn move_to_numbered_workspace(&mut self, id: WindowId, workspace: usize) {
-        if workspace < self.stacks.len() && !self.is_desktop_or_dock(id) {
+        if workspace < self.workspace_count && !self.is_desktop_or_dock(id) {
             self.move_to_workspace(id, workspace);
         }
     }

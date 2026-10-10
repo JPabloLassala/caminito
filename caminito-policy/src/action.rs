@@ -33,6 +33,11 @@ pub enum Action {
     Close,
     /// `toggle-maximized`
     ToggleMaximized,
+    /// `toggle-above`: keeps the focused window above the others, or stops (155).
+    ToggleAbove,
+    /// `toggle-on-all-workspaces`: shows the focused window on every workspace, or only on
+    /// the active one (155).
+    ToggleOnAllWorkspaces,
     /// `maximize`
     Maximize,
     /// `unmaximize`

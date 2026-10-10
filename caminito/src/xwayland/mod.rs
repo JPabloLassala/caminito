@@ -203,12 +203,16 @@ impl Caminito {
         let policy = &self.policy;
         // Bottom to top: Smithay moves each window above the one before it, whatever its
         // doc comment says. Windows on other workspaces aren't in the scene, and go below.
-        let active = policy.active_workspace();
-        let order: Vec<X11Surface> = (0..policy.workspace_count())
-            .filter(|workspace| *workspace != active)
-            .chain([active])
-            .flat_map(|workspace| policy.stacking(workspace))
-            .filter_map(|id| policy.window(*id)?.window().x11_surface().cloned())
+        // A sticky window is on the active workspace, and goes there once (155).
+        let on_active = policy.stacking(policy.active_workspace());
+        let others = policy
+            .stacking_all()
+            .iter()
+            .copied()
+            .filter(|id| !on_active.contains(id));
+        let order: Vec<X11Surface> = others
+            .chain(on_active.iter().copied())
+            .filter_map(|id| policy.window(id)?.window().x11_surface().cloned())
             .collect();
         let ids: Vec<X11Window> = order.iter().map(X11Surface::window_id).collect();
         let Some(xwayland) = self.xwayland.as_mut() else {

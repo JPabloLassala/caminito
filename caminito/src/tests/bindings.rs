@@ -7,7 +7,7 @@ use caminito_test_client::{ToplevelState, format_input};
 use insta::assert_snapshot;
 
 use super::fixture::{
-    ClientWindow, Fixture, KEY_D, KEY_F4, KEY_F10, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL,
+    ClientWindow, Fixture, KEY_A, KEY_D, KEY_F4, KEY_F10, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL,
     KEY_LEFTMETA, KEY_LEFTSHIFT, KEY_Q, KEY_RIGHT, KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use crate::settings::Value;
@@ -224,6 +224,34 @@ on_both_kinds! {
         assert!(!f.state.caminito.policy.is_maximized(policy_id));
         f.chord(&[KEY_LEFTMETA, KEY_Q]);
         assert!(f.state.caminito.policy.is_maximized(policy_id));
+    }
+}
+
+on_both_kinds! {
+    fn toggle_above_and_toggle_on_all_workspaces_toggle_the_focused_window(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let window = f.map(id, WindowSpec::plain((400, 300)));
+        let pid = f.pid(window);
+        set_binding(&mut f, MARCO_WINDOW_KEYBINDINGS, "toggle-above", "<Super>a", |rows| {
+            binds(rows, "toggle-above", "<Super>a")
+        });
+        let key = "toggle-on-all-workspaces";
+        set_binding(&mut f, MARCO_WINDOW_KEYBINDINGS, key, "<Super>q", |rows| {
+            binds(rows, key, "<Super>q")
+        });
+
+        f.chord(&[KEY_LEFTMETA, KEY_A]);
+        assert!(f.state.caminito.policy.is_above(pid));
+        f.chord(&[KEY_LEFTMETA, KEY_Q]);
+        assert!(f.state.caminito.policy.is_sticky(pid));
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+        assert!(f.state.caminito.policy.is_showing(pid));
+
+        f.chord(&[KEY_LEFTMETA, KEY_A]);
+        f.chord(&[KEY_LEFTMETA, KEY_Q]);
+        let policy = &f.state.caminito.policy;
+        assert!(!policy.is_above(pid) && !policy.is_sticky(pid));
+        assert_eq!(policy.workspace_of(pid), Some(1));
     }
 }
 

@@ -276,6 +276,7 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "<Alt>F10",
                 policy(Action::ToggleMaximized),
             ),
+            window("toggle-above", "disabled", policy(Action::ToggleAbove)),
             window("maximize", "disabled", policy(Action::Maximize)),
             window("unmaximize", "<Alt>F5", policy(Action::Unmaximize)),
             window("toggle-shaded", "disabled", policy(Action::ToggleShaded)),
@@ -283,6 +284,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
             window("close", "<Alt>F4", policy(Action::Close)),
             window("begin-move", "<Alt>F7", policy(Action::BeginMove)),
             window("begin-resize", "<Alt>F8", policy(Action::BeginResize)),
+            window(
+                "toggle-on-all-workspaces",
+                "disabled",
+                policy(Action::ToggleOnAllWorkspaces),
+            ),
         ])
         .chain(move_to_workspace)
         .chain([

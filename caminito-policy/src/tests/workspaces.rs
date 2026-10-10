@@ -172,7 +172,8 @@ fn a_smaller_workspace_count_moves_windows_to_the_new_last_workspace() {
     policy.settings_changed(workspaces(2));
 
     assert_eq!(policy.workspace_count(), 2);
-    assert_eq!(policy.stacking(1), [id(1), id(2), id(3)]);
+    // In the one stacking order, which moving them leaves alone, as in Marco (155).
+    assert_eq!(policy.stacking(1), [id(2), id(3), id(1)]);
     assert_eq!(policy.workspace_of(id(3)), Some(1));
     assert_eq!(policy.active_workspace(), 0);
 }
