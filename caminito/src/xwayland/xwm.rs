@@ -419,8 +419,14 @@ impl Caminito {
             .iter()
             .any(|w| w.window_id() == id)
         {
-            xwayland.override_redirect.push(window);
+            xwayland.override_redirect.push(window.clone());
         }
+        // Xwayland before 24.1 doesn't give the input shape to the surface, so it's
+        // read here as a managed window's is.
+        self.with_xconn("watch an X window's input region", |xconn| {
+            xconn.watch_shape(id)
+        });
+        self.read_input_shape(&window);
         self.queue_redraw_all();
     }
 

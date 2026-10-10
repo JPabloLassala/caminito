@@ -569,7 +569,7 @@ impl Caminito {
     }
 
     /// Reads a window's input region again.
-    fn read_input_shape(&mut self, window: &X11Surface) {
+    pub(super) fn read_input_shape(&mut self, window: &X11Surface) {
         let id = window.window_id();
         let shape = self
             .with_xconn("read an X window's input region", |xconn| {
@@ -586,10 +586,14 @@ impl Caminito {
         with_x_facts(window, |facts| facts.input_shape = shape);
     }
 
-    /// The pending or managed window whose X window is `window`.
+    /// The pending, managed or override-redirect window whose X window is `window`.
     fn known_x11_surface(&self, window: X11Window) -> Option<X11Surface> {
-        self.window_for_key(&WindowKey::X11(window))?
-            .x11_surface()
+        self.window_for_key(&WindowKey::X11(window))
+            .and_then(|known| known.x11_surface())
+            .or_else(|| {
+                self.override_redirect_windows()
+                    .find(|surface| surface.window_id() == window)
+            })
             .cloned()
     }
 

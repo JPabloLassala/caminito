@@ -123,6 +123,10 @@ impl Caminito {
                 self.window_changed(id);
             }
         }
+        let override_redirect: Vec<_> = self.override_redirect_windows().cloned().collect();
+        for surface in override_redirect {
+            self.read_input_shape(&surface);
+        }
     }
 }
 

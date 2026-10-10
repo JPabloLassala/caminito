@@ -794,6 +794,9 @@ impl Caminito {
         self.override_redirect_windows().find_map(|window| {
             let origin = scene::override_redirect_bbox(window).loc;
             let (_, origin) = window.surface_under(location, origin, WindowSurfaceType::ALL)?;
+            if !takes_pointer_at(window, location - origin.to_f64()) {
+                return None;
+            }
             Some(Under::OverrideRedirect(
                 Box::new(window.clone()),
                 origin.to_f64(),
