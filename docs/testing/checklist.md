@@ -1226,7 +1226,8 @@ session_env() {
 
 ### Windows and Keyboard Shortcuts open under Caminito, and name it
 
-- **Milestone:** M6
+- **Milestone:** M8, for step 4, which applies a changed shortcut at once (148). It's run in
+  M8's closing run (173). The other steps are M6's.
 - **Steps:**
   1. With `mate-control-center-caminito` installed, and `caminito-git` at a build that has the
      `50-caminito-*.xml` manifests (`ls /usr/share/mate-control-center/keybindings`), log into
@@ -1237,14 +1238,16 @@ session_env() {
      left and back.
   3. Open *Keyboard Shortcuts* from the control center. Find *Window Management*, and
      *Desktop*'s *Show the panel's "Run Application" dialog box*.
-  4. Click the shortcut of *Maximize window*, press Super+Up, and run:
+  4. Click the shortcut of *Toggle maximization state*, press Super+Up, and run:
 
      ```sh
-     gsettings get org.mate.Marco.window-keybindings maximize
+     gsettings get org.mate.Marco.window-keybindings toggle-maximized
      ```
 
-     Press Super+Up with a window focused. Then click the shortcut again, press Backspace,
-     and run the command again.
+     With a window focused, press Super+Up twice, then Alt+F10. Then click the shortcut
+     again, press Backspace, run the command again, and press Super+Up and Alt+F10. Last,
+     run `gsettings reset org.mate.Marco.window-keybindings toggle-maximized` and press
+     Alt+F10.
   5. Log out, log into *MATE*, the X11 session, and open both dialogs there. Then log into the
      Wayfire session and open both.
 - **Expected:** in step 2 the dialog opens, with no *The current window manager is
@@ -1253,15 +1256,17 @@ session_env() {
   open (06). In step 3 the dialog opens without a crash, and lists Caminito's window management
   actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
   Ctrl+Alt+D. In step 4 the key is a string that names Super and Up, `'<Mod4>Up'` or
-  `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. Super+Up maximises nothing: **a shortcut changed in the dialog changes no
-  binding until M8**, when Caminito reads `org.mate.Marco.*` keybindings in place of its
-  hard-coded set (17). In X11 MATE both dialogs are as they were, with Marco's shortcuts
+  `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. **The shortcut applies at
+  once**, with no restart (148): the first Super+Up maximises the window and the second
+  restores it, while Alt+F10 reaches the window and maximises nothing. Once it's disabled,
+  neither maximises, and after the reset Alt+F10 maximises the window again. In X11 MATE both dialogs are as they were, with Marco's shortcuts
   listed, since the variables aren't read on X11. In the Wayfire session *Windows* says the
   window manager is unsupported, as the stock one does, and *Keyboard Shortcuts* opens, where
   the stock one crashed, and lists no window management actions (101, ADR 0011).
 - **Debug tool:** `mate-window-properties` and `mate-keybinding-properties` run from a
   terminal, `echo "$MATE_WM_NAME $MATE_WM_KEYBINDINGS"` there, `gsettings monitor
-  org.mate.Marco.general`, and `coredumpctl` for a crash.
+  org.mate.Marco.general`, `DumpState`'s `bindings`, which lists each combination in force
+  with its key, and `coredumpctl` for a crash.
 
 ### Mouse and Keyboard open under Caminito, and apply live
 

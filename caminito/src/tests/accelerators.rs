@@ -16,7 +16,7 @@ use super::fixture::{
     KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_MUTE, KEY_NUMLOCK, Kind, Logs, WindowSpec,
 };
 use crate::settings::Value;
-use crate::settings::translate::KEYBOARD;
+use crate::settings::translate::{KEYBOARD, MARCO_WINDOW_KEYBINDINGS};
 
 /// A caller of `org.mate.Caminito` on a connection of its own, and the activations and
 /// repeats it's signalled.
@@ -424,6 +424,44 @@ fn a_combination_caminito_binds_itself_isnt_signalled() {
     assert_eq!(caller.next_activation(&mut f).0, actions[1]);
     f.roundtrip(id);
     assert!(f.client(id).window(window.xdg()).close_requested);
+}
+
+/// The grabs follow the keys (148): a combination Caminito stops binding is its grab's from
+/// then on, and one it starts binding isn't any more.
+#[test]
+fn a_grab_follows_the_combinations_caminito_binds_as_the_keys_change() {
+    let (mut f, id, window, bus) = with_a_focused_window();
+    let mut caller = Caller::new(&mut f, &bus);
+    let actions = caller.grab(&mut f, &["<Alt>F4", "F9", "XF86AudioMute"]);
+    let [alt_f4, f9, mute] = actions[..] else {
+        panic!("three action ids, not {actions:?}");
+    };
+
+    f.set_setting(MARCO_WINDOW_KEYBINDINGS, "close", Value::Str("F9".into()));
+    f.dispatch_until(|f| {
+        f.state
+            .caminito
+            .state_dump()
+            .contains("\"combination\": \"F9\"")
+    });
+    f.chord(&[KEY_F9]);
+    f.chord(&[KEY_LEFTALT, KEY_F4]);
+    f.chord(&[KEY_MUTE]);
+
+    // F9 closed the window instead of reaching its grab, and Alt+F4 reached its grab.
+    assert_eq!(caller.next_activation(&mut f).0, alt_f4);
+    assert_eq!(caller.next_activation(&mut f).0, mute);
+    f.roundtrip(id);
+    assert!(f.client(id).window(window.xdg()).close_requested);
+
+    f.set_setting(
+        MARCO_WINDOW_KEYBINDINGS,
+        "close",
+        Value::Str("disabled".into()),
+    );
+    f.dispatch_until(|f| !f.state.caminito.state_dump().contains("\"key\": \"close\""));
+    f.chord(&[KEY_F9]);
+    assert_eq!(caller.next_activation(&mut f).0, f9);
 }
 
 #[test]

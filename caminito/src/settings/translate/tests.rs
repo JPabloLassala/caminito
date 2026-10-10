@@ -1,4 +1,5 @@
 use super::*;
+use crate::input::bindings::Bindings;
 
 /// A reading of every key at the schema defaults of Marco 1.29.0 and MATE 1.28.
 fn defaults() -> Reading {
@@ -560,6 +561,52 @@ fn the_screenshot_commands_are_read_where_the_schema_has_them() {
         settings(&reading).commands.area_screenshot,
         "mate-screenshot --area --clipboard"
     );
+}
+
+// Keybindings (148). The table itself is `input::bindings`'s, and tested there.
+
+#[test]
+fn without_the_keybinding_keys_the_bindings_are_marcos_defaults() {
+    assert_eq!(settings(&defaults()).bindings, Bindings::default());
+}
+
+#[test]
+fn the_keybinding_keys_of_both_schemas_are_read() {
+    let mut reading = with(MARCO_WINDOW_KEYBINDINGS, "close", string("<Super>q"));
+    reading.insert(
+        MARCO_GLOBAL_KEYBINDINGS,
+        "run-command-area-screenshot",
+        string("<Control>Print"),
+        string("<Shift>Print"),
+    );
+    let (expected, _) = Bindings::from_keys([
+        (MARCO_WINDOW_KEYBINDINGS, "close", "<Super>q"),
+        (
+            MARCO_GLOBAL_KEYBINDINGS,
+            "run-command-area-screenshot",
+            "<Control>Print",
+        ),
+    ]);
+    let bindings = settings(&reading).bindings;
+    assert_eq!(bindings, expected);
+    assert_ne!(bindings, Bindings::default());
+}
+
+#[test]
+fn a_keybinding_that_doesnt_parse_is_a_problem_logged_once_per_value() {
+    let reading = with(MARCO_WINDOW_KEYBINDINGS, "minimize", string("<Alt>F99"));
+    let (_, first) = problem(&reading);
+    assert_eq!(
+        first.to_string(),
+        "org.mate.Marco.window-keybindings minimize is '<Alt>F99', which isn't a key \
+         combination Caminito can bind: F99 isn't a keysym; binding nothing"
+    );
+    let mut logged = Logged::default();
+    assert_eq!(logged.first_time(vec![first.clone()]).len(), 1);
+    assert_eq!(logged.first_time(vec![first]).len(), 0);
+    let reading = with(MARCO_WINDOW_KEYBINDINGS, "minimize", string("<Alt>F98"));
+    let (_, second) = problem(&reading);
+    assert_eq!(logged.first_time(vec![second]).len(), 1);
 }
 
 #[test]

@@ -128,6 +128,72 @@ expression: without_x_ids(&dump)
     "inhibitors": [],
     "notifications": 0
   },
+  "bindings": [
+    {
+      "key": "switch-to-workspace-left",
+      "combination": "<Control><Alt>Left"
+    },
+    {
+      "key": "switch-to-workspace-right",
+      "combination": "<Control><Alt>Right"
+    },
+    {
+      "key": "switch-group",
+      "combination": "<Alt>grave"
+    },
+    {
+      "key": "switch-group",
+      "combination": "<Shift><Alt>grave"
+    },
+    {
+      "key": "switch-windows",
+      "combination": "<Alt>Tab"
+    },
+    {
+      "key": "switch-windows",
+      "combination": "<Shift><Alt>Tab"
+    },
+    {
+      "key": "switch-panels",
+      "combination": "<Control><Alt>Tab"
+    },
+    {
+      "key": "switch-panels",
+      "combination": "<Control><Shift><Alt>Tab"
+    },
+    {
+      "key": "show-desktop",
+      "combination": "<Control><Alt>d"
+    },
+    {
+      "key": "panel-main-menu",
+      "combination": "<Alt>F1"
+    },
+    {
+      "key": "panel-run-dialog",
+      "combination": "<Alt>F2"
+    },
+    {
+      "key": "run-command-screenshot",
+      "combination": "Print"
+    },
+    {
+      "key": "run-command-window-screenshot",
+      "combination": "<Alt>Print"
+    },
+    {
+      "key": "run-command-area-screenshot",
+      "combination": "<Shift>Print"
+    },
+    {
+      "key": "toggle-maximized",
+      "combination": "<Alt>F10"
+    },
+    {
+      "key": "close",
+      "combination": "<Alt>F4"
+    }
+  ],
   "accelerator_grabs": [],
   "switcher": null,
   "global_menu_switch": "off",

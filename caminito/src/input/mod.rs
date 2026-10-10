@@ -378,11 +378,18 @@ impl State {
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
         }
-        // Bindings name keys as the first layout does, whichever layout is active.
-        let sym = keysym.raw_latin_sym_or_raw_current_sym();
-        let binding = sym.and_then(|sym| Some((sym, bindings::binding_for(mods, sym)?)));
+        // Bindings name keys as the first layout does, whichever layout is active, or by
+        // the keysym the press types, as the accelerator grabs do (100). A key with
+        // nothing on its first level is named by what it types alone.
+        let typed = keysym.modified_sym();
+        let key = keysym.raw_latin_sym_or_raw_current_sym().unwrap_or(typed);
+        let binding = self
+            .caminito
+            .settings
+            .bindings
+            .binding_for(mods, &[key, typed]);
         match binding {
-            Some((key, binding)) => {
+            Some(binding) => {
                 self.caminito.suppressed_keys.insert(keycode);
                 let bound = match binding {
                     Binding::Policy(action @ Action::Switch { .. }) => {
