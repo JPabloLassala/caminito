@@ -164,6 +164,9 @@ expression: without_x_ids(&dump)
     "paused_until": 0,
     "location": null,
     "location_source": "none",
+    "sun_elevation": null,
+    "sun_highest": null,
+    "next_sunrise": 1791702000,
     "target_temperature": 6500,
     "outputs": [
       {

@@ -1,0 +1,10 @@
+# An excerpt of tzdata 2026c's tzdata.zi, for the tests of the sun schedule's location (138).
+# This zic input file is in the public domain.
+Z America/Montevideo -3:44:51 - LMT 1908 Jun 10
+Z Asia/Kolkata 5:53:28 - LMT 1854 Jun 28
+Z Etc/UTC 0 - UTC
+Z Europe/Oslo 0:43 - LMT 1895
+L Etc/UTC Etc/Zulu
+L Etc/UTC UTC
+L Asia/Kolkata Asia/Calcutta
+L Europe/Oslo Arctic/Longyearbyen

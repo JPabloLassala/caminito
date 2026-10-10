@@ -1,0 +1,11 @@
+# tzdb timezone descriptions (deprecated version)
+#
+# This file is in the public domain.
+# An excerpt of tzdata 2026c's zone.tab, for the tests of the sun schedule's location (138).
+#
+BE	+5050+00420	Europe/Brussels
+IN	+2232+08822	Asia/Kolkata
+NL	+5222+00454	Europe/Amsterdam
+NO	+5955+01045	Europe/Oslo
+SJ	+7800+01600	Arctic/Longyearbyen
+UY	-345433-0561245	America/Montevideo

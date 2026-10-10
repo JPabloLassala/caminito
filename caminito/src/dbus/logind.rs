@@ -189,6 +189,7 @@ impl Caminito {
             logind.preparing = false;
             logind.release_sleep_delay(&self.loop_handle);
         }
+        self.night_light_resumed();
     }
 }
 

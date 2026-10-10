@@ -281,10 +281,12 @@ impl CaminitoInterface {
     ///
     /// - `temperature` (`u`): the temperature the outputs are to have, in kelvin, which they
     ///   fade to over about 2 s. It's 6500, neutral, while Night Light is off.
-    /// - `location-source` (`s`): where the sun schedule's location comes from. It's `none`
-    ///   until Caminito looks for one (138).
-    /// - `next-sunrise` (`x`): the Unix time the sun next climbs past −6°, or 0 while it
-    ///   isn't known, as it isn't until 138.
+    /// - `location-source` (`s`): where the sun schedule's location comes from: `stored`
+    ///   (`night-light-last-location`), `time-zone` (its coordinates in `zone.tab`), or
+    ///   `none`, when the sun schedule uses fixed times, 07:00 to 19:00 (138).
+    /// - `next-sunrise` (`x`): the Unix time the sun next climbs past −6°, or 07:00 local
+    ///   with no location. It's 0 when it doesn't in the next two days, in a polar night or
+    ///   under the midnight sun.
     ///
     /// Its settings are `org.mate.Caminito`'s `night-light-*` keys.
     #[zbus(property)]
