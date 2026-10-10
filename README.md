@@ -121,9 +121,11 @@ key only while an XWayland window has the keyboard.
 `vala-panel-appmenu-mate-caminito` is the one patched package that isn't a MATE component, and
 nothing depends on it: build it for a global menu in the panel
 ([ADR 0017](docs/adr/0017-caminito-brokers-the-global-menu-for-a-patched-appmenu-applet.md)).
-It's the AUR's `vala-panel-appmenu-mate` 25.04, with two patches: under Caminito the *Global
+It's the AUR's `vala-panel-appmenu-mate` 25.04, with four patches: under Caminito the *Global
 Application Menu* applet draws the menu Caminito publishes for the focused window, and while
-the applet is on a panel apps leave their menubars to it. So far that's the menu of a
+the applet is on a panel apps leave their menubars to it. On any desktop, a menu Firefox
+remakes stays open, and a shortcut of two presses, as VS Code's Ctrl+K Ctrl+O, is drawn whole
+where the applet drew only its first. So far that's the menu of a
 `GtkApplication`, as GTK 4 apps and some GTK 3 apps have, of a Qt 6 app, and of Firefox and
 VS Code once they're [set up for it](#the-global-menu). A dialog with no menu shows its
 parent's. The application's name is in bold before the menus, and each applet's
@@ -297,9 +299,10 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   editor's command line turns it off for that run.
 
   The menu is VS Code's own, with your key bindings. It doesn't reach a Flatpak
-  editor, never greys an item out, shows a checkmark only for a setting it can read, shows no
-  shortcut for a chord, leaves out other extensions' items, and isn't translated. Alt+F
-  doesn't open the panel's menu.
+  editor, never greys an item out, shows a checkmark only for a setting it can read, leaves
+  out other extensions' items, and isn't translated. A chord's shortcut, such as Ctrl+K
+  Ctrl+O, is drawn whole from the applet's package 25.04-5, and `caminito-vscode-git`
+  conflicts with older ones. Alt+F doesn't open the panel's menu.
 
   Without the package, VS Code has a global menu only as an XWayland window, since an Electron
   app says where its menu is by an X window's id alone. Put `--ozone-platform=x11` in

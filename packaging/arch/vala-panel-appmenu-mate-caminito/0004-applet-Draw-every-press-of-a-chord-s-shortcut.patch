@@ -1,0 +1,290 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sat, 10 Oct 2026 12:00:00 -0300
+Subject: [PATCH] applet: Draw every press of a chord's shortcut
+
+A dbusmenu shortcut is a list of presses. The translator made a GTK
+accelerator of the first and dropped the rest, so an item bound to a
+chord, as VS Code's Open Folder... is to Ctrl+K Ctrl+O, showed "Ctrl+K"
+alone: a shortcut that does something else, or nothing.
+
+A GTK accelerator is one press, and GtkAccelLabel draws only what it
+makes of one key and its modifiers. So the translator now writes a chord
+as each press's accelerator with a space between them, "<Control>k
+<Control>o", which GTK parses no key from: its accel label draws
+nothing. The applet looks at each item GTK makes from the model as it's
+put in a menu, and where the model's accelerator is a chord it draws the
+presses after the label, as GTK writes each ("Ctrl+K Ctrl+O"), in a node
+named "accelerator" so that a theme styles it as it styles an accel
+label's, and right-aligned with the same padding, so that its text ends
+where a one-press accelerator's does.
+
+A one-press shortcut is the accelerator it was, and GTK draws it as
+before. An empty shortcut, which the translator read past the end of, is
+now an empty accelerator, which GTK draws as none.
+---
+ lib/menu-chords.vala                       | 163 +++++++++++++++++++++
+ lib/menu-widget.vala                       |   2 +
+ lib/meson.build                            |   1 +
+ subprojects/appmenu-glib-translator/item.c |  47 +++---
+ 4 files changed, 194 insertions(+), 19 deletions(-)
+ create mode 100644 lib/menu-chords.vala
+
+diff --git a/lib/menu-chords.vala b/lib/menu-chords.vala
+new file mode 100644
+index 0000000..2331a9e
+--- /dev/null
++++ b/lib/menu-chords.vala
+@@ -0,0 +1,163 @@
++/*
++ * vala-panel-appmenu
++ * Copyright (C) 2026 Juan Pablo Lassala <jpablolassala@gmail.com>
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++/*
++ * A chord's shortcut, drawn where a menu item's accelerator is.
++ *
++ * The translator makes a dbusmenu shortcut of several presses into each press's accelerator
++ * with a space between them, as "<Control>k <Control>o". A GTK accelerator is one press, so
++ * GtkModelMenuItem parses no key from it and its accel label draws nothing. Here every item
++ * GTK makes from the model is looked at as it's inserted in a menu, and one whose accelerator
++ * is a chord gets the presses drawn after its label, as GTK writes each ("Ctrl+K Ctrl+O"),
++ * right-aligned where an accel label draws a one-press accelerator. A one-press accelerator
++ * is left to GTK.
++ *
++ * GTK keeps the model's item on the widget it makes, under the data key "GtkMenuTrackerItem",
++ * and the item's "accel" property is the model's attribute as it is (gtkmenushell.c, line
++ * 2140, and gtkmenutrackeritem.c, line 693, at GTK's 3.24.43 tag).
++ */
++
++namespace Appmenu.Chords
++{
++    private const string TRACKED = "appmenu-chords-tracked";
++
++    /* Draws the chord of every item of the shell, its submenus' and those inserted later */
++    public void track(Gtk.MenuShell shell)
++    {
++        if (shell.get_data<bool>(TRACKED))
++            return;
++        shell.set_data<bool>(TRACKED, true);
++        shell.insert.connect_after((child, position) => {
++            look_at(child);
++        });
++        shell.foreach(look_at);
++    }
++
++    private void look_at(Gtk.Widget widget)
++    {
++        unowned Gtk.MenuItem? item = widget as Gtk.MenuItem;
++        if (item == null)
++            return;
++        unowned Gtk.MenuShell? submenu = item.get_submenu() as Gtk.MenuShell;
++        if (submenu != null)
++            track(submenu);
++        unowned GLib.Object? tracker = item.get_data<GLib.Object>("GtkMenuTrackerItem");
++        if (tracker == null || tracker.get_class().find_property("accel") == null)
++            return;
++        string? accel = null;
++        tracker.get("accel", out accel);
++        string? text = label_of(accel);
++        if (text != null)
++            add_to(item, text);
++    }
++
++    /* Each press's label as GTK writes it, with a space between them. Null for one press,
++     * which the accel label draws, and for a press GTK can't parse. */
++    private string? label_of(string? accel)
++    {
++        if (accel == null || !accel.contains(" "))
++            return null;
++        string[] labels = {};
++        foreach (unowned string press in accel.split(" "))
++        {
++            uint key;
++            Gdk.ModifierType mods;
++            Gtk.accelerator_parse(press, out key, out mods);
++            if (key == 0)
++                return null;
++            labels += Gtk.accelerator_get_label(key, mods);
++        }
++        return string.joinv(" ", labels);
++    }
++
++    /* After the label, in the box GtkModelMenuItem puts an icon in, which it makes the same
++     * way when it has none yet. Its text and icon go on being set through the box. */
++    private void add_to(Gtk.MenuItem item, string text)
++    {
++        Gtk.Widget? child = item.get_child();
++        if (child == null)
++            return;
++        unowned Gtk.Box? box = child as Gtk.Box;
++        if (box == null)
++        {
++            var made = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 6);
++            item.remove(child);
++            made.pack_end(child, true, true, 0);
++            item.add(made);
++            made.show();
++            box = made;
++        }
++        /* First of the children packed at the end, which GTK lays out from the end. */
++        var chord = new Chord(text);
++        box.pack_end(chord, false, false, 0);
++        box.reorder_child(chord, 0);
++        chord.show();
++    }
++
++    /* The presses, drawn as an accel label draws its accelerator: in a node named
++     * "accelerator", so a theme styles them alike, and with its padding of 3 pixels after
++     * them (gtkaccellabel.c, lines 292 and 460, at GTK's 3.24.43 tag). */
++    private class Chord : Gtk.Widget
++    {
++        private const int PADDING = 3;
++        private string text;
++
++        static construct
++        {
++            set_css_name("accelerator");
++        }
++
++        public Chord(string text)
++        {
++            Object();
++            this.text = text;
++            set_has_window(false);
++        }
++
++        private Pango.Layout layout()
++        {
++            return create_pango_layout(text);
++        }
++
++        protected override void get_preferred_width(out int minimum, out int natural)
++        {
++            int width, height;
++            layout().get_pixel_size(out width, out height);
++            minimum = natural = width + PADDING;
++        }
++
++        protected override void get_preferred_height(out int minimum, out int natural)
++        {
++            int width, height;
++            layout().get_pixel_size(out width, out height);
++            minimum = natural = height;
++        }
++
++        protected override bool draw(Cairo.Context cr)
++        {
++            var layout = layout();
++            int width, height;
++            layout.get_pixel_size(out width, out height);
++            /* The padding is on the side away from the label in either direction, as an
++             * accel label draws at its edge with the padding after it, or at 0 right to left. */
++            int y = (get_allocated_height() - height) / 2;
++            get_style_context().render_layout(cr, 0, y, layout);
++            return false;
++        }
++    }
++}
+diff --git a/lib/menu-widget.vala b/lib/menu-widget.vala
+index 3a01327..3098ccd 100644
+--- a/lib/menu-widget.vala
++++ b/lib/menu-widget.vala
+@@ -83,6 +83,8 @@ namespace Appmenu
+             scroller.set_propagate_natural_width(true);
+             this.add(scroller);
+             scroller.add(mwidget);
++            /* A chord's presses beside its item */
++            Chords.track(mwidget);
+             mwidget.show();
+             scroller.show();
+             this.show();
+diff --git a/lib/meson.build b/lib/meson.build
+index ab18552..474a4db 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -3,6 +3,7 @@ sources = files(
+     'appmenu-caminito.vala',
+     'registrar.vala',
+     'menu-widget.vala',
++    'menu-chords.vala',
+     'helper-desktop.vala',
+     'helper-dbus.vala',
+     'helper-dbusmenu.vala',
+diff --git a/subprojects/appmenu-glib-translator/item.c b/subprojects/appmenu-glib-translator/item.c
+index 104c14a..06c115c 100644
+--- a/subprojects/appmenu-glib-translator/item.c
++++ b/subprojects/appmenu-glib-translator/item.c
+@@ -355,31 +355,40 @@ static void act_props_try_update(DBusMenuItem *item)
+ 	}
+ }
+ 
++/* A shortcut of several presses, a chord, is each press's accelerator with a space between
++ * them, as "<Control>k <Control>o". GTK parses no such accelerator, so its menu item draws
++ * nothing for it, and the applet's menu draws the presses one after another in its place
++ * (lib/menu-chords.vala). One press is the accelerator it always was. */
+ static bool dbus_menu_item_update_shortcut(DBusMenuItem *item, GVariant *value)
+ {
+ 	GString *new_accel_string = g_string_new(NULL);
+-	if (g_variant_n_children(value) != 1)
+-		g_debug("Unable to parse shortcut correctly, too many keys. Taking first.");
+ 
+-	GVariantIter iter;
+-	GVariant *child = g_variant_get_child_value(value, 0);
+-	g_variant_iter_init(&iter, child);
+-	char *string;
+-
+-	while (g_variant_iter_loop(&iter, "s", &string))
++	GVariantIter presses;
++	GVariant *press;
++	g_variant_iter_init(&presses, value);
++	while ((press = g_variant_iter_next_value(&presses)) != NULL)
+ 	{
+-		if (g_strcmp0(string, DBUS_MENU_SHORTCUT_CONTROL) == 0)
+-			g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_CONTROL);
+-		else if (g_strcmp0(string, DBUS_MENU_SHORTCUT_ALT) == 0)
+-			g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_ALT);
+-		else if (g_strcmp0(string, DBUS_MENU_SHORTCUT_SHIFT) == 0)
+-			g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_SHIFT);
+-		else if (g_strcmp0(string, DBUS_MENU_SHORTCUT_SUPER) == 0)
+-			g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_SUPER);
+-		else
+-			g_string_append(new_accel_string, string);
++		if (new_accel_string->len > 0)
++			g_string_append_c(new_accel_string, ' ');
++
++		GVariantIter iter;
++		g_variant_iter_init(&iter, press);
++		char *string;
++		while (g_variant_iter_loop(&iter, "s", &string))
++		{
++			if (g_strcmp0(string, DBUS_MENU_SHORTCUT_CONTROL) == 0)
++				g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_CONTROL);
++			else if (g_strcmp0(string, DBUS_MENU_SHORTCUT_ALT) == 0)
++				g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_ALT);
++			else if (g_strcmp0(string, DBUS_MENU_SHORTCUT_SHIFT) == 0)
++				g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_SHIFT);
++			else if (g_strcmp0(string, DBUS_MENU_SHORTCUT_SUPER) == 0)
++				g_string_append(new_accel_string, DBUS_MENUMODEL_SHORTCUT_SUPER);
++			else
++				g_string_append(new_accel_string, string);
++		}
++		g_variant_unref(press);
+ 	}
+-	g_variant_unref(child);
+ 	g_autofree char *str = g_string_free(new_accel_string, false);
+ 	GVariant *new_accel  = g_variant_new_string(str);
+ 	bool updated         = attr_update_checked(item, G_MENU_ATTRIBUTE_ACCEL, new_accel);
