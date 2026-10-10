@@ -333,10 +333,11 @@ fn dragging_a_tiled_windows_titlebar_untiles_it_under_the_pointer() {
     policy.grab_motion(SEAT, at(250., 10.), false);
 
     assert_eq!(policy.tile(id(1)), None);
-    // Its floating size, with a quarter of it left of the pointer, at its floating top.
+    // Its floating size, with a quarter of it left of the pointer, and the press as far
+    // down it as it was down the tile: 10 of 1080, 3 of 300.
     assert_eq!(
         last(&policy),
-        (rect(150, 400, 400, 300), WindowStates::default())
+        (rect(150, 7, 400, 300), WindowStates::default())
     );
 }
 
@@ -350,10 +351,11 @@ fn a_move_of_a_tiled_window_holds_it_until_twice_the_drag_threshold_then_untiles
     assert_eq!(policy.tile(id(1)), Some(Tile::Left));
     assert_eq!(last(&policy).0, rect(0, 0, 960, 1080));
 
-    // The pointer is 496 of the tile's 960 across, so as far across the floating 400.
+    // The pointer is 496 of the tile's 960 across, so as far across the floating 400, and
+    // it was pressed 500 of 1080 down, so as far down the floating 300.
     policy.grab_motion(SEAT, at(496., 500.), false);
     assert_eq!(policy.tile(id(1)), None);
-    assert_eq!(last(&policy).0, rect(289, 400, 400, 300));
+    assert_eq!(last(&policy).0, rect(289, 361, 400, 300));
 }
 
 #[test]

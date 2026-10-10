@@ -417,11 +417,7 @@ impl Mapped {
         if self.states.fullscreen {
             return self.frame.clear();
         }
-        let state = FrameState {
-            maximized: self.states.maximized,
-            focused: self.activated,
-            shaded: self.states.shaded,
-        };
+        let state = self.states.frame_state(self.activated);
         let content = FrameContent {
             size: self.size(),
             title: self.title(),

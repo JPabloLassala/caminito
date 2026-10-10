@@ -1151,9 +1151,10 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Unmaximises or untiles `id` for `begin_titlebar_move`, keeping `pointer`'s fraction
-    /// across the still-maximised titlebar the same across the one it's restored to. The
-    /// window's vertical position is left to `relayout`'s floating restore, and to the catch
-    /// up `begin_move`'s caller applies for the distance dragged since `at_press`.
+    /// across the still-maximised titlebar the same across the one it's restored to. A
+    /// maximised window's vertical position is left to `relayout`'s floating restore, and
+    /// a tiled one keeps `at_press`'s fraction down its frame; both then take the catch up
+    /// `begin_move`'s caller applies for the distance dragged since `at_press`.
     ///
     /// Built from `geometry`, policy's own requested rectangle, rather than `Managed::frame`
     /// (which lags behind it until the client commits a matching size): a drag must track
@@ -1173,6 +1174,12 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             0.5
         };
+        // A tile may be far taller than the window it goes back to, so the press keeps its
+        // place down the frame too, as Marco puts a shaken loose tile under the pointer
+        // (window.c:7470-7485) (158).
+        let down = managed.tile.is_some().then(|| {
+            ((at_press.y - f64::from(before.loc.y)) / f64::from(before.size.h.max(1))).clamp(0., 1.)
+        });
         self.set_maximized(id, false);
         let Some(managed) = self.windows.get_mut(&id) else {
             return;
@@ -1181,6 +1188,11 @@ impl<W: PolicyWindow> Policy<W> {
         let after_width = f64::from(managed.geometry.size.w + e.left + e.right);
         let frame_x = (at_press.x - fraction * after_width).round() as i32;
         managed.geometry.loc.x = frame_x + e.left;
+        if let Some(down) = down {
+            let after_height = f64::from(managed.geometry.size.h + e.top + e.bottom);
+            let frame_y = (at_press.y - down * after_height).round() as i32;
+            managed.geometry.loc.y = frame_y + e.top;
+        }
         self.apply();
     }
 

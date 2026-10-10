@@ -147,6 +147,8 @@ impl FrameContext {
             maximized: state.maximized,
             fullscreen: false,
             shaded: state.shaded,
+            tiled_left: state.tiled_left,
+            tiled_right: state.tiled_right,
         };
         frame_style(&facts, self.attach_modal_dialogs)
     }
@@ -354,7 +356,7 @@ pub struct WindowFrame {
     facts: Option<WindowFacts>,
     ssd: bool,
     /// The extents in each [`FrameState`], by [`state_index`].
-    extents: [FrameExtents<i32, Logical>; 8],
+    extents: [FrameExtents<i32, Logical>; 24],
     drawn: Option<(FrameInputs, ButtonStates, u64)>,
     /// Where everything was when the strips were last drawn, which the pointer finds the
     /// frame's controls by.
@@ -367,7 +369,17 @@ pub struct WindowFrame {
 
 /// Where a state's extents are in [`WindowFrame::extents`].
 fn state_index(state: FrameState) -> usize {
-    usize::from(state.maximized) << 2 | usize::from(state.focused) << 1 | usize::from(state.shaded)
+    let tiled = if state.tiled_left {
+        1
+    } else if state.tiled_right {
+        2
+    } else {
+        0
+    };
+    tiled << 3
+        | usize::from(state.maximized) << 2
+        | usize::from(state.focused) << 1
+        | usize::from(state.shaded)
 }
 
 impl WindowFrame {
@@ -380,6 +392,8 @@ impl WindowFrame {
                 maximized: index & 4 != 0,
                 focused: index & 2 != 0,
                 shaded: index & 1 != 0,
+                tiled_left: index >> 3 == 1,
+                tiled_right: index >> 3 == 2,
             };
             debug_assert_eq!(state_index(state), index);
             *extents = frame_context.extents(&facts, state);

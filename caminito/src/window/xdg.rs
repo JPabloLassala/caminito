@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use caminito_policy::{SizeHints, WindowStates, WindowType};
+use caminito_policy::{SizeHints, Tile, WindowStates, WindowType};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{DisplayHandle, Resource};
@@ -120,6 +120,10 @@ fn follow_own_size(toplevel: &ToplevelSurface, size: Size<i32, Logical>) -> Pend
             xdg_toplevel::State::Maximized,
             xdg_toplevel::State::Fullscreen,
             xdg_toplevel::State::Resizing,
+            xdg_toplevel::State::TiledLeft,
+            xdg_toplevel::State::TiledRight,
+            xdg_toplevel::State::TiledTop,
+            xdg_toplevel::State::TiledBottom,
         ]
         .into_iter()
         .any(|state| pending.states.contains(state));
@@ -268,12 +272,20 @@ impl Adapter for ToplevelSurface {
         // Where the window is is Caminito's alone; the client is told its size and states.
         self.with_pending_state(|pending| pending.size = Some(geometry.size));
         size_asked(self);
+        // A tiled window is told the edges it lies along, so GTK draws them square and
+        // without its shadow (07, 158). Smithay leaves them out for a client older than
+        // xdg_wm_base 2.
+        let tiled = states.tile.map(Tile::edges).unwrap_or_default();
         set_pending_states(
             self,
             &[
                 (xdg_toplevel::State::Maximized, states.maximized),
                 (xdg_toplevel::State::Fullscreen, states.fullscreen),
                 (xdg_toplevel::State::Resizing, states.resizing),
+                (xdg_toplevel::State::TiledLeft, tiled.left),
+                (xdg_toplevel::State::TiledRight, tiled.right),
+                (xdg_toplevel::State::TiledTop, tiled.top),
+                (xdg_toplevel::State::TiledBottom, tiled.bottom),
             ],
         );
     }
