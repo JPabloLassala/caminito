@@ -112,6 +112,27 @@ fn a_registered_windows_menu_is_published_while_it_has_the_focus() {
 }
 
 #[test]
+fn a_dialog_without_a_registered_menu_has_its_parents() {
+    let (mut f, _dir, bus, id, caller) = with_an_x11_client();
+    let code = map(&mut f, id, "code");
+    let (app, registrar) = an_app(&mut f, &bus);
+    register(&mut f, &registrar, code.x11(), MENU);
+
+    // VS Code's Open File dialog, transient for its window and with no menu of its own.
+    let open = f.map(
+        id,
+        WindowSpec {
+            app_id: Some("code"),
+            parent: Some(code),
+            ..WindowSpec::default()
+        },
+    );
+
+    assert!(f.has_keyboard(open));
+    assert_eq!(global_menu(&mut f, &caller), dbusmenu(&app, MENU, "code"));
+}
+
+#[test]
 fn the_menu_goes_with_its_window() {
     let (mut f, _dir, bus, id, caller) = with_an_x11_client();
     map(&mut f, id, "mate-calc");
