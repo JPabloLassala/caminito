@@ -24,14 +24,17 @@ fn focused_client(f: &mut Fixture) -> ClientId {
     id
 }
 
-/// The symbols the client's keymap was compiled from, such as `pc_us_es_2_inet(evdev)`.
-fn symbols(f: &Fixture, id: ClientId) -> String {
+/// The names of the client's keymap's groups, such as `["English (US)", "Spanish"]`.
+/// The symbols section's own name isn't read: libxkbcommon 1.6, Ubuntu 24.04's, writes it as
+/// `(unnamed)`.
+fn groups(f: &Fixture, id: ClientId) -> Vec<String> {
     let keymap = f.client_state(id).keymap.as_deref().expect("a keymap");
-    let line = keymap
+    keymap
         .lines()
-        .find_map(|line| line.trim().strip_prefix("xkb_symbols \""))
-        .expect("the keymap names its symbols");
-    line.split('"').next().unwrap().to_owned()
+        .filter_map(|line| line.trim().strip_prefix("name[Group"))
+        .filter_map(|line| line.split('"').nth(1))
+        .map(str::to_owned)
+        .collect()
 }
 
 #[test]
@@ -43,11 +46,7 @@ fn layouts_at_start_up_are_the_keymap_a_client_gets() {
     )]);
     let id = focused_client(&mut f);
     f.roundtrip(id);
-    assert!(
-        symbols(&f, id).contains("de(nodeadkeys)"),
-        "{}",
-        symbols(&f, id)
-    );
+    assert_eq!(groups(&f, id), ["German (no dead keys)"]);
 }
 
 #[test]
@@ -55,10 +54,10 @@ fn setting_layouts_live_sends_a_client_a_keymap_with_them() {
     let mut f = Fixture::new();
     let id = focused_client(&mut f);
     f.roundtrip(id);
-    assert!(!symbols(&f, id).contains("es_2"));
+    assert_eq!(groups(&f, id), ["English (US)"]);
 
     f.set_setting(KEYBOARD_XKB, "layouts", strings(&["us", "es"]));
-    f.dispatch_until(|f| symbols(f, id).contains("us_es_2"));
+    f.dispatch_until(|f| groups(f, id) == ["English (US)", "Spanish"]);
 }
 
 #[test]
@@ -89,13 +88,13 @@ fn a_layout_xkbcommon_cant_compile_keeps_the_keymap() {
     let mut f = Fixture::new();
     let id = focused_client(&mut f);
     f.set_setting(KEYBOARD_XKB, "layouts", strings(&["es"]));
-    f.dispatch_until(|f| symbols(f, id).contains("_es_"));
+    f.dispatch_until(|f| groups(f, id) == ["Spanish"]);
 
     f.set_setting(KEYBOARD_XKB, "layouts", strings(&["no-such-layout"]));
     // Settings arrive in order, so once the rate has, so has the layout.
     f.set_setting(KEYBOARD, "rate", Value::Int(50));
     f.dispatch_until(|f| f.client_state(id).repeat_info == Some((50, 500)));
-    assert!(symbols(&f, id).contains("_es_"), "{}", symbols(&f, id));
+    assert_eq!(groups(&f, id), ["Spanish"]);
 }
 
 #[test]
@@ -107,7 +106,7 @@ fn a_new_keymap_keeps_numlock() {
     assert_eq!(f.client_state(id).locked_modifiers, NUM_LOCK);
 
     f.set_setting(KEYBOARD_XKB, "layouts", strings(&["es"]));
-    f.dispatch_until(|f| symbols(f, id).contains("_es_"));
+    f.dispatch_until(|f| groups(f, id) == ["Spanish"]);
     f.roundtrip(id);
     assert_eq!(f.client_state(id).locked_modifiers, NUM_LOCK);
 }
