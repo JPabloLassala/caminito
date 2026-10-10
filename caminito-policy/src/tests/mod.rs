@@ -3,12 +3,14 @@
 mod actions;
 mod commit;
 mod dynamic_workspaces;
+mod edge_resistance;
 mod focus;
 mod grid;
 mod interactive;
 mod invariants;
 mod outputs;
 mod placement;
+mod placement_modes;
 mod requests;
 mod shade;
 mod show_desktop;

@@ -15,7 +15,7 @@ fn a_move_follows_the_pointer() {
     );
 
     assert!(policy.begin_move(SEAT, id(1), at(150., 150.)));
-    policy.grab_motion(SEAT, at(200.5, 120.));
+    policy.grab_motion(SEAT, at(200.5, 120.), false);
     policy.end_grab(SEAT);
 
     assert_eq!(policy.geometry(id(1)).unwrap().loc, (151, 70).into());
@@ -33,7 +33,7 @@ fn a_move_onto_another_output_changes_the_windows_outputs() {
     );
 
     policy.begin_move(SEAT, id(1), at(150., 150.));
-    policy.grab_motion(SEAT, at(2150., 150.));
+    policy.grab_motion(SEAT, at(2150., 150.), false);
 
     assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(2)][..]));
 }
@@ -61,7 +61,7 @@ fn a_resize_asks_for_the_new_size_within_the_hints() {
     );
 
     assert!(policy.begin_resize(SEAT, id(1), ResizeEdges::BOTTOM_RIGHT, at(500., 400.)));
-    policy.grab_motion(SEAT, at(800., 500.));
+    policy.grab_motion(SEAT, at(800., 500.), false);
 
     let (geometry, states) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(
@@ -84,7 +84,7 @@ fn a_resize_from_the_top_left_keeps_the_bottom_right_corner() {
     );
 
     policy.begin_resize(SEAT, id(1), ResizeEdges::TOP_LEFT, at(100., 100.));
-    policy.grab_motion(SEAT, at(50., 80.));
+    policy.grab_motion(SEAT, at(50., 80.), false);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(geometry, Rectangle::new((50, 80).into(), (450, 320).into()));
 
@@ -104,7 +104,7 @@ fn unmapping_a_grabbed_window_ends_the_grab() {
     policy.begin_move(SEAT, id(1), at(0., 0.));
 
     policy.unmap_window(id(1));
-    policy.grab_motion(SEAT, at(10., 10.));
+    policy.grab_motion(SEAT, at(10., 10.), false);
 
     assert!(policy.grab(SEAT).is_none());
 }
@@ -168,7 +168,7 @@ fn dragging_the_titlebar_of_a_maximised_window_unmaximises_it_under_the_pointer(
     );
 
     // The same grab keeps following the pointer, as an ordinary move does.
-    policy.grab_motion(SEAT, at(970., 10.));
+    policy.grab_motion(SEAT, at(970., 10.), false);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(geometry.loc, (770, 100).into());
 }
@@ -189,7 +189,7 @@ fn a_catch_up_after_crossing_the_threshold_keeps_the_pointers_fraction_across_th
     // `motion()` applies that same catch-up with a `grab_motion` call right after starting
     // the grab, so it's simulated here too.
     assert!(policy.begin_titlebar_move(SEAT, id(1), at(400., 10.), at(480., 30.)));
-    policy.grab_motion(SEAT, at(480., 30.));
+    policy.grab_motion(SEAT, at(480., 30.), false);
 
     assert!(!policy.is_maximized(id(1)));
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
@@ -216,7 +216,7 @@ fn dragging_the_titlebar_of_a_half_maximised_window_unmaximises_both_axes() {
 
     // Without unmaximising first, `pin_maximized_axes` would keep the horizontal axis at
     // its maximised size and position for the rest of the grab; now it moves freely too.
-    policy.grab_motion(SEAT, at(600., 60.));
+    policy.grab_motion(SEAT, at(600., 60.), false);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(
         geometry,
@@ -233,7 +233,7 @@ fn begin_titlebar_move_leaves_an_ordinary_window_exactly_as_begin_move_would() {
     );
 
     assert!(policy.begin_titlebar_move(SEAT, id(1), at(150., 150.), at(150., 150.)));
-    policy.grab_motion(SEAT, at(200.5, 120.));
+    policy.grab_motion(SEAT, at(200.5, 120.), false);
     policy.end_grab(SEAT);
 
     assert_eq!(policy.geometry(id(1)).unwrap().loc, (151, 70).into());

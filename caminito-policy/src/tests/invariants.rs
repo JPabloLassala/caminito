@@ -105,6 +105,8 @@ enum Op {
     },
     GrabMotion {
         seat: u32,
+        /// Shift held: snap-move instead of resisting (157).
+        snap: bool,
         x: i16,
         y: i16,
     },
@@ -245,7 +247,8 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (seat(), window_id()).prop_map(|(seat, id)| Op::BeginMove { seat, id }),
         1 => (seat(), window_id(), any::<bool>())
             .prop_map(|(seat, id, top_left)| Op::BeginResize { seat, id, top_left }),
-        1 => (seat(), any::<i16>(), any::<i16>()).prop_map(|(seat, x, y)| Op::GrabMotion { seat, x, y }),
+        1 => (seat(), any::<i16>(), any::<i16>(), any::<bool>())
+            .prop_map(|(seat, x, y, snap)| Op::GrabMotion { seat, snap, x, y }),
         1 => seat().prop_map(Op::EndGrab),
         1 => (1..=6usize).prop_map(Op::SetWorkspaceCount),
         1 => any::<bool>().prop_map(Op::SetDynamicWorkspaces),
@@ -347,7 +350,9 @@ impl Op {
                 };
                 policy.begin_resize(SeatId(seat), WindowId(id), edges, pointer(0, 0));
             }
-            Op::GrabMotion { seat, x, y } => policy.grab_motion(SeatId(seat), pointer(x, y)),
+            Op::GrabMotion { seat, snap, x, y } => {
+                policy.grab_motion(SeatId(seat), pointer(x, y), snap)
+            }
             Op::EndGrab(seat) => policy.end_grab(SeatId(seat)),
             Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
                 workspace_count,

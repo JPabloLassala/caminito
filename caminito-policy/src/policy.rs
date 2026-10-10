@@ -6,12 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
+use crate::edges::{EdgeWindow, Edges};
 use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
-    Action, FrameState, Grid, Output, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates,
-    WindowType, WorkspaceLayout,
+    Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, SizeHints, WindowId,
+    WindowStates, WindowType, WorkspaceLayout,
 };
 
 mod dynamic_workspaces;
@@ -53,8 +54,13 @@ struct Grab {
     /// The edges being resized, or `None` for a move.
     resize: Option<ResizeEdges>,
     start_pointer: Point<f64, Logical>,
-    /// The window geometry when the grab began, at its committed size.
+    /// The window geometry when the grab began, at its committed size, moved by any nudge
+    /// since.
     start: Rectangle<i32, Logical>,
+    /// Where the window geometry was when the grab began, which a cancel goes back to.
+    initial: Point<i32, Logical>,
+    /// A manual placement of a new window (154), which the keys move, put down and cancel.
+    placing: bool,
 }
 
 /// Marco's `MAX_REASONABLE_WORKSPACES`, the schema's upper bound on `num-workspaces`.
@@ -77,9 +83,16 @@ pub struct Config {
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
     /// open (108).
     pub alt_tab_raise_windows: bool,
+    /// `placement-mode` (154).
+    pub placement_mode: PlacementMode,
+    /// `center-new-windows`: the automatic mode puts a new window in the middle of the work
+    /// area (154).
+    pub center_new_windows: bool,
 }
 
 impl Default for Config {
+    /// Marco's defaults, except `center-new-windows`, which is off: the placement policy's
+    /// tests were written for, and Caminito's before 154.
     fn default() -> Self {
         // Marco's default `num-workspaces`, with its default names.
         let workspace_count = 4;
@@ -89,8 +102,19 @@ impl Default for Config {
             workspace_layout: WorkspaceLayout::default(),
             dynamic_workspaces: false,
             alt_tab_raise_windows: false,
+            placement_mode: PlacementMode::Automatic,
+            center_new_windows: false,
         }
     }
+}
+
+/// The states a window asks to map with, which change how it's placed (154).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MapStates {
+    /// Maximised both ways.
+    pub maximized: bool,
+    /// Fullscreen, on the output named if one is.
+    pub fullscreen: Option<Option<OutputId>>,
 }
 
 /// Marco's name for a workspace with none set, numbered from 1.
@@ -172,8 +196,13 @@ impl<W: PolicyWindow> Managed<W> {
     /// A shaded window is only its frame's titlebar, which Marco's shaded styles keep the
     /// height of.
     fn frame(&self) -> Rectangle<i32, Logical> {
+        self.frame_of(Rectangle::new(self.geometry.loc, self.size))
+    }
+
+    /// The outer rectangle the window would have at window geometry `geometry`.
+    fn frame_of(&self, geometry: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
         let e = self.visible_extents();
-        let mut frame = frame_around(Rectangle::new(self.geometry.loc, self.size), e);
+        let mut frame = frame_around(geometry, e);
         if self.shaded {
             frame.size.h = e.top;
         }
@@ -287,6 +316,11 @@ pub struct Policy<W: PolicyWindow> {
     switcher: Option<switcher::Open>,
     /// `alt-tab-raise-windows`.
     alt_tab_raise_windows: bool,
+    placement_mode: PlacementMode,
+    center_new_windows: bool,
+    /// Where the pointer was when the compositor last said, which `pointer` and `manual`
+    /// placement put a new window at.
+    pointer: Option<Point<f64, Logical>>,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -310,6 +344,9 @@ impl<W: PolicyWindow> Policy<W> {
             mru: Vec::new(),
             switcher: None,
             alt_tab_raise_windows: false,
+            placement_mode: PlacementMode::Automatic,
+            center_new_windows: false,
+            pointer: None,
         };
         policy.settings_changed(config);
         policy
@@ -378,6 +415,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.dynamic_workspaces = config.dynamic_workspaces;
         self.workspace_layout = config.workspace_layout;
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
+        self.placement_mode = config.placement_mode;
+        self.center_new_windows = config.center_new_windows;
         if !self.dynamic_workspaces {
             self.set_workspace_count(config.workspace_count);
         }
@@ -408,7 +447,8 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Gives each workspace its name from the settings, or Marco's default. A name is the
-    /// number's, not the workspace's, as Marco keeps them (`meta_prefs_get_workspace_name`, prefs.c:2257-2268).
+    /// number's, not the workspace's, as Marco keeps them (`meta_prefs_get_workspace_name`,
+    /// prefs.c:2257-2268).
     fn name_workspaces(&mut self) {
         self.workspace_names = (0..self.stacks.len())
             .map(|index| {
@@ -420,8 +460,31 @@ impl<W: PolicyWindow> Policy<W> {
             .collect();
     }
 
+    /// Where the pointer is, which `pointer` and `manual` placement put a new window at. The
+    /// compositor says before it maps a window.
+    pub fn set_pointer(&mut self, pointer: Point<f64, Logical>) {
+        self.pointer = Some(pointer);
+    }
+
     /// Starts managing a window the client has mapped.
     pub fn map_window(&mut self, window: W, now: Duration) {
+        self.map_window_with(window, MapStates::default(), now);
+    }
+
+    /// Starts managing a window the client has mapped with `states`. A window that maps
+    /// maximised or fullscreen keeps the automatic placement, for the geometry it goes back
+    /// to, whatever the placement keys say (154).
+    pub fn map_window_with(&mut self, window: W, states: MapStates, now: Duration) {
+        let id = window.id();
+        self.map(window, states, now);
+        if let Some(output) = states.fullscreen {
+            self.set_fullscreen(id, true, output);
+        } else if states.maximized {
+            self.set_maximized(id, true);
+        }
+    }
+
+    fn map(&mut self, window: W, states: MapStates, now: Duration) {
         let id = window.id();
         let size = window.size();
         let geometry = Rectangle::new(Point::default(), size);
@@ -469,8 +532,13 @@ impl<W: PolicyWindow> Policy<W> {
         self.stacks[workspace].push(id);
         // Before it's placed, which is among the windows that show.
         self.leave_show_desktop(id);
-        self.place(id);
-        self.maximize_if_too_big(id);
+        let constrained = states.maximized || states.fullscreen.is_some();
+        let by_pointer = self.place(id, !constrained);
+        // Marco's pointer placement skips its maximising of a window too big for its work
+        // area (place.c:898-905).
+        if !by_pointer {
+            self.maximize_if_too_big(id);
+        }
         self.adopt_transients(id);
         // While the Window switcher is open the focus stays where it is, and the window gets
         // it when the switcher closes.
@@ -479,7 +547,23 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             self.focus_mapped(id, now);
         }
+        if by_pointer && self.placement_mode == PlacementMode::Manual {
+            self.begin_manual_placement(id);
+        }
         self.apply();
+    }
+
+    /// Has the last seat move a new window with its pointer until it's put down, as Marco's
+    /// `move_after_placement` begins a keyboard move (window.c:2329-2334). Like Marco's
+    /// `meta_window_begin_grab_op`, it doesn't start while the seat has another grab.
+    fn begin_manual_placement(&mut self, id: WindowId) {
+        let (seat, Some(pointer)) = (self.last_seat, self.pointer) else {
+            return;
+        };
+        if self.grabs.contains_key(&seat) || !self.begin_grab(seat, id, None, pointer) {
+            return;
+        }
+        self.grabs.get_mut(&seat).unwrap().placing = true;
     }
 
     /// Focuses a window that has just mapped, as Marco's `window_state_on_map`
@@ -967,43 +1051,92 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// The seat's pointer moved during a grab.
-    pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>) {
+    /// The seat's pointer moved during a grab. With `snap` (Shift held), the window snaps to
+    /// the nearest edges; otherwise it resists at the edges it meets (157).
+    pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
         let Some(grab) = self.grabs.get(&seat) else {
             return;
         };
         let delta = pointer - grab.start_pointer;
         let start = grab.start;
+        let resize = grab.resize;
+        let edges = self.edges_for(grab.window);
         let managed = self.windows.get_mut(&grab.window).unwrap();
         let current = managed.geometry;
-        match grab.resize {
-            None => managed.geometry.loc = (start.loc.to_f64() + delta).to_i32_round(),
-            Some(edges) => {
+        // Edges hold back the frame, measured from where policy last asked the window to
+        // be, as `unmaximize_for_drag` measures it.
+        let old_frame = managed.frame_of(current);
+        match resize {
+            None => {
+                let loc = (start.loc.to_f64() + delta).to_i32_round();
+                let proposed = managed.frame_of(Rectangle::new(loc, current.size));
+                let frame_loc = edges.for_move(old_frame, proposed, snap);
+                managed.geometry.loc = loc + (frame_loc - proposed.loc);
+            }
+            Some(edges_moved) => {
                 let (dx, dy) = (delta.x.round() as i32, delta.y.round() as i32);
                 let mut size = start.size;
-                if edges.left {
+                if edges_moved.left {
                     size.w -= dx;
-                } else if edges.right {
+                } else if edges_moved.right {
                     size.w += dx;
                 }
-                if edges.top {
+                if edges_moved.top {
                     size.h -= dy;
-                } else if edges.bottom {
+                } else if edges_moved.bottom {
                     size.h += dy;
                 }
-                let size = managed.hints.clamp(size);
-                let mut loc = start.loc;
-                if edges.left {
-                    loc.x = start.loc.x + start.size.w - size.w;
-                }
-                if edges.top {
-                    loc.y = start.loc.y + start.size.h - size.h;
-                }
-                managed.geometry = Rectangle::new(loc, size);
+                let hints = managed.hints;
+                let proposed = |size| {
+                    let size = hints.clamp(size);
+                    let mut loc = start.loc;
+                    if edges_moved.left {
+                        loc.x = start.loc.x + start.size.w - size.w;
+                    }
+                    if edges_moved.top {
+                        loc.y = start.loc.y + start.size.h - size.h;
+                    }
+                    Rectangle::new(loc, size)
+                };
+                let unresisted = proposed(size);
+                let proposed_frame = managed.frame_of(unresisted);
+                let (w, h) = edges.for_resize(old_frame, proposed_frame, snap);
+                let resisted = Size::new(
+                    (unresisted.size.w + w - proposed_frame.size.w).max(0),
+                    (unresisted.size.h + h - proposed_frame.size.h).max(0),
+                );
+                managed.geometry = proposed(resisted);
             }
         }
         managed.pin_maximized_axes(current);
         self.apply();
+    }
+
+    /// Moves the window of the seat's move grab by `delta`, as a key does, and goes on
+    /// following the pointer from there.
+    pub fn nudge_grab(&mut self, seat: SeatId, delta: Point<i32, Logical>) {
+        let Some(grab) = self.grabs.get_mut(&seat) else {
+            return;
+        };
+        if grab.resize.is_some() {
+            return;
+        }
+        grab.start.loc += delta;
+        let managed = self.windows.get_mut(&grab.window).unwrap();
+        managed.geometry.loc += delta;
+        self.apply();
+    }
+
+    /// Ends the seat's move grab with its window back where it began, as Escape does in
+    /// Marco's keyboard move (keybindings.c:1523-1545).
+    pub fn cancel_grab(&mut self, seat: SeatId) {
+        if let Some(grab) = self.grabs.get(&seat)
+            && grab.resize.is_none()
+        {
+            let managed = self.windows.get_mut(&grab.window).unwrap();
+            managed.geometry.loc = grab.initial;
+        }
+        self.end_grab(seat);
     }
 
     /// Ends the seat's grab, if it has one.
@@ -1039,6 +1172,37 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// The edges a grab's window meets (157): the work areas', and the frames of the other
+    /// windows showing on the workspace whose edges Marco counts, all but desktops, menus
+    /// and splash screens (edge-resistance.c:33-39).
+    fn edges_for(&self, grabbed: WindowId) -> Edges {
+        let windows: Vec<EdgeWindow> = self.stacks[self.active]
+            .iter()
+            .filter(|id| **id != grabbed && self.is_showing(**id))
+            .filter_map(|id| {
+                let managed = &self.windows[id];
+                let has_edges = match managed.window_type {
+                    WindowType::Desktop | WindowType::Menu | WindowType::Splashscreen => {
+                        return None;
+                    }
+                    WindowType::Dock => false,
+                    _ => true,
+                };
+                Some(EdgeWindow {
+                    frame: managed.frame(),
+                    has_edges,
+                })
+            })
+            .collect();
+        let screen = self
+            .outputs
+            .iter()
+            .map(|o| o.geometry)
+            .reduce(|a, b| a.merge(b))
+            .unwrap_or_default();
+        Edges::new(self.outputs.iter().map(Self::work_area), &windows, screen)
+    }
+
     fn begin_grab(
         &mut self,
         seat: SeatId,
@@ -1070,6 +1234,8 @@ impl<W: PolicyWindow> Policy<W> {
                 resize,
                 start_pointer: pointer,
                 start,
+                initial: start.loc,
+                placing: false,
             },
         );
         self.apply();
@@ -1137,6 +1303,14 @@ impl<W: PolicyWindow> Policy<W> {
 
     pub fn window_mut(&mut self, id: WindowId) -> Option<&mut W> {
         self.windows.get_mut(&id).map(|m| &mut m.window)
+    }
+
+    /// The new window the seat is placing by hand (154), if its grab is one.
+    pub fn placing(&self, seat: SeatId) -> Option<WindowId> {
+        self.grabs
+            .get(&seat)
+            .filter(|grab| grab.placing)
+            .map(|grab| grab.window)
     }
 
     /// The window the seat is moving or resizing.
@@ -1452,14 +1626,17 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Places a newly mapped window with Marco's automatic placement.
-    fn place(&mut self, id: WindowId) {
+    /// Places a newly mapped window as Marco's `meta_window_place` does (place.c:700-905),
+    /// with the placement keys if `by_mode` (154), else with the automatic mode as if
+    /// `center-new-windows` were off. Returns whether it was placed at the pointer.
+    fn place(&mut self, id: WindowId, by_mode: bool) -> bool {
         let managed = &self.windows[&id];
         let e = managed.visible_extents();
         let (left, top) = (e.left, e.top);
         let frame_size = managed.frame().size;
         let size = managed.size;
 
+        let mut by_pointer = false;
         let loc = if let Some(requested) = managed.window.requested_position(e) {
             // Marco honours USPosition and PPosition with its workarounds on (the default).
             requested
@@ -1481,60 +1658,101 @@ impl<W: PolicyWindow> Policy<W> {
                 }
                 None => loc,
             }
-        } else {
-            let output = self
-                .focus(self.last_seat)
-                .and_then(|f| self.output_of(self.windows[&f].frame()))
-                .or(self.primary_output());
-            match output {
+        } else if matches!(
+            managed.window_type,
+            WindowType::Dialog | WindowType::ModalDialog | WindowType::Splashscreen
+        ) {
+            // Marco centres the window geometry, not the frame, on the output.
+            match self.placement_output() {
                 None => Point::new(left, top),
-                Some(output) => self.place_on(id, output, frame_size, (left, top)),
+                Some(output) => {
+                    let area = output.geometry;
+                    Point::new(
+                        area.loc.x + (area.size.w - size.w) / 2,
+                        area.loc.y + (area.size.h - size.h) / 2,
+                    )
+                }
+            }
+        } else if let (true, PlacementMode::Pointer | PlacementMode::Manual, Some(pointer)) =
+            (by_mode, self.placement_mode, self.pointer)
+        {
+            // Kept within the work area of the output the pointer is on (154), as Marco's
+            // constraints keep a new window on its monitor.
+            by_pointer = true;
+            let pointer = pointer.to_i32_round();
+            let output = self
+                .outputs
+                .iter()
+                .find(|o| o.geometry.contains(pointer))
+                .or(self.primary_output());
+            let frame_loc = placement::at_pointer(frame_size, pointer);
+            let frame_loc = match output {
+                Some(output) => placement::constrain(
+                    Rectangle::new(frame_loc, frame_size),
+                    Self::work_area(output),
+                ),
+                None => frame_loc,
+            };
+            Point::new(frame_loc.x + left, frame_loc.y + top)
+        } else {
+            match self.placement_output() {
+                None => Point::new(left, top),
+                Some(output) => {
+                    let center = by_mode && self.center_new_windows;
+                    self.place_on(id, output, frame_size, (left, top), center)
+                }
             }
         };
         self.windows.get_mut(&id).unwrap().geometry.loc = loc;
+        by_pointer
     }
 
-    /// Places a window without a parent to centre on, on `output`.
+    /// The output a new window goes on with nothing else to go by: the focused window's,
+    /// else the primary output.
+    fn placement_output(&self) -> Option<&Output> {
+        self.focus(self.last_seat)
+            .and_then(|f| self.output_of(self.windows[&f].frame()))
+            .or(self.primary_output())
+    }
+
+    /// Places a window with the automatic mode on `output`, in the middle of its work area if
+    /// `center`.
     fn place_on(
         &self,
         id: WindowId,
         output: &Output,
         frame_size: Size<i32, Logical>,
         (left, top): (i32, i32),
+        center: bool,
     ) -> Point<i32, Logical> {
         let managed = &self.windows[&id];
-        if matches!(
-            managed.window_type,
-            WindowType::Dialog | WindowType::ModalDialog | WindowType::Splashscreen
-        ) {
-            // Marco centres the window geometry, not the frame, on the output.
-            let area = output.geometry;
-            return Point::new(
-                area.loc.x + (area.size.w - managed.size.w) / 2,
-                area.loc.y + (area.size.h - managed.size.h) / 2,
-            );
-        }
-
         let area = Self::work_area(output);
-        let others: Vec<Obstacle> = self.stacks[managed.workspace]
-            .iter()
-            .filter(|other| **other != id && self.is_visible_on_workspace(**other))
-            .map(|other| &self.windows[other])
-            .filter(|m| self.output_of(m.frame()).map(|o| o.id) == Some(output.id))
-            .map(|m| Obstacle {
-                frame: m.frame(),
-                client: m.geometry.loc,
-                blocks: matches!(
-                    m.window_type,
-                    WindowType::Normal
-                        | WindowType::Utility
-                        | WindowType::Toolbar
-                        | WindowType::Menu
-                ),
-            })
-            .collect();
-        let frame_loc = placement::first_fit(frame_size, area, &others)
-            .unwrap_or_else(|| placement::cascade(frame_size, (left, top), area, &others));
+        let frame_loc = if center {
+            // A frame that doesn't fit the middle doesn't fit beside another window either,
+            // and Marco leaves it at the monitor's origin with no cascade
+            // (place.c:606-628, 941), which the work area moves it into.
+            placement::center(frame_size, area).unwrap_or(output.geometry.loc)
+        } else {
+            let others: Vec<Obstacle> = self.stacks[managed.workspace]
+                .iter()
+                .filter(|other| **other != id && self.is_visible_on_workspace(**other))
+                .map(|other| &self.windows[other])
+                .filter(|m| self.output_of(m.frame()).map(|o| o.id) == Some(output.id))
+                .map(|m| Obstacle {
+                    frame: m.frame(),
+                    client: m.geometry.loc,
+                    blocks: matches!(
+                        m.window_type,
+                        WindowType::Normal
+                            | WindowType::Utility
+                            | WindowType::Toolbar
+                            | WindowType::Menu
+                    ),
+                })
+                .collect();
+            placement::first_fit(frame_size, area, &others)
+                .unwrap_or_else(|| placement::cascade(frame_size, (left, top), area, &others))
+        };
         let frame_loc = placement::constrain(Rectangle::new(frame_loc, frame_size), area);
         Point::new(frame_loc.x + left, frame_loc.y + top)
     }

@@ -10,22 +10,22 @@ use super::Held;
 
 /// A key combination: a keysym with exactly these modifiers held.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Accelerator {
-    held: Held,
-    keysym: Keysym,
+pub(super) struct Accelerator {
+    pub(super) held: Held,
+    pub(super) keysym: Keysym,
 }
 
 impl Accelerator {
     /// Whether a press with `mods` held is this combination, where `keysyms` are the ones
     /// that name the key pressed.
-    fn matches(&self, mods: &ModifiersState, keysyms: &[Keysym]) -> bool {
+    pub(super) fn matches(&self, mods: &ModifiersState, keysyms: &[Keysym]) -> bool {
         self.held == Held::from(mods) && keysyms.contains(&self.keysym)
     }
 }
 
 /// Why a string isn't an accelerator Caminito can grab.
 #[derive(Debug, PartialEq)]
-enum ParseError {
+pub(super) enum ParseError {
     /// A `<` with no `>` after it.
     UnclosedModifier,
     /// A modifier GTK doesn't name.
@@ -60,7 +60,7 @@ impl std::error::Error for ParseError {}
 /// `egg_accelerator_parse_virtual` for `<Shft>` and `<Ctl>`): modifiers in angle brackets,
 /// in any order and case, then a keysym's name. The empty string and `disabled`, which
 /// MATE stores for a shortcut with no keys, are no accelerator.
-fn parse(accelerator: &str) -> Result<Option<Accelerator>, ParseError> {
+pub(super) fn parse(accelerator: &str) -> Result<Option<Accelerator>, ParseError> {
     if accelerator.is_empty() || accelerator == "disabled" {
         return Ok(None);
     }
