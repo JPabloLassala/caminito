@@ -131,7 +131,10 @@ struct NightLightDump {
 #[derive(Serialize)]
 struct NightLightOutputDump {
     output: String,
-    temperature: u32,
+    /// Night Light's temperature on it, or `None` while a gamma client's table is on it.
+    temperature: Option<u32>,
+    /// Whether a gamma client holds it (141).
+    gamma_client: bool,
 }
 
 #[derive(Serialize)]
@@ -571,7 +574,8 @@ impl Caminito {
                 .iter()
                 .map(|output| NightLightOutputDump {
                     output: output.name(),
-                    temperature: night_light.temperature(output, now),
+                    temperature: night_light.applied(output, now),
+                    gamma_client: self.gamma_control_state.holds(output),
                 })
                 .collect(),
         }

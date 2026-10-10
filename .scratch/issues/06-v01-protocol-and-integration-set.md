@@ -38,12 +38,12 @@ This ticket decides *where each fix lives and which channel carries it* for ever
 ### Deferred protocols
 
 - **wlr-screencopy.** mate-screenshot prefers ext-image-copy-capture and uses screencopy only as a fallback.
-- **wlr-output-power-management, wlr-gamma-control and wlr-virtual-pointer.** Nothing in the v0.1 scope binds them.
+- **wlr-output-power-management and wlr-virtual-pointer.** Nothing in the v0.1 scope binds them. wlr-gamma-control was left out here too; ticket 141 serves it after v0.1, on the tty only, for Night Light's gamma clients (ADR 0023).
 - **The Xfce private toplevel and output protocols.** libxfce4windowing binds them only if they're offered.
 
 ### Access to privileged globals
 
-Layer-shell, foreign-toplevel, ext-workspace, output management, data-control and screen capture are offered to every client **except those in a `wp_security_context_v1` sandbox** (Flatpak).
+Layer-shell, foreign-toplevel, ext-workspace, output management, data-control, screen capture and, since 141, gamma control are offered to every client **except those in a `wp_security_context_v1` sandbox** (Flatpak).
 
 ### Integration channels
 

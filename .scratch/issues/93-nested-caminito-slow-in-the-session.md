@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open
+Status: open: the fix is in, and the nested run with foot and xterm in the Session is the developer's
 Milestone: none (proposed: it gates no milestone, since a nested run is the development loop's and not a user's)
 Blocked by: none
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -65,3 +65,10 @@ Left as they are:
 - **A timer and its surface live until the timestamp,** however far ahead a client sets it.
 
 To do, for the third criterion: install a build with the fix, log into *MATE on Caminito* again, and run `./93-measure.sh` from a terminal. The `host` medians should be near KDE's, and its question records what the developer sees.
+
+## Done (2026-10-10)
+
+- **The fix was already on the trunk when this was shipped.** `State::release_at_commit_time` and `tests/commit_timing.rs` came in with 67e7390, a commit named for 115 that carried them. Nothing in Caminito changes here; this records it and the status.
+- **The test was checked red and green again, in a cloud container.** With the pre-commit hook's call to `release_at_commit_time` taken out, `a_commit_is_shown_at_its_timestamp_with_nothing_else_drawing` fails at its last `wait_for_pixel`; with it, it passes.
+- **The full suite was run on a private session bus, on Ubuntu 24.04 rather than Arch.** 1233 passed and 6 failed, none in a test of this ticket: four in `tests::keymap` and `the_pointer_goes_through_an_override_redirect_windows_input_shaped_shadow` fail again alone, and `a_second_clients_lock_is_refused_once_the_locker_is_gone` passed when rerun. The container's xkeyboard-config and Xwayland aren't Arch's, so they're taken as the container's, not checked on the developer's machine.
+- **`93-measure.sh` wasn't run.** The container has no Session, tty, GPU or host compositor, so the third criterion's run is left as *To do* above says: a build with the fix installed, *MATE on Caminito*, and `./93-measure.sh` from a terminal, with `host` medians near KDE's 8 to 12 ms and its question answered. If they aren't, the next suspects are the two left as they are above: the fifo barrier, and the timed frame drawn a refresh after its time.

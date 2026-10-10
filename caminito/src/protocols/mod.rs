@@ -4,6 +4,7 @@
 pub mod appmenu;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
+pub mod gamma_control;
 pub mod gtk_shell;
 pub mod idle_notify;
 pub mod output_management;

@@ -4,6 +4,7 @@ mod compositor;
 mod decoration;
 mod ext_workspace;
 mod foreign_toplevel;
+mod gamma_control;
 mod gtk_shell;
 mod image_capture;
 mod input;

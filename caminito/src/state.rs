@@ -109,6 +109,7 @@ use crate::output::{OutputRecord, output_id};
 use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
+use crate::protocols::gamma_control::GammaControlState;
 use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::idle_notify::IdleNotifyState;
 use crate::protocols::output_management::OutputManagementState;
@@ -216,6 +217,8 @@ pub struct Caminito {
     pub(crate) night_light: NightLight,
     /// `NightLight` as `org.mate.Caminito`'s callers last heard it (137).
     pub(crate) night_light_signalled: Option<night_light::Published>,
+    /// wlr-gamma-control, offered only by a backend with gamma tables (141).
+    pub(crate) gamma_control_state: GammaControlState,
     /// How far a test has moved Caminito's clock on, so that idle's timers come due
     /// without waiting for them (128).
     #[cfg(test)]
@@ -606,6 +609,8 @@ impl State {
         self.refresh_idle();
         // After idle and the lock, whose changes it signals.
         self.caminito.refresh_screensaver();
+        // Before Night Light, which steps in on an output that went from a gamma client.
+        self.refresh_gamma_control();
         self.refresh_night_light();
         self.update_pointer_focus();
         self.caminito.update_button_states();
@@ -880,6 +885,7 @@ impl Caminito {
             idle: Idle::new(settings.idle, clock.now().into()),
             night_light: NightLight::new(settings.night_light),
             night_light_signalled: None,
+            gamma_control_state: GammaControlState::default(),
             #[cfg(test)]
             clock_offset: Duration::ZERO,
             #[cfg(test)]

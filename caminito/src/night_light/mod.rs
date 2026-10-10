@@ -7,6 +7,9 @@
 //! The sun schedule (138) is worked out about once a minute from the sun's elevation at the
 //! location, by `sun`, `curve` and `zone`, and at once on a key change, a resume, or a jump
 //! of the clock. The pause is 140's, and geoclue 139's.
+//!
+//! A gamma client (141) wins its own output: while its table is on it, Night Light steps
+//! back from that output alone, and fades back in when the client lets go.
 
 mod curve;
 mod ramp;
@@ -265,9 +268,11 @@ impl NightLight {
         self.state.target()
     }
 
-    /// `output`'s temperature at `now`, in kelvin, partway through a fade or not.
-    pub(crate) fn temperature(&self, output: &Output, now: Duration) -> u32 {
-        self.state.temperature(output_id(output), now)
+    /// `output`'s temperature at `now`, in kelvin, partway through a fade or not, or `None`
+    /// while a gamma client's table is on it.
+    pub(crate) fn applied(&self, output: &Output, now: Duration) -> Option<u32> {
+        let id = output_id(output);
+        (!self.state.has_stepped_back(id)).then(|| self.state.temperature(id, now))
     }
 
     pub(crate) fn published(&self) -> Published {
@@ -287,6 +292,19 @@ impl Caminito {
 
     pub(crate) fn night_light_output_removed(&mut self, id: OutputId) {
         self.night_light.state.remove_output(id);
+    }
+
+    /// A gamma client's table is on `output`: Night Light steps back from it.
+    pub(crate) fn night_light_step_back(&mut self, output: &Output) {
+        self.night_light.state.step_back(output_id(output));
+    }
+
+    /// The gamma client let go of `output`, whose table the backend made neutral: Night
+    /// Light fades back in on it.
+    pub(crate) fn night_light_step_in(&mut self, output: &Output) {
+        let now = self.now();
+        self.night_light.state.step_in(output_id(output), now);
+        self.step_night_light();
     }
 
     /// New Night Light settings: the outputs fade to the new target.
@@ -387,12 +405,17 @@ impl Caminito {
 
 impl State {
     /// The refresh pass's part of Night Light: each output's temperature now, to the
-    /// backend, which writes a table only where it changed.
+    /// backend, which writes a table only where it changed. Where a gamma client's table
+    /// is on an output, the backend keeps it, and writes it again if a resume or a
+    /// modeset may have lost it.
     pub(crate) fn refresh_night_light(&mut self) {
         let caminito = &self.caminito;
         let now = caminito.now();
         for output in &caminito.outputs {
-            let kelvin = caminito.night_light.temperature(output, now);
+            let kelvin = caminito
+                .night_light
+                .state
+                .temperature(output_id(output), now);
             self.backend.set_temperature(output, kelvin);
         }
     }

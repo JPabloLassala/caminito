@@ -1,7 +1,7 @@
 //! Night Light's temperatures, without the backend: the target the settings give, and each
 //! output's on its way to it. Time is an argument, so the fades are tested without a clock.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use super::ramp::NEUTRAL;
@@ -17,6 +17,8 @@ pub(crate) struct NightLightState<K> {
     /// The sun schedule's temperature, as last worked out (138).
     sun: u32,
     outputs: BTreeMap<K, Light>,
+    /// The outputs a gamma client's table is on, which Night Light steps back from (141).
+    stepped_back: BTreeSet<K>,
 }
 
 /// One output's temperature: steady, or fading from one to another. A fade is in mireds,
@@ -75,6 +77,7 @@ impl<K: Ord + Copy> NightLightState<K> {
             settings,
             sun: NEUTRAL,
             outputs: BTreeMap::new(),
+            stepped_back: BTreeSet::new(),
         }
     }
 
@@ -138,6 +141,33 @@ impl<K: Ord + Copy> NightLightState<K> {
 
     pub(crate) fn remove_output(&mut self, id: K) {
         self.outputs.remove(&id);
+        self.stepped_back.remove(&id);
+    }
+
+    /// A gamma client's table is on output `id`: Night Light steps back from it alone, and
+    /// its temperature is no longer applied (ADR 0023).
+    pub(crate) fn step_back(&mut self, id: K) {
+        if self.outputs.contains_key(&id) {
+            self.stepped_back.insert(id);
+        }
+    }
+
+    /// The gamma client let go of output `id`, whose table is neutral again: Night Light
+    /// fades back in on it from there.
+    pub(crate) fn step_in(&mut self, id: K, now: Duration) {
+        if !self.stepped_back.remove(&id) {
+            return;
+        }
+        let target = self.target();
+        if let Some(light) = self.outputs.get_mut(&id) {
+            *light = Light::steady(NEUTRAL);
+            light.fade_to(target, now);
+        }
+    }
+
+    /// Whether Night Light has stepped back from output `id` for a gamma client.
+    pub(crate) fn has_stepped_back(&self, id: K) -> bool {
+        self.stepped_back.contains(&id)
     }
 
     /// The temperature of output `id` at `now`, in kelvin. One Night Light doesn't know of is
@@ -150,7 +180,9 @@ impl<K: Ord + Copy> NightLightState<K> {
 
     /// Whether any output is still fading at `now`.
     pub(crate) fn is_fading(&self, now: Duration) -> bool {
-        self.outputs.values().any(|light| light.is_fading(now))
+        self.outputs
+            .iter()
+            .any(|(id, light)| !self.stepped_back.contains(id) && light.is_fading(now))
     }
 }
 
@@ -321,5 +353,49 @@ mod tests {
         state.settings_changed(constant(3000), 6500, secs(10.0));
         state.remove_output(1);
         assert!(!state.is_fading(secs(10.5)));
+    }
+
+    #[test]
+    fn night_light_steps_back_from_one_output_of_two() {
+        let mut state = one_output(off());
+        state.add_output(2);
+        state.step_back(1);
+        state.settings_changed(constant(4000), 6500, secs(10.0));
+
+        assert!(state.has_stepped_back(1));
+        assert!(!state.has_stepped_back(2));
+        assert_eq!(state.temperature(2, secs(12.0)), 4000);
+    }
+
+    #[test]
+    fn night_light_fades_back_in_from_neutral_when_the_gamma_client_lets_go() {
+        let mut state = one_output(constant(4000));
+        state.step_back(1);
+        assert!(!state.is_fading(secs(10.0)));
+
+        state.step_in(1, secs(10.0));
+
+        assert!(!state.has_stepped_back(1));
+        assert_eq!(state.temperature(1, secs(10.0)), 6500);
+        assert_eq!(state.temperature(1, secs(11.0)), 4952);
+        assert_eq!(state.temperature(1, secs(12.0)), 4000);
+    }
+
+    #[test]
+    fn letting_go_of_an_output_night_light_never_stepped_back_from_changes_nothing() {
+        let mut state = one_output(constant(4000));
+        state.step_in(1, secs(10.0));
+        assert_eq!(state.temperature(1, secs(10.0)), 4000);
+        assert!(!state.is_fading(secs(10.0)));
+    }
+
+    #[test]
+    fn an_output_unplugged_while_held_is_no_longer_stepped_back_from() {
+        let mut state = one_output(constant(4000));
+        state.step_back(1);
+        state.remove_output(1);
+        state.add_output(1);
+        assert!(!state.has_stepped_back(1));
+        assert_eq!(state.temperature(1, secs(10.0)), 4000);
     }
 }
