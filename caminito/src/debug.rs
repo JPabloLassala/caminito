@@ -113,8 +113,14 @@ struct NightLightDump {
     paused_until: i64,
     /// The sun schedule's latitude and longitude, while it has one.
     location: Option<(f64, f64)>,
-    /// Where the location comes from: `none` until 138.
+    /// Where the location comes from: `stored`, `time-zone`, or `none` for the fixed times.
     location_source: &'static str,
+    /// The sun's elevation now, in degrees, while there's a location.
+    sun_elevation: Option<f64>,
+    /// The day's highest elevation, in degrees, while there's a location.
+    sun_highest: Option<f64>,
+    /// The Unix time the sun next climbs past −6°, as `NightLight`'s `next-sunrise`.
+    next_sunrise: i64,
     /// The temperature the outputs are to have, in kelvin.
     target_temperature: u32,
     /// Each output's temperature now, partway through a fade or not. Only the tty writes it
@@ -546,13 +552,19 @@ impl Caminito {
     fn night_light_dump(&self) -> NightLightDump {
         let night_light = &self.night_light;
         let settings = night_light.settings();
+        let sun = night_light.sun();
         let now = self.now();
         NightLightDump {
             enabled: settings.enabled,
             schedule: settings.schedule.name(),
             paused_until: settings.paused_until,
-            location: None,
-            location_source: night_light.location_source(),
+            location: sun
+                .location
+                .map(|location| (location.latitude, location.longitude)),
+            location_source: sun.source.name(),
+            sun_elevation: sun.elevation,
+            sun_highest: sun.highest,
+            next_sunrise: sun.next_sunrise,
             target_temperature: night_light.target(),
             outputs: self
                 .outputs

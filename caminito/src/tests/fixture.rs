@@ -1277,6 +1277,16 @@ impl Fixture {
     pub fn advance_clock(&mut self, duration: Duration) {
         self.state.caminito.clock_offset += duration;
         self.state.idle_elapse();
+        self.state.caminito.night_light_tick();
+        self.dispatch();
+    }
+
+    /// Sets the wall clock to `unix`, in seconds, from which it moves with Caminito's
+    /// clock, and works the sun out again at it as though the clock had jumped there.
+    pub fn set_wall_clock(&mut self, unix: f64) {
+        let caminito = &mut self.state.caminito;
+        caminito.wall_clock = Some((unix, caminito.now()));
+        caminito.night_light_tick();
         self.dispatch();
     }
 

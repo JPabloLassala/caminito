@@ -216,6 +216,10 @@ pub struct Caminito {
     /// without waiting for them (128).
     #[cfg(test)]
     pub(crate) clock_offset: Duration,
+    /// The wall clock a test has set: the Unix time it read when `now` was the second
+    /// value, from which it runs with Caminito's clock (138).
+    #[cfg(test)]
+    pub(crate) wall_clock: Option<(f64, Duration)>,
 
     // Rendering (06). linux-dmabuf and drm-syncobj are the tty backend's (57).
     pub viewporter_state: ViewporterState,
@@ -873,6 +877,8 @@ impl Caminito {
             night_light_signalled: None,
             #[cfg(test)]
             clock_offset: Duration::ZERO,
+            #[cfg(test)]
+            wall_clock: None,
 
             viewporter_state: ViewporterState::new::<State>(dh),
             fractional_scale_state: FractionalScaleManagerState::new::<State>(dh),
@@ -947,6 +953,7 @@ impl Caminito {
             debug: DebugToggles::default(),
         };
         caminito.ask_palette_for_theme_colors();
+        caminito.start_night_light();
         Ok(caminito)
     }
 
@@ -1100,6 +1107,21 @@ impl Caminito {
         #[cfg(test)]
         let now = now + self.clock_offset;
         now
+    }
+
+    /// The wall clock, in Unix seconds, for what follows the sun (138). A test sets it with
+    /// `Fixture::set_wall_clock`, and it moves with `now` from there.
+    pub(crate) fn unix_now(&self) -> f64 {
+        #[cfg(test)]
+        if let Some((unix, at)) = self.wall_clock {
+            return unix + self.now().saturating_sub(at).as_secs_f64();
+        }
+        let since_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        #[cfg(test)]
+        let since_epoch = since_epoch + self.clock_offset;
+        since_epoch.as_secs_f64()
     }
 
     /// Sends the outward views of policy state whatever changed since they last sent.
