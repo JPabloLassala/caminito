@@ -986,6 +986,39 @@ fn the_show_desktop_skip_list_is_passed_to_policy() {
     );
 }
 
+// Tiling (158).
+
+#[test]
+fn the_defaults_tile_at_the_sides_and_corners_and_maximise_at_the_top() {
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert!(policy.allow_tiling);
+        assert!(policy.allow_top_tiling);
+        assert_eq!(policy.drag_threshold, 8);
+    }
+}
+
+/// Set off, neither is reported as unsupported, which `settings` checks.
+#[test]
+fn the_tiling_keys_set_off_are_passed_to_policy() {
+    let mut reading = with(MARCO_GENERAL, "allow-tiling", Value::Bool(false));
+    reading.insert(
+        MARCO_GENERAL,
+        "allow-top-tiling",
+        Value::Bool(false),
+        Value::Bool(true),
+    );
+    let policy = settings(&reading).policy;
+    assert!(!policy.allow_tiling);
+    assert!(!policy.allow_top_tiling);
+}
+
+#[test]
+fn the_drag_threshold_sizes_tilings_zones_too() {
+    let reading = with(MOUSE, "drag-threshold", Value::Int(20));
+    assert_eq!(settings(&reading).policy.drag_threshold, 20);
+}
+
 #[test]
 fn the_window_switcher_shows_icons_alone_without_the_compositing_manager() {
     let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));

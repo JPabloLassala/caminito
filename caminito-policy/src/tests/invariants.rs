@@ -591,6 +591,8 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                     maximized: states.maximized,
                     focused: window.is_activated(),
                     shaded: states.shaded,
+                    tiled_left: states.tile == Some(crate::Tile::Left),
+                    tiled_right: states.tile == Some(crate::Tile::Right),
                 })
             } else {
                 smithay::utils::FrameExtents::default()
@@ -668,7 +670,11 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
 }
 
 fn check_ops(ops: Vec<Op>) {
-    let mut policy = Policy::new(Config::default());
+    // Tiling on, as Marco's default has it, so the drags can tile (158).
+    let mut policy = Policy::new(Config {
+        allow_tiling: true,
+        ..Config::default()
+    });
     for (step, op) in ops.into_iter().enumerate() {
         op.apply(&mut policy, step as u64);
         verify_invariants(&policy);

@@ -75,6 +75,8 @@ fn frame(window_type: WindowType) -> Option<FrameType> {
         maximized: false,
         fullscreen: false,
         shaded: false,
+        tiled_left: false,
+        tiled_right: false,
     };
     frame_style(&facts, false).map(|(frame_type, _)| frame_type)
 }

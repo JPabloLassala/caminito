@@ -152,10 +152,10 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // ticket that honours it. Caminito does what each one's default asks, except
     // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
     // values it matches none of. A key whose other value is what Caminito already does
-    // (`audible-bell`, `allow-tiling`, `allow-top-tiling`, `allow-tile-cycling`,
-    // `reduced-resources`) isn't here. Master's keys are logged only where the installed
-    // schema has them. The keybindings' schemas have no key here: an action with no
-    // behaviour yet is read and binds nothing, and its default reaches the client (148).
+    // (`audible-bell`, `allow-tile-cycling`, `reduced-resources`) isn't here. Master's keys
+    // are logged only where the installed schema has them. The keybindings' schemas have
+    // no key here: an action with no behaviour yet is read and binds nothing, and its
+    // default reaches the client (148).
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
@@ -1047,6 +1047,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         rows: r.int_clamped(CAMINITO, "workspace-layout-rows", 1, 0, most) as usize,
         columns: r.int_clamped(CAMINITO, "workspace-layout-columns", 0, 0, most) as usize,
     };
+    // Frame drags and tiling's zones both go by it (158).
+    let drag_threshold = r.int_at_least(MOUSE, "drag-threshold", 8, 0);
     let policy = Config {
         workspace_count,
         workspace_names,
@@ -1072,6 +1074,9 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             "show-desktop-skip-list",
             "",
         )),
+        allow_tiling: r.bool(MARCO_GENERAL, "allow-tiling", true),
+        allow_top_tiling: r.bool(MARCO_GENERAL, "allow-top-tiling", true),
+        drag_threshold,
     };
     let switcher = SwitcherSettings {
         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,
@@ -1202,7 +1207,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             double_click_time: Duration::from_millis(
                 r.int_at_least(MOUSE, "double-click", 400, 1) as u64
             ),
-            drag_threshold: r.int_at_least(MOUSE, "drag-threshold", 8, 0) as u32,
+            drag_threshold: drag_threshold as u32,
         },
         sound: Sound {
             theme_name: r.string(SOUND, "theme-name", "freedesktop"),

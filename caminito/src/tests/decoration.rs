@@ -181,7 +181,7 @@ fn maximising_fits_the_maximised_frame_in_the_work_area() {
     } = f.mapped(window).frame_extents(FrameState {
         maximized: true,
         focused: true,
-        shaded: false,
+        ..FrameState::default()
     });
 
     f.client(id).set_maximized(window.xdg());

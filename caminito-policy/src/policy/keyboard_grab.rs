@@ -89,16 +89,9 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(grab) = self.grabs.get(&seat).filter(|grab| grab.keyboard) else {
             return;
         };
-        let (window, initial, resize) = (grab.window, grab.initial, grab.resize);
+        let resize = grab.resize;
         match key {
-            GrabKey::Escape => {
-                let managed = self.windows.get_mut(&window).unwrap();
-                match resize {
-                    None => managed.geometry.loc = initial.loc,
-                    Some(_) => managed.geometry = initial,
-                }
-                self.end_grab(seat);
-            }
+            GrabKey::Escape => self.cancel_grab(seat),
             GrabKey::Other => self.end_grab(seat),
             GrabKey::Arrow { x, y, step } => match resize {
                 None => self.step_move(seat, Point::new(x, y), step),
@@ -134,7 +127,16 @@ impl<W: PolicyWindow> Policy<W> {
     /// or snapping to the next one.
     fn step_move(&mut self, seat: SeatId, direction: Point<i32, Logical>, step: GrabStep) {
         let grab = &self.grabs[&seat];
-        let (window, placing) = (grab.window, grab.placing);
+        let (window, placing, pointer) = (grab.window, grab.placing, grab.start_pointer);
+        // A tiled window is untiled round the pointer first, as a pointer move does once it
+        // shakes it loose (158).
+        if self.tile(window).is_some() {
+            self.unmaximize_for_drag(window, pointer, pointer);
+            let loc = self.windows[&window].geometry.loc;
+            let grab = self.grabs.get_mut(&seat).unwrap();
+            grab.start.loc = loc;
+            grab.initial.loc = loc;
+        }
         let edges = self.edges_for(window);
         let managed = self.windows.get_mut(&window).unwrap();
         let before = managed.geometry.loc;
