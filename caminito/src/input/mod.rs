@@ -12,10 +12,9 @@ mod serials;
 
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
-use grab::PlacementKey;
 pub(crate) use serials::InputSerials;
 
-use caminito_policy::{Action, Crossing, PointerTarget, ResizeEdges, WindowId};
+use caminito_policy::{Action, Crossing, GrabKey, PointerTarget, ResizeEdges, WindowId};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, Event, InputBackend, InputEvent,
     InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
@@ -287,7 +286,7 @@ impl State {
                 self.caminito.ask_panel(action, time.millis());
             }
             Some(Some(Bound::Command(command))) => self.caminito.run_command(command),
-            Some(Some(Bound::Placement(key))) => self.placement_key(key, time),
+            Some(Some(Bound::GrabKey(key))) => self.keyboard_grab_key(key, time),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 let time = time.millis();
                 self.caminito
@@ -377,13 +376,14 @@ impl State {
         if self.caminito.lock.is_locked() {
             return FilterResult::Forward;
         }
-        // A manual placement has the keyboard while it lasts (154), as Marco's keyboard move
-        // does, and nothing can open over it.
-        if self.caminito.policy.placing(SEAT).is_some()
-            && let Some(key) = PlacementKey::of(mods, keysym)
+        // A keyboard move or resize has the keyboard while it lasts (156), as Marco's does,
+        // a manual placement among them (154), and nothing can open over it: Alt+Tab puts the
+        // window down. A shortcuts inhibitor doesn't take the keys from one under way.
+        if self.caminito.policy.keyboard_grab(SEAT).is_some()
+            && let Some(key) = grab::grab_key(mods, keysym)
         {
             self.caminito.suppressed_keys.insert(keycode);
-            return FilterResult::Intercept(Some(Bound::Placement(key)));
+            return FilterResult::Intercept(Some(Bound::GrabKey(key)));
         }
         // The open Window switcher has the keyboard (108), before an inhibitor has its say:
         // it never opens under one.
@@ -711,8 +711,9 @@ enum Bound {
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },
-    /// A key for the manual placement in progress (154).
-    Placement(PlacementKey),
+    /// A key for the keyboard move or resize in progress (156), or the manual placement
+    /// (154).
+    GrabKey(GrabKey),
 }
 
 /// The VT an `XF86Switch_VT_n` keysym switches to.

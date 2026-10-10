@@ -6,6 +6,10 @@
 //! other windows showing on the workspace, less the parts windows above them cover. Marco's
 //! timeouts are all 0 (edge-resistance.c:348-350), so resistance is by distance alone and
 //! needs no time.
+//!
+//! A keyboard move or resize (156) steps by a key at a time, and Marco treats it apart
+//! (`keyboard_op`): a step stops at any edge it would cross, and a snap goes on to the next
+//! edge its way.
 
 use smithay::utils::{Logical, Point, Rectangle};
 
@@ -18,6 +22,14 @@ const OUTPUT_THRESHOLD: i32 = 32;
 /// How far a snap-move's pointer must go before a side jumps more than this far, so a
 /// slight slip of the hand doesn't snap the window away (edge-resistance.c:518-529).
 const SNAP_SLIP: i32 = 8;
+
+/// What drives a grab's window, which Marco's edges treat apart (`keyboard_op`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum By {
+    Pointer,
+    /// The keys of a keyboard move or resize (156).
+    Keys,
+}
 
 /// The way along its axis an edge holds a window's side back, Marco's `MetaSide`: a `Left`
 /// edge stops a side moving left (an output's left edge, a window's right one).
@@ -163,18 +175,33 @@ impl Edges {
     /// Where a window's outer rectangle moves to from `old`, when the pointer would take
     /// it to `proposed`: each side resists or snaps on its own, then the window moves by
     /// the smaller change each way, so it keeps its size, as Marco's
-    /// `meta_window_edge_resistance_for_move` does (edge-resistance.c:1176-1216).
+    /// `meta_window_edge_resistance_for_move` does (edge-resistance.c:1176-1216). A key's
+    /// snap moves the window by the side that found an edge, if only one did.
     pub(crate) fn for_move(
         &self,
         old: Rectangle<i32, Logical>,
         proposed: Rectangle<i32, Logical>,
         snap: bool,
+        by: By,
     ) -> Point<i32, Logical> {
-        let moved = self.each_side(old, proposed, snap);
-        // Snapping measures from where the pointer would put the window, resisting from
-        // where it was.
-        let reference = Sides::from(if snap { proposed } else { old });
-        let smaller = |a: i32, b: i32| if a.abs() < b.abs() { a } else { b };
+        let moved = self.each_side(old, proposed, snap, by);
+        // A pointer's snap measures from where the pointer would put the window; the rest
+        // from where it was.
+        let reference = Sides::from(if snap && by == By::Pointer {
+            proposed
+        } else {
+            old
+        });
+        let key_snap = snap && by == By::Keys;
+        let smaller = |a: i32, b: i32| {
+            if key_snap && a == 0 {
+                b
+            } else if (key_snap && b == 0) || a.abs() < b.abs() {
+                a
+            } else {
+                b
+            }
+        };
         let dx = smaller(moved.left - reference.left, moved.right - reference.right);
         let dy = smaller(moved.top - reference.top, moved.bottom - reference.bottom);
         (reference.left + dx, reference.top + dy).into()
@@ -189,8 +216,9 @@ impl Edges {
         old: Rectangle<i32, Logical>,
         proposed: Rectangle<i32, Logical>,
         snap: bool,
+        by: By,
     ) -> (i32, i32) {
-        let s = self.each_side(old, proposed, snap);
+        let s = self.each_side(old, proposed, snap, by);
         (s.right - s.left, s.bottom - s.top)
     }
 
@@ -201,14 +229,14 @@ impl Edges {
         old: Rectangle<i32, Logical>,
         new: Rectangle<i32, Logical>,
         snap: bool,
+        by: By,
     ) -> Sides {
         let (o, n) = (Sides::from(old), Sides::from(new));
-        let side = |edges: &[Edge], from: i32, to: i32| {
-            if snap {
-                snap_position(edges, from, to, new)
-            } else {
-                resist(edges, from, to, old, new)
-            }
+        let side = |edges: &[Edge], from: i32, to: i32| match (snap, by) {
+            (true, By::Pointer) => snap_position(edges, from, to, new),
+            (false, By::Pointer) => resist(edges, from, to, old, new),
+            (true, By::Keys) => snap_ahead(edges, from, to, new),
+            (false, By::Keys) => stop_short(edges, from, to, old, new),
         };
         Sides {
             left: side(&self.vertical, o.left, n.left),
@@ -296,4 +324,40 @@ fn snap_position(edges: &[Edge], from: i32, to: i32, new: Rectangle<i32, Logical
     } else {
         nearest
     }
+}
+
+/// Where a key's step of a side from `from` to `to` stops: at the first edge of any kind
+/// that it would cross, short of `to`. One it starts on doesn't hold it, so the next key
+/// goes on (edge-resistance.c:402-408).
+fn stop_short(
+    edges: &[Edge],
+    from: i32,
+    to: i32,
+    old: Rectangle<i32, Logical>,
+    new: Rectangle<i32, Logical>,
+) -> i32 {
+    let (low, high) = (from.min(to), from.max(to));
+    edges
+        .iter()
+        .filter(|e| low < e.position && e.position < high)
+        .filter(|e| e.aligns(old) || e.aligns(new))
+        .map(|e| e.position)
+        .min_by_key(|p| (p - from).abs())
+        .unwrap_or(to)
+}
+
+/// Where a key's snap of a side from `from` towards `to` goes: the edge the window's new
+/// rectangle meets nearest `to`, at it or beyond it, or nowhere if there's none, as
+/// Marco's `find_nearest_position` with `only_forward` (edge-resistance.c:181-293).
+fn snap_ahead(edges: &[Edge], from: i32, to: i32, new: Rectangle<i32, Logical>) -> i32 {
+    if from == to {
+        return to;
+    }
+    edges
+        .iter()
+        .filter(|e| e.aligns(new))
+        .map(|e| e.position)
+        .filter(|p| (p - to) * (from - to) <= 0)
+        .min_by_key(|p| (p - to).abs())
+        .unwrap_or(from)
 }

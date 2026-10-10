@@ -9,11 +9,11 @@ use super::Policy;
 /// The functions Marco gives a window that the actions need, from its type and size hints
 /// (`recalc_window_features`, window.c:6670-6830). An SSD window's frame shows the same
 /// through its buttons (`decoration::style`).
-struct Functions {
+pub(super) struct Functions {
     minimize: bool,
     maximize: bool,
     /// Resizing, which maximising one way needs.
-    resize: bool,
+    pub(super) resize: bool,
     fullscreen: bool,
 }
 
@@ -54,7 +54,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    fn functions(&self, id: WindowId) -> Functions {
+    pub(super) fn functions(&self, id: WindowId) -> Functions {
         let managed = &self.windows[&id];
         let SizeHints { min, max } = managed.hints;
         // A zero maximum is unbounded.
