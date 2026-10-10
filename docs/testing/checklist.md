@@ -1325,3 +1325,24 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `switcher` member has the list,
   the selection, the popup's output and its cells while the popup shows, and `gsettings
   monitor org.mate.Marco.general`.
+
+## Marco parity
+
+### The parity table's rows that no test covers
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, and log into *MATE*, the X11 session, on a second machine
+     or after it, to compare with Marco.
+  2. Go through `docs/parity.md`. For each *honoured* row whose *Covered by* cell is empty,
+     or names only a unit test where the row's behaviour shows on screen, change the key
+     with `gsettings set` (or press the action's binding) under Caminito and under Marco.
+  3. For each *never* and *unsupported* row with a key, set the key away from its default
+     under Caminito.
+  4. Run as the last step of M8's closing run (173), once no row is *to do*.
+- **Expected:** in step 2 Caminito does what the row says, and what Marco does unless the
+  row says otherwise. In step 3 an *unsupported* key Caminito doesn't match is logged once,
+  `… but Caminito doesn't support it yet; ignoring it`, and a *never* key is ignored without
+  a word (09). No row is *to do* (173).
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, Caminito's log, and
+  `org.mate.Caminito.Debug`'s state dump.

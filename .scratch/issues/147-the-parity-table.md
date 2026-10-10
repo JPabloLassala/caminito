@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: needs-triage
+Status: resolved
 Milestone: M8
 Blocked by: none
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -37,12 +37,12 @@ M8's audit ([17](17-milestone-slicing.md)): `docs/parity.md` gets a row for ever
 
 ## Acceptance criteria
 
-- [ ] The two tests above, written before the table is filled, fail on today's file and pass on the new one.
-- [ ] `docs/parity.md` has a row for every key and action of the five schemas, master's five included, each with a status and, for every row that's settled, the test or checklist item that covers it.
-- [ ] Every *to do* row names one of 148 to 172, and every one of 148 to 172 is named by at least one row, or its notes say why none.
-- [ ] The keyless section lists 05's *never* and *later* items and 09's unsupported keys, each with its reason.
-- [ ] `UNSUPPORTED` has the M8 keys whose defaults Caminito doesn't match yet, each with a comment naming its ticket, and the settings translation's tests still pass.
-- [ ] The checklist has an item, tagged M8: a pass over the table's rows that no automated test covers ([17](17-milestone-slicing.md)'s M8 checklist). It's run by [173](173-packaging-and-closing-m8.md), as its last step.
+- [x] The two tests above, written before the table is filled, fail on today's file and pass on the new one.
+- [x] `docs/parity.md` has a row for every key and action of the five schemas, master's five included, each with a status and, for every row that's settled, the test or checklist item that covers it.
+- [x] Every *to do* row names one of 148 to 172, and every one of 148 to 172 is named by at least one row, or its notes say why none.
+- [x] The keyless section lists 05's *never* and *later* items and 09's unsupported keys, each with its reason.
+- [x] `UNSUPPORTED` has the M8 keys whose defaults Caminito doesn't match yet, each with a comment naming its ticket, and the settings translation's tests still pass.
+- [x] The checklist has an item, tagged M8: a pass over the table's rows that no automated test covers ([17](17-milestone-slicing.md)'s M8 checklist). It's run by [173](173-packaging-and-closing-m8.md), as its last step.
 
 ## Notes
 
@@ -56,3 +56,21 @@ M8's audit ([17](17-milestone-slicing.md)): `docs/parity.md` gets a row for ever
 - **Which schema.** Re-vendor Marco master's schema, so the tests see the five keys as Marco does, or keep 1.29.0 as Arch ships it and read master's keys where the installed schema has them. The proposal is the second: the tests are against what the developer's machine installs, and the table's test adds the five by name.
 - **Whether *to do* is a status.** 17 has four statuses. The proposal is that *to do* is allowed until [173](173-packaging-and-closing-m8.md), which checks none is left, so that the table is whole from this ticket on.
 - **`locate-pointer`** (Caminito draws the ripple itself, [53](53-input-settings-translation.md) sent it to this audit), and AccessX's `timeout-enable`, `capslock-beep-enable` and `feature-state-change-beep` ([134](134-accessx.md) left them unsupported): M8's, with a ticket of their own after 172, or later, with a row in the keyless section. They're in `UNSUPPORTED` today.
+
+## Comments
+
+**Triage (2026-10-10), decided by the shipping agent without the developer, for the developer to confirm:**
+
+- **Which schema:** the proposal. 1.29.0 stays vendored as Arch ships it, and the table's test adds master's five keys by name.
+- **Whether *to do* is a status:** the proposal. *To do* is allowed until 173, which checks none is left.
+- **`locate-pointer`, `timeout-enable`, `capslock-beep-enable` and `feature-state-change-beep`:** later, each with a row in the keyless section and its reason, and still in `UNSUPPORTED`, so they're logged. No question marked a recommendation; this one writes no new ticket and leaves M8's scope as its tickets have it. The developer can bring any of them into M8 with a ticket after 172.
+- **Which keys `UNSUPPORTED` gains:** by the purpose the ticket gives, so that a user who has changed a key from its default sees the log line. The ticket's "whose default Caminito doesn't match yet" reads the other way round from that purpose and from the entries already there (`visual-bell`, `locate-pointer`, `mousekeys-enable`, all off by default and matched off), and from 150, 165 and 169, which expect `wrap-style`, `focus-new-windows`, `alt-tab-urgent-placement` and `visual-bell` there. So a key is added when a value a user can set is one Caminito doesn't do, and left out when the value away from the default is what Caminito already does (`audible-bell`, `center-new-windows`, the three tiling keys, `reduced-resources`) or when it only matters with another key set.
+
+## Done (2026-10-10)
+
+- **Tests first:** `caminito/src/tests/parity.rs`, beside the keybinding manifests' test, whose reader of the vendored schema it shares. Both tests failed on the old table (keys with no row; `locate-pointer` unsupported with no row) and pass on the new one. The first also fails on a duplicate row or a key the schema doesn't have, and on a *to do* row that names none of 148 to 172.
+- **The table's shape:** one section per Marco schema, the Window switcher's rows folded into `general` and `global-keybindings`; a section for the foreign keys (`org.mate.interface enable-animations`, `org.mate.sound`'s three, `double-click` and `drag-threshold`); and *What has no key of Marco's*, with *Never*, *Later* and *To do in M8* tables. A row's schema is its heading's, or written as `` `schema` `key` `` in the keyless tables; a family is `` `name-1` to `-36` ``, a wildcard `` `mousekeys-*` ``.
+- **Honoured actions** keep Marco's default binding, hard-coded until 148, as 108's rows said; the rows say so and name 148. `compositing-manager` stays honoured: off already turns off everything Caminito has, and 171 and 172 must keep it so.
+- **Tickets with no key of their own** (152, 157, 168, 171) are named by rows of *To do in M8*; 166 by the X11 startup-notification row. `alt-tab-minimized-placement` was named by no M8 ticket, so it went to 163 (the lists `switch-*` and `cycle-*` share), with a note added to 163.
+- **`UNSUPPORTED`** gained 14 `general` keys, by the triage above: `focus-mode`, `raise-on-click`, `auto-raise`, `focus-new-windows`, `alt-tab-urgent-placement`, `placement-mode`, `wrap-style`, `dynamic-workspaces`, `mouse-button-modifier`, `resize-with-right-button`, both `action-scroll-*-titlebar`, `alt-tab-minimized-placement` and `show-desktop-skip-list`. The bindings' schemas aren't read, so no action could be there.
+- **Not run here:** the cloud container has Ubuntu's Xwayland 23.2, which doesn't start under the fixture, so the 238 X11-tier tests failed at "Xwayland starts", which nothing here touches; every other test of the workspace passed, the translation's included. Clippy on this toolchain fails on three `manual_range_contains` lints in caminito-theme, untouched here; `caminito` is clean with that lint allowed. `tools/check` on the developer's machine, and the checklist item, are 173's.

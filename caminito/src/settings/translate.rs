@@ -125,15 +125,47 @@ pub const SCHEMAS: &[Schema] = &[
 /// (09, 54). Caminito behaves as if `group-per-window` were off, so a log line would reach
 /// only the users who turned it off, whom Caminito already matches.
 pub const UNSUPPORTED: &[(&str, &str)] = &[
-    // Caminito will draw the ripple itself; M8's parity audit decides when (53).
+    // Caminito will draw the ripple itself (53); 147 put it on the later roadmap.
     (MOUSE, "locate-pointer"),
-    // The bell is counted but neither flashes nor plays until M8 (105, 17). Caminito
+    // The bell is counted but neither flashes nor plays until 169 and 170 (105). Caminito
     // matches `audible-bell` only when it's off, and `visual-bell-type` only matters with
     // the visual bell on, so neither is logged.
     (MARCO_GENERAL, "visual-bell"),
+    // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
+    // ticket that honours it. Caminito does what each one's default asks, except
+    // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
+    // values it matches none of. A key whose other value is what Caminito already does
+    // (`audible-bell`, `center-new-windows`, `allow-tiling`, `allow-top-tiling`,
+    // `allow-tile-cycling`, `reduced-resources`) isn't here, nor is one that only matters
+    // with another key set (`auto-raise-delay`, `visual-bell-type`, and `command-1` to
+    // `-12`, whose bindings aren't read until 148). Master's keys are logged only where the
+    // installed schema has them.
+    // 153.
+    (MARCO_GENERAL, "focus-mode"),
+    (MARCO_GENERAL, "raise-on-click"),
+    (MARCO_GENERAL, "auto-raise"),
+    // 165.
+    (MARCO_GENERAL, "focus-new-windows"),
+    (MARCO_GENERAL, "alt-tab-urgent-placement"),
+    // 154.
+    (MARCO_GENERAL, "placement-mode"),
+    // 150.
+    (MARCO_GENERAL, "wrap-style"),
+    // 151.
+    (MARCO_GENERAL, "dynamic-workspaces"),
+    // 162.
+    (MARCO_GENERAL, "mouse-button-modifier"),
+    (MARCO_GENERAL, "resize-with-right-button"),
+    (MARCO_GENERAL, "action-scroll-up-titlebar"),
+    (MARCO_GENERAL, "action-scroll-down-titlebar"),
+    // 163.
+    (MARCO_GENERAL, "alt-tab-minimized-placement"),
+    // 164.
+    (MARCO_GENERAL, "show-desktop-skip-list"),
     // Mouse keys are later (13): they need pointer emulation with msd's acceleration curve.
     (A11Y_KEYBOARD, "mousekeys-enable"),
-    // 13 has these in v0.1, and the AccessX filter doesn't apply them yet (134).
+    // 13 had these in v0.1, and the AccessX filter doesn't apply them yet (134); 147 put
+    // them on the later roadmap.
     // `timeout` only matters with `timeout-enable` on, so it isn't logged.
     (A11Y_KEYBOARD, "timeout-enable"),
     (A11Y_KEYBOARD, "capslock-beep-enable"),
