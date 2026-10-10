@@ -1043,8 +1043,9 @@ impl Caminito {
         let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
         let mut changed = false;
         for id in ids {
+            let flashing = self.bells.flashes_frame(id);
             let mapped = self.policy.window_mut(id).unwrap();
-            changed |= mapped.refresh_frame(&mut self.frame_context, colors);
+            changed |= mapped.refresh_frame(&mut self.frame_context, colors, flashing);
         }
         if changed {
             self.queue_redraw_all();
