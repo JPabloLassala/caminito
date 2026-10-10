@@ -578,6 +578,34 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `WAYLAND_DEBUG=1 mate-panel
   --replace 2>&1 | grep ext_workspace` for the workspaces Caminito adds and removes.
 
+### The four directions in a 2 × 2 grid, with each wrap style
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with four workspaces, and set the workspace switcher's rows
+     to 2 in its *Preferences*, so that the first and second workspaces are above the third
+     and fourth.
+  2. With `gsettings set org.mate.Marco.general wrap-style 'no wrap'`, on the first
+     workspace, press Ctrl+Alt+Up, Ctrl+Alt+Left, then Ctrl+Alt+Right, Down, Left and Up.
+  3. `gsettings set org.mate.Marco.general wrap-style classic`, then on the first workspace
+     press Ctrl+Alt+Up, and on the first again Ctrl+Alt+Left; on the fourth, Ctrl+Alt+Right,
+     and on the fourth again Ctrl+Alt+Down.
+  4. `gsettings set org.mate.Marco.general wrap-style toroidal`, and press the keys of step 3
+     from the same workspaces.
+  5. Open a terminal on the first workspace and press Ctrl+Shift+Alt+Down, then
+     Ctrl+Shift+Alt+Up.
+  6. `gsettings set org.mate.Marco.global-keybindings switch-to-workspace-prev
+     '<Super>p'`, click the fourth workspace in the switcher, then press Super+P twice.
+  7. Reset `wrap-style` and `switch-to-workspace-prev`, and set the rows back to 1.
+- **Expected:** in step 2 the first two keys do nothing, and the four after go to the second,
+  fourth, third and first workspaces. In step 3 classic goes to the fourth, the fourth, the
+  first and the first. In step 4 toroidal goes to the third, the second, the third and the
+  second. In step 5 the terminal goes to the third workspace and back, the view with it, and it
+  keeps the focus. In step 6 Super+P goes back to the workspace the click left, then to the
+  fourth again. The switcher shows each switch as it happens.
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and the debug dump's `bindings`
+  for the combinations in force.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

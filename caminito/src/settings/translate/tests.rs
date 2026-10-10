@@ -45,6 +45,7 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "auto-raise-delay", Value::Int(500));
     put(MARCO_GENERAL, "placement-mode", s("automatic"));
     put(MARCO_GENERAL, "center-new-windows", Value::Bool(true));
+    put(MARCO_GENERAL, "wrap-style", s("no wrap"));
     put(MARCO_GENERAL, "show-desktop-skip-list", s(""));
     for n in 1..=36 {
         put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
@@ -350,6 +351,35 @@ fn workspace_layout_rows_and_columns_out_of_range_are_clamped() {
     let (settings, problem) = self::problem(&with(CAMINITO, key, Value::Int(50)));
     assert_eq!(settings.policy.workspace_layout.columns, 36);
     assert_eq!(problem, out_of_range(CAMINITO, key, "50", "36"));
+}
+
+#[test]
+fn the_default_wrap_style_is_no_wrap() {
+    for reading in [defaults(), Reading::default()] {
+        assert_eq!(settings(&reading).policy.wrap_style, WrapStyle::NoWrap);
+    }
+}
+
+#[test]
+fn wrap_style_is_passed_to_policy() {
+    for (nick, wrap) in [
+        ("classic", WrapStyle::Classic),
+        ("toroidal", WrapStyle::Toroidal),
+    ] {
+        let reading = with(MARCO_GENERAL, "wrap-style", string(nick));
+        // And with no problem: it isn't unsupported any more (150).
+        assert_eq!(settings(&reading).policy.wrap_style, wrap);
+    }
+}
+
+#[test]
+fn an_unknown_wrap_style_falls_back_to_no_wrap() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "wrap-style", string("spiral")));
+    assert_eq!(settings.policy.wrap_style, WrapStyle::NoWrap);
+    assert_eq!(
+        problem,
+        invalid(MARCO_GENERAL, "wrap-style", "'spiral'", "'no wrap'")
+    );
 }
 
 #[test]
@@ -2003,7 +2033,8 @@ fn without_the_device_schemas_their_keys_are_defaults() {
 
 // Unsupported keys, logging once, and missing schemas.
 
-const TEST_UNSUPPORTED: &[(&str, &str)] = &[(MARCO_GENERAL, "wrap-style")];
+/// A made-up key, so that no ticket that honours a key takes the example away.
+const TEST_UNSUPPORTED: &[(&str, &str)] = &[(MARCO_GENERAL, "test-style")];
 
 fn unsupported_problems(reading: &Reading) -> Vec<Problem> {
     translate_with(reading, TEST_UNSUPPORTED).problems
@@ -2011,7 +2042,13 @@ fn unsupported_problems(reading: &Reading) -> Vec<Problem> {
 
 #[test]
 fn an_unsupported_key_at_its_default_is_not_reported() {
-    let reading = with(MARCO_GENERAL, "wrap-style", string("no wrap"));
+    let mut reading = defaults();
+    reading.insert(
+        MARCO_GENERAL,
+        "test-style",
+        string("plain"),
+        string("plain"),
+    );
     assert_eq!(unsupported_problems(&reading), []);
 }
 
@@ -2020,16 +2057,16 @@ fn an_unsupported_key_set_away_from_its_default_is_reported() {
     let mut reading = defaults();
     reading.insert(
         MARCO_GENERAL,
-        "wrap-style",
-        string("toroidal"),
-        string("no wrap"),
+        "test-style",
+        string("fancy"),
+        string("plain"),
     );
     assert_eq!(
         unsupported_problems(&reading),
         [Problem::Unsupported {
             schema: MARCO_GENERAL.into(),
-            key: "wrap-style".into(),
-            value: "'toroidal'".into(),
+            key: "test-style".into(),
+            value: "'fancy'".into(),
         }]
     );
 }
@@ -2043,15 +2080,15 @@ fn an_unsupported_key_that_isnt_installed_is_not_reported() {
 fn an_unsupported_key_is_logged_once_whatever_its_values() {
     let unsupported = |value: &str| Problem::Unsupported {
         schema: MARCO_GENERAL.into(),
-        key: "wrap-style".into(),
+        key: "test-style".into(),
         value: value.into(),
     };
     let mut logged = Logged::default();
     assert_eq!(
-        logged.first_time(vec![unsupported("'toroidal'")]),
-        [unsupported("'toroidal'")]
+        logged.first_time(vec![unsupported("'fancy'")]),
+        [unsupported("'fancy'")]
     );
-    assert_eq!(logged.first_time(vec![unsupported("'classic'")]), []);
+    assert_eq!(logged.first_time(vec![unsupported("'fancier'")]), []);
 }
 
 #[test]

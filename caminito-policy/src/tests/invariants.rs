@@ -8,6 +8,7 @@ use smithay::utils::Size;
 
 use crate::{
     Crossing, FocusMode, FrameState, PointerTarget, PolicyWindow, ResizeEdges, SwitchList,
+    WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -116,6 +117,11 @@ enum Op {
     SetWorkspaceCount(usize),
     /// `dynamic-workspaces` (151), with Marco's four workspaces for when it's off.
     SetDynamicWorkspaces(bool),
+    /// The grid's rows and `wrap-style` (150), keeping the count.
+    SetWorkspaceGrid {
+        rows: usize,
+        wrap: WrapStyle,
+    },
     RequestGeometry {
         id: u64,
         loc: Option<(i32, i32)>,
@@ -207,6 +213,11 @@ fn action() -> impl Strategy<Value = Action> {
     prop_oneof![
         Just(Action::SwitchToWorkspaceLeft),
         Just(Action::SwitchToWorkspaceRight),
+        Just(Action::SwitchToWorkspaceUp),
+        Just(Action::SwitchToWorkspaceDown),
+        Just(Action::SwitchToWorkspacePrev),
+        Just(Action::MoveToWorkspaceUp),
+        Just(Action::MoveToWorkspaceDown),
         Just(Action::Close),
         Just(Action::ToggleMaximized),
         (switch_list(), any::<bool>())
@@ -268,6 +279,15 @@ fn op() -> impl Strategy<Value = Op> {
         1 => seat().prop_map(Op::EndGrab),
         1 => (1..=6usize).prop_map(Op::SetWorkspaceCount),
         1 => any::<bool>().prop_map(Op::SetDynamicWorkspaces),
+        1 => (
+            0..=3usize,
+            prop_oneof![
+                Just(WrapStyle::NoWrap),
+                Just(WrapStyle::Classic),
+                Just(WrapStyle::Toroidal)
+            ]
+        )
+            .prop_map(|(rows, wrap)| Op::SetWorkspaceGrid { rows, wrap }),
         1 => (
             window_id(),
             proptest::option::of((-500..3500i32, -500..2000i32)),
@@ -404,6 +424,15 @@ impl Op {
             }),
             Op::SetDynamicWorkspaces(dynamic_workspaces) => policy.settings_changed(Config {
                 dynamic_workspaces,
+                ..Config::default()
+            }),
+            Op::SetWorkspaceGrid { rows, wrap } => policy.settings_changed(Config {
+                workspace_count: policy.workspace_count(),
+                workspace_layout: WorkspaceLayout {
+                    rows,
+                    ..WorkspaceLayout::default()
+                },
+                wrap_style: wrap,
                 ..Config::default()
             }),
             Op::RequestGeometry { id, loc, size } => {

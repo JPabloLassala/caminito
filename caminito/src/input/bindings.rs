@@ -92,13 +92,14 @@ const fn switch(list: SwitchList, reversed: bool) -> Does {
 }
 
 /// The actions that have a behaviour, in Marco's order (`src/include/all-keybindings.h`
-/// at 1.29.0, the global actions before the window ones), which is the order its
-/// `process_event` tries them in (`core/keybindings.c:1203-1260`), so of two keys with one
-/// combination the first wins. Every other action's key is read and parsed, and binds
+/// at 1.29.0, the global actions before the window ones, but for the moves to the
+/// workspace beside, which follow the switches there, and `switch-to-workspace-prev`, which
+/// is last), which is the order its `process_event` tries them in
+/// (`core/keybindings.c:1203-1260`), so of two keys with one combination the first wins. Every other action's key is read and parsed, and binds
 /// nothing until its ticket gives it a behaviour (147). `run-command-area-screenshot` is
 /// master's (`8522ed1`), after the window screenshot as there; where the installed schema
 /// hasn't the key, it has master's default.
-const BINDABLE: [Bindable; 18] = [
+const BINDABLE: [Bindable; 23] = [
     global(
         "switch-to-workspace-left",
         "<Control><Alt>Left",
@@ -108,6 +109,26 @@ const BINDABLE: [Bindable; 18] = [
         "switch-to-workspace-right",
         "<Control><Alt>Right",
         policy(Action::SwitchToWorkspaceRight),
+    ),
+    global(
+        "switch-to-workspace-up",
+        "<Control><Alt>Up",
+        policy(Action::SwitchToWorkspaceUp),
+    ),
+    global(
+        "switch-to-workspace-down",
+        "<Control><Alt>Down",
+        policy(Action::SwitchToWorkspaceDown),
+    ),
+    window(
+        "move-to-workspace-up",
+        "<Control><Shift><Alt>Up",
+        policy(Action::MoveToWorkspaceUp),
+    ),
+    window(
+        "move-to-workspace-down",
+        "<Control><Shift><Alt>Down",
+        policy(Action::MoveToWorkspaceDown),
     ),
     global(
         "switch-group",
@@ -185,6 +206,11 @@ const BINDABLE: [Bindable; 18] = [
         policy(Action::ToggleMaximized),
     ),
     window("close", "<Alt>F4", policy(Action::Close)),
+    global(
+        "switch-to-workspace-prev",
+        "disabled",
+        policy(Action::SwitchToWorkspacePrev),
+    ),
 ];
 
 /// One combination in force, and the key it came from.

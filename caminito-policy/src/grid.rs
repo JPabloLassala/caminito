@@ -36,12 +36,26 @@ impl Default for WorkspaceLayout {
     }
 }
 
-/// A way to go from one workspace to the one beside it. Up and down come with their
-/// bindings, in M8 (17).
+/// Marco's `wrap-style`: where a move past an edge of the grid goes (150).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WrapStyle {
+    /// Nowhere: the move does nothing, as by default.
+    #[default]
+    NoWrap,
+    /// On to the next row or column: the end of a row leads to the start of the next, and
+    /// the bottom of a column to the top of the next, the last to the first.
+    Classic,
+    /// Round: the end of a row leads to its own start, and of a column to its own top.
+    Toroidal,
+}
+
+/// A way to go from one workspace to the one beside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Direction {
     Left,
     Right,
+    Up,
+    Down,
 }
 
 /// The grid for a number of workspaces: enough cells for all of them, filled from the top
@@ -121,14 +135,64 @@ impl Grid {
         (workspace < self.count).then_some(workspace)
     }
 
-    /// The workspace one cell from `workspace`, if there is one. Nothing wraps: the end of
-    /// a row isn't the start of the next.
-    pub(crate) fn neighbour(&self, workspace: usize, direction: Direction) -> Option<usize> {
+    /// The workspace one cell from `workspace` in `direction`, or, past an edge of the grid,
+    /// where `wrap` takes the move, as Marco's `meta_workspace_get_neighbor` does
+    /// (workspace.c:830-960). `None` when the move goes nowhere, or back to `workspace`.
+    ///
+    /// The move runs along a line, the workspace's row for left and right and its column
+    /// for up and down. An empty cell is past the line's edge: the filled cells of a line
+    /// are always at its start, since the grid is filled in order from the top left.
+    pub(crate) fn neighbour(
+        &self,
+        workspace: usize,
+        direction: Direction,
+        wrap: WrapStyle,
+    ) -> Option<usize> {
         let (column, row) = self.cell(workspace);
-        let (column, row) = match direction {
-            Direction::Left => (column.checked_sub(1)?, row),
-            Direction::Right => (column + 1, row),
+        let across = matches!(direction, Direction::Left | Direction::Right);
+        let forward = matches!(direction, Direction::Right | Direction::Down);
+        let (line, along, lines, length) = if across {
+            (row, column, self.rows, self.columns)
+        } else {
+            (column, row, self.columns, self.rows)
         };
-        self.workspace_at(column, row)
+        let at = |line: usize, along: usize| {
+            if across {
+                self.workspace_at(along, line)
+            } else {
+                self.workspace_at(line, along)
+            }
+        };
+        // The first or the last workspace of a line, the end a move into it comes in at.
+        let end = |line: usize| {
+            if forward {
+                at(line, 0)
+            } else {
+                (0..length).rev().find_map(|along| at(line, along))
+            }
+        };
+        let next = if forward {
+            Some(along + 1)
+        } else {
+            along.checked_sub(1)
+        };
+        let neighbour = match next.and_then(|along| at(line, along)) {
+            Some(neighbour) => Some(neighbour),
+            None => match wrap {
+                WrapStyle::NoWrap => None,
+                WrapStyle::Toroidal => end(line),
+                // The next line, or the previous one, that has a workspace. The
+                // workspace's own line has, so the search ends.
+                WrapStyle::Classic => (1..=lines).find_map(|step| {
+                    let line = if forward {
+                        (line + step) % lines
+                    } else {
+                        (line + lines - step) % lines
+                    };
+                    end(line)
+                }),
+            },
+        };
+        neighbour.filter(|neighbour| *neighbour != workspace)
     }
 }

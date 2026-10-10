@@ -20,7 +20,7 @@ mod test_window;
 mod tests;
 
 pub use action::Action;
-pub use grid::{Grid, Orientation, WorkspaceLayout};
+pub use grid::{Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{

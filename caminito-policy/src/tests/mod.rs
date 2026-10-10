@@ -20,6 +20,7 @@ mod states;
 mod switcher;
 mod transients;
 mod work_area;
+mod workspace_moves;
 mod workspaces;
 
 use std::time::Duration;
