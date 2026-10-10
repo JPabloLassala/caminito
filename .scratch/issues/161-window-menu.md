@@ -39,3 +39,8 @@ Marco's window menu, with every item ([05](05-v01-marco-feature-cut.md), [17](17
 - **Greyed items for CSD and XWayland windows:** which items Caminito can't do for each, beyond *Roll Up* on CSD.
 
 **From Marco's source**, to be settled by the implementing agent and recorded in the Done section: the items, their order, labels and conditions; where Alt+Space puts the menu; what *Move Titlebar On-screen* counts as on-screen.
+
+## Work in progress (2026-10-10)
+
+- **Stopped before any of the menu was written, at the developer's request.** The agent had only fetched Marco's source to read its menu code; there is no patch.
+- **Landed from its branch:** two integration fixes unrelated to the menu: 155's one-stack ADR renumbered to 0025 (158 had taken 0024), and 156's `begin-move`/`begin-resize` rows added to the two-workspace debug-dump snapshots.

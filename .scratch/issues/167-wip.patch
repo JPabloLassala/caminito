@@ -1,0 +1,675 @@
+diff --git a/caminito/src/commands.rs b/caminito/src/commands.rs
+index be35985..cd58c6e 100644
+--- a/caminito/src/commands.rs
++++ b/caminito/src/commands.rs
+@@ -27,8 +27,8 @@ pub(crate) enum Command {
+ }
+ 
+ impl Caminito {
+-    /// Runs the command line the settings have for `command`. One that's empty or can't be
+-    /// run is logged; Marco's dialog for it is 167's.
++    /// Runs the command line the settings have for `command`. One that can't be run, as
++    /// an empty one can't, is logged and shows Marco's error dialog (167).
+     pub(crate) fn run_command(&mut self, command: Command) {
+         let commands = &self.settings.commands;
+         let line = match command {
+@@ -38,18 +38,33 @@ impl Caminito {
+             Command::Numbered(n) => &commands.numbered[n - 1],
+             Command::Terminal => &commands.terminal,
+         };
+-        // Marco's schema has a space for each numbered command, which no shell runs.
+-        if line.trim().is_empty() {
+-            tracing::warn!("can't run {} for a keybinding: it's empty", command.key());
+-            return;
+-        }
+         match spawn(line, &self.environment) {
+             Ok(()) => tracing::debug!("ran {line:?} for a keybinding"),
+-            Err(err) => tracing::warn!("can't run {line:?} for a keybinding: {err}"),
++            Err(err) => {
++                tracing::warn!(
++                    "can't run {} {line:?} for a keybinding: {err}",
++                    command.key()
++                );
++                let text = error_text(line, err.message());
++                self.show_error_dialog(&text);
++            }
+         }
+     }
+ }
+ 
++/// The text of Marco's dialog for a command that can't be run (`error_on_command`,
++/// `core/keybindings.c:2397-2445`): GLib's `message`, after the command unless it's empty.
++/// Marco's schema has a space for each numbered command, which GLib can't run either. Both
++/// are escaped for zenity's markup, which Marco's aren't.
++fn error_text(line: &str, message: &str) -> String {
++    let message = glib::markup_escape_text(message);
++    if line.is_empty() {
++        return message.into();
++    }
++    let line = glib::markup_escape_text(line);
++    format!("There was an error running <tt>{line}</tt>:\n\n{message}")
++}
++
+ impl Command {
+     /// The key that holds the command line, as `schema key`.
+     fn key(self) -> String {
+@@ -70,15 +85,16 @@ impl Command {
+ /// the program is a grandchild, so Caminito has no child to reap.
+ fn spawn(line: &str, environment: &BTreeMap<OsString, OsString>) -> Result<(), glib::Error> {
+     let argv = glib::shell_parse_argv(line)?;
+-    let argv: Vec<&Path> = argv.iter().map(Path::new).collect();
++    spawn_argv(&argv, environment)
++}
+ 
+-    let mut variables: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+-    // A nested run has its host's, which isn't Caminito's Xwayland's.
+-    if !environment.contains_key(OsStr::new("DISPLAY")) {
+-        variables.remove(OsStr::new("DISPLAY"));
+-    }
+-    variables.extend(environment.clone());
+-    let envp: Vec<OsString> = variables
++/// Spawns `argv` as [`spawn`] does a command line.
++pub(crate) fn spawn_argv(
++    argv: &[impl AsRef<OsStr>],
++    environment: &BTreeMap<OsString, OsString>,
++) -> Result<(), glib::Error> {
++    let argv: Vec<&Path> = argv.iter().map(Path::new).collect();
++    let envp: Vec<OsString> = child_environment(environment)
+         .into_iter()
+         .map(|(mut name, value)| {
+             name.push("=");
+@@ -93,3 +109,16 @@ fn spawn(line: &str, environment: &BTreeMap<OsString, OsString>) -> Result<(), g
+     glib::spawn_async(None::<&Path>, &argv, &envp, flags, None)?;
+     Ok(())
+ }
++
++/// The environment of what Caminito spawns: its own, with `environment` over it.
++pub(crate) fn child_environment(
++    environment: &BTreeMap<OsString, OsString>,
++) -> BTreeMap<OsString, OsString> {
++    let mut variables: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
++    // A nested run has its host's, which isn't Caminito's Xwayland's.
++    if !environment.contains_key(OsStr::new("DISPLAY")) {
++        variables.remove(OsStr::new("DISPLAY"));
++    }
++    variables.extend(environment.clone());
++    variables
++}
+diff --git a/caminito/src/dialogs.rs b/caminito/src/dialogs.rs
+new file mode 100644
+index 0000000..4324916
+--- /dev/null
++++ b/caminito/src/dialogs.rs
+@@ -0,0 +1,119 @@
++//! Marco's zenity dialogs (167): the error a keybinding's command shows when it can't be
++//! run, and `rename-workspace`'s entry. They're Marco's (`core/util.c`, `meta_show_dialog`
++//! and `meta_show_entry_dialog`, at `8522ed1`), with its arguments but `--display` and
++//! `--class`, which zenity 4 refuses: the display is in the environment Caminito gives what
++//! it spawns. A dialog is a client like any other, and nothing waits for it.
++
++use std::io;
++use std::process::{Command, Output, Stdio};
++
++use caminito_policy::MAX_WORKSPACES;
++use smithay::reexports::calloop::channel;
++
++use crate::commands::{child_environment, spawn_argv};
++use crate::settings::Value;
++use crate::settings::translate::MARCO_WORKSPACE_NAMES;
++use crate::state::Caminito;
++
++/// The title of Marco's dialogs.
++const TITLE: &str = "Marco";
++
++impl Caminito {
++    /// Shows Marco's error dialog with `text`, in zenity's markup. zenity missing is logged,
++    /// and nothing shows.
++    pub(crate) fn show_error_dialog(&self, text: &str) {
++        let argv = ["zenity", "--error", "--title", TITLE, "--text", text];
++        if let Err(err) = spawn_argv(&argv, &self.environment) {
++            tracing::warn!("can't show Marco's error dialog: {err}");
++        }
++    }
++
++    /// `rename-workspace` (`core/keybindings.c`, `handle_rename_workspace`): asks for the
++    /// active workspace's new name, with its name as the entry's text, and writes the answer
++    /// to its `name-N`, which the pager then shows (97). A cancel, or an empty answer,
++    /// leaves the name. While the dialog shows, another isn't.
++    pub(crate) fn rename_workspace(&mut self) {
++        if self.workspace_rename.is_some() {
++            return;
++        }
++        let workspace = self.policy.active_workspace();
++        let Some(name) = self.policy.workspace_names().get(workspace) else {
++            return;
++        };
++        let spawned = Command::new("zenity")
++            .args(["--entry", "--title", TITLE, "--text", "New Workspace Name:"])
++            .args(["--entry-text", name])
++            .args(["--ok-label", "OK", "--cancel-label", "Cancel"])
++            .env_clear()
++            .envs(child_environment(&self.environment))
++            .current_dir("/")
++            .stdin(Stdio::null())
++            .stdout(Stdio::piped())
++            .spawn();
++        let child = match spawned {
++            Ok(child) => child,
++            Err(err) => {
++                tracing::warn!("can't show Marco's dialog for rename-workspace: zenity: {err}");
++                return;
++            }
++        };
++        let (answer, answers) = channel::channel();
++        // The answer is waited for on a thread of its own, which reaps zenity too.
++        let waiting = std::thread::Builder::new()
++            .name("caminito-dialog".into())
++            .spawn(move || {
++                let _ = answer.send(child.wait_with_output());
++            });
++        if let Err(err) = waiting {
++            tracing::warn!("can't wait for rename-workspace's dialog: {err}");
++            return;
++        }
++        // The channel's source goes once the thread has sent the answer and ended.
++        let inserted = self
++            .loop_handle
++            .insert_source(answers, move |event, _, state| {
++                let caminito = &mut state.caminito;
++                caminito.workspace_rename = None;
++                if let channel::Event::Msg(output) = event {
++                    caminito.workspace_renamed(workspace, output);
++                }
++            });
++        match inserted {
++            Ok(token) => self.workspace_rename = Some(token),
++            Err(err) => tracing::warn!("can't wait for rename-workspace's dialog: {err}"),
++        }
++    }
++
++    /// Writes the name zenity answered for `workspace`, as Marco's
++    /// `handle_rename_workspace_callback` and `meta_prefs_change_workspace_name` do: the
++    /// answer without its newline, unless it's empty or the name it has.
++    fn workspace_renamed(&mut self, workspace: usize, output: io::Result<Output>) {
++        let output = match output {
++            Ok(output) => output,
++            Err(err) => {
++                tracing::warn!("rename-workspace's dialog failed: {err}");
++                return;
++            }
++        };
++        if !output.status.success() {
++            tracing::debug!("rename-workspace's dialog was cancelled");
++            return;
++        }
++        let Ok(answer) = String::from_utf8(output.stdout) else {
++            tracing::debug!("rename-workspace's dialog answered a name that isn't UTF-8");
++            return;
++        };
++        let answer = answer.strip_suffix('\n').unwrap_or(&answer);
++        // Marco's schema names 36 workspaces.
++        if answer.is_empty() || workspace >= MAX_WORKSPACES {
++            return;
++        }
++        let names = self.policy.workspace_names();
++        if names.get(workspace).is_some_and(|name| name == answer) {
++            return;
++        }
++        let key = format!("name-{}", workspace + 1);
++        self.settings_thread
++            .set(MARCO_WORKSPACE_NAMES, &key, Value::Str(answer.to_owned()));
++    }
++}
+diff --git a/caminito/src/input/bindings.rs b/caminito/src/input/bindings.rs
+index d7a1763..200b807 100644
+--- a/caminito/src/input/bindings.rs
++++ b/caminito/src/input/bindings.rs
+@@ -43,6 +43,8 @@ pub(crate) enum Binding {
+     Panel(PanelAction),
+     /// A command to run (104).
+     Command(Command),
++    /// `rename-workspace`'s dialog (167).
++    RenameWorkspace,
+ }
+ 
+ /// What an action Caminito binds does when its combination is pressed.
+@@ -266,6 +268,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
+                 "disabled",
+                 command(Command::Terminal),
+             ),
++            global(
++                "rename-workspace",
++                "disabled",
++                Does::Run(Binding::RenameWorkspace),
++            ),
+             window(
+                 "toggle-fullscreen",
+                 "disabled",
+diff --git a/caminito/src/input/mod.rs b/caminito/src/input/mod.rs
+index 4808f2a..b7e7f9c 100644
+--- a/caminito/src/input/mod.rs
++++ b/caminito/src/input/mod.rs
+@@ -286,6 +286,7 @@ impl State {
+                 self.caminito.ask_panel(action, time.millis());
+             }
+             Some(Some(Bound::Command(command))) => self.caminito.run_command(command),
++            Some(Some(Bound::RenameWorkspace)) => self.caminito.rename_workspace(),
+             Some(Some(Bound::GrabKey(key))) => self.keyboard_grab_key(key, time),
+             Some(Some(Bound::Accelerator { owner, action })) => {
+                 let time = time.millis();
+@@ -407,6 +408,7 @@ impl State {
+                     Binding::Policy(action) => Bound::Action(action),
+                     Binding::Panel(action) => Bound::Panel(action),
+                     Binding::Command(command) => Bound::Command(command),
++                    Binding::RenameWorkspace => Bound::RenameWorkspace,
+                 };
+                 FilterResult::Intercept(Some(bound))
+             }
+@@ -708,6 +710,8 @@ enum Bound {
+     Panel(PanelAction),
+     /// One of Caminito's bindings: a command to run (104).
+     Command(Command),
++    /// One of Caminito's bindings: `rename-workspace`'s dialog (167).
++    RenameWorkspace,
+     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
+     /// to signal it.
+     Accelerator { owner: String, action: u32 },
+diff --git a/caminito/src/lib.rs b/caminito/src/lib.rs
+index 791cfbe..62e08f4 100644
+--- a/caminito/src/lib.rs
++++ b/caminito/src/lib.rs
+@@ -8,6 +8,7 @@ pub mod cursor;
+ pub mod dbus;
+ pub mod debug;
+ pub mod decoration;
++mod dialogs;
+ mod handlers;
+ pub mod helpers;
+ pub mod icons;
+diff --git a/caminito/src/state.rs b/caminito/src/state.rs
+index c0ca229..66002b6 100644
+--- a/caminito/src/state.rs
++++ b/caminito/src/state.rs
+@@ -350,6 +350,9 @@ pub struct Caminito {
+     /// kept here rather than set with `set_var`, which isn't safe once the settings and
+     /// D-Bus threads run.
+     pub environment: BTreeMap<OsString, OsString>,
++    /// `rename-workspace`'s dialog while it shows: the source its answer comes back on
++    /// (167). Another isn't shown meanwhile, as in Marco.
++    pub(crate) workspace_rename: Option<RegistrationToken>,
+ 
+     /// The Wayland socket's source, until a Session closes it as it ends (61).
+     socket_source: Option<RegistrationToken>,
+@@ -965,6 +968,7 @@ impl Caminito {
+             xwayland_keyboard_grab_state,
+             xwayland_keyboard_grab: None,
+             environment: BTreeMap::new(),
++            workspace_rename: None,
+             socket_source: None,
+             helper_stderr: StderrTarget::Prefixed,
+             session: None,
+diff --git a/caminito/src/tests/commands.rs b/caminito/src/tests/commands.rs
+index a8f9c0f..80e9496 100644
+--- a/caminito/src/tests/commands.rs
++++ b/caminito/src/tests/commands.rs
+@@ -132,14 +132,22 @@ fn a_run_command_whose_command_is_empty_runs_nothing_and_is_logged() {
+         set(MARCO_GLOBAL_KEYBINDINGS, "run-command-2", "<Super>w"),
+         set(MARCO_KEYBINDING_COMMANDS, "command-2", ""),
+     ]);
++    // Marco's error dialog shows too (167): `tests::dialogs`' concern, so its stand-in here
++    // does nothing.
++    let dir = tempfile::tempdir().unwrap();
++    let zenity = dir.path().join("zenity");
++    fs::write(&zenity, "#!/bin/sh\n").unwrap();
++    fs::set_permissions(&zenity, fs::Permissions::from_mode(0o755)).unwrap();
++    first_in_path(&mut f, &dir);
+ 
+     f.chord(&[KEY_LEFTMETA, KEY_Q]);
+     f.chord(&[KEY_LEFTMETA, KEY_W]);
+ 
+     let logs = logs.text();
+-    for n in 1..=2 {
++    for (n, line) in [(1, "\" \""), (2, "\"\"")] {
+         let line = format!(
+-            "can't run org.mate.Marco.keybinding-commands command-{n} for a keybinding: it's empty"
++            "can't run org.mate.Marco.keybinding-commands command-{n} {line} for a keybinding: \
++             Text was empty (or contained only whitespace)"
+         );
+         assert!(logs.contains(&line), "{logs}");
+     }
+diff --git a/caminito/src/tests/dialogs.rs b/caminito/src/tests/dialogs.rs
+new file mode 100644
+index 0000000..69a3077
+--- /dev/null
++++ b/caminito/src/tests/dialogs.rs
+@@ -0,0 +1,261 @@
++//! Marco's zenity dialogs (167): the error a `run-command-*` binding shows when its
++//! command is empty or can't be run, and `rename-workspace`'s entry. A stand-in for zenity,
++//! first in the `PATH` Caminito gives what it spawns, writes down its arguments and gives
++//! the answer the test sets, or cancels.
++
++use std::fs;
++use std::os::unix::fs::PermissionsExt;
++use std::path::PathBuf;
++
++use tempfile::TempDir;
++
++use super::fixture::{Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTMETA, KEY_Q, KEY_R, KEY_RIGHT};
++use crate::settings::Value;
++use crate::settings::translate::{
++    MARCO_GLOBAL_KEYBINDINGS, MARCO_KEYBINDING_COMMANDS, MARCO_WORKSPACE_NAMES,
++};
++
++/// A stand-in for zenity in a directory of its own.
++struct Zenity {
++    dir: TempDir,
++}
++
++impl Zenity {
++    /// Puts the stand-in first in the `PATH` of what Caminito spawns. It answers `answer`,
++    /// as a user who types it and presses OK, or with `None` cancels.
++    fn install(f: &mut Fixture, answer: Option<&str>) -> Self {
++        let dir = tempfile::tempdir().unwrap();
++        // Each argument ends in a NUL, as the error's text has lines of its own. The record
++        // is moved into place once the answer is out, so it's never read half-written.
++        let script = "#!/bin/sh\n\
++                      here=$(dirname \"$0\")\n\
++                      printf '%s\\0' \"$@\" > \"$here/running\"\n\
++                      status=1\n\
++                      if [ -e \"$here/answer\" ]; then cat \"$here/answer\"; status=0; fi\n\
++                      mv \"$here/running\" \"$here/ran\"\n\
++                      exit $status\n";
++        let program = dir.path().join("zenity");
++        fs::write(&program, script).unwrap();
++        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
++        if let Some(answer) = answer {
++            // zenity prints the entry's text and a newline.
++            fs::write(dir.path().join("answer"), format!("{answer}\n")).unwrap();
++        }
++
++        let mut path = dir.path().as_os_str().to_owned();
++        if let Some(rest) = std::env::var_os("PATH") {
++            path.push(":");
++            path.push(rest);
++        }
++        f.state.caminito.environment.insert("PATH".into(), path);
++        Self { dir }
++    }
++
++    fn ran(&self) -> PathBuf {
++        self.dir.path().join("ran")
++    }
++
++    /// Waits for the stand-in to have run, and returns its arguments.
++    fn arguments(&self, f: &mut Fixture) -> Vec<String> {
++        let ran = self.ran();
++        f.dispatch_until(|_| ran.exists());
++        let written = fs::read_to_string(&ran).unwrap();
++        written.split_terminator('\0').map(str::to_owned).collect()
++    }
++}
++
++fn set(schema: &'static str, key: &str, value: &str) -> (&'static str, String, Value) {
++    (schema, key.into(), Value::Str(value.into()))
++}
++
++fn error_dialog(text: &str) -> Vec<String> {
++    ["--error", "--title", "Marco", "--text", text]
++        .map(str::to_owned)
++        .to_vec()
++}
++
++// A command that fails.
++
++/// A fixture with `run-command-1` on Super+Q, and `command-1` set to `command`.
++fn command_1(command: &str) -> Fixture {
++    Fixture::with_settings(vec![
++        set(MARCO_GLOBAL_KEYBINDINGS, "run-command-1", "<Super>q"),
++        set(MARCO_KEYBINDING_COMMANDS, "command-1", command),
++    ])
++}
++
++#[test]
++fn an_empty_command_shows_marcos_error_dialog_with_glibs_message() {
++    let mut f = command_1("");
++    let zenity = Zenity::install(&mut f, None);
++
++    f.chord(&[KEY_LEFTMETA, KEY_Q]);
++
++    assert_eq!(
++        zenity.arguments(&mut f),
++        error_dialog("Text was empty (or contained only whitespace)")
++    );
++}
++
++#[test]
++fn marcos_default_command_of_a_space_shows_the_dialog_naming_it() {
++    let mut f = Fixture::with_settings(vec![set(
++        MARCO_GLOBAL_KEYBINDINGS,
++        "run-command-1",
++        "<Super>q",
++    )]);
++    let zenity = Zenity::install(&mut f, None);
++
++    f.chord(&[KEY_LEFTMETA, KEY_Q]);
++
++    assert_eq!(
++        zenity.arguments(&mut f),
++        error_dialog(
++            "There was an error running <tt> </tt>:\n\n\
++             Text was empty (or contained only whitespace)"
++        )
++    );
++}
++
++#[test]
++fn a_missing_program_shows_marcos_error_dialog_naming_the_command() {
++    let mut f = command_1("no-such-program --open");
++    let zenity = Zenity::install(&mut f, None);
++
++    f.chord(&[KEY_LEFTMETA, KEY_Q]);
++
++    assert_eq!(
++        zenity.arguments(&mut f),
++        error_dialog(
++            "There was an error running <tt>no-such-program --open</tt>:\n\n\
++             Failed to execute child process “no-such-program” (No such file or directory)"
++        )
++    );
++}
++
++#[test]
++fn the_command_in_the_dialog_is_escaped_for_its_markup() {
++    let mut f = command_1("no-such-program <a&b>");
++    let zenity = Zenity::install(&mut f, None);
++
++    f.chord(&[KEY_LEFTMETA, KEY_Q]);
++
++    let text = &zenity.arguments(&mut f)[4];
++    assert!(
++        text.starts_with("There was an error running <tt>no-such-program &lt;a&amp;b&gt;</tt>"),
++        "{text}"
++    );
++}
++
++// `rename-workspace`.
++
++/// A fixture with `rename-workspace` on Super+R, and `initial` besides.
++fn with_rename_bound(mut initial: Vec<(&'static str, String, Value)>) -> Fixture {
++    initial.push(set(
++        MARCO_GLOBAL_KEYBINDINGS,
++        "rename-workspace",
++        "<Super>r",
++    ));
++    Fixture::with_settings(initial)
++}
++
++fn entry_dialog(entry_text: &str) -> Vec<String> {
++    [
++        "--entry",
++        "--title",
++        "Marco",
++        "--text",
++        "New Workspace Name:",
++        "--entry-text",
++        entry_text,
++        "--ok-label",
++        "OK",
++        "--cancel-label",
++        "Cancel",
++    ]
++    .map(str::to_owned)
++    .to_vec()
++}
++
++fn name(f: &Fixture, workspace: usize) -> String {
++    f.state.caminito.policy.workspace_names()[workspace].clone()
++}
++
++#[test]
++fn rename_workspace_asks_for_the_active_workspaces_name_and_writes_the_answer() {
++    let mut f = with_rename_bound(vec![set(MARCO_WORKSPACE_NAMES, "name-3", "Mail")]);
++    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
++    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
++    assert_eq!(f.state.caminito.policy.active_workspace(), 2);
++    let zenity = Zenity::install(&mut f, Some("Post"));
++
++    f.chord(&[KEY_LEFTMETA, KEY_R]);
++
++    assert_eq!(zenity.arguments(&mut f), entry_dialog("Mail"));
++    // The pager's names are policy's (97).
++    f.dispatch_until(|f| name(f, 2) == "Post");
++    assert_eq!(name(&f, 0), "Workspace 1");
++}
++
++#[test]
++fn an_unnamed_workspace_is_offered_marcos_default_name() {
++    let mut f = with_rename_bound(vec![]);
++    let zenity = Zenity::install(&mut f, Some("Code"));
++
++    f.chord(&[KEY_LEFTMETA, KEY_R]);
++
++    assert_eq!(zenity.arguments(&mut f), entry_dialog("Workspace 1"));
++    f.dispatch_until(|f| name(f, 0) == "Code");
++}
++
++/// Waits for the dialog to be over, then for a write of the test's own to come back from
++/// the settings thread, so that any write the dialog made is in by then.
++fn wait_for_the_dialog_and_the_settings(f: &mut Fixture, zenity: &Zenity) {
++    let ran = zenity.ran();
++    f.dispatch_until(|f| ran.exists() && f.state.caminito.workspace_rename.is_none());
++    f.set_setting(
++        MARCO_WORKSPACE_NAMES,
++        "name-4",
++        Value::Str("Barrier".into()),
++    );
++    f.dispatch_until(|f| name(f, 3) == "Barrier");
++}
++
++#[test]
++fn cancelling_rename_workspace_leaves_the_name() {
++    let mut f = with_rename_bound(vec![set(MARCO_WORKSPACE_NAMES, "name-1", "Mail")]);
++    let zenity = Zenity::install(&mut f, None);
++
++    f.chord(&[KEY_LEFTMETA, KEY_R]);
++
++    wait_for_the_dialog_and_the_settings(&mut f, &zenity);
++    assert_eq!(name(&f, 0), "Mail");
++}
++
++#[test]
++fn an_empty_answer_leaves_the_name() {
++    let mut f = with_rename_bound(vec![set(MARCO_WORKSPACE_NAMES, "name-1", "Mail")]);
++    let zenity = Zenity::install(&mut f, Some(""));
++
++    f.chord(&[KEY_LEFTMETA, KEY_R]);
++
++    wait_for_the_dialog_and_the_settings(&mut f, &zenity);
++    assert_eq!(name(&f, 0), "Mail");
++}
++
++#[test]
++fn rename_workspace_is_unbound_by_default() {
++    let mut f = Fixture::new();
++    let zenity = Zenity::install(&mut f, Some("Code"));
++
++    f.chord(&[KEY_LEFTMETA, KEY_R]);
++    f.set_setting(
++        MARCO_WORKSPACE_NAMES,
++        "name-4",
++        Value::Str("Barrier".into()),
++    );
++    f.dispatch_until(|f| name(f, 3) == "Barrier");
++
++    assert!(!zenity.ran().exists());
++    assert_eq!(name(&f, 0), "Workspace 1");
++}
+diff --git a/caminito/src/tests/mod.rs b/caminito/src/tests/mod.rs
+index 2690626..3baaad5 100644
+--- a/caminito/src/tests/mod.rs
++++ b/caminito/src/tests/mod.rs
+@@ -15,6 +15,7 @@ mod cursors;
+ mod data_control;
+ mod debug;
+ mod decoration;
++mod dialogs;
+ mod dpms;
+ mod drag_icons;
+ mod dynamic_workspaces;
+diff --git a/docs/parity.md b/docs/parity.md
+index 182e25e..e522c57 100644
+--- a/docs/parity.md
++++ b/docs/parity.md
+@@ -71,7 +71,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
+ 
+ | Key | Status | What Caminito does | Covered by |
+ | --- | --- | --- | --- |
+-| `command-1` to `-12` | honoured | Run through the shell by `run-command-1` to `-12` (149). One that's empty, as Marco's default of a space is, runs nothing and is logged; Marco's dialog for it is 167's. | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs` |
++| `command-1` to `-12` | honoured | Run through the shell by `run-command-1` to `-12` (149). One that's empty, as Marco's default of a space is, runs nothing, is logged and shows Marco's error dialog, as the keyless section's *The error dialog for a command that can't run* says (167). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs`, `caminito/src/tests/dialogs.rs` |
+ | `command-screenshot` | honoured | Run through the shell by `run-command-screenshot` (104). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs` |
+ | `command-window-screenshot` | honoured | Run by `run-command-window-screenshot` (104). | the same |
+ | `command-area-screenshot` | honoured | Master's key, read where the schema has it, with master's default otherwise; run by `run-command-area-screenshot` (104). | the same |
+@@ -110,7 +110,7 @@ Every action's key is read and watched, and a change applies at once ([148](../.
+ | `run-command-window-screenshot` | honoured | Alt+Print runs `command-window-screenshot` (104). | the same |
+ | `run-command-area-screenshot` | honoured | Master's action: Shift+Print, master's default, runs `command-area-screenshot` (104). | the same |
+ | `run-command-terminal` | honoured | Unbound by default, as in Marco; once bound, runs `org.mate.applications-terminal exec`, `mate-terminal` by default (149). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs` |
+-| `rename-workspace` | to do (167) | Unbound, as by default. | |
++| `rename-workspace` | honoured | Unbound by default, as in Marco; once bound, shows Marco's zenity entry dialog with the active workspace's name, and writes the answer to its `name-N`, which the pager then shows. Cancelling, or an empty answer, leaves the name; another press while it shows does nothing (167). | `caminito/src/tests/dialogs.rs` |
+ 
+ ## `org.mate.Marco.window-keybindings`
+ 
+@@ -231,5 +231,6 @@ The roadmap after v0.1: each is *unsupported*. The keys among them that Caminito
+ | The workspace popup | to do (152) | Shown by the workspace bindings while their modifier is held; Marco has no key for it. |
+ | Edge resistance and snap-move | honoured | Always on, as in Marco: a window being moved or resized stops at the work areas' edges and the other windows' until the pointer goes 32 (16 for a window) pixels past, and with Shift held it snaps to the nearest edges instead (157). Covered by `caminito-policy/src/tests/edge_resistance.rs` and `caminito/src/tests/edge_resistance.rs`. |
+ | Edge and corner tiling, with the tile preview | honoured | With `allow-tiling` on, a window being moved with the pointer within twice the drag threshold of its output's work area's side, or of a corner, shows the tile preview: where letting go puts its frame, in the palette's selected background, translucent inside a line of it, beneath the moved window. Letting go there tiles it, and moving away hides the preview; a Shift move tiles nowhere. A tiled window gets xdg's `tiled_*` states for the edges it lies along, an SSD Frame drawn in the theme's `tiled_left` and `tiled_right` styles, X configure requests refused, and follows its work area. A titlebar drag past `drag-threshold` untiles it under the pointer, any other move twice that, and maximising it untiles it too (158). A resize by its inner sides, those not along the work area's edges, keeps it tiled at the new size, which it keeps until it's tiled afresh; by any other side it changes nothing, as in Marco (159). Covered by `caminito-policy/src/tests/tiling.rs` and `caminito/src/tests/tiling.rs`. |
++| The error dialog for a command that can't run | honoured | A `run-command-*` binding, a screenshot's or the terminal's, whose command is empty or can't be started shows Marco's zenity error dialog with GLib's message, after the command unless it's empty, with Marco's arguments but `--display` and `--class`, which zenity 4 refuses. The failure is logged too, and zenity missing is logged with nothing shown (167). Covered by `caminito/src/tests/dialogs.rs`. |
+ | "Not responding" and Force Quit | to do (168) | Shown when a window doesn't close; Marco has no key for it. |
+ | Shadows | to do (171) | Turned off by `compositing-manager`, with no key of their own. |
+diff --git a/docs/testing/checklist.md b/docs/testing/checklist.md
+index b0e717e..55a59da 100644
+--- a/docs/testing/checklist.md
++++ b/docs/testing/checklist.md
+@@ -1630,3 +1630,23 @@ session_env() {
+   window's stops there, and the next key goes on, as in Marco (156).
+ - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
+   bindings in force.
++
++### A failed command's dialog, and `rename-workspace`
++
++- **Milestone:** M8, run in M8's closing run (173).
++- **Steps:**
++  1. Log into *MATE on Caminito*, with `zenity` installed. Open *Keyboard Shortcuts* from the
++     control center, or use `gsettings`, to bind `run-command-1` to Super+1, leaving
++     `org.mate.Marco.keybinding-commands command-1` at its default, and press it.
++  2. Run `gsettings set org.mate.Marco.keybinding-commands command-1 'no-such-program'` and
++     press Super+1 again.
++  3. Bind `rename-workspace` (`gsettings set org.mate.Marco.global-keybindings
++     rename-workspace '<Super>r'`). Switch to the second workspace, press Super+R, type a new
++     name and press OK. Press Super+R again and press Cancel.
++- **Expected:** in step 1 an error dialog titled *Marco* says the text was empty, and takes
++  the focus as a new window does; in step 2 it says there was an error running
++  `no-such-program`, with GLib's message. Caminito goes on meanwhile. In step 3 the entry
++  dialog asks for the *New Workspace Name:* with the workspace's name filled in, and the
++  pager shows the new name once OK is pressed; Cancel leaves it (167).
++- **Debug tool:** `gsettings monitor org.mate.Marco.workspace-names`, and Caminito's log, which
++  has a line for each command that can't run.

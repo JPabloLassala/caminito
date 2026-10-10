@@ -34,3 +34,9 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 - **108's "an urgent window keeps its place"** against Marco master's `alt-tab-urgent-placement`, whose default is `start`: with Marco 1.29.0, which has no key, which applies; and with master's, whether its default is followed.
 
 **From Marco's source**, to be settled by the implementing agent and recorded in the Done section: what Marco's *smart* and *strict* compare on X11 (user time against the focused window's), which this ticket maps onto tokens, and when Marco clears a window's urgency.
+
+## Work in progress (2026-10-10)
+
+- **Stopped before landing, at the developer's request.** An agent built most of the ticket in one commit (policy's `focus_stealing.rs` with `focus-new-windows` smart/strict judging xdg-activation tokens; a refused window opens below the focused one and stays urgent until focused; urgency shown by the Window switcher and the debug dump and placed by `alt-tab-urgent-placement`; settings translation, policy and headless tests, xdg-activation in the test client, a parity row and a checklist item). Its own ticket notes are inside the patch.
+- **Not done:** the Done section, the code review, a test run after the last edits, and the merge.
+- **The patch:** [165-wip.patch](165-wip.patch), made with `git diff --binary bd6403f <its commit>`. It conflicts with later merges (155, 156) in `caminito-policy/src/lib.rs`, `policy.rs`, `docs/parity.md` and the checklist, so apply it with `git apply --3way` on a branch that contains bd6403f and resolve those.

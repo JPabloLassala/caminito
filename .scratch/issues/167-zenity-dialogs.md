@@ -29,3 +29,8 @@ The helper dialogs Marco shows with zenity ([05](05-v01-marco-feature-cut.md)), 
 **For the developer**, decided when the ticket is done and listed in its Done section for confirmation:
 
 - **zenity missing:** proposed, the failure is logged once and nothing shows, as Marco does if it does the same.
+
+## Work in progress (2026-10-10)
+
+- **Stopped before landing, at the developer's request.** An agent had started it, uncommitted: a new `caminito/src/dialogs.rs` and `caminito/src/tests/dialogs.rs`, edits to `commands.rs`, `input/bindings.rs`, `input/mod.rs`, `lib.rs`, `state.rs`, the commands tests, `docs/parity.md` and the checklist. It was on the docs edits when stopped; nothing was tested or reviewed, and no triage was recorded.
+- **The patch:** [167-wip.patch](167-wip.patch), made with `git diff --cached --binary` against 26a54f7. It applies cleanly to the branch this note lands on.

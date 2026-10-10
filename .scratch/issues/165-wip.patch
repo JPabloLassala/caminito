@@ -1,0 +1,1611 @@
+diff --git a/.scratch/issues/165-focus-stealing-prevention-for-native-windows.md b/.scratch/issues/165-focus-stealing-prevention-for-native-windows.md
+index c261620..22d10fe 100644
+--- a/.scratch/issues/165-focus-stealing-prevention-for-native-windows.md
++++ b/.scratch/issues/165-focus-stealing-prevention-for-native-windows.md
+@@ -34,3 +34,11 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
+ - **108's "an urgent window keeps its place"** against Marco master's `alt-tab-urgent-placement`, whose default is `start`: with Marco 1.29.0, which has no key, which applies; and with master's, whether its default is followed.
+ 
+ **From Marco's source**, to be settled by the implementing agent and recorded in the Done section: what Marco's *smart* and *strict* compare on X11 (user time against the focused window's), which this ticket maps onto tokens, and when Marco clears a window's urgency.
++
++## Triage (2026-10-10)
++
++No option was marked recommended; the agent shipping the ticket took these defaults, and they're recorded in the Done section too.
++
++- **Recent:** issued by Caminito in the last 10 seconds (`TOKEN_LIFETIME`), and not before the seat's focus last changed. **Tied to user input:** the asking client has the keyboard, and the serial is no older than the keyboard's entering it (any input event of the focused client), or than the pointer's, for the click that focused it.
++- **A client's first window:** by pid, policy's own fact (socket credentials for a native client, and `_NET_WM_PID` for 166). No criterion makes a second Caja window from the menu a first window, since Caja's desktop is a Layer surface and the earlier browser window is the same process, connection and app id alike.
++- **108 against `alt-tab-urgent-placement`:** with Marco 1.29.0's schema, which has no key, an urgent window keeps its place (108); with master's, its value is followed, default `start` included.
+diff --git a/caminito-policy/src/lib.rs b/caminito-policy/src/lib.rs
+index 7b6751d..0eabf02 100644
+--- a/caminito-policy/src/lib.rs
++++ b/caminito-policy/src/lib.rs
+@@ -24,8 +24,9 @@ pub use grid::{Grid, Orientation, WorkspaceLayout, WrapStyle};
+ pub use output::{Output, OutputId, ReservedEdges};
+ pub use placement::PlacementMode;
+ pub use policy::{
+-    Config, Crossing, FocusMode, MAX_WORKSPACES, MapStates, PointerTarget, Policy, ResizeEdges,
+-    SeatId, SwitchList, Switcher, default_workspace_name,
++    ActivationToken, Config, Crossing, FocusClaim, FocusMode, FocusNewWindows, MAX_WORKSPACES,
++    MapStates, PointerTarget, Policy, ResizeEdges, SeatId, SwitchList, Switcher, TOKEN_LIFETIME,
++    UrgentPlacement, default_workspace_name,
+ };
+ pub use skip_list::ShowDesktopSkipList;
+ pub use stack::Layer;
+diff --git a/caminito-policy/src/policy.rs b/caminito-policy/src/policy.rs
+index 2bc97c6..9c69753 100644
+--- a/caminito-policy/src/policy.rs
++++ b/caminito-policy/src/policy.rs
+@@ -16,10 +16,14 @@ use crate::{
+ };
+ 
+ mod dynamic_workspaces;
++mod focus_stealing;
+ mod pointer;
+ mod switcher;
+ mod window_actions;
+ 
++pub use focus_stealing::{
++    ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
++};
+ pub use pointer::{Crossing, FocusMode, PointerTarget};
+ pub use switcher::{SwitchList, Switcher};
+ 
+@@ -135,6 +139,10 @@ pub struct Config {
+     /// `org.mate.peripherals-mouse drag-threshold`, in logical pixels: twice it is how far
+     /// into the work area a side's and a corner's tiling zones reach, as in Marco (158).
+     pub drag_threshold: i32,
++    /// `focus-new-windows` (165).
++    pub focus_new_windows: FocusNewWindows,
++    /// `alt-tab-urgent-placement`, where the installed schema has it (165).
++    pub urgent_placement: UrgentPlacement,
+ }
+ 
+ impl Default for Config {
+@@ -163,17 +171,23 @@ impl Default for Config {
+             allow_tile_cycling: true,
+             // msd's default.
+             drag_threshold: 8,
++            focus_new_windows: FocusNewWindows::Smart,
++            // Marco 1.29.0's, which has no key (165).
++            urgent_placement: UrgentPlacement::Mru,
+         }
+     }
+ }
+ 
+-/// The states a window asks to map with, which change how it's placed (154).
++/// The states a window asks to map with, which change how it's placed (154), and its claim
++/// to the focus (165).
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+ pub struct MapStates {
+     /// Maximised both ways.
+     pub maximized: bool,
+     /// Fullscreen, on the output named if one is.
+     pub fullscreen: Option<Option<OutputId>>,
++    /// What it claims the focus with (165).
++    pub focus: FocusClaim,
+ }
+ 
+ /// Marco's name for a workspace with none set, numbered from 1.
+@@ -231,6 +245,9 @@ struct Managed<W> {
+     tile: Option<Tiled>,
+     /// The geometry to go back to, while maximised, tiled or fullscreen.
+     floating: Option<Rectangle<i32, Logical>>,
++    /// Refused the focus, and not focused since (165): Marco's
++    /// `wm_state_demands_attention`.
++    demands_attention: bool,
+     sent: Sent,
+ }
+ 
+@@ -511,6 +528,10 @@ pub struct Policy<W: PolicyWindow> {
+     pointer: Option<Point<f64, Logical>>,
+     /// The pointer focus modes, `raise-on-click` and auto-raise (153).
+     pointer_focus: pointer::PointerFocus,
++    /// `focus-new-windows` (165).
++    focus_new_windows: FocusNewWindows,
++    /// `alt-tab-urgent-placement` (165).
++    urgent_placement: UrgentPlacement,
+ }
+ 
+ impl<W: PolicyWindow> Policy<W> {
+@@ -545,6 +566,8 @@ impl<W: PolicyWindow> Policy<W> {
+             drag_threshold: 0,
+             pointer: None,
+             pointer_focus: pointer::PointerFocus::default(),
++            focus_new_windows: FocusNewWindows::Smart,
++            urgent_placement: UrgentPlacement::Mru,
+         };
+         policy.settings_changed(config);
+         policy
+@@ -622,6 +645,8 @@ impl<W: PolicyWindow> Policy<W> {
+         self.allow_tile_cycling = config.allow_tile_cycling;
+         self.drag_threshold = config.drag_threshold;
+         self.show_desktop_skip_list = config.show_desktop_skip_list;
++        self.focus_new_windows = config.focus_new_windows;
++        self.urgent_placement = config.urgent_placement;
+         if !self.dynamic_workspaces {
+             self.set_workspace_count(config.workspace_count);
+         }
+@@ -743,6 +768,7 @@ impl<W: PolicyWindow> Policy<W> {
+                 sticky: false,
+                 tile: None,
+                 floating: None,
++                demands_attention: false,
+                 sent: Sent::default(),
+             },
+         );
+@@ -758,8 +784,10 @@ impl<W: PolicyWindow> Policy<W> {
+         }
+         self.adopt_transients(id);
+         // While the Window switcher is open the focus stays where it is, and the window gets
+-        // it when the switcher closes.
+-        if self.switcher.is_some() {
++        // it when the switcher closes, unless `focus-new-windows` refuses it now.
++        if self.focuses_on_map(id) && !self.claim_gives_focus(id, states.focus, now) {
++            self.refuse_focus(id);
++        } else if self.switcher.is_some() {
+             self.switcher_defer_focus(id, now);
+         } else {
+             self.focus_mapped(id, now);
+@@ -787,25 +815,28 @@ impl<W: PolicyWindow> Policy<W> {
+     /// (window.c:1997-2044) does. A window mapped on another workspace isn't shown, so it
+     /// isn't focused either.
+     fn focus_mapped(&mut self, id: WindowId, now: Duration) {
+-        let Some(managed) = self.windows.get(&id) else {
+-            return;
+-        };
+-        if managed.window.takes_input()
+-            && managed.workspace == self.active
+-            && !matches!(
+-                managed.window_type,
+-                WindowType::Desktop
+-                    | WindowType::Dock
+-                    | WindowType::Splashscreen
+-                    | WindowType::Menu
+-                    | WindowType::Utility
+-                    | WindowType::Toolbar
+-            )
+-        {
++        if self.focuses_on_map(id) {
+             self.focus_window(self.last_seat, id, now);
+         }
+     }
+ 
++    /// Whether a window that has just mapped is one Marco's `window_state_on_map` focuses.
++    fn focuses_on_map(&self, id: WindowId) -> bool {
++        self.windows.get(&id).is_some_and(|managed| {
++            managed.window.takes_input()
++                && managed.workspace == self.active
++                && !matches!(
++                    managed.window_type,
++                    WindowType::Desktop
++                        | WindowType::Dock
++                        | WindowType::Splashscreen
++                        | WindowType::Menu
++                        | WindowType::Utility
++                        | WindowType::Toolbar
++                )
++        })
++    }
++
+     /// Stops managing a window the client has unmapped or destroyed, and hands it back.
+     pub fn unmap_window(&mut self, id: WindowId) -> Option<W> {
+         let managed = self.windows.remove(&id)?;
+@@ -2419,6 +2450,8 @@ impl<W: PolicyWindow> Policy<W> {
+                 let activated = focused.contains(id);
+                 let changed = managed.activated != activated;
+                 managed.activated = activated;
++                // Marco's `meta_window_focus` unsets it (window.c:4468-4469).
++                managed.demands_attention &= !activated;
+                 (changed && managed.constrained()).then_some(*id)
+             })
+             .collect();
+diff --git a/caminito-policy/src/policy/focus_stealing.rs b/caminito-policy/src/policy/focus_stealing.rs
+new file mode 100644
+index 0000000..41e49e7
+--- /dev/null
++++ b/caminito-policy/src/policy/focus_stealing.rs
+@@ -0,0 +1,156 @@
++//! Focus-stealing prevention (165): whether a new window, or a client's request to activate
++//! one, takes the focus as `focus-new-windows` allows, and the urgency of a window refused
++//! it.
++//!
++//! Marco compares a new window's `_NET_WM_USER_TIME` with the focused window's
++//! (window.c:1835-1931): a window whose launch is older than the user's last interaction
++//! with the focused window is refused, and a window with no time at all, or mapped while
++//! nothing has the focus, takes it. Policy maps that onto xdg-activation tokens: a token's
++//! time is when Caminito issued it, and the focused window's user time is when the seat's
++//! focus last changed. *strict* differs from *smart* in Marco only for terminals; here it
++//! asks for a token tied to user input, as 05 has it.
++
++use std::time::Duration;
++
++use crate::{PolicyWindow, SeatId, WindowId};
++
++use super::Policy;
++
++/// How long after Caminito issued it a token still gives the focus.
++pub const TOKEN_LIFETIME: Duration = Duration::from_secs(10);
++
++/// `focus-new-windows`.
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
++pub enum FocusNewWindows {
++    /// A valid and recent token gives the focus, and a client's first window takes it with
++    /// none. Marco's default.
++    #[default]
++    Smart,
++    /// Only a recent token tied to user input gives the focus.
++    Strict,
++}
++
++/// `alt-tab-urgent-placement`, Marco master's key: where the Window switcher lists an urgent
++/// window.
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
++pub enum UrgentPlacement {
++    /// First, before the others: master's default.
++    Start,
++    /// In its place by when it last had the focus, as 108 has it and Marco 1.29.0, which has
++    /// no key, does.
++    #[default]
++    Mru,
++}
++
++/// An xdg-activation token Caminito issued, as policy judges it.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct ActivationToken {
++    /// When Caminito issued it, on the clock policy is given `now` by.
++    pub issued: Duration,
++    /// Whether it's tied to user input: asked for with a serial of an input event of the
++    /// client that had the keyboard.
++    pub input: bool,
++}
++
++/// What a window maps with to claim the focus.
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
++pub enum FocusClaim {
++    /// Nothing is checked, and the window takes the focus as every window did before 165:
++    /// XWayland's windows, until 166.
++    #[default]
++    Unchecked,
++    /// A native window with no token, or with one Caminito doesn't know.
++    NoToken,
++    /// A native window with a token.
++    Token(ActivationToken),
++}
++
++impl<W: PolicyWindow> Policy<W> {
++    /// A client asks to activate `id` with a token, or with one Caminito doesn't know. A
++    /// token `focus-new-windows` takes activates it as `activate` does; otherwise it's
++    /// made urgent, unless it has the focus already.
++    pub fn request_activation(
++        &mut self,
++        seat: SeatId,
++        id: WindowId,
++        token: Option<ActivationToken>,
++        now: Duration,
++    ) {
++        if !self.windows.contains_key(&id) {
++            return;
++        }
++        if token.is_some_and(|token| self.token_gives_focus(seat, token, now)) {
++            self.activate(seat, id, now);
++        } else if self.focus(seat) != Some(id) {
++            self.windows.get_mut(&id).unwrap().demands_attention = true;
++        }
++    }
++
++    /// Whether the window asks for the user's attention: it was refused the focus and hasn't
++    /// had it since, or its client says so.
++    pub fn is_urgent(&self, id: WindowId) -> bool {
++        self.windows
++            .get(&id)
++            .is_some_and(|managed| managed.demands_attention || managed.window.urgent())
++    }
++
++    /// Whether `id`, which has just mapped, may take the focus with `claim`.
++    pub(super) fn claim_gives_focus(&self, id: WindowId, claim: FocusClaim, now: Duration) -> bool {
++        let seat = self.last_seat;
++        let token = match claim {
++            FocusClaim::Unchecked => return true,
++            FocusClaim::NoToken => None,
++            FocusClaim::Token(token) => Some(token),
++        };
++        if token.is_some_and(|token| self.token_gives_focus(seat, token, now)) {
++            return true;
++        }
++        // Marco focuses a window mapped while nothing has the focus.
++        let Some(focused) = self.focus(seat) else {
++            return true;
++        };
++        // A window of the focused window's client is as tied to the user's input as a token
++        // of that client's would be: Marco's toolkits give it the app's last user time.
++        let pid = self.windows[&id].window.pid();
++        let same_client =
++            |other: &WindowId| pid.is_some() && self.windows[other].window.pid() == pid;
++        if same_client(&focused) {
++            return true;
++        }
++        // MATE's launchers pass no token yet (05).
++        self.focus_new_windows == FocusNewWindows::Smart
++            && !self
++                .windows
++                .keys()
++                .any(|other| *other != id && same_client(other))
++    }
++
++    /// Whether `token` gives the focus for `seat` now: it's recent, no older than the seat's
++    /// last focus change, and with *strict* tied to user input.
++    fn token_gives_focus(&self, seat: SeatId, token: ActivationToken, now: Duration) -> bool {
++        let recent = now.saturating_sub(token.issued) <= TOKEN_LIFETIME
++            && !self
++                .focus_time
++                .get(&seat)
++                .is_some_and(|last| token.issued < *last);
++        recent && (self.focus_new_windows == FocusNewWindows::Smart || token.input)
++    }
++
++    /// Refuses a window that has just mapped the focus, as Marco's `meta_window_show` does
++    /// (window.c:2190-2237): it goes just below the focused window rather than over it, and
++    /// is urgent.
++    pub(super) fn refuse_focus(&mut self, id: WindowId) {
++        let managed = self.windows.get_mut(&id).unwrap();
++        managed.demands_attention = true;
++        let workspace = managed.workspace;
++        let Some(focused) = self.focus(self.last_seat) else {
++            return;
++        };
++        let stack = &mut self.stacks[workspace];
++        if stack.contains(&focused) {
++            stack.retain(|w| *w != id);
++            let below = stack.iter().position(|w| *w == focused).unwrap();
++            stack.insert(below, id);
++        }
++    }
++}
+diff --git a/caminito-policy/src/policy/switcher.rs b/caminito-policy/src/policy/switcher.rs
+index fb09721..76f8b99 100644
+--- a/caminito-policy/src/policy/switcher.rs
++++ b/caminito-policy/src/policy/switcher.rs
+@@ -3,7 +3,7 @@
+ 
+ use std::time::Duration;
+ 
+-use crate::{PolicyWindow, SeatId, WindowId, WindowType};
++use crate::{PolicyWindow, SeatId, UrgentPlacement, WindowId, WindowType};
+ 
+ use super::Policy;
+ 
+@@ -257,11 +257,19 @@ impl<W: PolicyWindow> Policy<W> {
+ 
+         // Most recently used first, by the better place of the window and its dialog. A window
+         // that never had the focus is in neither, and keeps its stacking order after those that
+-        // did. Then the minimised go last. The sort is stable, so ties keep the stacking order.
++        // did. Then the minimised go last, and with `alt-tab-urgent-placement`'s `start` the
++        // urgent ones that aren't go first, as Marco master's `meta_display_get_tab_list` has
++        // them (165). The sort is stable, so ties keep the stacking order.
+         let place = |id: WindowId| self.mru.iter().position(|w| *w == id);
++        let urgent_first = self.urgent_placement == UrgentPlacement::Start;
+         entries.sort_by_key(|&(base, listed)| {
+             let used = place(base).into_iter().chain(place(listed)).min();
+-            (self.windows[&base].minimized, used.unwrap_or(usize::MAX))
++            let urgent = urgent_first && (self.is_urgent(base) || self.is_urgent(listed));
++            (
++                self.windows[&base].minimized,
++                !urgent,
++                used.unwrap_or(usize::MAX),
++            )
+         });
+ 
+         let mut listed = Vec::new();
+diff --git a/caminito-policy/src/test_window.rs b/caminito-policy/src/test_window.rs
+index 9dca97d..cc33b68 100644
+--- a/caminito-policy/src/test_window.rs
++++ b/caminito-policy/src/test_window.rs
+@@ -210,6 +210,11 @@ impl PolicyWindow for TestWindow {
+         self.skip_taskbar
+     }
+ 
++    /// A test window never asks for attention itself.
++    fn urgent(&self) -> bool {
++        false
++    }
++
+     fn is_ssd(&self) -> bool {
+         self.ssd
+     }
+diff --git a/caminito-policy/src/tests/focus_stealing.rs b/caminito-policy/src/tests/focus_stealing.rs
+new file mode 100644
+index 0000000..70b9199
+--- /dev/null
++++ b/caminito-policy/src/tests/focus_stealing.rs
+@@ -0,0 +1,280 @@
++//! `focus-new-windows` on xdg-activation tokens, urgency, and `alt-tab-urgent-placement` (165).
++
++use super::*;
++use crate::{
++    ActivationToken, FocusClaim, FocusNewWindows, MapStates, SwitchList, TOKEN_LIFETIME,
++    UrgentPlacement,
++};
++
++const SMART: FocusNewWindows = FocusNewWindows::Smart;
++const STRICT: FocusNewWindows = FocusNewWindows::Strict;
++
++/// `policy()` with `focus-new-windows` as `mode`, and window 1 of the process 100 mapped and
++/// focused at 1 ms.
++fn focused_other_client(mode: FocusNewWindows) -> Policy<TestWindow> {
++    let mut policy = policy();
++    policy.settings_changed(Config {
++        focus_new_windows: mode,
++        ..Config::default()
++    });
++    policy.map_window(TestWindow::new(1, 400, 300).with_pid(100), ms(1));
++    assert_eq!(policy.focus(SEAT), Some(id(1)));
++    policy
++}
++
++/// Maps a window of the process `pid` with `claim`.
++fn map_claiming(policy: &mut Policy<TestWindow>, w: u64, pid: u32, claim: FocusClaim, now: u64) {
++    let states = MapStates {
++        focus: claim,
++        ..MapStates::default()
++    };
++    policy.map_window_with(TestWindow::new(w, 400, 300).with_pid(pid), states, ms(now));
++}
++
++fn token(issued: u64, input: bool) -> FocusClaim {
++    FocusClaim::Token(ActivationToken {
++        issued: ms(issued),
++        input,
++    })
++}
++
++/// Whether window 2 took the focus from window 1, checking that a refused window is urgent
++/// and under the focused one, and that a focused one is neither.
++fn second_took_focus(policy: &Policy<TestWindow>) -> bool {
++    let took = policy.focus(SEAT) == Some(id(2));
++    if took {
++        assert!(!policy.is_urgent(id(2)));
++        assert_eq!(policy.stacking(0), [id(1), id(2)]);
++    } else {
++        assert_eq!(policy.focus(SEAT), Some(id(1)));
++        assert!(policy.is_urgent(id(2)));
++        assert_eq!(policy.stacking(0), [id(2), id(1)]);
++    }
++    took
++}
++
++const LATER: u64 = 2_000;
++
++#[test]
++fn a_recent_token_gives_the_focus_under_both_modes() {
++    for mode in [SMART, STRICT] {
++        let mut policy = focused_other_client(mode);
++        map_claiming(&mut policy, 2, 200, token(LATER - 100, true), LATER);
++        assert!(second_took_focus(&policy), "{mode:?}");
++    }
++}
++
++/// Maps the process 200's first window on another workspace, so that it isn't focused and
++/// the next window of the process is its second.
++fn map_first_elsewhere(policy: &mut Policy<TestWindow>) {
++    policy.map_window(
++        TestWindow::new(3, 400, 300)
++            .with_pid(200)
++            .with_requested_workspace(1),
++        ms(10),
++    );
++}
++
++#[test]
++fn an_old_token_gives_no_focus_to_a_second_window() {
++    let old = LATER + TOKEN_LIFETIME.as_millis() as u64 + 1;
++    for mode in [SMART, STRICT] {
++        let mut policy = focused_other_client(mode);
++        map_first_elsewhere(&mut policy);
++        map_claiming(&mut policy, 2, 200, token(LATER, true), old);
++        assert!(!second_took_focus(&policy), "{mode:?}");
++    }
++}
++
++#[test]
++fn a_token_older_than_the_last_focus_change_gives_no_focus() {
++    let mut policy = focused_other_client(SMART);
++    policy.map_window(TestWindow::new(3, 400, 300).with_pid(200), ms(10));
++    // The user went back to window 1 after the token was issued.
++    policy.click(SEAT, id(1), ms(LATER));
++    map_claiming(&mut policy, 2, 200, token(LATER - 100, true), LATER + 100);
++
++    assert_eq!(policy.focus(SEAT), Some(id(1)));
++    assert!(policy.is_urgent(id(2)));
++}
++
++#[test]
++fn a_token_with_no_input_serial_gives_the_focus_under_smart_only() {
++    let mut smart = focused_other_client(SMART);
++    map_claiming(&mut smart, 2, 200, token(LATER - 100, false), LATER);
++    assert!(second_took_focus(&smart));
++
++    let mut strict = focused_other_client(STRICT);
++    map_claiming(&mut strict, 2, 200, token(LATER - 100, false), LATER);
++    assert!(!second_took_focus(&strict));
++}
++
++#[test]
++fn a_first_window_with_no_token_takes_the_focus_under_smart_only() {
++    let mut smart = focused_other_client(SMART);
++    map_claiming(&mut smart, 2, 200, FocusClaim::NoToken, LATER);
++    assert!(second_took_focus(&smart));
++
++    let mut strict = focused_other_client(STRICT);
++    map_claiming(&mut strict, 2, 200, FocusClaim::NoToken, LATER);
++    assert!(!second_took_focus(&strict));
++}
++
++#[test]
++fn a_second_window_with_no_token_is_refused_under_both_modes() {
++    for mode in [SMART, STRICT] {
++        let mut policy = focused_other_client(mode);
++        map_first_elsewhere(&mut policy);
++        map_claiming(&mut policy, 2, 200, FocusClaim::NoToken, LATER);
++        assert!(!second_took_focus(&policy), "{mode:?}");
++    }
++}
++
++#[test]
++fn a_window_of_the_focused_client_takes_the_focus_with_no_token_under_both_modes() {
++    for mode in [SMART, STRICT] {
++        let mut policy = focused_other_client(mode);
++        map_claiming(&mut policy, 2, 100, FocusClaim::NoToken, LATER);
++        assert!(second_took_focus(&policy), "{mode:?}");
++    }
++}
++
++#[test]
++fn a_window_mapped_while_nothing_has_the_focus_takes_it_under_both_modes() {
++    for mode in [SMART, STRICT] {
++        let mut policy = policy();
++        policy.settings_changed(Config {
++            focus_new_windows: mode,
++            ..Config::default()
++        });
++        policy.map_window(
++            TestWindow::new(1, 400, 300)
++                .with_pid(100)
++                .with_requested_workspace(1),
++            ms(1),
++        );
++        map_claiming(&mut policy, 2, 100, FocusClaim::NoToken, LATER);
++        assert_eq!(policy.focus(SEAT), Some(id(2)), "{mode:?}");
++    }
++}
++
++#[test]
++fn an_unchecked_window_takes_the_focus_under_strict() {
++    let mut policy = focused_other_client(STRICT);
++    map_claiming(&mut policy, 2, 200, FocusClaim::Unchecked, LATER);
++    assert!(second_took_focus(&policy));
++}
++
++#[test]
++fn urgency_clears_when_the_window_is_focused() {
++    let mut policy = focused_other_client(STRICT);
++    map_claiming(&mut policy, 2, 200, FocusClaim::NoToken, LATER);
++    assert!(policy.is_urgent(id(2)));
++
++    policy.click(SEAT, id(2), ms(LATER + 10));
++
++    assert!(!policy.is_urgent(id(2)));
++}
++
++#[test]
++fn an_activation_with_a_token_that_counts_activates_the_window() {
++    let mut policy = focused_other_client(STRICT);
++    policy.map_window(TestWindow::new(2, 400, 300).with_pid(100), ms(10));
++    policy.click(SEAT, id(1), ms(20));
++    let token = ActivationToken {
++        issued: ms(LATER - 100),
++        input: true,
++    };
++
++    policy.request_activation(SEAT, id(2), Some(token), ms(LATER));
++
++    assert_eq!(policy.focus(SEAT), Some(id(2)));
++    assert_eq!(policy.stacking(0), [id(1), id(2)]);
++    assert!(!policy.is_urgent(id(2)));
++}
++
++#[test]
++fn an_activation_refused_makes_the_window_urgent_and_leaves_the_stacking() {
++    let old = LATER + TOKEN_LIFETIME.as_millis() as u64 + 1;
++    let no_input = Some((LATER - 100, false));
++    for (mode, token, now) in [
++        (STRICT, no_input, LATER),
++        (SMART, Some((LATER, true)), old),
++        (SMART, None, LATER),
++    ] {
++        let mut policy = focused_other_client(mode);
++        policy.map_window(TestWindow::new(2, 400, 300).with_pid(100), ms(10));
++        policy.click(SEAT, id(1), ms(20));
++        let token = token.map(|(issued, input)| ActivationToken {
++            issued: ms(issued),
++            input,
++        });
++
++        policy.request_activation(SEAT, id(2), token, ms(now));
++
++        assert_eq!(policy.focus(SEAT), Some(id(1)), "{mode:?} {token:?}");
++        assert_eq!(policy.stacking(0), [id(2), id(1)]);
++        assert!(policy.is_urgent(id(2)));
++    }
++}
++
++#[test]
++fn an_activation_of_the_focused_window_does_not_make_it_urgent() {
++    let mut policy = focused_other_client(STRICT);
++
++    policy.request_activation(SEAT, id(1), None, ms(LATER));
++
++    assert!(!policy.is_urgent(id(1)));
++}
++
++/// Windows 1 to 3 focused in turn, then window 4 of another process refused the focus
++/// under *strict*, and window 2 focused last.
++fn urgent_fourth(placement: UrgentPlacement) -> Policy<TestWindow> {
++    let mut policy = policy();
++    policy.settings_changed(Config {
++        focus_new_windows: STRICT,
++        urgent_placement: placement,
++        ..Config::default()
++    });
++    for w in 1..=3 {
++        policy.map_window(TestWindow::new(w, 400, 300).with_pid(100), ms(w));
++    }
++    map_claiming(&mut policy, 4, 200, FocusClaim::NoToken, 10);
++    policy.click(SEAT, id(2), ms(20));
++    assert!(policy.is_urgent(id(4)));
++    policy
++}
++
++#[test]
++fn urgent_placement_start_lists_an_urgent_window_first() {
++    let policy = urgent_fourth(UrgentPlacement::Start);
++    assert_eq!(
++        policy.switch_list(SEAT, SwitchList::Windows),
++        [id(4), id(2), id(3), id(1)]
++    );
++}
++
++/// `mru`, and Marco 1.29.0 with no key, which `Config::default` stands for: the urgent window,
++/// never focused, comes after those that were, as 108 has it.
++#[test]
++fn urgent_placement_mru_and_no_key_keep_an_urgent_window_in_its_place() {
++    for policy in [
++        urgent_fourth(UrgentPlacement::Mru),
++        urgent_fourth(Config::default().urgent_placement),
++    ] {
++        assert_eq!(
++            policy.switch_list(SEAT, SwitchList::Windows),
++            [id(2), id(3), id(1), id(4)]
++        );
++    }
++}
++
++#[test]
++fn urgent_placement_start_still_lists_a_minimised_urgent_window_last() {
++    let mut policy = urgent_fourth(UrgentPlacement::Start);
++    policy.minimize(id(4));
++    assert_eq!(
++        policy.switch_list(SEAT, SwitchList::Windows),
++        [id(2), id(3), id(1), id(4)]
++    );
++}
+diff --git a/caminito-policy/src/tests/mod.rs b/caminito-policy/src/tests/mod.rs
+index c6111da..2c8b699 100644
+--- a/caminito-policy/src/tests/mod.rs
++++ b/caminito-policy/src/tests/mod.rs
+@@ -5,6 +5,7 @@ mod commit;
+ mod dynamic_workspaces;
+ mod edge_resistance;
+ mod focus;
++mod focus_stealing;
+ mod grid;
+ mod interactive;
+ mod invariants;
+diff --git a/caminito-policy/src/tests/placement_modes.rs b/caminito-policy/src/tests/placement_modes.rs
+index 530d857..fc9eb3b 100644
+--- a/caminito-policy/src/tests/placement_modes.rs
++++ b/caminito-policy/src/tests/placement_modes.rs
+@@ -341,11 +341,11 @@ fn a_parentless_dialog_is_centred_on_the_output_in_every_mode() {
+ fn a_window_mapped_maximised_or_fullscreen_goes_back_to_where_automatic_placement_puts_it() {
+     let maximized = MapStates {
+         maximized: true,
+-        fullscreen: None,
++        ..MapStates::default()
+     };
+     let fullscreen = MapStates {
+-        maximized: false,
+         fullscreen: Some(None),
++        ..MapStates::default()
+     };
+     for states in [maximized, fullscreen] {
+         for (mode, center) in [
+diff --git a/caminito-policy/src/window.rs b/caminito-policy/src/window.rs
+index 4c47e9a..fb5aba8 100644
+--- a/caminito-policy/src/window.rs
++++ b/caminito-policy/src/window.rs
+@@ -165,6 +165,8 @@ pub trait PolicyWindow {
+     /// Whether the window is left out of the taskbar, by its own asking or by Marco's rules
+     /// for its type. The Window switcher leaves it out too (108).
+     fn skips_taskbar(&self) -> bool;
++    /// Whether the client asks for the user's attention itself, as an X client can.
++    fn urgent(&self) -> bool;
+     /// Whether Caminito draws a frame for this window.
+     fn is_ssd(&self) -> bool;
+     /// The frame's size around the window geometry in `state`, since a theme can draw a
+diff --git a/caminito-test-client/src/lib.rs b/caminito-test-client/src/lib.rs
+index 8f934e3..7699f80 100644
+--- a/caminito-test-client/src/lib.rs
++++ b/caminito-test-client/src/lib.rs
+@@ -12,7 +12,8 @@
+ //! selections as a clipboard manager does, [`security_context`] makes the socket a
+ //! sandboxed client connects through, [`image_capture`] copies an output's or a
+ //! window's pixels as a screenshot tool does, [`session_lock`] locks the session as a
+-//! locker does, and [`idle`] hears of idle and holds it off.
++//! locker does, [`idle`] hears of idle and holds it off, and [`xdg_activation`] asks for
++//! tokens and activates windows with them.
+ 
+ pub mod appmenu;
+ pub mod data_control;
+@@ -29,6 +30,7 @@ pub mod security_context;
+ pub mod selection;
+ pub mod session_lock;
+ pub mod x11;
++pub mod xdg_activation;
+ pub mod xfce_foreign_toplevel;
+ 
+ use std::fmt;
+@@ -176,6 +178,9 @@ pub struct State {
+     pub group: u32,
+     /// The serial of the last button press, which starts moves, resizes and popup grabs.
+     pub last_press_serial: Option<u32>,
++    /// The serial of the last keyboard enter, key or button event, which a toolkit asks for
++    /// an activation token with.
++    pub last_input_serial: Option<u32>,
+     /// The `wl_output`s bound so far, in the order the compositor advertised them.
+     pub outputs: Vec<Output>,
+     data_device_manager: Option<WlDataDeviceManager>,
+@@ -205,6 +210,10 @@ pub struct State {
+     gamma_control_manager: Option<ZwlrGammaControlManagerV1>,
+     /// The gamma controls the client asked for, and what each was told.
+     gamma_controls: Vec<gamma_control::GammaControl>,
++    activation:
++        Option<wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1>,
++    /// The activation tokens the client asked for, once issued.
++    activation_tokens: Vec<Option<String>>,
+ }
+ 
+ /// A bound `wl_output`.
+@@ -1142,6 +1151,7 @@ impl Dispatch<WlPointer, ()> for State {
+                 state: button_state,
+                 ..
+             } => {
++                state.last_input_serial = Some(serial);
+                 let pressed = button_state == WEnum::Value(wl_pointer::ButtonState::Pressed);
+                 if pressed {
+                     state.last_press_serial = Some(serial);
+@@ -1164,20 +1174,29 @@ impl Dispatch<WlKeyboard, ()> for State {
+         _: &QueueHandle<Self>,
+     ) {
+         let input = match event {
+-            wl_keyboard::Event::Enter { surface, .. } => InputEvent::KeyboardEnter {
+-                surface: state.surface_ref(&surface),
+-            },
++            wl_keyboard::Event::Enter {
++                serial, surface, ..
++            } => {
++                state.last_input_serial = Some(serial);
++                InputEvent::KeyboardEnter {
++                    surface: state.surface_ref(&surface),
++                }
++            }
+             wl_keyboard::Event::Leave { surface, .. } => InputEvent::KeyboardLeave {
+                 surface: state.surface_ref(&surface),
+             },
+             wl_keyboard::Event::Key {
++                serial,
+                 key,
+                 state: key_state,
+                 ..
+-            } => InputEvent::Key {
+-                key,
+-                pressed: key_state == WEnum::Value(wl_keyboard::KeyState::Pressed),
+-            },
++            } => {
++                state.last_input_serial = Some(serial);
++                InputEvent::Key {
++                    key,
++                    pressed: key_state == WEnum::Value(wl_keyboard::KeyState::Pressed),
++                }
++            }
+             wl_keyboard::Event::RepeatInfo { rate, delay } => {
+                 state.repeat_info = Some((rate, delay));
+                 return;
+diff --git a/caminito-test-client/src/xdg_activation.rs b/caminito-test-client/src/xdg_activation.rs
+new file mode 100644
+index 0000000..8c05b1c
+--- /dev/null
++++ b/caminito-test-client/src/xdg_activation.rs
+@@ -0,0 +1,76 @@
++//! xdg-activation (165): a client that asks for a token, as a terminal launching an app or
++//! a toolkit presenting a window does, and asks for a window to be activated with one.
++
++use wayland_client::{Connection, Dispatch, QueueHandle};
++use wayland_protocols::xdg::activation::v1::client::xdg_activation_token_v1::{
++    self, XdgActivationTokenV1,
++};
++use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::{self, XdgActivationV1};
++
++use crate::{Client, State, WindowId};
++
++/// The index of one of a client's activation tokens.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct TokenId(usize);
++
++impl Client {
++    /// Asks for a token, with the seat's serial `serial` and the window `from`'s surface if
++    /// given. The token arrives once the client has dispatched Caminito's answer.
++    pub fn request_activation_token(
++        &mut self,
++        serial: Option<u32>,
++        from: Option<WindowId>,
++    ) -> TokenId {
++        let id = TokenId(self.state.activation_tokens.len());
++        let activation: XdgActivationV1 = self.global(|state| &mut state.activation, 1);
++        let token = activation.get_activation_token(&self.qh, id);
++        if let Some(serial) = serial {
++            token.set_serial(serial, &self.seat());
++        }
++        if let Some(from) = from {
++            token.set_surface(&self.window(from).surface);
++        }
++        token.commit();
++        self.state.activation_tokens.push(None);
++        id
++    }
++
++    /// The token, once Caminito has issued it.
++    pub fn activation_token(&self, id: TokenId) -> Option<&str> {
++        self.state.activation_tokens[id.0].as_deref()
++    }
++
++    /// Asks for `window` to be activated with `token`.
++    pub fn activate(&mut self, token: &str, window: WindowId) {
++        let activation: XdgActivationV1 = self.global(|state| &mut state.activation, 1);
++        activation.activate(token.to_owned(), &self.window(window).surface);
++    }
++}
++
++impl Dispatch<XdgActivationV1, ()> for State {
++    fn event(
++        _: &mut Self,
++        _: &XdgActivationV1,
++        _: xdg_activation_v1::Event,
++        _: &(),
++        _: &Connection,
++        _: &QueueHandle<Self>,
++    ) {
++    }
++}
++
++impl Dispatch<XdgActivationTokenV1, TokenId> for State {
++    fn event(
++        state: &mut Self,
++        token: &XdgActivationTokenV1,
++        event: xdg_activation_token_v1::Event,
++        id: &TokenId,
++        _: &Connection,
++        _: &QueueHandle<Self>,
++    ) {
++        if let xdg_activation_token_v1::Event::Done { token: issued } = event {
++            state.activation_tokens[id.0] = Some(issued);
++            token.destroy();
++        }
++    }
++}
+diff --git a/caminito/src/debug.rs b/caminito/src/debug.rs
+index 4bc4169..7b4a496 100644
+--- a/caminito/src/debug.rs
++++ b/caminito/src/debug.rs
+@@ -473,7 +473,7 @@ impl Caminito {
+                                 .collect(),
+                         }
+                     }),
+-                    urgent: mapped.is_urgent(),
++                    urgent: policy.is_urgent(id),
+                     skip_taskbar: skips.taskbar,
+                     skip_pager: skips.pager,
+                     tile: policy.tile(id).map(tile_name),
+diff --git a/caminito/src/handlers/xdg_shell.rs b/caminito/src/handlers/xdg_shell.rs
+index b069620..42888ef 100644
+--- a/caminito/src/handlers/xdg_shell.rs
++++ b/caminito/src/handlers/xdg_shell.rs
+@@ -1,11 +1,12 @@
+ //! `xdg_wm_base` and the protocols that extend its toplevels: xdg-activation, xdg-foreign,
+-//! xdg-dialog, xdg-toplevel-icon and xdg-system-bell.
++//! xdg-dialog, xdg-toplevel-icon and xdg-system-bell. xdg-activation's tokens are judged by
++//! policy's focus-stealing prevention (165).
+ //!
+ //! The toplevel handlers only translate xdg-shell's events into `window::lifecycle`'s: a new
+ //! toplevel is created, and pending until it commits a buffer; committing a null buffer
+ //! withdraws it, and it starts over as a new pending window.
+ 
+-use caminito_policy::{ResizeEdges, WindowId};
++use caminito_policy::{ActivationToken, ResizeEdges, TOKEN_LIFETIME, WindowId};
+ use smithay::backend::renderer::utils::with_renderer_surface_state;
+ use smithay::desktop::{
+     PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window,
+@@ -349,16 +350,74 @@ impl XdgSystemBellHandler for State {
+     }
+ }
+ 
++/// What Caminito recorded of a token as it issued it (165), in the token's user data.
++struct IssuedToken(ActivationToken);
++
+ impl XdgActivationHandler for State {
+     fn activation_state(&mut self) -> &mut XdgActivationState {
+         &mut self.caminito.xdg_activation_state
+     }
+ 
++    /// Records when the token was issued, and whether it's tied to user input. A token past
++    /// its lifetime gives no focus, so the old ones are dropped meanwhile.
++    fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
++        let caminito = &mut self.caminito;
++        let now = caminito.now();
++        let issued = ActivationToken {
++            issued: now,
++            input: caminito.is_from_input(&data),
++        };
++        data.user_data.insert_if_missing(|| IssuedToken(issued));
++        caminito.xdg_activation_state.retain_tokens(|_, data| {
++            data.user_data
++                .get::<IssuedToken>()
++                .is_some_and(|token| now.saturating_sub(token.0.issued) <= TOKEN_LIFETIME)
++        });
++        true
++    }
++
++    /// Activates the window, or has it map with the token, as `focus-new-windows` allows.
++    /// A token is used once.
+     fn request_activation(
+         &mut self,
+-        _token: XdgActivationToken,
+-        _token_data: XdgActivationTokenData,
+-        _surface: WlSurface,
++        token: XdgActivationToken,
++        token_data: XdgActivationTokenData,
++        surface: WlSurface,
+     ) {
++        let caminito = &mut self.caminito;
++        let issued = token_data
++            .user_data
++            .get::<IssuedToken>()
++            .map(|token| token.0);
++        if let Some(key) = caminito.window_key_for_surface(&surface) {
++            caminito.window_activation_requested(&key, issued);
++        }
++        caminito.xdg_activation_state.remove_token(&token);
++    }
++}
++
++impl Caminito {
++    /// Whether a token is tied to user input (165): asked for by the client with the keyboard,
++    /// with a serial it had since the keyboard entered it, which any of its input events
++    /// gives it, or since the pointer entered it, for the click that focused it.
++    fn is_from_input(&self, data: &XdgActivationTokenData) -> bool {
++        let Some((serial, _)) = &data.serial else {
++            return false;
++        };
++        let asker = |surface: Option<std::borrow::Cow<'_, WlSurface>>| {
++            let client = surface.and_then(|surface| surface.client());
++            client.is_some_and(|client| Some(client.id()) == data.client_id)
++        };
++        let since =
++            |enter: Option<Serial>| enter.is_some_and(|enter| serial.is_no_older_than(&enter));
++        let keyboard = self.seat.get_keyboard().unwrap();
++        let pointer = self.seat.get_pointer().unwrap();
++        let has_keyboard = keyboard
++            .current_focus()
++            .is_some_and(|focus| asker(focus.wl_surface()));
++        let has_pointer = pointer
++            .current_focus()
++            .is_some_and(|focus| asker(focus.wl_surface()));
++        has_keyboard && (since(keyboard.last_enter()) || has_pointer && since(pointer.last_enter()))
+     }
+ }
+diff --git a/caminito/src/settings/translate.rs b/caminito/src/settings/translate.rs
+index 858d757..fe8b484 100644
+--- a/caminito/src/settings/translate.rs
++++ b/caminito/src/settings/translate.rs
+@@ -6,8 +6,8 @@ use std::fmt;
+ use std::time::Duration;
+ 
+ use caminito_policy::{
+-    Config, FocusMode, MAX_WORKSPACES, Orientation, PlacementMode, ShowDesktopSkipList,
+-    WorkspaceLayout, WrapStyle, default_workspace_name,
++    Config, FocusMode, FocusNewWindows, MAX_WORKSPACES, Orientation, PlacementMode,
++    ShowDesktopSkipList, UrgentPlacement, WorkspaceLayout, WrapStyle, default_workspace_name,
+ };
+ use caminito_theme::ButtonLayout;
+ 
+@@ -150,15 +150,11 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
+     (MOUSE, "locate-pointer"),
+     // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
+     // ticket that honours it. Caminito does what each one's default asks, except
+-    // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
+-    // values it matches none of. A key whose other value is what Caminito already does
++    // `resize-with-right-button`, whose values it matches none of. A key whose other value is what Caminito already does
+     // (`audible-bell`, `reduced-resources`) isn't here. Master's keys
+     // are logged only where the installed schema has them. The keybindings' schemas have
+     // no key here: an action with no behaviour yet is read and binds nothing, and its
+     // default reaches the client (148).
+-    // 165.
+-    (MARCO_GENERAL, "focus-new-windows"),
+-    (MARCO_GENERAL, "alt-tab-urgent-placement"),
+     // 162.
+     (MARCO_GENERAL, "mouse-button-modifier"),
+     (MARCO_GENERAL, "resize-with-right-button"),
+@@ -607,6 +603,17 @@ impl Nick for FocusMode {
+     ];
+ }
+ 
++/// `org.mate.Marco.FocusNewWindows`.
++impl Nick for FocusNewWindows {
++    const NICKS: &'static [(&'static str, Self)] =
++        &[("smart", Self::Smart), ("strict", Self::Strict)];
++}
++
++/// Marco master's `org.mate.Marco.UrgentWindowPlacement`.
++impl Nick for UrgentPlacement {
++    const NICKS: &'static [(&'static str, Self)] = &[("start", Self::Start), ("mru", Self::Mru)];
++}
++
+ /// `org.mate.Marco.placement_type`.
+ impl Nick for PlacementMode {
+     const NICKS: &'static [(&'static str, Self)] = &[
+@@ -1078,6 +1085,14 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
+         allow_top_tiling: r.bool(MARCO_GENERAL, "allow-top-tiling", true),
+         allow_tile_cycling: r.bool(MARCO_GENERAL, "allow-tile-cycling", true),
+         drag_threshold,
++        focus_new_windows: r.nick(MARCO_GENERAL, "focus-new-windows", FocusNewWindows::Smart),
++        // Marco master's key, whose schema default is `start`. Marco 1.29.0 has none, and an
++        // urgent window keeps its place there, as 108 has it (165).
++        urgent_placement: r.nick(
++            MARCO_GENERAL,
++            "alt-tab-urgent-placement",
++            UrgentPlacement::Mru,
++        ),
+     };
+     let switcher = SwitcherSettings {
+         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,
+diff --git a/caminito/src/settings/translate/tests.rs b/caminito/src/settings/translate/tests.rs
+index 20dd3e5..49a9a4f 100644
+--- a/caminito/src/settings/translate/tests.rs
++++ b/caminito/src/settings/translate/tests.rs
+@@ -40,6 +40,7 @@ fn defaults() -> Reading {
+     put(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(5));
+     put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
+     put(MARCO_GENERAL, "focus-mode", s("click"));
++    put(MARCO_GENERAL, "focus-new-windows", s("smart"));
+     put(MARCO_GENERAL, "raise-on-click", Value::Bool(true));
+     put(MARCO_GENERAL, "auto-raise", Value::Bool(false));
+     put(MARCO_GENERAL, "auto-raise-delay", Value::Int(500));
+@@ -817,6 +818,48 @@ fn a_value_of_the_wrong_type_falls_back_to_the_default() {
+     );
+ }
+ 
++// Focus-stealing prevention and urgent windows (165).
++
++#[test]
++fn focus_new_windows_is_passed_to_policy_and_isnt_reported_as_unsupported() {
++    assert_eq!(
++        settings(&defaults()).policy.focus_new_windows,
++        FocusNewWindows::Smart
++    );
++    // `settings` checks there's no problem.
++    let reading = with(MARCO_GENERAL, "focus-new-windows", string("strict"));
++    assert_eq!(
++        settings(&reading).policy.focus_new_windows,
++        FocusNewWindows::Strict
++    );
++}
++
++#[test]
++fn urgent_placement_keeps_an_urgent_windows_place_where_the_schema_has_no_key_for_it() {
++    // Marco 1.29.0's schema, which `defaults` reads, has no `alt-tab-urgent-placement`.
++    assert_eq!(
++        settings(&defaults()).policy.urgent_placement,
++        UrgentPlacement::Mru
++    );
++}
++
++#[test]
++fn urgent_placement_follows_masters_key_and_its_default() {
++    for (value, placement) in [
++        ("start", UrgentPlacement::Start),
++        ("mru", UrgentPlacement::Mru),
++    ] {
++        let mut reading = defaults();
++        reading.insert(
++            MARCO_GENERAL,
++            "alt-tab-urgent-placement",
++            string(value),
++            string("start"),
++        );
++        assert_eq!(settings(&reading).policy.urgent_placement, placement);
++    }
++}
++
+ // The focus modes and auto-raise (153).
+ 
+ #[test]
+diff --git a/caminito/src/switcher/mod.rs b/caminito/src/switcher/mod.rs
+index f5275a0..da8f467 100644
+--- a/caminito/src/switcher/mod.rs
++++ b/caminito/src/switcher/mod.rs
+@@ -226,7 +226,7 @@ impl Caminito {
+                 .iter()
+                 .filter_map(|id| {
+                     let mapped = window(id)?;
+-                    Some((*id, mapped.is_urgent(), mapped.icon_source()))
++                    Some((*id, self.policy.is_urgent(*id), mapped.icon_source()))
+                 })
+                 .collect(),
+             title: window(&switcher.windows[switcher.selected])
+diff --git a/caminito/src/tests/focus_stealing.rs b/caminito/src/tests/focus_stealing.rs
+new file mode 100644
+index 0000000..981f5cb
+--- /dev/null
++++ b/caminito/src/tests/focus_stealing.rs
+@@ -0,0 +1,184 @@
++//! Focus-stealing prevention for native windows (165): xdg-activation's tokens, and
++//! `focus-new-windows` judging them, on xdg windows only, since XWayland's are 166's. The
++//! fixture's clients are all of the test's own process, so the clients here are connected
++//! as processes of their own, which is how policy tells one client's windows from another's.
++
++use caminito_policy::FocusNewWindows;
++use caminito_test_client::xdg_activation::TokenId;
++
++use super::fixture::{ClientId, ClientWindow, Fixture, WINDOW_COLOR, WindowSpec};
++use crate::settings::Value;
++use crate::settings::translate::MARCO_GENERAL;
++use crate::state::SEAT;
++
++/// One 1920 × 1080 output, with `focus-new-windows` set to `mode` from the start.
++fn fixture(mode: &str) -> Fixture {
++    let mut f = Fixture::with_settings(vec![(
++        MARCO_GENERAL,
++        "focus-new-windows".into(),
++        Value::Str(mode.into()),
++    )]);
++    f.add_output((1920, 1080), 1.0);
++    f
++}
++
++/// A client of the process `pid` with the pointer and keyboard, as a toolkit has them.
++fn client(f: &mut Fixture, pid: u32) -> ClientId {
++    let id = f.connect_as_process(pid);
++    f.client(id).bind_input();
++    f.roundtrip(id);
++    id
++}
++
++fn has_focus(f: &Fixture, window: ClientWindow) -> bool {
++    f.state.caminito.policy.focus(SEAT) == Some(f.pid(window))
++}
++
++/// Whether the debug dump lists the window as urgent.
++fn dumped_urgent(f: &Fixture, window: ClientWindow) -> bool {
++    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
++    let id = f.pid(window).0;
++    let entry = dump["windows"]
++        .as_array()
++        .unwrap()
++        .iter()
++        .find(|entry| entry["id"] == id)
++        .expect("the window is dumped")
++        .clone();
++    entry["urgent"].as_bool().unwrap()
++}
++
++/// Clicks the middle of a window.
++fn click(f: &mut Fixture, window: ClientWindow) {
++    let geometry = f.geometry(window);
++    let x = geometry.loc.x + geometry.size.w / 2;
++    let y = geometry.loc.y + geometry.size.h / 2;
++    f.click(x.into(), y.into());
++    f.roundtrip(window.client());
++}
++
++/// Asks for a token from `from` with its client's last input serial, and returns it once
++/// issued.
++fn token_from(f: &mut Fixture, from: ClientWindow) -> String {
++    let id = from.client();
++    let serial = f.client_state(id).last_input_serial;
++    assert!(serial.is_some(), "{from:?}'s client has had input");
++    let token: TokenId = f
++        .client(id)
++        .request_activation_token(serial, Some(from.xdg()));
++    f.roundtrip(id);
++    f.client(id).activation_token(token).unwrap().to_owned()
++}
++
++fn activate(f: &mut Fixture, token: &str, window: ClientWindow) {
++    f.client(window.client()).activate(token, window.xdg());
++    f.roundtrip(window.client());
++}
++
++#[test]
++fn a_token_from_the_focused_client_activates_its_second_window() {
++    for mode in ["smart", "strict"] {
++        let mut f = fixture(mode);
++        let id = client(&mut f, 100);
++        let first = f.map(id, WindowSpec::plain((400, 300)));
++        let second = f.map(id, WindowSpec::plain((400, 300)));
++        click(&mut f, first);
++        assert!(has_focus(&f, first), "{mode}");
++
++        let token = token_from(&mut f, first);
++        activate(&mut f, &token, second);
++
++        assert!(has_focus(&f, second), "{mode}");
++        assert!(f.has_keyboard(second), "{mode}");
++        assert!(!dumped_urgent(&f, second), "{mode}");
++    }
++}
++
++#[test]
++fn a_token_from_a_window_that_is_not_focused_is_refused_under_strict() {
++    let mut f = fixture("smart");
++    let other = client(&mut f, 100);
++    let unfocused = f.map(other, WindowSpec::plain((400, 300)));
++    let id = client(&mut f, 200);
++    let focused = f.map(id, WindowSpec::plain((400, 300)));
++    assert!(has_focus(&f, focused));
++    f.set_setting(
++        MARCO_GENERAL,
++        "focus-new-windows",
++        Value::Str("strict".into()),
++    );
++    f.dispatch_until(|f| {
++        f.state.caminito.settings.policy.focus_new_windows == FocusNewWindows::Strict
++    });
++
++    let token = token_from(&mut f, unfocused);
++    activate(&mut f, &token, unfocused);
++
++    assert!(has_focus(&f, focused));
++    assert!(f.has_keyboard(focused));
++    assert!(dumped_urgent(&f, unfocused));
++    let stacking = f.state.caminito.policy.stacking(0);
++    assert_eq!(stacking, [f.pid(unfocused), f.pid(focused)]);
++
++    // Focusing it ends its urgency.
++    click(&mut f, unfocused);
++    assert!(has_focus(&f, unfocused));
++    assert!(!dumped_urgent(&f, unfocused));
++}
++
++#[test]
++fn a_first_window_with_no_token_is_focused_under_smart() {
++    let mut f = fixture("smart");
++    let other = client(&mut f, 100);
++    f.map(other, WindowSpec::plain((400, 300)));
++    let id = client(&mut f, 200);
++
++    let first = f.map(id, WindowSpec::plain((400, 300)));
++
++    assert!(has_focus(&f, first));
++    assert!(f.has_keyboard(first));
++    assert!(!dumped_urgent(&f, first));
++}
++
++#[test]
++fn a_window_that_opens_by_itself_is_refused_and_put_under_the_focused_one() {
++    let mut f = fixture("smart");
++    let id = client(&mut f, 200);
++    let earlier = f.map(id, WindowSpec::plain((400, 300)));
++    let other = client(&mut f, 100);
++    let focused = f.map(other, WindowSpec::plain((400, 300)));
++    assert!(has_focus(&f, focused));
++
++    // The process 200's second window, with no token, while the other client has the focus.
++    let later = f.map(id, WindowSpec::plain((400, 300)));
++
++    assert!(has_focus(&f, focused));
++    assert!(f.has_keyboard(focused));
++    assert!(dumped_urgent(&f, later));
++    let stacking = f.state.caminito.policy.stacking(0);
++    assert_eq!(stacking, [f.pid(earlier), f.pid(later), f.pid(focused)]);
++}
++
++#[test]
++fn a_token_asked_for_before_the_window_maps_gives_it_the_focus() {
++    let mut f = fixture("strict");
++    let launcher = client(&mut f, 100);
++    let terminal = f.map(launcher, WindowSpec::plain((400, 300)));
++    click(&mut f, terminal);
++    let token = token_from(&mut f, terminal);
++
++    // The launched app activates its window with the token before it has content, as GTK
++    // does with the token it was launched with.
++    let id = client(&mut f, 200);
++    let window = f.client(id).create_window();
++    f.client(id).commit(window);
++    f.roundtrip(id);
++    f.client(id).activate(&token, window);
++    f.client(id)
++        .ack_and_commit_buffer(window, (400, 300), WINDOW_COLOR);
++    f.roundtrip(id);
++
++    let launched = ClientWindow::Xdg(id, window);
++    assert!(has_focus(&f, launched));
++    assert!(!dumped_urgent(&f, launched));
++}
+diff --git a/caminito/src/tests/mod.rs b/caminito/src/tests/mod.rs
+index 86b4ec3..2954857 100644
+--- a/caminito/src/tests/mod.rs
++++ b/caminito/src/tests/mod.rs
+@@ -22,6 +22,7 @@ mod edge_resistance;
+ mod ext_workspace;
+ mod fixture;
+ mod focus_modes;
++mod focus_stealing;
+ mod foreign_toplevel;
+ mod frames;
+ mod gamma_control;
+diff --git a/caminito/src/tests/switcher.rs b/caminito/src/tests/switcher.rs
+index 0a04e44..fdf1426 100644
+--- a/caminito/src/tests/switcher.rs
++++ b/caminito/src/tests/switcher.rs
+@@ -300,6 +300,12 @@ on_both_kinds! {
+         let a = map_of_app(&mut f, one, "one");
+         let between = map_of_app(&mut f, other, "other");
+         let b = map_of_app(&mut f, one, "one");
++        // `focus-new-windows` refuses the xdg `b`, the second window of a client with no
++        // token, the focus (165), so the user gives it.
++        let geometry = f.state.caminito.policy.geometry(b).unwrap();
++        let middle = geometry.loc + Point::from((geometry.size.w / 2, geometry.size.h / 2));
++        f.click(middle.x.into(), middle.y.into());
++        assert_eq!(focus(&f), Some(b));
+ 
+         f.key(KEY_LEFTALT, true);
+         tap(&mut f, KEY_GRAVE);
+@@ -1003,7 +1009,7 @@ fn an_urgent_window_is_marked() {
+         x.send_client_message(window, "_NET_WM_STATE", [1, attention, attention, 1, 0])
+     })
+     .unwrap();
+-    f.dispatch_until(|f| f.mapped(urgent).is_urgent());
++    f.dispatch_until(|f| f.state.caminito.policy.is_urgent(urgent_id));
+     f.dispatch();
+ 
+     // It's marked while the popup shows, and keeps its place.
+@@ -1011,6 +1017,36 @@ fn an_urgent_window_is_marked() {
+     assert_ne!(pixel(&mut f, marked), pixel(&mut f, plain));
+ }
+ 
++/// An xdg window is urgent once `focus-new-windows` refuses it the focus (165). The clients
++/// are processes of their own, as policy tells one client's windows from another's by it.
++#[test]
++fn an_xdg_window_refused_the_focus_is_marked() {
++    let mut f = Fixture::with_settings(vec![(
++        MARCO_GENERAL,
++        "focus-new-windows".into(),
++        Value::Str("strict".into()),
++    )]);
++    f.add_output((1920, 1080), 1.0);
++    let focused = f.connect_as_process(100);
++    map_windows(&mut f, focused, 2);
++    let other = f.connect_as_process(200);
++    let refused = f.map(other, WindowSpec::plain((400, 300)));
++    let refused_id = f.pid(refused);
++    assert!(f.state.caminito.policy.is_urgent(refused_id));
++    let mark = |f: &Fixture, index| {
++        let cell = cell(f, index);
++        cell.loc + Point::from((cell.size.w - 8, 8))
++    };
++
++    show(&mut f);
++
++    // Never focused, it comes after the others, as Marco 1.29.0 has no
++    // `alt-tab-urgent-placement`.
++    assert_eq!(listed(&f)[2], refused_id);
++    let (plain, marked) = (mark(&f, 0), mark(&f, 2));
++    assert_ne!(pixel(&mut f, marked), pixel(&mut f, plain));
++}
++
+ /// Every pixel of the first output, with the popup's own left out.
+ fn pixels_outside(f: &mut Fixture, popup: Rectangle<i32, Logical>) -> Vec<u32> {
+     let output = f.state.caminito.outputs[0].clone();
+diff --git a/caminito/src/window/lifecycle.rs b/caminito/src/window/lifecycle.rs
+index b1b9fff..73d5d41 100644
+--- a/caminito/src/window/lifecycle.rs
++++ b/caminito/src/window/lifecycle.rs
+@@ -4,7 +4,9 @@
+ //! into this module's: created, pending state request, committed content, withdrawn and
+ //! destroyed.
+ 
+-use caminito_policy::{FrameState, MapStates, OutputId, SizeHints, WindowId};
++use caminito_policy::{
++    ActivationToken, FocusClaim, FrameState, MapStates, OutputId, SizeHints, WindowId,
++};
+ use smithay::desktop::Window;
+ use smithay::desktop::space::SpaceElement;
+ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+@@ -28,6 +30,8 @@ struct Pending {
+     sticky: bool,
+     /// It asked to be the active window, which it becomes as it maps.
+     active: bool,
++    /// What it claims the focus with as it maps (165).
++    focus: FocusClaim,
+ }
+ 
+ /// The pending windows.
+@@ -77,13 +81,18 @@ impl Caminito {
+     /// content.
+     pub(crate) fn window_created(&mut self, window: Window) {
+         self.pending.0.push(Pending {
+-            window,
+             maximized: false,
+             fullscreen: None,
+             above: false,
+             below: false,
+             sticky: false,
+             active: false,
++            // XWayland's windows are 166's.
++            focus: match WindowKey::of(&window) {
++                WindowKey::Wayland(_) => FocusClaim::NoToken,
++                WindowKey::X11(_) => FocusClaim::Unchecked,
++            },
++            window,
+         });
+     }
+ 
+@@ -139,6 +148,23 @@ impl Caminito {
+         false
+     }
+ 
++    /// Activation requested: a client asks for the window to be activated with an
++    /// xdg-activation token Caminito issued, or with one it doesn't know. Policy decides for
++    /// a managed window; a pending one maps with it (165).
++    pub(crate) fn window_activation_requested(
++        &mut self,
++        key: &WindowKey,
++        token: Option<ActivationToken>,
++    ) {
++        if let Some(id) = self.mapped_for_key(key) {
++            let now = self.now();
++            self.policy.request_activation(SEAT, id, token, now);
++            self.queue_redraw_all();
++        } else if let Some(index) = self.pending.position(key) {
++            self.pending.0[index].focus = token.map_or(FocusClaim::NoToken, FocusClaim::Token);
++        }
++    }
++
+     /// Committed content: the window's surface committed a buffer. A pending window maps
+     /// into policy; a managed one tells policy what changed.
+     pub(crate) fn window_committed(&mut self, key: &WindowKey) {
+@@ -226,6 +252,7 @@ impl Caminito {
+             below,
+             sticky,
+             active,
++            focus,
+         } = pending;
+         let mut mapped = Mapped::new(id, window);
+         mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
+@@ -237,6 +264,7 @@ impl Caminito {
+         let states = MapStates {
+             maximized,
+             fullscreen,
++            focus,
+         };
+         self.policy.map_window_with(mapped, states, now);
+         self.policy.set_above(id, above);
+diff --git a/caminito/src/window/mod.rs b/caminito/src/window/mod.rs
+index 870f3e3..bbc9237 100644
+--- a/caminito/src/window/mod.rs
++++ b/caminito/src/window/mod.rs
+@@ -432,13 +432,6 @@ impl Mapped {
+         self.adapter().title()
+     }
+ 
+-    /// Whether the window asks for the user's attention, which the Window switcher marks
+-    /// (108), and for M8's focus-stealing prevention. wlr-foreign-toplevel version 3 has no
+-    /// state for it (65).
+-    pub(crate) fn is_urgent(&self) -> bool {
+-        self.adapter().urgent()
+-    }
+-
+     /// Where the window's icon comes from.
+     pub(crate) fn icon_source(&self) -> IconSource {
+         self.adapter().icon()
+@@ -527,6 +520,12 @@ impl PolicyWindow for Mapped {
+         self.adapter().app_id()
+     }
+ 
++    /// The client's own ask for attention. `Policy::is_urgent` adds a refused focus to it,
++    /// and that is what the Window switcher marks (108) and the debug dump lists (165).
++    fn urgent(&self) -> bool {
++        self.adapter().urgent()
++    }
++
+     fn skips_taskbar(&self) -> bool {
+         self.skips().taskbar
+     }
+diff --git a/caminito/src/window/xdg.rs b/caminito/src/window/xdg.rs
+index 9b32df5..becc3b2 100644
+--- a/caminito/src/window/xdg.rs
++++ b/caminito/src/window/xdg.rs
+@@ -249,7 +249,8 @@ impl Adapter for ToplevelSurface {
+         ToplevelSurface::parent(self).map(WindowKey::Wayland)
+     }
+ 
+-    /// xdg-activation's urgency comes with focus-stealing prevention in M8.
++    /// No protocol Caminito has lets an xdg toplevel ask for attention (65): its urgency is
++    /// policy's, from a refused focus (165).
+     fn urgent(&self) -> bool {
+         false
+     }
+diff --git a/docs/parity.md b/docs/parity.md
+index 1449a5e..49177fb 100644
+--- a/docs/parity.md
++++ b/docs/parity.md
+@@ -25,7 +25,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
+ | `show-tab-border` | never | Nothing is drawn round the selected window where it sits: its thumbnail shows which it is (ADR 0016). | the checklist's *The parity table's rows that no test covers* |
+ | `button-layout` | honoured | The SSD Frame's buttons, in Marco's syntax. CSD windows get the layout through the mirror (09). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/frames.rs` |
+ | `focus-mode` | honoured | `click`, `sloppy` and `mouse`, live, for xdg and XWayland windows alike. The pointer entering a window focuses it, or its modal dialog, and a dock, the panel or another Layer surface never; leaving it for the desktop (nothing, or a Layer surface below the windows, such as caja's) takes the focus away under `mouse`. A crossing of a still pointer, as a window maps, goes or restacks under it, counts only until the keyboard moves the focus, as Marco's `mouse_mode` has it. The Window switcher and a move or resize hold the modes off. Layer surfaces take the keyboard by their own keyboard interactivity (153). | `caminito-policy/src/tests/pointer_focus.rs`, `caminito/src/tests/focus_modes.rs`, the checklist's *The focus modes and auto-raise* |
+-| `focus-new-windows` | to do (165) | A new window takes the focus; xdg-activation requests activate nothing. | |
++| `focus-new-windows` | honoured | For native windows, on xdg-activation tokens. `smart`: a new window, or a request to activate one, takes the focus with a token Caminito issued in the last 10 seconds and since the focus last changed; a client's first window takes it with no token, as MATE's launchers pass none yet. `strict`: only such a token, asked for with a serial of the client's input while it had the keyboard, gives the focus. Under both, a window of the focused window's client takes it, and so does one that maps while nothing has the focus, as in Marco. A window refused the focus opens just under the focused one and is urgent until it's focused. XWayland windows are 166's (165). | `caminito-policy/src/tests/focus_stealing.rs`, `caminito/src/tests/focus_stealing.rs`, `caminito/src/settings/translate/tests.rs`, the checklist's *Focus-stealing prevention for native windows* |
+ | `raise-on-click` | honoured | Off, a click on a window's body focuses it, or its modal dialog, without raising anything. A click on its titlebar raises it once released, and a move or resize, by the Frame or with Alt, raises it only if the pointer went less than 8 pixels, as in Marco; a drag doesn't. | the same |
+ | `action-double-click-titlebar` | honoured | An SSD titlebar's double click, by `double-click`'s time (05: SSD frames only). | `caminito/src/tests/frames.rs` (`double_clicking_the_titlebar_runs_its_action`) |
+ | `action-middle-click-titlebar` | honoured | An SSD titlebar's middle click. | `caminito/src/tests/frames.rs` (`middle_and_right_clicks_on_the_titlebar_run_their_actions`) |
+@@ -59,7 +59,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
+ | `alt-tab-expand-to-fit-title` | never | The grid's width comes from its thumbnails, and a title wider than the popup is ellipsised (ADR 0016). | `caminito/src/tests/switcher.rs` |
+ | `alt-tab-raise-windows` | honoured | The selected window is raised while the switcher is open, and goes back if it's cancelled. | `caminito-policy/src/tests/switcher.rs`, `caminito/src/tests/switcher.rs` |
+ | `alt-tab-minimized-placement` | to do (163) | Master's key, read nowhere yet: minimised windows come last, as its default `end` places them. | `caminito-policy/src/tests/switcher.rs` (`minimised_windows_come_after_the_others`) |
+-| `alt-tab-urgent-placement` | to do (165) | Master's key, read nowhere yet: an urgent window keeps its place (108). | |
++| `alt-tab-urgent-placement` | honoured | Master's key, read where the installed schema has it: `start`, its default, lists urgent windows before the others, and `mru` in their place by when they last had the focus; minimised windows come last either way. With Marco 1.29.0's schema, which has no key, an urgent window keeps its place, as 108 has it (165). | `caminito-policy/src/tests/focus_stealing.rs`, `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/switcher.rs` (`an_xdg_window_refused_the_focus_is_marked`) |
+ 
+ ## `org.mate.Marco.workspace-names`
+ 
+diff --git a/docs/testing/checklist.md b/docs/testing/checklist.md
+index bdaae3e..e14d313 100644
+--- a/docs/testing/checklist.md
++++ b/docs/testing/checklist.md
+@@ -1606,3 +1606,29 @@ session_env() {
+ - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `org.mate.Caminito.Debug`'s
+   state dump, whose `focus` and workspaces' `stacking` members show which window has the focus
+   and which is on top.
++
++### Focus-stealing prevention for native windows
++
++- **Milestone:** M8
++- **Steps:**
++  1. Log into *MATE on Caminito*. Open `mate-terminal` and Firefox (native, with
++     `MOZ_ENABLE_WAYLAND=1`), and focus the terminal.
++  2. With `gsettings set org.mate.Marco.general focus-new-windows smart` (Marco's default),
++     run `xdg-open https://mate-desktop.org` in the terminal, which passes Firefox a token. Then
++     open `pluma` from the panel's menu. Then run `sleep 5; zenity --info` in the terminal and
++     focus Firefox before it opens, and run `(sleep 5; pluma --new-window) &` and focus Firefox
++     again.
++  3. Hold Alt and press Tab while a refused window is open. Release Alt on it.
++  4. Run `gsettings set org.mate.Marco.general focus-new-windows strict` and repeat step 2.
++  5. Run as part of M8's closing run (173), and reset the key with `gsettings reset`.
++- **Expected:** in step 2 the link opens in the running Firefox, which takes the focus and
++  comes to the top; `pluma` from the menu takes the focus, as a first window does with no
++  token; `zenity`, a first window, takes it too, and the second `pluma` window, which opens
++  by itself while Firefox has the focus, doesn't: it opens under Firefox and is urgent. In step
++  3 the urgent window has a dot in its cell's top right corner, and is no longer urgent once
++  it has the focus. In step 4 the link still raises Firefox, as the terminal asked with a key
++  press; `pluma` from the menu and `zenity` open under the focused window, urgent, since MATE's
++  launchers pass no token yet (165).
++- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
++  `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
++  `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
