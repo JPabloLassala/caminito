@@ -4,7 +4,7 @@
 
 use super::*;
 
-use crate::{MapStates, PlacementMode};
+use crate::{GrabKey, GrabStep, MapStates, PlacementMode};
 
 fn placed(policy: &Policy<TestWindow>, w: u64) -> (i32, i32) {
     let geometry = policy.geometry(id(w)).expect("window is managed");
@@ -13,6 +13,10 @@ fn placed(policy: &Policy<TestWindow>, w: u64) -> (i32, i32) {
 
 fn at(x: f64, y: f64) -> Point<f64, Logical> {
     Point::new(x, y)
+}
+
+fn right(step: GrabStep) -> GrabKey {
+    GrabKey::Arrow { x: 1, y: 0, step }
 }
 
 fn config(placement_mode: PlacementMode, center_new_windows: bool) -> Config {
@@ -132,9 +136,9 @@ fn a_cancelled_manual_placement_goes_back_to_where_it_started() {
     let mut policy = policy_with(PlacementMode::Manual, false, 1000., 500.);
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
     policy.grab_motion(SEAT, at(1300., 700.), false);
-    policy.nudge_grab(SEAT, Point::new(10, 0));
+    policy.grab_key(SEAT, right(GrabStep::Normal));
 
-    policy.cancel_grab(SEAT);
+    policy.grab_key(SEAT, GrabKey::Escape);
 
     assert_eq!(placed(&policy, 1), (800, 350));
     assert_eq!(policy.grab(SEAT), None);
@@ -145,8 +149,18 @@ fn a_nudged_manual_placement_goes_on_following_the_pointer_from_where_it_was_nud
     let mut policy = policy_with(PlacementMode::Manual, false, 1000., 500.);
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
 
-    policy.nudge_grab(SEAT, Point::new(10, -1));
+    policy.grab_key(SEAT, right(GrabStep::Normal));
+    policy.grab_key(
+        SEAT,
+        GrabKey::Arrow {
+            x: 0,
+            y: -1,
+            step: GrabStep::Fine,
+        },
+    );
     assert_eq!(placed(&policy, 1), (810, 349));
+    // A manual placement doesn't warp the pointer (154).
+    assert_eq!(policy.take_pointer_warp(SEAT), None);
 
     policy.grab_motion(SEAT, at(1100., 500.), false);
     assert_eq!(placed(&policy, 1), (910, 349));

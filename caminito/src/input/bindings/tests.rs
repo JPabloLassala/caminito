@@ -175,6 +175,8 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
         (WINDOW, "unmaximize", "<Alt>F5"),
         (WINDOW, "minimize", "<Alt>F9"),
         (WINDOW, "close", "<Alt>F4"),
+        (WINDOW, "begin-move", "<Alt>F7"),
+        (WINDOW, "begin-resize", "<Alt>F8"),
         (GLOBAL, "switch-to-workspace-prev", "disabled"),
     ];
     assert_eq!(table(&defaults), table(&[]));
@@ -257,6 +259,8 @@ fn switch_windows_all_is_unbound_by_default_and_bindable() {
 fn marcos_defaults_bind_the_window_and_workspace_actions() {
     let t = table(&[]);
     assert_eq!(bound(&t, ALT, Keysym::F9), policy(Action::Minimize));
+    assert_eq!(bound(&t, ALT, Keysym::F7), policy(Action::BeginMove));
+    assert_eq!(bound(&t, ALT, Keysym::F8), policy(Action::BeginResize));
     assert_eq!(bound(&t, ALT, Keysym::F5), policy(Action::Unmaximize));
     assert_eq!(
         bound(&t, CTRL_ALT_SHIFT, Keysym::Left),
@@ -356,8 +360,8 @@ fn an_action_with_no_behaviour_yet_binds_nothing() {
     // `cycle-windows`'s default, and values set by the user.
     let t = table(&[
         (GLOBAL, "cycle-windows", "<Alt>Escape"),
-        (WINDOW, "begin-resize", "<Super>Up"),
-        (WINDOW, "begin-move", "<Super>Down"),
+        (WINDOW, "activate-window-menu", "<Super>Up"),
+        (WINDOW, "move-to-center", "<Super>Down"),
     ]);
     assert_eq!(bound(&t, ALT, Keysym::Escape), None);
     assert_eq!(bound(&t, SUPER, Keysym::Up), None);
@@ -552,5 +556,5 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 24, "{rows:?}");
+    assert_eq!(rows.len(), 26, "{rows:?}");
 }

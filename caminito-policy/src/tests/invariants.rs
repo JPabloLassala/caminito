@@ -7,8 +7,8 @@ use super::*;
 use smithay::utils::Size;
 
 use crate::{
-    Crossing, FocusMode, FrameState, PointerTarget, PolicyWindow, ResizeEdges, SwitchList,
-    WrapStyle,
+    Crossing, FocusMode, FrameState, GrabKey, GrabStep, PointerTarget, PolicyWindow, ResizeEdges,
+    SwitchList, WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -114,6 +114,11 @@ enum Op {
         y: i16,
     },
     EndGrab(u32),
+    /// A key of a keyboard move or resize (156).
+    GrabKey {
+        seat: u32,
+        key: GrabKey,
+    },
     SetWorkspaceCount(usize),
     /// `dynamic-workspaces` (151), with Marco's four workspaces for when it's off.
     SetDynamicWorkspaces(bool),
@@ -246,6 +251,8 @@ fn action() -> impl Strategy<Value = Action> {
             .prop_map(|(list, backward)| Action::Switch { list, backward }),
         Just(Action::ShowDesktop),
         tile().prop_map(Action::Tile),
+        Just(Action::BeginMove),
+        Just(Action::BeginResize),
     ]
 }
 
@@ -258,6 +265,19 @@ fn tile() -> impl Strategy<Value = crate::Tile> {
         Just(Tile::TopRight),
         Just(Tile::BottomLeft),
         Just(Tile::BottomRight),
+    ]
+}
+
+fn grab_key() -> impl Strategy<Value = GrabKey> {
+    let step = prop_oneof![
+        Just(GrabStep::Normal),
+        Just(GrabStep::Fine),
+        Just(GrabStep::Snap)
+    ];
+    prop_oneof![
+        6 => (-1..=1i32, -1..=1i32, step).prop_map(|(x, y, step)| GrabKey::Arrow { x, y, step }),
+        1 => Just(GrabKey::Escape),
+        1 => Just(GrabKey::Other),
     ]
 }
 
@@ -312,6 +332,7 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (seat(), any::<i16>(), any::<i16>(), any::<bool>())
             .prop_map(|(seat, x, y, snap)| Op::GrabMotion { seat, snap, x, y }),
         1 => seat().prop_map(Op::EndGrab),
+        2 => (seat(), grab_key()).prop_map(|(seat, key)| Op::GrabKey { seat, key }),
         1 => (1..=6usize).prop_map(Op::SetWorkspaceCount),
         1 => any::<bool>().prop_map(Op::SetDynamicWorkspaces),
         1 => (
@@ -454,6 +475,7 @@ impl Op {
                 policy.grab_motion(SeatId(seat), pointer(x, y), snap)
             }
             Op::EndGrab(seat) => policy.end_grab(SeatId(seat)),
+            Op::GrabKey { seat, key } => policy.grab_key(SeatId(seat), key),
             Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
                 workspace_count,
                 workspace_names: Vec::new(),
