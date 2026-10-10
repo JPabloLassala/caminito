@@ -524,7 +524,7 @@ fn frame_around(
 pub struct Policy<W: PolicyWindow> {
     windows: BTreeMap<WindowId, Managed<W>>,
     /// Every window, bottom to top: one stack, as Marco keeps it, which each workspace's
-    /// stacking is the windows on it of (ADR 0024).
+    /// stacking is the windows on it of (ADR 0025).
     stack: Vec<WindowId>,
     /// How many workspaces there are, never 0.
     workspace_count: usize,
