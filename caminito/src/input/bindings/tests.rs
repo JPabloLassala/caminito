@@ -139,6 +139,14 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
     let defaults = [
         (GLOBAL, "switch-to-workspace-left", "<Control><Alt>Left"),
         (GLOBAL, "switch-to-workspace-right", "<Control><Alt>Right"),
+        (GLOBAL, "switch-to-workspace-up", "<Control><Alt>Up"),
+        (GLOBAL, "switch-to-workspace-down", "<Control><Alt>Down"),
+        (WINDOW, "move-to-workspace-up", "<Control><Shift><Alt>Up"),
+        (
+            WINDOW,
+            "move-to-workspace-down",
+            "<Control><Shift><Alt>Down",
+        ),
         (GLOBAL, "switch-group", "<Alt>grave"),
         (GLOBAL, "switch-group-backward", "disabled"),
         (GLOBAL, "switch-windows", "<Alt>Tab"),
@@ -153,11 +161,53 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
         (GLOBAL, "run-command-screenshot", "Print"),
         (GLOBAL, "run-command-window-screenshot", "<Alt>Print"),
         (GLOBAL, "run-command-area-screenshot", "<Shift>Print"),
+        (
+            WINDOW,
+            "move-to-workspace-left",
+            "<Control><Shift><Alt>Left",
+        ),
+        (
+            WINDOW,
+            "move-to-workspace-right",
+            "<Control><Shift><Alt>Right",
+        ),
         (WINDOW, "toggle-maximized", "<Alt>F10"),
+        (WINDOW, "unmaximize", "<Alt>F5"),
+        (WINDOW, "minimize", "<Alt>F9"),
         (WINDOW, "close", "<Alt>F4"),
+        (GLOBAL, "switch-to-workspace-prev", "disabled"),
     ];
     assert_eq!(table(&defaults), table(&[]));
     assert_eq!(Bindings::default(), table(&[]));
+}
+
+#[test]
+fn up_down_and_prev_have_marcos_defaults() {
+    // 150's: prev is unbound by default, as in Marco.
+    let t = table(&[]);
+    assert_eq!(
+        bound(&t, CTRL_ALT, Keysym::Up),
+        policy(Action::SwitchToWorkspaceUp)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT, Keysym::Down),
+        policy(Action::SwitchToWorkspaceDown)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT_SHIFT, Keysym::Up),
+        policy(Action::MoveToWorkspaceUp)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT_SHIFT, Keysym::Down),
+        policy(Action::MoveToWorkspaceDown)
+    );
+    assert!(!t.iter().any(|(key, _)| key == "switch-to-workspace-prev"));
+
+    let t = table(&[(GLOBAL, "switch-to-workspace-prev", "<Super>Tab")]);
+    assert_eq!(
+        bound(&t, SUPER, Keysym::Tab),
+        policy(Action::SwitchToWorkspacePrev)
+    );
 }
 
 #[test]
@@ -204,16 +254,85 @@ fn switch_windows_all_is_unbound_by_default_and_bindable() {
 }
 
 #[test]
+fn marcos_defaults_bind_the_window_and_workspace_actions() {
+    let t = table(&[]);
+    assert_eq!(bound(&t, ALT, Keysym::F9), policy(Action::Minimize));
+    assert_eq!(bound(&t, ALT, Keysym::F5), policy(Action::Unmaximize));
+    assert_eq!(
+        bound(&t, CTRL_ALT_SHIFT, Keysym::Left),
+        policy(Action::MoveToWorkspaceLeft)
+    );
+    assert_eq!(
+        bound(&t, CTRL_ALT_SHIFT, Keysym::Right),
+        policy(Action::MoveToWorkspaceRight)
+    );
+}
+
+#[test]
+fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
+    let command = |command| Some(Binding::Command(command));
+    let cases = [
+        (
+            GLOBAL,
+            "switch-to-workspace-1",
+            policy(Action::SwitchToWorkspace(0)),
+        ),
+        (
+            GLOBAL,
+            "switch-to-workspace-12",
+            policy(Action::SwitchToWorkspace(11)),
+        ),
+        (GLOBAL, "run-command-1", command(Command::Numbered(1))),
+        (GLOBAL, "run-command-12", command(Command::Numbered(12))),
+        (GLOBAL, "run-command-terminal", command(Command::Terminal)),
+        (
+            WINDOW,
+            "toggle-fullscreen",
+            policy(Action::ToggleFullscreen),
+        ),
+        (WINDOW, "maximize", policy(Action::Maximize)),
+        (WINDOW, "toggle-shaded", policy(Action::ToggleShaded)),
+        (
+            WINDOW,
+            "move-to-workspace-1",
+            policy(Action::MoveToWorkspace(0)),
+        ),
+        (
+            WINDOW,
+            "move-to-workspace-12",
+            policy(Action::MoveToWorkspace(11)),
+        ),
+        (WINDOW, "raise-or-lower", policy(Action::RaiseOrLower)),
+        (WINDOW, "raise", policy(Action::Raise)),
+        (WINDOW, "lower", policy(Action::Lower)),
+        (
+            WINDOW,
+            "maximize-vertically",
+            policy(Action::ToggleMaximizedVertically),
+        ),
+        (
+            WINDOW,
+            "maximize-horizontally",
+            policy(Action::ToggleMaximizedHorizontally),
+        ),
+    ];
+    for (schema, key, binding) in cases {
+        let t = table(&[(schema, key, "<Super>q")]);
+        assert_eq!(bound(&t, SUPER, Keysym::q), binding, "{key}");
+    }
+}
+
+#[test]
 fn an_action_with_no_behaviour_yet_binds_nothing() {
-    // `minimize`'s and `cycle-windows`'s defaults, and a value set by the user.
+    // `cycle-windows`'s default, and values set by the user.
     let t = table(&[
-        (WINDOW, "minimize", "<Alt>F9"),
         (GLOBAL, "cycle-windows", "<Alt>Escape"),
-        (WINDOW, "maximize", "<Super>Up"),
+        (WINDOW, "toggle-above", "<Super>Up"),
+        (WINDOW, "begin-move", "<Super>Down"),
     ]);
-    assert_eq!(bound(&t, ALT, Keysym::F9), None);
     assert_eq!(bound(&t, ALT, Keysym::Escape), None);
     assert_eq!(bound(&t, SUPER, Keysym::Up), None);
+    assert_eq!(bound(&t, SUPER, Keysym::Down), None);
 }
 
 #[test]
@@ -391,7 +510,7 @@ fn a_switch_binding_with_no_modifier_but_shift_binds_nothing_and_is_a_problem() 
 fn shift_reverses_only_the_switch_actions() {
     let t = table(&[]);
     assert_eq!(bound(&t, ALT_SHIFT, Keysym::F4), None);
-    assert_eq!(bound(&t, CTRL_ALT_SHIFT, Keysym::Left), None);
+    assert_eq!(bound(&t, ALT_SHIFT, Keysym::F9), None);
 }
 
 // The debug dump's list.
@@ -404,5 +523,5 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 16, "{rows:?}");
+    assert_eq!(rows.len(), 24, "{rows:?}");
 }

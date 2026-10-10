@@ -12,12 +12,13 @@ use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
     Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, ShowDesktopSkipList,
-    SizeHints, Tile, WindowId, WindowStates, WindowType, WorkspaceLayout,
+    SizeHints, Tile, WindowId, WindowStates, WindowType, WorkspaceLayout, WrapStyle,
 };
 
 mod dynamic_workspaces;
 mod pointer;
 mod switcher;
+mod window_actions;
 
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
@@ -101,6 +102,8 @@ pub struct Config {
     pub dynamic_workspaces: bool,
     /// The `workspace-layout-*` keys: the grid the workspaces are in.
     pub workspace_layout: WorkspaceLayout,
+    /// `wrap-style`: where a move past an edge of the grid goes (150).
+    pub wrap_style: WrapStyle,
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
     /// open (108).
     pub alt_tab_raise_windows: bool,
@@ -141,6 +144,7 @@ impl Default for Config {
             workspace_count,
             workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
             workspace_layout: WorkspaceLayout::default(),
+            wrap_style: WrapStyle::NoWrap,
             dynamic_workspaces: false,
             alt_tab_raise_windows: false,
             placement_mode: PlacementMode::Automatic,
@@ -373,6 +377,10 @@ pub struct Policy<W: PolicyWindow> {
     /// Each workspace's windows, bottom to top.
     stacks: Vec<Vec<WindowId>>,
     active: usize,
+    /// The workspace active before `active`, which `switch-to-workspace-prev` goes back to
+    /// (150). Every switch sets it, as Marco's `meta_workspace_activate_with_focus` does
+    /// (workspace.c:399-400), and it's forgotten when its workspace is removed.
+    previous: Option<usize>,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
     /// (workspace.h:79).
     showing_desktop: BTreeMap<usize, ShownDesktop>,
@@ -384,6 +392,8 @@ pub struct Policy<W: PolicyWindow> {
     dynamic_workspaces: bool,
     /// The grid the settings ask for, which the count makes a `Grid` of.
     workspace_layout: WorkspaceLayout,
+    /// `wrap-style` (150).
+    wrap_style: WrapStyle,
     outputs: Vec<Output>,
     /// The user's primary output, or its stand-in (81), if the compositor has told of one.
     primary_output: Option<OutputId>,
@@ -422,11 +432,13 @@ impl<W: PolicyWindow> Policy<W> {
             windows: BTreeMap::new(),
             stacks: vec![Vec::new()],
             active: 0,
+            previous: None,
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             configured_names: Vec::new(),
             dynamic_workspaces: false,
             workspace_layout: WorkspaceLayout::default(),
+            wrap_style: WrapStyle::NoWrap,
             outputs: Vec::new(),
             primary_output: None,
             seats: BTreeSet::new(),
@@ -513,6 +525,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.configured_names = config.workspace_names;
         self.dynamic_workspaces = config.dynamic_workspaces;
         self.workspace_layout = config.workspace_layout;
+        self.wrap_style = config.wrap_style;
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
         self.placement_mode = config.placement_mode;
         self.center_new_windows = config.center_new_windows;
@@ -542,11 +555,22 @@ impl<W: PolicyWindow> Policy<W> {
             // order of the workspaces they came from, which is only close to that.
             self.stacks[last].extend(removed);
             self.active = self.active.min(last);
+            self.forget_removed_previous();
             self.showing_desktop
                 .retain(|workspace, _| *workspace < count);
         } else {
             self.stacks.resize(count, Vec::new());
         }
+    }
+
+    /// Forgets the previous workspace once it's no longer there, or it's the active one
+    /// since the count changed. `switch-to-workspace-prev` then does nothing until the
+    /// next switch. Marco keeps a pointer to the removed workspace.
+    fn forget_removed_previous(&mut self) {
+        let count = self.stacks.len();
+        self.previous = self
+            .previous
+            .filter(|previous| *previous < count && *previous != self.active);
     }
 
     /// Gives each workspace its name from the settings, or Marco's default. A name is the
@@ -801,20 +825,35 @@ impl<W: PolicyWindow> Policy<W> {
         match action {
             Action::SwitchToWorkspaceLeft => self.switch_workspace_towards(Direction::Left),
             Action::SwitchToWorkspaceRight => self.switch_workspace_towards(Direction::Right),
-            Action::SwitchToWorkspace(workspace) => self.switch_workspace(workspace),
-            Action::ToggleMaximized => {
-                // Marco gives the desktop and docks no maximise function.
-                if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
-                    self.set_maximized(id, !self.is_maximized(id));
+            Action::SwitchToWorkspaceUp => self.switch_workspace_towards(Direction::Up),
+            Action::SwitchToWorkspaceDown => self.switch_workspace_towards(Direction::Down),
+            Action::SwitchToWorkspacePrev => {
+                if let Some(previous) = self.previous {
+                    self.switch_workspace(previous);
                 }
             }
-            Action::Close => {
-                if let Some(id) = self.focus(seat) {
-                    self.close(id);
-                }
+            Action::MoveToWorkspaceLeft => {
+                self.move_to_workspace_towards(seat, Direction::Left, now);
             }
+            Action::MoveToWorkspaceRight => {
+                self.move_to_workspace_towards(seat, Direction::Right, now);
+            }
+            Action::MoveToWorkspaceUp => self.move_to_workspace_towards(seat, Direction::Up, now),
+            Action::MoveToWorkspaceDown => {
+                self.move_to_workspace_towards(seat, Direction::Down, now);
+            }
+            // A number past the count does nothing (`handle_switch_to_workspace`).
+            Action::SwitchToWorkspace(workspace) if workspace < self.stacks.len() => {
+                self.switch_workspace(workspace);
+            }
+            Action::SwitchToWorkspace(_) => {}
             Action::Switch { list, backward } => self.switch(seat, list, backward, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
+            action => {
+                if let Some(id) = self.focus(seat) {
+                    self.window_action(id, action);
+                }
+            }
         }
         self.apply();
     }
@@ -873,11 +912,35 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Switches to the workspace beside the active one in the grid, if there is one. Nothing
-    /// wraps until `wrap-style` is read, in M8 (17).
+    /// The workspace beside the active one in the grid, where `wrap-style` takes a move past
+    /// its edge, if the move goes anywhere.
+    fn workspace_towards(&self, direction: Direction) -> Option<usize> {
+        self.workspace_grid()
+            .neighbour(self.active, direction, self.wrap_style)
+    }
+
+    /// Switches to the workspace beside the active one in the grid, if there is one.
     fn switch_workspace_towards(&mut self, direction: Direction) {
-        if let Some(workspace) = self.workspace_grid().neighbour(self.active, direction) {
+        if let Some(workspace) = self.workspace_towards(direction) {
             self.switch_workspace(workspace);
+        }
+    }
+
+    /// Moves `seat`'s focused window to the workspace beside the active one, with its
+    /// transient family, and switches there with the window focused and raised, as Marco's
+    /// `handle_workspace_switch_or_move` does (keybindings.c:3560-3576). Marco gives the
+    /// desktop and docks no such move: they're on every workspace.
+    fn move_to_workspace_towards(&mut self, seat: SeatId, direction: Direction, now: Duration) {
+        let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) else {
+            return;
+        };
+        let Some(workspace) = self.workspace_towards(direction) else {
+            return;
+        };
+        self.move_tree(self.root(id), workspace);
+        self.switch_workspace(workspace);
+        if self.focus_window(seat, id, now) {
+            self.raise_family(id);
         }
     }
 
@@ -887,6 +950,7 @@ impl<W: PolicyWindow> Policy<W> {
         if workspace != self.active {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
             self.close_switcher(switcher::Close::Dropped);
+            self.previous = Some(self.active);
             self.active = workspace;
             self.focus.clear();
             if let Some(id) = self.default_focus() {

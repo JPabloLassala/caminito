@@ -1,5 +1,6 @@
-//! The commands a keybinding runs (104), as Marco's `run-command-*` bindings run those of
-//! `org.mate.Marco.keybinding-commands`. So far, mate-screenshot's three.
+//! The commands a keybinding runs (104, 149), as Marco's `run-command-*` bindings run those
+//! of `org.mate.Marco.keybinding-commands`, and `run-command-terminal` the terminal of
+//! `org.mate.applications-terminal`.
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -7,6 +8,7 @@ use std::path::Path;
 
 use gio::glib;
 
+use crate::settings::translate::{MARCO_KEYBINDING_COMMANDS, TERMINAL};
 use crate::state::Caminito;
 
 /// A command of `org.mate.Marco.keybinding-commands`.
@@ -18,22 +20,47 @@ pub(crate) enum Command {
     WindowScreenshot,
     /// `command-area-screenshot`, of an area the user picks.
     AreaScreenshot,
+    /// `command-1` to `-12`, by their number.
+    Numbered(usize),
+    /// `org.mate.applications-terminal exec`, which `run-command-terminal` runs.
+    Terminal,
 }
 
 impl Caminito {
     /// Runs the command line the settings have for `command`. One that's empty or can't be
-    /// run is logged: Marco's dialog for it comes with the bindings, in M8 (17).
+    /// run is logged; Marco's dialog for it is 167's.
     pub(crate) fn run_command(&mut self, command: Command) {
         let commands = &self.settings.commands;
         let line = match command {
             Command::Screenshot => &commands.screenshot,
             Command::WindowScreenshot => &commands.window_screenshot,
             Command::AreaScreenshot => &commands.area_screenshot,
+            Command::Numbered(n) => &commands.numbered[n - 1],
+            Command::Terminal => &commands.terminal,
         };
+        // Marco's schema has a space for each numbered command, which no shell runs.
+        if line.trim().is_empty() {
+            tracing::warn!("can't run {} for a keybinding: it's empty", command.key());
+            return;
+        }
         match spawn(line, &self.environment) {
             Ok(()) => tracing::debug!("ran {line:?} for a keybinding"),
             Err(err) => tracing::warn!("can't run {line:?} for a keybinding: {err}"),
         }
+    }
+}
+
+impl Command {
+    /// The key that holds the command line, as `schema key`.
+    fn key(self) -> String {
+        let key = match self {
+            Command::Screenshot => "command-screenshot".to_owned(),
+            Command::WindowScreenshot => "command-window-screenshot".to_owned(),
+            Command::AreaScreenshot => "command-area-screenshot".to_owned(),
+            Command::Numbered(n) => format!("command-{n}"),
+            Command::Terminal => return format!("{TERMINAL} exec"),
+        };
+        format!("{MARCO_KEYBINDING_COMMANDS} {key}")
     }
 }
 

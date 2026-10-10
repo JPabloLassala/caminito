@@ -17,6 +17,7 @@ headless tests read it as their only schema source, each on a memory backend of 
 | `org.mate.accessibility-keyboard` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-3` |
 | `org.mate.lockdown` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`) |
 | `org.mate.background` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), with `@datadir@` as `/usr/share`: caminito-locker's MateBG reads it (132) |
+| `org.mate.applications-terminal` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`): `run-command-terminal` runs its `exec` (149) |
 | `org.mate.sound` | mate-desktop 1.28.2 (`fee79b7559965d8ae3b4b8e213717b525c703c1b`), as installed by Arch's `mate-desktop 1.28.2-2` |
 | `org.mate.session` | mate-session-manager 1.28.0 (`fa1bf6c2fb45ff0263465537a0730ebff2b2010d`), with `@GETTEXT_PACKAGE@` as `mate-session-manager` and `@DEFAULT_WM@` as `marco` |
 | `org.mate.power-manager` | mate-power-manager 1.28.1 (`cd5ef755e2b2222fa8b51715a7420a01e3426ba4`), with `@GETTEXT_PACKAGE@` as `mate-power-manager` |

@@ -197,14 +197,17 @@ Logs go to stderr at `info`; set `RUST_LOG` (for example `RUST_LOG=caminito=debu
 The keybindings are read from Marco's `org.mate.Marco.global-keybindings` and
 `org.mate.Marco.window-keybindings`, and a change applies at once. Marco's defaults bind:
 
-| Keys                  | Action                                     |
-| --------------------- | ------------------------------------------ |
-| Ctrl+Alt+Left / Right | Switch workspace                           |
-| Alt+Tab               | Switch windows, with the Window switcher   |
-| Alt+\`                | Switch the focused application's windows   |
-| Ctrl+Alt+Tab          | Switch panels and the desktop              |
-| Alt+F4                | Close window                               |
-| Alt+F10               | Toggle maximised                           |
+| Keys                        | Action                                   |
+| --------------------------- | ---------------------------------------- |
+| Ctrl+Alt+Left / Right       | Switch workspace                         |
+| Ctrl+Shift+Alt+Left / Right | Move the window to the next workspace    |
+| Alt+Tab                     | Switch windows, with the Window switcher |
+| Alt+\`                      | Switch the focused application's windows |
+| Ctrl+Alt+Tab                | Switch panels and the desktop            |
+| Alt+F4                      | Close window                             |
+| Alt+F10                     | Toggle maximised                         |
+| Alt+F5                      | Unmaximise                               |
+| Alt+F9                      | Minimise                                 |
 
 Shift with a switch binding steps backward. While the Window switcher is open, Tab and the
 arrow keys move the selection, releasing the modifier or Enter activates the selected window,
