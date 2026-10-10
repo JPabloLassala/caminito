@@ -41,6 +41,7 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
     put(MARCO_GENERAL, "placement-mode", s("automatic"));
     put(MARCO_GENERAL, "center-new-windows", Value::Bool(true));
+    put(MARCO_GENERAL, "show-desktop-skip-list", s(""));
     for n in 1..=36 {
         put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
     }
@@ -858,6 +859,22 @@ fn every_placement_mode_nick_is_known() {
 fn center_new_windows_off_is_passed_to_policy() {
     let reading = with(MARCO_GENERAL, "center-new-windows", Value::Bool(false));
     assert!(!settings(&reading).policy.center_new_windows);
+}
+
+// `show-desktop-skip-list` (164).
+
+/// Set, it isn't reported as unsupported, which `settings` checks.
+#[test]
+fn the_show_desktop_skip_list_is_passed_to_policy() {
+    let reading = with(
+        MARCO_GENERAL,
+        "show-desktop-skip-list",
+        string("Conky, xclock"),
+    );
+    assert_eq!(
+        settings(&reading).policy.show_desktop_skip_list,
+        ShowDesktopSkipList::parse("Conky,xclock")
+    );
 }
 
 #[test]

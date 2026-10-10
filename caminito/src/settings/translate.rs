@@ -6,7 +6,8 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, MAX_WORKSPACES, Orientation, PlacementMode, WorkspaceLayout, default_workspace_name,
+    Config, MAX_WORKSPACES, Orientation, PlacementMode, ShowDesktopSkipList, WorkspaceLayout,
+    default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
 
@@ -167,8 +168,6 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     (MARCO_GENERAL, "action-scroll-down-titlebar"),
     // 163.
     (MARCO_GENERAL, "alt-tab-minimized-placement"),
-    // 164.
-    (MARCO_GENERAL, "show-desktop-skip-list"),
     // Mouse keys are later (13): they need pointer emulation with msd's acceleration curve.
     (A11Y_KEYBOARD, "mousekeys-enable"),
     // 13 had these in v0.1, and the AccessX filter doesn't apply them yet (134); 147 put
@@ -1036,6 +1035,11 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
         placement_mode: r.nick(MARCO_GENERAL, "placement-mode", PlacementMode::Automatic),
         center_new_windows: r.bool(MARCO_GENERAL, "center-new-windows", true),
+        show_desktop_skip_list: ShowDesktopSkipList::parse(&r.string(
+            MARCO_GENERAL,
+            "show-desktop-skip-list",
+            "",
+        )),
     };
     let switcher = SwitcherSettings {
         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,
