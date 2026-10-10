@@ -18,6 +18,7 @@ mod show_desktop;
 mod stacking;
 mod states;
 mod switcher;
+mod tiling;
 mod transients;
 mod work_area;
 mod workspaces;

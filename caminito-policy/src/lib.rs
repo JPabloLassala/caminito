@@ -29,4 +29,6 @@ pub use policy::{
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;
-pub use window::{FrameState, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
+pub use window::{
+    FrameState, PolicyWindow, SizeHints, Tile, TiledEdges, WindowId, WindowStates, WindowType,
+};
