@@ -18,6 +18,7 @@ mod stacking;
 mod states;
 mod switcher;
 mod transients;
+mod window_actions;
 mod work_area;
 mod workspaces;
 

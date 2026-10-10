@@ -17,6 +17,7 @@ use crate::{
 
 mod dynamic_workspaces;
 mod switcher;
+mod window_actions;
 
 pub use switcher::{SwitchList, Switcher};
 
@@ -684,20 +685,18 @@ impl<W: PolicyWindow> Policy<W> {
         match action {
             Action::SwitchToWorkspaceLeft => self.switch_workspace_towards(Direction::Left),
             Action::SwitchToWorkspaceRight => self.switch_workspace_towards(Direction::Right),
-            Action::SwitchToWorkspace(workspace) => self.switch_workspace(workspace),
-            Action::ToggleMaximized => {
-                // Marco gives the desktop and docks no maximise function.
-                if let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) {
-                    self.set_maximized(id, !self.is_maximized(id));
-                }
+            // A number past the count does nothing (`handle_switch_to_workspace`).
+            Action::SwitchToWorkspace(workspace) if workspace < self.stacks.len() => {
+                self.switch_workspace(workspace);
             }
-            Action::Close => {
-                if let Some(id) = self.focus(seat) {
-                    self.close(id);
-                }
-            }
+            Action::SwitchToWorkspace(_) => {}
             Action::Switch { list, backward } => self.switch(seat, list, backward, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
+            action => {
+                if let Some(id) = self.focus(seat) {
+                    self.window_action(seat, id, action, now);
+                }
+            }
         }
         self.apply();
     }
