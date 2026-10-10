@@ -122,6 +122,10 @@ use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 /// How long a window that isn't redrawn waits for a frame callback anyway.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_secs(1));
 
+/// The tests' wall clock at Caminito's start: 2026-10-10 at 12:00 UTC (138).
+#[cfg(test)]
+const TEST_WALL_CLOCK: f64 = 1_791_633_600.0;
+
 /// Policy's id for Caminito's one seat.
 pub const SEAT: SeatId = SeatId(0);
 
@@ -216,10 +220,11 @@ pub struct Caminito {
     /// without waiting for them (128).
     #[cfg(test)]
     pub(crate) clock_offset: Duration,
-    /// The wall clock a test has set: the Unix time it read when `now` was the second
-    /// value, from which it runs with Caminito's clock (138).
+    /// The tests' wall clock: the Unix time it read when `now` was the second value, from
+    /// which it runs with Caminito's clock (138). It starts at `TEST_WALL_CLOCK`, so that
+    /// what follows the sun is the same on every run, and `Fixture::set_wall_clock` sets it.
     #[cfg(test)]
-    pub(crate) wall_clock: Option<(f64, Duration)>,
+    pub(crate) wall_clock: (f64, Duration),
 
     // Rendering (06). linux-dmabuf and drm-syncobj are the tty backend's (57).
     pub viewporter_state: ViewporterState,
@@ -878,7 +883,7 @@ impl Caminito {
             #[cfg(test)]
             clock_offset: Duration::ZERO,
             #[cfg(test)]
-            wall_clock: None,
+            wall_clock: (TEST_WALL_CLOCK, clock.now().into()),
 
             viewporter_state: ViewporterState::new::<State>(dh),
             fractional_scale_state: FractionalScaleManagerState::new::<State>(dh),
@@ -1109,19 +1114,19 @@ impl Caminito {
         now
     }
 
-    /// The wall clock, in Unix seconds, for what follows the sun (138). A test sets it with
-    /// `Fixture::set_wall_clock`, and it moves with `now` from there.
+    /// The wall clock, in Unix seconds, for what follows the sun (138). The tests' is
+    /// `wall_clock`.
     pub(crate) fn unix_now(&self) -> f64 {
         #[cfg(test)]
-        if let Some((unix, at)) = self.wall_clock {
-            return unix + self.now().saturating_sub(at).as_secs_f64();
+        {
+            let (unix, at) = self.wall_clock;
+            unix + self.now().saturating_sub(at).as_secs_f64()
         }
-        let since_epoch = std::time::SystemTime::now()
+        #[cfg(not(test))]
+        std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        #[cfg(test)]
-        let since_epoch = since_epoch + self.clock_offset;
-        since_epoch.as_secs_f64()
+            .unwrap_or_default()
+            .as_secs_f64()
     }
 
     /// Sends the outward views of policy state whatever changed since they last sent.

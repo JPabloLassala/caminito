@@ -294,15 +294,8 @@ impl Caminito {
         if settings == *self.night_light.settings() {
             return;
         }
-        let now = self.now();
-        let unix = self.unix_now();
-        let sun = self.night_light.work_out(&settings, unix);
-        self.night_light.log_source(&sun);
-        self.night_light.sun = sun;
-        self.night_light.worked_out = Some((now, unix));
-        self.night_light
-            .state
-            .settings_changed(settings, sun.temperature, now);
+        let (sun, now) = self.work_out_sun_under(&settings);
+        self.night_light.state.settings_changed(settings, sun, now);
         self.step_night_light();
     }
 
@@ -340,15 +333,23 @@ impl Caminito {
 
     /// Works the sun out again, now, and moves the target with it.
     fn work_out_sun(&mut self, fade: bool) {
+        let settings = *self.night_light.settings();
+        let (sun, now) = self.work_out_sun_under(&settings);
+        self.night_light.state.sun_moved(sun, fade, now);
+        self.step_night_light();
+    }
+
+    /// Works the sun out now under `settings`, and keeps it. Returns the sun schedule's
+    /// temperature, and `now`.
+    fn work_out_sun_under(&mut self, settings: &NightLightSettings) -> (u32, Duration) {
         let now = self.now();
         let unix = self.unix_now();
-        let settings = *self.night_light.settings();
-        let sun = self.night_light.work_out(&settings, unix);
-        self.night_light.log_source(&sun);
-        self.night_light.sun = sun;
-        self.night_light.worked_out = Some((now, unix));
-        self.night_light.state.sun_moved(sun.temperature, fade, now);
-        self.step_night_light();
+        let night_light = &mut self.night_light;
+        let sun = night_light.work_out(settings, unix);
+        night_light.log_source(&sun);
+        night_light.sun = sun;
+        night_light.worked_out = Some((now, unix));
+        (sun.temperature, now)
     }
 
     /// Flips `night-light-enabled`, for `ToggleNightLight()`. The change comes back from the

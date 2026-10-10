@@ -188,12 +188,13 @@ fn the_outputs_fade_to_the_target_over_two_seconds() {
     assert_eq!(applied(&f), 4000);
 }
 
-/// Listens on another thread for `org.mate.Caminito` at `bus` to signal `NightLight`
-/// `count` times, and returns a handle to the temperatures each signal said, in order.
-fn listen(f: &mut Fixture, bus: &str, count: usize) -> thread::JoinHandle<Vec<u32>> {
+/// Listens on another thread for `org.mate.Caminito` at `bus` to signal `NightLight`, and
+/// sends the temperature each signal said, in order.
+fn listen(f: &mut Fixture, bus: &str) -> mpsc::Receiver<u32> {
     let bus = bus.to_owned();
     let (listening, is_listening) = mpsc::channel();
-    let listener = thread::spawn(move || {
+    let (signalled, signals) = mpsc::channel();
+    thread::spawn(move || {
         let connection = caminito_test_client::dbus::session().unwrap();
         let properties = zbus::blocking::fdo::PropertiesProxy::builder(&connection)
             .destination(bus)
@@ -211,25 +212,32 @@ fn listen(f: &mut Fixture, bus: &str, count: usize) -> thread::JoinHandle<Vec<u3
                 let night_light = <&Dict>::try_from(night_light).unwrap();
                 night_light.get::<_, u32>(&"temperature").unwrap()
             })
-            .take(count)
-            .collect()
+            .try_for_each(|temperature| signalled.send(temperature))
     });
     f.dispatch_until(|_| is_listening.try_recv().is_ok());
-    listener
+    signals
 }
 
 #[test]
 fn the_property_is_signalled_when_the_target_changes() {
     let mut f = Fixture::with_settings(vec![constant_schedule()]);
     let bus = f.start_dbus();
-    let listener = listen(&mut f, &bus, 2);
+    let signals = listen(&mut f, &bus);
+    let mut heard = Vec::new();
 
+    // Each change is heard before the next is made: the signal reads the property when
+    // it's sent, so two quick changes could both say the second.
     f.set_setting(CAMINITO, "night-light-enabled", Value::Bool(true));
-    f.dispatch_until(|f| target(f) == 4000);
+    f.dispatch_until_mut(|_| {
+        heard.extend(signals.try_iter());
+        !heard.is_empty()
+    });
     f.set_setting(CAMINITO, "night-light-enabled", Value::Bool(false));
-
-    f.dispatch_until(|_| listener.is_finished());
-    assert_eq!(listener.join().unwrap(), [4000, 6500]);
+    f.dispatch_until_mut(|_| {
+        heard.extend(signals.try_iter());
+        heard.len() >= 2
+    });
+    assert_eq!(heard, [4000, 6500]);
 }
 
 /// 2026-12-21 at 03:00 UTC: midnight in Montevideo, the night before its longest day.
