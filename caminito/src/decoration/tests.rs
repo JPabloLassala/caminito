@@ -38,7 +38,7 @@ fn an_eos_maximised_utility_frame_has_side_borders_only_while_unfocused() {
         frame.extents(FrameState {
             maximized: true,
             focused,
-            shaded: false,
+            ..FrameState::default()
         })
     };
 
@@ -63,6 +63,7 @@ fn a_pending_window_is_framed_as_it_will_be_once_mapped() {
             maximized,
             focused,
             shaded,
+            ..FrameState::default()
         };
         assert_eq!(context.extents(&facts, state), frame.extents(state));
     }
@@ -133,4 +134,35 @@ fn net_wm_icon_leaves_out_a_truncated_image() {
 
     assert!(super::NetWmIcon::parse(&[16, 16, 0]).is_none());
     assert!(super::NetWmIcon::parse(&[]).is_none());
+}
+
+#[test]
+fn a_side_tiled_frame_is_measured_in_the_themes_tiled_styles() {
+    // Menta's tiled geometries are its maximised one with a border of 1 on the inner side.
+    let context = context("Menta");
+    let frame = frame(&context, facts(WindowType::Normal));
+    let sides = |state: FrameState| {
+        let extents = frame.extents(state);
+        (extents.left, extents.right, extents.bottom)
+    };
+    let focused = FrameState {
+        focused: true,
+        ..FrameState::default()
+    };
+
+    let left = sides(FrameState {
+        tiled_left: true,
+        ..focused
+    });
+    let right = sides(FrameState {
+        tiled_right: true,
+        ..focused
+    });
+
+    assert_eq!((left, right), ((0, 1, 0), (1, 0, 0)));
+    assert_ne!(
+        sides(focused),
+        left,
+        "a floating frame has borders of its own"
+    );
 }

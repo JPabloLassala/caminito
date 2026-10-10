@@ -63,6 +63,7 @@ mod session;
 mod settings;
 mod show_desktop;
 mod switcher;
+mod tiling;
 mod window_actions;
 mod window_properties;
 mod work_area;

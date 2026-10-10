@@ -12,7 +12,7 @@ use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
     Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, ShowDesktopSkipList,
-    SizeHints, WindowId, WindowStates, WindowType, WorkspaceLayout, WrapStyle,
+    SizeHints, Tile, WindowId, WindowStates, WindowType, WorkspaceLayout, WrapStyle,
 };
 
 mod dynamic_workspaces;
@@ -67,6 +67,18 @@ struct Grab {
     /// Whether the pointer has gone Marco's 8 pixels from where the grab began
     /// (display.c:3995-3997), past which it isn't a click.
     moved: bool,
+    /// Where letting go of a move tiles or maximises the window, while the pointer is in a
+    /// side's, a corner's or the top's zone (158).
+    tile_target: Option<TileTarget>,
+}
+
+/// What letting go of a move does with the window, from where the pointer is (158).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TileTarget {
+    /// Tiles it on the output.
+    Tile(Tile, OutputId),
+    /// Maximises it, as `allow-top-tiling` has the top edge do.
+    Maximize(OutputId),
 }
 
 /// How far, on either axis, the pointer goes from where a grab began before it's no longer
@@ -112,11 +124,19 @@ pub struct Config {
     pub auto_raise: bool,
     /// `auto-raise-delay`.
     pub auto_raise_delay: Duration,
+    /// `allow-tiling`: a window dragged to an output's side or corner is tiled there (158).
+    pub allow_tiling: bool,
+    /// `allow-top-tiling`: with `allow-tiling`, a window dragged to an output's top is
+    /// maximised (158).
+    pub allow_top_tiling: bool,
+    /// `org.mate.peripherals-mouse drag-threshold`, in logical pixels: twice it is how far
+    /// into the work area a side's and a corner's tiling zones reach, as in Marco (158).
+    pub drag_threshold: i32,
 }
 
 impl Default for Config {
-    /// Marco's defaults, except `center-new-windows`, which is off: the placement policy's
-    /// tests were written for, and Caminito's before 154.
+    /// Marco's defaults, except `center-new-windows` and `allow-tiling`, which are off: the
+    /// tests were written for Caminito before 154 and 158.
     fn default() -> Self {
         // Marco's default `num-workspaces`, with its default names.
         let workspace_count = 4;
@@ -135,6 +155,10 @@ impl Default for Config {
             raise_on_click: true,
             auto_raise: false,
             auto_raise_delay: Duration::from_millis(500),
+            allow_tiling: false,
+            allow_top_tiling: true,
+            // msd's default.
+            drag_threshold: 8,
         }
     }
 }
@@ -198,7 +222,9 @@ struct Managed<W> {
     above: bool,
     below: bool,
     sticky: bool,
-    /// The geometry to go back to, while maximised or fullscreen.
+    /// The half or quarter it's tiled to, and on which output's work area (158).
+    tile: Option<(Tile, OutputId)>,
+    /// The geometry to go back to, while maximised, tiled or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
     sent: Sent,
 }
@@ -224,6 +250,8 @@ impl<W: PolicyWindow> Managed<W> {
         if self.ssd {
             self.window.frame_extents(FrameState {
                 maximized: false,
+                tiled_left: false,
+                tiled_right: false,
                 ..self.frame_state()
             })
         } else {
@@ -255,9 +283,16 @@ impl<W> Managed<W> {
         self.maximized_horizontally && self.maximized_vertically
     }
 
-    /// Policy sets the size: maximised either way, or fullscreen.
+    /// Policy sets the size: maximised either way, tiled, or fullscreen.
     fn constrained(&self) -> bool {
-        self.maximized_horizontally || self.maximized_vertically || self.fullscreen
+        self.maximized_horizontally
+            || self.maximized_vertically
+            || self.tile.is_some()
+            || self.fullscreen
+    }
+
+    fn tiled(&self) -> Option<Tile> {
+        self.tile.map(|(tile, _)| tile)
     }
 
     /// Undoes a grab's change to the ways the window is maximised, from its geometry
@@ -294,16 +329,32 @@ impl<W> Managed<W> {
             fullscreen: self.fullscreen,
             shaded: self.shaded,
             resizing: self.resize.is_some(),
+            tile: self.tiled(),
         }
     }
 
     fn frame_state(&self) -> FrameState {
-        FrameState {
-            maximized: self.maximized(),
-            focused: self.activated,
-            shaded: self.shaded,
-        }
+        self.states().frame_state(self.activated)
     }
+}
+
+/// The part of work area `area` that a window tiled to `tile` fills, frame and all, as
+/// Marco's `meta_window_get_current_tile_area` has it (window.c:8205-8282): half its width,
+/// rounded down, and for a corner half its height too.
+fn tile_area(area: Rectangle<i32, Logical>, tile: Tile) -> Rectangle<i32, Logical> {
+    let edges = tile.edges();
+    let mut frame = area;
+    frame.size.w = area.size.w / 2;
+    if !(edges.top && edges.bottom) {
+        frame.size.h = area.size.h / 2;
+    }
+    if edges.right {
+        frame.loc.x += area.size.w - frame.size.w;
+    }
+    if !edges.top {
+        frame.loc.y += frame.size.h;
+    }
+    frame
 }
 
 /// The frame of `extents` around window geometry `geometry`.
@@ -363,6 +414,9 @@ pub struct Policy<W: PolicyWindow> {
     alt_tab_raise_windows: bool,
     placement_mode: PlacementMode,
     center_new_windows: bool,
+    allow_tiling: bool,
+    allow_top_tiling: bool,
+    drag_threshold: i32,
     /// `show-desktop-skip-list`, which the next Show Desktop takes.
     show_desktop_skip_list: ShowDesktopSkipList,
     /// Where the pointer was when the compositor last said, which `pointer` and `manual`
@@ -398,6 +452,9 @@ impl<W: PolicyWindow> Policy<W> {
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
+            allow_tiling: false,
+            allow_top_tiling: false,
+            drag_threshold: 0,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
         };
@@ -472,6 +529,9 @@ impl<W: PolicyWindow> Policy<W> {
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
         self.placement_mode = config.placement_mode;
         self.center_new_windows = config.center_new_windows;
+        self.allow_tiling = config.allow_tiling;
+        self.allow_top_tiling = config.allow_top_tiling;
+        self.drag_threshold = config.drag_threshold;
         self.show_desktop_skip_list = config.show_desktop_skip_list;
         if !self.dynamic_workspaces {
             self.set_workspace_count(config.workspace_count);
@@ -592,6 +652,7 @@ impl<W: PolicyWindow> Policy<W> {
                 above: false,
                 below: false,
                 sticky: false,
+                tile: None,
                 floating: None,
                 sent: Sent::default(),
             },
@@ -964,10 +1025,14 @@ impl<W: PolicyWindow> Policy<W> {
         };
         let horizontally = horizontally.unwrap_or(managed.maximized_horizontally);
         let vertically = vertically.unwrap_or(managed.maximized_vertically);
-        if (managed.maximized_horizontally, managed.maximized_vertically)
-            != (horizontally, vertically)
+        // Maximising or unmaximising either way untiles, keeping the floating geometry, as
+        // Marco's `meta_window_maximize` and `meta_window_unmaximize` do (158).
+        if managed.tile.is_some()
+            || (managed.maximized_horizontally, managed.maximized_vertically)
+                != (horizontally, vertically)
         {
             managed.save_floating();
+            managed.tile = None;
             if vertically && !managed.maximized_vertically {
                 managed.shaded = false;
             }
@@ -1003,7 +1068,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// The client asks to move its window to `loc` or resize it to `size`, as an X11
     /// `ConfigureRequest` does. It's refused while the window is maximised either way,
-    /// fullscreen, or being moved or resized, as Marco ignores one during a grab
+    /// tiled (158), fullscreen, or being moved or resized, as Marco ignores one during a grab
     /// (window.c:4866-4885). Otherwise the size is kept within the hints, and the frame
     /// shrunk and moved inside the work area, as Marco's constraints do for a configure
     /// request (constraints.c:1456-1479).
@@ -1142,16 +1207,18 @@ impl<W: PolicyWindow> Policy<W> {
             .windows
             .get(&id)
             .is_some_and(|m| m.maximized_horizontally || m.maximized_vertically)
+            || self.tile(id).is_some()
         {
             self.unmaximize_for_drag(id, at_press, pointer);
         }
         self.begin_move(seat, id, at_press)
     }
 
-    /// Unmaximises `id` both ways for `begin_titlebar_move`, keeping `pointer`'s fraction
-    /// across the still-maximised titlebar the same across the one it's restored to. The
-    /// window's vertical position is left to `relayout`'s floating restore, and to the catch
-    /// up `begin_move`'s caller applies for the distance dragged since `at_press`.
+    /// Unmaximises or untiles `id` for `begin_titlebar_move`, keeping `pointer`'s fraction
+    /// across the still-maximised titlebar the same across the one it's restored to. A
+    /// maximised window's vertical position is left to `relayout`'s floating restore, and
+    /// a tiled one keeps `at_press`'s fraction down its frame; both then take the catch up
+    /// `begin_move`'s caller applies for the distance dragged since `at_press`.
     ///
     /// Built from `geometry`, policy's own requested rectangle, rather than `Managed::frame`
     /// (which lags behind it until the client commits a matching size): a drag must track
@@ -1171,6 +1238,12 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             0.5
         };
+        // A tile may be far taller than the window it goes back to, so the press keeps its
+        // place down the frame too, as Marco puts a shaken loose tile under the pointer
+        // (window.c:7470-7485) (158).
+        let down = managed.tile.is_some().then(|| {
+            ((at_press.y - f64::from(before.loc.y)) / f64::from(before.size.h.max(1))).clamp(0., 1.)
+        });
         self.set_maximized(id, false);
         let Some(managed) = self.windows.get_mut(&id) else {
             return;
@@ -1179,17 +1252,50 @@ impl<W: PolicyWindow> Policy<W> {
         let after_width = f64::from(managed.geometry.size.w + e.left + e.right);
         let frame_x = (at_press.x - fraction * after_width).round() as i32;
         managed.geometry.loc.x = frame_x + e.left;
+        if let Some(down) = down {
+            let after_height = f64::from(managed.geometry.size.h + e.top + e.bottom);
+            let frame_y = (at_press.y - down * after_height).round() as i32;
+            managed.geometry.loc.y = frame_y + e.top;
+        }
         self.apply();
     }
 
     /// The seat's pointer moved during a grab. With `snap` (Shift held), the window snaps to
     /// the nearest edges; otherwise it resists at the edges it meets (157).
+    ///
+    /// As in Marco's `update_move` (window.c:7380-7445), a move holds a tiled window where
+    /// it is until the pointer is twice the drag threshold from where the move began, then
+    /// untiles it under the pointer, as a titlebar drag does at once (144). The pointer's
+    /// place then picks where letting go tiles the window, before edge resistance moves
+    /// it, and a snapping move tiles nowhere (158).
     pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
         let Some(grab) = self.grabs.get_mut(&seat) else {
             return;
         };
         let delta = pointer - grab.start_pointer;
         grab.moved |= delta.x.abs() >= CLICK_DISTANCE || delta.y.abs() >= CLICK_DISTANCE;
+        if grab.resize.is_none() {
+            let (window, start_pointer) = (grab.window, grab.start_pointer);
+            if self.tile(window).is_some() {
+                let shake = f64::from(2 * self.drag_threshold);
+                if delta.x.abs().max(delta.y.abs()) < shake {
+                    return;
+                }
+                self.unmaximize_for_drag(window, start_pointer, pointer);
+                let loc = self.windows[&window].geometry.loc;
+                let grab = self.grabs.get_mut(&seat).unwrap();
+                grab.start.loc = loc;
+                grab.initial = loc;
+            }
+            let grab = &self.grabs[&seat];
+            let target = if snap || grab.placing {
+                None
+            } else {
+                self.tile_target(grab.window, pointer)
+            };
+            self.grabs.get_mut(&seat).unwrap().tile_target = target;
+        }
+        let grab = &self.grabs[&seat];
         let start = grab.start;
         let resize = grab.resize;
         let window = grab.window;
@@ -1263,9 +1369,10 @@ impl<W: PolicyWindow> Policy<W> {
     /// Ends the seat's move grab with its window back where it began, as Escape does in
     /// Marco's keyboard move (keybindings.c:1523-1545).
     pub fn cancel_grab(&mut self, seat: SeatId) {
-        if let Some(grab) = self.grabs.get(&seat)
+        if let Some(grab) = self.grabs.get_mut(&seat)
             && grab.resize.is_none()
         {
+            grab.tile_target = None;
             let managed = self.windows.get_mut(&grab.window).unwrap();
             managed.geometry.loc = grab.initial;
         }
@@ -1273,7 +1380,10 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Ends the seat's grab, if it has one. With `raise-on-click` off, one that ends as a
-    /// click raises its window, as Marco's does (display.c:3857-3870) (153).
+    /// click raises its window, as Marco's does (display.c:3857-3870) (153). A move let go
+    /// of in a tiling zone tiles or maximises its window there, as Marco's button release
+    /// does (window.c:8022-8038), and the window goes back to where the move began when
+    /// it's untiled (158).
     pub fn end_grab(&mut self, seat: SeatId) {
         if let Some(grab) = self.grabs.remove(&seat)
             && let Some(managed) = self.windows.get_mut(&grab.window)
@@ -1282,8 +1392,77 @@ impl<W: PolicyWindow> Policy<W> {
             if !self.pointer_focus.raise_on_click() && !grab.moved {
                 self.raise_family(grab.window);
             }
+            let managed = self.windows.get_mut(&grab.window).unwrap();
+            if let Some(target) = grab.tile_target {
+                // A window maximised one way keeps the floating geometry it had before.
+                if managed.floating.is_none() {
+                    managed.floating = Some(Rectangle::new(grab.initial, managed.geometry.size));
+                }
+                match target {
+                    TileTarget::Tile(tile, output) => {
+                        managed.tile = Some((tile, output));
+                        managed.maximized_horizontally = false;
+                        managed.maximized_vertically = false;
+                        self.relayout(grab.window);
+                    }
+                    TileTarget::Maximize(_) => self.set_maximized(grab.window, true),
+                }
+            }
         }
         self.apply();
+    }
+
+    /// Where letting go of a move of `id` with the pointer at `pointer` tiles it, as
+    /// Marco's `calculate_tiling_mode` finds it (window.c:7590-7629): on the output the
+    /// pointer is on, a side's zone reaches from the output's edge to twice the drag
+    /// threshold inside the work area's, a corner is where it meets the same strip along
+    /// the top or bottom, and the top's zone is the output's edge down to the work area's.
+    fn tile_target(&self, id: WindowId, pointer: Point<f64, Logical>) -> Option<TileTarget> {
+        if !self.allow_tiling {
+            return None;
+        }
+        let managed = &self.windows[&id];
+        let p = Point::<i32, Logical>::new(pointer.x.floor() as i32, pointer.y.floor() as i32);
+        let output = self.outputs.iter().find(|o| o.geometry.contains(p))?;
+        let (o, area) = (output.geometry, Self::work_area(output));
+        let zone = 2 * self.drag_threshold;
+        // Marco's `has_maximize_func`: normal windows and dialogs that can be resized
+        // (window.c:6695-6772).
+        let hints = managed.hints;
+        let fixed_size = hints.max.w > 0
+            && hints.max.w == hints.min.w
+            && hints.max.h > 0
+            && hints.max.h == hints.min.h;
+        let can_maximize =
+            matches!(managed.window_type, WindowType::Normal | WindowType::Dialog) && !fixed_size;
+        // `meta_window_can_tile` (window.c:2745-2770): the window's least size fits half the
+        // work area's width and all its height. Marco checks a corner's quarter no harder.
+        let e = managed.floating_extents();
+        let can_tile = can_maximize
+            && !managed.shaded
+            && area.size.w / 2 - e.left - e.right >= hints.min.w
+            && area.size.h - e.top - e.bottom >= hints.min.h;
+        let corner = |top, bottom, side| {
+            if p.y >= o.loc.y && p.y < area.loc.y + zone {
+                top
+            } else if p.y < o.loc.y + o.size.h && p.y > area.loc.y + area.size.h - zone {
+                bottom
+            } else {
+                side
+            }
+        };
+        let tile = if can_tile && p.x >= o.loc.x && p.x < area.loc.x + zone {
+            Some(corner(Tile::TopLeft, Tile::BottomLeft, Tile::Left))
+        } else if can_tile && p.x >= area.loc.x + area.size.w - zone && p.x < o.loc.x + o.size.w {
+            Some(corner(Tile::TopRight, Tile::BottomRight, Tile::Right))
+        } else {
+            None
+        };
+        match tile {
+            Some(tile) => Some(TileTarget::Tile(tile, output.id)),
+            None => (can_maximize && self.allow_top_tiling && p.y >= o.loc.y && p.y <= area.loc.y)
+                .then_some(TileTarget::Maximize(output.id)),
+        }
     }
 
     /// Ends grabs on windows that can no longer be moved or resized: hidden, maximised
@@ -1362,6 +1541,12 @@ impl<W: PolicyWindow> Policy<W> {
         self.set_last_seat(seat);
         self.end_grab(seat);
         let managed = self.windows.get_mut(&id).unwrap();
+        // A tiled window resized is a floating one of its tiled size from then on. Marco
+        // keeps it tiled and lets its free side move (constraints.c:947-956); that's left
+        // to a later ticket.
+        if resize.is_some() && managed.tile.take().is_some() {
+            managed.floating = None;
+        }
         let start = Rectangle::new(managed.geometry.loc, managed.size);
         managed.resize = resize.map(|edges| (edges, start));
         self.grabs.insert(
@@ -1374,6 +1559,7 @@ impl<W: PolicyWindow> Policy<W> {
                 initial: start.loc,
                 placing: false,
                 moved: false,
+                tile_target: None,
             },
         );
         self.apply();
@@ -1454,6 +1640,28 @@ impl<W: PolicyWindow> Policy<W> {
     /// The window the seat is moving or resizing.
     pub fn grab(&self, seat: SeatId) -> Option<WindowId> {
         self.grabs.get(&seat).map(|g| g.window)
+    }
+
+    /// The half or quarter of a work area the window is tiled to (158).
+    pub fn tile(&self, id: WindowId) -> Option<Tile> {
+        self.windows.get(&id).and_then(Managed::tiled)
+    }
+
+    /// Where letting go of the seat's move would put the window's frame, while the pointer
+    /// is in a tiling zone: the tile preview's rectangle (158).
+    pub fn tile_preview(&self, seat: SeatId) -> Option<Rectangle<i32, Logical>> {
+        let (area, tile) = match self.grabs.get(&seat)?.tile_target? {
+            TileTarget::Tile(tile, output) => (self.work_area_of(output)?, Some(tile)),
+            TileTarget::Maximize(output) => (self.work_area_of(output)?, None),
+        };
+        Some(tile.map_or(area, |tile| tile_area(area, tile)))
+    }
+
+    fn work_area_of(&self, output: OutputId) -> Option<Rectangle<i32, Logical>> {
+        self.outputs
+            .iter()
+            .find(|o| o.id == output)
+            .map(Self::work_area)
     }
 
     /// Whether the window is maximised both ways.
@@ -1677,6 +1885,8 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let output = managed
             .fullscreen_output
+            .filter(|_| managed.fullscreen)
+            .or(managed.tile.map(|(_, output)| output))
             .and_then(|o| self.outputs.iter().find(|output| output.id == o))
             .or_else(|| self.output_of(managed.frame()))
             .or(self.primary_output());
@@ -1685,6 +1895,20 @@ impl<W: PolicyWindow> Policy<W> {
         };
         let geometry = if managed.fullscreen {
             output.geometry
+        } else if let Some((tile, _)) = managed.tile {
+            // Marco ignores the size hints but the least size, as it does for a maximised
+            // window (constraints.c:928-934).
+            let e = managed.visible_extents();
+            let frame = tile_area(Self::work_area(output), tile);
+            let size: Size<i32, Logical> = Size::new(
+                frame.size.w - e.left - e.right,
+                frame.size.h - e.top - e.bottom,
+            );
+            let size = Size::new(
+                size.w.max(managed.hints.min.w).max(1),
+                size.h.max(managed.hints.min.h).max(1),
+            );
+            Rectangle::new((frame.loc.x + e.left, frame.loc.y + e.top).into(), size)
         } else {
             let area = Self::work_area(output);
             let e = managed.visible_extents();
@@ -1699,7 +1923,11 @@ impl<W: PolicyWindow> Policy<W> {
             }
             geometry
         };
-        self.windows.get_mut(&id).unwrap().geometry = geometry;
+        // A tiled window whose output went away is tiled on the one it's on now.
+        let tile = managed.tile.map(|(tile, _)| (tile, output.id));
+        let managed = self.windows.get_mut(&id).unwrap();
+        managed.geometry = geometry;
+        managed.tile = tile;
     }
 
     /// After outputs change: moves every window that's on no output onto the primary

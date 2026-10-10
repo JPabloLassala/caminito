@@ -152,6 +152,10 @@ _Avoid_: phase, sprint, release (only v0.1.0 is a release)
 Caminito's window-management decisions: focus, stacking, placement, workspaces, transients and Marco's other window rules. It sees windows only through the `PolicyWindow` trait, never as protocol objects, so it treats xdg and XWayland windows alike.
 _Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
 
+**Tile**:
+A half or quarter of an output's work area that a window dropped at the output's side or corner fills, and keeps filling until it's untiled. A tiled window is in a state of its own beside maximise (ADR 0024); a window dropped at the top is maximised, not tiled. The tile preview is the translucent rectangle that shows where a drop will put the window.
+_Avoid_: snapped (144's word for a window maximised one way), half-maximised, tiling model (Caminito isn't a tiling compositor)
+
 **Workspace grid**:
 The rows and columns the workspaces are in, which the workspace switcher shows and the bindings for the workspace to the left or right move through. It comes from `org.mate.Caminito`'s three `workspace-layout-*` keys and the number of workspaces, and each workspace's cell is its ext-workspace coordinates.
 _Avoid_: layout (that's the outputs'), pager layout, desktop layout (`_NET_DESKTOP_LAYOUT` is X11's, which Caminito doesn't publish)
@@ -177,7 +181,7 @@ Caminito's extension for VS Code and the forks that share its extension API, whi
 _Avoid_: Caminito integration (the working name, for an extension that would do more), plugin, VS Code extension alone (any extension is one)
 
 **Scene**:
-The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
+The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order with the tile preview beneath the window being moved, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::Space`, which Caminito doesn't use)
 
 **Night Light**:

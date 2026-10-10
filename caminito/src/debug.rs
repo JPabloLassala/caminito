@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use caminito_policy::{PolicyWindow, SwitchList};
+use caminito_policy::{PolicyWindow, SwitchList, Tile};
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -103,6 +103,10 @@ struct StateDump {
     bell: BellDump,
     /// Night Light (137).
     night_light: NightLightDump,
+    /// Where letting go of the move in progress would tile or maximise its window, frame
+    /// and all, while the tile preview shows it (158).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tile_preview: Option<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -273,6 +277,22 @@ struct WindowDump {
     urgent: bool,
     skip_taskbar: bool,
     skip_pager: bool,
+    /// The half or quarter of its work area it's tiled to (158): `left`, `right`,
+    /// `top-left`, `top-right`, `bottom-left` or `bottom-right`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tile: Option<&'static str>,
+}
+
+/// The dump's name for `tile`.
+fn tile_name(tile: Tile) -> &'static str {
+    match tile {
+        Tile::Left => "left",
+        Tile::Right => "right",
+        Tile::TopLeft => "top-left",
+        Tile::TopRight => "top-right",
+        Tile::BottomLeft => "bottom-left",
+        Tile::BottomRight => "bottom-right",
+    }
 }
 
 #[derive(Serialize)]
@@ -415,7 +435,8 @@ impl Caminito {
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
     /// with their keys, the accelerator grabs with their owners, the Window switcher, the
-    /// bells rung with the last one, and Night Light, as pretty-printed JSON.
+    /// bells rung with the last one, Night Light, and each window's tile with the tile
+    /// preview (158), as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -455,6 +476,7 @@ impl Caminito {
                     urgent: mapped.is_urgent(),
                     skip_taskbar: skips.taskbar,
                     skip_pager: skips.pager,
+                    tile: policy.tile(id).map(tile_name),
                 }
             })
             .collect();
@@ -565,6 +587,7 @@ impl Caminito {
                 }),
             },
             night_light: self.night_light_dump(),
+            tile_preview: policy.tile_preview(SEAT).map(RectDump::from),
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

@@ -496,7 +496,7 @@ impl Caminito {
         let state = FrameState {
             maximized: request.maximized,
             focused: true,
-            shaded: false,
+            ..FrameState::default()
         };
         let extents = self
             .applied_x11_scale()

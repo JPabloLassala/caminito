@@ -54,6 +54,66 @@ pub struct WindowStates {
     pub shaded: bool,
     /// An interactive resize is in progress.
     pub resizing: bool,
+    /// The half or quarter of a work area the window is tiled to (158).
+    pub tile: Option<Tile>,
+}
+
+impl WindowStates {
+    /// The state its frame is drawn and measured in, focused or not. Only a side tile has
+    /// a theme style of its own, as in Marco's `META_WINDOW_TILED_LEFT` and `_RIGHT`
+    /// (window-private.h:427-433) (158).
+    pub fn frame_state(&self, focused: bool) -> FrameState {
+        FrameState {
+            maximized: self.maximized,
+            focused,
+            shaded: self.shaded,
+            tiled_left: self.tile == Some(Tile::Left),
+            tiled_right: self.tile == Some(Tile::Right),
+        }
+    }
+}
+
+/// A half or quarter of a work area that a window dragged to an output's side or corner
+/// fills, as Marco's `MetaTileMode` has them (158). The top edge's tiling is a maximise,
+/// so it isn't one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tile {
+    Left,
+    Right,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl Tile {
+    /// The work area's edges the tile lies along, which xdg-shell's `tiled_*` states name.
+    pub fn edges(self) -> TiledEdges {
+        let (left, right) = match self {
+            Tile::Left | Tile::TopLeft | Tile::BottomLeft => (true, false),
+            Tile::Right | Tile::TopRight | Tile::BottomRight => (false, true),
+        };
+        let (top, bottom) = match self {
+            Tile::Left | Tile::Right => (true, true),
+            Tile::TopLeft | Tile::TopRight => (true, false),
+            Tile::BottomLeft | Tile::BottomRight => (false, true),
+        };
+        TiledEdges {
+            left,
+            right,
+            top,
+            bottom,
+        }
+    }
+}
+
+/// Which of a window's edges lie along its work area's, for xdg-shell's `tiled_*` states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TiledEdges {
+    pub left: bool,
+    pub right: bool,
+    pub top: bool,
+    pub bottom: bool,
 }
 
 /// The state of a window that its frame extents can depend on (ADR 0012), which policy lays
@@ -65,6 +125,10 @@ pub struct FrameState {
     /// Focused by some seat, so shown activated.
     pub focused: bool,
     pub shaded: bool,
+    /// Tiled to the work area's left or right half, which a Marco theme can draw in its
+    /// `tiled_left` and `tiled_right` styles. A quarter has no style of its own (158).
+    pub tiled_left: bool,
+    pub tiled_right: bool,
 }
 
 /// A window as policy sees it: facts to read, and requests to apply decisions.
