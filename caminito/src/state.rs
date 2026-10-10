@@ -116,7 +116,8 @@ use crate::protocols::idle_notify::IdleNotifyState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
-use crate::settings::{self, Settings, SettingsThread};
+use crate::settings::translate::MARCO_GENERAL;
+use crate::settings::{self, Settings, SettingsThread, Value};
 use crate::switcher::OpenSwitcher;
 use crate::window::{Mapped, PendingWindows};
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
@@ -322,6 +323,9 @@ pub struct Caminito {
     /// The settings as last read, and the GLib thread that reads them.
     pub settings: Settings,
     pub settings_thread: SettingsThread,
+    /// The workspace count last written to `num-workspaces` for `dynamic-workspaces`, until
+    /// the key changes (151).
+    written_workspace_count: Option<usize>,
     /// The input devices plugged in, which get the settings for their kind (53).
     pub(crate) input_devices: InputDevices,
     /// NumLock's state when the refresh pass last looked, so a change is written back once.
@@ -952,6 +956,7 @@ impl Caminito {
             accessx_wake: None,
             settings,
             settings_thread,
+            written_workspace_count: None,
             xwayland: None,
             xwayland_restart: xwayland::Restart::default(),
             wayland_selections: WaylandSelections::default(),
@@ -976,6 +981,22 @@ impl Caminito {
         Ok(caminito)
     }
 
+    /// Writes the workspace count back to `num-workspaces` while `dynamic-workspaces` is on,
+    /// as Marco's master does through `_NET_NUMBER_OF_DESKTOPS` (screen.c:1138-1168), so the
+    /// pager's preferences show it (97). A change of the key meanwhile is answered with the
+    /// count, as policy leaves it unread then.
+    fn refresh_num_workspaces(&mut self) {
+        let count = self.policy.workspace_count();
+        if self.settings.policy.dynamic_workspaces
+            && count != self.settings.policy.workspace_count
+            && self.written_workspace_count != Some(count)
+        {
+            self.settings_thread
+                .set(MARCO_GENERAL, "num-workspaces", Value::Int(count as i32));
+            self.written_workspace_count = Some(count);
+        }
+    }
+
     /// Asks the palette helper for the `gtk:custom` colours the theme uses.
     fn ask_palette_for_theme_colors(&mut self) {
         self.palette
@@ -984,6 +1005,9 @@ impl Caminito {
 
     /// New settings from the settings thread: passes on what changed.
     fn settings_changed(&mut self, settings: Settings) {
+        if settings.policy.workspace_count != self.settings.policy.workspace_count {
+            self.written_workspace_count = None;
+        }
         if settings.policy != self.settings.policy {
             tracing::debug!(
                 "{} workspaces: {:?}",
@@ -1049,8 +1073,9 @@ impl Caminito {
         let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
         let mut changed = false;
         for id in ids {
+            let flashing = self.bells.flashes_frame(id);
             let mapped = self.policy.window_mut(id).unwrap();
-            changed |= mapped.refresh_frame(&mut self.frame_context, colors);
+            changed |= mapped.refresh_frame(&mut self.frame_context, colors, flashing);
         }
         if changed {
             self.queue_redraw_all();
@@ -1167,6 +1192,7 @@ impl Caminito {
         self.refresh_toplevel_workspaces();
         self.refresh_ext_workspace();
         self.refresh_toplevel_workspaces();
+        self.refresh_num_workspaces();
         // After foreign-toplevel and ext-workspace, whose leaves name the `wl_output`s.
         self.refresh_output_globals();
         for mapped in self.policy.windows() {

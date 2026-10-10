@@ -313,6 +313,8 @@ pub struct FrameContent {
     pub icon: IconSource,
     /// The integer scale the strips are drawn at (13).
     pub scale: i32,
+    /// Whether the visual bell flashes the frame (169).
+    pub flashing: bool,
 }
 
 /// What a window's strips are drawn from, besides [`FrameContext`].
@@ -408,7 +410,7 @@ impl WindowFrame {
         let style = self
             .facts
             .and_then(|facts| frame_context.style(&facts, state));
-        let Some((frame_type, flags)) = style else {
+        let Some((frame_type, mut flags)) = style else {
             return self.clear();
         };
         let FrameContent {
@@ -416,7 +418,9 @@ impl WindowFrame {
             title,
             icon,
             scale,
+            flashing,
         } = content;
+        flags.is_flashing = flashing;
         let inputs = FrameInputs {
             frame_type,
             flags,

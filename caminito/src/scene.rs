@@ -25,7 +25,7 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::output::output_geometry;
+use crate::output::{output_geometry, output_id};
 use crate::state::Caminito;
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -38,6 +38,10 @@ pub(crate) const BLANK: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
 
 /// What a locked output shows wherever the locker draws nothing (12).
 pub(crate) const LOCK_BACKGROUND: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
+
+/// What the visual bell's full-screen flash shows: white, as Marco fills its flash window
+/// (`bell.c:bell_flash_screen`) (169).
+pub(crate) const BELL_FLASH: Color32F = Color32F::new(1.0, 1.0, 1.0, 1.0);
 
 /// Frame debug's outline colours (14).
 const STRIP_OUTLINE: Color32F = Color32F::new(1.0, 0.0, 0.0, 1.0);
@@ -64,7 +68,8 @@ render_elements! {
     Window = WaylandSurfaceRenderElement<R>,
     /// A frame's strip, one of Caminito's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
-    /// A side of one of frame debug's outlines, the lock's background, or the blank.
+    /// A side of one of frame debug's outlines, the lock's background, the blank, or the
+    /// visual bell's flash.
     Solid = SolidColorRenderElement,
     /// A part of a window in one of the Window switcher's thumbnails (108).
     Thumbnail = ThumbnailPart<R>,
@@ -83,6 +88,9 @@ pub(crate) enum SceneLayer {
     /// While the session is locked, the output's lock surface over the solid lock
     /// background, and nothing of the layers below (12).
     Lock,
+    /// The visual bell's full-screen flash, over everything of the session and under the
+    /// lock, which shows nothing of it (169).
+    BellFlash,
     /// The Window switcher's popup (108), over everything a client draws: the corner
     /// icons, then the thumbnails, then the rest of its chrome.
     Switcher,
@@ -116,11 +124,12 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 13] = [
+pub(crate) const LAYERS: [SceneLayer; 14] = [
     SceneLayer::Blank,
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
     SceneLayer::Lock,
+    SceneLayer::BellFlash,
     SceneLayer::Switcher,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
@@ -277,6 +286,7 @@ fn layer_elements<R>(
             layer_shell_elements(layer, renderer, caminito, output, elements)
         }
         SceneLayer::Lock => lock_elements(renderer, caminito, output, elements),
+        SceneLayer::BellFlash => bell_flash_elements(caminito, output, elements),
         SceneLayer::Switcher => switcher_elements(renderer, caminito, output, elements),
     }
 }
@@ -297,6 +307,26 @@ where
         covered,
         CommitCounter::default(),
         BLANK,
+        Kind::Unspecified,
+    )));
+}
+
+/// While the visual bell flashes `output`, white over all of it (169).
+fn bell_flash_elements<R>(caminito: &Caminito, output: &Output, elements: &mut Vec<SceneElement<R>>)
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let Some(id) = caminito.bells.output_flash(output_id(output)) else {
+        return;
+    };
+    let scale = output.current_scale().fractional_scale();
+    let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
+    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+        id.clone(),
+        covered,
+        CommitCounter::default(),
+        BELL_FLASH,
         Kind::Unspecified,
     )));
 }

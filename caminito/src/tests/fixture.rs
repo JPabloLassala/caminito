@@ -38,23 +38,61 @@ use crate::settings::{self, Value};
 use crate::state::{ClientState, State};
 use crate::window::Mapped;
 
+/// The vendored schemas under `tests/schemas/` (14).
+const SCHEMA_SOURCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/schemas");
+
 /// The vendored schemas under `tests/schemas/` (14), compiled once per test run beside the
 /// test binary.
 pub(crate) fn test_schemas() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
-        let exe = std::env::current_exe().unwrap();
-        let dir = exe.parent().unwrap().join("caminito-test-schemas");
-        std::fs::create_dir_all(&dir).unwrap();
-        let sources = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/schemas");
-        let status = std::process::Command::new("glib-compile-schemas")
-            .arg(format!("--targetdir={}", dir.display()))
-            .arg(sources)
-            .status()
-            .expect("glib-compile-schemas runs");
-        assert!(status.success(), "the test schemas compile");
-        dir
+        compile_schemas(
+            std::path::Path::new(SCHEMA_SOURCES),
+            "caminito-test-schemas",
+        )
     })
+}
+
+/// The vendored schemas with Marco master's `org.mate.marco.gschema.xml`, from
+/// `tests/schemas/marco-master/`, in place of 1.29.0's: the keys Caminito reads where the
+/// installed schema has them (147, 151). Compiled once per test run beside the test binary.
+fn marco_master_schemas() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        const MARCO: &str = "org.mate.marco.gschema.xml";
+        let exe = std::env::current_exe().unwrap();
+        let sources = exe
+            .parent()
+            .unwrap()
+            .join("caminito-test-schemas-marco-master-sources");
+        std::fs::create_dir_all(&sources).unwrap();
+        for entry in std::fs::read_dir(SCHEMA_SOURCES).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+            if name.ends_with(".gschema.xml") && name != MARCO {
+                std::fs::copy(&path, sources.join(name)).unwrap();
+            }
+        }
+        let master = std::path::Path::new(SCHEMA_SOURCES)
+            .join("marco-master")
+            .join(MARCO);
+        std::fs::copy(master, sources.join(MARCO)).unwrap();
+        compile_schemas(&sources, "caminito-test-schemas-marco-master")
+    })
+}
+
+/// Compiles the schemas in `sources` into a directory named `name` beside the test binary.
+fn compile_schemas(sources: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let dir = exe.parent().unwrap().join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    let status = std::process::Command::new("glib-compile-schemas")
+        .arg(format!("--targetdir={}", dir.display()))
+        .arg(sources)
+        .status()
+        .expect("glib-compile-schemas runs");
+    assert!(status.success(), "the test schemas compile");
+    dir
 }
 
 // Linux input event codes.
@@ -354,7 +392,22 @@ impl Fixture {
     /// before the first snapshot. `center-new-windows` is off unless `initial` sets it: the
     /// tests were written for the automatic placement's first fit, before Caminito honoured
     /// Marco's default, on (154).
-    pub fn with_settings(mut initial: Vec<(&'static str, String, Value)>) -> Self {
+    pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
+        Self::on_schemas(test_schemas(), initial)
+    }
+
+    /// Caminito as `with_settings` has it, on Marco master's schema instead of the 1.29.0
+    /// that Arch ships, so the keys only master has can be set (151).
+    pub fn with_marco_master_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
+        Self::on_schemas(marco_master_schemas(), initial)
+    }
+
+    /// Caminito with no outputs and no clients, on the schemas compiled into `schema_dir`,
+    /// with `center-new-windows` off unless `initial` sets it.
+    fn on_schemas(
+        schema_dir: &std::path::Path,
+        mut initial: Vec<(&'static str, String, Value)>,
+    ) -> Self {
         let center = (MARCO_GENERAL, "center-new-windows");
         if !initial
             .iter()
@@ -364,7 +417,7 @@ impl Fixture {
         }
         let event_loop = EventLoop::try_new().unwrap();
         let settings = settings::Source::Test {
-            schema_dir: test_schemas().to_owned(),
+            schema_dir: schema_dir.to_owned(),
             initial,
         };
         let state = State::new_headless(&event_loop, Display::new().unwrap(), settings);
@@ -1303,12 +1356,14 @@ impl Fixture {
     }
 
     /// Moves Caminito's clock on by `duration`, as a user who leaves it alone lets time pass,
-    /// runs idle's and policy's timers that are due by then, as their loop timers would,
-    /// and dispatches (128, 153). Nothing waits for the time to pass.
+    /// runs idle's and policy's timers (128, 153) and ends the visual bell's flash (169) if
+    /// they're due by then, as their loop timers would, and dispatches. Nothing waits for
+    /// the time to pass.
     pub fn advance_clock(&mut self, duration: Duration) {
         self.state.caminito.clock_offset += duration;
         self.state.idle_elapse();
         self.state.policy_elapse();
+        self.state.caminito.bell_elapse();
         self.state.caminito.night_light_tick();
         self.dispatch();
     }

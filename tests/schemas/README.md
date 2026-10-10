@@ -21,6 +21,7 @@ headless tests read it as their only schema source, each on a memory backend of 
 | `org.mate.session` | mate-session-manager 1.28.0 (`fa1bf6c2fb45ff0263465537a0730ebff2b2010d`), with `@GETTEXT_PACKAGE@` as `mate-session-manager` and `@DEFAULT_WM@` as `marco` |
 | `org.mate.power-manager` | mate-power-manager 1.28.1 (`cd5ef755e2b2222fa8b51715a7420a01e3426ba4`), with `@GETTEXT_PACKAGE@` as `mate-power-manager` |
 | `org.mate.screensaver` | mate-screensaver `60b2db3`, the source caminito-locker is ported from (131), with `@datadir@` as `/usr/share` |
+| `org.mate.Marco.*` of Marco's master (`marco-master/org.mate.marco.gschema.xml`) | marco `8522ed1`, the 1.29.0 schema with the five keys master adds (147). It isn't compiled with the rest: only the tests of a key that master has (151) compile it, in place of 1.29.0's |
 | `org.mate.Caminito` | Caminito's own, a link to [data/org.mate.Caminito.gschema.xml](../../data/org.mate.Caminito.gschema.xml), which Meson installs |
 
 mate-settings-daemon 1.28.0's mouse schema has no `natural-scroll`, which msd's master reads, so

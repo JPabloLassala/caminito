@@ -784,6 +784,7 @@ impl Caminito {
             | SceneLayer::Cursor
             | SceneLayer::DragIcon
             | SceneLayer::Lock
+            | SceneLayer::BellFlash
             | SceneLayer::Switcher => None,
             SceneLayer::Overlay
             | SceneLayer::Top

@@ -284,6 +284,24 @@ fn names_beyond_the_count_are_not_passed_on() {
     assert_eq!(settings(&reading).policy.workspace_names.len(), 4);
 }
 
+#[test]
+fn dynamic_workspaces_is_off_where_the_schema_has_no_key_for_it() {
+    // Marco 1.29.0's schema, which `defaults` reads, has no `dynamic-workspaces`.
+    assert!(!settings(&defaults()).policy.dynamic_workspaces);
+}
+
+#[test]
+fn dynamic_workspaces_is_read_where_the_schema_has_it_and_then_every_name_is_passed_on() {
+    let mut reading = with(MARCO_GENERAL, "dynamic-workspaces", Value::Bool(true));
+    reading.insert(MARCO_WORKSPACE_NAMES, "name-9", string("Spare"), string(""));
+    let config = settings(&reading).policy;
+    assert!(config.dynamic_workspaces);
+    // The count is Caminito's then, and can reach any of them (151).
+    assert_eq!(config.workspace_names.len(), 36);
+    assert_eq!(config.workspace_names[8], "Spare");
+    assert_eq!(config.workspace_names[35], "Workspace 36");
+}
+
 // The workspace grid (96).
 
 #[test]
@@ -1268,9 +1286,8 @@ fn bell_keys_are_read() {
     let reading = with_all(&[
         (MARCO_GENERAL, "audible-bell", Value::Bool(false)),
         (MARCO_GENERAL, "visual-bell", Value::Bool(true)),
-        (MARCO_GENERAL, "visual-bell-type", string("frame-flash")),
+        (MARCO_GENERAL, "visual-bell-type", string("frame_flash")),
     ]);
-    // The visual bell on is also reported as unsupported, which the test below checks.
     assert_eq!(
         translate(&reading).settings.bell,
         Bell {
@@ -1626,16 +1643,9 @@ fn the_never_keys_change_nothing_and_arent_reported() {
 }
 
 #[test]
-fn the_visual_bell_set_on_is_reported_as_unsupported() {
+fn the_visual_bell_set_on_is_honoured_without_a_problem() {
     let problems = translate(&with(MARCO_GENERAL, "visual-bell", Value::Bool(true))).problems;
-    assert_eq!(
-        problems,
-        [Problem::Unsupported {
-            schema: MARCO_GENERAL.into(),
-            key: "visual-bell".into(),
-            value: "true".into(),
-        }]
-    );
+    assert_eq!(problems, []);
 }
 
 #[test]

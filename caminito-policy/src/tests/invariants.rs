@@ -114,6 +114,8 @@ enum Op {
     },
     EndGrab(u32),
     SetWorkspaceCount(usize),
+    /// `dynamic-workspaces` (151), with Marco's four workspaces for when it's off.
+    SetDynamicWorkspaces(bool),
     RequestGeometry {
         id: u64,
         loc: Option<(i32, i32)>,
@@ -265,6 +267,7 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(seat, x, y, snap)| Op::GrabMotion { seat, snap, x, y }),
         1 => seat().prop_map(Op::EndGrab),
         1 => (1..=6usize).prop_map(Op::SetWorkspaceCount),
+        1 => any::<bool>().prop_map(Op::SetDynamicWorkspaces),
         1 => (
             window_id(),
             proptest::option::of((-500..3500i32, -500..2000i32)),
@@ -397,6 +400,10 @@ impl Op {
             Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
                 workspace_count,
                 workspace_names: Vec::new(),
+                ..Config::default()
+            }),
+            Op::SetDynamicWorkspaces(dynamic_workspaces) => policy.settings_changed(Config {
+                dynamic_workspaces,
                 ..Config::default()
             }),
             Op::RequestGeometry { id, loc, size } => {

@@ -142,27 +142,21 @@ pub const SCHEMAS: &[Schema] = &[
 pub const UNSUPPORTED: &[(&str, &str)] = &[
     // Caminito will draw the ripple itself (53); 147 put it on the later roadmap.
     (MOUSE, "locate-pointer"),
-    // The bell is counted but neither flashes nor plays until 169 and 170 (105). Caminito
-    // matches `audible-bell` only when it's off, and `visual-bell-type` only matters with
-    // the visual bell on, so neither is logged.
-    (MARCO_GENERAL, "visual-bell"),
     // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
     // ticket that honours it. Caminito does what each one's default asks, except
     // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
     // values it matches none of. A key whose other value is what Caminito already does
     // (`audible-bell`, `allow-tiling`, `allow-top-tiling`, `allow-tile-cycling`,
     // `reduced-resources`) isn't here, nor is one that only matters with another key set
-    // (`visual-bell-type`, and `command-1` to `-12`, whose bindings bind nothing until
-    // 149). Master's keys are logged only where the installed schema has them. The
-    // keybindings' schemas have no key here: an action with no behaviour yet is read and
-    // binds nothing, and its default reaches the client (148).
+    // (`command-1` to `-12`, whose bindings bind nothing until 149). Master's keys are
+    // logged only where the installed schema has them. The keybindings' schemas have no
+    // key here: an action with no behaviour yet is read and binds nothing, and its default
+    // reaches the client (148).
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
     // 150.
     (MARCO_GENERAL, "wrap-style"),
-    // 151.
-    (MARCO_GENERAL, "dynamic-workspaces"),
     // 162.
     (MARCO_GENERAL, "mouse-button-modifier"),
     (MARCO_GENERAL, "resize-with-right-button"),
@@ -795,7 +789,7 @@ pub struct Sound {
 }
 
 /// Marco's bell keys, from `org.mate.Marco.general` (09). The bell event reads them (105),
-/// and M8 acts on them (17).
+/// and flashes by the visual bell's (169).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bell {
     /// `audible-bell`: whether a bell plays the sound theme's bell.
@@ -809,16 +803,16 @@ pub struct Bell {
 /// `org.mate.Marco.VisualBellType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisualBellType {
-    /// The whole screen, or the outputs the window is on.
+    /// Every output.
     Fullscreen,
-    /// The window's frame.
+    /// The window's frame, or an output where there's none.
     FrameFlash,
 }
 
 impl Nick for VisualBellType {
     const NICKS: &'static [(&'static str, Self)] = &[
         ("fullscreen", Self::Fullscreen),
-        ("frame-flash", Self::FrameFlash),
+        ("frame_flash", Self::FrameFlash),
     ];
 }
 
@@ -1010,7 +1004,15 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
 
     let workspace_count =
         r.int_clamped(MARCO_GENERAL, "num-workspaces", 4, 1, MAX_WORKSPACES as i32) as usize;
-    let workspace_names = (1..=workspace_count)
+    // Marco master's key, off where the schema has no key for it (151). With it on the count
+    // is Caminito's, so every name is passed on.
+    let dynamic_workspaces = r.bool(MARCO_GENERAL, "dynamic-workspaces", false);
+    let named = if dynamic_workspaces {
+        MAX_WORKSPACES
+    } else {
+        workspace_count
+    };
+    let workspace_names = (1..=named)
         .map(|n| {
             let name = r.string(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), "");
             // Marco treats an empty name as unset.
@@ -1035,6 +1037,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let policy = Config {
         workspace_count,
         workspace_names,
+        dynamic_workspaces,
         workspace_layout,
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
         focus_mode: r.nick(MARCO_GENERAL, "focus-mode", FocusMode::Click),

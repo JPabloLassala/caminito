@@ -38,11 +38,11 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `titlebar-uses-system-font` | honoured | On, the title is in `org.mate.interface font-name`. | `caminito/src/settings/translate/tests.rs` |
 | `titlebar-font` | honoured | The title's font. | the same |
 | `num-workspaces` | honoured | 1 to 36 workspaces, live, as M2 and 97 settled. | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/settings.rs`, `caminito/src/tests/ext_workspace.rs` |
-| `dynamic-workspaces` | to do (151) | Master's key: off, and read nowhere yet. | |
+| `dynamic-workspaces` | honoured | Master's key, read where the installed schema has it, and off where it hasn't. On, one empty workspace follows those with windows, as in Marco's master: an emptied one is closed up by moving the windows of those after it down one, the view and the focus with them, and `num-workspaces` is written back with the count (151). | `caminito-policy/src/tests/dynamic_workspaces.rs`, `caminito/src/tests/dynamic_workspaces.rs`, `caminito/src/settings/translate/tests.rs`, the checklist's *Dynamic workspaces grow and shrink the switcher* |
 | `wrap-style` | to do (150) | The Workspace grid doesn't wrap, Marco's default `no wrap`. | |
-| `visual-bell` | to do (169) | A bell is counted and logged, and nothing flashes (105). | `caminito/src/tests/bell.rs` |
+| `visual-bell` | honoured | On, every bell flashes as `visual-bell-type` says, from any source (105), for 100 ms on Caminito's clock; a second bell during a flash starts it again (169). | `caminito/src/tests/bell.rs`, the checklist's *The visual bell flashes* |
 | `audible-bell` | to do (170) | Read; nothing plays (105). | the same |
-| `visual-bell-type` | to do (169) | Read with `visual-bell` (105). | the same |
+| `visual-bell-type` | honoured | `fullscreen` flashes every output white; `frame_flash` draws the bell's window's Frame in the other focus state, or flashes the output of a window with no Frame (CSD, fullscreen, hidden) or of the pointer for a bell for no window (169). | the same |
 | `compositing-manager` | honoured | Off: the Window switcher's grid shows icons with no thumbnails. Caminito always composites; the shadows (171) and the minimise animation (172) it turns off come with their tickets. | `caminito/src/tests/switcher.rs` |
 | `compositing-fast-alt-tab` | honoured | On: the grid shows icons with no thumbnails. | the same |
 | `reduced-resources` | to do (172) | There is no minimise animation for it to turn off yet. | |
