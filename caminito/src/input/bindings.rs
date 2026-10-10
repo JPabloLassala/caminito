@@ -91,101 +91,193 @@ const fn switch(list: SwitchList, reversed: bool) -> Does {
     Does::Switch { list, reversed }
 }
 
+/// The keys of a family numbered 1 to 12, such as `switch-to-workspace-1` to `-12`.
+macro_rules! twelve {
+    ($prefix:literal) => {
+        [
+            concat!($prefix, 1),
+            concat!($prefix, 2),
+            concat!($prefix, 3),
+            concat!($prefix, 4),
+            concat!($prefix, 5),
+            concat!($prefix, 6),
+            concat!($prefix, 7),
+            concat!($prefix, 8),
+            concat!($prefix, 9),
+            concat!($prefix, 10),
+            concat!($prefix, 11),
+            concat!($prefix, 12),
+        ]
+    };
+}
+
+/// Each key of a family numbered from 1, with what its number does. Marco's default for
+/// every one is `disabled`.
+fn numbered(
+    keys: [&'static str; 12],
+    make: fn(&'static str, &'static str, Does) -> Bindable,
+    does: impl Fn(usize) -> Does,
+) -> impl Iterator<Item = Bindable> {
+    keys.into_iter()
+        .enumerate()
+        .map(move |(i, key)| make(key, "disabled", does(i + 1)))
+}
+
+const fn command(command: Command) -> Does {
+    Does::Run(Binding::Command(command))
+}
+
 /// The actions that have a behaviour, in Marco's order (`src/include/all-keybindings.h`
 /// at 1.29.0, the global actions before the window ones), which is the order its
 /// `process_event` tries them in (`core/keybindings.c:1203-1260`), so of two keys with one
-/// combination the first wins. Every other action's key is read and parsed, and binds
-/// nothing until its ticket gives it a behaviour (147). `run-command-area-screenshot` is
-/// master's (`8522ed1`), after the window screenshot as there; where the installed schema
-/// hasn't the key, it has master's default.
-const BINDABLE: [Bindable; 18] = [
-    global(
-        "switch-to-workspace-left",
-        "<Control><Alt>Left",
-        policy(Action::SwitchToWorkspaceLeft),
-    ),
-    global(
-        "switch-to-workspace-right",
-        "<Control><Alt>Right",
-        policy(Action::SwitchToWorkspaceRight),
-    ),
-    global(
-        "switch-group",
-        "<Alt>grave",
-        switch(SwitchList::Group, false),
-    ),
-    global(
-        "switch-group-backward",
-        "disabled",
-        switch(SwitchList::Group, true),
-    ),
-    global(
-        "switch-windows",
-        "<Alt>Tab",
-        switch(SwitchList::Windows, false),
-    ),
-    global(
-        "switch-windows-backward",
-        "disabled",
-        switch(SwitchList::Windows, true),
-    ),
-    global(
-        "switch-windows-all",
-        "disabled",
-        switch(SwitchList::WindowsAll, false),
-    ),
-    global(
-        "switch-windows-all-backward",
-        "disabled",
-        switch(SwitchList::WindowsAll, true),
-    ),
-    global(
-        "switch-panels",
-        "<Control><Alt>Tab",
-        switch(SwitchList::Panels, false),
-    ),
-    global(
-        "switch-panels-backward",
-        "disabled",
-        switch(SwitchList::Panels, true),
-    ),
-    global(
-        "show-desktop",
-        "<Control><Alt>d",
-        policy(Action::ShowDesktop),
-    ),
-    global(
-        "panel-main-menu",
-        "<Alt>F1",
-        Does::Run(Binding::Panel(PanelAction::MainMenu)),
-    ),
-    global(
-        "panel-run-dialog",
-        "<Alt>F2",
-        Does::Run(Binding::Panel(PanelAction::RunDialog)),
-    ),
-    global(
-        "run-command-screenshot",
-        "Print",
-        Does::Run(Binding::Command(Command::Screenshot)),
-    ),
-    global(
-        "run-command-window-screenshot",
-        "<Alt>Print",
-        Does::Run(Binding::Command(Command::WindowScreenshot)),
-    ),
-    global(
-        "run-command-area-screenshot",
-        "<Shift>Print",
-        Does::Run(Binding::Command(Command::AreaScreenshot)),
-    ),
-    window(
-        "toggle-maximized",
-        "<Alt>F10",
-        policy(Action::ToggleMaximized),
-    ),
-    window("close", "<Alt>F4", policy(Action::Close)),
-];
+/// combination the first wins. `move-to-workspace-left` and `-right` are among the global
+/// ones there, though their keys are in `window-keybindings`. Every other action's key is
+/// read and parsed, and binds nothing until its ticket gives it a behaviour (147).
+/// `run-command-area-screenshot` is master's (`8522ed1`), after the window screenshot as
+/// there; where the installed schema hasn't the key, it has master's default.
+fn bindable() -> impl Iterator<Item = Bindable> {
+    let switch_to_workspace = numbered(twelve!("switch-to-workspace-"), global, |n| {
+        policy(Action::SwitchToWorkspace(n - 1))
+    });
+    let run_command = numbered(twelve!("run-command-"), global, |n| {
+        command(Command::Numbered(n))
+    });
+    let move_to_workspace = numbered(twelve!("move-to-workspace-"), window, |n| {
+        policy(Action::MoveToWorkspace(n - 1))
+    });
+    switch_to_workspace
+        .chain([
+            global(
+                "switch-to-workspace-left",
+                "<Control><Alt>Left",
+                policy(Action::SwitchToWorkspaceLeft),
+            ),
+            global(
+                "switch-to-workspace-right",
+                "<Control><Alt>Right",
+                policy(Action::SwitchToWorkspaceRight),
+            ),
+            window(
+                "move-to-workspace-left",
+                "<Control><Shift><Alt>Left",
+                policy(Action::MoveToWorkspaceLeft),
+            ),
+            window(
+                "move-to-workspace-right",
+                "<Control><Shift><Alt>Right",
+                policy(Action::MoveToWorkspaceRight),
+            ),
+            global(
+                "switch-group",
+                "<Alt>grave",
+                switch(SwitchList::Group, false),
+            ),
+            global(
+                "switch-group-backward",
+                "disabled",
+                switch(SwitchList::Group, true),
+            ),
+            global(
+                "switch-windows",
+                "<Alt>Tab",
+                switch(SwitchList::Windows, false),
+            ),
+            global(
+                "switch-windows-backward",
+                "disabled",
+                switch(SwitchList::Windows, true),
+            ),
+            global(
+                "switch-windows-all",
+                "disabled",
+                switch(SwitchList::WindowsAll, false),
+            ),
+            global(
+                "switch-windows-all-backward",
+                "disabled",
+                switch(SwitchList::WindowsAll, true),
+            ),
+            global(
+                "switch-panels",
+                "<Control><Alt>Tab",
+                switch(SwitchList::Panels, false),
+            ),
+            global(
+                "switch-panels-backward",
+                "disabled",
+                switch(SwitchList::Panels, true),
+            ),
+            global(
+                "show-desktop",
+                "<Control><Alt>d",
+                policy(Action::ShowDesktop),
+            ),
+            global(
+                "panel-main-menu",
+                "<Alt>F1",
+                Does::Run(Binding::Panel(PanelAction::MainMenu)),
+            ),
+            global(
+                "panel-run-dialog",
+                "<Alt>F2",
+                Does::Run(Binding::Panel(PanelAction::RunDialog)),
+            ),
+        ])
+        .chain(run_command)
+        .chain([
+            global(
+                "run-command-screenshot",
+                "Print",
+                command(Command::Screenshot),
+            ),
+            global(
+                "run-command-window-screenshot",
+                "<Alt>Print",
+                command(Command::WindowScreenshot),
+            ),
+            global(
+                "run-command-area-screenshot",
+                "<Shift>Print",
+                command(Command::AreaScreenshot),
+            ),
+            global(
+                "run-command-terminal",
+                "disabled",
+                command(Command::Terminal),
+            ),
+            window(
+                "toggle-fullscreen",
+                "disabled",
+                policy(Action::ToggleFullscreen),
+            ),
+            window(
+                "toggle-maximized",
+                "<Alt>F10",
+                policy(Action::ToggleMaximized),
+            ),
+            window("maximize", "disabled", policy(Action::Maximize)),
+            window("unmaximize", "<Alt>F5", policy(Action::Unmaximize)),
+            window("toggle-shaded", "disabled", policy(Action::ToggleShaded)),
+            window("minimize", "<Alt>F9", policy(Action::Minimize)),
+            window("close", "<Alt>F4", policy(Action::Close)),
+        ])
+        .chain(move_to_workspace)
+        .chain([
+            window("raise-or-lower", "disabled", policy(Action::RaiseOrLower)),
+            window("raise", "disabled", policy(Action::Raise)),
+            window("lower", "disabled", policy(Action::Lower)),
+            window(
+                "maximize-vertically",
+                "disabled",
+                policy(Action::ToggleMaximizedVertically),
+            ),
+            window(
+                "maximize-horizontally",
+                "disabled",
+                policy(Action::ToggleMaximizedHorizontally),
+            ),
+        ])
+}
 
 /// One combination in force, and the key it came from.
 #[derive(Debug, Clone, PartialEq)]
@@ -201,7 +293,7 @@ struct Row {
 /// then, so it ends under the table it started under.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bindings {
-    /// In `BINDABLE`'s order, each Shift variant right after its combination.
+    /// In `bindable`'s order, each Shift variant right after its combination.
     rows: Vec<Row>,
 }
 
@@ -230,7 +322,7 @@ impl Bindings {
             }
         }
         let mut rows = Vec::new();
-        for bindable in &BINDABLE {
+        for bindable in bindable() {
             let value = keys
                 .iter()
                 .find(|(schema, key, _)| *schema == bindable.schema && *key == bindable.key)

@@ -268,6 +268,8 @@ impl State {
             },
         );
         match intercepted {
+            Some(Some(Bound::Action(Action::ToggleShaded)))
+                if !self.caminito.focused_window_shades() => {}
             Some(Some(Bound::Action(action))) => {
                 let now = self.caminito.now();
                 self.caminito.policy.action(SEAT, action, now);

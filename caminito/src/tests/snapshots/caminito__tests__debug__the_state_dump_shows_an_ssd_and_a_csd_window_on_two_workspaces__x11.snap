@@ -160,6 +160,14 @@ expression: without_x_ids(&dump)
       "combination": "<Control><Alt>Right"
     },
     {
+      "key": "move-to-workspace-left",
+      "combination": "<Control><Shift><Alt>Left"
+    },
+    {
+      "key": "move-to-workspace-right",
+      "combination": "<Control><Shift><Alt>Right"
+    },
+    {
       "key": "switch-group",
       "combination": "<Alt>grave"
     },
@@ -210,6 +218,14 @@ expression: without_x_ids(&dump)
     {
       "key": "toggle-maximized",
       "combination": "<Alt>F10"
+    },
+    {
+      "key": "unmaximize",
+      "combination": "<Alt>F5"
+    },
+    {
+      "key": "minimize",
+      "combination": "<Alt>F9"
     },
     {
       "key": "close",
