@@ -8,6 +8,7 @@ mod interactive;
 mod invariants;
 mod outputs;
 mod placement;
+mod pointer_focus;
 mod requests;
 mod shade;
 mod show_desktop;

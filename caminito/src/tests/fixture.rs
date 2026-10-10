@@ -1291,11 +1291,12 @@ impl Fixture {
     }
 
     /// Moves Caminito's clock on by `duration`, as a user who leaves it alone lets time pass,
-    /// runs idle's timers that are due by then, as their loop timer would, and dispatches
-    /// (128). Nothing waits for the time to pass.
+    /// runs idle's and policy's timers that are due by then, as their loop timers would,
+    /// and dispatches (128, 153). Nothing waits for the time to pass.
     pub fn advance_clock(&mut self, duration: Duration) {
         self.state.caminito.clock_offset += duration;
         self.state.idle_elapse();
+        self.state.policy_elapse();
         self.state.caminito.night_light_tick();
         self.dispatch();
     }

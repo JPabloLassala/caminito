@@ -6,7 +6,9 @@ use proptest::prelude::*;
 use super::*;
 use smithay::utils::Size;
 
-use crate::{FrameState, PolicyWindow, ResizeEdges, SwitchList};
+use crate::{
+    Crossing, FocusMode, FrameState, PointerTarget, PolicyWindow, ResizeEdges, SwitchList,
+};
 
 const SEATS: u32 = 2;
 
@@ -124,6 +126,23 @@ enum Op {
     SwitcherSelect(usize),
     SwitcherCommit,
     SwitcherCancel,
+    /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
+    SetFocusMode {
+        mode: FocusMode,
+        raise_on_click: bool,
+        auto_raise: bool,
+    },
+    PointerEntered {
+        seat: u32,
+        target: PointerTarget,
+        crossing: Crossing,
+    },
+    FrameClick {
+        seat: u32,
+        id: u64,
+    },
+    /// Time passes, and policy runs what's due.
+    Elapse(u64),
 }
 
 fn window_id() -> impl Strategy<Value = u64> {
@@ -258,7 +277,34 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0..10usize).prop_map(Op::SwitcherSelect),
         1 => Just(Op::SwitcherCommit),
         1 => Just(Op::SwitcherCancel),
+        1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
+            Op::SetFocusMode { mode, raise_on_click, auto_raise }
+        }),
+        3 => (seat(), pointer_target(), crossing())
+            .prop_map(|(seat, target, crossing)| Op::PointerEntered { seat, target, crossing }),
+        1 => (seat(), window_id()).prop_map(|(seat, id)| Op::FrameClick { seat, id }),
+        1 => (0..1000u64).prop_map(Op::Elapse),
     ]
+}
+
+fn focus_mode() -> impl Strategy<Value = FocusMode> {
+    prop_oneof![
+        Just(FocusMode::Click),
+        Just(FocusMode::Sloppy),
+        Just(FocusMode::Mouse),
+    ]
+}
+
+fn pointer_target() -> impl Strategy<Value = PointerTarget> {
+    prop_oneof![
+        4 => window_id().prop_map(|id| PointerTarget::Window(WindowId(id))),
+        1 => Just(PointerTarget::Desktop),
+        1 => Just(PointerTarget::Other),
+    ]
+}
+
+fn crossing() -> impl Strategy<Value = Crossing> {
+    prop_oneof![Just(Crossing::Motion), Just(Crossing::Scene)]
 }
 
 impl Op {
@@ -360,6 +406,25 @@ impl Op {
             Op::SwitcherSelect(index) => policy.switcher_select(index),
             Op::SwitcherCommit => policy.switcher_commit(now),
             Op::SwitcherCancel => policy.switcher_cancel(now),
+            Op::SetFocusMode {
+                mode,
+                raise_on_click,
+                auto_raise,
+            } => policy.settings_changed(Config {
+                workspace_count: policy.workspace_count(),
+                focus_mode: mode,
+                raise_on_click,
+                auto_raise,
+                auto_raise_delay: ms(200),
+                ..Config::default()
+            }),
+            Op::PointerEntered {
+                seat,
+                target,
+                crossing,
+            } => policy.pointer_entered(SeatId(seat), target, crossing, now),
+            Op::FrameClick { seat, id } => policy.frame_click(SeatId(seat), WindowId(id), now),
+            Op::Elapse(by) => policy.elapse(now + ms(by)),
         }
     }
 }

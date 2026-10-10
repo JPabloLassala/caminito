@@ -21,8 +21,8 @@ pub use action::Action;
 pub use grid::{Grid, Orientation, WorkspaceLayout};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use policy::{
-    Config, MAX_WORKSPACES, Policy, ResizeEdges, SeatId, SwitchList, Switcher,
-    default_workspace_name,
+    Config, Crossing, FocusMode, MAX_WORKSPACES, PointerTarget, Policy, ResizeEdges, SeatId,
+    SwitchList, Switcher, default_workspace_name,
 };
 pub use stack::Layer;
 pub use window::{FrameState, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};

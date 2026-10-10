@@ -1346,3 +1346,33 @@ session_env() {
   a word (09). No row is *to do* (173).
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, Caminito's log, and
   `org.mate.Caminito.Debug`'s state dump.
+
+### The focus modes and auto-raise
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open a terminal (a native window) and an X11 app, such as
+     `xterm`, side by side, with some desktop showing between them and the panel at the top.
+  2. Run `gsettings set org.mate.Marco.general focus-mode sloppy`. Move the pointer into the
+     terminal, then the X11 app, then onto the desktop, then onto the panel, typing a letter
+     at each stop.
+  3. Run `gsettings set org.mate.Marco.general focus-mode mouse` and do the same.
+  4. Hold Alt and press Tab with the pointer over one window, move the pointer over the
+     other, and release Alt on the first.
+  5. Run `gsettings set org.mate.Marco.general auto-raise true`, overlap the two windows,
+     and move the pointer from the one on top into the part of the other that shows. Then
+     do it again and leave it before half a second.
+  6. Run `gsettings set org.mate.Marco.general focus-mode click`, then `gsettings set
+     org.mate.Marco.general raise-on-click false`, and click the lower window's body, then its
+     titlebar. Reset the four keys with `gsettings reset`.
+- **Expected:** in step 2 each window takes the focus, and the letter, as the pointer enters
+  it, without being raised, and on the desktop and the panel the last window keeps the
+  focus. In step 3 the same, but on the desktop no window has the focus and the letter goes
+  nowhere, and on the panel the last window keeps it. Each key change applies at once. In
+  step 4 the focus stays put while the switcher is open, and goes to the window released on.
+  In step 5 the lower window is focused at once and raised after half a second, Marco's
+  default `auto-raise-delay`, and not raised the second time. In step 6 the click on the body
+  focuses the window and leaves it below; the click on the titlebar raises it (153).
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `org.mate.Caminito.Debug`'s
+  state dump, whose `focus` and workspaces' `stacking` members show which window has the focus
+  and which is on top.

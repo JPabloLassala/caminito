@@ -118,7 +118,10 @@ impl<W: PolicyWindow> Policy<W> {
         let windows = self.switch_list(seat, list);
         match windows.as_slice() {
             [] => {}
-            [only] => self.activate(seat, *only, now),
+            [only] => {
+                self.pointer.keyboard_focused();
+                self.activate(seat, *only, now);
+            }
             _ => {
                 // Ruling 7: the second entry when the first is the focused window, which
                 // the switcher is for leaving; backward, the last.
@@ -155,6 +158,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let time = match how {
             Close::Commit(now) => {
+                self.pointer.keyboard_focused();
                 let switcher = &open.switcher;
                 self.activate(switcher.seat, switcher.windows[switcher.selected], now);
                 Some(now)

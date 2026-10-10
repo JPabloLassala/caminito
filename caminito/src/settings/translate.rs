@@ -6,7 +6,7 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, MAX_WORKSPACES, Orientation, WorkspaceLayout, default_workspace_name,
+    Config, FocusMode, MAX_WORKSPACES, Orientation, WorkspaceLayout, default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
 
@@ -137,13 +137,9 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // values it matches none of. A key whose other value is what Caminito already does
     // (`audible-bell`, `center-new-windows`, `allow-tiling`, `allow-top-tiling`,
     // `allow-tile-cycling`, `reduced-resources`) isn't here, nor is one that only matters
-    // with another key set (`auto-raise-delay`, `visual-bell-type`, and `command-1` to
-    // `-12`, whose bindings aren't read until 148). Master's keys are logged only where the
-    // installed schema has them.
-    // 153.
-    (MARCO_GENERAL, "focus-mode"),
-    (MARCO_GENERAL, "raise-on-click"),
-    (MARCO_GENERAL, "auto-raise"),
+    // with another key set (`visual-bell-type`, and `command-1` to `-12`, whose bindings
+    // aren't read until 148). Master's keys are logged only where the installed schema has
+    // them.
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
@@ -557,6 +553,15 @@ impl Nick for TitlebarAction {
 impl Nick for Schedule {
     const NICKS: &'static [(&'static str, Self)] =
         &[("sun", Self::Sun), ("constant", Self::Constant)];
+}
+
+/// `org.mate.Marco.FocusMode`.
+impl Nick for FocusMode {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("click", Self::Click),
+        ("sloppy", Self::Sloppy),
+        ("mouse", Self::Mouse),
+    ];
 }
 
 /// `org.mate.Caminito.WorkspaceLayoutOrientation`.
@@ -978,6 +983,17 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_names,
         workspace_layout,
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
+        focus_mode: r.nick(MARCO_GENERAL, "focus-mode", FocusMode::Click),
+        raise_on_click: r.bool(MARCO_GENERAL, "raise-on-click", true),
+        auto_raise: r.bool(MARCO_GENERAL, "auto-raise", false),
+        // Marco's bounds on the delay (prefs.c:543-549).
+        auto_raise_delay: Duration::from_millis(r.int_clamped(
+            MARCO_GENERAL,
+            "auto-raise-delay",
+            500,
+            0,
+            10_000,
+        ) as u64),
     };
     let switcher = SwitcherSettings {
         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,

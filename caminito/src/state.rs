@@ -106,6 +106,7 @@ use crate::night_light::{self, NightLight};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
+use crate::policy_timer::PolicyTimer;
 use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -213,6 +214,8 @@ pub struct Caminito {
     pub idle_inhibit_state: IdleInhibitManagerState,
     /// Idle's timers, the blank and what holds them off (128).
     pub(crate) idle: Idle,
+    /// The loop timer for policy's deadline, auto-raise's (153).
+    pub(crate) policy_timer: PolicyTimer,
     /// Night Light's temperatures and fades (ADR 0023).
     pub(crate) night_light: NightLight,
     /// `NightLight` as `org.mate.Caminito`'s callers last heard it (137).
@@ -613,6 +616,8 @@ impl State {
         self.refresh_gamma_control();
         self.refresh_night_light();
         self.update_pointer_focus();
+        // After the pointer's crossings, which queue an auto-raise.
+        self.caminito.wake_policy();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
         self.caminito.refresh_switcher_popup();
@@ -883,6 +888,7 @@ impl Caminito {
             idle_notify_state: IdleNotifyState::new::<State>(dh),
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),
+            policy_timer: PolicyTimer::default(),
             night_light: NightLight::new(settings.night_light),
             night_light_signalled: None,
             gamma_control_state: GammaControlState::default(),

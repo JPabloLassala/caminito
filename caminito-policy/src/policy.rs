@@ -14,8 +14,10 @@ use crate::{
     WindowType, WorkspaceLayout,
 };
 
+mod pointer;
 mod switcher;
 
+pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
 
 /// A seat, as the compositor numbers them.
@@ -72,6 +74,16 @@ pub struct Config {
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
     /// open (108).
     pub alt_tab_raise_windows: bool,
+    /// `focus-mode` (153).
+    pub focus_mode: FocusMode,
+    /// `raise-on-click`: off, a click on a window's body focuses it without raising it. A
+    /// click on its Frame always raises it (153).
+    pub raise_on_click: bool,
+    /// `auto-raise`: with a pointer focus mode, a window the pointer focuses is raised
+    /// after `auto_raise_delay`, if the pointer is still in it (153).
+    pub auto_raise: bool,
+    /// `auto-raise-delay`.
+    pub auto_raise_delay: Duration,
 }
 
 impl Default for Config {
@@ -83,6 +95,11 @@ impl Default for Config {
             workspace_names: (1..=workspace_count).map(default_workspace_name).collect(),
             workspace_layout: WorkspaceLayout::default(),
             alt_tab_raise_windows: false,
+            // Marco's defaults.
+            focus_mode: FocusMode::Click,
+            raise_on_click: true,
+            auto_raise: false,
+            auto_raise_delay: Duration::from_millis(500),
         }
     }
 }
@@ -277,6 +294,8 @@ pub struct Policy<W: PolicyWindow> {
     switcher: Option<switcher::Open>,
     /// `alt-tab-raise-windows`.
     alt_tab_raise_windows: bool,
+    /// The pointer focus modes, `raise-on-click` and auto-raise (153).
+    pointer: pointer::PointerFocus,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -298,6 +317,7 @@ impl<W: PolicyWindow> Policy<W> {
             mru: Vec::new(),
             switcher: None,
             alt_tab_raise_windows: false,
+            pointer: pointer::PointerFocus::default(),
         };
         policy.settings_changed(config);
         policy
@@ -360,6 +380,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// workspaces to the new last one, and the active workspace with them, as Marco's
     /// `update_num_workspaces` does; a larger one adds empty workspaces at the end.
     pub fn settings_changed(&mut self, config: Config) {
+        self.pointer.settings_changed(&config);
         let count = config.workspace_count.clamp(1, MAX_WORKSPACES);
         let mut names = config.workspace_names;
         names.truncate(count);
@@ -549,13 +570,26 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// A button press on a window: click focus, and Marco's raise on click. Marco raises a
-    /// dock but doesn't focus it, since panels ask for focus themselves (display.c:1937-1946).
+    /// A button press on a window's body: click focus, and Marco's raise on click, which
+    /// `raise-on-click` turns off (153). Marco raises a dock but doesn't focus it, since
+    /// panels ask for focus themselves (display.c:1923-1946).
     pub fn click(&mut self, seat: SeatId, id: WindowId, now: Duration) {
+        let raise = self.pointer.raise_on_click();
+        self.press(seat, id, raise, now);
+    }
+
+    /// A button press on a window's Frame, which focuses and raises it whatever
+    /// `raise-on-click` says, as Marco's frames do (frames.c:1586) (153).
+    pub fn frame_click(&mut self, seat: SeatId, id: WindowId, now: Duration) {
+        self.press(seat, id, true, now);
+    }
+
+    /// A press on a window, which focuses it, and raises it with `raise`.
+    fn press(&mut self, seat: SeatId, id: WindowId, raise: bool, now: Duration) {
         self.set_last_seat(seat);
         if self.is_showing(id) {
             let dock = self.windows[&id].window_type == WindowType::Dock;
-            if dock || self.focus_window(seat, id, now) {
+            if (dock || self.focus_window(seat, id, now)) && raise {
                 self.raise_family(id);
             }
         }

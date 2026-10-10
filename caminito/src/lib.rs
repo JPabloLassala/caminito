@@ -18,6 +18,7 @@ mod lock;
 pub mod logging;
 mod night_light;
 pub mod output;
+mod policy_timer;
 pub mod protocols;
 pub mod scene;
 pub mod session;
