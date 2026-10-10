@@ -21,6 +21,7 @@ mod dynamic_workspaces;
 mod edge_resistance;
 mod ext_workspace;
 mod fixture;
+mod focus_modes;
 mod foreign_toplevel;
 mod frames;
 mod gamma_control;

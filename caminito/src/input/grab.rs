@@ -404,6 +404,11 @@ impl PointerGrab<State> for Grab {
                 caminito.policy.end_grab(SEAT);
                 caminito.window_grab = None;
             }
+            // A titlebar press that never became a drag is a click on the titlebar (153).
+            Purpose::Frame(FrameHold::Title { window, .. }) => {
+                caminito.frame_pointer.pressed = None;
+                caminito.policy.titlebar_released(window);
+            }
             Purpose::Frame(_) => caminito.frame_pointer.pressed = None,
         }
         caminito.queue_redraw_all();

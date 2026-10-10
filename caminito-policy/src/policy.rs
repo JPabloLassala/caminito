@@ -16,8 +16,10 @@ use crate::{
 };
 
 mod dynamic_workspaces;
+mod pointer;
 mod switcher;
 
+pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
 
 /// A seat, as the compositor numbers them.
@@ -61,7 +63,14 @@ struct Grab {
     initial: Point<i32, Logical>,
     /// A manual placement of a new window (154), which the keys move, put down and cancel.
     placing: bool,
+    /// Whether the pointer has gone Marco's 8 pixels from where the grab began
+    /// (display.c:3995-3997), past which it isn't a click.
+    moved: bool,
 }
+
+/// How far, on either axis, the pointer goes from where a grab began before it's no longer
+/// a click, as Marco has it (display.c:3995-3997).
+const CLICK_DISTANCE: f64 = 8.;
 
 /// Marco's `MAX_REASONABLE_WORKSPACES`, the schema's upper bound on `num-workspaces`.
 pub const MAX_WORKSPACES: usize = 36;
@@ -90,6 +99,16 @@ pub struct Config {
     pub center_new_windows: bool,
     /// `show-desktop-skip-list` (164).
     pub show_desktop_skip_list: ShowDesktopSkipList,
+    /// `focus-mode` (153).
+    pub focus_mode: FocusMode,
+    /// `raise-on-click`: off, a click on a window's body focuses it without raising it. A
+    /// click on its Frame always raises it (153).
+    pub raise_on_click: bool,
+    /// `auto-raise`: with a pointer focus mode, a window the pointer focuses is raised
+    /// after `auto_raise_delay`, if the pointer is still in it (153).
+    pub auto_raise: bool,
+    /// `auto-raise-delay`.
+    pub auto_raise_delay: Duration,
 }
 
 impl Default for Config {
@@ -107,6 +126,11 @@ impl Default for Config {
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
+            // Marco's defaults.
+            focus_mode: FocusMode::Click,
+            raise_on_click: true,
+            auto_raise: false,
+            auto_raise_delay: Duration::from_millis(500),
         }
     }
 }
@@ -334,6 +358,8 @@ pub struct Policy<W: PolicyWindow> {
     /// Where the pointer was when the compositor last said, which `pointer` and `manual`
     /// placement put a new window at.
     pointer: Option<Point<f64, Logical>>,
+    /// The pointer focus modes, `raise-on-click` and auto-raise (153).
+    pointer_focus: pointer::PointerFocus,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -361,6 +387,7 @@ impl<W: PolicyWindow> Policy<W> {
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
             pointer: None,
+            pointer_focus: pointer::PointerFocus::default(),
         };
         policy.settings_changed(config);
         policy
@@ -425,6 +452,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// `dynamic-workspaces` on, the count is policy's own and `num-workspaces` is left
     /// unread (151).
     pub fn settings_changed(&mut self, config: Config) {
+        self.pointer_focus.settings_changed(&config);
         self.configured_names = config.workspace_names;
         self.dynamic_workspaces = config.dynamic_workspaces;
         self.workspace_layout = config.workspace_layout;
@@ -680,15 +708,28 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// A button press on a window: click focus, and Marco's raise on click. Marco raises a
-    /// dock but doesn't focus it, since panels ask for focus themselves (display.c:1937-1946).
+    /// A button press on a window, its body or its Frame: click focus, and Marco's raise on
+    /// click, which `raise-on-click` turns off (153). Marco raises a dock but doesn't
+    /// focus it, since panels ask for focus themselves (display.c:1923-1946). With the key
+    /// off, a press that starts a move or resize, or the titlebar's, raises the window if it
+    /// ends as a click: see `end_grab` and `titlebar_released`.
     pub fn click(&mut self, seat: SeatId, id: WindowId, now: Duration) {
         self.set_last_seat(seat);
         if self.is_showing(id) {
             let dock = self.windows[&id].window_type == WindowType::Dock;
-            if dock || self.focus_window(seat, id, now) {
+            if (dock || self.focus_window(seat, id, now)) && self.pointer_focus.raise_on_click() {
                 self.raise_family(id);
             }
+        }
+        self.apply();
+    }
+
+    /// A press on a window's titlebar ended without dragging it. With `raise-on-click` off
+    /// that raises the window, as Marco raises one it was about to move when the pointer
+    /// hardly moved (display.c:3857-3870); with it on, the press raised it already (153).
+    pub fn titlebar_released(&mut self, id: WindowId) {
+        if !self.pointer_focus.raise_on_click() && self.is_showing(id) {
+            self.raise_family(id);
         }
         self.apply();
     }
@@ -1080,14 +1121,16 @@ impl<W: PolicyWindow> Policy<W> {
     /// The seat's pointer moved during a grab. With `snap` (Shift held), the window snaps to
     /// the nearest edges; otherwise it resists at the edges it meets (157).
     pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
-        let Some(grab) = self.grabs.get(&seat) else {
+        let Some(grab) = self.grabs.get_mut(&seat) else {
             return;
         };
         let delta = pointer - grab.start_pointer;
+        grab.moved |= delta.x.abs() >= CLICK_DISTANCE || delta.y.abs() >= CLICK_DISTANCE;
         let start = grab.start;
         let resize = grab.resize;
-        let edges = self.edges_for(grab.window);
-        let managed = self.windows.get_mut(&grab.window).unwrap();
+        let window = grab.window;
+        let edges = self.edges_for(window);
+        let managed = self.windows.get_mut(&window).unwrap();
         let current = managed.geometry;
         // Edges hold back the frame, measured from where policy last asked the window to
         // be, as `unmaximize_for_drag` measures it.
@@ -1165,12 +1208,16 @@ impl<W: PolicyWindow> Policy<W> {
         self.end_grab(seat);
     }
 
-    /// Ends the seat's grab, if it has one.
+    /// Ends the seat's grab, if it has one. With `raise-on-click` off, one that ends as a
+    /// click raises its window, as Marco's does (display.c:3857-3870) (153).
     pub fn end_grab(&mut self, seat: SeatId) {
         if let Some(grab) = self.grabs.remove(&seat)
             && let Some(managed) = self.windows.get_mut(&grab.window)
         {
             managed.resize = None;
+            if !self.pointer_focus.raise_on_click() && !grab.moved {
+                self.raise_family(grab.window);
+            }
         }
         self.apply();
     }
@@ -1262,6 +1309,7 @@ impl<W: PolicyWindow> Policy<W> {
                 start,
                 initial: start.loc,
                 placing: false,
+                moved: false,
             },
         );
         self.apply();

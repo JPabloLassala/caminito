@@ -11,6 +11,7 @@ mod invariants;
 mod outputs;
 mod placement;
 mod placement_modes;
+mod pointer_focus;
 mod requests;
 mod shade;
 mod show_desktop;
