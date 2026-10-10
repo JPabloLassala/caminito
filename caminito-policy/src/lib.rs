@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod action;
+mod edges;
 mod grid;
 mod output;
 mod placement;

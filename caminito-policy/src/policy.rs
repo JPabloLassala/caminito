@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
+use crate::edges::{EdgeWindow, Edges};
 use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
@@ -189,8 +190,13 @@ impl<W: PolicyWindow> Managed<W> {
     /// A shaded window is only its frame's titlebar, which Marco's shaded styles keep the
     /// height of.
     fn frame(&self) -> Rectangle<i32, Logical> {
+        self.frame_of(Rectangle::new(self.geometry.loc, self.size))
+    }
+
+    /// The outer rectangle the window would have at window geometry `geometry`.
+    fn frame_of(&self, geometry: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
         let e = self.visible_extents();
-        let mut frame = frame_around(Rectangle::new(self.geometry.loc, self.size), e);
+        let mut frame = frame_around(geometry, e);
         if self.shaded {
             frame.size.h = e.top;
         }
@@ -1012,39 +1018,61 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// The seat's pointer moved during a grab.
-    pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>) {
+    /// The seat's pointer moved during a grab. With `snap` (Shift held), the window snaps to
+    /// the nearest edges; otherwise it resists at the edges it meets (157).
+    pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
         let Some(grab) = self.grabs.get(&seat) else {
             return;
         };
         let delta = pointer - grab.start_pointer;
         let start = grab.start;
+        let resize = grab.resize;
+        let edges = self.edges_for(grab.window);
         let managed = self.windows.get_mut(&grab.window).unwrap();
         let current = managed.geometry;
-        match grab.resize {
-            None => managed.geometry.loc = (start.loc.to_f64() + delta).to_i32_round(),
-            Some(edges) => {
+        // Edges hold back the frame, measured from where policy last asked the window to
+        // be, as `unmaximize_for_drag` measures it.
+        let old_frame = managed.frame_of(current);
+        match resize {
+            None => {
+                let loc = (start.loc.to_f64() + delta).to_i32_round();
+                let proposed = managed.frame_of(Rectangle::new(loc, current.size));
+                let frame_loc = edges.for_move(old_frame, proposed, snap);
+                managed.geometry.loc = loc + (frame_loc - proposed.loc);
+            }
+            Some(edges_moved) => {
                 let (dx, dy) = (delta.x.round() as i32, delta.y.round() as i32);
                 let mut size = start.size;
-                if edges.left {
+                if edges_moved.left {
                     size.w -= dx;
-                } else if edges.right {
+                } else if edges_moved.right {
                     size.w += dx;
                 }
-                if edges.top {
+                if edges_moved.top {
                     size.h -= dy;
-                } else if edges.bottom {
+                } else if edges_moved.bottom {
                     size.h += dy;
                 }
-                let size = managed.hints.clamp(size);
-                let mut loc = start.loc;
-                if edges.left {
-                    loc.x = start.loc.x + start.size.w - size.w;
-                }
-                if edges.top {
-                    loc.y = start.loc.y + start.size.h - size.h;
-                }
-                managed.geometry = Rectangle::new(loc, size);
+                let hints = managed.hints;
+                let proposed = |size| {
+                    let size = hints.clamp(size);
+                    let mut loc = start.loc;
+                    if edges_moved.left {
+                        loc.x = start.loc.x + start.size.w - size.w;
+                    }
+                    if edges_moved.top {
+                        loc.y = start.loc.y + start.size.h - size.h;
+                    }
+                    Rectangle::new(loc, size)
+                };
+                let unresisted = proposed(size);
+                let proposed_frame = managed.frame_of(unresisted);
+                let (w, h) = edges.for_resize(old_frame, proposed_frame, snap);
+                let resisted = Size::new(
+                    (unresisted.size.w + w - proposed_frame.size.w).max(0),
+                    (unresisted.size.h + h - proposed_frame.size.h).max(0),
+                );
+                managed.geometry = proposed(resisted);
             }
         }
         managed.pin_maximized_axes(current);
@@ -1109,6 +1137,37 @@ impl<W: PolicyWindow> Policy<W> {
                 managed.resize = None;
             }
         }
+    }
+
+    /// The edges a grab's window meets (157): the work areas', and the frames of the other
+    /// windows showing on the workspace whose edges Marco counts, all but desktops, menus
+    /// and splash screens (edge-resistance.c:33-39).
+    fn edges_for(&self, grabbed: WindowId) -> Edges {
+        let windows: Vec<EdgeWindow> = self.stacks[self.active]
+            .iter()
+            .filter(|id| **id != grabbed && self.is_showing(**id))
+            .filter_map(|id| {
+                let managed = &self.windows[id];
+                let has_edges = match managed.window_type {
+                    WindowType::Desktop | WindowType::Menu | WindowType::Splashscreen => {
+                        return None;
+                    }
+                    WindowType::Dock => false,
+                    _ => true,
+                };
+                Some(EdgeWindow {
+                    frame: managed.frame(),
+                    has_edges,
+                })
+            })
+            .collect();
+        let screen = self
+            .outputs
+            .iter()
+            .map(|o| o.geometry)
+            .reduce(|a, b| a.merge(b))
+            .unwrap_or_default();
+        Edges::new(self.outputs.iter().map(Self::work_area), &windows, screen)
     }
 
     fn begin_grab(

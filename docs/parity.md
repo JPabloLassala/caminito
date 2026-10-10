@@ -229,6 +229,6 @@ The roadmap after v0.1: each is *unsupported*. The keys among them that Caminito
 | What | Status | Why |
 | --- | --- | --- |
 | The workspace popup | to do (152) | Shown by the workspace bindings while their modifier is held; Marco has no key for it. |
-| Edge resistance and snap-move | to do (157) | Always on in Marco, with Shift for snap-move. |
+| Edge resistance and snap-move | honoured | Always on, as in Marco: a window being moved or resized stops at the work areas' edges and the other windows' until the pointer goes 32 (16 for a window) pixels past, and with Shift held it snaps to the nearest edges instead (157). Covered by `caminito-policy/src/tests/edge_resistance.rs` and `caminito/src/tests/edge_resistance.rs`. |
 | "Not responding" and Force Quit | to do (168) | Shown when a window doesn't close; Marco has no key for it. |
 | Shadows | to do (171) | Turned off by `compositing-manager`, with no key of their own. |

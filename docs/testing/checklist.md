@@ -1134,6 +1134,28 @@ session_env() {
   `WAYLAND_DEBUG=1 pluma 2>&1 | grep -E 'wl_surface.*(enter|leave|set_buffer_scale)'` for the
   outputs pluma is told of and the scale it draws at.
 
+### Edge resistance and snap-move when dragging a window
+
+- **Milestone:** M8
+- **Steps:**
+  1. With both monitors connected side by side, log into *MATE on Caminito*, with the panel
+     along the bottom. Open pluma and a terminal (xterm, for an X11 window), apart.
+  2. Drag pluma slowly by its titlebar down to the panel, then on past it. Do the same with
+     Alt+drag, and resize pluma from its bottom edge down to the panel.
+  3. Drag pluma slowly to the right onto the other monitor, then on across it.
+  4. Drag pluma slowly towards the terminal until their sides meet, then on over it.
+  5. Repeat steps 2 to 4 holding Shift during the drag, and press and let go of Shift mid-drag.
+  6. Repeat steps 2 to 5 dragging the terminal, and compare with Marco under *MATE*, the X11
+     session.
+- **Expected:** in steps 2 to 4 the window stops where its frame meets the panel, the
+  monitors' shared edge (with its right side, then with its left) and the terminal's frame,
+  and goes on once the pointer is about 32 pixels past (16 at a window), as in Marco. With
+  Shift, it jumps to the nearest edge instead and moves from edge to edge; letting go of Shift
+  goes back to following the pointer. The terminal does the same. Nothing resists moving
+  away from an edge (157).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
+  outputs' work areas.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
