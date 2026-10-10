@@ -1,15 +1,18 @@
-//! Marco's focus modes and auto-raise (153): the pointer's crossings, as Caminito reports
-//! them to policy, moving the focus, the keyboard with it, and raising after the delay.
+//! Marco's focus modes, `raise-on-click` and auto-raise (153): the pointer's crossings, as
+//! Caminito reports them to policy, moving the focus and the keyboard with it, and raising.
 
 use std::time::Duration;
 
 use caminito_policy::WindowId;
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
+use caminito_theme::ButtonFunction;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WindowSpec,
+    on_both_kinds,
 };
+use crate::decoration::control::FrameControl;
 use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
 use crate::state::SEAT;
@@ -190,6 +193,27 @@ on_both_kinds! {
 
         assert_eq!(focus(&f), Some(pa));
         assert_eq!(stacking(&f), [pa, pb]);
+    }
+}
+
+on_both_kinds! {
+    fn without_raise_on_click_a_click_on_the_titlebar_raises_the_window(kind: Kind) {
+        let (mut f, id) = connected_with(kind, &[("raise-on-click", Value::Bool(false))]);
+        let a = f.map(id, WindowSpec::default());
+        let b = f.map(id, WindowSpec::default());
+        let (pa, pb) = (f.pid(a), f.pid(b));
+        let close = f.button_rect(a, ButtonFunction::Close).to_f64();
+        let geometry = f.geometry(a);
+        let x = f64::from(geometry.loc.x + geometry.size.w / 2);
+        f.pointer_move(x, close.loc.y + close.size.h / 2.);
+        assert_eq!(f.control_under_pointer(), Some(FrameControl::Title));
+
+        f.pointer_button(BTN_LEFT, true);
+        assert_eq!(focus(&f), Some(pa));
+        assert_eq!(stacking(&f), [pa, pb]);
+        f.pointer_button(BTN_LEFT, false);
+
+        assert_eq!(stacking(&f), [pb, pa]);
     }
 }
 

@@ -125,7 +125,7 @@ impl State {
         );
         if button == BTN_LEFT && !acts_on_window {
             let now = caminito.now();
-            caminito.policy.frame_click(SEAT, window, now);
+            caminito.policy.click(SEAT, window, now);
             self.update_keyboard_focus();
         }
 
@@ -191,7 +191,7 @@ impl State {
             ButtonFunction::Minimize => policy.minimize(window),
             ButtonFunction::Maximize => {
                 let now = caminito.now();
-                caminito.policy.frame_click(SEAT, window, now);
+                caminito.policy.click(SEAT, window, now);
                 // Unmaximise takes any button. The middle and right buttons maximise one
                 // way, as Marco's do.
                 match button {

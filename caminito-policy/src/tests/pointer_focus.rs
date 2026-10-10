@@ -155,12 +155,40 @@ fn without_raise_on_click_a_click_on_the_body_focuses_without_raising() {
 }
 
 #[test]
-fn without_raise_on_click_a_click_on_the_frame_focuses_and_raises() {
+fn without_raise_on_click_a_click_on_the_titlebar_raises_once_it_is_released() {
     let mut policy = not_raising_on_click();
 
-    policy.frame_click(SEAT, id(1), ms(3));
+    policy.click(SEAT, id(1), ms(3));
+    assert_eq!(policy.stacking(0), [id(1), id(2)]);
+    policy.titlebar_released(id(1));
 
     assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert_eq!(policy.stacking(0), [id(2), id(1)]);
+}
+
+#[test]
+fn without_raise_on_click_dragging_the_titlebar_moves_the_window_without_raising_it() {
+    let mut policy = not_raising_on_click();
+    let press = Point::from((10., 10.));
+
+    policy.click(SEAT, id(1), ms(3));
+    policy.begin_titlebar_move(SEAT, id(1), press, Point::from((20., 10.)));
+    policy.grab_motion(SEAT, Point::from((60., 10.)));
+    policy.end_grab(SEAT);
+
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert_eq!(policy.stacking(0), [id(1), id(2)]);
+}
+
+#[test]
+fn without_raise_on_click_a_move_that_hardly_moves_is_a_click_and_raises() {
+    let mut policy = not_raising_on_click();
+
+    policy.click(SEAT, id(1), ms(3));
+    policy.begin_move(SEAT, id(1), Point::from((10., 10.)));
+    policy.grab_motion(SEAT, Point::from((14., 13.)));
+    policy.end_grab(SEAT);
+
     assert_eq!(policy.stacking(0), [id(2), id(1)]);
 }
 

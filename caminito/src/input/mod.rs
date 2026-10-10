@@ -532,8 +532,6 @@ impl State {
                 {
                     self.frame_press(id, control, button, location, serial, time);
                 }
-                // A press on the Frame's client area, or a modifier-drag on the Frame, is on
-                // the body, as Marco's passive grab on the client window sees it.
                 _ => {
                     let now = self.caminito.now();
                     self.caminito.policy.click(SEAT, id, now);

@@ -137,10 +137,7 @@ enum Op {
         target: PointerTarget,
         crossing: Crossing,
     },
-    FrameClick {
-        seat: u32,
-        id: u64,
-    },
+    TitlebarReleased(u64),
     /// Time passes, and policy runs what's due.
     Elapse(u64),
 }
@@ -282,7 +279,7 @@ fn op() -> impl Strategy<Value = Op> {
         }),
         3 => (seat(), pointer_target(), crossing())
             .prop_map(|(seat, target, crossing)| Op::PointerEntered { seat, target, crossing }),
-        1 => (seat(), window_id()).prop_map(|(seat, id)| Op::FrameClick { seat, id }),
+        1 => window_id().prop_map(Op::TitlebarReleased),
         1 => (0..1000u64).prop_map(Op::Elapse),
     ]
 }
@@ -423,7 +420,7 @@ impl Op {
                 target,
                 crossing,
             } => policy.pointer_entered(SeatId(seat), target, crossing, now),
-            Op::FrameClick { seat, id } => policy.frame_click(SeatId(seat), WindowId(id), now),
+            Op::TitlebarReleased(id) => policy.titlebar_released(WindowId(id)),
             Op::Elapse(by) => policy.elapse(now + ms(by)),
         }
     }
