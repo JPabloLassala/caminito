@@ -129,7 +129,7 @@ impl<W: PolicyWindow> Policy<W> {
         crossing: Crossing,
         now: Duration,
     ) {
-        let pointer = &mut self.pointer;
+        let pointer = &mut self.pointer_focus;
         if pointer.targets.insert(seat, target) == Some(target) {
             return;
         }
@@ -139,11 +139,11 @@ impl<W: PolicyWindow> Policy<W> {
             .take_if(|p| p.seat == seat && target != PointerTarget::Window(p.window));
         if pointer.mode == FocusMode::Click
             || self.pointer_modes_held(seat)
-            || (crossing == Crossing::Scene && !self.pointer.mouse_mode)
+            || (crossing == Crossing::Scene && !self.pointer_focus.mouse_mode)
         {
             return;
         }
-        self.pointer.mouse_mode = true;
+        self.pointer_focus.mouse_mode = true;
         let entered = match target {
             PointerTarget::Window(id) if self.is_showing(id) => {
                 match self.windows[&id].window_type {
@@ -159,9 +159,9 @@ impl<W: PolicyWindow> Policy<W> {
             Entered::Window(id) => {
                 self.set_last_seat(seat);
                 if self.focus_window(seat, id, now)
-                    && let Some(delay) = self.pointer.auto_raise
+                    && let Some(delay) = self.pointer_focus.auto_raise
                 {
-                    self.pointer.pending = Some(AutoRaise {
+                    self.pointer_focus.pending = Some(AutoRaise {
                         seat,
                         window: id,
                         focused: self.focus[&seat],
@@ -169,7 +169,7 @@ impl<W: PolicyWindow> Policy<W> {
                     });
                 }
             }
-            Entered::Desktop if self.pointer.mode == FocusMode::Mouse => {
+            Entered::Desktop if self.pointer_focus.mode == FocusMode::Mouse => {
                 self.set_last_seat(seat);
                 self.unfocus(seat, now);
             }
@@ -180,17 +180,18 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// When policy next needs `elapse` called: an auto-raise's deadline.
     pub fn deadline(&self) -> Option<Duration> {
-        self.pointer.pending.map(|p| p.due)
+        self.pointer_focus.pending.map(|p| p.due)
     }
 
     /// Runs what's due by `now`: an auto-raise, which raises its window if the pointer is
     /// still in it and it still has the focus, as Marco's
     /// `window_raise_with_delay_callback` checks (display.c:1311-1361).
     pub fn elapse(&mut self, now: Duration) {
-        let Some(p) = self.pointer.pending.take_if(|p| p.due <= now) else {
+        let Some(p) = self.pointer_focus.pending.take_if(|p| p.due <= now) else {
             return;
         };
-        let still = self.pointer.targets.get(&p.seat) == Some(&PointerTarget::Window(p.window))
+        let still = self.pointer_focus.targets.get(&p.seat)
+            == Some(&PointerTarget::Window(p.window))
             && self.focus(p.seat) == Some(p.focused)
             && self.is_showing(p.window)
             && !self.pointer_modes_held(p.seat);
@@ -216,6 +217,6 @@ impl<W: PolicyWindow> Policy<W> {
         }
         self.focus_time.insert(seat, now);
         self.focus.remove(&seat);
-        self.pointer.pending.take_if(|p| p.seat == seat);
+        self.pointer_focus.pending.take_if(|p| p.seat == seat);
     }
 }

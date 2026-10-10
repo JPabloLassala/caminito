@@ -173,7 +173,7 @@ fn without_raise_on_click_dragging_the_titlebar_moves_the_window_without_raising
 
     policy.click(SEAT, id(1), ms(3));
     policy.begin_titlebar_move(SEAT, id(1), press, Point::from((20., 10.)));
-    policy.grab_motion(SEAT, Point::from((60., 10.)));
+    policy.grab_motion(SEAT, Point::from((60., 10.)), false);
     policy.end_grab(SEAT);
 
     assert_eq!(policy.focus(SEAT), Some(id(1)));
@@ -186,7 +186,7 @@ fn without_raise_on_click_a_move_that_hardly_moves_is_a_click_and_raises() {
 
     policy.click(SEAT, id(1), ms(3));
     policy.begin_move(SEAT, id(1), Point::from((10., 10.)));
-    policy.grab_motion(SEAT, Point::from((14., 13.)));
+    policy.grab_motion(SEAT, Point::from((14., 13.)), false);
     policy.end_grab(SEAT);
 
     assert_eq!(policy.stacking(0), [id(2), id(1)]);

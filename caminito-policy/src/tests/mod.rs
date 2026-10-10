@@ -2,12 +2,14 @@
 
 mod actions;
 mod commit;
+mod edge_resistance;
 mod focus;
 mod grid;
 mod interactive;
 mod invariants;
 mod outputs;
 mod placement;
+mod placement_modes;
 mod pointer_focus;
 mod requests;
 mod shade;

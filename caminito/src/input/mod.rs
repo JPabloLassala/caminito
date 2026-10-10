@@ -12,6 +12,7 @@ mod serials;
 
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
+use grab::PlacementKey;
 pub(crate) use serials::InputSerials;
 
 use caminito_policy::{Action, Crossing, PointerTarget, ResizeEdges, WindowId};
@@ -284,6 +285,7 @@ impl State {
                 self.caminito.ask_panel(action, time.millis());
             }
             Some(Some(Bound::Command(command))) => self.caminito.run_command(command),
+            Some(Some(Bound::Placement(key))) => self.placement_key(key, time),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 let time = time.millis();
                 self.caminito
@@ -372,6 +374,14 @@ impl State {
         // Nothing else of Caminito's runs while the session is locked (12).
         if self.caminito.lock.is_locked() {
             return FilterResult::Forward;
+        }
+        // A manual placement has the keyboard while it lasts (154), as Marco's keyboard move
+        // does, and nothing can open over it.
+        if self.caminito.policy.placing(SEAT).is_some()
+            && let Some(key) = PlacementKey::of(mods, keysym)
+        {
+            self.caminito.suppressed_keys.insert(keycode);
+            return FilterResult::Intercept(Some(Bound::Placement(key)));
         }
         // The open Window switcher has the keyboard (108), before an inhibitor has its say:
         // it never opens under one.
@@ -701,6 +711,8 @@ enum Bound {
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },
+    /// A key for the manual placement in progress (154).
+    Placement(PlacementKey),
 }
 
 /// The VT an `XF86Switch_VT_n` keysym switches to.

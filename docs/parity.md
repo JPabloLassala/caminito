@@ -48,11 +48,11 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `reduced-resources` | to do (172) | There is no minimise animation for it to turn off yet. | |
 | `application-based` | never | Marco never implemented it (05). | the checklist's *The parity table's rows that no test covers* |
 | `disable-workarounds` | never | Marco's misfeatures for old or broken X11 applications, which Caminito doesn't carry (05). | the checklist's *The parity table's rows that no test covers* |
-| `center-new-windows` | to do (154) | Windows are placed as Marco's `automatic` mode does. | |
+| `center-new-windows` | honoured | On, Marco's default, the `automatic` mode puts a new window in the middle of the work area of the focused window's output, over any windows there; one that doesn't fit there goes in its corner. It doesn't change `pointer` or `manual` placement, a position the client asks for, a dialog centred on its parent or the output, or the place a window that maps maximised or fullscreen goes back to (154). | `caminito-policy/src/tests/placement_modes.rs`, `caminito/src/tests/placement.rs` |
 | `allow-tiling` | to do (158) | Nothing tiles yet. | |
 | `allow-top-tiling` | to do (158) | As `allow-tiling`. | |
 | `allow-tile-cycling` | to do (159) | As `allow-tiling`. | |
-| `placement-mode` | to do (154) | Always `automatic`, Marco's default. | |
+| `placement-mode` | honoured | `automatic`: the first fit, else a cascade. `pointer`: the frame centred on the pointer, kept within the work area of the output the pointer is on. `manual`: as `pointer`, then the window follows the pointer, onto another output too, until a click or a key puts it down: the arrows, the keypad's and `hjkl` move it by 10 pixels, or 1 with Ctrl or Shift, Escape puts it back where it began, and any other key puts it down where it is. A position the client asks for, a dialog, and a window that maps maximised or fullscreen keep the `automatic` rules, as in Marco (154). | `caminito-policy/src/tests/placement_modes.rs`, `caminito/src/tests/placement.rs` |
 | `show-desktop-skip-list` | to do (164) | Show Desktop hides every window (94). | |
 | `icon-size` | honoured | The size of the icons in the icons-only grid, in logical pixels. A thumbnail's corner icon is a quarter of the thumbnail's height instead. | `caminito/src/tests/switcher.rs` |
 | `alt-tab-max-columns` | honoured | The grid wraps at this many columns. | `caminito/src/switcher/layout.rs`, `caminito/src/tests/switcher.rs` |
@@ -229,6 +229,6 @@ The roadmap after v0.1: each is *unsupported*. The keys among them that Caminito
 | What | Status | Why |
 | --- | --- | --- |
 | The workspace popup | to do (152) | Shown by the workspace bindings while their modifier is held; Marco has no key for it. |
-| Edge resistance and snap-move | to do (157) | Always on in Marco, with Shift for snap-move. |
+| Edge resistance and snap-move | honoured | Always on, as in Marco: a window being moved or resized stops at the work areas' edges and the other windows' until the pointer goes 32 (16 for a window) pixels past, and with Shift held it snaps to the nearest edges instead (157). Covered by `caminito-policy/src/tests/edge_resistance.rs` and `caminito/src/tests/edge_resistance.rs`. |
 | "Not responding" and Force Quit | to do (168) | Shown when a window doesn't close; Marco has no key for it. |
 | Shadows | to do (171) | Turned off by `compositing-manager`, with no key of their own. |

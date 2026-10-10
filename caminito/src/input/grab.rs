@@ -1,17 +1,19 @@
 //! The pointer grabs Caminito holds: an interactive move or resize, where policy does the
-//! geometry and the grab feeds it the pointer until the buttons are released, and a press
-//! on a frame, held until it's released (31).
+//! geometry and the grab feeds it the pointer until the buttons are released, among them a
+//! manual placement and the keys it takes (154), and a press on a frame, held until it's
+//! released (31).
 
 use caminito_policy::{ResizeEdges, WindowId};
 use caminito_theme::ButtonFunction;
-use smithay::backend::input::ButtonState;
+use smithay::backend::input::{ButtonState, InputTime};
+use smithay::input::keyboard::{Keysym, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, Focus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData, MotionEvent, PointerGrab,
     PointerInnerHandle, RelativeMotionEvent,
 };
-use smithay::utils::{Logical, Point, Serial};
+use smithay::utils::{Logical, Point, SERIAL_COUNTER, Serial};
 
 use super::PointerFocus;
 use crate::state::{Caminito, SEAT, State};
@@ -45,6 +47,59 @@ enum Purpose {
     /// Policy is moving or resizing a window.
     Window,
     Frame(FrameHold),
+}
+
+/// What a key does to a manual placement (154), as in Marco's keyboard move
+/// (keybindings.c:1480-1627).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlacementKey {
+    /// Moves the window by this much.
+    Nudge(Point<i32, Logical>),
+    /// Puts the window down where it is.
+    PutDown,
+    /// Puts the window back where it was placed.
+    Cancel,
+}
+
+impl PlacementKey {
+    /// What the press of `keysym` does, or `None` for a modifier, which Marco lets by. The
+    /// arrows, the keypad's and vi's move the window by 10 pixels, or 1 with Ctrl or Shift,
+    /// Escape cancels, and any other key puts it down.
+    pub(crate) fn of(mods: &ModifiersState, keysym: &KeysymHandle<'_>) -> Option<Self> {
+        let sym = keysym
+            .raw_latin_sym_or_raw_current_sym()
+            .unwrap_or_else(|| keysym.modified_sym());
+        if sym.is_modifier_key() {
+            return None;
+        }
+        let step = if mods.ctrl || mods.shift { 1 } else { 10 };
+        let (mut dx, mut dy) = (0, 0);
+        match sym {
+            Keysym::KP_Home | Keysym::KP_Prior | Keysym::Up | Keysym::KP_Up | Keysym::k => {
+                dy = -step;
+            }
+            Keysym::KP_End | Keysym::KP_Next | Keysym::Down | Keysym::KP_Down | Keysym::j => {
+                dy = step;
+            }
+            _ => {}
+        }
+        match sym {
+            Keysym::KP_Home | Keysym::KP_End | Keysym::Left | Keysym::KP_Left | Keysym::h => {
+                dx = -step;
+            }
+            Keysym::KP_Prior | Keysym::KP_Next | Keysym::Right | Keysym::KP_Right | Keysym::l => {
+                dx = step;
+            }
+            _ => {}
+        }
+        Some(if (dx, dy) != (0, 0) {
+            Self::Nudge(Point::new(dx, dy))
+        } else if sym == Keysym::Escape {
+            Self::Cancel
+        } else {
+            Self::PutDown
+        })
+    }
 }
 
 /// A pointer grab of Caminito's. No client has the pointer while it lasts.
@@ -128,6 +183,46 @@ impl State {
         }
     }
 
+    /// Holds the pointer for policy's manual placement of a new window (154), once policy has
+    /// begun one: the window follows the pointer until a click. A placement that can't
+    /// have the pointer, while the session is locked or something else holds it, ends
+    /// where it began.
+    pub(crate) fn refresh_manual_placement(&mut self) {
+        let caminito = &mut self.caminito;
+        if caminito.policy.placing(SEAT).is_none() || caminito.window_grab.is_some() {
+            return;
+        }
+        let pointer = caminito.seat.get_pointer().unwrap();
+        if caminito.lock.is_locked() || pointer.is_grabbed() {
+            caminito.policy.end_grab(SEAT);
+            return;
+        }
+        caminito.window_grab = Some(GrabKind::Move);
+        let grab = Grab {
+            start_data: start_data(0, pointer.current_location()),
+            purpose: Purpose::Window,
+        };
+        pointer.set_grab(self, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+    }
+
+    /// A key pressed during a manual placement (154).
+    pub(crate) fn placement_key(&mut self, key: PlacementKey, time: InputTime) {
+        let policy = &mut self.caminito.policy;
+        match key {
+            PlacementKey::Nudge(delta) => policy.nudge_grab(SEAT, delta),
+            PlacementKey::PutDown | PlacementKey::Cancel => {
+                if key == PlacementKey::Cancel {
+                    policy.cancel_grab(SEAT);
+                }
+                let pointer = self.caminito.seat.get_pointer().unwrap();
+                pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+                // In case the pointer was never held for it.
+                self.caminito.policy.end_grab(SEAT);
+            }
+        }
+        self.caminito.queue_redraw_all();
+    }
+
     /// Holds the pointer for a press on a frame, from where `start_data` found it.
     pub fn begin_frame_grab(
         &mut self,
@@ -172,7 +267,9 @@ impl PointerGrab<State> for Grab {
             }
         }
         if let Purpose::Window = self.purpose {
-            caminito.policy.grab_motion(SEAT, event.location);
+            // Marco reads Shift from each motion, so it can be pressed or let go mid-drag.
+            let snap = caminito.seat.get_keyboard().unwrap().modifier_state().shift;
+            caminito.policy.grab_motion(SEAT, event.location, snap);
             caminito.queue_redraw_all();
             // Policy ends the grab itself if the window goes away or is maximised.
             if caminito.policy.grab(SEAT).is_none() {

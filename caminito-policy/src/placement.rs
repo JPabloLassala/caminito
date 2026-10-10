@@ -1,6 +1,19 @@
-//! Marco's automatic placement (`place.c`), on frame rectangles.
+//! Marco's placement (`place.c`), on frame rectangles: the automatic, pointer and manual
+//! modes, and `center-new-windows` (154).
 
 use smithay::utils::{Logical, Point, Rectangle, Size};
+
+/// Marco's `placement-mode`: where a new window goes when nothing else places it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlacementMode {
+    /// The first fit, or a cascade.
+    #[default]
+    Automatic,
+    /// Centred on the pointer.
+    Pointer,
+    /// Centred on the pointer, then moved with it until it's put down.
+    Manual,
+}
 
 type Rect = Rectangle<i32, Logical>;
 
@@ -25,6 +38,24 @@ pub(crate) fn center_tile(size: Size<i32, Logical>, area: Rect) -> Point<i32, Lo
         area.loc.x + (area.size.w % (size.w + 1)) / 2,
         area.loc.y + (area.size.h % (size.h + 1)) / 3,
     )
+}
+
+/// Marco's `center_rect_in_area`, for `center-new-windows`: the middle of `area`, if the
+/// frame fits there. Windows already there don't matter.
+pub(crate) fn center(size: Size<i32, Logical>, area: Rect) -> Option<Point<i32, Logical>> {
+    let loc = Point::new(
+        area.loc.x + (area.size.w - size.w) / 2,
+        area.loc.y + (area.size.h - size.h) / 2,
+    );
+    area.contains_rect(Rectangle::new(loc, size)).then_some(loc)
+}
+
+/// Marco's `place_by_pointer`: the frame centred on the pointer.
+pub(crate) fn at_pointer(
+    size: Size<i32, Logical>,
+    pointer: Point<i32, Logical>,
+) -> Point<i32, Logical> {
+    Point::new(pointer.x - size.w / 2, pointer.y - size.h / 2)
 }
 
 /// Marco's `find_first_fit`: the centre tile, then below each window, then right of each, for

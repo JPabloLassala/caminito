@@ -1134,6 +1134,28 @@ session_env() {
   `WAYLAND_DEBUG=1 pluma 2>&1 | grep -E 'wl_surface.*(enter|leave|set_buffer_scale)'` for the
   outputs pluma is told of and the scale it draws at.
 
+### Edge resistance and snap-move when dragging a window
+
+- **Milestone:** M8
+- **Steps:**
+  1. With both monitors connected side by side, log into *MATE on Caminito*, with the panel
+     along the bottom. Open pluma and a terminal (xterm, for an X11 window), apart.
+  2. Drag pluma slowly by its titlebar down to the panel, then on past it. Do the same with
+     Alt+drag, and resize pluma from its bottom edge down to the panel.
+  3. Drag pluma slowly to the right onto the other monitor, then on across it.
+  4. Drag pluma slowly towards the terminal until their sides meet, then on over it.
+  5. Repeat steps 2 to 4 holding Shift during the drag, and press and let go of Shift mid-drag.
+  6. Repeat steps 2 to 5 dragging the terminal, and compare with Marco under *MATE*, the X11
+     session.
+- **Expected:** in steps 2 to 4 the window stops where its frame meets the panel, the
+  monitors' shared edge (with its right side, then with its left) and the terminal's frame,
+  and goes on once the pointer is about 32 pixels past (16 at a window), as in Marco. With
+  Shift, it jumps to the nearest edge instead and moves from edge to edge; letting go of Shift
+  goes back to following the pointer. The terminal does the same. Nothing resists moving
+  away from an edge (157).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
+  outputs' work areas.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
@@ -1327,6 +1349,30 @@ session_env() {
   monitor org.mate.Marco.general`.
 
 ## Marco parity
+
+### Each placement mode places a native and an X11 window on two outputs
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors. Run `gsettings set org.mate.Marco.general
+     center-new-windows false`.
+  2. For each of `automatic`, `pointer` and `manual`, run `gsettings set
+     org.mate.Marco.general placement-mode <mode>`. Then, with the pointer on each monitor in
+     turn, once in the middle and once near a corner, open `pluma` (native) and `xterm`
+     (X11) from a terminal on the other monitor.
+  3. In `manual`, put one window down with a click, move one with the arrow keys and put it
+     down with Return, drag one onto the other monitor, and press Escape on one.
+  4. Run `gsettings set org.mate.Marco.general center-new-windows true` (Marco's default)
+     and repeat step 2 with `automatic` only, focusing a window on each monitor in turn.
+- **Expected:** in step 2 `automatic` puts each window beside the others on the monitor of
+  the focused window, `pointer` centres each on the pointer, and near a corner keeps it
+  within that monitor and clear of the panel. In `manual` each window shows on the pointer
+  and follows it, with the keyboard and pointer taken from the apps, until step 3 puts it
+  down; the arrows move it in small steps, it can go onto the other monitor, and Escape
+  puts it back where it showed. In step 4 each window opens in the middle of the focused
+  window's monitor, over the others. Native and X11 windows behave alike (154).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
+  `gsettings monitor org.mate.Marco.general`.
 
 ### The parity table's rows that no test covers
 

@@ -119,7 +119,7 @@ impl<W: PolicyWindow> Policy<W> {
         match windows.as_slice() {
             [] => {}
             [only] => {
-                self.pointer.keyboard_focused();
+                self.pointer_focus.keyboard_focused();
                 self.activate(seat, *only, now);
             }
             _ => {
@@ -158,7 +158,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let time = match how {
             Close::Commit(now) => {
-                self.pointer.keyboard_focused();
+                self.pointer_focus.keyboard_focused();
                 let switcher = &open.switcher;
                 self.activate(switcher.seat, switcher.windows[switcher.selected], now);
                 Some(now)

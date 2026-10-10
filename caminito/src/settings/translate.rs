@@ -6,7 +6,8 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, FocusMode, MAX_WORKSPACES, Orientation, WorkspaceLayout, default_workspace_name,
+    Config, FocusMode, MAX_WORKSPACES, Orientation, PlacementMode, WorkspaceLayout,
+    default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
 
@@ -135,16 +136,13 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // ticket that honours it. Caminito does what each one's default asks, except
     // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
     // values it matches none of. A key whose other value is what Caminito already does
-    // (`audible-bell`, `center-new-windows`, `allow-tiling`, `allow-top-tiling`,
-    // `allow-tile-cycling`, `reduced-resources`) isn't here, nor is one that only matters
-    // with another key set (`visual-bell-type`, and `command-1` to `-12`, whose bindings
-    // aren't read until 148). Master's keys are logged only where the installed schema has
-    // them.
+    // (`audible-bell`, `allow-tiling`, `allow-top-tiling`, `allow-tile-cycling`,
+    // `reduced-resources`) isn't here, nor is one that only matters with another key set
+    // (`visual-bell-type`, and `command-1` to `-12`, whose bindings aren't read until
+    // 148). Master's keys are logged only where the installed schema has them.
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
-    // 154.
-    (MARCO_GENERAL, "placement-mode"),
     // 150.
     (MARCO_GENERAL, "wrap-style"),
     // 151.
@@ -561,6 +559,15 @@ impl Nick for FocusMode {
         ("click", Self::Click),
         ("sloppy", Self::Sloppy),
         ("mouse", Self::Mouse),
+    ];
+}
+
+/// `org.mate.Marco.placement_type`.
+impl Nick for PlacementMode {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("automatic", Self::Automatic),
+        ("pointer", Self::Pointer),
+        ("manual", Self::Manual),
     ];
 }
 
@@ -994,6 +1001,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             0,
             10_000,
         ) as u64),
+        placement_mode: r.nick(MARCO_GENERAL, "placement-mode", PlacementMode::Automatic),
+        center_new_windows: r.bool(MARCO_GENERAL, "center-new-windows", true),
     };
     let switcher = SwitcherSettings {
         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,
