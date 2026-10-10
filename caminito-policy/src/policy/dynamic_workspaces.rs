@@ -70,23 +70,25 @@ impl<W: PolicyWindow> Policy<W> {
 
         // The active workspace follows its windows, and the focus with them. Marco keeps the
         // index, which shows the next workspace's windows instead. An empty one stays if it
-        // can, as in Marco, or the first is activated, Marco's `safe_target`.
-        self.active = match occupied.iter().position(|from| *from == self.active) {
-            Some(to) => to,
-            None if self.active < count => self.active,
+        // can, as in Marco.
+        let active = occupied.iter().position(|from| *from == self.active);
+        match active {
+            Some(to) => self.active = to,
+            None if self.active < count => {}
             None => {
-                // Marco activates it as a switch does, with the default focus
-                // (`safely_remove_workspaces`, screen.c:1420-1421).
-                self.focus.clear();
+                // Or the first is activated, Marco's `safe_target`, as a switch does, with
+                // the default focus (`safely_remove_workspaces`, screen.c:1427-1428), and
+                // the open switcher closed (ruling 9 of 108).
+                self.close_switcher(switcher::Close::Dropped);
                 self.active = 0;
+                self.focus.clear();
                 if let Some(id) = self.default_focus() {
                     for seat in &self.seats {
                         self.focus.insert(*seat, id);
                     }
                 }
-                0
             }
-        };
+        }
         self.name_workspaces();
     }
 }

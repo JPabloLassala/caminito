@@ -408,7 +408,7 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Gives each workspace its name from the settings, or Marco's default. A name is the
-    /// number's, not the workspace's, as Marco keeps them (prefs.c:2200-2268).
+    /// number's, not the workspace's, as Marco keeps them (`meta_prefs_get_workspace_name`, prefs.c:2257-2268).
     fn name_workspaces(&mut self) {
         self.workspace_names = (0..self.stacks.len())
             .map(|index| {
