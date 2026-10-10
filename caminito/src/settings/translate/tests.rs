@@ -39,6 +39,8 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "icon-size", Value::Int(48));
     put(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(5));
     put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
+    put(MARCO_GENERAL, "placement-mode", s("automatic"));
+    put(MARCO_GENERAL, "center-new-windows", Value::Bool(true));
     for n in 1..=36 {
         put(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), s(""));
     }
@@ -809,6 +811,35 @@ fn alt_tab_max_columns_out_of_range_is_clamped() {
 fn alt_tab_raise_windows_is_passed_to_policy() {
     let reading = with(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(true));
     assert!(settings(&reading).policy.alt_tab_raise_windows);
+}
+
+// Placement (154).
+
+#[test]
+fn the_defaults_place_new_windows_automatically_in_the_middle_of_the_work_area() {
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.placement_mode, PlacementMode::Automatic);
+        assert!(policy.center_new_windows);
+    }
+}
+
+#[test]
+fn every_placement_mode_nick_is_known() {
+    for (nick, mode) in [
+        ("automatic", PlacementMode::Automatic),
+        ("pointer", PlacementMode::Pointer),
+        ("manual", PlacementMode::Manual),
+    ] {
+        let reading = with(MARCO_GENERAL, "placement-mode", string(nick));
+        assert_eq!(settings(&reading).policy.placement_mode, mode, "{nick}");
+    }
+}
+
+#[test]
+fn center_new_windows_off_is_passed_to_policy() {
+    let reading = with(MARCO_GENERAL, "center-new-windows", Value::Bool(false));
+    assert!(!settings(&reading).policy.center_new_windows);
 }
 
 #[test]

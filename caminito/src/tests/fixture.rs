@@ -33,6 +33,7 @@ use x11rb::protocol::Event;
 
 use crate::decoration::control::FrameControl;
 use crate::output::saved::{self, SavedLayouts};
+use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Value};
 use crate::state::{ClientState, State};
 use crate::window::Mapped;
@@ -350,8 +351,17 @@ impl Fixture {
     }
 
     /// Caminito with no outputs and no clients, on settings of its own with `initial` set
-    /// before the first snapshot.
-    pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
+    /// before the first snapshot. `center-new-windows` is off unless `initial` sets it: the
+    /// tests were written for the automatic placement's first fit, before Caminito honoured
+    /// Marco's default, on (154).
+    pub fn with_settings(mut initial: Vec<(&'static str, String, Value)>) -> Self {
+        let center = (MARCO_GENERAL, "center-new-windows");
+        if !initial
+            .iter()
+            .any(|(schema, key, _)| (*schema, key.as_str()) == center)
+        {
+            initial.insert(0, (center.0, center.1.into(), Value::Bool(false)));
+        }
         let event_loop = EventLoop::try_new().unwrap();
         let settings = settings::Source::Test {
             schema_dir: test_schemas().to_owned(),
