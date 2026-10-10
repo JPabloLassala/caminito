@@ -11,6 +11,9 @@ and configuration read from the existing `org.mate.Marco.*` gsettings.
 
 It is written in Rust on [Smithay](https://github.com/Smithay/smithay).
 
+The name is Argentine: Caminito, "little way", is the street in La Boca and the tango, and it
+keeps the pun on Wayland.
+
 > **Status:** early development. Caminito v0.1 is being built in nine milestones. The first six
 > (M1, a nested compositor, M2, Marco frames, M3, XWayland, M4, on the metal, M5, the MATE
 > session, and M6, the MATE integrations) are done, and M7 (lock, idle and accessibility) is next.
