@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open
+Status: open: the tree is done; the package builds, the logo's installed path, the login and step 3 are the developer's, the goldens' regeneration on a machine with Marco is what the first criterion waits on, and the second is checked against the GitHub history, not this trunk's
 Milestone: none: it gates no milestone
 Blocked by: 101
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -78,3 +78,11 @@ The new logo is the house that is in the tree as the project's icon by then (com
 
 - **The second commit is in:** the canvas is 551 by 551 with the drawing centred (`viewBox="239.5 33 551 551"`), the C2PA block and its namespace are gone, Meson installs the file in hicolor's scalable apps, the session entry has `Icon=caminito`, and the README shows it at 128 by 128, which draws the house at its old 106 by 128. `caminito-git` depends on `hicolor-icon-theme`, which owns the directory, as the patched packages that install icons do. `tests/logo.rs` checks the square, the missing credentials and the entry's icon.
 - **Not run here:** Meson, makepkg and the X11 tier, as the container this was done in has no Meson and its Xwayland doesn't start. The installed path and the greeter's icon are for the developer's package build and login.
+
+## Done (2026-10-10)
+
+- **The rename and the logo were already on the trunk.** This pass checked the criteria against the tree and finished what the replace had left: `caminito-vscode/package.json` still named the old repository (Cargo.toml and the three PKGBUILDs name `JPabloLassala/caminito`), its Open Recent test used the old name as a sample folder, CONTEXT.md had no _Avoid_ entry for the former name, and the README had no line on where the name comes from. All four are in, and nothing else was swept.
+- **The first criterion's search still finds the old name, on purpose, in six places:** the goldens' pinned title in `tests/goldens/cases.json` (until they are regenerated with Marco), CONTEXT.md's _Avoid_ entry, the records of the old install and title in 100 and here, 131's link to a CI run under the repository's current URL, and the ship skill's `../camino-ticket-<NN>` worktree path, which follows the checkout's directory until the developer renames it. This ticket's own "What to build" was rewritten by the replace, so it reads "`caminito` to `caminito`"; the three spellings replaced were the old name in lower, title and upper case.
+- **The second criterion can't be checked on this trunk:** its history starts at `67e7390`, an import of the whole tree after the rename, so the rename commit is only in the GitHub history.
+- **The logo's file passes the in-tree checks:** 551 by 551, no C2PA, `Icon=caminito` on the session entry, and Meson's install in hicolor's scalable apps, which `tests/logo.rs` covers but Meson didn't run here.
+- **Run:** the extension's 137 tests and its typecheck, and the Rust tests of `caminito-layout` and `caminito-policy`. The rest of the workspace doesn't build in this container, which has no pango; the change touches no Rust. Not run: makepkg, Meson and the login.
