@@ -41,6 +41,17 @@ impl Caminito {
         self.policy.window(window)?.frame().flags()
     }
 
+    /// Whether `toggle-shaded` acts on the focused window: Marco gives a shade function
+    /// only to a window with a titlebar, so not to a CSD window or one with a border alone
+    /// (`recalc_window_features`, window.c:6814-6816), as its frame's flags say for the
+    /// titlebar's actions (149).
+    pub(super) fn focused_window_shades(&self) -> bool {
+        self.policy
+            .focus(SEAT)
+            .and_then(|window| self.frame_flags(window))
+            .is_some_and(|flags| flags.allows_shade)
+    }
+
     /// Whether a left press on `window`'s frame is the second of a double-click, as GDK's
     /// `GDK_2BUTTON_PRESS` is: soon enough after the first and near it. A third press
     /// starts over.

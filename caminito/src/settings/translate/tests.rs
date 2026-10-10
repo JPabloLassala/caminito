@@ -618,6 +618,18 @@ fn the_screenshot_commands_are_read_where_the_schema_has_them() {
     );
 }
 
+#[test]
+fn the_numbered_commands_and_the_terminal_are_read_with_their_defaults() {
+    let commands = settings(&defaults()).commands;
+    assert_eq!(commands.numbered.len(), 12);
+    assert_eq!(commands.terminal, "mate-terminal");
+
+    let reading = with(MARCO_KEYBINDING_COMMANDS, "command-12", string("caja ~"));
+    assert_eq!(settings(&reading).commands.numbered[11], "caja ~");
+    let reading = with(TERMINAL, "exec", string("xterm"));
+    assert_eq!(settings(&reading).commands.terminal, "xterm");
+}
+
 // Keybindings (148). The table itself is `input::bindings`'s, and tested there.
 
 #[test]

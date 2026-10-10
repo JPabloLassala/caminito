@@ -2,7 +2,8 @@
 
 use crate::SwitchList;
 
-/// An action a keybinding triggers. Only the variants M1 binds exist so far; M8 adds the rest.
+/// An action a keybinding triggers: those with a behaviour in policy. The window actions act
+/// on the seat's focused window, and do nothing without one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// `switch-to-workspace-left`
@@ -17,6 +18,12 @@ pub enum Action {
     SwitchToWorkspacePrev,
     /// `switch-to-workspace-N`, numbered from 0 here.
     SwitchToWorkspace(usize),
+    /// `move-to-workspace-left`
+    MoveToWorkspaceLeft,
+    /// `move-to-workspace-right`
+    MoveToWorkspaceRight,
+    /// `move-to-workspace-N`, numbered from 0 here.
+    MoveToWorkspace(usize),
     /// `move-to-workspace-up`: the focused window to the workspace above, which becomes
     /// the active one, the window keeping the focus.
     MoveToWorkspaceUp,
@@ -26,6 +33,26 @@ pub enum Action {
     Close,
     /// `toggle-maximized`
     ToggleMaximized,
+    /// `maximize`
+    Maximize,
+    /// `unmaximize`
+    Unmaximize,
+    /// `maximize-horizontally`, which toggles.
+    ToggleMaximizedHorizontally,
+    /// `maximize-vertically`, which toggles.
+    ToggleMaximizedVertically,
+    /// `toggle-fullscreen`
+    ToggleFullscreen,
+    /// `toggle-shaded`
+    ToggleShaded,
+    /// `minimize`
+    Minimize,
+    /// `raise`
+    Raise,
+    /// `lower`
+    Lower,
+    /// `raise-or-lower`
+    RaiseOrLower,
     /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
     /// that is open, towards the end of the list or `backward`.
     Switch { list: SwitchList, backward: bool },

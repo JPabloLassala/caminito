@@ -1451,6 +1451,36 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
   `gsettings monitor org.mate.Marco.general`.
 
+### The window and workspace actions work from Keyboard Shortcuts on a native and an X11 window
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `pluma` (native) with a frame, `gnome-calculator` or
+     another header-bar app (native, its own titlebar), and `xterm` (X11), overlapping.
+  2. Open *Keyboard Shortcuts* from the control center. Under *Window Management*, give a
+     shortcut to each of *Maximize window*, *Toggle fullscreen mode*, *Toggle shaded state*,
+     *Raise window if it's covered by another window, otherwise lower it*, *Raise window
+     above other windows*, *Lower window below other windows*, *Maximize window vertically*,
+     *Maximize window horizontally*, *Switch to workspace 2* and *5*, *Move window to
+     workspace 3*, and *Run a terminal*. Under *Desktop*, or with `gsettings set
+     org.mate.Marco.global-keybindings run-command-1 '<Super>1'` and `gsettings set
+     org.mate.Marco.keybinding-commands command-1 'caja'`, bind a command.
+  3. On each of the three windows in turn, press each shortcut, and Alt+F9, Alt+F5 after
+     maximising, Ctrl+Shift+Alt+Right and Ctrl+Shift+Alt+Left. With four workspaces, press
+     *Switch to workspace 5*. Clear `command-1` to the empty string and press its shortcut.
+- **Expected:** each action does to the focused window what its name says, as under Marco,
+  and takes effect the moment its shortcut is set. The shade shades pluma and xterm to their
+  titlebars, and does nothing to the header-bar app. Raise-or-lower raises a covered window
+  and lowers one on top. *Move window to workspace 3* sends the window there and the focus to
+  the window under it; Ctrl+Shift+Alt+Right takes the window, the focus and the view to the
+  next workspace together. *Switch to workspace 5* does nothing. The terminal shortcut opens
+  mate-terminal, the command shortcut opens caja, and the empty command opens nothing and
+  leaves a line in the journal (149).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `bindings` lists the
+  combinations in force, and whose windows show their state, workspace and stacking;
+  `gsettings monitor org.mate.Marco.window-keybindings`; and `journalctl --user -b | grep
+  caminito` for the empty command.
+
 ### `show-desktop-skip-list` keeps a native and an X11 window on screen
 
 - **Milestone:** M8

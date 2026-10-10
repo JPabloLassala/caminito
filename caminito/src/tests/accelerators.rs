@@ -327,7 +327,8 @@ fn an_ungrabbed_combination_reaches_the_focused_client_as_before() {
     // Neither the keys released, nor a grabbed key with other modifiers held.
     f.chord(&[KEY_MUTE]);
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_A]);
-    f.chord(&[KEY_LEFTALT, KEY_F9]);
+    // Ctrl, as Alt+F9 is `minimize`'s (149).
+    f.chord(&[KEY_LEFTCTRL, KEY_F9]);
     f.chord(&[KEY_F9]);
 
     assert_eq!(caller.next_activation(&mut f).0, actions[2]);
@@ -341,10 +342,10 @@ fn an_ungrabbed_combination_reaches_the_focused_client_as_before() {
     key 30 released
     key 56 released
     key 29 released
-    key 56 pressed
+    key 29 pressed
     key 67 pressed
     key 67 released
-    key 56 released
+    key 29 released
     ");
 }
 
