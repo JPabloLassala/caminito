@@ -24,16 +24,16 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `resize-with-right-button` | to do (162) | With Alt, the middle button resizes, and no button opens the window menu. | |
 | `show-tab-border` | never | Nothing is drawn round the selected window where it sits: its thumbnail shows which it is (ADR 0016). | the checklist's *The parity table's rows that no test covers* |
 | `button-layout` | honoured | The SSD Frame's buttons, in Marco's syntax. CSD windows get the layout through the mirror (09). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/frames.rs` |
-| `focus-mode` | to do (153) | Focus follows the click, Marco's default `click`. | |
+| `focus-mode` | honoured | `click`, `sloppy` and `mouse`, live, for xdg and XWayland windows alike. The pointer entering a window focuses it, or its modal dialog, and a dock, the panel or another Layer surface never; leaving it for the desktop (nothing, or a Layer surface below the windows, such as caja's) takes the focus away under `mouse`. A crossing of a still pointer, as a window maps, goes or restacks under it, counts only until the keyboard moves the focus, as Marco's `mouse_mode` has it. The Window switcher and a move or resize hold the modes off. Layer surfaces take the keyboard by their own keyboard interactivity (153). | `caminito-policy/src/tests/pointer_focus.rs`, `caminito/src/tests/focus_modes.rs`, the checklist's *The focus modes and auto-raise* |
 | `focus-new-windows` | to do (165) | A new window takes the focus; xdg-activation requests activate nothing. | |
-| `raise-on-click` | to do (153) | A click raises, Marco's default. | |
+| `raise-on-click` | honoured | Off, a click on a window's body focuses it, or its modal dialog, without raising anything. A click on its titlebar raises it once released, and a move or resize, by the Frame or with Alt, raises it only if the pointer went less than 8 pixels, as in Marco; a drag doesn't. | the same |
 | `action-double-click-titlebar` | honoured | An SSD titlebar's double click, by `double-click`'s time (05: SSD frames only). | `caminito/src/tests/frames.rs` (`double_clicking_the_titlebar_runs_its_action`) |
 | `action-middle-click-titlebar` | honoured | An SSD titlebar's middle click. | `caminito/src/tests/frames.rs` (`middle_and_right_clicks_on_the_titlebar_run_their_actions`) |
 | `action-right-click-titlebar` | honoured | An SSD titlebar's right click. `menu` logs and does nothing until the window menu (161). | the same |
 | `action-scroll-up-titlebar` | to do (162) | A scroll on the titlebar does nothing, Marco's default `none`. | |
 | `action-scroll-down-titlebar` | to do (162) | As `action-scroll-up-titlebar`. | |
-| `auto-raise` | to do (153) | Off, Marco's default. | |
-| `auto-raise-delay` | to do (153) | Read with `auto-raise`. | |
+| `auto-raise` | honoured | With `sloppy` or `mouse`, a window the pointer focuses is raised after `auto-raise-delay` if the pointer is still in it and it still has the focus; leaving it first cancels the raise. | the same |
+| `auto-raise-delay` | honoured | The delay, in milliseconds, within Marco's 0 to 10000. | `caminito/src/settings/translate/tests.rs`, `caminito-policy/src/tests/pointer_focus.rs`, `caminito/src/tests/focus_modes.rs` |
 | `theme` | honoured | The Marco theme the Frames are drawn in, reloaded live. | `caminito/src/settings/translate/tests.rs`, `caminito-theme/tests/` |
 | `titlebar-uses-system-font` | honoured | On, the title is in `org.mate.interface font-name`. | `caminito/src/settings/translate/tests.rs` |
 | `titlebar-font` | honoured | The title's font. | the same |

@@ -39,6 +39,10 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "icon-size", Value::Int(48));
     put(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(5));
     put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
+    put(MARCO_GENERAL, "focus-mode", s("click"));
+    put(MARCO_GENERAL, "raise-on-click", Value::Bool(true));
+    put(MARCO_GENERAL, "auto-raise", Value::Bool(false));
+    put(MARCO_GENERAL, "auto-raise-delay", Value::Int(500));
     put(MARCO_GENERAL, "placement-mode", s("automatic"));
     put(MARCO_GENERAL, "center-new-windows", Value::Bool(true));
     for n in 1..=36 {
@@ -767,6 +771,69 @@ fn a_value_of_the_wrong_type_falls_back_to_the_default() {
     assert_eq!(
         problem,
         invalid(MARCO_GENERAL, "titlebar-uses-system-font", "1", "false")
+    );
+}
+
+// The focus modes and auto-raise (153).
+
+#[test]
+fn the_defaults_give_click_focus_raise_on_click_and_no_auto_raise() {
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.focus_mode, FocusMode::Click);
+        assert!(policy.raise_on_click);
+        assert!(!policy.auto_raise);
+        assert_eq!(policy.auto_raise_delay, Duration::from_millis(500));
+    }
+}
+
+#[test]
+fn focus_mode_is_passed_to_policy() {
+    for (nick, mode) in [("sloppy", FocusMode::Sloppy), ("mouse", FocusMode::Mouse)] {
+        let reading = with(MARCO_GENERAL, "focus-mode", string(nick));
+        assert_eq!(settings(&reading).policy.focus_mode, mode);
+    }
+}
+
+#[test]
+fn an_unknown_focus_mode_falls_back_to_click() {
+    let (settings, problem) = problem(&with(MARCO_GENERAL, "focus-mode", string("lazy")));
+    assert_eq!(settings.policy.focus_mode, FocusMode::Click);
+    assert_eq!(
+        problem,
+        invalid(MARCO_GENERAL, "focus-mode", "'lazy'", "'click'")
+    );
+}
+
+#[test]
+fn raise_on_click_and_auto_raise_are_passed_to_policy() {
+    let reading = with(MARCO_GENERAL, "raise-on-click", Value::Bool(false));
+    assert!(!settings(&reading).policy.raise_on_click);
+    let reading = with(MARCO_GENERAL, "auto-raise", Value::Bool(true));
+    assert!(settings(&reading).policy.auto_raise);
+    let reading = with(MARCO_GENERAL, "auto-raise-delay", Value::Int(250));
+    assert_eq!(
+        settings(&reading).policy.auto_raise_delay,
+        Duration::from_millis(250)
+    );
+}
+
+#[test]
+fn auto_raise_delay_out_of_range_is_clamped_to_marcos_bounds() {
+    let reading = with(MARCO_GENERAL, "auto-raise-delay", Value::Int(-1));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.policy.auto_raise_delay, Duration::ZERO);
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "auto-raise-delay", "-1", "0")
+    );
+
+    let reading = with(MARCO_GENERAL, "auto-raise-delay", Value::Int(10_001));
+    let (settings, problem) = self::problem(&reading);
+    assert_eq!(settings.policy.auto_raise_delay, Duration::from_secs(10));
+    assert_eq!(
+        problem,
+        out_of_range(MARCO_GENERAL, "auto-raise-delay", "10001", "10000")
     );
 }
 
