@@ -11,8 +11,8 @@ use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
-    Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, SizeHints, WindowId,
-    WindowStates, WindowType, WorkspaceLayout,
+    Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, ShowDesktopSkipList,
+    SizeHints, WindowId, WindowStates, WindowType, WorkspaceLayout,
 };
 
 mod dynamic_workspaces;
@@ -88,6 +88,8 @@ pub struct Config {
     /// `center-new-windows`: the automatic mode puts a new window in the middle of the work
     /// area (154).
     pub center_new_windows: bool,
+    /// `show-desktop-skip-list` (164).
+    pub show_desktop_skip_list: ShowDesktopSkipList,
 }
 
 impl Default for Config {
@@ -104,6 +106,7 @@ impl Default for Config {
             alt_tab_raise_windows: false,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
+            show_desktop_skip_list: ShowDesktopSkipList::default(),
         }
     }
 }
@@ -120,6 +123,14 @@ pub struct MapStates {
 /// Marco's name for a workspace with none set, numbered from 1.
 pub fn default_workspace_name(number: usize) -> String {
     format!("Workspace {number}")
+}
+
+/// A workspace showing its desktop (94).
+struct ShownDesktop {
+    /// The window every seat focused when it was shown.
+    focus: BTreeMap<SeatId, WindowId>,
+    /// `show-desktop-skip-list` when it was shown: a change waits for the next time.
+    skip_list: ShowDesktopSkipList,
 }
 
 /// What policy has last asked of a window, so each request is sent only when it changes.
@@ -288,8 +299,8 @@ pub struct Policy<W: PolicyWindow> {
     stacks: Vec<Vec<WindowId>>,
     active: usize,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
-    /// (workspace.h:79), each with the window every seat focused when it was shown.
-    showing_desktop: BTreeMap<usize, BTreeMap<SeatId, WindowId>>,
+    /// (workspace.h:79).
+    showing_desktop: BTreeMap<usize, ShownDesktop>,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
     /// The names the settings give, which may be fewer or more than the workspaces.
@@ -318,6 +329,8 @@ pub struct Policy<W: PolicyWindow> {
     alt_tab_raise_windows: bool,
     placement_mode: PlacementMode,
     center_new_windows: bool,
+    /// `show-desktop-skip-list`, which the next Show Desktop takes.
+    show_desktop_skip_list: ShowDesktopSkipList,
     /// Where the pointer was when the compositor last said, which `pointer` and `manual`
     /// placement put a new window at.
     pointer: Option<Point<f64, Logical>>,
@@ -346,6 +359,7 @@ impl<W: PolicyWindow> Policy<W> {
             alt_tab_raise_windows: false,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
+            show_desktop_skip_list: ShowDesktopSkipList::default(),
             pointer: None,
         };
         policy.settings_changed(config);
@@ -417,6 +431,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
         self.placement_mode = config.placement_mode;
         self.center_new_windows = config.center_new_windows;
+        self.show_desktop_skip_list = config.show_desktop_skip_list;
         if !self.dynamic_workspaces {
             self.set_workspace_count(config.workspace_count);
         }
@@ -716,7 +731,13 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         }
         if showing {
-            self.showing_desktop.insert(self.active, self.focus.clone());
+            self.showing_desktop.insert(
+                self.active,
+                ShownDesktop {
+                    focus: self.focus.clone(),
+                    skip_list: self.show_desktop_skip_list.clone(),
+                },
+            );
             // Marco focuses the most recently used desktop window. One that never had the
             // focus isn't in `mru`, so the stack is looked through after it.
             let top_down = self.stacks[self.active].iter().rev();
@@ -725,13 +746,18 @@ impl<W: PolicyWindow> Policy<W> {
             });
             if let Some(desktop) = desktop {
                 for seat in &self.seats {
-                    self.focus.insert(*seat, desktop);
+                    // A seat on a listed window keeps it, which Marco's focusing of the
+                    // desktop takes away.
+                    if !self.focus.get(seat).is_some_and(|id| self.is_skipped(*id)) {
+                        self.focus.insert(*seat, desktop);
+                    }
                 }
             }
         } else {
             let before = self
                 .showing_desktop
                 .remove(&self.active)
+                .map(|shown| shown.focus)
                 .unwrap_or_default();
             let default = self.default_focus();
             for seat in &self.seats {
@@ -1815,6 +1841,30 @@ impl<W: PolicyWindow> Policy<W> {
         false
     }
 
+    /// Whether a window shows while its workspace shows the desktop: a desktop component, or
+    /// a window `show-desktop-skip-list` lists.
+    fn stays_on_desktop(&self, id: WindowId) -> bool {
+        self.is_desktop_component(id) || self.is_skipped(id)
+    }
+
+    /// Whether the skip list its workspace took when it showed the desktop lists a window,
+    /// or a transient ancestor, so that a listed app's dialogs stay with it. Marco matches
+    /// each window by its own class, which a toolkit gives its dialogs too.
+    fn is_skipped(&self, id: WindowId) -> bool {
+        let Some(shown) = self.showing_desktop.get(&self.windows[&id].workspace) else {
+            return false;
+        };
+        let mut current = Some(id);
+        while let Some(w) = current {
+            let managed = &self.windows[&w];
+            if shown.skip_list.matches(managed.window.app_id().as_deref()) {
+                return true;
+            }
+            current = managed.parent;
+        }
+        false
+    }
+
     /// Stops showing the desktop on the workspace of `id`, a window newly mapped or
     /// activated there, unless it's a desktop component. The windows that were hidden
     /// are minimised for good, so that `id` comes up alone: Marco's
@@ -1827,13 +1877,14 @@ impl<W: PolicyWindow> Policy<W> {
     /// here they're kept, as Marco itself keeps an activated window's.
     fn leave_show_desktop(&mut self, id: WindowId) {
         let workspace = self.windows[&id].workspace;
-        if !self.showing_desktop.contains_key(&workspace) || self.is_desktop_component(id) {
+        if !self.showing_desktop.contains_key(&workspace) || self.stays_on_desktop(id) {
             return;
         }
         for other in self.stacks[workspace].clone() {
             let managed = &self.windows[&other];
             if matches!(managed.window_type, WindowType::Normal | WindowType::Dialog)
                 && !self.is_ancestor(other, id)
+                && !self.is_skipped(other)
             {
                 self.windows.get_mut(&other).unwrap().minimized = true;
             }
@@ -1857,7 +1908,7 @@ impl<W: PolicyWindow> Policy<W> {
             .windows
             .get(&id)
             .is_some_and(|m| self.showing_desktop.contains_key(&m.workspace))
-            && !self.is_desktop_component(id)
+            && !self.stays_on_desktop(id)
         {
             return false;
         }

@@ -4,6 +4,7 @@
 //! (window.c:1385-1412).
 
 use super::*;
+use crate::ShowDesktopSkipList;
 
 /// Three windows on the first workspace, 3 on top and focused.
 fn three_windows() -> Policy<TestWindow> {
@@ -357,4 +358,168 @@ fn asking_for_what_it_already_is_changes_nothing() {
     policy.set_showing_desktop(true);
     policy.set_showing_desktop(true);
     assert!(policy.is_showing_desktop());
+}
+
+// `show-desktop-skip-list` (164).
+
+/// A policy with `show-desktop-skip-list` set to `list`.
+fn skipping(list: &str) -> Policy<TestWindow> {
+    let mut policy = Policy::new(Config {
+        show_desktop_skip_list: ShowDesktopSkipList::parse(list),
+        ..Config::default()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy
+}
+
+#[test]
+fn a_listed_window_stays_with_its_place_and_focus_and_the_others_come_back_round_it() {
+    let mut policy = skipping("Conky");
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_app_id("mate-terminal"),
+        ms(1),
+    );
+    policy.map_window(TestWindow::new(2, 400, 300).with_app_id("Conky"), ms(2));
+    let geometry = window(&policy, 2).last_geometry();
+
+    policy.action(SEAT, Action::ShowDesktop, ms(3));
+
+    assert!(is_hidden(&policy, 1));
+    assert!(policy.is_showing(id(2)));
+    assert_eq!(window(&policy, 2).last_outputs(), Some(&[OutputId(1)][..]));
+    assert_eq!(window(&policy, 2).last_geometry(), geometry);
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert!(window(&policy, 2).is_activated());
+
+    policy.action(SEAT, Action::ShowDesktop, ms(4));
+
+    assert!(policy.is_showing(id(1)) && policy.is_showing(id(2)));
+    assert_eq!(policy.stacking(0), [id(1), id(2)]);
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(window(&policy, 2).last_geometry(), geometry);
+}
+
+#[test]
+fn an_empty_list_hides_every_window() {
+    let mut policy = skipping("");
+    policy.map_window(TestWindow::new(1, 400, 300).with_app_id("Conky"), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+
+    policy.set_showing_desktop(true);
+
+    assert!(is_hidden(&policy, 1) && is_hidden(&policy, 2));
+    assert_eq!(policy.focus(SEAT), None);
+}
+
+#[test]
+fn an_entry_that_matches_no_window_hides_them_all() {
+    let mut policy = skipping("xclock");
+    policy.map_window(TestWindow::new(1, 400, 300).with_app_id("Conky"), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+
+    policy.set_showing_desktop(true);
+
+    assert!(is_hidden(&policy, 1) && is_hidden(&policy, 2));
+}
+
+#[test]
+fn entries_are_split_on_commas_trimmed_and_matched_in_any_case() {
+    let mut policy = skipping(" xclock , CONKY,,");
+    policy.map_window(TestWindow::new(1, 400, 300).with_app_id("conky"), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300).with_app_id("XClock"), ms(2));
+    policy.map_window(
+        TestWindow::new(3, 400, 300).with_app_id("xclock conky"),
+        ms(3),
+    );
+    policy.map_window(TestWindow::new(4, 400, 300), ms(4));
+
+    policy.set_showing_desktop(true);
+
+    assert!(policy.is_showing(id(1)) && policy.is_showing(id(2)));
+    assert!(is_hidden(&policy, 3) && is_hidden(&policy, 4));
+}
+
+#[test]
+fn a_change_of_the_list_waits_for_the_next_show_desktop() {
+    let mut policy = skipping("Conky");
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_app_id("mate-terminal"),
+        ms(1),
+    );
+    policy.map_window(TestWindow::new(2, 400, 300).with_app_id("Conky"), ms(2));
+    policy.set_showing_desktop(true);
+
+    policy.settings_changed(Config {
+        show_desktop_skip_list: ShowDesktopSkipList::parse("mate-terminal"),
+        ..Config::default()
+    });
+
+    assert!(is_hidden(&policy, 1));
+    assert!(policy.is_showing(id(2)));
+
+    policy.set_showing_desktop(false);
+    policy.set_showing_desktop(true);
+
+    assert!(policy.is_showing(id(1)));
+    assert!(is_hidden(&policy, 2));
+}
+
+#[test]
+fn a_seat_on_a_listed_window_keeps_it_where_the_others_go_to_the_desktop() {
+    let mut policy = skipping("Conky");
+    policy.map_window(
+        TestWindow::new(1, 1920, 1080).with_type(WindowType::Desktop),
+        ms(1),
+    );
+    policy.map_window(TestWindow::new(2, 400, 300).with_app_id("Conky"), ms(2));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+
+    policy.set_showing_desktop(true);
+
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
+#[test]
+fn a_listed_window_mapped_while_the_desktop_shows_leaves_the_others_hidden() {
+    let mut policy = skipping("Conky");
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.set_showing_desktop(true);
+
+    policy.map_window(TestWindow::new(2, 400, 300).with_app_id("Conky"), ms(2));
+
+    assert!(policy.is_showing_desktop());
+    assert!(policy.is_showing(id(2)));
+    assert!(is_hidden(&policy, 1));
+    assert!(!policy.is_minimized(id(1)));
+}
+
+#[test]
+fn a_window_mapped_while_the_desktop_shows_doesnt_minimise_a_listed_one() {
+    let mut policy = skipping("Conky");
+    policy.map_window(TestWindow::new(1, 400, 300).with_app_id("Conky"), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.set_showing_desktop(true);
+
+    policy.map_window(TestWindow::new(3, 400, 300), ms(3));
+
+    assert!(!policy.is_showing_desktop());
+    assert!(policy.is_minimized(id(2)));
+    assert!(!policy.is_minimized(id(1)));
+    assert!(policy.is_showing(id(1)) && policy.is_showing(id(3)));
+}
+
+#[test]
+fn a_listed_windows_transients_stay_with_it() {
+    let mut policy = skipping("Conky");
+    policy.map_window(TestWindow::new(1, 400, 300).with_app_id("Conky"), ms(1));
+    policy.map_window(
+        TestWindow::new(2, 200, 100)
+            .with_type(WindowType::Dialog)
+            .with_parent(1),
+        ms(2),
+    );
+
+    policy.set_showing_desktop(true);
+
+    assert!(policy.is_showing(id(1)) && policy.is_showing(id(2)));
 }
