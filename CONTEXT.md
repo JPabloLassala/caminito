@@ -6,7 +6,7 @@ Caminito is a Wayland compositor for the MATE desktop, built to be the Wayland c
 
 **Caminito**:
 The Wayland compositor for the MATE desktop. It is display server, window manager and compositor in one process.
-_Avoid_: Caminito window manager, Caminito WM
+_Avoid_: Caminito window manager, Caminito WM, Camino (the former name)
 
 **Marco**:
 MATE's X11 window manager, the behavioural and visual reference for Caminito.
