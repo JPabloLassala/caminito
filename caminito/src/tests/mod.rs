@@ -65,6 +65,7 @@ mod show_desktop;
 mod switcher;
 mod window_properties;
 mod work_area;
+mod workspace_moves;
 mod x11_scale;
 mod xdg_shell;
 mod xfce_foreign_toplevel;

@@ -6,7 +6,7 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, FocusMode, MAX_WORKSPACES, Orientation, PlacementMode, WorkspaceLayout,
+    Config, FocusMode, MAX_WORKSPACES, Orientation, PlacementMode, WorkspaceLayout, WrapStyle,
     default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
@@ -155,8 +155,6 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
-    // 150.
-    (MARCO_GENERAL, "wrap-style"),
     // 162.
     (MARCO_GENERAL, "mouse-button-modifier"),
     (MARCO_GENERAL, "resize-with-right-button"),
@@ -612,6 +610,15 @@ impl Nick for PlacementMode {
     ];
 }
 
+/// `org.mate.Marco.WrapStyle`.
+impl Nick for WrapStyle {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("no wrap", Self::NoWrap),
+        ("classic", Self::Classic),
+        ("toroidal", Self::Toroidal),
+    ];
+}
+
 /// `org.mate.Caminito.WorkspaceLayoutOrientation`.
 impl Nick for Orientation {
     const NICKS: &'static [(&'static str, Self)] = &[
@@ -1039,6 +1046,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_names,
         dynamic_workspaces,
         workspace_layout,
+        wrap_style: r.nick(MARCO_GENERAL, "wrap-style", WrapStyle::NoWrap),
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
         focus_mode: r.nick(MARCO_GENERAL, "focus-mode", FocusMode::Click),
         raise_on_click: r.bool(MARCO_GENERAL, "raise-on-click", true),

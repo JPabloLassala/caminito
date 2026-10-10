@@ -1,8 +1,8 @@
 //! The workspace grid (96): where each workspace is for a count and the settings' rows and
-//! columns, and the workspace beside one.
+//! columns, and the workspace beside one, by `wrap-style` (150).
 
-use crate::grid::Direction;
-use crate::{Grid, Orientation, WorkspaceLayout};
+use crate::grid::Direction::{self, Down, Left, Right, Up};
+use crate::{Grid, Orientation, WorkspaceLayout, WrapStyle};
 
 fn layout(orientation: Orientation, rows: usize, columns: usize) -> WorkspaceLayout {
     WorkspaceLayout {
@@ -108,9 +108,18 @@ fn a_neighbour_is_the_workspace_in_the_next_cell() {
     // 0 1 2
     // 3 4
     let grid = Grid::new(5, layout(Orientation::Horizontal, 2, 0));
-    assert_eq!(grid.neighbour(0, Direction::Right), Some(1));
-    assert_eq!(grid.neighbour(1, Direction::Left), Some(0));
-    assert_eq!(grid.neighbour(3, Direction::Right), Some(4));
+    assert_eq!(
+        grid.neighbour(0, Direction::Right, WrapStyle::NoWrap),
+        Some(1)
+    );
+    assert_eq!(
+        grid.neighbour(1, Direction::Left, WrapStyle::NoWrap),
+        Some(0)
+    );
+    assert_eq!(
+        grid.neighbour(3, Direction::Right, WrapStyle::NoWrap),
+        Some(4)
+    );
 }
 
 #[test]
@@ -118,9 +127,163 @@ fn there_s_no_neighbour_past_an_edge_or_in_an_empty_cell() {
     // 0 1 2
     // 3 4
     let grid = Grid::new(5, layout(Orientation::Horizontal, 2, 0));
-    assert_eq!(grid.neighbour(0, Direction::Left), None);
+    assert_eq!(grid.neighbour(0, Direction::Left, WrapStyle::NoWrap), None);
     // The end of a row isn't the start of the next.
-    assert_eq!(grid.neighbour(2, Direction::Right), None);
-    assert_eq!(grid.neighbour(3, Direction::Left), None);
-    assert_eq!(grid.neighbour(4, Direction::Right), None);
+    assert_eq!(grid.neighbour(2, Direction::Right, WrapStyle::NoWrap), None);
+    assert_eq!(grid.neighbour(3, Direction::Left, WrapStyle::NoWrap), None);
+    assert_eq!(grid.neighbour(4, Direction::Right, WrapStyle::NoWrap), None);
+}
+
+/// Where each move goes from each workspace of `grid`, as `[left, right, up, down]`, with
+/// `None` for no move.
+fn moves(grid: Grid, wrap: WrapStyle, count: usize) -> Vec<[Option<usize>; 4]> {
+    (0..count)
+        .map(|workspace| [Left, Right, Up, Down].map(|d| grid.neighbour(workspace, d, wrap)))
+        .collect()
+}
+
+#[test]
+fn up_and_down_in_one_row_go_nowhere_but_with_classic() {
+    let grid = Grid::new(4, WorkspaceLayout::default());
+    for wrap in [WrapStyle::NoWrap, WrapStyle::Toroidal] {
+        for workspace in 0..4 {
+            assert_eq!(grid.neighbour(workspace, Up, wrap), None, "{wrap:?}");
+            assert_eq!(grid.neighbour(workspace, Down, wrap), None, "{wrap:?}");
+        }
+    }
+    // Each column is one workspace, so classic goes on to the column before or after, as
+    // Marco's does.
+    assert_eq!(grid.neighbour(1, Up, WrapStyle::Classic), Some(0));
+    assert_eq!(grid.neighbour(0, Up, WrapStyle::Classic), Some(3));
+    assert_eq!(grid.neighbour(3, Down, WrapStyle::Classic), Some(0));
+}
+
+#[test]
+fn classic_in_one_row_runs_on_from_each_end_to_the_other() {
+    let grid = Grid::new(4, WorkspaceLayout::default());
+    assert_eq!(grid.neighbour(3, Right, WrapStyle::Classic), Some(0));
+    assert_eq!(grid.neighbour(0, Left, WrapStyle::Classic), Some(3));
+    assert_eq!(grid.neighbour(3, Right, WrapStyle::Toroidal), Some(0));
+    assert_eq!(grid.neighbour(0, Left, WrapStyle::Toroidal), Some(3));
+}
+
+#[test]
+fn a_full_grid_stops_at_its_edges_with_no_wrap() {
+    // 0 1
+    // 2 3
+    let grid = Grid::new(4, layout(Orientation::Horizontal, 2, 0));
+    assert_eq!(
+        moves(grid, WrapStyle::NoWrap, 4),
+        [
+            [None, Some(1), None, Some(2)],
+            [Some(0), None, None, Some(3)],
+            [None, Some(3), Some(0), None],
+            [Some(2), None, Some(1), None],
+        ]
+    );
+}
+
+#[test]
+fn toroidal_takes_each_edge_of_a_full_grid_round_to_its_own_row_or_column() {
+    // 0 1 2
+    // 3 4 5
+    let grid = Grid::new(6, layout(Orientation::Horizontal, 2, 0));
+    assert_eq!(
+        moves(grid, WrapStyle::Toroidal, 6),
+        [
+            [Some(2), Some(1), Some(3), Some(3)],
+            [Some(0), Some(2), Some(4), Some(4)],
+            [Some(1), Some(0), Some(5), Some(5)],
+            [Some(5), Some(4), Some(0), Some(0)],
+            [Some(3), Some(5), Some(1), Some(1)],
+            [Some(4), Some(3), Some(2), Some(2)],
+        ]
+    );
+}
+
+#[test]
+fn classic_takes_each_edge_of_a_full_grid_on_to_the_next_row_or_column() {
+    // 0 1 2
+    // 3 4 5
+    // The end of a row leads to the start of the next, and the end of a column to the top
+    // of the next, the last to the first, as in Marco (`meta_workspace_get_neighbor`).
+    let grid = Grid::new(6, layout(Orientation::Horizontal, 2, 0));
+    assert_eq!(
+        moves(grid, WrapStyle::Classic, 6),
+        [
+            [Some(5), Some(1), Some(5), Some(3)],
+            [Some(0), Some(2), Some(3), Some(4)],
+            [Some(1), Some(3), Some(4), Some(5)],
+            [Some(2), Some(4), Some(0), Some(1)],
+            [Some(3), Some(5), Some(1), Some(2)],
+            [Some(4), Some(0), Some(2), Some(0)],
+        ]
+    );
+}
+
+#[test]
+fn a_part_filled_grid_s_empty_cells_are_past_its_edges() {
+    // 0 1 2
+    // 3 4 5
+    // 6
+    let grid = Grid::new(7, layout(Orientation::Horizontal, 0, 3));
+    assert_eq!(
+        moves(grid, WrapStyle::NoWrap, 7)[4..],
+        [
+            [Some(3), Some(5), Some(1), None],
+            [Some(4), None, Some(2), None],
+            [None, None, Some(3), None],
+        ]
+    );
+    // Toroidal goes round the filled part of the row or column, as Marco does.
+    assert_eq!(
+        moves(grid, WrapStyle::Toroidal, 7),
+        [
+            [Some(2), Some(1), Some(6), Some(3)],
+            [Some(0), Some(2), Some(4), Some(4)],
+            [Some(1), Some(0), Some(5), Some(5)],
+            [Some(5), Some(4), Some(0), Some(6)],
+            [Some(3), Some(5), Some(1), Some(1)],
+            [Some(4), Some(3), Some(2), Some(2)],
+            [None, None, Some(3), Some(0)],
+        ]
+    );
+    // Classic goes on to the start or the end of the filled part of the next or previous.
+    assert_eq!(
+        moves(grid, WrapStyle::Classic, 7),
+        [
+            [Some(6), Some(1), Some(5), Some(3)],
+            [Some(0), Some(2), Some(6), Some(4)],
+            [Some(1), Some(3), Some(4), Some(5)],
+            [Some(2), Some(4), Some(0), Some(6)],
+            [Some(3), Some(5), Some(1), Some(2)],
+            [Some(4), Some(6), Some(2), Some(0)],
+            [Some(5), Some(0), Some(3), Some(1)],
+        ]
+    );
+}
+
+#[test]
+fn classic_passes_over_a_row_with_no_workspaces() {
+    // 0 1 2
+    // 3
+    // (an empty row)
+    let grid = Grid::new(4, layout(Orientation::Horizontal, 3, 3));
+    assert_eq!(grid.neighbour(3, Right, WrapStyle::Classic), Some(0));
+    assert_eq!(grid.neighbour(0, Left, WrapStyle::Classic), Some(3));
+    // Column 2 has only workspace 2, so up from 0 is the bottom of that column.
+    assert_eq!(grid.neighbour(0, Up, WrapStyle::Classic), Some(2));
+}
+
+#[test]
+fn a_vertical_grid_wraps_as_a_horizontal_one_turned() {
+    // 0 2
+    // 1
+    let grid = Grid::new(3, layout(Orientation::Vertical, 2, 0));
+    assert_eq!(grid.neighbour(1, Down, WrapStyle::Classic), Some(2));
+    assert_eq!(grid.neighbour(2, Down, WrapStyle::Classic), Some(0));
+    assert_eq!(grid.neighbour(1, Right, WrapStyle::Classic), Some(0));
+    assert_eq!(grid.neighbour(2, Down, WrapStyle::Toroidal), None);
+    assert_eq!(grid.neighbour(1, Right, WrapStyle::Toroidal), None);
+    assert_eq!(grid.neighbour(0, Left, WrapStyle::Toroidal), Some(2));
 }
