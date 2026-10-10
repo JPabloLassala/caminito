@@ -11,9 +11,15 @@ use caminito_policy::{
 };
 use caminito_theme::ButtonLayout;
 
+use crate::input::bindings::Bindings;
+
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
 pub const MARCO_KEYBINDING_COMMANDS: &str = "org.mate.Marco.keybinding-commands";
+/// The bindings of actions that aren't a window's (148).
+pub const MARCO_GLOBAL_KEYBINDINGS: &str = "org.mate.Marco.global-keybindings";
+/// The bindings of actions on the focused window (148).
+pub const MARCO_WINDOW_KEYBINDINGS: &str = "org.mate.Marco.window-keybindings";
 pub const INTERFACE: &str = "org.mate.interface";
 pub const FONT_RENDERING: &str = "org.mate.font-rendering";
 pub const MOUSE: &str = "org.mate.peripherals-mouse";
@@ -56,6 +62,14 @@ pub const SCHEMAS: &[Schema] = &[
     },
     Schema {
         id: MARCO_KEYBINDING_COMMANDS,
+        required: true,
+    },
+    Schema {
+        id: MARCO_GLOBAL_KEYBINDINGS,
+        required: true,
+    },
+    Schema {
+        id: MARCO_WINDOW_KEYBINDINGS,
         required: true,
     },
     Schema {
@@ -138,8 +152,10 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // values it matches none of. A key whose other value is what Caminito already does
     // (`audible-bell`, `allow-tiling`, `allow-top-tiling`, `allow-tile-cycling`,
     // `reduced-resources`) isn't here, nor is one that only matters with another key set
-    // (`visual-bell-type`, and `command-1` to `-12`, whose bindings aren't read until
-    // 148). Master's keys are logged only where the installed schema has them.
+    // (`visual-bell-type`, and `command-1` to `-12`, whose bindings bind nothing until
+    // 149). Master's keys are logged only where the installed schema has them. The
+    // keybindings' schemas have no key here: an action with no behaviour yet is read and
+    // binds nothing, and its default reaches the client (148).
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
@@ -271,6 +287,17 @@ impl Reading {
     fn get(&self, schema: &str, key: &str) -> Option<&Entry> {
         self.entries.get(&(schema.into(), key.into()))
     }
+
+    /// The keys of `schema` whose values are strings, with their values.
+    fn strings_of<'a>(&'a self, schema: &'a str) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.entries
+            .iter()
+            .filter(move |((id, _), _)| id == schema)
+            .filter_map(|((_, key), entry)| match &entry.value {
+                Value::Str(value) => Some((key.as_str(), value.as_str())),
+                _ => None,
+            })
+    }
 }
 
 /// Something wrong with the settings, logged once (09).
@@ -295,6 +322,14 @@ pub enum Problem {
         schema: String,
         key: String,
         value: String,
+    },
+    /// A keybinding that isn't a combination Caminito can bind, which binds nothing
+    /// (148), and why.
+    Unbindable {
+        schema: String,
+        key: String,
+        value: String,
+        reason: String,
     },
     /// An optional schema that isn't installed, so its keys are defaults.
     MissingSchema(String),
@@ -321,6 +356,16 @@ impl fmt::Display for Problem {
             Problem::Unsupported { schema, key, value } => write!(
                 f,
                 "{schema} {key} is {value}, but Caminito doesn't support it yet; ignoring it"
+            ),
+            Problem::Unbindable {
+                schema,
+                key,
+                value,
+                reason,
+            } => write!(
+                f,
+                "{schema} {key} is {value}, which isn't a key combination Caminito can bind: \
+                 {reason}; binding nothing"
             ),
             Problem::MissingSchema(schema) => {
                 write!(f, "the {schema} schema isn't installed; using its defaults")
@@ -359,6 +404,8 @@ impl Logged {
 pub struct Settings {
     /// Policy's settings: the workspace count and names, and the grid they're in.
     pub policy: Config,
+    /// The keybindings in force (148).
+    pub bindings: Bindings,
     pub commands: Commands,
     pub frames: Frames,
     pub switcher: SwitcherSettings,
@@ -1043,6 +1090,17 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         attach_modal_dialogs: r.bool(MARCO_GENERAL, "attach-modal-dialogs", false),
     };
 
+    // Every key of both schemas, so every value is parsed (148).
+    let keys = [MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS]
+        .into_iter()
+        .flat_map(|schema| {
+            reading
+                .strings_of(schema)
+                .map(move |(key, value)| (schema, key, value))
+        });
+    let (bindings, problems) = Bindings::from_keys(keys);
+    r.problems.extend(problems);
+
     let commands = Commands {
         screenshot: r.string(
             MARCO_KEYBINDING_COMMANDS,
@@ -1063,6 +1121,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
 
     let settings = Settings {
         policy,
+        bindings,
         commands,
         frames,
         switcher,

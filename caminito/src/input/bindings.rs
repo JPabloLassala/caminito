@@ -1,13 +1,18 @@
-//! Caminito's keybindings: a hard-coded set of Marco's defaults, standing in until M8 reads
-//! `org.mate.Marco.*` (17). The accelerators other programs grab are `accelerators`' (98).
+//! Caminito's keybindings, read from `org.mate.Marco.global-keybindings` and
+//! `org.mate.Marco.window-keybindings` as Marco reads them (148). The accelerators other
+//! programs grab are `accelerators`' (98).
 
 pub(crate) mod accelerators;
 
-use caminito_policy::{Action, SwitchList};
-use smithay::input::keyboard::{Keysym, ModifiersState};
+use std::fmt;
 
+use caminito_policy::{Action, SwitchList};
+use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
+
+use self::accelerators::{Accelerator, parse};
 use crate::commands::Command;
 use crate::dbus::panel::PanelAction;
+use crate::settings::translate::{MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS, Problem};
 
 /// The modifiers a binding names. Locks don't count.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -17,20 +22,6 @@ struct Held {
     shift: bool,
     logo: bool,
 }
-
-const NONE: Held = Held {
-    ctrl: false,
-    alt: false,
-    shift: false,
-    logo: false,
-};
-
-const SHIFT: Held = Held {
-    ctrl: false,
-    alt: false,
-    shift: true,
-    logo: false,
-};
 
 impl From<&ModifiersState> for Held {
     fn from(mods: &ModifiersState) -> Self {
@@ -43,34 +34,6 @@ impl From<&ModifiersState> for Held {
     }
 }
 
-const ALT: Held = Held {
-    ctrl: false,
-    alt: true,
-    shift: false,
-    logo: false,
-};
-
-const ALT_SHIFT: Held = Held {
-    ctrl: false,
-    alt: true,
-    shift: true,
-    logo: false,
-};
-
-const CTRL_ALT: Held = Held {
-    ctrl: true,
-    alt: true,
-    shift: false,
-    logo: false,
-};
-
-const CTRL_ALT_SHIFT: Held = Held {
-    ctrl: true,
-    alt: true,
-    shift: true,
-    logo: false,
-};
-
 /// What a binding does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Binding {
@@ -82,199 +45,293 @@ pub(crate) enum Binding {
     Command(Command),
 }
 
-/// A `switch-*` action's binding (108).
-const fn switch(list: SwitchList, backward: bool) -> Binding {
-    Binding::Policy(Action::Switch { list, backward })
+/// What an action Caminito binds does when its combination is pressed.
+#[derive(Debug, Clone, Copy)]
+enum Does {
+    Run(Binding),
+    /// A `switch-*` action (108), which Marco flags `BINDING_REVERSES`: Shift turns it
+    /// round, and a `-backward` one is `reversed` to start with.
+    Switch {
+        list: SwitchList,
+        reversed: bool,
+    },
 }
 
-/// Marco's defaults for the actions M1 binds, for `show-desktop` (94), for the panel's two
-/// (95), for its three screenshot commands (104), and for the `switch-*` actions (108).
-/// `<Shift>Print` is the default of the Marco that has `run-command-area-screenshot`
-/// (`org.mate.marco.gschema.xml:692-693` at `8522ed1`); 1.29.0 doesn't bind it.
-///
-/// Marco has no key for a `switch-*-backward` action: Shift with the action's own binding
-/// steps backward, so each is here twice. `switch-windows-all` is unbound.
-const BINDINGS: [(Held, Keysym, Binding); 16] = [
-    (
-        CTRL_ALT,
-        Keysym::Left,
-        Binding::Policy(Action::SwitchToWorkspaceLeft),
+/// An action Caminito binds: its key, Marco's default for it, and what it does.
+struct Bindable {
+    schema: &'static str,
+    key: &'static str,
+    default: &'static str,
+    does: Does,
+}
+
+const fn global(key: &'static str, default: &'static str, does: Does) -> Bindable {
+    Bindable {
+        schema: MARCO_GLOBAL_KEYBINDINGS,
+        key,
+        default,
+        does,
+    }
+}
+
+const fn window(key: &'static str, default: &'static str, does: Does) -> Bindable {
+    Bindable {
+        schema: MARCO_WINDOW_KEYBINDINGS,
+        key,
+        default,
+        does,
+    }
+}
+
+const fn policy(action: Action) -> Does {
+    Does::Run(Binding::Policy(action))
+}
+
+const fn switch(list: SwitchList, reversed: bool) -> Does {
+    Does::Switch { list, reversed }
+}
+
+/// The actions that have a behaviour, in Marco's order (`src/include/all-keybindings.h`
+/// at 1.29.0, the global actions before the window ones), which is the order its
+/// `process_event` tries them in (`core/keybindings.c:1203-1260`), so of two keys with one
+/// combination the first wins. Every other action's key is read and parsed, and binds
+/// nothing until its ticket gives it a behaviour (147). `run-command-area-screenshot` is
+/// master's (`8522ed1`), after the window screenshot as there; where the installed schema
+/// hasn't the key, it has master's default.
+const BINDABLE: [Bindable; 18] = [
+    global(
+        "switch-to-workspace-left",
+        "<Control><Alt>Left",
+        policy(Action::SwitchToWorkspaceLeft),
     ),
-    (
-        CTRL_ALT,
-        Keysym::Right,
-        Binding::Policy(Action::SwitchToWorkspaceRight),
+    global(
+        "switch-to-workspace-right",
+        "<Control><Alt>Right",
+        policy(Action::SwitchToWorkspaceRight),
     ),
-    (ALT, Keysym::F1, Binding::Panel(PanelAction::MainMenu)),
-    (ALT, Keysym::F2, Binding::Panel(PanelAction::RunDialog)),
-    (ALT, Keysym::F4, Binding::Policy(Action::Close)),
-    (ALT, Keysym::F10, Binding::Policy(Action::ToggleMaximized)),
-    (ALT, Keysym::Tab, switch(SwitchList::Windows, false)),
-    (ALT_SHIFT, Keysym::Tab, switch(SwitchList::Windows, true)),
-    (ALT, Keysym::grave, switch(SwitchList::Group, false)),
-    (ALT_SHIFT, Keysym::grave, switch(SwitchList::Group, true)),
-    (CTRL_ALT, Keysym::Tab, switch(SwitchList::Panels, false)),
-    (
-        CTRL_ALT_SHIFT,
-        Keysym::Tab,
+    global(
+        "switch-group",
+        "<Alt>grave",
+        switch(SwitchList::Group, false),
+    ),
+    global(
+        "switch-group-backward",
+        "disabled",
+        switch(SwitchList::Group, true),
+    ),
+    global(
+        "switch-windows",
+        "<Alt>Tab",
+        switch(SwitchList::Windows, false),
+    ),
+    global(
+        "switch-windows-backward",
+        "disabled",
+        switch(SwitchList::Windows, true),
+    ),
+    global(
+        "switch-windows-all",
+        "disabled",
+        switch(SwitchList::WindowsAll, false),
+    ),
+    global(
+        "switch-windows-all-backward",
+        "disabled",
+        switch(SwitchList::WindowsAll, true),
+    ),
+    global(
+        "switch-panels",
+        "<Control><Alt>Tab",
+        switch(SwitchList::Panels, false),
+    ),
+    global(
+        "switch-panels-backward",
+        "disabled",
         switch(SwitchList::Panels, true),
     ),
-    (CTRL_ALT, Keysym::d, Binding::Policy(Action::ShowDesktop)),
-    (NONE, Keysym::Print, Binding::Command(Command::Screenshot)),
-    (
-        ALT,
-        Keysym::Print,
-        Binding::Command(Command::WindowScreenshot),
+    global(
+        "show-desktop",
+        "<Control><Alt>d",
+        policy(Action::ShowDesktop),
     ),
-    (
-        SHIFT,
-        Keysym::Print,
-        Binding::Command(Command::AreaScreenshot),
+    global(
+        "panel-main-menu",
+        "<Alt>F1",
+        Does::Run(Binding::Panel(PanelAction::MainMenu)),
     ),
+    global(
+        "panel-run-dialog",
+        "<Alt>F2",
+        Does::Run(Binding::Panel(PanelAction::RunDialog)),
+    ),
+    global(
+        "run-command-screenshot",
+        "Print",
+        Does::Run(Binding::Command(Command::Screenshot)),
+    ),
+    global(
+        "run-command-window-screenshot",
+        "<Alt>Print",
+        Does::Run(Binding::Command(Command::WindowScreenshot)),
+    ),
+    global(
+        "run-command-area-screenshot",
+        "<Shift>Print",
+        Does::Run(Binding::Command(Command::AreaScreenshot)),
+    ),
+    window(
+        "toggle-maximized",
+        "<Alt>F10",
+        policy(Action::ToggleMaximized),
+    ),
+    window("close", "<Alt>F4", policy(Action::Close)),
 ];
 
-/// What's bound to `keysym` with exactly `mods` held, if anything.
-pub(crate) fn binding_for(mods: &ModifiersState, keysym: Keysym) -> Option<Binding> {
-    let held = Held::from(mods);
-    BINDINGS
-        .iter()
-        .find(|(mods, sym, _)| *mods == held && *sym == keysym)
-        .map(|(_, _, binding)| *binding)
+/// One combination in force, and the key it came from.
+#[derive(Debug, Clone, PartialEq)]
+struct Row {
+    key: &'static str,
+    combination: Accelerator,
+    binding: Binding,
+}
+
+/// The bindings in force, which the keyboard path's bindings stage matches a press
+/// against. The settings thread builds it from the keys, and a change to one replaces it
+/// whole. A press that ran a binding has its release swallowed whatever the table is by
+/// then, so it ends under the table it started under.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bindings {
+    /// In `BINDABLE`'s order, each Shift variant right after its combination.
+    rows: Vec<Row>,
+}
+
+impl Default for Bindings {
+    /// Marco's defaults.
+    fn default() -> Self {
+        Self::from_keys([]).0
+    }
+}
+
+impl Bindings {
+    /// Builds the table from the keys' values, as `(schema, key, value)`: every key of
+    /// both schemas, whether Caminito binds its action or not, so every value is parsed.
+    /// An action Caminito binds whose key `keys` hasn't has Marco's default. A value that
+    /// can't be bound binds nothing, and is a problem.
+    pub(crate) fn from_keys<'a>(
+        keys: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+    ) -> (Self, Vec<Problem>) {
+        let keys: Vec<(&str, &str, &str)> = keys.into_iter().collect();
+        // Every value parsed, in Marco's way (`meta_ui_parse_accelerator`): `disabled` and
+        // the empty string are no combination, and a value that doesn't parse binds nothing.
+        let mut problems = Vec::new();
+        for (schema, key, value) in &keys {
+            if let Err(err) = parse(value) {
+                problems.push(unbindable(schema, key, value, &err.to_string()));
+            }
+        }
+        let mut rows = Vec::new();
+        for bindable in &BINDABLE {
+            let value = keys
+                .iter()
+                .find(|(schema, key, _)| *schema == bindable.schema && *key == bindable.key)
+                .map_or(bindable.default, |(_, _, value)| value);
+            let Ok(Some(combination)) = parse(value) else {
+                continue;
+            };
+            let row = |combination, binding| Row {
+                key: bindable.key,
+                combination,
+                binding,
+            };
+            let (list, reversed) = match bindable.does {
+                Does::Run(binding) => {
+                    rows.push(row(combination, binding));
+                    continue;
+                }
+                Does::Switch { list, reversed } => (list, reversed),
+            };
+            let held = combination.held;
+            // Marco refuses a binding Shift reverses that holds nothing but Shift
+            // (`update_binding`, `core/prefs.c:1902-1950`), which would take the key from
+            // every client. It writes the old value back; Caminito binds nothing.
+            if !(held.ctrl || held.alt || held.logo) {
+                problems.push(unbindable(
+                    bindable.schema,
+                    bindable.key,
+                    value,
+                    "a binding Shift reverses needs a modifier such as Ctrl or Alt",
+                ));
+                continue;
+            }
+            // `do_choose_window` turns the action round when Shift is down
+            // (`core/keybindings.c:3036-3038`), so a combination with Shift in it steps the
+            // other way.
+            let switch = |shift: bool| {
+                let backward = reversed != shift;
+                Binding::Policy(Action::Switch { list, backward })
+            };
+            rows.push(row(combination, switch(held.shift)));
+            // And `rebuild_binding_table` binds it with Shift too, right after it
+            // (`core/keybindings.c:403-420`).
+            if !held.shift {
+                let held = Held {
+                    shift: true,
+                    ..held
+                };
+                rows.push(row(
+                    Accelerator {
+                        held,
+                        ..combination
+                    },
+                    switch(true),
+                ));
+            }
+        }
+        (Self { rows }, problems)
+    }
+
+    /// What's bound to a press with exactly `mods` held, where `keysyms` name the key
+    /// pressed as they do for the accelerator grabs (100). The first row that matches wins.
+    pub(crate) fn binding_for(&self, mods: &ModifiersState, keysyms: &[Keysym]) -> Option<Binding> {
+        self.rows
+            .iter()
+            .find(|row| row.combination.matches(mods, keysyms))
+            .map(|row| row.binding)
+    }
+
+    /// Each combination in force, in GTK's syntax, with the key it came from.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&'static str, String)> + '_ {
+        self.rows
+            .iter()
+            .map(|row| (row.key, row.combination.to_string()))
+    }
+}
+
+fn unbindable(schema: &str, key: &str, value: &str, reason: &str) -> Problem {
+    Problem::Unbindable {
+        schema: schema.into(),
+        key: key.into(),
+        value: format!("'{value}'"),
+        reason: reason.into(),
+    }
+}
+
+impl fmt::Display for Accelerator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let held = self.held;
+        for (on, name) in [
+            (held.ctrl, "<Control>"),
+            (held.shift, "<Shift>"),
+            (held.alt, "<Alt>"),
+            (held.logo, "<Super>"),
+        ] {
+            if on {
+                f.write_str(name)?;
+            }
+        }
+        f.write_str(&xkb::keysym_get_name(self.keysym))
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn mods(ctrl: bool, alt: bool, shift: bool) -> ModifiersState {
-        ModifiersState {
-            ctrl,
-            alt,
-            shift,
-            ..ModifiersState::default()
-        }
-    }
-
-    const NONE: (bool, bool, bool) = (false, false, false);
-    const SHIFT: (bool, bool, bool) = (false, false, true);
-    const ALT: (bool, bool, bool) = (false, true, false);
-    const ALT_SHIFT: (bool, bool, bool) = (false, true, true);
-    const CTRL_ALT: (bool, bool, bool) = (true, true, false);
-    const CTRL_ALT_SHIFT: (bool, bool, bool) = (true, true, true);
-
-    fn bound(held: (bool, bool, bool), keysym: Keysym) -> Option<Binding> {
-        binding_for(&mods(held.0, held.1, held.2), keysym)
-    }
-
-    fn policy(action: Action) -> Option<Binding> {
-        Some(Binding::Policy(action))
-    }
-
-    #[test]
-    fn marcos_default_bindings() {
-        assert_eq!(
-            bound(CTRL_ALT, Keysym::Left),
-            policy(Action::SwitchToWorkspaceLeft)
-        );
-        assert_eq!(
-            bound(CTRL_ALT, Keysym::Right),
-            policy(Action::SwitchToWorkspaceRight)
-        );
-        assert_eq!(bound(ALT, Keysym::F4), policy(Action::Close));
-        assert_eq!(bound(ALT, Keysym::F10), policy(Action::ToggleMaximized));
-        assert_eq!(bound(CTRL_ALT, Keysym::d), policy(Action::ShowDesktop));
-    }
-
-    #[test]
-    fn the_window_switchers_bindings() {
-        let switch = |list, backward| policy(Action::Switch { list, backward });
-        assert_eq!(bound(ALT, Keysym::Tab), switch(SwitchList::Windows, false));
-        assert_eq!(bound(ALT, Keysym::grave), switch(SwitchList::Group, false));
-        assert_eq!(
-            bound(CTRL_ALT, Keysym::Tab),
-            switch(SwitchList::Panels, false)
-        );
-    }
-
-    #[test]
-    fn shift_with_a_window_switcher_binding_steps_backward() {
-        let switch = |list, backward| policy(Action::Switch { list, backward });
-        assert_eq!(
-            bound(ALT_SHIFT, Keysym::Tab),
-            switch(SwitchList::Windows, true)
-        );
-        assert_eq!(
-            bound(ALT_SHIFT, Keysym::grave),
-            switch(SwitchList::Group, true)
-        );
-        assert_eq!(
-            bound(CTRL_ALT_SHIFT, Keysym::Tab),
-            switch(SwitchList::Panels, true)
-        );
-    }
-
-    #[test]
-    fn switch_windows_all_is_unbound() {
-        let all = |binding: &(Held, Keysym, Binding)| {
-            matches!(
-                binding.2,
-                Binding::Policy(Action::Switch {
-                    list: SwitchList::WindowsAll,
-                    ..
-                })
-            )
-        };
-        assert!(!BINDINGS.iter().any(all));
-    }
-
-    #[test]
-    fn marcos_screenshot_bindings() {
-        let command = |command| Some(Binding::Command(command));
-        assert_eq!(bound(NONE, Keysym::Print), command(Command::Screenshot));
-        assert_eq!(
-            bound(ALT, Keysym::Print),
-            command(Command::WindowScreenshot)
-        );
-        assert_eq!(
-            bound(SHIFT, Keysym::Print),
-            command(Command::AreaScreenshot)
-        );
-        assert_eq!(bound(CTRL_ALT, Keysym::Print), None);
-    }
-
-    #[test]
-    fn the_panels_bindings() {
-        assert_eq!(
-            bound(ALT, Keysym::F1),
-            Some(Binding::Panel(PanelAction::MainMenu))
-        );
-        assert_eq!(
-            bound(ALT, Keysym::F2),
-            Some(Binding::Panel(PanelAction::RunDialog))
-        );
-    }
-
-    #[test]
-    fn modifiers_must_match_exactly() {
-        assert_eq!(bound((false, false, false), Keysym::F4), None);
-        assert_eq!(bound((true, true, false), Keysym::F4), None);
-        assert_eq!(bound((false, true, true), Keysym::F4), None);
-        assert_eq!(bound(ALT, Keysym::Left), None);
-    }
-
-    #[test]
-    fn locks_dont_count_as_modifiers() {
-        let held = ModifiersState {
-            alt: true,
-            caps_lock: true,
-            num_lock: true,
-            ..ModifiersState::default()
-        };
-        assert_eq!(binding_for(&held, Keysym::F4), policy(Action::Close));
-    }
-
-    #[test]
-    fn unbound_keys_have_no_action() {
-        assert_eq!(bound(ALT, Keysym::a), None);
-    }
-}
+mod tests;

@@ -78,7 +78,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 
 ## `org.mate.Marco.global-keybindings`
 
-An honoured action's binding is Marco's default, hard-coded until 148 reads the keys. A combination Caminito doesn't bind is free for mate-settings-daemon's accelerator grabs, which Caminito signals ([98](../.scratch/issues/98-accelerator-grabs.md), `caminito/src/tests/accelerators.rs`); one it binds isn't signalled. The `switch-*` rows are 108's: which windows an action lists, their order, and what a quick Alt+Tab goes to are Marco's.
+Every action's key is read and watched, and a change applies at once ([148](../.scratch/issues/148-keybindings-from-settings.md)). Its value is parsed as 98's accelerator grabs are, so `<Super>`, `<Mod4>` and `<Primary>` read alike, and `disabled` and the empty string bind nothing; a value that doesn't parse binds nothing and is logged once per key and value. An honoured action binds its key's combination, Marco's default unless the user changed it; a *to do* action's is read and parsed, and binds nothing until its ticket. Of two keys with one combination, the first in Marco's order wins, the global actions before the window ones. The `switch-*` actions are bound with Shift too, which turns them round, as in Marco, and refuse a combination with no modifier but Shift. A combination Caminito doesn't bind is free for mate-settings-daemon's accelerator grabs, which Caminito signals ([98](../.scratch/issues/98-accelerator-grabs.md), `caminito/src/tests/accelerators.rs`); one it binds isn't signalled, and that follows the keys as they change. The debug dump's `bindings` lists the combinations in force with their keys. Tests: `caminito/src/input/bindings/tests.rs` (the table), `caminito/src/tests/bindings.rs` (the keys through the fixture, on both kinds of window) and `caminito/src/settings/translate/tests.rs`. The `switch-*` rows are 108's: which windows an action lists, their order, and what a quick Alt+Tab goes to are Marco's.
 
 | Action | Status | What Caminito does | Covered by |
 | --- | --- | --- | --- |
@@ -90,13 +90,13 @@ An honoured action's binding is Marco's default, hard-coded until 148 reads the 
 | `switch-to-workspace-down` | to do (150) | Ctrl+Alt+Down reaches the focused client. | |
 | `switch-to-workspace-prev` | to do (150) | Unbound, as by default. | |
 | `switch-group` | honoured | Alt+\` opens the switcher over the focused application's windows on the active workspace: those of its process, or of its app id where a window names no process. | `caminito-policy/src/tests/switcher.rs`, `caminito/src/tests/switcher.rs` |
-| `switch-group-backward` | honoured | Shift with `switch-group`'s binding. | the same |
+| `switch-group-backward` | honoured | Shift with `switch-group`'s binding. Its own key, when set, binds its combination backward, and with Shift forward (148). | the same, `caminito/src/input/bindings/tests.rs` |
 | `switch-windows` | honoured | Alt+Tab opens the Window switcher over the active workspace's windows. | the same |
-| `switch-windows-backward` | honoured | Marco's default is `disabled`: Shift with `switch-windows`'s binding opens the switcher on its last entry, and steps it backward. | the same |
-| `switch-windows-all` | honoured | Every workspace's windows. Unbound, as in Marco, so nothing reaches it until 148 reads the key. | `caminito-policy/src/tests/switcher.rs` |
-| `switch-windows-all-backward` | honoured | As `switch-windows-backward`. Unbound. | the same |
+| `switch-windows-backward` | honoured | Marco's default is `disabled`: Shift with `switch-windows`'s binding opens the switcher on its last entry, and steps it backward. Its own key, when set, binds its combination backward, and with Shift forward (148). | the same, `caminito/src/input/bindings/tests.rs` |
+| `switch-windows-all` | honoured | Every workspace's windows. Unbound by default, as in Marco, and bound by its key once set (148). | `caminito-policy/src/tests/switcher.rs`, `caminito/src/tests/bindings.rs` |
+| `switch-windows-all-backward` | honoured | As `switch-windows-backward`. Unbound by default. | `caminito-policy/src/tests/switcher.rs`, `caminito/src/input/bindings/tests.rs` |
 | `switch-panels` | honoured | Ctrl+Alt+Tab opens the switcher over docks and the desktop. Only XWayland windows are docks or a desktop to policy: a Wayland panel is a Layer surface, and isn't listed until 163. | `caminito-policy/src/tests/switcher.rs`, `caminito/src/tests/switcher.rs` |
-| `switch-panels-backward` | honoured | Shift with `switch-panels`'s binding. | the same |
+| `switch-panels-backward` | honoured | Shift with `switch-panels`'s binding. Its own key, when set, binds its combination backward, and with Shift forward (148). | the same, `caminito/src/input/bindings/tests.rs` |
 | `cycle-group` | to do (163) | Alt+F6 reaches the focused client. | |
 | `cycle-group-backward` | to do (163) | Unbound, as by default. | |
 | `cycle-windows` | to do (163) | Alt+Escape reaches the focused client. | |
@@ -114,7 +114,7 @@ An honoured action's binding is Marco's default, hard-coded until 148 reads the 
 
 ## `org.mate.Marco.window-keybindings`
 
-As in `global-keybindings`, an honoured action's binding is Marco's default, hard-coded until 148 reads the keys. An action that's *to do* binds nothing, so its default combination reaches the focused client.
+Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybindings-from-settings.md)), with the same tests: an honoured action binds its key's combination, and an action that's *to do* binds nothing, so its combination reaches the focused client.
 
 | Action | Status | What Caminito does | Covered by |
 | --- | --- | --- | --- |
