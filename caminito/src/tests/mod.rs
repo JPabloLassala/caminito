@@ -17,6 +17,7 @@ mod debug;
 mod decoration;
 mod dpms;
 mod drag_icons;
+mod edge_resistance;
 mod ext_workspace;
 mod fixture;
 mod foreign_toplevel;

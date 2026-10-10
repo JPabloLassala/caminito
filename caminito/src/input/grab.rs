@@ -172,7 +172,9 @@ impl PointerGrab<State> for Grab {
             }
         }
         if let Purpose::Window = self.purpose {
-            caminito.policy.grab_motion(SEAT, event.location);
+            // Marco reads Shift from each motion, so it can be pressed or let go mid-drag.
+            let snap = caminito.seat.get_keyboard().unwrap().modifier_state().shift;
+            caminito.policy.grab_motion(SEAT, event.location, snap);
             caminito.queue_redraw_all();
             // Policy ends the grab itself if the window goes away or is maximised.
             if caminito.policy.grab(SEAT).is_none() {
