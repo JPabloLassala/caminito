@@ -16,6 +16,9 @@ pub struct FrameFacts {
     pub maximized: bool,
     pub fullscreen: bool,
     pub shaded: bool,
+    /// Tiled to the left or right half of a work area (158).
+    pub tiled_left: bool,
+    pub tiled_right: bool,
 }
 
 /// The frame type and flags Marco draws a window with, or `None` for a type it never frames.
@@ -50,6 +53,8 @@ pub fn frame_style(
     let has_maximize = normal_or_dialog && has_resize && !facts.fullscreen;
     let has_shade = !border_only && !facts.fullscreen;
     let resize = has_resize && !facts.maximized && !facts.fullscreen && !facts.shaded;
+    // A side tile fills its work area's height (window-private.h:446).
+    let side_tiled = facts.tiled_left || facts.tiled_right;
 
     let decorated = !border_only;
     let flags = FrameFlags {
@@ -58,7 +63,7 @@ pub fn frame_style(
         allows_appmenu: false,
         allows_minimize: decorated && has_minimize,
         allows_maximize: decorated && has_maximize,
-        allows_vertical_resize: resize && grows(min.h, max.h),
+        allows_vertical_resize: resize && grows(min.h, max.h) && !side_tiled,
         allows_horizontal_resize: resize && grows(min.w, max.w),
         has_focus: facts.activated,
         shaded: facts.shaded,
@@ -69,8 +74,8 @@ pub fn frame_style(
         fullscreen: facts.fullscreen,
         is_flashing: false,
         above: false,
-        tiled_left: false,
-        tiled_right: false,
+        tiled_left: facts.tiled_left,
+        tiled_right: facts.tiled_right,
     };
     Some((frame_type, flags))
 }

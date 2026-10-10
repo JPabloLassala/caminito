@@ -320,7 +320,7 @@ impl Caminito {
                 maximized,
                 // A new window is focused.
                 focused: true,
-                shaded: false,
+                ..FrameState::default()
             };
             self.frame_context.extents(&facts, state)
         };

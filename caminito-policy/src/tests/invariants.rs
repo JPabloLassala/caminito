@@ -228,9 +228,36 @@ fn action() -> impl Strategy<Value = Action> {
         Just(Action::MoveToWorkspaceDown),
         Just(Action::Close),
         Just(Action::ToggleMaximized),
+        (0..6usize).prop_map(Action::SwitchToWorkspace),
+        (0..6usize).prop_map(Action::MoveToWorkspace),
+        Just(Action::MoveToWorkspaceLeft),
+        Just(Action::MoveToWorkspaceRight),
+        Just(Action::Maximize),
+        Just(Action::Unmaximize),
+        Just(Action::ToggleMaximizedHorizontally),
+        Just(Action::ToggleMaximizedVertically),
+        Just(Action::ToggleFullscreen),
+        Just(Action::ToggleShaded),
+        Just(Action::Minimize),
+        Just(Action::Raise),
+        Just(Action::Lower),
+        Just(Action::RaiseOrLower),
         (switch_list(), any::<bool>())
             .prop_map(|(list, backward)| Action::Switch { list, backward }),
         Just(Action::ShowDesktop),
+        tile().prop_map(Action::Tile),
+    ]
+}
+
+fn tile() -> impl Strategy<Value = crate::Tile> {
+    use crate::Tile;
+    prop_oneof![
+        Just(Tile::Left),
+        Just(Tile::Right),
+        Just(Tile::TopLeft),
+        Just(Tile::TopRight),
+        Just(Tile::BottomLeft),
+        Just(Tile::BottomRight),
     ]
 }
 
@@ -589,6 +616,8 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                     maximized: states.maximized,
                     focused: window.is_activated(),
                     shaded: states.shaded,
+                    tiled_left: states.tile == Some(crate::Tile::Left),
+                    tiled_right: states.tile == Some(crate::Tile::Right),
                 })
             } else {
                 smithay::utils::FrameExtents::default()
@@ -666,7 +695,11 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
 }
 
 fn check_ops(ops: Vec<Op>) {
-    let mut policy = Policy::new(Config::default());
+    // Tiling on, as Marco's default has it, so the drags can tile (158).
+    let mut policy = Policy::new(Config {
+        allow_tiling: true,
+        ..Config::default()
+    });
     for (step, op) in ops.into_iter().enumerate() {
         op.apply(&mut policy, step as u64);
         verify_invariants(&policy);

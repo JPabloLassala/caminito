@@ -1207,6 +1207,64 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
   outputs' work areas.
 
+### Edge and corner tiling of a GTK3, a GTK4 CSD and an X11 window
+
+- **Milestone:** M8
+- **Steps:**
+  1. With both monitors connected side by side, log into *MATE on Caminito*, with the panel
+     along the top. Open pluma (native GTK3, Caminito's Frame), `gtk4-demo` (GTK4, drawing
+     its own titlebar) and xterm (X11).
+  2. Drag pluma by its titlebar to each side, each corner and the top of the first monitor,
+     waiting at each before letting go, then once with Shift held. Each time, drag it back
+     out by its titlebar.
+  3. Drag pluma to the monitors' shared edge, just inside the first, then just past it onto
+     the second, and let go there.
+  4. Repeat steps 2 and 3 with `gtk4-demo` and xterm, and once with Alt+drag on xterm.
+  5. Run `gsettings set org.mate.Marco.general allow-top-tiling false` and drag pluma to the
+     top; run `gsettings set org.mate.Marco.general allow-tiling false` and drag it to a side.
+     Reset both with `gsettings reset`.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2, while the pointer is at a side, a corner or the top, a translucent
+  rectangle in the theme's selection colour shows the half, the quarter or the whole work
+  area, beneath the window; it goes when the pointer moves away, and letting go fills it,
+  the panel left clear. A side tile's frame is drawn square where the theme has tiled
+  styles. With Shift nothing shows or tiles. Dragging out puts the window back at its size
+  before, under the pointer. In step 3 it tiles to the first monitor's right half, then to
+  the second's left half. In step 4 `gtk4-demo` drops its rounded corners and shadow while
+  tiled and gets them back once untiled, xterm tiles as pluma does, and Alt+drag holds a
+  tiled xterm still for a few pixels before it comes loose. In step 5 the top does nothing,
+  then the side does nothing, as in Marco under *MATE*, the X11 session (158).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for `tile_preview` while dragging
+  and each window's `tile`, and `WAYLAND_DEBUG=1 gtk4-demo 2>&1 | grep configure` for the
+  `tiled_*` states.
+
+### The tiling keybindings and tile cycling, on a native and an X11 window
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with the panel along the top. In mate-control-center's
+     *Keyboard Shortcuts*, under *Window Management*, set the six *Tile window to …* actions
+     to Super with Q (west side), W (east side), E (north-west corner), R (north-east),
+     T (south-west) and A (south-east). Open pluma (native GTK3) and xterm (X11).
+  2. With pluma focused, press each of the six once.
+  3. Press Super+W three times, then four more times.
+  4. Run `gsettings set org.mate.Marco.general allow-tile-cycling false`, then press Super+W
+     twice. Reset it with `gsettings reset`.
+  5. Tile pluma with Super+Q and drag its right edge in by a few hundred pixels.
+  6. Repeat steps 2 to 5 with xterm, maximised once with Alt+F10 before a press.
+  7. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the window fills each half and quarter of the work area in turn,
+  the panel left clear. In step 3 the right-hand tile is half, a third, then a quarter of
+  the screen wide, and then the whole width, three quarters, two thirds, and the window goes
+  back to its size and place from before step 2. In step 4 the first press tiles it to the
+  right half and the second puts it back. In step 5 the window stays tiled at its new width,
+  its left edge and its height unchanged, and a drag of its left or bottom edge changes
+  nothing. In step 6 xterm does the same, and a maximised xterm is tiled at once and goes
+  back to its size from before it was maximised, as in Marco under *MATE*, the X11 session
+  (159).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's `tile` and
+  geometry, and its bindings in force.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
@@ -1450,6 +1508,36 @@ session_env() {
   window's monitor, over the others. Native and X11 windows behave alike (154).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
   `gsettings monitor org.mate.Marco.general`.
+
+### The window and workspace actions work from Keyboard Shortcuts on a native and an X11 window
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `pluma` (native) with a frame, `gnome-calculator` or
+     another header-bar app (native, its own titlebar), and `xterm` (X11), overlapping.
+  2. Open *Keyboard Shortcuts* from the control center. Under *Window Management*, give a
+     shortcut to each of *Maximize window*, *Toggle fullscreen mode*, *Toggle shaded state*,
+     *Raise window if it's covered by another window, otherwise lower it*, *Raise window
+     above other windows*, *Lower window below other windows*, *Maximize window vertically*,
+     *Maximize window horizontally*, *Switch to workspace 2* and *5*, *Move window to
+     workspace 3*, and *Run a terminal*. Under *Desktop*, or with `gsettings set
+     org.mate.Marco.global-keybindings run-command-1 '<Super>1'` and `gsettings set
+     org.mate.Marco.keybinding-commands command-1 'caja'`, bind a command.
+  3. On each of the three windows in turn, press each shortcut, and Alt+F9, Alt+F5 after
+     maximising, Ctrl+Shift+Alt+Right and Ctrl+Shift+Alt+Left. With four workspaces, press
+     *Switch to workspace 5*. Clear `command-1` to the empty string and press its shortcut.
+- **Expected:** each action does to the focused window what its name says, as under Marco,
+  and takes effect the moment its shortcut is set. The shade shades pluma and xterm to their
+  titlebars, and does nothing to the header-bar app. Raise-or-lower raises a covered window
+  and lowers one on top. *Move window to workspace 3* sends the window there and the focus to
+  the window under it; Ctrl+Shift+Alt+Right takes the window, the focus and the view to the
+  next workspace together. *Switch to workspace 5* does nothing. The terminal shortcut opens
+  mate-terminal, the command shortcut opens caja, and the empty command opens nothing and
+  leaves a line in the journal (149).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `bindings` lists the
+  combinations in force, and whose windows show their state, workspace and stacking;
+  `gsettings monitor org.mate.Marco.window-keybindings`; and `journalctl --user -b | grep
+  caminito` for the empty command.
 
 ### `show-desktop-skip-list` keeps a native and an X11 window on screen
 

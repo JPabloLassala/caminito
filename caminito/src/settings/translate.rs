@@ -16,6 +16,8 @@ use crate::input::bindings::Bindings;
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
 pub const MARCO_KEYBINDING_COMMANDS: &str = "org.mate.Marco.keybinding-commands";
+/// mate-desktop's preferred terminal, which `run-command-terminal` runs (09, 149).
+pub const TERMINAL: &str = "org.mate.applications-terminal";
 /// The bindings of actions that aren't a window's (148).
 pub const MARCO_GLOBAL_KEYBINDINGS: &str = "org.mate.Marco.global-keybindings";
 /// The bindings of actions on the focused window (148).
@@ -71,6 +73,10 @@ pub const SCHEMAS: &[Schema] = &[
     Schema {
         id: MARCO_WINDOW_KEYBINDINGS,
         required: true,
+    },
+    Schema {
+        id: TERMINAL,
+        required: false,
     },
     Schema {
         id: INTERFACE,
@@ -146,12 +152,10 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // ticket that honours it. Caminito does what each one's default asks, except
     // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
     // values it matches none of. A key whose other value is what Caminito already does
-    // (`audible-bell`, `allow-tiling`, `allow-top-tiling`, `allow-tile-cycling`,
-    // `reduced-resources`) isn't here, nor is one that only matters with another key set
-    // (`command-1` to `-12`, whose bindings bind nothing until 149). Master's keys are
-    // logged only where the installed schema has them. The keybindings' schemas have no
-    // key here: an action with no behaviour yet is read and binds nothing, and its default
-    // reaches the client (148).
+    // (`audible-bell`, `reduced-resources`) isn't here. Master's keys
+    // are logged only where the installed schema has them. The keybindings' schemas have
+    // no key here: an action with no behaviour yet is read and binds nothing, and its
+    // default reaches the client (148).
     // 165.
     (MARCO_GENERAL, "focus-new-windows"),
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
@@ -497,8 +501,8 @@ pub struct SwitcherSettings {
 }
 
 /// The command lines Marco's `run-command-*` bindings run, from
-/// `org.mate.Marco.keybinding-commands` (104). Only the screenshots' are read until M8
-/// reads the bindings (17).
+/// `org.mate.Marco.keybinding-commands` (104, 149), and the terminal
+/// `run-command-terminal` runs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Commands {
     /// `command-screenshot`.
@@ -508,6 +512,10 @@ pub struct Commands {
     /// `command-area-screenshot`. Marco 1.29.0's schema has no key for it, so it's often
     /// the default of the Marco that has (`org.mate.marco.gschema.xml:780-781` at `8522ed1`).
     pub area_screenshot: String,
+    /// `command-1` to `-12`, from the first.
+    pub numbered: Vec<String>,
+    /// `org.mate.applications-terminal exec`, as Marco's `meta_prefs_get_terminal_command`.
+    pub terminal: String,
 }
 
 /// What SSD frames are drawn with and do (05, 07).
@@ -1039,6 +1047,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         rows: r.int_clamped(CAMINITO, "workspace-layout-rows", 1, 0, most) as usize,
         columns: r.int_clamped(CAMINITO, "workspace-layout-columns", 0, 0, most) as usize,
     };
+    // Frame drags and tiling's zones both go by it (158).
+    let drag_threshold = r.int_at_least(MOUSE, "drag-threshold", 8, 0);
     let policy = Config {
         workspace_count,
         workspace_names,
@@ -1064,6 +1074,10 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             "show-desktop-skip-list",
             "",
         )),
+        allow_tiling: r.bool(MARCO_GENERAL, "allow-tiling", true),
+        allow_top_tiling: r.bool(MARCO_GENERAL, "allow-top-tiling", true),
+        allow_tile_cycling: r.bool(MARCO_GENERAL, "allow-tile-cycling", true),
+        drag_threshold,
     };
     let switcher = SwitcherSettings {
         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,
@@ -1131,6 +1145,10 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             "command-area-screenshot",
             "mate-screenshot --area",
         ),
+        numbered: (1..=12)
+            .map(|n| r.string(MARCO_KEYBINDING_COMMANDS, &format!("command-{n}"), ""))
+            .collect(),
+        terminal: r.string(TERMINAL, "exec", "mate-terminal"),
     };
 
     let settings = Settings {
@@ -1190,7 +1208,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             double_click_time: Duration::from_millis(
                 r.int_at_least(MOUSE, "double-click", 400, 1) as u64
             ),
-            drag_threshold: r.int_at_least(MOUSE, "drag-threshold", 8, 0) as u32,
+            drag_threshold: drag_threshold as u32,
         },
         sound: Sound {
             theme_name: r.string(SOUND, "theme-name", "freedesktop"),

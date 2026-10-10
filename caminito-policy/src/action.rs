@@ -1,8 +1,9 @@
 //! Keybinding actions, named after Marco's `org.mate.Marco.*` keybinding keys.
 
-use crate::SwitchList;
+use crate::{SwitchList, Tile};
 
-/// An action a keybinding triggers. Only the variants M1 binds exist so far; M8 adds the rest.
+/// An action a keybinding triggers: those with a behaviour in policy. The window actions act
+/// on the seat's focused window, and do nothing without one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// `switch-to-workspace-left`
@@ -17,6 +18,12 @@ pub enum Action {
     SwitchToWorkspacePrev,
     /// `switch-to-workspace-N`, numbered from 0 here.
     SwitchToWorkspace(usize),
+    /// `move-to-workspace-left`
+    MoveToWorkspaceLeft,
+    /// `move-to-workspace-right`
+    MoveToWorkspaceRight,
+    /// `move-to-workspace-N`, numbered from 0 here.
+    MoveToWorkspace(usize),
     /// `move-to-workspace-up`: the focused window to the workspace above, which becomes
     /// the active one, the window keeping the focus.
     MoveToWorkspaceUp,
@@ -31,6 +38,29 @@ pub enum Action {
     /// `toggle-on-all-workspaces`: shows the focused window on every workspace, or only on
     /// the active one (155).
     ToggleOnAllWorkspaces,
+    /// `maximize`
+    Maximize,
+    /// `unmaximize`
+    Unmaximize,
+    /// `maximize-horizontally`, which toggles.
+    ToggleMaximizedHorizontally,
+    /// `maximize-vertically`, which toggles.
+    ToggleMaximizedVertically,
+    /// `toggle-fullscreen`
+    ToggleFullscreen,
+    /// `toggle-shaded`
+    ToggleShaded,
+    /// `minimize`
+    Minimize,
+    /// `raise`
+    Raise,
+    /// `lower`
+    Lower,
+    /// `raise-or-lower`
+    RaiseOrLower,
+    /// `tile-to-side-e` and `-w`, and `tile-to-corner-ne`, `-nw`, `-se` and `-sw` (159):
+    /// tiles the focused window there, cycles its size, or untiles it.
+    Tile(Tile),
     /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
     /// that is open, towards the end of the list or `backward`.
     Switch { list: SwitchList, backward: bool },

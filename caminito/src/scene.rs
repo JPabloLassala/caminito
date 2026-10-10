@@ -4,6 +4,7 @@
 //! is the only code that knows the layer order.
 
 use caminito_policy::{Layer as StackLayer, WindowId};
+use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
@@ -26,7 +27,7 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
 use crate::output::{output_geometry, output_id};
-use crate::state::Caminito;
+use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
 
@@ -42,6 +43,10 @@ pub(crate) const LOCK_BACKGROUND: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
 /// What the visual bell's full-screen flash shows: white, as Marco fills its flash window
 /// (`bell.c:bell_flash_screen`) (169).
 pub(crate) const BELL_FLASH: Color32F = Color32F::new(1.0, 1.0, 1.0, 1.0);
+
+/// How opaque the tile preview's fill is: GTK's default `selection-box-alpha`, which Marco
+/// fills its preview at (tile-preview.c:47-122) (158).
+pub(crate) const TILE_PREVIEW_ALPHA: f32 = 64.0 / 255.0;
 
 /// Frame debug's outline colours (14).
 const STRIP_OUTLINE: Color32F = Color32F::new(1.0, 0.0, 0.0, 1.0);
@@ -111,7 +116,8 @@ pub(crate) enum SceneLayer {
     /// covers them as it covers the panel (80).
     LayerPopups,
     /// The current workspace's other windows in policy's stacking order, each with its
-    /// frame.
+    /// frame, and the tile preview just beneath the window being moved, as Marco lowers its
+    /// preview beneath the focused window (tile-preview.c:182-184) (158).
     Windows,
     /// The bottom layer-shell layer (63), without its surfaces' popups.
     Bottom,
@@ -843,6 +849,75 @@ fn window_elements<R>(
         let origin = geometry.loc - output_geometry.loc;
         let shown = Rectangle::from_size(output_geometry.size);
         one_window_elements(renderer, mapped, origin, shown, scale, elements);
+        if layer == SceneLayer::Windows && policy.grab(SEAT) == Some(id) {
+            tile_preview_elements(caminito, output, elements);
+        }
+    }
+}
+
+/// While a move's pointer is in a tiling zone, the tile preview on `output`: where letting
+/// go puts the window's frame, in the palette's selected background, translucent inside a
+/// line of it one pixel wide, as Marco draws it (tile-preview.c:47-122) (158).
+fn tile_preview_elements<R>(
+    caminito: &Caminito,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let output_geometry = output_geometry(output);
+    let Some(preview) = caminito
+        .policy
+        .tile_preview(SEAT)
+        .filter(|preview| preview.overlaps(output_geometry))
+    else {
+        return;
+    };
+    let colors = caminito.palette.palette().variant(Variant::Default);
+    // A theme, or the neutral palette, that selects in the background of anything else
+    // would hide the preview: the text colour draws it then, as the Window switcher's
+    // selection does.
+    let selected = colors.background(GtkState::Selected);
+    let color = if selected == colors.background(GtkState::Normal) {
+        colors.text(GtkState::Normal)
+    } else {
+        selected
+    };
+    let (r, g, b) = (color.red as f32, color.green as f32, color.blue as f32);
+    let line = Color32F::new(r, g, b, 1.0);
+    let a = TILE_PREVIEW_ALPHA;
+    let fill = Color32F::new(r * a, g * a, b * a, a);
+
+    let scale = output.current_scale().fractional_scale();
+    let local = Rectangle::new(preview.loc - output_geometry.loc, preview.size);
+    let rect = local.to_physical_precise_round::<_, i32>(scale);
+    let width = (scale.round() as i32).max(1);
+    let (w, h) = (rect.size.w, rect.size.h);
+    let sides = [
+        Rectangle::new(rect.loc, (w, width).into()),
+        Rectangle::new(rect.loc + Point::from((0, h - width)), (w, width).into()),
+        Rectangle::new(rect.loc, (width, h).into()),
+        Rectangle::new(rect.loc + Point::from((w - width, 0)), (width, h).into()),
+    ];
+    let inside = Rectangle::new(
+        rect.loc + Point::from((width, width)),
+        (w - 2 * width, h - 2 * width).into(),
+    );
+    // New ids each frame, as frame debug's outlines have: the preview shows only during a
+    // drag, which draws every frame anyway.
+    let solid = |area, color| {
+        SceneElement::Solid(SolidColorRenderElement::new(
+            Id::new(),
+            area,
+            CommitCounter::default(),
+            color,
+            Kind::Unspecified,
+        ))
+    };
+    elements.extend(sides.into_iter().map(|side| solid(side, line)));
+    if !inside.is_empty() {
+        elements.push(solid(inside, fill));
     }
 }
 

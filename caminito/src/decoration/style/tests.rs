@@ -12,6 +12,8 @@ fn normal() -> FrameFacts {
         maximized: false,
         fullscreen: false,
         shaded: false,
+        tiled_left: false,
+        tiled_right: false,
     }
 }
 
@@ -202,4 +204,21 @@ fn marco_frames_no_desktop_dock_toolbar_or_splash_screen() {
         };
         assert_eq!(frame_style(&facts, false), None, "{window_type:?}");
     }
+}
+
+#[test]
+fn a_side_tiled_frame_is_flagged_tiled_and_resizes_only_across() {
+    let facts = FrameFacts {
+        tiled_right: true,
+        ..normal()
+    };
+    let (_, flags) = frame_style(&facts, false).unwrap();
+    assert_eq!(
+        flags,
+        FrameFlags {
+            tiled_right: true,
+            allows_vertical_resize: false,
+            ..allows_all()
+        }
+    );
 }

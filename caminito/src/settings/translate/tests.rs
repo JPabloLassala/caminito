@@ -618,6 +618,18 @@ fn the_screenshot_commands_are_read_where_the_schema_has_them() {
     );
 }
 
+#[test]
+fn the_numbered_commands_and_the_terminal_are_read_with_their_defaults() {
+    let commands = settings(&defaults()).commands;
+    assert_eq!(commands.numbered.len(), 12);
+    assert_eq!(commands.terminal, "mate-terminal");
+
+    let reading = with(MARCO_KEYBINDING_COMMANDS, "command-12", string("caja ~"));
+    assert_eq!(settings(&reading).commands.numbered[11], "caja ~");
+    let reading = with(TERMINAL, "exec", string("xterm"));
+    assert_eq!(settings(&reading).commands.terminal, "xterm");
+}
+
 // Keybindings (148). The table itself is `input::bindings`'s, and tested there.
 
 #[test]
@@ -972,6 +984,38 @@ fn the_show_desktop_skip_list_is_passed_to_policy() {
         settings(&reading).policy.show_desktop_skip_list,
         ShowDesktopSkipList::parse("Conky,xclock")
     );
+}
+
+// Tiling (158).
+
+#[test]
+fn the_defaults_tile_at_the_sides_and_corners_and_maximise_at_the_top() {
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert!(policy.allow_tiling);
+        assert!(policy.allow_top_tiling);
+        assert!(policy.allow_tile_cycling);
+        assert_eq!(policy.drag_threshold, 8);
+    }
+}
+
+/// Set off, neither is reported as unsupported, which `settings` checks.
+#[test]
+fn the_tiling_keys_set_off_are_passed_to_policy() {
+    let mut reading = with(MARCO_GENERAL, "allow-tiling", Value::Bool(false));
+    for key in ["allow-top-tiling", "allow-tile-cycling"] {
+        reading.insert(MARCO_GENERAL, key, Value::Bool(false), Value::Bool(true));
+    }
+    let policy = settings(&reading).policy;
+    assert!(!policy.allow_tiling);
+    assert!(!policy.allow_top_tiling);
+    assert!(!policy.allow_tile_cycling);
+}
+
+#[test]
+fn the_drag_threshold_sizes_tilings_zones_too() {
+    let reading = with(MOUSE, "drag-threshold", Value::Int(20));
+    assert_eq!(settings(&reading).policy.drag_threshold, 20);
 }
 
 #[test]
