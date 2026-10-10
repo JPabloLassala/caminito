@@ -116,12 +116,12 @@ fn manual_placement_starts_at_the_pointer_and_follows_it_until_put_down() {
     assert_eq!(policy.placing(SEAT), Some(id(1)));
     assert_eq!(policy.grab(SEAT), Some(id(1)));
 
-    policy.grab_motion(SEAT, at(1100., 550.));
+    policy.grab_motion(SEAT, at(1100., 550.), false);
     assert_eq!(placed(&policy, 1), (900, 400));
 
     policy.end_grab(SEAT);
     assert_eq!(policy.placing(SEAT), None);
-    policy.grab_motion(SEAT, at(1300., 550.));
+    policy.grab_motion(SEAT, at(1300., 550.), false);
     assert_eq!(placed(&policy, 1), (900, 400));
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(geometry.loc, (900, 400).into());
@@ -131,7 +131,7 @@ fn manual_placement_starts_at_the_pointer_and_follows_it_until_put_down() {
 fn a_cancelled_manual_placement_goes_back_to_where_it_started() {
     let mut policy = policy_with(PlacementMode::Manual, false, 1000., 500.);
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
-    policy.grab_motion(SEAT, at(1300., 700.));
+    policy.grab_motion(SEAT, at(1300., 700.), false);
     policy.nudge_grab(SEAT, Point::new(10, 0));
 
     policy.cancel_grab(SEAT);
@@ -148,7 +148,7 @@ fn a_nudged_manual_placement_goes_on_following_the_pointer_from_where_it_was_nud
     policy.nudge_grab(SEAT, Point::new(10, -1));
     assert_eq!(placed(&policy, 1), (810, 349));
 
-    policy.grab_motion(SEAT, at(1100., 500.));
+    policy.grab_motion(SEAT, at(1100., 500.), false);
     assert_eq!(placed(&policy, 1), (910, 349));
 }
 
@@ -173,7 +173,7 @@ fn manual_placement_starts_in_the_work_area_and_can_leave_its_output() {
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
     assert_eq!(placed(&policy, 1), (1520, 780));
 
-    policy.grab_motion(SEAT, at(2500., 600.));
+    policy.grab_motion(SEAT, at(2500., 600.), false);
 
     assert_eq!(placed(&policy, 1), (2120, 310));
     assert_eq!(window(&policy, 1).last_outputs(), Some(&[OutputId(2)][..]));
