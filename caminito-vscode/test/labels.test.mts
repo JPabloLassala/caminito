@@ -111,9 +111,9 @@ test("a client reads each item's shortcut, from the defaults and the user's file
     [FIND]: [['Control', 'Alt', 'f']],
     [PALETTE]: [['Control', 'Shift', 'p']],
     [ALL_COMMANDS]: [['Control', 'Shift', 'p']],
+    // A chord's shortcut is each of its presses (145).
+    [CLOSE_FOLDER]: [['Control', 'k'], ['f']],
   });
-  // A chord has none: Close Folder is there, with no shortcut.
-  idOf((await f.menu())!, CLOSE_FOLDER);
 });
 
 test("a change of the user's file sends one ItemsPropertiesUpdated", async (t) => {
@@ -138,6 +138,7 @@ test("a change of the user's file sends one ItemsPropertiesUpdated", async (t) =
     [FIND]: [['Control', 'Alt', 'f']],
     [PALETTE]: [['F1']],
     [ALL_COMMANDS]: [['F1']],
+    [CLOSE_FOLDER]: [['Control', 'k'], ['f']],
   });
 
   // The same bindings written again change nothing a client hears.
@@ -147,6 +148,33 @@ test("a change of the user's file sends one ItemsPropertiesUpdated", async (t) =
   ]);
   await quiet();
   assert.equal(f.heard.length, 1);
+});
+
+test("a change of the user's file to and from a chord sends one ItemsPropertiesUpdated each", async (t) => {
+  const dir = userDir(t);
+  const f = await fixture(t, { defaultKeybindings: DEFAULTS, userDir: dir });
+  const save = idOf((await f.menu())!, SAVE);
+
+  write(dir, 'keybindings.json', [
+    { key: 'ctrl+s', command: '-workbench.action.files.save' },
+    { key: 'ctrl+k ctrl+s', command: 'workbench.action.files.save' },
+  ]);
+  assert.deepEqual(await heard(f, 1), [
+    {
+      signal: 'ItemsPropertiesUpdated',
+      updated: [[save, [['shortcut', [['Control', 'k'], ['Control', 's']]]]]],
+      removed: [],
+    },
+  ]);
+  assert.deepEqual(shortcuts((await f.menu())!)[SAVE], [['Control', 'k'], ['Control', 's']]);
+
+  write(dir, 'keybindings.json', []);
+  assert.deepEqual((await heard(f, 2))[1], {
+    signal: 'ItemsPropertiesUpdated',
+    updated: [[save, [['shortcut', [['Control', 's']]]]]],
+    removed: [],
+  });
+  assert.equal(f.heard.length, 2);
 });
 
 test("with the defaults unreadable, the snapshot's labels are served with the user's bindings over them", async (t) => {
@@ -166,12 +194,9 @@ test("with the defaults unreadable, the snapshot's labels are served with the us
   assert.equal(served[FIND], undefined);
   assert.deepEqual(served[PALETTE], [['Control', 'Shift', 'p']]);
   assert.deepEqual(served[RESET_ZOOM], [['Control', 'KP_0']]);
-  assert.equal(served[CLOSE_FOLDER], undefined);
-  // Every label of the snapshot that isn't a chord, but the two the user's file changed.
-  const singles = Object.values(VS_CODE.table.keybindings).filter(
-    (keybinding) => !keybinding.userSettingsLabel!.includes(' '),
-  );
-  assert.ok(Object.keys(served).length >= singles.length - 1);
+  assert.deepEqual(served[CLOSE_FOLDER], [['Control', 'k'], ['f']]);
+  // Every label of the snapshot, chords among them, but the two the user's file changed.
+  assert.ok(Object.keys(served).length >= Object.keys(VS_CODE.table.keybindings).length - 1);
   assert.ok(f.editor.logged.some((line) => line.startsWith("can't read the default keybindings")));
 });
 
