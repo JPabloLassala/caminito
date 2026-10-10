@@ -160,8 +160,6 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     (MARCO_GENERAL, "alt-tab-urgent-placement"),
     // 150.
     (MARCO_GENERAL, "wrap-style"),
-    // 151.
-    (MARCO_GENERAL, "dynamic-workspaces"),
     // 162.
     (MARCO_GENERAL, "mouse-button-modifier"),
     (MARCO_GENERAL, "resize-with-right-button"),
@@ -1000,7 +998,15 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
 
     let workspace_count =
         r.int_clamped(MARCO_GENERAL, "num-workspaces", 4, 1, MAX_WORKSPACES as i32) as usize;
-    let workspace_names = (1..=workspace_count)
+    // Marco master's key, off where the schema has no key for it (151). With it on the count
+    // is Caminito's, so every name is passed on.
+    let dynamic_workspaces = r.bool(MARCO_GENERAL, "dynamic-workspaces", false);
+    let named = if dynamic_workspaces {
+        MAX_WORKSPACES
+    } else {
+        workspace_count
+    };
+    let workspace_names = (1..=named)
         .map(|n| {
             let name = r.string(MARCO_WORKSPACE_NAMES, &format!("name-{n}"), "");
             // Marco treats an empty name as unset.
@@ -1025,6 +1031,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let policy = Config {
         workspace_count,
         workspace_names,
+        dynamic_workspaces,
         workspace_layout,
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
         placement_mode: r.nick(MARCO_GENERAL, "placement-mode", PlacementMode::Automatic),

@@ -2,6 +2,7 @@
 
 mod actions;
 mod commit;
+mod dynamic_workspaces;
 mod edge_resistance;
 mod focus;
 mod grid;
