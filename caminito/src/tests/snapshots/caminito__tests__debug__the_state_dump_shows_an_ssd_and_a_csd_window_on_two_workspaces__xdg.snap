@@ -224,6 +224,14 @@ expression: without_x_ids(&dump)
     {
       "key": "close",
       "combination": "<Alt>F4"
+    },
+    {
+      "key": "begin-move",
+      "combination": "<Alt>F7"
+    },
+    {
+      "key": "begin-resize",
+      "combination": "<Alt>F8"
     }
   ],
   "accelerator_grabs": [],

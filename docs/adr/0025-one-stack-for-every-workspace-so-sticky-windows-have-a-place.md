@@ -1,4 +1,4 @@
-# 24. One stack for every workspace, so that a sticky window has a place in it
+# 25. One stack for every workspace, so that a sticky window has a place in it
 
 Date: 2026-10-10
 Status: Accepted
