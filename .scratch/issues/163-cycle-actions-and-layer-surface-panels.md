@@ -30,3 +30,7 @@ The switching actions [108](108-window-switcher.md) left: those with no popup, a
 
 - **How a Layer surface is focused for the panel:** the keyboard is given to it, and mate-panel, a GTK3 client on gtk-layer-shell, must then let a key move between its applets. Whether it does, and whether caja's desktop takes the keyboard, is found here.
 - **Which cooperation from mate-panel or caja is a known gap:** what doesn't work without a carried patch, written in the ticket and in parity's row, rather than patched here.
+
+## Notes
+
+- **`alt-tab-minimized-placement`** (Marco master's, default `end`) was given to this ticket by [147](147-the-parity-table.md), as no M8 ticket named it: read where the schema has it, it places minimised windows in the lists `switch-*` and `cycle-*` share, as [165](165-focus-stealing-prevention-for-native-windows.md) does `alt-tab-urgent-placement`. Its row says honoured with a Policy test of its values, and it leaves `UNSUPPORTED`.
