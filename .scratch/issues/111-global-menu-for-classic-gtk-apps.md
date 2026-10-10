@@ -2,7 +2,7 @@
 
 Epic: global-menu
 Type: implementation
-Status: open
+Status: open: the code and the package are in; the first two criteria need `appmenu-gtk-module-caminito` installed, a new Session with the applet on the panel, and someone looking at the panel, which is the developer's
 Milestone: none: after v0.1
 Blocked by: [110](110-global-menu-for-gtk-application-apps.md)
 
@@ -81,3 +81,11 @@ Most of MATE's apps build a classic `GtkMenuBar` and export nothing. `appmenu-gt
   - The Session this ran in has the AUR's `appmenu-gtk-module-wayland` in its `GTK_MODULES`, from `/etc/profile.d`. A new Session would load both modules. What the two do together wasn't run.
 - The AUR's `appmenu-gtk-module-wayland` 26.08.03 is another project (guiodic's, "PoC: GTK global menu on Plasma Wayland"). It turns the menubar into a dbusmenu with `libdbusmenu-gtk3` and gives it to the surface through `org_kde_kwin_appmenu`, which is [112](112-global-menu-for-qt-apps-and-firefox.md)'s channel and not 110's. It's no fix for this ticket.
 - GTK4 has no modules, so a GTK4 app that isn't a `GtkApplication` with a menubar has no global menu.
+
+## Done (2026-10-10)
+
+- **Shipped from a cloud container, which isn't Arch and has no Session.** The code (`227d586`, `45a253b`) was already on the trunk: the session's adding of the module to `GTK_MODULES` with its unit tests, `appmenu-gtk-module-caminito` with its two upstream fixes, and the optional dependency in `caminito-git`. Nothing was built anew.
+- **Not tried again here.** Ubuntu's archive has pluma and the stock module, but not Caminito's patched mate-panel or `vala-panel-appmenu-mate-caminito`, and no Wayland desktop for `run.sh` to nest in. A run here couldn't show more than the 2026-10-08 checks did, and couldn't tick the first two criteria, which ask for a Session and someone looking at the panel. No other way (a carried patch) was started.
+- **The suite here, on Ubuntu 24.04 under `dbus-run-session`:** `session`'s three tests of `GTK_MODULES` pass. caminito's lib tests have 242 failures, 235 of them `Xwayland starts` and the rest in keymap, night light, commit timing and root properties, all from this container's Xwayland and xkb. This ticket changes no code, so `tools/check` on Arch is what stands.
+- **ADR 0017 and ADR 0011 now name the package,** and 0017 no longer promises a gschema override, as the 2026-10-08 notes asked: `run-on-wayland` is on by default in 25.04.
+- **Still the developer's:** installing the package and starting a new Session for the first two criteria, the missing Tabs menu for mate-terminal, what the AUR's `appmenu-gtk-module-wayland` in `/etc/profile.d` does beside this module in that Session, and sending `0001` and `0002` upstream.
