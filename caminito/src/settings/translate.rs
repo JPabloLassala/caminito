@@ -152,7 +152,7 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // ticket that honours it. Caminito does what each one's default asks, except
     // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
     // values it matches none of. A key whose other value is what Caminito already does
-    // (`audible-bell`, `allow-tile-cycling`, `reduced-resources`) isn't here. Master's keys
+    // (`audible-bell`, `reduced-resources`) isn't here. Master's keys
     // are logged only where the installed schema has them. The keybindings' schemas have
     // no key here: an action with no behaviour yet is read and binds nothing, and its
     // default reaches the client (148).
@@ -1076,6 +1076,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         )),
         allow_tiling: r.bool(MARCO_GENERAL, "allow-tiling", true),
         allow_top_tiling: r.bool(MARCO_GENERAL, "allow-top-tiling", true),
+        allow_tile_cycling: r.bool(MARCO_GENERAL, "allow-tile-cycling", true),
         drag_threshold,
     };
     let switcher = SwitcherSettings {

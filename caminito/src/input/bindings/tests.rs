@@ -315,6 +315,28 @@ fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
             "maximize-horizontally",
             policy(Action::ToggleMaximizedHorizontally),
         ),
+        (WINDOW, "tile-to-side-e", policy(Action::Tile(Tile::Right))),
+        (WINDOW, "tile-to-side-w", policy(Action::Tile(Tile::Left))),
+        (
+            WINDOW,
+            "tile-to-corner-nw",
+            policy(Action::Tile(Tile::TopLeft)),
+        ),
+        (
+            WINDOW,
+            "tile-to-corner-ne",
+            policy(Action::Tile(Tile::TopRight)),
+        ),
+        (
+            WINDOW,
+            "tile-to-corner-se",
+            policy(Action::Tile(Tile::BottomRight)),
+        ),
+        (
+            WINDOW,
+            "tile-to-corner-sw",
+            policy(Action::Tile(Tile::BottomLeft)),
+        ),
     ];
     for (schema, key, binding) in cases {
         let t = table(&[(schema, key, "<Super>q")]);

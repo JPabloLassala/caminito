@@ -1238,6 +1238,33 @@ session_env() {
   and each window's `tile`, and `WAYLAND_DEBUG=1 gtk4-demo 2>&1 | grep configure` for the
   `tiled_*` states.
 
+### The tiling keybindings and tile cycling, on a native and an X11 window
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with the panel along the top. In mate-control-center's
+     *Keyboard Shortcuts*, under *Window Management*, set the six *Tile window to …* actions
+     to Super with Q (west side), W (east side), E (north-west corner), R (north-east),
+     T (south-west) and A (south-east). Open pluma (native GTK3) and xterm (X11).
+  2. With pluma focused, press each of the six once.
+  3. Press Super+W three times, then four more times.
+  4. Run `gsettings set org.mate.Marco.general allow-tile-cycling false`, then press Super+W
+     twice. Reset it with `gsettings reset`.
+  5. Tile pluma with Super+Q and drag its right edge in by a few hundred pixels.
+  6. Repeat steps 2 to 5 with xterm, maximised once with Alt+F10 before a press.
+  7. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the window fills each half and quarter of the work area in turn,
+  the panel left clear. In step 3 the right-hand tile is half, a third, then a quarter of
+  the screen wide, and then the whole width, three quarters, two thirds, and the window goes
+  back to its size and place from before step 2. In step 4 the first press tiles it to the
+  right half and the second puts it back. In step 5 the window stays tiled at its new width,
+  its left edge and its height unchanged, and a drag of its left or bottom edge changes
+  nothing. In step 6 xterm does the same, and a maximised xterm is tiled at once and goes
+  back to its size from before it was maximised, as in Marco under *MATE*, the X11 session
+  (159).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's `tile` and
+  geometry, and its bindings in force.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale

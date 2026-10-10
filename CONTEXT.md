@@ -153,7 +153,7 @@ Caminito's window-management decisions: focus, stacking, placement, workspaces, 
 _Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
 
 **Tile**:
-A half or quarter of an output's work area that a window dropped at the output's side or corner fills, and keeps filling until it's untiled. A tiled window is in a state of its own beside maximise (ADR 0024); a window dropped at the top is maximised, not tiled. The tile preview is the translucent rectangle that shows where a drop will put the window.
+A half or quarter of an output's work area that a window dropped at the output's side or corner fills, and keeps filling until it's untiled. The tiling keybindings tile a window there too, and with tile cycling repeated presses change the tile's width to another share of the work area's. A tiled window is in a state of its own beside maximise (ADR 0024); a window dropped at the top is maximised, not tiled. The tile preview is the translucent rectangle that shows where a drop will put the window.
 _Avoid_: snapped (144's word for a window maximised one way), half-maximised, tiling model (Caminito isn't a tiling compositor)
 
 **Workspace grid**:
