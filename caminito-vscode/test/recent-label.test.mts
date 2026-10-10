@@ -16,7 +16,7 @@ const remote = (authority: string, path: string): Uri => ({
 });
 
 test('a path under home has the home directory as ~', () => {
-  assert.equal(recentLabel({ folderUri: file('/home/ana/src/camino') }, HOME), '~/src/camino');
+  assert.equal(recentLabel({ folderUri: file('/home/ana/src/caminito') }, HOME), '~/src/caminito');
   assert.equal(recentLabel({ fileUri: file('/home/ana/notes.txt') }, HOME), '~/notes.txt');
   assert.equal(recentLabel({ folderUri: file('/home/ana') }, HOME), '~');
   assert.equal(recentLabel({ folderUri: file('/home/ana/') }, `${HOME}/`), '~/');
@@ -30,8 +30,8 @@ test('a path elsewhere is shown as it is', () => {
 
 test('a workspace file is its path less the extension, marked (Workspace)', () => {
   assert.equal(
-    recentLabel({ workspace: { configPath: file('/home/ana/w/camino.code-workspace') } }, HOME),
-    '~/w/camino (Workspace)',
+    recentLabel({ workspace: { configPath: file('/home/ana/w/caminito.code-workspace') } }, HOME),
+    '~/w/caminito (Workspace)',
   );
   assert.equal(
     recentLabel({ workspace: { configPath: file('/srv/other.json') } }, HOME),
