@@ -120,7 +120,7 @@ impl<W: PolicyWindow> Policy<W> {
             return true;
         }
         // MATE's launchers pass no token yet (05).
-        self.focus_new_windows == FocusNewWindows::Smart
+        self.config.focus_new_windows == FocusNewWindows::Smart
             && !self
                 .windows
                 .keys()
@@ -135,7 +135,7 @@ impl<W: PolicyWindow> Policy<W> {
                 .focus_time
                 .get(&seat)
                 .is_some_and(|last| token.issued < *last);
-        recent && (self.focus_new_windows == FocusNewWindows::Smart || token.input)
+        recent && (self.config.focus_new_windows == FocusNewWindows::Smart || token.input)
     }
 
     /// Refuses a window that has just mapped the focus, as Marco's `meta_window_show` does
