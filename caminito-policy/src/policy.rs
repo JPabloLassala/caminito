@@ -17,6 +17,7 @@ use crate::{
 
 mod dynamic_workspaces;
 mod keyboard_grab;
+mod move_to;
 mod pointer;
 mod switcher;
 mod window_actions;
@@ -2053,6 +2054,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// floating window's. A window maximised one way keeps its floating geometry the
     /// other way.
     fn relayout(&mut self, id: WindowId) {
+        self.relayout_on(id, None);
+    }
+
+    /// `relayout`, on output `on` if it names one policy has: a window a binding moved to
+    /// another output (160) is laid out there, though its frame is still on the one it left.
+    fn relayout_on(&mut self, id: WindowId, on: Option<OutputId>) {
         let managed = &self.windows[&id];
         if !managed.constrained() {
             let managed = self.windows.get_mut(&id).unwrap();
@@ -2061,9 +2068,8 @@ impl<W: PolicyWindow> Policy<W> {
             }
             return;
         }
-        let output = managed
-            .fullscreen_output
-            .filter(|_| managed.fullscreen)
+        let output = on
+            .or(managed.fullscreen_output.filter(|_| managed.fullscreen))
             .or(managed.tile.map(|tiled| tiled.output))
             .and_then(|o| self.outputs.iter().find(|output| output.id == o))
             .or_else(|| self.output_of(managed.frame()))

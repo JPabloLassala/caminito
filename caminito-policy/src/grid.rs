@@ -49,9 +49,10 @@ pub enum WrapStyle {
     Toroidal,
 }
 
-/// A way to go from one workspace to the one beside it.
+/// A way to go from one workspace to the one beside it, or from one output to the one
+/// beside it (160).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Direction {
+pub enum Direction {
     Left,
     Right,
     Up,

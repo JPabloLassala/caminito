@@ -19,8 +19,8 @@ mod test_window;
 #[cfg(test)]
 mod tests;
 
-pub use action::Action;
-pub use grid::{Grid, Orientation, WorkspaceLayout, WrapStyle};
+pub use action::{Action, Anchor};
+pub use grid::{Direction, Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{

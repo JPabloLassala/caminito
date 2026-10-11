@@ -53,6 +53,8 @@ impl<W: PolicyWindow> Policy<W> {
             Action::RaiseOrLower => self.raise_or_lower(id),
             Action::MoveToWorkspace(workspace) => self.move_to_numbered_workspace(id, workspace),
             Action::Tile(tile) => self.toggle_tile(id, tile),
+            Action::MoveTo(anchor) => self.move_to(id, anchor),
+            Action::MoveToMonitor(direction) => self.move_to_monitor(id, direction),
             // `handle_toggle_above` and `handle_toggle_on_all_workspaces`
             // (keybindings.c:3172-3182, 3387-3397), which ask nothing of the window's type
             // (155).
