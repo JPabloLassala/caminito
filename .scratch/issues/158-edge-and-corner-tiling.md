@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in and its xdg tests pass; the headless tests' `::x11` halves and `an_x11_configure_request_is_refused_while_the_window_is_tiled` need Xwayland, which doesn't start in the build container, and the checklist item is 173's closing run
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 157
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -24,7 +24,7 @@ Marco's tiling by drag ([05](05-v01-marco-feature-cut.md)): a window dragged to 
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code: each side, the top and each corner; `allow-tiling` and `allow-top-tiling` off; the floating geometry restored on untile; a tiled window's titlebar drag untiling it as 144's tests do for maximised windows; the work area changing under a tiled window.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: a drag to each edge showing the preview in the debug dump and tiling on release; the xdg `tiled_*` states sent; an X11 configure request refused while tiled; a drag out untiling.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: a drag to each edge showing the preview in the debug dump and tiling on release; the xdg `tiled_*` states sent; an X11 configure request refused while tiled; a drag out untiling.
 - [x] A drawing test for the preview, read from the output's pixels: Marco's has no goldens.
 - [x] `allow-tiling` and `allow-top-tiling` leave `UNSUPPORTED`; their rows in `docs/parity.md` and the keyless section's edge and corner tiling say honoured, with the tests above.
 - [x] The checklist has an item, tagged M8: dragging a native GTK3 window, a GTK4 CSD window and an X11 window to each edge and corner, and back out. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
@@ -51,3 +51,4 @@ Marco's tiling by drag ([05](05-v01-marco-feature-cut.md)): a window dragged to 
 - **Tests run** (under `dbus-run-session`, with `--skip x11` for the headless ones), before the merge: `caminito-policy` `tests::tiling`, `tests::interactive`, `tests::edge_resistance`, `tests::invariants`, `tests::states`, `tests::requests`, `tests::work_area`, `tests::outputs`, `tests::pointer_focus`, `tests::placement_modes`; `caminito` `tests::tiling`, `settings::translate`, `decoration::`, `window::x11::tests`, `tests::debug`, `tests::frames`, `tests::edge_resistance`, `tests::xdg_shell`, `tests::preferred_scale`, `tests::grabs`, `tests::placement`, `tests::xwayland_windows`; clippy on the workspace (bar the three pre-existing theme lints) and rustfmt. Not run here: every `::x11` half and the X-only tests, as Xwayland doesn't start ("Xwayland starts"), and the checklist item, which needs a Session.
 
 - **After merging the integration branch** (149 and 150 came in; conflicts in the imports, `UNSUPPORTED`'s comment and the test module list): the same policy modules plus `tests::window_actions`, and `caminito` `tests::tiling`, `settings::translate`, `decoration::`, `tests::debug`, `tests::frames`, `tests::edge_resistance`, `tests::xdg_shell` and `tests::window_actions`, all green with `--skip x11`.
+- **The X11 halves, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored, and `cargo test -p caminito-policy --lib` (399 passed). `tests::tiling`'s fourteen tests passed, its five `::x11` halves and `an_x11_configure_request_is_refused_while_the_window_is_tiled` included, with `tests::frames`, `tests::debug`, `tests::xdg_shell`, `tests::preferred_scale`, `tests::placement` and `tests::xwayland_windows`. None of the 8 failures is this ticket's code; they're listed in [148](148-keybindings-from-settings.md)'s Done section. The one in `tests::grabs`, a module this ticket ran, is [157](157-edge-resistance-and-snap-move.md)'s. The rest of `tools/check` wasn't run.

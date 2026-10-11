@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in and its xdg tests pass; the headless tests' `::x11` halves need Xwayland, which doesn't start in the build container, and the checklist item is 173's closing run
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 158
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -18,7 +18,7 @@ The tiling bindings, on [158](158-edge-and-corner-tiling.md)'s tiled state ([05]
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code: each binding's half or quarter; a second press; the cycle of sizes with `allow-tile-cycling` on and off; a window on a second output.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: each binding set in the test (Marco's defaults are `disabled`) tiling the focused window, and the xdg `tiled_*` states sent.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: each binding set in the test (Marco's defaults are `disabled`) tiling the focused window, and the xdg `tiled_*` states sent.
 - [x] `allow-tile-cycling` leaves `UNSUPPORTED`; the six actions' and the key's rows in `docs/parity.md` say honoured, with the tests above.
 - [x] The checklist has an item, tagged M8: the six bindings, set in mate-control-center, on a native and an X11 window, and a side's binding pressed three times. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -37,3 +37,4 @@ The tiling bindings, on [158](158-edge-and-corner-tiling.md)'s tiled state ([05]
 - **TDD:** the first policy test (each binding's half or quarter) was seen red; the cycle and second-press tests were written against the first implementation, and checked by breaking the non-cycling branch, which failed two of them. The resize tests were seen red before the change. The headless tests and the settings test were written before the bindings and the key were added (the latter seen failing to compile).
 - **`allow-tile-cycling`** wasn't in `UNSUPPORTED` (its other value was what Caminito did), so it only leaves the comment there; it's read into policy's `Config`, on by default. The proptest sequences now run the six actions too.
 - **Tests run** (under `dbus-run-session`, with `--skip x11` for the headless ones), before the merge: `caminito-policy` `tiling` (both `tests::tiling` and `tests::keyboard_tiling`), `tests::invariants`, `tests::interactive`, `tests::window_actions`, `tests::states`, `tests::requests`, `tests::work_area`, `tests::outputs`, `tests::edge_resistance`, `tests::placement_modes`; `caminito` `tests::tiling`, `settings::translate`, `input::bindings`, `tests::parity`, `tests::bindings`, `tests::window_actions`, `tests::debug`, `tests::frames`, `tests::edge_resistance`, `tests::xdg_shell`, `tests::grabs` (bar its two X-only tests); clippy on `caminito-policy` and `caminito` (bar the three pre-existing theme lints) and rustfmt. Not run here: every `::x11` half, which fails at "Xwayland starts", and the checklist item, which needs a Session.
+- **The X11 halves, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored, and `cargo test -p caminito-policy --lib` (399 passed). `tests::tiling`'s `each_tiling_binding_once_set_tiles_the_focused_window` and `a_sides_binding_pressed_again_cycles_its_width_then_untiles` passed on both kinds of window, and `a_window_tiled_by_a_binding_is_told_the_edges_it_lies_along`, with `tests::bindings`, `tests::window_actions`, `tests::debug` and `tests::frames`. None of the 8 failures is this ticket's code; they're listed in [148](148-keybindings-from-settings.md)'s Done section. The one in `tests::grabs`, a module this ticket ran, is [157](157-edge-resistance-and-snap-move.md)'s. The rest of `tools/check` wasn't run.
