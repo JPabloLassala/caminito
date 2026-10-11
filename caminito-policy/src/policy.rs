@@ -667,7 +667,7 @@ pub struct Policy<W: PolicyWindow> {
     /// The pointer focus modes' and auto-raise's state (153).
     pointer_focus: pointer::PointerFocus,
     /// What the Scene read when `take_scene_changed` was last asked (179).
-    scene_taken: SceneReads,
+    last_scene_reads: SceneReads,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -696,7 +696,7 @@ impl<W: PolicyWindow> Policy<W> {
             chosen: None,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
-            scene_taken: SceneReads::default(),
+            last_scene_reads: SceneReads::default(),
         };
         policy.apply_config();
         policy
@@ -1858,8 +1858,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// themselves, so no event has to say that it changed them.
     pub fn take_scene_changed(&mut self) -> bool {
         let reads = self.scene_reads();
-        let changed = reads != self.scene_taken;
-        self.scene_taken = reads;
+        let changed = reads != self.last_scene_reads;
+        self.last_scene_reads = reads;
         changed
     }
 

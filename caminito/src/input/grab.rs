@@ -278,6 +278,8 @@ impl PointerGrab<State> for Grab {
             // A keyboard resize's first motion picks its edges, and warps the pointer there.
             if let Some(location) = caminito.policy.take_pointer_warp(SEAT) {
                 caminito.window_grab = Some(window_grab_kind(caminito));
+                // The cursor shows the edges the resize has picked.
+                caminito.queue_redraw_all();
                 let warp = MotionEvent {
                     location,
                     serial: event.serial,
