@@ -2,7 +2,7 @@
 //! Workspace grid that the bindings make.
 
 use super::*;
-use crate::WrapStyle;
+use crate::{Direction, WrapStyle};
 
 /// A policy with `count` workspaces in `rows` rows, wrapping by `wrap`.
 fn grid(count: usize, rows: usize, wrap: WrapStyle) -> Policy<TestWindow> {
@@ -249,4 +249,69 @@ fn move_to_workspace_down_with_no_focus_or_on_the_desktop_does_nothing() {
     policy.action(SEAT, Action::MoveToWorkspaceDown, ms(4));
     assert_eq!(policy.active_workspace(), 0);
     assert_eq!(policy.workspace_of(id(1)), Some(0));
+}
+
+#[test]
+fn each_switch_is_noted_with_the_way_it_went_in_the_grid() {
+    // 0 1
+    // 2 3
+    let mut policy = grid(4, 2, WrapStyle::NoWrap);
+    assert_eq!(policy.take_workspace_switches(), []);
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(1));
+    policy.action(SEAT, Action::SwitchToWorkspaceDown, ms(2));
+    policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(3));
+    policy.action(SEAT, Action::SwitchToWorkspaceUp, ms(4));
+    // At the grid's edge, and to the active workspace: no switch.
+    policy.action(SEAT, Action::SwitchToWorkspaceUp, ms(5));
+    policy.switch_workspace(0);
+
+    assert_eq!(
+        policy.take_workspace_switches(),
+        [
+            Direction::Right,
+            Direction::Down,
+            Direction::Left,
+            Direction::Up
+        ]
+    );
+    assert_eq!(policy.take_workspace_switches(), []);
+}
+
+#[test]
+fn a_switch_across_columns_is_left_or_right_whatever_its_rows() {
+    // 0 1
+    // 2 3
+    let mut policy = grid(4, 2, WrapStyle::NoWrap);
+    policy.switch_workspace(3);
+    policy.switch_workspace(0);
+
+    assert_eq!(
+        policy.take_workspace_switches(),
+        [Direction::Right, Direction::Left]
+    );
+}
+
+#[test]
+fn a_switch_that_wraps_is_noted_by_where_it_lands() {
+    let mut policy = grid(4, 1, WrapStyle::Toroidal);
+    policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(1));
+    assert_eq!(policy.active_workspace(), 3);
+
+    assert_eq!(policy.take_workspace_switches(), [Direction::Right]);
+}
+
+#[test]
+fn removing_the_active_workspace_is_a_switch_to_the_last_left() {
+    let mut policy = grid(4, 1, WrapStyle::NoWrap);
+    policy.switch_workspace(3);
+    policy.take_workspace_switches();
+
+    policy.settings_changed(Config {
+        workspace_count: 2,
+        ..Config::default()
+    });
+
+    assert_eq!(policy.active_workspace(), 1);
+    assert_eq!(policy.take_workspace_switches(), [Direction::Left]);
 }

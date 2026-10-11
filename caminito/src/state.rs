@@ -120,6 +120,7 @@ use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
 use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Settings, SettingsThread, Value};
+use crate::sound::{Canberra, Player};
 use crate::switcher::OpenSwitcher;
 use crate::window::{Mapped, PendingWindows};
 use crate::window_menu::OpenWindowMenu;
@@ -260,6 +261,8 @@ pub struct Caminito {
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
     pub(crate) bells: Bells,
+    /// What plays the bell and the workspace switch sounds (170).
+    pub(crate) player: Box<dyn Player>,
     /// The windows shrinking into their buttons as they're minimised (172).
     pub(crate) minimize_animations: MinimizeAnimations,
     /// The grabbed accelerator whose key is held and repeating (99).
@@ -485,6 +488,7 @@ impl State {
             ThemeDirs::from_env(),
             PaletteCache::from_env(),
             CursorSource::Xcursor,
+            Box::new(Canberra::default()),
         )?;
         // Before the backend finds the monitors, so that they're restored as they're found.
         caminito.saved_layouts = SavedLayouts::load(saved::default_path());
@@ -508,6 +512,7 @@ impl State {
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
         settings: settings::Source,
+        player: Box<dyn Player>,
     ) -> Self {
         let themes = ThemeDirs::new(vec![
             concat!(env!("CARGO_MANIFEST_DIR"), "/../tests").into(),
@@ -519,6 +524,7 @@ impl State {
             themes,
             None,
             CursorSource::BuiltIn,
+            player,
         )
         .expect("the settings start");
         let backend = Backend::Headless(crate::backend::headless::Headless::default());
@@ -648,6 +654,7 @@ impl State {
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
         self.caminito.refresh_window_menu();
+        self.caminito.refresh_sounds();
         // With the windows the handlers and the bindings before this pass asked to close.
         self.caminito.refresh_close_pings();
         self.update_keyboard_focus();
@@ -792,6 +799,7 @@ impl Caminito {
         theme_dirs: ThemeDirs,
         palette_cache: Option<PaletteCache>,
         cursor_source: CursorSource,
+        player: Box<dyn Player>,
     ) -> Result<Self, settings::Error> {
         let (settings, settings_thread, changes) = settings::start(settings)?;
         let display_handle = display.handle();
@@ -945,6 +953,7 @@ impl Caminito {
             suppressed_keys: HashSet::new(),
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
+            player,
             minimize_animations: MinimizeAnimations::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),

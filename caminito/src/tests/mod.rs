@@ -71,6 +71,7 @@ mod session;
 mod settings;
 mod shadows;
 mod show_desktop;
+mod sounds;
 mod switcher;
 mod tiling;
 mod window_actions;

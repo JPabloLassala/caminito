@@ -1077,7 +1077,8 @@ session_env() {
   lowercase, a notification says *Sticky Keys turned on* after the second five, and the
   dialog's tick follows each. In step 7 the quick tap types nothing and the held key types
   `a` after the delay, then the second quick tap of `a` types nothing. In step 8 the press is
-  logged as a bell, which flashes as the visual bell says (169) and doesn't sound until 170.
+  logged as a bell, which flashes as the visual bell says (169) and sounds as the audible
+  bell says (170).
 - **Debug tool:** `gsettings monitor org.mate.accessibility-keyboard`, `wev` in place of
   pluma and `xev` in place of xterm for the keys and modifiers each gets, and `DumpState`'s
   `bell`, whose `source` is `accessx` for one of these beeps.
@@ -1546,6 +1547,31 @@ session_env() {
   flashes (169).
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `DumpState`'s `bell`, whose
   `count` goes up at each bell and whose `last` names its source and window.
+
+### The bell and the workspace switches sound
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with the speakers on. Open `mate-terminal`, a native
+     Wayland window, and `xterm`, an XWayland one. In mate-control-center's *Sound*, on
+     *Sound Effects*, choose a sound theme and tick *Enable window and button sounds*.
+  2. Run `printf '\a'` in each terminal.
+  3. Press Ctrl+Alt+Right, Ctrl+Alt+Left and, with the workspaces in two rows, Ctrl+Alt+Down
+     and Ctrl+Alt+Up. Click another workspace in the panel's workspace switcher.
+  4. Choose another sound theme in *Sound*, and repeat steps 2 and 3.
+  5. Untick *Enable window and button sounds*, and repeat steps 2 and 3.
+  6. Run `gsettings set org.mate.Marco.general audible-bell false`, and `printf '\a'` in
+     each terminal. Set it back to `true`, run `gsettings set org.mate.peripherals-keyboard
+     bell-mode off`, and ring again. Set `bell-mode` back to `on`.
+  7. Run as part of M8's closing run (173).
+- **Expected:** in step 2 each terminal's bell plays the theme's bell. In step 3 each switch
+  plays the theme's sound for its direction, the pager's click too. In step 4 the sounds are
+  the new theme's, with no restart. In step 5 the bell still plays and the switches are
+  silent. In step 6 neither bell plays, with either key (170).
+- **Debug tool:** `gsettings monitor org.mate.sound`, `DumpState`'s `bell`, the journal
+  (`journalctl --user -b -t caminito`), where a sound libcanberra can't play is logged, and
+  `canberra-gtk-play -i bell-window-system` or `-i desktop-switch-right`, which plays the
+  same sound without Caminito.
 
 ## Marco parity
 
