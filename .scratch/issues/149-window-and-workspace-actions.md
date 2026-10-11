@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in; the X11 halves of the new fixture tests are unrun here (Xwayland doesn't start in the cloud container) and are the developer's to run, and the checklist item is 173's closing run
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 148
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -21,7 +21,7 @@ Each window action acts on the focused window, and does nothing with none, or on
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code, for any rule this ticket adds to policy: `raise-or-lower`'s test, and whether `move-to-workspace-*` takes the focus and the active workspace with the window.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: each action from its default binding, or from a binding set in the test where Marco's default is `disabled`; a number past the count; the shade on an SSD window and nothing on a CSD one; a command run and an empty one logged; `run-command-terminal` running the terminal key's command.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: each action from its default binding, or from a binding set in the test where Marco's default is `disabled`; a number past the count; the shade on an SSD window and nothing on a CSD one; a command run and an empty one logged; `run-command-terminal` running the terminal key's command.
 - [x] Their rows in `docs/parity.md` say honoured, with the tests above; any of these keys in `UNSUPPORTED` leaves it.
 - [x] The checklist has an item, tagged M8: each action from mate-control-center's *Keyboard Shortcuts*, on a native and an X11 window. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -47,4 +47,5 @@ Each window action acts on the focused window, and does nothing with none, or on
 - **`UNSUPPORTED`:** none of these keys was there; its comment no longer names `command-1` to `-12`.
 - **Review:** no sub-agent tool was available to this run, so the two-axis review was done by hand against the spec and CODING_STANDARDS.md.
 - **Tests run (only the related ones, per the run's instructions):** `cargo test -p caminito-policy --lib` (all 321, the crate being the one changed), and in `caminito` the filters `tests::window_actions`, `tests::workspace_moves`, `tests::commands`, `tests::bindings`, `tests::debug`, `tests::accelerators`, `tests::settings`, `tests::keybinding_manifests`, `tests::parity`, `settings::translate` and `input::bindings`, before and after merging the integration branch. Every xdg and non-X11 test passed; every `::x11` half, and the xsettings tests the `settings` filter caught, failed at "Xwayland starts", as in this container. The X11 state-dump snapshot was edited by hand to match the xdg one. Clippy is clean on both crates but for caminito-theme's three pre-existing `manual_range_contains` lints.
+- **The X11 halves, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: `cargo test -p caminito-policy --lib` (399 passed) and the same `caminito` filters under `dbus-run-session` (262 passed, none failed or ignored). The 16 `::x11` tests among them passed, `tests::window_actions`' six included, and so did the xsettings tests; `tests::debug` passed against the X11 state-dump snapshot edited by hand. The full `caminito` suite wasn't run.
 

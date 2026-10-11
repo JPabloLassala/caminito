@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in and its xdg tests pass; the XWayland halves of the new fixture tests need the developer's `tools/check` (Xwayland doesn't start in the cloud container), and the checklist step is 173's closing run
+Status: resolved: the checklist step's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 147
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -22,7 +22,7 @@ Caminito's bindings come from the user's settings, as Marco's do, in place of M1
 ## Acceptance criteria
 
 - [x] Policy-free unit tests, written before the code, of the table: built from a set of key values, a changed key, `disabled`, the empty string, an unparseable value, two keys with the same combination, and the `-backward` rule.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: every binding that works today works from its key's default; changing a key with the test backend moves the binding at once; `disabled` unbinds; `switch-windows-all` opens the Window switcher over every workspace's windows once it's bound; a 98 grab of a combination Caminito stops binding is signalled.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: every binding that works today works from its key's default; changing a key with the test backend moves the binding at once; `disabled` unbinds; `switch-windows-all` opens the Window switcher over every workspace's windows once it's bound; a 98 grab of a combination Caminito stops binding is signalled.
 - [x] `org.mate.Marco.global-keybindings` and `window-keybindings` leave `UNSUPPORTED` if 147 put them there, and their rows in `docs/parity.md` say how they're read, with the tests above.
 - [x] [101](101-mate-control-center-caminito.md)'s checklist item no longer says a changed shortcut changes no binding: it says the shortcut applies at once, and checks it. The item is tagged M8 for that step, which is the developer's, run in a Session, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -56,3 +56,4 @@ Caminito's bindings come from the user's settings, as Marco's do, in place of M1
 - **The debug dump** has `bindings`, each combination in force with its key, in the order they're tried. The two `the_state_dump_shows_…` snapshots gained the list; the X11 one was edited by hand to match the xdg one, as its test can't run here.
 - **The checklist item** (*Windows and Keyboard Shortcuts open under Caminito, and name it*) is tagged M8 for step 4, now on *Toggle maximization state*, which Caminito binds (`maximize` is 149's), and checks the changed shortcut applies at once. It's run in 173's closing run.
 - **Not run here:** the cloud container's Xwayland 23.2 doesn't start under the fixture, so the X11 halves of the new `on_both_kinds!` tests, and every other X11-tier test, failed at "Xwayland starts", and `display_is_set_only_once_the_root_properties_and_xsettings_exist`, which waits on Xwayland, timed out. `a_killed_locker_comes_back_and_takes_the_lock_over_with_the_session_locked_meanwhile` failed once under the full suite's load and passed alone. caminito-theme's goldens differ in pixels on this container's fonts, untouched here. Every other test of the workspace passed. Clippy is clean on `caminito` apart from the three pre-existing `manual_range_contains` lints in caminito-theme.
+- **The X11 halves, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored. This ticket's tests passed, the `::x11` halves of `tests::bindings`' five `on_both_kinds!` tests included, with `tests::accelerators`, `input::bindings`, `settings::translate` and `tests::debug` against the X11 state-dump snapshot edited by hand; `display_is_set_only_once_the_root_properties_and_xsettings_exist` and `a_killed_locker_comes_back_…` passed too. None of the 8 failures is this ticket's: four of `tests::keymap`, which fail before M8 too (at `741fccd`), since libxkbcommon 1.13 writes a group's name as `name[1]`, not `name[Group1]`; `tests::grabs::alt_middle_drag_resizes_from_the_nearest_corner::x11`, which passes at `741fccd` and fails on master every time; and two of `tests::lock` and one of `tests::gamma_control`, which failed under the full suite's load and passed twice alone. The rest of `tools/check` wasn't run.
