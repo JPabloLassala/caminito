@@ -87,6 +87,9 @@ struct Grab {
     /// Where letting go of a move tiles or maximises the window, while the pointer is in a
     /// side's, a corner's or the top's zone (158).
     tile_target: Option<TileTarget>,
+    /// A move its client asked for of a maximised window, which stays maximised until the
+    /// pointer shakes it loose (144).
+    held: bool,
 }
 
 /// What letting go of a move does with the window, from where the pointer is (158).
@@ -955,7 +958,7 @@ impl<W: PolicyWindow> Policy<W> {
         let (seat, Some(pointer)) = (self.last_seat, self.pointer) else {
             return;
         };
-        if self.grabs.contains_key(&seat) || !self.begin_grab(seat, id, None, pointer) {
+        if self.grabs.contains_key(&seat) || !self.begin_grab(seat, id, None, pointer, false) {
             return;
         }
         let grab = self.grabs.get_mut(&seat).unwrap();
@@ -1537,7 +1540,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Starts moving a window with `seat`'s pointer. Returns false if the window can't be moved.
     pub fn begin_move(&mut self, seat: SeatId, id: WindowId, pointer: Point<f64, Logical>) -> bool {
-        self.begin_grab(seat, id, None, pointer)
+        self.begin_grab(seat, id, None, pointer, false)
     }
 
     /// Starts resizing a window's `edges` with `seat`'s pointer. Returns false if the window
@@ -1549,7 +1552,21 @@ impl<W: PolicyWindow> Policy<W> {
         edges: ResizeEdges,
         pointer: Point<f64, Logical>,
     ) -> bool {
-        self.begin_grab(seat, id, Some(edges), pointer)
+        self.begin_grab(seat, id, Some(edges), pointer, false)
+    }
+
+    /// Starts a move the window's client asked for, as one that draws its own titlebar does
+    /// for a press on it. Such a press is the client's titlebar drag, so a maximised window
+    /// is moved too: `grab_motion` holds it until the pointer shakes it loose, since the
+    /// client may ask at the press, before anything says it's a drag (144). Returns false
+    /// if the window can't be moved.
+    pub fn begin_requested_move(
+        &mut self,
+        seat: SeatId,
+        id: WindowId,
+        pointer: Point<f64, Logical>,
+    ) -> bool {
+        self.begin_grab(seat, id, None, pointer, true)
     }
 
     /// Starts moving a window from a titlebar drag that's crossed the drag threshold, with
@@ -1577,10 +1594,9 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Unmaximises or untiles `id` for `begin_titlebar_move`, keeping `pointer`'s fraction
-    /// across the still-maximised titlebar the same across the one it's restored to. A
-    /// maximised window's vertical position is left to `relayout`'s floating restore, and
-    /// a tiled one keeps `at_press`'s fraction down its frame; both then take the catch up
-    /// `begin_move`'s caller applies for the distance dragged since `at_press`.
+    /// across the still-maximised titlebar the same across the one it's restored to, and
+    /// `at_press`'s fraction down its frame. It then takes the catch up `begin_move`'s
+    /// caller applies for the distance dragged since `at_press`.
     ///
     /// Built from `geometry`, policy's own requested rectangle, rather than `Managed::frame`
     /// (which lags behind it until the client commits a matching size): a drag must track
@@ -1600,12 +1616,12 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             0.5
         };
-        // A tile may be far taller than the window it goes back to, so the press keeps its
-        // place down the frame too, as Marco puts a shaken loose tile under the pointer
+        // A tile or a maximised window may be far taller than the window it goes back to,
+        // and its floating geometry may be anywhere, so the press keeps its place down the
+        // frame too, as Marco puts a shaken loose window under the pointer
         // (window.c:7470-7485) (158).
-        let down = managed.tile.is_some().then(|| {
-            ((at_press.y - f64::from(before.loc.y)) / f64::from(before.size.h.max(1))).clamp(0., 1.)
-        });
+        let down = ((at_press.y - f64::from(before.loc.y)) / f64::from(before.size.h.max(1)))
+            .clamp(0., 1.);
         self.set_maximized(id, false);
         let Some(managed) = self.windows.get_mut(&id) else {
             return;
@@ -1614,11 +1630,9 @@ impl<W: PolicyWindow> Policy<W> {
         let after_width = f64::from(managed.geometry.size.w + e.left + e.right);
         let frame_x = (at_press.x - fraction * after_width).round() as i32;
         managed.geometry.loc.x = frame_x + e.left;
-        if let Some(down) = down {
-            let after_height = f64::from(managed.geometry.size.h + e.top + e.bottom);
-            let frame_y = (at_press.y - down * after_height).round() as i32;
-            managed.geometry.loc.y = frame_y + e.top;
-        }
+        let after_height = f64::from(managed.geometry.size.h + e.top + e.bottom);
+        let frame_y = (at_press.y - down * after_height).round() as i32;
+        managed.geometry.loc.y = frame_y + e.top;
         self.apply();
     }
 
@@ -1628,7 +1642,8 @@ impl<W: PolicyWindow> Policy<W> {
     ///
     /// As in Marco's `update_move` (window.c:7380-7445), a move holds a tiled window where
     /// it is until the pointer is twice the drag threshold from where the move began, then
-    /// untiles it under the pointer, as a titlebar drag does at once (144). The pointer's
+    /// untiles it under the pointer, as a titlebar drag does at once (144). A move its
+    /// client asked for holds a maximised window the same way. The pointer's
     /// place then picks where letting go tiles the window, before edge resistance moves
     /// it, and a snapping move tiles nowhere (158), nor does a keyboard move (156).
     pub fn grab_motion(&mut self, seat: SeatId, pointer: Point<f64, Logical>, snap: bool) {
@@ -1642,12 +1657,14 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         }
         if grab.resize.is_none() {
-            let (window, start_pointer) = (grab.window, grab.start_pointer);
-            if self.tile(window).is_some() {
+            let (window, start_pointer, held) = (grab.window, grab.start_pointer, grab.held);
+            if held || self.tile(window).is_some() {
                 let shake = f64::from(2 * self.config.drag_threshold);
                 if delta.x.abs().max(delta.y.abs()) < shake {
                     return;
                 }
+                // Let go of first, so that nothing ends the grab as its window is laid out.
+                self.grabs.get_mut(&seat).unwrap().held = false;
                 self.unmaximize_for_drag(window, start_pointer, pointer);
                 let loc = self.windows[&window].geometry.loc;
                 let grab = self.grabs.get_mut(&seat).unwrap();
@@ -1784,7 +1801,8 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Ends grabs on windows that can no longer be moved or resized: hidden, maximised
-    /// both ways or fullscreen, or shaded during a resize.
+    /// both ways or fullscreen, or shaded during a resize. A held move's window is still
+    /// maximised.
     fn end_stale_grabs(&mut self) {
         let stale: Vec<SeatId> = self
             .grabs
@@ -1792,7 +1810,7 @@ impl<W: PolicyWindow> Policy<W> {
             .filter(|(_, g)| {
                 let managed = &self.windows[&g.window];
                 !self.is_showing(g.window)
-                    || managed.maximized()
+                    || (managed.maximized() && !g.held)
                     || managed.fullscreen
                     || (managed.shaded && g.resize.is_some())
             })
@@ -1851,8 +1869,16 @@ impl<W: PolicyWindow> Policy<W> {
         id: WindowId,
         resize: Option<ResizeEdges>,
         pointer: Point<f64, Logical>,
+        requested: bool,
     ) -> bool {
-        let movable = self.can_grab(id, resize.is_some())
+        let held = requested
+            && resize.is_none()
+            && self.is_showing(id)
+            && self
+                .windows
+                .get(&id)
+                .is_some_and(|m| m.maximized() && !m.fullscreen);
+        let movable = (held || self.can_grab(id, resize.is_some()))
             && self.switcher.is_none()
             && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat);
         if !movable {
@@ -1876,6 +1902,7 @@ impl<W: PolicyWindow> Policy<W> {
                 warp: None,
                 moved: false,
                 tile_target: None,
+                held,
             },
         );
         self.apply();

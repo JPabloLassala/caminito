@@ -159,13 +159,40 @@ impl State {
             .caminito
             .start_window_grab(id, kind, start_data.location)
         {
-            let grab = Grab {
-                start_data,
-                purpose: Purpose::Window,
-            };
-            let pointer = self.caminito.seat.get_pointer().unwrap();
-            pointer.set_grab(self, grab, serial, Focus::Clear);
+            self.hold_pointer_for_window_grab(start_data, serial);
         }
+    }
+
+    /// Starts a move the window's client asked for, as `begin_window_grab` starts any
+    /// other. A maximised window is moved too, once the pointer shakes it loose: the press
+    /// was on a titlebar the client draws itself, as VS Code's is (144).
+    pub fn begin_requested_move_grab(
+        &mut self,
+        id: WindowId,
+        start_data: GrabStartData<State>,
+        serial: Serial,
+    ) {
+        if self.caminito.lock.is_locked() {
+            return;
+        }
+        let caminito = &mut self.caminito;
+        if caminito
+            .policy
+            .begin_requested_move(SEAT, id, start_data.location)
+        {
+            caminito.window_grab = Some(GrabKind::Move);
+            self.hold_pointer_for_window_grab(start_data, serial);
+        }
+    }
+
+    /// Holds the pointer for a move or resize policy has begun.
+    fn hold_pointer_for_window_grab(&mut self, start_data: GrabStartData<State>, serial: Serial) {
+        let grab = Grab {
+            start_data,
+            purpose: Purpose::Window,
+        };
+        let pointer = self.caminito.seat.get_pointer().unwrap();
+        pointer.set_grab(self, grab, serial, Focus::Clear);
     }
 
     /// Holds the pointer for policy's keyboard move or resize (156) or manual placement of a

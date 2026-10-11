@@ -160,17 +160,19 @@ fn dragging_the_titlebar_of_a_maximised_window_unmaximises_it_under_the_pointer(
     assert!(!policy.is_maximized_vertically(id(1)));
     // Restored to its floating size, positioned so the pointer keeps the same half-way
     // point across the (now much narrower) titlebar: frame width 410, so 205 either side
-    // of the pointer, minus the frame's 5px left border.
+    // of the pointer, minus the frame's 5px left border. The press is as far down the
+    // frame as it was down the maximised one, 10 of 1080 and so 3 of 330, not down at
+    // the floating geometry's 100.
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(
         geometry,
-        Rectangle::new((760, 100).into(), (400, 300).into())
+        Rectangle::new((760, 32).into(), (400, 300).into())
     );
 
     // The same grab keeps following the pointer, as an ordinary move does.
     policy.grab_motion(SEAT, at(970., 10.), false);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
-    assert_eq!(geometry.loc, (770, 100).into());
+    assert_eq!(geometry.loc, (770, 32).into());
 }
 
 #[test]
@@ -195,7 +197,7 @@ fn a_catch_up_after_crossing_the_threshold_keeps_the_pointers_fraction_across_th
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(
         geometry,
-        Rectangle::new((383, 120).into(), (400, 300).into())
+        Rectangle::new((383, 52).into(), (400, 300).into())
     );
 }
 
@@ -209,14 +211,14 @@ fn dragging_the_titlebar_of_a_half_maximised_window_unmaximises_both_axes() {
     policy.set_maximized_horizontally(id(1), true);
     assert!(policy.is_maximized_horizontally(id(1)));
 
-    assert!(policy.begin_titlebar_move(SEAT, id(1), at(500., 10.), at(500., 10.)));
+    assert!(policy.begin_titlebar_move(SEAT, id(1), at(500., 110.), at(500., 110.)));
 
     assert!(!policy.is_maximized_horizontally(id(1)));
     assert!(!policy.is_maximized_vertically(id(1)));
 
     // Without unmaximising first, `pin_maximized_axes` would keep the horizontal axis at
     // its maximised size and position for the rest of the grab; now it moves freely too.
-    policy.grab_motion(SEAT, at(600., 60.), false);
+    policy.grab_motion(SEAT, at(600., 160.), false);
     let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
     assert_eq!(
         geometry,
@@ -237,4 +239,61 @@ fn begin_titlebar_move_leaves_an_ordinary_window_exactly_as_begin_move_would() {
     policy.end_grab(SEAT);
 
     assert_eq!(policy.geometry(id(1)).unwrap().loc, (151, 70).into());
+}
+
+#[test]
+fn a_move_its_client_asks_for_holds_a_maximised_window_then_unmaximises_it_under_the_pointer() {
+    let mut policy = policy();
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(100, 500),
+        ms(1),
+    );
+    policy.set_maximized(id(1), true);
+
+    // A client that draws its own titlebar asks for the move at the press, so a click
+    // mustn't unmaximise: the window stays until the pointer is twice the drag threshold
+    // away, as a tiled one does.
+    assert!(policy.begin_requested_move(SEAT, id(1), at(960., 10.)));
+    policy.grab_motion(SEAT, at(960., 25.), false);
+    assert!(policy.is_maximized(id(1)));
+    assert_eq!(policy.grab(SEAT), Some(id(1)));
+
+    // Half of the floating 400 either side of the pointer, and the press 10 of 1080 down
+    // it, 3 of 300, then the 16 the pointer has gone.
+    policy.grab_motion(SEAT, at(960., 26.), false);
+    assert!(!policy.is_maximized_horizontally(id(1)));
+    assert!(!policy.is_maximized_vertically(id(1)));
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(
+        geometry,
+        Rectangle::new((760, 23).into(), (400, 300).into())
+    );
+
+    // Maximised again mid-drag, the grab ends as any other does.
+    policy.set_maximized(id(1), true);
+    assert_eq!(policy.grab(SEAT), None);
+}
+
+#[test]
+fn a_requested_move_let_go_of_before_the_threshold_leaves_the_window_maximised() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.set_maximized(id(1), true);
+
+    assert!(policy.begin_requested_move(SEAT, id(1), at(960., 10.)));
+    policy.grab_motion(SEAT, at(965., 12.), false);
+    policy.end_grab(SEAT);
+
+    assert!(policy.is_maximized(id(1)));
+    let (geometry, _) = window(&policy, 1).last_geometry().unwrap();
+    assert_eq!(geometry, Rectangle::new((0, 0).into(), (1920, 1080).into()));
+}
+
+#[test]
+fn a_requested_move_never_starts_on_a_fullscreen_window() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.set_fullscreen(id(1), true, None);
+
+    assert!(!policy.begin_requested_move(SEAT, id(1), at(960., 10.)));
 }

@@ -366,7 +366,11 @@ impl State {
         if !on_xwayland {
             return;
         }
-        self.begin_window_grab(id, kind, start_data, SERIAL_COUNTER.next_serial());
+        let serial = SERIAL_COUNTER.next_serial();
+        match kind {
+            GrabKind::Move => self.begin_requested_move_grab(id, start_data, serial),
+            GrabKind::Resize(_) => self.begin_window_grab(id, kind, start_data, serial),
+        }
     }
 
     /// Handles a commit to one of Xwayland's surfaces: content on a window's surface maps it

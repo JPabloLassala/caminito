@@ -327,6 +327,11 @@ on_both_kinds! {
         let p = policy(&f);
         assert!(!p.is_maximized_horizontally(pid) && !p.is_maximized_vertically(pid));
         let after_threshold = f.geometry(window).loc;
+        // The titlebar is still under the pointer, wherever the window was before.
+        let pointer = title + Point::from((100., 20.));
+        let frame = p.frame_rect(pid).unwrap().to_f64();
+        assert!(frame.contains(pointer));
+        assert!(pointer.y < f64::from(after_threshold.y));
 
         move_to(&mut f, title + Point::from((150., 20.)));
         assert_eq!(f.geometry(window).loc, after_threshold + Point::from((50, 0)));

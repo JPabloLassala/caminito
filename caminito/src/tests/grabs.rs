@@ -45,6 +45,43 @@ fn a_move_request_moves_the_window_with_the_pointer_until_release() {
 }
 
 #[test]
+fn a_move_request_on_a_maximised_window_unmaximises_it_under_the_pointer_once_dragged() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let pid = f.pid(window);
+    f.client(id).set_maximized(window.xdg());
+    f.sync(window);
+    assert!(f.state.caminito.policy.is_maximized(pid));
+    let maximised = f.geometry(window);
+
+    // A client that draws its own titlebar, such as VS Code, asks at the press: a click
+    // leaves the window maximised.
+    let serial = press_inside(&mut f, window, 200, 10);
+    let press = (maximised.loc + Point::from((200, 10))).to_f64();
+    f.client(id).start_move(window.xdg(), serial);
+    f.roundtrip(id);
+    assert_eq!(f.state.caminito.policy.grab(SEAT), Some(pid));
+    f.pointer_move(press.x + 5., press.y + 5.);
+    assert!(f.state.caminito.policy.is_maximized(pid));
+
+    // Dragged, it's unmaximised with the pointer still on it, near its top.
+    let pointer = press + Point::from((60., 40.));
+    f.pointer_move(pointer.x, pointer.y);
+    f.sync(window);
+    assert!(!f.state.caminito.policy.is_maximized_horizontally(pid));
+    assert!(!f.state.caminito.policy.is_maximized_vertically(pid));
+    let geometry = f.geometry(window);
+    assert_eq!(geometry.size, (400, 300).into());
+    assert!(geometry.to_f64().contains(pointer));
+    assert!(pointer.y - f64::from(geometry.loc.y) < 20.);
+
+    f.pointer_move(pointer.x + 30., pointer.y);
+    assert_eq!(f.geometry(window).loc, geometry.loc + Point::from((30, 0)));
+    f.pointer_button(BTN_LEFT, false);
+}
+
+#[test]
 fn a_move_request_without_a_held_button_is_refused() {
     let (mut f, id) = Fixture::connected(Kind::Xdg);
     f.client(id).bind_input();

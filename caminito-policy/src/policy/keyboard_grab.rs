@@ -73,7 +73,7 @@ impl<W: PolicyWindow> Policy<W> {
             return false;
         }
         let edges = resize.then(ResizeEdges::default);
-        if !self.begin_grab(seat, id, edges, Point::default()) {
+        if !self.begin_grab(seat, id, edges, Point::default(), false) {
             return false;
         }
         let grab = self.grabs.get_mut(&seat).unwrap();

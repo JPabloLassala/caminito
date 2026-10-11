@@ -85,7 +85,7 @@ impl XdgShellHandler for State {
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial) {
         if let Some((id, start_data)) = self.interactive_request(&surface, &seat, serial) {
-            self.begin_window_grab(id, GrabKind::Move, start_data, serial);
+            self.begin_requested_move_grab(id, start_data, serial);
         }
     }
 
