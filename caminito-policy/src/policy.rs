@@ -546,6 +546,8 @@ fn frame_around(
 }
 
 pub struct Policy<W: PolicyWindow> {
+    /// The settings, as `settings_changed` last gave them.
+    config: Config,
     windows: BTreeMap<WindowId, Managed<W>>,
     /// Every window, bottom to top: one stack, as Marco keeps it, which each workspace's
     /// stacking is the windows on it of (ADR 0025).
@@ -562,14 +564,6 @@ pub struct Policy<W: PolicyWindow> {
     showing_desktop: BTreeMap<usize, ShownDesktop>,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
-    /// The names the settings give, which may be fewer or more than the workspaces.
-    configured_names: Vec<String>,
-    /// `dynamic-workspaces` (151).
-    dynamic_workspaces: bool,
-    /// The grid the settings ask for, which the count makes a `Grid` of.
-    workspace_layout: WorkspaceLayout,
-    /// `wrap-style` (150).
-    wrap_style: WrapStyle,
     outputs: Vec<Output>,
     /// The user's primary output, or its stand-in (81), if the compositor has told of one.
     primary_output: Option<OutputId>,
@@ -588,38 +582,23 @@ pub struct Policy<W: PolicyWindow> {
     switcher: Option<switcher::Open>,
     /// The window menu (161), while it's open.
     window_menu: Option<WindowMenu>,
-    /// `alt-tab-raise-windows`.
-    alt_tab_raise_windows: bool,
-    /// `alt-tab-minimized-placement` (163).
-    alt_tab_minimized_placement: MinimizedPlacement,
     /// The Layer surfaces that accept the keyboard, most recently used first (163).
     layers: Vec<LayerSurfaceId>,
     /// The one that has the keyboard in place of the focused window.
     keyboard_layer: Option<LayerSurfaceId>,
     /// What the Window switcher last chose, until the compositor takes it.
     chosen: Option<SwitchEntry>,
-    placement_mode: PlacementMode,
-    center_new_windows: bool,
-    allow_tiling: bool,
-    allow_top_tiling: bool,
-    allow_tile_cycling: bool,
-    drag_threshold: i32,
-    /// `show-desktop-skip-list`, which the next Show Desktop takes.
-    show_desktop_skip_list: ShowDesktopSkipList,
     /// Where the pointer was when the compositor last said, which `pointer` and `manual`
     /// placement put a new window at.
     pointer: Option<Point<f64, Logical>>,
     /// The pointer focus modes, `raise-on-click` and auto-raise (153).
     pointer_focus: pointer::PointerFocus,
-    /// `focus-new-windows` (165).
-    focus_new_windows: FocusNewWindows,
-    /// `alt-tab-urgent-placement` (165).
-    urgent_placement: UrgentPlacement,
 }
 
 impl<W: PolicyWindow> Policy<W> {
     pub fn new(config: Config) -> Self {
         let mut policy = Self {
+            config,
             windows: BTreeMap::new(),
             stack: Vec::new(),
             workspace_count: 1,
@@ -627,10 +606,6 @@ impl<W: PolicyWindow> Policy<W> {
             previous: None,
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
-            configured_names: Vec::new(),
-            dynamic_workspaces: false,
-            workspace_layout: WorkspaceLayout::default(),
-            wrap_style: WrapStyle::NoWrap,
             outputs: Vec::new(),
             primary_output: None,
             seats: BTreeSet::new(),
@@ -641,24 +616,13 @@ impl<W: PolicyWindow> Policy<W> {
             mru: Vec::new(),
             switcher: None,
             window_menu: None,
-            alt_tab_raise_windows: false,
-            alt_tab_minimized_placement: MinimizedPlacement::End,
             layers: Vec::new(),
             keyboard_layer: None,
             chosen: None,
-            placement_mode: PlacementMode::Automatic,
-            center_new_windows: false,
-            show_desktop_skip_list: ShowDesktopSkipList::default(),
-            allow_tiling: false,
-            allow_top_tiling: false,
-            allow_tile_cycling: true,
-            drag_threshold: 0,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
-            focus_new_windows: FocusNewWindows::default(),
-            urgent_placement: UrgentPlacement::default(),
         };
-        policy.settings_changed(config);
+        policy.apply_config();
         policy
     }
 
@@ -722,23 +686,14 @@ impl<W: PolicyWindow> Policy<W> {
     /// unread (151).
     pub fn settings_changed(&mut self, config: Config) {
         self.pointer_focus.settings_changed(&config);
-        self.configured_names = config.workspace_names;
-        self.dynamic_workspaces = config.dynamic_workspaces;
-        self.workspace_layout = config.workspace_layout;
-        self.wrap_style = config.wrap_style;
-        self.alt_tab_raise_windows = config.alt_tab_raise_windows;
-        self.alt_tab_minimized_placement = config.alt_tab_minimized_placement;
-        self.placement_mode = config.placement_mode;
-        self.center_new_windows = config.center_new_windows;
-        self.allow_tiling = config.allow_tiling;
-        self.allow_top_tiling = config.allow_top_tiling;
-        self.allow_tile_cycling = config.allow_tile_cycling;
-        self.drag_threshold = config.drag_threshold;
-        self.show_desktop_skip_list = config.show_desktop_skip_list;
-        self.focus_new_windows = config.focus_new_windows;
-        self.urgent_placement = config.urgent_placement;
-        if !self.dynamic_workspaces {
-            self.set_workspace_count(config.workspace_count);
+        self.config = config;
+        self.apply_config();
+    }
+
+    /// Does what a new `config` asks for at once: the workspaces' count and names.
+    fn apply_config(&mut self) {
+        if !self.config.dynamic_workspaces {
+            self.set_workspace_count(self.config.workspace_count);
         }
         self.name_workspaces();
         // The active workspace may have been removed, so every seat's focus is checked.
@@ -781,7 +736,8 @@ impl<W: PolicyWindow> Policy<W> {
     fn name_workspaces(&mut self) {
         self.workspace_names = (0..self.workspace_count)
             .map(|index| {
-                self.configured_names
+                self.config
+                    .workspace_names
                     .get(index)
                     .cloned()
                     .unwrap_or_else(|| default_workspace_name(index + 1))
@@ -887,7 +843,7 @@ impl<W: PolicyWindow> Policy<W> {
         } else {
             self.focus_mapped(id, now);
         }
-        if by_pointer && self.placement_mode == PlacementMode::Manual {
+        if by_pointer && self.config.placement_mode == PlacementMode::Manual {
             self.begin_manual_placement(id);
         }
         self.apply();
@@ -1019,7 +975,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.set_last_seat(seat);
         if self.is_showing(id) {
             let dock = self.windows[&id].window_type == WindowType::Dock;
-            if (dock || self.focus_window(seat, id, now)) && self.pointer_focus.raise_on_click() {
+            if (dock || self.focus_window(seat, id, now)) && self.config.raise_on_click {
                 self.raise_family(id);
             }
         }
@@ -1030,7 +986,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// that raises the window, as Marco raises one it was about to move when the pointer
     /// hardly moved (display.c:3857-3870); with it on, the press raised it already (153).
     pub fn titlebar_released(&mut self, id: WindowId) {
-        if !self.pointer_focus.raise_on_click() && self.is_showing(id) {
+        if !self.config.raise_on_click && self.is_showing(id) {
             self.raise_family(id);
         }
         self.apply();
@@ -1104,7 +1060,7 @@ impl<W: PolicyWindow> Policy<W> {
                 self.active,
                 ShownDesktop {
                     focus: self.focus.clone(),
-                    skip_list: self.show_desktop_skip_list.clone(),
+                    skip_list: self.config.show_desktop_skip_list.clone(),
                 },
             );
             // Marco focuses the most recently used desktop window. One that never had the
@@ -1144,7 +1100,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// its edge, if the move goes anywhere.
     fn workspace_towards(&self, direction: Direction) -> Option<usize> {
         self.workspace_grid()
-            .neighbour(self.active, direction, self.wrap_style)
+            .neighbour(self.active, direction, self.config.wrap_style)
     }
 
     /// Switches to the workspace beside the active one in the grid, if there is one.
@@ -1538,7 +1494,7 @@ impl<W: PolicyWindow> Policy<W> {
         if grab.resize.is_none() {
             let (window, start_pointer) = (grab.window, grab.start_pointer);
             if self.tile(window).is_some() {
-                let shake = f64::from(2 * self.drag_threshold);
+                let shake = f64::from(2 * self.config.drag_threshold);
                 if delta.x.abs().max(delta.y.abs()) < shake {
                     return;
                 }
@@ -1612,7 +1568,7 @@ impl<W: PolicyWindow> Policy<W> {
             && let Some(managed) = self.windows.get_mut(&grab.window)
         {
             managed.resize = None;
-            if !self.pointer_focus.raise_on_click() && !grab.moved {
+            if !self.config.raise_on_click && !grab.moved {
                 self.raise_family(grab.window);
             }
             let managed = self.windows.get_mut(&grab.window).unwrap();
@@ -1642,13 +1598,13 @@ impl<W: PolicyWindow> Policy<W> {
     /// threshold inside the work area's, a corner is where it meets the same strip along
     /// the top or bottom, and the top's zone is the output's edge down to the work area's.
     fn tile_target(&self, id: WindowId, pointer: Point<f64, Logical>) -> Option<TileTarget> {
-        if !self.allow_tiling {
+        if !self.config.allow_tiling {
             return None;
         }
         let p = Point::<i32, Logical>::new(pointer.x.floor() as i32, pointer.y.floor() as i32);
         let output = self.outputs.iter().find(|o| o.geometry.contains(p))?;
         let (o, area) = (output.geometry, Self::work_area(output));
-        let zone = 2 * self.drag_threshold;
+        let zone = 2 * self.config.drag_threshold;
         let can_maximize = self.functions(id).maximize;
         let can_tile = self.can_tile(id, area);
         let corner = |top, bottom, side| {
@@ -1669,7 +1625,10 @@ impl<W: PolicyWindow> Policy<W> {
         };
         match tile {
             Some(tile) => Some(TileTarget::Tile(tile, output.id)),
-            None => (can_maximize && self.allow_top_tiling && p.y >= o.loc.y && p.y <= area.loc.y)
+            None => (can_maximize
+                && self.config.allow_top_tiling
+                && p.y >= o.loc.y
+                && p.y <= area.loc.y)
                 .then_some(TileTarget::Maximize(output.id)),
         }
     }
@@ -1833,7 +1792,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Where each workspace is: the grid the layout keys give this many workspaces (96).
     pub fn workspace_grid(&self) -> Grid {
-        Grid::new(self.workspace_count, self.workspace_layout)
+        Grid::new(self.workspace_count, self.config.workspace_layout)
     }
 
     /// Each workspace's name, from the first.
@@ -2284,7 +2243,7 @@ impl<W: PolicyWindow> Policy<W> {
                 }
             }
         } else if let (true, PlacementMode::Pointer | PlacementMode::Manual, Some(pointer)) =
-            (by_mode, self.placement_mode, self.pointer)
+            (by_mode, self.config.placement_mode, self.pointer)
         {
             // Kept within the work area of the output the pointer is on (154), as Marco's
             // constraints keep a new window on its monitor.
@@ -2308,7 +2267,7 @@ impl<W: PolicyWindow> Policy<W> {
             match self.placement_output() {
                 None => Point::new(left, top),
                 Some(output) => {
-                    let center = by_mode && self.center_new_windows;
+                    let center = by_mode && self.config.center_new_windows;
                     self.place_on(id, output, frame_size, (left, top), center)
                 }
             }
