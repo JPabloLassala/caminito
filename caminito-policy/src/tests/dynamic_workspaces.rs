@@ -3,7 +3,7 @@
 //! at Marco `8522ed1`).
 
 use super::*;
-use crate::MAX_WORKSPACES;
+use crate::{Direction, MAX_WORKSPACES};
 
 /// A policy with one output and `dynamic-workspaces` on, from Marco's four workspaces.
 fn dynamic() -> Policy<TestWindow> {
@@ -98,6 +98,36 @@ fn the_active_workspace_removed_activates_the_first() {
     assert_eq!(policy.workspace_count(), 2);
     assert_eq!(policy.active_workspace(), 0);
     assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn the_active_workspace_removed_is_a_switch_to_the_first() {
+    let mut policy = dynamic();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.move_to_workspace(id(2), 1);
+    policy.switch_workspace(2);
+    policy.take_workspace_switches();
+
+    policy.unmap_window(id(2));
+
+    assert_eq!(policy.active_workspace(), 0);
+    assert_eq!(policy.take_workspace_switches(), [Direction::Left]);
+}
+
+#[test]
+fn the_active_workspace_following_its_windows_down_is_no_switch() {
+    let mut policy = dynamic();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.move_to_workspace(id(2), 1);
+    policy.switch_workspace(1);
+    policy.take_workspace_switches();
+
+    policy.unmap_window(id(1));
+
+    assert_eq!(policy.active_workspace(), 0);
+    assert_eq!(policy.take_workspace_switches(), []);
 }
 
 #[test]

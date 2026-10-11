@@ -13,6 +13,7 @@ cd "$(dirname "$(realpath "$0")")/.."
 if [ "${1-}" = --deps ]; then
   # pixman: the headless backend links it in test builds. wayland: the fixture's clients load
   # libwayland-client. dbus: dbus-run-session gives caminito's tests a private bus (14).
+  # libcanberra: caminito links it to play its sounds (170).
   # pango, gdk-pixbuf2: caminito-theme lays out titles and loads theme images with them.
   # meson, gtk3: the palette helper's build. xorg-server-xvfb, xorg-xauth: xvfb-run, which
   # the palette helper's test runs under. xorg-xwayland: the X11 tier spawns a real Xwayland
@@ -20,7 +21,7 @@ if [ "${1-}" = --deps ]; then
   # tty backend links them. gtk4: caminito-displays (84). gtk-session-lock, mate-desktop, pam:
   # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
   # passwords against. nodejs, npm: the global menu extension (116).
-  sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus \
+  sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
     nodejs npm

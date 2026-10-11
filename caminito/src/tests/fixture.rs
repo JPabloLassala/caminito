@@ -38,6 +38,7 @@ use crate::input::{AxisScroll, Scroll, V120_CLICK, WHEEL_CLICK};
 use crate::output::saved::{self, SavedLayouts};
 use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Value};
+use crate::sound::Recorder;
 use crate::state::{ClientState, State};
 use crate::window::Mapped;
 
@@ -194,6 +195,8 @@ pub enum Kind {
 pub struct Fixture {
     event_loop: EventLoop<'static, State>,
     pub state: State,
+    /// The sounds Caminito asked its player for (170).
+    pub sounds: Recorder,
     clients: Vec<TestClient>,
     input_millis: u32,
     /// Caminito's well-known names on the tests' bus, while this fixture has them.
@@ -366,6 +369,9 @@ pub struct WindowSpec {
     /// Whether it can be asked to close: `WM_DELETE_WINDOW` in `WM_PROTOCOLS`, as toolkits
     /// set it. An xdg toplevel always can.
     pub delete_window: bool,
+    /// X11 only: whether `WM_PROTOCOLS` has `_NET_WM_PING`, as toolkits set it. An xdg
+    /// client is always pinged.
+    pub ping: bool,
     /// xdg only: whether it makes a `wp_fractional_scale_v1` before its first commit, as
     /// GTK4 and Qt 6 do.
     pub fractional_scale: bool,
@@ -394,6 +400,7 @@ impl Default for WindowSpec {
             input: None,
             cardinals: Vec::new(),
             delete_window: true,
+            ping: false,
             fractional_scale: false,
             sync_request: false,
             fixed_size: false,
@@ -452,10 +459,17 @@ impl Fixture {
             schema_dir: schema_dir.to_owned(),
             initial,
         };
-        let state = State::new_headless(&event_loop, Display::new().unwrap(), settings);
+        let sounds = Recorder::default();
+        let state = State::new_headless(
+            &event_loop,
+            Display::new().unwrap(),
+            settings,
+            Box::new(sounds.clone()),
+        );
         Self {
             event_loop,
             state,
+            sounds,
             clients: Vec::new(),
             input_millis: 0,
             names: None,
@@ -830,6 +844,7 @@ impl Fixture {
             title: spec.title,
             class: spec.app_id,
             delete_window: spec.delete_window,
+            ping: spec.ping,
             empty: false,
             background: None,
             override_redirect: false,

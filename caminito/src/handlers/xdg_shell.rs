@@ -25,7 +25,7 @@ use smithay::utils::{Logical, Point, Rectangle, Serial};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::dialog::XdgDialogHandler;
 use smithay::wayland::shell::xdg::{
-    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+    PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellHandler, XdgShellState,
 };
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
@@ -49,6 +49,11 @@ impl XdgShellHandler for State {
         // The initial configure goes out on the initial commit.
         let window = Window::new_wayland_window(surface);
         self.caminito.window_created(window);
+    }
+
+    /// The answer to the ping that went with a request to close (168).
+    fn client_pong(&mut self, client: ShellClient) {
+        self.caminito.xdg_client_answered(&client);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {

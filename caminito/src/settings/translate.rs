@@ -140,8 +140,8 @@ pub const SCHEMAS: &[Schema] = &[
 ///
 /// Keys that are *never* supported aren't here: they're ignored without a word (09, 53).
 /// Of the input schemas, those are `motion-threshold` and `tap-button-*-finger`, which msd
-/// uses only for non-libinput drivers, and the keyboard's `bell-mode`, `click`,
-/// `click-volume`, `bell-pitch`, `bell-duration` and `bell-custom-file`.
+/// uses only for non-libinput drivers, and the keyboard's `click`, `click-volume`,
+/// `bell-pitch`, `bell-duration` and `bell-custom-file`.
 ///
 /// `org.mate.peripherals-keyboard-xkb.general`'s `group-per-window` and `default-group` are
 /// unsupported, as v0.1 has one global group, but they're documented rather than logged
@@ -831,7 +831,9 @@ pub struct Sound {
 /// and flashes by the visual bell's (169).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bell {
-    /// `audible-bell`: whether a bell plays the sound theme's bell.
+    /// `audible-bell`: whether a bell plays the sound theme's bell (170). The keyboard's
+    /// `bell-mode` set to `off` silences it too, whatever `audible-bell` says; `on` and
+    /// `custom` are both on (09).
     pub audible: bool,
     /// `visual-bell`: whether a bell flashes.
     pub visual: bool,
@@ -1280,7 +1282,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             input_feedback_sounds: r.bool(SOUND, "input-feedback-sounds", false),
         },
         bell: Bell {
-            audible: r.bool(MARCO_GENERAL, "audible-bell", true),
+            audible: r.bool(MARCO_GENERAL, "audible-bell", true)
+                && r.string(KEYBOARD, "bell-mode", "on") != "off",
             visual: r.bool(MARCO_GENERAL, "visual-bell", false),
             visual_type: r.nick(
                 MARCO_GENERAL,

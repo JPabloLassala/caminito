@@ -1077,7 +1077,8 @@ session_env() {
   lowercase, a notification says *Sticky Keys turned on* after the second five, and the
   dialog's tick follows each. In step 7 the quick tap types nothing and the held key types
   `a` after the delay, then the second quick tap of `a` types nothing. In step 8 the press is
-  logged as a bell, which flashes as the visual bell says (169) and doesn't sound until 170.
+  logged as a bell, which flashes as the visual bell says (169) and sounds as the audible
+  bell says (170).
 - **Debug tool:** `gsettings monitor org.mate.accessibility-keyboard`, `wev` in place of
   pluma and `xev` in place of xterm for the keys and modifiers each gets, and `DumpState`'s
   `bell`, whose `source` is `accessx` for one of these beeps.
@@ -1547,6 +1548,31 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `DumpState`'s `bell`, whose
   `count` goes up at each bell and whose `last` names its source and window.
 
+### The bell and the workspace switches sound
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with the speakers on. Open `mate-terminal`, a native
+     Wayland window, and `xterm`, an XWayland one. In mate-control-center's *Sound*, on
+     *Sound Effects*, choose a sound theme and tick *Enable window and button sounds*.
+  2. Run `printf '\a'` in each terminal.
+  3. Press Ctrl+Alt+Right, Ctrl+Alt+Left and, with the workspaces in two rows, Ctrl+Alt+Down
+     and Ctrl+Alt+Up. Click another workspace in the panel's workspace switcher.
+  4. Choose another sound theme in *Sound*, and repeat steps 2 and 3.
+  5. Untick *Enable window and button sounds*, and repeat steps 2 and 3.
+  6. Run `gsettings set org.mate.Marco.general audible-bell false`, and `printf '\a'` in
+     each terminal. Set it back to `true`, run `gsettings set org.mate.peripherals-keyboard
+     bell-mode off`, and ring again. Set `bell-mode` back to `on`.
+  7. Run as part of M8's closing run (173).
+- **Expected:** in step 2 each terminal's bell plays the theme's bell. In step 3 each switch
+  plays the theme's sound for its direction, the pager's click too. In step 4 the sounds are
+  the new theme's, with no restart. In step 5 the bell still plays and the switches are
+  silent. In step 6 neither bell plays, with either key (170).
+- **Debug tool:** `gsettings monitor org.mate.sound`, `DumpState`'s `bell`, the journal
+  (`journalctl --user -b -t caminito`), where a sound libcanberra can't play is logged, and
+  `canberra-gtk-play -i bell-window-system` or `-i desktop-switch-right`, which plays the
+  same sound without Caminito.
+
 ## Marco parity
 
 ### Each placement mode places a native and an X11 window on two outputs
@@ -1781,6 +1807,34 @@ session_env() {
   `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
   `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
 
+### Focus-stealing prevention for XWayland windows, and urgency in the window list
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `xterm` and `wmctrl` installed and
+     `focus-new-windows` at `smart`, Marco's default. Open `xterm` from the panel's menu, and
+     `mate-terminal`.
+  2. In `xterm`, run `(sleep 5; GDK_BACKEND=x11 pluma --new-window) &`, wait for Pluma's
+     window, then run the same command again and focus `mate-terminal` before the second
+     window opens.
+  3. Look at the second Pluma window's button in the panel's window list, and at its cell in
+     the Window switcher (Alt+Tab, then Escape). In `mate-terminal`, find its id with
+     `wmctrl -l` and run `xprop -id <id> _NET_WM_STATE`.
+  4. Click the button in the window list.
+  5. Focus `mate-terminal`, then in it run `wmctrl -a xterm`.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the first Pluma window takes the focus, as its client's first
+  window; the second opens under the focused window and doesn't take the focus. In step 3 its
+  button in the window list shows that it wants attention, its cell in the Window switcher
+  has a dot in its top right corner, and its `_NET_WM_STATE` has
+  `_NET_WM_STATE_DEMANDS_ATTENTION`. In step 4 the window comes to the top with the focus,
+  and its button and its cell no longer show it wants attention. In step 5 `xterm` takes the
+  focus: `wmctrl` gives no source indication, which Caminito honours as Marco does (166).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
+  `focus` member show which was refused, `xprop -id <window> _NET_WM_STATE _NET_WM_PID`, and
+  `WAYLAND_DEBUG=1 mate-panel --replace` for the `xfce_foreign_toplevel_handle_v1` `state`
+  events.
+
 ### A failed command's dialog, and `rename-workspace`
 
 - **Milestone:** M8, run in M8's closing run (173).
@@ -1908,3 +1962,33 @@ session_env() {
 - **Debug tool:** Caminito's log, which names a value of `mouse-button-modifier` it can't
   use; `org.mate.Caminito.Debug`'s state dump, whose `window_menu` member shows the open
   menu.
+
+### "Not responding" and Force Quit
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open `pluma` (a native window)
+     and `xterm` (X11).
+  2. Stop `pluma` with `kill -STOP $(pidof pluma)` from a terminal. Focus it, press Alt+F4,
+     and wait five seconds.
+  3. In the dialog, choose *Wait*. Press Alt+F4 on `pluma` again, and before the dialog
+     shows run `kill -CONT $(pidof pluma)`.
+  4. Open `pluma` again, stop it, press Alt+F4 and wait for the dialog. Press Alt+F4 on
+     `pluma` once more, and wait five seconds. Press Alt+F4 on the dialog, and then Escape
+     in it.
+  5. Press Alt+F4 on `pluma` once more, wait for the dialog and choose *Force Quit*.
+  6. Repeat steps 2 to 5 with `xterm`, stopped with `kill -STOP $(pidof xterm)`.
+  7. Open `pluma` again, stop it, press Alt+F4, wait for the dialog, and run
+     `kill -CONT $(pidof pluma)`.
+- **Expected:** in step 2 Marco's dialog shows after five seconds, titled *Marco*, with the
+  window's title, "is not responding", and the buttons *Wait* and *Force Quit*. In step 3
+  the dialog goes and `pluma` stays, stopped; then `pluma` closes with no dialog. In step
+  4 the second Alt+F4 shows no second dialog, and gives the first one the focus; Alt+F4
+  on the dialog leaves it and `pluma` as they are, and Escape closes the dialog and
+  `pluma` stays. In step 5 `pluma`'s window goes at once and its
+  process is gone (`pidof pluma` prints nothing). In step 6 `xterm` does the same. In
+  step 7 the dialog goes by itself as `pluma` closes. Caminito, Xwayland and the other
+  windows stay throughout (168).
+- **Debug tool:** `journalctl -t caminito` for `forcing … to quit` and `can't force … to
+  quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
+  `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.

@@ -9,6 +9,10 @@
 //! time is when Caminito issued it, and the focused window's user time is when the seat's
 //! focus last changed. *strict* differs from *smart* in Marco only for terminals; here it
 //! asks for a token tied to user input, as 05 has it.
+//!
+//! XWayland's windows carry no token (X11 startup notification is 05's), so they take the
+//! path of a window with none (166). `_NET_ACTIVE_WINDOW` is judged by its source
+//! indication, since X's timestamp isn't on Caminito's clock.
 
 use std::time::Duration;
 
@@ -55,14 +59,24 @@ pub struct ActivationToken {
 /// What a window maps with to claim the focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FocusClaim {
-    /// Nothing is checked, and the window takes the focus as every window did before 165:
-    /// XWayland's windows, until 166.
+    /// Nothing is checked, and the window takes the focus as every window did before 165.
     #[default]
     Unchecked,
-    /// A native window with no token, or with one Caminito doesn't know.
+    /// A native window with no token, or with one Caminito doesn't know, and every
+    /// XWayland window (166).
     NoToken,
     /// A native window with a token.
     Token(ActivationToken),
+}
+
+/// Who asks to activate a window with no token: `_NET_ACTIVE_WINDOW`'s source indication
+/// (166).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivationSource {
+    /// A pager or a window list, which acts for the user: honoured.
+    Pager,
+    /// The window's own client: honoured only if that client has the focus already.
+    Application,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -81,19 +95,72 @@ impl<W: PolicyWindow> Policy<W> {
         }
         if token.is_some_and(|token| self.token_gives_focus(seat, token, now)) {
             self.activate(seat, id, now);
-        } else if self.focus(seat) != Some(id)
-            && let Some(managed) = self.windows.get_mut(&id)
-        {
-            managed.demands_attention = true;
+        } else {
+            self.set_demands_attention(id, true);
         }
     }
 
-    /// Whether the window asks for the user's attention: it was refused the focus and hasn't
-    /// had it since, or its client says so.
+    /// A client asks to activate `id` with no token, as `source`. A pager's request
+    /// activates it as `activate` does, and so does an application's while its client has
+    /// the focus, or nothing has; otherwise the window is made urgent.
+    ///
+    /// Marco judges both by the request's timestamp against the user's last input
+    /// (window.c:3177-3188), and looks at the source only to raise the window.
+    pub fn request_activation_from(
+        &mut self,
+        seat: SeatId,
+        id: WindowId,
+        source: ActivationSource,
+        now: Duration,
+    ) {
+        if !self.windows.contains_key(&id) {
+            return;
+        }
+        let honoured = match source {
+            ActivationSource::Pager => true,
+            ActivationSource::Application => self
+                .focus(seat)
+                .is_none_or(|focused| focused == id || self.same_client(id, focused)),
+        };
+        if honoured {
+            self.activate(seat, id, now);
+        } else {
+            self.set_demands_attention(id, true);
+        }
+    }
+
+    /// Sets or unsets the window's demand for attention, as its client asks with
+    /// `_NET_WM_STATE_DEMANDS_ATTENTION`, or as policy does for a window it refuses the
+    /// focus. A client can take back a demand policy made, as in Marco (window.c:5370-5378).
+    /// A window that has the focus demands none.
+    pub fn set_demands_attention(&mut self, id: WindowId, demands_attention: bool) {
+        let focused = self.focus.values().any(|focused| *focused == id);
+        if let Some(managed) = self.windows.get_mut(&id) {
+            managed.demands_attention = demands_attention && !focused;
+        }
+    }
+
+    /// Whether the window demands attention: policy refused it the focus, or its client
+    /// asked, and it hasn't had the focus since. It's what `_NET_WM_STATE_DEMANDS_ATTENTION`
+    /// says of an XWayland window.
+    pub fn demands_attention(&self, id: WindowId) -> bool {
+        self.windows
+            .get(&id)
+            .is_some_and(|managed| managed.demands_attention)
+    }
+
+    /// Whether the window asks for the user's attention: it demands attention, or its
+    /// client's urgency hint says so.
     pub fn is_urgent(&self, id: WindowId) -> bool {
         self.windows
             .get(&id)
             .is_some_and(|managed| managed.demands_attention || managed.window.urgent())
+    }
+
+    /// Whether the two windows are one client's, which policy tells by the process.
+    fn same_client(&self, a: WindowId, b: WindowId) -> bool {
+        let pid = self.windows[&a].window.pid();
+        pid.is_some() && self.windows[&b].window.pid() == pid
     }
 
     /// Whether `id`, which has just mapped, may take the focus with `claim`.
@@ -113,10 +180,8 @@ impl<W: PolicyWindow> Policy<W> {
         };
         // A window of the focused window's client is as tied to the user's input as a token
         // of that client's would be: Marco's toolkits give it the app's last user time.
-        let pid = self.windows[&id].window.pid();
-        let same_client =
-            |other: &WindowId| pid.is_some() && self.windows[other].window.pid() == pid;
-        if same_client(&focused) {
+        // Marco never refuses a transient of the focused window (window.c:2155).
+        if self.same_client(id, focused) || self.is_ancestor(focused, id) {
             return true;
         }
         // MATE's launchers pass no token yet (05).
@@ -124,7 +189,7 @@ impl<W: PolicyWindow> Policy<W> {
             && !self
                 .windows
                 .keys()
-                .any(|other| *other != id && same_client(other))
+                .any(|other| *other != id && self.same_client(id, *other))
     }
 
     /// Whether `token` gives the focus for `seat` now: it's recent, no older than the seat's

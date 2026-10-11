@@ -1,5 +1,6 @@
 //! `Policy`: Caminito's window-management model, driven by events and applied through `W`.
 
+use std::cmp::Ordering;
 use std::time::Duration;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,7 +28,7 @@ mod window_actions;
 mod window_menu;
 
 pub use focus_stealing::{
-    ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
+    ActivationSource, ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
 };
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
@@ -268,8 +269,8 @@ struct Managed<W> {
     tile: Option<Tiled>,
     /// The geometry to go back to, while maximised, tiled or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
-    /// Refused the focus, and not focused since (165): Marco's
-    /// `wm_state_demands_attention`.
+    /// Refused the focus, or its client asked for attention, and not focused since (165,
+    /// 166): Marco's `wm_state_demands_attention`.
     demands_attention: bool,
     /// `attach-modal-dialogs`, which the window's functions depend on (177).
     attach_modal_dialogs: bool,
@@ -632,6 +633,9 @@ pub struct Policy<W: PolicyWindow> {
     /// (150). Every switch sets it, as Marco's `meta_workspace_activate_with_focus` does
     /// (workspace.c:399-400), and it's forgotten when its workspace is removed.
     previous: Option<usize>,
+    /// The way each switch went since `take_workspace_switches` last took them, for the
+    /// compositor's switch sounds (170).
+    switches: Vec<Direction>,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
     /// (workspace.h:79).
     showing_desktop: BTreeMap<usize, ShownDesktop>,
@@ -679,6 +683,7 @@ impl<W: PolicyWindow> Policy<W> {
             workspace_count: 1,
             active: 0,
             previous: None,
+            switches: Vec::new(),
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             outputs: Vec::new(),
@@ -797,6 +802,8 @@ impl<W: PolicyWindow> Policy<W> {
             for managed in self.windows.values_mut() {
                 managed.workspace = managed.workspace.min(last);
             }
+            // In the grid as it was, which had the workspace.
+            self.note_switch(self.workspace_grid(), self.active.min(last));
             self.workspace_count = count;
             self.active = self.active.min(last);
             self.forget_removed_previous();
@@ -1228,6 +1235,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.close_switcher(switcher::Close::Dropped);
             // And closes the window menu, whose moves are from the active workspace (161).
             self.window_menu = None;
+            self.note_switch(self.workspace_grid(), workspace);
             self.previous = Some(self.active);
             self.active = workspace;
             self.focus.clear();
@@ -1238,6 +1246,29 @@ impl<W: PolicyWindow> Policy<W> {
             }
         }
         self.apply();
+    }
+
+    /// Notes the way a switch from the active workspace to `to` goes in `grid`, by their
+    /// cells, as Marco's `workspace_switch_sound` has it (workspace.c:310-362): left or right
+    /// where the columns differ, and up or down only within a column. A switch that wraps
+    /// past the grid's edge so goes the other way.
+    pub(super) fn note_switch(&mut self, grid: Grid, to: usize) {
+        let (from_column, from_row) = grid.cell(self.active);
+        let (column, row) = grid.cell(to);
+        let direction = match (column.cmp(&from_column), row.cmp(&from_row)) {
+            (Ordering::Less, _) => Direction::Left,
+            (Ordering::Greater, _) => Direction::Right,
+            (Ordering::Equal, Ordering::Less) => Direction::Up,
+            (Ordering::Equal, Ordering::Greater) => Direction::Down,
+            (Ordering::Equal, Ordering::Equal) => return,
+        };
+        self.switches.push(direction);
+    }
+
+    /// The way each switch of the active workspace went since this was last called, the
+    /// oldest first, however the switch came (170).
+    pub fn take_workspace_switches(&mut self) -> Vec<Direction> {
+        std::mem::take(&mut self.switches)
     }
 
     /// Moves a window to `workspace`, with every window in its transient tree. A sticky

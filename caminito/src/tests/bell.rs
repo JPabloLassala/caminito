@@ -5,6 +5,8 @@
 //!
 //! The visual bell (169) acts on it: a bell flashes every output, or the bell's window's
 //! frame, for one flash on Caminito's clock, read from the outputs' pixels.
+//!
+//! The audible bell (170) plays it: the sound theme's bell, which the tests' player records.
 
 use serde_json::{Value, json};
 use smithay::output::Output;
@@ -18,7 +20,7 @@ use crate::bell::FLASH;
 use crate::output::output_geometry;
 use crate::scene::CLEAR_COLOR;
 use crate::settings::Value as Setting;
-use crate::settings::translate::{MARCO_GENERAL, VisualBellType};
+use crate::settings::translate::{KEYBOARD, MARCO_GENERAL, SOUND, VisualBellType};
 
 /// The dump's bell.
 fn bell(f: &Fixture) -> Value {
@@ -458,4 +460,114 @@ fn a_second_bell_during_a_flash_starts_the_flash_again() {
     assert_eq!(pixel(&mut f, &first, empty), FLASH_WHITE);
     f.advance_clock(FLASH);
     assert_eq!(pixel(&mut f, &first, empty), clear());
+}
+
+/// The bell's sound from the `mate` sound theme, as the player is asked for it.
+fn mate_bell() -> (String, String) {
+    ("mate".into(), "bell-window-system".into())
+}
+
+/// Caminito on `settings` and the `mate` sound theme, with one output and a window of
+/// `kind`. `event-sounds` is off, which the bell doesn't heed (09).
+fn sounding(
+    kind: Kind,
+    mut settings: Vec<(&'static str, String, Setting)>,
+) -> (Fixture, ClientId, ClientWindow) {
+    settings.push((SOUND, "theme-name".into(), Setting::Str("mate".into())));
+    settings.push((SOUND, "event-sounds".into(), Setting::Bool(false)));
+    let mut f = Fixture::with_settings(settings);
+    f.add_output((1920, 1080), 1.0);
+    let client = f.connect(kind);
+    let window = f.map(client, WindowSpec::default());
+    (f, client, window)
+}
+
+/// Has `client` ring the bell for `window`, and waits until it's the `count`th rung.
+fn ring_and_wait(f: &mut Fixture, client: ClientId, window: ClientWindow, count: u64) {
+    ring(f, client, window);
+    f.dispatch_until(|f| bell(f)["count"] == count);
+}
+
+on_both_kinds! {
+    fn a_bell_plays_the_sound_themes_bell(kind: Kind) {
+        let (mut f, client, window) = sounding(kind, Vec::new());
+
+        ring_and_wait(&mut f, client, window, 1);
+
+        assert_eq!(f.sounds.take(), [mate_bell()]);
+    }
+}
+
+on_both_kinds! {
+    fn no_bell_plays_with_the_audible_bell_off(kind: Kind) {
+        let settings = vec![(MARCO_GENERAL, "audible-bell".into(), Setting::Bool(false))];
+        let (mut f, client, window) = sounding(kind, settings);
+
+        ring_and_wait(&mut f, client, window, 1);
+
+        assert_eq!(f.sounds.take(), []);
+    }
+}
+
+#[test]
+fn the_visual_bell_and_the_audible_bell_both_act_on_one_bell() {
+    let (mut f, client, window) = sounding(Kind::Xdg, visual_bell("fullscreen"));
+    let output = f.state.caminito.outputs[0].clone();
+    let empty = empty_spot(&f, &output, &[window]);
+
+    ring(&mut f, client, window);
+
+    wait_for(&mut f, &output, empty, FLASH_WHITE);
+    assert_eq!(f.sounds.take(), [mate_bell()]);
+}
+
+#[test]
+fn bell_mode_off_silences_the_bell_whatever_audible_bell_says() {
+    let settings = vec![
+        (MARCO_GENERAL, "audible-bell".into(), Setting::Bool(true)),
+        (KEYBOARD, "bell-mode".into(), Setting::Str("off".into())),
+    ];
+    let (mut f, client, window) = sounding(Kind::Xdg, settings);
+
+    ring_and_wait(&mut f, client, window, 1);
+
+    assert_eq!(f.sounds.take(), []);
+}
+
+#[test]
+fn bell_mode_custom_plays_the_bell_as_on_does() {
+    let settings = vec![(KEYBOARD, "bell-mode".into(), Setting::Str("custom".into()))];
+    let (mut f, client, window) = sounding(Kind::Xdg, settings);
+
+    ring_and_wait(&mut f, client, window, 1);
+
+    assert_eq!(f.sounds.take(), [mate_bell()]);
+}
+
+#[test]
+fn a_change_of_the_audible_bells_keys_applies_to_the_next_bell() {
+    let (mut f, client, window) = sounding(Kind::Xdg, Vec::new());
+    ring_and_wait(&mut f, client, window, 1);
+    assert_eq!(f.sounds.take(), [mate_bell()]);
+
+    f.set_setting(SOUND, "theme-name", Setting::Str("freedesktop".into()));
+    f.dispatch_until(|f| f.state.caminito.settings.sound.theme_name == "freedesktop");
+    assert_eq!(f.sounds.take(), [], "a change plays nothing itself");
+    ring_and_wait(&mut f, client, window, 2);
+    assert_eq!(
+        f.sounds.take(),
+        [("freedesktop".into(), "bell-window-system".into())]
+    );
+
+    f.set_setting(KEYBOARD, "bell-mode", Setting::Str("off".into()));
+    f.dispatch_until(|f| !f.state.caminito.settings.bell.audible);
+    ring_and_wait(&mut f, client, window, 3);
+    assert_eq!(f.sounds.take(), []);
+
+    f.set_setting(KEYBOARD, "bell-mode", Setting::Str("on".into()));
+    f.dispatch_until(|f| f.state.caminito.settings.bell.audible);
+    f.set_setting(MARCO_GENERAL, "audible-bell", Setting::Bool(false));
+    f.dispatch_until(|f| !f.state.caminito.settings.bell.audible);
+    ring_and_wait(&mut f, client, window, 4);
+    assert_eq!(f.sounds.take(), []);
 }
