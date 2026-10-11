@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in and its xdg tests pass; the X11 variants of the headless tests need a run where Xwayland starts, and the checklist item is 173's closing run
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 148
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -20,7 +20,7 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code: a move and a resize stepped with each arrow; Return; Escape putting the window back; a maximised window refused.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: Alt+F7 and Alt+F8 and the arrows; a `_NET_WM_MOVERESIZE` with direction 9 and 10; the keys not reaching the client during the grab.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: Alt+F7 and Alt+F8 and the arrows; a `_NET_WM_MOVERESIZE` with direction 9 and 10; the keys not reaching the client during the grab.
 - [x] The two actions' rows in `docs/parity.md` say honoured, with the tests above.
 - [x] The checklist has an item, tagged M8: Alt+F7 and Alt+F8 on a native and an X11 window, ended with Return and with Escape, and the pointer's place after each. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -47,3 +47,4 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 - **For the developer to confirm:** *with the Window switcher*, Alt+Tab during a keyboard grab is refused: Tab is a key of the grab, which puts the window down, and the switcher doesn't open, as during a pointer grab (108) and as Marco's grab takes every key. *With keyboard-shortcuts-inhibit*, as proposed: a client that inhibits shortcuts gets Alt+F7 and Alt+F8, as every other binding, and a grab already started keeps the keys.
 - **Not run:** the full suite (by instruction); the X11 headless variants; the checklist item, which goes to 173's closing run. Run: `caminito-policy`'s `tests::keyboard_grab`, `placement_modes`, `interactive`, `edge_resistance`, `invariants`, `states`, `shade`, `pointer_focus`, `window_actions`, `actions` and `switcher`, `tiling` and `keyboard_tiling`; `caminito`'s `tests::keyboard_grab`, `tests::placement`, `tests::bindings`, `input::bindings`, `tests::window_properties`, `tests::grabs`, `tests::edge_resistance`, `tests::tiling` and `tests::parity`, before and after merging the integration branch. `clippy` is clean apart from caminito-theme's three pre-existing `manual_range_contains` lints.
 - **Triage:** the ticket was `ready-for-agent`; the questions for the implementing agent were settled from Marco's source as above, and the two for the developer take the proposed or recommended answer, with no human asked.
+- **The X11 variants, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored, and `cargo test -p caminito-policy --lib` (399 passed). `tests::keyboard_grab`'s eleven tests passed, its five `::x11` variants included, and `tests::window_properties`' three for `_NET_WM_MOVERESIZE` directions 9 and 10. None of the 8 failures is this ticket's code; they're listed in [148](148-keybindings-from-settings.md)'s Done section. The one in `tests::grabs`, a module this ticket ran, is [157](157-edge-resistance-and-snap-move.md)'s. The rest of `tools/check` wasn't run.

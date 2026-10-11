@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code, tests and docs are in; the headless tests' X11 variants need a run on the developer's machine, where Xwayland starts, and the checklist item is 173's to run
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 147
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -49,3 +49,4 @@ Marco's placement modes for new windows ([05](05-v01-marco-feature-cut.md)). Tod
 - **Marco's default for `center-new-windows` is on**, which Caminito now follows in a Session. `Config::default` and the test fixture keep it off, since the existing Policy and headless tests were written for the first-fit tile; the tests of centring set it on.
 - **Not run:** the checklist item, which needs a Session with two monitors and goes to 173's closing run; the X11 headless variants; `clippy --workspace -D warnings` is clean apart from caminito-theme's three pre-existing `manual_range_contains` lints. One locker test (`a_killed_locker_comes_back_…`) failed once in the loaded full run and passed three times alone.
 - **Triage:** the ticket was `ready-for-agent` with the open questions above for the implementing agent; each was settled from Marco's source as recorded here, with no human asked.
+- **The X11 variants, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored. `tests::placement`'s twelve tests passed, its six `::x11` variants included, and `cargo test -p caminito-policy --lib` passed (399). None of the 8 failures is this ticket's; they're listed in [148](148-keybindings-from-settings.md)'s Done section. The rest of `tools/check` wasn't run.
