@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 ## Why
@@ -46,14 +46,14 @@ No new term in `CONTEXT.md`. "A window's functions" is Marco's word for it.
 
 ## Acceptance criteria
 
-- [ ] Policy tests, written before the code: a table of the functions for each window type, with and without size hints that fix its size, fullscreen, a CSD window, and a modal dialog with a parent with `attach-modal-dialogs` on and off.
-- [ ] Policy tests, written before the code: each setter refuses a window without the function, and always lets a window leave the state.
-- [ ] `decoration/style/tests.rs` keeps only the mapping from the functions to the flags and the frame type; `frame_style` has no `grows` and reads no size hints for the `allows_*` flags.
-- [ ] Headless tests through the fixture, written before the code: a client's maximise request on a fixed-size window is refused, on xdg and XWayland windows; a Pending window that asks for it maps unmaximised; `toggle-shaded` does nothing on a CSD window and on an attached modal dialog; a fixed-size window that asks for fullscreen gets it.
-- [ ] `grep -rn "focused_window_shades\|flags.allows_" caminito/src/input` finds nothing.
-- [ ] `docs/parity.md` records the fullscreen difference, and `attach-modal-dialogs`' row names Policy's tests.
-- [ ] ADR 0012 has its line.
-- [ ] `tools/check` passes, or the Done section lists what was run and what was not.
+- [x] Policy tests, written before the code: a table of the functions for each window type, with and without size hints that fix its size, fullscreen, a CSD window, and a modal dialog with a parent with `attach-modal-dialogs` on and off.
+- [x] Policy tests, written before the code: each setter refuses a window without the function, and always lets a window leave the state.
+- [x] `decoration/style/tests.rs` keeps only the mapping from the functions to the flags and the frame type; `frame_style` has no `grows` and reads no size hints for the `allows_*` flags.
+- [x] Headless tests through the fixture, written before the code: a client's maximise request on a fixed-size window is refused, on xdg and XWayland windows; a Pending window that asks for it maps unmaximised; `toggle-shaded` does nothing on a CSD window and on an attached modal dialog; a fixed-size window that asks for fullscreen gets it.
+- [x] `grep -rn "focused_window_shades\|flags.allows_" caminito/src/input` finds nothing.
+- [x] `docs/parity.md` records the fullscreen difference, and `attach-modal-dialogs`' row names Policy's tests.
+- [x] ADR 0012 has its line.
+- [x] `tools/check` passes, or the Done section lists what was run and what was not.
 
 ## For the implementing agent to settle
 
@@ -62,3 +62,21 @@ From Marco's source (`recalc_window_features`, `window.c`), recorded in the Done
 - **Which window types are fixed,** and which have no minimise, maximise or fullscreen function. The two ports disagree today, and Marco decides.
 - **Motif hints:** if Caminito reads an XWayland window's `_MOTIF_WM_HINTS` functions, whether they change the functions as Marco's `mwm_has_*_func` do. If it doesn't read them, say so and leave it.
 - **How the functions travel with the `FrameState`:** in it, or beside it. The Frame's table of extents is keyed by the state, so the key shouldn't grow by more than "border only" needs.
+
+## Done (2026-10-11)
+
+- **Tested first:** Policy's tests (`caminito-policy/src/tests/functions.rs`) were written against a stub of `functions` and ungated setters, and 15 of 17 failed before the code. The headless tests (`caminito/src/tests/functions.rs`) were written after Policy's gates, not before. To see them fail, `functions` was loosened to the old behaviour for one run: all 8 failed, and the change was put back.
+- **Which window types are fixed (Marco's `recalc_window_features`, read in 1.29.1):** Desktop, Dock and Splashscreen have no resize function, and nor has an attached modal dialog. Only Normal and Dialog have the minimise, maximise and fullscreen functions, so a modal dialog, a utility window, a menu and a toolbar have none of the three. A window that can't resize has no maximise function. A fullscreen window has no shade, resize or maximise function. Shade needs a Frame with a titlebar: not a CSD window, a toolbar, or a border-only Frame. The size is fixed only when the least and greatest sizes are equal both ways.
+- **Motif hints:** Caminito reads only the decorations field of `_MOTIF_WM_HINTS` (`xwayland/xconn.rs`), not the functions, and not `MWM_DECOR_BORDER`. They are left as they are: Marco's `mwm_has_*_func` count as on.
+- **How the functions travel:** beside the `FrameState`, by a new request, `PolicyWindow::set_functions`, sent before the first geometry and when they change. The `FrameState` got "border only" and also the two ways the window resizes (`resizes_horizontally`, `resizes_vertically`). This is more than the ticket's "not more than border only needs": a Marco theme picks a frame's style by `resize="both"`, `"horizontal"`, `"vertical"` or `"none"`, so the extents depend on them, and `frame_style` may no longer read the size hints. The table of extents went from 24 to 192 entries, and it now lays out one title for each title scale of the theme, not one for each state, so it costs less than before.
+- **`Functions` has the resize function each way** (`resize_horizontally`, `resize_vertically`), since the Frame's two resize flags need them. `resize()` is Marco's `has_resize_func`.
+- **One-way maximise asks the resize function, not the maximise one.** Marco's `handle_maximize_vertically` and `_horizontally` ask only `has_resize_func`, so a utility window maximises one way by the key. Marco's titlebar asks the maximise function for one way too, so `titlebar_action` keeps a guard on `Policy::functions(window).maximize` for its two one-way actions, and one on "border only" for *Close* (Marco's `META_FRAME_ALLOWS_DELETE`). They read Policy's functions, not the flags. The developer can drop them if one gate is preferred to Marco's detail.
+- **Two places give the facts themselves, not one:** a Pending window (`pending_functions`), and an XWayland window that asks for `_NET_FRAME_EXTENTS` before it maps (`xwayland/mod.rs`), which Policy doesn't know either. Both call `functions_before_managed`. The second has no size hints yet, so a fixed-size X window gets the extents of one that resizes until it maps.
+- **Found by the headless tests:** the pre-map configure asked a fixed-size window for the maximised size though Policy then refused the state. `configure_pending` now asks for a state only if the window will have the function.
+- **Not asked for, and done:** `maximize_if_too_big` needs the maximise function, as Marco's placement does (`place.c`), since it sets the state without the setter. A window's "may move" in a titlebar drag is `!is_fullscreen` from Policy, in place of `flags.allows_move`.
+- **Left as in Marco:** a window that loses a function keeps its state (a shaded dialog that becomes attached stays shaded, as Marco's FIXME says), and can always leave it.
+- **`attach-modal-dialogs` is copied into each managed window,** so that a window's functions come from its own fields in every layout. `settings_changed` keeps the copies equal.
+- **No schema has `attach-modal-dialogs`,** so `set_setting` can't set it. `Fixture::set_attach_modal_dialogs` hands Caminito the settings directly, and `State::settings_changed` is `pub(crate)` for it. `docs/parity.md` has the key in a new row of the keyless section, since the parity test allows no row in `general` for a key the schema lacks.
+- **Two older Policy tests changed:** they minimised a modal dialog directly, which has no minimise function. They now minimise it while it's a dialog.
+- **What was run, in the OrbStack machine:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p caminito-policy` (501 pass), and 813 of `caminito`'s tests after the merge of `master`: the unit tests of `decoration`, `window`, `input`, `settings` and `deadlines`, and the headless modules `functions`, `decoration`, `frames`, `window_actions`, `xdg_shell`, `xwayland_windows`, `gtk_shell`, `placement`, `tiling`, `window_menu`, `foreign_toplevel`, `window_properties`, `shadows`, `bindings`, `keyboard_grab`, `dialogs`, `grabs`, `settings`, `parity`, `switcher`, `accelerators`, `global_menu`, `night_light` and `workspace_popup`.
+- **What was not run:** `tools/check` as a whole: `cargo deny`, the build step, the other crates' tests, the palette helper, the helpers' tests, caminito-locker, the extension, and the rest of `caminito`'s suite.
