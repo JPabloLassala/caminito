@@ -1386,13 +1386,12 @@ impl Fixture {
 
     /// Moves Caminito's clock on by `duration`, as a user who leaves it alone lets time pass,
     /// runs what's due by then, as the loop timer would (174), and dispatches. Nothing waits
-    /// for the time to pass. Night Light's minute is a timer of its own until 176.
+    /// for the time to pass.
     pub fn advance_clock(&mut self, duration: Duration) {
         self.state.caminito.clock_offset += duration;
         // It counts real time, so it's behind the clock now; the dispatch sets another.
         self.state.caminito.drop_deadline_timer();
         self.state.run_due();
-        self.state.caminito.night_light_tick();
         self.dispatch();
     }
 
