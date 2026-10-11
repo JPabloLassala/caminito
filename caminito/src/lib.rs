@@ -20,6 +20,7 @@ mod lock;
 pub mod logging;
 mod minimize_animation;
 mod night_light;
+mod not_responding;
 pub mod output;
 pub mod protocols;
 pub mod scene;

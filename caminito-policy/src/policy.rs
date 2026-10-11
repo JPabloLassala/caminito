@@ -28,7 +28,7 @@ mod window_actions;
 mod window_menu;
 
 pub use focus_stealing::{
-    ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
+    ActivationSource, ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
 };
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
@@ -269,8 +269,8 @@ struct Managed<W> {
     tile: Option<Tiled>,
     /// The geometry to go back to, while maximised, tiled or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
-    /// Refused the focus, and not focused since (165): Marco's
-    /// `wm_state_demands_attention`.
+    /// Refused the focus, or its client asked for attention, and not focused since (165,
+    /// 166): Marco's `wm_state_demands_attention`.
     demands_attention: bool,
     /// `attach-modal-dialogs`, which the window's functions depend on (177).
     attach_modal_dialogs: bool,

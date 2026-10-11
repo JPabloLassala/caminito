@@ -6,16 +6,17 @@
 //! window it publishes each managed window's desktop, and reads what Smithay doesn't
 //! (39). It's a calloop fd source on the main thread (15), which hands on the root and
 //! window messages Smithay drops as [`Request`]s, and hears XKB's bell (06). It also makes
-//! the primary output RandR's primary (81).
+//! the primary output RandR's primary (81), and reads `_NET_ACTIVE_WINDOW`'s source
+//! indication, which Smithay leaves out of the request it hands on (166).
 //!
 //! Ownership rule (11): it never writes a property Smithay maintains. Every write goes
 //! through `replace32`, `replace8` or `delete`, which assert it in debug builds.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::os::fd::AsFd;
 
-use caminito_policy::MAX_WORKSPACES;
+use caminito_policy::{ActivationSource, MAX_WORKSPACES};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
     self, Interest, LoopHandle, Mode, PostAction, RegistrationToken,
@@ -318,6 +319,10 @@ pub(super) struct WindowProperties {
     pub(super) frame_extents: FrameExtents<i32, Logical>,
 }
 
+/// How many `_NET_ACTIVE_WINDOW` messages' source indications are kept for Smithay to ask
+/// about.
+const ACTIVATIONS_KEPT: usize = 32;
+
 /// Caminito's connection to Xwayland. Dropping it closes it.
 pub(super) struct XConnection {
     conn: RustConnection,
@@ -333,6 +338,11 @@ pub(super) struct XConnection {
     published_resources: Option<Resources>,
     /// Managed windows whose `_NET_FRAME_EXTENTS` is written again, changed or not.
     frame_extents_owed: HashSet<Window>,
+    /// Who sent each `_NET_ACTIVE_WINDOW` message read and not yet asked about, oldest
+    /// first (166).
+    activations: VecDeque<(Window, ActivationSource)>,
+    /// The requests `take_activation_source` read ahead, for `requests` to hand on.
+    read_ahead: Vec<Request>,
     /// Whether Xwayland has SHAPE, which input regions are read with.
     has_shape: bool,
     /// Whether Xwayland has RandR, whose primary output is set (81).
@@ -428,6 +438,8 @@ impl XConnection {
             published_windows: HashMap::new(),
             published_resources: None,
             frame_extents_owed: HashSet::new(),
+            activations: VecDeque::new(),
+            read_ahead: Vec::new(),
             has_shape,
             has_randr,
             randr_primary: None,
@@ -440,7 +452,7 @@ impl XConnection {
 
     /// The messages X has sent since this was last asked.
     pub(super) fn requests(&mut self) -> Result<Vec<Request>, Error> {
-        let mut requests = Vec::new();
+        let mut requests = std::mem::take(&mut self.read_ahead);
         while let Some(event) = self.conn.poll_for_event()? {
             let message = match event {
                 Event::ClientMessage(message) => message,
@@ -477,6 +489,21 @@ impl XConnection {
                 } else if type_ == atoms._NET_NUMBER_OF_DESKTOPS {
                     requests.push(Request::NumberOfDesktops(data[0] as usize));
                 }
+            } else if type_ == atoms._NET_ACTIVE_WINDOW {
+                // Smithay hands the request on without its source indication, so that's
+                // kept for `take_activation_source`. One Smithay never asks about is
+                // dropped. EWMH: 1 is an application and 2 a pager. Marco takes a client
+                // older than the indication, which says 0 and gives no timestamp, as it
+                // takes a pager, and reads a number it doesn't know as 0
+                // (window.c:3170-3195, 5571-5575).
+                if self.activations.len() == ACTIVATIONS_KEPT {
+                    self.activations.pop_front();
+                }
+                let source = match data[0] {
+                    1 => ActivationSource::Application,
+                    _ => ActivationSource::Pager,
+                };
+                self.activations.push_back((window, source));
             } else if type_ == atoms._NET_REQUEST_FRAME_EXTENTS {
                 requests.push(Request::FrameExtents { window });
             } else if type_ == atoms._NET_WM_MOVERESIZE {
@@ -553,6 +580,26 @@ impl XConnection {
     pub(super) fn desktop(&self, window: Window) -> Result<Option<u32>, Error> {
         let desktop = self.cardinals(window, self.atoms._NET_WM_DESKTOP)?;
         Ok(desktop.and_then(|value| value.first().copied()))
+    }
+
+    /// `WM_CLIENT_MACHINE`, the machine `_NET_WM_PID`'s process is of, whatever its
+    /// encoding, or `None` if it's unset or the window has gone.
+    pub(super) fn client_machine(&self, window: Window) -> Result<Option<Vec<u8>>, Error> {
+        let machine = AtomEnum::WM_CLIENT_MACHINE;
+        let cookie = self
+            .conn
+            .get_property(false, window, machine, AtomEnum::ANY, 0, 1024)?;
+        let reply = gone_is_none(cookie.reply())?;
+        Ok(reply
+            .filter(|reply| reply.format == 8 && !reply.value.is_empty())
+            .map(|reply| reply.value))
+    }
+
+    /// Cuts off the client that made `window`, as `XKillClient` does.
+    pub(super) fn kill_client(&self, window: Window) -> Result<(), Error> {
+        self.conn.kill_client(window)?;
+        self.conn.flush()?;
+        Ok(())
     }
 
     /// `_NET_WM_ICON`, unparsed.
@@ -932,6 +979,28 @@ impl XConnection {
         }
         self.published_resources = Some(resources);
         Ok(())
+    }
+
+    /// Who sent the oldest `_NET_ACTIVE_WINDOW` message for `window` that hasn't been asked
+    /// about (166), which it forgets. It's for when Smithay hands on that message, which X
+    /// sent this connection too: a round trip makes sure it has arrived here, and what else
+    /// arrived is kept for `requests`.
+    pub(super) fn take_activation_source(
+        &mut self,
+        window: Window,
+    ) -> Result<Option<ActivationSource>, Error> {
+        self.conn.sync()?;
+        self.read_ahead = self.requests()?;
+        let asked = self.activations.iter().position(|(w, _)| *w == window);
+        Ok(asked
+            .and_then(|index| self.activations.remove(index))
+            .map(|(_, source)| source))
+    }
+
+    /// Forgets who asked for a destroyed window to be active. X gives its id to another
+    /// window, which a request kept for the first mustn't be taken for.
+    pub(super) fn window_destroyed(&mut self, window: Window) {
+        self.activations.retain(|(asked, _)| *asked != window);
     }
 
     /// Waits until Xwayland has handled every request sent so far. x11rb queues the events

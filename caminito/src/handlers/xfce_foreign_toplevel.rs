@@ -1,7 +1,7 @@
 //! Xfce's foreign toplevel protocol (75): each listed window's workspace, by the id
 //! ext-workspace knows the workspace by, and whether it's sticky, kept above or kept below,
 //! are sent in the refresh pass, and a request to change one of those states goes to policy
-//! (155).
+//! (155). Whether it's urgent is sent too, for a window of either kind (166).
 
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1;
 
@@ -56,6 +56,7 @@ impl Caminito {
                     sticky: policy.is_sticky(id),
                     above: policy.is_above(id),
                     below: policy.is_below(id),
+                    demands_attention: policy.is_urgent(id),
                 }
             },
         );
