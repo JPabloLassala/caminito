@@ -18,7 +18,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// Adds and removes workspaces for the windows they have, while `dynamic-workspaces` is
     /// on.
     pub(super) fn update_dynamic_workspaces(&mut self) {
-        if !self.dynamic_workspaces {
+        if !self.config.dynamic_workspaces {
             return;
         }
         // The workspaces with windows, in order. Marco fills each empty workspace with the

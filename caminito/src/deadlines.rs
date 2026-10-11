@@ -18,16 +18,20 @@ use crate::state::{Caminito, State};
 /// 2. Idle, which blanks and locks (128).
 /// 3. AccessX, whose keys go on to the clients and whose beeps ring the bell (134).
 /// 4. The repeat of a held accelerator (99), which signals a key AccessX let through.
-/// 5. The bell's flash (169) and the minimise animations (172), which only draw.
-/// 6. Night Light (138), which only moves the outputs' temperatures.
+/// 5. The Global menu's grace period (114), which nothing else here looks at.
+/// 6. The Window switcher's popup (108), the bell's flash (169) and the minimise animations
+///    (172), which only draw.
+/// 7. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 7] = [
+const HOLDERS: [Holder; 9] = [
     Holder::Policy,
     Holder::Idle,
     Holder::AccessX,
     Holder::AcceleratorRepeat,
+    Holder::GlobalMenu,
+    Holder::SwitcherPopup,
     Holder::Bell,
     Holder::MinimizeAnimations,
     Holder::NightLight,
@@ -39,6 +43,8 @@ enum Holder {
     Idle,
     AccessX,
     AcceleratorRepeat,
+    GlobalMenu,
+    SwitcherPopup,
     Bell,
     MinimizeAnimations,
     NightLight,
@@ -52,6 +58,8 @@ impl Holder {
             Holder::Idle => caminito.idle.deadline(),
             Holder::AccessX => caminito.accessx.deadline(),
             Holder::AcceleratorRepeat => caminito.accelerator_repeat.as_ref().map(Repeat::deadline),
+            Holder::GlobalMenu => caminito.global_menu_switch.deadline(),
+            Holder::SwitcherPopup => caminito.switcher_popup_deadline(),
             Holder::Bell => caminito.bells.deadline(),
             Holder::MinimizeAnimations => caminito.minimize_animations.deadline(),
             Holder::NightLight => caminito.night_light.deadline(caminito.now()),
@@ -67,6 +75,8 @@ impl Holder {
             Holder::Idle => state.idle_elapse(now),
             Holder::AccessX => state.accessx_elapse(now),
             Holder::AcceleratorRepeat => state.caminito.accelerator_repeat_elapse(now),
+            Holder::GlobalMenu => state.caminito.global_menu_time_passed(now),
+            Holder::SwitcherPopup => state.caminito.switcher_popup_elapse(now),
             Holder::Bell => state.caminito.bell_elapse(now),
             Holder::MinimizeAnimations => state.caminito.minimize_animation_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),

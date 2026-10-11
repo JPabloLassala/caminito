@@ -22,6 +22,7 @@ use crate::scene::SceneLayer;
 use crate::settings::Value;
 use crate::settings::translate::{MARCO_GENERAL, MARCO_GLOBAL_KEYBINDINGS};
 use crate::state::SEAT;
+use crate::switcher::POPUP_DELAY;
 
 /// The debug dump's `switcher` member: `null` while the Window switcher is closed.
 fn switcher(f: &Fixture) -> serde_json::Value {
@@ -704,9 +705,8 @@ on_both_kinds! {
 
         assert!(!is_open(&f));
         assert!(!has_switcher_layer(&mut f, &output));
-        // The popup's timer went with the switcher: nothing appears later. 150 ms is
-        // well past the 90 ms the popup waits.
-        f.dispatch_for(std::time::Duration::from_millis(150));
+        // The popup's deadline went with the switcher: nothing appears later.
+        f.advance_clock(POPUP_DELAY);
         assert!(!is_open(&f));
         assert!(!has_switcher_layer(&mut f, &output));
     }
@@ -723,8 +723,15 @@ on_both_kinds! {
 
         assert_eq!(switcher(&f)["visible"], false);
         assert!(!has_switcher_layer(&mut f, &output));
+        // Inside the delay: the clock also moves as the test runs, which the 60 ms left of
+        // it allows for.
+        f.advance_clock(POPUP_DELAY / 3);
+        assert_eq!(switcher(&f)["visible"], false);
+        assert!(!has_switcher_layer(&mut f, &output));
 
-        f.dispatch_until(|f| switcher(f)["visible"] == true);
+        f.advance_clock(POPUP_DELAY);
+
+        assert_eq!(switcher(&f)["visible"], true);
         assert!(has_switcher_layer(&mut f, &output));
         f.key(KEY_LEFTALT, false);
         assert!(!has_switcher_layer(&mut f, &output));
@@ -1417,8 +1424,8 @@ on_both_kinds! {
         );
         assert_eq!(on_top(&f), b);
         assert_eq!(focus(&f), Some(c));
-        // No popup ever shows: 150 ms is well past the 90 ms the Window switcher's waits.
-        f.dispatch_for(std::time::Duration::from_millis(150));
+        // No popup ever shows, though the Window switcher's delay is over.
+        f.advance_clock(POPUP_DELAY);
         assert_eq!(switcher(&f)["visible"], false);
         assert!(!has_switcher_layer(&mut f, &output));
 

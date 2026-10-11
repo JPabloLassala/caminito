@@ -347,7 +347,7 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         let cycle = !open.switcher.popup;
-        if cycle || self.alt_tab_raise_windows {
+        if cycle || self.config.alt_tab_raise_windows {
             self.restore_stacking(&open.stack);
             let selected = open.switcher.entries[open.switcher.selected].window();
             if cycle && open.peeked != selected {
@@ -418,11 +418,11 @@ impl<W: PolicyWindow> Policy<W> {
         // `alt-tab-urgent-placement`'s `start` the urgent ones go first among the rest (165),
         // as Marco master's `meta_display_get_tab_list` has them (core/display.c:4801-4818).
         // The sort is stable, so ties keep the stacking order.
-        let placement = self.alt_tab_minimized_placement;
+        let placement = self.config.alt_tab_minimized_placement;
         let minimized = |id: &WindowId| self.windows[id].minimized;
         entries.retain(|(base, _)| placement != MinimizedPlacement::Hidden || !minimized(base));
         let place = |id: WindowId| self.mru.iter().position(|w| *w == id);
-        let urgent_first = self.urgent_placement == UrgentPlacement::Start;
+        let urgent_first = self.config.urgent_placement == UrgentPlacement::Start;
         entries.sort_by_key(|&(base, listed)| {
             let used = place(base).into_iter().chain(place(listed)).min();
             let last = placement == MinimizedPlacement::End && minimized(&base);
