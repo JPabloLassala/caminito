@@ -12,7 +12,7 @@ use super::{Policy, TileSize, Tiled};
 /// (`recalc_window_features`, window.c:6670-6830). An SSD window's frame shows the same
 /// through its buttons (`decoration::style`).
 pub(super) struct Functions {
-    minimize: bool,
+    pub(super) minimize: bool,
     pub(super) maximize: bool,
     /// Resizing, which maximising one way needs.
     pub(super) resize: bool,

@@ -126,10 +126,9 @@ impl Atoms {
         })
     }
 
-    /// What Caminito handles beyond Smithay's `_NET_SUPPORTED`. `_GTK_SHOW_WINDOW_MENU` waits
-    /// for M8's window menu: GTK sends it only if it's listed, and shows its own menu
-    /// otherwise.
-    fn supported(&self) -> [Atom; 15] {
+    /// What Caminito handles beyond Smithay's `_NET_SUPPORTED`. GTK sends
+    /// `_GTK_SHOW_WINDOW_MENU` only if it's listed, and shows its own menu otherwise (161).
+    fn supported(&self) -> [Atom; 16] {
         [
             self._NET_SUPPORTING_WM_CHECK,
             self._NET_WM_NAME,
@@ -148,6 +147,7 @@ impl Atoms {
             self._NET_WM_ICON,
             self._NET_WM_STRUT,
             self._NET_WM_STRUT_PARTIAL,
+            self._GTK_SHOW_WINDOW_MENU,
         ]
     }
 
@@ -258,6 +258,9 @@ pub(super) enum Request {
     KeyboardMoveResize { window: Window, resize: bool },
     /// `_NET_WM_MOVERESIZE`'s cancel (11).
     CancelMoveResize { window: Window },
+    /// `_GTK_SHOW_WINDOW_MENU`: open the window's menu at this point of the root, in X's
+    /// pixels (161).
+    ShowWindowMenu { window: Window, x: i32, y: i32 },
     /// `_NET_WM_STATE`'s skip-taskbar or skip-pager, which Smithay drops after map: `action`
     /// 0 removes, 1 adds and 2 toggles.
     Skips {
@@ -501,12 +504,13 @@ impl XConnection {
                     });
                 }
             } else if type_ == atoms._GTK_SHOW_WINDOW_MENU {
-                // M8's window menu (05) opens here.
-                tracing::debug!(
-                    "an X client asked for the window menu of {window:#x} at {}, {}",
-                    data[1] as i32,
-                    data[2] as i32
-                );
+                // The device's id, then the point, as GTK3's
+                // `gdk_x11_window_show_window_menu` sends them.
+                requests.push(Request::ShowWindowMenu {
+                    window,
+                    x: data[1] as i32,
+                    y: data[2] as i32,
+                });
             } else if type_ == atoms._NET_CLOSE_WINDOW {
                 requests.push(Request::Close { window });
             } else if type_ == atoms._NET_MOVERESIZE_WINDOW {

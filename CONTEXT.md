@@ -164,6 +164,10 @@ _Avoid_: layout (that's the outputs'), pager layout, desktop layout (`_NET_DESKT
 The popup that Alt+Tab and Marco's other `switch-*` actions open while the modifier is held: a grid of the windows' thumbnails, most recently used first, from which releasing the modifier activates the selected one. It stands in for Marco's Alt+Tab popup (ADR 0016).
 _Avoid_: task switcher (KDE's term; Caminito's unit is the window), Alt+Tab popup or tab popup (Marco's own, which Caminito doesn't have), switcher alone (the workspace switcher is the panel's pager)
 
+**Window menu**:
+The menu of a window's actions, Marco's: minimise, maximise, move, resize, always on top, the workspace moves and close. Alt+Space, a right click on a titlebar, the Frame's menu button and a client's own request open it. Caminito draws it (ADR 0026).
+_Avoid_: system menu, context menu, app menu (that's the Global menu's or the Frame's appmenu button)
+
 **Workspace popup**:
 The popup that a switch or a move to the workspace beside shows while the binding's modifiers are held: the Workspace grid, each workspace's cell with its name and an outline of its windows, and the active workspace marked. It's Marco's workspace popup, drawn by Caminito.
 _Avoid_: workspace switcher (the panel's pager), workspace OSD, tab popup (Marco's widget for it and for Alt+Tab)

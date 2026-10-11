@@ -28,6 +28,7 @@ pub mod settings;
 pub mod state;
 mod switcher;
 pub mod window;
+mod window_menu;
 mod work_area;
 mod workspace_popup;
 pub mod xwayland;

@@ -101,6 +101,7 @@ fn the_root_lists_what_caminito_supports_and_its_check_window_is_named_caminito(
     _NET_WM_ICON
     _NET_WM_STRUT
     _NET_WM_STRUT_PARTIAL
+    _GTK_SHOW_WINDOW_MENU
     ");
     assert_snapshot!(name, @r#"_NET_WM_NAME(UTF8_STRING) = "Caminito""#);
 }

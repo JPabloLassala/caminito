@@ -432,13 +432,6 @@ fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
 }
 
 #[test]
-fn an_action_with_no_behaviour_yet_binds_nothing() {
-    // Values set by the user.
-    let t = table(&[(WINDOW, "activate-window-menu", "<Super>Up")]);
-    assert_eq!(bound(&t, SUPER, Keysym::Up), None);
-}
-
-#[test]
 fn modifiers_must_match_exactly_and_locks_dont_count() {
     let t = table(&[]);
     assert_eq!(bound(&t, NONE, Keysym::F4), None);
@@ -616,6 +609,23 @@ fn shift_reverses_only_the_switch_actions() {
     assert_eq!(bound(&t, ALT_SHIFT, Keysym::F9), None);
 }
 
+// The window menu's hints (161).
+
+#[test]
+fn a_combination_is_written_as_marcos_menu_shows_it() {
+    let t = table(&[
+        (WINDOW, "close", "<Control><Shift>backslash"),
+        (WINDOW, "minimize", "<Super>a"),
+        (WINDOW, "maximize", "<Alt>space"),
+    ]);
+    assert_eq!(t.label_of("close").as_deref(), Some("Shift+Ctrl+Backslash"));
+    assert_eq!(t.label_of("minimize").as_deref(), Some("Super+A"));
+    assert_eq!(t.label_of("maximize").as_deref(), Some("Alt+Space"));
+    assert_eq!(t.label_of("begin-move").as_deref(), Some("Alt+F7"));
+    // An action with no combination has no hint.
+    assert_eq!(t.label_of("toggle-above"), None);
+}
+
 // The debug dump's list.
 
 #[test]
@@ -626,7 +636,7 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 32, "{rows:?}");
+    assert_eq!(rows.len(), 33, "{rows:?}");
 }
 
 // The `cycle-*` actions (163).

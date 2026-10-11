@@ -1,4 +1,4 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CStr, OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::process::ExitCode;
 
@@ -14,6 +14,7 @@ fn main() -> ExitCode {
         }
     };
     caminito::logging::init(args.session.is_some());
+    set_messages_locale();
 
     let kind = caminito::backend::Kind::choose(
         std::env::var_os("WAYLAND_DISPLAY").as_deref(),
@@ -25,6 +26,27 @@ fn main() -> ExitCode {
             tracing::error!("{}", report(err.as_ref()));
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Has gettext read the user's language from the environment, for the window menu's
+/// labels, which are Marco's translations (161). Only the categories gettext reads, the
+/// messages' and the character set's: the numbers the C libraries write stay the C
+/// locale's. A locale whose character set isn't UTF-8 gets no translation, since gettext
+/// would give its text in that set.
+fn set_messages_locale() {
+    // Safety: no other thread runs yet, so none reads the locale meanwhile, and each
+    // string is a NUL-terminated literal that outlives its call.
+    unsafe {
+        libc::setlocale(libc::LC_CTYPE, c"".as_ptr());
+        libc::setlocale(libc::LC_MESSAGES, c"".as_ptr());
+    }
+    // Safety: `nl_langinfo` returns a NUL-terminated string that stays valid until the
+    // next call to it or to `setlocale`, and it's copied out before either.
+    let codeset = unsafe { CStr::from_ptr(libc::nl_langinfo(libc::CODESET)) }.to_owned();
+    if codeset.as_bytes() != b"UTF-8" {
+        // Safety: as above.
+        unsafe { libc::setlocale(libc::LC_MESSAGES, c"C".as_ptr()) };
     }
 }
 

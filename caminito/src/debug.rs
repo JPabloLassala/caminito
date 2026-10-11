@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use caminito_policy::{PolicyWindow, SwitchEntry, SwitchList, Tile};
+use caminito_policy::{MenuEntry, MenuItem, MenuMark, PolicyWindow, SwitchEntry, SwitchList, Tile};
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -17,6 +17,7 @@ use crate::output::{output_geometry, output_id};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::CellStyle;
 use crate::window::{Strut, with_x_facts};
+use crate::window_menu::{Pane, Text};
 
 /// The debug toggles, and what they draw with.
 #[derive(Default)]
@@ -95,6 +96,8 @@ struct StateDump {
     switcher: Option<SwitcherDump>,
     /// The Workspace popup (152), while it shows.
     workspace_popup: Option<WorkspacePopupDump>,
+    /// The window menu (161), while it's open.
+    window_menu: Option<WindowMenuDump>,
     /// Whether the apps are told to give up their own menubars (110): `on` while a Global
     /// menu applet is on the bus, `leaving` for the grace period after it left (114), and
     /// `off`.
@@ -234,6 +237,46 @@ struct SwitcherPopupDump {
     /// The popup and each window's cell, from the output's top left corner.
     popup: RectDump,
     cells: Vec<RectDump>,
+}
+
+#[derive(Serialize)]
+struct WindowMenuDump {
+    /// The window it's for.
+    window: u64,
+    /// The name of the output it's on, once it's laid out.
+    output: Option<String>,
+    /// The menu, from the output's top left corner.
+    rect: Option<RectDump>,
+    /// The selected item's place among `items`.
+    selected: Option<usize>,
+    items: Vec<MenuItemDump>,
+    /// The submenu of workspaces, while it's open.
+    submenu: Option<SubmenuDump>,
+}
+
+#[derive(Serialize)]
+struct SubmenuDump {
+    rect: Option<RectDump>,
+    selected: Option<usize>,
+    items: Vec<MenuItemDump>,
+}
+
+#[derive(Serialize)]
+struct MenuItemDump {
+    /// `item`, `submenu` for the item that opens it, or `separator`.
+    kind: &'static str,
+    /// The label as drawn, in the user's language.
+    label: Option<String>,
+    /// The letter that chooses it.
+    mnemonic: Option<char>,
+    /// Its keybinding, as drawn.
+    accelerator: Option<String>,
+    /// Whether it can't be chosen.
+    greyed: bool,
+    /// `checked` or `unchecked` for a check box, `set` or `unset` for a radio button.
+    mark: Option<&'static str>,
+    /// Its row, from the output's top left corner.
+    rect: Option<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -608,6 +651,64 @@ impl Caminito {
                 names: cells.iter().map(|cell| cell.name.into()).collect(),
             }
         });
+        let window_menu = policy.window_menu().map(|menu| {
+            let shown = self
+                .shown_window_menu()
+                .filter(|shown| shown.texts.top.len() == menu.entries.len());
+            let item = |item: Option<&MenuItem>, text: Option<&Text>, rect: Option<RectDump>| {
+                MenuItemDump {
+                    kind: match (item, text) {
+                        (Some(_), _) => "item",
+                        (None, Some(_)) => "submenu",
+                        (None, None) => "separator",
+                    },
+                    label: text.map(|text| text.label.text.clone()),
+                    mnemonic: text.and_then(|text| text.label.mnemonic.map(|(_, c)| c)),
+                    accelerator: text.and_then(|text| text.accelerator.clone()),
+                    greyed: item.is_some_and(|item| !item.sensitive),
+                    mark: item.and_then(|item| match item.mark {
+                        MenuMark::None => None,
+                        MenuMark::Check(true) => Some("checked"),
+                        MenuMark::Check(false) => Some("unchecked"),
+                        MenuMark::Radio(true) => Some("set"),
+                        MenuMark::Radio(false) => Some("unset"),
+                    }),
+                    rect,
+                }
+            };
+            let row = |pane: Option<&Pane>, index: usize| {
+                pane.and_then(|pane| pane.layout.rows.get(index).copied())
+                    .map(RectDump::from)
+            };
+            let main = shown.map(|shown| &shown.main);
+            let sub = shown.and_then(|shown| shown.submenu.as_ref());
+            let items = menu.entries.iter().enumerate().map(|(index, entry)| {
+                let text = shown.and_then(|shown| shown.texts.top[index].as_ref());
+                let entry = match entry {
+                    MenuEntry::Item(entry) => Some(entry),
+                    MenuEntry::Separator | MenuEntry::Workspaces(_) => None,
+                };
+                item(entry, text, row(main, index))
+            });
+            WindowMenuDump {
+                window: menu.window.0,
+                output: shown.map(|shown| shown.output.name()),
+                rect: main.map(|pane| pane.layout.rect.into()),
+                selected: menu.selected,
+                items: items.collect(),
+                submenu: menu.submenu().filter(|_| menu.submenu_open).map(|items| {
+                    let items = items.iter().enumerate().map(|(index, entry)| {
+                        let text = shown.and_then(|shown| shown.texts.sub.get(index));
+                        item(Some(entry), text, row(sub, index))
+                    });
+                    SubmenuDump {
+                        rect: sub.map(|pane| pane.layout.rect.into()),
+                        selected: menu.submenu_selected,
+                        items: items.collect(),
+                    }
+                }),
+            }
+        });
         let dump = StateDump {
             windows,
             workspaces,
@@ -627,6 +728,7 @@ impl Caminito {
             accelerator_grabs,
             switcher,
             workspace_popup,
+            window_menu,
             global_menu_switch: self.global_menu_switch.name(),
             menu_claims,
             bell: BellDump {
