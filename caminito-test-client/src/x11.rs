@@ -23,6 +23,8 @@ use x11rb::wrapper::ConnectionExt as _;
 
 /// `WM_HINTS`'s input flag (ICCCM 4.1.2.4).
 const INPUT_HINT: u32 = 1;
+/// Its urgency flag.
+const URGENCY_HINT: u32 = 1 << 8;
 /// `WM_NORMAL_HINTS`'s `USPosition` flag (ICCCM 4.1.2.3).
 const US_POSITION: u32 = 1;
 /// Its `PMinSize` and `PMaxSize` flags.
@@ -390,6 +392,20 @@ impl X11Client {
             property,
             AtomEnum::CARDINAL,
             value,
+        )?;
+        self.conn.sync()
+    }
+
+    /// Sets `WM_HINTS` with its urgency flag or without it, and nothing else, as
+    /// `XSetWMHints` does for a window that wants attention.
+    pub fn set_urgency_hint(&self, window: Window, urgent: bool) -> Result<(), ReplyError> {
+        let flags = if urgent { URGENCY_HINT } else { 0 };
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            AtomEnum::WM_HINTS,
+            AtomEnum::WM_HINTS,
+            &[flags, 0, 0, 0, 0, 0, 0, 0, 0],
         )?;
         self.conn.sync()
     }

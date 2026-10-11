@@ -5,8 +5,8 @@
 //! destroyed.
 
 use caminito_policy::{
-    ActivationToken, FocusClaim, FunctionFacts, Functions, MapStates, OutputId, WindowId,
-    WindowStates, functions,
+    ActivationSource, ActivationToken, FocusClaim, FunctionFacts, Functions, MapStates, OutputId,
+    WindowId, WindowStates, functions,
 };
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
@@ -29,8 +29,10 @@ struct Pending {
     above: bool,
     below: bool,
     sticky: bool,
-    /// It asked to be the active window, which it becomes as it maps.
-    active: bool,
+    /// It was asked to be the active window, which policy judges once it has mapped (166).
+    active: Option<ActivationSource>,
+    /// It asked for attention with `_NET_WM_STATE_DEMANDS_ATTENTION` (166).
+    demands_attention: bool,
     /// What it claims the focus with as it maps (165).
     focus: FocusClaim,
 }
@@ -72,9 +74,11 @@ pub(crate) enum StateRequest {
     Above(bool),
     Below(bool),
     Sticky(bool),
-    /// The active window, as `_NET_ACTIVE_WINDOW` asks: policy switches to its workspace,
-    /// unminimises it, raises it and focuses it.
-    Active,
+    /// The active window, as `_NET_ACTIVE_WINDOW` asks: if policy honours the one who asks,
+    /// it switches to its workspace, unminimises it, raises it and focuses it (166).
+    Active(ActivationSource),
+    /// `_NET_WM_STATE_DEMANDS_ATTENTION`, set or unset (166).
+    DemandsAttention(bool),
 }
 
 impl Caminito {
@@ -87,12 +91,10 @@ impl Caminito {
             above: false,
             below: false,
             sticky: false,
-            active: false,
-            // XWayland's windows are 166's.
-            focus: match WindowKey::of(&window) {
-                WindowKey::Wayland(_) => FocusClaim::NoToken,
-                WindowKey::X11(_) => FocusClaim::Unchecked,
-            },
+            active: None,
+            demands_attention: false,
+            // An XWayland window carries no token either (166).
+            focus: FocusClaim::NoToken,
             window,
         });
     }
@@ -112,7 +114,12 @@ impl Caminito {
                 StateRequest::Above(above) => policy.set_above(id, above),
                 StateRequest::Below(below) => policy.set_below(id, below),
                 StateRequest::Sticky(sticky) => policy.set_sticky(id, sticky),
-                StateRequest::Active => policy.activate(SEAT, id, now),
+                StateRequest::Active(source) => {
+                    policy.request_activation_from(SEAT, id, source, now)
+                }
+                StateRequest::DemandsAttention(demands_attention) => {
+                    policy.set_demands_attention(id, demands_attention)
+                }
             }
             self.queue_redraw_all();
             return true;
@@ -140,8 +147,12 @@ impl Caminito {
                 pending.sticky = sticky;
                 return false;
             }
-            StateRequest::Active => {
-                pending.active = true;
+            StateRequest::Active(source) => {
+                pending.active = Some(source);
+                return false;
+            }
+            StateRequest::DemandsAttention(demands_attention) => {
+                pending.demands_attention = demands_attention;
                 return false;
             }
         }
@@ -253,6 +264,7 @@ impl Caminito {
             below,
             sticky,
             active,
+            demands_attention,
             focus,
         } = pending;
         let mut mapped = Mapped::new(id, window);
@@ -271,8 +283,12 @@ impl Caminito {
         self.policy.set_above(id, above);
         self.policy.set_below(id, below);
         self.policy.set_sticky(id, sticky);
-        if active {
-            self.policy.activate(SEAT, id, now);
+        // Not unset: policy has made the demand itself for a window it refused the focus.
+        if demands_attention {
+            self.policy.set_demands_attention(id, true);
+        }
+        if let Some(source) = active {
+            self.policy.request_activation_from(SEAT, id, source, now);
         }
         self.queue_redraw_all();
         id

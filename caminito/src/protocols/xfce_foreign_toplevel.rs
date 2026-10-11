@@ -11,7 +11,8 @@
 //! two protocols' states.
 //!
 //! It says too whether a toplevel is sticky, kept above or kept below, and takes a
-//! client's requests to change those, which it hands the compositor (155). The rest of the
+//! client's requests to change those, which it hands the compositor (155), and whether it
+//! demands attention, which a window list flashes its button for (166). The rest of the
 //! protocol isn't Caminito's to offer yet. No icon is sent, so libxfce4windowing finds one by
 //! the toplevel's app id, as it did. The other requests that change a toplevel are taken and
 //! ignored, and an icon's pixels always fail.
@@ -73,6 +74,8 @@ pub struct XfceToplevel {
     pub sticky: bool,
     pub above: bool,
     pub below: bool,
+    /// It asks for the user's attention, which libxfce4windowing calls urgent (166).
+    pub demands_attention: bool,
 }
 
 impl XfceToplevel {
@@ -84,6 +87,7 @@ impl XfceToplevel {
             (self.sticky, State::Sticky),
             (self.above, State::Above),
             (self.below, State::Below),
+            (self.demands_attention, State::DemandsAttention),
         ]
         .into_iter()
         .filter(|(set, _)| *set)

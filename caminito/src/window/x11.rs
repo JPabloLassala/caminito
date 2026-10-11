@@ -146,8 +146,6 @@ struct Unflushed {
     geometry: Option<(Rectangle<i32, Logical>, WindowStates)>,
     /// `_NET_WM_STATE_MODAL`, as the client asked.
     modal: Option<bool>,
-    /// `_NET_WM_STATE_DEMANDS_ATTENTION`, as the client asked.
-    demands_attention: Option<bool>,
     /// The last geometry was sent with a sync request, which another flush mustn't cancel.
     /// Unlike the rest, it's kept from one flush to the next.
     syncing: bool,
@@ -184,13 +182,6 @@ pub(crate) fn request_skips(surface: &X11Surface, action: u32, taskbar: bool, pa
         apply(&mut skips.pager);
     }
     with_x_facts(surface, |facts| facts.skips = Some(skips));
-}
-
-/// Records the client's request to demand attention or not, as [`request_modal`] does.
-pub(crate) fn request_demands_attention(surface: &X11Surface, demands_attention: bool) {
-    unflushed(surface, |unflushed| {
-        unflushed.demands_attention = Some(demands_attention)
-    });
 }
 
 /// What Caminito's X connection has read of a window that Smithay doesn't (39).
@@ -375,11 +366,9 @@ impl Adapter for X11Surface {
         self.is_transient_for().map(WindowKey::X11)
     }
 
-    /// `WM_HINTS`'s urgency, or `_NET_WM_STATE_DEMANDS_ATTENTION`.
+    /// `WM_HINTS`'s urgency. `_NET_WM_STATE_DEMANDS_ATTENTION` is policy's to keep (166).
     fn urgent(&self) -> bool {
-        let demands_attention = unflushed(self, |unflushed| unflushed.demands_attention)
-            .unwrap_or_else(|| self.demands_attention());
-        self.hints().is_some_and(|hints| hints.urgent) || demands_attention
+        self.hints().is_some_and(|hints| hints.urgent)
     }
 
     /// ICCCM's input model: the input hint or `WM_TAKE_FOCUS`.
@@ -406,16 +395,12 @@ impl Adapter for X11Surface {
         let Unflushed {
             geometry,
             modal,
-            demands_attention,
             syncing,
         } = unflushed(self, std::mem::take);
         unflushed(self, |unflushed| unflushed.syncing = syncing);
         let mut set = Ok(());
         if let Some(modal) = modal {
             set = set.and(self.set_modal(modal));
-        }
-        if let Some(demands_attention) = demands_attention {
-            set = set.and(self.set_demands_attention(demands_attention));
         }
         if let Some((geometry, states)) = geometry {
             set_net_wm_states(self, states.maximized, states.fullscreen);

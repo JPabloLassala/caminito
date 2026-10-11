@@ -1781,6 +1781,34 @@ session_env() {
   `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
   `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
 
+### Focus-stealing prevention for XWayland windows, and urgency in the window list
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `xterm` and `wmctrl` installed and
+     `focus-new-windows` at `smart`, Marco's default. Open `xterm` from the panel's menu, and
+     `mate-terminal`.
+  2. In `xterm`, run `(sleep 5; GDK_BACKEND=x11 pluma --new-window) &`, wait for Pluma's
+     window, then run the same command again and focus `mate-terminal` before the second
+     window opens.
+  3. Look at the second Pluma window's button in the panel's window list, and at its cell in
+     the Window switcher (Alt+Tab, then Escape). In `mate-terminal`, find its id with
+     `wmctrl -l` and run `xprop -id <id> _NET_WM_STATE`.
+  4. Click the button in the window list.
+  5. Focus `mate-terminal`, then in it run `wmctrl -a xterm`.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the first Pluma window takes the focus, as its client's first
+  window; the second opens under the focused window and doesn't take the focus. In step 3 its
+  button in the window list shows that it wants attention, its cell in the Window switcher
+  has a dot in its top right corner, and its `_NET_WM_STATE` has
+  `_NET_WM_STATE_DEMANDS_ATTENTION`. In step 4 the window comes to the top with the focus,
+  and its button and its cell no longer show it wants attention. In step 5 `xterm` takes the
+  focus: `wmctrl` gives no source indication, which Caminito honours as Marco does (166).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
+  `focus` member show which was refused, `xprop -id <window> _NET_WM_STATE _NET_WM_PID`, and
+  `WAYLAND_DEBUG=1 mate-panel --replace` for the `xfce_foreign_toplevel_handle_v1` `state`
+  events.
+
 ### A failed command's dialog, and `rename-workspace`
 
 - **Milestone:** M8, run in M8's closing run (173).
@@ -1881,6 +1909,33 @@ session_env() {
   the items, which are greyed, and the selection; `WAYLAND_DEBUG=1` on the GTK4 app for
   `xdg_toplevel.show_window_menu`, and `xprop -root _NET_SUPPORTED` for
   `_GTK_SHOW_WINDOW_MENU`.
+
+### Modifier clicks and titlebar scrolling from the control center
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `pluma` (a native window with a Frame) and an X11 app,
+     such as `xterm`.
+  2. Open the control center's *Windows*, and on *Behaviour* set *Movement Key* to *Super*.
+     Run `gsettings get org.mate.Marco.general mouse-button-modifier`.
+  3. On each of the two windows, with Super held and the pointer inside the window: drag with
+     the left button, drag with the right button near a corner, and click the middle button.
+     Then do the same with Alt held.
+  4. Run `gsettings set org.mate.Marco.general resize-with-right-button false`, and with Super
+     held drag with the middle button and click the right one, on each window.
+  5. Run `gsettings set org.mate.Marco.general action-scroll-up-titlebar shade` and
+     `gsettings set org.mate.Marco.general action-scroll-down-titlebar unshade`. Turn the wheel
+     up and then down over each window's titlebar, and then over one of its buttons.
+  6. Put the settings back: *Movement Key* to *Alt*, and `gsettings reset` for the three keys.
+- **Expected:** in step 2 the key is `'<Super>'`. In step 3, with Super the left button moves the window, the right one resizes
+  it from the corner nearest the pointer and the middle one opens the window menu at the
+  pointer, and the app shows no sign of the clicks, such as its own context menu; with Alt
+  the clicks are the app's. In step 4 the middle button resizes and the right one opens the
+  menu. In step 5 the window rolls up and then unrolls, with no need to restart anything, and
+  a scroll over a button does nothing.
+- **Debug tool:** Caminito's log, which names a value of `mouse-button-modifier` it can't
+  use; `org.mate.Caminito.Debug`'s state dump, whose `window_menu` member shows the open
+  menu.
 
 ### "Not responding" and Force Quit
 
