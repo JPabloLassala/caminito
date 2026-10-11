@@ -2,6 +2,11 @@
 //!
 //! There's no retained scene graph: each output's elements are rebuilt every frame, and this
 //! is the only code that knows the layer order.
+//!
+//! What's read from policy here is what `Policy::take_scene_changed` watches, for the
+//! refresh pass to draw the outputs again (179). A query of policy that's new here goes in
+//! `SCENE_QUERIES` (`caminito-policy/src/tests/invariants.rs`), whose test fails until it
+//! does, and in policy's `SceneReads`.
 
 use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};

@@ -33,7 +33,6 @@ impl ExtWorkspaceHandler for State {
         caminito
             .policy
             .action(SEAT, Action::SwitchToWorkspace(index), now);
-        caminito.queue_redraw_all();
     }
 }
 

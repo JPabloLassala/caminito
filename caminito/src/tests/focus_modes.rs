@@ -9,8 +9,8 @@ use caminito_theme::ButtonFunction;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WindowSpec,
-    on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WINDOW_COLOR,
+    WindowSpec, on_both_kinds,
 };
 use crate::decoration::control::FrameControl;
 use crate::settings::Value;
@@ -145,6 +145,53 @@ on_both_kinds! {
         f.advance_clock(Duration::from_millis(1000));
         assert_eq!(stacking(&f), [pb, pa]);
     }
+}
+
+on_both_kinds! {
+    fn auto_raise_draws_the_window_it_raised_under_a_pointer_that_stays_still(kind: Kind) {
+        let (mut f, id) = connected_with(
+            kind,
+            &[
+                focus_mode("sloppy"),
+                ("auto-raise", Value::Bool(true)),
+                ("auto-raise-delay", Value::Int(2000)),
+            ],
+        );
+        // Too big to go side by side, so `b` covers a part of `a`.
+        let big = || WindowSpec {
+            size: (1200, 700),
+            ..WindowSpec::default()
+        };
+        let a = f.map(id, big());
+        let b = f.map(id, big());
+        // On the titlebar of `a`, under `b`'s body.
+        let frame = f.visible_frame(a);
+        let at = frame.loc + Point::from((300, 10));
+        assert!(f.geometry(b).contains(at) && !f.geometry(a).contains(at));
+        let body = WINDOW_COLOR & 0xff_ffff;
+
+        let still = bottom_right_of(&f, a);
+        move_to(&mut f, still);
+        assert_eq!(focus(&f), f.policy_id(a));
+        assert_eq!(pixel(&mut f, at), body);
+
+        // Nothing but the time passes: the raise is the one cause of a frame (179).
+        f.advance_clock(Duration::from_millis(2500));
+
+        assert_ne!(pixel(&mut f, at), body);
+    }
+}
+
+/// The first output's pixel at `at`, as `0xRRGGBB`, as it was last drawn: nothing asks for
+/// a frame here.
+fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
+    let output = f.state.caminito.outputs[0].clone();
+    let pixel = f
+        .state
+        .backend
+        .headless_mut()
+        .pixel(&output, at.to_physical(1));
+    pixel.expect("the output is drawn") & 0xff_ffff
 }
 
 #[test]

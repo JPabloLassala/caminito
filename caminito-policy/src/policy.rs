@@ -577,6 +577,47 @@ fn frame_around(
     )
 }
 
+/// What the Scene reads from policy (179): the answers to the queries
+/// `caminito/src/scene.rs` makes, which `tests/invariants.rs` lists as `SCENE_QUERIES` and
+/// holds to the Scene's source. A query the Scene adds gets its answer here too.
+#[derive(Default, PartialEq)]
+struct SceneReads {
+    /// `stacking` of the active workspace, which is in it with `active_workspace`.
+    stacking: Vec<WindowId>,
+    /// Each window `window` has, with what's asked of it.
+    windows: Vec<WindowReads>,
+    /// Each seat's grab.
+    grabs: Vec<GrabReads>,
+    /// The entries of `switcher`, which the popup's thumbnails are of.
+    switcher: Option<Vec<SwitchEntry>>,
+}
+
+/// What the Scene reads of one seat's grab.
+#[derive(PartialEq)]
+struct GrabReads {
+    seat: SeatId,
+    /// `grab`.
+    window: WindowId,
+    /// `tile_preview`.
+    tile_preview: Option<Rectangle<i32, Logical>>,
+}
+
+/// What the Scene reads of one window.
+#[derive(PartialEq)]
+struct WindowReads {
+    id: WindowId,
+    /// `geometry`.
+    geometry: Rectangle<i32, Logical>,
+    /// `frame_rect`.
+    frame: Rectangle<i32, Logical>,
+    /// `is_showing`.
+    showing: bool,
+    /// `is_fullscreen`.
+    fullscreen: bool,
+    /// `layer`.
+    layer: Option<Layer>,
+}
+
 pub struct Policy<W: PolicyWindow> {
     /// The settings, as `settings_changed` last gave them.
     config: Config,
@@ -625,6 +666,8 @@ pub struct Policy<W: PolicyWindow> {
     pointer: Option<Point<f64, Logical>>,
     /// The pointer focus modes' and auto-raise's state (153).
     pointer_focus: pointer::PointerFocus,
+    /// What the Scene read when `take_scene_changed` was last asked (179).
+    scene_taken: SceneReads,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -653,6 +696,7 @@ impl<W: PolicyWindow> Policy<W> {
             chosen: None,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
+            scene_taken: SceneReads::default(),
         };
         policy.apply_config();
         policy
@@ -1808,6 +1852,45 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     // Queries.
+
+    /// Whether what the Scene reads from policy changed since this was last asked (179):
+    /// the compositor then draws its outputs again. It's worked out here, from the answers
+    /// themselves, so no event has to say that it changed them.
+    pub fn take_scene_changed(&mut self) -> bool {
+        let reads = self.scene_reads();
+        let changed = reads != self.scene_taken;
+        self.scene_taken = reads;
+        changed
+    }
+
+    /// What the Scene reads from policy, now.
+    fn scene_reads(&self) -> SceneReads {
+        SceneReads {
+            stacking: self.stacking(self.active),
+            windows: self
+                .windows
+                .iter()
+                .map(|(id, managed)| WindowReads {
+                    id: *id,
+                    geometry: Rectangle::new(managed.geometry.loc, managed.size),
+                    frame: managed.frame(),
+                    showing: self.is_showing(*id),
+                    fullscreen: managed.fullscreen,
+                    layer: self.layer(*id),
+                })
+                .collect(),
+            grabs: self
+                .grabs
+                .iter()
+                .map(|(seat, grab)| GrabReads {
+                    seat: *seat,
+                    window: grab.window,
+                    tile_preview: self.tile_preview(*seat),
+                })
+                .collect(),
+            switcher: self.switcher().map(|switcher| switcher.entries.clone()),
+        }
+    }
 
     pub fn window(&self, id: WindowId) -> Option<&W> {
         self.windows.get(&id).map(|m| &m.window)

@@ -38,7 +38,6 @@ impl ForeignToplevelHandler for State {
         self.caminito
             .policy
             .activate(SEAT, window_id(toplevel), now);
-        self.caminito.queue_redraw_all();
     }
 
     fn close_toplevel(&mut self, toplevel: ToplevelId) {
@@ -48,14 +47,12 @@ impl ForeignToplevelHandler for State {
     fn set_toplevel_maximized(&mut self, toplevel: ToplevelId, maximized: bool) {
         let policy = &mut self.caminito.policy;
         policy.set_maximized(window_id(toplevel), maximized);
-        self.caminito.queue_redraw_all();
     }
 
     /// A window list restores a window by activating it, so that's what unminimising is.
     fn set_toplevel_minimized(&mut self, toplevel: ToplevelId, minimized: bool) {
         if minimized {
             self.caminito.policy.minimize(window_id(toplevel));
-            self.caminito.queue_redraw_all();
         } else if self.caminito.policy.is_minimized(window_id(toplevel)) {
             self.activate_toplevel(toplevel);
         }
@@ -65,13 +62,11 @@ impl ForeignToplevelHandler for State {
         let output = output.map(|output| output_id(&output));
         let policy = &mut self.caminito.policy;
         policy.set_fullscreen(window_id(toplevel), true, output);
-        self.caminito.queue_redraw_all();
     }
 
     fn unfullscreen_toplevel(&mut self, toplevel: ToplevelId) {
         let policy = &mut self.caminito.policy;
         policy.set_fullscreen(window_id(toplevel), false, None);
-        self.caminito.queue_redraw_all();
     }
 
     fn set_toplevel_rectangle(

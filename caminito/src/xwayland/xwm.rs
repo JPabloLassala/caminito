@@ -320,7 +320,6 @@ impl State {
     ) {
         if let Some(id) = self.caminito.mapped_for_key(&key(window)) {
             request(&mut self.caminito, id);
-            self.caminito.queue_redraw_all();
         }
     }
 
@@ -397,7 +396,6 @@ impl Caminito {
         let requested = configure_request_geometry(window, gravity, loc, size, extents);
         self.policy
             .request_geometry(id, requested.loc, requested.size);
-        self.queue_redraw_all();
         true
     }
 

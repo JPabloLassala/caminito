@@ -1,11 +1,14 @@
 //! ext-workspace (66): the workspaces a panel's workspace switcher sees, what it's told as
-//! they change, and what its requests do. No test maps a window: workspaces are the same
-//! whichever kind of window is on them.
+//! they change, and what its requests do. One test alone maps a window: workspaces are the
+//! same whichever kind of window is on them.
 
 use caminito_test_client::output_management::HeadChange;
 use insta::assert_snapshot;
+use smithay::utils::{Logical, Point};
 
-use super::fixture::{ClientId, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind};
+use super::fixture::{
+    ClientId, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, WINDOW_COLOR, WindowSpec,
+};
 use crate::settings::Value;
 use crate::settings::translate::{CAMINITO, MARCO_GENERAL, MARCO_WORKSPACE_NAMES};
 
@@ -139,6 +142,27 @@ fn activate_switches_workspace_at_the_commit() {
     workspace 2: state State(Active)
     done
     ");
+}
+
+/// The handler asks policy alone: the refresh pass draws what policy changed (179). The
+/// window has no frame, which would be drawn again as it lost the focus.
+#[test]
+fn a_switch_of_workspace_a_pager_asks_for_is_drawn() {
+    let (mut f, pager) = pager();
+    let app = f.connect(Kind::Xdg);
+    let window = f.map(app, WindowSpec::plain((400, 300)));
+    let inside = f.geometry(window).loc + Point::<i32, Logical>::from((200, 150));
+    let body = WINDOW_COLOR & 0xff_ffff;
+    f.wait_for_pixel(inside.x, inside.y, body);
+
+    f.client(pager).activate_workspace(1);
+    f.client(pager).commit_workspaces();
+    f.roundtrip(pager);
+
+    let output = f.state.caminito.outputs[0].clone();
+    let headless = f.state.backend.headless_mut();
+    let pixel = headless.pixel(&output, inside.to_physical(1));
+    assert_ne!(pixel.expect("the output is drawn") & 0xff_ffff, body);
 }
 
 #[test]

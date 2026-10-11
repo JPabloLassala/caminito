@@ -389,7 +389,6 @@ impl Caminito {
             }
         }
         self.refresh_window_menu();
-        self.queue_redraw_all();
         Some(FilterResult::Intercept(None))
     }
 }
@@ -417,7 +416,6 @@ impl State {
             });
         }
         caminito.refresh_window_menu();
-        caminito.queue_redraw_all();
     }
 
     /// A pointer button's press with the pointer at `location`. Returns whether it was the
@@ -450,7 +448,6 @@ impl State {
             None => caminito.policy.close_window_menu(),
         }
         caminito.refresh_window_menu();
-        caminito.queue_redraw_all();
         true
     }
 }

@@ -398,7 +398,6 @@ impl Caminito {
             Request::CurrentDesktop(n) if n < self.policy.workspace_count() => {
                 let now = self.now();
                 self.policy.action(SEAT, Action::SwitchToWorkspace(n), now);
-                self.queue_redraw_all();
             }
             Request::CurrentDesktop(n) => {
                 tracing::debug!("an X client asked for desktop {n}, which isn't one");
@@ -539,7 +538,6 @@ impl Caminito {
             policy.set_sticky(id, false);
             policy.move_to_workspace(id, desktop as usize);
         }
-        self.queue_redraw_all();
     }
 
     /// Runs `use_it` on Caminito's X connection, if there is one. A connection that fails is
@@ -735,7 +733,6 @@ impl State {
         } else {
             caminito.policy.begin_keyboard_move(SEAT, id);
         }
-        caminito.queue_redraw_all();
     }
 
     /// `_GTK_SHOW_WINDOW_MENU`: an X client that draws its own titlebar asks for the
