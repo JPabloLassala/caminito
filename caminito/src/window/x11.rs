@@ -463,7 +463,7 @@ impl Adapter for X11Surface {
             Ok(()) | Err(PingError::PingAlreadyPending(_)) => true,
             Err(PingError::NotSupported | PingError::InvalidTimestamp) => false,
             Err(PingError::Connection(err)) => {
-                tracing::debug!("can't ping an X window: {err}");
+                tracing::debug!("can't ping an XWayland window: {err}");
                 false
             }
         }

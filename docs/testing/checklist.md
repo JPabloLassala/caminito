@@ -1893,7 +1893,8 @@ session_env() {
   3. In the dialog, choose *Wait*. Press Alt+F4 on `pluma` again, and before the dialog
      shows run `kill -CONT $(pidof pluma)`.
   4. Open `pluma` again, stop it, press Alt+F4 and wait for the dialog. Press Alt+F4 on
-     `pluma` once more, and wait five seconds. Then press Escape in the dialog.
+     `pluma` once more, and wait five seconds. Press Alt+F4 on the dialog, and then Escape
+     in it.
   5. Press Alt+F4 on `pluma` once more, wait for the dialog and choose *Force Quit*.
   6. Repeat steps 2 to 5 with `xterm`, stopped with `kill -STOP $(pidof xterm)`.
   7. Open `pluma` again, stop it, press Alt+F4, wait for the dialog, and run
@@ -1901,8 +1902,9 @@ session_env() {
 - **Expected:** in step 2 Marco's dialog shows after five seconds, titled *Marco*, with the
   window's title, "is not responding", and the buttons *Wait* and *Force Quit*. In step 3
   the dialog goes and `pluma` stays, stopped; then `pluma` closes with no dialog. In step
-  4 the second Alt+F4 shows no second dialog, and gives the first one the focus; Escape
-  closes the dialog and `pluma` stays. In step 5 `pluma`'s window goes at once and its
+  4 the second Alt+F4 shows no second dialog, and gives the first one the focus; Alt+F4
+  on the dialog leaves it and `pluma` as they are, and Escape closes the dialog and
+  `pluma` stays. In step 5 `pluma`'s window goes at once and its
   process is gone (`pidof pluma` prints nothing). In step 6 `xterm` does the same. In
   step 7 the dialog goes by itself as `pluma` closes. Caminito, Xwayland and the other
   windows stay throughout (168).

@@ -238,6 +238,7 @@ fn an_x11_window_that_takes_no_ping_gets_no_dialog() {
     assert_eq!(zenity.starts(), 0);
 }
 
+/// The title is read the same way for both kinds, so one kind shows it.
 #[test]
 fn the_title_in_the_dialog_is_escaped_for_its_markup() {
     let mut f = Fixture::new();
@@ -299,9 +300,8 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
-    /// Not as in Marco, where zenity's status for Escape and for its window closed is
-    /// Force Quit's.
-    fn escape_in_the_dialog_or_closing_it_is_wait(kind: Kind) {
+    /// Not as in Marco, where zenity's status for Escape is Force Quit's.
+    fn escape_in_the_dialog_is_wait(kind: Kind) {
         let mut f = Fixture::new();
         f.add_output((1920, 1080), 1.0);
         let zenity = Zenity::install_pressing(&mut f, Press::Escape);
@@ -468,7 +468,8 @@ on_both_kinds! {
 }
 
 /// Marco's `meta_window_present_delete_dialog` (`core/delete.c:211-248`) activates the
-/// dialog that shows. The dialog is a window of zenity's process.
+/// dialog that shows. The dialog is a window of zenity's process, which only a Wayland
+/// client of the fixture's can be taken for, and zenity 4 is one.
 #[test]
 fn a_close_while_the_dialog_shows_brings_the_dialog_forward() {
     let mut f = Fixture::new();
@@ -495,6 +496,7 @@ fn a_close_while_the_dialog_shows_brings_the_dialog_forward() {
     zenity.release();
 }
 
+/// The dialog is spawned the same way for both kinds, so one kind shows it.
 #[test]
 fn zenity_missing_is_logged_and_nothing_shows() {
     let logs = Logs::capture();

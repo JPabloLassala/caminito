@@ -563,7 +563,7 @@ impl Caminito {
     /// is a process here, as Marco's `meta_window_kill` asks (`core/delete.c:171-176`).
     pub(crate) fn x_client_is_of_this_machine(&mut self, window: &X11Surface) -> bool {
         let id = window.window_id();
-        let machine = self.with_xconn("read an X window's machine", |xconn| {
+        let machine = self.with_xconn("read an XWayland window's machine", |xconn| {
             xconn.client_machine(id)
         });
         let uname = rustix::system::uname();
@@ -573,7 +573,9 @@ impl Caminito {
     /// Cuts off the X client that made `window`.
     pub(crate) fn kill_x_client(&mut self, window: &X11Surface) {
         let id = window.window_id();
-        self.with_xconn("cut an X client off", |xconn| xconn.kill_client(id));
+        self.with_xconn("cut an XWayland window's client off", |xconn| {
+            xconn.kill_client(id)
+        });
     }
 
     /// Reads what Caminito's X connection knows of a window Smithay doesn't, as it asks to

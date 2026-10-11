@@ -29,7 +29,7 @@ pub(super) enum Press {
     Ok,
     /// The Cancel button: status 1.
     Cancel,
-    /// Escape, or the dialog's window closed: zenity's `ZENITY_ESC`, or 1 without it.
+    /// Escape: zenity's `ZENITY_ESC`, or 1 without it.
     Escape,
 }
 

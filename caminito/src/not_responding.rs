@@ -12,15 +12,15 @@
 //!
 //! - An answer to the ping takes the dialog away, as the window's closing does. Marco's
 //!   `delete_ping_reply_func` does nothing, and its dialog stays.
-//! - Escape in the dialog, or closing it, is *Wait*. zenity's status for both is 1, as for
-//!   *Force Quit*, which Marco takes them for, though its comment says that status 1
-//!   "means the user pressed Force Quit".
+//! - Escape in the dialog is *Wait*. zenity's status for it is 1, as for *Force Quit*,
+//!   which Marco takes it for, though its comment says that status 1 "means the user
+//!   pressed Force Quit". zenity 4's question doesn't close when it's asked to.
 //! - The dialog isn't transient for the window: Marco's `WINDOWID` names an X window to a
 //!   zenity that's an X client, which zenity 4 on Caminito isn't.
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::process::{Child, Command};
 use std::time::Duration;
 
@@ -43,8 +43,7 @@ const PING_TIMEOUT: Duration = Duration::from_secs(5);
 /// zenity's status for *Force Quit*, its cancel button.
 const FORCE_QUIT: i32 = 1;
 
-/// The status zenity is given for Escape and for its window closed, in `ZENITY_ESC`, to
-/// tell them from *Force Quit*.
+/// The status zenity is given for Escape, in `ZENITY_ESC`, to tell it from *Force Quit*.
 const ESCAPE: &str = "2";
 
 /// The windows asked to close whose clients owe an answer to a ping, or have the dialog.
@@ -66,6 +65,17 @@ struct Dialog {
     zenity: Child,
     /// The source that sees zenity end.
     source: RegistrationToken,
+}
+
+impl Dialog {
+    /// Kills zenity, as Marco does (`core/delete.c:202-209`), so the wait is short. Its
+    /// source is the caller's to remove.
+    fn take_away(mut self) {
+        let ended = self.zenity.kill().and_then(|()| self.zenity.wait());
+        if let Err(err) = ended {
+            tracing::warn!("can't take a \"not responding\" dialog away: {err}");
+        }
+    }
 }
 
 impl NotResponding {
@@ -122,36 +132,32 @@ impl Caminito {
             .collect();
         for (id, dialog) in unanswered {
             match dialog {
-                Some(zenity) => self.present_dialog(zenity, now),
+                Some(zenity_pid) => self.present_dialog(zenity_pid, now),
                 None => self.show_not_responding_dialog(id),
             }
         }
     }
 
-    /// The window's client answered its ping, or the window has gone: nothing waits for
-    /// it now, and its dialog is taken away, as Marco's is from a window that goes
+    /// Stops waiting for the window `id`, whose client answered its ping, or which has
+    /// gone, and takes its dialog away, as Marco's is from a window that goes
     /// (`meta_window_free_delete_dialog`, `core/delete.c:202-209`).
-    pub(crate) fn window_responds(&mut self, id: WindowId) {
+    pub(crate) fn forget_close_ping(&mut self, id: WindowId) {
         let Some(waiting) = self.not_responding.windows.remove(&id) else {
             return;
         };
-        if let Some(mut dialog) = waiting.dialog {
+        if let Some(dialog) = waiting.dialog {
             self.loop_handle.remove(dialog.source);
-            // Killed, as Marco's is, so the wait is short.
-            let ended = dialog.zenity.kill().and_then(|()| dialog.zenity.wait());
-            if let Err(err) = ended {
-                tracing::warn!("can't take a \"not responding\" dialog away: {err}");
-            }
+            dialog.take_away();
         }
     }
 
     /// An xdg client answered its ping, which is for every window of its.
     pub(crate) fn xdg_client_answered(&mut self, client: &ShellClient) {
-        let waiting: Vec<WindowId> = self.not_responding.windows.keys().copied().collect();
-        for id in waiting {
+        let ids: Vec<WindowId> = self.not_responding.windows.keys().copied().collect();
+        for id in ids {
             let toplevel = self.policy.window(id).and_then(|m| m.window().toplevel());
             if toplevel.is_some_and(|toplevel| toplevel.client() == *client) {
-                self.window_responds(id);
+                self.forget_close_ping(id);
             }
         }
     }
@@ -201,29 +207,49 @@ impl Caminito {
             .loop_handle
             .insert_source(source, move |_, stdout, state| {
                 let mut buffer = [0; 512];
-                if let Ok(1..) = (&**stdout).read(&mut buffer) {
-                    return Ok(PostAction::Continue);
+                match (&**stdout).read(&mut buffer) {
+                    Ok(0) => state.caminito.not_responding_dialog_ended(id),
+                    Ok(_) => return Ok(PostAction::Continue),
+                    Err(err) if err.kind() == ErrorKind::Interrupted => {
+                        return Ok(PostAction::Continue);
+                    }
+                    // The dialog may show still, and nothing waits for it.
+                    Err(err) => {
+                        tracing::warn!("can't watch a \"not responding\" dialog: {err}");
+                        state.caminito.not_responding_dialog_lost(id);
+                    }
                 }
-                state.caminito.not_responding_dialog_ended(id);
                 Ok(PostAction::Remove)
             });
         inserted.map_err(|err| err.error.into())
     }
 
+    /// Takes the dialog of the window `id` out of what waits, from its own source, which
+    /// goes after this.
+    fn take_dialog(&mut self, id: WindowId) -> Option<Dialog> {
+        let windows = &mut self.not_responding.windows;
+        let waiting = windows.get_mut(&id)?;
+        let dialog = waiting.dialog.take();
+        // A close while the dialog showed may wait for its ping still.
+        if waiting.due.is_none() {
+            windows.remove(&id);
+        }
+        dialog
+    }
+
+    /// The dialog of the window `id` can't be watched any more, so it's taken away.
+    fn not_responding_dialog_lost(&mut self, id: WindowId) {
+        if let Some(dialog) = self.take_dialog(id) {
+            dialog.take_away();
+        }
+    }
+
     /// The dialog of the window `id` ended by itself: with *Force Quit*, which kills, or
     /// with anything else, which waits (`dialog_exited`, `core/delete.c:61-73`).
     fn not_responding_dialog_ended(&mut self, id: WindowId) {
-        let windows = &mut self.not_responding.windows;
-        let Some(mut dialog) = windows.get_mut(&id).and_then(|w| w.dialog.take()) else {
+        let Some(mut dialog) = self.take_dialog(id) else {
             return;
         };
-        // A close while the dialog showed may wait for its ping still.
-        if windows
-            .get(&id)
-            .is_some_and(|waiting| waiting.due.is_none())
-        {
-            windows.remove(&id);
-        }
         // zenity closes its stdout as it ends, so the wait is short.
         match dialog.zenity.wait() {
             Ok(status) if status.code() == Some(FORCE_QUIT) => self.force_quit(id),
@@ -235,8 +261,8 @@ impl Caminito {
     /// Brings the dialog that shows forward, as Marco's
     /// `meta_window_present_delete_dialog` does (`core/delete.c:211-248`), which finds it
     /// by its class and its parent: here it's the window of zenity's process.
-    fn present_dialog(&mut self, zenity: u32, now: Duration) {
-        let is_dialog = |mapped: &&Mapped| mapped.pid() == Some(zenity);
+    fn present_dialog(&mut self, zenity_pid: u32, now: Duration) {
+        let is_dialog = |mapped: &&Mapped| mapped.pid() == Some(zenity_pid);
         let dialog = self.policy.windows().find(is_dialog).map(Mapped::id);
         if let Some(id) = dialog {
             self.policy.activate(SEAT, id, now);
@@ -244,9 +270,10 @@ impl Caminito {
     }
 
     /// Force Quit, as Marco's `meta_window_kill` (`core/delete.c:162-200`): kills the
-    /// process of the window's client, and cuts an X client off whether it named a process
-    /// or not. The process is the Wayland client's by its socket's credentials, or an X
-    /// window's `_NET_WM_PID` if `WM_CLIENT_MACHINE` is this machine. Caminito's own process
+    /// process of the window's client, and cuts an XWayland window's client off whether it
+    /// named a process or not. The process is the Wayland client's by its socket's
+    /// credentials, or an XWayland window's `_NET_WM_PID` if `WM_CLIENT_MACHINE` is this
+    /// machine. Caminito's own process
     /// and Xwayland's are never killed.
     fn force_quit(&mut self, id: WindowId) {
         let Some(mapped) = self.policy.window(id) else {

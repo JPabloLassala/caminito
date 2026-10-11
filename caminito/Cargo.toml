@@ -17,7 +17,8 @@ drm-ffi = "0.9.1"
 futures-channel = "0.3.34"
 gio = "0.22.10"
 libc = "0.2.189"
-# process: SIGTERM to the helpers and to the session command (61).
+# process: SIGTERM to the helpers and to the session command (61), and Force Quit's SIGKILL
+# (168). system: the machine's name, for an XWayland window's `WM_CLIENT_MACHINE` (168).
 rustix = { workspace = true, features = ["fs", "process", "system"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
