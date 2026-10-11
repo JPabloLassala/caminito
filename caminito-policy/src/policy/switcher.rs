@@ -24,13 +24,15 @@ pub enum SwitchList {
 /// A Layer surface that accepts the keyboard, by the name the compositor gives it (163).
 /// Policy manages none: it only lists them among the panels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LayerId(pub u64);
+pub struct LayerSurfaceId(pub u64);
 
 /// What a list has: a window, or among the panels a Layer surface (163).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SwitchEntry {
+    /// A window policy manages.
     Window(WindowId),
-    Layer(LayerId),
+    /// A Layer surface that accepts the keyboard, which only the panels' list has.
+    Layer(LayerSurfaceId),
 }
 
 impl SwitchEntry {
@@ -163,8 +165,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// The Layer surfaces that accept the keyboard, and the one that has it in place of the
     /// focused window, if one does. Policy keeps them most recently used first: by when
     /// each had the keyboard, and then in the order they came.
-    pub fn set_layers(&mut self, layers: &[LayerId], keyboard: Option<LayerId>) {
-        let mut ordered: Vec<LayerId> = keyboard.into_iter().collect();
+    pub fn set_layers(&mut self, layers: &[LayerSurfaceId], keyboard: Option<LayerSurfaceId>) {
+        let mut ordered: Vec<LayerSurfaceId> = keyboard.into_iter().collect();
         let known = self.layers.iter().filter(|id| layers.contains(id));
         for id in known.chain(layers) {
             if !ordered.contains(id) {

@@ -1514,6 +1514,31 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
+    fn a_cycle_binding_of_another_list_ends_a_cycle(kind: Kind) {
+        // As in Marco, where `cycle-windows` ends a `cycle-group` grab and the other way
+        // round (`process_tab_grab`, core/keybindings.c:2187-2199).
+        let (mut f, id) = Fixture::connected(kind);
+        let a = map_of_app(&mut f, id, "one");
+        let b = map_of_app(&mut f, id, "one");
+
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_F6);
+        assert_eq!(on_top(&f), a);
+        tap(&mut f, KEY_ESC);
+        assert!(!is_open(&f));
+        assert_eq!(on_top(&f), b);
+
+        tap(&mut f, KEY_ESC);
+        assert_eq!(switcher(&f)["list"], "windows");
+        tap(&mut f, KEY_F6);
+        assert!(!is_open(&f));
+        f.key(KEY_LEFTALT, false);
+
+        assert_eq!(focus(&f), Some(b));
+    }
+}
+
+on_both_kinds! {
     fn a_press_of_the_pointer_ends_a_cycle_with_the_stacking_as_it_was(kind: Kind) {
         let (mut f, id) = Fixture::connected(kind);
         let windows = map_windows(&mut f, id, 3);
@@ -1576,6 +1601,7 @@ fn ctrl_alt_escape_cycles_docks_and_the_desktop() {
     assert_eq!(focus(&f), Some(first));
 }
 
+/// Only X11 has a dock as a managed window.
 #[test]
 fn cycle_panels_backward_cycles_from_its_own_binding() {
     let (mut f, x) = with_super_q(Kind::X11, "cycle-panels-backward");
@@ -1720,6 +1746,7 @@ on_both_kinds! {
     }
 }
 
+/// It maps an xdg toplevel only: no window is listed, so its kind changes nothing.
 #[test]
 fn a_layer_surface_that_unmaps_leaves_the_open_window_switcher() {
     let (mut f, shell, _window) = with_a_shell(Kind::Xdg);

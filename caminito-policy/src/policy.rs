@@ -23,7 +23,7 @@ mod window_actions;
 
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
-pub use switcher::{LayerId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
+pub use switcher::{LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
 
 /// A seat, as the compositor numbers them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -571,9 +571,9 @@ pub struct Policy<W: PolicyWindow> {
     /// `alt-tab-minimized-placement` (163).
     alt_tab_minimized_placement: MinimizedPlacement,
     /// The Layer surfaces that accept the keyboard, most recently used first (163).
-    layers: Vec<LayerId>,
+    layers: Vec<LayerSurfaceId>,
     /// The one that has the keyboard in place of the focused window.
-    keyboard_layer: Option<LayerId>,
+    keyboard_layer: Option<LayerSurfaceId>,
     /// What the Window switcher last chose, until the compositor takes it.
     chosen: Option<SwitchEntry>,
     placement_mode: PlacementMode,

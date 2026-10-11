@@ -2,7 +2,7 @@
 //! (63). Each output's are kept in Smithay's `layer_map_for_output`, which arranges them by
 //! their anchors, margins, sizes and exclusive zones (15). `scene` decides their order.
 
-use caminito_policy::{LayerId, SwitchEntry, WindowId};
+use caminito_policy::{LayerSurfaceId, SwitchEntry, WindowId};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
@@ -19,7 +19,7 @@ use crate::state::{Caminito, SEAT};
 use crate::window::send_preferred_scale;
 
 /// The name policy has for a layer surface (163), kept with its main surface.
-struct PolicyName(LayerId);
+struct PolicyName(LayerSurfaceId);
 
 impl Caminito {
     /// The output for a layer surface that names none: the one under the pointer, or else
@@ -41,7 +41,7 @@ impl Caminito {
         namespace: String,
     ) {
         let layer = LayerSurface::new(surface, namespace);
-        let name = PolicyName(LayerId(self.next_layer_id));
+        let name = PolicyName(LayerSurfaceId(self.next_layer_id));
         self.next_layer_id += 1;
         with_states(layer.wl_surface(), |data| {
             data.data_map.insert_if_missing(|| name);
@@ -153,12 +153,21 @@ impl Caminito {
     /// The layer surface policy names `id`, and where it is, globally.
     pub(crate) fn layer_named(
         &self,
-        id: LayerId,
+        id: LayerSurfaceId,
     ) -> Option<(LayerSurface, Rectangle<i32, Logical>)> {
         let layers = self.outputs.iter().flat_map(|o| self.layer_surfaces(o));
         layers
             .into_iter()
             .find(|(layer, _)| policy_name(layer) == Some(id))
+    }
+
+    /// The namespace of the layer surface a Window switcher's entry is, if it's one.
+    pub(crate) fn layer_namespace(&self, entry: SwitchEntry) -> Option<String> {
+        let SwitchEntry::Layer(id) = entry else {
+            return None;
+        };
+        let (layer, _) = self.layer_named(id)?;
+        Some(layer.namespace().to_owned())
     }
 
     /// Tells policy the layer surfaces that accept the keyboard, which `switch-panels` and
@@ -167,7 +176,7 @@ impl Caminito {
     pub(crate) fn refresh_panel_layers(&mut self) {
         let keyboard = self.layer_with_keyboard();
         let keyboard = keyboard.as_ref().and_then(policy_name);
-        let layers: Vec<LayerId> = self
+        let layers: Vec<LayerSurfaceId> = self
             .outputs
             .iter()
             .flat_map(|output| self.layer_surfaces(output))
@@ -243,7 +252,7 @@ impl Caminito {
     }
 }
 
-fn policy_name(layer: &LayerSurface) -> Option<LayerId> {
+fn policy_name(layer: &LayerSurface) -> Option<LayerSurfaceId> {
     with_states(layer.wl_surface(), |data| {
         data.data_map.get::<PolicyName>().map(|name| name.0)
     })

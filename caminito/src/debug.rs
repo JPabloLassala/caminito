@@ -565,13 +565,7 @@ impl Caminito {
                 path: tie.path.to_string(),
             })
             .collect();
-        let namespace = |entry: &SwitchEntry| match entry {
-            SwitchEntry::Layer(id) => {
-                let (layer, _) = self.layer_named(*id)?;
-                Some(layer.namespace().to_owned())
-            }
-            SwitchEntry::Window(_) => None,
-        };
+        let namespace = |entry: &SwitchEntry| self.layer_namespace(*entry);
         let switcher = policy.switcher().map(|switcher| SwitcherDump {
             list: match switcher.list {
                 SwitchList::Windows => "windows",

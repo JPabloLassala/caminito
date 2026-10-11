@@ -24,7 +24,7 @@ pub use grid::{Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
-    Config, Crossing, FocusMode, GrabKey, GrabStep, LayerId, MAX_WORKSPACES, MapStates,
+    Config, Crossing, FocusMode, GrabKey, GrabStep, LayerSurfaceId, MAX_WORKSPACES, MapStates,
     MinimizedPlacement, PointerTarget, Policy, ResizeEdges, SeatId, SwitchEntry, SwitchList,
     Switcher, default_workspace_name,
 };

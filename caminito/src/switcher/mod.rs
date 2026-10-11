@@ -242,13 +242,7 @@ impl Caminito {
         let switcher = self.policy.switcher()?;
         // A Layer surface has no title, app id or icon of its own: its namespace names it,
         // and an icon too where the icon theme has one by that name (163).
-        let namespace = |entry: &SwitchEntry| match entry {
-            SwitchEntry::Layer(id) => {
-                let (layer, _) = self.layer_named(*id)?;
-                Some(layer.namespace().to_owned())
-            }
-            SwitchEntry::Window(_) => None,
-        };
+        let namespace = |entry: &SwitchEntry| self.layer_namespace(*entry);
         let window = |entry: &SwitchEntry| self.policy.window(entry.window()?);
         Some(Drawn {
             grid: self.switcher_grid_on(output)?,
@@ -321,7 +315,7 @@ impl Caminito {
         self.refresh_switcher();
         let key = self.switcher.as_ref()?.key;
         let switcher = self.policy.switcher()?;
-        let (selected, popup) = (switcher.selected, switcher.popup);
+        let (selected, popup, list) = (switcher.selected, switcher.popup, switcher.list);
         if keysym.modified_sym().is_modifier_key() {
             return Some(FilterResult::Forward);
         }
@@ -338,16 +332,22 @@ impl Caminito {
         };
         // A `switch-*` binding steps the Window switcher and a `cycle-*` one a cycle, and
         // each ends the other's, as in Marco (`process_tab_grab`,
-        // core/keybindings.c:2141-2199), which also sets the stacking back.
+        // core/keybindings.c:2141-2199), which also sets the stacking back. A cycle has no
+        // Escape of its own, so a `cycle-*` binding of another list ends it too, as there
+        // between the group's and the others'; the Window switcher is stepped by any
+        // `switch-*` binding (108).
         let bindings = &self.settings.bindings;
         let bound = match bindings.binding_for(mods, &press_keysyms(keysym)) {
-            Some(Binding::Policy(Action::Switch { backward, .. })) => Some((true, backward)),
-            Some(Binding::Policy(Action::Cycle { backward, .. })) => Some((false, backward)),
+            Some(Binding::Policy(Action::Switch { backward, .. })) => Some((popup, backward)),
+            Some(Binding::Policy(Action::Cycle {
+                list: its,
+                backward,
+            })) => Some((!popup && its == list, backward)),
             _ => None,
         };
         match sym {
-            _ if let Some((its_popup, backward)) = bound => {
-                if its_popup == popup {
+            _ if let Some((steps, backward)) = bound => {
+                if steps {
                     self.policy.switcher_step(backward);
                 } else {
                     self.policy.switcher_cancel(now);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{LayerId, MinimizedPlacement, ResizeEdges, SwitchEntry, SwitchList};
+use crate::{LayerSurfaceId, MinimizedPlacement, ResizeEdges, SwitchEntry, SwitchList};
 
 const SWITCH: Action = Action::Switch {
     list: SwitchList::Windows,
@@ -742,12 +742,12 @@ fn panels() -> Policy<TestWindow> {
             ms(w),
         );
     }
-    policy.set_layers(&[LayerId(1), LayerId(2)], None);
+    policy.set_layers(&[LayerSurfaceId(1), LayerSurfaceId(2)], None);
     policy
 }
 
 fn layer(id: u64) -> SwitchEntry {
-    SwitchEntry::Layer(LayerId(id))
+    SwitchEntry::Layer(LayerSurfaceId(id))
 }
 
 fn dock(window: u64) -> SwitchEntry {
@@ -813,7 +813,10 @@ fn a_cancelled_switcher_names_nothing() {
 #[test]
 fn the_layer_surface_with_the_keyboard_is_first_and_the_next_is_selected() {
     let mut policy = panels();
-    policy.set_layers(&[LayerId(1), LayerId(2)], Some(LayerId(2)));
+    policy.set_layers(
+        &[LayerSurfaceId(1), LayerSurfaceId(2)],
+        Some(LayerSurfaceId(2)),
+    );
 
     policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
     let switcher = policy.switcher().unwrap();
@@ -824,10 +827,10 @@ fn the_layer_surface_with_the_keyboard_is_first_and_the_next_is_selected() {
 #[test]
 fn layer_surfaces_are_listed_by_when_each_last_had_the_keyboard() {
     let mut policy = policy();
-    let all = [LayerId(1), LayerId(2), LayerId(3)];
+    let all = [LayerSurfaceId(1), LayerSurfaceId(2), LayerSurfaceId(3)];
     policy.set_layers(&all, None);
-    policy.set_layers(&all, Some(LayerId(3)));
-    policy.set_layers(&all, Some(LayerId(2)));
+    policy.set_layers(&all, Some(LayerSurfaceId(3)));
+    policy.set_layers(&all, Some(LayerSurfaceId(2)));
     // A window took the keyboard back.
     policy.set_layers(&all, None);
 
@@ -842,7 +845,10 @@ fn with_a_layer_surface_at_the_keyboard_switch_windows_starts_on_the_focused_win
     // The focused window keeps policy's focus while a panel has the keyboard, and it's the
     // window to come back to.
     let mut policy = panels();
-    policy.set_layers(&[LayerId(1), LayerId(2)], Some(LayerId(1)));
+    policy.set_layers(
+        &[LayerSurfaceId(1), LayerSurfaceId(2)],
+        Some(LayerSurfaceId(1)),
+    );
     policy.action(SEAT, SWITCH, ms(10));
 
     let switcher = policy.switcher().unwrap();
@@ -853,7 +859,7 @@ fn with_a_layer_surface_at_the_keyboard_switch_windows_starts_on_the_focused_win
 #[test]
 fn one_layer_surface_alone_is_chosen_with_no_switcher() {
     let mut policy = three();
-    policy.set_layers(&[LayerId(7)], None);
+    policy.set_layers(&[LayerSurfaceId(7)], None);
     policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
 
     assert!(policy.switcher().is_none());
@@ -872,7 +878,7 @@ fn a_layer_surface_that_goes_away_leaves_the_open_switcher() {
         },
         ms(10),
     );
-    policy.set_layers(&[LayerId(1)], None);
+    policy.set_layers(&[LayerSurfaceId(1)], None);
 
     let switcher = policy.switcher().unwrap();
     assert_eq!(switcher.entries, [dock(5), dock(4), layer(1)]);
