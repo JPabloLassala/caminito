@@ -1,7 +1,7 @@
 # 22. VS Code's extension is installed as a built-in, linked into each editor by an alpm hook
 
 Date: 2026-10-08
-Status: Accepted
+Status: Accepted. Qualified on 2026-10-11 by the `debian-packaging` epic: on Ubuntu the same link script is run by dpkg triggers on each editor's directory, in place of alpm hooks.
 
 ## Context
 
