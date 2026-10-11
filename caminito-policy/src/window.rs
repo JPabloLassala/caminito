@@ -165,6 +165,8 @@ pub trait PolicyWindow {
     /// Whether the window is left out of the taskbar, by its own asking or by Marco's rules
     /// for its type. The Window switcher leaves it out too (108).
     fn skips_taskbar(&self) -> bool;
+    /// Whether the client asks for the user's attention itself, as an X client can.
+    fn urgent(&self) -> bool;
     /// Whether Caminito draws a frame for this window.
     fn is_ssd(&self) -> bool;
     /// The frame's size around the window geometry in `state`, since a theme can draw a

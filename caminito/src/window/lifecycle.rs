@@ -4,7 +4,9 @@
 //! into this module's: created, pending state request, committed content, withdrawn and
 //! destroyed.
 
-use caminito_policy::{FrameState, MapStates, OutputId, SizeHints, WindowId};
+use caminito_policy::{
+    ActivationToken, FocusClaim, FrameState, MapStates, OutputId, SizeHints, WindowId,
+};
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -28,6 +30,8 @@ struct Pending {
     sticky: bool,
     /// It asked to be the active window, which it becomes as it maps.
     active: bool,
+    /// What it claims the focus with as it maps (165).
+    focus: FocusClaim,
 }
 
 /// The pending windows.
@@ -77,13 +81,18 @@ impl Caminito {
     /// content.
     pub(crate) fn window_created(&mut self, window: Window) {
         self.pending.0.push(Pending {
-            window,
             maximized: false,
             fullscreen: None,
             above: false,
             below: false,
             sticky: false,
             active: false,
+            // XWayland's windows are 166's.
+            focus: match WindowKey::of(&window) {
+                WindowKey::Wayland(_) => FocusClaim::NoToken,
+                WindowKey::X11(_) => FocusClaim::Unchecked,
+            },
+            window,
         });
     }
 
@@ -137,6 +146,23 @@ impl Caminito {
         }
         self.configure_pending(key);
         false
+    }
+
+    /// Activation requested: a client asks for the window to be activated with an
+    /// xdg-activation token Caminito issued, or with one it doesn't know. Policy decides for
+    /// a managed window; a pending one maps with it (165).
+    pub(crate) fn window_activation_requested(
+        &mut self,
+        key: &WindowKey,
+        token: Option<ActivationToken>,
+    ) {
+        if let Some(id) = self.mapped_for_key(key) {
+            let now = self.now();
+            self.policy.request_activation(SEAT, id, token, now);
+            self.queue_redraw_all();
+        } else if let Some(index) = self.pending.position(key) {
+            self.pending.0[index].focus = token.map_or(FocusClaim::NoToken, FocusClaim::Token);
+        }
     }
 
     /// Committed content: the window's surface committed a buffer. A pending window maps
@@ -226,6 +252,7 @@ impl Caminito {
             below,
             sticky,
             active,
+            focus,
         } = pending;
         let mut mapped = Mapped::new(id, window);
         mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
@@ -237,6 +264,7 @@ impl Caminito {
         let states = MapStates {
             maximized,
             fullscreen,
+            focus,
         };
         self.policy.map_window_with(mapped, states, now);
         self.policy.set_above(id, above);

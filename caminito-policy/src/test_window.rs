@@ -210,6 +210,11 @@ impl PolicyWindow for TestWindow {
         self.skip_taskbar
     }
 
+    /// A test window never asks for attention itself.
+    fn urgent(&self) -> bool {
+        false
+    }
+
     fn is_ssd(&self) -> bool {
         self.ssd
     }

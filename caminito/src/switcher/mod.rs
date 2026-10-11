@@ -245,7 +245,7 @@ impl Caminito {
                 .iter()
                 .filter_map(|id| {
                     let mapped = window(id)?;
-                    Some((*id, mapped.is_urgent(), mapped.icon_source()))
+                    Some((*id, self.policy.is_urgent(*id), mapped.icon_source()))
                 })
                 .collect(),
             title: window(&switcher.windows[switcher.selected])

@@ -494,7 +494,7 @@ impl Caminito {
                                 .collect(),
                         }
                     }),
-                    urgent: mapped.is_urgent(),
+                    urgent: policy.is_urgent(id),
                     skip_taskbar: skips.taskbar,
                     skip_pager: skips.pager,
                     tile: policy.tile(id).map(tile_name),
