@@ -742,10 +742,10 @@ on_both_kinds! {
         let title = title_point(&f, window);
         move_to(&mut f, title);
 
-        // Two clicks in one event, as a fast turn gives.
+        // Two clicks in one event, as a fast turn gives, and then three.
         f.scroll(-240.);
         assert!(!is_shaded(&f, window));
-        f.scroll(-120.);
+        f.scroll(-360.);
         assert!(is_shaded(&f, window));
 
         // A wheel with finer steps acts once its steps make a click.
@@ -753,6 +753,27 @@ on_both_kinds! {
         f.scroll(-40.);
         assert!(is_shaded(&f, window));
         f.scroll(-40.);
+        assert!(!is_shaded(&f, window));
+    }
+}
+
+on_both_kinds! {
+    fn a_touchpads_scroll_on_the_titlebar_acts_once_for_each_wheel_click_of_distance(kind: Kind) {
+        let (mut f, window) = scrolling_with(kind, "toggle_shade", "none");
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+
+        // A wheel's click is 15.
+        f.finger_scroll(-10.);
+        assert!(!is_shaded(&f, window));
+        f.finger_scroll(-10.);
+        assert!(is_shaded(&f, window));
+
+        // What's left when the fingers leave doesn't count for the next scroll.
+        f.finger_scroll(0.);
+        f.finger_scroll(-10.);
+        assert!(is_shaded(&f, window));
+        f.finger_scroll(-10.);
         assert!(!is_shaded(&f, window));
     }
 }
@@ -804,5 +825,11 @@ on_both_kinds! {
         assert!(!is_shaded(&f, window));
         f.scroll(120.);
         assert!(is_shaded(&f, window));
+
+        let unshade = Value::Str("unshade".into());
+        f.set_setting(MARCO_GENERAL, "action-scroll-up-titlebar", unshade);
+        f.dispatch_until(|f| f.state.caminito.settings.frames.scroll_up == TitlebarAction::Unshade);
+        f.scroll(-120.);
+        assert!(!is_shaded(&f, window));
     }
 }

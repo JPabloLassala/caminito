@@ -17,17 +17,10 @@ impl Default for ButtonModifier {
     fn default() -> Self {
         Self(Some(Held {
             alt: true,
-            ..NOTHING
+            ..Held::NOTHING
         }))
     }
 }
-
-const NOTHING: Held = Held {
-    ctrl: false,
-    alt: false,
-    shift: false,
-    logo: false,
-};
 
 impl ButtonModifier {
     /// Parses the key's value: modifiers in GTK's accelerator syntax, one or more, and no

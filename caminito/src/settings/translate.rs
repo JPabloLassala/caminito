@@ -521,8 +521,9 @@ pub struct Frames {
     pub double_click: TitlebarAction,
     pub middle_click: TitlebarAction,
     pub right_click: TitlebarAction,
-    /// A scroll on the titlebar, one way and the other (162).
+    /// A scroll up on the titlebar (162).
     pub scroll_up: TitlebarAction,
+    /// A scroll down on it.
     pub scroll_down: TitlebarAction,
     /// Whether frames have shadows: `compositing-manager`, which is all that turns Marco's
     /// off (171).

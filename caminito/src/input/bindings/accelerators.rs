@@ -90,7 +90,7 @@ pub(super) fn parse(accelerator: &str) -> Result<Option<Accelerator>, ParseError
 
 /// The modifiers an accelerator starts with, and what's after them.
 pub(super) fn modifiers(accelerator: &str) -> Result<(Held, &str), ParseError> {
-    let mut held = Held::from(&ModifiersState::default());
+    let mut held = Held::NOTHING;
     let mut rest = accelerator;
     while let Some(after) = rest.strip_prefix('<') {
         let (name, after) = after.split_once('>').ok_or(ParseError::UnclosedModifier)?;

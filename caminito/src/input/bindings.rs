@@ -25,6 +25,16 @@ struct Held {
     logo: bool,
 }
 
+impl Held {
+    /// No modifier.
+    const NOTHING: Self = Self {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        logo: false,
+    };
+}
+
 impl From<&ModifiersState> for Held {
     fn from(mods: &ModifiersState) -> Self {
         Self {

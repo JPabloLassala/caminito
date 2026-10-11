@@ -6,8 +6,8 @@
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
-    BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_LEFTCTRL,
-    KEY_LEFTMETA, KEY_LEFTSHIFT, Kind, WindowSpec, on_both_kinds,
+    BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, ClientId, ClientWindow, Fixture, KEY_ESC, KEY_LEFTALT,
+    KEY_LEFTCTRL, KEY_LEFTMETA, KEY_LEFTSHIFT, Kind, WindowSpec, on_both_kinds,
 };
 use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
@@ -88,8 +88,8 @@ fn drag(f: &mut Fixture, window: ClientWindow, keys: &[u32], button: u32) -> Did
         assert_eq!(menu["window"], f.pid(window).0);
         assert_eq!(end, start, "the menu's press moved the window");
         let corner = |name: &str| menu["rect"][name].as_i64().unwrap() as i32;
-        f.state.caminito.policy.close_window_menu();
-        f.dispatch();
+        f.key(KEY_ESC, true);
+        f.key(KEY_ESC, false);
         return Did::Menu((corner("x"), corner("y")).into());
     }
     let moved = Rectangle::new(start.loc + Point::from((100, 50)), start.size);

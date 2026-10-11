@@ -34,7 +34,7 @@ use smithay::xwayland::X11Surface;
 use x11rb::protocol::Event;
 
 use crate::decoration::control::FrameControl;
-use crate::input::{AxisScroll, Scroll};
+use crate::input::{AxisScroll, Scroll, V120_CLICK, WHEEL_CLICK};
 use crate::output::saved::{self, SavedLayouts};
 use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Value};
@@ -1173,13 +1173,24 @@ impl Fixture {
     /// Turns a wheel by `v120` 120ths of a click, down if it's positive, as a mouse whose
     /// wheel has steps that fine does. A plain wheel's click is 120.
     pub fn scroll(&mut self, v120: f64) {
+        let amount = v120 * WHEEL_CLICK / V120_CLICK;
+        self.scroll_from(AxisSource::Wheel, amount, Some(v120));
+    }
+
+    /// Scrolls by `amount` with two fingers on a touchpad, down if it's positive, in the
+    /// units of which a wheel's click is 15. An `amount` of 0 is the fingers leaving it.
+    pub fn finger_scroll(&mut self, amount: f64) {
+        self.scroll_from(AxisSource::Finger, amount, None);
+    }
+
+    fn scroll_from(&mut self, source: AxisSource, amount: f64, v120: Option<f64>) {
         let scroll = Scroll {
             time: self.input_time(),
-            source: AxisSource::Wheel,
+            source,
             horizontal: None,
             vertical: AxisScroll {
-                amount: Some(v120 * 15. / 120.),
-                v120: Some(v120),
+                amount: Some(amount),
+                v120,
                 relative_direction: AxisRelativeDirection::Identical,
             },
         };

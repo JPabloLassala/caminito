@@ -197,7 +197,7 @@ impl State {
 
     /// Scrolling, sent to whatever has the pointer, after a titlebar under it has done what
     /// its `action-scroll-*-titlebar` keys ask (162).
-    pub fn on_pointer_scroll(&mut self, scroll: Scroll) {
+    pub(crate) fn on_pointer_scroll(&mut self, scroll: Scroll) {
         self.idle_activity();
         self.titlebar_scroll(&scroll);
         let mut frame = AxisFrame::new(scroll.time).source(scroll.source);
@@ -210,7 +210,6 @@ impl State {
             let Some(along) = along else {
                 continue;
             };
-            // A wheel click is 15 units, as libinput and GTK have it.
             let amount = along
                 .amount
                 .unwrap_or_else(|| along.v120.unwrap_or(0.) * WHEEL_CLICK / V120_CLICK);
@@ -818,7 +817,7 @@ impl Under {
 
 /// A scroll event, as a backend's device gives one or the headless fixture makes it.
 #[derive(Debug, Clone, Copy)]
-pub struct Scroll {
+pub(crate) struct Scroll {
     pub time: InputTime,
     pub source: AxisSource,
     /// `None` where the device's settings drop its horizontal scrolling (53).
@@ -828,7 +827,7 @@ pub struct Scroll {
 
 /// A scroll event's part along one axis.
 #[derive(Debug, Clone, Copy)]
-pub struct AxisScroll {
+pub(crate) struct AxisScroll {
     /// In libinput's units, of which a wheel's click is 15.
     pub amount: Option<f64>,
     /// In 120ths of a wheel's click, for a wheel.
@@ -837,9 +836,9 @@ pub struct AxisScroll {
 }
 
 /// A wheel's click in a scroll's units, as libinput and GTK have it.
-const WHEEL_CLICK: f64 = 15.;
+pub(crate) const WHEEL_CLICK: f64 = 15.;
 /// A wheel's click in a scroll's 120ths.
-const V120_CLICK: f64 = 120.;
+pub(crate) const V120_CLICK: f64 = 120.;
 
 /// What a press with `mouse-button-modifier`'s modifiers held does to the window under it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
