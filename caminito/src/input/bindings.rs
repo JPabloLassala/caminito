@@ -486,9 +486,9 @@ fn unbindable(schema: &str, key: &str, value: &str, reason: &str) -> Problem {
 
 impl Accelerator {
     /// The combination as GTK's accelerator labels write one, which Marco's menu shows
-    /// (`meta_accel_label_refetch`, metaaccellabel.c): `Shift+Ctrl+Alt+Super+` and the key,
-    /// a letter in upper case and any other key by its keysym's name, with spaces for its
-    /// underscores. The modifiers' names aren't translated, as GTK's are.
+    /// (`meta_accel_label_update`, metaaccellabel.c:336-461): `Shift+Ctrl+Alt+Super+` and the key,
+    /// a character in upper case, `Space` and `Backslash` by name, and any other key by its
+    /// keysym's name. The modifiers' names aren't translated, as Marco's are.
     fn label(&self) -> String {
         let held = self.held;
         let mut label = String::new();
@@ -504,8 +504,9 @@ impl Accelerator {
         }
         match self.keysym.key_char() {
             Some(' ') => label.push_str("Space"),
+            Some('\\') => label.push_str("Backslash"),
             Some(c) if !c.is_control() => label.extend(c.to_uppercase()),
-            _ => label.push_str(&xkb::keysym_get_name(self.keysym).replace('_', " ")),
+            _ => label.push_str(&xkb::keysym_get_name(self.keysym)),
         }
         label
     }

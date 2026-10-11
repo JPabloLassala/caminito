@@ -227,7 +227,7 @@ fn a_dock_has_only_close_and_the_submenu_to_choose() {
 }
 
 #[test]
-fn a_dialog_has_a_normal_windows_items_and_a_splash_screen_cant_be_kept_on_top() {
+fn a_dialog_has_a_normal_windows_items_and_a_splash_screen_only_the_workspace_ones() {
     let mut policy = policy();
     policy.map_window(
         TestWindow::new(1, 400, 300).with_type(WindowType::Dialog),
@@ -257,7 +257,7 @@ fn a_dialog_has_a_normal_windows_items_and_a_splash_screen_cant_be_kept_on_top()
         [
             "~Minimize",
             "~Maximize",
-            "Move",
+            "~Move",
             "~Resize",
             "---",
             "~[ ] ToggleAbove"

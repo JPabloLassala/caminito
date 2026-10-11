@@ -121,7 +121,11 @@ impl Caminito {
             Some(open) => open.anchor,
             None => match self.policy.geometry(menu.window) {
                 Some(geometry) => geometry.loc,
-                None => return,
+                None => {
+                    self.policy.close_window_menu();
+                    self.queue_redraw_all();
+                    return;
+                }
             },
         };
         let shown = open.and_then(|open| open.shown);
@@ -308,19 +312,30 @@ impl Caminito {
         }
     }
 
-    /// The entry, or the submenu's item while that's open, whose mnemonic `typed` is.
+    /// The entry, or the submenu's item while that's open, whose mnemonic `typed` is: the
+    /// first that isn't greyed, since two labels of a translation can share a letter.
     fn window_menu_mnemonic(&self, typed: char) -> Option<MenuSelection> {
         let menu = self.policy.window_menu()?;
         let texts = &self.shown_window_menu()?.texts;
         if menu.submenu_open {
-            let chosen = |text: &Text| text.label.is_chosen_by(typed);
-            texts.sub.iter().position(chosen).map(MenuSelection::Sub)
-        } else {
-            let chosen = |text: &Option<Text>| {
-                text.as_ref()
-                    .is_some_and(|text| text.label.is_chosen_by(typed))
+            let items = menu.submenu().unwrap_or_default();
+            let chosen = |(item, text): &(&MenuItem, &Text)| {
+                item.sensitive && text.label.is_chosen_by(typed)
             };
-            texts.top.iter().position(chosen).map(MenuSelection::Top)
+            let at = items.iter().zip(&texts.sub).position(|pair| chosen(&pair));
+            at.map(MenuSelection::Sub)
+        } else {
+            let chosen = |(entry, text): &(&MenuEntry, &Option<Text>)| {
+                let greyed = matches!(entry, MenuEntry::Item(item) if !item.sensitive);
+                let text = text.as_ref();
+                !greyed && text.is_some_and(|text| text.label.is_chosen_by(typed))
+            };
+            let at = menu
+                .entries
+                .iter()
+                .zip(&texts.top)
+                .position(|pair| chosen(&pair));
+            at.map(MenuSelection::Top)
         }
     }
 

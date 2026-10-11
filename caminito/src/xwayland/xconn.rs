@@ -504,8 +504,8 @@ impl XConnection {
                     });
                 }
             } else if type_ == atoms._GTK_SHOW_WINDOW_MENU {
-                // The device's id, then the point (gdkwindow-x11.c's
-                // `gdk_x11_window_show_window_menu`).
+                // The device's id, then the point, as GTK3's
+                // `gdk_x11_window_show_window_menu` sends them.
                 requests.push(Request::ShowWindowMenu {
                     window,
                     x: data[1] as i32,

@@ -201,7 +201,8 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The pointer is over `at`: it's selected, if it can be. Over the submenu's parent
-    /// the submenu opens, and over any other entry it closes.
+    /// the submenu opens, and over any other entry that can be selected it closes. A
+    /// separator and a greyed item change nothing.
     pub fn window_menu_select(&mut self, at: MenuSelection) {
         let Some(menu) = &mut self.window_menu else {
             return;
@@ -354,10 +355,12 @@ impl<W: PolicyWindow> Policy<W> {
         entries.push(MenuEntry::Item(item(maximize, functions.maximize)));
         // Marco greys them by `META_WINDOW_ALLOWS_MOVE` and `_RESIZE`
         // (window-private.h:440-444). Here they're greyed where the keyboard move or
-        // resize wouldn't start, which a window maximised both ways adds to Marco's.
+        // resize wouldn't start, which a window maximised both ways adds to Marco's. Marco
+        // gives a splash screen no move function (window.c:6808-6814).
+        let splash = managed.window_type == WindowType::Splashscreen;
         entries.push(MenuEntry::Item(item(
             MenuOp::Move,
-            self.can_grab(id, false),
+            !splash && self.can_grab(id, false),
         )));
         entries.push(MenuEntry::Item(item(
             MenuOp::Resize,
@@ -438,7 +441,6 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         }
         self.set_last_seat(seat);
-        let beside = |policy: &Self, direction| policy.workspace_beside(direction);
         let workspace = match op {
             MenuOp::Minimize => {
                 self.minimize(id);
@@ -477,10 +479,10 @@ impl<W: PolicyWindow> Policy<W> {
                 self.set_sticky(id, false);
                 None
             }
-            MenuOp::MoveLeft => beside(self, Direction::Left),
-            MenuOp::MoveRight => beside(self, Direction::Right),
-            MenuOp::MoveUp => beside(self, Direction::Up),
-            MenuOp::MoveDown => beside(self, Direction::Down),
+            MenuOp::MoveLeft => self.workspace_beside(Direction::Left),
+            MenuOp::MoveRight => self.workspace_beside(Direction::Right),
+            MenuOp::MoveUp => self.workspace_beside(Direction::Up),
+            MenuOp::MoveDown => self.workspace_beside(Direction::Down),
             MenuOp::MoveToWorkspace(workspace) => {
                 Some(workspace).filter(|workspace| *workspace < self.workspace_count)
             }

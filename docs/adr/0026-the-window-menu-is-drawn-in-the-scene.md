@@ -29,7 +29,7 @@ The acceptance criteria read the menu's items from the debug dump and choose eac
 - There's no new process, no protocol and no start-up delay before the first menu.
 - The menu doesn't look exactly like the theme's GTK menus: it has the palette's colours and the interface font, and none of the theme's borders, paddings or check marks.
 - Caminito keeps its own menu logic: the selection that skips separators and greyed items, the submenu, the mnemonics, and the place of the menu and its submenu on the output. A greyed item can't be selected with the keys, where GTK lets the selection rest on one.
-- The pointer has no GTK niceties: moving it from the submenu's parent to the submenu across another item closes the submenu, and pressing, dragging and releasing on an item doesn't choose it. A click does.
+- The pointer has no GTK niceties: moving it from the submenu's parent to the submenu across another item closes the submenu, and an item is chosen at the press of a button on it, so pressing on one item, dragging and releasing on another chooses the first.
 - `caminito` depends on `libc`, for `setlocale`, and has one more `unsafe` block.
 - A user who needs Orca can't use this menu with it. Every item but *Move Titlebar Onscreen* and the submenu's has a keybinding that does the same.
 - Rejected:

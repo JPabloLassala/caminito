@@ -546,6 +546,23 @@ fn shift_reverses_only_the_switch_actions() {
     assert_eq!(bound(&t, ALT_SHIFT, Keysym::F9), None);
 }
 
+// The window menu's hints (161).
+
+#[test]
+fn a_combination_is_written_as_marcos_menu_shows_it() {
+    let t = table(&[
+        (WINDOW, "close", "<Control><Shift>backslash"),
+        (WINDOW, "minimize", "<Super>a"),
+        (WINDOW, "maximize", "<Alt>space"),
+    ]);
+    assert_eq!(t.label_of("close").as_deref(), Some("Shift+Ctrl+Backslash"));
+    assert_eq!(t.label_of("minimize").as_deref(), Some("Super+A"));
+    assert_eq!(t.label_of("maximize").as_deref(), Some("Alt+Space"));
+    assert_eq!(t.label_of("begin-move").as_deref(), Some("Alt+F7"));
+    // An action with no combination has no hint.
+    assert_eq!(t.label_of("toggle-above"), None);
+}
+
 // The debug dump's list.
 
 #[test]
