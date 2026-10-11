@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in, and the X11 variants of the headless tests, which need an Xwayland that starts under the fixture, are the developer's to run with `tools/check`; the checklist item is 173's
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 148
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -19,7 +19,7 @@ The Workspace grid ([96](96-workspace-grid.md)) gains its other two directions a
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code: up and down in a one-row grid, a full grid and a part-filled one; each wrap style at each edge; `prev` after each kind of switch; `prev` after the count shrinks below it.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: the five actions from their bindings; `move-to-workspace-up` carrying the focused window; a `wrap-style` change applying at once.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: the five actions from their bindings; `move-to-workspace-up` carrying the focused window; a `wrap-style` change applying at once.
 - [x] `wrap-style` leaves `UNSUPPORTED`; the five actions' and the key's rows in `docs/parity.md` say honoured, with the tests above.
 - [x] The checklist has an item, tagged M8: the four directions in a 2 × 2 grid set from the pager, with each wrap style. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -44,3 +44,4 @@ The Workspace grid ([96](96-workspace-grid.md)) gains its other two directions a
 - **The bindings' order:** `switch-to-workspace-up` and `-down` follow `-right`, then `move-to-workspace-up` and `-down` (window keys) follow them, and `switch-to-workspace-prev` is last, as `all-keybindings.h` has them; `docs/parity.md` says so.
 - **The translation's unsupported-key tests** used `wrap-style` as their example; they use a made-up key, `test-style`, now, so a ticket that honours a key doesn't take the example away.
 - **Tests run** (only the ticket's and the modules it touched, under `dbus-run-session`): `caminito-policy`'s `tests::grid`, `tests::workspace_moves`, `tests::workspaces`, `tests::dynamic_workspaces` and `tests::invariants`, all passing (the whole of `caminito-policy` ran once by mistake while checking the build, 298 of 299 passing, the one failure the classic test above); `caminito`'s `tests::workspace_moves`, `tests::bindings`, `input::bindings`, `settings::translate`, `tests::parity`, `tests::ext_workspace` and `tests::dynamic_workspaces`, all passing but their `::x11` tests at "Xwayland starts", because Xwayland doesn't start in this container. So the headless tests' `::x11` halves weren't seen to pass, and the second criterion stays unticked for them. Clippy on `caminito-policy` and `caminito` is clean with the three pre-existing `manual_range_contains` lints in caminito-theme allowed. After merging 164, whose show-desktop skip list met this in the translation's imports and its defaults, the same tests were rerun, with `caminito-policy`'s `tests::show_desktop`, with the same results, and clippy again. The checklist item, *The four directions in a 2 × 2 grid, with each wrap style*, is 173's closing run.
+- **The X11 halves, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored. This ticket's tests passed, `tests::workspace_moves`' two `::x11` tests included, with `tests::bindings`, `input::bindings`, `settings::translate`, `tests::parity`, `tests::ext_workspace` and `tests::dynamic_workspaces`; `cargo test -p caminito-policy --lib` passed too (399). None of the 8 failures is this ticket's: four of `tests::keymap`, which fail before M8 too (at `741fccd`), since libxkbcommon 1.13 writes a group's name as `name[1]`, not `name[Group1]`; `tests::grabs::alt_middle_drag_resizes_from_the_nearest_corner::x11`, which passes at `741fccd` and fails on master every time; and two of `tests::lock` and one of `tests::gamma_control`, which failed under the full suite's load and passed twice alone. The rest of `tools/check` wasn't run.
