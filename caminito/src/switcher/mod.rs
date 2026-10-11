@@ -254,8 +254,8 @@ impl Caminito {
                     if let Some(namespace) = namespace(entry) {
                         return Some((*entry, false, IconSource::AppId(Some(namespace))));
                     }
-                    let mapped = window(entry)?;
-                    Some((*entry, mapped.is_urgent(), mapped.icon_source()))
+                    let (id, mapped) = (entry.window()?, window(entry)?);
+                    Some((*entry, self.policy.is_urgent(id), mapped.icon_source()))
                 })
                 .collect(),
             title: {

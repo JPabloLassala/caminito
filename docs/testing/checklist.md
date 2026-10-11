@@ -1298,6 +1298,37 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's `tile` and
   geometry, and its bindings in force.
 
+### The bindings that move a window to a corner, a side, the centre or another monitor
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, at different scales (100%
+     and 200%, say, set in *Displays*), and the panel along the top of the first. In
+     mate-control-center's *Keyboard Shortcuts*, under *Window Management*, set the four
+     *Move window to … corner* actions, the four *Move window to … side of screen* actions,
+     *Move window to center of screen* and the four *Move window to … monitor* actions to
+     keys of your choice. Open pluma (native GTK3) and xterm (X11).
+  2. With pluma focused on the first monitor, press each corner's binding, each side's and
+     the centre's.
+  3. Press the binding to the monitor the second one is towards, each corner's binding
+     there, and the binding back. Press a binding to a monitor where there is none.
+  4. Maximise pluma with Alt+F10, press a corner's binding, then the binding to the other
+     monitor and back, and unmaximise it with Alt+F5.
+  5. Repeat steps 2 to 4 with xterm, then open a menu of it after each move.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the window's frame, shadow apart, lies against each corner and
+  side of the work area, the panel left clear, and in its middle, and the window keeps its
+  size; a side's binding moves it one way only. In step 3 the window goes to the other
+  monitor, at the same share of the way across and down it and of the same share of its
+  size, wholly inside that monitor's work area and drawn sharp at its scale; the corners
+  there are that monitor's; the binding back returns it to the first monitor; and with no
+  monitor that way nothing moves. In step 4 the maximised window doesn't move for the
+  corner, is maximised on the other monitor and back, and goes back to its earlier size and
+  place when unmaximised. In step 5 xterm does the same, and its menus open at the window,
+  not where it was before the move (160).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry and
+  outputs, the outputs' work areas, and the bindings in force.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
@@ -1723,3 +1754,49 @@ session_env() {
   window's stops there, and the next key goes on, as in Marco (156).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
   bindings in force.
+
+### Focus-stealing prevention for native windows
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `mate-terminal` and Firefox (native, with
+     `MOZ_ENABLE_WAYLAND=1`), and focus the terminal.
+  2. With `gsettings set org.mate.Marco.general focus-new-windows smart` (Marco's default),
+     run `xdg-open https://mate-desktop.org` in the terminal, which passes Firefox a token. Then
+     open `pluma` from the panel's menu. Then run `sleep 5; zenity --info` in the terminal and
+     focus Firefox before it opens, and run `(sleep 5; pluma --new-window) &` and focus Firefox
+     again.
+  3. Hold Alt and press Tab while a refused window is open. Release Alt on it.
+  4. Run `gsettings set org.mate.Marco.general focus-new-windows strict` and repeat step 2.
+  5. Run as part of M8's closing run (173), and reset the key with `gsettings reset`.
+- **Expected:** in step 2 the link opens in the running Firefox, which takes the focus and
+  comes to the top; `pluma` from the menu takes the focus, as a first window does with no
+  token; `zenity`, a first window, takes it too, and the second `pluma` window, which opens
+  by itself while Firefox has the focus, doesn't: it opens under Firefox and is urgent. In step
+  3 the urgent window has a dot in its cell's top right corner, and is no longer urgent once
+  it has the focus. In step 4 the link still raises Firefox, as the terminal asked with a key
+  press; `pluma` from the menu and `zenity` open under the focused window, urgent, since MATE's
+  launchers pass no token yet (165).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
+  `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
+  `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
+
+### A failed command's dialog, and `rename-workspace`
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open *Keyboard Shortcuts* from the
+     control center, or use `gsettings`, to bind `run-command-1` to Super+1, leaving
+     `org.mate.Marco.keybinding-commands command-1` at its default, and press it.
+  2. Run `gsettings set org.mate.Marco.keybinding-commands command-1 'no-such-program'` and
+     press Super+1 again.
+  3. Bind `rename-workspace` (`gsettings set org.mate.Marco.global-keybindings
+     rename-workspace '<Super>r'`). Switch to the second workspace, press Super+R, type a new
+     name and press OK. Press Super+R again and press Cancel.
+- **Expected:** in step 1 an error dialog titled *Marco* says the text was empty, and takes
+  the focus as a new window does; in step 2 it says there was an error running
+  `no-such-program`, with GLib's message. Caminito goes on meanwhile. In step 3 the entry
+  dialog asks for the *New Workspace Name:* with the workspace's name filled in, and the
+  pager shows the new name once OK is pressed; Cancel leaves it (167).
+- **Debug tool:** `gsettings monitor org.mate.Marco.workspace-names`, and Caminito's log, which
+  has a line for each command that can't run.

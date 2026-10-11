@@ -355,11 +355,11 @@ fn a_parentless_dialog_is_centred_on_the_output_in_every_mode() {
 fn a_window_mapped_maximised_or_fullscreen_goes_back_to_where_automatic_placement_puts_it() {
     let maximized = MapStates {
         maximized: true,
-        fullscreen: None,
+        ..MapStates::default()
     };
     let fullscreen = MapStates {
-        maximized: false,
         fullscreen: Some(None),
+        ..MapStates::default()
     };
     for states in [maximized, fullscreen] {
         for (mode, center) in [

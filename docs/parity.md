@@ -25,7 +25,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `show-tab-border` | never | Nothing is drawn round the selected window where it sits: its thumbnail shows which it is (ADR 0016). | the checklist's *The parity table's rows that no test covers* |
 | `button-layout` | honoured | The SSD Frame's buttons, in Marco's syntax. CSD windows get the layout through the mirror (09). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/frames.rs` |
 | `focus-mode` | honoured | `click`, `sloppy` and `mouse`, live, for xdg and XWayland windows alike. The pointer entering a window focuses it, or its modal dialog, and a dock, the panel or another Layer surface never; leaving it for the desktop (nothing, or a Layer surface below the windows, such as caja's) takes the focus away under `mouse`. A crossing of a still pointer, as a window maps, goes or restacks under it, counts only until the keyboard moves the focus, as Marco's `mouse_mode` has it. The Window switcher and a move or resize hold the modes off. Layer surfaces take the keyboard by their own keyboard interactivity (153). | `caminito-policy/src/tests/pointer_focus.rs`, `caminito/src/tests/focus_modes.rs`, the checklist's *The focus modes and auto-raise* |
-| `focus-new-windows` | to do (165) | A new window takes the focus; xdg-activation requests activate nothing. | |
+| `focus-new-windows` | honoured | For native windows, on xdg-activation tokens. `smart`: a new window, or a request to activate one, takes the focus with a token Caminito issued in the last 10 seconds and since the focus last changed; a client's first window takes it with no token, as MATE's launchers pass none yet. `strict`: only such a token, asked for with a serial of the client's input while it had the keyboard, gives the focus. Under both, a window of the focused window's client takes it, and so does one that maps while nothing has the focus, as in Marco. A window refused the focus opens just under the focused one and is urgent until it's focused. XWayland windows are 166's (165). | `caminito-policy/src/tests/focus_stealing.rs`, `caminito/src/tests/focus_stealing.rs`, `caminito/src/settings/translate/tests.rs`, the checklist's *Focus-stealing prevention for native windows* |
 | `raise-on-click` | honoured | Off, a click on a window's body focuses it, or its modal dialog, without raising anything. A click on its titlebar raises it once released, and a move or resize, by the Frame or with Alt, raises it only if the pointer went less than 8 pixels, as in Marco; a drag doesn't. | the same |
 | `action-double-click-titlebar` | honoured | An SSD titlebar's double click, by `double-click`'s time (05: SSD frames only). `toggle_above` and `toggle_stick`, here and on the two keys below, keep the window above and make it sticky, or stop, by what the Frame shows (155). | `caminito/src/tests/frames.rs` (`double_clicking_the_titlebar_runs_its_action`, `the_titlebar_actions_toggle_above_and_sticky`) |
 | `action-middle-click-titlebar` | honoured | An SSD titlebar's middle click. | `caminito/src/tests/frames.rs` (`middle_and_right_clicks_on_the_titlebar_run_their_actions`) |
@@ -59,7 +59,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `alt-tab-expand-to-fit-title` | never | The grid's width comes from its thumbnails, and a title wider than the popup is ellipsised (ADR 0016). | `caminito/src/tests/switcher.rs` |
 | `alt-tab-raise-windows` | honoured | The selected window is raised while the switcher is open, and goes back if it's cancelled. | `caminito-policy/src/tests/switcher.rs`, `caminito/src/tests/switcher.rs` |
 | `alt-tab-minimized-placement` | honoured | Master's key, read where the installed schema has it, and `end` elsewhere. It places the minimised windows in the lists the `switch-*` and `cycle-*` actions share: `end` after the others, `mru` among them by use, and `hidden` in none (163). | `caminito-policy/src/tests/switcher.rs`, `caminito/src/settings/translate/tests.rs` |
-| `alt-tab-urgent-placement` | to do (165) | Master's key, read nowhere yet: an urgent window keeps its place (108). | |
+| `alt-tab-urgent-placement` | honoured | Master's key, read where the installed schema has it: `start`, its default, lists urgent windows before the others, and `mru` in their place by when they last had the focus; the minimised windows are placed first, by `alt-tab-minimized-placement`. With Marco 1.29.0's schema, which has no key, an urgent window keeps its place, as 108 has it (165). | `caminito-policy/src/tests/focus_stealing.rs`, `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/switcher.rs` (`an_xdg_window_refused_the_focus_is_marked`) |
 
 ## `org.mate.Marco.workspace-names`
 
@@ -71,7 +71,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 
 | Key | Status | What Caminito does | Covered by |
 | --- | --- | --- | --- |
-| `command-1` to `-12` | honoured | Run through the shell by `run-command-1` to `-12` (149). One that's empty, as Marco's default of a space is, runs nothing and is logged; Marco's dialog for it is 167's. | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs` |
+| `command-1` to `-12` | honoured | Run through the shell by `run-command-1` to `-12` (149). One that's empty, as Marco's default of a space is, runs nothing, is logged and shows Marco's error dialog, as the keyless section's *The error dialog for a command that can't run* says (167). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs`, `caminito/src/tests/dialogs.rs` |
 | `command-screenshot` | honoured | Run through the shell by `run-command-screenshot` (104). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs` |
 | `command-window-screenshot` | honoured | Run by `run-command-window-screenshot` (104). | the same |
 | `command-area-screenshot` | honoured | Master's key, read where the schema has it, with master's default otherwise; run by `run-command-area-screenshot` (104). | the same |
@@ -110,7 +110,7 @@ Every action's key is read and watched, and a change applies at once ([148](../.
 | `run-command-window-screenshot` | honoured | Alt+Print runs `command-window-screenshot` (104). | the same |
 | `run-command-area-screenshot` | honoured | Master's action: Shift+Print, master's default, runs `command-area-screenshot` (104). | the same |
 | `run-command-terminal` | honoured | Unbound by default, as in Marco; once bound, runs `org.mate.applications-terminal exec`, `mate-terminal` by default (149). | `caminito/src/settings/translate/tests.rs`, `caminito/src/tests/commands.rs` |
-| `rename-workspace` | to do (167) | Unbound, as by default. | |
+| `rename-workspace` | honoured | Unbound by default, as in Marco; once bound, shows Marco's zenity entry dialog with the active workspace's name, and writes the answer to its `name-N`, which the pager then shows. Cancelling, or an empty answer, leaves the name; another press while it shows does nothing (167). | `caminito/src/tests/dialogs.rs` |
 
 ## `org.mate.Marco.window-keybindings`
 
@@ -146,19 +146,19 @@ Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybin
 | `tile-to-corner-ne` | honoured | As `tile-to-side-e`, to the top-right quarter (159). | the same |
 | `tile-to-corner-se` | honoured | As `tile-to-side-e`, to the bottom-right quarter (159). | the same |
 | `tile-to-corner-sw` | honoured | As `tile-to-side-e`, to the bottom-left quarter (159). | the same |
-| `move-to-corner-nw` | to do (160) | Unbound, as by default. | |
-| `move-to-corner-ne` | to do (160) | Unbound, as by default. | |
-| `move-to-corner-sw` | to do (160) | Unbound, as by default. | |
-| `move-to-corner-se` | to do (160) | Unbound, as by default. | |
-| `move-to-side-n` | to do (160) | Unbound, as by default. | |
-| `move-to-side-s` | to do (160) | Unbound, as by default. | |
-| `move-to-side-e` | to do (160) | Unbound, as by default. | |
-| `move-to-side-w` | to do (160) | Unbound, as by default. | |
-| `move-to-center` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-n` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-s` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-e` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-w` | to do (160) | Unbound, as by default. | |
+| `move-to-corner-nw` | honoured | Unbound by default; once bound, moves the focused window, without resizing it, so that its Frame is against the top-left corner of the work area of the output it's most on. Marco measures against the work area of the whole screen, so with two monitors its window can leave its own. A maximised, tiled or fullscreen window, the desktop and a dock don't move, and a window maximised one way moves the other way alone (160). | `caminito-policy/src/tests/move_to.rs`, `caminito/src/input/bindings/tests.rs`, `caminito/src/tests/move_to.rs` |
+| `move-to-corner-ne` | honoured | As `move-to-corner-nw`, to the top-right corner (160). | the same |
+| `move-to-corner-sw` | honoured | As `move-to-corner-nw`, to the bottom-left corner (160). | the same |
+| `move-to-corner-se` | honoured | As `move-to-corner-nw`, to the bottom-right corner (160). | the same |
+| `move-to-side-n` | honoured | As `move-to-corner-nw`, against the top of the work area, where it is from side to side (160). | the same |
+| `move-to-side-s` | honoured | As `move-to-side-n`, against the bottom; a window taller than the work area keeps its top in it (160). | the same |
+| `move-to-side-e` | honoured | As `move-to-corner-nw`, against the right side, at the height it is (160). | the same |
+| `move-to-side-w` | honoured | As `move-to-side-e`, against the left side (160). | the same |
+| `move-to-center` | honoured | As `move-to-corner-nw`, to the middle of the work area (160). | the same |
+| `move-to-monitor-n` | honoured | Unbound by default; once bound, moves the focused window to the output that shares the top side of the one it's most on, and does nothing with none there. As in Marco, the window keeps its share of the output: its place and its size are scaled by the two outputs' sizes, so between outputs of one size it only moves. Its size is kept within its hints, and its Frame is then moved inside the work area, or to its top-left where it doesn't fit, where Marco lets most of it lie outside. A maximised or fullscreen window is maximised or fullscreen there and a tiled one keeps its tile, as in Marco; the desktop and a dock don't move (160). | `caminito-policy/src/tests/move_to.rs`, `caminito/src/input/bindings/tests.rs`, `caminito/src/tests/move_to.rs` |
+| `move-to-monitor-s` | honoured | As `move-to-monitor-n`, to the output below (160). | the same |
+| `move-to-monitor-e` | honoured | As `move-to-monitor-n`, to the output on the right (160). | the same |
+| `move-to-monitor-w` | honoured | As `move-to-monitor-n`, to the output on the left (160). | the same |
 
 ## Keys of other schemas Marco read
 
@@ -231,5 +231,6 @@ The roadmap after v0.1: each is *unsupported*. The keys among them that Caminito
 | The Workspace popup | honoured | Shown by the eight bindings to the workspace beside while their modifiers are held, at once, as in Marco, which has no key for it: see `switch-to-workspace-left` and `move-to-workspace-left`. It's drawn in the GTK theme's colours and font, as the Window switcher is (152). Covered by `caminito/src/tests/workspace_popup.rs`. |
 | Edge resistance and snap-move | honoured | Always on, as in Marco: a window being moved or resized stops at the work areas' edges and the other windows' until the pointer goes 32 (16 for a window) pixels past, and with Shift held it snaps to the nearest edges instead (157). Covered by `caminito-policy/src/tests/edge_resistance.rs` and `caminito/src/tests/edge_resistance.rs`. |
 | Edge and corner tiling, with the tile preview | honoured | With `allow-tiling` on, a window being moved with the pointer within twice the drag threshold of its output's work area's side, or of a corner, shows the tile preview: where letting go puts its frame, in the palette's selected background, translucent inside a line of it, beneath the moved window. Letting go there tiles it, and moving away hides the preview; a Shift move tiles nowhere. A tiled window gets xdg's `tiled_*` states for the edges it lies along, an SSD Frame drawn in the theme's `tiled_left` and `tiled_right` styles, X configure requests refused, and follows its work area. A titlebar drag past `drag-threshold` untiles it under the pointer, any other move twice that, and maximising it untiles it too (158). A resize by its inner sides, those not along the work area's edges, keeps it tiled at the new size, which it keeps until it's tiled afresh; by any other side it changes nothing, as in Marco (159). Covered by `caminito-policy/src/tests/tiling.rs` and `caminito/src/tests/tiling.rs`. |
+| The error dialog for a command that can't run | honoured | A `run-command-*` binding, a screenshot's or the terminal's, whose command is empty or can't be started shows Marco's zenity error dialog, titled *Marco*, with GLib's message, after the command unless it's empty. The arguments are Marco's but `--display` and `--class`, which zenity 4 refuses, and the command and the message are escaped for zenity's markup. The text is Marco's English: Caminito sets no locale. The failure is logged too, and zenity missing is logged with nothing shown, as in Marco (167). Covered by `caminito/src/tests/dialogs.rs`. |
 | "Not responding" and Force Quit | to do (168) | Shown when a window doesn't close; Marco has no key for it. |
 | Shadows | to do (171) | Turned off by `compositing-manager`, with no key of their own. |

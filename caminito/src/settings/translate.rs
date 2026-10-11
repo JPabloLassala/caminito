@@ -6,8 +6,9 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, FocusMode, MAX_WORKSPACES, MinimizedPlacement, Orientation, PlacementMode,
-    ShowDesktopSkipList, WorkspaceLayout, WrapStyle, default_workspace_name,
+    Config, FocusMode, FocusNewWindows, MAX_WORKSPACES, MinimizedPlacement, Orientation,
+    PlacementMode, ShowDesktopSkipList, UrgentPlacement, WorkspaceLayout, WrapStyle,
+    default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
 
@@ -150,15 +151,11 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     (MOUSE, "locate-pointer"),
     // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
     // ticket that honours it. Caminito does what each one's default asks, except
-    // `focus-new-windows`, `resize-with-right-button` and `alt-tab-urgent-placement`, whose
-    // values it matches none of. A key whose other value is what Caminito already does
-    // (`audible-bell`, `reduced-resources`) isn't here. Master's keys
-    // are logged only where the installed schema has them. The keybindings' schemas have
+    // `resize-with-right-button`, whose values it matches none of. A key whose other value is
+    // what Caminito already does (`audible-bell`, `reduced-resources`) isn't here. Master's
+    // keys are logged only where the installed schema has them. The keybindings' schemas have
     // no key here: an action with no behaviour yet is read and binds nothing, and its
     // default reaches the client (148).
-    // 165.
-    (MARCO_GENERAL, "focus-new-windows"),
-    (MARCO_GENERAL, "alt-tab-urgent-placement"),
     // 162.
     (MARCO_GENERAL, "mouse-button-modifier"),
     (MARCO_GENERAL, "resize-with-right-button"),
@@ -603,6 +600,17 @@ impl Nick for FocusMode {
         ("sloppy", Self::Sloppy),
         ("mouse", Self::Mouse),
     ];
+}
+
+/// `org.mate.Marco.FocusNewWindows`.
+impl Nick for FocusNewWindows {
+    const NICKS: &'static [(&'static str, Self)] =
+        &[("smart", Self::Smart), ("strict", Self::Strict)];
+}
+
+/// Marco master's `org.mate.Marco.UrgentWindowPlacement`.
+impl Nick for UrgentPlacement {
+    const NICKS: &'static [(&'static str, Self)] = &[("start", Self::Start), ("mru", Self::Mru)];
 }
 
 /// `org.mate.Marco.placement_type`.
@@ -1091,6 +1099,14 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         allow_top_tiling: r.bool(MARCO_GENERAL, "allow-top-tiling", true),
         allow_tile_cycling: r.bool(MARCO_GENERAL, "allow-tile-cycling", true),
         drag_threshold,
+        focus_new_windows: r.nick(MARCO_GENERAL, "focus-new-windows", FocusNewWindows::Smart),
+        // Marco master's key, whose schema default is `start`. Marco 1.29.0 has none, and an
+        // urgent window keeps its place there, as 108 has it (165).
+        urgent_placement: r.nick(
+            MARCO_GENERAL,
+            "alt-tab-urgent-placement",
+            UrgentPlacement::Mru,
+        ),
     };
     let switcher = SwitcherSettings {
         max_columns: r.int_clamped(MARCO_GENERAL, "alt-tab-max-columns", 5, 1, 64) as usize,

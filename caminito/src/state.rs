@@ -355,6 +355,9 @@ pub struct Caminito {
     /// kept here rather than set with `set_var`, which isn't safe once the settings and
     /// D-Bus threads run.
     pub environment: BTreeMap<OsString, OsString>,
+    /// `rename-workspace`'s dialog while it shows: the source its answer comes back on
+    /// (167). Another isn't shown meanwhile, as in Marco.
+    pub(crate) workspace_rename: Option<RegistrationToken>,
 
     /// The Wayland socket's source, until a Session closes it as it ends (61).
     socket_source: Option<RegistrationToken>,
@@ -974,6 +977,7 @@ impl Caminito {
             xwayland_keyboard_grab_state,
             xwayland_keyboard_grab: None,
             environment: BTreeMap::new(),
+            workspace_rename: None,
             socket_source: None,
             helper_stderr: StderrTarget::Prefixed,
             session: None,

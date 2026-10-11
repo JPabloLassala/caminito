@@ -307,6 +307,12 @@ on_both_kinds! {
         let a = map_of_app(&mut f, one, "one");
         let between = map_of_app(&mut f, other, "other");
         let b = map_of_app(&mut f, one, "one");
+        // `focus-new-windows` refuses the xdg `b`, the second window of a client with no
+        // token, the focus (165), so the user gives it.
+        let geometry = f.state.caminito.policy.geometry(b).unwrap();
+        let middle = geometry.loc + Point::from((geometry.size.w / 2, geometry.size.h / 2));
+        f.click(middle.x.into(), middle.y.into());
+        assert_eq!(focus(&f), Some(b));
 
         f.key(KEY_LEFTALT, true);
         tap(&mut f, KEY_GRAVE);
@@ -1010,11 +1016,42 @@ fn an_urgent_window_is_marked() {
         x.send_client_message(window, "_NET_WM_STATE", [1, attention, attention, 1, 0])
     })
     .unwrap();
-    f.dispatch_until(|f| f.mapped(urgent).is_urgent());
+    f.dispatch_until(|f| f.state.caminito.policy.is_urgent(urgent_id));
     f.dispatch();
 
     // It's marked while the popup shows, and keeps its place.
     assert_eq!(listed(&f)[2], urgent_id);
+    assert_ne!(pixel(&mut f, marked), pixel(&mut f, plain));
+}
+
+/// An xdg window is urgent once `focus-new-windows` refuses it the focus (165); an XWayland
+/// one isn't refused until 166. The clients are processes of their own, as policy tells one
+/// client's windows from another's by it.
+#[test]
+fn an_xdg_window_refused_the_focus_is_marked() {
+    let mut f = Fixture::with_settings(vec![(
+        MARCO_GENERAL,
+        "focus-new-windows".into(),
+        Value::Str("strict".into()),
+    )]);
+    f.add_output((1920, 1080), 1.0);
+    let focused = f.connect_as_process(100);
+    map_windows(&mut f, focused, 2);
+    let other = f.connect_as_process(200);
+    let refused = f.map(other, WindowSpec::plain((400, 300)));
+    let refused_id = f.pid(refused);
+    assert!(f.state.caminito.policy.is_urgent(refused_id));
+    let mark = |f: &Fixture, index| {
+        let cell = cell(f, index);
+        cell.loc + Point::from((cell.size.w - 8, 8))
+    };
+
+    show(&mut f);
+
+    // Never focused, it comes after the others, as Marco 1.29.0 has no
+    // `alt-tab-urgent-placement`.
+    assert_eq!(listed(&f)[2], refused_id);
+    let (plain, marked) = (mark(&f, 0), mark(&f, 2));
     assert_ne!(pixel(&mut f, marked), pixel(&mut f, plain));
 }
 
@@ -1457,6 +1494,11 @@ on_both_kinds! {
         let a = map_of_app(&mut f, one, "one");
         let _between = map_of_app(&mut f, other, "other");
         let b = map_of_app(&mut f, one, "one");
+        // `focus-new-windows` refuses the xdg `b` the focus (165), so the user gives it.
+        let geometry = f.state.caminito.policy.geometry(b).unwrap();
+        let middle = geometry.loc + Point::from((geometry.size.w / 2, geometry.size.h / 2));
+        f.click(middle.x.into(), middle.y.into());
+        assert_eq!(focus(&f), Some(b));
 
         f.key(KEY_LEFTALT, true);
         tap(&mut f, KEY_F6);

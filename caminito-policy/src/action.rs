@@ -1,6 +1,6 @@
 //! Keybinding actions, named after Marco's `org.mate.Marco.*` keybinding keys.
 
-use crate::{SwitchList, Tile};
+use crate::{Direction, SwitchList, Tile};
 
 /// An action a keybinding triggers: those with a behaviour in policy. The window actions act
 /// on the seat's focused window, and do nothing without one.
@@ -61,6 +61,12 @@ pub enum Action {
     /// `tile-to-side-e` and `-w`, and `tile-to-corner-ne`, `-nw`, `-se` and `-sw` (159):
     /// tiles the focused window there, cycles its size, or untiles it.
     Tile(Tile),
+    /// `move-to-corner-*`, `move-to-side-*` and `move-to-center` (160): moves the focused
+    /// window there in the work area of the output it's most on, without resizing it.
+    MoveTo(Anchor),
+    /// `move-to-monitor-n`, `-s`, `-e` and `-w` (160): moves the focused window to the
+    /// output beside its own that way.
+    MoveToMonitor(Direction),
     /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
     /// that is open, towards the end of the list or `backward`.
     Switch { list: SwitchList, backward: bool },
@@ -73,4 +79,19 @@ pub enum Action {
     BeginMove,
     /// `begin-resize`: a keyboard resize of the focused window (156).
     BeginResize,
+}
+
+/// Where in a work area `Action::MoveTo` puts a window's Frame (160): against a corner,
+/// against a side, which moves it along one axis alone, or in the middle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Anchor {
+    NorthWest,
+    North,
+    NorthEast,
+    West,
+    Centre,
+    East,
+    SouthWest,
+    South,
+    SouthEast,
 }

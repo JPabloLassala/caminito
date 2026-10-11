@@ -6,7 +6,7 @@ pub(crate) mod accelerators;
 
 use std::fmt;
 
-use caminito_policy::{Action, SwitchList, Tile};
+use caminito_policy::{Action, Anchor, Direction, SwitchList, Tile};
 use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
 
 use self::accelerators::{Accelerator, parse};
@@ -43,6 +43,8 @@ pub(crate) enum Binding {
     Panel(PanelAction),
     /// A command to run (104).
     Command(Command),
+    /// `rename-workspace`'s dialog (167).
+    RenameWorkspace,
 }
 
 /// What an action Caminito binds does when its combination is pressed.
@@ -306,6 +308,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "disabled",
                 command(Command::Terminal),
             ),
+            global(
+                "rename-workspace",
+                "disabled",
+                Does::Run(Binding::RenameWorkspace),
+            ),
             window(
                 "toggle-fullscreen",
                 "disabled",
@@ -374,6 +381,71 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "tile-to-corner-sw",
                 "disabled",
                 policy(Action::Tile(Tile::BottomLeft)),
+            ),
+            window(
+                "move-to-corner-nw",
+                "disabled",
+                policy(Action::MoveTo(Anchor::NorthWest)),
+            ),
+            window(
+                "move-to-corner-ne",
+                "disabled",
+                policy(Action::MoveTo(Anchor::NorthEast)),
+            ),
+            window(
+                "move-to-corner-sw",
+                "disabled",
+                policy(Action::MoveTo(Anchor::SouthWest)),
+            ),
+            window(
+                "move-to-corner-se",
+                "disabled",
+                policy(Action::MoveTo(Anchor::SouthEast)),
+            ),
+            window(
+                "move-to-side-n",
+                "disabled",
+                policy(Action::MoveTo(Anchor::North)),
+            ),
+            window(
+                "move-to-side-s",
+                "disabled",
+                policy(Action::MoveTo(Anchor::South)),
+            ),
+            window(
+                "move-to-side-e",
+                "disabled",
+                policy(Action::MoveTo(Anchor::East)),
+            ),
+            window(
+                "move-to-side-w",
+                "disabled",
+                policy(Action::MoveTo(Anchor::West)),
+            ),
+            window(
+                "move-to-center",
+                "disabled",
+                policy(Action::MoveTo(Anchor::Centre)),
+            ),
+            window(
+                "move-to-monitor-n",
+                "disabled",
+                policy(Action::MoveToMonitor(Direction::Up)),
+            ),
+            window(
+                "move-to-monitor-s",
+                "disabled",
+                policy(Action::MoveToMonitor(Direction::Down)),
+            ),
+            window(
+                "move-to-monitor-e",
+                "disabled",
+                policy(Action::MoveToMonitor(Direction::Right)),
+            ),
+            window(
+                "move-to-monitor-w",
+                "disabled",
+                policy(Action::MoveToMonitor(Direction::Left)),
             ),
             global(
                 "switch-to-workspace-prev",

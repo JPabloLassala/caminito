@@ -19,14 +19,15 @@ mod test_window;
 #[cfg(test)]
 mod tests;
 
-pub use action::Action;
-pub use grid::{Grid, Orientation, WorkspaceLayout, WrapStyle};
+pub use action::{Action, Anchor};
+pub use grid::{Direction, Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
-    Config, Crossing, FocusMode, GrabKey, GrabStep, LayerSurfaceId, MAX_WORKSPACES, MapStates,
-    MinimizedPlacement, PointerTarget, Policy, ResizeEdges, SeatId, SwitchEntry, SwitchList,
-    Switcher, default_workspace_name,
+    ActivationToken, Config, Crossing, FocusClaim, FocusMode, FocusNewWindows, GrabKey, GrabStep,
+    LayerSurfaceId, MAX_WORKSPACES, MapStates, MinimizedPlacement, PointerTarget, Policy,
+    ResizeEdges, SeatId, SwitchEntry, SwitchList, Switcher, TOKEN_LIFETIME, UrgentPlacement,
+    default_workspace_name,
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;

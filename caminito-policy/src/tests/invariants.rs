@@ -253,6 +253,8 @@ fn action() -> impl Strategy<Value = Action> {
             .prop_map(|(list, backward)| Action::Cycle { list, backward }),
         Just(Action::ShowDesktop),
         tile().prop_map(Action::Tile),
+        anchor().prop_map(Action::MoveTo),
+        direction().prop_map(Action::MoveToMonitor),
         Just(Action::BeginMove),
         Just(Action::BeginResize),
     ]
@@ -267,6 +269,31 @@ fn tile() -> impl Strategy<Value = crate::Tile> {
         Just(Tile::TopRight),
         Just(Tile::BottomLeft),
         Just(Tile::BottomRight),
+    ]
+}
+
+fn anchor() -> impl Strategy<Value = crate::Anchor> {
+    use crate::Anchor;
+    prop_oneof![
+        Just(Anchor::NorthWest),
+        Just(Anchor::North),
+        Just(Anchor::NorthEast),
+        Just(Anchor::West),
+        Just(Anchor::Centre),
+        Just(Anchor::East),
+        Just(Anchor::SouthWest),
+        Just(Anchor::South),
+        Just(Anchor::SouthEast),
+    ]
+}
+
+fn direction() -> impl Strategy<Value = crate::Direction> {
+    use crate::Direction;
+    prop_oneof![
+        Just(Direction::Left),
+        Just(Direction::Right),
+        Just(Direction::Up),
+        Just(Direction::Down),
     ]
 }
 

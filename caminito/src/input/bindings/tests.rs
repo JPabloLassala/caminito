@@ -358,6 +358,72 @@ fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
             "tile-to-corner-sw",
             policy(Action::Tile(Tile::BottomLeft)),
         ),
+        // 160's.
+        (
+            WINDOW,
+            "move-to-corner-nw",
+            policy(Action::MoveTo(Anchor::NorthWest)),
+        ),
+        (
+            WINDOW,
+            "move-to-corner-ne",
+            policy(Action::MoveTo(Anchor::NorthEast)),
+        ),
+        (
+            WINDOW,
+            "move-to-corner-sw",
+            policy(Action::MoveTo(Anchor::SouthWest)),
+        ),
+        (
+            WINDOW,
+            "move-to-corner-se",
+            policy(Action::MoveTo(Anchor::SouthEast)),
+        ),
+        (
+            WINDOW,
+            "move-to-side-n",
+            policy(Action::MoveTo(Anchor::North)),
+        ),
+        (
+            WINDOW,
+            "move-to-side-s",
+            policy(Action::MoveTo(Anchor::South)),
+        ),
+        (
+            WINDOW,
+            "move-to-side-e",
+            policy(Action::MoveTo(Anchor::East)),
+        ),
+        (
+            WINDOW,
+            "move-to-side-w",
+            policy(Action::MoveTo(Anchor::West)),
+        ),
+        (
+            WINDOW,
+            "move-to-center",
+            policy(Action::MoveTo(Anchor::Centre)),
+        ),
+        (
+            WINDOW,
+            "move-to-monitor-n",
+            policy(Action::MoveToMonitor(Direction::Up)),
+        ),
+        (
+            WINDOW,
+            "move-to-monitor-s",
+            policy(Action::MoveToMonitor(Direction::Down)),
+        ),
+        (
+            WINDOW,
+            "move-to-monitor-e",
+            policy(Action::MoveToMonitor(Direction::Right)),
+        ),
+        (
+            WINDOW,
+            "move-to-monitor-w",
+            policy(Action::MoveToMonitor(Direction::Left)),
+        ),
     ];
     for (schema, key, binding) in cases {
         let t = table(&[(schema, key, "<Super>q")]);
@@ -368,12 +434,8 @@ fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
 #[test]
 fn an_action_with_no_behaviour_yet_binds_nothing() {
     // Values set by the user.
-    let t = table(&[
-        (WINDOW, "activate-window-menu", "<Super>Up"),
-        (WINDOW, "move-to-center", "<Super>Down"),
-    ]);
+    let t = table(&[(WINDOW, "activate-window-menu", "<Super>Up")]);
     assert_eq!(bound(&t, SUPER, Keysym::Up), None);
-    assert_eq!(bound(&t, SUPER, Keysym::Down), None);
 }
 
 #[test]
