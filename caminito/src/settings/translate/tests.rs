@@ -29,6 +29,10 @@ fn defaults() -> Reading {
     );
     put(MARCO_GENERAL, "action-middle-click-titlebar", s("lower"));
     put(MARCO_GENERAL, "action-right-click-titlebar", s("menu"));
+    put(MARCO_GENERAL, "action-scroll-up-titlebar", s("none"));
+    put(MARCO_GENERAL, "action-scroll-down-titlebar", s("none"));
+    put(MARCO_GENERAL, "mouse-button-modifier", s("<Alt>"));
+    put(MARCO_GENERAL, "resize-with-right-button", Value::Bool(true));
     put(MARCO_GENERAL, "num-workspaces", Value::Int(4));
     put(MARCO_GENERAL, "compositing-manager", Value::Bool(true));
     put(MARCO_GENERAL, "reduced-resources", Value::Bool(false));
@@ -594,9 +598,85 @@ fn the_defaults_give_marcos_frames() {
             double_click: TitlebarAction::ToggleMaximize,
             middle_click: TitlebarAction::Lower,
             right_click: TitlebarAction::Menu,
+            scroll_up: TitlebarAction::None,
+            scroll_down: TitlebarAction::None,
             shadows: true,
         }
     );
+}
+
+// The clicks with a modifier held (162).
+
+#[test]
+fn the_defaults_give_marcos_modifier_click() {
+    assert_eq!(
+        settings(&defaults()).modifier_click,
+        ModifierClick {
+            modifier: ButtonModifier::default(),
+            resize_with_right_button: true,
+        }
+    );
+}
+
+#[test]
+fn the_mouse_button_modifier_is_parsed() {
+    let modifier = |value: &str| {
+        let reading = with(MARCO_GENERAL, "mouse-button-modifier", string(value));
+        settings(&reading).modifier_click.modifier.to_string()
+    };
+    assert_eq!(modifier("<Super>"), "<Super>");
+    assert_eq!(modifier("<Mod4>"), "<Super>");
+    assert_eq!(modifier("<Control><Alt>"), "<Control><Alt>");
+    assert_eq!(modifier(""), "disabled");
+    assert_eq!(modifier("disabled"), "disabled");
+}
+
+#[test]
+fn a_mouse_button_modifier_that_doesnt_parse_falls_back_to_alt_and_is_logged() {
+    let (settings, problem) = problem(&with(
+        MARCO_GENERAL,
+        "mouse-button-modifier",
+        string("garbage"),
+    ));
+    assert_eq!(settings.modifier_click.modifier, ButtonModifier::default());
+    assert_eq!(
+        problem,
+        invalid(
+            MARCO_GENERAL,
+            "mouse-button-modifier",
+            "'garbage'",
+            "'<Alt>'"
+        )
+    );
+    assert_eq!(
+        problem.to_string(),
+        "org.mate.Marco.general mouse-button-modifier is 'garbage', which isn't valid; \
+         using '<Alt>'"
+    );
+}
+
+#[test]
+fn resize_with_right_button_is_read() {
+    let reading = with(
+        MARCO_GENERAL,
+        "resize-with-right-button",
+        Value::Bool(false),
+    );
+    assert!(!settings(&reading).modifier_click.resize_with_right_button);
+}
+
+#[test]
+fn the_titlebar_scroll_actions_are_read_by_nick() {
+    let mut reading = with(MARCO_GENERAL, "action-scroll-up-titlebar", string("shade"));
+    reading.insert(
+        MARCO_GENERAL,
+        "action-scroll-down-titlebar",
+        string("unshade"),
+        string("none"),
+    );
+    let frames = settings(&reading).frames;
+    assert_eq!(frames.scroll_up, TitlebarAction::Shade);
+    assert_eq!(frames.scroll_down, TitlebarAction::Unshade);
 }
 
 #[test]

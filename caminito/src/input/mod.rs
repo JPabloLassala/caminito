@@ -16,9 +16,9 @@ pub(crate) use serials::InputSerials;
 
 use caminito_policy::{Action, Crossing, GrabKey, PointerTarget, ResizeEdges, WindowId};
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, Event, InputBackend, InputEvent,
-    InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent,
+    AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device, Event,
+    InputBackend, InputEvent, InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent,
+    PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::desktop::{LayerSurface, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
@@ -34,12 +34,14 @@ use smithay::wayland::shell::xdg::XDG_POPUP_ROLE;
 use smithay::xwayland::X11Surface;
 
 use self::bindings::Binding;
+use self::grab::FrameHold;
 use crate::commands::Command;
 use crate::dbus::a11y;
 use crate::dbus::panel::PanelAction;
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
 use crate::scene::{self, SceneLayer};
+use crate::settings::translate::ModifierClick;
 use crate::state::{Caminito, SEAT, State};
 use crate::window::takes_pointer_at;
 
@@ -76,7 +78,18 @@ impl State {
                     .caminito
                     .input_devices
                     .scrolls_horizontally(&event.device().id());
-                self.on_pointer_axis::<I>(&event, horizontal);
+                let along = |axis| AxisScroll {
+                    amount: event.amount(axis),
+                    v120: event.amount_v120(axis),
+                    relative_direction: event.relative_direction(axis),
+                };
+                let scroll = Scroll {
+                    time: event.time(),
+                    source: event.source(),
+                    horizontal: horizontal.then(|| along(Axis::Horizontal)),
+                    vertical: along(Axis::Vertical),
+                };
+                self.on_pointer_scroll(scroll);
             }
             InputEvent::DeviceAdded { .. }
             | InputEvent::DeviceRemoved { .. }
@@ -182,44 +195,98 @@ impl State {
         });
     }
 
-    /// Scrolling, sent to whatever has the pointer. Without `horizontal`, the horizontal
-    /// axis is dropped, as the device's settings ask (53).
-    fn on_pointer_axis<I: InputBackend>(&mut self, event: &I::PointerAxisEvent, horizontal: bool) {
+    /// Scrolling, sent to whatever has the pointer, after a titlebar under it has done what
+    /// its `action-scroll-*-titlebar` keys ask (162).
+    pub(crate) fn on_pointer_scroll(&mut self, scroll: Scroll) {
         self.idle_activity();
-        let mut frame = AxisFrame::new(event.time()).source(event.source());
+        self.titlebar_scroll(&scroll);
+        let mut frame = AxisFrame::new(scroll.time).source(scroll.source);
         let mut sent = false;
-        let axes: &[Axis] = if horizontal {
-            &[Axis::Horizontal, Axis::Vertical]
-        } else {
-            &[Axis::Vertical]
-        };
-        for &axis in axes {
-            // A wheel click is 15 units, as libinput and GTK have it.
-            let v120 = event.amount_v120(axis);
-            let amount = event
-                .amount(axis)
-                .unwrap_or_else(|| v120.unwrap_or(0.) * 15. / 120.);
+        let axes = [
+            (Axis::Horizontal, scroll.horizontal),
+            (Axis::Vertical, Some(scroll.vertical)),
+        ];
+        for (axis, along) in axes {
+            let Some(along) = along else {
+                continue;
+            };
+            let amount = along
+                .amount
+                .unwrap_or_else(|| along.v120.unwrap_or(0.) * WHEEL_CLICK / V120_CLICK);
             if amount != 0. {
                 frame = frame
-                    .relative_direction(axis, event.relative_direction(axis))
+                    .relative_direction(axis, along.relative_direction)
                     .value(axis, amount);
-                if let Some(v120) = v120 {
+                if let Some(v120) = along.v120 {
                     frame = frame.v120(axis, v120 as i32);
                 }
                 sent = true;
             }
-            if event.source() == AxisSource::Finger && event.amount(axis) == Some(0.) {
+            if scroll.source == AxisSource::Finger && along.amount == Some(0.) {
                 frame = frame.stop(axis);
                 sent = true;
             }
         }
         // All of it was horizontal scrolling the device's settings drop.
-        if !sent && !horizontal {
+        if !sent && scroll.horizontal.is_none() {
             return;
         }
         let pointer = self.caminito.seat.get_pointer().unwrap();
         pointer.axis(self, frame);
         pointer.frame(self);
+    }
+
+    /// A vertical scroll with the pointer on an SSD titlebar runs `action-scroll-up-titlebar`
+    /// or `action-scroll-down-titlebar` once for each click of the wheel, as Marco's frame
+    /// does for each press of X's buttons 4 and 5, on the title alone and with no grab under
+    /// way (`meta_frames_button_press_event`, frames.c:1768-1771 and 1937-1948). A wheel
+    /// with finer steps, or a touchpad, acts once for each whole click its steps add up to,
+    /// which is when the X server's driver presses the button.
+    fn titlebar_scroll(&mut self, scroll: &Scroll) {
+        let vertical = scroll.vertical;
+        let v120 = vertical
+            .v120
+            .or(vertical
+                .amount
+                .map(|amount| amount * V120_CLICK / WHEEL_CLICK))
+            .unwrap_or(0.);
+        let mut scrolled = self.caminito.frame_pointer.scrolled + v120;
+        // The fingers left the touchpad: what's left of a click doesn't count for the next.
+        if scroll.source == AxisSource::Finger && vertical.amount == Some(0.) {
+            scrolled = 0.;
+        }
+        // Each action may take the titlebar from under the pointer.
+        loop {
+            let Some(window) = self.titlebar_under_pointer() else {
+                scrolled = 0.;
+                break;
+            };
+            if scrolled.abs() < V120_CLICK {
+                break;
+            }
+            let frames = &self.caminito.settings.frames;
+            let action = if scrolled < 0. {
+                frames.scroll_up
+            } else {
+                frames.scroll_down
+            };
+            scrolled -= V120_CLICK.copysign(scrolled);
+            self.titlebar_action(window, action);
+        }
+        self.caminito.frame_pointer.scrolled = scrolled;
+    }
+
+    /// The window whose titlebar the pointer is on, clear of its buttons, unless a grab has
+    /// the pointer.
+    fn titlebar_under_pointer(&self) -> Option<WindowId> {
+        let pointer = self.caminito.seat.get_pointer().unwrap();
+        if pointer.is_grabbed() {
+            return None;
+        }
+        match self.caminito.under(pointer.current_location())? {
+            Under::Frame(window, FrameControl::Title) => Some(window),
+            _ => None,
+        }
     }
 
     /// The keyboard path: one key event through 15's five stages, in order, each deciding
@@ -533,11 +600,12 @@ impl State {
         self.caminito.queue_redraw_all();
     }
 
-    /// A pointer button, as a Linux input event code. With Alt held, as Marco's
-    /// `mouse-button-modifier` defaults to, the left button moves the window and the middle
-    /// one resizes it. A press on a frame does what Marco's frames do. Otherwise a press on a
-    /// window focuses and raises it through policy before the client sees the press. The
-    /// client never sees an Alt press or a press on the frame.
+    /// A pointer button, as a Linux input event code. With `mouse-button-modifier`'s
+    /// modifiers held, the left button moves the window, and the middle and right ones
+    /// resize it and open its menu, as `resize-with-right-button` says which (162). A press
+    /// on a frame does what Marco's frames do. Otherwise a press on a window focuses and
+    /// raises it through policy before the client sees the press. The client never sees a
+    /// press with the modifiers held or a press on the frame.
     pub fn on_pointer_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
         self.idle_activity();
         let pointer = self.caminito.seat.get_pointer().unwrap();
@@ -562,26 +630,18 @@ impl State {
             && let Some(id) = under.window()
         {
             self.caminito.window_pressed();
-            let alt = self
-                .caminito
-                .seat
-                .get_keyboard()
-                .unwrap()
-                .modifier_state()
-                .alt;
-            let drag = match button {
-                BTN_LEFT if alt => Some(GrabKind::Move),
-                BTN_MIDDLE if alt => self
-                    .caminito
-                    .nearest_corner(id, location)
-                    .map(GrabKind::Resize),
-                _ => None,
-            };
-            match under {
-                Under::Frame(id, control)
-                    if drag.is_none() && control != FrameControl::ClientArea =>
-                {
+            let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
+            let click = self.caminito.settings.modifier_click.does(button, &mods);
+            match (click, under) {
+                (None, Under::Frame(id, control)) if control != FrameControl::ClientArea => {
                     self.frame_press(id, control, button, location, serial, time);
+                }
+                // Marco raises the window for its menu, and doesn't focus it
+                // (`event_callback`, display.c:2009-2018).
+                (Some(ModifierAction::Menu), _) => {
+                    if self.caminito.settings.policy.raise_on_click {
+                        self.caminito.policy.raise(id);
+                    }
                 }
                 _ => {
                     let now = self.caminito.now();
@@ -589,8 +649,31 @@ impl State {
                     self.update_keyboard_focus();
                 }
             }
-            if let Some(kind) = drag {
-                self.begin_window_grab(id, kind, grab::start_data(button, location), serial);
+            if let Some(click) = click {
+                let start_data = || grab::start_data(button, location);
+                match click {
+                    ModifierAction::Move => {
+                        self.begin_window_grab(id, GrabKind::Move, start_data(), serial);
+                    }
+                    // Marco's `has_resize_func` (display.c:1962).
+                    ModifierAction::Resize => {
+                        if self.caminito.policy.functions(id).resize()
+                            && let Some(edges) = self.caminito.nearest_corner(id, location)
+                        {
+                            let kind = GrabKind::Resize(edges);
+                            self.begin_window_grab(id, kind, start_data(), serial);
+                        }
+                    }
+                    // At the pointer (display.c:2013-2017).
+                    ModifierAction::Menu => {
+                        self.open_window_menu(id, location.to_i32_floor(), time);
+                    }
+                }
+                // The press is Caminito's whatever came of it, as Marco's grab of the
+                // button is: a window that won't move or resize gets no press either.
+                if !pointer.is_grabbed() {
+                    self.begin_frame_grab(FrameHold::Held, start_data(), serial);
+                }
             }
         }
         let event = ButtonEvent {
@@ -732,6 +815,58 @@ impl Under {
     }
 }
 
+/// A scroll event, as a backend's device gives one or the headless fixture makes it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Scroll {
+    pub time: InputTime,
+    pub source: AxisSource,
+    /// `None` where the device's settings drop its horizontal scrolling (53).
+    pub horizontal: Option<AxisScroll>,
+    pub vertical: AxisScroll,
+}
+
+/// A scroll event's part along one axis.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AxisScroll {
+    /// In libinput's units, of which a wheel's click is 15.
+    pub amount: Option<f64>,
+    /// In 120ths of a wheel's click, for a wheel.
+    pub v120: Option<f64>,
+    pub relative_direction: AxisRelativeDirection,
+}
+
+/// A wheel's click in a scroll's units, as libinput and GTK have it.
+pub(crate) const WHEEL_CLICK: f64 = 15.;
+/// A wheel's click in a scroll's 120ths.
+pub(crate) const V120_CLICK: f64 = 120.;
+
+/// What a press with `mouse-button-modifier`'s modifiers held does to the window under it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModifierAction {
+    Move,
+    Resize,
+    Menu,
+}
+
+impl ModifierClick {
+    /// What a press of `button` with `mods` held does, if the modifiers are the key's:
+    /// Marco grabs buttons 1 to 3 with them (`meta_display_grab_window_buttons`,
+    /// display.c:4084-4129), and `meta_prefs_get_mouse_button_resize` and `_menu` say which
+    /// of 2 and 3 does what (prefs.c:2510-2520).
+    pub(crate) fn does(&self, button: u32, mods: &ModifiersState) -> Option<ModifierAction> {
+        if !self.modifier.held_by(mods, button == BTN_LEFT) {
+            return None;
+        }
+        match button {
+            BTN_LEFT => Some(ModifierAction::Move),
+            BTN_RIGHT if self.resize_with_right_button => Some(ModifierAction::Resize),
+            BTN_MIDDLE if !self.resize_with_right_button => Some(ModifierAction::Resize),
+            BTN_RIGHT | BTN_MIDDLE => Some(ModifierAction::Menu),
+            _ => None,
+        }
+    }
+}
+
 /// A pointer constraint's kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Constraint {
@@ -801,7 +936,8 @@ impl Caminito {
             .unwrap_or(location)
     }
 
-    /// The edges of the window's corner nearest `location`, which Alt+middle-drag resizes.
+    /// The edges of the window's corner nearest `location`, which a resize with the modifier
+    /// held moves.
     fn nearest_corner(&self, id: WindowId, location: Point<f64, Logical>) -> Option<ResizeEdges> {
         let geometry = self.policy.geometry(id)?.to_f64();
         let center = geometry.loc + geometry.size.downscale(2.).to_point();
