@@ -822,6 +822,7 @@ impl Caminito {
             | SceneLayer::DragIcon
             | SceneLayer::Lock
             | SceneLayer::BellFlash
+            | SceneLayer::Minimizing
             | SceneLayer::Switcher
             | SceneLayer::WorkspacePopup => None,
             SceneLayer::Overlay

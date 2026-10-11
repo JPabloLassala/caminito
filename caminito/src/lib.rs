@@ -17,6 +17,7 @@ pub mod input;
 mod layer;
 mod lock;
 pub mod logging;
+mod minimize_animation;
 mod night_light;
 pub mod output;
 mod policy_timer;

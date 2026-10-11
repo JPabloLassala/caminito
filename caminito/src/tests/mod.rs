@@ -46,6 +46,7 @@ mod locker;
 mod logind;
 mod logo;
 mod menu_claim;
+mod minimise_animation;
 mod move_to;
 mod night_light;
 mod output_lifecycle;
