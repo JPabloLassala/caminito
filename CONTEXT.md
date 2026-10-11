@@ -48,6 +48,10 @@ _Avoid_: undecorated window (that means a window with no decorations at all)
 The GTK3 theme's colours that Marco themes refer to: the window background and text colours per state, plus the theme's named colours, for the default and dark variants.
 _Avoid_: colour scheme (that's the portal's light/dark preference)
 
+**Colour scheme**:
+The light or dark preference that apps read through the portal. It is separate from the GTK theme: choosing a dark theme doesn't by itself make the colour scheme dark.
+_Avoid_: dark mode, dark theme (a GTK theme that happens to be dark)
+
 **Helper**:
 A process that Caminito itself starts and supervises: Xwayland, the palette helper and the locker. MATE components aren't helpers, because mate-session starts and restarts them.
 _Avoid_: daemon, child (for MATE components)

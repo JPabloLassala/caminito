@@ -18,14 +18,17 @@ Nothing in MATE bridges this gap. The Wayfire-based MATE session ships a static 
   - double-click and drag threshold;
   - the CSD button layout and titlebar click actions;
   - event sounds.
+- **The colour scheme is derived, not translated** (added 2026-10-11, [ticket 180](../../.scratch/issues/180-msd-mirrors-the-colour-scheme.md)). MATE has no light/dark key, so the mirror works `color-scheme` out from the GTK theme it has just mirrored: `prefer-dark` when the theme's window background is darker than its text, and `default` otherwise. It doesn't touch `gtk-application-prefer-dark-theme`.
 - **Writes** happen only when a value differs. MATE is the source of truth, and edits made on the GNOME side are overwritten.
 
 ## Consequences
 
 - Native GTK3 and GTK4 apps follow mate-control-center, as X11 apps do.
+- Apps that read the portal's colour scheme (browsers, Electron and libadwaita apps) go dark with a dark GTK theme and light with a light one. A `color-scheme` the user set by hand is overwritten, like every other mirrored key.
 - The mirror writes the user's real `org.gnome.*` keys, not defaults. A user who also logs into GNOME finds MATE's theme, fonts and button layout there. We accept this for v0.1.
 - Rejected:
   - a static `:MATE` gschema override, like mate-wayland-session's (it only sets defaults, so user changes aren't followed);
   - Caminito writing the keys itself (settings translation is msd's job, and msd already owns the translation table);
   - setting `GTK_USE_PORTAL=1` session-wide with a Caminito portal Settings backend that translates `org.mate.*` (it also reroutes GTK's file chooser and other portals, changes behaviour for every GTK app, and is much more work);
   - doing nothing, as mate-wayland-session does.
+  - for the colour scheme: going by a theme name that ends in `-dark` (BlackMATE is dark and doesn't), a switch of its own in MATE's Appearance preferences (a second source of truth beside the theme), and leaving the key to the user.
