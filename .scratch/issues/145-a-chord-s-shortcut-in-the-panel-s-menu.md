@@ -25,7 +25,7 @@ Blocked by:
 
 ## To run, and to answer here
 
-- [ ] What the panel draws for a chord of an application other than VS Code that serves one through dbusmenu, if one can be had.
+- [ ] What the panel draws for a chord of an application other than VS Code that serves one through dbusmenu, if one can be had. [qt-chord.py](145-checks/qt-chord.py), on PySide6, is one: a Qt window with two chords and a shortcut of four presses.
 
 ## Notes
 
