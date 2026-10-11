@@ -1000,7 +1000,7 @@ fn a_thumbnail_has_its_windows_icon_in_a_corner() {
     assert_eq!(pixel(&mut f, corner), 0xff0000);
 }
 
-/// Only an X window can ask for attention: wlr-foreign-toplevel has no state for it (65).
+/// Only an X window can ask for attention itself.
 #[test]
 fn an_urgent_window_is_marked() {
     let (mut f, x) = Fixture::connected(Kind::X11);
@@ -1031,9 +1031,8 @@ fn an_urgent_window_is_marked() {
     assert_ne!(pixel(&mut f, marked), pixel(&mut f, plain));
 }
 
-/// An xdg window is urgent once `focus-new-windows` refuses it the focus (165); an XWayland
-/// one isn't refused until 166. The clients are processes of their own, as policy tells one
-/// client's windows from another's by it.
+/// An xdg window is urgent once `focus-new-windows` refuses it the focus (165). The clients
+/// are processes of their own, as policy tells one client's windows from another's by it.
 #[test]
 fn an_xdg_window_refused_the_focus_is_marked() {
     let mut f = Fixture::with_settings(vec![(

@@ -1,9 +1,11 @@
-//! `focus-new-windows` on xdg-activation tokens, urgency, and `alt-tab-urgent-placement` (165).
+//! `focus-new-windows` on xdg-activation tokens, urgency, and `alt-tab-urgent-placement`
+//! (165); and the rules XWayland's windows add: a transient for the focused window,
+//! `_NET_ACTIVE_WINDOW`'s source indications, and the urgency a client asks for (166).
 
 use super::*;
 use crate::{
-    ActivationToken, FocusClaim, FocusNewWindows, MapStates, SwitchList, TOKEN_LIFETIME,
-    UrgentPlacement,
+    ActivationSource, ActivationToken, FocusClaim, FocusNewWindows, MapStates, SwitchList,
+    TOKEN_LIFETIME, UrgentPlacement,
 };
 
 const SMART: FocusNewWindows = FocusNewWindows::Smart;
@@ -305,4 +307,187 @@ fn a_window_refused_while_the_switcher_raises_windows_stays_under_the_focused_on
     policy.switcher_cancel(ms(12));
     assert_eq!(policy.focus(SEAT), Some(id(3)));
     assert_eq!(policy.stacking(0), [id(1), id(2), id(4), id(3)]);
+}
+
+// XWayland's windows, which carry no token (166).
+
+/// `focused_other_client` with window 3 of the process 200 mapped too, and window 1 focused
+/// again, so that the next window of the process 200 is its second.
+fn focused_beside_another_client(mode: FocusNewWindows) -> Policy<TestWindow> {
+    let mut policy = focused_other_client(mode);
+    policy.map_window(TestWindow::new(3, 400, 300).with_pid(200), ms(10));
+    policy.click(SEAT, id(1), ms(20));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    policy
+}
+
+/// Maps window 2 of the process 200, transient for `parent`, with no token.
+fn map_transient(policy: &mut Policy<TestWindow>, parent: u64) {
+    let states = MapStates {
+        focus: FocusClaim::NoToken,
+        ..MapStates::default()
+    };
+    let window = TestWindow::new(2, 300, 200)
+        .with_pid(200)
+        .with_parent(parent);
+    policy.map_window_with(window, states, ms(LATER));
+}
+
+#[test]
+fn a_transient_for_the_focused_window_takes_the_focus_with_no_token_under_both_modes() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_beside_another_client(mode);
+
+        map_transient(&mut policy, 1);
+
+        assert_eq!(policy.focus(SEAT), Some(id(2)), "{mode:?}");
+        assert!(!policy.is_urgent(id(2)), "{mode:?}");
+    }
+}
+
+#[test]
+fn a_transient_for_a_window_that_is_not_focused_is_refused_under_both_modes() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_beside_another_client(mode);
+
+        map_transient(&mut policy, 3);
+
+        assert_eq!(policy.focus(SEAT), Some(id(1)), "{mode:?}");
+        assert!(policy.is_urgent(id(2)), "{mode:?}");
+    }
+}
+
+#[test]
+fn an_activation_by_a_pager_activates_the_window_under_both_modes() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_beside_another_client(mode);
+
+        policy.request_activation_from(SEAT, id(3), ActivationSource::Pager, ms(LATER));
+
+        assert_eq!(policy.focus(SEAT), Some(id(3)), "{mode:?}");
+        assert_eq!(policy.stacking(0), [id(1), id(3)], "{mode:?}");
+        assert!(!policy.is_urgent(id(3)), "{mode:?}");
+    }
+}
+
+#[test]
+fn an_activation_by_the_focused_windows_client_activates_the_window() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_other_client(mode);
+        policy.map_window(TestWindow::new(2, 400, 300).with_pid(100), ms(10));
+        policy.click(SEAT, id(1), ms(20));
+
+        policy.request_activation_from(SEAT, id(2), ActivationSource::Application, ms(LATER));
+
+        assert_eq!(policy.focus(SEAT), Some(id(2)), "{mode:?}");
+        assert_eq!(policy.stacking(0), [id(1), id(2)], "{mode:?}");
+        assert!(!policy.is_urgent(id(2)), "{mode:?}");
+    }
+}
+
+#[test]
+fn an_activation_by_another_client_makes_the_window_urgent_and_leaves_the_stacking() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_beside_another_client(mode);
+        let stacking = policy.stacking(0);
+
+        policy.request_activation_from(SEAT, id(3), ActivationSource::Application, ms(LATER));
+
+        assert_eq!(policy.focus(SEAT), Some(id(1)), "{mode:?}");
+        assert_eq!(policy.stacking(0), stacking, "{mode:?}");
+        assert!(policy.is_urgent(id(3)), "{mode:?}");
+    }
+}
+
+#[test]
+fn an_activation_by_a_client_with_no_pid_is_refused() {
+    let mut policy = focused_other_client(SMART);
+    policy.map_window(TestWindow::new(2, 400, 300), ms(10));
+    policy.click(SEAT, id(1), ms(20));
+    // Window 1 with no pid either isn't the same client's.
+    policy.window_mut(id(1)).unwrap().pid = None;
+
+    policy.request_activation_from(SEAT, id(2), ActivationSource::Application, ms(LATER));
+
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert!(policy.is_urgent(id(2)));
+}
+
+#[test]
+fn an_activation_by_an_application_while_nothing_has_the_focus_activates_the_window() {
+    let mut policy = focused_other_client(STRICT);
+    policy.map_window(TestWindow::new(2, 400, 300).with_pid(200), ms(10));
+    policy.minimize(id(1));
+    policy.minimize(id(2));
+    assert_eq!(policy.focus(SEAT), None);
+
+    policy.request_activation_from(SEAT, id(2), ActivationSource::Application, ms(LATER));
+
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert!(!policy.is_urgent(id(2)));
+}
+
+#[test]
+fn an_activation_by_an_application_of_the_focused_window_does_not_make_it_urgent() {
+    let mut policy = focused_other_client(SMART);
+    policy.window_mut(id(1)).unwrap().pid = None;
+
+    policy.request_activation_from(SEAT, id(1), ActivationSource::Application, ms(LATER));
+
+    assert!(!policy.is_urgent(id(1)));
+}
+
+#[test]
+fn a_client_asks_for_attention_and_takes_the_ask_back() {
+    let mut policy = focused_beside_another_client(SMART);
+    assert!(!policy.demands_attention(id(3)));
+
+    policy.set_demands_attention(id(3), true);
+    assert!(policy.demands_attention(id(3)));
+    assert!(policy.is_urgent(id(3)));
+
+    policy.set_demands_attention(id(3), false);
+    assert!(!policy.demands_attention(id(3)));
+    assert!(!policy.is_urgent(id(3)));
+}
+
+#[test]
+fn the_urgency_policy_sets_is_the_windows_demand_for_attention() {
+    let mut refused = focused_other_client(STRICT);
+    map_claiming(&mut refused, 2, 200, FocusClaim::NoToken, LATER);
+    assert!(refused.demands_attention(id(2)));
+
+    let mut asked = focused_beside_another_client(SMART);
+    asked.request_activation_from(SEAT, id(3), ActivationSource::Application, ms(LATER));
+    assert!(asked.demands_attention(id(3)));
+}
+
+#[test]
+fn a_client_takes_back_the_urgency_policy_set() {
+    let mut policy = focused_other_client(STRICT);
+    map_claiming(&mut policy, 2, 200, FocusClaim::NoToken, LATER);
+
+    policy.set_demands_attention(id(2), false);
+
+    assert!(!policy.is_urgent(id(2)));
+}
+
+#[test]
+fn a_demand_for_attention_clears_when_the_window_is_focused() {
+    let mut policy = focused_beside_another_client(SMART);
+    policy.set_demands_attention(id(3), true);
+
+    policy.click(SEAT, id(3), ms(LATER));
+
+    assert!(!policy.demands_attention(id(3)));
+    assert!(!policy.is_urgent(id(3)));
+}
+
+#[test]
+fn the_focused_window_does_not_demand_attention() {
+    let mut policy = focused_other_client(SMART);
+
+    policy.set_demands_attention(id(1), true);
+
+    assert!(!policy.demands_attention(id(1)));
 }

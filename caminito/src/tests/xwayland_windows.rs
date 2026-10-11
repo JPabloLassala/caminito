@@ -330,6 +330,8 @@ fn a_window_demanding_attention_is_urgent() {
     let (mut f, x) = Fixture::connected(Kind::X11);
     let window = f.map(x, spec(400, 300));
     let id = f.pid(window);
+    // A window that has the focus demands none (166).
+    f.map(x, spec(400, 300));
 
     net_wm_state(
         &mut f,
@@ -395,17 +397,30 @@ fn a_dialog_that_asks_to_be_modal_becomes_a_modal_dialog_and_x_is_told() {
     assert!(states.contains("_NET_WM_STATE_MODAL"), "{states}");
 }
 
+/// `_NET_WM_PID`, as Qt and GTK set it: an application's request to be active is honoured
+/// while its process has the focus (166).
+fn of_process(pid: u32) -> Vec<(&'static str, Vec<u32>)> {
+    vec![("_NET_WM_PID", vec![pid])]
+}
+
 /// A launcher such as Albert maps a utility window, which isn't focused as it maps, and
 /// asks for the focus itself, as Qt's `requestActivate` does.
 #[test]
 fn a_utility_window_that_asks_to_be_active_takes_the_focus() {
     let (mut f, x) = Fixture::connected(Kind::X11);
-    let editor = f.map(x, spec(400, 300));
+    let editor = f.map(
+        x,
+        WindowSpec {
+            cardinals: of_process(100),
+            ..spec(400, 300)
+        },
+    );
     let launcher = f.map(
         x,
         WindowSpec {
             types: vec!["_NET_WM_WINDOW_TYPE_UTILITY"],
             states: vec!["_NET_WM_STATE_ABOVE"],
+            cardinals: of_process(100),
             ..spec(600, 100)
         },
     );
@@ -427,7 +442,13 @@ fn a_utility_window_that_asks_to_be_active_takes_the_focus() {
 #[test]
 fn a_utility_window_that_asks_to_be_active_while_pending_maps_focused() {
     let (mut f, x) = Fixture::connected(Kind::X11);
-    let editor = f.map(x, spec(400, 300));
+    let editor = f.map(
+        x,
+        WindowSpec {
+            cardinals: of_process(100),
+            ..spec(400, 300)
+        },
+    );
 
     let active = editor.x11();
     let launcher = f
@@ -435,6 +456,7 @@ fn a_utility_window_that_asks_to_be_active_while_pending_maps_focused() {
             let window = x.create_window(&XWindowSpec {
                 size: (600, 100),
                 types: vec!["_NET_WM_WINDOW_TYPE_UTILITY"],
+                cardinals: of_process(100),
                 ..XWindowSpec::default()
             })?;
             x.map(window)?;

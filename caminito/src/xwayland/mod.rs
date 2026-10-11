@@ -19,7 +19,7 @@ use std::os::unix::net::UnixStream;
 use std::process::Stdio;
 
 use caminito_policy::{
-    Action, FunctionFacts, MAX_WORKSPACES, PolicyWindow, SizeHints, WindowStates,
+    Action, ActivationSource, FunctionFacts, MAX_WORKSPACES, PolicyWindow, SizeHints, WindowStates,
 };
 use smithay::backend::input::InputTime;
 use smithay::reexports::calloop::RegistrationToken;
@@ -349,9 +349,10 @@ impl Caminito {
     }
 
     /// Tells each XWayland window the states policy keeps that X shows in `_NET_WM_STATE`
-    /// and `WM_STATE` (35): minimised as hidden and iconic, and the above, below and sticky
-    /// states policy records. They're Smithay's properties, so they go through its API,
-    /// only when they differ from what it last wrote.
+    /// and `WM_STATE` (35): minimised as hidden and iconic, the above, below and sticky
+    /// states policy records, and its demand for attention, which policy makes for a window
+    /// it refuses the focus and ends when the window has it (166). They're Smithay's
+    /// properties, so they go through its API, only when they differ from what it last wrote.
     fn refresh_x_states(&self) {
         let policy = &self.policy;
         for mapped in policy.windows() {
@@ -359,7 +360,7 @@ impl Caminito {
                 continue;
             };
             let id = mapped.id();
-            let states: [(bool, bool, SetState); 4] = [
+            let states: [(bool, bool, SetState); 5] = [
                 (
                     policy.is_minimized(id),
                     surface.is_hidden(),
@@ -379,6 +380,11 @@ impl Caminito {
                     policy.is_sticky(id),
                     surface.is_sticky(),
                     X11Surface::set_sticky,
+                ),
+                (
+                    policy.demands_attention(id),
+                    surface.demands_attention(),
+                    X11Surface::set_demands_attention,
                 ),
             ];
             for (wanted, told, tell) in states {
@@ -557,6 +563,23 @@ impl Caminito {
                 xwayland.xconn = None;
                 None
             }
+        }
+    }
+
+    /// Who sent the `_NET_ACTIVE_WINDOW` message for `window` that Smithay has just handed
+    /// on, by its source indication. Marco takes a request from a client older than the
+    /// indication, which says 0 and gives no timestamp, as it takes a pager's
+    /// (window.c:3170-3195). With no X connection of Caminito's to read it,
+    /// the request counts as an application's.
+    pub(crate) fn x_activation_source(&mut self, window: X11Window) -> ActivationSource {
+        let source = self
+            .with_xconn("read who asks for the active window", |xconn| {
+                xconn.activation_source(window)
+            })
+            .flatten();
+        match source {
+            Some(1) | None => ActivationSource::Application,
+            Some(_) => ActivationSource::Pager,
         }
     }
 
