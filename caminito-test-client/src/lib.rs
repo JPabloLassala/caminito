@@ -139,6 +139,11 @@ pub struct State {
     shm: Option<WlShm>,
     subcompositor: Option<WlSubcompositor>,
     wm_base: Option<XdgWmBase>,
+    /// Whether `xdg_wm_base`'s pings are left unanswered, as a program that hangs leaves
+    /// them.
+    hung: bool,
+    /// The pings left unanswered, oldest first.
+    unanswered_pings: Vec<u32>,
     seat: Option<WlSeat>,
     decoration_manager: Option<ZxdgDecorationManagerV1>,
     fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
@@ -684,6 +689,26 @@ impl Client {
     /// Asks for a frame callback on the next commit.
     pub fn request_frame(&self, id: WindowId) {
         self.window(id).surface.frame(&self.qh, FrameCallback(id));
+    }
+
+    /// Leaves `xdg_wm_base`'s pings unanswered from now on, as a program that hangs does.
+    pub fn hang(&mut self) {
+        self.state.hung = true;
+    }
+
+    /// Answers the pings left unanswered, and those to come, as a program that was only
+    /// slow does.
+    pub fn respond_again(&mut self) {
+        self.state.hung = false;
+        let wm_base = self.state.wm_base.as_ref().expect("xdg_wm_base is bound");
+        for serial in self.state.unanswered_pings.drain(..) {
+            wm_base.pong(serial);
+        }
+    }
+
+    /// How many pings are left unanswered.
+    pub fn unanswered_pings(&self) -> usize {
+        self.state.unanswered_pings.len()
     }
 
     /// Destroys the toplevel and its surfaces, after its xdg-decoration object, which
@@ -1375,7 +1400,7 @@ impl Dispatch<WlCallback, FrameCallback> for State {
 
 impl Dispatch<XdgWmBase, ()> for State {
     fn event(
-        _: &mut Self,
+        state: &mut Self,
         wm_base: &XdgWmBase,
         event: xdg_wm_base::Event,
         _: &(),
@@ -1383,7 +1408,11 @@ impl Dispatch<XdgWmBase, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let xdg_wm_base::Event::Ping { serial } = event {
-            wm_base.pong(serial);
+            if state.hung {
+                state.unanswered_pings.push(serial);
+            } else {
+                wm_base.pong(serial);
+            }
         }
     }
 }

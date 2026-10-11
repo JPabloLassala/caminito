@@ -105,6 +105,7 @@ use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
 use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::{self, NightLight};
+use crate::not_responding::NotResponding;
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
@@ -363,6 +364,9 @@ pub struct Caminito {
     /// `rename-workspace`'s dialog while it shows: the source its answer comes back on
     /// (167). Another isn't shown meanwhile, as in Marco.
     pub(crate) workspace_rename: Option<RegistrationToken>,
+    /// The windows asked to close whose clients owe an answer to a ping, and their "not
+    /// responding" dialogs (168).
+    pub(crate) not_responding: NotResponding,
 
     /// The Wayland socket's source, until a Session closes it as it ends (61).
     socket_source: Option<RegistrationToken>,
@@ -644,6 +648,8 @@ impl State {
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
         self.caminito.refresh_window_menu();
+        // With the windows the handlers and the bindings before this pass asked to close.
+        self.caminito.refresh_close_pings();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
         // After the frames, which may show the lock that logind's sleep waits for.
@@ -989,6 +995,7 @@ impl Caminito {
             xwayland_keyboard_grab: None,
             environment: BTreeMap::new(),
             workspace_rename: None,
+            not_responding: NotResponding::default(),
             socket_source: None,
             helper_stderr: StderrTarget::Prefixed,
             session: None,

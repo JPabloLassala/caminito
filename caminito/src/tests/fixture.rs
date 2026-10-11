@@ -366,6 +366,9 @@ pub struct WindowSpec {
     /// Whether it can be asked to close: `WM_DELETE_WINDOW` in `WM_PROTOCOLS`, as toolkits
     /// set it. An xdg toplevel always can.
     pub delete_window: bool,
+    /// X11 only: whether `WM_PROTOCOLS` has `_NET_WM_PING`, as toolkits set it. An xdg
+    /// client is always pinged.
+    pub ping: bool,
     /// xdg only: whether it makes a `wp_fractional_scale_v1` before its first commit, as
     /// GTK4 and Qt 6 do.
     pub fractional_scale: bool,
@@ -394,6 +397,7 @@ impl Default for WindowSpec {
             input: None,
             cardinals: Vec::new(),
             delete_window: true,
+            ping: false,
             fractional_scale: false,
             sync_request: false,
             fixed_size: false,
@@ -830,6 +834,7 @@ impl Fixture {
             title: spec.title,
             class: spec.app_id,
             delete_window: spec.delete_window,
+            ping: spec.ping,
             empty: false,
             background: None,
             override_redirect: false,

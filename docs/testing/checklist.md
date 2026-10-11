@@ -1936,3 +1936,33 @@ session_env() {
 - **Debug tool:** Caminito's log, which names a value of `mouse-button-modifier` it can't
   use; `org.mate.Caminito.Debug`'s state dump, whose `window_menu` member shows the open
   menu.
+
+### "Not responding" and Force Quit
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open `pluma` (a native window)
+     and `xterm` (X11).
+  2. Stop `pluma` with `kill -STOP $(pidof pluma)` from a terminal. Focus it, press Alt+F4,
+     and wait five seconds.
+  3. In the dialog, choose *Wait*. Press Alt+F4 on `pluma` again, and before the dialog
+     shows run `kill -CONT $(pidof pluma)`.
+  4. Open `pluma` again, stop it, press Alt+F4 and wait for the dialog. Press Alt+F4 on
+     `pluma` once more, and wait five seconds. Press Alt+F4 on the dialog, and then Escape
+     in it.
+  5. Press Alt+F4 on `pluma` once more, wait for the dialog and choose *Force Quit*.
+  6. Repeat steps 2 to 5 with `xterm`, stopped with `kill -STOP $(pidof xterm)`.
+  7. Open `pluma` again, stop it, press Alt+F4, wait for the dialog, and run
+     `kill -CONT $(pidof pluma)`.
+- **Expected:** in step 2 Marco's dialog shows after five seconds, titled *Marco*, with the
+  window's title, "is not responding", and the buttons *Wait* and *Force Quit*. In step 3
+  the dialog goes and `pluma` stays, stopped; then `pluma` closes with no dialog. In step
+  4 the second Alt+F4 shows no second dialog, and gives the first one the focus; Alt+F4
+  on the dialog leaves it and `pluma` as they are, and Escape closes the dialog and
+  `pluma` stays. In step 5 `pluma`'s window goes at once and its
+  process is gone (`pidof pluma` prints nothing). In step 6 `xterm` does the same. In
+  step 7 the dialog goes by itself as `pluma` closes. Caminito, Xwayland and the other
+  windows stay throughout (168).
+- **Debug tool:** `journalctl -t caminito` for `forcing … to quit` and `can't force … to
+  quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
+  `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.

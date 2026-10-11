@@ -113,6 +113,14 @@ impl XwmHandler for State {
             .window_destroyed(window.window_id());
     }
 
+    /// The answer to the `_NET_WM_PING` that went with a request to close (168).
+    fn ping_acked(&mut self, _xwm: XwmId, window: X11Surface, _timestamp: u32) {
+        let caminito = &mut self.caminito;
+        if let Some(id) = caminito.mapped_for_key(&key(&window)) {
+            caminito.forget_close_ping(id);
+        }
+    }
+
     /// Policy decides for a managed window, whose stacking is Caminito's alone. Any other is
     /// configured as it asks. Smithay then tells the client where it is, either way.
     fn configure_request(

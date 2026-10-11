@@ -582,6 +582,26 @@ impl XConnection {
         Ok(desktop.and_then(|value| value.first().copied()))
     }
 
+    /// `WM_CLIENT_MACHINE`, the machine `_NET_WM_PID`'s process is of, whatever its
+    /// encoding, or `None` if it's unset or the window has gone.
+    pub(super) fn client_machine(&self, window: Window) -> Result<Option<Vec<u8>>, Error> {
+        let machine = AtomEnum::WM_CLIENT_MACHINE;
+        let cookie = self
+            .conn
+            .get_property(false, window, machine, AtomEnum::ANY, 0, 1024)?;
+        let reply = gone_is_none(cookie.reply())?;
+        Ok(reply
+            .filter(|reply| reply.format == 8 && !reply.value.is_empty())
+            .map(|reply| reply.value))
+    }
+
+    /// Cuts off the client that made `window`, as `XKillClient` does.
+    pub(super) fn kill_client(&self, window: Window) -> Result<(), Error> {
+        self.conn.kill_client(window)?;
+        self.conn.flush()?;
+        Ok(())
+    }
+
     /// `_NET_WM_ICON`, unparsed.
     pub(super) fn icon(&self, window: Window) -> Result<Option<Vec<u32>>, Error> {
         self.cardinals(window, self.atoms._NET_WM_ICON)
