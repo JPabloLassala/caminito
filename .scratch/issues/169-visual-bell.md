@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code is in; the tests' X11 variants need a run where Xwayland starts (the developer's), and running the checklist item is 173's
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 147
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -19,7 +19,7 @@ What the user sees when an app rings the bell ([05](05-v01-marco-feature-cut.md)
 
 ## Acceptance criteria
 
-- [ ] Headless tests through the fixture, written before the code, with the driven clock: a bell from an xdg client and from an X11 client flashing every output with `fullscreen`, and the window's Frame with `frame_flash`, read from the output's pixels during the flash and after; nothing with `visual-bell` off; a key change applying to the next bell.
+- [x] Headless tests through the fixture, written before the code, with the driven clock: a bell from an xdg client and from an X11 client flashing every output with `fullscreen`, and the window's Frame with `frame_flash`, read from the output's pixels during the flash and after; nothing with `visual-bell` off; a key change applying to the next bell.
 - [x] `visual-bell` leaves `UNSUPPORTED`; its row and `visual-bell-type`'s in `docs/parity.md` say honoured, with the tests above.
 - [x] [105](105-one-bell-event.md)'s checklist item, or a new one tagged M8: `printf '\a'` in a native and an X11 terminal with each type. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -44,3 +44,4 @@ The flash is the bell event's, in `caminito/src/bell.rs`; the scene draws it (`S
 - **A bug from 105 fixed on the way:** the translation read `frame-flash` as the nick, but `org.mate.Marco.VisualBellType`'s is `frame_flash`, so a user's `frame_flash` was taken as invalid and fell back to `fullscreen` with a warning. The nick and its test are fixed, and the tests use the schema's spelling.
 - **Policy doesn't change:** the flashing state lives in `Bells` and reaches the Frame through `refresh_frames`, and the full-screen flash is a scene element. `visual-bell` left `UNSUPPORTED`; its translation test now checks it's taken without a problem.
 - **The tests run:** `tests::bell`, `settings::` (the translation's tests), `tests::parity`, `tests::frames`, `tests::decoration`, `tests::drag_icons`, `tests::override_redirect` and `tests::lock`, filtered by name, and clippy with `-D warnings` (bar caminito-theme's three `manual_range_contains`, which were already there). Before the instruction to run only those, `cargo test -p caminito --lib` ran twice, once after merging the integration branch: every failure (242, then 254) was an X11-tier test panicking at "Xwayland starts", or `root_properties`' wait for `DISPLAY`, which needs Xwayland too; the other crates' tests passed. After the last merge only the tests above were rerun.
+- **The X11 variants, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored, and `cargo test -p caminito-policy --lib` (399 passed). `tests::bell`'s twenty tests passed, its three `::x11` variants included (full-screen, frame-flash, visual bell off), with the two X-bell tests and `settings::translate`'s bell tests. None of the 8 failures is this ticket's; they're listed in [148](148-keybindings-from-settings.md)'s Done section. The rest of `tools/check` wasn't run.

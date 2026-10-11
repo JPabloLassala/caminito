@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: open: the code, the policy tests and the xdg headless tests are in; the X11 variants of the headless tests are unrun (Xwayland doesn't start in the build container), and running the checklist item in a Session is the developer's, at 173's closing run
+Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
 Blocked by: 147
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
@@ -19,7 +19,7 @@ Windows listed in `show-desktop-skip-list` stay on screen when the desktop is sh
 ## Acceptance criteria
 
 - [x] Policy tests, written before the code: a listed and an unlisted window shown and restored; an empty list; an entry that matches no window; the list changing while the desktop is shown.
-- [ ] Headless tests through the fixture, on xdg and XWayland windows: a native window listed by app id and an X11 one by `WM_CLASS` stay through Ctrl+Alt+D and through `ShowingDesktop` set over D-Bus.
+- [x] Headless tests through the fixture, on xdg and XWayland windows: a native window listed by app id and an X11 one by `WM_CLASS` stay through Ctrl+Alt+D and through `ShowingDesktop` set over D-Bus.
 - [x] `show-desktop-skip-list` leaves `UNSUPPORTED` if 147 put it there; its row in `docs/parity.md` says honoured, with the tests above.
 - [x] The checklist has an item, tagged M8: a terminal's app id and `xterm`'s class in the list, then the panel's Show Desktop and Ctrl+Alt+D. Running it in a Session is the developer's, and goes to [173](173-packaging-and-closing-m8.md)'s closing run.
 
@@ -38,3 +38,4 @@ Windows listed in `show-desktop-skip-list` stay on screen when the desktop is sh
 - **Focus:** a seat on a listed window keeps it when the desktop is shown, where Marco would focus the desktop window; the ticket asks for it. A listed window mapped while the desktop shows doesn't end it, and one already there isn't minimised when another window ends it.
 - **A change waits:** each workspace showing its desktop keeps the list it was shown with, so a change of the key applies at the next Show Desktop.
 - **Tests run** (under `dbus-run-session`, filtered): `cargo test -p caminito-policy --lib show_desktop` (31 passed, before and after merging the integration branch) and `cargo test -p caminito --lib -- tests::show_desktop settings::translate` (155 passed before merging the integration branch, 160 after; the four `::x11` variants, the two new ones among them, fail at "Xwayland starts", which is the environment). The full suite wasn't run, as asked for this run.
+- **The X11 variants, run on 2026-10-11:** in the OrbStack machine `camino` (Arch, aarch64), where Xwayland starts, on master at `9ffebec`: the whole of `caminito` as `tools/check` runs it (`XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- cargo test -p caminito`), 1445 passed, 8 failed, 5 ignored, and `cargo test -p caminito-policy --lib` (399 passed). `tests::show_desktop`'s fourteen tests passed, its four `::x11` variants included (`a_listed_window_stays_through_ctrl_alt_d` and `…_through_the_property` among them), and `settings::translate`. None of the 8 failures is this ticket's; they're listed in [148](148-keybindings-from-settings.md)'s Done section. The rest of `tools/check` wasn't run.
