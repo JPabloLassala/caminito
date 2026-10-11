@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sun, 11 Oct 2026 18:47:28 +0000
+Subject: [PATCH] system-info: Name Caminito in the Windowing System row
+
+The row named only GDK's backend, X11 or Wayland, so a Caminito session
+read as any other Wayland session. Where MATE_WM_NAME says Caminito the
+row reads "Caminito (Wayland)", or "Caminito (X11)" when System Info is
+itself an X11 client, on XWayland. The name and the backends aren't
+translated, as the backends weren't.
+
+Anywhere else the row is as it was.
+---
+ capplets/system-info/mate-system-info.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/capplets/system-info/mate-system-info.c b/capplets/system-info/mate-system-info.c
+index 00b0d8a..500aff5 100644
+--- a/capplets/system-info/mate-system-info.c
++++ b/capplets/system-info/mate-system-info.c
+@@ -39,6 +39,7 @@
+ #include "info-cleanup.h"
+ #include "mate-system-info.h"
+ #include "mate-system-info-resources.h"
++#include "wm-common.h"
+ 
+ struct _MateSystemInfo
+ {
+@@ -458,6 +459,18 @@ get_os_type (void)
+         return g_strdup_printf ("32-bit");
+ }
+ 
++/* "Wayland" alone is as true of any other Wayland session, so under
++ * Caminito the row names it. The backend stays in brackets, since a bug
++ * report needs to know whether System Info ran on XWayland. */
++static char *
++windowing_system_name (const char *backend)
++{
++    if (wm_common_is_caminito ())
++        return g_strdup_printf ("%s (%s)", WM_COMMON_CAMINITO, backend);
++
++    return g_strdup (backend);
++}
++
+ static char *
+ get_windowing_system (void)
+ {
+@@ -467,11 +480,11 @@ get_windowing_system (void)
+ 
+ #if defined(GDK_WINDOWING_X11)
+     if (GDK_IS_X11_DISPLAY (display))
+-        return g_strdup ("X11");
++        return windowing_system_name ("X11");
+ #endif /* GDK_WINDOWING_X11 */
+ #if defined(GDK_WINDOWING_WAYLAND)
+     if (GDK_IS_WAYLAND_DISPLAY (display))
+-        return g_strdup ("Wayland");
++        return windowing_system_name ("Wayland");
+ #endif /* GDK_WINDOWING_WAYLAND */
+     return g_strdup (C_("Windowing system (Wayland, X11, or Unknown)", "Unknown"));
+ }
