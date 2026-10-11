@@ -711,6 +711,13 @@ impl Client {
         self.window(id).toplevel.set_parent(parent);
     }
 
+    /// Fixes the window's size with its least and greatest sizes, from its next commit.
+    pub fn set_fixed_size(&self, id: WindowId, (width, height): (i32, i32)) {
+        let toplevel = &self.window(id).toplevel;
+        toplevel.set_min_size(width, height);
+        toplevel.set_max_size(width, height);
+    }
+
     /// Asks for an interactive move, as if `serial`'s button press started it.
     pub fn start_move(&mut self, id: WindowId, serial: u32) {
         let seat = self.seat();

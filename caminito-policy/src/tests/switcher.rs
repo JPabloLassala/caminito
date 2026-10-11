@@ -104,12 +104,15 @@ fn a_minimised_modal_dialog_leaves_its_parent_listed_as_itself() {
     policy.map_window(TestWindow::new(2, 400, 300), ms(2));
     policy.map_window(
         TestWindow::new(3, 200, 100)
-            .with_type(WindowType::ModalDialog)
+            .with_type(WindowType::Dialog)
             .with_parent(1)
             .skipping_taskbar(),
         ms(3),
     );
+    // A modal dialog has no minimise function (177), so it's minimised before it's modal.
     policy.minimize(id(3));
+    policy.window_mut(id(3)).unwrap().window_type = WindowType::ModalDialog;
+    policy.commit(id(3));
 
     let list = policy.switch_list(SEAT, SwitchList::Windows);
     assert!(list.contains(&SwitchEntry::Window(id(1))));

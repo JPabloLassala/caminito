@@ -3,9 +3,10 @@
 //!
 //! [`FrameContext`] holds what every frame is drawn with: the theme, the title font and how
 //! it's rendered, the button layout and the icon theme. Each window's [`WindowFrame`] derives
-//! its frame from the window's [`WindowFacts`] and a [`FrameState`] (ADR 0012): whether the
-//! window is SSD, its extents in every state, and its strips as `MemoryRenderBuffer`s, which
-//! it draws again only when something they're drawn from changes. Its shadow (171) is drawn
+//! its frame from the window's [`WindowFacts`], and a [`FrameState`] and the window's
+//! functions as Policy has them (ADR 0012, 177): whether the window is SSD, its extents in
+//! every state, and its strips as `MemoryRenderBuffer`s, which it draws again only when
+//! something they're drawn from changes. Its shadow (171) is drawn
 //! with them, and isn't part of the frame.
 
 pub mod control;
@@ -17,7 +18,7 @@ mod tests;
 
 use std::sync::Arc;
 
-use caminito_policy::{FrameState, SizeHints, WindowType};
+use caminito_policy::{FrameState, Functions, WindowType};
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use caminito_theme::{
     ButtonFunction, ButtonLayout, ButtonStates, Frame, FrameFlags, FrameGeometry, FrameType,
@@ -53,7 +54,6 @@ pub struct FrameContext {
     font_rendering: FontRendering,
     title_context: pango::Context,
     button_layout: ButtonLayout,
-    attach_modal_dialogs: bool,
     /// Whether frames have shadows: `compositing-manager` (171).
     shadows: bool,
     icons: IconLookup,
@@ -73,7 +73,6 @@ impl FrameContext {
             font_rendering,
             title_context: new_title_context(&font_rendering),
             button_layout: settings.frames.button_layout.clone(),
-            attach_modal_dialogs: settings.frames.attach_modal_dialogs,
             shadows: settings.frames.shadows,
             icons: IconLookup::from_env(&settings.interface.icon_theme),
             generation: 0,
@@ -103,10 +102,6 @@ impl FrameContext {
             self.button_layout = frames.button_layout.clone();
             changed = true;
         }
-        if frames.attach_modal_dialogs != self.attach_modal_dialogs {
-            self.attach_modal_dialogs = frames.attach_modal_dialogs;
-            changed = true;
-        }
         if frames.shadows != self.shadows {
             self.shadows = frames.shadows;
             changed = true;
@@ -130,37 +125,13 @@ impl FrameContext {
         &self.theme
     }
 
-    pub fn attach_modal_dialogs(&self) -> bool {
-        self.attach_modal_dialogs
-    }
-
     /// The extents of the frame a window of `facts` has in `state`, which policy places and
     /// maximises by: none if it has no frame. A pending window's are worked out here too,
     /// before it has a [`WindowFrame`].
     pub fn extents(&self, facts: &WindowFacts, state: FrameState) -> FrameExtents<i32, Logical> {
-        self.style(facts, state)
+        style(facts, state, extent_functions(state))
             .map(|(frame_type, flags)| self.visible_borders(frame_type, &flags))
             .unwrap_or_default()
-    }
-
-    /// The frame type and flags Marco draws a window of `facts` with in `state`, or `None`
-    /// if it has no frame. A fullscreen window shows no frame, so it's never asked for.
-    fn style(&self, facts: &WindowFacts, state: FrameState) -> Option<(FrameType, FrameFlags)> {
-        if !facts.wants_frame {
-            return None;
-        }
-        let facts = FrameFacts {
-            window_type: facts.window_type,
-            has_parent: facts.has_parent,
-            hints: facts.hints,
-            activated: state.focused,
-            maximized: state.maximized,
-            fullscreen: false,
-            shaded: state.shaded,
-            tiled_left: state.tiled_left,
-            tiled_right: state.tiled_right,
-        };
-        frame_style(&facts, self.attach_modal_dialogs)
     }
 
     /// The frame's visible borders around the window geometry. The invisible resize border
@@ -170,10 +141,20 @@ impl FrameContext {
         frame_type: FrameType,
         flags: &FrameFlags,
     ) -> FrameExtents<i32, Logical> {
-        let title = self.title(frame_type, flags, "");
+        let text_height = self.title(frame_type, flags, "").text_height;
+        self.visible_borders_at(frame_type, flags, text_height)
+    }
+
+    /// [`Self::visible_borders`], for a title of `text_height`.
+    fn visible_borders_at(
+        &self,
+        frame_type: FrameType,
+        flags: &FrameFlags,
+        text_height: i32,
+    ) -> FrameExtents<i32, Logical> {
         let visible = self
             .theme
-            .frame_borders(frame_type, title.text_height, flags)
+            .frame_borders(frame_type, text_height, flags)
             .visible;
         FrameExtents::new(visible.left, visible.right, visible.top, visible.bottom)
     }
@@ -206,6 +187,40 @@ impl FrameContext {
     pub fn title(&self, frame_type: FrameType, flags: &FrameFlags, text: &str) -> Title {
         let scale = self.theme.title_scale(frame_type, flags);
         Title::new(&self.title_context, &self.font, scale, text)
+    }
+}
+
+/// The frame type and flags Marco draws a window of `facts` with in `state`, with
+/// `functions`, or `None` if it has no frame. A fullscreen window shows no frame, so it's
+/// never asked for.
+fn style(
+    facts: &WindowFacts,
+    state: FrameState,
+    functions: Functions,
+) -> Option<(FrameType, FrameFlags)> {
+    if !facts.wants_frame {
+        return None;
+    }
+    frame_style(&FrameFacts {
+        window_type: facts.window_type,
+        functions,
+        activated: state.focused,
+        maximized: state.maximized,
+        fullscreen: false,
+        shaded: state.shaded,
+        tiled_left: state.tiled_left,
+        tiled_right: state.tiled_right,
+    })
+}
+
+/// The functions a frame's extents can depend on, which Policy asks for them with in the
+/// [`FrameState`] (177): the others only add or take a button.
+fn extent_functions(state: FrameState) -> Functions {
+    Functions {
+        border_only: state.border_only,
+        resize_horizontally: state.resizes_horizontally,
+        resize_vertically: state.resizes_vertically,
+        ..Functions::default()
     }
 }
 
@@ -304,14 +319,12 @@ impl NetWmIcon {
     }
 }
 
-/// What a window's frame is derived from besides its [`FrameState`]: facts that change only
-/// when the window commits or its decoration mode changes.
+/// What a window's frame is derived from besides its [`FrameState`] and its functions,
+/// which are Policy's (177): facts that change only when the window commits or its
+/// decoration mode changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowFacts {
     pub window_type: WindowType,
-    /// It's transient for a managed window.
-    pub has_parent: bool,
-    pub hints: SizeHints,
     /// It wants Caminito's frame.
     pub wants_frame: bool,
 }
@@ -370,7 +383,7 @@ pub struct WindowFrame {
     facts: Option<WindowFacts>,
     ssd: bool,
     /// The extents in each [`FrameState`], by [`state_index`].
-    extents: [FrameExtents<i32, Logical>; 24],
+    extents: Vec<FrameExtents<i32, Logical>>,
     drawn: Option<(FrameInputs, ButtonStates, u64)>,
     /// Where everything was when the strips were last drawn, which the pointer finds the
     /// frame's controls by.
@@ -394,28 +407,57 @@ fn state_index(state: FrameState) -> usize {
     } else {
         0
     };
-    tiled << 3
+    tiled << 6
+        | usize::from(state.border_only) << 5
+        | usize::from(state.resizes_horizontally) << 4
+        | usize::from(state.resizes_vertically) << 3
         | usize::from(state.maximized) << 2
         | usize::from(state.focused) << 1
         | usize::from(state.shaded)
 }
 
+/// How many [`FrameState`]s there are.
+const FRAME_STATES: usize = 3 << 6;
+
 impl WindowFrame {
     /// Takes up the window's facts, or the theme they're framed with: works out again
     /// whether the window is SSD, and its extents in every state.
     pub fn set_facts(&mut self, facts: WindowFacts, frame_context: &FrameContext) {
-        self.ssd = frame_context.style(&facts, FrameState::default()).is_some();
-        for (index, extents) in self.extents.iter_mut().enumerate() {
-            let state = FrameState {
-                maximized: index & 4 != 0,
-                focused: index & 2 != 0,
-                shaded: index & 1 != 0,
-                tiled_left: index >> 3 == 1,
-                tiled_right: index >> 3 == 2,
-            };
-            debug_assert_eq!(state_index(state), index);
-            *extents = frame_context.extents(&facts, state);
-        }
+        let default = FrameState::default();
+        self.ssd = style(&facts, default, extent_functions(default)).is_some();
+        // A title is laid out once for each scale the theme's styles give it, not for each
+        // state.
+        let mut text_heights: Vec<(f64, i32)> = Vec::new();
+        self.extents = (0..FRAME_STATES)
+            .map(|index| {
+                let state = FrameState {
+                    maximized: index & 4 != 0,
+                    focused: index & 2 != 0,
+                    shaded: index & 1 != 0,
+                    resizes_vertically: index & 8 != 0,
+                    resizes_horizontally: index & 16 != 0,
+                    border_only: index & 32 != 0,
+                    tiled_left: index >> 6 == 1,
+                    tiled_right: index >> 6 == 2,
+                };
+                debug_assert_eq!(state_index(state), index);
+                let Some((frame_type, flags)) = style(&facts, state, extent_functions(state))
+                else {
+                    return FrameExtents::default();
+                };
+                let scale = frame_context.theme.title_scale(frame_type, &flags);
+                let known = text_heights.iter().find(|(known, _)| *known == scale);
+                let text_height = match known {
+                    Some((_, text_height)) => *text_height,
+                    None => {
+                        let text_height = frame_context.title(frame_type, &flags, "").text_height;
+                        text_heights.push((scale, text_height));
+                        text_height
+                    }
+                };
+                frame_context.visible_borders_at(frame_type, &flags, text_height)
+            })
+            .collect();
         self.facts = Some(facts);
     }
 
@@ -424,24 +466,26 @@ impl WindowFrame {
         self.ssd
     }
 
-    /// The frame's extents in `state`: none for a CSD window.
+    /// The frame's extents in `state`: none for a CSD window, or before the facts are set.
     pub fn extents(&self, state: FrameState) -> FrameExtents<i32, Logical> {
-        self.extents[state_index(state)]
+        self.extents
+            .get(state_index(state))
+            .copied()
+            .unwrap_or_default()
     }
 
-    /// Draws the strips for `content` in `state` again if anything they're drawn from changed
-    /// since they were last drawn, or drops them if the window has no frame. Returns whether
-    /// the strips changed.
+    /// Draws the strips for `content` in `state` with `functions` again if anything they're
+    /// drawn from changed since they were last drawn, or drops them if the window has no
+    /// frame. Returns whether the strips changed.
     pub fn refresh(
         &mut self,
         frame_context: &mut FrameContext,
         colors: &PaletteColors,
         state: FrameState,
+        functions: Functions,
         content: FrameContent,
     ) -> bool {
-        let style = self
-            .facts
-            .and_then(|facts| frame_context.style(&facts, state));
+        let style = self.facts.and_then(|facts| style(&facts, state, functions));
         let Some((frame_type, mut flags)) = style else {
             return self.clear();
         };

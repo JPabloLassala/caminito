@@ -26,6 +26,7 @@ mod focus_modes;
 mod focus_stealing;
 mod foreign_toplevel;
 mod frames;
+mod functions;
 mod gamma_control;
 mod global_menu;
 mod grabs;

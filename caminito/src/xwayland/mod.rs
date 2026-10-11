@@ -18,7 +18,9 @@ use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::process::Stdio;
 
-use caminito_policy::{Action, FrameState, MAX_WORKSPACES, PolicyWindow, SizeHints};
+use caminito_policy::{
+    Action, FunctionFacts, MAX_WORKSPACES, PolicyWindow, SizeHints, WindowStates,
+};
 use smithay::backend::input::InputTime;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::wayland_server::Client;
@@ -490,18 +492,25 @@ impl Caminito {
         let has_parent = request
             .transient_for
             .is_some_and(|parent| self.mapped_for_key(&WindowKey::X11(parent)).is_some());
+        let window_type = marco_type(request.window_type, request.transient_for.is_some(), false);
         let facts = WindowFacts {
-            window_type: marco_type(request.window_type, request.transient_for.is_some(), false),
-            has_parent,
-            hints: SizeHints::default(),
+            window_type,
             // A fullscreen window shows no frame.
             wants_frame: request.decorated && !request.fullscreen,
         };
-        let state = FrameState {
+        let states = WindowStates {
             maximized: request.maximized,
-            focused: true,
-            ..FrameState::default()
+            ..WindowStates::default()
         };
+        // Its size hints aren't read with the request, so it's framed as one that resizes.
+        let functions = self.functions_before_managed(FunctionFacts {
+            window_type,
+            hints: SizeHints::default(),
+            has_parent,
+            ssd: facts.wants_frame,
+            fullscreen: false,
+        });
+        let state = states.frame_state(true, functions);
         let extents = self
             .applied_x11_scale()
             .extents_to_x(self.frame_context.extents(&facts, state));

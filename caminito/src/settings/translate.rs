@@ -531,8 +531,6 @@ pub struct Frames {
     pub double_click: TitlebarAction,
     pub middle_click: TitlebarAction,
     pub right_click: TitlebarAction,
-    /// Marco reads no key for this, so it's off unless a schema has one.
-    pub attach_modal_dialogs: bool,
     /// Whether frames have shadows: `compositing-manager`, which is all that turns Marco's
     /// off (171).
     pub shadows: bool,
@@ -1086,6 +1084,9 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             "alt-tab-minimized-placement",
             MinimizedPlacement::End,
         ),
+        // Marco reads no key for this, so it's off unless a schema has one. A window's
+        // functions depend on it, so it's Policy's (177).
+        attach_modal_dialogs: r.bool(MARCO_GENERAL, "attach-modal-dialogs", false),
         focus_mode: r.nick(MARCO_GENERAL, "focus-mode", FocusMode::Click),
         raise_on_click: r.bool(MARCO_GENERAL, "raise-on-click", true),
         auto_raise: r.bool(MARCO_GENERAL, "auto-raise", false),
@@ -1157,7 +1158,6 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             "action-right-click-titlebar",
             TitlebarAction::Menu,
         ),
-        attach_modal_dialogs: r.bool(MARCO_GENERAL, "attach-modal-dialogs", false),
         shadows: r.bool(MARCO_GENERAL, "compositing-manager", true),
     };
 

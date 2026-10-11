@@ -594,7 +594,6 @@ fn the_defaults_give_marcos_frames() {
             double_click: TitlebarAction::ToggleMaximize,
             middle_click: TitlebarAction::Lower,
             right_click: TitlebarAction::Menu,
-            attach_modal_dialogs: false,
             shadows: true,
         }
     );
@@ -807,7 +806,7 @@ fn an_unknown_titlebar_action_falls_back_to_the_default() {
 #[test]
 fn attach_modal_dialogs_is_read_when_a_schema_has_it() {
     let reading = with(MARCO_GENERAL, "attach-modal-dialogs", Value::Bool(true));
-    assert!(settings(&reading).frames.attach_modal_dialogs);
+    assert!(settings(&reading).policy.attach_modal_dialogs);
 }
 
 #[test]

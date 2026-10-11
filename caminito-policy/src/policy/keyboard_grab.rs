@@ -68,7 +68,7 @@ impl<W: PolicyWindow> Policy<W> {
                 && !self
                     .windows
                     .get(&id)
-                    .is_some_and(|_| self.functions(id).resize))
+                    .is_some_and(|managed| managed.functions().resize()))
         {
             return false;
         }

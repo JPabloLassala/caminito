@@ -1,13 +1,25 @@
-use caminito_policy::{SizeHints, WindowType};
+use caminito_policy::{Functions, WindowType};
 use caminito_theme::{FrameFlags, FrameType};
 
 use super::{FrameFacts, frame_style};
 
+/// Every function but a border only: what Policy gives a normal SSD window that resizes.
+fn all_functions() -> Functions {
+    Functions {
+        minimize: true,
+        maximize: true,
+        resize_horizontally: true,
+        resize_vertically: true,
+        fullscreen: true,
+        shade: true,
+        border_only: false,
+    }
+}
+
 fn normal() -> FrameFacts {
     FrameFacts {
         window_type: WindowType::Normal,
-        has_parent: false,
-        hints: SizeHints::default(),
+        functions: all_functions(),
         activated: false,
         maximized: false,
         fullscreen: false,
@@ -17,7 +29,7 @@ fn normal() -> FrameFacts {
     }
 }
 
-/// What Marco allows a normal, resizable window.
+/// The flags of a frame whose window has every function.
 fn allows_all() -> FrameFlags {
     FrameFlags {
         allows_delete: true,
@@ -33,161 +45,142 @@ fn allows_all() -> FrameFlags {
 }
 
 #[test]
-fn a_normal_window_gets_the_normal_style_with_everything_allowed() {
+fn a_window_with_every_function_has_everything_allowed() {
     assert_eq!(
-        frame_style(&normal(), false),
+        frame_style(&normal()),
         Some((FrameType::Normal, allows_all()))
     );
 }
 
 #[test]
-fn a_window_with_a_parent_is_a_dialog_which_may_still_minimise() {
-    let facts = FrameFacts {
-        window_type: WindowType::Dialog,
-        has_parent: true,
-        ..normal()
+fn each_function_the_window_lacks_is_a_flag_its_frame_lacks() {
+    let flags = |functions| {
+        let facts = FrameFacts {
+            functions,
+            ..normal()
+        };
+        frame_style(&facts).unwrap().1
     };
-    assert_eq!(
-        frame_style(&facts, false),
-        Some((FrameType::Dialog, allows_all()))
-    );
-}
+    let all = all_functions();
 
-#[test]
-fn a_modal_dialog_is_attached_only_with_a_parent_and_the_key_on() {
-    let modal = FrameFacts {
-        window_type: WindowType::ModalDialog,
-        ..normal()
-    };
-    let (frame_type, flags) = frame_style(&modal, false).unwrap();
-    assert_eq!(frame_type, FrameType::ModalDialog);
-    // Marco lets only normal windows and dialogs minimise and maximise.
-    assert!(!flags.allows_minimize && !flags.allows_maximize);
-
-    assert_eq!(frame_style(&modal, true).unwrap().0, FrameType::ModalDialog);
-    let with_parent = FrameFacts {
-        has_parent: true,
-        ..modal
-    };
     assert_eq!(
-        frame_style(&with_parent, false).unwrap().0,
-        FrameType::ModalDialog
+        flags(Functions {
+            minimize: false,
+            ..all
+        }),
+        FrameFlags {
+            allows_minimize: false,
+            ..allows_all()
+        }
     );
     assert_eq!(
-        frame_style(&with_parent, true),
-        Some((
-            FrameType::Attached,
-            // Border only, and not resizable.
-            FrameFlags {
-                allows_move: true,
-                ..FrameFlags::default()
-            }
-        ))
-    );
-}
-
-#[test]
-fn a_window_that_cant_resize_cant_maximise() {
-    let facts = FrameFacts {
-        hints: SizeHints {
-            min: (300, 200).into(),
-            max: (300, 200).into(),
-        },
-        ..normal()
-    };
-    let (_, flags) = frame_style(&facts, false).unwrap();
-    assert_eq!(
-        flags,
+        flags(Functions {
+            maximize: false,
+            ..all
+        }),
         FrameFlags {
             allows_maximize: false,
-            allows_vertical_resize: false,
+            ..allows_all()
+        }
+    );
+    assert_eq!(
+        flags(Functions {
+            resize_horizontally: false,
+            ..all
+        }),
+        FrameFlags {
             allows_horizontal_resize: false,
             ..allows_all()
         }
     );
+    assert_eq!(
+        flags(Functions {
+            resize_vertically: false,
+            ..all
+        }),
+        FrameFlags {
+            allows_vertical_resize: false,
+            ..allows_all()
+        }
+    );
+    assert_eq!(
+        flags(Functions {
+            shade: false,
+            ..all
+        }),
+        FrameFlags {
+            allows_shade: false,
+            ..allows_all()
+        }
+    );
+    // The fullscreen function has no flag.
+    assert_eq!(
+        flags(Functions {
+            fullscreen: false,
+            ..all
+        }),
+        allows_all()
+    );
 }
 
 #[test]
-fn a_window_resizable_one_way_allows_only_that_way() {
+fn a_frame_thats_a_border_only_allows_only_the_move_and_the_resizes() {
     let facts = FrameFacts {
-        hints: SizeHints {
-            min: (300, 200).into(),
-            max: (300, 0).into(),
+        functions: Functions {
+            border_only: true,
+            ..all_functions()
         },
         ..normal()
     };
-    let (_, flags) = frame_style(&facts, false).unwrap();
-    assert!(flags.allows_maximize);
-    assert!(flags.allows_vertical_resize);
-    assert!(!flags.allows_horizontal_resize);
-}
-
-#[test]
-fn focus_and_maximising_show_in_the_flags_and_a_maximised_frame_doesnt_resize() {
-    let facts = FrameFacts {
-        activated: true,
-        maximized: true,
-        ..normal()
-    };
-    let (_, flags) = frame_style(&facts, false).unwrap();
+    // `meta_frame_get_flags` leaves out the titlebar's flags alone (frame.c:260-281).
     assert_eq!(
-        flags,
+        frame_style(&facts).unwrap().1,
         FrameFlags {
-            has_focus: true,
-            maximized: true,
-            allows_vertical_resize: false,
-            allows_horizontal_resize: false,
-            ..allows_all()
-        }
-    );
-}
-
-#[test]
-fn a_fullscreen_frame_neither_moves_resizes_shades_nor_maximises() {
-    let facts = FrameFacts {
-        fullscreen: true,
-        ..normal()
-    };
-    let (_, flags) = frame_style(&facts, false).unwrap();
-    assert_eq!(
-        flags,
-        FrameFlags {
-            allows_delete: true,
-            allows_menu: true,
-            allows_minimize: true,
-            fullscreen: true,
+            allows_move: true,
+            allows_vertical_resize: true,
+            allows_horizontal_resize: true,
             ..FrameFlags::default()
         }
     );
 }
 
 #[test]
-fn a_shaded_frame_is_drawn_shaded_and_cant_be_resized() {
-    let facts = FrameFacts {
-        shaded: true,
-        ..normal()
-    };
-    let (_, flags) = frame_style(&facts, false).unwrap();
-    assert_eq!(
-        flags,
-        FrameFlags {
-            allows_vertical_resize: false,
-            allows_horizontal_resize: false,
-            shaded: true,
-            ..allows_all()
-        }
-    );
+fn each_framed_type_has_its_frame_type() {
+    for (window_type, frame_type) in [
+        (WindowType::Normal, FrameType::Normal),
+        (WindowType::Dialog, FrameType::Dialog),
+        (WindowType::ModalDialog, FrameType::ModalDialog),
+        (WindowType::Menu, FrameType::Menu),
+        (WindowType::Utility, FrameType::Utility),
+    ] {
+        let facts = FrameFacts {
+            window_type,
+            ..normal()
+        };
+        assert_eq!(frame_style(&facts).unwrap().0, frame_type);
+    }
 }
 
 #[test]
-fn a_utility_window_gets_its_own_style_without_minimise_or_maximise() {
+fn a_modal_dialog_with_a_border_only_is_attached() {
     let facts = FrameFacts {
-        window_type: WindowType::Utility,
+        window_type: WindowType::ModalDialog,
+        functions: Functions {
+            border_only: true,
+            ..Functions::default()
+        },
         ..normal()
     };
-    let (frame_type, flags) = frame_style(&facts, false).unwrap();
-    assert_eq!(frame_type, FrameType::Utility);
-    assert!(!flags.allows_minimize && !flags.allows_maximize);
+    assert_eq!(
+        frame_style(&facts),
+        Some((
+            FrameType::Attached,
+            FrameFlags {
+                allows_move: true,
+                ..FrameFlags::default()
+            }
+        ))
+    );
 }
 
 #[test]
@@ -202,8 +195,65 @@ fn marco_frames_no_desktop_dock_toolbar_or_splash_screen() {
             window_type,
             ..normal()
         };
-        assert_eq!(frame_style(&facts, false), None, "{window_type:?}");
+        assert_eq!(frame_style(&facts), None, "{window_type:?}");
     }
+}
+
+#[test]
+fn focus_and_maximising_show_in_the_flags_and_a_maximised_frame_doesnt_resize() {
+    let facts = FrameFacts {
+        activated: true,
+        maximized: true,
+        ..normal()
+    };
+    let (_, flags) = frame_style(&facts).unwrap();
+    assert_eq!(
+        flags,
+        FrameFlags {
+            has_focus: true,
+            maximized: true,
+            allows_vertical_resize: false,
+            allows_horizontal_resize: false,
+            ..allows_all()
+        }
+    );
+}
+
+#[test]
+fn a_fullscreen_frame_neither_moves_nor_resizes() {
+    let facts = FrameFacts {
+        fullscreen: true,
+        ..normal()
+    };
+    let (_, flags) = frame_style(&facts).unwrap();
+    assert_eq!(
+        flags,
+        FrameFlags {
+            allows_move: false,
+            allows_vertical_resize: false,
+            allows_horizontal_resize: false,
+            fullscreen: true,
+            ..allows_all()
+        }
+    );
+}
+
+#[test]
+fn a_shaded_frame_is_drawn_shaded_and_cant_be_resized() {
+    let facts = FrameFacts {
+        shaded: true,
+        ..normal()
+    };
+    let (_, flags) = frame_style(&facts).unwrap();
+    assert_eq!(
+        flags,
+        FrameFlags {
+            allows_vertical_resize: false,
+            allows_horizontal_resize: false,
+            shaded: true,
+            ..allows_all()
+        }
+    );
 }
 
 #[test]
@@ -212,7 +262,7 @@ fn a_side_tiled_frame_is_flagged_tiled_and_resizes_only_across() {
         tiled_right: true,
         ..normal()
     };
-    let (_, flags) = frame_style(&facts, false).unwrap();
+    let (_, flags) = frame_style(&facts).unwrap();
     assert_eq!(
         flags,
         FrameFlags {

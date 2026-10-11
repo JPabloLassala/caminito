@@ -14,6 +14,7 @@ Up to ticket 35, `Mapped` worked the extents out in `update_frame_facts` from th
 - **`PolicyWindow::frame_extents` takes a `FrameState { maximized, focused, shaded }`**, which policy builds from its own state. The window answers from its facts and the theme alone. Fullscreen isn't in the key, because policy never uses extents for a fullscreen window.
 - **Policy owns the extents in use.** `Policy::frame_extents(id)` is what the debug dump, X11 configure requests and `_NET_FRAME_EXTENTS` read. `PolicyWindow::requested_position` takes the extents from policy instead of working them out.
 - **Policy lays out again the windows whose focus changed**, because their extents may have changed with it.
+- **The flags' `allows_*` inputs and "border only" come from Policy, with the state** (ticket 177). Policy works out a window's functions and sends them to the window, and "border only" and the two ways it resizes, which a theme's extents can depend on, are in the `FrameState` too.
 - **`caminito`'s `WindowFrame` owns the one derivation** from facts and a `FrameState` to a frame type, flags and extents. It draws with the state policy last sent, so what's drawn and what policy left room for agree by construction.
 
 ## Consequences

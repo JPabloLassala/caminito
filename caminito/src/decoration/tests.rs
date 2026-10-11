@@ -1,4 +1,4 @@
-use caminito_policy::{FrameState, SizeHints, WindowType};
+use caminito_policy::{FrameState, Functions, WindowType};
 use caminito_theme::{Palette, ThemeDirs, Variant};
 use smithay::utils::{FrameExtents, Logical, Rectangle};
 
@@ -18,9 +18,27 @@ fn context(theme: &str) -> FrameContext {
 fn facts(window_type: WindowType) -> WindowFacts {
     WindowFacts {
         window_type,
-        has_parent: false,
-        hints: SizeHints::default(),
         wants_frame: true,
+    }
+}
+
+/// A window that resizes both ways, not focused: the state policy asks for the extents of
+/// a normal window in.
+const UNFOCUSED: FrameState = FrameState {
+    focused: false,
+    ..FOCUSED
+};
+
+/// The functions policy sends with `state`, for a window that has the others.
+fn functions(state: FrameState) -> Functions {
+    Functions {
+        minimize: true,
+        maximize: true,
+        resize_horizontally: state.resizes_horizontally,
+        resize_vertically: state.resizes_vertically,
+        fullscreen: true,
+        shade: !state.border_only,
+        border_only: state.border_only,
     }
 }
 
@@ -38,7 +56,7 @@ fn an_eos_maximised_utility_frame_has_side_borders_only_while_unfocused() {
         frame.extents(FrameState {
             maximized: true,
             focused,
-            ..FrameState::default()
+            ..UNFOCUSED
         })
     };
 
@@ -63,7 +81,7 @@ fn a_pending_window_is_framed_as_it_will_be_once_mapped() {
             maximized,
             focused,
             shaded,
-            ..FrameState::default()
+            ..UNFOCUSED
         };
         assert_eq!(context.extents(&facts, state), frame.extents(state));
     }
@@ -84,13 +102,56 @@ fn a_csd_window_and_a_dock_have_no_frame() {
 
     for frame in [&csd, &dock] {
         assert!(!frame.is_ssd());
-        assert_eq!(
-            frame.extents(FrameState::default()),
-            FrameExtents::default()
-        );
+        assert_eq!(frame.extents(UNFOCUSED), FrameExtents::default());
     }
     assert!(normal.is_ssd());
-    assert!(normal.extents(FrameState::default()).top > 0);
+    assert!(normal.extents(UNFOCUSED).top > 0);
+}
+
+#[test]
+fn a_frame_thats_a_border_only_is_measured_and_drawn_attached() {
+    let mut context = context("Menta");
+    let mut frame = frame(&context, facts(WindowType::ModalDialog));
+    let attached = FrameState {
+        border_only: true,
+        resizes_horizontally: false,
+        resizes_vertically: false,
+        ..FOCUSED
+    };
+
+    assert!(frame.extents(attached).top < frame.extents(FOCUSED).top);
+
+    draw(&mut frame, &mut context, attached, 1);
+    assert_eq!(
+        frame.frame_type(),
+        Some(caminito_theme::FrameType::Attached)
+    );
+    draw(&mut frame, &mut context, FOCUSED, 1);
+    assert_eq!(
+        frame.frame_type(),
+        Some(caminito_theme::FrameType::ModalDialog)
+    );
+}
+
+#[test]
+fn every_state_policy_can_ask_for_has_the_extents_its_style_gives() {
+    let context = context("eOS");
+    let facts = facts(WindowType::Utility);
+    let frame = frame(&context, facts);
+    for index in 0..1 << 8 {
+        let bit = |n: usize| index & (1 << n) != 0;
+        let state = FrameState {
+            maximized: bit(0),
+            focused: bit(1),
+            shaded: bit(2),
+            tiled_left: bit(3),
+            tiled_right: bit(4) && !bit(3),
+            border_only: bit(5),
+            resizes_horizontally: bit(6),
+            resizes_vertically: bit(7),
+        };
+        assert_eq!(context.extents(&facts, state), frame.extents(state));
+    }
 }
 
 /// The ARGB32 word at the middle of `surface`.
@@ -147,7 +208,7 @@ fn a_side_tiled_frame_is_measured_in_the_themes_tiled_styles() {
     };
     let focused = FrameState {
         focused: true,
-        ..FrameState::default()
+        ..UNFOCUSED
     };
 
     let left = sides(FrameState {
@@ -190,7 +251,8 @@ fn draw_sized(
         above: false,
         stuck: false,
     };
-    frame.refresh(context, palette.variant(Variant::Default), state, content);
+    let colors = palette.variant(Variant::Default);
+    frame.refresh(context, colors, state, functions(state), content);
 }
 
 /// `visible` grown by this much on each side.
@@ -210,6 +272,9 @@ const FOCUSED: FrameState = FrameState {
     shaded: false,
     tiled_left: false,
     tiled_right: false,
+    border_only: false,
+    resizes_horizontally: true,
+    resizes_vertically: true,
 };
 
 #[test]

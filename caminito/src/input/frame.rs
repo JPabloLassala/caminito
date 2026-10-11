@@ -3,7 +3,7 @@
 //! clicks, and resizing from the borders.
 
 use caminito_policy::{PolicyWindow, WindowId};
-use caminito_theme::{ButtonFunction, ButtonState, ButtonStates, FrameFlags};
+use caminito_theme::{ButtonFunction, ButtonState, ButtonStates};
 use smithay::backend::input::InputTime;
 use smithay::utils::{Logical, Point, Serial};
 
@@ -36,20 +36,11 @@ struct Press {
 }
 
 impl Caminito {
-    /// The flags a window's frame is showing with, if it's showing one.
-    fn frame_flags(&self, window: WindowId) -> Option<FrameFlags> {
-        self.policy.window(window)?.frame().flags()
-    }
-
-    /// Whether `toggle-shaded` acts on the focused window: Marco gives a shade function
-    /// only to a window with a titlebar, so not to a CSD window or one with a border alone
-    /// (`recalc_window_features`, window.c:6814-6816), as its frame's flags say for the
-    /// titlebar's actions (149).
-    pub(super) fn focused_window_shades(&self) -> bool {
+    /// Whether a window is showing a frame, for the pointer to use.
+    fn is_framed(&self, window: WindowId) -> bool {
         self.policy
-            .focus(SEAT)
-            .and_then(|window| self.frame_flags(window))
-            .is_some_and(|flags| flags.allows_shade)
+            .window(window)
+            .is_some_and(|mapped| mapped.shows_frame())
     }
 
     /// Whether a left press on `window`'s frame is the second of a double-click, as GDK's
@@ -122,9 +113,9 @@ impl State {
         time: InputTime,
     ) {
         let caminito = &mut self.caminito;
-        let Some(flags) = caminito.frame_flags(window) else {
+        if !caminito.is_framed(window) {
             return;
-        };
+        }
         let double = button == BTN_LEFT && caminito.double_click(window, location, time);
 
         // A left press focuses, except on the buttons that act on the window.
@@ -169,7 +160,8 @@ impl State {
             }
             (FrameControl::Title, BTN_LEFT) => FrameHold::Title {
                 window,
-                can_move: flags.allows_move,
+                // Marco's `META_WINDOW_ALLOWS_MOVE` (window-private.h:440).
+                can_move: !self.caminito.policy.is_fullscreen(window),
             },
             (_, BTN_MIDDLE) => {
                 self.titlebar_action(window, frames.middle_click);
@@ -240,38 +232,40 @@ impl State {
         self.caminito.queue_redraw_all();
     }
 
-    /// Runs one of the `action-*-titlebar` actions on a window, if its frame allows it
-    /// (`meta_frame_titlebar_event`).
+    /// Runs one of the `action-*-titlebar` actions on a window (`meta_frame_titlebar_event`,
+    /// frames.c:1480-1650). Policy's setters refuse a state the window has no function for
+    /// (177).
     fn titlebar_action(&mut self, window: WindowId, action: TitlebarAction) {
         let caminito = &mut self.caminito;
-        let Some(flags) = caminito.frame_flags(window) else {
+        if !caminito.is_framed(window) {
             return;
-        };
+        }
         let now = caminito.now();
         let policy = &mut caminito.policy;
+        let functions = policy.functions(window);
         match action {
-            TitlebarAction::ToggleShade if flags.allows_shade => {
-                policy.set_shaded(window, !flags.shaded);
-            }
-            TitlebarAction::Shade if flags.allows_shade => policy.set_shaded(window, true),
-            TitlebarAction::Unshade if flags.allows_shade => policy.set_shaded(window, false),
-            TitlebarAction::ToggleMaximize if flags.allows_maximize => {
-                self.toggle_maximized(window);
-            }
-            TitlebarAction::ToggleMaximizeHorizontally if flags.allows_maximize => {
+            TitlebarAction::ToggleShade => policy.set_shaded(window, !policy.is_shaded(window)),
+            TitlebarAction::Shade => policy.set_shaded(window, true),
+            TitlebarAction::Unshade => policy.set_shaded(window, false),
+            TitlebarAction::ToggleMaximize => self.toggle_maximized(window),
+            // Marco's frame asks the maximise function for one way too (frames.c:1527-1549),
+            // where its keybindings, and so Policy's setters, ask only the resize function.
+            TitlebarAction::ToggleMaximizeHorizontally if functions.maximize => {
                 self.toggle_maximized_horizontally(window);
             }
-            TitlebarAction::ToggleMaximizeVertically if flags.allows_maximize => {
+            TitlebarAction::ToggleMaximizeVertically if functions.maximize => {
                 self.toggle_maximized_vertically(window);
             }
-            TitlebarAction::Minimize if flags.allows_minimize => policy.minimize(window),
-            TitlebarAction::Close if flags.allows_delete => policy.close(window),
+            TitlebarAction::Minimize => policy.minimize(window),
+            // A frame that's a border only has no `META_FRAME_ALLOWS_DELETE`
+            // (`meta_frame_get_flags`, frame.c:260-281).
+            TitlebarAction::Close if !functions.border_only => policy.close(window),
             TitlebarAction::Lower => policy.lower(SEAT, window, now),
             TitlebarAction::Raise => policy.raise(window),
-            // By the frame's flags, as Marco's `meta_frame_titlebar_event` toggles them
-            // (frames.c:1614-1642) (155).
-            TitlebarAction::ToggleAbove => policy.set_above(window, !flags.above),
-            TitlebarAction::ToggleStick => policy.set_sticky(window, !flags.stuck),
+            // As Marco's `meta_frame_titlebar_event` toggles them (frames.c:1614-1642)
+            // (155).
+            TitlebarAction::ToggleAbove => policy.set_above(window, !policy.is_above(window)),
+            TitlebarAction::ToggleStick => policy.set_sticky(window, !policy.is_sticky(window)),
             // At the pointer, as Marco's `meta_frame_titlebar_event` opens it
             // (frames.c:1570-1577) (161).
             TitlebarAction::Menu => {

@@ -69,8 +69,7 @@ fn override_redirect_types_on_a_managed_window_count_as_no_type() {
 fn frame(window_type: WindowType) -> Option<FrameType> {
     let facts = FrameFacts {
         window_type,
-        has_parent: false,
-        hints: Default::default(),
+        functions: Default::default(),
         activated: true,
         maximized: false,
         fullscreen: false,
@@ -78,7 +77,7 @@ fn frame(window_type: WindowType) -> Option<FrameType> {
         tiled_left: false,
         tiled_right: false,
     };
-    frame_style(&facts, false).map(|(frame_type, _)| frame_type)
+    frame_style(&facts).map(|(frame_type, _)| frame_type)
 }
 
 #[test]

@@ -19,7 +19,7 @@ pub(crate) use xdg::owe_configure;
 use std::sync::Mutex;
 
 use caminito_policy::{
-    FrameState, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
+    FrameState, Functions, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
 };
 use caminito_theme::PaletteColors;
 use smithay::backend::renderer::element::{
@@ -181,6 +181,8 @@ pub struct Mapped {
     activated: bool,
     /// The states policy last asked for.
     states: WindowStates,
+    /// The functions policy last sent, which the frame shows (177).
+    functions: Functions,
     /// The largest rounded-up scale of the outputs the window is on, which its strips are
     /// drawn at (13).
     frame_scale: i32,
@@ -220,6 +222,7 @@ impl Mapped {
             main_output: None,
             activated: false,
             states: WindowStates::default(),
+            functions: Functions::default(),
             frame_scale: 1,
             frame: WindowFrame::default(),
             minimize_rectangle: None,
@@ -240,13 +243,11 @@ impl Mapped {
     }
 
     /// Reads the window's facts again: the managed window it's transient for, and what its
-    /// frame is derived from. Policy reads them next.
+    /// frame is derived from besides what policy sends. Policy reads them next.
     pub fn read_facts(&mut self, parent: Option<WindowId>, frame_context: &FrameContext) {
         self.parent = parent;
         let facts = WindowFacts {
             window_type: self.window_type(),
-            has_parent: parent.is_some(),
-            hints: self.size_hints(),
             wants_frame: self.adapter().wants_frame(),
         };
         self.frame.set_facts(facts, frame_context);
@@ -406,7 +407,8 @@ impl Mapped {
 
     /// Draws the frame's strips again if anything they're drawn from changed, or drops them
     /// if the window shows no frame. They're drawn in the state policy last sent, the one
-    /// it laid the window out in (ADR 0012), in the other focus state while the visual bell
+    /// it laid the window out in (ADR 0012), with the functions it last sent (177), in the
+    /// other focus state while the visual bell
     /// flashes it (169), with the buttons of a window kept `above` and `sticky` or not
     /// (155). Returns whether the strips changed.
     pub fn refresh_frame(
@@ -420,7 +422,7 @@ impl Mapped {
         if self.states.fullscreen {
             return self.frame.clear();
         }
-        let state = self.states.frame_state(self.activated);
+        let state = self.states.frame_state(self.activated, self.functions);
         let content = FrameContent {
             size: self.size(),
             title: self.title(),
@@ -430,7 +432,8 @@ impl Mapped {
             above,
             stuck: sticky,
         };
-        self.frame.refresh(frame_context, colors, state, content)
+        self.frame
+            .refresh(frame_context, colors, state, self.functions, content)
     }
 
     pub fn title(&self) -> String {
@@ -537,6 +540,10 @@ impl PolicyWindow for Mapped {
 
     fn frame_extents(&self, state: FrameState) -> FrameExtents<i32, Logical> {
         self.frame.extents(state)
+    }
+
+    fn set_functions(&mut self, functions: Functions) {
+        self.functions = functions;
     }
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {

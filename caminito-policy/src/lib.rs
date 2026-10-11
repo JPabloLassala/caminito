@@ -6,6 +6,7 @@
 
 mod action;
 mod edges;
+mod functions;
 mod grid;
 mod output;
 mod placement;
@@ -20,6 +21,7 @@ mod test_window;
 mod tests;
 
 pub use action::{Action, Anchor};
+pub use functions::{FunctionFacts, Functions, functions};
 pub use grid::{Direction, Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;

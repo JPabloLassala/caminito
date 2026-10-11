@@ -25,6 +25,9 @@ use x11rb::wrapper::ConnectionExt as _;
 const INPUT_HINT: u32 = 1;
 /// `WM_NORMAL_HINTS`'s `USPosition` flag (ICCCM 4.1.2.3).
 const US_POSITION: u32 = 1;
+/// Its `PMinSize` and `PMaxSize` flags.
+const P_MIN_SIZE: u32 = 1 << 4;
+const P_MAX_SIZE: u32 = 1 << 5;
 /// `_MOTIF_WM_HINTS`'s decorations flag.
 const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
 
@@ -39,6 +42,9 @@ pub struct XWindowSpec {
     /// Where it's created, and whether `WM_NORMAL_HINTS` says the user asked for it
     /// (`USPosition`).
     pub position: Option<(i16, i16)>,
+    /// Whether `WM_NORMAL_HINTS` fixes its size, with its least and greatest sizes both
+    /// `size`.
+    pub fixed_size: bool,
     /// `_NET_WM_WINDOW_TYPE`'s atoms, such as `_NET_WM_WINDOW_TYPE_DIALOG`, most preferred
     /// first. Empty leaves the property unset.
     pub types: Vec<&'static str>,
@@ -188,11 +194,20 @@ impl X11Client {
                 &[parent],
             )?;
         }
-        if let Some((x, y)) = spec.position {
-            // flags, then the obsolete position and size, which ICCCM says to leave be.
+        if spec.position.is_some() || spec.fixed_size {
+            // flags, then the obsolete position and size, which ICCCM says to leave be, then
+            // the least and greatest sizes.
             let mut hints = [0u32; 18];
-            hints[0] = US_POSITION;
-            (hints[1], hints[2]) = (x as u32, y as u32);
+            if let Some((x, y)) = spec.position {
+                hints[0] |= US_POSITION;
+                (hints[1], hints[2]) = (x as u32, y as u32);
+            }
+            if spec.fixed_size {
+                let (width, height) = (u32::from(spec.size.0), u32::from(spec.size.1));
+                hints[0] |= P_MIN_SIZE | P_MAX_SIZE;
+                (hints[5], hints[6]) = (width, height);
+                (hints[7], hints[8]) = (width, height);
+            }
             self.conn.change_property32(
                 PropMode::REPLACE,
                 window,
