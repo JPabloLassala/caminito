@@ -523,7 +523,7 @@ impl State {
 
     /// New settings from the settings thread. The keymap is set here, as the keyboard
     /// needs all of `State` to send it.
-    fn settings_changed(&mut self, settings: Settings) {
+    pub(crate) fn settings_changed(&mut self, settings: Settings) {
         if settings.keymap != self.caminito.settings.keymap {
             self.keymap_changed(&settings.keymap);
         }

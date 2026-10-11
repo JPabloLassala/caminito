@@ -270,8 +270,6 @@ impl State {
             },
         );
         match intercepted {
-            Some(Some(Bound::Action(Action::ToggleShaded)))
-                if !self.caminito.focused_window_shades() => {}
             Some(Some(Bound::Action(action))) => {
                 // A client's open menu gives way to the window menu (161).
                 if action == Action::ActivateWindowMenu {

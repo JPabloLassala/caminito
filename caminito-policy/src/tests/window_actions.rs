@@ -164,7 +164,7 @@ fn the_desktop_and_docks_dont_move_to_another_workspace() {
 }
 
 #[test]
-fn a_fixed_size_window_isnt_maximised_or_made_fullscreen() {
+fn a_fixed_size_window_isnt_maximised_but_is_made_fullscreen() {
     let mut policy = policy();
     policy.map_window(
         TestWindow::new(1, 400, 300).with_hints((400, 300), (400, 300)),
@@ -176,13 +176,16 @@ fn a_fixed_size_window_isnt_maximised_or_made_fullscreen() {
         Action::ToggleMaximized,
         Action::ToggleMaximizedHorizontally,
         Action::ToggleMaximizedVertically,
-        Action::ToggleFullscreen,
     ] {
         policy.action(SEAT, action, ms(2));
     }
 
     assert!(!policy.is_maximized_horizontally(id(1)));
     assert!(!policy.is_maximized_vertically(id(1)));
+    // Not as in Marco (177).
+    policy.action(SEAT, Action::ToggleFullscreen, ms(2));
+    assert!(policy.is_fullscreen(id(1)));
+    policy.action(SEAT, Action::ToggleFullscreen, ms(2));
     assert!(!policy.is_fullscreen(id(1)));
     // It can still be minimised.
     policy.action(SEAT, Action::Minimize, ms(3));

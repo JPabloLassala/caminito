@@ -368,6 +368,12 @@ pub struct WindowSpec {
     pub fractional_scale: bool,
     /// X11 only: whether it takes `_NET_WM_SYNC_REQUEST`, as toolkits do.
     pub sync_request: bool,
+    /// Whether its size hints fix it at `size`: xdg's least and greatest sizes, or
+    /// `WM_NORMAL_HINTS`'.
+    pub fixed_size: bool,
+    /// Whether it asks to be maximised before it maps: xdg's `set_maximized`, or
+    /// `_NET_WM_STATE`'s two atoms.
+    pub maximized: bool,
 }
 
 impl Default for WindowSpec {
@@ -387,6 +393,8 @@ impl Default for WindowSpec {
             delete_window: true,
             fractional_scale: false,
             sync_request: false,
+            fixed_size: false,
+            maximized: false,
         }
     }
 }
@@ -756,6 +764,12 @@ impl Fixture {
             assert_eq!(parent.client(), id, "a parent of the same client");
             client.set_parent(window, Some(parent.xdg()));
         }
+        if spec.fixed_size {
+            client.set_fixed_size(window, spec.size);
+        }
+        if spec.maximized {
+            client.set_maximized(window);
+        }
         match spec.decoration {
             Decoration::Server => {
                 client.request_decoration(window, Some(DecorationMode::ServerSide));
@@ -788,14 +802,22 @@ impl Fixture {
             Decoration::Client => Some(false),
             Decoration::NoPreference => panic!("only xdg-decoration has no preference"),
         };
+        let mut states = spec.states;
+        if spec.maximized {
+            states.extend([
+                "_NET_WM_STATE_MAXIMIZED_VERT",
+                "_NET_WM_STATE_MAXIMIZED_HORZ",
+            ]);
+        }
         let x_spec = XWindowSpec {
             size: (
                 u16::try_from(spec.size.0).unwrap(),
                 u16::try_from(spec.size.1).unwrap(),
             ),
             position: spec.position,
+            fixed_size: spec.fixed_size,
             types: spec.types,
-            states: spec.states,
+            states,
             input: spec.input,
             transient_for: spec.parent.map(|parent| {
                 assert_eq!(parent.client(), id, "a parent of the same client");
@@ -1231,6 +1253,16 @@ impl Fixture {
     /// reports it; see `dispatch_until`.
     pub fn set_setting(&mut self, schema: &'static str, key: &str, value: Value) {
         self.state.caminito.settings_thread.set(schema, key, value);
+    }
+
+    /// Turns `attach-modal-dialogs` on or off, as a change of the key would. No schema has
+    /// the key (Marco reads none for it), so `set_setting` can't, and the test hands
+    /// Caminito the settings itself (177).
+    pub fn set_attach_modal_dialogs(&mut self, on: bool) {
+        let mut settings = self.state.caminito.settings.clone();
+        settings.policy.attach_modal_dialogs = on;
+        self.state.settings_changed(settings);
+        self.dispatch();
     }
 
     /// Dispatches until `done` holds, waiting for other threads such as the settings

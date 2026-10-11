@@ -2,7 +2,7 @@
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
-use crate::OutputId;
+use crate::{Functions, OutputId};
 
 /// A window's stable id, chosen by the compositor and unique among managed windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,11 +59,14 @@ pub struct WindowStates {
 }
 
 impl WindowStates {
-    /// The state its frame is drawn and measured in, focused or not. Only a side tile has
-    /// a theme style of its own, as in Marco's `META_WINDOW_TILED_LEFT` and `_RIGHT`
-    /// (window-private.h:427-433) (158).
-    pub fn frame_state(&self, focused: bool) -> FrameState {
+    /// The state its frame is drawn and measured in, focused or not, with `functions`.
+    /// Only a side tile has a theme style of its own, as in Marco's
+    /// `META_WINDOW_TILED_LEFT` and `_RIGHT` (window-private.h:427-433) (158).
+    pub fn frame_state(&self, focused: bool, functions: Functions) -> FrameState {
         FrameState {
+            border_only: functions.border_only,
+            resizes_horizontally: functions.resize_horizontally,
+            resizes_vertically: functions.resize_vertically,
             maximized: self.maximized,
             focused,
             shaded: self.shaded,
@@ -117,7 +120,7 @@ pub struct TiledEdges {
 }
 
 /// The state of a window that its frame extents can depend on (ADR 0012), which policy lays
-/// the window out in.
+/// the window out in, and those of its functions that they can depend on (177).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameState {
     /// Maximised both ways.
@@ -129,6 +132,12 @@ pub struct FrameState {
     /// `tiled_left` and `tiled_right` styles. A quarter has no style of its own (158).
     pub tiled_left: bool,
     pub tiled_right: bool,
+    /// The frame has no titlebar ([`Functions::border_only`]).
+    pub border_only: bool,
+    /// The ways the window has the resize function, which a Marco theme picks a frame's
+    /// style by (`resize="both"`, `"horizontal"`, `"vertical"` or `"none"`).
+    pub resizes_horizontally: bool,
+    pub resizes_vertically: bool,
 }
 
 /// A window as policy sees it: facts to read, and requests to apply decisions.
@@ -176,6 +185,9 @@ pub trait PolicyWindow {
 
     // Requests.
 
+    /// What the window can do, which its frame shows (177). Policy says before the first
+    /// geometry, and before a geometry laid out with new ones.
+    fn set_functions(&mut self, functions: Functions);
     /// Places the window geometry at `geometry.loc` now, and asks the client for
     /// `geometry.size` with `states`.
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates);

@@ -5,7 +5,7 @@
 
 use super::*;
 
-use crate::{FrameState, ResizeEdges, Tile, TiledEdges};
+use crate::{FrameState, Functions, ResizeEdges, Tile, TiledEdges};
 
 fn at(x: f64, y: f64) -> Point<f64, Logical> {
     Point::new(x, y)
@@ -284,7 +284,7 @@ fn a_side_tile_has_its_frame_drawn_tiled_and_a_corner_doesnt() {
         ..WindowStates::default()
     };
     assert_eq!(
-        states(Some(Tile::Right)).frame_state(true),
+        states(Some(Tile::Right)).frame_state(true, Functions::default()),
         FrameState {
             focused: true,
             tiled_right: true,
@@ -292,7 +292,7 @@ fn a_side_tile_has_its_frame_drawn_tiled_and_a_corner_doesnt() {
         }
     );
     assert_eq!(
-        states(Some(Tile::TopLeft)).frame_state(false),
+        states(Some(Tile::TopLeft)).frame_state(false, Functions::default()),
         FrameState::default()
     );
 }

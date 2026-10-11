@@ -7,8 +7,8 @@ use super::*;
 use smithay::utils::Size;
 
 use crate::{
-    Crossing, FocusMode, FrameState, GrabKey, GrabStep, PointerTarget, PolicyWindow, ResizeEdges,
-    SwitchList, WrapStyle,
+    Crossing, FocusMode, GrabKey, GrabStep, PointerTarget, PolicyWindow, ResizeEdges, SwitchList,
+    WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -663,13 +663,7 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
             assert_eq!(states.shaded, policy.is_shaded(id), "{id:?}'s states");
             // Policy lays the window out with the frame drawn for what it was last sent.
             let drawn = if window.ssd && !states.fullscreen {
-                window.frame_extents(FrameState {
-                    maximized: states.maximized,
-                    focused: window.is_activated(),
-                    shaded: states.shaded,
-                    tiled_left: states.tile == Some(crate::Tile::Left),
-                    tiled_right: states.tile == Some(crate::Tile::Right),
-                })
+                window.frame_extents(states.frame_state(window.is_activated(), window.functions))
             } else {
                 smithay::utils::FrameExtents::default()
             };

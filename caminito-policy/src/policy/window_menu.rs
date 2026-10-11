@@ -330,7 +330,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// leaves *Roll Up* and *Unroll* out (window.c:7140-7145).
     fn window_menu_entries(&self, id: WindowId) -> Vec<MenuEntry> {
         let managed = &self.windows[&id];
-        let functions = self.functions(id);
+        let functions = managed.functions();
         let count = self.workspace_count;
         let desktop_or_dock = self.is_desktop_or_dock(id);
         // Marco's `on_all_workspaces`, which its `always_sticky` windows are too.
@@ -364,7 +364,7 @@ impl<W: PolicyWindow> Policy<W> {
         )));
         entries.push(MenuEntry::Item(item(
             MenuOp::Resize,
-            functions.resize && self.can_grab(id, true),
+            functions.resize() && self.can_grab(id, true),
         )));
         if !desktop_or_dock && !self.titlebar_is_onscreen(id) {
             entries.push(MenuEntry::Item(item(MenuOp::Recover, true)));

@@ -7,6 +7,7 @@ mod dynamic_workspaces;
 mod edge_resistance;
 mod focus;
 mod focus_stealing;
+mod functions;
 mod grid;
 mod interactive;
 mod invariants;
@@ -33,12 +34,12 @@ mod workspaces;
 
 use std::time::Duration;
 
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle};
 
 use crate::test_window::TestWindow;
 use crate::{
-    Action, Config, Layer, Output, OutputId, Policy, ReservedEdges, SeatId, WindowId, WindowStates,
-    WindowType, WorkspaceLayout,
+    Action, Config, Layer, MapStates, Output, OutputId, Policy, ReservedEdges, SeatId, WindowId,
+    WindowStates, WindowType, WorkspaceLayout,
 };
 
 const SEAT: SeatId = SeatId(0);

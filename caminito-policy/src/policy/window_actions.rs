@@ -1,29 +1,17 @@
 //! The keybinding actions on the focused window (149): its state, its stacking and its
-//! workspace, each as Marco's handler in `core/keybindings.c` (1.29.0) does it, and only
-//! where Marco gives the window the function (`recalc_window_features`).
+//! workspace, each as Marco's handler in `core/keybindings.c` (1.29.0) does it. Policy's
+//! setters refuse a state the window has no function for (177).
 
 use smithay::utils::{Logical, Rectangle};
 
-use crate::{Action, PolicyWindow, SizeHints, Tile, WindowId, WindowType};
+use crate::{Action, PolicyWindow, Tile, WindowId};
 
 use super::{Policy, TileSize, Tiled};
-
-/// The functions Marco gives a window that the actions need, from its type and size hints
-/// (`recalc_window_features`, window.c:6670-6830). An SSD window's frame shows the same
-/// through its buttons (`decoration::style`).
-pub(super) struct Functions {
-    pub(super) minimize: bool,
-    pub(super) maximize: bool,
-    /// Resizing, which maximising one way needs.
-    pub(super) resize: bool,
-    fullscreen: bool,
-}
 
 impl<W: PolicyWindow> Policy<W> {
     /// Runs a window action on `id`, a seat's focused window. The moves to the workspace
     /// beside are `move_to_workspace_towards`'s (150).
     pub(super) fn window_action(&mut self, id: WindowId, action: Action) {
-        let functions = self.functions(id);
         let managed = &self.windows[&id];
         let (horizontally, vertically) =
             (managed.maximized_horizontally, managed.maximized_vertically);
@@ -32,22 +20,16 @@ impl<W: PolicyWindow> Policy<W> {
             Action::ToggleMaximized if horizontally && vertically => {
                 self.set_maximized(id, false);
             }
-            Action::ToggleMaximized | Action::Maximize if functions.maximize => {
-                self.set_maximized(id, true);
-            }
+            Action::ToggleMaximized | Action::Maximize => self.set_maximized(id, true),
             // `handle_unmaximize` undoes either way alone too.
             Action::Unmaximize if horizontally || vertically => self.set_maximized(id, false),
-            Action::ToggleMaximizedHorizontally if functions.resize => {
+            Action::ToggleMaximizedHorizontally => {
                 self.set_maximized_horizontally(id, !horizontally);
             }
-            Action::ToggleMaximizedVertically if functions.resize => {
-                self.set_maximized_vertically(id, !vertically);
-            }
-            Action::ToggleFullscreen if managed.fullscreen => self.set_fullscreen(id, false, None),
-            Action::ToggleFullscreen if functions.fullscreen => self.set_fullscreen(id, true, None),
-            // `set_shaded` shades only what has a shade function.
+            Action::ToggleMaximizedVertically => self.set_maximized_vertically(id, !vertically),
+            Action::ToggleFullscreen => self.set_fullscreen(id, !managed.fullscreen, None),
             Action::ToggleShaded => self.set_shaded(id, !managed.shaded),
-            Action::Minimize if functions.minimize => self.minimize(id),
+            Action::Minimize => self.minimize(id),
             Action::Raise => self.raise(id),
             Action::Lower => self.lower_in_layer(id),
             Action::RaiseOrLower => self.raise_or_lower(id),
@@ -64,28 +46,6 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    pub(super) fn functions(&self, id: WindowId) -> Functions {
-        let managed = &self.windows[&id];
-        let SizeHints { min, max } = managed.hints;
-        // A zero maximum is unbounded.
-        let grows = |min: i32, max: i32| max == 0 || min < max;
-        let fixed = matches!(
-            managed.window_type,
-            WindowType::Desktop | WindowType::Dock | WindowType::Splashscreen
-        );
-        let resizable = !fixed && (grows(min.w, max.w) || grows(min.h, max.h));
-        let normal_or_dialog =
-            matches!(managed.window_type, WindowType::Normal | WindowType::Dialog);
-        // Marco also allows fullscreen to a fixed-size window whose minimum size is the
-        // screen's, which no window Caminito manages asks for.
-        Functions {
-            minimize: normal_or_dialog,
-            maximize: normal_or_dialog && resizable && !managed.fullscreen,
-            resize: resizable && !managed.fullscreen,
-            fullscreen: normal_or_dialog && resizable,
-        }
-    }
-
     /// Whether `id` can be tiled in work area `area`, as `meta_window_can_tile` has it
     /// (window.c:2745-2770): it can be maximised and isn't shaded, and its least size fits
     /// half the work area's width and all its height, frame and all. Marco checks a corner's
@@ -94,7 +54,7 @@ impl<W: PolicyWindow> Policy<W> {
         let managed = &self.windows[&id];
         let e = managed.floating_extents();
         let min = managed.hints.min;
-        self.functions(id).maximize
+        managed.functions().maximize
             && !managed.shaded
             && area.size.w / 2 - e.left - e.right >= min.w
             && area.size.h - e.top - e.bottom >= min.h

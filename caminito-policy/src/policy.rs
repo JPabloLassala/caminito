@@ -7,12 +7,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
 use crate::edges::{By, EdgeWindow, Edges};
+use crate::functions;
 use crate::grid::Direction;
 use crate::placement::{self, Obstacle};
 use crate::stack::{self, Layer};
 use crate::{
-    Action, FrameState, Grid, Output, OutputId, PlacementMode, PolicyWindow, ShowDesktopSkipList,
-    SizeHints, Tile, WindowId, WindowStates, WindowType, WorkspaceLayout, WrapStyle,
+    Action, FrameState, FunctionFacts, Functions, Grid, Output, OutputId, PlacementMode,
+    PolicyWindow, ShowDesktopSkipList, SizeHints, Tile, WindowId, WindowStates, WindowType,
+    WorkspaceLayout, WrapStyle,
 };
 
 mod dynamic_workspaces;
@@ -156,6 +158,8 @@ pub struct Config {
     pub focus_new_windows: FocusNewWindows,
     /// `alt-tab-urgent-placement`, where the installed schema has it (165).
     pub urgent_placement: UrgentPlacement,
+    /// `attach-modal-dialogs`: a modal dialog with a parent has a border only (177).
+    pub attach_modal_dialogs: bool,
 }
 
 impl Default for Config {
@@ -188,6 +192,7 @@ impl Default for Config {
             focus_new_windows: FocusNewWindows::Smart,
             // Marco 1.29.0's, which has no key (165).
             urgent_placement: UrgentPlacement::Mru,
+            attach_modal_dialogs: false,
         }
     }
 }
@@ -220,6 +225,7 @@ struct ShownDesktop {
 /// What policy has last asked of a window, so each request is sent only when it changes.
 #[derive(Default)]
 struct Sent {
+    functions: Option<Functions>,
     geometry: Option<(Rectangle<i32, Logical>, WindowStates)>,
     activated: bool,
     outputs: Option<Vec<OutputId>>,
@@ -265,6 +271,8 @@ struct Managed<W> {
     /// Refused the focus, and not focused since (165): Marco's
     /// `wm_state_demands_attention`.
     demands_attention: bool,
+    /// `attach-modal-dialogs`, which the window's functions depend on (177).
+    attach_modal_dialogs: bool,
     sent: Sent,
 }
 
@@ -425,8 +433,32 @@ impl<W> Managed<W> {
         }
     }
 
+    /// What the window's functions are worked out from.
+    fn function_facts(&self) -> FunctionFacts {
+        FunctionFacts {
+            window_type: self.window_type,
+            hints: self.hints,
+            has_parent: self.parent.is_some(),
+            ssd: self.ssd,
+            fullscreen: self.fullscreen,
+        }
+    }
+
+    /// The window's functions (177).
+    fn functions(&self) -> Functions {
+        functions::functions(&self.function_facts(), self.attach_modal_dialogs)
+    }
+
+    /// The state the frame is asked for in. A fullscreen window shows no frame, so its
+    /// frame is asked for only as it'll be out of fullscreen, with the functions it'll have
+    /// then.
     fn frame_state(&self) -> FrameState {
-        self.states().frame_state(self.activated)
+        let facts = FunctionFacts {
+            fullscreen: false,
+            ..self.function_facts()
+        };
+        let functions = functions::functions(&facts, self.attach_modal_dialogs);
+        self.states().frame_state(self.activated, functions)
     }
 }
 
@@ -615,6 +647,8 @@ pub struct Policy<W: PolicyWindow> {
     focus_new_windows: FocusNewWindows,
     /// `alt-tab-urgent-placement` (165).
     urgent_placement: UrgentPlacement,
+    /// `attach-modal-dialogs` (177).
+    attach_modal_dialogs: bool,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -657,6 +691,7 @@ impl<W: PolicyWindow> Policy<W> {
             pointer_focus: pointer::PointerFocus::default(),
             focus_new_windows: FocusNewWindows::default(),
             urgent_placement: UrgentPlacement::default(),
+            attach_modal_dialogs: false,
         };
         policy.settings_changed(config);
         policy
@@ -737,6 +772,16 @@ impl<W: PolicyWindow> Policy<W> {
         self.show_desktop_skip_list = config.show_desktop_skip_list;
         self.focus_new_windows = config.focus_new_windows;
         self.urgent_placement = config.urgent_placement;
+        if self.attach_modal_dialogs != config.attach_modal_dialogs {
+            self.attach_modal_dialogs = config.attach_modal_dialogs;
+            // A dialog that's attached or let go has another frame to be laid out with.
+            let ids: Vec<WindowId> = self.windows.keys().copied().collect();
+            for id in ids {
+                self.windows.get_mut(&id).unwrap().attach_modal_dialogs =
+                    config.attach_modal_dialogs;
+                self.relayout(id);
+            }
+        }
         if !self.dynamic_workspaces {
             self.set_workspace_count(config.workspace_count);
         }
@@ -806,6 +851,7 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn map_window_with(&mut self, window: W, states: MapStates, now: Duration) {
         let id = window.id();
         self.map(window, states, now);
+        // The setters refuse a state the window has no function for (177).
         if let Some(output) = states.fullscreen {
             self.set_fullscreen(id, true, output);
         } else if states.maximized {
@@ -864,13 +910,17 @@ impl<W: PolicyWindow> Policy<W> {
                 tile: None,
                 floating: None,
                 demands_attention: false,
+                attach_modal_dialogs: self.attach_modal_dialogs,
                 sent: Sent::default(),
             },
         );
         self.stack.push(id);
         // Before it's placed, which is among the windows that show.
         self.leave_show_desktop(id);
-        let constrained = states.maximized || states.fullscreen.is_some();
+        // A state the window has no function for is one it won't map with (177).
+        let functions = self.windows[&id].functions();
+        let constrained = (states.maximized && functions.maximize)
+            || (states.fullscreen.is_some() && functions.fullscreen);
         let by_pointer = self.place(id, !constrained);
         // Marco's pointer placement skips its maximising of a window too big for its work
         // area (place.c:898-905).
@@ -1250,6 +1300,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Sets the ways the window is maximised, leaving `None`s as they are. Maximising
     /// vertically unshades, as in Marco's `meta_window_maximize`.
+    ///
+    /// A window is maximised both ways only with the maximise function, as Marco's
+    /// `handle_maximize` and its `_NET_WM_STATE` handler ask (keybindings.c:3275-3301,
+    /// window.c:5205-5254), and one way with the resize function, as
+    /// `handle_maximize_vertically` and `_horizontally` ask (keybindings.c:2529-2559).
+    /// Unmaximising is never refused (177).
     fn set_maximized_axes(
         &mut self,
         id: WindowId,
@@ -1259,6 +1315,17 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(managed) = self.windows.get_mut(&id) else {
             return;
         };
+        let functions = managed.functions();
+        let allowed = if horizontally.is_some() && vertically.is_some() {
+            functions.maximize
+        } else {
+            functions.resize()
+        };
+        let maximizes = (horizontally == Some(true) && !managed.maximized_horizontally)
+            || (vertically == Some(true) && !managed.maximized_vertically);
+        if maximizes && !allowed {
+            return;
+        }
         let horizontally = horizontally.unwrap_or(managed.maximized_horizontally);
         let vertically = vertically.unwrap_or(managed.maximized_vertically);
         // Maximising or unmaximising either way untiles, keeping the floating geometry, as
@@ -1279,20 +1346,27 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Shades or unshades an SSD window. A CSD window can't be shaded: Caminito doesn't
-    /// know where its titlebar is (07).
+    /// Shades a window that has the shade function, or unshades one. A CSD window has
+    /// none: Caminito doesn't know where its titlebar is (07). Nor has one whose frame is a
+    /// border only, or a fullscreen one (177).
     pub fn set_shaded(&mut self, id: WindowId, shaded: bool) {
-        if let Some(managed) = self.windows.get_mut(&id) {
-            managed.shaded = shaded && managed.ssd && !managed.fullscreen;
+        if let Some(managed) = self.windows.get_mut(&id)
+            && (!shaded || managed.functions().shade)
+        {
+            managed.shaded = shaded;
         }
         self.apply();
     }
 
-    /// Enters fullscreen, on `output` if the client named one, or leaves it.
+    /// Enters fullscreen, on `output` if the client named one, or leaves it. A window
+    /// enters it only with the fullscreen function (177).
     pub fn set_fullscreen(&mut self, id: WindowId, fullscreen: bool, output: Option<OutputId>) {
         let Some(managed) = self.windows.get_mut(&id) else {
             return;
         };
+        if fullscreen && !managed.fullscreen && !managed.functions().fullscreen {
+            return;
+        }
         managed.save_floating();
         managed.fullscreen = fullscreen;
         // Marco unshades a window it makes fullscreen.
@@ -1383,8 +1457,11 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
+    /// Minimises a window that has the minimise function (177).
     pub fn minimize(&mut self, id: WindowId) {
-        if let Some(managed) = self.windows.get_mut(&id) {
+        if let Some(managed) = self.windows.get_mut(&id)
+            && managed.functions().minimize
+        {
             managed.minimized = true;
         }
         self.apply();
@@ -1649,7 +1726,7 @@ impl<W: PolicyWindow> Policy<W> {
         let output = self.outputs.iter().find(|o| o.geometry.contains(p))?;
         let (o, area) = (output.geometry, Self::work_area(output));
         let zone = 2 * self.drag_threshold;
-        let can_maximize = self.functions(id).maximize;
+        let can_maximize = self.windows[&id].functions().maximize;
         let can_tile = self.can_tile(id, area);
         let corner = |top, bottom, side| {
             if p.y >= o.loc.y && p.y < area.loc.y + zone {
@@ -1903,6 +1980,14 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows
             .get(&id)
             .map(Managed::visible_extents)
+            .unwrap_or_default()
+    }
+
+    /// What Marco lets the window do (177). A window policy doesn't manage has no function.
+    pub fn functions(&self, id: WindowId) -> Functions {
+        self.windows
+            .get(&id)
+            .map(Managed::functions)
             .unwrap_or_default()
     }
 
@@ -2219,7 +2304,8 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Marco maximises a framed window that's placed at least as big as its work area.
+    /// Marco maximises a framed window that's placed at least as big as its work area, if
+    /// it has the maximise function (place.c:913-918).
     fn maximize_if_too_big(&mut self, id: WindowId) {
         let managed = &self.windows[&id];
         let frame = managed.frame();
@@ -2227,7 +2313,11 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         let area = Self::work_area(output);
-        if managed.ssd && frame.size.w >= area.size.w && frame.size.h >= area.size.h {
+        if managed.ssd
+            && managed.functions().maximize
+            && frame.size.w >= area.size.w
+            && frame.size.h >= area.size.h
+        {
             let managed = self.windows.get_mut(&id).unwrap();
             managed.save_floating();
             managed.maximized_horizontally = true;
@@ -2630,6 +2720,12 @@ impl<W: PolicyWindow> Policy<W> {
             if managed.sent.outputs.as_ref() != Some(&outputs) {
                 managed.window.set_outputs(&outputs);
                 managed.sent.outputs = Some(outputs);
+            }
+
+            let functions = managed.functions();
+            if managed.sent.functions != Some(functions) {
+                managed.window.set_functions(functions);
+                managed.sent.functions = Some(functions);
             }
 
             let request = (managed.geometry, managed.states());

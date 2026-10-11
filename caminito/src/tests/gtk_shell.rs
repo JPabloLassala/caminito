@@ -9,7 +9,7 @@ use super::fixture::{ClientId, ClientWindow, Fixture, Kind, WindowSpec};
 
 /// One output, and a framed dialog over its framed 600 × 400 parent, as pluma's *Open* is
 /// over its window. The `attached` style isn't tested here: no MATE schema has
-/// `attach-modal-dialogs`, and `decoration::style`'s tests have it.
+/// `attach-modal-dialogs`, and `functions.rs` has it (177).
 fn a_dialog() -> (Fixture, ClientId, ClientWindow, ClientWindow) {
     let mut f = Fixture::new();
     f.add_output((1920, 1080), 1.0);

@@ -161,7 +161,12 @@ fn a_dialog_that_becomes_modal_takes_the_focus_its_parent_is_given() {
 #[test]
 fn a_minimised_modal_dialog_leaves_its_parent_the_focus() {
     let mut policy = a_modal_dialog_over_its_parent();
+    // A modal dialog has no minimise function (177), so it's minimised while it isn't modal.
+    policy.window_mut(id(2)).unwrap().window_type = WindowType::Dialog;
+    policy.commit(id(2));
     policy.minimize(id(2));
+    policy.window_mut(id(2)).unwrap().window_type = WindowType::ModalDialog;
+    policy.commit(id(2));
 
     policy.click(SEAT, id(1), ms(4));
 

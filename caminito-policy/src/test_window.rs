@@ -2,7 +2,9 @@
 
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
-use crate::{FrameState, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType};
+use crate::{
+    FrameState, Functions, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
+};
 
 /// A request policy made on a `TestWindow`.
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +37,13 @@ pub struct TestWindow {
     pub unfocused_border: i32,
     /// The frame's top while shaded, if the theme's shaded style gives it another.
     pub shaded_top: Option<i32>,
+    /// The frame's extents while it's a border only, if the theme gives it others.
+    pub border_only_extents: Option<FrameExtents<i32, Logical>>,
+    /// The frame's extents while the window resizes neither way, if the theme gives it
+    /// others.
+    pub unresizable_extents: Option<FrameExtents<i32, Logical>>,
+    /// The functions policy last sent.
+    pub functions: Functions,
     pub calls: Vec<Call>,
 }
 
@@ -58,6 +67,9 @@ impl TestWindow {
             maximized_extents: FrameExtents::default(),
             unfocused_border: 0,
             shaded_top: None,
+            border_only_extents: None,
+            unresizable_extents: None,
+            functions: Functions::default(),
             calls: Vec::new(),
         }
     }
@@ -220,10 +232,12 @@ impl PolicyWindow for TestWindow {
     }
 
     fn frame_extents(&self, state: FrameState) -> FrameExtents<i32, Logical> {
-        let mut extents = if state.maximized {
-            self.maximized_extents
-        } else {
-            self.extents
+        let unresizable = !state.resizes_horizontally && !state.resizes_vertically;
+        let mut extents = match (self.border_only_extents, self.unresizable_extents) {
+            (Some(extents), _) if state.border_only => extents,
+            (_, Some(extents)) if unresizable => extents,
+            _ if state.maximized => self.maximized_extents,
+            _ => self.extents,
         };
         if !state.focused {
             extents.left += self.unfocused_border;
@@ -234,6 +248,10 @@ impl PolicyWindow for TestWindow {
             extents.top = top;
         }
         extents
+    }
+
+    fn set_functions(&mut self, functions: Functions) {
+        self.functions = functions;
     }
 
     fn set_geometry(&mut self, geometry: Rectangle<i32, Logical>, states: WindowStates) {
