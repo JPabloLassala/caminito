@@ -176,6 +176,10 @@ _Avoid_: system menu, context menu, app menu (that's the Global menu's or the Fr
 The popup that a switch or a move to the workspace beside shows while the binding's modifiers are held: the Workspace grid, each workspace's cell with its name and an outline of its windows, and the active workspace marked. It's Marco's workspace popup, drawn by Caminito.
 _Avoid_: workspace switcher (the panel's pager), workspace OSD, tab popup (Marco's widget for it and for Alt+Tab)
 
+**Interaction**:
+What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu or the Workspace popup. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
+_Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)
+
 **System shortcut**:
 A combination of modifiers with a key or a mouse button that Caminito acts on before any client sees it, whoever owns the action: Caminito's own window and workspace actions, a command the user gave a shortcut to, or a media key. System Shortcuts is the control centre's dialog that lists and changes them. A binding is one of Caminito's own, and an accelerator is one another program has asked Caminito for.
 _Avoid_: keyboard shortcut (a mouse button can be one), keybinding, hotkey, global shortcut, shortcut alone for an application's own (those are the client's)
