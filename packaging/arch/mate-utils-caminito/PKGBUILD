@@ -28,9 +28,12 @@ provides=("${_pkgname}=${pkgver}")
 conflicts=("${_pkgname}" 'mate-utils-gtk3')
 # 0001 is active only while org.mate.Caminito has an owner (ADR 0011): mate-screenshot's
 # --window captures the window Caminito names (104).
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
+# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
+_patches="file://$(realpath -m "$startdir/../../patches/mate-utils")"
 source=("git+https://github.com/mate-desktop/mate-utils.git#tag=v${pkgver}"
         git+https://github.com/mate-desktop/mate-submodules.git
-        0001-screenshot-Capture-the-active-window-on-Wayland-with.patch)
+        "$_patches/0001-screenshot-Capture-the-active-window-on-Wayland-with.patch")
 sha256sums=('4dc1726054d2333bb4dda6f0bed8c8ea49eeaf839525b5d5c6d9d46ddfa058e9'
             'SKIP'
             '311dd77a7846f77b2d3447ffcecea484cc370719b2ab69190b59ec19347d8a49')
@@ -43,7 +46,7 @@ prepare() {
 	local src
 	for src in "${source[@]}"; do
 		[[ ${src} = *.patch ]] || continue
-		patch -Np1 -i "${srcdir}/${src}"
+		patch -Np1 -i "${srcdir}/${src##*/}"
 	done
 
 	./autogen.sh

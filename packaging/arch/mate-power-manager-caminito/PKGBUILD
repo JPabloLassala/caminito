@@ -28,8 +28,11 @@ conflicts=("${_pkgname}")
 # 0001 is active only when MATE_WM_NAME=Caminito (ADR 0011): the keys are grabbed through
 # Caminito, since mate-power-manager runs on XWayland there and its own grabs see a key only
 # while an XWayland window has the keyboard (107, ADR 0014).
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
+# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
+_patches="file://$(realpath -m "$startdir/../../patches/mate-power-manager")"
 source=("git+https://github.com/mate-desktop/mate-power-manager.git#tag=v${pkgver}"
-        0001-button-Grab-the-keys-through-Caminito.patch)
+        "$_patches/0001-button-Grab-the-keys-through-Caminito.patch")
 sha256sums=('b156ce0251f0ef883e69926a5ac0e82e2ae29b82f1e57c7d509295394e2c4fe0'
             '61c391b97a7dcd7b037845dd1d324148803b5c1ce13f44e8f2fe6c35326d966e')
 
@@ -39,7 +42,7 @@ prepare() {
 	local src
 	for src in "${source[@]}"; do
 		[[ ${src} = *.patch ]] || continue
-		patch -Np1 -i "${srcdir}/${src}"
+		patch -Np1 -i "${srcdir}/${src##*/}"
 	done
 
 	NOCONFIGURE=1 ./autogen.sh

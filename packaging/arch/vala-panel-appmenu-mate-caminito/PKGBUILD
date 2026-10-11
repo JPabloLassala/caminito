@@ -49,11 +49,14 @@ conflicts=("${_pkgname}-mate" "${_pkgname}-locale" 'appmenu-glib-translator')
 # alone. It now writes every press, and the applet draws them after the label, where a
 # one-press accelerator is (145). pkgrel 5 is the first with it, which caminito-vscode-git's
 # conflicts names.
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
+# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
+_patches="file://$(realpath -m "$startdir/../../patches/vala-panel-appmenu")"
 source=("${_pkgname}::git+${url}.git#tag=${pkgver}"
-        0001-applet-Add-a-Caminito-backend.patch
-        0002-applet-Let-the-application-s-name-be-turned-off-unde.patch
-        0003-translator-Keep-a-menu-open-while-Firefox-makes-its-.patch
-        0004-applet-Draw-every-press-of-a-chord-s-shortcut.patch)
+        "$_patches/0001-applet-Add-a-Caminito-backend.patch"
+        "$_patches/0002-applet-Let-the-application-s-name-be-turned-off-unde.patch"
+        "$_patches/0003-translator-Keep-a-menu-open-while-Firefox-makes-its-.patch"
+        "$_patches/0004-applet-Draw-every-press-of-a-chord-s-shortcut.patch")
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
             'f3c5266093696fe12172e39a035c60ec24f01b72f525990847dc04fa344492ed'
             'e2c3146a9c86064b5aee9d57be2a57355a5e9916533e2bca344693357ad6c902'
@@ -70,7 +73,7 @@ prepare() {
     local src
     for src in "${source[@]}"; do
         [[ ${src} = *.patch ]] || continue
-        patch -Np1 -i "${srcdir}/${src}"
+        patch -Np1 -i "${srcdir}/${src##*/}"
     done
 }
 

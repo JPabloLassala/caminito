@@ -157,15 +157,22 @@ window that isn't a `GtkApplicationWindow`, such as mate-terminal's. The session
 module to its `GTK_MODULES` when this package is installed, and not for the stock one, with
 which those apps would have no menu at all while the applet is on a panel.
 
-The patches are `git format-patch` files beside each PKGBUILD, and they are the only copy. Each
-series applies to a baseline: an upstream tag, or a pinned commit where the component has no
-tag. To move a package to a new baseline, rebase its series:
+The patches are `git format-patch` files in [packaging/patches/](packaging/patches/), one
+directory for each component under upstream's name, as `mate-panel` for `mate-panel-caminito` and
+`vala-panel-appmenu` for `vala-panel-appmenu-mate-caminito`. They are the only copy, for every
+distribution ([ADR 0030](docs/adr/0030-carried-patches-are-kept-once-for-every-distribution.md)).
+A build patch that only Arch needs, such as msd's revert, is in the component's `arch/`, and
+applies after the rest. The PKGBUILDs take the patches as `file://` sources, which makepkg copies
+beside the PKGBUILD, where git ignores them.
+
+Each series applies to a baseline: an upstream tag, or a pinned commit where the component has
+no tag. To move a component to a new baseline, rebase its series:
 
 1. In a checkout of the component, at the old baseline, apply the series:
 
    ```sh
    git checkout -b caminito <old baseline>
-   git am /path/to/caminito/packaging/arch/<pkgname>-caminito/*.patch
+   git am /path/to/caminito/packaging/patches/<component>/*.patch
    ```
 
 2. Move it to the new baseline, and correct what breaks:
@@ -174,14 +181,19 @@ tag. To move a package to a new baseline, rebase its series:
    git rebase --onto <new baseline> <old baseline> caminito
    ```
 
-3. Export the series again, then update the PKGBUILD's source, `pkgver` and checksums
+3. Export the series again. Remove makepkg's copies of the old patches from beside the
+   PKGBUILD, or it checks those, then update the PKGBUILD's source, `pkgver` and checksums
    (`updpkgsums`). Commit the patches and the PKGBUILD together, one commit for each move:
 
    ```sh
-   rm /path/to/caminito/packaging/arch/<pkgname>-caminito/*.patch
+   rm /path/to/caminito/packaging/patches/<component>/*.patch \
+     /path/to/caminito/packaging/arch/<pkgname>-caminito/*.patch
    git format-patch --zero-commit --no-signature -N \
-     -o /path/to/caminito/packaging/arch/<pkgname>-caminito <new baseline>
+     -o /path/to/caminito/packaging/patches/<component> <new baseline>
    ```
+
+4. If the component has a build patch in `arch/`, apply it on top (`git am`), and export it
+   again into `arch/` if it needed a change. It goes once Arch's libraries don't need it.
 
 A change to the patches alone, on the same baseline, increases `pkgrel` instead.
 
