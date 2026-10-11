@@ -351,7 +351,6 @@ impl State {
                     let mods = keyboard.modifier_state();
                     self.caminito.show_workspace_popup(action, &mods);
                 }
-                self.caminito.queue_redraw_all();
             }
             Some(Some(Bound::Switch { action, key })) => {
                 let mods = keyboard.modifier_state();

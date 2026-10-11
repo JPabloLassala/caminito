@@ -36,7 +36,6 @@ impl XfceForeignToplevelHandler for State {
             XfceState::Above => policy.set_above(id, set),
             XfceState::Below => policy.set_below(id, set),
         }
-        caminito.queue_redraw_all();
     }
 }
 

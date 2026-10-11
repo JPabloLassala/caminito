@@ -650,6 +650,14 @@ impl Caminito {
         }
     }
 
+    /// Queues every output if what the Scene reads from policy changed since the last
+    /// refresh pass (179). Policy doesn't say which outputs show the change.
+    pub(crate) fn queue_redraw_for_policy(&mut self) {
+        if self.policy.take_scene_changed() {
+            self.queue_redraw_all();
+        }
+    }
+
     /// The outputs queued for redraw since the last call.
     pub fn take_queued_redraws(&mut self) -> Vec<Output> {
         let queued = std::mem::take(&mut self.redraws);

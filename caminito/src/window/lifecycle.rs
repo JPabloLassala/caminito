@@ -121,7 +121,6 @@ impl Caminito {
                     policy.set_demands_attention(id, demands_attention)
                 }
             }
-            self.queue_redraw_all();
             return true;
         }
         let Some(index) = self.pending.position(key) else {
@@ -171,7 +170,6 @@ impl Caminito {
         if let Some(id) = self.mapped_for_key(key) {
             let now = self.now();
             self.policy.request_activation(SEAT, id, token, now);
-            self.queue_redraw_all();
         } else if let Some(index) = self.pending.position(key) {
             self.pending.0[index].focus = token.map_or(FocusClaim::NoToken, FocusClaim::Token);
         }
@@ -235,6 +233,7 @@ impl Caminito {
     pub(crate) fn window_changed(&mut self, id: WindowId) {
         if self.read_window_facts(id) {
             self.policy.commit(id);
+            // The client's commit, with what it drew.
             self.queue_redraw_all();
         }
     }
@@ -290,7 +289,6 @@ impl Caminito {
         if let Some(source) = active {
             self.policy.request_activation_from(SEAT, id, source, now);
         }
-        self.queue_redraw_all();
         id
     }
 
@@ -303,7 +301,6 @@ impl Caminito {
             for output in &self.outputs {
                 mapped.window().output_leave(output);
             }
-            self.queue_redraw_all();
         }
     }
 

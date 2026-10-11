@@ -658,6 +658,9 @@ impl State {
         // With the windows the handlers and the bindings before this pass asked to close.
         self.caminito.refresh_close_pings();
         self.update_keyboard_focus();
+        // After the last step that changes policy, and before the outputs are drawn: what
+        // a handler or a step above changed in policy is drawn in this pass (179).
+        self.caminito.queue_redraw_for_policy();
         self.redraw_queued_outputs();
         // After the frames, which may show the lock that logind's sleep waits for.
         self.caminito.refresh_logind();

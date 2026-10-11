@@ -19,6 +19,7 @@ mod placement;
 mod placement_modes;
 mod pointer_focus;
 mod requests;
+mod scene_changed;
 mod shade;
 mod show_desktop;
 mod stacking;

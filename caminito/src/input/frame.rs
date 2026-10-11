@@ -232,7 +232,6 @@ impl State {
             }
         }
         self.update_keyboard_focus();
-        self.caminito.queue_redraw_all();
     }
 
     /// Runs one of the `action-*-titlebar` actions on a window (`meta_frame_titlebar_event`,
@@ -280,7 +279,6 @@ impl State {
             _ => {}
         }
         self.update_keyboard_focus();
-        self.caminito.queue_redraw_all();
     }
 
     /// Maximises the window both ways, or unmaximises it both ways if it's maximised both

@@ -197,7 +197,6 @@ impl Caminito {
         let outputs = self.policy_outputs();
         if outputs != self.policy.outputs() {
             self.policy.set_outputs(outputs);
-            self.queue_redraw_all();
         }
     }
 }
