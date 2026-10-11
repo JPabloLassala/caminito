@@ -4,7 +4,7 @@ Epic: caminito-v0.1
 Type: implementation
 Status: resolved: the checklist item's run in a Session is 173's closing run
 Milestone: M8
-Blocked by: 149, 155, 156
+Blocked by: 149, 155, 156, 177
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 ## What to build
