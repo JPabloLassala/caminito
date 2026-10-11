@@ -6,8 +6,9 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, FocusMode, FocusNewWindows, MAX_WORKSPACES, Orientation, PlacementMode,
-    ShowDesktopSkipList, UrgentPlacement, WorkspaceLayout, WrapStyle, default_workspace_name,
+    Config, FocusMode, FocusNewWindows, MAX_WORKSPACES, MinimizedPlacement, Orientation,
+    PlacementMode, ShowDesktopSkipList, UrgentPlacement, WorkspaceLayout, WrapStyle,
+    default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
 
@@ -160,8 +161,6 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     (MARCO_GENERAL, "resize-with-right-button"),
     (MARCO_GENERAL, "action-scroll-up-titlebar"),
     (MARCO_GENERAL, "action-scroll-down-titlebar"),
-    // 163.
-    (MARCO_GENERAL, "alt-tab-minimized-placement"),
     // Mouse keys are later (13): they need pointer emulation with msd's acceleration curve.
     (A11Y_KEYBOARD, "mousekeys-enable"),
     // 13 had these in v0.1, and the AccessX filter doesn't apply them yet (134); 147 put
@@ -629,6 +628,15 @@ impl Nick for PlacementMode {
     ];
 }
 
+/// Marco master's `org.mate.Marco.MinimizedWindowPlacement`.
+impl Nick for MinimizedPlacement {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("mru", Self::Mru),
+        ("end", Self::End),
+        ("hidden", Self::Hidden),
+    ];
+}
+
 /// `org.mate.Marco.WrapStyle`.
 impl Nick for WrapStyle {
     const NICKS: &'static [(&'static str, Self)] = &[
@@ -1069,6 +1077,12 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_layout,
         wrap_style: r.nick(MARCO_GENERAL, "wrap-style", WrapStyle::NoWrap),
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
+        // Marco master's key, with its default where the schema has no key for it (163).
+        alt_tab_minimized_placement: r.nick(
+            MARCO_GENERAL,
+            "alt-tab-minimized-placement",
+            MinimizedPlacement::End,
+        ),
         focus_mode: r.nick(MARCO_GENERAL, "focus-mode", FocusMode::Click),
         raise_on_click: r.bool(MARCO_GENERAL, "raise-on-click", true),
         auto_raise: r.bool(MARCO_GENERAL, "auto-raise", false),

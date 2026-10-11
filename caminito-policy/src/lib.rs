@@ -25,8 +25,9 @@ pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
     ActivationToken, Config, Crossing, FocusClaim, FocusMode, FocusNewWindows, GrabKey, GrabStep,
-    MAX_WORKSPACES, MapStates, PointerTarget, Policy, ResizeEdges, SeatId, SwitchList, Switcher,
-    TOKEN_LIFETIME, UrgentPlacement, default_workspace_name,
+    LayerSurfaceId, MAX_WORKSPACES, MapStates, MinimizedPlacement, PointerTarget, Policy,
+    ResizeEdges, SeatId, SwitchEntry, SwitchList, Switcher, TOKEN_LIFETIME, UrgentPlacement,
+    default_workspace_name,
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;

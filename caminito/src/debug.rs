@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use caminito_policy::{PolicyWindow, SwitchList, Tile};
+use caminito_policy::{PolicyWindow, SwitchEntry, SwitchList, Tile};
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -207,10 +207,16 @@ struct LastBellDump {
 struct SwitcherDump {
     /// The action's list: `windows`, `windows-all`, `group` or `panels`.
     list: &'static str,
+    /// Whether it's a `cycle-*` action's (163), which has no popup.
+    cycle: bool,
     /// The windows listed, in order.
     windows: Vec<u64>,
-    /// The selected window.
-    selected: u64,
+    /// The Layer surfaces listed among the panels (163), in order, by their namespaces.
+    layers: Vec<String>,
+    /// The selected window, if it's one.
+    selected: Option<u64>,
+    /// The selected Layer surface's namespace, if it's one.
+    selected_layer: Option<String>,
     /// Whether its popup is drawn.
     visible: bool,
     /// The popup, once it has appeared.
@@ -559,6 +565,7 @@ impl Caminito {
                 path: tie.path.to_string(),
             })
             .collect();
+        let namespace = |entry: &SwitchEntry| self.layer_namespace(*entry);
         let switcher = policy.switcher().map(|switcher| SwitcherDump {
             list: match switcher.list {
                 SwitchList::Windows => "windows",
@@ -566,8 +573,15 @@ impl Caminito {
                 SwitchList::Group => "group",
                 SwitchList::Panels => "panels",
             },
-            windows: switcher.windows.iter().map(|id| id.0).collect(),
-            selected: switcher.windows[switcher.selected].0,
+            cycle: !switcher.popup,
+            windows: switcher
+                .entries
+                .iter()
+                .filter_map(|entry| Some(entry.window()?.0))
+                .collect(),
+            layers: switcher.entries.iter().filter_map(namespace).collect(),
+            selected: switcher.entries[switcher.selected].window().map(|id| id.0),
+            selected_layer: namespace(&switcher.entries[switcher.selected]),
             visible: self.visible_switcher().is_some(),
             popup: self.visible_switcher().map(|popup| SwitcherPopupDump {
                 output: popup.output.name(),

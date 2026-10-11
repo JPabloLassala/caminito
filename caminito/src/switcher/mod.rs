@@ -1,5 +1,6 @@
 //! The Window switcher's side in the compositor (108, [ADR 0016]): the popup that
-//! `switch-windows` and its siblings open. Policy has the list, the selection, committing
+//! `switch-windows` and its siblings open. A `cycle-*` action (163) is the same with no
+//! popup, as Marco's is. Policy has the list, the selection, committing
 //! and cancelling. Here are the keys and the clicks that drive it while it's open, when
 //! and where its popup shows, and the grid it's laid out in. `draw` draws the popup's
 //! chrome, and `scene` puts it and the thumbnails on the output.
@@ -11,7 +12,7 @@ pub(crate) mod layout;
 
 use std::time::Duration;
 
-use caminito_policy::{Action, WindowId};
+use caminito_policy::{Action, SwitchEntry};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::desktop::{PopupKind, PopupManager};
@@ -26,6 +27,8 @@ use smithay::wayland::seat::WaylandFocus;
 use self::draw::{Chrome, Entry};
 use self::layout::{CellStyle, Direction, Grid};
 use crate::decoration::IconSource;
+use crate::input::bindings::Binding;
+use crate::input::press_keysyms;
 use crate::output::output_geometry;
 use crate::scene;
 use crate::state::{Caminito, SEAT, State};
@@ -103,8 +106,8 @@ pub(crate) struct Popup {
 struct Drawn {
     grid: Grid,
     selected: usize,
-    /// Each listed window, whether it's urgent, and where its icon comes from.
-    windows: Vec<(WindowId, bool, IconSource)>,
+    /// Each listed entry, whether it's urgent, and where its icon comes from.
+    entries: Vec<(SwitchEntry, bool, IconSource)>,
     title: String,
     scale: i32,
     colors: PaletteColors,
@@ -134,7 +137,7 @@ impl Caminito {
 
     /// The grid the open switcher has on `output`.
     fn switcher_grid_on(&self, output: &Output) -> Option<Grid> {
-        let count = self.policy.switcher()?.windows.len();
+        let count = self.policy.switcher()?.entries.len();
         let settings = self.settings.switcher;
         let style = if settings.thumbnails {
             CellStyle::Thumbnails
@@ -165,6 +168,7 @@ impl Caminito {
     /// or a cancel here, or by itself, as when the workspace changed under it or its last
     /// listed window closed.
     pub(crate) fn refresh_switcher(&mut self) {
+        self.give_keyboard_to_chosen();
         if self.policy.switcher().is_none()
             && let Some(open) = self.switcher.take()
         {
@@ -236,21 +240,29 @@ impl Caminito {
     /// What the popup's chrome is drawn from on `output`, now.
     fn switcher_chrome_inputs(&self, output: &Output) -> Option<Drawn> {
         let switcher = self.policy.switcher()?;
-        let window = |id: &WindowId| self.policy.window(*id);
+        // A Layer surface has no title, app id or icon of its own: its namespace names it,
+        // and an icon too where the icon theme has one by that name (163).
+        let namespace = |entry: &SwitchEntry| self.layer_namespace(*entry);
+        let window = |entry: &SwitchEntry| self.policy.window(entry.window()?);
         Some(Drawn {
             grid: self.switcher_grid_on(output)?,
             selected: switcher.selected,
-            windows: switcher
-                .windows
+            entries: switcher
+                .entries
                 .iter()
-                .filter_map(|id| {
-                    let mapped = window(id)?;
-                    Some((*id, self.policy.is_urgent(*id), mapped.icon_source()))
+                .filter_map(|entry| {
+                    if let Some(namespace) = namespace(entry) {
+                        return Some((*entry, false, IconSource::AppId(Some(namespace))));
+                    }
+                    let (id, mapped) = (entry.window()?, window(entry)?);
+                    Some((*entry, self.policy.is_urgent(id), mapped.icon_source()))
                 })
                 .collect(),
-            title: window(&switcher.windows[switcher.selected])
-                .map(|mapped| mapped.title())
-                .unwrap_or_default(),
+            title: {
+                let selected = &switcher.entries[switcher.selected];
+                let title = window(selected).map(|mapped| mapped.title());
+                title.or_else(|| namespace(selected)).unwrap_or_default()
+            },
             scale: output.current_scale().fractional_scale().ceil() as i32,
             colors: self.palette.palette().variant(Variant::Default).clone(),
             font: self.settings.interface.font_name.clone(),
@@ -263,7 +275,7 @@ impl Caminito {
     fn draw_switcher_chrome(&mut self, drawn: &Drawn) -> Option<Chrome> {
         let grid = &drawn.grid;
         let entries: Vec<Entry> = drawn
-            .windows
+            .entries
             .iter()
             .enumerate()
             .map(|(index, (_, urgent, source))| Entry {
@@ -302,7 +314,8 @@ impl Caminito {
     ) -> Option<FilterResult<Option<T>>> {
         self.refresh_switcher();
         let key = self.switcher.as_ref()?.key;
-        let selected = self.policy.switcher()?.selected;
+        let switcher = self.policy.switcher()?;
+        let (selected, popup, list) = (switcher.selected, switcher.popup, switcher.list);
         if keysym.modified_sym().is_modifier_key() {
             return Some(FilterResult::Forward);
         }
@@ -317,7 +330,29 @@ impl Caminito {
             Some(Keysym::Down) => Some(Direction::Down),
             _ => None,
         };
+        // A `switch-*` binding steps the Window switcher and a `cycle-*` one a cycle, and
+        // each ends the other's, as in Marco (`process_tab_grab`,
+        // core/keybindings.c:2141-2199), which also sets the stacking back. A cycle has no
+        // Escape of its own, so a `cycle-*` binding of another list ends it too, as there
+        // between the group's and the others'; the Window switcher is stepped by any
+        // `switch-*` binding (108).
+        let bindings = &self.settings.bindings;
+        let bound = match bindings.binding_for(mods, &press_keysyms(keysym)) {
+            Some(Binding::Policy(Action::Switch { backward, .. })) => Some((popup, backward)),
+            Some(Binding::Policy(Action::Cycle {
+                list: its,
+                backward,
+            })) => Some((!popup && its == list, backward)),
+            _ => None,
+        };
         match sym {
+            _ if let Some((steps, backward)) = bound => {
+                if steps {
+                    self.policy.switcher_step(backward);
+                } else {
+                    self.policy.switcher_cancel(now);
+                }
+            }
             Some(sym) if sym == key || sym == Keysym::Tab => {
                 self.policy.switcher_step(mods.shift);
             }
@@ -352,8 +387,9 @@ impl Caminito {
 }
 
 impl State {
-    /// A `switch-*` binding fired with the Window switcher closed: `key` with `mods` down.
-    /// Nothing opens during a move or resize. A client's open menu is dismissed first.
+    /// A `switch-*` or `cycle-*` binding fired with the Window switcher closed: `key` with
+    /// `mods` down. Nothing opens during a move or resize. A client's open menu is
+    /// dismissed first. A `cycle-*` action times no popup (163).
     pub(crate) fn switch_action(
         &mut self,
         action: Action,
@@ -367,22 +403,28 @@ impl State {
         self.dismiss_menus(time);
         let now = self.caminito.now();
         self.caminito.policy.action(SEAT, action, now);
-        if self.caminito.policy.switcher().is_some() {
-            let timer = Timer::from_duration(POPUP_DELAY);
-            let timer = self
-                .caminito
-                .loop_handle
-                .insert_source(timer, |_, _, state| {
-                    if let Some(open) = &mut state.caminito.switcher {
-                        open.timer = None;
-                    }
-                    state.caminito.show_switcher_popup();
-                    TimeoutAction::Drop
-                })
-                .inspect_err(|err| {
-                    tracing::warn!("can't time the window switcher's popup: {}", err.error)
-                })
-                .ok();
+        // One entry alone is chosen at once.
+        self.caminito.give_keyboard_to_chosen();
+        if let Some(switcher) = self.caminito.policy.switcher() {
+            let timer = switcher.popup.then(|| {
+                let timer = Timer::from_duration(POPUP_DELAY);
+                let inserted = self
+                    .caminito
+                    .loop_handle
+                    .insert_source(timer, |_, _, state| {
+                        if let Some(open) = &mut state.caminito.switcher {
+                            open.timer = None;
+                        }
+                        state.caminito.show_switcher_popup();
+                        TimeoutAction::Drop
+                    });
+                inserted
+                    .inspect_err(|err| {
+                        tracing::warn!("can't time the window switcher's popup: {}", err.error)
+                    })
+                    .ok()
+            });
+            let timer = timer.flatten();
             self.caminito.switcher = Some(OpenSwitcher {
                 holding: Holding::of(mods),
                 key,

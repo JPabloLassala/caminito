@@ -51,11 +51,13 @@ pub(crate) enum Binding {
 #[derive(Debug, Clone, Copy)]
 enum Does {
     Run(Binding),
-    /// A `switch-*` action (108), which Marco flags `BINDING_REVERSES`: Shift turns it
-    /// round, and a `-backward` one is `reversed` to start with.
+    /// A `switch-*` action (108), or with no `popup` a `cycle-*` one (163), which Marco
+    /// flags `BINDING_REVERSES`: Shift turns it round, and a `-backward` one is `reversed`
+    /// to start with.
     Switch {
         list: SwitchList,
         reversed: bool,
+        popup: bool,
     },
 }
 
@@ -90,7 +92,19 @@ const fn policy(action: Action) -> Does {
 }
 
 const fn switch(list: SwitchList, reversed: bool) -> Does {
-    Does::Switch { list, reversed }
+    Does::Switch {
+        list,
+        reversed,
+        popup: true,
+    }
+}
+
+const fn cycle(list: SwitchList, reversed: bool) -> Does {
+    Does::Switch {
+        list,
+        reversed,
+        popup: false,
+    }
 }
 
 /// The keys of a family numbered 1 to 12, such as `switch-to-workspace-1` to `-12`.
@@ -229,6 +243,32 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "switch-panels-backward",
                 "disabled",
                 switch(SwitchList::Panels, true),
+            ),
+            global("cycle-group", "<Alt>F6", cycle(SwitchList::Group, false)),
+            global(
+                "cycle-group-backward",
+                "disabled",
+                cycle(SwitchList::Group, true),
+            ),
+            global(
+                "cycle-windows",
+                "<Alt>Escape",
+                cycle(SwitchList::Windows, false),
+            ),
+            global(
+                "cycle-windows-backward",
+                "disabled",
+                cycle(SwitchList::Windows, true),
+            ),
+            global(
+                "cycle-panels",
+                "<Control><Alt>Escape",
+                cycle(SwitchList::Panels, false),
+            ),
+            global(
+                "cycle-panels-backward",
+                "disabled",
+                cycle(SwitchList::Panels, true),
             ),
             global(
                 "show-desktop",
@@ -471,12 +511,16 @@ impl Bindings {
                 combination,
                 binding,
             };
-            let (list, reversed) = match bindable.does {
+            let (list, reversed, popup) = match bindable.does {
                 Does::Run(binding) => {
                     rows.push(row(combination, binding));
                     continue;
                 }
-                Does::Switch { list, reversed } => (list, reversed),
+                Does::Switch {
+                    list,
+                    reversed,
+                    popup,
+                } => (list, reversed, popup),
             };
             let held = combination.held;
             // Marco refuses a binding Shift reverses that holds nothing but Shift
@@ -496,7 +540,11 @@ impl Bindings {
             // other way.
             let switch = |shift: bool| {
                 let backward = reversed != shift;
-                Binding::Policy(Action::Switch { list, backward })
+                Binding::Policy(if popup {
+                    Action::Switch { list, backward }
+                } else {
+                    Action::Cycle { list, backward }
+                })
             };
             rows.push(row(combination, switch(held.shift)));
             // And `rebuild_binding_table` binds it with Shift too, right after it

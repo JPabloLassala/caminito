@@ -3,7 +3,7 @@
 //! There's no retained scene graph: each output's elements are rebuilt every frame, and this
 //! is the only code that knows the layer order.
 
-use caminito_policy::{Layer as StackLayer, WindowId};
+use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
@@ -21,7 +21,7 @@ use smithay::desktop::{LayerSurface, PopupManager, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
@@ -522,13 +522,50 @@ fn thumbnail_elements<R>(
     let Some(switcher) = policy.switcher() else {
         return;
     };
-    // The grid is laid out again in the refresh pass, so it has a cell for each window.
-    for (index, &id) in switcher.windows.iter().enumerate().take(grid.cells.len()) {
-        let Some(frame) = policy.frame_rect(id) else {
-            continue;
+    // The grid is laid out again in the refresh pass, so it has a cell for each entry.
+    let entries = switcher.entries.iter().enumerate();
+    for (index, entry) in entries.take(grid.cells.len()) {
+        let mut parts: Vec<WindowPart<R>> = Vec::new();
+        // What the thumbnail shows whole: a window's frame, or a Layer surface (163).
+        let size = match *entry {
+            SwitchEntry::Window(id) => {
+                let (Some(mapped), Some(geometry), Some(frame)) = (
+                    policy.window(id),
+                    policy.geometry(id),
+                    policy.frame_rect(id),
+                ) else {
+                    continue;
+                };
+                let shown = Rectangle::from_size(frame.size);
+                one_window_elements(
+                    renderer,
+                    mapped,
+                    geometry.loc - frame.loc,
+                    shown,
+                    scale,
+                    &mut parts,
+                );
+                frame.size
+            }
+            SwitchEntry::Layer(id) => {
+                let Some((layer, geometry)) = caminito.layer_named(id) else {
+                    continue;
+                };
+                parts.extend(AsRenderElements::<R>::render_elements::<WindowPart<R>>(
+                    &layer,
+                    renderer,
+                    Point::default(),
+                    Scale::from(scale),
+                    1.0,
+                ));
+                geometry.size
+            }
         };
-        let target = grid.thumbnail(index, frame.size);
-        scaled_window_elements(renderer, caminito, id, target, scale, elements);
+        if size.w <= 0 || size.h <= 0 {
+            continue;
+        }
+        let target = grid.thumbnail(index, size);
+        scaled_elements(parts, size, target, scale, elements);
     }
 }
 
@@ -544,23 +581,40 @@ fn minimizing_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
+    let policy = &caminito.policy;
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
     for (id, target) in caminito.minimize_animations.boxes(caminito.now()) {
-        if !target.overlaps(output_geometry) {
+        let (Some(mapped), Some(geometry), Some(frame)) = (
+            policy.window(id),
+            policy.geometry(id),
+            policy.frame_rect(id),
+        ) else {
+            continue;
+        };
+        if !target.overlaps(output_geometry) || frame.size.w <= 0 || frame.size.h <= 0 {
             continue;
         }
+        let mut parts: Vec<WindowPart<R>> = Vec::new();
+        let shown = Rectangle::from_size(frame.size);
+        one_window_elements(
+            renderer,
+            mapped,
+            geometry.loc - frame.loc,
+            shown,
+            scale,
+            &mut parts,
+        );
         let target = Rectangle::new(target.loc - output_geometry.loc, target.size);
-        scaled_window_elements(renderer, caminito, id, target, scale, elements);
+        scaled_elements(parts, frame.size, target, scale, elements);
     }
 }
 
-/// A window as a capture of it shows it (103), its surfaces over its frame, scaled to fill
-/// `target`, which is from the origin of what's drawn, and cut off at its edge.
-fn scaled_window_elements<R>(
-    renderer: &mut R,
-    caminito: &Caminito,
-    id: WindowId,
+/// `parts`, which show something of `size` whole from the origin, scaled to fill `target`,
+/// which is from the origin of what's drawn, and cut off at its edge.
+fn scaled_elements<R>(
+    parts: Vec<WindowPart<R>>,
+    size: Size<i32, Logical>,
     target: Rectangle<i32, Logical>,
     scale: f64,
     elements: &mut Vec<SceneElement<R>>,
@@ -568,30 +622,9 @@ fn scaled_window_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let policy = &caminito.policy;
-    let (Some(mapped), Some(geometry), Some(frame)) = (
-        policy.window(id),
-        policy.geometry(id),
-        policy.frame_rect(id),
-    ) else {
-        return;
-    };
-    if frame.size.w <= 0 || frame.size.h <= 0 {
-        return;
-    }
-    let mut parts: Vec<WindowPart<R>> = Vec::new();
-    let shown = Rectangle::from_size(frame.size);
-    one_window_elements(
-        renderer,
-        mapped,
-        geometry.loc - frame.loc,
-        shown,
-        scale,
-        &mut parts,
-    );
     let factor = Scale::from((
-        f64::from(target.size.w) / f64::from(frame.size.w),
-        f64::from(target.size.h) / f64::from(frame.size.h),
+        f64::from(target.size.w) / f64::from(size.w),
+        f64::from(target.size.h) / f64::from(size.h),
     ));
     let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
     // A window's popups and subsurfaces can reach past its frame.

@@ -249,6 +249,8 @@ pub struct Caminito {
     pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
     /// The layer surface a click gave the keyboard, and policy's focus then (63).
     pub(crate) keyboard_layer: Option<(LayerSurface, Option<WindowId>)>,
+    /// The name policy gets for the next layer surface (163).
+    pub(crate) next_layer_id: u64,
     /// Keys whose press ran a binding or a grabbed accelerator, so their release is
     /// swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
@@ -638,6 +640,7 @@ impl State {
         self.caminito.refresh_frames();
         // Before the outputs are drawn, with what policy minimised since the last pass.
         self.caminito.refresh_minimize_animations();
+        self.caminito.refresh_panel_layers();
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
         self.update_keyboard_focus();
@@ -927,6 +930,7 @@ impl Caminito {
 
             pointer_focus: None,
             keyboard_layer: None,
+            next_layer_id: 0,
             suppressed_keys: HashSet::new(),
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
