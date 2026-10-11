@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::os::fd::AsFd;
 
-use caminito_policy::MAX_WORKSPACES;
+use caminito_policy::{ActivationSource, MAX_WORKSPACES};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
     self, Interest, LoopHandle, Mode, PostAction, RegistrationToken,
@@ -338,11 +338,11 @@ pub(super) struct XConnection {
     published_resources: Option<Resources>,
     /// Managed windows whose `_NET_FRAME_EXTENTS` is written again, changed or not.
     frame_extents_owed: HashSet<Window>,
-    /// The source indication of each `_NET_ACTIVE_WINDOW` message read and not yet asked
-    /// for, oldest first (166).
-    activations: VecDeque<(Window, u32)>,
-    /// The requests `activation_source` read, for `requests` to hand on.
-    held: Vec<Request>,
+    /// Who sent each `_NET_ACTIVE_WINDOW` message read and not yet asked about, oldest
+    /// first (166).
+    activations: VecDeque<(Window, ActivationSource)>,
+    /// The requests `take_activation_source` read ahead, for `requests` to hand on.
+    read_ahead: Vec<Request>,
     /// Whether Xwayland has SHAPE, which input regions are read with.
     has_shape: bool,
     /// Whether Xwayland has RandR, whose primary output is set (81).
@@ -439,7 +439,7 @@ impl XConnection {
             published_resources: None,
             frame_extents_owed: HashSet::new(),
             activations: VecDeque::new(),
-            held: Vec::new(),
+            read_ahead: Vec::new(),
             has_shape,
             has_randr,
             randr_primary: None,
@@ -452,7 +452,7 @@ impl XConnection {
 
     /// The messages X has sent since this was last asked.
     pub(super) fn requests(&mut self) -> Result<Vec<Request>, Error> {
-        let mut requests = std::mem::take(&mut self.held);
+        let mut requests = std::mem::take(&mut self.read_ahead);
         while let Some(event) = self.conn.poll_for_event()? {
             let message = match event {
                 Event::ClientMessage(message) => message,
@@ -491,11 +491,19 @@ impl XConnection {
                 }
             } else if type_ == atoms._NET_ACTIVE_WINDOW {
                 // Smithay hands the request on without its source indication, so that's
-                // kept for `activation_source`. One Smithay never asks about is dropped.
+                // kept for `take_activation_source`. One Smithay never asks about is
+                // dropped. EWMH: 1 is an application and 2 a pager. Marco takes a client
+                // older than the indication, which says 0 and gives no timestamp, as it
+                // takes a pager, and reads a number it doesn't know as 0
+                // (window.c:3170-3195, 5571-5575).
                 if self.activations.len() == ACTIVATIONS_KEPT {
                     self.activations.pop_front();
                 }
-                self.activations.push_back((window, data[0]));
+                let source = match data[0] {
+                    1 => ActivationSource::Application,
+                    _ => ActivationSource::Pager,
+                };
+                self.activations.push_back((window, source));
             } else if type_ == atoms._NET_REQUEST_FRAME_EXTENTS {
                 requests.push(Request::FrameExtents { window });
             } else if type_ == atoms._NET_WM_MOVERESIZE {
@@ -953,17 +961,26 @@ impl XConnection {
         Ok(())
     }
 
-    /// The source indication of the oldest `_NET_ACTIVE_WINDOW` message for `window` that
-    /// hasn't been asked for: 1 for an application, 2 for a pager, and 0 for a client older
-    /// than the indication (166). It's for when Smithay hands on that message, which X sent
-    /// this connection too: a round trip makes sure it has arrived here.
-    pub(super) fn activation_source(&mut self, window: Window) -> Result<Option<u32>, Error> {
+    /// Who sent the oldest `_NET_ACTIVE_WINDOW` message for `window` that hasn't been asked
+    /// about (166), which it forgets. It's for when Smithay hands on that message, which X
+    /// sent this connection too: a round trip makes sure it has arrived here, and what else
+    /// arrived is kept for `requests`.
+    pub(super) fn take_activation_source(
+        &mut self,
+        window: Window,
+    ) -> Result<Option<ActivationSource>, Error> {
         self.conn.sync()?;
-        self.held = self.requests()?;
+        self.read_ahead = self.requests()?;
         let asked = self.activations.iter().position(|(w, _)| *w == window);
         Ok(asked
             .and_then(|index| self.activations.remove(index))
             .map(|(_, source)| source))
+    }
+
+    /// Forgets who asked for a destroyed window to be active. X gives its id to another
+    /// window, which a request kept for the first mustn't be taken for.
+    pub(super) fn window_destroyed(&mut self, window: Window) {
+        self.activations.retain(|(asked, _)| *asked != window);
     }
 
     /// Waits until Xwayland has handled every request sent so far. x11rb queues the events

@@ -107,6 +107,7 @@ impl XwmHandler for State {
         caminito.with_root_stack(|stack| stack.destroyed(window.window_id()));
         caminito.override_redirect_unmapped(&window);
         caminito.window_destroyed(&key(&window));
+        caminito.x_window_destroyed(window.window_id());
         caminito
             .app_menu_registrations
             .window_destroyed(window.window_id());

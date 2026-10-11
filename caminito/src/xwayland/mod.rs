@@ -566,21 +566,22 @@ impl Caminito {
         }
     }
 
-    /// Who sent the `_NET_ACTIVE_WINDOW` message for `window` that Smithay has just handed
-    /// on, by its source indication. Marco takes a request from a client older than the
-    /// indication, which says 0 and gives no timestamp, as it takes a pager's
-    /// (window.c:3170-3195). With no X connection of Caminito's to read it,
-    /// the request counts as an application's.
-    pub(crate) fn x_activation_source(&mut self, window: X11Window) -> ActivationSource {
-        let source = self
-            .with_xconn("read who asks for the active window", |xconn| {
-                xconn.activation_source(window)
-            })
-            .flatten();
-        match source {
-            Some(1) | None => ActivationSource::Application,
-            Some(_) => ActivationSource::Pager,
+    /// An X window is gone, which Caminito's X connection kept requests for.
+    pub(crate) fn x_window_destroyed(&mut self, window: X11Window) {
+        if let Some(xconn) = self.xwayland.as_mut().and_then(|x| x.xconn.as_mut()) {
+            xconn.window_destroyed(window);
         }
+    }
+
+    /// Who sent the `_NET_ACTIVE_WINDOW` message for `window` that Smithay has just handed
+    /// on, by its source indication. With no X connection of Caminito's to read it, the
+    /// request counts as an application's.
+    pub(crate) fn x_activation_source(&mut self, window: X11Window) -> ActivationSource {
+        self.with_xconn("read who asks for the active window", |xconn| {
+            xconn.take_activation_source(window)
+        })
+        .flatten()
+        .unwrap_or(ActivationSource::Application)
     }
 
     /// Reads what Caminito's X connection knows of a window Smithay doesn't, as it asks to

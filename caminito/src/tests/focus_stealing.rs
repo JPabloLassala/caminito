@@ -4,7 +4,7 @@
 //! urgency of either kind as a window list is told of it (166).
 //!
 //! The fixture's clients are all of the test's own process, so the xdg clients here are
-//! connected as processes of their own, and the X windows say theirs in `_NET_WM_PID`,
+//! connected as processes of their own, and the XWayland windows say theirs in `_NET_WM_PID`,
 //! which is how policy tells one client's windows from another's.
 
 use caminito_policy::FocusNewWindows;
@@ -58,7 +58,7 @@ fn click(f: &mut Fixture, window: ClientWindow) {
     let x = geometry.loc.x + geometry.size.w / 2;
     let y = geometry.loc.y + geometry.size.h / 2;
     f.click(x.into(), y.into());
-    f.roundtrip(window.client());
+    f.sync(window);
 }
 
 /// Asks for a token from `from` with its client's last input serial, and returns it once
@@ -196,7 +196,7 @@ fn x_fixture(mode: &str) -> (Fixture, ClientId) {
     (f, x)
 }
 
-/// An X window of the process `pid`, as `_NET_WM_PID` says.
+/// An XWayland window of the process `pid`, as `_NET_WM_PID` says.
 fn of_process(pid: u32) -> WindowSpec {
     WindowSpec {
         cardinals: vec![("_NET_WM_PID", vec![pid])],
@@ -204,16 +204,7 @@ fn of_process(pid: u32) -> WindowSpec {
     }
 }
 
-/// Clicks the middle of an X window.
-fn x_click(f: &mut Fixture, window: ClientWindow) {
-    let geometry = f.geometry(window);
-    let x = geometry.loc.x + geometry.size.w / 2;
-    let y = geometry.loc.y + geometry.size.h / 2;
-    f.click(x.into(), y.into());
-    f.sync(window);
-}
-
-/// Whether the X window's `_NET_WM_STATE` has `_NET_WM_STATE_DEMANDS_ATTENTION`.
+/// Whether the XWayland window's `_NET_WM_STATE` has `_NET_WM_STATE_DEMANDS_ATTENTION`.
 fn x_demands_attention(f: &mut Fixture, window: ClientWindow) -> bool {
     let id = window.x11();
     let states = f
@@ -235,18 +226,20 @@ fn ask_to_be_active(f: &mut Fixture, window: ClientWindow, source: u32) {
     .unwrap();
 }
 
-/// Windows of the processes 200 and 100, the last focused, under `mode`.
+/// XWayland windows of the processes 200 and 100, the last focused, under `mode`, which
+/// is set once both are mapped, as *strict* would refuse the second.
 fn x_window_beside_the_focused_one(mode: &str) -> (Fixture, ClientId, ClientWindow, ClientWindow) {
     let (mut f, x) = x_fixture("smart");
     let other = f.map(x, of_process(200));
     let focused = f.map(x, of_process(100));
     assert!(has_focus(&f, focused));
-    if mode != "smart" {
-        f.set_setting(MARCO_GENERAL, "focus-new-windows", Value::Str(mode.into()));
-        f.dispatch_until(|f| {
-            f.state.caminito.settings.policy.focus_new_windows == FocusNewWindows::Strict
-        });
-    }
+    let wanted = match mode {
+        "smart" => FocusNewWindows::Smart,
+        "strict" => FocusNewWindows::Strict,
+        other => panic!("{other} isn't a mode"),
+    };
+    f.set_setting(MARCO_GENERAL, "focus-new-windows", Value::Str(mode.into()));
+    f.dispatch_until(|f| f.state.caminito.settings.policy.focus_new_windows == wanted);
     (f, x, other, focused)
 }
 
@@ -280,7 +273,7 @@ fn an_x_window_that_opens_by_itself_is_refused_and_demands_attention_until_focus
     // Caminito says so in `_NET_WM_STATE`.
     f.dispatch_until_mut(|f| x_demands_attention(f, later));
 
-    x_click(&mut f, later);
+    click(&mut f, later);
 
     assert!(has_focus(&f, later));
     assert!(!dumped_urgent(&f, later));
@@ -329,7 +322,7 @@ fn a_dialog_transient_for_an_x_window_that_is_not_focused_is_refused() {
 
 #[test]
 fn net_active_window_from_a_pager_or_an_old_client_is_honoured() {
-    for (mode, source) in [("smart", 2), ("strict", 2), ("smart", 0)] {
+    for (mode, source) in [("smart", 2), ("strict", 2), ("smart", 0), ("strict", 0)] {
         let (mut f, _x, other, _focused) = x_window_beside_the_focused_one(mode);
 
         ask_to_be_active(&mut f, other, source);
@@ -362,7 +355,7 @@ fn net_active_window_from_an_application_that_has_not_the_focus_makes_the_window
 fn net_active_window_from_the_focused_windows_application_is_honoured() {
     let (mut f, x, _other, focused) = x_window_beside_the_focused_one("strict");
     let second = f.map(x, of_process(100));
-    x_click(&mut f, focused);
+    click(&mut f, focused);
     assert!(has_focus(&f, focused));
 
     ask_to_be_active(&mut f, second, 1);
@@ -389,8 +382,8 @@ fn an_x_client_takes_back_the_demand_for_attention_caminito_made() {
     f.dispatch_until_mut(|f| !x_demands_attention(f, other));
 }
 
-/// An X window that asks for attention before it maps has the focus as it maps, so it
-/// demands none.
+/// An XWayland window that asks for attention before it maps has the focus as it maps, so
+/// it demands none.
 #[test]
 fn an_x_window_that_maps_demanding_attention_and_takes_the_focus_demands_none() {
     let (mut f, x) = x_fixture("smart");
@@ -470,7 +463,7 @@ fn a_panel_is_told_when_an_x_window_demands_attention_and_when_it_stops() {
         ["toplevel 0: xfce state [DemandsAttention]"]
     );
 
-    x_click(&mut f, other);
+    click(&mut f, other);
     assert!(has_focus(&f, other));
 
     assert_eq!(xfce_states(&mut f, panel), ["toplevel 0: xfce state []"]);

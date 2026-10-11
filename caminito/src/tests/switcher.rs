@@ -1000,7 +1000,7 @@ fn a_thumbnail_has_its_windows_icon_in_a_corner() {
     assert_eq!(pixel(&mut f, corner), 0xff0000);
 }
 
-/// Only an X window can ask for attention itself.
+/// Only an XWayland window can ask for attention itself.
 #[test]
 fn an_urgent_window_is_marked() {
     let (mut f, x) = Fixture::connected(Kind::X11);
