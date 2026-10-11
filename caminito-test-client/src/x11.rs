@@ -62,6 +62,9 @@ pub struct XWindowSpec {
     pub class: Option<&'static str>,
     /// Whether `WM_PROTOCOLS` has `WM_DELETE_WINDOW`, so closing it sends a message.
     pub delete_window: bool,
+    /// Whether `WM_PROTOCOLS` has `_NET_WM_PING`, as a toolkit's window does. Nothing
+    /// answers the ping but [`answer_pings`](X11Client::answer_pings).
+    pub ping: bool,
     /// Leaves out the background, so the window has no content and Xwayland commits none.
     pub empty: bool,
     /// The colour it's filled with, if not [`BACKGROUND`].
@@ -272,6 +275,9 @@ impl X11Client {
         let mut protocols = Vec::new();
         if spec.delete_window {
             protocols.push(self.atom("WM_DELETE_WINDOW")?);
+        }
+        if spec.ping {
+            protocols.push(self.atom("_NET_WM_PING")?);
         }
         if spec.sync_request {
             use x11rb::protocol::sync::{ConnectionExt as _, Int64};
@@ -556,6 +562,38 @@ impl X11Client {
             self.conn.sync()?;
         }
         Ok(values.len())
+    }
+
+    /// Answers the `_NET_WM_PING`s `window` has had since the last call, as a toolkit's
+    /// loop does: sends each back to the root. Returns how many there were; the other
+    /// events are kept for [`events`](Self::events).
+    pub fn answer_pings(&self, window: Window) -> Result<usize, ReplyError> {
+        let protocols = self.atom("WM_PROTOCOLS")?;
+        let ping = self.atom("_NET_WM_PING")?;
+        let mut pings = 0;
+        let mut others = Vec::new();
+        for event in self.events()? {
+            match &event {
+                Event::ClientMessage(message)
+                    if message.window == window
+                        && message.type_ == protocols
+                        && message.data.as_data32()[0] == ping =>
+                {
+                    let answer = ClientMessageEvent::new(32, self.root, protocols, message.data);
+                    self.conn.send_event(
+                        false,
+                        self.root,
+                        EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+                        answer,
+                    )?;
+                    pings += 1;
+                }
+                _ => others.push(event),
+            }
+        }
+        self.backlog.lock().unwrap().extend(others);
+        self.conn.sync()?;
+        Ok(pings)
     }
 
     /// Blocks until an event `pick` takes arrives, keeping the others for

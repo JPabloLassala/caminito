@@ -16,6 +16,7 @@ pub(crate) use x11::{
 };
 pub(crate) use xdg::owe_configure;
 
+use std::cell::Cell;
 use std::sync::Mutex;
 
 use caminito_policy::{
@@ -33,7 +34,7 @@ use smithay::desktop::{Window, WindowSurface};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Serial, Size};
 use smithay::wayland::compositor::{SurfaceData, send_surface_state, with_states};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::seat::WaylandFocus;
@@ -91,6 +92,9 @@ trait Adapter {
     fn set_activated(&self, activated: bool);
     /// Asks the client to close the window.
     fn close(&self);
+    /// Pings the client, with `serial` to tell its answer by. Whether the client owes an
+    /// answer now: to this ping, or to one before it that it hasn't answered.
+    fn ping(&self, serial: Serial) -> bool;
     /// Configures a pending window before it maps.
     fn configure_pending(&self, configure: &PreMapConfigure);
     /// What the keyboard focuses to give the window the keyboard.
@@ -190,6 +194,9 @@ pub struct Mapped {
     /// Where a foreign-toplevel client shows the window, as a rectangle on one of its
     /// surfaces (65): the target of the minimise animation (172).
     minimize_rectangle: Option<(WlSurface, Rectangle<i32, Logical>)>,
+    /// Whether policy has asked the window to close since the refresh pass last pinged its
+    /// client (168).
+    close_asked: Cell<bool>,
 }
 
 /// Which of two outputs a surface drawn on both has as its main output: the one it has,
@@ -226,6 +233,7 @@ impl Mapped {
             frame_scale: 1,
             frame: WindowFrame::default(),
             minimize_rectangle: None,
+            close_asked: Cell::new(false),
         }
     }
 
@@ -440,6 +448,16 @@ impl Mapped {
         self.adapter().title()
     }
 
+    /// Whether policy has asked the window to close since this was last asked (168).
+    pub(crate) fn take_close_asked(&self) -> bool {
+        self.close_asked.take()
+    }
+
+    /// Pings the window's client, as [`Adapter::ping`] says.
+    pub(crate) fn ping(&self, serial: Serial) -> bool {
+        self.adapter().ping(serial)
+    }
+
     /// Where the window's icon comes from.
     pub(crate) fn icon_source(&self) -> IconSource {
         self.adapter().icon()
@@ -558,6 +576,7 @@ impl PolicyWindow for Mapped {
 
     fn close(&mut self) {
         self.adapter().close();
+        self.close_asked.set(true);
     }
 
     fn set_outputs(&mut self, outputs: &[OutputId]) {

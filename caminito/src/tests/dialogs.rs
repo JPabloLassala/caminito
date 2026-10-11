@@ -18,24 +18,37 @@ use crate::settings::translate::{
 };
 
 /// A stand-in for zenity in a directory of its own.
-struct Zenity {
+pub(super) struct Zenity {
     dir: TempDir,
+}
+
+/// How a dialog of the stand-in's ends.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Press {
+    /// The OK button: status 0.
+    Ok,
+    /// The Cancel button: status 1.
+    Cancel,
+    /// Escape, or the dialog's window closed: zenity's `ZENITY_ESC`, or 1 without it.
+    Escape,
 }
 
 impl Zenity {
     /// Puts the stand-in first in the `PATH` of what Caminito spawns. It answers `answer`,
     /// as a user who types it and presses OK, or with `None` cancels.
-    fn install(f: &mut Fixture, answer: Option<&str>) -> Self {
+    pub(super) fn install(f: &mut Fixture, answer: Option<&str>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         // Each argument ends in a NUL, as the error's text has lines of its own. The record
         // is moved into place once the answer is out, so it's never read half-written.
         let script = "#!/bin/sh\n\
                       here=$(dirname \"$0\")\n\
-                      echo >> \"$here/started\"\n\
+                      echo $$ >> \"$here/started\"\n\
                       while [ -e \"$here/hold\" ]; do sleep 0.02; done\n\
                       printf '%s\\0' \"$@\" > \"$here/running\"\n\
                       status=1\n\
                       if [ -e \"$here/answer\" ]; then cat \"$here/answer\"; status=0; fi\n\
+                      if [ -e \"$here/status\" ]; then status=$(cat \"$here/status\"); fi\n\
+                      if [ \"$status\" = escape ]; then status=${ZENITY_ESC:-1}; fi\n\
                       mv \"$here/running\" \"$here/ran\"\n\
                       exit $status\n";
         let program = dir.path().join("zenity");
@@ -49,27 +62,50 @@ impl Zenity {
         Self { dir }
     }
 
+    /// Puts in a stand-in whose dialogs end with `press`.
+    pub(super) fn install_pressing(f: &mut Fixture, press: Press) -> Self {
+        let zenity = Self::install(f, None);
+        zenity.press(press);
+        zenity
+    }
+
+    /// Has the dialogs that haven't ended yet end with `press`.
+    pub(super) fn press(&self, press: Press) {
+        let status = match press {
+            Press::Ok => "0",
+            Press::Cancel => "1",
+            Press::Escape => "escape",
+        };
+        fs::write(self.dir.path().join("status"), status).unwrap();
+    }
+
     /// Keeps the stand-in from answering, as a dialog that still shows, until
     /// [`release`](Self::release).
-    fn hold(&self) {
+    pub(super) fn hold(&self) {
         fs::write(self.dir.path().join("hold"), "").unwrap();
     }
 
-    fn release(&self) {
+    pub(super) fn release(&self) {
         fs::remove_file(self.dir.path().join("hold")).unwrap();
     }
 
-    /// How many times the stand-in has started.
-    fn starts(&self) -> usize {
-        fs::read_to_string(self.dir.path().join("started")).map_or(0, |text| text.lines().count())
+    /// The process of each start of the stand-in, oldest first.
+    pub(super) fn processes(&self) -> Vec<u32> {
+        let started = fs::read_to_string(self.dir.path().join("started")).unwrap_or_default();
+        started.lines().map(|pid| pid.parse().unwrap()).collect()
     }
 
-    fn ran(&self) -> PathBuf {
+    /// How many times the stand-in has started.
+    pub(super) fn starts(&self) -> usize {
+        self.processes().len()
+    }
+
+    pub(super) fn ran(&self) -> PathBuf {
         self.dir.path().join("ran")
     }
 
     /// Waits for the stand-in to have run, and returns its arguments.
-    fn arguments(&self, f: &mut Fixture) -> Vec<String> {
+    pub(super) fn arguments(&self, f: &mut Fixture) -> Vec<String> {
         let ran = self.ran();
         f.dispatch_until(|_| ran.exists());
         let written = fs::read_to_string(&ran).unwrap();

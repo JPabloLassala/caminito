@@ -281,6 +281,8 @@ impl Caminito {
     /// Stops managing a window.
     fn unmap_window(&mut self, id: WindowId) {
         self.menu_claims.toplevel_gone(id);
+        // Its "not responding" dialog goes with it (168).
+        self.window_responds(id);
         if let Some(mapped) = self.policy.unmap_window(id) {
             for output in &self.outputs {
                 mapped.window().output_leave(output);

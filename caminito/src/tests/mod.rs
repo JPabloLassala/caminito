@@ -50,6 +50,7 @@ mod menu_claim;
 mod minimise_animation;
 mod move_to;
 mod night_light;
+mod not_responding;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;

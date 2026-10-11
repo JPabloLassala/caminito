@@ -32,7 +32,6 @@ use smithay::xwayland::xwm::settings::Value as XSettingValue;
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent};
 
 pub(crate) use self::restart::Restart;
-#[cfg(test)]
 pub(crate) use self::restart::process;
 use self::scale::X11Scale;
 pub(crate) use self::selection::WaylandSelections;
@@ -558,6 +557,23 @@ impl Caminito {
                 None
             }
         }
+    }
+
+    /// Whether `window`'s `WM_CLIENT_MACHINE` names this machine, so that its `_NET_WM_PID`
+    /// is a process here, as Marco's `meta_window_kill` asks (`core/delete.c:171-176`).
+    pub(crate) fn x_client_is_of_this_machine(&mut self, window: &X11Surface) -> bool {
+        let id = window.window_id();
+        let machine = self.with_xconn("read an X window's machine", |xconn| {
+            xconn.client_machine(id)
+        });
+        let uname = rustix::system::uname();
+        machine.flatten().as_deref() == Some(uname.nodename().to_bytes())
+    }
+
+    /// Cuts off the X client that made `window`.
+    pub(crate) fn kill_x_client(&mut self, window: &X11Surface) {
+        let id = window.window_id();
+        self.with_xconn("cut an X client off", |xconn| xconn.kill_client(id));
     }
 
     /// Reads what Caminito's X connection knows of a window Smithay doesn't, as it asks to

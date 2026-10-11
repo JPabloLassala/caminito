@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use caminito_policy::{SizeHints, WindowStates, WindowType};
 use smithay::reexports::x11rb::protocol::xproto::Gravity;
-use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Serial, Size};
 use smithay::xwayland::X11Surface;
-use smithay::xwayland::xwm::{WmInputModel, WmWindowType};
+use smithay::xwayland::xwm::{PingError, WmInputModel, WmWindowType};
 
 use super::{Adapter, PreMapConfigure, Skips, WindowKey};
 use crate::decoration::{IconSource, NetWmIcon};
@@ -453,6 +453,19 @@ impl Adapter for X11Surface {
     fn close(&self) {
         if let Err(err) = X11Surface::close(self) {
             tracing::debug!("can't close an X window: {err}");
+        }
+    }
+
+    /// `_NET_WM_PING`, if `WM_PROTOCOLS` has it. Marco takes a window without it as one
+    /// that answered (`meta_display_ping_window`, `core/display.c:4441-4447`).
+    fn ping(&self, serial: Serial) -> bool {
+        match self.send_ping(u32::from(serial)) {
+            Ok(()) | Err(PingError::PingAlreadyPending(_)) => true,
+            Err(PingError::NotSupported | PingError::InvalidTimestamp) => false,
+            Err(PingError::Connection(err)) => {
+                tracing::debug!("can't ping an X window: {err}");
+                false
+            }
         }
     }
 

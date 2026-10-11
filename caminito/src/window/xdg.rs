@@ -8,8 +8,9 @@ use caminito_policy::{SizeHints, Tile, WindowStates, WindowType};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{DisplayHandle, Resource};
-use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Serial, Size};
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::PingError;
 use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
 use smithay::wayland::xdg_toplevel_icon::ToplevelIconCachedState;
@@ -319,6 +320,15 @@ impl Adapter for ToplevelSurface {
 
     fn close(&self) {
         self.send_close();
+    }
+
+    /// `xdg_wm_base`'s ping, which is its client's and not the window's: Smithay sends no
+    /// other while one has no answer.
+    fn ping(&self, serial: Serial) -> bool {
+        match self.client().send_ping(serial) {
+            Ok(()) | Err(PingError::PingAlreadyPending(_)) => true,
+            Err(PingError::DeadSurface) => false,
+        }
     }
 
     /// Sets the pre-map configure, and sends it if the initial configure has gone out; the

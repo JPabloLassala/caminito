@@ -5,9 +5,9 @@
 //! Caminito gives what it spawns. A dialog is a client like any other, and nothing waits for it.
 
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
 use std::os::fd::OwnedFd;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use caminito_policy::MAX_WORKSPACES;
 use smithay::reexports::calloop::generic::Generic;
@@ -19,7 +19,7 @@ use crate::settings::translate::MARCO_WORKSPACE_NAMES;
 use crate::state::Caminito;
 
 /// The title of Marco's dialogs.
-const TITLE: &str = "Marco";
+pub(crate) const TITLE: &str = "Marco";
 
 impl Caminito {
     /// Shows Marco's error dialog with `text`, in zenity's markup. zenity missing is logged,
@@ -43,26 +43,18 @@ impl Caminito {
         let Some(name) = self.policy.workspace_names().get(workspace) else {
             return;
         };
-        let spawned = Command::new("zenity")
+        let mut zenity = Command::new("zenity");
+        zenity
             .args(["--entry", "--title", TITLE, "--text", "New Workspace Name:"])
             .args(["--entry-text", name])
-            .args(["--ok-label", "OK", "--cancel-label", "Cancel"])
-            .env_clear()
-            .envs(child_environment(&self.environment))
-            .current_dir("/")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .spawn();
-        let mut child = match spawned {
-            Ok(child) => child,
+            .args(["--ok-label", "OK", "--cancel-label", "Cancel"]);
+        let (mut child, stdout) = match self.spawn_dialog(zenity) {
+            Ok(spawned) => spawned,
             Err(err) => {
                 tracing::warn!("can't show Marco's dialog for rename-workspace: zenity: {err}");
                 return;
             }
         };
-        let stdout = child.stdout.take().expect("zenity's stdout is piped");
-        // A file, which the source can read through a shared reference.
-        let stdout = File::from(OwnedFd::from(stdout));
         // zenity's answer comes on the loop, as on Marco's: nothing waits for the dialog.
         let source = Generic::new(stdout, Interest::READ, Mode::Level);
         let mut answer = Vec::new();
@@ -92,6 +84,27 @@ impl Caminito {
             Ok(token) => self.workspace_rename = Some(token),
             Err(err) => tracing::warn!("can't wait for rename-workspace's dialog: {err}"),
         }
+    }
+
+    /// Spawns `zenity`, a dialog with its arguments, in the environment Caminito gives what
+    /// it spawns. Returns its process, and its stdout as a file, which a source on the loop
+    /// can read through a shared reference: zenity closes it as it ends.
+    pub(crate) fn spawn_dialog(&self, mut zenity: Command) -> io::Result<(Child, File)> {
+        // The caller's variables are over Caminito's.
+        let own: Vec<_> = zenity
+            .get_envs()
+            .filter_map(|(name, value)| Some((name.to_owned(), value?.to_owned())))
+            .collect();
+        let mut child = zenity
+            .env_clear()
+            .envs(child_environment(&self.environment))
+            .envs(own)
+            .current_dir("/")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .spawn()?;
+        let stdout = child.stdout.take().expect("zenity's stdout is piped");
+        Ok((child, File::from(OwnedFd::from(stdout))))
     }
 
     /// Writes the name zenity answered for `workspace`, as Marco's

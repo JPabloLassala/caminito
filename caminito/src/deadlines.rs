@@ -15,18 +15,21 @@ use crate::state::{Caminito, State};
 /// time:
 ///
 /// 1. Policy, whose auto-raise restacks the windows the rest looks at (153).
-/// 2. Idle, which blanks and locks (128).
-/// 3. AccessX, whose keys go on to the clients and whose beeps ring the bell (134).
-/// 4. The repeat of a held accelerator (99), which signals a key AccessX let through.
-/// 5. The Global menu's grace period (114), which nothing else here looks at.
-/// 6. The Window switcher's popup (108), the bell's flash (169) and the minimise animations
+/// 2. The pings that go with a request to close (168): one with no answer brings the "not
+///    responding" dialog forward if it shows, which restacks the windows too.
+/// 3. Idle, which blanks and locks (128).
+/// 4. AccessX, whose keys go on to the clients and whose beeps ring the bell (134).
+/// 5. The repeat of a held accelerator (99), which signals a key AccessX let through.
+/// 6. The Global menu's grace period (114), which nothing else here looks at.
+/// 7. The Window switcher's popup (108), the bell's flash (169) and the minimise animations
 ///    (172), which only draw.
-/// 7. Night Light (138), which only moves the outputs' temperatures.
+/// 8. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 9] = [
+const HOLDERS: [Holder; 10] = [
     Holder::Policy,
+    Holder::ClosePings,
     Holder::Idle,
     Holder::AccessX,
     Holder::AcceleratorRepeat,
@@ -40,6 +43,7 @@ const HOLDERS: [Holder; 9] = [
 #[derive(Debug, Clone, Copy)]
 enum Holder {
     Policy,
+    ClosePings,
     Idle,
     AccessX,
     AcceleratorRepeat,
@@ -55,6 +59,7 @@ impl Holder {
     fn deadline(self, caminito: &Caminito) -> Option<Duration> {
         match self {
             Holder::Policy => caminito.policy.deadline(),
+            Holder::ClosePings => caminito.not_responding.deadline(),
             Holder::Idle => caminito.idle.deadline(),
             Holder::AccessX => caminito.accessx.deadline(),
             Holder::AcceleratorRepeat => caminito.accelerator_repeat.as_ref().map(Repeat::deadline),
@@ -72,6 +77,7 @@ impl Holder {
     fn elapse(self, state: &mut State, now: Duration) {
         match self {
             Holder::Policy => state.caminito.policy.elapse(now),
+            Holder::ClosePings => state.caminito.close_pings_elapse(now),
             Holder::Idle => state.idle_elapse(now),
             Holder::AccessX => state.accessx_elapse(now),
             Holder::AcceleratorRepeat => state.caminito.accelerator_repeat_elapse(now),
