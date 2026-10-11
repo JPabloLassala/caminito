@@ -47,7 +47,7 @@ or the checklist item that covers it:
   action is, and the control center's _Keyboard Shortcuts_ lists them.
 - **never:** Caminito will not implement it, for the reason beside it: what only an X11 window
   manager can do, and what Marco itself never finished.
-- **left to another component:** another program of the session does it.
+- **left to another component:** another program of the Session does it.
 - **unsupported:** not done in v0.1, and on the roadmap after it. Caminito logs such a key once
   when it's set away from its default.
 

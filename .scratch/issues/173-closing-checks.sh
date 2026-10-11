@@ -192,21 +192,23 @@ finish() {
 #   173-closing-checks.sh packages         on the host desktop: tools/check, then the packages
 #   173-closing-checks.sh items M8         in MATE on Caminito: the items tagged M8, then
 #                                          144's check and the decisions left to confirm
-#   173-closing-checks.sh items M6 M7      in MATE on Caminito: the earlier items still open
+#   173-closing-checks.sh items M6 M7      in MATE on Caminito: the earlier items still open,
+#                                          which 106 and 136 left; M1 to M5 take the same
+#                                          part, for any of theirs that's open again
 #   173-closing-checks.sh x11              in X11 MATE, and then in MATE on Wayfire
 #   173-closing-checks.sh message          anywhere: the results, as the closing commit has them
 #
 # Run them from the checkout, in a terminal you can still see while a check runs: over ssh
 # from another machine is best for the items that lock, blank or end the session. Each
 # result is saved as it's given, so a part that's stopped is run again and resumes. A part's
-# last stage appends its results to 173-closing-results.md, beside the ticket.
+# last stage appends its results to 173-checks/closing-results.md, beside the ticket.
 
 PART="${1:-}"
 shift || true
 HERE="$(dirname "$(realpath "$0")")"
 ROOT="$(realpath "$HERE/../..")"
 CHECKLIST="$ROOT/docs/testing/checklist.md"
-RESULTS_FILE="${RESULTS_FILE:-$HERE/173-closing-results.md}"
+RESULTS_FILE="${RESULTS_FILE:-$HERE/173-checks/closing-results.md}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/caminito"
 GATE="X11 MATE and the Wayfire session are unchanged with the Patched packages"
 PARITY="The parity table's rows that no test covers"
@@ -275,13 +277,16 @@ record() {
 # optional note.
 result() {
   local name="$1" reply="" verdict note=""
-  printf '  %s? Did all of it work? (%s) [y]es, [n]o, [s]kipped:%s ' "$YELLOW" "$name" "$RESET"
-  read -r reply || true
-  case $reply in
-    [Yy]*) verdict=pass ;;
-    [Ss]*) verdict="not run" ;;
-    *) verdict=FAIL ;;
-  esac
+  # Only an answer is one: a bare Enter asks again, and the end of the input stops the part.
+  while true; do
+    printf '  %s? Did all of it work? (%s) [y]es, [n]o, [s]kipped:%s ' "$YELLOW" "$name" "$RESET"
+    read -r reply || exit 1
+    case $reply in
+      [Yy]*) verdict=pass; break ;;
+      [Ss]*) verdict="not run"; break ;;
+      [Nn]*) verdict=FAIL; break ;;
+    esac
+  done
   printf '  %sNote (what you saw; Enter for none):%s ' "$BOLD" "$RESET"
   read -r note || true
   # The results are kept one to a line, with | between their parts.
@@ -342,6 +347,7 @@ record_stage() {
     say "$verdict  $name${note:+ ($note)}"
   done
   if confirm "Write these down?"; then
+    mkdir -p "$(dirname "$RESULTS_FILE")"
     {
       printf '\n## %s (%s), as %s on %s\n\nOn %s.\n\n' \
         "${WHERE^}" "$(date +%F)" "$(id -un)" "$(uname -n)" "$(installed)"
@@ -356,7 +362,7 @@ record_stage() {
   else
     SKIPPED+=("recording the results (they stay in $PROGRESS)")
   fi
-  SKIPPED+=("this wizard's other parts, unless 173-closing-results.md has them:  packages, items M8, items M6 M7, x11")
+  SKIPPED+=("this wizard's other parts, unless $RESULTS_FILE has them:  packages, items M8, items M6 M7, x11")
   SKIPPED+=("then:  173-closing-checks.sh message  for the Close M8 Marco parity commit")
   finish
 }
@@ -409,8 +415,8 @@ if ! done_already "The packages are installed from the built files"; then
   for package in "${PACKAGES[@]}"; do
     say "  $package $(sed -n 's/^pkgver=//p' "$ROOT/packaging/arch/$package/PKGBUILD")-$(sed -n 's/^pkgrel=//p' "$ROOT/packaging/arch/$package/PKGBUILD")"
   done
-  note "caminito-git's pkgver is the commit it's built from, which makepkg writes. A Patched"
-  note "package whose pkgrel is the installed one has no new patch, and needn't be built again."
+  note "caminito-git's pkgver is the commit it's built from, which makepkg writes. M8 wrote no"
+  note "new Carried patch, so a Patched package at the installed pkgrel is the installed one."
   for package in "${PACKAGES[@]}"; do
     if confirm "Build and install $package?"; then
       (cd "$ROOT/packaging/arch/$package" && makepkg -si) || warn "$package didn't build or install"
@@ -504,6 +510,7 @@ fi
 stage "MATE on Wayfire, with every Patched package installed"
 if ! done_already "MATE on Wayfire is unchanged with the Patched packages"; then
   say "Log out, log into MATE on Wayfire, run this part again there, and resume."
+  confirm "Is this terminal in MATE on Wayfire now?" || { say "Stopped: X11 MATE's result is saved."; exit 0; }
   show sh -c 'echo "XDG_SESSION_TYPE=$XDG_SESSION_TYPE MATE_WM_NAME=${MATE_WM_NAME-}"; pgrep -x wayfire >/dev/null && echo "wayfire runs"'
   note "The item's Wayfire steps are the ones shown in the stage before."
   result "MATE on Wayfire is unchanged with the Patched packages"

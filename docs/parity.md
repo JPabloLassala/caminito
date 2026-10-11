@@ -1,6 +1,6 @@
 # Parity with Marco
 
-Each of Marco's `org.mate.Marco.*` keys and keybinding actions, with what Caminito does with it and what covers it. M8 closed with no row left *to do* ([17](../.scratch/issues/17-milestone-slicing.md), [173](../.scratch/issues/173-packaging-and-closing-m8.md)).
+Each of Marco's `org.mate.Marco.*` keys and keybinding actions, with what Caminito does with it and what covers it. M8 closes with no row left *to do* ([17](../.scratch/issues/17-milestone-slicing.md), [173](../.scratch/issues/173-packaging-and-closing-m8.md)).
 
 The list is the schema itself ([147](../.scratch/issues/147-the-parity-table.md)): Marco 1.29.0's, which Arch ships and which is vendored for the tests in `tests/schemas/`, and the five keys Marco's master adds to it, which Caminito reads where the installed schema has them: `dynamic-workspaces`, `alt-tab-minimized-placement` and `alt-tab-urgent-placement` in `general`, `run-command-area-screenshot` in `global-keybindings` and `command-area-screenshot` in `keybinding-commands`. That's 40 keys in `general`, 36 in `workspace-names`, 15 in `keybinding-commands`, and 103 actions: 51 in `global-keybindings` and 52 in `window-keybindings`.
 
@@ -218,7 +218,7 @@ The roadmap after v0.1: each is *unsupported*, and no row outside this section i
 | `org.mate.peripherals-keyboard-xkb.general` `default-group` | unsupported | As `group-per-window` (09, 54). |
 | `org.mate.accessibility-keyboard` `mousekeys-*` | unsupported | Mouse keys need pointer emulation with msd's acceleration curve (13, 09). |
 | `org.mate.typing-break` `enabled` | unsupported | The typing break is later (13, 09). |
-| `org.mate.peripherals-mouse` `locate-pointer` | unsupported | Caminito will draw the ripple itself (53); 147 put it here, for the developer to bring into M8 with a ticket after 172 if wanted. |
+| `org.mate.peripherals-mouse` `locate-pointer` | unsupported | Caminito will draw the ripple itself (53); 147 put it here, and no ticket brought it into M8. |
 | `org.mate.accessibility-keyboard` `timeout-enable` | unsupported | 13 had it in v0.1, and the AccessX filter doesn't apply it yet (134); 147 put it here, as `locate-pointer`. |
 | `org.mate.accessibility-keyboard` `capslock-beep-enable` | unsupported | As `timeout-enable`. |
 | `org.mate.accessibility-keyboard` `feature-state-change-beep` | unsupported | As `capslock-beep-enable`. |

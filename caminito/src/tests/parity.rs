@@ -36,7 +36,7 @@ const MASTER_KEYS: [(&str, &str); 5] = [
     ),
 ];
 
-/// 17's four statuses. *To do* was a fifth until M8 closed (173).
+/// 17's four statuses. *To do* was a fifth until 173.
 const STATUSES: [&str; 4] = [
     "honoured",
     "never",
@@ -90,18 +90,17 @@ fn keys(cell: &str, heading: Option<&str>) -> Vec<(String, String)> {
     }
 }
 
-/// Every row of the table.
-fn rows() -> Vec<Row> {
+/// The table's rows, keyed or not, as the heading each is under and its first three cells:
+/// what it's about, its status, and what Caminito does or why.
+fn cells() -> Vec<[String; 4]> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/parity.md");
     let text = fs::read_to_string(path).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    let mut heading = None;
-    let mut rows = Vec::new();
+    let mut heading = "";
+    let mut cells = Vec::new();
     for (n, line) in lines.iter().enumerate() {
         if line.starts_with('#') {
-            heading = quoted(line)
-                .into_iter()
-                .find(|q| q.starts_with("org.mate."));
+            heading = line;
             continue;
         }
         let is_header = lines
@@ -110,8 +109,19 @@ fn rows() -> Vec<Row> {
         if !line.starts_with("| ") || line.starts_with("| ---") || is_header {
             continue;
         }
-        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
-        let (first, status) = (cells[1], cells[2]);
+        let row: Vec<&str> = line.split('|').map(str::trim).collect();
+        cells.push([heading, row[1], row[2], row[3]].map(str::to_owned));
+    }
+    cells
+}
+
+/// Every row of the table that names a key.
+fn rows() -> Vec<Row> {
+    let mut rows = Vec::new();
+    for [heading, first, status, _] in &cells() {
+        let heading = quoted(heading)
+            .into_iter()
+            .find(|q| q.starts_with("org.mate."));
         for (schema, key) in keys(first, heading) {
             let status = STATUSES
                 .into_iter()
@@ -169,31 +179,6 @@ fn every_unsupported_key_has_an_unsupported_row() {
             row.status
         );
     }
-}
-
-/// The table's rows, keyed or not, as the heading each is under and its first three cells:
-/// what it's about, its status, and what Caminito does or why.
-fn cells() -> Vec<[String; 4]> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/parity.md");
-    let text = fs::read_to_string(path).unwrap();
-    let lines: Vec<&str> = text.lines().collect();
-    let mut heading = "";
-    let mut cells = Vec::new();
-    for (n, line) in lines.iter().enumerate() {
-        if line.starts_with('#') {
-            heading = line;
-            continue;
-        }
-        let is_header = lines
-            .get(n + 1)
-            .is_some_and(|next| next.starts_with("| ---"));
-        if !line.starts_with("| ") || line.starts_with("| ---") || is_header {
-            continue;
-        }
-        let row: Vec<&str> = line.split('|').map(str::trim).collect();
-        cells.push([heading, row[1], row[2], row[3]].map(str::to_owned));
-    }
-    cells
 }
 
 /// M8's exit (17, 173): every row, with a key of Marco's or none, has one of the four
