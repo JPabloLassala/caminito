@@ -235,6 +235,28 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
+    fn a_window_capture_leaves_the_shadow_out(kind: Kind) {
+        let (mut f, client) = Fixture::connected(kind);
+        let window = f.map(client, WindowSpec::default());
+        let tool = screenshot_tool(&mut f);
+        f.pointer_move(1900., 1000.);
+
+        let capture = capture_window(&mut f, tool, window, false);
+
+        // Menta's top corners are rounded. The output shows the shadow in the pixel the
+        // corner cuts out and beside the frame, and the capture shows nothing there (171).
+        let frame = f.visible_frame(window);
+        assert!(f.mapped(window).frame().shadow_rect().is_some());
+        let output = output_pixels(&mut f);
+        let clear = argb8888(CLEAR_COLOR);
+        assert_ne!(output.at(frame.loc.x, frame.loc.y), clear, "the shadow is drawn");
+        assert_ne!(output.at(frame.loc.x + frame.size.w + 2, frame.loc.y + 40), clear);
+        assert_eq!(capture.at(0, 0), 0);
+        assert_eq!(capture.size, (frame.size.w, frame.size.h));
+    }
+}
+
+on_both_kinds! {
     fn a_window_capture_is_the_same_when_another_window_covers_it(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
         let window = f.map(client, WindowSpec::default());

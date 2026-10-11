@@ -6,7 +6,9 @@
 use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
-use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
+use smithay::backend::renderer::element::memory::{
+    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
+};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
@@ -976,6 +978,10 @@ fn window_elements<R>(
         let origin = geometry.loc - output_geometry.loc;
         let shown = Rectangle::from_size(output_geometry.size);
         one_window_elements(renderer, mapped, origin, shown, scale, elements);
+        // The shadow is the output's alone: a capture of the window and its thumbnail
+        // are the window with its frame (103, 171).
+        let shadow = mapped.frame().shadow();
+        buffer_elements(renderer, shadow, origin, shown, scale, "shadow", elements);
         if layer == SceneLayer::Windows && policy.grab(SEAT) == Some(id) {
             tile_preview_elements(caminito, output, elements);
         }
@@ -1075,7 +1081,27 @@ fn one_window_elements<R, E>(
     }
 
     // The strips lie around the window geometry, behind the window and its popups.
-    for (mut rect, buffer) in mapped.frame().strips() {
+    let strips = mapped.frame().strips();
+    buffer_elements(renderer, strips, origin, shown, scale, "strip", elements);
+}
+
+/// The elements of the `buffers` of a frame, its strips or its shadow's bands, that are in
+/// `shown`, at `scale`. Each has its place from the window geometry's origin, which is at
+/// `origin`.
+fn buffer_elements<'a, R, E>(
+    renderer: &mut R,
+    buffers: impl Iterator<Item = (Rectangle<i32, Logical>, &'a MemoryRenderBuffer)>,
+    origin: Point<i32, Logical>,
+    shown: Rectangle<i32, Logical>,
+    scale: f64,
+    what: &str,
+    elements: &mut Vec<E>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+    E: From<MemoryRenderBufferRenderElement<R>>,
+{
+    for (mut rect, buffer) in buffers {
         rect.loc += origin;
         if !rect.overlaps(shown) {
             continue;
@@ -1092,7 +1118,7 @@ fn one_window_elements<R, E>(
         );
         match element {
             Ok(element) => elements.push(E::from(element)),
-            Err(err) => tracing::warn!("can't draw a frame strip: {err:?}"),
+            Err(err) => tracing::warn!("can't draw a frame's {what}: {err:?}"),
         }
     }
 }

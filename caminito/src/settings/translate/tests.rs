@@ -595,6 +595,7 @@ fn the_defaults_give_marcos_frames() {
             middle_click: TitlebarAction::Lower,
             right_click: TitlebarAction::Menu,
             attach_modal_dialogs: false,
+            shadows: true,
         }
     );
 }
@@ -1109,6 +1110,15 @@ fn each_of_three_keys_turns_the_minimise_animation_off() {
         let reading = with(schema, key, Value::Bool(value));
         assert!(!settings(&reading).minimize_animation, "{key}");
     }
+}
+
+#[test]
+fn frames_have_no_shadows_without_the_compositing_manager() {
+    let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
+    assert!(!settings(&reading).frames.shadows);
+    // Fast Alt+Tab is the Window switcher's alone.
+    let reading = with(MARCO_GENERAL, "compositing-fast-alt-tab", Value::Bool(true));
+    assert!(settings(&reading).frames.shadows);
 }
 
 #[test]

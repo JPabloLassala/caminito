@@ -66,6 +66,7 @@ mod security_context;
 mod selection;
 mod session;
 mod settings;
+mod shadows;
 mod show_desktop;
 mod switcher;
 mod tiling;
