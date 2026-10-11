@@ -176,6 +176,10 @@ _Avoid_: system menu, context menu, app menu (that's the Global menu's or the Fr
 The popup that a switch or a move to the workspace beside shows while the binding's modifiers are held: the Workspace grid, each workspace's cell with its name and an outline of its windows, and the active workspace marked. It's Marco's workspace popup, drawn by Caminito.
 _Avoid_: workspace switcher (the panel's pager), workspace OSD, tab popup (Marco's widget for it and for Alt+Tab)
 
+**System shortcut**:
+A combination of modifiers with a key or a mouse button that Caminito acts on before any client sees it, whoever owns the action: Caminito's own window and workspace actions, a command the user gave a shortcut to, or a media key. System Shortcuts is the control centre's dialog that lists and changes them. A binding is one of Caminito's own, and an accelerator is one another program has asked Caminito for.
+_Avoid_: keyboard shortcut (a mouse button can be one), keybinding, hotkey, global shortcut, shortcut alone for an application's own (those are the client's)
+
 **Global menu**:
 The focused window's menubar, shown in the panel instead of inside the window. There is one, whatever the number of panels or outputs, and a window without a menubar has none.
 _Avoid_: app menu (GNOME's single per-application menu, a different thing), main menu (the panel's Alt+F1 menu), menubar alone (that's the one inside a window)
