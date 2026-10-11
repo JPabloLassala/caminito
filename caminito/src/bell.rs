@@ -7,8 +7,6 @@ use std::time::Duration;
 
 use caminito_policy::{OutputId, WindowId};
 use smithay::backend::renderer::element::Id;
-use smithay::reexports::calloop::RegistrationToken;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::get_parent;
 
@@ -86,8 +84,6 @@ struct Flash {
     until: Duration,
     /// The full-screen flash's id in the scene, so it's damaged once and not at every frame.
     id: Id,
-    /// The loop timer that ends it, until it fires.
-    timer: Option<RegistrationToken>,
 }
 
 /// The bells rung since Caminito started, and the flash of the last, while it shows.
@@ -102,6 +98,11 @@ pub(crate) struct Bells {
 }
 
 impl Bells {
+    /// When the flash is over, while one shows: `deadlines` ends it then (174).
+    pub(crate) fn deadline(&self) -> Option<Duration> {
+        self.flash.as_ref().map(|flash| flash.until)
+    }
+
     /// The id of the full-screen flash the scene draws over `output`, while it flashes.
     pub(crate) fn output_flash(&self, output: OutputId) -> Option<&Id> {
         let flash = self.flash.as_ref()?;
@@ -165,9 +166,7 @@ impl Caminito {
             flashed,
             until: self.now() + FLASH,
             id: Id::new(),
-            timer: None,
         });
-        self.set_flash_timer();
         self.queue_redraw_all();
     }
 
@@ -195,50 +194,18 @@ impl Caminito {
         Some(output_id(output))
     }
 
-    /// Sets the loop timer that ends the flash when it's due.
-    fn set_flash_timer(&mut self) {
-        let now = self.now();
-        let Some(flash) = &mut self.bells.flash else {
-            return;
-        };
-        let timer = Timer::from_duration(flash.until.saturating_sub(now));
-        let timer = self.loop_handle.insert_source(timer, |_, _, state| {
-            // This timer is done; a flash it fired early for gets another.
-            if let Some(flash) = &mut state.caminito.bells.flash {
-                flash.timer = None;
-            }
-            state.caminito.bell_elapse();
-            state.caminito.set_flash_timer();
-            TimeoutAction::Drop
-        });
-        match timer {
-            Ok(timer) => flash.timer = Some(timer),
-            Err(err) => tracing::warn!("can't set the visual bell's timer: {}", err.error),
-        }
-    }
-
-    /// Ends the flash if it's due, as its loop timer does when it fires, and as a test does
-    /// once it has moved Caminito's clock on.
-    pub(crate) fn bell_elapse(&mut self) {
-        if self
-            .bells
-            .flash
-            .as_ref()
-            .is_some_and(|flash| flash.until <= self.now())
-        {
+    /// Ends the flash if it's due at `now`, for `deadlines`.
+    pub(crate) fn bell_elapse(&mut self, now: Duration) {
+        if self.bells.deadline().is_some_and(|until| until <= now) {
             self.end_flash();
         }
     }
 
     /// Ends the flash, if one shows.
     fn end_flash(&mut self) {
-        let Some(flash) = self.bells.flash.take() else {
-            return;
-        };
-        if let Some(timer) = flash.timer {
-            self.loop_handle.remove(timer);
+        if self.bells.flash.take().is_some() {
+            self.queue_redraw_all();
         }
-        self.queue_redraw_all();
     }
 
     /// The window a bell for `surface` is for: its root surface's, so a subsurface's bell is

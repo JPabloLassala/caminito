@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use smithay::input::keyboard::{Keycode, Keysym};
 
-pub(crate) use self::apply::Wake;
 use crate::settings::translate::AccessX as Settings;
 
 /// How many presses of Shift in a row toggle sticky keys.
@@ -253,7 +252,7 @@ impl Filter {
     }
 
     /// The time [`Filter::elapse`] is next needed at, if any.
-    fn deadline(&self) -> Option<Duration> {
+    pub(crate) fn deadline(&self) -> Option<Duration> {
         let waiting = self.waiting.iter().map(|w| w.due);
         waiting.chain(self.shift_hold).min()
     }

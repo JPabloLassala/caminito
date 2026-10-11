@@ -1,25 +1,16 @@
 //! The AccessX filter in the keyboard path (15): the keys it lets through go on to stage 3,
 //! its beeps ring the bell event (105), a feature it turned on or off is written to its key
-//! and told in a notification, and a timer wakes it when it asked to be.
+//! and told in a notification, and `deadlines` wakes it when it asked to be (174).
 
 use std::time::Duration;
 
 use smithay::backend::input::{InputTime, KeyState, Keycode};
-use smithay::reexports::calloop::RegistrationToken;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
 use super::{Cause, Effect, Feature, Key, Role, Settings};
 use crate::bell::{BellFor, BellSource};
 use crate::settings::Value;
 use crate::settings::translate::A11Y_KEYBOARD;
 use crate::state::{Caminito, State};
-
-/// The timer for the filter's deadline.
-pub(crate) struct Wake {
-    /// The deadline it's for.
-    due: Duration,
-    timer: RegistrationToken,
-}
 
 impl State {
     /// Stage 2 of the keyboard path: a device's key event at `time`, through the filter.
@@ -47,6 +38,12 @@ impl State {
         self.accessx_effects(effects);
     }
 
+    /// Runs what the filter has due at `now`, for `deadlines`.
+    pub(crate) fn accessx_elapse(&mut self, now: Duration) {
+        let effects = self.caminito.accessx.elapse(now);
+        self.accessx_effects(effects);
+    }
+
     /// What `keycode` is to the filter: by the keysym it has unshifted in the active layout,
     /// so a keymap that moves Ctrl to CapsLock moves what sticky keys hold too.
     fn key_role(&mut self, keycode: Keycode) -> Role {
@@ -60,7 +57,7 @@ impl State {
         })
     }
 
-    /// Does what the filter asked, and sets the timer for what it's waiting on.
+    /// Does what the filter asked.
     fn accessx_effects(&mut self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
@@ -82,35 +79,6 @@ impl State {
                 }
                 Effect::Turn { feature, on, by } => self.caminito.accessx_turned(feature, on, by),
             }
-        }
-        self.wake_accessx();
-    }
-
-    /// Sets the timer for the filter's deadline, if it isn't set for it already.
-    fn wake_accessx(&mut self) {
-        let caminito = &mut self.caminito;
-        let deadline = caminito.accessx.deadline();
-        if caminito.accessx_wake.as_ref().map(|wake| wake.due) == deadline {
-            return;
-        }
-        if let Some(wake) = caminito.accessx_wake.take() {
-            caminito.loop_handle.remove(wake.timer);
-        }
-        let Some(due) = deadline else {
-            return;
-        };
-        let timer = Timer::from_duration(due.saturating_sub(caminito.now()));
-        let timer = caminito.loop_handle.insert_source(timer, |_, _, state| {
-            // This timer is done, and the filter's next deadline gets another.
-            state.caminito.accessx_wake = None;
-            let now = state.caminito.now();
-            let effects = state.caminito.accessx.elapse(now);
-            state.accessx_effects(effects);
-            TimeoutAction::Drop
-        });
-        match timer {
-            Ok(timer) => caminito.accessx_wake = Some(Wake { due, timer }),
-            Err(err) => tracing::warn!("can't set AccessX's timer: {}", err.error),
         }
     }
 }
