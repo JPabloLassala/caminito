@@ -1,8 +1,8 @@
 //! Night Light (ADR 0023): Caminito warms every output toward a lower colour temperature by
 //! writing its gamma table. `state` works out each output's temperature from the settings,
 //! fading every change over about 2 s; the refresh pass hands them to the backend, and while
-//! a fade runs a loop timer steps it. The tty backend writes the tables; the nested run and
-//! headless keep the state and tint nothing.
+//! a fade runs `deadlines` wakes the loop for each step (176). The tty backend writes the
+//! tables; the nested run and headless keep the state and tint nothing.
 //!
 //! The sun schedule (138) is worked out about once a minute from the sun's elevation at the
 //! location, by `sun`, `curve` and `zone`, and at once on a key change, a resume, or a jump
@@ -23,8 +23,6 @@ use std::time::Duration;
 
 use gio::glib;
 use smithay::output::Output;
-use smithay::reexports::calloop::RegistrationToken;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
 use self::curve::Temperatures;
 pub(crate) use self::ramp::{NEUTRAL, ramp};
@@ -47,12 +45,9 @@ const MINUTE: Duration = Duration::from_secs(60);
 /// the time. A jump fades.
 const JUMP: f64 = 60.0;
 
-/// Night Light's temperatures, the sun, and the timers that step their fades and work the
-/// sun out again.
+/// Night Light's temperatures, and the sun.
 pub(crate) struct NightLight {
     state: NightLightState<OutputId>,
-    /// The loop timer stepping the fades, while one runs.
-    stepping: Option<RegistrationToken>,
     /// Where the time zone is read from.
     zone_files: ZoneFiles,
     /// The coordinates of each zone `localtime` has named, as `zone.tab` gave them.
@@ -60,7 +55,8 @@ pub(crate) struct NightLight {
     /// The sun as last worked out.
     sun: Sun,
     /// Caminito's clock and the wall clock, in Unix seconds, when the sun was last worked
-    /// out, to tell a jump of the one from the other.
+    /// out, to tell a jump of the one from the other. The next working-out is a minute
+    /// after it.
     worked_out: Option<(Duration, f64)>,
     /// The location source last logged, so that each fallback is logged once.
     logged: Option<Source>,
@@ -146,7 +142,6 @@ impl NightLight {
     pub(crate) fn new(settings: NightLightSettings) -> Self {
         NightLight {
             state: NightLightState::new(settings),
-            stepping: None,
             zone_files: ZoneFiles::default(),
             zones: HashMap::new(),
             sun: Sun {
@@ -165,6 +160,21 @@ impl NightLight {
     /// The sun as last worked out.
     pub(crate) fn sun(&self) -> &Sun {
         &self.sun
+    }
+
+    /// When `deadlines` is next to wake the loop (176), at `now`: for the minute's
+    /// working-out of the sun, or sooner while a fade runs, for its next step. The step has
+    /// nothing to run: the refresh pass after it hands the outputs' temperatures on.
+    pub(crate) fn deadline(&self, now: Duration) -> Option<Duration> {
+        let minute = self.minute();
+        let step = self.state.is_fading(now).then(|| now + STEP);
+        minute.into_iter().chain(step).min()
+    }
+
+    /// When the sun is next worked out: a minute after the last time, whatever asked for
+    /// that one.
+    fn minute(&self) -> Option<Duration> {
+        self.worked_out.map(|(then, _)| then + MINUTE)
     }
 
     /// Reads the time zone from `files` from now on, for a test.
@@ -304,7 +314,6 @@ impl Caminito {
     pub(crate) fn night_light_step_in(&mut self, output: &Output) {
         let now = self.now();
         self.night_light.state.step_in(output_id(output), now);
-        self.step_night_light();
     }
 
     /// New Night Light settings: the outputs fade to the new target.
@@ -314,25 +323,24 @@ impl Caminito {
         }
         let (sun, now) = self.work_out_sun_under(&settings);
         self.night_light.state.settings_changed(settings, sun, now);
-        self.step_night_light();
     }
 
-    /// Works the sun out at once, with no fade, and then about once a minute.
+    /// Works the sun out at once, with no fade. `deadlines` works it out again about once a
+    /// minute from then on.
     pub(crate) fn start_night_light(&mut self) {
         self.work_out_sun(false);
-        let timer = self
-            .loop_handle
-            .insert_source(Timer::from_duration(MINUTE), |_, _, state| {
-                state.caminito.night_light_tick();
-                TimeoutAction::ToDuration(MINUTE)
-            });
-        if let Err(err) = timer {
-            tracing::warn!("can't set Night Light's minute timer: {}", err.error);
+    }
+
+    /// Works the sun out if its minute is due at `now`, for `deadlines`. A minute that's
+    /// late isn't made up for: the next is a minute after this one.
+    pub(crate) fn night_light_elapse(&mut self, now: Duration) {
+        if self.night_light.minute().is_some_and(|due| due <= now) {
+            self.night_light_tick();
         }
     }
 
-    /// The minute's working-out of the sun, as the timer does it and a test does once it has
-    /// moved Caminito's clock on. A jump of the wall clock from Caminito's fades.
+    /// The minute's working-out of the sun, which a test also does once it has made the wall
+    /// clock jump. A jump of the wall clock from Caminito's fades.
     pub(crate) fn night_light_tick(&mut self) {
         let jumped = self
             .night_light
@@ -354,7 +362,6 @@ impl Caminito {
         let settings = *self.night_light.settings();
         let (sun, now) = self.work_out_sun_under(&settings);
         self.night_light.state.sun_moved(sun, fade, now);
-        self.step_night_light();
     }
 
     /// Works the sun out now under `settings`, and keeps it. Returns the sun schedule's
@@ -376,30 +383,6 @@ impl Caminito {
         let enabled = self.night_light.settings().enabled;
         self.settings_thread
             .set(CAMINITO, "night-light-enabled", Value::Bool(!enabled));
-    }
-
-    /// Sets the timer that steps the fades, if one runs and nothing steps it. Each step wakes
-    /// the loop, and the refresh pass after it hands the outputs' temperatures on.
-    fn step_night_light(&mut self) {
-        if self.night_light.stepping.is_some() || !self.night_light.state.is_fading(self.now()) {
-            return;
-        }
-        let timer = self
-            .loop_handle
-            .insert_source(Timer::from_duration(STEP), |_, _, state| {
-                let caminito = &mut state.caminito;
-                if caminito.night_light.state.is_fading(caminito.now()) {
-                    TimeoutAction::ToDuration(STEP)
-                } else {
-                    // The refresh pass after this hands on where the fade ended.
-                    caminito.night_light.stepping = None;
-                    TimeoutAction::Drop
-                }
-            });
-        match timer {
-            Ok(timer) => self.night_light.stepping = Some(timer),
-            Err(err) => tracing::warn!("can't set Night Light's timer: {}", err.error),
-        }
     }
 }
 
