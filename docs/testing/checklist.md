@@ -1691,3 +1691,29 @@ session_env() {
   window's stops there, and the next key goes on, as in Marco (156).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
   bindings in force.
+
+### Focus-stealing prevention for native windows
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `mate-terminal` and Firefox (native, with
+     `MOZ_ENABLE_WAYLAND=1`), and focus the terminal.
+  2. With `gsettings set org.mate.Marco.general focus-new-windows smart` (Marco's default),
+     run `xdg-open https://mate-desktop.org` in the terminal, which passes Firefox a token. Then
+     open `pluma` from the panel's menu. Then run `sleep 5; zenity --info` in the terminal and
+     focus Firefox before it opens, and run `(sleep 5; pluma --new-window) &` and focus Firefox
+     again.
+  3. Hold Alt and press Tab while a refused window is open. Release Alt on it.
+  4. Run `gsettings set org.mate.Marco.general focus-new-windows strict` and repeat step 2.
+  5. Run as part of M8's closing run (173), and reset the key with `gsettings reset`.
+- **Expected:** in step 2 the link opens in the running Firefox, which takes the focus and
+  comes to the top; `pluma` from the menu takes the focus, as a first window does with no
+  token; `zenity`, a first window, takes it too, and the second `pluma` window, which opens
+  by itself while Firefox has the focus, doesn't: it opens under Firefox and is urgent. In step
+  3 the urgent window has a dot in its cell's top right corner, and is no longer urgent once
+  it has the focus. In step 4 the link still raises Firefox, as the terminal asked with a key
+  press; `pluma` from the menu and `zenity` open under the focused window, urgent, since MATE's
+  launchers pass no token yet (165).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
+  `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
+  `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.

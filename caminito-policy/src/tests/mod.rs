@@ -6,6 +6,7 @@ mod commit;
 mod dynamic_workspaces;
 mod edge_resistance;
 mod focus;
+mod focus_stealing;
 mod grid;
 mod interactive;
 mod invariants;

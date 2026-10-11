@@ -35,8 +35,10 @@ Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 **From Marco's source**, to be settled by the implementing agent and recorded in the Done section: what Marco's *smart* and *strict* compare on X11 (user time against the focused window's), which this ticket maps onto tokens, and when Marco clears a window's urgency.
 
-## Work in progress (2026-10-10)
+## Triage (2026-10-10)
 
-- **Stopped before landing, at the developer's request.** An agent built most of the ticket in one commit (policy's `focus_stealing.rs` with `focus-new-windows` smart/strict judging xdg-activation tokens; a refused window opens below the focused one and stays urgent until focused; urgency shown by the Window switcher and the debug dump and placed by `alt-tab-urgent-placement`; settings translation, policy and headless tests, xdg-activation in the test client, a parity row and a checklist item). Its own ticket notes are inside the patch.
-- **Not done:** the Done section, the code review, a test run after the last edits, and the merge.
-- **The patch:** [165-wip.patch](165-wip.patch), made with `git diff --binary bd6403f <its commit>`. It conflicts with later merges (155, 156) in `caminito-policy/src/lib.rs`, `policy.rs`, `docs/parity.md` and the checklist, so apply it with `git apply --3way` on a branch that contains bd6403f and resolve those.
+No option was marked recommended; the agent shipping the ticket took these defaults, and they're recorded in the Done section too.
+
+- **Recent:** issued by Caminito in the last 10 seconds (`TOKEN_LIFETIME`), and not before the seat's focus last changed. **Tied to user input:** the asking client has the keyboard, and the serial is no older than the keyboard's entering it (any input event of the focused client), or than the pointer's, for the click that focused it.
+- **A client's first window:** by pid, policy's own fact (socket credentials for a native client, and `_NET_WM_PID` for 166). No criterion makes a second Caja window from the menu a first window, since Caja's desktop is a Layer surface and the earlier browser window is the same process, connection and app id alike.
+- **108 against `alt-tab-urgent-placement`:** with Marco 1.29.0's schema, which has no key, an urgent window keeps its place (108); with master's, its value is followed, default `start` included.

@@ -437,13 +437,6 @@ impl Mapped {
         self.adapter().title()
     }
 
-    /// Whether the window asks for the user's attention, which the Window switcher marks
-    /// (108), and for M8's focus-stealing prevention. wlr-foreign-toplevel version 3 has no
-    /// state for it (65).
-    pub(crate) fn is_urgent(&self) -> bool {
-        self.adapter().urgent()
-    }
-
     /// Where the window's icon comes from.
     pub(crate) fn icon_source(&self) -> IconSource {
         self.adapter().icon()
@@ -530,6 +523,12 @@ impl PolicyWindow for Mapped {
 
     fn app_id(&self) -> Option<String> {
         self.adapter().app_id()
+    }
+
+    /// The client's own ask for attention. `Policy::is_urgent` adds a refused focus to it,
+    /// and that is what the Window switcher marks (108) and the debug dump lists (165).
+    fn urgent(&self) -> bool {
+        self.adapter().urgent()
     }
 
     fn skips_taskbar(&self) -> bool {
