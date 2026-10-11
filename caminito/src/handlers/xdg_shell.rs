@@ -1,11 +1,12 @@
 //! `xdg_wm_base` and the protocols that extend its toplevels: xdg-activation, xdg-foreign,
-//! xdg-dialog, xdg-toplevel-icon and xdg-system-bell.
+//! xdg-dialog, xdg-toplevel-icon and xdg-system-bell. xdg-activation's tokens are judged by
+//! policy's focus-stealing prevention (165).
 //!
 //! The toplevel handlers only translate xdg-shell's events into `window::lifecycle`'s: a new
 //! toplevel is created, and pending until it commits a buffer; committing a null buffer
 //! withdraws it, and it starts over as a new pending window.
 
-use caminito_policy::{ResizeEdges, WindowId};
+use caminito_policy::{ActivationToken, ResizeEdges, TOKEN_LIFETIME, WindowId};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -349,16 +350,74 @@ impl XdgSystemBellHandler for State {
     }
 }
 
+/// What Caminito recorded of a token as it issued it (165), in the token's user data.
+struct IssuedToken(ActivationToken);
+
 impl XdgActivationHandler for State {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.caminito.xdg_activation_state
     }
 
+    /// Records when the token was issued, and whether it's tied to user input. A token past
+    /// its lifetime gives no focus, so the old ones are dropped meanwhile.
+    fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        let caminito = &mut self.caminito;
+        let now = caminito.now();
+        let issued = ActivationToken {
+            issued: now,
+            input: caminito.is_from_input(&data),
+        };
+        data.user_data.insert_if_missing(|| IssuedToken(issued));
+        caminito.xdg_activation_state.retain_tokens(|_, data| {
+            data.user_data
+                .get::<IssuedToken>()
+                .is_some_and(|token| now.saturating_sub(token.0.issued) <= TOKEN_LIFETIME)
+        });
+        true
+    }
+
+    /// Activates the window, or has it map with the token, as `focus-new-windows` allows.
+    /// A token is used once.
     fn request_activation(
         &mut self,
-        _token: XdgActivationToken,
-        _token_data: XdgActivationTokenData,
-        _surface: WlSurface,
+        token: XdgActivationToken,
+        token_data: XdgActivationTokenData,
+        surface: WlSurface,
     ) {
+        let caminito = &mut self.caminito;
+        let issued = token_data
+            .user_data
+            .get::<IssuedToken>()
+            .map(|token| token.0);
+        if let Some(key) = caminito.window_key_for_surface(&surface) {
+            caminito.window_activation_requested(&key, issued);
+        }
+        caminito.xdg_activation_state.remove_token(&token);
+    }
+}
+
+impl Caminito {
+    /// Whether a token is tied to user input (165): asked for by the client with the keyboard,
+    /// with a serial it had since the keyboard entered it, which any of its input events
+    /// gives it, or since the pointer entered it, for the click that focused it.
+    fn is_from_input(&self, data: &XdgActivationTokenData) -> bool {
+        let Some((serial, _)) = &data.serial else {
+            return false;
+        };
+        let asker = |surface: Option<std::borrow::Cow<'_, WlSurface>>| {
+            let client = surface.and_then(|surface| surface.client());
+            client.is_some_and(|client| Some(client.id()) == data.client_id)
+        };
+        let since =
+            |enter: Option<Serial>| enter.is_some_and(|enter| serial.is_no_older_than(&enter));
+        let keyboard = self.seat.get_keyboard().unwrap();
+        let pointer = self.seat.get_pointer().unwrap();
+        let has_keyboard = keyboard
+            .current_focus()
+            .is_some_and(|focus| asker(focus.wl_surface()));
+        let has_pointer = pointer
+            .current_focus()
+            .is_some_and(|focus| asker(focus.wl_surface()));
+        has_keyboard && (since(keyboard.last_enter()) || has_pointer && since(pointer.last_enter()))
     }
 }

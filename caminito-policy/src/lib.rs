@@ -24,8 +24,9 @@ pub use grid::{Direction, Grid, Orientation, WorkspaceLayout, WrapStyle};
 pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
-    Config, Crossing, FocusMode, GrabKey, GrabStep, MAX_WORKSPACES, MapStates, PointerTarget,
-    Policy, ResizeEdges, SeatId, SwitchList, Switcher, default_workspace_name,
+    ActivationToken, Config, Crossing, FocusClaim, FocusMode, FocusNewWindows, GrabKey, GrabStep,
+    MAX_WORKSPACES, MapStates, PointerTarget, Policy, ResizeEdges, SeatId, SwitchList, Switcher,
+    TOKEN_LIFETIME, UrgentPlacement, default_workspace_name,
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;

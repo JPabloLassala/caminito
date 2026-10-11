@@ -12,7 +12,8 @@
 //! selections as a clipboard manager does, [`security_context`] makes the socket a
 //! sandboxed client connects through, [`image_capture`] copies an output's or a
 //! window's pixels as a screenshot tool does, [`session_lock`] locks the session as a
-//! locker does, and [`idle`] hears of idle and holds it off.
+//! locker does, [`idle`] hears of idle and holds it off, and [`xdg_activation`] asks for
+//! tokens and activates windows with them.
 
 pub mod appmenu;
 pub mod data_control;
@@ -29,6 +30,7 @@ pub mod security_context;
 pub mod selection;
 pub mod session_lock;
 pub mod x11;
+pub mod xdg_activation;
 pub mod xfce_foreign_toplevel;
 
 use std::fmt;
@@ -176,6 +178,9 @@ pub struct State {
     pub group: u32,
     /// The serial of the last button press, which starts moves, resizes and popup grabs.
     pub last_press_serial: Option<u32>,
+    /// The serial of the last keyboard enter, key or button event, which a toolkit asks for
+    /// an activation token with.
+    pub last_input_serial: Option<u32>,
     /// The `wl_output`s bound so far, in the order the compositor advertised them.
     pub outputs: Vec<Output>,
     data_device_manager: Option<WlDataDeviceManager>,
@@ -205,6 +210,11 @@ pub struct State {
     gamma_control_manager: Option<ZwlrGammaControlManagerV1>,
     /// The gamma controls the client asked for, and what each was told.
     gamma_controls: Vec<gamma_control::GammaControl>,
+    /// xdg-activation's global, if the compositor has it.
+    activation:
+        Option<wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1>,
+    /// The activation tokens the client asked for, once issued.
+    activation_tokens: Vec<Option<String>>,
 }
 
 /// A bound `wl_output`.
@@ -1142,6 +1152,7 @@ impl Dispatch<WlPointer, ()> for State {
                 state: button_state,
                 ..
             } => {
+                state.last_input_serial = Some(serial);
                 let pressed = button_state == WEnum::Value(wl_pointer::ButtonState::Pressed);
                 if pressed {
                     state.last_press_serial = Some(serial);
@@ -1164,20 +1175,29 @@ impl Dispatch<WlKeyboard, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         let input = match event {
-            wl_keyboard::Event::Enter { surface, .. } => InputEvent::KeyboardEnter {
-                surface: state.surface_ref(&surface),
-            },
+            wl_keyboard::Event::Enter {
+                serial, surface, ..
+            } => {
+                state.last_input_serial = Some(serial);
+                InputEvent::KeyboardEnter {
+                    surface: state.surface_ref(&surface),
+                }
+            }
             wl_keyboard::Event::Leave { surface, .. } => InputEvent::KeyboardLeave {
                 surface: state.surface_ref(&surface),
             },
             wl_keyboard::Event::Key {
+                serial,
                 key,
                 state: key_state,
                 ..
-            } => InputEvent::Key {
-                key,
-                pressed: key_state == WEnum::Value(wl_keyboard::KeyState::Pressed),
-            },
+            } => {
+                state.last_input_serial = Some(serial);
+                InputEvent::Key {
+                    key,
+                    pressed: key_state == WEnum::Value(wl_keyboard::KeyState::Pressed),
+                }
+            }
             wl_keyboard::Event::RepeatInfo { rate, delay } => {
                 state.repeat_info = Some((rate, delay));
                 return;

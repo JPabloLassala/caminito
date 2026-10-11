@@ -133,6 +133,16 @@ on_both_kinds! {
     fn alt_middle_drag_resizes_from_the_nearest_corner(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
         let window = f.map(client, WindowSpec::plain((400, 300)));
+        // Alt+dragged into the middle of the output first, so that the resize doesn't end
+        // near an edge that resists it (157).
+        let grip = (f.geometry(window).loc + Point::from((200, 150))).to_f64();
+        f.pointer_move(grip.x, grip.y);
+        f.key(KEY_LEFTALT, true);
+        f.pointer_button(BTN_LEFT, true);
+        f.pointer_move(grip.x + 400., grip.y + 300.);
+        f.pointer_button(BTN_LEFT, false);
+        f.key(KEY_LEFTALT, false);
+        f.sync(window);
         let start = f.geometry(window);
         // Nearer the top-left corner than any other.
         let point = (start.loc + Point::from((20, 30))).to_f64();

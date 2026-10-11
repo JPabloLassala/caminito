@@ -16,12 +16,16 @@ use crate::{
 };
 
 mod dynamic_workspaces;
+mod focus_stealing;
 mod keyboard_grab;
 mod move_to;
 mod pointer;
 mod switcher;
 mod window_actions;
 
+pub use focus_stealing::{
+    ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
+};
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
@@ -143,6 +147,10 @@ pub struct Config {
     /// `org.mate.peripherals-mouse drag-threshold`, in logical pixels: twice it is how far
     /// into the work area a side's and a corner's tiling zones reach, as in Marco (158).
     pub drag_threshold: i32,
+    /// `focus-new-windows` (165).
+    pub focus_new_windows: FocusNewWindows,
+    /// `alt-tab-urgent-placement`, where the installed schema has it (165).
+    pub urgent_placement: UrgentPlacement,
 }
 
 impl Default for Config {
@@ -171,17 +179,23 @@ impl Default for Config {
             allow_tile_cycling: true,
             // msd's default.
             drag_threshold: 8,
+            focus_new_windows: FocusNewWindows::Smart,
+            // Marco 1.29.0's, which has no key (165).
+            urgent_placement: UrgentPlacement::Mru,
         }
     }
 }
 
-/// The states a window asks to map with, which change how it's placed (154).
+/// The states a window asks to map with, which change how it's placed (154), and its claim
+/// to the focus (165).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MapStates {
     /// Maximised both ways.
     pub maximized: bool,
     /// Fullscreen, on the output named if one is.
     pub fullscreen: Option<Option<OutputId>>,
+    /// What it claims the focus with (165).
+    pub focus: FocusClaim,
 }
 
 /// Marco's name for a workspace with none set, numbered from 1.
@@ -242,6 +256,9 @@ struct Managed<W> {
     tile: Option<Tiled>,
     /// The geometry to go back to, while maximised, tiled or fullscreen.
     floating: Option<Rectangle<i32, Logical>>,
+    /// Refused the focus, and not focused since (165): Marco's
+    /// `wm_state_demands_attention`.
+    demands_attention: bool,
     sent: Sent,
 }
 
@@ -578,6 +595,10 @@ pub struct Policy<W: PolicyWindow> {
     pointer: Option<Point<f64, Logical>>,
     /// The pointer focus modes, `raise-on-click` and auto-raise (153).
     pointer_focus: pointer::PointerFocus,
+    /// `focus-new-windows` (165).
+    focus_new_windows: FocusNewWindows,
+    /// `alt-tab-urgent-placement` (165).
+    urgent_placement: UrgentPlacement,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -613,6 +634,8 @@ impl<W: PolicyWindow> Policy<W> {
             drag_threshold: 0,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
+            focus_new_windows: FocusNewWindows::default(),
+            urgent_placement: UrgentPlacement::default(),
         };
         policy.settings_changed(config);
         policy
@@ -690,6 +713,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.allow_tile_cycling = config.allow_tile_cycling;
         self.drag_threshold = config.drag_threshold;
         self.show_desktop_skip_list = config.show_desktop_skip_list;
+        self.focus_new_windows = config.focus_new_windows;
+        self.urgent_placement = config.urgent_placement;
         if !self.dynamic_workspaces {
             self.set_workspace_count(config.workspace_count);
         }
@@ -816,6 +841,7 @@ impl<W: PolicyWindow> Policy<W> {
                 sticky,
                 tile: None,
                 floating: None,
+                demands_attention: false,
                 sent: Sent::default(),
             },
         );
@@ -831,8 +857,10 @@ impl<W: PolicyWindow> Policy<W> {
         }
         self.adopt_transients(id);
         // While the Window switcher is open the focus stays where it is, and the window gets
-        // it when the switcher closes.
-        if self.switcher.is_some() {
+        // it when the switcher closes, unless `focus-new-windows` refuses it now.
+        if self.focuses_on_map(id) && !self.claim_gives_focus(id, states.focus, now) {
+            self.refuse_focus(id);
+        } else if self.switcher.is_some() {
             self.switcher_defer_focus(id, now);
         } else {
             self.focus_mapped(id, now);
@@ -862,23 +890,26 @@ impl<W: PolicyWindow> Policy<W> {
     /// (window.c:1997-2044) does. A window mapped on another workspace isn't shown, so it
     /// isn't focused either.
     fn focus_mapped(&mut self, id: WindowId, now: Duration) {
-        let Some(managed) = self.windows.get(&id) else {
-            return;
-        };
-        if managed.window.takes_input()
-            && self.is_on_workspace(id, self.active)
-            && !matches!(
-                managed.window_type,
-                WindowType::Desktop
-                    | WindowType::Dock
-                    | WindowType::Splashscreen
-                    | WindowType::Menu
-                    | WindowType::Utility
-                    | WindowType::Toolbar
-            )
-        {
+        if self.focuses_on_map(id) {
             self.focus_window(self.last_seat, id, now);
         }
+    }
+
+    /// Whether a window that has just mapped is one Marco's `window_state_on_map` focuses.
+    fn focuses_on_map(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|managed| {
+            managed.window.takes_input()
+                && self.is_on_workspace(id, self.active)
+                && !matches!(
+                    managed.window_type,
+                    WindowType::Desktop
+                        | WindowType::Dock
+                        | WindowType::Splashscreen
+                        | WindowType::Menu
+                        | WindowType::Utility
+                        | WindowType::Toolbar
+                )
+        })
     }
 
     /// Stops managing a window the client has unmapped or destroyed, and hands it back.
@@ -2546,6 +2577,8 @@ impl<W: PolicyWindow> Policy<W> {
                 let activated = focused.contains(id);
                 let changed = managed.activated != activated;
                 managed.activated = activated;
+                // Marco's `meta_window_focus` unsets it (window.c:4468-4469).
+                managed.demands_attention &= !activated;
                 (changed && managed.constrained()).then_some(*id)
             })
             .collect();
