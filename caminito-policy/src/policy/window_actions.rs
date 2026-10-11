@@ -71,8 +71,8 @@ impl<W: PolicyWindow> Policy<W> {
         let current = self.windows[&id].tile;
         let same = current.is_some_and(|tiled| tiled.tile == tile);
         let next = match current {
-            Some(tiled) if self.allow_tile_cycling && same => tiled.size.next(),
-            Some(_) if !self.allow_tile_cycling => None,
+            Some(tiled) if self.config.allow_tile_cycling && same => tiled.size.next(),
+            Some(_) if !self.config.allow_tile_cycling => None,
             _ => Some(TileSize::Half),
         };
         if same && next.is_none() {

@@ -7,6 +7,7 @@
 //! `org_kde_kwin_appmenu`, and its menu is `app_menu_registrar`'s.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use caminito_test_client::dbus::{CaminitoProxy, GlobalMenu};
 use caminito_test_client::gtk_shell::DbusProperties;
@@ -20,6 +21,8 @@ use crate::dbus::global_menu::{APPLET_NAME, GRACE, REGISTRAR_NAME};
 
 /// `gtk_shell1`'s `global_menu_bar` capability.
 const GLOBAL_MENU_BAR: u32 = 2;
+
+const SECOND: Duration = Duration::from_secs(1);
 
 /// Caminito with one output on a bus of the test's own, which lasts as long as the directory
 /// and the bus do.
@@ -101,11 +104,9 @@ pub(super) fn wait_for_the_applet_to_leave(f: &mut Fixture) {
     f.dispatch_until(|f| switch(f) == "leaving");
 }
 
-/// The grace period passes: Caminito is given the time its timer would give it when it
-/// fires, with no waiting.
+/// The grace period passes, with no waiting.
 pub(super) fn the_grace_period_passes(f: &mut Fixture) {
-    let now = f.state.caminito.now() + GRACE;
-    f.state.caminito.global_menu_time_passed(now);
+    f.advance_clock(GRACE);
 }
 
 /// What pluma's window says of its menus, were pluma a `GtkApplication`.
@@ -243,12 +244,19 @@ fn the_capability_stays_for_the_grace_period_after_the_applet_leaves() {
 
     drop(applet);
     wait_for_the_applet_to_leave(&mut f);
+    f.advance_clock(GRACE - SECOND);
 
     f.roundtrip(early);
+    assert_eq!(switch(&f), "leaving");
     assert_eq!(f.client(early).gtk_capabilities(), &[GLOBAL_MENU_BAR]);
     // A client that starts meanwhile, as the panel's own does, is told as before.
     let late = a_gtk_client(&mut f);
     assert_eq!(f.client(late).gtk_capabilities(), &[GLOBAL_MENU_BAR]);
+
+    f.advance_clock(SECOND);
+
+    assert_eq!(switch(&f), "off");
+    wait_for_capabilities(&mut f, early, 0);
 }
 
 #[test]

@@ -18,8 +18,6 @@ use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::output::Output;
-use smithay::reexports::calloop::RegistrationToken;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::seat::WaylandFocus;
@@ -84,8 +82,8 @@ pub(crate) struct OpenSwitcher {
     holding: Holding,
     /// The key of the binding that opened it, which steps it as Tab does.
     key: Keysym,
-    /// The timer that runs until the popup appears.
-    timer: Option<RegistrationToken>,
+    /// When the popup appears, until it has: `deadlines` shows it then (175).
+    popup_due: Option<Duration>,
     /// The popup, once it has appeared.
     popup: Option<Popup>,
 }
@@ -169,13 +167,23 @@ impl Caminito {
     /// listed window closed.
     pub(crate) fn refresh_switcher(&mut self) {
         self.give_keyboard_to_chosen();
-        if self.policy.switcher().is_none()
-            && let Some(open) = self.switcher.take()
-        {
-            if let Some(timer) = open.timer {
-                self.loop_handle.remove(timer);
-            }
+        if self.policy.switcher().is_none() && self.switcher.take().is_some() {
             self.queue_redraw_all();
+        }
+    }
+
+    /// When the popup appears, while an open switcher waits to show it.
+    pub(crate) fn switcher_popup_deadline(&self) -> Option<Duration> {
+        self.switcher.as_ref()?.popup_due
+    }
+
+    /// Shows the popup if it's due at `now`, for `deadlines`.
+    pub(crate) fn switcher_popup_elapse(&mut self, now: Duration) {
+        if let Some(open) = &mut self.switcher
+            && open.popup_due.is_some_and(|due| due <= now)
+        {
+            open.popup_due = None;
+            self.show_switcher_popup();
         }
     }
 
@@ -406,29 +414,11 @@ impl State {
         // One entry alone is chosen at once.
         self.caminito.give_keyboard_to_chosen();
         if let Some(switcher) = self.caminito.policy.switcher() {
-            let timer = switcher.popup.then(|| {
-                let timer = Timer::from_duration(POPUP_DELAY);
-                let inserted = self
-                    .caminito
-                    .loop_handle
-                    .insert_source(timer, |_, _, state| {
-                        if let Some(open) = &mut state.caminito.switcher {
-                            open.timer = None;
-                        }
-                        state.caminito.show_switcher_popup();
-                        TimeoutAction::Drop
-                    });
-                inserted
-                    .inspect_err(|err| {
-                        tracing::warn!("can't time the window switcher's popup: {}", err.error)
-                    })
-                    .ok()
-            });
-            let timer = timer.flatten();
+            let popup_due = switcher.popup.then(|| now + POPUP_DELAY);
             self.caminito.switcher = Some(OpenSwitcher {
                 holding: Holding::of(mods),
                 key,
-                timer,
+                popup_due,
                 popup: None,
             });
         }
