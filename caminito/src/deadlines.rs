@@ -16,11 +16,15 @@ use crate::state::{Caminito, State};
 /// 1. Policy, whose auto-raise restacks the windows the rest looks at (153).
 /// 2. Idle, which blanks and locks (128).
 /// 3. AccessX, whose keys go on to the clients and whose beeps ring the bell (134).
-/// 4. The bell's flash (169) and the minimise animations (172), which only draw.
-const HOLDERS: [Holder; 5] = [
+/// 4. The Global menu's grace period (114), which nothing else here looks at.
+/// 5. The Window switcher's popup (108), the bell's flash (169) and the minimise animations
+///    (172), which only draw.
+const HOLDERS: [Holder; 7] = [
     Holder::Policy,
     Holder::Idle,
     Holder::AccessX,
+    Holder::GlobalMenu,
+    Holder::SwitcherPopup,
     Holder::Bell,
     Holder::MinimizeAnimations,
 ];
@@ -30,6 +34,8 @@ enum Holder {
     Policy,
     Idle,
     AccessX,
+    GlobalMenu,
+    SwitcherPopup,
     Bell,
     MinimizeAnimations,
 }
@@ -41,6 +47,8 @@ impl Holder {
             Holder::Policy => caminito.policy.deadline(),
             Holder::Idle => caminito.idle.deadline(),
             Holder::AccessX => caminito.accessx.deadline(),
+            Holder::GlobalMenu => caminito.global_menu_switch.deadline(),
+            Holder::SwitcherPopup => caminito.switcher_popup_deadline(),
             Holder::Bell => caminito.bells.deadline(),
             Holder::MinimizeAnimations => caminito.minimize_animations.deadline(),
         }
@@ -54,6 +62,8 @@ impl Holder {
             Holder::Policy => state.caminito.policy.elapse(now),
             Holder::Idle => state.idle_elapse(now),
             Holder::AccessX => state.accessx_elapse(now),
+            Holder::GlobalMenu => state.caminito.global_menu_time_passed(now),
+            Holder::SwitcherPopup => state.caminito.switcher_popup_elapse(now),
             Holder::Bell => state.caminito.bell_elapse(now),
             Holder::MinimizeAnimations => state.caminito.minimize_animation_elapse(now),
         }

@@ -17,7 +17,6 @@ use std::time::Duration;
 
 use caminito_policy::{PolicyWindow, WindowId};
 use smithay::reexports::calloop::channel;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use zbus::export::ordered_stream::OrderedStreamExt;
 use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::names::BusName;
@@ -57,33 +56,31 @@ pub(crate) enum Switch {
 }
 
 impl Switch {
-    /// The applet's name got an owner, or lost it, at `now`. Returns the grace period's
-    /// length if one starts.
-    fn applet_changed(&mut self, present: bool, now: Duration) -> Option<Duration> {
+    /// The applet's name got an owner, or lost it, at `now`. A grace period starts if it
+    /// lost it.
+    fn applet_changed(&mut self, present: bool, now: Duration) {
         match (*self, present) {
             (_, true) => *self = Self::On,
-            (Self::On, false) => {
-                *self = Self::Leaving { until: now + GRACE };
-                return Some(GRACE);
-            }
+            (Self::On, false) => *self = Self::Leaving { until: now + GRACE },
             // Losing the name again starts no new grace period, and an applet that was
             // never there leaves nothing to wait for.
             (Self::Leaving { .. } | Self::Off, false) => {}
         }
-        None
     }
 
-    /// Ends the grace period if it's over at `now`. Returns how long is left of it, if it's
-    /// still running.
-    fn time_passed(&mut self, now: Duration) -> Option<Duration> {
-        let Self::Leaving { until } = *self else {
-            return None;
-        };
-        if now < until {
-            return Some(until - now);
+    /// When the grace period ends, while one runs: `deadlines` ends it then (175).
+    pub(crate) fn deadline(self) -> Option<Duration> {
+        match self {
+            Self::Leaving { until } => Some(until),
+            Self::Off | Self::On => None,
         }
-        *self = Self::Off;
-        None
+    }
+
+    /// Ends the grace period if it's over at `now`.
+    fn time_passed(&mut self, now: Duration) {
+        if self.deadline().is_some_and(|until| until <= now) {
+            *self = Self::Off;
+        }
     }
 
     /// Whether something shows the apps' menubars, or did within the grace period.
@@ -283,21 +280,7 @@ impl Caminito {
         if present {
             self.global_menu_offered = true;
         }
-        let Some(grace) = self.global_menu_switch.applet_changed(present, now) else {
-            return;
-        };
-        // One timer for each grace period. One that outlives its own, because an owner
-        // came back, finds nothing to end, or waits for the end of the next.
-        let timer = Timer::from_duration(grace);
-        self.loop_handle
-            .insert_source(timer, |_, (), state| {
-                let now = state.caminito.now();
-                match state.caminito.global_menu_time_passed(now) {
-                    Some(left) => TimeoutAction::ToDuration(left),
-                    None => TimeoutAction::Drop,
-                }
-            })
-            .expect("a timer joins the event loop");
+        self.global_menu_switch.applet_changed(present, now);
     }
 
     /// The bus took the registrar's name back, at the registrar's `change`. For an applet
@@ -311,9 +294,10 @@ impl Caminito {
     }
 
     /// Takes the switch off if the grace period after the applet's name lost its owner is
-    /// over at `now`. Returns how long is left of it, if it's still running.
-    pub(crate) fn global_menu_time_passed(&mut self, now: Duration) -> Option<Duration> {
-        self.global_menu_switch.time_passed(now)
+    /// over at `now`, for `deadlines`. The refresh pass after it gives the registrar's name
+    /// up.
+    pub(crate) fn global_menu_time_passed(&mut self, now: Duration) {
+        self.global_menu_switch.time_passed(now);
     }
 
     /// The menu `id` says it has, with its application.
@@ -396,7 +380,7 @@ mod tests {
     fn left() -> Switch {
         let mut switch = Switch::default();
         switch.applet_changed(true, SECOND);
-        assert_eq!(switch.applet_changed(false, LEFT), Some(GRACE));
+        switch.applet_changed(false, LEFT);
         switch
     }
 
@@ -406,14 +390,15 @@ mod tests {
         assert!(!switch.is_on());
 
         // What the watch says first where no applet is on the bus.
-        assert_eq!(switch.applet_changed(false, SECOND), None);
+        switch.applet_changed(false, SECOND);
 
         assert_eq!(switch, Switch::Off);
-        assert_eq!(switch.time_passed(SECOND + GRACE), None);
+        assert_eq!(switch.deadline(), None);
 
         switch.applet_changed(true, SECOND * 2);
 
         assert!(switch.is_on());
+        assert_eq!(switch.deadline(), None);
     }
 
     #[test]
@@ -421,19 +406,22 @@ mod tests {
         let mut switch = left();
 
         assert!(switch.is_on());
-        assert_eq!(switch.time_passed(LEFT + SECOND), Some(GRACE - SECOND));
+        assert_eq!(switch.deadline(), Some(LEFT + GRACE));
+        switch.time_passed(LEFT + SECOND);
         assert!(switch.is_on());
-        assert_eq!(switch.time_passed(LEFT + GRACE - SECOND), Some(SECOND));
+        switch.time_passed(LEFT + GRACE - SECOND);
         assert!(switch.is_on());
+        assert_eq!(switch.deadline(), Some(LEFT + GRACE));
     }
 
     #[test]
     fn the_switch_goes_off_when_the_grace_period_ends_with_no_applet() {
         let mut switch = left();
 
-        assert_eq!(switch.time_passed(LEFT + GRACE), None);
+        switch.time_passed(LEFT + GRACE);
 
         assert_eq!(switch, Switch::Off);
+        assert_eq!(switch.deadline(), None);
     }
 
     #[test]
@@ -442,8 +430,9 @@ mod tests {
 
         switch.applet_changed(true, LEFT + SECOND);
 
-        // The timer of the grace period it ended finds nothing to do.
-        assert_eq!(switch.time_passed(LEFT + GRACE), None);
+        // The grace period it ended has no deadline left.
+        assert_eq!(switch.deadline(), None);
+        switch.time_passed(LEFT + GRACE);
         assert_eq!(switch, Switch::On);
     }
 
@@ -455,11 +444,20 @@ mod tests {
 
         switch.applet_changed(false, again);
 
-        // The first one's timer fires within the second, and has to wait for its end.
-        let rest = again - LEFT;
-        assert_eq!(switch.time_passed(LEFT + GRACE), Some(rest));
+        // The end of the first one is within the second, and ends nothing.
+        assert_eq!(switch.deadline(), Some(again + GRACE));
+        switch.time_passed(LEFT + GRACE);
         assert!(switch.is_on());
-        assert_eq!(switch.time_passed(again + GRACE), None);
+        switch.time_passed(again + GRACE);
         assert_eq!(switch, Switch::Off);
+    }
+
+    #[test]
+    fn losing_the_name_again_keeps_the_grace_period_that_runs() {
+        let mut switch = left();
+
+        switch.applet_changed(false, LEFT + SECOND);
+
+        assert_eq!(switch.deadline(), Some(LEFT + GRACE));
     }
 }
