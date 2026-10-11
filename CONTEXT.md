@@ -21,7 +21,7 @@ A change to a MATE component, or to a panel applet from outside MATE, that Camin
 _Avoid_: fork, upstream patch
 
 **Patched package**:
-An Arch package named `<pkgname>-caminito` that builds a MATE component, or a panel applet from outside MATE, with its carried patches and replaces the stock package through `provides` and `conflicts`.
+A distribution package that builds a MATE component, or a panel applet from outside MATE, with its carried patches, and takes the stock package's place, so that only one of the two is installed.
 _Avoid_: fork package, Caminito build of MATE
 
 **Layer surface**:
