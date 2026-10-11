@@ -3,7 +3,7 @@
 //! There's no retained scene graph: each output's elements are rebuilt every frame, and this
 //! is the only code that knows the layer order.
 
-use caminito_policy::{Layer as StackLayer, WindowId};
+use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::{
@@ -516,32 +516,52 @@ fn thumbnail_elements<R>(
     let Some(switcher) = policy.switcher() else {
         return;
     };
-    // The grid is laid out again in the refresh pass, so it has a cell for each window.
-    for (index, &id) in switcher.windows.iter().enumerate().take(grid.cells.len()) {
-        let (Some(mapped), Some(geometry), Some(frame)) = (
-            policy.window(id),
-            policy.geometry(id),
-            policy.frame_rect(id),
-        ) else {
-            continue;
+    // The grid is laid out again in the refresh pass, so it has a cell for each entry.
+    let entries = switcher.entries.iter().enumerate();
+    for (index, entry) in entries.take(grid.cells.len()) {
+        let mut parts: Vec<WindowPart<R>> = Vec::new();
+        // What the thumbnail shows whole: a window's frame, or a Layer surface (163).
+        let size = match *entry {
+            SwitchEntry::Window(id) => {
+                let (Some(mapped), Some(geometry), Some(frame)) = (
+                    policy.window(id),
+                    policy.geometry(id),
+                    policy.frame_rect(id),
+                ) else {
+                    continue;
+                };
+                let shown = Rectangle::from_size(frame.size);
+                one_window_elements(
+                    renderer,
+                    mapped,
+                    geometry.loc - frame.loc,
+                    shown,
+                    scale,
+                    &mut parts,
+                );
+                frame.size
+            }
+            SwitchEntry::Layer(id) => {
+                let Some((layer, geometry)) = caminito.layer_named(id) else {
+                    continue;
+                };
+                parts.extend(AsRenderElements::<R>::render_elements::<WindowPart<R>>(
+                    &layer,
+                    renderer,
+                    Point::default(),
+                    Scale::from(scale),
+                    1.0,
+                ));
+                geometry.size
+            }
         };
-        if frame.size.w <= 0 || frame.size.h <= 0 {
+        if size.w <= 0 || size.h <= 0 {
             continue;
         }
-        let mut parts: Vec<WindowPart<R>> = Vec::new();
-        let shown = Rectangle::from_size(frame.size);
-        one_window_elements(
-            renderer,
-            mapped,
-            geometry.loc - frame.loc,
-            shown,
-            scale,
-            &mut parts,
-        );
-        let target = grid.thumbnail(index, frame.size);
+        let target = grid.thumbnail(index, size);
         let factor = Scale::from((
-            f64::from(target.size.w) / f64::from(frame.size.w),
-            f64::from(target.size.h) / f64::from(frame.size.h),
+            f64::from(target.size.w) / f64::from(size.w),
+            f64::from(target.size.h) / f64::from(size.h),
         ));
         let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
         // A window's popups and subsurfaces can reach past its frame.
