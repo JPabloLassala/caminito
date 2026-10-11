@@ -14,7 +14,7 @@ use crate::backend::headless::argb8888;
 use crate::decoration::control::FrameControl;
 use crate::scene::CLEAR_COLOR;
 use crate::settings::Value;
-use crate::settings::translate::MARCO_GENERAL;
+use crate::settings::translate::{MARCO_GENERAL, TitlebarAction};
 use crate::window::Mapped;
 
 /// One output and a framed window of `size` from a client of `kind`, under a Caminito with
@@ -690,5 +690,146 @@ on_both_kinds! {
             let p = policy(&f);
             assert!(!p.is_maximized_horizontally(pid) && !p.is_maximized_vertically(pid));
         }
+    }
+}
+
+// Scrolling on the titlebar (162).
+
+/// A 400 × 300 framed window under a fresh Caminito whose titlebar scrolls up to `up` and down
+/// to `down`.
+fn scrolling_with(kind: Kind, up: &str, down: &str) -> (Fixture, ClientWindow) {
+    let key = |way: &str, action: &str| {
+        (
+            MARCO_GENERAL,
+            format!("action-scroll-{way}-titlebar"),
+            Value::Str(action.into()),
+        )
+    };
+    framed_with(kind, vec![key("up", up), key("down", down)], (400, 300))
+}
+
+fn is_shaded(f: &Fixture, window: ClientWindow) -> bool {
+    policy(f).is_shaded(f.pid(window))
+}
+
+on_both_kinds! {
+    fn scrolling_up_and_down_on_the_titlebar_run_their_actions(kind: Kind) {
+        let (mut f, window) = scrolling_with(kind, "shade", "unshade");
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+
+        f.scroll(-120.);
+        assert!(is_shaded(&f, window));
+        f.scroll(-120.);
+        assert!(is_shaded(&f, window));
+        f.scroll(120.);
+        assert!(!is_shaded(&f, window));
+
+        // The other way round, with other actions.
+        let (mut f, window) = scrolling_with(kind, "none", "toggle_maximize");
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+        f.scroll(-120.);
+        assert!(!policy(&f).is_maximized(f.pid(window)));
+        f.scroll(120.);
+        assert!(policy(&f).is_maximized(f.pid(window)));
+    }
+}
+
+on_both_kinds! {
+    fn each_click_of_the_wheel_runs_the_titlebars_scroll_action_again(kind: Kind) {
+        let (mut f, window) = scrolling_with(kind, "toggle_shade", "none");
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+
+        // Two clicks in one event, as a fast turn gives, and then three.
+        f.scroll(-240.);
+        assert!(!is_shaded(&f, window));
+        f.scroll(-360.);
+        assert!(is_shaded(&f, window));
+
+        // A wheel with finer steps acts once its steps make a click.
+        f.scroll(-40.);
+        f.scroll(-40.);
+        assert!(is_shaded(&f, window));
+        f.scroll(-40.);
+        assert!(!is_shaded(&f, window));
+    }
+}
+
+on_both_kinds! {
+    fn a_touchpads_scroll_on_the_titlebar_acts_once_for_each_wheel_click_of_distance(kind: Kind) {
+        let (mut f, window) = scrolling_with(kind, "toggle_shade", "none");
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+
+        // A wheel's click is 15.
+        f.finger_scroll(-10.);
+        assert!(!is_shaded(&f, window));
+        f.finger_scroll(-10.);
+        assert!(is_shaded(&f, window));
+
+        // What's left when the fingers leave doesn't count for the next scroll.
+        f.finger_scroll(0.);
+        f.finger_scroll(-10.);
+        assert!(is_shaded(&f, window));
+        f.finger_scroll(-10.);
+        assert!(!is_shaded(&f, window));
+    }
+}
+
+on_both_kinds! {
+    fn a_scroll_off_the_title_does_nothing(kind: Kind) {
+        let (mut f, window) = scrolling_with(kind, "toggle_shade", "toggle_shade");
+
+        // On a button, as Marco's frame takes a scroll on the title alone.
+        let close = center(f.button_rect(window, ButtonFunction::Close));
+        move_to(&mut f, close);
+        f.scroll(-120.);
+        f.scroll(120.);
+        assert!(!is_shaded(&f, window));
+
+        // In the window.
+        let inside = center(f.geometry(window));
+        move_to(&mut f, inside);
+        f.scroll(-120.);
+        assert!(!is_shaded(&f, window));
+
+        // And part of a click there is no part of one on the title.
+        f.scroll(-80.);
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+        f.scroll(-80.);
+        assert!(!is_shaded(&f, window));
+        f.scroll(-40.);
+        assert!(is_shaded(&f, window));
+    }
+}
+
+on_both_kinds! {
+    fn a_changed_titlebar_scroll_action_applies_at_once(kind: Kind) {
+        let (mut f, window) = framed(kind);
+        let title = title_point(&f, window);
+        move_to(&mut f, title);
+        // Marco's default is `none`.
+        f.scroll(-120.);
+        f.scroll(120.);
+        assert!(!is_shaded(&f, window));
+
+        let shade = Value::Str("toggle_shade".into());
+        f.set_setting(MARCO_GENERAL, "action-scroll-down-titlebar", shade);
+        f.dispatch_until(|f| {
+            f.state.caminito.settings.frames.scroll_down == TitlebarAction::ToggleShade
+        });
+        f.scroll(-120.);
+        assert!(!is_shaded(&f, window));
+        f.scroll(120.);
+        assert!(is_shaded(&f, window));
+
+        let unshade = Value::Str("unshade".into());
+        f.set_setting(MARCO_GENERAL, "action-scroll-up-titlebar", unshade);
+        f.dispatch_until(|f| f.state.caminito.settings.frames.scroll_up == TitlebarAction::Unshade);
+        f.scroll(-120.);
+        assert!(!is_shaded(&f, window));
     }
 }
