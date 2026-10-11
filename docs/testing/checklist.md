@@ -1452,7 +1452,7 @@ session_env() {
      X11 session, and look for *About Caminito* in its control center.
   7. In a checkout, run `cargo build -p caminito -p caminito-about`, then
      `target/debug/caminito --version` and `target/debug/caminito-about`.
-- **Expected:** in step 1 `caminito --version` prints `caminito 0.1.0 (r<count>.<hash>)` and
+- **Expected:** in step 1 `caminito --version` prints `0.1.0 (r<count>.<hash>)` and
   exits, and the part in brackets is the package's `pkgver`. In step 2 the entry is under
   *Hardware* with Caminito's logo, and opens the prototype's compact card (182): the logo on
   the left, *Caminito* in large bold type with the same version string after it on one line,

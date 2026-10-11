@@ -3,6 +3,10 @@
 //! The revision is `CAMINITO_REVISION`'s, which the PKGBUILD sets from its `pkgver`, or
 //! else the checkout's, from `git`. A build with neither, from a tarball say, has the Cargo
 //! version alone and doesn't fail.
+//!
+//! The checkout's revision is always `r<count>.<hash>`, which is the PKGBUILD's `pkgver` while
+//! the repository has no tag. With one, `pkgver` is `git describe`'s, and only a packaged
+//! build has it.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,15 +15,18 @@ use std::process::Command;
 mod string;
 
 /// The variable a packager names the revision in.
-const REVISION: &str = "CAMINITO_REVISION";
+const REVISION_VARIABLE: &str = "CAMINITO_REVISION";
 
 fn main() {
-    println!("cargo::rerun-if-env-changed={REVISION}");
+    println!("cargo::rerun-if-env-changed={REVISION_VARIABLE}");
     let manifest_dir =
         PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("cargo sets it"));
     watch_head(&manifest_dir);
 
-    let revision = string::revision(std::env::var(REVISION).ok(), || {
+    let revision = string::revision(std::env::var(REVISION_VARIABLE).ok(), || {
+        // Caminito's own checkout, and not a repository that an unpacked tarball of it
+        // happens to be below, whose revision git would give as readily.
+        git(&manifest_dir, &["ls-files", "--error-unmatch", "build.rs"])?;
         let count = git(&manifest_dir, &["rev-list", "--count", "HEAD"])?;
         let hash = git(&manifest_dir, &["rev-parse", "--short=7", "HEAD"])?;
         Some(string::pkgver(&count, &hash))

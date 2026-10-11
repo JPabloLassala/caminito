@@ -123,18 +123,18 @@ fn title_markup(version: &str) -> String {
 
 /// The small line: what Caminito is built on, its licence, and under them the repository.
 fn small_markup() -> String {
-    let built_on = BUILT_ON.map(|(name, url)| link(url, name)).join(" and ");
+    let built_on = BUILT_ON.map(|(name, url)| link(name, url)).join(" and ");
     let (licence, licence_text) = LICENCE;
     let shown = REPOSITORY.strip_prefix("https://").unwrap_or(REPOSITORY);
     format!(
         "<small>Built on {built_on}. {}.\n{}</small>",
-        link(licence_text, licence),
-        link(REPOSITORY, shown)
+        link(licence, licence_text),
+        link(shown, REPOSITORY)
     )
 }
 
 /// A link of a label's markup.
-fn link(url: &str, text: &str) -> String {
+fn link(text: &str, url: &str) -> String {
     format!(
         "<a href=\"{}\">{}</a>",
         glib::markup_escape_text(url),

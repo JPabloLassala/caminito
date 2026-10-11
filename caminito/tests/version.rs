@@ -7,8 +7,8 @@ use std::process::Command;
 fn version_prints_the_version_string_and_starts_no_compositor() {
     let output = Command::new(env!("CARGO_BIN_EXE_caminito"))
         .arg("--version")
-        // With no display and no seat a compositor couldn't start, so status 0 says none
-        // was tried.
+        // With nothing to nest in and no seat a compositor couldn't start, so status 0 says
+        // none was tried.
         .env_clear()
         .output()
         .unwrap();
@@ -16,7 +16,7 @@ fn version_prints_the_version_string_and_starts_no_compositor() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        format!("caminito {}\n", caminito_version::VERSION)
+        format!("{}\n", caminito_version::VERSION)
     );
     assert!(output.stderr.is_empty(), "{output:?}");
 }

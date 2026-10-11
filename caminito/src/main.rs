@@ -15,7 +15,7 @@ fn main() -> ExitCode {
     };
     if args.version {
         // The program's answer, not a log line, so it's on stdout and tracing isn't asked.
-        println!("caminito {}", caminito_version::VERSION);
+        println!("{}", caminito_version::VERSION);
         return ExitCode::SUCCESS;
     }
     caminito::logging::init(args.session.is_some());
