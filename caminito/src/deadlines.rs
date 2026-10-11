@@ -62,21 +62,21 @@ impl Holder {
 
 /// The loop timer for the earliest deadline, while a holder waits.
 #[derive(Default)]
-pub(crate) struct Deadlines(Option<LoopTimer>);
+pub(crate) struct DeadlineTimer(Option<Set>);
 
-struct LoopTimer {
+struct Set {
     /// The deadline it's for.
     due: Duration,
-    timer: RegistrationToken,
+    token: RegistrationToken,
 }
 
-/// Whether a loop timer due at `timer` serves when the earliest deadline is `earliest`. One
+/// Whether a loop timer due at `set` serves when the earliest deadline is `earliest`. One
 /// due at or before the deadline does: it finds nothing to do, and the refresh pass after
 /// it sets the next. Input, which only ever moves idle's deadline later, then doesn't set a
 /// timer at every event.
-fn serves(timer: Option<Duration>, earliest: Option<Duration>) -> bool {
-    match (timer, earliest) {
-        (Some(timer), Some(earliest)) => timer <= earliest,
+fn serves(set: Option<Duration>, earliest: Option<Duration>) -> bool {
+    match (set, earliest) {
+        (Some(set), Some(earliest)) => set <= earliest,
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
     }
@@ -101,25 +101,31 @@ impl Caminito {
             .into_iter()
             .filter_map(|holder| holder.deadline(self))
             .min();
-        if serves(self.deadlines.0.as_ref().map(|timer| timer.due), earliest) {
+        if serves(self.deadline_timer.0.as_ref().map(|set| set.due), earliest) {
             return;
         }
-        if let Some(timer) = self.deadlines.0.take() {
-            self.loop_handle.remove(timer.timer);
-        }
+        self.drop_deadline_timer();
         let Some(due) = earliest else {
             return;
         };
         let timer = Timer::from_duration(due.saturating_sub(self.now()));
         let timer = self.loop_handle.insert_source(timer, |_, _, state| {
             // This timer is done, and the refresh pass sets the next.
-            state.caminito.deadlines.0 = None;
+            state.caminito.deadline_timer.0 = None;
             state.run_due();
             TimeoutAction::Drop
         });
         match timer {
-            Ok(timer) => self.deadlines.0 = Some(LoopTimer { due, timer }),
+            Ok(token) => self.deadline_timer.0 = Some(Set { due, token }),
             Err(err) => tracing::warn!("can't set the deadlines' timer: {}", err.error),
+        }
+    }
+
+    /// Takes the loop timer away, so that the next refresh pass sets one. A test's move of
+    /// the clock does too: the timer counts real time, and would fire that much late.
+    pub(crate) fn drop_deadline_timer(&mut self) {
+        if let Some(set) = self.deadline_timer.0.take() {
+            self.loop_handle.remove(set.token);
         }
     }
 }

@@ -89,7 +89,7 @@ use crate::dbus::menu_claim::Claims;
 use crate::dbus::panel::Panel;
 use crate::dbus::registrar::Registrations;
 use crate::dbus::screensaver::ScreensaverShim;
-use crate::deadlines::Deadlines;
+use crate::deadlines::DeadlineTimer;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
@@ -218,7 +218,7 @@ pub struct Caminito {
     /// Idle's timers, the blank and what holds them off (128).
     pub(crate) idle: Idle,
     /// The loop timer for the earliest deadline of what waits on Caminito's clock (174).
-    pub(crate) deadlines: Deadlines,
+    pub(crate) deadline_timer: DeadlineTimer,
     /// Night Light's temperatures and fades (ADR 0023).
     pub(crate) night_light: NightLight,
     /// `NightLight` as `org.mate.Caminito`'s callers last heard it (137).
@@ -911,7 +911,7 @@ impl Caminito {
             idle_notify_state: IdleNotifyState::new::<State>(dh),
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),
-            deadlines: Deadlines::default(),
+            deadline_timer: DeadlineTimer::default(),
             night_light: NightLight::new(settings.night_light),
             night_light_signalled: None,
             gamma_control_state: GammaControlState::default(),

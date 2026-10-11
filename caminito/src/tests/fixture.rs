@@ -1376,6 +1376,8 @@ impl Fixture {
     /// for the time to pass. Night Light's minute is a timer of its own until 176.
     pub fn advance_clock(&mut self, duration: Duration) {
         self.state.caminito.clock_offset += duration;
+        // It counts real time, so it's behind the clock now; the dispatch sets another.
+        self.state.caminito.drop_deadline_timer();
         self.state.run_due();
         self.state.caminito.night_light_tick();
         self.dispatch();
