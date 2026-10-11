@@ -8,8 +8,10 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
-use super::commands::write_program;
-use super::fixture::{Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTMETA, KEY_Q, KEY_R, KEY_RIGHT};
+use super::commands::{first_in_path, write_program};
+use super::fixture::{
+    Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTMETA, KEY_Q, KEY_R, KEY_RIGHT, Logs,
+};
 use crate::settings::Value;
 use crate::settings::translate::{
     MARCO_GLOBAL_KEYBINDINGS, MARCO_KEYBINDING_COMMANDS, MARCO_WORKSPACE_NAMES,
@@ -29,6 +31,8 @@ impl Zenity {
         // is moved into place once the answer is out, so it's never read half-written.
         let script = "#!/bin/sh\n\
                       here=$(dirname \"$0\")\n\
+                      echo >> \"$here/started\"\n\
+                      while [ -e \"$here/hold\" ]; do sleep 0.02; done\n\
                       printf '%s\\0' \"$@\" > \"$here/running\"\n\
                       status=1\n\
                       if [ -e \"$here/answer\" ]; then cat \"$here/answer\"; status=0; fi\n\
@@ -41,13 +45,23 @@ impl Zenity {
             fs::write(dir.path().join("answer"), format!("{answer}\n")).unwrap();
         }
 
-        let mut path = dir.path().as_os_str().to_owned();
-        if let Some(rest) = std::env::var_os("PATH") {
-            path.push(":");
-            path.push(rest);
-        }
-        f.state.caminito.environment.insert("PATH".into(), path);
+        first_in_path(f, &dir);
         Self { dir }
+    }
+
+    /// Keeps the stand-in from answering, as a dialog that still shows, until
+    /// [`release`](Self::release).
+    fn hold(&self) {
+        fs::write(self.dir.path().join("hold"), "").unwrap();
+    }
+
+    fn release(&self) {
+        fs::remove_file(self.dir.path().join("hold")).unwrap();
+    }
+
+    /// How many times the stand-in has started.
+    fn starts(&self) -> usize {
+        fs::read_to_string(self.dir.path().join("started")).map_or(0, |text| text.lines().count())
     }
 
     fn ran(&self) -> PathBuf {
@@ -240,6 +254,54 @@ fn an_empty_answer_leaves_the_name() {
 
     wait_for_the_dialog_and_the_settings(&mut f, &zenity);
     assert_eq!(name(&f, 0), "Mail");
+}
+
+#[test]
+fn while_the_dialog_shows_caminito_goes_on_and_another_press_shows_no_other() {
+    let mut f = with_rename_bound(vec![]);
+    let zenity = Zenity::install(&mut f, Some("Code"));
+    zenity.hold();
+
+    f.chord(&[KEY_LEFTMETA, KEY_R]);
+    f.dispatch_until(|_| zenity.starts() == 1);
+    f.chord(&[KEY_LEFTMETA, KEY_R]);
+    // The loop goes on: a setting comes in while the dialog shows.
+    f.set_setting(
+        MARCO_WORKSPACE_NAMES,
+        "name-4",
+        Value::Str("Barrier".into()),
+    );
+    f.dispatch_until(|f| name(f, 3) == "Barrier");
+    zenity.release();
+
+    f.dispatch_until(|f| name(f, 0) == "Code");
+    assert_eq!(zenity.starts(), 1);
+}
+
+#[test]
+fn zenity_missing_is_logged_and_nothing_shows() {
+    let logs = Logs::capture();
+    let mut f = Fixture::with_settings(vec![
+        set(MARCO_GLOBAL_KEYBINDINGS, "run-command-1", "<Super>q"),
+        set(MARCO_GLOBAL_KEYBINDINGS, "rename-workspace", "<Super>r"),
+    ]);
+    // A `PATH` of one empty directory has no zenity.
+    let empty = tempfile::tempdir().unwrap();
+    f.state
+        .caminito
+        .environment
+        .insert("PATH".into(), empty.path().into());
+
+    f.chord(&[KEY_LEFTMETA, KEY_Q]);
+    f.chord(&[KEY_LEFTMETA, KEY_R]);
+
+    let logs = logs.text();
+    assert!(logs.contains("can't show Marco's error dialog: "), "{logs}");
+    assert!(
+        logs.contains("can't show Marco's dialog for rename-workspace: zenity: "),
+        "{logs}"
+    );
+    assert!(f.state.caminito.workspace_rename.is_none());
 }
 
 #[test]

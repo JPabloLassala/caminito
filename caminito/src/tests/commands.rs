@@ -44,7 +44,7 @@ pub(super) fn write_program(program: &Path, script: &str) {
 }
 
 /// Puts `dir` first in the `PATH` of what Caminito spawns.
-fn first_in_path(f: &mut Fixture, dir: &TempDir) {
+pub(super) fn first_in_path(f: &mut Fixture, dir: &TempDir) {
     let mut path = dir.path().as_os_str().to_owned();
     if let Some(rest) = std::env::var_os("PATH") {
         path.push(":");
