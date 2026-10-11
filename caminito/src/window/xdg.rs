@@ -249,7 +249,8 @@ impl Adapter for ToplevelSurface {
         ToplevelSurface::parent(self).map(WindowKey::Wayland)
     }
 
-    /// xdg-activation's urgency comes with focus-stealing prevention in M8.
+    /// No protocol Caminito has lets an xdg toplevel ask for attention (65): its urgency is
+    /// policy's, from a refused focus (165).
     fn urgent(&self) -> bool {
         false
     }

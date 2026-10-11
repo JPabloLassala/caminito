@@ -40,6 +40,7 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "alt-tab-max-columns", Value::Int(5));
     put(MARCO_GENERAL, "alt-tab-raise-windows", Value::Bool(false));
     put(MARCO_GENERAL, "focus-mode", s("click"));
+    put(MARCO_GENERAL, "focus-new-windows", s("smart"));
     put(MARCO_GENERAL, "raise-on-click", Value::Bool(true));
     put(MARCO_GENERAL, "auto-raise", Value::Bool(false));
     put(MARCO_GENERAL, "auto-raise-delay", Value::Int(500));
@@ -815,6 +816,48 @@ fn a_value_of_the_wrong_type_falls_back_to_the_default() {
         problem,
         invalid(MARCO_GENERAL, "titlebar-uses-system-font", "1", "false")
     );
+}
+
+// Focus-stealing prevention and urgent windows (165).
+
+#[test]
+fn focus_new_windows_is_passed_to_policy_and_isnt_reported_as_unsupported() {
+    assert_eq!(
+        settings(&defaults()).policy.focus_new_windows,
+        FocusNewWindows::Smart
+    );
+    // `settings` checks there's no problem.
+    let reading = with(MARCO_GENERAL, "focus-new-windows", string("strict"));
+    assert_eq!(
+        settings(&reading).policy.focus_new_windows,
+        FocusNewWindows::Strict
+    );
+}
+
+#[test]
+fn urgent_placement_keeps_an_urgent_windows_place_where_the_schema_has_no_key_for_it() {
+    // Marco 1.29.0's schema, which `defaults` reads, has no `alt-tab-urgent-placement`.
+    assert_eq!(
+        settings(&defaults()).policy.urgent_placement,
+        UrgentPlacement::Mru
+    );
+}
+
+#[test]
+fn urgent_placement_follows_masters_key_and_its_default() {
+    for (value, placement) in [
+        ("start", UrgentPlacement::Start),
+        ("mru", UrgentPlacement::Mru),
+    ] {
+        let mut reading = defaults();
+        reading.insert(
+            MARCO_GENERAL,
+            "alt-tab-urgent-placement",
+            string(value),
+            string("start"),
+        );
+        assert_eq!(settings(&reading).policy.urgent_placement, placement);
+    }
 }
 
 // The focus modes and auto-raise (153).

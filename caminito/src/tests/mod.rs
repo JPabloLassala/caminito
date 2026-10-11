@@ -23,6 +23,7 @@ mod edge_resistance;
 mod ext_workspace;
 mod fixture;
 mod focus_modes;
+mod focus_stealing;
 mod foreign_toplevel;
 mod frames;
 mod gamma_control;

@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::{PolicyWindow, SeatId, WindowId, WindowType};
+use crate::{PolicyWindow, SeatId, UrgentPlacement, WindowId, WindowType};
 
 use super::Policy;
 
@@ -180,6 +180,11 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// The stacking an open switcher puts back, for a window that maps under another (165).
+    pub(super) fn switcher_saved_stack(&mut self) -> Option<&mut Vec<WindowId>> {
+        self.switcher.as_mut().map(|open| &mut open.stack)
+    }
+
     /// Takes a window that went away out of the switcher's list.
     pub(super) fn switcher_window_unmapped(&mut self, id: WindowId) {
         let Some(open) = &mut self.switcher else {
@@ -264,11 +269,19 @@ impl<W: PolicyWindow> Policy<W> {
 
         // Most recently used first, by the better place of the window and its dialog. A window
         // that never had the focus is in neither, and keeps its stacking order after those that
-        // did. Then the minimised go last. The sort is stable, so ties keep the stacking order.
+        // did. Then the minimised go last, and with `alt-tab-urgent-placement`'s `start` the
+        // urgent ones that aren't go first, as Marco master's `meta_display_get_tab_list` has
+        // them (165). The sort is stable, so ties keep the stacking order.
         let place = |id: WindowId| self.mru.iter().position(|w| *w == id);
+        let urgent_first = self.urgent_placement == UrgentPlacement::Start;
         entries.sort_by_key(|&(base, listed)| {
             let used = place(base).into_iter().chain(place(listed)).min();
-            (self.windows[&base].minimized, used.unwrap_or(usize::MAX))
+            let urgent = urgent_first && (self.is_urgent(base) || self.is_urgent(listed));
+            (
+                self.windows[&base].minimized,
+                !urgent,
+                used.unwrap_or(usize::MAX),
+            )
         });
 
         let mut listed = Vec::new();
