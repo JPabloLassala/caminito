@@ -19,17 +19,23 @@ mirror: it copies MATE's settings one way into those GNOME keys, at
 start-up and on every change, and writes a key only when its value
 differs. That also leaves out the X resources and the QT_SCALE_FACTOR
 export, which are wrong on Wayland. Without that variable, nothing changes.
+
+MATE has no light or dark key, so the apps that read the colour scheme
+from the portal (browsers, Electron and libadwaita apps) stayed light with
+a dark theme. The mirror also works out org.gnome.desktop.interface
+color-scheme from the GTK theme: prefer-dark when the theme's window
+background is darker than its text, and default otherwise.
 ---
- plugins/xsettings/Makefile.am             |   2 +
- plugins/xsettings/msd-gnome-mirror.c      | 329 ++++++++++++++++++++++
- plugins/xsettings/msd-gnome-mirror.h      |  35 +++
- plugins/xsettings/msd-xsettings-manager.c |  16 ++
- 4 files changed, 382 insertions(+)
+ plugins/xsettings/Makefile.am             |   3 +
+ plugins/xsettings/msd-gnome-mirror.c      | 402 ++++++++++++++++++++++
+ plugins/xsettings/msd-gnome-mirror.h      |  35 ++
+ plugins/xsettings/msd-xsettings-manager.c |  16 +
+ 4 files changed, 456 insertions(+)
  create mode 100644 plugins/xsettings/msd-gnome-mirror.c
  create mode 100644 plugins/xsettings/msd-gnome-mirror.h
 
 diff --git a/plugins/xsettings/Makefile.am b/plugins/xsettings/Makefile.am
-index e81842f..aa73e98 100644
+index e81842f..a0ff248 100644
 --- a/plugins/xsettings/Makefile.am
 +++ b/plugins/xsettings/Makefile.am
 @@ -9,6 +9,8 @@ libxsettings_la_SOURCES =	\
@@ -41,12 +47,20 @@ index e81842f..aa73e98 100644
  	xsettings-common.h	\
  	xsettings-common.c	\
  	xsettings-manager.h	\
+@@ -39,6 +41,7 @@ libxsettings_la_LIBADD  = 	\
+ 	$(SETTINGS_PLUGIN_LIBS)	\
+ 	$(FONTCONFIG_LIBS)	\
+ 	$(X11_LIBS)		\
++	-lm			\
+ 	$(NULL)
+ 
+ plugin_in_files = 		\
 diff --git a/plugins/xsettings/msd-gnome-mirror.c b/plugins/xsettings/msd-gnome-mirror.c
 new file mode 100644
-index 0000000..2cca969
+index 0000000..3e0fd2d
 --- /dev/null
 +++ b/plugins/xsettings/msd-gnome-mirror.c
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,402 @@
 +/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
 + *
 + * Copyright (C) 2026 MATE Developers
@@ -77,10 +91,12 @@ index 0000000..2cca969
 +
 +#include "config.h"
 +
++#include <math.h>
 +#include <string.h>
 +
 +#include <glib.h>
 +#include <gio/gio.h>
++#include <gtk/gtk.h>
 +
 +#include "msd-gnome-mirror.h"
 +
@@ -147,6 +163,76 @@ index 0000000..2cca969
 +        return translated;
 +}
 +
++/* The relative luminance of WCAG 2, from sRGB. */
++static gdouble
++luminance (const GdkRGBA *rgba)
++{
++        gdouble channels[] = { rgba->red, rgba->green, rgba->blue };
++        guint   i;
++
++        for (i = 0; i < G_N_ELEMENTS (channels); i++) {
++                channels[i] = channels[i] <= 0.04045 ? channels[i] / 12.92
++                                                     : pow ((channels[i] + 0.055) / 1.055, 2.4);
++        }
++
++        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
++}
++
++/* Whether a window's background is darker than its text in the named theme.
++ * The theme's own CSS is loaded and measured on a style context of its own,
++ * so the answer does not wait for msd's own windows to load the new theme. A
++ * theme GTK cannot find is drawn as Adwaita, and is measured as Adwaita too.
++ * The user's gtk.css is above the theme, as it is in every app. msd does not
++ * start without a display, so there is always a screen to measure on. */
++static gboolean
++theme_is_dark (const char *theme)
++{
++        GtkCssProvider  *provider;
++        GtkWidgetPath   *path;
++        GtkStyleContext *context;
++        GdkRGBA         *background;
++        GdkRGBA          text;
++        gboolean         dark;
++
++        /* GTK keeps it, and gives the same one back for the same name */
++        provider = gtk_css_provider_get_named (theme, NULL);
++
++        path = gtk_widget_path_new ();
++        gtk_widget_path_append_type (path, GTK_TYPE_WINDOW);
++        gtk_widget_path_iter_set_object_name (path, -1, "window");
++        gtk_widget_path_iter_add_class (path, -1, GTK_STYLE_CLASS_BACKGROUND);
++
++        /* Above the theme msd itself has, which can still be the old one */
++        context = gtk_style_context_new ();
++        gtk_style_context_set_path (context, path);
++        gtk_style_context_add_provider (context, GTK_STYLE_PROVIDER (provider),
++                                        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
++
++        gtk_style_context_get (context, GTK_STATE_FLAG_NORMAL,
++                               GTK_STYLE_PROPERTY_BACKGROUND_COLOR, &background,
++                               NULL);
++        gtk_style_context_get_color (context, GTK_STATE_FLAG_NORMAL, &text);
++        dark = luminance (background) < luminance (&text);
++
++        gdk_rgba_free (background);
++        g_object_unref (context);
++        gtk_widget_path_unref (path);
++
++        return dark;
++}
++
++/* MATE has no light or dark key, and the apps that read the colour scheme
++ * from the portal (browsers, Electron and libadwaita apps) stayed light with
++ * a dark theme. So the colour scheme is worked out from the theme. Never
++ * "prefer-light": "default" is what a light theme means to the apps. */
++static GVariant *
++translate_color_scheme (GVariant *value)
++{
++        const char *theme = g_variant_get_string (value, NULL);
++
++        return g_variant_new_string (theme_is_dark (theme) ? "prefer-dark" : "default");
++}
++
 +static const MirrorEntry mirror_entries [] = {
 +        { MATE_INTERFACE_SCHEMA, "gtk-theme",                GNOME_INTERFACE_SCHEMA, "gtk-theme",                NULL, NULL },
 +        { MATE_INTERFACE_SCHEMA, "icon-theme",               GNOME_INTERFACE_SCHEMA, "icon-theme",               NULL, NULL },
@@ -159,6 +245,7 @@ index 0000000..2cca969
 +        { MATE_INTERFACE_SCHEMA, "gtk-enable-animations",    GNOME_INTERFACE_SCHEMA, "enable-animations",        NULL, NULL },
 +        { MATE_INTERFACE_SCHEMA, "gtk-enable-primary-paste", GNOME_INTERFACE_SCHEMA, "gtk-enable-primary-paste", NULL, NULL },
 +        { MATE_INTERFACE_SCHEMA, "gtk-overlay-scrolling",    GNOME_INTERFACE_SCHEMA, "overlay-scrolling",        NULL, NULL },
++        { MATE_INTERFACE_SCHEMA, "gtk-theme",                GNOME_INTERFACE_SCHEMA, "color-scheme",             translate_color_scheme, NULL },
 +        { MATE_INTERFACE_SCHEMA, "gtk-decoration-layout",    GNOME_WM_SCHEMA,        "button-layout",            NULL, NULL },
 +
 +        { MATE_MOUSE_SCHEMA,     "cursor-theme",             GNOME_INTERFACE_SCHEMA, "cursor-theme",             NULL, NULL },
@@ -418,7 +505,7 @@ index 0000000..b8af952
 +
 +#endif /* __MSD_GNOME_MIRROR_H */
 diff --git a/plugins/xsettings/msd-xsettings-manager.c b/plugins/xsettings/msd-xsettings-manager.c
-index 879aa81..90dd839 100644
+index 879aa81..d37c722 100644
 --- a/plugins/xsettings/msd-xsettings-manager.c
 +++ b/plugins/xsettings/msd-xsettings-manager.c
 @@ -47,6 +47,7 @@
