@@ -166,14 +166,13 @@ impl NightLight {
     /// working-out of the sun, or sooner while a fade runs, for its next step. The step has
     /// nothing to run: the refresh pass after it hands the outputs' temperatures on.
     pub(crate) fn deadline(&self, now: Duration) -> Option<Duration> {
-        let minute = self.minute();
         let step = self.state.is_fading(now).then(|| now + STEP);
-        minute.into_iter().chain(step).min()
+        self.next_working_out().into_iter().chain(step).min()
     }
 
     /// When the sun is next worked out: a minute after the last time, whatever asked for
     /// that one.
-    fn minute(&self) -> Option<Duration> {
+    fn next_working_out(&self) -> Option<Duration> {
         self.worked_out.map(|(then, _)| then + MINUTE)
     }
 
@@ -334,7 +333,11 @@ impl Caminito {
     /// Works the sun out if its minute is due at `now`, for `deadlines`. A minute that's
     /// late isn't made up for: the next is a minute after this one.
     pub(crate) fn night_light_elapse(&mut self, now: Duration) {
-        if self.night_light.minute().is_some_and(|due| due <= now) {
+        if self
+            .night_light
+            .next_working_out()
+            .is_some_and(|due| due <= now)
+        {
             self.night_light_tick();
         }
     }

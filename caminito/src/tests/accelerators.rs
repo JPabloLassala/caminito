@@ -98,15 +98,21 @@ impl Caller {
     }
 }
 
-/// The repeat the tests set: a delay and a period that no test's real time comes near, so
-/// only `advance_clock` brings a repeat.
-const SLOW: (i32, i32) = (20_000, 1);
-
-/// `SLOW`'s delay.
+/// The delay of the repeat the tests set, which no test's real time comes near, so only
+/// `advance_clock` brings a repeat.
 const DELAY: Duration = Duration::from_secs(20);
 
-/// `SLOW`'s period.
+/// The period of the repeat the tests set.
 const PERIOD: Duration = Duration::from_secs(1);
+
+/// Sets the keyboard's repeat to `DELAY` and `PERIOD`.
+fn set_slow_repeat(f: &mut Fixture) {
+    set_repeat(
+        f,
+        DELAY.as_millis() as i32,
+        (1000 / PERIOD.as_millis()) as i32,
+    );
+}
 
 /// The delay of the keyboard's repeat, as it's set now.
 fn repeat_delay(f: &Fixture) -> Duration {
@@ -239,7 +245,7 @@ fn a_keypad_key_is_named_by_what_it_types_with_numlock_on() {
 #[test]
 fn a_held_grabbed_key_signals_repeats_at_the_keyboards_delay_and_rate() {
     let (mut f, id, _, bus) = with_a_focused_window();
-    set_repeat(&mut f, SLOW.0, SLOW.1);
+    set_slow_repeat(&mut f);
     let mut caller = Caller::new(&mut f, &bus);
     let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
 
@@ -257,7 +263,7 @@ fn a_held_grabbed_key_signals_repeats_at_the_keyboards_delay_and_rate() {
     // The press's time, then the delay, then the rate's period.
     assert_eq!(
         [first_time, second_time, third_time],
-        [pressed + 20_000, pressed + 21_000, pressed + 22_000]
+        [20_000, 21_000, 22_000].map(|after| pressed + after)
     );
     // There were three repeats and no more, the press was signalled once, and no client
     // saw the key.
@@ -271,7 +277,7 @@ fn a_held_grabbed_key_signals_repeats_at_the_keyboards_delay_and_rate() {
 #[test]
 fn a_held_grabbed_key_signals_one_repeat_for_many_periods_passed_at_once() {
     let (mut f, _, _, bus) = with_a_focused_window();
-    set_repeat(&mut f, SLOW.0, SLOW.1);
+    set_slow_repeat(&mut f);
     let mut caller = Caller::new(&mut f, &bus);
     let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
 
@@ -290,7 +296,7 @@ fn a_held_grabbed_key_signals_one_repeat_for_many_periods_passed_at_once() {
 #[test]
 fn a_grabbed_keys_release_ends_its_repeats() {
     let (mut f, _, _, bus) = with_a_focused_window();
-    set_repeat(&mut f, SLOW.0, SLOW.1);
+    set_slow_repeat(&mut f);
     let mut caller = Caller::new(&mut f, &bus);
     let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
     f.key(KEY_MUTE, true);
@@ -306,7 +312,7 @@ fn a_grabbed_keys_release_ends_its_repeats() {
 #[test]
 fn another_keys_press_ends_the_repeats_of_a_held_grabbed_key() {
     let (mut f, _, _, bus) = with_a_focused_window();
-    set_repeat(&mut f, SLOW.0, SLOW.1);
+    set_slow_repeat(&mut f);
     let mut caller = Caller::new(&mut f, &bus);
     let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
     f.key(KEY_MUTE, true);
@@ -324,7 +330,7 @@ fn another_keys_press_ends_the_repeats_of_a_held_grabbed_key() {
 #[test]
 fn releasing_the_grab_of_a_held_key_ends_its_repeats() {
     let (mut f, _, _, bus) = with_a_focused_window();
-    set_repeat(&mut f, SLOW.0, SLOW.1);
+    set_slow_repeat(&mut f);
     let mut caller = Caller::new(&mut f, &bus);
     let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
     f.key(KEY_MUTE, true);
@@ -349,7 +355,8 @@ fn a_held_grabbed_key_doesnt_repeat_with_the_keyboards_repeat_off() {
     let actions = caller.grab(&mut f, &["XF86AudioMute", "F9"]);
 
     f.key(KEY_MUTE, true);
-    // A key that repeated would have by now.
+    // The delay, and then ten of the periods the rate had before repeat went off: a key
+    // that repeated would have by now.
     f.advance_clock(Duration::from_millis(30));
     f.advance_clock(Duration::from_millis(100));
     f.key(KEY_MUTE, false);
