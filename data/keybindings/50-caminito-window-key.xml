@@ -6,6 +6,7 @@
   <KeyListEntry name="maximize" description="Maximize window"/>
   <KeyListEntry name="unmaximize" description="Restore window"/>
   <KeyListEntry name="toggle-shaded" description="Toggle shaded state"/>
+  <KeyListEntry name="toggle-above" description="Toggle whether a window will always be visible over other windows"/>
   <KeyListEntry name="close" description="Close window"/>
   <KeyListEntry name="minimize" description="Minimize window"/>
   <KeyListEntry name="begin-move" description="Move window"/>

@@ -37,6 +37,23 @@ keeps the pun on Wayland.
 Out of scope: tiling beyond Marco's edge snapping, showy effects, non-Linux platforms, and
 replacing the Wayfire-based MATE Wayland session.
 
+### Marco parity
+
+Parity means that every key of Marco's five `org.mate.Marco.*` schemas, and each of its 103
+keybinding actions, has one of four answers in [docs/parity.md](docs/parity.md), with the test
+or the checklist item that covers it:
+
+- **honoured:** Caminito does what Marco does with it, or what its row says. Every keybinding
+  action is, and the control center's _Keyboard Shortcuts_ lists them.
+- **never:** Caminito will not implement it, for the reason beside it: what only an X11 window
+  manager can do, and what Marco itself never finished.
+- **left to another component:** another program of the session does it.
+- **unsupported:** not done in v0.1, and on the roadmap after it. Caminito logs such a key once
+  when it's set away from its default.
+
+It doesn't mean pixel-for-pixel sameness everywhere. Where Caminito differs on purpose, as in
+the Window switcher's grid of thumbnails in place of Marco's Alt+Tab popup, the row says how.
+
 ## Milestones
 
 | #   | Milestone                    | Ends with                                                                                             |

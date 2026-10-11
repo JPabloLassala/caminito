@@ -1,6 +1,6 @@
 # Parity with Marco
 
-Each of Marco's `org.mate.Marco.*` keys and keybinding actions, with what Caminito does with it and what covers it. M8 closes when no row is still *to do* ([17](../.scratch/issues/17-milestone-slicing.md), [173](../.scratch/issues/173-packaging-and-closing-m8.md)).
+Each of Marco's `org.mate.Marco.*` keys and keybinding actions, with what Caminito does with it and what covers it. M8 closed with no row left *to do* ([17](../.scratch/issues/17-milestone-slicing.md), [173](../.scratch/issues/173-packaging-and-closing-m8.md)).
 
 The list is the schema itself ([147](../.scratch/issues/147-the-parity-table.md)): Marco 1.29.0's, which Arch ships and which is vendored for the tests in `tests/schemas/`, and the five keys Marco's master adds to it, which Caminito reads where the installed schema has them: `dynamic-workspaces`, `alt-tab-minimized-placement` and `alt-tab-urgent-placement` in `general`, `run-command-area-screenshot` in `global-keybindings` and `command-area-screenshot` in `keybinding-commands`. That's 40 keys in `general`, 36 in `workspace-names`, 15 in `keybinding-commands`, and 103 actions: 51 in `global-keybindings` and 52 in `window-keybindings`.
 
@@ -10,9 +10,8 @@ A row's status is one of:
 - **never:** Caminito will not implement it, for the reason beside it.
 - **left to another component:** another program of the Session does it.
 - **unsupported:** not yet done, and on the roadmap. It's logged once when the user has changed it from its default (09).
-- **to do:** M8's, settled by the ticket the row names. *To do* is allowed until 173, which checks none is left.
 
-A numbered family (`name-1` to `-36`) shares a row. `caminito/src/tests/parity.rs` checks that every key and action of the five schemas, master's five included, has exactly one row, that every *to do* row names one of M8's tickets, and that every key in the settings translation's `UNSUPPORTED` has an *unsupported* or *to do* row. A pass over the rows no test covers is the checklist's *The parity table's rows that no test covers*, run by 173.
+A numbered family (`name-1` to `-36`) shares a row. `caminito/src/tests/parity.rs` checks that every key and action of the five schemas, master's five included, has exactly one row, that every row has one of the four statuses, *to do* no longer being one, that every key in the settings translation's `UNSUPPORTED` has an *unsupported* row, and that the *unsupported* rows are all under *Later*. A pass over the rows no test covers is the checklist's *The parity table's rows that no test covers*, run by 173.
 
 ## `org.mate.Marco.general`
 
@@ -78,7 +77,7 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 
 ## `org.mate.Marco.global-keybindings`
 
-Every action's key is read and watched, and a change applies at once ([148](../.scratch/issues/148-keybindings-from-settings.md)). Its value is parsed as 98's accelerator grabs are, so `<Super>`, `<Mod4>` and `<Primary>` read alike, and `disabled` and the empty string bind nothing; a value that doesn't parse binds nothing and is logged once per key and value. An honoured action binds its key's combination, Marco's default unless the user changed it; a *to do* action's is read and parsed, and binds nothing until its ticket. Of two keys with one combination, the first in Marco's order wins, the global actions before the window ones, but for the moves to the workspace beside, which follow the switches there, and `switch-to-workspace-prev`, which is last, as `all-keybindings.h` has them. The `switch-*` actions are bound with Shift too, which turns them round, as in Marco, and refuse a combination with no modifier but Shift. A combination Caminito doesn't bind is free for mate-settings-daemon's accelerator grabs, which Caminito signals ([98](../.scratch/issues/98-accelerator-grabs.md), `caminito/src/tests/accelerators.rs`); one it binds isn't signalled, and that follows the keys as they change. The debug dump's `bindings` lists the combinations in force with their keys. Tests: `caminito/src/input/bindings/tests.rs` (the table), `caminito/src/tests/bindings.rs` (the keys through the fixture, on both kinds of window) and `caminito/src/settings/translate/tests.rs`. The `switch-*` rows are 108's: which windows an action lists, their order, and what a quick Alt+Tab goes to are Marco's.
+Every action's key is read and watched, and a change applies at once ([148](../.scratch/issues/148-keybindings-from-settings.md)). Its value is parsed as 98's accelerator grabs are, so `<Super>`, `<Mod4>` and `<Primary>` read alike, and `disabled` and the empty string bind nothing; a value that doesn't parse binds nothing and is logged once per key and value. An honoured action binds its key's combination, Marco's default unless the user changed it, and every action is honoured. Of two keys with one combination, the first in Marco's order wins, the global actions before the window ones, but for the moves to the workspace beside, which follow the switches there, and `switch-to-workspace-prev`, which is last, as `all-keybindings.h` has them. The `switch-*` actions are bound with Shift too, which turns them round, as in Marco, and refuse a combination with no modifier but Shift. A combination Caminito doesn't bind is free for mate-settings-daemon's accelerator grabs, which Caminito signals ([98](../.scratch/issues/98-accelerator-grabs.md), `caminito/src/tests/accelerators.rs`); one it binds isn't signalled, and that follows the keys as they change. The debug dump's `bindings` lists the combinations in force with their keys. Tests: `caminito/src/input/bindings/tests.rs` (the table), `caminito/src/tests/bindings.rs` (the keys through the fixture, on both kinds of window) and `caminito/src/settings/translate/tests.rs`. The `switch-*` rows are 108's: which windows an action lists, their order, and what a quick Alt+Tab goes to are Marco's.
 
 | Action | Status | What Caminito does | Covered by |
 | --- | --- | --- | --- |
@@ -114,7 +113,7 @@ Every action's key is read and watched, and a change applies at once ([148](../.
 
 ## `org.mate.Marco.window-keybindings`
 
-Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybindings-from-settings.md)), with the same tests: an honoured action binds its key's combination, and an action that's *to do* binds nothing, so its combination reaches the focused client.
+Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybindings-from-settings.md)), with the same tests: an honoured action binds its key's combination, and every action is honoured.
 
 | Action | Status | What Caminito does | Covered by |
 | --- | --- | --- | --- |
@@ -187,7 +186,7 @@ Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybin
 
 ## What has no key of Marco's
 
-Most of 05's and 09's roadmap has no key in Marco's schemas: what Caminito never does, what it does later, and M8's work that no key turns on.
+Most of 05's and 09's roadmap has no key in Marco's schemas: what Caminito never does, what it does later, and what M8 built that no key turns on.
 
 ### Never
 
@@ -206,7 +205,7 @@ Most of 05's and 09's roadmap has no key in Marco's schemas: what Caminito never
 
 ### Later
 
-The roadmap after v0.1: each is *unsupported*. The keys among them that Caminito doesn't match are logged once when set away from their defaults (09).
+The roadmap after v0.1: each is *unsupported*, and no row outside this section is. The first five are 05's *later* list, and the next four 09's roadmap; the last four were moved here, each with its reason beside it. The keys among them that Caminito doesn't match are logged once when set away from their defaults (09).
 
 | What | Status | Why |
 | --- | --- | --- |
@@ -224,7 +223,7 @@ The roadmap after v0.1: each is *unsupported*. The keys among them that Caminito
 | `org.mate.accessibility-keyboard` `capslock-beep-enable` | unsupported | As `timeout-enable`. |
 | `org.mate.accessibility-keyboard` `feature-state-change-beep` | unsupported | As `capslock-beep-enable`. |
 
-### To do in M8
+### Built in M8
 
 | What | Status | Why |
 | --- | --- | --- |

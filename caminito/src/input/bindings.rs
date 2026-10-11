@@ -472,6 +472,12 @@ fn bindable() -> impl Iterator<Item = Bindable> {
         ])
 }
 
+/// The schema and key of every action Caminito binds, for the keybinding manifests' test.
+#[cfg(test)]
+pub(crate) fn bound_keys() -> Vec<(&'static str, &'static str)> {
+    bindable().map(|b| (b.schema, b.key)).collect()
+}
+
 /// One combination in force, and the key it came from.
 #[derive(Debug, Clone, PartialEq)]
 struct Row {

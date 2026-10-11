@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <KeyListEntries name="Window Management" wm_name="Caminito" package="marco" schema="org.mate.Marco.global-keybindings">
   <KeyListEntry name="switch-windows" description="Move between windows, using a popup window"/>
+  <KeyListEntry name="switch-windows-backward" description="Move backward between windows, using a popup window"/>
+  <KeyListEntry name="switch-windows-all" description="Move between windows on all workspaces, using a popup window"/>
+  <KeyListEntry name="switch-windows-all-backward" description="Move backward between windows on all workspaces, using a popup window"/>
   <KeyListEntry name="switch-group" description="Move between windows of an application, using a popup window"/>
+  <KeyListEntry name="switch-group-backward" description="Move backward between windows of an application, using a popup window"/>
   <KeyListEntry name="switch-panels" description="Move between panels and the desktop, using a popup window"/>
+  <KeyListEntry name="switch-panels-backward" description="Move backward between panels and the desktop, using a popup window"/>
   <KeyListEntry name="cycle-windows" description="Move between windows immediately"/>
+  <KeyListEntry name="cycle-windows-backward" description="Move backward between windows immediately"/>
   <KeyListEntry name="cycle-group" description="Move between windows of an application immediately"/>
+  <KeyListEntry name="cycle-group-backward" description="Move backward between windows of an application immediately"/>
   <KeyListEntry name="cycle-panels" description="Move between panels and the desktop immediately"/>
+  <KeyListEntry name="cycle-panels-backward" description="Move backward between panels and the desktop immediately"/>
   <KeyListEntry name="show-desktop" description="Hide all normal windows and set focus to the desktop"/>
   <KeyListEntry name="switch-to-workspace-1" description="Switch to workspace 1" value="1" key="num-workspaces" schema="org.mate.Marco.general" comparison="gt"/>
   <KeyListEntry name="switch-to-workspace-2" description="Switch to workspace 2" value="1" key="num-workspaces" schema="org.mate.Marco.general" comparison="gt"/>
