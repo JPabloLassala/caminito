@@ -298,6 +298,11 @@ fn a_framed_window_is_drawn_with_the_themes_strips_around_it() {
             ..ssd((300, 200))
         },
     );
+    // The frame alone: its shadow shows where its rounded corners are cut, and has
+    // shadows.rs's tests (171).
+    f.set_setting(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
+    f.dispatch_until(|f| f.mapped(window).frame().shadow_rect().is_none());
+    f.draw(&output);
     let geometry = f.geometry(window);
     let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
     let clear = argb8888(CLEAR_COLOR);

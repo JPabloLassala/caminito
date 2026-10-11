@@ -1768,3 +1768,33 @@ session_env() {
   pager shows the new name once OK is pressed; Cancel leaves it (167).
 - **Debug tool:** `gsettings monitor org.mate.Marco.workspace-names`, and Caminito's log, which
   has a line for each command that can't run.
+
+### Shadows around a native and an X11 window
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, on a monitor at a fractional scale such as 1.5. Open
+     `mate-terminal`, a native Wayland window with a Frame, `xterm`, an XWayland one, and a
+     GTK4 application that draws its own titlebar, such as `gnome-calculator`. Put the two
+     terminals so that they overlap, over a light desktop background.
+  2. Focus each terminal in turn.
+  3. Move the pointer onto the focused terminal's shadow, more than 10 logical pixels from
+     its Frame and over the other terminal, and click.
+  4. Resize a terminal, shade it by a double click on its titlebar with
+     `action-double-click-titlebar` at `toggle_shade`, and unshade it. Maximise it, and tile it
+     to a side.
+  5. Take a screenshot of a terminal's window with `mate-screenshot -w`.
+  6. Run `gsettings set org.mate.Marco.general compositing-manager false`, look, and set it
+     back to `true`.
+- **Expected:** in step 1 each terminal has a soft black shadow around its Frame, which
+  follows the Frame's rounded corners with no gap and no hard edge, and Caminito draws none
+  around the GTK4 window, which has its own. In step 2 the focused terminal's shadow is the
+  larger, and lies down and right of its Frame; the other's is smaller and lies below it. In
+  step 3 the pointer shows no resize cursor, and the click focuses and raises the terminal
+  under the shadow. In step 4 the shadow follows the Frame as it's resized, lies around the
+  titlebar alone while the window is shaded, and isn't there while the window is maximised
+  or tiled to a side, as in Marco. In step 5 the screenshot is the window with its Frame and
+  no shadow. In step 6 no window has a shadow while the key is off, at once, and they come
+  back with it (171).
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and frame debug, which outlines
+  each Frame's strips and its invisible resize border.
