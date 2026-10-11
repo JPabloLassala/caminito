@@ -1,6 +1,7 @@
 #!/bin/bash
 # Runs the tests ticket 175 touches, in the OrbStack machine: `175-test.sh [filters…]`.
 cd "$(dirname "$0")/../.." || exit 1
+# Ticket 174's target directory, which has the dependencies built.
 export CARGO_TARGET_DIR="$HOME/target-174"
 ulimit -n "$(ulimit -Hn)"
 touch caminito/src/lib.rs
