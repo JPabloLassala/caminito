@@ -58,6 +58,11 @@ fn pixel(f: &mut Fixture, output: &Output, at: Point<i32, Logical>) -> u32 {
     pixel.expect("the output is drawn") & 0xff_ffff
 }
 
+/// The window with the focus.
+fn focus(f: &Fixture) -> Option<caminito_policy::WindowId> {
+    f.state.caminito.policy.focus(SEAT)
+}
+
 fn clear() -> u32 {
     argb8888(CLEAR_COLOR) & 0xff_ffff
 }
@@ -123,9 +128,9 @@ on_both_kinds! {
 on_both_kinds! {
     fn an_unfocused_frame_has_the_smaller_shadow(kind: Kind) {
         let (mut f, output, window) = framed(kind);
-        let other = f.connect(Kind::Xdg);
-        f.map(other, WindowSpec { size: (100, 100), ..WindowSpec::default() });
-        assert_ne!(f.state.caminito.policy.focus(SEAT), Some(f.pid(window)));
+        let spec = WindowSpec { size: (100, 100), ..WindowSpec::default() };
+        f.map(window.client(), spec);
+        assert_ne!(focus(&f), Some(f.pid(window)));
         let visible = f.visible_frame(window);
         let right = visible.loc.x + visible.size.w;
         let middle = visible.loc.y + visible.size.h / 2;
@@ -214,7 +219,7 @@ on_both_kinds! {
         f.pointer_move(f64::from(target.x), f64::from(target.y));
         f.pointer_button(BTN_LEFT, false);
         let (under_id, over_id) = (f.pid(under), f.pid(over));
-        assert_eq!(f.state.caminito.policy.focus(SEAT), Some(over_id));
+        assert_eq!(focus(&f), Some(over_id));
 
         // A point on its shadow, past its invisible resize border, over the large window.
         let visible = f.visible_frame(over);
@@ -232,7 +237,7 @@ on_both_kinds! {
         f.pointer_button(BTN_LEFT, true);
         f.pointer_button(BTN_LEFT, false);
 
-        assert_eq!(f.state.caminito.policy.focus(SEAT), Some(under_id));
+        assert_eq!(focus(&f), Some(under_id));
         assert!(f.has_keyboard(under));
     }
 }

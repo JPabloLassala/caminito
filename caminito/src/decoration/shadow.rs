@@ -30,7 +30,7 @@ pub enum ShadowType {
 impl ShadowType {
     /// The shadow of a frame drawn with `flags`, or `None` where Marco draws none.
     pub fn of(flags: &FrameFlags) -> Option<Self> {
-        if flags.maximized || flags.tiled_left || flags.tiled_right || flags.fullscreen {
+        if flags.maximized || flags.tiled_left || flags.tiled_right {
             return None;
         }
         Some(if flags.has_focus {
@@ -98,7 +98,8 @@ pub struct Band {
 
 /// How much of the Gaussian falls on each pixel along one axis of a shadow of a frame
 /// `length` pixels long, from the shadow's start (`sum_gaussian`, one axis of it: the map
-/// is the product of its axes).
+/// is the product of its axes). The map's centre is past its middle, and `make_shadow`
+/// works out the near half alone and mirrors it (:537-588), as this does.
 fn profile(radius: f64, spread: usize, length: usize) -> Vec<f64> {
     let centre = (spread / 2) as f64;
     let map: Vec<f64> = (0..spread)
@@ -108,8 +109,10 @@ fn profile(radius: f64, spread: usize, length: usize) -> Vec<f64> {
         })
         .collect();
     let total: f64 = map.iter().sum();
-    (0..length + spread)
+    let whole = length + spread;
+    (0..whole)
         .map(|at| {
+            let at = at.min(whole - 1 - at);
             let start = spread.saturating_sub(at);
             let end = (length + spread - at).min(spread);
             map[start..end].iter().sum::<f64>() / total
@@ -295,18 +298,21 @@ mod tests {
     #[test]
     fn the_shadow_lands_on_whole_pixels_at_scales_1_and_1_5_and_2() {
         let visible = Rectangle::<i32, Logical>::new((101, 51).into(), (401, 301).into());
-        let rect = ShadowType::Large.rect(visible);
-        for (scale, expected) in [
-            (1.0, ((86, 36), (437, 337))),
-            (1.5, ((129, 54), (656, 506))),
-            (2.0, ((172, 72), (874, 674))),
+        for (shadow_type, scale, expected) in [
+            (ShadowType::Large, 1.0, ((86, 36), (437, 337))),
+            (ShadowType::Large, 1.5, ((129, 54), (656, 506))),
+            (ShadowType::Large, 2.0, ((172, 72), (874, 674))),
+            (ShadowType::Medium, 1.0, ((92, 44), (419, 319))),
+            (ShadowType::Medium, 1.5, ((138, 66), (629, 479))),
+            (ShadowType::Medium, 2.0, ((184, 88), (838, 638))),
         ] {
+            let rect = shadow_type.rect(visible);
             let physical: Rectangle<i32, Physical> = rect.to_physical_precise_round(scale);
             let (loc, size) = expected;
             assert_eq!(
                 physical,
                 Rectangle::new(loc.into(), size.into()),
-                "at {scale}"
+                "{shadow_type:?} at {scale}"
             );
         }
     }
@@ -354,6 +360,10 @@ mod tests {
         assert!(alpha(100, 100) > alpha(100, 110));
         assert!(alpha(100, 110) > alpha(100, 120));
         assert_eq!(alpha(-15, -15), 0, "the far corner");
+        // Each side is the one across from it, mirrored, as Marco builds them.
+        assert_eq!(alpha(220, 120), 0);
+        assert_eq!(alpha(-10, 53), alpha(215, 53));
+        assert_eq!(alpha(103, -10), alpha(103, 115));
         // The large shadow lies 3 pixels right of and below the frame's middle.
         assert!(alpha(205, 50) > alpha(-6, 50));
         assert!(alpha(100, 105) > alpha(100, -6));
