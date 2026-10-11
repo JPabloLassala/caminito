@@ -69,13 +69,16 @@ conflicts=("$_pkgname")
 # shortcuts. 0004 and 0005 are gated as 0001 and 0002 are: the Mouse and Keyboard capplets run on
 # XWayland, and Mouse always shows its touchpad page, since XWayland's devices aren't the
 # machine's (06, 102).
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
+# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
+_patches="file://$(realpath -m "$startdir/../../patches/mate-control-center")"
 source=(
   "git+https://github.com/mate-desktop/mate-control-center.git#tag=v$pkgver"
-  0001-wm-common-Know-Caminito-from-the-environment-off-X11.patch
-  0002-windows-Open-under-Caminito.patch
-  0003-keybindings-Do-not-crash-on-a-display-that-isn-t-X11.patch
-  0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch
-  0005-mouse-Show-the-touchpad-page-under-Caminito.patch
+  "$_patches/0001-wm-common-Know-Caminito-from-the-environment-off-X11.patch"
+  "$_patches/0002-windows-Open-under-Caminito.patch"
+  "$_patches/0003-keybindings-Do-not-crash-on-a-display-that-isn-t-X11.patch"
+  "$_patches/0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch"
+  "$_patches/0005-mouse-Show-the-touchpad-page-under-Caminito.patch"
 )
 b2sums=(
   5125854bee37563c54b9e22b23dc2b6670cc7453e2669b547c577394ea2250959fa76c0c7fe5df656a4b237a201835762ed7be4d49643ae99febe74ca9d7065a
@@ -92,7 +95,7 @@ prepare() {
   local src
   for src in "${source[@]}"; do
     [[ $src = *.patch ]] || continue
-    patch -Np1 -i "$srcdir/$src"
+    patch -Np1 -i "$srcdir/${src##*/}"
   done
 
   autoreconf -fiv

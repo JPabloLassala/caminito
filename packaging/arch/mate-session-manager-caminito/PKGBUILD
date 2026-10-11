@@ -61,13 +61,16 @@ groups=(mate)
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
 # Every patch is active only when MATE_WM_NAME=Caminito (08, ADR 0004; 78, ADR 0014).
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
+# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
+_patches="file://$(realpath -m "$startdir/../../patches/mate-session-manager")"
 source=(
   "git+https://github.com/mate-desktop/mate-session-manager.git#commit=$_commit"
   git+https://github.com/mate-desktop/mate-submodules.git
-  0001-main-Unset-GDK_BACKEND-under-Caminito.patch
-  0002-main-Skip-the-windowmanager-required-component-under.patch
-  0003-autostart-Skip-mate-screensaver-and-mate-maximus-und.patch
-  0004-autostart-Start-mate-power-manager-on-X11-under-Cami.patch
+  "$_patches/0001-main-Unset-GDK_BACKEND-under-Caminito.patch"
+  "$_patches/0002-main-Skip-the-windowmanager-required-component-under.patch"
+  "$_patches/0003-autostart-Skip-mate-screensaver-and-mate-maximus-und.patch"
+  "$_patches/0004-autostart-Start-mate-power-manager-on-X11-under-Cami.patch"
 )
 b2sums=(
   ef165f32eef80783df69906d7054bd51133099b10141a033a269c33086dd66a9f60315b6b10b95c72e1d25662a9d9870aba5c9546cb99865d6ba0b6716efa55b
@@ -93,7 +96,7 @@ prepare() {
   local src
   for src in "${source[@]}"; do
     [[ $src = *.patch ]] || continue
-    patch -Np1 -i "$srcdir/$src"
+    patch -Np1 -i "$srcdir/${src##*/}"
   done
 
   autoreconf -fiv
