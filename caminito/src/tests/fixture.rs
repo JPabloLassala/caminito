@@ -127,6 +127,7 @@ pub const KEY_F1: u32 = 59;
 pub const KEY_F2: u32 = 60;
 pub const KEY_F4: u32 = 62;
 pub const KEY_F5: u32 = 63;
+pub const KEY_F6: u32 = 64;
 pub const KEY_F7: u32 = 65;
 pub const KEY_F8: u32 = 66;
 pub const KEY_F9: u32 = 67;
@@ -1384,14 +1385,15 @@ impl Fixture {
     }
 
     /// Moves Caminito's clock on by `duration`, as a user who leaves it alone lets time pass,
-    /// runs idle's and policy's timers (128, 153) and ends the visual bell's flash (169) if
-    /// they're due by then, as their loop timers would, and dispatches. Nothing waits for
-    /// the time to pass.
+    /// runs idle's and policy's timers (128, 153), ends the visual bell's flash (169) and
+    /// steps the minimise animations (172) if they're due by then, as their loop timers
+    /// would, and dispatches. Nothing waits for the time to pass.
     pub fn advance_clock(&mut self, duration: Duration) {
         self.state.caminito.clock_offset += duration;
         self.state.idle_elapse();
         self.state.policy_elapse();
         self.state.caminito.bell_elapse();
+        self.state.caminito.minimize_animation_elapse();
         self.state.caminito.night_light_tick();
         self.dispatch();
     }

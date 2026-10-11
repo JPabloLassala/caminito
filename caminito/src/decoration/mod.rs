@@ -5,10 +5,12 @@
 //! it's rendered, the button layout and the icon theme. Each window's [`WindowFrame`] derives
 //! its frame from the window's [`WindowFacts`] and a [`FrameState`] (ADR 0012): whether the
 //! window is SSD, its extents in every state, and its strips as `MemoryRenderBuffer`s, which
-//! it draws again only when something they're drawn from changes.
+//! it draws again only when something they're drawn from changes. Its shadow (171) is drawn
+//! with them, and isn't part of the frame.
 
 pub mod control;
 pub mod palette;
+pub mod shadow;
 pub mod style;
 #[cfg(test)]
 mod tests;
@@ -24,10 +26,11 @@ use caminito_theme::{
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
-use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Buffer, FrameExtents, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::shm::with_buffer_contents;
 
 use crate::decoration::control::FrameControl;
+use crate::decoration::shadow::{ShadowInputs, ShadowType};
 use crate::decoration::style::{FrameFacts, frame_style};
 use crate::icons::{IconLookup, load_icon};
 use crate::settings::Settings;
@@ -51,6 +54,8 @@ pub struct FrameContext {
     title_context: pango::Context,
     button_layout: ButtonLayout,
     attach_modal_dialogs: bool,
+    /// Whether frames have shadows: `compositing-manager` (171).
+    shadows: bool,
     icons: IconLookup,
     /// Counts changes to any of the above or to the palette, so frames know to draw again.
     generation: u64,
@@ -69,6 +74,7 @@ impl FrameContext {
             title_context: new_title_context(&font_rendering),
             button_layout: settings.frames.button_layout.clone(),
             attach_modal_dialogs: settings.frames.attach_modal_dialogs,
+            shadows: settings.frames.shadows,
             icons: IconLookup::from_env(&settings.interface.icon_theme),
             generation: 0,
         }
@@ -99,6 +105,10 @@ impl FrameContext {
         }
         if frames.attach_modal_dialogs != self.attach_modal_dialogs {
             self.attach_modal_dialogs = frames.attach_modal_dialogs;
+            changed = true;
+        }
+        if frames.shadows != self.shadows {
+            self.shadows = frames.shadows;
             changed = true;
         }
         if settings.interface.icon_theme != self.icons.theme() {
@@ -366,9 +376,13 @@ pub struct WindowFrame {
     /// frame's controls by.
     geometry: Option<FrameGeometry>,
     strips: Vec<StripBuffer>,
+    /// The shadow's bands, from the visible frame's top left corner, and what they were
+    /// drawn from: kept while that's the same, whatever else of the frame changes (171).
+    shadow: Option<(ShadowInputs, Vec<StripBuffer>)>,
     icons: Option<WindowIcons>,
     button_states: ButtonStates,
     renders: u64,
+    shadow_renders: u64,
 }
 
 /// Where a state's extents are in [`WindowFrame::extents`].
@@ -478,16 +492,69 @@ impl WindowFrame {
             &frame_context.button_layout,
         );
         self.strips = self.draw(frame_context, colors, inputs, &title, &geometry);
+        self.update_shadow(frame_context.shadows, inputs, &geometry);
         self.geometry = Some(geometry);
         self.drawn = Some(key);
         self.renders += 1;
         true
     }
 
+    /// Draws the shadow of the frame `inputs` and `geometry` describe, unless the one it has
+    /// was drawn from the same, or drops it where the frame has none: `shadows` is off, or
+    /// Marco draws none for it.
+    fn update_shadow(&mut self, shadows: bool, inputs: &FrameInputs, geometry: &FrameGeometry) {
+        let Some(shadow_type) = ShadowType::of(&inputs.flags).filter(|_| shadows) else {
+            self.shadow = None;
+            return;
+        };
+        let scale = inputs.scale;
+        let visible = geometry.visible_rect();
+        let cutouts = geometry
+            .corner_cutouts(scale)
+            .into_iter()
+            .map(|cutout| {
+                Rectangle::<i32, Buffer>::new(
+                    (cutout.x - visible.x * scale, cutout.y - visible.y * scale).into(),
+                    (cutout.width, cutout.height).into(),
+                )
+            })
+            .collect();
+        let shadow = ShadowInputs {
+            shadow_type,
+            size: (visible.width, visible.height).into(),
+            scale,
+            cutouts,
+        };
+        if self
+            .shadow
+            .as_ref()
+            .is_some_and(|(drawn, _)| *drawn == shadow)
+        {
+            return;
+        }
+        let bands = shadow::bands(&shadow)
+            .into_iter()
+            .map(|band| StripBuffer {
+                rect: band.rect,
+                buffer: MemoryRenderBuffer::from_slice(
+                    &band.pixels,
+                    Fourcc::Argb8888,
+                    (band.size.w, band.size.h),
+                    scale,
+                    Transform::Normal,
+                    None,
+                ),
+            })
+            .collect();
+        self.shadow = Some((shadow, bands));
+        self.shadow_renders += 1;
+    }
+
     /// Drops the strips, for a window that shows no frame. Returns whether it had any.
     pub fn clear(&mut self) -> bool {
         self.drawn = None;
         self.geometry = None;
+        self.shadow = None;
         !std::mem::take(&mut self.strips).is_empty()
     }
 
@@ -556,6 +623,31 @@ impl WindowFrame {
         self.strips.iter().map(|strip| (strip.rect, &strip.buffer))
     }
 
+    /// The frame's visible rectangle, from the window geometry's origin, if it's showing.
+    pub fn visible(&self) -> Option<Rectangle<i32, Logical>> {
+        let geometry = self.geometry.as_ref()?;
+        Some(from_frame_origin(geometry, geometry.visible_rect()))
+    }
+
+    /// Each band of the frame's shadow, and where it goes from the window geometry's
+    /// origin: none for a frame with no shadow.
+    pub fn shadow(&self) -> impl Iterator<Item = (Rectangle<i32, Logical>, &MemoryRenderBuffer)> {
+        let origin = self.visible().map(|visible| visible.loc);
+        let bands = self.shadow.iter().flat_map(|(_, bands)| bands);
+        bands.filter_map(move |band| {
+            Some((
+                Rectangle::new(band.rect.loc + origin?, band.rect.size),
+                &band.buffer,
+            ))
+        })
+    }
+
+    /// The shadow's rectangle, from the window geometry's origin, if the frame has one.
+    pub fn shadow_rect(&self) -> Option<Rectangle<i32, Logical>> {
+        let (shadow, _) = self.shadow.as_ref()?;
+        Some(shadow.shadow_type.rect(self.visible()?))
+    }
+
     /// The scale the strips were drawn at, while the frame is showing.
     pub fn drawn_scale(&self) -> Option<i32> {
         self.drawn.as_ref().map(|(inputs, _, _)| inputs.scale)
@@ -585,6 +677,11 @@ impl WindowFrame {
     /// How many times the strips have been drawn.
     pub fn renders(&self) -> u64 {
         self.renders
+    }
+
+    /// How many times the shadow has been drawn.
+    pub fn shadow_renders(&self) -> u64 {
+        self.shadow_renders
     }
 
     fn draw(

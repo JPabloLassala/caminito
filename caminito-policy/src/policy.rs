@@ -18,6 +18,7 @@ use crate::{
 mod dynamic_workspaces;
 mod focus_stealing;
 mod keyboard_grab;
+mod move_to;
 mod pointer;
 mod switcher;
 mod window_actions;
@@ -28,7 +29,7 @@ pub use focus_stealing::{
 };
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
-pub use switcher::{SwitchList, Switcher};
+pub use switcher::{LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
 pub use window_menu::{MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection, WindowMenu};
 
 /// A seat, as the compositor numbers them.
@@ -120,6 +121,9 @@ pub struct Config {
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
     /// open (108).
     pub alt_tab_raise_windows: bool,
+    /// Marco master's `alt-tab-minimized-placement`: where the Window switcher's lists have
+    /// the minimised windows (163).
+    pub alt_tab_minimized_placement: MinimizedPlacement,
     /// `placement-mode` (154).
     pub placement_mode: PlacementMode,
     /// `center-new-windows`: the automatic mode puts a new window in the middle of the work
@@ -167,6 +171,7 @@ impl Default for Config {
             wrap_style: WrapStyle::NoWrap,
             dynamic_workspaces: false,
             alt_tab_raise_windows: false,
+            alt_tab_minimized_placement: MinimizedPlacement::End,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
@@ -585,6 +590,14 @@ pub struct Policy<W: PolicyWindow> {
     window_menu: Option<WindowMenu>,
     /// `alt-tab-raise-windows`.
     alt_tab_raise_windows: bool,
+    /// `alt-tab-minimized-placement` (163).
+    alt_tab_minimized_placement: MinimizedPlacement,
+    /// The Layer surfaces that accept the keyboard, most recently used first (163).
+    layers: Vec<LayerSurfaceId>,
+    /// The one that has the keyboard in place of the focused window.
+    keyboard_layer: Option<LayerSurfaceId>,
+    /// What the Window switcher last chose, until the compositor takes it.
+    chosen: Option<SwitchEntry>,
     placement_mode: PlacementMode,
     center_new_windows: bool,
     allow_tiling: bool,
@@ -629,6 +642,10 @@ impl<W: PolicyWindow> Policy<W> {
             switcher: None,
             window_menu: None,
             alt_tab_raise_windows: false,
+            alt_tab_minimized_placement: MinimizedPlacement::End,
+            layers: Vec::new(),
+            keyboard_layer: None,
+            chosen: None,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
@@ -710,6 +727,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.workspace_layout = config.workspace_layout;
         self.wrap_style = config.wrap_style;
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
+        self.alt_tab_minimized_placement = config.alt_tab_minimized_placement;
         self.placement_mode = config.placement_mode;
         self.center_new_windows = config.center_new_windows;
         self.allow_tiling = config.allow_tiling;
@@ -1046,7 +1064,8 @@ impl<W: PolicyWindow> Policy<W> {
                 self.switch_workspace(workspace);
             }
             Action::SwitchToWorkspace(_) => {}
-            Action::Switch { list, backward } => self.switch(seat, list, backward, now),
+            Action::Switch { list, backward } => self.switch(seat, list, backward, true, now),
+            Action::Cycle { list, backward } => self.switch(seat, list, backward, false, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
             Action::ActivateWindowMenu => {
                 if let Some(id) = self.focus(seat) {
@@ -2090,6 +2109,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// floating window's. A window maximised one way keeps its floating geometry the
     /// other way.
     fn relayout(&mut self, id: WindowId) {
+        self.relayout_on(id, None);
+    }
+
+    /// `relayout`, on output `on` if it names one policy has: a window a binding moved to
+    /// another output (160) is laid out there, though its frame is still on the one it left.
+    fn relayout_on(&mut self, id: WindowId, on: Option<OutputId>) {
         let managed = &self.windows[&id];
         if !managed.constrained() {
             let managed = self.windows.get_mut(&id).unwrap();
@@ -2098,9 +2123,8 @@ impl<W: PolicyWindow> Policy<W> {
             }
             return;
         }
-        let output = managed
-            .fullscreen_output
-            .filter(|_| managed.fullscreen)
+        let output = on
+            .or(managed.fullscreen_output.filter(|_| managed.fullscreen))
             .or(managed.tile.map(|tiled| tiled.output))
             .and_then(|o| self.outputs.iter().find(|output| output.id == o))
             .or_else(|| self.output_of(managed.frame()))

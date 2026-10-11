@@ -31,6 +31,7 @@ fn defaults() -> Reading {
     put(MARCO_GENERAL, "action-right-click-titlebar", s("menu"));
     put(MARCO_GENERAL, "num-workspaces", Value::Int(4));
     put(MARCO_GENERAL, "compositing-manager", Value::Bool(true));
+    put(MARCO_GENERAL, "reduced-resources", Value::Bool(false));
     put(
         MARCO_GENERAL,
         "compositing-fast-alt-tab",
@@ -89,6 +90,7 @@ fn defaults() -> Reading {
     put(INTERFACE, "automatic-mnemonics", Value::Bool(true));
     put(INTERFACE, "gtk-enable-primary-paste", Value::Bool(true));
     put(INTERFACE, "gtk-enable-animations", Value::Bool(true));
+    put(INTERFACE, "enable-animations", Value::Bool(true));
     put(INTERFACE, "gtk-dialogs-use-header", Value::Bool(false));
     put(INTERFACE, "window-scaling-factor", Value::Int(0));
     put(FONT_RENDERING, "antialiasing", s("rgba"));
@@ -593,6 +595,7 @@ fn the_defaults_give_marcos_frames() {
             middle_click: TitlebarAction::Lower,
             right_click: TitlebarAction::Menu,
             attach_modal_dialogs: false,
+            shadows: true,
         }
     );
 }
@@ -984,6 +987,28 @@ fn alt_tab_raise_windows_is_passed_to_policy() {
     assert!(settings(&reading).policy.alt_tab_raise_windows);
 }
 
+#[test]
+fn alt_tab_minimized_placement_is_end_where_the_schema_has_no_key_for_it() {
+    // Marco 1.29.0's schema, which `defaults` reads, hasn't master's key.
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.alt_tab_minimized_placement, MinimizedPlacement::End);
+    }
+}
+
+#[test]
+fn every_alt_tab_minimized_placement_nick_is_known() {
+    for (nick, placement) in [
+        ("mru", MinimizedPlacement::Mru),
+        ("end", MinimizedPlacement::End),
+        ("hidden", MinimizedPlacement::Hidden),
+    ] {
+        let reading = with(MARCO_GENERAL, "alt-tab-minimized-placement", string(nick));
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.alt_tab_minimized_placement, placement, "{nick}");
+    }
+}
+
 // Placement (154).
 
 #[test]
@@ -1065,6 +1090,35 @@ fn the_drag_threshold_sizes_tilings_zones_too() {
 fn the_window_switcher_shows_icons_alone_without_the_compositing_manager() {
     let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
     assert!(!settings(&reading).switcher.thumbnails);
+}
+
+// The minimise animation (172).
+
+#[test]
+fn the_defaults_animate_a_minimised_window() {
+    assert!(settings(&defaults()).minimize_animation);
+    assert!(settings(&Reading::default()).minimize_animation);
+}
+
+#[test]
+fn each_of_three_keys_turns_the_minimise_animation_off() {
+    for (schema, key, value) in [
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let reading = with(schema, key, Value::Bool(value));
+        assert!(!settings(&reading).minimize_animation, "{key}");
+    }
+}
+
+#[test]
+fn frames_have_no_shadows_without_the_compositing_manager() {
+    let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
+    assert!(!settings(&reading).frames.shadows);
+    // Fast Alt+Tab is the Window switcher's alone.
+    let reading = with(MARCO_GENERAL, "compositing-fast-alt-tab", Value::Bool(true));
+    assert!(settings(&reading).frames.shadows);
 }
 
 #[test]

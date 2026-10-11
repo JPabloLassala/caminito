@@ -1298,6 +1298,37 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's `tile` and
   geometry, and its bindings in force.
 
+### The bindings that move a window to a corner, a side, the centre or another monitor
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, at different scales (100%
+     and 200%, say, set in *Displays*), and the panel along the top of the first. In
+     mate-control-center's *Keyboard Shortcuts*, under *Window Management*, set the four
+     *Move window to … corner* actions, the four *Move window to … side of screen* actions,
+     *Move window to center of screen* and the four *Move window to … monitor* actions to
+     keys of your choice. Open pluma (native GTK3) and xterm (X11).
+  2. With pluma focused on the first monitor, press each corner's binding, each side's and
+     the centre's.
+  3. Press the binding to the monitor the second one is towards, each corner's binding
+     there, and the binding back. Press a binding to a monitor where there is none.
+  4. Maximise pluma with Alt+F10, press a corner's binding, then the binding to the other
+     monitor and back, and unmaximise it with Alt+F5.
+  5. Repeat steps 2 to 4 with xterm, then open a menu of it after each move.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the window's frame, shadow apart, lies against each corner and
+  side of the work area, the panel left clear, and in its middle, and the window keeps its
+  size; a side's binding moves it one way only. In step 3 the window goes to the other
+  monitor, at the same share of the way across and down it and of the same share of its
+  size, wholly inside that monitor's work area and drawn sharp at its scale; the corners
+  there are that monitor's; the binding back returns it to the first monitor; and with no
+  monitor that way nothing moves. In step 4 the maximised window doesn't move for the
+  corner, is maximised on the other monitor and back, and goes back to its earlier size and
+  place when unmaximised. In step 5 xterm does the same, and its menus open at the window,
+  not where it was before the move (160).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry and
+  outputs, the outputs' work areas, and the bindings in force.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
@@ -1488,8 +1519,8 @@ session_env() {
   selection, and nothing shows on the windows themselves. Releasing Alt restores the file
   manager and gives it the focus. In step 4 Escape leaves the focus and the stacking as they
   were, and the click gives the focus to the window clicked. In step 5 Alt+\` lists only the
-  focused application's windows, and Ctrl+Alt+Tab lists nothing under Wayland's panel, a Layer
-  surface, so nothing happens. In step 6 the popup is on the pointer's monitor. In step 7
+  focused application's windows, and Ctrl+Alt+Tab is *Ctrl+Alt+Tab and Ctrl+Alt+Esc reach the
+  panel and the desktop*'s to look at. In step 6 the popup is on the pointer's monitor. In step 7
   the grid shows icons with no thumbnails (108, ADR 0016).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `switcher` member has the list,
   the selection, the popup's output and its cells while the popup shows, and `gsettings
@@ -1668,6 +1699,38 @@ session_env() {
   state dump, whose `focus` and workspaces' `stacking` members show which window has the focus
   and which is on top.
 
+### Ctrl+Alt+Tab and Ctrl+Alt+Esc reach the panel and the desktop, and Alt+Esc and Alt+F6 cycle
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with caja drawing the desktop. Open pluma (a native window)
+     and `xterm` (X11), and a second pluma window with `pluma --new-window`.
+  2. Hold Alt and press Escape. Keep Alt held, look, press Escape again, and release Alt.
+     Then tap Alt+Escape quickly, and Alt+Shift+Escape.
+  3. Minimise `xterm`. Hold Alt and press Escape until `xterm` is the one shown, then press
+     Escape once more, and release Alt.
+  4. Focus a pluma window and press Alt+F6, twice.
+  5. Hold Ctrl+Alt and press Tab, then release. Type a letter that an icon's name begins with.
+     Click a window.
+  6. Press Ctrl+Alt+Escape. Press an arrow key, and press Menu or Shift+F10. Close the menu
+     and press Alt+Escape.
+  7. Compare steps 2 to 6 with Marco under *MATE*, the X11 session.
+- **Expected:** in step 2 no popup shows: each press of Escape raises the next window, most
+  recently used first, with the focus where it was, and releasing Alt gives the raised window
+  the focus. A quick Alt+Escape goes to the window used before, and Alt+Shift+Escape to the
+  least recently used. In step 3 the minimised `xterm` shows while it's the selected one and
+  is minimised again when the selection leaves it. In step 4 Alt+F6 goes between the two
+  pluma windows only. In step 5 caja's desktop is the one thing to list, so it gets the
+  keyboard at once and no popup shows. mate-panel's panels aren't listed: mate-panel asks for
+  no keyboard on its Layer surfaces, a known gap that needs a carried patch (163). The letter selects an icon, while
+  the window that had the focus keeps its Frame drawn focused, and the click gives the
+  keyboard back to the window. In step 6 the desktop has the keyboard again: the arrow moves
+  between the icons and the menu key opens the selected one's menu; Alt+Escape gives the
+  keyboard back to a window. Under Marco the panels are reached too.
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump: the `switcher` member has `cycle`,
+  the `windows` and `layers` listed and the selection while the modifier is held, and each
+  output's `layer_surfaces` have their `keyboard_interactivity`.
+
 ### Alt+F7 and Alt+F8 move and resize a window by the keys
 
 - **Milestone:** M8, run in M8's closing run (173).
@@ -1717,6 +1780,78 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
   `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
   `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
+
+### A failed command's dialog, and `rename-workspace`
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open *Keyboard Shortcuts* from the
+     control center, or use `gsettings`, to bind `run-command-1` to Super+1, leaving
+     `org.mate.Marco.keybinding-commands command-1` at its default, and press it.
+  2. Run `gsettings set org.mate.Marco.keybinding-commands command-1 'no-such-program'` and
+     press Super+1 again.
+  3. Bind `rename-workspace` (`gsettings set org.mate.Marco.global-keybindings
+     rename-workspace '<Super>r'`). Switch to the second workspace, press Super+R, type a new
+     name and press OK. Press Super+R again and press Cancel.
+- **Expected:** in step 1 an error dialog titled *Marco* says the text was empty, and takes
+  the focus as a new window does; in step 2 it says there was an error running
+  `no-such-program`, with GLib's message. Caminito goes on meanwhile. In step 3 the entry
+  dialog asks for the *New Workspace Name:* with the workspace's name filled in, and the
+  pager shows the new name once OK is pressed; Cancel leaves it (167).
+- **Debug tool:** `gsettings monitor org.mate.Marco.workspace-names`, and Caminito's log, which
+  has a line for each command that can't run.
+
+### Shadows around a native and an X11 window
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, on a monitor at a fractional scale such as 1.5. Open
+     `mate-terminal`, a native Wayland window with a Frame, `xterm`, an XWayland one, and a
+     GTK4 application that draws its own titlebar, such as `gnome-calculator`. Put the two
+     terminals so that they overlap, over a light desktop background.
+  2. Focus each terminal in turn.
+  3. Move the pointer onto the focused terminal's shadow, more than 10 logical pixels from
+     its Frame and over the other terminal, and click.
+  4. Resize a terminal, shade it by a double click on its titlebar with
+     `action-double-click-titlebar` at `toggle_shade`, and unshade it. Maximise it, and tile it
+     to a side.
+  5. Take a screenshot of a terminal's window with `mate-screenshot -w`.
+  6. Run `gsettings set org.mate.Marco.general compositing-manager false`, look, and set it
+     back to `true`.
+- **Expected:** in step 1 each terminal has a soft black shadow around its Frame, which
+  follows the Frame's rounded corners with no gap and no hard edge, and Caminito draws none
+  around the GTK4 window, which has its own. In step 2 the focused terminal's shadow is the
+  larger, and lies down and right of its Frame; the other's is smaller and lies below it. In
+  step 3 the pointer shows no resize cursor, and the click focuses and raises the terminal
+  under the shadow. In step 4 the shadow follows the Frame as it's resized, lies around the
+  titlebar alone while the window is shaded, and isn't there while the window is maximised
+  or tiled to a side, as in Marco. In step 5 the screenshot is the window with its Frame and
+  no shadow. In step 6 no window has a shadow while the key is off, at once, and they come
+  back with it (171).
+- **Debug tool:** `gsettings monitor org.mate.Marco.general`, and frame debug, which outlines
+  each Frame's strips and its invisible resize border.
+
+### The minimise animation
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with the panel's window list showing. Open pluma (a native
+     window) and `xterm` (X11), apart, away from the window list.
+  2. Minimise pluma with its Frame's minimise button, and bring it back by its button in the
+     window list. Then click its button in the window list while it has the focus, which
+     minimises it, and bring it back again.
+  3. Repeat step 2 with `xterm`.
+  4. Minimise pluma and click its button in the window list at once, before it's gone.
+  5. Run `gsettings set org.mate.Marco.general reduced-resources true` and repeat steps 2
+     and 3. Then run `gsettings reset org.mate.Marco.general reduced-resources`.
+- **Expected:** in steps 2 and 3 the window shrinks into its button in the window list in a
+  quarter of a second, drawn with its content and its Frame, over the other windows and the
+  panel, and the focus goes to the other window as it starts. In step 4 the window is back
+  in its place at once, with nothing left on its way. In step 5 each window is gone at
+  once, with no animation (172).
+- **Debug tool:** `WAYLAND_DEBUG=1` on the panel, or `wlrctl`, for the
+  `zwlr_foreign_toplevel_handle_v1.set_rectangle` it sends, and
+  `gsettings monitor org.mate.Marco.general`.
 
 ### The window menu
 

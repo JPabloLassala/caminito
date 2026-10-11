@@ -102,6 +102,7 @@ use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
+use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::{self, NightLight};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
@@ -249,6 +250,8 @@ pub struct Caminito {
     pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
     /// The layer surface a click gave the keyboard, and policy's focus then (63).
     pub(crate) keyboard_layer: Option<(LayerSurface, Option<WindowId>)>,
+    /// The name policy gets for the next layer surface (163).
+    pub(crate) next_layer_id: u64,
     /// Keys whose press ran a binding or a grabbed accelerator, so their release is
     /// swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
@@ -256,6 +259,8 @@ pub struct Caminito {
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
     pub(crate) bells: Bells,
+    /// The windows shrinking into their buttons as they're minimised (172).
+    pub(crate) minimize_animations: MinimizeAnimations,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -356,6 +361,9 @@ pub struct Caminito {
     /// kept here rather than set with `set_var`, which isn't safe once the settings and
     /// D-Bus threads run.
     pub environment: BTreeMap<OsString, OsString>,
+    /// `rename-workspace`'s dialog while it shows: the source its answer comes back on
+    /// (167). Another isn't shown meanwhile, as in Marco.
+    pub(crate) workspace_rename: Option<RegistrationToken>,
 
     /// The Wayland socket's source, until a Session closes it as it ends (61).
     socket_source: Option<RegistrationToken>,
@@ -633,6 +641,9 @@ impl State {
         self.caminito.wake_policy();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
+        // Before the outputs are drawn, with what policy minimised since the last pass.
+        self.caminito.refresh_minimize_animations();
+        self.caminito.refresh_panel_layers();
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
         self.caminito.refresh_window_menu();
@@ -923,9 +934,11 @@ impl Caminito {
 
             pointer_focus: None,
             keyboard_layer: None,
+            next_layer_id: 0,
             suppressed_keys: HashSet::new(),
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
+            minimize_animations: MinimizeAnimations::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,
@@ -975,6 +988,7 @@ impl Caminito {
             xwayland_keyboard_grab_state,
             xwayland_keyboard_grab: None,
             environment: BTreeMap::new(),
+            workspace_rename: None,
             socket_source: None,
             helper_stderr: StderrTarget::Prefixed,
             session: None,

@@ -249,8 +249,12 @@ fn action() -> impl Strategy<Value = Action> {
         Just(Action::RaiseOrLower),
         (switch_list(), any::<bool>())
             .prop_map(|(list, backward)| Action::Switch { list, backward }),
+        (switch_list(), any::<bool>())
+            .prop_map(|(list, backward)| Action::Cycle { list, backward }),
         Just(Action::ShowDesktop),
         tile().prop_map(Action::Tile),
+        anchor().prop_map(Action::MoveTo),
+        direction().prop_map(Action::MoveToMonitor),
         Just(Action::BeginMove),
         Just(Action::BeginResize),
     ]
@@ -265,6 +269,31 @@ fn tile() -> impl Strategy<Value = crate::Tile> {
         Just(Tile::TopRight),
         Just(Tile::BottomLeft),
         Just(Tile::BottomRight),
+    ]
+}
+
+fn anchor() -> impl Strategy<Value = crate::Anchor> {
+    use crate::Anchor;
+    prop_oneof![
+        Just(Anchor::NorthWest),
+        Just(Anchor::North),
+        Just(Anchor::NorthEast),
+        Just(Anchor::West),
+        Just(Anchor::Centre),
+        Just(Anchor::East),
+        Just(Anchor::SouthWest),
+        Just(Anchor::South),
+        Just(Anchor::SouthEast),
+    ]
+}
+
+fn direction() -> impl Strategy<Value = crate::Direction> {
+    use crate::Direction;
+    prop_oneof![
+        Just(Direction::Left),
+        Just(Direction::Right),
+        Just(Direction::Up),
+        Just(Direction::Down),
     ]
 }
 
@@ -687,19 +716,22 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     // The Window switcher lists managed windows, once each, and selects one of them.
     if let Some(switcher) = policy.switcher() {
         assert!(
-            !switcher.windows.is_empty(),
+            !switcher.entries.is_empty(),
             "an open switcher lists windows"
         );
         assert!(
-            switcher.selected < switcher.windows.len(),
+            switcher.selected < switcher.entries.len(),
             "the selection {} is in the {} listed windows",
             switcher.selected,
-            switcher.windows.len()
+            switcher.entries.len()
         );
-        for (place, id) in switcher.windows.iter().enumerate() {
-            assert!(policy.window(*id).is_some(), "{id:?} is listed but gone");
+        for (place, entry) in switcher.entries.iter().enumerate() {
+            let id = entry
+                .window()
+                .expect("the compositor named no Layer surface");
+            assert!(policy.window(id).is_some(), "{id:?} is listed but gone");
             assert!(
-                !switcher.windows[..place].contains(id),
+                !switcher.entries[..place].contains(entry),
                 "{id:?} is listed twice"
             );
         }

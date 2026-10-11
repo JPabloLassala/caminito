@@ -6,8 +6,9 @@ use std::fmt;
 use std::time::Duration;
 
 use caminito_policy::{
-    Config, FocusMode, FocusNewWindows, MAX_WORKSPACES, Orientation, PlacementMode,
-    ShowDesktopSkipList, UrgentPlacement, WorkspaceLayout, WrapStyle, default_workspace_name,
+    Config, FocusMode, FocusNewWindows, MAX_WORKSPACES, MinimizedPlacement, Orientation,
+    PlacementMode, ShowDesktopSkipList, UrgentPlacement, WorkspaceLayout, WrapStyle,
+    default_workspace_name,
 };
 use caminito_theme::ButtonLayout;
 
@@ -151,17 +152,15 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
     // ticket that honours it. Caminito does what each one's default asks, except
     // `resize-with-right-button`, whose values it matches none of. A key whose other value is
-    // what Caminito already does (`audible-bell`, `reduced-resources`) isn't here. Master's
-    // keys are logged only where the installed schema has them. The keybindings' schemas have
-    // no key here: an action with no behaviour yet is read and binds nothing, and its
-    // default reaches the client (148).
+    // what Caminito already does (`audible-bell`) isn't here. Master's keys are logged only
+    // where the installed schema has them. The keybindings' schemas have no key here: an
+    // action with no behaviour yet is read and binds nothing, and its default reaches the
+    // client (148).
     // 162.
     (MARCO_GENERAL, "mouse-button-modifier"),
     (MARCO_GENERAL, "resize-with-right-button"),
     (MARCO_GENERAL, "action-scroll-up-titlebar"),
     (MARCO_GENERAL, "action-scroll-down-titlebar"),
-    // 163.
-    (MARCO_GENERAL, "alt-tab-minimized-placement"),
     // Mouse keys are later (13): they need pointer emulation with msd's acceleration curve.
     (A11Y_KEYBOARD, "mousekeys-enable"),
     // 13 had these in v0.1, and the AccessX filter doesn't apply them yet (134); 147 put
@@ -399,6 +398,12 @@ pub struct Settings {
     pub commands: Commands,
     pub frames: Frames,
     pub switcher: SwitcherSettings,
+    /// Whether a minimised window shrinks into its button (172): `compositing-manager` on,
+    /// `reduced-resources` off and `org.mate.interface enable-animations` on. Marco reads
+    /// the last two for it (`window.c:1502-1503`, `effects.c:run_handler`); its box
+    /// animation needs no compositing manager, but Caminito's is drawn from the window's
+    /// content, which is the compositing manager's work.
+    pub minimize_animation: bool,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -528,6 +533,9 @@ pub struct Frames {
     pub right_click: TitlebarAction,
     /// Marco reads no key for this, so it's off unless a schema has one.
     pub attach_modal_dialogs: bool,
+    /// Whether frames have shadows: `compositing-manager`, which is all that turns Marco's
+    /// off (171).
+    pub shadows: bool,
 }
 
 /// A titlebar click's action (`org.mate.Marco.ActionTitlebar`).
@@ -620,6 +628,15 @@ impl Nick for PlacementMode {
         ("automatic", Self::Automatic),
         ("pointer", Self::Pointer),
         ("manual", Self::Manual),
+    ];
+}
+
+/// Marco master's `org.mate.Marco.MinimizedWindowPlacement`.
+impl Nick for MinimizedPlacement {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("mru", Self::Mru),
+        ("end", Self::End),
+        ("hidden", Self::Hidden),
     ];
 }
 
@@ -1063,6 +1080,12 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_layout,
         wrap_style: r.nick(MARCO_GENERAL, "wrap-style", WrapStyle::NoWrap),
         alt_tab_raise_windows: r.bool(MARCO_GENERAL, "alt-tab-raise-windows", false),
+        // Marco master's key, with its default where the schema has no key for it (163).
+        alt_tab_minimized_placement: r.nick(
+            MARCO_GENERAL,
+            "alt-tab-minimized-placement",
+            MinimizedPlacement::End,
+        ),
         focus_mode: r.nick(MARCO_GENERAL, "focus-mode", FocusMode::Click),
         raise_on_click: r.bool(MARCO_GENERAL, "raise-on-click", true),
         auto_raise: r.bool(MARCO_GENERAL, "auto-raise", false),
@@ -1101,6 +1124,10 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         icon_size: r.int_clamped(MARCO_GENERAL, "icon-size", 48, 8, 256),
     };
 
+    let minimize_animation = r.bool(MARCO_GENERAL, "compositing-manager", true)
+        && !r.bool(MARCO_GENERAL, "reduced-resources", false)
+        && r.bool(INTERFACE, "enable-animations", true);
+
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
     let frames = Frames {
@@ -1131,6 +1158,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             TitlebarAction::Menu,
         ),
         attach_modal_dialogs: r.bool(MARCO_GENERAL, "attach-modal-dialogs", false),
+        shadows: r.bool(MARCO_GENERAL, "compositing-manager", true),
     };
 
     // Every key of both schemas, so every value is parsed (148).
@@ -1172,6 +1200,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         commands,
         frames,
         switcher,
+        minimize_animation,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,
