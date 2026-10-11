@@ -33,27 +33,46 @@ use crate::state::{Caminito, SEAT, State};
 /// How long after the key the popup appears, so a quick Alt+Tab shows nothing (108).
 pub(crate) const POPUP_DELAY: Duration = Duration::from_millis(90);
 
-/// The modifiers that hold the Window switcher open: those of the binding that opened it,
-/// without Shift, which only turns it backward.
+/// The modifiers that hold a popup open: those of the binding that opened it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Holding {
+pub(crate) struct Holding {
     ctrl: bool,
     alt: bool,
     logo: bool,
+    shift: bool,
 }
 
 impl Holding {
+    /// The Window switcher's: `mods` without Shift, which only turns it backward.
     fn of(mods: &ModifiersState) -> Self {
+        Self {
+            shift: false,
+            ..Self::with_shift_of(mods)
+        }
+    }
+
+    /// The Workspace popup's (152): `mods` with Shift, which its bindings tell a move from
+    /// a switch by.
+    pub(crate) fn with_shift_of(mods: &ModifiersState) -> Self {
         Self {
             ctrl: mods.ctrl,
             alt: mods.alt,
             logo: mods.logo,
+            shift: mods.shift,
         }
     }
 
+    /// Whether it has no modifier, so that no release would let go of it.
+    pub(crate) fn is_empty(self) -> bool {
+        !(self.ctrl || self.alt || self.logo || self.shift)
+    }
+
     /// Whether every one of them is down in `mods`.
-    fn is_held_in(self, mods: &ModifiersState) -> bool {
-        (!self.ctrl || mods.ctrl) && (!self.alt || mods.alt) && (!self.logo || mods.logo)
+    pub(crate) fn is_held_in(self, mods: &ModifiersState) -> bool {
+        (!self.ctrl || mods.ctrl)
+            && (!self.alt || mods.alt)
+            && (!self.logo || mods.logo)
+            && (!self.shift || mods.shift)
     }
 }
 
@@ -100,12 +119,12 @@ impl Caminito {
     /// be: the one the pointer is on, else the primary output.
     pub(crate) fn switcher_grid(&self) -> Option<Grid> {
         let shown = self.visible_switcher().map(|popup| popup.output.clone());
-        self.switcher_grid_on(&shown.or_else(|| self.switcher_output())?)
+        self.switcher_grid_on(&shown.or_else(|| self.popup_output())?)
     }
 
-    /// The output the popup appears on: the one the pointer is on, else the primary
-    /// output.
-    fn switcher_output(&self) -> Option<Output> {
+    /// The output a popup appears on, the Workspace popup too (152): the one the pointer is
+    /// on, else the primary output.
+    pub(crate) fn popup_output(&self) -> Option<Output> {
         self.outputs
             .iter()
             .find(|output| scene::pointer_on(self, output).is_some())
@@ -159,7 +178,7 @@ impl Caminito {
     /// The popup's delay is over: it appears, if the switcher is still open.
     fn show_switcher_popup(&mut self) {
         self.refresh_switcher();
-        let Some(output) = self.switcher_output() else {
+        let Some(output) = self.popup_output() else {
             return;
         };
         let Some(grid) = self.switcher_grid_on(&output) else {
@@ -187,7 +206,7 @@ impl Caminito {
         // The popup's output was unplugged or turned off under it.
         let output = if self.outputs.contains(&shown) {
             shown
-        } else if let Some(output) = self.switcher_output() {
+        } else if let Some(output) = self.popup_output() {
             output
         } else {
             let now = self.now();

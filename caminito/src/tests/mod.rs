@@ -69,6 +69,7 @@ mod window_actions;
 mod window_properties;
 mod work_area;
 mod workspace_moves;
+mod workspace_popup;
 mod x11_scale;
 mod xdg_shell;
 mod xfce_foreign_toplevel;

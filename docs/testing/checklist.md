@@ -606,6 +606,39 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and the debug dump's `bindings`
   for the combinations in force.
 
+### The Workspace popup shows the grid while Ctrl+Alt is held
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with four workspaces and two monitors. Set the workspace
+     switcher's rows to 2 in its *Preferences*, and name the workspaces there, the last one
+     with a name longer than the others. Open a terminal on the first workspace.
+  2. With the pointer on the first monitor, hold Ctrl+Alt and press Right, then Down, Left
+     and Up, slowly, and release Ctrl+Alt.
+  3. Hold Ctrl+Alt, press Left, and release Alt alone.
+  4. Hold Ctrl+Alt, press Right, and press A. Hold Ctrl+Alt, press Left, and click a window.
+  5. Tap Ctrl+Alt+Right, then Ctrl+Alt+Left, quickly.
+  6. With the terminal focused, hold Ctrl+Shift+Alt and press Right, then Down, and release.
+  7. Move the pointer to the second monitor and do step 2 again.
+  8. Hold Alt, start to move a window with the left button, and press Ctrl+Right with them
+     held. Lock the screen and press Ctrl+Alt+Right.
+  9. Set the rows back to 1. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the popup appears at the first press, in the middle of the first
+  monitor, in the GTK theme's colours and font: four cells in two rows, each a small picture
+  of its workspace with its name under it, the long name ending in an ellipsis, and the
+  terminal outlined in the first. The cell of the workspace switched to is marked at each
+  press, and the workspace behind the popup changes with it. The popup goes at the release.
+  In step 3 the popup shows the first workspace marked, though the switch went nowhere, and
+  goes when Alt is released. In step 4 the A closes the popup and types nothing, and the
+  click closes it and doesn't reach the window. In step 5 the workspace changes and back, and
+  the popup at most flashes. In step 6 the terminal goes to the second workspace and then
+  the fourth, its outline with it, and keeps the focus. In step 7 the popup is on the second
+  monitor. In step 8 the workspace changes under the move and no popup shows, and under the
+  lock nothing happens (152).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `workspace_popup` member has
+  the popup's output, its mode, the grid's shape, the workspace marked and each cell's
+  rectangles while it shows.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

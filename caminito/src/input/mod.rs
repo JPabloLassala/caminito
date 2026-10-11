@@ -274,7 +274,14 @@ impl State {
                 if !self.caminito.focused_window_shades() => {}
             Some(Some(Bound::Action(action))) => {
                 let now = self.caminito.now();
+                // Before the action, which may leave no window with the focus a move needs.
+                let shows_popup = self.caminito.workspace_popup_shows_for(action);
                 self.caminito.policy.action(SEAT, action, now);
+                // A switch or a move to the workspace beside shows the Workspace popup (152).
+                if shows_popup {
+                    let mods = keyboard.modifier_state();
+                    self.caminito.show_workspace_popup(action, &mods);
+                }
                 self.caminito.queue_redraw_all();
             }
             Some(Some(Bound::Switch { action, key })) => {
@@ -359,6 +366,8 @@ impl State {
             // The release that lets go of the Window switcher's modifier commits it (108),
             // and goes on to the client, which saw the press.
             self.caminito.switcher_key_released(mods);
+            // And the one that lets go of the Workspace popup's closes it (152).
+            self.caminito.workspace_popup_key_released(mods);
             return if self.caminito.suppressed_keys.remove(&keycode) {
                 FilterResult::Intercept(None)
             } else {
@@ -389,6 +398,25 @@ impl State {
         // it never opens under one.
         if let Some(result) = self.caminito.switcher_key_pressed(keycode, mods, keysym) {
             return result;
+        }
+        // So has the Workspace popup while it shows (152), as Marco's grab has
+        // (`process_workspace_switch_grab`, keybindings.c:2760-2899): a binding to the
+        // workspace beside steps it, and any other key closes it and goes no further. A
+        // modifier goes on to the client, as with the Window switcher open.
+        if self.caminito.workspace_popup.is_some() {
+            if keysym.modified_sym().is_modifier_key() {
+                return FilterResult::Forward;
+            }
+            self.caminito.suppressed_keys.insert(keycode);
+            let bindings = &self.caminito.settings.bindings;
+            let step = match bindings.binding_for(mods, &press_keysyms(keysym)) {
+                Some(Binding::Policy(action)) => self.caminito.workspace_popup_step(action),
+                _ => None,
+            };
+            if step.is_none() {
+                self.caminito.close_workspace_popup();
+            }
+            return FilterResult::Intercept(step.map(Bound::Action));
         }
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
@@ -505,7 +533,9 @@ impl State {
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
-        if self.switcher_button(button, state, location) {
+        if self.switcher_button(button, state, location)
+            || self.caminito.workspace_popup_button(button, state)
+        {
             return;
         }
         let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
@@ -788,7 +818,8 @@ impl Caminito {
             | SceneLayer::DragIcon
             | SceneLayer::Lock
             | SceneLayer::BellFlash
-            | SceneLayer::Switcher => None,
+            | SceneLayer::Switcher
+            | SceneLayer::WorkspacePopup => None,
             SceneLayer::Overlay
             | SceneLayer::Top
             | SceneLayer::LayerPopups

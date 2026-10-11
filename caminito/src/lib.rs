@@ -27,6 +27,7 @@ pub mod state;
 mod switcher;
 pub mod window;
 mod work_area;
+mod workspace_popup;
 pub mod xwayland;
 
 #[cfg(test)]

@@ -100,36 +100,13 @@ pub(crate) fn draw(
     scale: i32,
 ) -> Result<Chrome, cairo::Error> {
     let thumbnails = grid.style == CellStyle::Thumbnails;
-    let under = surface(grid, scale)?;
-    let over = thumbnails.then(|| surface(grid, scale)).transpose()?;
+    let under = surface(grid.popup, scale)?;
+    let over = thumbnails.then(|| surface(grid.popup, scale)).transpose()?;
     {
-        let cr = context(&under, grid, scale)?;
-        let popup = grid.popup.to_f64();
-        set_color(&cr, colors.background(GtkState::Normal), 1.0);
-        cr.rectangle(popup.loc.x, popup.loc.y, popup.size.w, popup.size.h);
-        cr.fill()?;
-        set_color(&cr, colors.text(GtkState::Normal), BORDER_ALPHA);
-        cr.set_line_width(BORDER);
-        cr.rectangle(
-            popup.loc.x + BORDER / 2.0,
-            popup.loc.y + BORDER / 2.0,
-            popup.size.w - BORDER,
-            popup.size.h - BORDER,
-        );
-        cr.stroke()?;
-
+        let cr = context(&under, grid.popup, scale)?;
+        draw_background(&cr, grid.popup, colors)?;
         if let Some(cell) = grid.cells.get(selected) {
-            let cell = cell.to_f64();
-            // A theme, or the neutral palette, that gives a selected window the background
-            // of any other would hide the selection: the text colour tints the cell then.
-            let background = colors.background(GtkState::Selected);
-            if background == colors.background(GtkState::Normal) {
-                set_color(&cr, colors.text(GtkState::Normal), SELECTION_TINT);
-            } else {
-                set_color(&cr, background, 1.0);
-            }
-            cr.rectangle(cell.loc.x, cell.loc.y, cell.size.w, cell.size.h);
-            cr.fill()?;
+            fill_selected(&cr, *cell, colors)?;
         }
         let urgent = colors
             .named(URGENT_COLOR)
@@ -152,7 +129,7 @@ pub(crate) fn draw(
         }
     }
     if let Some(over) = &over {
-        let cr = context(over, grid, scale)?;
+        let cr = context(over, grid.popup, scale)?;
         draw_icons(&cr, grid, entries)?;
     }
     let buffer =
@@ -163,23 +140,75 @@ pub(crate) fn draw(
     })
 }
 
-/// A transparent surface that covers the popup at `scale`.
-fn surface(grid: &Grid, scale: i32) -> Result<ImageSurface, cairo::Error> {
-    let size = grid.popup.size;
+/// A transparent surface that covers `popup` at `scale`.
+pub(crate) fn surface(
+    popup: Rectangle<i32, Logical>,
+    scale: i32,
+) -> Result<ImageSurface, cairo::Error> {
+    let size = popup.size;
     ImageSurface::create(Format::ARgb32, size.w * scale, size.h * scale)
 }
 
-/// A context that draws on `surface` in logical pixels from the output's corner, as the
-/// grid's rectangles are.
-fn context(surface: &ImageSurface, grid: &Grid, scale: i32) -> Result<Context, cairo::Error> {
+/// A context that draws on `surface`, which covers `popup`, in logical pixels from the
+/// output's corner, as a popup's rectangles are.
+pub(crate) fn context(
+    surface: &ImageSurface,
+    popup: Rectangle<i32, Logical>,
+    scale: i32,
+) -> Result<Context, cairo::Error> {
     let cr = Context::new(surface)?;
     cr.scale(f64::from(scale), f64::from(scale));
-    cr.translate(-f64::from(grid.popup.loc.x), -f64::from(grid.popup.loc.y));
+    cr.translate(-f64::from(popup.loc.x), -f64::from(popup.loc.y));
     Ok(cr)
 }
 
-fn set_color(cr: &Context, color: Rgba, alpha: f64) {
+pub(crate) fn set_color(cr: &Context, color: Rgba, alpha: f64) {
     cr.set_source_rgba(color.red, color.green, color.blue, color.alpha * alpha);
+}
+
+/// A popup's background, in the theme's, inside a line of its text colour. The Workspace
+/// popup's is the same (152).
+pub(crate) fn draw_background(
+    cr: &Context,
+    popup: Rectangle<i32, Logical>,
+    colors: &PaletteColors,
+) -> Result<(), cairo::Error> {
+    let popup = popup.to_f64();
+    set_color(cr, colors.background(GtkState::Normal), 1.0);
+    cr.rectangle(popup.loc.x, popup.loc.y, popup.size.w, popup.size.h);
+    cr.fill()?;
+    set_color(cr, colors.text(GtkState::Normal), BORDER_ALPHA);
+    cr.set_line_width(BORDER);
+    cr.rectangle(
+        popup.loc.x + BORDER / 2.0,
+        popup.loc.y + BORDER / 2.0,
+        popup.size.w - BORDER,
+        popup.size.h - BORDER,
+    );
+    cr.stroke()
+}
+
+/// Whether the theme's selection shows on the popup's background. A theme, or the neutral
+/// palette, that gives a selected cell the background of any other would hide the
+/// selection: the text colour tints the cell then.
+pub(crate) fn selection_shows(colors: &PaletteColors) -> bool {
+    colors.background(GtkState::Selected) != colors.background(GtkState::Normal)
+}
+
+/// The selected cell's fill, over `cell`.
+pub(crate) fn fill_selected(
+    cr: &Context,
+    cell: Rectangle<i32, Logical>,
+    colors: &PaletteColors,
+) -> Result<(), cairo::Error> {
+    let cell = cell.to_f64();
+    if selection_shows(colors) {
+        set_color(cr, colors.background(GtkState::Selected), 1.0);
+    } else {
+        set_color(cr, colors.text(GtkState::Normal), SELECTION_TINT);
+    }
+    cr.rectangle(cell.loc.x, cell.loc.y, cell.size.w, cell.size.h);
+    cr.fill()
 }
 
 /// The title on one line in the middle of the title band, ellipsised at its end if it's
