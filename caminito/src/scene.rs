@@ -102,6 +102,8 @@ pub(crate) enum SceneLayer {
     /// The Workspace popup (152), over everything a client draws, as the Window switcher's
     /// popup is. The two never show together.
     WorkspacePopup,
+    /// The window menu (161), over everything a client draws, its submenu over it.
+    WindowMenu,
     /// The overlay layer-shell layer (63).
     Overlay,
     /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
@@ -133,7 +135,7 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 15] = [
+pub(crate) const LAYERS: [SceneLayer; 16] = [
     SceneLayer::Blank,
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
@@ -141,6 +143,7 @@ pub(crate) const LAYERS: [SceneLayer; 15] = [
     SceneLayer::BellFlash,
     SceneLayer::Switcher,
     SceneLayer::WorkspacePopup,
+    SceneLayer::WindowMenu,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
     SceneLayer::FullscreenWindows,
@@ -301,6 +304,7 @@ fn layer_elements<R>(
         SceneLayer::WorkspacePopup => {
             workspace_popup_elements(renderer, caminito, output, elements);
         }
+        SceneLayer::WindowMenu => window_menu_elements(renderer, caminito, output, elements),
     }
 }
 
@@ -493,6 +497,45 @@ fn workspace_popup_elements<R>(
         Ok(element) => elements.push(SceneElement::Frame(element)),
         // Every frame while the popup shows, so not above `debug!`.
         Err(err) => tracing::debug!("can't draw the workspace popup: {err:?}"),
+    }
+}
+
+/// The window menu (161), if it's on `output`, front to back: its submenu, then the menu,
+/// each one buffer drawn in the refresh pass.
+fn window_menu_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let shown = caminito.shown_window_menu();
+    let Some(shown) = shown.filter(|shown| shown.output == *output) else {
+        return;
+    };
+    let scale = output.current_scale().fractional_scale();
+    for pane in shown.submenu.iter().chain([&shown.main]) {
+        let Some(chrome) = &pane.chrome else {
+            continue;
+        };
+        let rect = pane.layout.rect;
+        let location = rect.loc.to_physical_precise_round::<_, i32>(scale);
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location.to_f64(),
+            chrome,
+            None,
+            None,
+            Some(rect.size),
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(element) => elements.push(SceneElement::Frame(element)),
+            // Every frame while the menu shows, so not above `debug!`.
+            Err(err) => tracing::debug!("can't draw the window menu: {err:?}"),
+        }
     }
 }
 

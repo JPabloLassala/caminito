@@ -120,6 +120,7 @@ use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Settings, SettingsThread, Value};
 use crate::switcher::OpenSwitcher;
 use crate::window::{Mapped, PendingWindows};
+use crate::window_menu::OpenWindowMenu;
 use crate::workspace_popup::WorkspacePopup;
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 
@@ -261,13 +262,15 @@ pub struct Caminito {
     pub frame_pointer: FramePointer,
     /// The interactive move or resize the pointer is doing, if any.
     pub window_grab: Option<GrabKind>,
-    /// Pointer buttons whose press was the Window switcher's (108), or closed the Workspace
-    /// popup (152), so their release is swallowed too.
+    /// Pointer buttons whose press was the Window switcher's (108) or the window menu's
+    /// (161), or closed the Workspace popup (152), so their release is swallowed too.
     pub(crate) suppressed_buttons: HashSet<u32>,
     /// The compositor's side of the Window switcher while it's open (108).
     pub(crate) switcher: Option<OpenSwitcher>,
     /// The Workspace popup while it shows (152).
     pub(crate) workspace_popup: Option<WorkspacePopup>,
+    /// The compositor's side of the window menu while it's open (161).
+    pub(crate) window_menu: Option<OpenWindowMenu>,
     /// The cursor the client with pointer focus asked for.
     pub client_cursor: CursorImageStatus,
     /// The icon of the Wayland drag in progress, if it has one (48).
@@ -632,6 +635,7 @@ impl State {
         self.caminito.refresh_frames();
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
+        self.caminito.refresh_window_menu();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
         // After the frames, which may show the lock that logind's sleep waits for.
@@ -928,6 +932,7 @@ impl Caminito {
             suppressed_buttons: HashSet::new(),
             switcher: None,
             workspace_popup: None,
+            window_menu: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,
             cursors,

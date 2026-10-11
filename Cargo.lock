@@ -337,6 +337,7 @@ dependencies = [
  "futures-channel",
  "gio",
  "insta",
+ "libc",
  "rustix 1.1.5",
  "serde",
  "serde_json",

@@ -67,6 +67,7 @@ mod show_desktop;
 mod switcher;
 mod tiling;
 mod window_actions;
+mod window_menu;
 mod window_properties;
 mod work_area;
 mod workspace_moves;

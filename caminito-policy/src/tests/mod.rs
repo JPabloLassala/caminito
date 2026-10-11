@@ -25,6 +25,7 @@ mod switcher;
 mod tiling;
 mod transients;
 mod window_actions;
+mod window_menu;
 mod work_area;
 mod workspace_moves;
 mod workspaces;

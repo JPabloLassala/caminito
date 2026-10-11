@@ -462,8 +462,10 @@ impl Caminito {
                     with_x_facts(&surface, |facts| facts.input_shape = None);
                 }
             }
-            Request::KeyboardMoveResize { .. } | Request::CancelMoveResize { .. } => {
-                unreachable!("State::x_requests runs the grabs")
+            Request::KeyboardMoveResize { .. }
+            | Request::CancelMoveResize { .. }
+            | Request::ShowWindowMenu { .. } => {
+                unreachable!("State::x_requests runs the grabs and the window menu")
             }
         }
     }
@@ -702,6 +704,7 @@ impl State {
                     self.x_keyboard_move_resize(window, resize);
                 }
                 Request::CancelMoveResize { window } => self.x_cancel_move_resize(window),
+                Request::ShowWindowMenu { window, x, y } => self.x_show_window_menu(window, x, y),
                 request => self.caminito.x_request(request),
             }
         }
@@ -724,6 +727,23 @@ impl State {
             caminito.policy.begin_keyboard_move(SEAT, id);
         }
         caminito.queue_redraw_all();
+    }
+
+    /// `_GTK_SHOW_WINDOW_MENU`: an X client that draws its own titlebar asks for the
+    /// window menu at a point of the root, as GTK3 does for a right click on a header bar.
+    /// Marco raises the window first with `raise-on-click` (window.c:5611-5624).
+    fn x_show_window_menu(&mut self, window: X11Window, x: i32, y: i32) {
+        let caminito = &mut self.caminito;
+        let Some(id) = caminito.mapped_for_key(&WindowKey::X11(window)) else {
+            return;
+        };
+        let scale = caminito.applied_x11_scale();
+        let at = (scale.to_logical(x), scale.to_logical(y)).into();
+        if caminito.settings.policy.raise_on_click {
+            caminito.policy.raise(id);
+        }
+        let time = InputTime::from_micros(caminito.now().as_micros() as u64);
+        self.open_window_menu(id, at, time);
     }
 
     /// `_NET_WM_MOVERESIZE`'s cancel: ends the move or resize of the window, if one is in

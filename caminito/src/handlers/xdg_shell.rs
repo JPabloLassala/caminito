@@ -7,6 +7,7 @@
 //! withdraws it, and it starts over as a new pending window.
 
 use caminito_policy::{ActivationToken, ResizeEdges, TOKEN_LIFETIME, WindowId};
+use smithay::backend::input::InputTime;
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -20,7 +21,7 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Rectangle, Serial};
+use smithay::utils::{Logical, Point, Rectangle, Serial};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::dialog::XdgDialogHandler;
 use smithay::wayland::shell::xdg::{
@@ -100,6 +101,31 @@ impl XdgShellHandler for State {
         if let Some((id, start_data)) = self.interactive_request(&surface, &seat, serial) {
             self.begin_window_grab(id, GrabKind::Resize(edges), start_data, serial);
         }
+    }
+
+    /// A client that draws its own titlebar asks for the window menu, at a point from its
+    /// window geometry's corner, as GTK does for a right click on a header bar (161). The
+    /// serial is of a key or button event the client was sent.
+    fn show_window_menu(
+        &mut self,
+        surface: ToplevelSurface,
+        _seat: WlSeat,
+        serial: Serial,
+        location: Point<i32, Logical>,
+    ) {
+        let caminito = &self.caminito;
+        let Some(id) = caminito.mapped_for_surface(surface.wl_surface()) else {
+            return;
+        };
+        let asked_on_input = surface
+            .wl_surface()
+            .client()
+            .is_some_and(|client| caminito.input_serials.has(serial, &client));
+        let Some(geometry) = caminito.policy.geometry(id).filter(|_| asked_on_input) else {
+            return;
+        };
+        let time = InputTime::from_micros(caminito.now().as_micros() as u64);
+        self.open_window_menu(id, geometry.loc + location, time);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {

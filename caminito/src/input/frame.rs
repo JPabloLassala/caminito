@@ -219,8 +219,20 @@ impl State {
             ButtonFunction::Unabove => policy.set_above(window, false),
             ButtonFunction::Stick => policy.set_sticky(window, true),
             ButtonFunction::Unstick => policy.set_sticky(window, false),
-            // The window menu comes in M8 (161).
-            ButtonFunction::Menu | ButtonFunction::Appmenu => {
+            // Under the button's bottom left corner, as Marco's
+            // `meta_frames_button_press_event` puts it (frames.c:1826-1847), though Marco
+            // opens it at the press (161).
+            ButtonFunction::Menu => {
+                let below = policy.window(window).and_then(|mapped| {
+                    let rect = mapped.frame().button_rect(function)?;
+                    Some(policy.geometry(window)?.loc + rect.loc + Point::from((0, rect.size.h)))
+                });
+                if let Some(below) = below {
+                    let time = InputTime::from_micros(caminito.now().as_micros() as u64);
+                    self.open_window_menu(window, below, time);
+                }
+            }
+            ButtonFunction::Appmenu => {
                 tracing::debug!("the {function:?} button does nothing yet");
             }
         }
@@ -260,9 +272,13 @@ impl State {
             // (frames.c:1614-1642) (155).
             TitlebarAction::ToggleAbove => policy.set_above(window, !flags.above),
             TitlebarAction::ToggleStick => policy.set_sticky(window, !flags.stuck),
-            // The window menu comes in M8 (161).
+            // At the pointer, as Marco's `meta_frame_titlebar_event` opens it
+            // (frames.c:1570-1577) (161).
             TitlebarAction::Menu => {
-                tracing::debug!("the titlebar action {action:?} does nothing yet");
+                let pointer = caminito.seat.get_pointer().unwrap();
+                let at = pointer.current_location().to_i32_floor();
+                let time = InputTime::from_micros(now.as_micros() as u64);
+                self.open_window_menu(window, at, time);
             }
             _ => {}
         }

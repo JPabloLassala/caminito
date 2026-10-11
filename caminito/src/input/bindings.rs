@@ -267,6 +267,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 command(Command::Terminal),
             ),
             window(
+                "activate-window-menu",
+                "<Alt>space",
+                policy(Action::ActivateWindowMenu),
+            ),
+            window(
                 "toggle-fullscreen",
                 "disabled",
                 policy(Action::ToggleFullscreen),
@@ -455,6 +460,13 @@ impl Bindings {
             .map(|row| row.binding)
     }
 
+    /// The first combination in force for `key`, as a menu shows one beside an item:
+    /// `Alt+F9` (161).
+    pub(crate) fn label_of(&self, key: &str) -> Option<String> {
+        let row = self.rows.iter().find(|row| row.key == key)?;
+        Some(row.combination.label())
+    }
+
     /// Each combination in force, in GTK's syntax, with the key it came from.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&'static str, String)> + '_ {
         self.rows
@@ -469,6 +481,33 @@ fn unbindable(schema: &str, key: &str, value: &str, reason: &str) -> Problem {
         key: key.into(),
         value: format!("'{value}'"),
         reason: reason.into(),
+    }
+}
+
+impl Accelerator {
+    /// The combination as GTK's accelerator labels write one, which Marco's menu shows
+    /// (`meta_accel_label_refetch`, metaaccellabel.c): `Shift+Ctrl+Alt+Super+` and the key,
+    /// a letter in upper case and any other key by its keysym's name, with spaces for its
+    /// underscores. The modifiers' names aren't translated, as GTK's are.
+    fn label(&self) -> String {
+        let held = self.held;
+        let mut label = String::new();
+        for (on, name) in [
+            (held.shift, "Shift+"),
+            (held.ctrl, "Ctrl+"),
+            (held.alt, "Alt+"),
+            (held.logo, "Super+"),
+        ] {
+            if on {
+                label.push_str(name);
+            }
+        }
+        match self.keysym.key_char() {
+            Some(' ') => label.push_str("Space"),
+            Some(c) if !c.is_control() => label.extend(c.to_uppercase()),
+            _ => label.push_str(&xkb::keysym_get_name(self.keysym).replace('_', " ")),
+        }
+        label
     }
 }
 

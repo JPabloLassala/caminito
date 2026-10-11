@@ -360,7 +360,7 @@ fn an_action_with_no_behaviour_yet_binds_nothing() {
     // `cycle-windows`'s default, and values set by the user.
     let t = table(&[
         (GLOBAL, "cycle-windows", "<Alt>Escape"),
-        (WINDOW, "activate-window-menu", "<Super>Up"),
+        (WINDOW, "move-to-corner-nw", "<Super>Up"),
         (WINDOW, "move-to-center", "<Super>Down"),
     ]);
     assert_eq!(bound(&t, ALT, Keysym::Escape), None);
@@ -556,5 +556,5 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 26, "{rows:?}");
+    assert_eq!(rows.len(), 27, "{rows:?}");
 }

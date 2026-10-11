@@ -273,6 +273,8 @@ impl State {
             caminito.policy.switcher_cancel(now);
             caminito.refresh_switcher();
         }
+        caminito.policy.close_window_menu();
+        caminito.refresh_window_menu();
         caminito.stop_accelerator_repeat();
         caminito.keyboard_layer = None;
         self.update_keyboard_focus();

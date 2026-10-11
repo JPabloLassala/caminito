@@ -16,6 +16,7 @@ caminito-theme = { path = "../caminito-theme" }
 drm-ffi = "0.9.1"
 futures-channel = "0.3.34"
 gio = "0.22.10"
+libc = "0.2.189"
 # process: SIGTERM to the helpers and to the session command (61).
 rustix = { workspace = true, features = ["fs", "process"] }
 serde = { version = "1.0.229", features = ["derive"] }

@@ -1717,3 +1717,32 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
   `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
   `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
+
+### The window menu
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*. Open `pluma` (a native window with a Frame), a GTK4 app
+     that draws its own titlebar, such as `gnome-calculator`, and an X11 GTK3 app with
+     `GDK_BACKEND=x11`, such as `GDK_BACKEND=x11 gedit` or any GTK3 app with a header bar.
+  2. Focus `pluma` and press Alt+Space. Then right click its titlebar, and then click its
+     Frame's menu button. Right click the GTK4 app's titlebar, and the X11 app's.
+  3. In `pluma`'s menu, choose each item once, opening the menu again each time: with the
+     arrows and Return, with its underlined letter, and with a click. Go into *Move to
+     Another Workspace* with Right and with the pointer.
+  4. Open the menu and press Escape. Open it and click outside it.
+  5. Maximise `pluma` and open its menu. Open the menu of a fixed-size dialog, such as
+     `pluma`'s *About*.
+  6. Run the Session in another language, such as `LANG=es_AR.UTF-8`, and open the menu.
+- **Expected:** in step 2 each of the five opens the same menu: under the window's top left
+  corner for Alt+Space, at the pointer for the right clicks, and under the button for the
+  menu button. The GTK4 and the X11 app show Caminito's menu, not their own. In step 3 each
+  item does what its binding does, the moves to a workspace leave the active workspace as
+  it is, and the keybindings beside the items are those in force. In step 4 the menu closes,
+  and the click reaches no window. In step 5 *Move* and *Resize* are greyed for the
+  maximised window, and *Maximize* and *Resize* for the dialog. In step 6 the labels are
+  Marco's in that language.
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `window_menu` member lists
+  the items, which are greyed, and the selection; `WAYLAND_DEBUG=1` on the GTK4 app for
+  `xdg_toplevel.show_window_menu`, and `xprop -root _NET_SUPPORTED` for
+  `_GTK_SHOW_WINDOW_MENU`.

@@ -273,6 +273,10 @@ impl State {
             Some(Some(Bound::Action(Action::ToggleShaded)))
                 if !self.caminito.focused_window_shades() => {}
             Some(Some(Bound::Action(action))) => {
+                // A client's open menu gives way to the window menu (161).
+                if action == Action::ActivateWindowMenu {
+                    self.dismiss_menus(time);
+                }
                 let now = self.caminito.now();
                 // Before the action, which may leave no window with the focus a move needs.
                 let shows_popup = self.caminito.workspace_popup_shows_for(action);
@@ -399,6 +403,10 @@ impl State {
         if let Some(result) = self.caminito.switcher_key_pressed(keycode, mods, keysym) {
             return result;
         }
+        // And so has the open window menu (161), as a GTK menu's grab has.
+        if let Some(result) = self.caminito.window_menu_key_pressed(keycode, keysym) {
+            return result;
+        }
         // So has the Workspace popup while it shows (152), as Marco's grab has
         // (`process_workspace_switch_grab`, keybindings.c:2760-2899): a binding to the
         // workspace beside steps it, and any other key closes it and goes no further. A
@@ -496,6 +504,8 @@ impl State {
     /// the pointer is over, for the pointer focus modes (153), unless a grab has the pointer.
     fn pointer_motion(&mut self, location: Point<f64, Logical>, time: InputTime, why: Crossing) {
         let pointer = self.caminito.seat.get_pointer().unwrap();
+        // The open window menu's row under the pointer is selected (161).
+        self.caminito.window_menu_motion(location);
         let target = self.caminito.under(location);
         let under = target.as_ref().and_then(Under::surface);
         let hover = target.as_ref().and_then(Under::frame_control);
@@ -533,7 +543,8 @@ impl State {
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
-        if self.switcher_button(button, state, location)
+        if self.window_menu_button(button, state, location)
+            || self.switcher_button(button, state, location)
             || self.caminito.workspace_popup_button(button, state)
         {
             return;
@@ -812,6 +823,11 @@ impl Caminito {
         if self.switcher_popup_at(location) {
             return None;
         }
+        // The open window menu has the pointer wherever it is, as a GTK menu's grab has
+        // (161): no client has it meanwhile, and no Frame.
+        if self.policy.window_menu().is_some() {
+            return None;
+        }
         scene::LAYERS.into_iter().find_map(|layer| match layer {
             SceneLayer::Blank
             | SceneLayer::Cursor
@@ -819,7 +835,8 @@ impl Caminito {
             | SceneLayer::Lock
             | SceneLayer::BellFlash
             | SceneLayer::Switcher
-            | SceneLayer::WorkspacePopup => None,
+            | SceneLayer::WorkspacePopup
+            | SceneLayer::WindowMenu => None,
             SceneLayer::Overlay
             | SceneLayer::Top
             | SceneLayer::LayerPopups
@@ -931,7 +948,10 @@ impl Caminito {
         location: Point<f64, Logical>,
         under: Option<&Under>,
     ) -> PointerTarget {
-        if self.lock.is_locked() || self.switcher_popup_at(location) {
+        if self.lock.is_locked()
+            || self.switcher_popup_at(location)
+            || self.policy.window_menu().is_some()
+        {
             return PointerTarget::Other;
         }
         match under {

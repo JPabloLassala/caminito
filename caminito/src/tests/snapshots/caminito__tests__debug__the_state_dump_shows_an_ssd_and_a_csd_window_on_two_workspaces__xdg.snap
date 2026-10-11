@@ -210,6 +210,10 @@ expression: without_x_ids(&dump)
       "combination": "<Shift>Print"
     },
     {
+      "key": "activate-window-menu",
+      "combination": "<Alt>space"
+    },
+    {
       "key": "toggle-maximized",
       "combination": "<Alt>F10"
     },
@@ -237,6 +241,7 @@ expression: without_x_ids(&dump)
   "accelerator_grabs": [],
   "switcher": null,
   "workspace_popup": null,
+  "window_menu": null,
   "global_menu_switch": "off",
   "menu_claims": [],
   "bell": {

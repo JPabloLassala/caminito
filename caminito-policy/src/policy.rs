@@ -21,6 +21,7 @@ mod keyboard_grab;
 mod pointer;
 mod switcher;
 mod window_actions;
+mod window_menu;
 
 pub use focus_stealing::{
     ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
@@ -28,6 +29,7 @@ pub use focus_stealing::{
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{SwitchList, Switcher};
+pub use window_menu::{MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection, WindowMenu};
 
 /// A seat, as the compositor numbers them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -579,6 +581,8 @@ pub struct Policy<W: PolicyWindow> {
     mru: Vec<WindowId>,
     /// The Window switcher (108), while it's open.
     switcher: Option<switcher::Open>,
+    /// The window menu (161), while it's open.
+    window_menu: Option<WindowMenu>,
     /// `alt-tab-raise-windows`.
     alt_tab_raise_windows: bool,
     placement_mode: PlacementMode,
@@ -623,6 +627,7 @@ impl<W: PolicyWindow> Policy<W> {
             grabs: BTreeMap::new(),
             mru: Vec::new(),
             switcher: None,
+            window_menu: None,
             alt_tab_raise_windows: false,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
@@ -1043,6 +1048,11 @@ impl<W: PolicyWindow> Policy<W> {
             Action::SwitchToWorkspace(_) => {}
             Action::Switch { list, backward } => self.switch(seat, list, backward, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
+            Action::ActivateWindowMenu => {
+                if let Some(id) = self.focus(seat) {
+                    self.open_window_menu(seat, id);
+                }
+            }
             Action::BeginMove | Action::BeginResize => {
                 if let Some(id) = self.focus(seat) {
                     self.begin_keyboard_grab(seat, id, action == Action::BeginResize);
@@ -1149,6 +1159,8 @@ impl<W: PolicyWindow> Policy<W> {
         if workspace != self.active {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
             self.close_switcher(switcher::Close::Dropped);
+            // And closes the window menu, whose moves are from the active workspace (161).
+            self.window_menu = None;
             self.previous = Some(self.active);
             self.active = workspace;
             self.focus.clear();
@@ -1712,15 +1724,9 @@ impl<W: PolicyWindow> Policy<W> {
         resize: Option<ResizeEdges>,
         pointer: Point<f64, Logical>,
     ) -> bool {
-        let movable = self.is_showing(id)
+        let movable = self.can_grab(id, resize.is_some())
             && self.switcher.is_none()
-            && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat)
-            && self.windows.get(&id).is_some_and(|m| {
-                !m.maximized()
-                    && !m.fullscreen
-                    && !(m.shaded && resize.is_some())
-                    && !matches!(m.window_type, WindowType::Desktop | WindowType::Dock)
-            });
+            && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat);
         if !movable {
             return false;
         }
@@ -2548,6 +2554,7 @@ impl<W: PolicyWindow> Policy<W> {
         // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
         self.update_dynamic_workspaces();
         self.end_stale_grabs();
+        self.close_stale_window_menu();
         self.fix_focus();
         self.mru.retain(|id| self.windows.contains_key(id));
         if let Some(focused) = self.focus(self.last_seat) {

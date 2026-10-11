@@ -717,6 +717,15 @@ impl Client {
         self.window(id).toplevel._move(&seat, serial);
     }
 
+    /// Asks for the window menu at `(x, y)` from the window geometry's corner, as if
+    /// `serial`'s button press asked for it.
+    pub fn show_window_menu(&mut self, id: WindowId, serial: u32, x: i32, y: i32) {
+        let seat = self.seat();
+        self.window(id)
+            .toplevel
+            .show_window_menu(&seat, serial, x, y);
+    }
+
     /// Asks for an interactive resize from `edge`, as if `serial`'s button press started it.
     pub fn start_resize(&mut self, id: WindowId, serial: u32, edge: ResizeEdge) {
         let seat = self.seat();
