@@ -4,8 +4,8 @@
 //! starts the count again; it never unlocks. ext-idle-notify's clients are told whatever
 //! `idle-activation-enabled` says.
 //!
-//! The timers are `state`'s pure type, which this applies with one loop timer for its
-//! deadline, on Caminito's clock. Inhibitors hold idle off: an idle-inhibit surface while
+//! The timers are `state`'s pure type, which this applies on Caminito's clock, woken at its
+//! deadline by `deadlines` (174). Inhibitors hold idle off: an idle-inhibit surface while
 //! it's visible, mate-session's `IsInhibited` (`dbus::session_manager`), and the Screensaver
 //! shim's (127). None applies while the session is locked, when no client surface is
 //! visible (12).
@@ -22,8 +22,6 @@ mod state;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::Id;
-use smithay::reexports::calloop::RegistrationToken;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_protocols::ext::idle_notify::v1::server::ext_idle_notification_v1::ExtIdleNotificationV1;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -40,8 +38,6 @@ use crate::state::{Caminito, State};
 /// Idle's timers, what holds them off, and the blank.
 pub(crate) struct Idle {
     state: IdleState<ExtIdleNotificationV1>,
-    /// The loop timer for the state's deadline, while it has one.
-    wake: Option<Wake>,
     /// The surfaces an idle-inhibit client asked to hold idle off while they're visible.
     inhibitors: Vec<WlSurface>,
     /// Whether mate-session last said an inhibitor of its own holds idle off.
@@ -51,17 +47,10 @@ pub(crate) struct Idle {
     blank: Id,
 }
 
-/// The loop timer for a deadline.
-struct Wake {
-    due: Duration,
-    timer: RegistrationToken,
-}
-
 impl Idle {
     pub(crate) fn new(settings: IdleSettings, now: Duration) -> Self {
         Idle {
             state: IdleState::new(settings, now),
-            wake: None,
             inhibitors: Vec::new(),
             session_inhibited: false,
             blank: Id::new(),
@@ -107,6 +96,11 @@ impl Idle {
     /// How many ext-idle-notify notifications there are.
     pub(crate) fn notification_count(&self) -> usize {
         self.state.notification_count()
+    }
+
+    /// When the timers are next due, if any waits.
+    pub(crate) fn deadline(&self) -> Option<Duration> {
+        self.state.deadline()
     }
 
     /// The id of the blank `scene` draws on every output while blanked.
@@ -172,15 +166,13 @@ impl State {
         self.idle_effects(effects);
     }
 
-    /// Runs the timers that are due, as the loop timer does when it fires, and as a test
-    /// does once it has moved Caminito's clock on.
-    pub(crate) fn idle_elapse(&mut self) {
-        let now = self.caminito.now();
+    /// Runs the timers that are due at `now`, for `deadlines`.
+    pub(crate) fn idle_elapse(&mut self, now: Duration) {
         let effects = self.caminito.idle.state.elapse(now);
         self.idle_effects(effects);
     }
 
-    /// Does what the timers asked, and sets the loop timer for what they're waiting on.
+    /// Does what the timers asked.
     fn idle_effects(&mut self, effects: Vec<Effect<ExtIdleNotificationV1>>) {
         for effect in effects {
             match effect {
@@ -210,7 +202,6 @@ impl State {
                 Effect::Resumed(notification) => notification.resumed(),
             }
         }
-        self.caminito.wake_idle();
     }
 }
 
@@ -219,35 +210,6 @@ impl Caminito {
     /// applies it.
     pub(crate) fn session_inhibited_changed(&mut self, inhibited: bool) {
         self.idle.session_inhibited = inhibited;
-    }
-
-    /// Sets the loop timer for the timers' deadline. Activity only ever moves the deadline
-    /// later, so a timer that's due before it is kept: it finds nothing to do, and sets the
-    /// next. Input then doesn't set a timer at every event.
-    fn wake_idle(&mut self) {
-        let deadline = self.idle.state.deadline();
-        if let Some(wake) = &self.idle.wake
-            && deadline.is_some_and(|deadline| wake.due <= deadline)
-        {
-            return;
-        }
-        if let Some(wake) = self.idle.wake.take() {
-            self.loop_handle.remove(wake.timer);
-        }
-        let Some(due) = deadline else {
-            return;
-        };
-        let timer = Timer::from_duration(due.saturating_sub(self.now()));
-        let timer = self.loop_handle.insert_source(timer, |_, _, state| {
-            // This timer is done, and the next deadline gets another.
-            state.caminito.idle.wake = None;
-            state.idle_elapse();
-            TimeoutAction::Drop
-        });
-        match timer {
-            Ok(timer) => self.idle.wake = Some(Wake { due, timer }),
-            Err(err) => tracing::warn!("can't set idle's timer: {}", err.error),
-        }
     }
 
     /// Whether `surface` is on screen as part of a window that shows, or of a layer
@@ -305,6 +267,5 @@ impl IdleNotifyHandler for State {
 
     fn idle_notification_destroyed(&mut self, notification: &ExtIdleNotificationV1) {
         self.caminito.idle.state.remove_notification(notification);
-        self.caminito.wake_idle();
     }
 }

@@ -89,6 +89,7 @@ use crate::dbus::menu_claim::Claims;
 use crate::dbus::panel::Panel;
 use crate::dbus::registrar::Registrations;
 use crate::dbus::screensaver::ScreensaverShim;
+use crate::deadlines::Deadlines;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
@@ -107,7 +108,6 @@ use crate::night_light::{self, NightLight};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::output::{OutputRecord, output_id};
-use crate::policy_timer::PolicyTimer;
 use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -217,8 +217,8 @@ pub struct Caminito {
     pub idle_inhibit_state: IdleInhibitManagerState,
     /// Idle's timers, the blank and what holds them off (128).
     pub(crate) idle: Idle,
-    /// The loop timer for policy's deadline, auto-raise's (153).
-    pub(crate) policy_timer: PolicyTimer,
+    /// The loop timer for the earliest deadline of what waits on Caminito's clock (174).
+    pub(crate) deadlines: Deadlines,
     /// Night Light's temperatures and fades (ADR 0023).
     pub(crate) night_light: NightLight,
     /// `NightLight` as `org.mate.Caminito`'s callers last heard it (137).
@@ -338,9 +338,8 @@ pub struct Caminito {
     pub(crate) input_devices: InputDevices,
     /// NumLock's state when the refresh pass last looked, so a change is written back once.
     pub(crate) numlock_seen: bool,
-    /// AccessX's filter, stage 2 of the keyboard path (134), and the timer for its deadline.
+    /// AccessX's filter, stage 2 of the keyboard path (134).
     pub(crate) accessx: accessx::Filter,
-    pub(crate) accessx_wake: Option<accessx::Wake>,
 
     /// Xwayland, from its spawn until it fails (11).
     pub xwayland: Option<RunningXwayland>,
@@ -634,8 +633,6 @@ impl State {
         self.refresh_gamma_control();
         self.refresh_night_light();
         self.update_pointer_focus();
-        // After the pointer's crossings, which queue an auto-raise.
-        self.caminito.wake_policy();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
         // Before the outputs are drawn, with what policy minimised since the last pass.
@@ -648,6 +645,10 @@ impl State {
         // After the frames, which may show the lock that logind's sleep waits for.
         self.caminito.refresh_logind();
         self.refresh_captures();
+        // After everything that moves a deadline (174): the pointer's crossings, which
+        // queue an auto-raise, idle's refresh, the minimise animations' start, and the
+        // handlers before this pass.
+        self.caminito.refresh_deadlines();
         if let Err(err) = self.caminito.display_handle.flush_clients() {
             tracing::warn!("error flushing clients: {err}");
         }
@@ -910,7 +911,7 @@ impl Caminito {
             idle_notify_state: IdleNotifyState::new::<State>(dh),
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),
-            policy_timer: PolicyTimer::default(),
+            deadlines: Deadlines::default(),
             night_light: NightLight::new(settings.night_light),
             night_light_signalled: None,
             gamma_control_state: GammaControlState::default(),
@@ -972,7 +973,6 @@ impl Caminito {
             input_devices: InputDevices::new(settings.devices),
             numlock_seen,
             accessx: accessx::Filter::new(settings.accessx),
-            accessx_wake: None,
             settings,
             settings_thread,
             written_workspace_count: None,

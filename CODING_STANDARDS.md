@@ -24,6 +24,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - Handlers change policy state and mark it dirty. They never update an outward view inline (foreign-toplevel, ext-workspace, EWMH properties, D-Bus properties, the debug dump). The refresh pass after each dispatch does that.
 - Wayland, X11, input, policy and rendering all run on the main thread. A new thread is justified only when a library needs its own loop. It talks to the main loop through a `calloop::channel`, and the main thread never blocks on it.
 - Policy takes time as an argument (`now`) and never reads a clock, so tests and proptest sequences are deterministic.
+- A feature that waits on Caminito's clock gives a `deadline()` and an `elapse(now)` and joins the list in `deadlines`. It sets a calloop `Timer` of its own only when it waits on a process or a protocol object.
 - Don't call `std::env::set_var` once other threads are running. Put variables for spawned clients in `Caminito::environment`.
 - Keep items private. Use `pub(crate)` for crate-internal sharing, and `pub` only for what another crate or `main.rs` uses.
 

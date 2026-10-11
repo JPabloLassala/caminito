@@ -5,6 +5,7 @@
 //! follows too, so a Wayland client stands for either kind (45).
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use caminito_test_client::format_input;
 use insta::assert_snapshot;
@@ -121,6 +122,25 @@ fn a_key_slow_keys_hold_back_reaches_the_client_once_its_delay_is_over() {
     key 30 pressed
     key 30 released
     ");
+}
+
+#[test]
+fn a_key_slow_keys_hold_back_reaches_the_client_once_the_clock_is_past_its_delay() {
+    // A delay no test waits out: only the clock that moves on ends it (174).
+    let mut f = Fixture::with_settings(vec![
+        on("slowkeys-enable"),
+        (A11Y_KEYBOARD, "slowkeys-delay".into(), Value::Int(60_000)),
+    ]);
+    let (id, _) = focused_client(&mut f);
+
+    f.key(KEY_A, true);
+    f.advance_clock(Duration::from_secs(59));
+    f.roundtrip(id);
+    assert_snapshot!(format_input(&f.client(id).state.input), @"");
+
+    f.advance_clock(Duration::from_secs(1));
+    f.roundtrip(id);
+    assert_snapshot!(format_input(&f.client(id).state.input), @"key 30 pressed");
 }
 
 #[test]

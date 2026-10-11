@@ -14,8 +14,6 @@ use std::time::Duration;
 
 use caminito_policy::{PolicyWindow, WindowId};
 use smithay::desktop::layer_map_for_output;
-use smithay::reexports::calloop::RegistrationToken;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle};
 
@@ -76,11 +74,16 @@ pub(crate) struct MinimizeAnimations {
     /// The windows that were on screen at the last refresh pass.
     shown: HashSet<WindowId>,
     running: Vec<Animation>,
-    /// The loop timer that draws the next step, while any runs.
-    timer: Option<RegistrationToken>,
+    /// When the next step is drawn, while any runs: `deadlines` draws it then (174).
+    next_step: Option<Duration>,
 }
 
 impl MinimizeAnimations {
+    /// When the next step is due, while any runs.
+    pub(crate) fn deadline(&self) -> Option<Duration> {
+        self.next_step
+    }
+
     /// Each window on its way at `now`, with the box it's drawn in, globally.
     pub(crate) fn boxes(
         &self,
@@ -133,7 +136,7 @@ impl Caminito {
         }
         if changed {
             self.queue_redraw_all();
-            self.set_minimize_animation_timer();
+            self.minimize_animations.next_step.get_or_insert(now + STEP);
         }
     }
 
@@ -160,40 +163,18 @@ impl Caminito {
             .then(|| geometry.loc - mapped.window().geometry().loc)
     }
 
-    /// Sets the loop timer that draws the animations' next steps, unless it's set.
-    fn set_minimize_animation_timer(&mut self) {
+    /// Ends the animations that are over and draws the next step of the others, if a step
+    /// is due at `now`, for `deadlines`. A step that's late isn't made up for: the next is
+    /// one step after this one.
+    pub(crate) fn minimize_animation_elapse(&mut self, now: Duration) {
         let animations = &mut self.minimize_animations;
-        if animations.timer.is_some() || animations.running.is_empty() {
+        if animations.next_step.is_none_or(|step| now < step) {
             return;
         }
-        let timer = Timer::from_duration(STEP);
-        let timer = self.loop_handle.insert_source(timer, |_, _, state| {
-            let caminito = &mut state.caminito;
-            caminito.minimize_animation_elapse();
-            if caminito.minimize_animations.running.is_empty() {
-                caminito.minimize_animations.timer = None;
-                TimeoutAction::Drop
-            } else {
-                TimeoutAction::ToDuration(STEP)
-            }
-        });
-        match timer {
-            Ok(timer) => self.minimize_animations.timer = Some(timer),
-            Err(err) => tracing::warn!("can't set the minimise animation's timer: {}", err.error),
-        }
-    }
-
-    /// Ends the animations that are over and draws the next step of the others, as their
-    /// loop timer does when it fires, and as a test does once it has moved Caminito's clock
-    /// on.
-    pub(crate) fn minimize_animation_elapse(&mut self) {
-        if self.minimize_animations.running.is_empty() {
-            return;
-        }
-        let now = self.now();
-        self.minimize_animations
+        animations
             .running
             .retain(|animation| animation.box_at(now).is_some());
+        animations.next_step = (!animations.running.is_empty()).then_some(now + STEP);
         self.queue_redraw_all();
     }
 }
