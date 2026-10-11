@@ -26,8 +26,7 @@ use super::stack::RootStack;
 use crate::input::{GrabKind, KeyboardFocus};
 use crate::state::{Caminito, State};
 use crate::window::{
-    STICKY, StateRequest, WindowKey, configure_request_geometry, request_demands_attention,
-    request_modal, with_x_facts,
+    STICKY, StateRequest, WindowKey, configure_request_geometry, request_modal, with_x_facts,
 };
 
 /// The key `window::lifecycle` knows an X window by.
@@ -75,6 +74,10 @@ impl XwmHandler for State {
                 (window.is_above(), StateRequest::Above(true)),
                 (window.is_below(), StateRequest::Below(true)),
                 (window.is_sticky() || sticky, StateRequest::Sticky(true)),
+                (
+                    window.demands_attention(),
+                    StateRequest::DemandsAttention(true),
+                ),
             ];
             for (_, request) in asked.into_iter().filter(|(asked, _)| *asked) {
                 caminito.window_state_request(&key, request);
@@ -104,6 +107,7 @@ impl XwmHandler for State {
         caminito.with_root_stack(|stack| stack.destroyed(window.window_id()));
         caminito.override_redirect_unmapped(&window);
         caminito.window_destroyed(&key(&window));
+        caminito.x_window_destroyed(window.window_id());
         caminito
             .app_menu_registrations
             .window_destroyed(window.window_id());
@@ -244,11 +248,13 @@ impl XwmHandler for State {
     }
 
     fn demands_attention_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.set_demands_attention(&window, true);
+        self.caminito
+            .window_state_request(&key(&window), StateRequest::DemandsAttention(true));
     }
 
     fn undemands_attention_request(&mut self, _xwm: XwmId, window: X11Surface) {
-        self.set_demands_attention(&window, false);
+        self.caminito
+            .window_state_request(&key(&window), StateRequest::DemandsAttention(false));
     }
 
     /// `_NET_WM_MOVERESIZE`'s directions 0 to 7.
@@ -276,7 +282,8 @@ impl XwmHandler for State {
 
     /// `_NET_ACTIVE_WINDOW`: a launcher's utility window, which isn't focused as it maps,
     /// gets the keyboard this way. X's timestamp isn't on Caminito's clock, so the request
-    /// counts as made now.
+    /// counts as made now, and policy judges it by its source indication (166), which
+    /// Caminito's X connection reads, as Smithay doesn't hand it on.
     fn active_window_request(
         &mut self,
         _xwm: XwmId,
@@ -284,8 +291,9 @@ impl XwmHandler for State {
         _timestamp: u32,
         _currently_active_window: Option<X11Surface>,
     ) {
+        let source = self.caminito.x_activation_source(window.window_id());
         self.caminito
-            .window_state_request(&key(&window), StateRequest::Active);
+            .window_state_request(&key(&window), StateRequest::Active(source));
     }
 
     fn allow_selection_access(&mut self, _xwm: XwmId, _selection: SelectionTarget) -> bool {
@@ -330,11 +338,6 @@ impl State {
         if let Some(id) = self.caminito.mapped_for_key(&key(window)) {
             self.caminito.window_changed(id);
         }
-    }
-
-    /// Sets `_NET_WM_STATE_DEMANDS_ATTENTION`, which makes the window urgent.
-    fn set_demands_attention(&mut self, window: &X11Surface, demands_attention: bool) {
-        request_demands_attention(window, demands_attention);
     }
 
     /// Starts a move or resize a managed window asked for, if a button still holds the

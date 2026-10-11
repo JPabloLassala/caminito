@@ -1781,6 +1781,34 @@ session_env() {
   `focus` member show which was refused, `WAYLAND_DEBUG=1` on the app for its
   `xdg_activation_v1` requests, and `gsettings monitor org.mate.Marco.general`.
 
+### Focus-stealing prevention for XWayland windows, and urgency in the window list
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `xterm` and `wmctrl` installed and
+     `focus-new-windows` at `smart`, Marco's default. Open `xterm` from the panel's menu, and
+     `mate-terminal`.
+  2. In `xterm`, run `(sleep 5; GDK_BACKEND=x11 pluma --new-window) &`, wait for Pluma's
+     window, then run the same command again and focus `mate-terminal` before the second
+     window opens.
+  3. Look at the second Pluma window's button in the panel's window list, and at its cell in
+     the Window switcher (Alt+Tab, then Escape). In `mate-terminal`, find its id with
+     `wmctrl -l` and run `xprop -id <id> _NET_WM_STATE`.
+  4. Click the button in the window list.
+  5. Focus `mate-terminal`, then in it run `wmctrl -a xterm`.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the first Pluma window takes the focus, as its client's first
+  window; the second opens under the focused window and doesn't take the focus. In step 3 its
+  button in the window list shows that it wants attention, its cell in the Window switcher
+  has a dot in its top right corner, and its `_NET_WM_STATE` has
+  `_NET_WM_STATE_DEMANDS_ATTENTION`. In step 4 the window comes to the top with the focus,
+  and its button and its cell no longer show it wants attention. In step 5 `xterm` takes the
+  focus: `wmctrl` gives no source indication, which Caminito honours as Marco does (166).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose windows' `urgent` and the
+  `focus` member show which was refused, `xprop -id <window> _NET_WM_STATE _NET_WM_PID`, and
+  `WAYLAND_DEBUG=1 mate-panel --replace` for the `xfce_foreign_toplevel_handle_v1` `state`
+  events.
+
 ### A failed command's dialog, and `rename-workspace`
 
 - **Milestone:** M8, run in M8's closing run (173).

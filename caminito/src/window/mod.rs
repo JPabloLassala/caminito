@@ -11,8 +11,8 @@ mod xdg;
 pub(crate) use lifecycle::PendingWindows;
 pub(crate) use lifecycle::StateRequest;
 pub(crate) use x11::{
-    STICKY, Side, Strut, configure_request_geometry, marco_type, request_demands_attention,
-    request_modal, request_skips, struts, takes_pointer_at, with_x_facts,
+    STICKY, Side, Strut, configure_request_geometry, marco_type, request_modal, request_skips,
+    struts, takes_pointer_at, with_x_facts,
 };
 pub(crate) use xdg::owe_configure;
 
@@ -524,8 +524,9 @@ impl PolicyWindow for Mapped {
         self.adapter().app_id()
     }
 
-    /// The client's own ask for attention. `Policy::is_urgent` adds a refused focus to it,
-    /// and that is what the Window switcher marks (108) and the debug dump lists (165).
+    /// The client's urgency hint. `Policy::is_urgent` adds the window's demand for attention
+    /// to it, and that is what the Window switcher marks (108), the debug dump lists (165)
+    /// and a window list is told (166).
     fn urgent(&self) -> bool {
         self.adapter().urgent()
     }
