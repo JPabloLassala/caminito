@@ -12,7 +12,7 @@ _pkgname=mate-settings-daemon
 # The first tag with the Wayland background and clipboard. Its wlrandr plugin is off under
 # Caminito, which keeps the saved layouts itself (0005, ADR 0014).
 pkgver=1.29.1
-pkgrel=6
+pkgrel=7
 pkgdesc="The MATE Settings daemon, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-settings-daemon'
@@ -84,7 +84,7 @@ source=(
 )
 b2sums=(
   ce41a546278c85e775bef0efb9da014d822570f93c19532d36ae864453bbb611e36eeea7b6cda68950722e0b50856bafc9884cd6aa2cd5cdf26f1bac6970ff9b
-  f56bc8dbd46397cde37563bef523228b1fd858b87d2dd2e4c69e2f0dc9769ca2167636aa39b776a2d601278a74774642a065ccef9c023242548c6c118046c659
+  0a23b16455eb979b7c8613f19710d4d155c4e84c4ae25adfc43c0632eddc598994517539058ea8494ec947f1ebd5df17c0f3f39eb4ae5617f99a7abb042ca012
   375bc6a12d6166a847a96ee333fc0a8c94b1bb72098ef0cc3ad9252ec50b57b63b5c0eef4c8a35617d281c819143b058f352df44927e998d16f7a3f74ddf6b0b
   7cf16e87d7e10cd6b01856f27b7a38b5d56b25d0904ba077f42e66e3be7961edb84b3eafbd22401436e39802fa4e4d67b59639e55a0bc140c91ed8b71a46f940
   506d5bbf3d6888a34b1f2c7776ec658836ce1e0517cf919aa0fa664b794c5cfccefe9f0dd9b16a64852991b854104fffb8c23ea09d227ce2ce89d691da69f379
