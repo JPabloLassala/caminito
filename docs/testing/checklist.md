@@ -1435,6 +1435,37 @@ session_env() {
 - **Debug tool:** `gtk-launch mate-display-properties`, and `ls
   /usr/share/caminito/xdg/applications`.
 
+## caminito-about
+
+### About Caminito is in the control center, under Caminito only, and shows the installed build
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built from the PKGBUILD and installed, log into *MATE on Caminito*.
+     Run `caminito --version` and `pacman -Q caminito-git`.
+  2. Open the control center and the panel's *System ▸ Preferences ▸ Hardware* menu, and open
+     *About Caminito* from each.
+  3. Press each of the four links: *Marco*, *Smithay*, *GPL-2.0-or-later* and the repository.
+  4. With the window open, open *About Caminito* again, or run `caminito-about`.
+  5. Try to resize the window, and press Escape.
+  6. Run `ls /usr/share/applications | grep -i caminito-about`. Log out, log into *MATE*, the
+     X11 session, and look for *About Caminito* in its control center.
+  7. In a checkout, run `cargo build -p caminito -p caminito-about`, then
+     `target/debug/caminito --version` and `target/debug/caminito-about`.
+- **Expected:** in step 1 `caminito --version` prints `caminito 0.1.0 (r<count>.<hash>)` and
+  exits, and the part in brackets is the package's `pkgver`. In step 2 the entry is under
+  *Hardware* with Caminito's logo, and opens the prototype's compact card (182): the logo on
+  the left, *Caminito* in large bold type with the same version string after it on one line,
+  *A Wayland compositor for the MATE desktop* under them, and two small dim lines, *Built on
+  Marco and Smithay. GPL-2.0-or-later.* and the repository. There is no Close button. In step
+  3 each link opens in the browser: Marco's and Smithay's repositories, the GNU page of the
+  GPL 2's text, and `https://github.com/JPabloLassala/caminito`. In step 4 the open window is
+  raised and there is still one. In step 5 the window doesn't resize, and Escape closes it. In
+  step 6 `ls` prints nothing, and X11 MATE has no *About Caminito*. In step 7 both show the
+  checkout's `r$(git rev-list --count HEAD).$(git rev-parse --short=7 HEAD)`.
+- **Debug tool:** `ls /usr/share/caminito/xdg/applications`, `gtk-launch caminito-about`, and
+  `caminito-about` run from a terminal for GTK's warnings.
+
 ## The control center
 
 ### Windows and Keyboard Shortcuts open under Caminito, and name it

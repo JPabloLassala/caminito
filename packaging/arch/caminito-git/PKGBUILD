@@ -42,6 +42,9 @@ license=(GPL-2.0-or-later)
 # keybindings directory, which marco's own are in too; they list every action Caminito binds
 # (173). The logo (109) is in hicolor's
 # scalable apps, a directory hicolor-icon-theme owns.
+#
+# caminito-about (182) links gtk4 and nothing else. Its entry is in /usr/share/caminito/xdg
+# too.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver
@@ -88,6 +91,9 @@ build() {
   cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
+  # The revision in the version string (182), which `caminito --version` prints and
+  # caminito-about shows: this package's, so they agree with `pacman -Q`.
+  export CAMINITO_REVISION=$pkgver
   cargo build --frozen --release
   # makepkg keeps src/ between runs, and Meson keeps a build directory's flags when it's
   # set up again, so each build starts it afresh.
@@ -102,11 +108,15 @@ check() {
   export CARGO_TARGET_DIR=target
   # In release, so the tests reuse build()'s dependencies instead of compiling them again
   # in debug. tools/check runs them in debug.
+  # The same revision as build()'s, or cargo would build caminito-version and what depends
+  # on it again.
+  export CAMINITO_REVISION=$pkgver
   dbus-run-session -- cargo test --frozen --release
 }
 
 package() {
   cd "$_pkgname"
   meson install -C build --destdir "$pkgdir"
-  install -Dm755 target/release/caminito target/release/caminito-displays -t "$pkgdir/usr/bin"
+  install -Dm755 target/release/caminito target/release/caminito-displays \
+    target/release/caminito-about -t "$pkgdir/usr/bin"
 }

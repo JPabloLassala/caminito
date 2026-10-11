@@ -333,6 +333,7 @@ dependencies = [
  "caminito-policy",
  "caminito-test-client",
  "caminito-theme",
+ "caminito-version",
  "drm-ffi",
  "futures-channel",
  "gio",
@@ -352,6 +353,14 @@ dependencies = [
  "x11rb",
  "xcursor",
  "zbus",
+]
+
+[[package]]
+name = "caminito-about"
+version = "0.1.0"
+dependencies = [
+ "caminito-version",
+ "gtk4",
 ]
 
 [[package]]
@@ -408,6 +417,10 @@ dependencies = [
  "serde_json",
  "tempfile",
 ]
+
+[[package]]
+name = "caminito-version"
+version = "0.1.0"
 
 [[package]]
 name = "cc"

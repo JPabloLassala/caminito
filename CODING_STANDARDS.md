@@ -7,7 +7,7 @@ How Caminito's code is written. Reviews check a diff against this file, [CONTEXT
 - `cargo fmt --all --check`, with rustfmt's defaults. There is no `rustfmt.toml`.
 - `cargo clippy --workspace --all-targets -- -D warnings`, so every clippy warning fails the build. Fix the code rather than silencing the lint. If an allow is truly needed, use `#[expect(clippy::…, reason = "…")]` on the smallest item.
 - `[workspace.lints]` in [Cargo.toml](Cargo.toml) adds `clippy::undocumented_unsafe_blocks`. Every crate opts in with `lints.workspace = true`.
-- `caminito-policy`, `caminito-layout` and caminito-displays's library are `#![forbid(unsafe_code)]`.
+- `caminito-policy`, `caminito-layout`, `caminito-version`, caminito-about and caminito-displays's library are `#![forbid(unsafe_code)]`.
 - `cargo deny check` against [deny.toml](deny.toml) for licences and advisories.
 
 ## Crates and modules
@@ -19,6 +19,8 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - `caminito-theme` knows nothing of Wayland.
 - `caminito-layout` has no dependencies, and gets none (ADR 0015). caminito-displays depends on it too.
 - `caminito-displays` is a program of its own (ADR 0014), and depends on `caminito-layout` alone of Caminito's crates. Its library, the page's state and its client of output management, names no toolkit, so that Caminito's headless tests can drive it. GTK is the binary's.
+- `caminito-version` is the version string and the build script that finds the build's revision (182). `caminito` and `caminito-about` both depend on it, so `caminito --version` and the dialog can't disagree. It has no dependencies.
+- `caminito-about` is a program of its own (182), since the compositor doesn't link GTK and caminito-displays is the displays program. It depends on `caminito-version` alone of Caminito's crates.
 - Protocols Caminito implements itself go in `caminito/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. `output_management` is the first. D-Bus interfaces go in `caminito/src/dbus/`.
 - `scene` is the only code that knows the layer order.
 - Handlers change policy state. The refresh pass after each dispatch queues the redraw for a Policy change (`Policy::take_scene_changed`) and updates the outward views (foreign-toplevel, ext-workspace, EWMH properties, D-Bus properties, the debug dump); a handler never updates one inline. A handler queues a redraw only for what Policy doesn't hold: the lock, idle's blank, the bell, a Layer surface, the cursor, a selection, a client's commit, an output's change, a Frame's look, a popup's own buffer.

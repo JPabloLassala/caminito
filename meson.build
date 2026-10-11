@@ -47,6 +47,14 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# caminito-about's entry (182), in the same directory, so that only a Session lists it:
+# under X11 MATE it would describe a compositor that isn't running. Its categories put it
+# under Hardware in the control center, beside System Info and Displays.
+install_data(
+  'data/caminito-about.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+
 # What the control center's Keyboard Shortcuts dialog lists under Caminito (05, 101): Marco's
 # own manifests from marco 1.29.0, with Caminito's name in wm_name, which the dialog matches
 # against MATE_WM_KEYBINDINGS. They point at the org.mate.Marco.* keys, and their names are

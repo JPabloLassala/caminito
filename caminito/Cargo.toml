@@ -11,6 +11,8 @@ publish = false
 caminito-layout = { path = "../caminito-layout" }
 caminito-policy = { path = "../caminito-policy" }
 caminito-theme = { path = "../caminito-theme" }
+# The version string `--version` prints, which caminito-about shows too (182).
+caminito-version = { path = "../caminito-version" }
 # GAMMA_LUT's blob of a CRTC's size, which drm's `create_property_blob` can't make from a
 # slice (137). Smithay's drm already depends on it.
 drm-ffi = "0.9.1"
