@@ -24,6 +24,10 @@ _Avoid_: fork, upstream patch
 A distribution package that builds a MATE component, or a panel applet from outside MATE, with its carried patches, and takes the stock package's place, so that only one of the two is installed.
 _Avoid_: fork package, Caminito build of MATE
 
+**Backported package**:
+A stock MATE component built at a newer upstream version, with no carried patches, because a distribution's own is older than what Caminito or a patched package needs. It takes the stock package's place as a patched package does.
+_Avoid_: patched package
+
 **Layer surface**:
 A shell surface that sits in a fixed layer of an output rather than among ordinary windows: the panel, caja's desktop, the wallpaper, notification bubbles and the screenshot area picker.
 _Avoid_: panel window, dock window
