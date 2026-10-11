@@ -12,7 +12,7 @@
 pkgname=mate-control-center-caminito
 _pkgname=mate-control-center
 pkgver=1.29.1
-pkgrel=3
+pkgrel=4
 pkgdesc="The Control Center for MATE, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-control-center'
@@ -68,7 +68,8 @@ conflicts=("$_pkgname")
 # other Wayland sessions. There the capplet opens now, and lists no window manager's
 # shortcuts. 0004 and 0005 are gated as 0001 and 0002 are: the Mouse and Keyboard capplets run on
 # XWayland, and Mouse always shows its touchpad page, since XWayland's devices aren't the
-# machine's (06, 102).
+# machine's (06, 102). 0006 is gated on MATE_WM_NAME alone too: System Info's Windowing System
+# row reads "Caminito (Wayland)", or "Caminito (X11)" when it runs on XWayland (181).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-control-center")"
@@ -79,6 +80,7 @@ source=(
   "$_patches/0003-keybindings-Do-not-crash-on-a-display-that-isn-t-X11.patch"
   "$_patches/0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch"
   "$_patches/0005-mouse-Show-the-touchpad-page-under-Caminito.patch"
+  "$_patches/0006-system-info-Name-Caminito-in-the-Windowing-System-row.patch"
 )
 b2sums=(
   5125854bee37563c54b9e22b23dc2b6670cc7453e2669b547c577394ea2250959fa76c0c7fe5df656a4b237a201835762ed7be4d49643ae99febe74ca9d7065a
@@ -87,6 +89,7 @@ b2sums=(
   d0d2f81406c957c47aff78181a061473f31a4ddf1813c942be1d96070f25f334ff9d1001bedd7f699bda5cc0d5f806cfb6c57d83adbce4135af5472a1056680f
   c2e1bbc9eca4545f90e90b4601ec574404834108820edb114ae2a7dfe5989deccf4bd0a7c4c342e8939123146d096bc9dbdec5fb75b1bc3a4475c1cc78a6cf0b
   12d7a2018fb7b01327c7daa3134060f7de67752a2f1cc35cb048c4fba55e04b5f13fc037f42017d2d02ea9f3d09a51e1e181640406be084482041a7f73bbf109
+  2b44b4cc0c2812316768c99f3cf828c04e04faeaf2e16f0bc34b6df7b548f710b671b02e8ea224d7451f92263c6f43762fb0c0e105001fda48ea36a28717e67d
 )
 
 prepare() {

@@ -1514,6 +1514,24 @@ session_env() {
   org.mate.peripherals-touchpad`, `gsettings monitor org.mate.peripherals-keyboard-xkb.kbd`,
   `xkbcomp "$DISPLAY" - | grep xkb_symbols`, and `coredumpctl` for a crash.
 
+### System Info's Windowing System row names Caminito
+
+- **Milestone:** M6
+- **Steps:**
+  1. With `mate-control-center-caminito` installed, log into *MATE on Caminito*. Open *System
+     Info* from the control center, under *Hardware*, and read its *Windowing System* row.
+  2. Close it, and run `GDK_BACKEND=x11 mate-system-info` in a terminal.
+  3. Run `env -u MATE_WM_NAME mate-system-info`, and then `env -u MATE_WM_NAME
+     GDK_BACKEND=x11 mate-system-info`.
+  4. Log out, log into *MATE*, the X11 session, and open *System Info* there.
+- **Expected:** the row reads `Caminito (Wayland)` in step 1 and `Caminito (X11)` in step 2,
+  where the dialog is an XWayland window (`xprop` can pick it). In step 3 it reads `Wayland`,
+  then `X11`, as the stock dialog does, and in X11 MATE `X11`: the gate is `MATE_WM_NAME`
+  alone (181, ADR 0011).
+- **Debug tool:** `echo "$MATE_WM_NAME $GDK_BACKEND"` in the terminal, and
+  [windowing-row.sh](../../.scratch/issues/181-checks/windowing-row.sh), which prints the row
+  of a `mate-system-info` built from the series.
+
 ### The Window switcher shows live thumbnails
 
 - **Milestone:** M8
