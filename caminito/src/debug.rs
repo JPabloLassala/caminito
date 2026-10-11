@@ -93,6 +93,8 @@ struct StateDump {
     accelerator_grabs: Vec<AcceleratorGrabDump>,
     /// The Window switcher (108), while it's open.
     switcher: Option<SwitcherDump>,
+    /// The Workspace popup (152), while it shows.
+    workspace_popup: Option<WorkspacePopupDump>,
     /// Whether the apps are told to give up their own menubars (110): `on` while a Global
     /// menu applet is on the bus, `leaving` for the grace period after it left (114), and
     /// `off`.
@@ -226,6 +228,25 @@ struct SwitcherPopupDump {
     /// The popup and each window's cell, from the output's top left corner.
     popup: RectDump,
     cells: Vec<RectDump>,
+}
+
+#[derive(Serialize)]
+struct WorkspacePopupDump {
+    /// The name of the output the popup is on.
+    output: String,
+    /// What a further direction does: `switch`, or `move` for the focused window too.
+    mode: &'static str,
+    /// The Workspace grid's shape.
+    columns: usize,
+    rows: usize,
+    /// The workspace marked, which is the active one.
+    selected: usize,
+    /// The popup, and for each workspace, from the first, its cell, the preview in it and
+    /// the band its name is in, from the output's top left corner.
+    popup: RectDump,
+    cells: Vec<RectDump>,
+    previews: Vec<RectDump>,
+    names: Vec<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -435,8 +456,8 @@ impl Caminito {
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
     /// with their keys, the accelerator grabs with their owners, the Window switcher, the
-    /// bells rung with the last one, Night Light, and each window's tile with the tile
-    /// preview (158), as pretty-printed JSON.
+    /// Workspace popup, the bells rung with the last one, Night Light, and each window's tile
+    /// with the tile preview (158), as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -559,6 +580,20 @@ impl Caminito {
                 cells: popup.grid.cells.iter().map(|cell| (*cell).into()).collect(),
             }),
         });
+        let workspace_popup = self.workspace_popup.as_ref().map(|popup| {
+            let cells = &popup.layout.cells;
+            WorkspacePopupDump {
+                output: popup.output.name(),
+                mode: if popup.moves { "move" } else { "switch" },
+                columns: popup.layout.columns,
+                rows: popup.layout.rows,
+                selected: policy.active_workspace(),
+                popup: popup.layout.popup.into(),
+                cells: cells.iter().map(|cell| cell.rect.into()).collect(),
+                previews: cells.iter().map(|cell| cell.preview.into()).collect(),
+                names: cells.iter().map(|cell| cell.name.into()).collect(),
+            }
+        });
         let dump = StateDump {
             windows,
             workspaces,
@@ -577,6 +612,7 @@ impl Caminito {
             bindings,
             accelerator_grabs,
             switcher,
+            workspace_popup,
             global_menu_switch: self.global_menu_switch.name(),
             menu_claims,
             bell: BellDump {

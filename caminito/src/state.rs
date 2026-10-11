@@ -120,6 +120,7 @@ use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Settings, SettingsThread, Value};
 use crate::switcher::OpenSwitcher;
 use crate::window::{Mapped, PendingWindows};
+use crate::workspace_popup::WorkspacePopup;
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
@@ -260,11 +261,13 @@ pub struct Caminito {
     pub frame_pointer: FramePointer,
     /// The interactive move or resize the pointer is doing, if any.
     pub window_grab: Option<GrabKind>,
-    /// Pointer buttons whose press was the Window switcher's, so their release is
-    /// swallowed too (108).
+    /// Pointer buttons whose press was the Window switcher's (108), or closed the Workspace
+    /// popup (152), so their release is swallowed too.
     pub(crate) suppressed_buttons: HashSet<u32>,
     /// The compositor's side of the Window switcher while it's open (108).
     pub(crate) switcher: Option<OpenSwitcher>,
+    /// The Workspace popup while it shows (152).
+    pub(crate) workspace_popup: Option<WorkspacePopup>,
     /// The cursor the client with pointer focus asked for.
     pub client_cursor: CursorImageStatus,
     /// The icon of the Wayland drag in progress, if it has one (48).
@@ -628,6 +631,7 @@ impl State {
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
         self.caminito.refresh_switcher_popup();
+        self.caminito.refresh_workspace_popup();
         self.update_keyboard_focus();
         self.redraw_queued_outputs();
         // After the frames, which may show the lock that logind's sleep waits for.
@@ -923,6 +927,7 @@ impl Caminito {
             window_grab: None,
             suppressed_buttons: HashSet::new(),
             switcher: None,
+            workspace_popup: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,
             cursors,

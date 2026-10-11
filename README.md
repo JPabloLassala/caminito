@@ -211,7 +211,8 @@ The keybindings are read from Marco's `org.mate.Marco.global-keybindings` and
 
 Shift with a switch binding steps backward. While the Window switcher is open, Tab and the
 arrow keys move the selection, releasing the modifier or Enter activates the selected window,
-and Escape cancels.
+and Escape cancels. While the modifiers of a switch or a move to the workspace beside are held,
+the Workspace popup shows the workspaces in their grid, and the arrow keys go on from there.
 
 ### The MATE session
 

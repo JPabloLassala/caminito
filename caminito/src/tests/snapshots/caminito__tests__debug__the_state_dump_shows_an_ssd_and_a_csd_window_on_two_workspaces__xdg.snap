@@ -236,6 +236,7 @@ expression: without_x_ids(&dump)
   ],
   "accelerator_grabs": [],
   "switcher": null,
+  "workspace_popup": null,
   "global_menu_switch": "off",
   "menu_claims": [],
   "bell": {

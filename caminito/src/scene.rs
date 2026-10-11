@@ -99,6 +99,9 @@ pub(crate) enum SceneLayer {
     /// The Window switcher's popup (108), over everything a client draws: the corner
     /// icons, then the thumbnails, then the rest of its chrome.
     Switcher,
+    /// The Workspace popup (152), over everything a client draws, as the Window switcher's
+    /// popup is. The two never show together.
+    WorkspacePopup,
     /// The overlay layer-shell layer (63).
     Overlay,
     /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
@@ -130,13 +133,14 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 14] = [
+pub(crate) const LAYERS: [SceneLayer; 15] = [
     SceneLayer::Blank,
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
     SceneLayer::Lock,
     SceneLayer::BellFlash,
     SceneLayer::Switcher,
+    SceneLayer::WorkspacePopup,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
     SceneLayer::FullscreenWindows,
@@ -294,6 +298,9 @@ fn layer_elements<R>(
         SceneLayer::Lock => lock_elements(renderer, caminito, output, elements),
         SceneLayer::BellFlash => bell_flash_elements(caminito, output, elements),
         SceneLayer::Switcher => switcher_elements(renderer, caminito, output, elements),
+        SceneLayer::WorkspacePopup => {
+            workspace_popup_elements(renderer, caminito, output, elements);
+        }
     }
 }
 
@@ -451,6 +458,42 @@ fn switcher_elements<R>(
         thumbnail_elements(renderer, caminito, grid, scale, elements);
     }
     chrome_element(renderer, &chrome.under, elements);
+}
+
+/// The Workspace popup (152), if it's on `output`: one buffer, drawn in the refresh pass.
+fn workspace_popup_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let popup = caminito.workspace_popup.as_ref();
+    let Some(popup) = popup.filter(|popup| popup.output == *output) else {
+        return;
+    };
+    let Some(chrome) = &popup.chrome else {
+        return;
+    };
+    let scale = output.current_scale().fractional_scale();
+    let rect = popup.layout.popup;
+    let location = rect.loc.to_physical_precise_round::<_, i32>(scale);
+    let element = MemoryRenderBufferRenderElement::from_buffer(
+        renderer,
+        location.to_f64(),
+        chrome,
+        None,
+        None,
+        Some(rect.size),
+        Kind::Unspecified,
+    );
+    match element {
+        Ok(element) => elements.push(SceneElement::Frame(element)),
+        // Every frame while the popup shows, so not above `debug!`.
+        Err(err) => tracing::debug!("can't draw the workspace popup: {err:?}"),
+    }
 }
 
 /// Each listed window in its cell of `grid`, as a capture of the window shows it (103): its
