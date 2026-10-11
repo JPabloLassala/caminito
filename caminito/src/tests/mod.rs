@@ -15,6 +15,7 @@ mod cursors;
 mod data_control;
 mod debug;
 mod decoration;
+mod dialogs;
 mod dpms;
 mod drag_icons;
 mod dynamic_workspaces;

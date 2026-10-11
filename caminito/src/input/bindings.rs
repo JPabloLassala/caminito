@@ -43,6 +43,8 @@ pub(crate) enum Binding {
     Panel(PanelAction),
     /// A command to run (104).
     Command(Command),
+    /// `rename-workspace`'s dialog (167).
+    RenameWorkspace,
 }
 
 /// What an action Caminito binds does when its combination is pressed.
@@ -265,6 +267,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "run-command-terminal",
                 "disabled",
                 command(Command::Terminal),
+            ),
+            global(
+                "rename-workspace",
+                "disabled",
+                Does::Run(Binding::RenameWorkspace),
             ),
             window(
                 "toggle-fullscreen",

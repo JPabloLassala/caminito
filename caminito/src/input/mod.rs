@@ -293,6 +293,7 @@ impl State {
                 self.caminito.ask_panel(action, time.millis());
             }
             Some(Some(Bound::Command(command))) => self.caminito.run_command(command),
+            Some(Some(Bound::RenameWorkspace)) => self.caminito.rename_workspace(),
             Some(Some(Bound::GrabKey(key))) => self.keyboard_grab_key(key, time),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 let time = time.millis();
@@ -435,6 +436,7 @@ impl State {
                     Binding::Policy(action) => Bound::Action(action),
                     Binding::Panel(action) => Bound::Panel(action),
                     Binding::Command(command) => Bound::Command(command),
+                    Binding::RenameWorkspace => Bound::RenameWorkspace,
                 };
                 FilterResult::Intercept(Some(bound))
             }
@@ -738,6 +740,8 @@ enum Bound {
     Panel(PanelAction),
     /// One of Caminito's bindings: a command to run (104).
     Command(Command),
+    /// One of Caminito's bindings: `rename-workspace`'s dialog (167).
+    RenameWorkspace,
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },

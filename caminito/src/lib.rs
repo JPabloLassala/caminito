@@ -8,6 +8,7 @@ pub mod cursor;
 pub mod dbus;
 pub mod debug;
 pub mod decoration;
+mod dialogs;
 mod handlers;
 pub mod helpers;
 pub mod icons;

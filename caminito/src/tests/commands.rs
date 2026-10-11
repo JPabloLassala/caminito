@@ -4,8 +4,7 @@
 //! `PATH` Caminito gives what it spawns, writes down how it was run.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
@@ -25,10 +24,23 @@ fn stand_in(program: &str) -> (TempDir, PathBuf) {
                   here=$(dirname \"$0\")\n\
                   printf '%s\\n' \"$0\" \"$@\" > \"$here/running\"\n\
                   mv \"$here/running\" \"$here/ran\"\n";
-    fs::write(&program, script).unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    write_program(&program, script);
     let ran = dir.path().join("ran");
     (dir, ran)
+}
+
+/// Writes `script` to `program`, which can then be run. `install` writes it: were it this
+/// process, another test's thread could fork with the file open for writing, and running
+/// it would fail meanwhile as a text file that's busy.
+pub(super) fn write_program(program: &Path, script: &str) {
+    let source = program.with_extension("script");
+    fs::write(&source, script).unwrap();
+    let status = std::process::Command::new("install")
+        .args(["-m", "755"])
+        .args([&source, program])
+        .status()
+        .unwrap();
+    assert!(status.success(), "{status}");
 }
 
 /// Puts `dir` first in the `PATH` of what Caminito spawns.
@@ -132,14 +144,26 @@ fn a_run_command_whose_command_is_empty_runs_nothing_and_is_logged() {
         set(MARCO_GLOBAL_KEYBINDINGS, "run-command-2", "<Super>w"),
         set(MARCO_KEYBINDING_COMMANDS, "command-2", ""),
     ]);
+    // Marco's error dialog shows too (167): `tests::dialogs`' concern, so its stand-in here
+    // does nothing.
+    let dir = tempfile::tempdir().unwrap();
+    let zenity = dir.path().join("zenity");
+    write_program(&zenity, "#!/bin/sh\n");
+    first_in_path(&mut f, &dir);
+    // `tests::dialogs` logs the same line on threads that capture nothing, and tracing
+    // caches the line as off if one of them is the first to log it. A first press has it
+    // known, and then the cache is rebuilt on this thread.
+    f.chord(&[KEY_LEFTMETA, KEY_Q]);
+    tracing::callsite::rebuild_interest_cache();
 
     f.chord(&[KEY_LEFTMETA, KEY_Q]);
     f.chord(&[KEY_LEFTMETA, KEY_W]);
 
     let logs = logs.text();
-    for n in 1..=2 {
+    for (n, line) in [(1, "\" \""), (2, "\"\"")] {
         let line = format!(
-            "can't run org.mate.Marco.keybinding-commands command-{n} for a keybinding: it's empty"
+            "can't run org.mate.Marco.keybinding-commands command-{n} {line} for a keybinding: \
+             Text was empty (or contained only whitespace)"
         );
         assert!(logs.contains(&line), "{logs}");
     }

@@ -27,8 +27,8 @@ pub(crate) enum Command {
 }
 
 impl Caminito {
-    /// Runs the command line the settings have for `command`. One that's empty or can't be
-    /// run is logged; Marco's dialog for it is 167's.
+    /// Runs the command line the settings have for `command`. One that can't be run, as
+    /// an empty one can't, is logged and shows Marco's error dialog (167).
     pub(crate) fn run_command(&mut self, command: Command) {
         let commands = &self.settings.commands;
         let line = match command {
@@ -38,16 +38,31 @@ impl Caminito {
             Command::Numbered(n) => &commands.numbered[n - 1],
             Command::Terminal => &commands.terminal,
         };
-        // Marco's schema has a space for each numbered command, which no shell runs.
-        if line.trim().is_empty() {
-            tracing::warn!("can't run {} for a keybinding: it's empty", command.key());
-            return;
-        }
         match spawn(line, &self.environment) {
             Ok(()) => tracing::debug!("ran {line:?} for a keybinding"),
-            Err(err) => tracing::warn!("can't run {line:?} for a keybinding: {err}"),
+            Err(err) => {
+                tracing::warn!(
+                    "can't run {} {line:?} for a keybinding: {err}",
+                    command.key()
+                );
+                let text = error_text(line, err.message());
+                self.show_error_dialog(&text);
+            }
         }
     }
+}
+
+/// The text of Marco's dialog for a command that can't be run (`error_on_command`,
+/// `core/keybindings.c:2397-2445`): GLib's `message`, after the command unless it's empty.
+/// Marco's schema has a space for each numbered command, which GLib can't run either. Both
+/// are escaped for zenity's markup, which Marco's aren't.
+fn error_text(line: &str, message: &str) -> String {
+    let message = glib::markup_escape_text(message);
+    if line.is_empty() {
+        return message.into();
+    }
+    let line = glib::markup_escape_text(line);
+    format!("There was an error running <tt>{line}</tt>:\n\n{message}")
 }
 
 impl Command {
@@ -70,15 +85,16 @@ impl Command {
 /// the program is a grandchild, so Caminito has no child to reap.
 fn spawn(line: &str, environment: &BTreeMap<OsString, OsString>) -> Result<(), glib::Error> {
     let argv = glib::shell_parse_argv(line)?;
-    let argv: Vec<&Path> = argv.iter().map(Path::new).collect();
+    spawn_argv(&argv, environment)
+}
 
-    let mut variables: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
-    // A nested run has its host's, which isn't Caminito's Xwayland's.
-    if !environment.contains_key(OsStr::new("DISPLAY")) {
-        variables.remove(OsStr::new("DISPLAY"));
-    }
-    variables.extend(environment.clone());
-    let envp: Vec<OsString> = variables
+/// Spawns `argv` as [`spawn`] does a command line.
+pub(crate) fn spawn_argv(
+    argv: &[impl AsRef<OsStr>],
+    environment: &BTreeMap<OsString, OsString>,
+) -> Result<(), glib::Error> {
+    let argv: Vec<&Path> = argv.iter().map(Path::new).collect();
+    let envp: Vec<OsString> = child_environment(environment)
         .into_iter()
         .map(|(mut name, value)| {
             name.push("=");
@@ -92,4 +108,17 @@ fn spawn(line: &str, environment: &BTreeMap<OsString, OsString>) -> Result<(), g
     let flags = glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::SEARCH_PATH_FROM_ENVP;
     glib::spawn_async(None::<&Path>, &argv, &envp, flags, None)?;
     Ok(())
+}
+
+/// The environment of what Caminito spawns: its own, with `environment` over it.
+pub(crate) fn child_environment(
+    environment: &BTreeMap<OsString, OsString>,
+) -> BTreeMap<OsString, OsString> {
+    let mut variables: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    // A nested run has its host's, which isn't Caminito's Xwayland's.
+    if !environment.contains_key(OsStr::new("DISPLAY")) {
+        variables.remove(OsStr::new("DISPLAY"));
+    }
+    variables.extend(environment.clone());
+    variables
 }

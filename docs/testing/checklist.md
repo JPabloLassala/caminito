@@ -1691,3 +1691,23 @@ session_env() {
   window's stops there, and the next key goes on, as in Marco (156).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for the windows' geometry and the
   bindings in force.
+
+### A failed command's dialog, and `rename-workspace`
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open *Keyboard Shortcuts* from the
+     control center, or use `gsettings`, to bind `run-command-1` to Super+1, leaving
+     `org.mate.Marco.keybinding-commands command-1` at its default, and press it.
+  2. Run `gsettings set org.mate.Marco.keybinding-commands command-1 'no-such-program'` and
+     press Super+1 again.
+  3. Bind `rename-workspace` (`gsettings set org.mate.Marco.global-keybindings
+     rename-workspace '<Super>r'`). Switch to the second workspace, press Super+R, type a new
+     name and press OK. Press Super+R again and press Cancel.
+- **Expected:** in step 1 an error dialog titled *Marco* says the text was empty, and takes
+  the focus as a new window does; in step 2 it says there was an error running
+  `no-such-program`, with GLib's message. Caminito goes on meanwhile. In step 3 the entry
+  dialog asks for the *New Workspace Name:* with the workspace's name filled in, and the
+  pager shows the new name once OK is pressed; Cancel leaves it (167).
+- **Debug tool:** `gsettings monitor org.mate.Marco.workspace-names`, and Caminito's log, which
+  has a line for each command that can't run.
