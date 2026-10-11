@@ -217,13 +217,26 @@ fn x_demands_attention(f: &mut Fixture, window: ClientWindow) -> bool {
 }
 
 /// Sends `_NET_ACTIVE_WINDOW` for the window with the source indication `source`: 1 for an
-/// application, 2 for a pager, and 0 as a client older than the indication does.
+/// application, 2 for a pager, and 0 as a client older than the indication does. It gives
+/// no timestamp.
 fn ask_to_be_active(f: &mut Fixture, window: ClientWindow, source: u32) {
+    ask_to_be_active_at(f, window, source, 0);
+}
+
+/// Sends `_NET_ACTIVE_WINDOW` for the window with the source indication `source` and X's
+/// timestamp `time`.
+fn ask_to_be_active_at(f: &mut Fixture, window: ClientWindow, source: u32, time: u32) {
     let id = window.x11();
     f.x11_call(window.client(), move |x| {
-        x.send_client_message(id, "_NET_ACTIVE_WINDOW", [source, 0, 0, 0, 0])
+        x.send_client_message(id, "_NET_ACTIVE_WINDOW", [source, time, 0, 0, 0])
     })
     .unwrap();
+}
+
+/// X's timestamp `ago` milliseconds before now: Xwayland's time is Caminito's clock in 32
+/// bits.
+fn x_time_ago(f: &Fixture, ago: u32) -> u32 {
+    (f.state.caminito.now().as_millis() as u32).wrapping_sub(ago)
 }
 
 /// XWayland windows of the processes 200 and 100, the last focused, under `mode`, which
@@ -349,6 +362,38 @@ fn net_active_window_from_an_application_that_has_not_the_focus_makes_the_window
     assert!(f.has_keyboard(focused));
     assert_eq!(f.state.caminito.policy.stacking(0), stacking);
     f.dispatch_until_mut(|f| x_demands_attention(f, other));
+}
+
+/// A launcher such as Albert, shown by a key binding's command while another client has
+/// the focus: Qt's `requestActivate` gives the time its window was shown at.
+#[test]
+fn net_active_window_from_an_application_since_the_focus_last_changed_is_honoured() {
+    for mode in ["smart", "strict"] {
+        let (mut f, _x, other, _focused) = x_window_beside_the_focused_one(mode);
+
+        let now = x_time_ago(&f, 0);
+        ask_to_be_active_at(&mut f, other, 1, now);
+
+        f.dispatch_until(|f| has_focus(f, other));
+        assert!(f.has_keyboard(other), "{mode}");
+        assert!(!dumped_urgent(&f, other), "{mode}");
+        assert_eq!(
+            f.state.caminito.policy.stacking(0).last(),
+            Some(&f.pid(other))
+        );
+    }
+}
+
+#[test]
+fn net_active_window_from_an_application_older_than_the_focus_makes_the_window_urgent() {
+    let (mut f, _x, other, focused) = x_window_beside_the_focused_one("smart");
+
+    let a_minute_ago = x_time_ago(&f, 60_000);
+    ask_to_be_active_at(&mut f, other, 1, a_minute_ago);
+
+    f.dispatch_until(|f| dumped_urgent(f, other));
+    assert!(has_focus(&f, focused));
+    assert!(f.has_keyboard(focused));
 }
 
 #[test]

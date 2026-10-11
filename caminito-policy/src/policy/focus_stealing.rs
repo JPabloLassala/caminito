@@ -11,8 +11,9 @@
 //! asks for a token tied to user input, as 05 has it.
 //!
 //! XWayland's windows carry no token (X11 startup notification is 05's), so they take the
-//! path of a window with none (166). `_NET_ACTIVE_WINDOW` is judged by its source
-//! indication, since X's timestamp isn't on Caminito's clock.
+//! path of a window with none (166). `_NET_ACTIVE_WINDOW` from a pager is honoured by its
+//! source indication, and an application's is judged by its timestamp as Marco judges
+//! every one, the compositor having put X's timestamp on Caminito's clock.
 
 use std::time::Duration;
 
@@ -75,8 +76,12 @@ pub enum FocusClaim {
 pub enum ActivationSource {
     /// A pager or a window list, which acts for the user: honoured.
     Pager,
-    /// The window's own client: honoured only if that client has the focus already.
-    Application,
+    /// The window's own client: honoured if that client has the focus already, or if it
+    /// asked no earlier than the focus last changed.
+    Application {
+        /// The request's timestamp on the clock policy is given `now` by, if it has one.
+        asked: Option<Duration>,
+    },
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -102,10 +107,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// A client asks to activate `id` with no token, as `source`. A pager's request
     /// activates it as `activate` does, and so does an application's while its client has
-    /// the focus, or nothing has; otherwise the window is made urgent.
+    /// the focus, or nothing has, or made since the seat's focus last changed; otherwise
+    /// the window is made urgent.
     ///
     /// Marco judges both by the request's timestamp against the user's last input
-    /// (window.c:3177-3188), and looks at the source only to raise the window.
+    /// (window.c:3143-3154), and looks at the source only to raise the window. It takes a
+    /// request with no timestamp, which here an application's needs.
     pub fn request_activation_from(
         &mut self,
         seat: SeatId,
@@ -118,9 +125,15 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let honoured = match source {
             ActivationSource::Pager => true,
-            ActivationSource::Application => self
-                .focus(seat)
-                .is_none_or(|focused| focused == id || self.same_client(id, focused)),
+            ActivationSource::Application { asked } => {
+                let since_focus = asked.is_some_and(|asked| {
+                    !self.focus_time.get(&seat).is_some_and(|last| asked < *last)
+                });
+                since_focus
+                    || self
+                        .focus(seat)
+                        .is_none_or(|focused| focused == id || self.same_client(id, focused))
+            }
         };
         if honoured {
             self.activate(seat, id, now);

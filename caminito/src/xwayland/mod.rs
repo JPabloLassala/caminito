@@ -591,13 +591,14 @@ impl Caminito {
 
     /// Who sent the `_NET_ACTIVE_WINDOW` message for `window` that Smithay has just handed
     /// on, by its source indication. With no X connection of Caminito's to read it, the
-    /// request counts as an application's.
+    /// request counts as an application's with no timestamp.
     pub(crate) fn x_activation_source(&mut self, window: X11Window) -> ActivationSource {
+        let now = self.now();
         self.with_xconn("read who asks for the active window", |xconn| {
-            xconn.take_activation_source(window)
+            xconn.take_activation_source(window, now)
         })
         .flatten()
-        .unwrap_or(ActivationSource::Application)
+        .unwrap_or(ActivationSource::Application { asked: None })
     }
 
     /// Reads what Caminito's X connection knows of a window Smithay doesn't, as it asks to

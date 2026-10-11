@@ -15,6 +15,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::os::fd::AsFd;
+use std::time::Duration;
 
 use caminito_policy::{ActivationSource, MAX_WORKSPACES};
 use smithay::reexports::calloop::generic::Generic;
@@ -31,7 +32,7 @@ use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xkb::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ChangeWindowAttributesAux, ConnectionExt, EventMask, GetPropertyReply, Gravity,
-    PropMode, Window,
+    PropMode, Timestamp, Window,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -323,6 +324,23 @@ pub(super) struct WindowProperties {
 /// about.
 const ACTIVATIONS_KEPT: usize = 32;
 
+/// Who sent a `_NET_ACTIVE_WINDOW` message, as it was read.
+#[derive(Debug, Clone, Copy)]
+enum Asker {
+    Pager,
+    /// With the message's timestamp, which is zero if it has none.
+    Application(Timestamp),
+}
+
+/// X's `time` on the clock `now` is read from. Xwayland's time is the monotonic clock's
+/// milliseconds in 32 bits, and Caminito's clock is that one, so it's the time nearest
+/// `now` that `time` can stand for.
+fn on_caminito_clock(time: Timestamp, now: Duration) -> Duration {
+    let now_ms = now.as_millis() as u64;
+    let since_now = time.wrapping_sub(now_ms as u32) as i32;
+    Duration::from_millis(now_ms.saturating_add_signed(since_now.into()))
+}
+
 /// Caminito's connection to Xwayland. Dropping it closes it.
 pub(super) struct XConnection {
     conn: RustConnection,
@@ -340,7 +358,7 @@ pub(super) struct XConnection {
     frame_extents_owed: HashSet<Window>,
     /// Who sent each `_NET_ACTIVE_WINDOW` message read and not yet asked about, oldest
     /// first (166).
-    activations: VecDeque<(Window, ActivationSource)>,
+    activations: VecDeque<(Window, Asker)>,
     /// The requests `take_activation_source` read ahead, for `requests` to hand on.
     read_ahead: Vec<Request>,
     /// Whether Xwayland has SHAPE, which input regions are read with.
@@ -495,13 +513,14 @@ impl XConnection {
                 // dropped. EWMH: 1 is an application and 2 a pager. Marco takes a client
                 // older than the indication, which says 0 and gives no timestamp, as it
                 // takes a pager, and reads a number it doesn't know as 0
-                // (window.c:3170-3195, 5571-5575).
+                // (window.c:3170-3195, 5571-5575). An application's is judged by its
+                // timestamp.
                 if self.activations.len() == ACTIVATIONS_KEPT {
                     self.activations.pop_front();
                 }
                 let source = match data[0] {
-                    1 => ActivationSource::Application,
-                    _ => ActivationSource::Pager,
+                    1 => Asker::Application(data[1]),
+                    _ => Asker::Pager,
                 };
                 self.activations.push_back((window, source));
             } else if type_ == atoms._NET_REQUEST_FRAME_EXTENTS {
@@ -982,19 +1001,26 @@ impl XConnection {
     }
 
     /// Who sent the oldest `_NET_ACTIVE_WINDOW` message for `window` that hasn't been asked
-    /// about (166), which it forgets. It's for when Smithay hands on that message, which X
-    /// sent this connection too: a round trip makes sure it has arrived here, and what else
-    /// arrived is kept for `requests`.
+    /// about (166), which it forgets, with an application's timestamp on the clock `now`
+    /// is read from. It's for when Smithay hands on that message, which X sent this
+    /// connection too: a round trip makes sure it has arrived here, and what else arrived
+    /// is kept for `requests`.
     pub(super) fn take_activation_source(
         &mut self,
         window: Window,
+        now: Duration,
     ) -> Result<Option<ActivationSource>, Error> {
         self.conn.sync()?;
         self.read_ahead = self.requests()?;
         let asked = self.activations.iter().position(|(w, _)| *w == window);
         Ok(asked
             .and_then(|index| self.activations.remove(index))
-            .map(|(_, source)| source))
+            .map(|(_, asker)| match asker {
+                Asker::Pager => ActivationSource::Pager,
+                Asker::Application(time) => ActivationSource::Application {
+                    asked: (time != x11rb::CURRENT_TIME).then(|| on_caminito_clock(time, now)),
+                },
+            }))
     }
 
     /// Forgets who asked for a destroyed window to be active. X gives its id to another

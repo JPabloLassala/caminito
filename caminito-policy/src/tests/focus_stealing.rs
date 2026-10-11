@@ -11,6 +11,16 @@ use crate::{
 const SMART: FocusNewWindows = FocusNewWindows::Smart;
 const STRICT: FocusNewWindows = FocusNewWindows::Strict;
 
+/// An application's request with no timestamp.
+const UNTIMED: ActivationSource = ActivationSource::Application { asked: None };
+
+/// An application's request with the timestamp `asked`.
+fn timed(asked: u64) -> ActivationSource {
+    ActivationSource::Application {
+        asked: Some(ms(asked)),
+    }
+}
+
 /// `policy()` with `focus-new-windows` as `mode`, and window 1 of the process 100 mapped and
 /// focused at 1 ms.
 fn focused_other_client(mode: FocusNewWindows) -> Policy<TestWindow> {
@@ -377,7 +387,7 @@ fn an_activation_by_the_focused_windows_client_activates_the_window() {
         policy.map_window(TestWindow::new(2, 400, 300).with_pid(100), ms(10));
         policy.click(SEAT, id(1), ms(20));
 
-        policy.request_activation_from(SEAT, id(2), ActivationSource::Application, ms(LATER));
+        policy.request_activation_from(SEAT, id(2), UNTIMED, ms(LATER));
 
         assert_eq!(policy.focus(SEAT), Some(id(2)), "{mode:?}");
         assert_eq!(policy.stacking(0), [id(1), id(2)], "{mode:?}");
@@ -391,10 +401,41 @@ fn an_activation_by_another_client_makes_the_window_urgent_and_leaves_the_stacki
         let mut policy = focused_beside_another_client(mode);
         let stacking = policy.stacking(0);
 
-        policy.request_activation_from(SEAT, id(3), ActivationSource::Application, ms(LATER));
+        policy.request_activation_from(SEAT, id(3), UNTIMED, ms(LATER));
 
         assert_eq!(policy.focus(SEAT), Some(id(1)), "{mode:?}");
         assert_eq!(policy.stacking(0), stacking, "{mode:?}");
+        assert!(policy.is_urgent(id(3)), "{mode:?}");
+    }
+}
+
+/// A launcher shown by a key binding's command: its request is made after the user's last
+/// input, as Qt's `requestActivate` says with the time of the window's showing.
+#[test]
+fn an_activation_by_another_client_since_the_focus_last_changed_activates_the_window() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_beside_another_client(mode);
+        let focused_at = LATER - 10;
+        policy.click(SEAT, id(1), ms(focused_at));
+
+        policy.request_activation_from(SEAT, id(3), timed(focused_at), ms(LATER));
+
+        assert_eq!(policy.focus(SEAT), Some(id(3)), "{mode:?}");
+        assert_eq!(policy.stacking(0).last(), Some(&id(3)), "{mode:?}");
+        assert!(!policy.is_urgent(id(3)), "{mode:?}");
+    }
+}
+
+#[test]
+fn an_activation_by_another_client_older_than_the_focus_makes_the_window_urgent() {
+    for mode in [SMART, STRICT] {
+        let mut policy = focused_beside_another_client(mode);
+        let focused_at = LATER - 10;
+        policy.click(SEAT, id(1), ms(focused_at));
+
+        policy.request_activation_from(SEAT, id(3), timed(focused_at - 1), ms(LATER));
+
+        assert_eq!(policy.focus(SEAT), Some(id(1)), "{mode:?}");
         assert!(policy.is_urgent(id(3)), "{mode:?}");
     }
 }
@@ -407,7 +448,7 @@ fn an_activation_by_a_client_with_no_pid_is_refused() {
     // Window 1 with no pid either isn't the same client's.
     policy.window_mut(id(1)).unwrap().pid = None;
 
-    policy.request_activation_from(SEAT, id(2), ActivationSource::Application, ms(LATER));
+    policy.request_activation_from(SEAT, id(2), UNTIMED, ms(LATER));
 
     assert_eq!(policy.focus(SEAT), Some(id(1)));
     assert!(policy.is_urgent(id(2)));
@@ -421,7 +462,7 @@ fn an_activation_by_an_application_while_nothing_has_the_focus_activates_the_win
     policy.minimize(id(2));
     assert_eq!(policy.focus(SEAT), None);
 
-    policy.request_activation_from(SEAT, id(2), ActivationSource::Application, ms(LATER));
+    policy.request_activation_from(SEAT, id(2), UNTIMED, ms(LATER));
 
     assert_eq!(policy.focus(SEAT), Some(id(2)));
     assert!(!policy.is_urgent(id(2)));
@@ -432,7 +473,7 @@ fn an_activation_by_an_application_of_the_focused_window_does_not_make_it_urgent
     let mut policy = focused_other_client(SMART);
     policy.window_mut(id(1)).unwrap().pid = None;
 
-    policy.request_activation_from(SEAT, id(1), ActivationSource::Application, ms(LATER));
+    policy.request_activation_from(SEAT, id(1), UNTIMED, ms(LATER));
 
     assert!(!policy.is_urgent(id(1)));
 }
@@ -458,7 +499,7 @@ fn the_urgency_policy_sets_is_the_windows_demand_for_attention() {
     assert!(refused.demands_attention(id(2)));
 
     let mut asked = focused_beside_another_client(SMART);
-    asked.request_activation_from(SEAT, id(3), ActivationSource::Application, ms(LATER));
+    asked.request_activation_from(SEAT, id(3), UNTIMED, ms(LATER));
     assert!(asked.demands_attention(id(3)));
 }
 
