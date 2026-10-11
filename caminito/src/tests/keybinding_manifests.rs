@@ -1,9 +1,12 @@
 //! The `50-caminito-*.xml` keybinding manifests (05, 101), which tell the control center's
 //! Keyboard Shortcuts dialog what Caminito binds. They need no fixture: they're data, checked
-//! against Marco's schema, whose keys they point at. That schema has no key for an action
-//! Caminito never implements (05), so a manifest that passes lists none.
+//! against Marco's schema, whose keys they point at, and against the actions Caminito binds
+//! (173). That schema has no key for an action Caminito never implements (05), so a manifest
+//! that passes lists none.
 
 use std::fs;
+
+use crate::input::bindings::bound_keys;
 
 const MANIFESTS: [&str; 3] = [
     "50-caminito-desktop-key.xml",
@@ -79,4 +82,55 @@ fn each_manifest_is_caminitos_and_names_only_keys_marcos_schema_has() {
         }
         assert!(entries > 0, "{manifest} lists no action");
     }
+}
+
+/// The schema and name of every entry of the three manifests.
+fn entries() -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    for manifest in MANIFESTS {
+        let path = format!(
+            "{}/../data/keybindings/{manifest}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text = fs::read_to_string(&path).unwrap_or_else(|err| panic!("{path}: {err}"));
+        let mut elements = text.split('<').filter(|e| e.starts_with("KeyListEntr"));
+        let schema = attribute(elements.next().unwrap(), "schema").unwrap();
+        for entry in elements {
+            let name = attribute(entry, "name").unwrap();
+            entries.push((schema.to_owned(), name.to_owned()));
+        }
+    }
+    entries
+}
+
+/// The control center's Keyboard Shortcuts shows what the manifests list, so they list each
+/// action Caminito binds once, and nothing else. `run-command-area-screenshot` is master's
+/// (147): the schema Arch ships hasn't its key, and the dialog aborts on a key its schema
+/// hasn't, so no manifest lists it until Marco's release has it.
+#[test]
+fn the_manifests_list_every_action_caminito_binds_once() {
+    let entries = entries();
+    let mut problems = Vec::new();
+    for (schema, key) in bound_keys() {
+        if !schema_keys(schema).iter().any(|k| k == key) {
+            assert_eq!(key, "run-command-area-screenshot");
+            continue;
+        }
+        match entries
+            .iter()
+            .filter(|(s, k)| s == schema && k == key)
+            .count()
+        {
+            0 => problems.push(format!("no manifest lists {schema} {key}")),
+            1 => {}
+            n => problems.push(format!("{n} entries list {schema} {key}")),
+        }
+    }
+    let bound = bound_keys();
+    for (schema, key) in &entries {
+        if !bound.iter().any(|(s, k)| s == schema && k == key) {
+            problems.push(format!("Caminito doesn't bind {schema} {key}"));
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }

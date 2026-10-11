@@ -36,17 +36,16 @@ const MASTER_KEYS: [(&str, &str); 5] = [
     ),
 ];
 
-/// 17's four statuses, and *to do* until M8 closes (173).
-const STATUSES: [&str; 5] = [
+/// 17's four statuses. *To do* was a fifth until 173.
+const STATUSES: [&str; 4] = [
     "honoured",
     "never",
     "left to another component",
     "unsupported",
-    "to do",
 ];
 
-/// The tickets that settle M8's *to do* rows.
-const M8_TICKETS: std::ops::RangeInclusive<u32> = 148..=172;
+/// The section the roadmap's rows are in: 05's *later* list and 09's roadmap.
+const LATER: &str = "### Later";
 
 #[derive(Debug)]
 struct Row {
@@ -70,13 +69,6 @@ fn quoted(text: &str) -> Vec<&str> {
     text.split('`').skip(1).step_by(2).collect()
 }
 
-/// The numbers in a text.
-fn numbers(text: &str) -> Vec<u32> {
-    text.split(|c: char| !c.is_ascii_digit())
-        .filter_map(|n| n.parse().ok())
-        .collect()
-}
-
 /// The keys a row's first cell names, under the schema of the heading above it.
 fn keys(cell: &str, heading: Option<&str>) -> Vec<(String, String)> {
     let quoted = quoted(cell);
@@ -98,18 +90,17 @@ fn keys(cell: &str, heading: Option<&str>) -> Vec<(String, String)> {
     }
 }
 
-/// Every row of the table.
-fn rows() -> Vec<Row> {
+/// The table's rows, keyed or not, as the heading each is under and its first three cells:
+/// what it's about, its status, and what Caminito does or why.
+fn cells() -> Vec<[String; 4]> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/parity.md");
     let text = fs::read_to_string(path).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    let mut heading = None;
-    let mut rows = Vec::new();
+    let mut heading = "";
+    let mut cells = Vec::new();
     for (n, line) in lines.iter().enumerate() {
         if line.starts_with('#') {
-            heading = quoted(line)
-                .into_iter()
-                .find(|q| q.starts_with("org.mate."));
+            heading = line;
             continue;
         }
         let is_header = lines
@@ -118,21 +109,24 @@ fn rows() -> Vec<Row> {
         if !line.starts_with("| ") || line.starts_with("| ---") || is_header {
             continue;
         }
-        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
-        let (first, status) = (cells[1], cells[2]);
+        let row: Vec<&str> = line.split('|').map(str::trim).collect();
+        cells.push([heading, row[1], row[2], row[3]].map(str::to_owned));
+    }
+    cells
+}
+
+/// Every row of the table that names a key.
+fn rows() -> Vec<Row> {
+    let mut rows = Vec::new();
+    for [heading, first, status, _] in &cells() {
+        let heading = quoted(heading)
+            .into_iter()
+            .find(|q| q.starts_with("org.mate."));
         for (schema, key) in keys(first, heading) {
             let status = STATUSES
                 .into_iter()
                 .find(|s| status.starts_with(s))
                 .unwrap_or_else(|| panic!("{key}'s status isn't one of 17's: {status}"));
-            if status == "to do" {
-                assert!(
-                    numbers(cells[2])
-                        .into_iter()
-                        .any(|t| M8_TICKETS.contains(&t)),
-                    "{key} is to do and names none of 148 to 172"
-                );
-            }
             rows.push(Row {
                 schema,
                 key,
@@ -172,17 +166,45 @@ fn every_key_and_action_of_marcos_schemas_has_one_row() {
 }
 
 #[test]
-fn every_unsupported_key_has_an_unsupported_or_to_do_row() {
+fn every_unsupported_key_has_an_unsupported_row() {
     let rows = rows();
     for (schema, key) in UNSUPPORTED {
         let row = rows
             .iter()
             .find(|row| row.is(schema, key))
             .unwrap_or_else(|| panic!("{schema} {key} is unsupported and has no row"));
-        assert!(
-            matches!(row.status, "unsupported" | "to do"),
+        assert_eq!(
+            row.status, "unsupported",
             "{schema} {key} is unsupported, and its row says {}",
             row.status
         );
+    }
+}
+
+/// M8's exit (17, 173): every row, with a key of Marco's or none, has one of the four
+/// statuses, so none is left *to do*.
+#[test]
+fn no_row_is_left_to_do() {
+    for [_, what, status, _] in cells() {
+        assert!(
+            STATUSES.contains(&status.as_str()),
+            "{what}'s status isn't one of 17's: {status}"
+        );
+    }
+}
+
+/// The roadmap is one list: a row is *unsupported* only under *Later*, and every row there
+/// is, with its reason beside it.
+#[test]
+fn the_unsupported_rows_are_the_later_section() {
+    let cells = cells();
+    assert!(cells.iter().any(|[heading, ..]| heading == LATER));
+    for [heading, what, status, why] in &cells {
+        assert_eq!(
+            status == "unsupported",
+            heading == LATER,
+            "{what} is {status} under {heading}"
+        );
+        assert!(!why.is_empty(), "{what} has no reason beside it");
     }
 }

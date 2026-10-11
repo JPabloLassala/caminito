@@ -5,5 +5,17 @@
   <KeyListEntry name="run-command-screenshot" description="Take a screenshot"/>
   <KeyListEntry name="run-command-window-screenshot" description="Take a screenshot of a window"/>
   <KeyListEntry name="run-command-terminal" description="Run a terminal"/>
+  <KeyListEntry name="run-command-1" description="Run command 1"/>
+  <KeyListEntry name="run-command-2" description="Run command 2"/>
+  <KeyListEntry name="run-command-3" description="Run command 3"/>
+  <KeyListEntry name="run-command-4" description="Run command 4"/>
+  <KeyListEntry name="run-command-5" description="Run command 5"/>
+  <KeyListEntry name="run-command-6" description="Run command 6"/>
+  <KeyListEntry name="run-command-7" description="Run command 7"/>
+  <KeyListEntry name="run-command-8" description="Run command 8"/>
+  <KeyListEntry name="run-command-9" description="Run command 9"/>
+  <KeyListEntry name="run-command-10" description="Run command 10"/>
+  <KeyListEntry name="run-command-11" description="Run command 11"/>
+  <KeyListEntry name="run-command-12" description="Run command 12"/>
   <KeyListEntry name="rename-workspace" description="Rename current workspace"/>
 </KeyListEntries>
