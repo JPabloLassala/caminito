@@ -58,10 +58,6 @@ struct AutoRaise {
 
 /// Policy's state for the pointer focus modes.
 pub(super) struct PointerFocus {
-    mode: FocusMode,
-    raise_on_click: bool,
-    /// `auto-raise-delay`, while `auto-raise` is on.
-    auto_raise: Option<Duration>,
     /// What each seat's pointer was last reported over.
     targets: BTreeMap<SeatId, PointerTarget>,
     /// Marco's `mouse_mode` (display.c:391): off once the keyboard has moved the focus, as
@@ -76,9 +72,6 @@ pub(super) struct PointerFocus {
 impl Default for PointerFocus {
     fn default() -> Self {
         Self {
-            mode: FocusMode::default(),
-            raise_on_click: true,
-            auto_raise: None,
             targets: BTreeMap::new(),
             mouse_mode: true,
             pending: None,
@@ -87,19 +80,12 @@ impl Default for PointerFocus {
 }
 
 impl PointerFocus {
-    /// Takes the settings, which apply from the next crossing. Leaving the pointer modes or
-    /// turning auto-raise off drops a waiting auto-raise.
+    /// The settings are to be `config`, which applies from the next crossing. Leaving the
+    /// pointer modes or turning auto-raise off drops a waiting auto-raise.
     pub(super) fn settings_changed(&mut self, config: &Config) {
-        self.mode = config.focus_mode;
-        self.raise_on_click = config.raise_on_click;
-        self.auto_raise = config.auto_raise.then_some(config.auto_raise_delay);
-        if self.mode == FocusMode::Click || self.auto_raise.is_none() {
+        if config.focus_mode == FocusMode::Click || !config.auto_raise {
             self.pending = None;
         }
-    }
-
-    pub(super) fn raise_on_click(&self) -> bool {
-        self.raise_on_click
     }
 
     /// The keyboard moved the focus: crossings of the scene's leave it until the pointer
@@ -137,7 +123,7 @@ impl<W: PolicyWindow> Policy<W> {
         pointer
             .pending
             .take_if(|p| p.seat == seat && target != PointerTarget::Window(p.window));
-        if pointer.mode == FocusMode::Click
+        if self.config.focus_mode == FocusMode::Click
             || self.pointer_modes_held(seat)
             || (crossing == Crossing::Scene && !self.pointer_focus.mouse_mode)
         {
@@ -158,18 +144,16 @@ impl<W: PolicyWindow> Policy<W> {
         match entered {
             Entered::Window(id) => {
                 self.set_last_seat(seat);
-                if self.focus_window(seat, id, now)
-                    && let Some(delay) = self.pointer_focus.auto_raise
-                {
+                if self.focus_window(seat, id, now) && self.config.auto_raise {
                     self.pointer_focus.pending = Some(AutoRaise {
                         seat,
                         window: id,
                         focused: self.focus[&seat],
-                        due: now + delay,
+                        due: now + self.config.auto_raise_delay,
                     });
                 }
             }
-            Entered::Desktop if self.pointer_focus.mode == FocusMode::Mouse => {
+            Entered::Desktop if self.config.focus_mode == FocusMode::Mouse => {
                 self.set_last_seat(seat);
                 self.unfocus(seat, now);
             }
