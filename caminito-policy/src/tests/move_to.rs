@@ -34,6 +34,27 @@ fn frame(policy: &Policy<TestWindow>, window: u64) -> Rectangle<i32, Logical> {
     policy.frame_rect(id(window)).expect("window is managed")
 }
 
+/// The geometry policy last asked of a window.
+fn sent(policy: &Policy<TestWindow>, id: u64) -> Rectangle<i32, Logical> {
+    window(policy, id)
+        .last_geometry()
+        .expect("was configured")
+        .0
+}
+
+/// Maps window 2, a desktop or a dock 300×30 at 100,200, and gives it the focus.
+fn focus_a_desktop_or_dock(policy: &mut Policy<TestWindow>, window_type: WindowType) {
+    policy.map_window(
+        TestWindow::new(2, 300, 30)
+            .with_type(window_type)
+            .with_requested_position(100, 200),
+        ms(2),
+    );
+    policy.click(SEAT, id(2), ms(3));
+    policy.activate(SEAT, id(2), ms(3));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
 #[test]
 fn each_corner_side_and_the_centre_puts_the_frame_there_in_the_work_area() {
     // The work area is 1920×1026 at 0,24, so the Frame's right side is at 1920 from
@@ -58,7 +79,7 @@ fn each_corner_side_and_the_centre_puts_the_frame_there_in_the_work_area() {
         assert_eq!(frame(&policy, 1), rect(x, y, 408, 334), "{anchor:?}");
         // The window geometry sent is the Frame's less its extents.
         assert_eq!(
-            window(&policy, 1).last_geometry().unwrap().0,
+            sent(&policy, 1),
             rect(x + 4, y + 30, 400, 300),
             "{anchor:?}"
         );
@@ -66,37 +87,25 @@ fn each_corner_side_and_the_centre_puts_the_frame_there_in_the_work_area() {
 }
 
 #[test]
-fn a_fullscreen_or_tiled_window_and_a_dock_stay_where_they_are() {
+fn a_fullscreen_or_tiled_window_the_desktop_and_a_dock_stay_where_they_are() {
     let mut fullscreen = with_panels();
     press(&mut fullscreen, Action::ToggleFullscreen);
     press(&mut fullscreen, Action::MoveTo(Anchor::SouthEast));
-    assert_eq!(
-        window(&fullscreen, 1).last_geometry().unwrap().0,
-        rect(0, 0, 1920, 1080)
-    );
+    assert_eq!(sent(&fullscreen, 1), rect(0, 0, 1920, 1080));
 
     // A tiled window keeps its tile (158).
     let mut tiled = with_panels();
     press(&mut tiled, Action::Tile(crate::Tile::Left));
     press(&mut tiled, Action::MoveTo(Anchor::East));
     assert_eq!(tiled.tile(id(1)), Some(crate::Tile::Left));
-    assert_eq!(
-        window(&tiled, 1).last_geometry().unwrap().0,
-        rect(4, 54, 952, 992)
-    );
+    assert_eq!(sent(&tiled, 1), rect(4, 54, 952, 992));
 
-    let mut dock = with_panels();
-    dock.map_window(
-        TestWindow::new(2, 300, 30)
-            .with_type(WindowType::Dock)
-            .with_requested_position(100, 200),
-        ms(2),
-    );
-    dock.click(SEAT, id(2), ms(3));
-    dock.activate(SEAT, id(2), ms(3));
-    assert_eq!(dock.focus(SEAT), Some(id(2)));
-    press(&mut dock, Action::MoveTo(Anchor::Centre));
-    assert_eq!(frame(&dock, 2).loc, (100, 200).into());
+    for window_type in [WindowType::Desktop, WindowType::Dock] {
+        let mut policy = with_panels();
+        focus_a_desktop_or_dock(&mut policy, window_type);
+        press(&mut policy, Action::MoveTo(Anchor::Centre));
+        assert_eq!(frame(&policy, 2).loc, (100, 200).into(), "{window_type:?}");
+    }
 }
 
 #[test]
@@ -118,21 +127,15 @@ fn a_window_maximised_one_way_moves_the_other_way_alone() {
 
     press(&mut policy, Action::MoveTo(Anchor::SouthEast));
 
-    assert_eq!(
-        window(&policy, 1).last_geometry().unwrap().0,
-        rect(1516, 54, 400, 992)
-    );
+    assert_eq!(sent(&policy, 1), rect(1516, 54, 400, 992));
     // Unmaximised, it's where the binding put it along x, and where it was along y.
     press(&mut policy, Action::ToggleMaximizedVertically);
-    assert_eq!(
-        window(&policy, 1).last_geometry().unwrap().0,
-        rect(1516, 430, 400, 300)
-    );
+    assert_eq!(sent(&policy, 1), rect(1516, 430, 400, 300));
 }
 
 #[test]
 fn a_window_taller_than_the_work_area_keeps_its_top_in_it() {
-    // Marco keeps the titlebar on the screen (`constrain_titlebar_visible`).
+    // Marco keeps the titlebar in the work area (`constrain_titlebar_visible`).
     for anchor in [Anchor::South, Anchor::SouthWest, Anchor::Centre] {
         let mut policy = Policy::new(Config::default());
         policy.add_output(reserving(output(1, 0, 0, 1920, 1080), 0, 0, 24, 30));
@@ -168,13 +171,6 @@ fn a_smaller_output_on_the_right(window: TestWindow) -> Policy<TestWindow> {
     policy.add_output(reserving(output(2, 1920, 0, 1280, 1024), 0, 0, 24, 0));
     policy.map_window(window, ms(1));
     policy
-}
-
-fn sent(policy: &Policy<TestWindow>, id: u64) -> Rectangle<i32, Logical> {
-    window(policy, id)
-        .last_geometry()
-        .expect("was configured")
-        .0
 }
 
 #[test]
@@ -273,19 +269,30 @@ fn a_fullscreen_window_is_fullscreen_on_the_other_output_and_a_tiled_one_keeps_i
 }
 
 #[test]
-fn a_dock_isnt_moved_to_another_output() {
-    let mut policy = three_outputs();
+fn the_desktop_and_a_dock_arent_moved_to_another_output() {
+    for window_type in [WindowType::Desktop, WindowType::Dock] {
+        let mut policy = three_outputs();
+        focus_a_desktop_or_dock(&mut policy, window_type);
+
+        press(&mut policy, Action::MoveToMonitor(Direction::Right));
+
+        assert_eq!(frame(&policy, 2).loc, (100, 200).into(), "{window_type:?}");
+    }
+}
+
+#[test]
+fn a_side_to_the_left_or_right_leaves_a_window_under_the_panel_at_its_height() {
+    // A panel that comes after the window doesn't move it, so its top is above the work
+    // area, and only a binding that moves it up or down brings it in.
+    let mut policy = policy();
     policy.map_window(
-        TestWindow::new(2, 300, 30)
-            .with_type(WindowType::Dock)
-            .with_requested_position(100, 200),
-        ms(2),
+        TestWindow::new(1, 400, 300).with_requested_position(500, 0),
+        ms(1),
     );
-    policy.click(SEAT, id(2), ms(3));
-    policy.activate(SEAT, id(2), ms(3));
-    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    policy.add_output(reserving(output(1, 0, 0, 1920, 1080), 0, 0, 24, 30));
+    assert_eq!(frame(&policy, 1).loc, (500, 0).into());
 
-    press(&mut policy, Action::MoveToMonitor(Direction::Right));
+    press(&mut policy, Action::MoveTo(Anchor::East));
 
-    assert_eq!(frame(&policy, 2).loc, (100, 200).into());
+    assert_eq!(frame(&policy, 1).loc, (1520, 0).into());
 }

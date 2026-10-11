@@ -49,7 +49,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// (`constrain_maximization`, `constrain_tiling` and `constrain_fullscreen`,
     /// constraints.c:816-1095), so those don't move, and one maximised one way moves the
     /// other way alone. They keep the titlebar in the work area too
-    /// (`constrain_titlebar_visible`), so a window taller than it keeps its top there.
+    /// (`constrain_titlebar_visible`, constraints.c:1482-1564), so a window taller than it
+    /// keeps its top there.
     pub(super) fn move_to(&mut self, id: WindowId, anchor: Anchor) {
         if !self.moves_by_binding(id) {
             return;
@@ -72,8 +73,14 @@ impl<W: PolicyWindow> Policy<W> {
         let (x, y) = anchor.along();
         let to = Point::new(
             place(x, frame.loc.x, frame.size.w, area.loc.x, area.size.w),
-            place(y, frame.loc.y, frame.size.h, area.loc.y, area.size.h).max(area.loc.y),
+            place(y, frame.loc.y, frame.size.h, area.loc.y, area.size.h),
         );
+        // Only a binding that moves the window up or down brings its top into the work area.
+        let to = if y.is_some() {
+            Point::new(to.x, to.y.max(area.loc.y))
+        } else {
+            to
+        };
         let managed = self.windows.get_mut(&id).unwrap();
         let before = managed.geometry;
         managed.geometry.loc += to - frame.loc;
@@ -87,7 +94,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// two monitors' sizes, so between outputs of one size it only moves. The size is then
     /// kept within the hints, and the Frame moved inside the work area, or to its top-left
     /// along an axis it doesn't fit. Marco lets all of a moved window but a strip leave the
-    /// work area (`constrain_partially_onscreen`); the ticket asks for it to be clamped.
+    /// work area (`constrain_partially_onscreen`, constraints.c:1566-1632); the ticket asks for it to be clamped.
     ///
     /// A maximised or fullscreen window is maximised or fullscreen on the new output, as
     /// Marco's constraints make it from the monitor the asked-for rectangle is on
