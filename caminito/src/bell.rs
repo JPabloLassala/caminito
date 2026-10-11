@@ -151,7 +151,7 @@ impl Caminito {
             self.flash_bell(settings.visual_type, window);
         }
         if audible {
-            self.play(Sound::Bell);
+            self.play_sound(Sound::Bell);
         }
     }
 

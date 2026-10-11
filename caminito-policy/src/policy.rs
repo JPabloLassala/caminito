@@ -758,8 +758,8 @@ impl<W: PolicyWindow> Policy<W> {
             for managed in self.windows.values_mut() {
                 managed.workspace = managed.workspace.min(last);
             }
-            // Before the count changes, as the switch is in the grid that had the workspace.
-            self.note_switch(self.active.min(last));
+            // In the grid as it was, which had the workspace.
+            self.note_switch(self.workspace_grid(), self.active.min(last));
             self.workspace_count = count;
             self.active = self.active.min(last);
             self.forget_removed_previous();
@@ -1191,7 +1191,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.close_switcher(switcher::Close::Dropped);
             // And closes the window menu, whose moves are from the active workspace (161).
             self.window_menu = None;
-            self.note_switch(workspace);
+            self.note_switch(self.workspace_grid(), workspace);
             self.previous = Some(self.active);
             self.active = workspace;
             self.focus.clear();
@@ -1204,12 +1204,11 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Notes the way a switch from the active workspace to `to` goes in the grid, by their
+    /// Notes the way a switch from the active workspace to `to` goes in `grid`, by their
     /// cells, as Marco's `workspace_switch_sound` has it (workspace.c:310-362): left or right
     /// where the columns differ, and up or down only within a column. A switch that wraps
     /// past the grid's edge so goes the other way.
-    fn note_switch(&mut self, to: usize) {
-        let grid = self.workspace_grid();
+    pub(super) fn note_switch(&mut self, grid: Grid, to: usize) {
         let (from_column, from_row) = grid.cell(self.active);
         let (column, row) = grid.cell(to);
         let direction = match (column.cmp(&from_column), row.cmp(&from_row)) {

@@ -61,6 +61,8 @@ impl<W: PolicyWindow> Policy<W> {
                 None => 0,
             };
         }
+        // The grid as it was, for the switch away from a removed active workspace (170).
+        let grid = self.workspace_grid();
         self.workspace_count = count;
 
         // The previous workspace follows its windows too (150), or is kept as the active one
@@ -83,6 +85,7 @@ impl<W: PolicyWindow> Policy<W> {
                 // the default focus (`safely_remove_workspaces`, screen.c:1427-1428), and
                 // the open switcher closed (ruling 9 of 108).
                 self.close_switcher(switcher::Close::Dropped);
+                self.note_switch(grid, 0);
                 self.active = 0;
                 self.focus.clear();
                 if let Some(id) = self.default_focus() {

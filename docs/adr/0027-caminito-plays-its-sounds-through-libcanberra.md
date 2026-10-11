@@ -19,7 +19,8 @@ The acceptance criteria ask for the player behind a seam the headless tests repl
 
 - **Caminito calls libcanberra itself,** through a few `extern "C"` declarations of its own in `caminito/src/sound.rs`: a context, a property list and `ca_context_play_full`. It uses none of libcanberra's GTK integration. The developer chose this on 2026-10-11.
 - **Each sound names its theme.** Caminito gives `org.mate.sound theme-name` as `canberra.xdg-theme.name` with every sound, so a change of the key is heard at the next sound with nothing to tell libcanberra.
-- **The sounds and their properties are Marco's:** `bell-window-system` and `desktop-switch-left`, `-right`, `-up` and `-down`, with Marco's descriptions and `canberra.cache-control` of `permanent`.
+- **The sounds are Marco's:** `bell-window-system` and `desktop-switch-left`, `-right`, `-up` and `-down`, with Marco's descriptions.
+- **No sound is kept in the sound server's cache:** `canberra.cache-control` is `never`, where Marco asks for `permanent`. The cache has a sound by its name alone, so a cached bell would go on playing the last theme's after `theme-name` changes.
 - **The player is a trait,** `sound::Player`, with libcanberra behind it in a Session and a recorder in the tests. Policy says which way each switch went; the compositor crate decides what plays.
 - **The context is made at the first sound,** and a sound that can't be played is logged, the first as a warning and the rest at `debug`, and dropped. Caminito starts and runs the same with no sound server.
 
@@ -28,7 +29,7 @@ The acceptance criteria ask for the player behind a seam the headless tests repl
 - The theme lookup, the sound cache and the choice of sound server are libcanberra's, as they were Marco's, so a sound theme sounds as it did under Marco.
 - `caminito` links `libcanberra.so`, which `caminito-git` must depend on (173), and has more `unsafe` blocks, all in `sound.rs`.
 - libcanberra's code runs in the compositor's process: a crash in it, or in the sound server's client library it loads, ends the Session.
-- The first sound opens the connection to the sound server on Caminito's thread, which libcanberra waits for. Later sounds are handed to the sound server and return at once.
+- The first sound opens the connection to the sound server on Caminito's thread, which libcanberra waits for. Each sound's file is found and opened on that thread too, and then played by libcanberra's own.
 - The bell has none of the properties Marco gives for its window (the title, the X window, where it is on the screen), so a sound server can't place it by the window.
 - Marco falls back to the X server's own bell when libcanberra can't play; Caminito has no such bell and stays silent.
 - The headless tests check what Caminito asks its player for, and one test calls libcanberra with its `null` driver. No test hears a sound: that's the checklist's.

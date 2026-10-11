@@ -13,16 +13,16 @@ use crate::state::Caminito;
 /// A sound Caminito plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sound {
-    /// The bell's (`bell.c:meta_bell_notify`).
+    /// The bell's (`meta_bell_notify`, bell.c:281-364).
     Bell,
     /// A workspace switch's, by the way it went in the Workspace grid
-    /// (`workspace.c:workspace_switch_sound`).
+    /// (`workspace_switch_sound`, workspace.c:310-362).
     Switch(Direction),
 }
 
 impl Sound {
     /// The sound's name in the sound naming spec, as Marco's canberra calls name it.
-    pub fn event_id(self) -> &'static CStr {
+    pub(crate) fn event_id(self) -> &'static CStr {
         match self {
             Sound::Bell => c"bell-window-system",
             Sound::Switch(Direction::Left) => c"desktop-switch-left",
@@ -32,7 +32,8 @@ impl Sound {
         }
     }
 
-    /// What the sound server's lists call it, in Marco's words.
+    /// What the sound server's lists call it, in Marco's words (bell.c:297,
+    /// workspace.c:356).
     fn description(self) -> &'static CStr {
         match self {
             Sound::Bell => c"Bell event",
@@ -49,17 +50,17 @@ pub trait Player {
 
 impl Caminito {
     /// Plays `sound` from the sound theme the settings name.
-    pub(crate) fn play(&mut self, sound: Sound) {
+    pub(crate) fn play_sound(&mut self, sound: Sound) {
         self.player.play(&self.settings.sound.theme_name, sound);
     }
 
     /// Plays the sound of each workspace switch since the last pass, if `event-sounds` is
     /// on: Marco plays one at every activation of a workspace, whatever asked for it
-    /// (`workspace.c:meta_workspace_activate_with_focus`).
+    /// (`meta_workspace_activate_with_focus`, workspace.c:382-383).
     pub(crate) fn refresh_sounds(&mut self) {
         for direction in self.policy.take_workspace_switches() {
             if self.settings.sound.event_sounds {
-                self.play(Sound::Switch(direction));
+                self.play_sound(Sound::Switch(direction));
             }
         }
     }
@@ -103,10 +104,25 @@ unsafe extern "C" {
 /// libcanberra's `CA_SUCCESS`.
 const CA_SUCCESS: c_int = 0;
 
+/// `code` as a result: libcanberra's `CA_SUCCESS`, or an error.
+fn check(code: c_int) -> Result<(), c_int> {
+    if code == CA_SUCCESS {
+        Ok(())
+    } else {
+        Err(code)
+    }
+}
+
 /// A libcanberra error's text.
 fn ca_error(code: c_int) -> String {
-    // Safety: `ca_strerror` returns a NUL-terminated static string for any code.
-    unsafe { CStr::from_ptr(ca_strerror(code)) }
+    // Safety: `ca_strerror` takes any code, and returns a NUL-terminated static string or,
+    // for a code that isn't one of its own, NULL, which is looked for before it's read.
+    let text = unsafe { ca_strerror(code) };
+    if text.is_null() {
+        return format!("libcanberra's error {code}");
+    }
+    // Safety: as above, the string is NUL-terminated and static.
+    unsafe { CStr::from_ptr(text) }
         .to_string_lossy()
         .into_owned()
 }
@@ -124,10 +140,7 @@ impl Props {
         for (key, value) in props {
             // Safety: the list is live, and the key and the value are NUL-terminated strings
             // that libcanberra copies before it returns.
-            let code = unsafe { ca_proplist_sets(list.0.as_ptr(), key.as_ptr(), value.as_ptr()) };
-            if code != CA_SUCCESS {
-                return Err(code);
-            }
+            check(unsafe { ca_proplist_sets(list.0.as_ptr(), key.as_ptr(), value.as_ptr()) })?;
         }
         Ok(list)
     }
@@ -144,7 +157,7 @@ impl Drop for Props {
 /// (ADR 0027). Its context is made at the first sound, so a Session with no sound server
 /// starts as any other, and a sound that can't be played is logged and dropped.
 #[derive(Default)]
-pub struct Canberra {
+pub(crate) struct Canberra {
     context: Option<NonNull<CaContext>>,
     /// Whether a failure was logged as a warning, which only the first is.
     warned: bool,
@@ -160,45 +173,47 @@ impl Canberra {
         // Safety: `context` is a valid place for the new context's pointer.
         let code = unsafe { ca_context_create(&mut context) };
         let context = NonNull::new(context).ok_or(code)?;
+        // Kept whether or not it takes its name: it plays without one, and `drop` destroys
+        // it.
         self.context = Some(context);
-        let props = Props::new(&[
+        let named = Props::new(&[
             (c"application.name", c"Caminito"),
             (c"application.id", c"org.mate.Caminito"),
-        ])?;
-        // Safety: the context and the list are live, and libcanberra copies the list.
-        let code = unsafe { ca_context_change_props_full(context.as_ptr(), props.0.as_ptr()) };
-        if code != CA_SUCCESS {
-            return Err(code);
+        ])
+        .and_then(|props| {
+            // Safety: the context and the list are live, and libcanberra copies the list.
+            check(unsafe { ca_context_change_props_full(context.as_ptr(), props.0.as_ptr()) })
+        });
+        if let Err(code) = named {
+            tracing::debug!("libcanberra's context has no name: {}", ca_error(code));
         }
         Ok(context)
     }
 
-    /// Asks libcanberra for `sound` from `theme`, with Marco's properties: the sound stays
-    /// in the sound server's cache, as `permanent` asks.
+    /// Asks libcanberra for `sound` from `theme`. The sound is read from the theme each time
+    /// and never kept in the sound server's cache, where Marco asks for `permanent`
+    /// (bell.c:298, workspace.c:357): the cache has a sound by its name alone, so it would
+    /// go on playing the last theme's after `theme-name` changes.
     fn try_play(&mut self, theme: &CStr, sound: Sound) -> Result<(), c_int> {
         let context = self.context()?;
         let props = Props::new(&[
             (c"event.id", sound.event_id()),
             (c"event.description", sound.description()),
-            (c"canberra.cache-control", c"permanent"),
+            (c"canberra.cache-control", c"never"),
             (c"canberra.xdg-theme.name", theme),
         ])?;
         // Safety: the context and the list are live, libcanberra copies the list, and with
         // no callback it's given no data to keep.
-        let code = unsafe {
+        check(unsafe {
             ca_context_play_full(context.as_ptr(), 1, props.0.as_ptr(), None, ptr::null_mut())
-        };
-        if code == CA_SUCCESS {
-            Ok(())
-        } else {
-            Err(code)
-        }
+        })
     }
 }
 
 impl Player for Canberra {
     fn play(&mut self, theme: &str, sound: Sound) {
         let Ok(theme) = CString::new(theme) else {
+            tracing::debug!("can't play from the {theme:?} sound theme: its name has a NUL");
             return;
         };
         let Err(code) = self.try_play(&theme, sound) else {
@@ -228,12 +243,12 @@ impl Drop for Canberra {
 /// in the sound naming spec, the oldest first.
 #[cfg(test)]
 #[derive(Debug, Clone, Default)]
-pub struct Recorder(std::rc::Rc<std::cell::RefCell<Vec<(String, String)>>>);
+pub(crate) struct Recorder(std::rc::Rc<std::cell::RefCell<Vec<(String, String)>>>);
 
 #[cfg(test)]
 impl Recorder {
     /// The sounds asked for since this was last called.
-    pub fn take(&self) -> Vec<(String, String)> {
+    pub(crate) fn take(&self) -> Vec<(String, String)> {
         self.0.take()
     }
 }
@@ -291,5 +306,6 @@ mod tests {
     #[test]
     fn a_libcanberra_error_has_its_text() {
         assert_eq!(ca_error(CA_SUCCESS), "Success");
+        assert_eq!(ca_error(1), "libcanberra's error 1");
     }
 }
