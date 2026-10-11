@@ -1,7 +1,7 @@
 //! The one bell event (105): `gtk_shell1`'s, xdg-system-bell's and XKB's bells, and AccessX's
 //! beeps (134), made one event for the window it's for (06). The event is counted and the
-//! last one kept for the debug dump, and the visual bell flashes for it (169). Playing it is
-//! 170's.
+//! last one kept for the debug dump, the visual bell flashes for it (169), and the audible
+//! bell plays it (170).
 
 use std::time::Duration;
 
@@ -13,6 +13,7 @@ use smithay::wayland::compositor::get_parent;
 use crate::output::output_id;
 use crate::scene::pointer_on;
 use crate::settings::translate::VisualBellType;
+use crate::sound::Sound;
 use crate::state::{Caminito, SEAT};
 
 /// How long one flash of the visual bell lasts: Marco's frame flash's 100 ms
@@ -123,8 +124,10 @@ impl Bells {
 }
 
 impl Caminito {
-    /// Rings the bell from `source`: flashes it if the visual bell is on (169). 170 plays it
-    /// here.
+    /// Rings the bell from `source`: flashes it if the visual bell is on (169), and plays the
+    /// sound theme's bell if the audible bell is (170). Marco's audible bell goes through
+    /// GTK's canberra context, which `event-sounds` turns off; Caminito's doesn't, as 09 has
+    /// it.
     pub(crate) fn ring_bell(&mut self, source: BellSource, bell_for: BellFor) {
         let window = match bell_for {
             BellFor::Focus => self.policy.focus(SEAT),
@@ -143,8 +146,12 @@ impl Caminito {
             settings.visual,
             settings.visual_type,
         );
+        let audible = settings.audible;
         if settings.visual {
             self.flash_bell(settings.visual_type, window);
+        }
+        if audible {
+            self.play(Sound::Bell);
         }
     }
 

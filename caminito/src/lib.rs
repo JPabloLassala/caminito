@@ -25,6 +25,7 @@ pub mod protocols;
 pub mod scene;
 pub mod session;
 pub mod settings;
+mod sound;
 pub mod state;
 mod switcher;
 pub mod window;

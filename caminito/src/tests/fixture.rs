@@ -35,6 +35,7 @@ use crate::decoration::control::FrameControl;
 use crate::output::saved::{self, SavedLayouts};
 use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Value};
+use crate::sound::Recorder;
 use crate::state::{ClientState, State};
 use crate::window::Mapped;
 
@@ -191,6 +192,8 @@ pub enum Kind {
 pub struct Fixture {
     event_loop: EventLoop<'static, State>,
     pub state: State,
+    /// The sounds Caminito asked its player for (170).
+    pub sounds: Recorder,
     clients: Vec<TestClient>,
     input_millis: u32,
     /// Caminito's well-known names on the tests' bus, while this fixture has them.
@@ -449,10 +452,17 @@ impl Fixture {
             schema_dir: schema_dir.to_owned(),
             initial,
         };
-        let state = State::new_headless(&event_loop, Display::new().unwrap(), settings);
+        let sounds = Recorder::default();
+        let state = State::new_headless(
+            &event_loop,
+            Display::new().unwrap(),
+            settings,
+            Box::new(sounds.clone()),
+        );
         Self {
             event_loop,
             state,
+            sounds,
             clients: Vec::new(),
             input_millis: 0,
             names: None,

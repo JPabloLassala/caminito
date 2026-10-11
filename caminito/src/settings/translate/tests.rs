@@ -1486,6 +1486,31 @@ fn bell_keys_are_read() {
 }
 
 #[test]
+fn bell_mode_off_silences_the_audible_bell_and_leaves_the_visual_one() {
+    let reading = with_all(&[
+        (MARCO_GENERAL, "audible-bell", Value::Bool(true)),
+        (MARCO_GENERAL, "visual-bell", Value::Bool(true)),
+        (KEYBOARD, "bell-mode", string("off")),
+    ]);
+    let bell = translate(&reading).settings.bell;
+    assert!(!bell.audible);
+    assert!(bell.visual);
+}
+
+#[test]
+fn bell_mode_on_and_custom_leave_the_audible_bell_to_its_key() {
+    for mode in ["on", "custom"] {
+        for audible in [true, false] {
+            let reading = with_all(&[
+                (MARCO_GENERAL, "audible-bell", Value::Bool(audible)),
+                (KEYBOARD, "bell-mode", string(mode)),
+            ]);
+            assert_eq!(translate(&reading).settings.bell.audible, audible);
+        }
+    }
+}
+
+#[test]
 fn an_unknown_visual_bell_type_is_fullscreen() {
     let (settings, problem) = problem(&with(MARCO_GENERAL, "visual-bell-type", string("ripple")));
     assert_eq!(settings.bell.visual_type, VisualBellType::Fullscreen);
@@ -1820,7 +1845,6 @@ fn the_never_keys_change_nothing_and_arent_reported() {
         (TOUCHPAD, "tap-button-one-finger", Value::Int(3)),
         (TOUCHPAD, "tap-button-two-finger", Value::Int(1)),
         (TOUCHPAD, "tap-button-three-finger", Value::Int(1)),
-        (KEYBOARD, "bell-mode", string("off")),
         (KEYBOARD, "click", Value::Bool(false)),
         (KEYBOARD, "click-volume", Value::Int(50)),
         (KEYBOARD, "bell-pitch", Value::Int(800)),

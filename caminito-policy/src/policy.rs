@@ -1,5 +1,6 @@
 //! `Policy`: Caminito's window-management model, driven by events and applied through `W`.
 
+use std::cmp::Ordering;
 use std::time::Duration;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -591,6 +592,9 @@ pub struct Policy<W: PolicyWindow> {
     /// (150). Every switch sets it, as Marco's `meta_workspace_activate_with_focus` does
     /// (workspace.c:399-400), and it's forgotten when its workspace is removed.
     previous: Option<usize>,
+    /// The way each switch went since `take_workspace_switches` last took them, for the
+    /// compositor's switch sounds (170).
+    switches: Vec<Direction>,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
     /// (workspace.h:79).
     showing_desktop: BTreeMap<usize, ShownDesktop>,
@@ -636,6 +640,7 @@ impl<W: PolicyWindow> Policy<W> {
             workspace_count: 1,
             active: 0,
             previous: None,
+            switches: Vec::new(),
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             outputs: Vec::new(),
@@ -753,6 +758,8 @@ impl<W: PolicyWindow> Policy<W> {
             for managed in self.windows.values_mut() {
                 managed.workspace = managed.workspace.min(last);
             }
+            // Before the count changes, as the switch is in the grid that had the workspace.
+            self.note_switch(self.active.min(last));
             self.workspace_count = count;
             self.active = self.active.min(last);
             self.forget_removed_previous();
@@ -1184,6 +1191,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.close_switcher(switcher::Close::Dropped);
             // And closes the window menu, whose moves are from the active workspace (161).
             self.window_menu = None;
+            self.note_switch(workspace);
             self.previous = Some(self.active);
             self.active = workspace;
             self.focus.clear();
@@ -1194,6 +1202,30 @@ impl<W: PolicyWindow> Policy<W> {
             }
         }
         self.apply();
+    }
+
+    /// Notes the way a switch from the active workspace to `to` goes in the grid, by their
+    /// cells, as Marco's `workspace_switch_sound` has it (workspace.c:310-362): left or right
+    /// where the columns differ, and up or down only within a column. A switch that wraps
+    /// past the grid's edge so goes the other way.
+    fn note_switch(&mut self, to: usize) {
+        let grid = self.workspace_grid();
+        let (from_column, from_row) = grid.cell(self.active);
+        let (column, row) = grid.cell(to);
+        let direction = match (column.cmp(&from_column), row.cmp(&from_row)) {
+            (Ordering::Less, _) => Direction::Left,
+            (Ordering::Greater, _) => Direction::Right,
+            (Ordering::Equal, Ordering::Less) => Direction::Up,
+            (Ordering::Equal, Ordering::Greater) => Direction::Down,
+            (Ordering::Equal, Ordering::Equal) => return,
+        };
+        self.switches.push(direction);
+    }
+
+    /// The way each switch of the active workspace went since this was last called, the
+    /// oldest first, however the switch came (170).
+    pub fn take_workspace_switches(&mut self) -> Vec<Direction> {
+        std::mem::take(&mut self.switches)
     }
 
     /// Moves a window to `workspace`, with every window in its transient tree. A sticky
