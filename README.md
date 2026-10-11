@@ -204,6 +204,9 @@ The keybindings are read from Marco's `org.mate.Marco.global-keybindings` and
 | Alt+Tab                     | Switch windows, with the Window switcher |
 | Alt+\`                      | Switch the focused application's windows |
 | Ctrl+Alt+Tab                | Switch panels and the desktop            |
+| Alt+Esc                     | Cycle windows, with no popup             |
+| Alt+F6                      | Cycle the focused application's windows  |
+| Ctrl+Alt+Esc                | Cycle panels and the desktop             |
 | Alt+F4                      | Close window                             |
 | Alt+F10                     | Toggle maximised                         |
 | Alt+F5                      | Unmaximise                               |

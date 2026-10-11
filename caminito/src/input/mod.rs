@@ -429,7 +429,7 @@ impl State {
             Some(binding) => {
                 self.caminito.suppressed_keys.insert(keycode);
                 let bound = match binding {
-                    Binding::Policy(action @ Action::Switch { .. }) => {
+                    Binding::Policy(action @ (Action::Switch { .. } | Action::Cycle { .. })) => {
                         Bound::Switch { action, key }
                     }
                     Binding::Policy(action) => Bound::Action(action),
@@ -751,7 +751,7 @@ enum Bound {
 /// layout is active, and the one the press types, as Keyboard Shortcuts writes
 /// `<Shift>exclam` (100). A key with nothing on its first level is named by what it types
 /// alone.
-fn press_keysyms(keysym: &KeysymHandle<'_>) -> [Keysym; 2] {
+pub(crate) fn press_keysyms(keysym: &KeysymHandle<'_>) -> [Keysym; 2] {
     let typed = keysym.modified_sym();
     let first_level = keysym.raw_latin_sym_or_raw_current_sym();
     [first_level.unwrap_or(typed), typed]

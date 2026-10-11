@@ -77,6 +77,10 @@ fn switch(list: SwitchList, backward: bool) -> Option<Binding> {
     policy(Action::Switch { list, backward })
 }
 
+fn cycle(list: SwitchList, backward: bool) -> Option<Binding> {
+    policy(Action::Cycle { list, backward })
+}
+
 fn unbindable(schema: &str, key: &str, value: &str, reason: &str) -> Problem {
     Problem::Unbindable {
         schema: schema.into(),
@@ -155,6 +159,12 @@ fn the_defaults_are_the_table_built_from_the_schemas_default_values() {
         (GLOBAL, "switch-windows-all-backward", "disabled"),
         (GLOBAL, "switch-panels", "<Control><Alt>Tab"),
         (GLOBAL, "switch-panels-backward", "disabled"),
+        (GLOBAL, "cycle-group", "<Alt>F6"),
+        (GLOBAL, "cycle-group-backward", "disabled"),
+        (GLOBAL, "cycle-windows", "<Alt>Escape"),
+        (GLOBAL, "cycle-windows-backward", "disabled"),
+        (GLOBAL, "cycle-panels", "<Control><Alt>Escape"),
+        (GLOBAL, "cycle-panels-backward", "disabled"),
         (GLOBAL, "show-desktop", "<Control><Alt>d"),
         (GLOBAL, "panel-main-menu", "<Alt>F1"),
         (GLOBAL, "panel-run-dialog", "<Alt>F2"),
@@ -357,13 +367,11 @@ fn the_window_and_workspace_actions_marco_leaves_disabled_bind_once_set() {
 
 #[test]
 fn an_action_with_no_behaviour_yet_binds_nothing() {
-    // `cycle-windows`'s default, and values set by the user.
+    // Values set by the user.
     let t = table(&[
-        (GLOBAL, "cycle-windows", "<Alt>Escape"),
         (WINDOW, "activate-window-menu", "<Super>Up"),
         (WINDOW, "move-to-center", "<Super>Down"),
     ]);
-    assert_eq!(bound(&t, ALT, Keysym::Escape), None);
     assert_eq!(bound(&t, SUPER, Keysym::Up), None);
     assert_eq!(bound(&t, SUPER, Keysym::Down), None);
 }
@@ -556,5 +564,52 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 26, "{rows:?}");
+    assert_eq!(rows.len(), 32, "{rows:?}");
+}
+
+// The `cycle-*` actions (163).
+
+#[test]
+fn marcos_defaults_bind_the_cycle_actions_and_shift_turns_them_round() {
+    let t = table(&[]);
+    for (mods, shifted, key, list) in [
+        (ALT, ALT_SHIFT, Keysym::Escape, SwitchList::Windows),
+        (ALT, ALT_SHIFT, Keysym::F6, SwitchList::Group),
+        (CTRL_ALT, CTRL_ALT_SHIFT, Keysym::Escape, SwitchList::Panels),
+    ] {
+        assert_eq!(bound(&t, mods, key), cycle(list, false), "{list:?}");
+        assert_eq!(bound(&t, shifted, key), cycle(list, true), "{list:?}");
+    }
+}
+
+#[test]
+fn a_cycle_backward_key_binds_its_combination_backward_and_with_shift_forward() {
+    for (key, list) in [
+        ("cycle-windows-backward", SwitchList::Windows),
+        ("cycle-group-backward", SwitchList::Group),
+        ("cycle-panels-backward", SwitchList::Panels),
+    ] {
+        let t = table(&[(GLOBAL, key, "<Super>q")]);
+        assert_eq!(bound(&t, SUPER, Keysym::q), cycle(list, true), "{key}");
+        assert_eq!(
+            bound(&t, SUPER_SHIFT, Keysym::q),
+            cycle(list, false),
+            "{key}"
+        );
+    }
+}
+
+#[test]
+fn a_cycle_binding_with_no_modifier_but_shift_binds_nothing_and_is_a_problem() {
+    let (t, problems) = Bindings::from_keys([(GLOBAL, "cycle-windows", "Escape")]);
+    assert_eq!(bound(&t, NONE, Keysym::Escape), None);
+    assert_eq!(
+        problems,
+        [unbindable(
+            GLOBAL,
+            "cycle-windows",
+            "Escape",
+            "a binding Shift reverses needs a modifier such as Ctrl or Alt"
+        )]
+    );
 }

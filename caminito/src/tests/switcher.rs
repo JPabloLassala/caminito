@@ -1,22 +1,26 @@
 //! The Window switcher (108): the keys that open, step, commit and cancel it, the pointer
-//! in it, what's drawn, and the session lock it gives way to (125).
+//! in it, what's drawn, and the session lock it gives way to (125). The `cycle-*` actions,
+//! which have no popup, and the panels that are Layer surfaces are at the end (163).
 
 use caminito_policy::WindowId;
+use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
 use caminito_test_client::session_lock::LockId;
-use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner, format_input};
+use caminito_test_client::{
+    Anchor, ConstraintAdjustment, Gravity, InputEvent, Positioner, format_input,
+};
 use insta::assert_snapshot;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_A, KEY_DOWN, KEY_ENTER, KEY_ESC, KEY_GRAVE,
-    KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_RIGHT, KEY_TAB, KEY_UP, Kind,
-    WINDOW_COLOR, WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_A, KEY_DOWN, KEY_ENTER, KEY_ESC, KEY_F6,
+    KEY_GRAVE, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTMETA, KEY_LEFTSHIFT, KEY_Q, KEY_RIGHT,
+    KEY_TAB, KEY_UP, Kind, WINDOW_COLOR, WindowSpec, on_both_kinds,
 };
 use crate::output::output_geometry;
 use crate::scene::SceneLayer;
 use crate::settings::Value;
-use crate::settings::translate::MARCO_GENERAL;
+use crate::settings::translate::{MARCO_GENERAL, MARCO_GLOBAL_KEYBINDINGS};
 use crate::state::SEAT;
 
 /// The debug dump's `switcher` member: `null` while the Window switcher is closed.
@@ -104,8 +108,11 @@ on_both_kinds! {
             switcher(&f),
             serde_json::json!({
                 "list": "windows",
+                "cycle": false,
                 "windows": [c.0, b.0, a.0],
+                "layers": [],
                 "selected": b.0,
+                "selected_layer": null,
                 "visible": false,
             })
         );
@@ -326,7 +333,7 @@ on_both_kinds! {
 }
 
 /// Only X11 has docks and the desktop as managed windows: a Wayland panel and desktop are
-/// layer surfaces, which policy doesn't list.
+/// Layer surfaces, which the tests at the end list (163).
 #[test]
 fn ctrl_alt_tab_lists_docks_and_the_desktop() {
     let (mut f, x) = Fixture::connected(Kind::X11);
@@ -1292,7 +1299,7 @@ on_both_kinds! {
         // A window fills the output's middle under the popup, or the output is bare there:
         // either way the popup has the pointer for no client.
         let under_popup = middle(popup(&f));
-        let over_a_window = f.state.caminito.policy.switcher().unwrap().windows[0];
+        let over_a_window = listed(&f)[0];
         let window = f.state.caminito.policy.geometry(over_a_window).unwrap();
         f.state
             .caminito
@@ -1339,4 +1346,407 @@ on_both_kinds! {
 
         assert_eq!(f.mapped(small).main_output(), Some(&first));
     }
+}
+
+// The `cycle-*` actions (163).
+
+/// The window on top of the active workspace's stacking.
+fn on_top(f: &Fixture) -> WindowId {
+    let policy = &f.state.caminito.policy;
+    *policy.stacking(policy.active_workspace()).last().unwrap()
+}
+
+on_both_kinds! {
+    fn alt_escape_raises_the_next_window_at_once_and_focuses_it_as_alt_goes_up(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let first = f.map(id, WindowSpec::plain((400, 300)));
+        let (a, b, c) = (f.pid(first), map_windows(&mut f, id, 1)[0], map_windows(&mut f, id, 1)[0]);
+        let output = f.state.caminito.outputs[0].clone();
+
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_ESC);
+
+        assert_eq!(
+            switcher(&f),
+            serde_json::json!({
+                "list": "windows",
+                "cycle": true,
+                "windows": [c.0, b.0, a.0],
+                "layers": [],
+                "selected": b.0,
+                "selected_layer": null,
+                "visible": false,
+            })
+        );
+        assert_eq!(on_top(&f), b);
+        assert_eq!(focus(&f), Some(c));
+        // No popup ever shows: 150 ms is well past the 90 ms the Window switcher's waits.
+        f.dispatch_for(std::time::Duration::from_millis(150));
+        assert_eq!(switcher(&f)["visible"], false);
+        assert!(!has_switcher_layer(&mut f, &output));
+
+        // The binding's own key steps it, though it's Escape.
+        tap(&mut f, KEY_ESC);
+        assert_eq!(selected(&f), a);
+        assert_eq!(on_top(&f), a);
+        assert_eq!(focus(&f), Some(c));
+
+        f.key(KEY_LEFTALT, false);
+
+        assert!(!is_open(&f));
+        assert_eq!(focus(&f), Some(a));
+        assert!(f.has_keyboard(first));
+    }
+}
+
+on_both_kinds! {
+    fn alt_shift_escape_cycles_backward(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_windows(&mut f, id, 3);
+
+        f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT, KEY_ESC]);
+
+        // The last of the list: the least recently used.
+        assert!(!is_open(&f));
+        assert_eq!(focus(&f), Some(windows[0]));
+    }
+}
+
+/// One 1920 × 1080 output and a client of `kind`, with the global keybinding `key` set to
+/// Super+Q from the start.
+fn with_super_q(kind: Kind, key: &str) -> (Fixture, ClientId) {
+    let value = Value::Str("<Super>q".into());
+    let mut f = Fixture::with_settings(vec![(MARCO_GLOBAL_KEYBINDINGS, key.into(), value)]);
+    f.add_output((1920, 1080), 1.0);
+    let id = f.connect(kind);
+    (f, id)
+}
+
+on_both_kinds! {
+    fn cycle_windows_backward_cycles_backward_from_its_own_binding(kind: Kind) {
+        let (mut f, id) = with_super_q(kind, "cycle-windows-backward");
+        let windows = map_windows(&mut f, id, 3);
+        let (a, b, c) = (windows[0], windows[1], windows[2]);
+
+        f.key(KEY_LEFTMETA, true);
+        tap(&mut f, KEY_Q);
+        assert_eq!(switcher(&f)["cycle"], true);
+        assert_eq!(selected(&f), a);
+        // Its key steps the way its action goes, and with Shift the other way.
+        tap(&mut f, KEY_Q);
+        assert_eq!(selected(&f), b);
+        f.key(KEY_LEFTSHIFT, true);
+        tap(&mut f, KEY_Q);
+        f.key(KEY_LEFTSHIFT, false);
+        assert_eq!(selected(&f), a);
+        f.key(KEY_LEFTMETA, false);
+
+        assert_eq!(focus(&f), Some(a));
+        assert_ne!(focus(&f), Some(c));
+    }
+}
+
+on_both_kinds! {
+    fn alt_f6_cycles_the_focused_applications_windows(kind: Kind) {
+        let (mut f, one) = Fixture::connected(kind);
+        // Another application, as in `alt_grave_lists_the_focused_applications_windows`.
+        let other = match kind {
+            Kind::Xdg => f.connect_as_process(1),
+            Kind::X11 => f.connect(kind),
+        };
+        let a = map_of_app(&mut f, one, "one");
+        let _between = map_of_app(&mut f, other, "other");
+        let b = map_of_app(&mut f, one, "one");
+
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_F6);
+        assert_eq!(switcher(&f)["list"], "group");
+        assert_eq!(switcher(&f)["cycle"], true);
+        assert_eq!(listed(&f), [b, a]);
+        assert_eq!(on_top(&f), a);
+        f.key(KEY_LEFTALT, false);
+
+        assert_eq!(focus(&f), Some(a));
+
+        // With Shift, backward: of two, the other again.
+        f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT, KEY_F6]);
+        assert_eq!(focus(&f), Some(b));
+    }
+}
+
+on_both_kinds! {
+    fn cycle_group_backward_cycles_from_its_own_binding(kind: Kind) {
+        let (mut f, one) = with_super_q(kind, "cycle-group-backward");
+        let a = map_of_app(&mut f, one, "one");
+        let b = map_of_app(&mut f, one, "one");
+        let c = map_of_app(&mut f, one, "one");
+
+        f.chord(&[KEY_LEFTMETA, KEY_Q]);
+
+        assert_eq!(focus(&f), Some(a));
+        assert_ne!(focus(&f), Some(b));
+        assert_ne!(focus(&f), Some(c));
+    }
+}
+
+on_both_kinds! {
+    fn a_switch_binding_ends_a_cycle_and_a_cycle_binding_ends_the_window_switcher(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_windows(&mut f, id, 3);
+        let c = windows[2];
+
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_ESC);
+        assert_ne!(on_top(&f), c);
+        tap(&mut f, KEY_TAB);
+        assert!(!is_open(&f));
+        assert_eq!(focus(&f), Some(c));
+        assert_eq!(on_top(&f), c);
+
+        tap(&mut f, KEY_TAB);
+        assert_eq!(switcher(&f)["cycle"], false);
+        tap(&mut f, KEY_ESC);
+        assert!(!is_open(&f));
+        f.key(KEY_LEFTALT, false);
+
+        assert_eq!(focus(&f), Some(c));
+    }
+}
+
+on_both_kinds! {
+    fn a_press_of_the_pointer_ends_a_cycle_with_the_stacking_as_it_was(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_windows(&mut f, id, 3);
+        let c = windows[2];
+        // Clear of the windows, so the press is no window's.
+        f.pointer_move(1900., 1060.);
+
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_ESC);
+        assert_ne!(on_top(&f), c);
+        f.pointer_button(BTN_LEFT, true);
+        f.pointer_button(BTN_LEFT, false);
+        f.key(KEY_LEFTALT, false);
+
+        assert!(!is_open(&f));
+        assert_eq!(focus(&f), Some(c));
+        assert_eq!(on_top(&f), c);
+    }
+}
+
+/// Only X11 has docks and the desktop as managed windows.
+#[test]
+fn ctrl_alt_escape_cycles_docks_and_the_desktop() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let typed = |f: &mut Fixture, window_type| {
+        let window = f.map(
+            x,
+            WindowSpec {
+                types: vec![window_type],
+                ..WindowSpec::default()
+            },
+        );
+        f.pid(window)
+    };
+    let dock = typed(&mut f, "_NET_WM_WINDOW_TYPE_DOCK");
+    let desktop = typed(&mut f, "_NET_WM_WINDOW_TYPE_DESKTOP");
+    map_windows(&mut f, x, 2);
+
+    f.key(KEY_LEFTCTRL, true);
+    f.key(KEY_LEFTALT, true);
+    tap(&mut f, KEY_ESC);
+
+    assert_eq!(switcher(&f)["list"], "panels");
+    assert_eq!(switcher(&f)["cycle"], true);
+    let mut windows = listed(&f);
+    let first = selected(&f);
+    assert_eq!(first, windows[0]);
+    windows.sort();
+    assert_eq!(windows, [dock, desktop]);
+
+    tap(&mut f, KEY_ESC);
+    let chosen = selected(&f);
+    assert_ne!(chosen, first);
+    f.key(KEY_LEFTALT, false);
+    f.key(KEY_LEFTCTRL, false);
+    assert_eq!(focus(&f), Some(chosen));
+
+    // From the panel it has now, backward with Shift: the other one.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFTSHIFT, KEY_ESC]);
+    assert_eq!(focus(&f), Some(first));
+}
+
+#[test]
+fn cycle_panels_backward_cycles_from_its_own_binding() {
+    let (mut f, x) = with_super_q(Kind::X11, "cycle-panels-backward");
+    let dock = f.map(
+        x,
+        WindowSpec {
+            types: vec!["_NET_WM_WINDOW_TYPE_DOCK"],
+            ..WindowSpec::default()
+        },
+    );
+    map_windows(&mut f, x, 1);
+
+    f.chord(&[KEY_LEFTMETA, KEY_Q]);
+
+    assert_eq!(focus(&f), f.policy_id(dock));
+}
+
+// The panels that are Layer surfaces (163). Only Wayland clients make them, and only a
+// Wayland test client records the keyboard's events, so the shell is one whatever the
+// windows' kind.
+
+const PANEL: u32 = 0xff00ff00;
+const DESKTOP: u32 = 0xff0000ff;
+
+/// A 400 × 200 Layer surface named `namespace` in a corner, clear of where policy places the
+/// first windows.
+fn panel(
+    namespace: &'static str,
+    anchor: LayerAnchor,
+    keyboard: KeyboardInteractivity,
+) -> LayerSpec {
+    LayerSpec {
+        namespace,
+        anchor,
+        keyboard,
+        ..LayerSpec::floating(Layer::Top, (400, 200))
+    }
+}
+
+/// A window of a client of `kind` with the keyboard, and a shell with a panel and a
+/// desktop that take the keyboard on demand, and a bubble that takes none.
+fn with_a_shell(kind: Kind) -> (Fixture, ClientId, ClientWindow) {
+    let (mut f, client) = Fixture::connected(kind);
+    let shell = f.connect(Kind::Xdg);
+    f.client(shell).bind_input();
+    let window = f.map(client, WindowSpec::plain((400, 300)));
+    let on_demand = KeyboardInteractivity::OnDemand;
+    let (bottom, right) = (LayerAnchor::Bottom, LayerAnchor::Right);
+    f.map_layer(shell, panel("panel", bottom | right, on_demand), PANEL);
+    f.map_layer(
+        shell,
+        panel("desktop", bottom | LayerAnchor::Left, on_demand),
+        DESKTOP,
+    );
+    let none = KeyboardInteractivity::None;
+    f.map_layer(
+        shell,
+        panel("bubble", LayerAnchor::Top | right, none),
+        PANEL,
+    );
+    assert!(f.has_keyboard(window));
+    (f, shell, window)
+}
+
+/// The keyboard's enter and leave events `id` has had since they were last asked for.
+fn keyboard_events(f: &mut Fixture, id: ClientId) -> String {
+    f.roundtrip(id);
+    let events: Vec<InputEvent> = std::mem::take(&mut f.client(id).state.input)
+        .into_iter()
+        .filter(|event| {
+            matches!(
+                event,
+                InputEvent::KeyboardEnter { .. } | InputEvent::KeyboardLeave { .. }
+            )
+        })
+        .collect();
+    format_input(&events)
+}
+
+on_both_kinds! {
+    fn ctrl_alt_tab_lists_the_layer_surfaces_that_take_the_keyboard_and_gives_it_to_the_chosen(
+        kind: Kind
+    ) {
+        let (mut f, shell, window) = with_a_shell(kind);
+
+        f.key(KEY_LEFTCTRL, true);
+        f.key(KEY_LEFTALT, true);
+        tap(&mut f, KEY_TAB);
+
+        // The bubble takes no keyboard, and isn't listed.
+        assert_eq!(switcher(&f)["list"], "panels");
+        assert_eq!(switcher(&f)["layers"], serde_json::json!(["panel", "desktop"]));
+        assert_eq!(switcher(&f)["windows"], serde_json::json!([]));
+        assert_eq!(switcher(&f)["selected_layer"], "panel");
+        assert_eq!(keyboard_events(&mut f, shell), "");
+
+        // Each has a thumbnail, as a window has.
+        f.dispatch_until(|f| switcher(f)["visible"] == true);
+        f.dispatch();
+        let (first, second) = (middle(cell(&f, 0)), middle(cell(&f, 1)));
+        assert_eq!(pixel(&mut f, first), PANEL & 0xff_ffff);
+        assert_eq!(pixel(&mut f, second), DESKTOP & 0xff_ffff);
+
+        tap(&mut f, KEY_TAB);
+        assert_eq!(switcher(&f)["selected_layer"], "desktop");
+        f.key(KEY_LEFTALT, false);
+        f.key(KEY_LEFTCTRL, false);
+        f.dispatch();
+
+        assert!(!is_open(&f));
+        assert_eq!(keyboard_events(&mut f, shell), "keyboard enters layer surface 1");
+        assert!(!f.has_keyboard(window));
+        // The window keeps policy's focus, as under a clicked panel (63).
+        assert_eq!(focus(&f), f.policy_id(window));
+    }
+}
+
+on_both_kinds! {
+    fn ctrl_alt_escape_goes_from_one_layer_surface_to_the_next_and_alt_escape_back_to_the_window(
+        kind: Kind
+    ) {
+        let (mut f, shell, window) = with_a_shell(kind);
+
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_ESC]);
+        f.dispatch();
+        assert_eq!(keyboard_events(&mut f, shell), "keyboard enters layer surface 0");
+
+        // The one with the keyboard is first, so the next is one press away.
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_ESC]);
+        f.dispatch();
+        assert_eq!(
+            keyboard_events(&mut f, shell),
+            "keyboard leaves layer surface 0\nkeyboard enters layer surface 1"
+        );
+        assert!(!f.has_keyboard(window));
+
+        // The one window is policy's focus already, and takes the keyboard back.
+        f.chord(&[KEY_LEFTALT, KEY_ESC]);
+        f.dispatch();
+        assert_eq!(keyboard_events(&mut f, shell), "keyboard leaves layer surface 1");
+        assert!(f.has_keyboard(window));
+    }
+}
+
+#[test]
+fn a_layer_surface_that_unmaps_leaves_the_open_window_switcher() {
+    let (mut f, shell, _window) = with_a_shell(Kind::Xdg);
+    let third = f.map_layer(
+        shell,
+        panel(
+            "third",
+            LayerAnchor::Top | LayerAnchor::Left,
+            KeyboardInteractivity::OnDemand,
+        ),
+        PANEL,
+    );
+
+    f.key(KEY_LEFTCTRL, true);
+    f.key(KEY_LEFTALT, true);
+    tap(&mut f, KEY_TAB);
+    assert_eq!(
+        switcher(&f)["layers"],
+        serde_json::json!(["panel", "desktop", "third"])
+    );
+
+    f.client(shell).unmap_layer_surface(third);
+    f.roundtrip(shell);
+    f.dispatch();
+
+    assert_eq!(
+        switcher(&f)["layers"],
+        serde_json::json!(["panel", "desktop"])
+    );
 }

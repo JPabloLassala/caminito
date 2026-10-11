@@ -186,6 +186,30 @@ expression: without_x_ids(&dump)
       "combination": "<Control><Shift><Alt>Tab"
     },
     {
+      "key": "cycle-group",
+      "combination": "<Alt>F6"
+    },
+    {
+      "key": "cycle-group",
+      "combination": "<Shift><Alt>F6"
+    },
+    {
+      "key": "cycle-windows",
+      "combination": "<Alt>Escape"
+    },
+    {
+      "key": "cycle-windows",
+      "combination": "<Shift><Alt>Escape"
+    },
+    {
+      "key": "cycle-panels",
+      "combination": "<Control><Alt>Escape"
+    },
+    {
+      "key": "cycle-panels",
+      "combination": "<Control><Shift><Alt>Escape"
+    },
+    {
       "key": "show-desktop",
       "combination": "<Control><Alt>d"
     },

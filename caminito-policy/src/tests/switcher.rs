@@ -1,5 +1,5 @@
 use super::*;
-use crate::{ResizeEdges, SwitchList};
+use crate::{LayerId, MinimizedPlacement, ResizeEdges, SwitchEntry, SwitchList};
 
 const SWITCH: Action = Action::Switch {
     list: SwitchList::Windows,
@@ -112,8 +112,8 @@ fn a_minimised_modal_dialog_leaves_its_parent_listed_as_itself() {
     policy.minimize(id(3));
 
     let list = policy.switch_list(SEAT, SwitchList::Windows);
-    assert!(list.contains(&id(1)));
-    assert!(!list.contains(&id(3)));
+    assert!(list.contains(&SwitchEntry::Window(id(1))));
+    assert!(!list.contains(&SwitchEntry::Window(id(3))));
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn switch_group_lists_nothing_with_no_focused_window() {
     policy.map_window(TestWindow::new(1, 400, 300).without_input(), ms(1));
 
     assert_eq!(policy.focus(SEAT), None);
-    assert_eq!(policy.switch_list(SEAT, SwitchList::Group), []);
+    assert!(policy.switch_list(SEAT, SwitchList::Group).is_empty());
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn the_switcher_opens_on_the_second_entry_and_changes_no_focus() {
     policy.action(SEAT, SWITCH, ms(10));
 
     let switcher = policy.switcher().expect("the switcher is open");
-    assert_eq!(switcher.windows, [id(3), id(2), id(1)]);
+    assert_eq!(switcher.entries, [id(3), id(2), id(1)]);
     assert_eq!(switcher.selected, 1);
     assert_eq!(policy.focus(SEAT), Some(id(3)));
     assert_eq!(policy.stacking(0), [id(1), id(2), id(3)]);
@@ -325,7 +325,7 @@ fn switch_panels_from_a_normal_window_starts_on_the_first_entry() {
     policy.action(SEAT, panels, ms(10));
 
     let switcher = policy.switcher().unwrap();
-    assert_eq!(switcher.windows, [id(5), id(4)]);
+    assert_eq!(switcher.entries, [id(5), id(4)]);
     assert_eq!(switcher.selected, 0);
     assert_eq!(policy.focus(SEAT), Some(id(3)));
 }
@@ -364,13 +364,13 @@ fn a_selected_window_that_closes_gives_the_selection_to_the_next() {
     policy.unmap_window(id(2));
 
     let switcher = policy.switcher().unwrap();
-    assert_eq!(switcher.windows, [id(3), id(1)]);
-    assert_eq!(switcher.windows[switcher.selected], id(1));
+    assert_eq!(switcher.entries, [id(3), id(1)]);
+    assert_eq!(switcher.entries[switcher.selected], id(1));
 
     // The last entry closing gives the selection to the first.
     policy.unmap_window(id(1));
     let switcher = policy.switcher().unwrap();
-    assert_eq!(switcher.windows, [id(3)]);
+    assert_eq!(switcher.entries, [id(3)]);
     assert_eq!(switcher.selected, 0);
 }
 
@@ -381,13 +381,13 @@ fn an_unselected_window_that_closes_leaves_the_grid_and_keeps_the_selection_on_i
     policy.unmap_window(id(3));
 
     let switcher = policy.switcher().unwrap();
-    assert_eq!(switcher.windows, [id(2), id(1)]);
-    assert_eq!(switcher.windows[switcher.selected], id(2));
+    assert_eq!(switcher.entries, [id(2), id(1)]);
+    assert_eq!(switcher.entries[switcher.selected], id(2));
 
     policy.unmap_window(id(1));
     let switcher = policy.switcher().unwrap();
-    assert_eq!(switcher.windows, [id(2)]);
-    assert_eq!(switcher.windows[switcher.selected], id(2));
+    assert_eq!(switcher.entries, [id(2)]);
+    assert_eq!(switcher.entries[switcher.selected], id(2));
 }
 
 #[test]
@@ -408,7 +408,7 @@ fn a_window_that_opens_meanwhile_is_not_listed_nor_focused_until_the_switcher_cl
     cancelled.action(SEAT, SWITCH, ms(10));
     cancelled.map_window(TestWindow::new(4, 400, 300), ms(11));
 
-    assert_eq!(cancelled.switcher().unwrap().windows, [id(3), id(2), id(1)]);
+    assert_eq!(cancelled.switcher().unwrap().entries, [id(3), id(2), id(1)]);
     assert_eq!(cancelled.focus(SEAT), Some(id(3)));
     cancelled.switcher_cancel(ms(12));
     assert_eq!(cancelled.focus(SEAT), Some(id(4)));
@@ -519,10 +519,363 @@ fn committing_a_window_on_another_workspace_switches_to_it() {
         backward: true,
     };
     policy.action(SEAT, all, ms(10));
-    assert_eq!(policy.switcher().unwrap().windows, [id(3), id(2), id(1)]);
+    assert_eq!(policy.switcher().unwrap().entries, [id(3), id(2), id(1)]);
     policy.switcher_commit(ms(11));
 
     assert!(policy.switcher().is_none());
     assert_eq!(policy.active_workspace(), 1);
     assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+/// A `cycle-*` action over `list`.
+fn cycle(list: SwitchList, backward: bool) -> Action {
+    Action::Cycle { list, backward }
+}
+
+const CYCLE: Action = Action::Cycle {
+    list: SwitchList::Windows,
+    backward: false,
+};
+
+#[test]
+fn cycle_windows_selects_the_next_window_with_no_popup_and_raises_it_at_once() {
+    // `alt-tab-raise-windows` is off: a cycle raises all the same, as Marco's does
+    // (`do_choose_window`, core/keybindings.c:3117-3122).
+    let mut policy = three();
+    policy.action(SEAT, CYCLE, ms(10));
+
+    let switcher = policy.switcher().expect("the cycle is under way");
+    assert!(!switcher.popup);
+    assert_eq!(switcher.entries, [id(3), id(2), id(1)]);
+    assert_eq!(switcher.selected, 1);
+    assert_eq!(policy.stacking(0), [id(1), id(3), id(2)]);
+    // The focus moves when the modifier is let go.
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+
+    policy.switcher_commit(ms(11));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(policy.stacking(0), [id(1), id(3), id(2)]);
+}
+
+#[test]
+fn cycle_windows_backward_selects_the_last_window() {
+    let mut policy = three();
+    policy.action(SEAT, cycle(SwitchList::Windows, true), ms(10));
+
+    assert_eq!(policy.switcher().unwrap().selected, 2);
+    assert_eq!(policy.stacking(0), [id(2), id(3), id(1)]);
+
+    policy.switcher_commit(ms(11));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn each_press_of_a_cycle_raises_the_next_window_alone() {
+    let mut policy = three();
+    policy.action(SEAT, CYCLE, ms(10));
+    policy.action(SEAT, CYCLE, ms(11));
+
+    // 2 is back where it was, under 3.
+    assert_eq!(policy.switcher().unwrap().selected, 2);
+    assert_eq!(policy.stacking(0), [id(2), id(3), id(1)]);
+
+    policy.action(SEAT, cycle(SwitchList::Windows, true), ms(12));
+    assert_eq!(policy.switcher().unwrap().selected, 1);
+    assert_eq!(policy.stacking(0), [id(1), id(3), id(2)]);
+}
+
+#[test]
+fn a_cancelled_cycle_leaves_the_focus_and_the_stacking_as_they_were() {
+    let mut policy = three();
+    policy.action(SEAT, CYCLE, ms(10));
+    policy.switcher_cancel(ms(11));
+
+    assert!(policy.switcher().is_none());
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    assert_eq!(policy.stacking(0), [id(1), id(2), id(3)]);
+}
+
+#[test]
+fn a_cycle_shows_a_minimised_window_only_while_it_is_selected() {
+    let mut policy = three();
+    policy.minimize(id(3)); // 2 has the focus: 2, 1, then 3 minimised
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+
+    policy.action(SEAT, cycle(SwitchList::Windows, true), ms(10));
+    assert_eq!(policy.switcher().unwrap().selected, 2);
+    assert!(!policy.is_minimized(id(3)));
+
+    policy.action(SEAT, CYCLE, ms(11));
+    assert_eq!(policy.switcher().unwrap().selected, 0);
+    assert!(policy.is_minimized(id(3)));
+
+    policy.action(SEAT, cycle(SwitchList::Windows, true), ms(12));
+    assert!(!policy.is_minimized(id(3)));
+    policy.switcher_cancel(ms(13));
+    assert!(policy.is_minimized(id(3)));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
+#[test]
+fn a_cycle_that_commits_to_a_minimised_window_restores_it() {
+    let mut policy = three();
+    policy.minimize(id(3));
+    policy.action(SEAT, cycle(SwitchList::Windows, true), ms(10));
+    policy.switcher_commit(ms(11));
+
+    assert!(!policy.is_minimized(id(3)));
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+}
+
+#[test]
+fn cycle_group_walks_the_focused_applications_windows() {
+    let mut policy = policy();
+    policy.map_window(TestWindow::new(1, 400, 300).with_pid(10), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300).with_pid(20), ms(2));
+    policy.map_window(TestWindow::new(3, 400, 300).with_pid(10), ms(3));
+
+    policy.action(SEAT, cycle(SwitchList::Group, false), ms(10));
+
+    let switcher = policy.switcher().unwrap();
+    assert_eq!(switcher.list, SwitchList::Group);
+    assert_eq!(switcher.entries, [id(3), id(1)]);
+    assert_eq!(switcher.selected, 1);
+
+    policy.switcher_commit(ms(11));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn cycle_panels_walks_docks_and_the_desktop() {
+    let mut policy = three();
+    for w in 4..=5 {
+        policy.map_window(
+            TestWindow::new(w, 1920, 30).with_type(WindowType::Dock),
+            ms(w),
+        );
+    }
+    policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
+
+    let switcher = policy.switcher().unwrap();
+    assert_eq!(switcher.entries, [id(5), id(4)]);
+    assert_eq!(switcher.selected, 0);
+
+    policy.action(SEAT, cycle(SwitchList::Panels, true), ms(11));
+    policy.switcher_commit(ms(12));
+    assert_eq!(policy.focus(SEAT), Some(id(4)));
+}
+
+#[test]
+fn cycle_panels_with_one_panel_activates_it_at_once() {
+    // Marco's grab would hold it selected until the modifier went up
+    // (`do_choose_window`, core/keybindings.c:3053-3063): with one entry that's the same.
+    let mut policy = three();
+    policy.map_window(
+        TestWindow::new(4, 1920, 30).with_type(WindowType::Dock),
+        ms(4),
+    );
+    policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
+
+    assert!(policy.switcher().is_none());
+    assert_eq!(policy.focus(SEAT), Some(id(4)));
+
+    // And again from the panel itself, where it stays.
+    policy.action(SEAT, cycle(SwitchList::Panels, false), ms(11));
+    assert!(policy.switcher().is_none());
+    assert_eq!(policy.focus(SEAT), Some(id(4)));
+}
+
+/// `policy` with `alt-tab-minimized-placement` set.
+fn placing_minimised(
+    mut policy: Policy<TestWindow>,
+    placement: MinimizedPlacement,
+) -> Policy<TestWindow> {
+    policy.settings_changed(Config {
+        alt_tab_minimized_placement: placement,
+        ..Config::default()
+    });
+    policy
+}
+
+#[test]
+fn alt_tab_minimized_placement_places_the_minimised_windows_in_every_list() {
+    // 3 is the most recently used, then 2, which has the focus once 3 is minimised.
+    let minimised = |placement| {
+        let mut policy = placing_minimised(three(), placement);
+        policy.minimize(id(3));
+        policy
+    };
+
+    let end = minimised(MinimizedPlacement::End);
+    assert_eq!(
+        end.switch_list(SEAT, SwitchList::Windows),
+        [id(2), id(1), id(3)]
+    );
+
+    let hidden = minimised(MinimizedPlacement::Hidden);
+    assert_eq!(
+        hidden.switch_list(SEAT, SwitchList::Windows),
+        [id(2), id(1)]
+    );
+    assert_eq!(
+        hidden.switch_list(SEAT, SwitchList::WindowsAll),
+        [id(2), id(1)]
+    );
+
+    // Among the others by use: 2 took the focus after 3, and 1 never had it since.
+    let mut mru = minimised(MinimizedPlacement::Mru);
+    assert_eq!(
+        mru.switch_list(SEAT, SwitchList::Windows),
+        [id(2), id(3), id(1)]
+    );
+    // The cycle's list is the same one.
+    mru.action(SEAT, CYCLE, ms(10));
+    assert_eq!(mru.switcher().unwrap().entries, [id(2), id(3), id(1)]);
+}
+
+/// Two docks, 4 and 5, over `three`, and the Layer surfaces 1 and 2.
+fn panels() -> Policy<TestWindow> {
+    let mut policy = three();
+    for w in 4..=5 {
+        policy.map_window(
+            TestWindow::new(w, 1920, 30).with_type(WindowType::Dock),
+            ms(w),
+        );
+    }
+    policy.set_layers(&[LayerId(1), LayerId(2)], None);
+    policy
+}
+
+fn layer(id: u64) -> SwitchEntry {
+    SwitchEntry::Layer(LayerId(id))
+}
+
+fn dock(window: u64) -> SwitchEntry {
+    SwitchEntry::Window(id(window))
+}
+
+#[test]
+fn the_panels_list_has_the_layer_surfaces_after_the_windows() {
+    let policy = panels();
+
+    assert_eq!(
+        policy.switch_list(SEAT, SwitchList::Panels),
+        [dock(5), dock(4), layer(1), layer(2)]
+    );
+    for list in [
+        SwitchList::Windows,
+        SwitchList::WindowsAll,
+        SwitchList::Group,
+    ] {
+        let listed = policy.switch_list(SEAT, list);
+        assert!(listed.iter().all(|entry| entry.window().is_some()));
+    }
+}
+
+#[test]
+fn committing_to_a_layer_surface_names_it_and_changes_no_focus() {
+    let mut policy = panels();
+    policy.action(
+        SEAT,
+        Action::Switch {
+            list: SwitchList::Panels,
+            backward: true,
+        },
+        ms(10),
+    );
+    assert_eq!(policy.switcher().unwrap().selected, 3);
+    policy.switcher_commit(ms(11));
+
+    assert_eq!(policy.take_chosen(), Some(layer(2)));
+    assert_eq!(policy.take_chosen(), None);
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    assert_eq!(policy.stacking(0).last(), Some(&id(5)));
+}
+
+#[test]
+fn committing_to_a_window_names_it_so_a_layer_surface_gives_the_keyboard_back() {
+    let mut policy = three();
+    policy.action(SEAT, SWITCH, ms(10));
+    policy.switcher_commit(ms(11));
+
+    assert_eq!(policy.take_chosen(), Some(dock(2)));
+}
+
+#[test]
+fn a_cancelled_switcher_names_nothing() {
+    let mut policy = panels();
+    policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
+    policy.switcher_cancel(ms(11));
+
+    assert_eq!(policy.take_chosen(), None);
+}
+
+#[test]
+fn the_layer_surface_with_the_keyboard_is_first_and_the_next_is_selected() {
+    let mut policy = panels();
+    policy.set_layers(&[LayerId(1), LayerId(2)], Some(LayerId(2)));
+
+    policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
+    let switcher = policy.switcher().unwrap();
+    assert_eq!(switcher.entries, [layer(2), layer(1), dock(5), dock(4)]);
+    assert_eq!(switcher.selected, 1);
+}
+
+#[test]
+fn layer_surfaces_are_listed_by_when_each_last_had_the_keyboard() {
+    let mut policy = policy();
+    let all = [LayerId(1), LayerId(2), LayerId(3)];
+    policy.set_layers(&all, None);
+    policy.set_layers(&all, Some(LayerId(3)));
+    policy.set_layers(&all, Some(LayerId(2)));
+    // A window took the keyboard back.
+    policy.set_layers(&all, None);
+
+    assert_eq!(
+        policy.switch_list(SEAT, SwitchList::Panels),
+        [layer(2), layer(3), layer(1)]
+    );
+}
+
+#[test]
+fn with_a_layer_surface_at_the_keyboard_switch_windows_starts_on_the_focused_window() {
+    // The focused window keeps policy's focus while a panel has the keyboard, and it's the
+    // window to come back to.
+    let mut policy = panels();
+    policy.set_layers(&[LayerId(1), LayerId(2)], Some(LayerId(1)));
+    policy.action(SEAT, SWITCH, ms(10));
+
+    let switcher = policy.switcher().unwrap();
+    assert_eq!(switcher.entries[0], id(3));
+    assert_eq!(switcher.selected, 0);
+}
+
+#[test]
+fn one_layer_surface_alone_is_chosen_with_no_switcher() {
+    let mut policy = three();
+    policy.set_layers(&[LayerId(7)], None);
+    policy.action(SEAT, cycle(SwitchList::Panels, false), ms(10));
+
+    assert!(policy.switcher().is_none());
+    assert_eq!(policy.take_chosen(), Some(layer(7)));
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+}
+
+#[test]
+fn a_layer_surface_that_goes_away_leaves_the_open_switcher() {
+    let mut policy = panels();
+    policy.action(
+        SEAT,
+        Action::Switch {
+            list: SwitchList::Panels,
+            backward: true,
+        },
+        ms(10),
+    );
+    policy.set_layers(&[LayerId(1)], None);
+
+    let switcher = policy.switcher().unwrap();
+    assert_eq!(switcher.entries, [dock(5), dock(4), layer(1)]);
+    // The selected one was the last: the first is next.
+    assert_eq!(switcher.selected, 0);
 }

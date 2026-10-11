@@ -249,6 +249,8 @@ fn action() -> impl Strategy<Value = Action> {
         Just(Action::RaiseOrLower),
         (switch_list(), any::<bool>())
             .prop_map(|(list, backward)| Action::Switch { list, backward }),
+        (switch_list(), any::<bool>())
+            .prop_map(|(list, backward)| Action::Cycle { list, backward }),
         Just(Action::ShowDesktop),
         tile().prop_map(Action::Tile),
         Just(Action::BeginMove),
@@ -687,19 +689,22 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     // The Window switcher lists managed windows, once each, and selects one of them.
     if let Some(switcher) = policy.switcher() {
         assert!(
-            !switcher.windows.is_empty(),
+            !switcher.entries.is_empty(),
             "an open switcher lists windows"
         );
         assert!(
-            switcher.selected < switcher.windows.len(),
+            switcher.selected < switcher.entries.len(),
             "the selection {} is in the {} listed windows",
             switcher.selected,
-            switcher.windows.len()
+            switcher.entries.len()
         );
-        for (place, id) in switcher.windows.iter().enumerate() {
-            assert!(policy.window(*id).is_some(), "{id:?} is listed but gone");
+        for (place, entry) in switcher.entries.iter().enumerate() {
+            let id = entry
+                .window()
+                .expect("the compositor named no Layer surface");
+            assert!(policy.window(id).is_some(), "{id:?} is listed but gone");
             assert!(
-                !switcher.windows[..place].contains(id),
+                !switcher.entries[..place].contains(entry),
                 "{id:?} is listed twice"
             );
         }

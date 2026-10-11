@@ -1488,8 +1488,8 @@ session_env() {
   selection, and nothing shows on the windows themselves. Releasing Alt restores the file
   manager and gives it the focus. In step 4 Escape leaves the focus and the stacking as they
   were, and the click gives the focus to the window clicked. In step 5 Alt+\` lists only the
-  focused application's windows, and Ctrl+Alt+Tab lists nothing under Wayland's panel, a Layer
-  surface, so nothing happens. In step 6 the popup is on the pointer's monitor. In step 7
+  focused application's windows, and Ctrl+Alt+Tab is *Ctrl+Alt+Tab and Ctrl+Alt+Esc reach the
+  panel and the desktop*'s to look at. In step 6 the popup is on the pointer's monitor. In step 7
   the grid shows icons with no thumbnails (108, ADR 0016).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `switcher` member has the list,
   the selection, the popup's output and its cells while the popup shows, and `gsettings
@@ -1667,6 +1667,38 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Marco.general`, and `org.mate.Caminito.Debug`'s
   state dump, whose `focus` and workspaces' `stacking` members show which window has the focus
   and which is on top.
+
+### Ctrl+Alt+Tab and Ctrl+Alt+Esc reach the panel and the desktop, and Alt+Esc and Alt+F6 cycle
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with caja drawing the desktop. Open pluma (a native window)
+     and `xterm` (X11), and a second pluma window with `pluma --new-window`.
+  2. Hold Alt and press Escape. Keep Alt held, look, press Escape again, and release Alt.
+     Then tap Alt+Escape quickly, and Alt+Shift+Escape.
+  3. Minimise `xterm`. Hold Alt and press Escape until `xterm` is the one shown, then press
+     Escape once more, and release Alt.
+  4. Focus a pluma window and press Alt+F6, twice.
+  5. Hold Ctrl+Alt and press Tab, then release. Type a letter that an icon's name begins with.
+     Click a window.
+  6. Press Ctrl+Alt+Escape. Press an arrow key, and press Menu or Shift+F10. Close the menu
+     and press Alt+Escape.
+  7. Compare steps 2 to 6 with Marco under *MATE*, the X11 session.
+- **Expected:** in step 2 no popup shows: each press of Escape raises the next window, most
+  recently used first, with the focus where it was, and releasing Alt gives the raised window
+  the focus. A quick Alt+Escape goes to the window used before, and Alt+Shift+Escape to the
+  least recently used. In step 3 the minimised `xterm` shows while it's the selected one and
+  is minimised again when the selection leaves it. In step 4 Alt+F6 goes between the two
+  pluma windows only. In step 5 caja's desktop is the one thing to list, so it gets the
+  keyboard at once and no popup shows. mate-panel's panels aren't listed: mate-panel asks for
+  no keyboard on its Layer surfaces, a known gap that needs a carried patch (163). The letter selects an icon, while
+  the window that had the focus keeps its Frame drawn focused, and the click gives the
+  keyboard back to the window. In step 6 the desktop has the keyboard again: the arrow moves
+  between the icons and the menu key opens the selected one's menu; Alt+Escape gives the
+  keyboard back to a window. Under Marco the panels are reached too.
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump: the `switcher` member has `cycle`,
+  the `windows` and `layers` listed and the selection while the modifier is held, and each
+  output's `layer_surfaces` have their `keyboard_interactivity`.
 
 ### Alt+F7 and Alt+F8 move and resize a window by the keys
 

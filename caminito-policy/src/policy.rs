@@ -23,7 +23,7 @@ mod window_actions;
 
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
-pub use switcher::{SwitchList, Switcher};
+pub use switcher::{LayerId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
 
 /// A seat, as the compositor numbers them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -114,6 +114,9 @@ pub struct Config {
     /// `alt-tab-raise-windows`: the Window switcher raises the selected window while it's
     /// open (108).
     pub alt_tab_raise_windows: bool,
+    /// Marco master's `alt-tab-minimized-placement`: where the Window switcher's lists have
+    /// the minimised windows (163).
+    pub alt_tab_minimized_placement: MinimizedPlacement,
     /// `placement-mode` (154).
     pub placement_mode: PlacementMode,
     /// `center-new-windows`: the automatic mode puts a new window in the middle of the work
@@ -157,6 +160,7 @@ impl Default for Config {
             wrap_style: WrapStyle::NoWrap,
             dynamic_workspaces: false,
             alt_tab_raise_windows: false,
+            alt_tab_minimized_placement: MinimizedPlacement::End,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
@@ -564,6 +568,14 @@ pub struct Policy<W: PolicyWindow> {
     switcher: Option<switcher::Open>,
     /// `alt-tab-raise-windows`.
     alt_tab_raise_windows: bool,
+    /// `alt-tab-minimized-placement` (163).
+    alt_tab_minimized_placement: MinimizedPlacement,
+    /// The Layer surfaces that accept the keyboard, most recently used first (163).
+    layers: Vec<LayerId>,
+    /// The one that has the keyboard in place of the focused window.
+    keyboard_layer: Option<LayerId>,
+    /// What the Window switcher last chose, until the compositor takes it.
+    chosen: Option<SwitchEntry>,
     placement_mode: PlacementMode,
     center_new_windows: bool,
     allow_tiling: bool,
@@ -603,6 +615,10 @@ impl<W: PolicyWindow> Policy<W> {
             mru: Vec::new(),
             switcher: None,
             alt_tab_raise_windows: false,
+            alt_tab_minimized_placement: MinimizedPlacement::End,
+            layers: Vec::new(),
+            keyboard_layer: None,
+            chosen: None,
             placement_mode: PlacementMode::Automatic,
             center_new_windows: false,
             show_desktop_skip_list: ShowDesktopSkipList::default(),
@@ -682,6 +698,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.workspace_layout = config.workspace_layout;
         self.wrap_style = config.wrap_style;
         self.alt_tab_raise_windows = config.alt_tab_raise_windows;
+        self.alt_tab_minimized_placement = config.alt_tab_minimized_placement;
         self.placement_mode = config.placement_mode;
         self.center_new_windows = config.center_new_windows;
         self.allow_tiling = config.allow_tiling;
@@ -1010,7 +1027,8 @@ impl<W: PolicyWindow> Policy<W> {
                 self.switch_workspace(workspace);
             }
             Action::SwitchToWorkspace(_) => {}
-            Action::Switch { list, backward } => self.switch(seat, list, backward, now),
+            Action::Switch { list, backward } => self.switch(seat, list, backward, true, now),
+            Action::Cycle { list, backward } => self.switch(seat, list, backward, false, now),
             Action::ShowDesktop => self.set_showing_desktop(!self.is_showing_desktop()),
             Action::BeginMove | Action::BeginResize => {
                 if let Some(id) = self.focus(seat) {

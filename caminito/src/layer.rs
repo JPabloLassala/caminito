@@ -2,7 +2,7 @@
 //! (63). Each output's are kept in Smithay's `layer_map_for_output`, which arranges them by
 //! their anchors, margins, sizes and exclusive zones (15). `scene` decides their order.
 
-use caminito_policy::WindowId;
+use caminito_policy::{LayerId, SwitchEntry, WindowId};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
@@ -17,6 +17,9 @@ use crate::output::output_geometry;
 use crate::scene;
 use crate::state::{Caminito, SEAT};
 use crate::window::send_preferred_scale;
+
+/// The name policy has for a layer surface (163), kept with its main surface.
+struct PolicyName(LayerId);
 
 impl Caminito {
     /// The output for a layer surface that names none: the one under the pointer, or else
@@ -38,7 +41,10 @@ impl Caminito {
         namespace: String,
     ) {
         let layer = LayerSurface::new(surface, namespace);
+        let name = PolicyName(LayerId(self.next_layer_id));
+        self.next_layer_id += 1;
         with_states(layer.wl_surface(), |data| {
+            data.data_map.insert_if_missing(|| name);
             send_preferred_scale(layer.wl_surface(), data, output);
         });
         layer_map_for_output(output)
@@ -144,6 +150,50 @@ impl Caminito {
         Some(bounds)
     }
 
+    /// The layer surface policy names `id`, and where it is, globally.
+    pub(crate) fn layer_named(
+        &self,
+        id: LayerId,
+    ) -> Option<(LayerSurface, Rectangle<i32, Logical>)> {
+        let layers = self.outputs.iter().flat_map(|o| self.layer_surfaces(o));
+        layers
+            .into_iter()
+            .find(|(layer, _)| policy_name(layer) == Some(id))
+    }
+
+    /// Tells policy the layer surfaces that accept the keyboard, which `switch-panels` and
+    /// `cycle-panels` list (163), and the one that has it: the mapped ones whose keyboard
+    /// interactivity is `on_demand` or `exclusive`, in the order they were made.
+    pub(crate) fn refresh_panel_layers(&mut self) {
+        let keyboard = self.layer_with_keyboard();
+        let keyboard = keyboard.as_ref().and_then(policy_name);
+        let layers: Vec<LayerId> = self
+            .outputs
+            .iter()
+            .flat_map(|output| self.layer_surfaces(output))
+            .filter(|(layer, _)| {
+                is_mapped(layer) && interactivity(layer) != KeyboardInteractivity::None
+            })
+            .filter_map(|(layer, _)| policy_name(&layer))
+            .collect();
+        self.policy.set_layers(&layers, keyboard);
+    }
+
+    /// Gives the keyboard to what the Window switcher or a `cycle-*` action chose (163): a
+    /// layer surface has it as one that was clicked has, and a window takes it back from
+    /// one.
+    pub(crate) fn give_keyboard_to_chosen(&mut self) {
+        match self.policy.take_chosen() {
+            Some(SwitchEntry::Layer(id)) => {
+                if let Some((layer, _)) = self.layer_named(id) {
+                    self.keyboard_layer = Some((layer, self.policy.focus(SEAT)));
+                }
+            }
+            Some(SwitchEntry::Window(_)) => self.keyboard_layer = None,
+            None => {}
+        }
+    }
+
     /// A button was pressed on a layer surface. One with `on_demand` keyboard
     /// interactivity takes the keyboard; any other leaves it where it is.
     pub(crate) fn layer_pressed(&mut self, layer: &LayerSurface) {
@@ -162,7 +212,8 @@ impl Caminito {
     /// keeps the focus meanwhile, and its frame drawn focused, as under Marco while the
     /// panel's menu is open. It's the topmost mapped `exclusive` one of the overlay and top
     /// layers, or else the `on_demand` one that was clicked, which is forgotten here once
-    /// policy's focus changes or it can't have the keyboard any more.
+    /// policy's focus changes or it can't have the keyboard any more. One that
+    /// `switch-panels` or `cycle-panels` chose has it as the clicked one has (163).
     pub(crate) fn layer_with_keyboard(&mut self) -> Option<LayerSurface> {
         let exclusive = scene::layer_surfaces_above_windows(self)
             .into_iter()
@@ -190,6 +241,12 @@ impl Caminito {
         }
         self.keyboard_layer.as_ref().map(|(layer, _)| layer.clone())
     }
+}
+
+fn policy_name(layer: &LayerSurface) -> Option<LayerId> {
+    with_states(layer.wl_surface(), |data| {
+        data.data_map.get::<PolicyName>().map(|name| name.0)
+    })
 }
 
 fn interactivity(layer: &LayerSurface) -> KeyboardInteractivity {

@@ -1,5 +1,6 @@
 //! The Window switcher: the list the `switch-*` actions open and step through, and its state
-//! while it is open (108, ADR 0016).
+//! while it is open (108, ADR 0016). The `cycle-*` actions walk the same lists with no popup,
+//! and the panels' list has the Layer surfaces that accept the keyboard (163).
 
 use std::time::Duration;
 
@@ -20,16 +21,61 @@ pub enum SwitchList {
     Panels,
 }
 
-/// The open Window switcher (108): what it lists, and which entry is selected.
+/// A Layer surface that accepts the keyboard, by the name the compositor gives it (163).
+/// Policy manages none: it only lists them among the panels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LayerId(pub u64);
+
+/// What a list has: a window, or among the panels a Layer surface (163).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SwitchEntry {
+    Window(WindowId),
+    Layer(LayerId),
+}
+
+impl SwitchEntry {
+    /// The window, if it is one.
+    pub fn window(self) -> Option<WindowId> {
+        match self {
+            Self::Window(id) => Some(id),
+            Self::Layer(_) => None,
+        }
+    }
+}
+
+impl PartialEq<WindowId> for SwitchEntry {
+    fn eq(&self, other: &WindowId) -> bool {
+        *self == Self::Window(*other)
+    }
+}
+
+/// `alt-tab-minimized-placement`, Marco master's: where the lists have the minimised
+/// windows (163).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MinimizedPlacement {
+    /// Among the others, most recently used first.
+    Mru,
+    /// After the others.
+    #[default]
+    End,
+    /// Nowhere.
+    Hidden,
+}
+
+/// The open Window switcher (108), or a `cycle-*` action under way (163): what it lists,
+/// and which entry is selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Switcher {
-    /// The seat that opened it, which the selected window is activated for.
+    /// The seat that opened it, which the selected entry is activated for.
     pub seat: SeatId,
-    /// The action's list, which `windows` was made from.
+    /// The action's list, which `entries` was made from.
     pub list: SwitchList,
-    /// The windows listed, in order. Never empty.
-    pub windows: Vec<WindowId>,
-    /// The selected entry's place in `windows`.
+    /// Whether it has a popup. A `cycle-*` action's has none, and raises the selected
+    /// window at once in its place.
+    pub popup: bool,
+    /// What's listed, in order. Never empty.
+    pub entries: Vec<SwitchEntry>,
+    /// The selected entry's place in `entries`.
     pub selected: usize,
 }
 
@@ -41,6 +87,9 @@ pub(super) struct Open {
     stack: Vec<WindowId>,
     /// Whether the switcher has raised a window, so the stacking is put back on closing.
     raised: bool,
+    /// The minimised window a cycle shows while it's selected, as Marco's `tab_unminimized`
+    /// (core/keybindings.c:2313-2326). It's minimised again when the selection leaves it.
+    peeked: Option<WindowId>,
     /// The windows mapped while it's open, and when, in the order they mapped. They get the
     /// focus they would have had when it closes.
     mapped: Vec<(WindowId, Duration)>,
@@ -70,7 +119,7 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         let switcher = &mut open.switcher;
-        let len = switcher.windows.len();
+        let len = switcher.entries.len();
         switcher.selected = if backward {
             (switcher.selected + len - 1) % len
         } else {
@@ -85,14 +134,15 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(open) = &mut self.switcher else {
             return;
         };
-        if index < open.switcher.windows.len() {
+        if index < open.switcher.entries.len() {
             open.switcher.selected = index;
             self.raise_selected();
         }
         self.apply();
     }
 
-    /// Closes the switcher and activates the selected window, as `activate` does.
+    /// Closes the switcher and activates the selected window, as `activate` does. A Layer
+    /// surface is the compositor's to give the keyboard: `take_chosen` names it.
     pub fn switcher_commit(&mut self, now: Duration) {
         self.close_switcher(Close::Commit(now));
         self.apply();
@@ -104,10 +154,50 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// A `switch-*` action: steps the open switcher, or opens one over `list`. Nothing opens
-    /// during a move or resize, nor with no window to list, and one window alone is
-    /// activated with no switcher (108).
-    pub(super) fn switch(&mut self, seat: SeatId, list: SwitchList, backward: bool, now: Duration) {
+    /// What a commit last chose, once: the compositor takes the keyboard from a Layer
+    /// surface for a window, and gives it to a Layer surface (163).
+    pub fn take_chosen(&mut self) -> Option<SwitchEntry> {
+        self.chosen.take()
+    }
+
+    /// The Layer surfaces that accept the keyboard, and the one that has it in place of the
+    /// focused window, if one does. Policy keeps them most recently used first: by when
+    /// each had the keyboard, and then in the order they came.
+    pub fn set_layers(&mut self, layers: &[LayerId], keyboard: Option<LayerId>) {
+        let mut ordered: Vec<LayerId> = keyboard.into_iter().collect();
+        let known = self.layers.iter().filter(|id| layers.contains(id));
+        for id in known.chain(layers) {
+            if !ordered.contains(id) {
+                ordered.push(*id);
+            }
+        }
+        if ordered == self.layers && keyboard == self.keyboard_layer {
+            return;
+        }
+        self.layers = ordered;
+        self.keyboard_layer = keyboard;
+        let listed = self.switcher.iter().flat_map(|open| &open.switcher.entries);
+        let gone: Vec<SwitchEntry> = listed
+            .copied()
+            .filter(|entry| matches!(entry, SwitchEntry::Layer(id) if !layers.contains(id)))
+            .collect();
+        for entry in gone {
+            self.switcher_entry_gone(entry);
+        }
+        self.apply();
+    }
+
+    /// A `switch-*` action, or with no `popup` a `cycle-*` one: steps the open switcher, or
+    /// opens one over `list`. Nothing opens during a move or resize, nor with nothing to
+    /// list, and one entry alone is activated with no switcher (108).
+    pub(super) fn switch(
+        &mut self,
+        seat: SeatId,
+        list: SwitchList,
+        backward: bool,
+        popup: bool,
+        now: Duration,
+    ) {
         if self.switcher.is_some() {
             self.switcher_step(backward);
             return;
@@ -115,19 +205,19 @@ impl<W: PolicyWindow> Policy<W> {
         if self.grab(seat).is_some() {
             return;
         }
-        let windows = self.switch_list(seat, list);
-        match windows.as_slice() {
+        let entries = self.switch_list(seat, list);
+        match entries.as_slice() {
             [] => {}
             [only] => {
                 self.pointer_focus.keyboard_focused();
-                self.activate(seat, *only, now);
+                self.choose(seat, *only, now);
             }
             _ => {
-                // Ruling 7: the second entry when the first is the focused window, which
-                // the switcher is for leaving; backward, the last.
+                // Ruling 7: the second entry when the first has the keyboard, which the
+                // switcher is for leaving; backward, the last.
                 let selected = if backward {
-                    windows.len() - 1
-                } else if self.focus(seat) == Some(windows[0]) {
+                    entries.len() - 1
+                } else if self.has_keyboard(seat, entries[0]) {
                     1
                 } else {
                     0
@@ -136,11 +226,13 @@ impl<W: PolicyWindow> Policy<W> {
                     switcher: Switcher {
                         seat,
                         list,
-                        windows,
+                        popup,
+                        entries,
                         selected,
                     },
                     stack: self.stack.clone(),
                     raised: false,
+                    peeked: None,
                     mapped: Vec::new(),
                 });
                 self.raise_selected();
@@ -156,11 +248,15 @@ impl<W: PolicyWindow> Policy<W> {
         if open.raised {
             self.restore_stacking(&open.stack);
         }
+        // Activating it shows it again, if it's the one chosen.
+        if let Some(managed) = open.peeked.and_then(|id| self.windows.get_mut(&id)) {
+            managed.minimized = true;
+        }
         let time = match how {
             Close::Commit(now) => {
                 self.pointer_focus.keyboard_focused();
                 let switcher = &open.switcher;
-                self.activate(switcher.seat, switcher.windows[switcher.selected], now);
+                self.choose(switcher.seat, switcher.entries[switcher.selected], now);
                 Some(now)
             }
             Close::Cancel(now) => Some(now),
@@ -186,37 +282,84 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         open.mapped.retain(|(mapped, _)| *mapped != id);
-        let switcher = &mut open.switcher;
-        let Some(place) = switcher.windows.iter().position(|w| *w == id) else {
+        if open.peeked == Some(id) {
+            open.peeked = None;
+        }
+        self.switcher_entry_gone(SwitchEntry::Window(id));
+    }
+
+    /// Takes an entry that went away out of the switcher's list.
+    fn switcher_entry_gone(&mut self, entry: SwitchEntry) {
+        let Some(open) = &mut self.switcher else {
             return;
         };
-        switcher.windows.remove(place);
-        if switcher.windows.is_empty() {
+        let switcher = &mut open.switcher;
+        let Some(place) = switcher.entries.iter().position(|e| *e == entry) else {
+            return;
+        };
+        switcher.entries.remove(place);
+        if switcher.entries.is_empty() {
             self.close_switcher(Close::Dropped);
             return;
         }
         if place < switcher.selected {
-            // The selection stays on its window.
+            // The selection stays on its entry.
             switcher.selected -= 1;
-        } else if switcher.selected == switcher.windows.len() {
-            // The selected window was the last: the first is next.
+        } else if switcher.selected == switcher.entries.len() {
+            // The selected entry was the last: the first is next.
             switcher.selected = 0;
         }
         self.raise_selected();
     }
 
-    /// With `alt-tab-raise-windows`, raises the selected window over the stacking the
-    /// switcher opened with, so that only that window is out of place.
-    fn raise_selected(&mut self) {
-        if !self.alt_tab_raise_windows {
-            return;
+    /// Activates what the switcher chose, and leaves its name for the compositor.
+    fn choose(&mut self, seat: SeatId, entry: SwitchEntry, now: Duration) {
+        if let SwitchEntry::Window(id) = entry {
+            self.activate(seat, id, now);
         }
+        self.chosen = Some(entry);
+    }
+
+    /// Whether `entry` is what the keys go to: the focused window, unless a Layer surface
+    /// has the keyboard in its place, or that Layer surface.
+    fn has_keyboard(&self, seat: SeatId, entry: SwitchEntry) -> bool {
+        match entry {
+            SwitchEntry::Window(id) => {
+                self.keyboard_layer.is_none() && self.focus(seat) == Some(id)
+            }
+            SwitchEntry::Layer(id) => self.keyboard_layer == Some(id),
+        }
+    }
+
+    /// Raises the selected window over the stacking the switcher opened with, so that only
+    /// that window is out of place: a `switch-*` action with `alt-tab-raise-windows`, and
+    /// a `cycle-*` one always, which also shows the window while it's minimised, as
+    /// Marco's does (core/keybindings.c:2301-2327).
+    fn raise_selected(&mut self) {
         let Some(mut open) = self.switcher.take() else {
             return;
         };
-        self.restore_stacking(&open.stack);
-        self.raise_family(open.switcher.windows[open.switcher.selected]);
-        open.raised = true;
+        let cycle = !open.switcher.popup;
+        if cycle || self.alt_tab_raise_windows {
+            self.restore_stacking(&open.stack);
+            let selected = open.switcher.entries[open.switcher.selected].window();
+            if cycle && open.peeked != selected {
+                if let Some(managed) = open.peeked.take().and_then(|id| self.windows.get_mut(&id)) {
+                    managed.minimized = true;
+                }
+                if let Some(id) = selected
+                    && let Some(managed) = self.windows.get_mut(&id)
+                    && managed.minimized
+                {
+                    managed.minimized = false;
+                    open.peeked = Some(id);
+                }
+            }
+            if let Some(id) = selected {
+                self.raise_family(id);
+            }
+            open.raised = true;
+        }
         self.switcher = Some(open);
     }
 
@@ -233,8 +376,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.stack = restored;
     }
 
-    /// The windows `list` shows `seat`, in the Window switcher's order.
-    pub fn switch_list(&self, seat: SeatId, list: SwitchList) -> Vec<WindowId> {
+    /// What `list` shows `seat`, in the Window switcher's order.
+    pub fn switch_list(&self, seat: SeatId, list: SwitchList) -> Vec<SwitchEntry> {
         let group = match list {
             SwitchList::Group => match self.focus(seat) {
                 Some(focused) => Some(self.root(focused)),
@@ -264,17 +407,34 @@ impl<W: PolicyWindow> Policy<W> {
 
         // Most recently used first, by the better place of the window and its dialog. A window
         // that never had the focus is in neither, and keeps its stacking order after those that
-        // did. Then the minimised go last. The sort is stable, so ties keep the stacking order.
+        // did. Then `alt-tab-minimized-placement` places the minimised, as Marco master's
+        // `meta_display_get_tab_list` does (core/display.c:4801-4809). The sort is stable, so
+        // ties keep the stacking order.
+        let placement = self.alt_tab_minimized_placement;
+        let minimized = |id: &WindowId| self.windows[id].minimized;
+        entries.retain(|(base, _)| placement != MinimizedPlacement::Hidden || !minimized(base));
         let place = |id: WindowId| self.mru.iter().position(|w| *w == id);
         entries.sort_by_key(|&(base, listed)| {
             let used = place(base).into_iter().chain(place(listed)).min();
-            (self.windows[&base].minimized, used.unwrap_or(usize::MAX))
+            let last = placement == MinimizedPlacement::End && minimized(&base);
+            (last, used.unwrap_or(usize::MAX))
         });
 
         let mut listed = Vec::new();
         for (_, window) in entries {
-            if !listed.contains(&window) {
-                listed.push(window);
+            if !listed.contains(&SwitchEntry::Window(window)) {
+                listed.push(SwitchEntry::Window(window));
+            }
+        }
+        if list == SwitchList::Panels {
+            // Policy has no order between a window and a Layer surface: the Layer surfaces
+            // are first when one of them has the keyboard, so that the next is one press
+            // away, and else after the windows.
+            let layers = self.layers.iter().copied().map(SwitchEntry::Layer);
+            if self.keyboard_layer.is_some() {
+                listed.splice(0..0, layers);
+            } else {
+                listed.extend(layers);
             }
         }
         listed
