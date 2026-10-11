@@ -6,14 +6,19 @@ use super::*;
 /// A state a window asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateRequest {
+    /// Maximised both ways, or not.
     Maximized(bool),
     /// Fullscreen, on this output if the client named one.
     Fullscreen(Option<OutputId>),
+    /// Out of fullscreen.
     Unfullscreen,
+    /// Minimised, which a window that isn't managed can't be.
     Minimized,
     /// Kept above others, or not (155).
     Above(bool),
+    /// Kept below others, or not (155).
     Below(bool),
+    /// On every workspace, or on one (155).
     Sticky(bool),
     /// The active window, as `_NET_ACTIVE_WINDOW` asks: if policy honours the one who asks,
     /// it switches to its workspace, unminimises it, raises it and focuses it (166).
@@ -30,8 +35,11 @@ pub struct MapStates {
     pub maximized: bool,
     /// Fullscreen, on the output named if one is.
     pub fullscreen: Option<Option<OutputId>>,
+    /// Kept above others (155).
     pub above: bool,
+    /// Kept below others (155).
     pub below: bool,
+    /// On every workspace (155).
     pub sticky: bool,
     /// It asked to be the active window, which policy judges once it has mapped (166).
     pub active: Option<ActivationSource>,
