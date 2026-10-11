@@ -527,6 +527,9 @@ pub struct Frames {
     pub right_click: TitlebarAction,
     /// Marco reads no key for this, so it's off unless a schema has one.
     pub attach_modal_dialogs: bool,
+    /// Whether frames have shadows: `compositing-manager`, which is all that turns Marco's
+    /// off (171).
+    pub shadows: bool,
 }
 
 /// A titlebar click's action (`org.mate.Marco.ActionTitlebar`).
@@ -1145,6 +1148,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             TitlebarAction::Menu,
         ),
         attach_modal_dialogs: r.bool(MARCO_GENERAL, "attach-modal-dialogs", false),
+        shadows: r.bool(MARCO_GENERAL, "compositing-manager", true),
     };
 
     // Every key of both schemas, so every value is parsed (148).
