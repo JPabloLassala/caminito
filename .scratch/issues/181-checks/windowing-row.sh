@@ -15,15 +15,18 @@ gcc -shared -fPIC -o "$work/librow-probe.so" "$here/row-probe.c" $(pkg-config --
 
 export XDG_RUNTIME_DIR=$work/run
 mkdir -m 700 "$XDG_RUNTIME_DIR"
-Xvfb :99 >/dev/null 2>&1 & xpid=$!
+# Xvfb takes the first free display, and writes its number to fd 3.
+exec 3>"$work/display"
+Xvfb -displayfd 3 >/dev/null 2>&1 & xpid=$!
 weston --backend=headless --socket=wl-row --idle-time=0 >/dev/null 2>&1 & wpid=$!
 trap 'kill $xpid $wpid; rm -rf "$work"' EXIT
 sleep 2
+display=:$(cat "$work/display")
 
 failed=0
 check () {
   local name=$1 want=$2 got; shift 2
-  got=$(env -u MATE_WM_NAME -u GDK_BACKEND DISPLAY=:99 WAYLAND_DISPLAY=wl-row \
+  got=$(env -u MATE_WM_NAME -u GDK_BACKEND DISPLAY=$display WAYLAND_DISPLAY=wl-row \
     GTK_MODULES="$work/librow-probe.so" GSETTINGS_BACKEND=memory "$@" \
     dbus-run-session -- timeout 20 "$bin" 2>/dev/null | sed -n 's/^row=//p')
   if [ "$got" = "$want" ]; then echo "ok   $name: $got"

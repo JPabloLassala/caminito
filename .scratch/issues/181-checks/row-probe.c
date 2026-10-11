@@ -2,6 +2,7 @@
  * toplevel, then quits (181). */
 #include <gtk/gtk.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static GList *labels;
 
