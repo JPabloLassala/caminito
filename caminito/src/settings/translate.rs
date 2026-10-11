@@ -13,6 +13,7 @@ use caminito_policy::{
 use caminito_theme::ButtonLayout;
 
 use crate::input::bindings::Bindings;
+use crate::input::bindings::button_modifier::ButtonModifier;
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
@@ -149,18 +150,6 @@ pub const SCHEMAS: &[Schema] = &[
 pub const UNSUPPORTED: &[(&str, &str)] = &[
     // Caminito will draw the ripple itself (53); 147 put it on the later roadmap.
     (MOUSE, "locate-pointer"),
-    // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
-    // ticket that honours it. Caminito does what each one's default asks, except
-    // `resize-with-right-button`, whose values it matches none of. A key whose other value is
-    // what Caminito already does (`audible-bell`) isn't here. Master's keys are logged only
-    // where the installed schema has them. The keybindings' schemas have no key here: an
-    // action with no behaviour yet is read and binds nothing, and its default reaches the
-    // client (148).
-    // 162.
-    (MARCO_GENERAL, "mouse-button-modifier"),
-    (MARCO_GENERAL, "resize-with-right-button"),
-    (MARCO_GENERAL, "action-scroll-up-titlebar"),
-    (MARCO_GENERAL, "action-scroll-down-titlebar"),
     // Mouse keys are later (13): they need pointer emulation with msd's acceleration curve.
     (A11Y_KEYBOARD, "mousekeys-enable"),
     // 13 had these in v0.1, and the AccessX filter doesn't apply them yet (134); 147 put
@@ -397,6 +386,7 @@ pub struct Settings {
     pub bindings: Bindings,
     pub commands: Commands,
     pub frames: Frames,
+    pub modifier_click: ModifierClick,
     pub switcher: SwitcherSettings,
     /// Whether a minimised window shrinks into its button (172): `compositing-manager` on,
     /// `reduced-resources` off and `org.mate.interface enable-animations` on. Marco reads
@@ -531,12 +521,25 @@ pub struct Frames {
     pub double_click: TitlebarAction,
     pub middle_click: TitlebarAction,
     pub right_click: TitlebarAction,
+    /// A scroll on the titlebar, one way and the other (162).
+    pub scroll_up: TitlebarAction,
+    pub scroll_down: TitlebarAction,
     /// Whether frames have shadows: `compositing-manager`, which is all that turns Marco's
     /// off (171).
     pub shadows: bool,
 }
 
-/// A titlebar click's action (`org.mate.Marco.ActionTitlebar`).
+/// What a click on a window does with a modifier held, wherever on the window it is (162).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModifierClick {
+    /// `mouse-button-modifier`.
+    pub modifier: ButtonModifier,
+    /// Whether the right button resizes and the middle one opens the window menu, or the
+    /// other way round.
+    pub resize_with_right_button: bool,
+}
+
+/// A titlebar click's or scroll's action (`org.mate.Marco.ActionTitlebar`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TitlebarAction {
     Close,
@@ -1158,7 +1161,22 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             "action-right-click-titlebar",
             TitlebarAction::Menu,
         ),
+        scroll_up: r.nick(
+            MARCO_GENERAL,
+            "action-scroll-up-titlebar",
+            TitlebarAction::None,
+        ),
+        scroll_down: r.nick(
+            MARCO_GENERAL,
+            "action-scroll-down-titlebar",
+            TitlebarAction::None,
+        ),
         shadows: r.bool(MARCO_GENERAL, "compositing-manager", true),
+    };
+
+    let modifier_click = ModifierClick {
+        modifier: r.button_modifier(MARCO_GENERAL, "mouse-button-modifier"),
+        resize_with_right_button: r.bool(MARCO_GENERAL, "resize-with-right-button", true),
     };
 
     // Every key of both schemas, so every value is parsed (148).
@@ -1199,6 +1217,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         bindings,
         commands,
         frames,
+        modifier_click,
         switcher,
         minimize_animation,
         interface: Interface {
@@ -1531,6 +1550,19 @@ impl Reader<'_> {
         };
         self.read(schema, key, builtin.into(), accept, |s| {
             Value::Str(s.clone())
+        })
+    }
+
+    /// `mouse-button-modifier`'s modifiers. A value that isn't modifiers alone gives the
+    /// default, `<Alt>` (09), where Marco keeps the value it had (`mouse_button_mods_handler`,
+    /// prefs.c:1289-1313).
+    fn button_modifier(&mut self, schema: &str, key: &str) -> ButtonModifier {
+        let accept = |v: &Value| match v {
+            Value::Str(s) => ButtonModifier::parse(s).ok(),
+            _ => None,
+        };
+        self.read(schema, key, ButtonModifier::default(), accept, |m| {
+            Value::Str(m.to_string())
         })
     }
 

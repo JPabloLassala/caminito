@@ -1,5 +1,5 @@
 //! Interactive move and resize, from client requests and from Marco's Alt+drag and
-//! Alt+middle-drag (22). Move and resize requests are xdg's; Alt+drag and Alt+middle-drag
+//! Alt+right-drag (22). Move and resize requests are xdg's; Alt+drag and Alt+right-drag
 //! run with an xdg toplevel and an XWayland window (45).
 
 use caminito_test_client::{ResizeEdge, format_configures, format_input};
@@ -7,7 +7,7 @@ use insta::assert_snapshot;
 use smithay::utils::{Point, Rectangle};
 
 use super::fixture::{
-    BTN_LEFT, BTN_MIDDLE, ClientWindow, Fixture, KEY_LEFTALT, Kind, WINDOW_COLOR, WindowSpec,
+    BTN_LEFT, BTN_RIGHT, ClientWindow, Fixture, KEY_LEFTALT, Kind, WINDOW_COLOR, WindowSpec,
     on_both_kinds,
 };
 use crate::state::SEAT;
@@ -130,7 +130,7 @@ fn the_client_sees_nothing_of_an_alt_drag_but_the_alt_release() {
 }
 
 on_both_kinds! {
-    fn alt_middle_drag_resizes_from_the_nearest_corner(kind: Kind) {
+    fn alt_right_drag_resizes_from_the_nearest_corner(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
         let window = f.map(client, WindowSpec::plain((400, 300)));
         // Alt+dragged into the middle of the output first, so that the resize doesn't end
@@ -149,10 +149,10 @@ on_both_kinds! {
         f.pointer_move(point.x, point.y);
         f.key(KEY_LEFTALT, true);
 
-        f.pointer_button(BTN_MIDDLE, true);
+        f.pointer_button(BTN_RIGHT, true);
         f.pointer_move(point.x - 100., point.y - 50.);
         f.draw_at_asked_size(window, (500, 350));
-        f.pointer_button(BTN_MIDDLE, false);
+        f.pointer_button(BTN_RIGHT, false);
         f.key(KEY_LEFTALT, false);
         f.sync(window);
 
@@ -179,7 +179,7 @@ fn an_x_window_that_takes_sync_requests_keeps_its_size_until_it_has_drawn_the_ne
     let point = (start.loc + Point::from((380, 270))).to_f64();
     f.pointer_move(point.x, point.y);
     f.key(KEY_LEFTALT, true);
-    f.pointer_button(BTN_MIDDLE, true);
+    f.pointer_button(BTN_RIGHT, true);
     f.pointer_move(point.x + 100., point.y + 50.);
     f.sync(window);
 
@@ -195,7 +195,7 @@ fn an_x_window_that_takes_sync_requests_keeps_its_size_until_it_has_drawn_the_ne
     let acked = f.x11_call(client, move |x11| x11.ack_sync_requests(x));
     assert_eq!(acked.unwrap(), 1);
     f.dispatch_until(|f| f.geometry(window).size == (500, 350).into());
-    f.pointer_button(BTN_MIDDLE, false);
+    f.pointer_button(BTN_RIGHT, false);
     f.key(KEY_LEFTALT, false);
     f.sync(window);
 
@@ -219,9 +219,9 @@ fn an_x_window_released_before_it_has_drawn_its_new_size_still_waits_for_it() {
     let point = (start.loc + Point::from((380, 270))).to_f64();
     f.pointer_move(point.x, point.y);
     f.key(KEY_LEFTALT, true);
-    f.pointer_button(BTN_MIDDLE, true);
+    f.pointer_button(BTN_RIGHT, true);
     f.pointer_move(point.x + 100., point.y + 50.);
-    f.pointer_button(BTN_MIDDLE, false);
+    f.pointer_button(BTN_RIGHT, false);
     f.key(KEY_LEFTALT, false);
     f.sync(window);
 

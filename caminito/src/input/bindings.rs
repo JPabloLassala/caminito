@@ -1,8 +1,10 @@
 //! Caminito's keybindings, read from `org.mate.Marco.global-keybindings` and
 //! `org.mate.Marco.window-keybindings` as Marco reads them (148). The accelerators other
-//! programs grab are `accelerators`' (98).
+//! programs grab are `accelerators`' (98), and the modifier a click on a window is held
+//! with is `button_modifier`'s (162).
 
 pub(crate) mod accelerators;
+pub(crate) mod button_modifier;
 
 use std::fmt;
 

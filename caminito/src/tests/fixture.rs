@@ -19,7 +19,9 @@ use caminito_test_client::layer_shell::{LayerId, LayerSpec};
 use caminito_test_client::x11::{X11Client, XWindowSpec};
 use caminito_test_client::{Client, DecorationMode, WindowId};
 use caminito_theme::{ButtonFunction, ButtonState as FrameButtonState, FrameFlags, FrameType};
-use smithay::backend::input::{ButtonState, InputTime, KeyState, Keycode};
+use smithay::backend::input::{
+    AxisRelativeDirection, AxisSource, ButtonState, InputTime, KeyState, Keycode,
+};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::output::Output;
 use smithay::reexports::calloop::EventLoop;
@@ -32,6 +34,7 @@ use smithay::xwayland::X11Surface;
 use x11rb::protocol::Event;
 
 use crate::decoration::control::FrameControl;
+use crate::input::{AxisScroll, Scroll};
 use crate::output::saved::{self, SavedLayouts};
 use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Value};
@@ -1164,6 +1167,23 @@ impl Fixture {
             ButtonState::Released
         };
         self.state.on_pointer_button(button, state, time);
+        self.dispatch();
+    }
+
+    /// Turns a wheel by `v120` 120ths of a click, down if it's positive, as a mouse whose
+    /// wheel has steps that fine does. A plain wheel's click is 120.
+    pub fn scroll(&mut self, v120: f64) {
+        let scroll = Scroll {
+            time: self.input_time(),
+            source: AxisSource::Wheel,
+            horizontal: None,
+            vertical: AxisScroll {
+                amount: Some(v120 * 15. / 120.),
+                v120: Some(v120),
+                relative_direction: AxisRelativeDirection::Identical,
+            },
+        };
+        self.state.on_pointer_scroll(scroll);
         self.dispatch();
     }
 

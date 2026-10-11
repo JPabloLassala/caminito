@@ -25,7 +25,7 @@ impl Accelerator {
 
 /// Why a string isn't an accelerator Caminito can grab.
 #[derive(Debug, PartialEq)]
-pub(super) enum ParseError {
+pub(crate) enum ParseError {
     /// A `<` with no `>` after it.
     UnclosedModifier,
     /// A modifier GTK doesn't name.
@@ -39,6 +39,8 @@ pub(super) enum ParseError {
     Keycode,
     /// A key that isn't a keysym's name.
     UnknownKey(String),
+    /// A key where modifiers alone are asked for, as `mouse-button-modifier` asks (162).
+    NotAModifier(String),
 }
 
 impl fmt::Display for ParseError {
@@ -50,6 +52,7 @@ impl fmt::Display for ParseError {
             Self::NoKey => write!(f, "it names no key"),
             Self::Keycode => write!(f, "a key by its code can't be grabbed"),
             Self::UnknownKey(name) => write!(f, "{name} isn't a keysym"),
+            Self::NotAModifier(name) => write!(f, "{name} isn't a modifier"),
         }
     }
 }
@@ -64,23 +67,7 @@ pub(super) fn parse(accelerator: &str) -> Result<Option<Accelerator>, ParseError
     if accelerator.is_empty() || accelerator == "disabled" {
         return Ok(None);
     }
-    let mut held = Held::from(&ModifiersState::default());
-    let mut rest = accelerator;
-    while let Some(after) = rest.strip_prefix('<') {
-        let (name, after) = after.split_once('>').ok_or(ParseError::UnclosedModifier)?;
-        // The virtual modifiers are where xkeyboard-config's evdev rules put them.
-        match name.to_ascii_lowercase().as_str() {
-            "control" | "ctrl" | "ctl" | "primary" => held.ctrl = true,
-            "shift" | "shft" => held.shift = true,
-            "alt" | "meta" | "mod1" => held.alt = true,
-            "super" | "hyper" | "mod4" => held.logo = true,
-            "release" | "mod2" | "mod3" | "mod5" => {
-                return Err(ParseError::UnsupportedModifier(name.to_owned()));
-            }
-            _ => return Err(ParseError::UnknownModifier(name.to_owned())),
-        }
-        rest = after;
-    }
+    let (held, rest) = modifiers(accelerator)?;
     if rest.is_empty() {
         return Err(ParseError::NoKey);
     }
@@ -99,6 +86,28 @@ pub(super) fn parse(accelerator: &str) -> Result<Option<Accelerator>, ParseError
         _ => keysym,
     };
     Ok(Some(Accelerator { held, keysym }))
+}
+
+/// The modifiers an accelerator starts with, and what's after them.
+pub(super) fn modifiers(accelerator: &str) -> Result<(Held, &str), ParseError> {
+    let mut held = Held::from(&ModifiersState::default());
+    let mut rest = accelerator;
+    while let Some(after) = rest.strip_prefix('<') {
+        let (name, after) = after.split_once('>').ok_or(ParseError::UnclosedModifier)?;
+        // The virtual modifiers are where xkeyboard-config's evdev rules put them.
+        match name.to_ascii_lowercase().as_str() {
+            "control" | "ctrl" | "ctl" | "primary" => held.ctrl = true,
+            "shift" | "shft" => held.shift = true,
+            "alt" | "meta" | "mod1" => held.alt = true,
+            "super" | "hyper" | "mod4" => held.logo = true,
+            "release" | "mod2" | "mod3" | "mod5" => {
+                return Err(ParseError::UnsupportedModifier(name.to_owned()));
+            }
+            _ => return Err(ParseError::UnknownModifier(name.to_owned())),
+        }
+        rest = after;
+    }
+    Ok((held, rest))
 }
 
 /// One caller's grab of a combination.

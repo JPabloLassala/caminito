@@ -26,6 +26,9 @@ pub struct FramePointer {
     pub pressed: Option<(WindowId, ButtonFunction)>,
     /// The last left press on a frame, which a second one may make a double-click.
     last_press: Option<Press>,
+    /// How far a scroll on a titlebar has gone since its last whole click of a wheel, in
+    /// 120ths of one (162).
+    pub(super) scrolled: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -235,7 +238,7 @@ impl State {
     /// Runs one of the `action-*-titlebar` actions on a window (`meta_frame_titlebar_event`,
     /// frames.c:1480-1650). Policy's setters refuse a state the window has no function for
     /// (177).
-    fn titlebar_action(&mut self, window: WindowId, action: TitlebarAction) {
+    pub(super) fn titlebar_action(&mut self, window: WindowId, action: TitlebarAction) {
         let caminito = &mut self.caminito;
         if !caminito.is_framed(window) {
             return;
