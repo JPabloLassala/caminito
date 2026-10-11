@@ -196,7 +196,6 @@ impl State {
     pub(crate) fn keyboard_grab_key(&mut self, key: GrabKey, time: InputTime) {
         let caminito = &mut self.caminito;
         caminito.policy.grab_key(SEAT, key);
-        caminito.queue_redraw_all();
         if caminito.policy.grab(SEAT).is_none() {
             let pointer = caminito.seat.get_pointer().unwrap();
             pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
@@ -206,6 +205,8 @@ impl State {
         }
         if caminito.window_grab.is_some() {
             caminito.window_grab = Some(window_grab_kind(caminito));
+            // The cursor shows the edges a resize has picked.
+            caminito.queue_redraw_all();
         }
         self.warp_pointer_for_grab();
     }
@@ -274,10 +275,11 @@ impl PointerGrab<State> for Grab {
             // Marco reads Shift from each motion, so it can be pressed or let go mid-drag.
             let snap = caminito.seat.get_keyboard().unwrap().modifier_state().shift;
             caminito.policy.grab_motion(SEAT, event.location, snap);
-            caminito.queue_redraw_all();
             // A keyboard resize's first motion picks its edges, and warps the pointer there.
             if let Some(location) = caminito.policy.take_pointer_warp(SEAT) {
                 caminito.window_grab = Some(window_grab_kind(caminito));
+                // The cursor shows the edges the resize has picked.
+                caminito.queue_redraw_all();
                 let warp = MotionEvent {
                     location,
                     serial: event.serial,
@@ -426,6 +428,7 @@ impl PointerGrab<State> for Grab {
             }
             Purpose::Frame(_) => caminito.frame_pointer.pressed = None,
         }
+        // The cursor is no longer the grab's, or the pressed frame's.
         caminito.queue_redraw_all();
     }
 }

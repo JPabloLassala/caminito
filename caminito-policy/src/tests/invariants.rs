@@ -7,8 +7,8 @@ use super::*;
 use smithay::utils::Size;
 
 use crate::{
-    Crossing, FocusMode, GrabKey, GrabStep, PointerTarget, PolicyWindow, ResizeEdges, SwitchList,
-    WrapStyle,
+    Crossing, FocusMode, GrabKey, GrabStep, PointerTarget, PolicyWindow, ResizeEdges, SwitchEntry,
+    SwitchList, WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -742,14 +742,130 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     }
 }
 
+/// The queries `caminito/src/scene.rs` makes of policy, in the alphabet's order. `SceneView`
+/// holds the answer to each, and `the_scene_view_has_every_query_the_scene_makes` holds
+/// this list to the Scene's source (179).
+const SCENE_QUERIES: [&str; 11] = [
+    "active_workspace",
+    "frame_rect",
+    "geometry",
+    "grab",
+    "is_fullscreen",
+    "is_showing",
+    "layer",
+    "stacking",
+    "switcher",
+    "tile_preview",
+    "window",
+];
+
+/// What the Scene reads from policy, by the queries it reads it with (179).
+#[derive(Debug, PartialEq)]
+struct SceneView {
+    /// `stacking` of `active_workspace`.
+    stacking: Vec<WindowId>,
+    /// Each managed window, as `window` has them, with its answers.
+    windows: Vec<WindowView>,
+    /// Each seat's answers.
+    grabs: Vec<GrabView>,
+    /// The entries of `switcher`.
+    switcher: Option<Vec<SwitchEntry>>,
+}
+
+#[derive(Debug, PartialEq)]
+struct GrabView {
+    grab: Option<WindowId>,
+    tile_preview: Option<Rectangle<i32, Logical>>,
+}
+
+#[derive(Debug, PartialEq)]
+struct WindowView {
+    id: WindowId,
+    geometry: Option<Rectangle<i32, Logical>>,
+    frame_rect: Option<Rectangle<i32, Logical>>,
+    is_showing: bool,
+    is_fullscreen: bool,
+    layer: Option<Layer>,
+}
+
+fn scene_view(policy: &Policy<TestWindow>) -> SceneView {
+    SceneView {
+        stacking: policy.stacking(policy.active_workspace()),
+        windows: policy
+            .windows()
+            .map(|window| {
+                let id = window.id;
+                WindowView {
+                    id,
+                    geometry: policy.geometry(id),
+                    frame_rect: policy.frame_rect(id),
+                    is_showing: policy.is_showing(id),
+                    is_fullscreen: policy.is_fullscreen(id),
+                    layer: policy.layer(id),
+                }
+            })
+            .collect(),
+        grabs: (0..SEATS)
+            .map(|seat| GrabView {
+                grab: policy.grab(SeatId(seat)),
+                tile_preview: policy.tile_preview(SeatId(seat)),
+            })
+            .collect(),
+        switcher: policy.switcher().map(|switcher| switcher.entries.clone()),
+    }
+}
+
+/// The names of the methods `source` calls on something named `policy`.
+fn policy_queries(source: &str) -> std::collections::BTreeSet<&str> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut queries = std::collections::BTreeSet::new();
+    for (at, _) in source.match_indices("policy") {
+        if source[..at].ends_with(word) {
+            continue;
+        }
+        let rest = source[at + "policy".len()..].trim_start();
+        let Some(rest) = rest.strip_prefix('.') else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let name = &rest[..rest.find(|c| !word(c)).unwrap_or(rest.len())];
+        if rest[name.len()..].starts_with('(') {
+            queries.insert(name);
+        }
+    }
+    queries
+}
+
+#[test]
+fn the_scene_view_has_every_query_the_scene_makes() {
+    let scene = include_str!("../../../caminito/src/scene.rs");
+    assert_eq!(
+        policy_queries(scene).into_iter().collect::<Vec<_>>(),
+        SCENE_QUERIES,
+        "`SceneView`, and `SceneReads` in policy.rs, hold what `scene.rs` reads from policy"
+    );
+}
+
 fn check_ops(ops: Vec<Op>) {
     // Tiling on, as Marco's default has it, so the drags can tile (158).
     let mut policy = Policy::new(Config {
         allow_tiling: true,
         ..Config::default()
     });
+    policy.take_scene_changed();
+    let mut seen = scene_view(&policy);
     for (step, op) in ops.into_iter().enumerate() {
+        let done = op.clone();
         op.apply(&mut policy, step as u64);
+        // A change in what the Scene reads comes with policy saying so (179). Saying so
+        // with no change is allowed.
+        let view = scene_view(&policy);
+        let said = policy.take_scene_changed();
+        assert!(
+            said || view == seen,
+            "{done:?} changed what the Scene reads, and policy didn't say so"
+        );
+        seen = view;
         verify_invariants(&policy);
     }
 }

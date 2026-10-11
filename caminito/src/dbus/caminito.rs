@@ -370,7 +370,6 @@ impl Caminito {
             }
             Request::SetShowingDesktop(showing, reply) => {
                 self.policy.set_showing_desktop(showing);
-                self.queue_redraw_all();
                 // zbus signals this one too.
                 self.showing_desktop_signalled = Some(showing);
                 let _ = reply.send(());

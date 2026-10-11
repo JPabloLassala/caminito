@@ -374,7 +374,6 @@ impl Caminito {
             }
         }
         self.refresh_switcher();
-        self.queue_redraw_all();
         Some(FilterResult::Intercept(None))
     }
 
@@ -389,7 +388,6 @@ impl Caminito {
             let now = self.now();
             self.policy.switcher_commit(now);
             self.refresh_switcher();
-            self.queue_redraw_all();
         }
     }
 }
@@ -422,7 +420,6 @@ impl State {
                 popup: None,
             });
         }
-        self.caminito.queue_redraw_all();
     }
 
     /// A pointer button with the pointer at `location`. Returns whether it was the Window
@@ -459,7 +456,6 @@ impl State {
             None => caminito.policy.switcher_cancel(now),
         }
         caminito.refresh_switcher();
-        caminito.queue_redraw_all();
         true
     }
 
