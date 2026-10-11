@@ -70,6 +70,9 @@ pub enum Action {
     /// A `switch-*` action (108): opens the Window switcher over `list`, or steps the one
     /// that is open, towards the end of the list or `backward`.
     Switch { list: SwitchList, backward: bool },
+    /// A `cycle-*` action (163): as its `switch-*` action, with no popup, and the selected
+    /// window raised at once.
+    Cycle { list: SwitchList, backward: bool },
     /// `show-desktop`
     ShowDesktop,
     /// `begin-move`: a keyboard move of the focused window (156).

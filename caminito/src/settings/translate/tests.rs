@@ -984,6 +984,28 @@ fn alt_tab_raise_windows_is_passed_to_policy() {
     assert!(settings(&reading).policy.alt_tab_raise_windows);
 }
 
+#[test]
+fn alt_tab_minimized_placement_is_end_where_the_schema_has_no_key_for_it() {
+    // Marco 1.29.0's schema, which `defaults` reads, hasn't master's key.
+    for reading in [defaults(), Reading::default()] {
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.alt_tab_minimized_placement, MinimizedPlacement::End);
+    }
+}
+
+#[test]
+fn every_alt_tab_minimized_placement_nick_is_known() {
+    for (nick, placement) in [
+        ("mru", MinimizedPlacement::Mru),
+        ("end", MinimizedPlacement::End),
+        ("hidden", MinimizedPlacement::Hidden),
+    ] {
+        let reading = with(MARCO_GENERAL, "alt-tab-minimized-placement", string(nick));
+        let policy = settings(&reading).policy;
+        assert_eq!(policy.alt_tab_minimized_placement, placement, "{nick}");
+    }
+}
+
 // Placement (154).
 
 #[test]
