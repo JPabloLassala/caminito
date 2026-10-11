@@ -591,7 +591,7 @@ pub struct Policy<W: PolicyWindow> {
     /// Where the pointer was when the compositor last said, which `pointer` and `manual`
     /// placement put a new window at.
     pointer: Option<Point<f64, Logical>>,
-    /// The pointer focus modes, `raise-on-click` and auto-raise (153).
+    /// The pointer focus modes' and auto-raise's state (153).
     pointer_focus: pointer::PointerFocus,
 }
 
@@ -690,7 +690,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply_config();
     }
 
-    /// Does what a new `config` asks for at once: the workspaces' count and names.
+    /// Does what a new `config` asks for at once: the workspaces' count and names, and
+    /// `apply()`.
     fn apply_config(&mut self) {
         if !self.config.dynamic_workspaces {
             self.set_workspace_count(self.config.workspace_count);
