@@ -15,9 +15,9 @@ const CELL_PADDING: i32 = 6;
 /// The height of the name under a preview, and the space between the two.
 const NAME_HEIGHT: i32 = 20;
 const NAME_GAP: i32 = 4;
-/// The share of the output's width the previews of one row of every cell take together, as
-/// Marco's `MINI_WORKSPACE_SCREEN_FRACTION` of 0.33 (tabpopup.c:1009, 1032).
-const SCREEN_FRACTION: i32 = 3;
+/// What the output's width is divided by for the width every cell's preview takes together,
+/// as Marco's `MINI_WORKSPACE_SCREEN_FRACTION` of 0.33 has it (tabpopup.c:1009, 1032).
+const SCREEN_DIVISOR: i32 = 3;
 /// The narrowest preview that rule gives, so that a name has room in a grid of many cells.
 /// Marco's popup has no floor: its names aren't in the cells.
 const MIN_PREVIEW_WIDTH: i32 = 96;
@@ -38,6 +38,7 @@ pub(crate) struct Cell {
 /// The popup's rectangles on one output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Layout {
+    /// The Workspace grid's shape.
     pub(crate) columns: usize,
     pub(crate) rows: usize,
     /// The popup, from the output's corner.
@@ -60,7 +61,7 @@ impl Layout {
             - around.1
             - NAME_GAP
             - NAME_HEIGHT;
-        let mut width = (output.w / SCREEN_FRACTION / (columns * rows))
+        let mut width = (output.w / SCREEN_DIVISOR / (columns * rows))
             .max(MIN_PREVIEW_WIDTH)
             .min(fit_w)
             .max(1);

@@ -123,7 +123,7 @@ pub(crate) fn draw(
             );
             cr.fill()?;
         }
-        draw_title(&cr, grid, title, colors.text(GtkState::Normal));
+        draw_text(&cr, grid.title, title, colors.text(GtkState::Normal));
         if !thumbnails {
             draw_icons(&cr, grid, entries)?;
         }
@@ -162,6 +162,7 @@ pub(crate) fn context(
     Ok(cr)
 }
 
+/// Sets the colour cairo draws in to `alpha` of `color`.
 pub(crate) fn set_color(cr: &Context, color: Rgba, alpha: f64) {
     cr.set_source_rgba(color.red, color.green, color.blue, color.alpha * alpha);
 }
@@ -211,14 +212,15 @@ pub(crate) fn fill_selected(
     cr.fill()
 }
 
-/// The title on one line in the middle of the title band, ellipsised at its end if it's
-/// wider than the band, and clipped to the band whatever pango makes of it.
-fn draw_title(cr: &Context, grid: &Grid, title: &Title, color: Rgba) {
-    let band = grid.title.to_f64();
-    let layout = &title.layout;
-    layout.set_width(grid.title.size.w.max(0) * pango::SCALE);
+/// `text` on one line in the middle of `band`, ellipsised at its end if it's wider than the
+/// band, and clipped to the band whatever pango makes of it: the selected window's title
+/// here, and a workspace's name in the Workspace popup (152).
+pub(crate) fn draw_text(cr: &Context, band: Rectangle<i32, Logical>, text: &Title, color: Rgba) {
+    let layout = &text.layout;
+    layout.set_width(band.size.w.max(0) * pango::SCALE);
     layout.set_alignment(pango::Alignment::Center);
     let (_, height) = layout.pixel_size();
+    let band = band.to_f64();
     cr.save().ok();
     cr.rectangle(band.loc.x, band.loc.y, band.size.w, band.size.h);
     cr.clip();

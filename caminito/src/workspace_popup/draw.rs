@@ -2,14 +2,14 @@
 //! theme's colours and font (ADR 0003), as the Window switcher's is (108), in one buffer.
 
 use caminito_theme::cairo::{self, Context};
-use caminito_theme::{GtkState, PaletteColors, Rgba, Title, pango, pangocairo};
+use caminito_theme::{GtkState, PaletteColors, Title};
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::utils::{Logical, Rectangle, Size};
 
 use super::layout::Layout;
 use crate::decoration::memory_buffer;
 use crate::switcher::draw::{
-    context, draw_background, fill_selected, selection_shows, set_color, surface,
+    context, draw_background, draw_text, fill_selected, selection_shows, set_color, surface,
 };
 
 /// How much of the text colour tints a preview, to set the workspace off from the popup.
@@ -54,7 +54,7 @@ pub(crate) fn draw(
             } else {
                 text
             };
-            draw_name(&cr, cell.name, &workspace.name, color);
+            draw_text(&cr, cell.name, &workspace.name, color);
         }
     }
     memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory)
@@ -102,24 +102,4 @@ fn draw_preview(
         cr.stroke()?;
     }
     cr.restore()
-}
-
-/// The name on one line in the middle of its band, ellipsised at its end if it's wider,
-/// and clipped to the band whatever pango makes of it.
-fn draw_name(cr: &Context, band: Rectangle<i32, Logical>, name: &Title, color: Rgba) {
-    let layout = &name.layout;
-    layout.set_width(band.size.w.max(0) * pango::SCALE);
-    layout.set_alignment(pango::Alignment::Center);
-    let (_, height) = layout.pixel_size();
-    let band = band.to_f64();
-    cr.save().ok();
-    cr.rectangle(band.loc.x, band.loc.y, band.size.w, band.size.h);
-    cr.clip();
-    set_color(cr, color, 1.0);
-    cr.move_to(
-        band.loc.x,
-        band.loc.y + ((band.size.h - f64::from(height)) / 2.0).max(0.0),
-    );
-    pangocairo::functions::show_layout(cr, layout);
-    cr.restore().ok();
 }

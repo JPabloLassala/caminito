@@ -456,8 +456,8 @@ impl Caminito {
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
     /// with their keys, the accelerator grabs with their owners, the Window switcher, the
-    /// Workspace popup, the bells rung with the last one, Night Light, and each window's tile with the tile
-    /// preview (158), as pretty-printed JSON.
+    /// Workspace popup, the bells rung with the last one, Night Light, and each window's tile
+    /// with the tile preview (158), as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy

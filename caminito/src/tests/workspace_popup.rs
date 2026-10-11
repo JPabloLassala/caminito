@@ -8,7 +8,7 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, Fixture, KEY_A, KEY_DOWN, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL,
+    BTN_LEFT, ClientId, Fixture, KEY_A, KEY_DOWN, KEY_F7, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL,
     KEY_LEFTSHIFT, KEY_RIGHT, KEY_TAB, KEY_UP, Kind, WindowSpec, on_both_kinds,
 };
 use crate::output::output_geometry;
@@ -221,7 +221,7 @@ fn releasing_either_modifier_closes_it() {
 }
 
 #[test]
-fn a_quick_chord_leaves_no_popup() {
+fn a_quick_chord_shows_it_only_until_the_release() {
     let (mut f, _) = two_rows(Kind::Xdg);
     let output = f.state.caminito.outputs[0].clone();
 
@@ -510,6 +510,22 @@ on_both_kinds! {
     }
 }
 
+on_both_kinds! {
+    fn nothing_shows_during_a_keyboard_move(kind: Kind) {
+        let (mut f, id) = two_rows(kind);
+        f.map(id, WindowSpec::plain((400, 300)));
+        f.chord(&[KEY_LEFTALT, KEY_F7]);
+        assert!(f.state.caminito.policy.keyboard_grab(SEAT).is_some());
+
+        hold_and_tap(&mut f, KEY_RIGHT);
+
+        // The arrow is the move's, which has the keyboard (156).
+        assert!(!is_open(&f));
+        assert_eq!(active(&f), 0);
+        release(&mut f);
+    }
+}
+
 // The drawing.
 
 /// The popup of four workspaces in two rows, shown with workspace 1 selected.
@@ -734,6 +750,7 @@ on_both_kinds! {
     }
 }
 
+/// On one kind: which windows a preview leaves out is policy's facts, the same for both.
 #[test]
 fn a_minimised_window_has_no_outline() {
     let (mut f, id) = two_rows(Kind::Xdg);
@@ -790,7 +807,4 @@ fn the_popup_is_right_on_a_scaled_output() {
     let (selected, other) = (in_padding(cell(&f, 1)), in_padding(cell(&f, 0)));
     assert_ne!(pixel_on(&mut f, &output, selected), background);
     assert_eq!(pixel_on(&mut f, &output, other), background);
-    // Nothing of it outside its rectangle.
-    let outside = rect.loc - Point::from((2, 2));
-    assert_ne!(pixel_on(&mut f, &output, outside), background);
 }

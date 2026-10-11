@@ -30,7 +30,9 @@ pub(crate) struct WorkspacePopup {
     /// Whether a move opened it, so that each further direction moves the focused window
     /// too, as Marco's `META_GRAB_OP_KEYBOARD_WORKSPACE_MOVING` does.
     pub(crate) moves: bool,
+    /// The output it's on.
     pub(crate) output: Output,
+    /// Its rectangles there, as last laid out.
     pub(crate) layout: Layout,
     /// The popup as last drawn, unless cairo couldn't draw it.
     pub(crate) chrome: Option<MemoryRenderBuffer>,
@@ -54,25 +56,43 @@ struct Drawn {
     generation: u64,
 }
 
-/// The switch and the move that go the way of `action`, and whether it's the move, if it's
-/// one of the eight to the workspace beside. Those alone show the popup: a switch or a
-/// move by number, and `switch-to-workspace-prev`, show none in Marco
-/// (keybindings.c:2360-2393, 3418-3440).
-fn beside(action: Action) -> Option<(Action, Action, bool)> {
-    use Action::{
-        MoveToWorkspaceDown, MoveToWorkspaceLeft, MoveToWorkspaceRight, MoveToWorkspaceUp,
-        SwitchToWorkspaceDown, SwitchToWorkspaceLeft, SwitchToWorkspaceRight, SwitchToWorkspaceUp,
-    };
-    let (switch, moves) = match action {
-        SwitchToWorkspaceLeft | MoveToWorkspaceLeft => (SwitchToWorkspaceLeft, MoveToWorkspaceLeft),
-        SwitchToWorkspaceRight | MoveToWorkspaceRight => {
-            (SwitchToWorkspaceRight, MoveToWorkspaceRight)
-        }
-        SwitchToWorkspaceUp | MoveToWorkspaceUp => (SwitchToWorkspaceUp, MoveToWorkspaceUp),
-        SwitchToWorkspaceDown | MoveToWorkspaceDown => (SwitchToWorkspaceDown, MoveToWorkspaceDown),
-        _ => return None,
-    };
-    Some((switch, moves, action == moves))
+/// The two actions that go one way in the Workspace grid, and which of them a binding is.
+struct Beside {
+    switch: Action,
+    move_window: Action,
+    /// Whether the binding is the move.
+    is_move: bool,
+}
+
+impl Beside {
+    /// What `action` is, if it's one of the eight to the workspace beside. Those alone show
+    /// the popup: a switch or a move by number, and `switch-to-workspace-prev`, show none
+    /// in Marco (keybindings.c:2360-2393, 3418-3440).
+    fn of(action: Action) -> Option<Self> {
+        use Action::{
+            MoveToWorkspaceDown, MoveToWorkspaceLeft, MoveToWorkspaceRight, MoveToWorkspaceUp,
+            SwitchToWorkspaceDown, SwitchToWorkspaceLeft, SwitchToWorkspaceRight,
+            SwitchToWorkspaceUp,
+        };
+        let (switch, move_window) = match action {
+            SwitchToWorkspaceLeft | MoveToWorkspaceLeft => {
+                (SwitchToWorkspaceLeft, MoveToWorkspaceLeft)
+            }
+            SwitchToWorkspaceRight | MoveToWorkspaceRight => {
+                (SwitchToWorkspaceRight, MoveToWorkspaceRight)
+            }
+            SwitchToWorkspaceUp | MoveToWorkspaceUp => (SwitchToWorkspaceUp, MoveToWorkspaceUp),
+            SwitchToWorkspaceDown | MoveToWorkspaceDown => {
+                (SwitchToWorkspaceDown, MoveToWorkspaceDown)
+            }
+            _ => return None,
+        };
+        Some(Self {
+            switch,
+            move_window,
+            is_move: action == move_window,
+        })
+    }
 }
 
 impl Caminito {
@@ -82,7 +102,7 @@ impl Caminito {
     /// when the move goes nowhere too, at an edge of a grid that doesn't wrap, as
     /// Marco's does.
     pub(crate) fn workspace_popup_shows_for(&self, action: Action) -> bool {
-        let Some((.., moves)) = beside(action) else {
+        let Some(beside) = Beside::of(action) else {
             return false;
         };
         let policy = &self.policy;
@@ -90,7 +110,9 @@ impl Caminito {
             let focus = policy.focus(SEAT);
             focus.is_some_and(|id| !policy.is_desktop_or_dock(id))
         };
-        policy.workspace_count() > 1 && !self.workspace_popup_gives_way() && (!moves || movable())
+        policy.workspace_count() > 1
+            && !self.workspace_popup_gives_way()
+            && (!beside.is_move || movable())
     }
 
     /// What the popup gives way to: the session lock, a move or resize, and the Window
@@ -108,7 +130,7 @@ impl Caminito {
     /// such a grab as it begins (keybindings.c:3541-3552).
     pub(crate) fn show_workspace_popup(&mut self, action: Action, mods: &ModifiersState) {
         let holding = Holding::with_shift_of(mods);
-        let Some((.., moves)) = beside(action) else {
+        let Some(beside) = Beside::of(action) else {
             return;
         };
         if self.workspace_popup.is_none()
@@ -118,7 +140,7 @@ impl Caminito {
             let layout = self.workspace_popup_layout(&output);
             self.workspace_popup = Some(WorkspacePopup {
                 holding,
-                moves,
+                moves: beside.is_move,
                 output,
                 layout,
                 chrome: None,
@@ -134,8 +156,12 @@ impl Caminito {
     /// `None` for any other action.
     pub(crate) fn workspace_popup_step(&self, action: Action) -> Option<Action> {
         let popup = self.workspace_popup.as_ref()?;
-        let (switch, moves, _) = beside(action)?;
-        Some(if popup.moves { moves } else { switch })
+        let beside = Beside::of(action)?;
+        Some(if popup.moves {
+            beside.move_window
+        } else {
+            beside.switch
+        })
     }
 
     /// A key went up, leaving `mods` down: the popup closes once the modifiers that hold
@@ -159,6 +185,7 @@ impl Caminito {
         true
     }
 
+    /// Takes the popup off the outputs, if it shows.
     pub(crate) fn close_workspace_popup(&mut self) {
         if self.workspace_popup.take().is_some() {
             self.queue_redraw_all();
