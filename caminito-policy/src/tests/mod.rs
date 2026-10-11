@@ -12,6 +12,7 @@ mod interactive;
 mod invariants;
 mod keyboard_grab;
 mod keyboard_tiling;
+mod move_to;
 mod outputs;
 mod placement;
 mod placement_modes;

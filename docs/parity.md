@@ -146,19 +146,19 @@ Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybin
 | `tile-to-corner-ne` | honoured | As `tile-to-side-e`, to the top-right quarter (159). | the same |
 | `tile-to-corner-se` | honoured | As `tile-to-side-e`, to the bottom-right quarter (159). | the same |
 | `tile-to-corner-sw` | honoured | As `tile-to-side-e`, to the bottom-left quarter (159). | the same |
-| `move-to-corner-nw` | to do (160) | Unbound, as by default. | |
-| `move-to-corner-ne` | to do (160) | Unbound, as by default. | |
-| `move-to-corner-sw` | to do (160) | Unbound, as by default. | |
-| `move-to-corner-se` | to do (160) | Unbound, as by default. | |
-| `move-to-side-n` | to do (160) | Unbound, as by default. | |
-| `move-to-side-s` | to do (160) | Unbound, as by default. | |
-| `move-to-side-e` | to do (160) | Unbound, as by default. | |
-| `move-to-side-w` | to do (160) | Unbound, as by default. | |
-| `move-to-center` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-n` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-s` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-e` | to do (160) | Unbound, as by default. | |
-| `move-to-monitor-w` | to do (160) | Unbound, as by default. | |
+| `move-to-corner-nw` | honoured | Unbound by default; once bound, moves the focused window, without resizing it, so that its Frame is against the top-left corner of the work area of the output it's most on. Marco measures against the work area of the whole screen, so with two monitors its window can leave its own. A maximised, tiled or fullscreen window, the desktop and a dock don't move, and a window maximised one way moves the other way alone (160). | `caminito-policy/src/tests/move_to.rs`, `caminito/src/input/bindings/tests.rs`, `caminito/src/tests/move_to.rs` |
+| `move-to-corner-ne` | honoured | As `move-to-corner-nw`, to the top-right corner (160). | the same |
+| `move-to-corner-sw` | honoured | As `move-to-corner-nw`, to the bottom-left corner (160). | the same |
+| `move-to-corner-se` | honoured | As `move-to-corner-nw`, to the bottom-right corner (160). | the same |
+| `move-to-side-n` | honoured | As `move-to-corner-nw`, against the top of the work area, where it is from side to side (160). | the same |
+| `move-to-side-s` | honoured | As `move-to-side-n`, against the bottom; a window taller than the work area keeps its top in it (160). | the same |
+| `move-to-side-e` | honoured | As `move-to-corner-nw`, against the right side, at the height it is (160). | the same |
+| `move-to-side-w` | honoured | As `move-to-side-e`, against the left side (160). | the same |
+| `move-to-center` | honoured | As `move-to-corner-nw`, to the middle of the work area (160). | the same |
+| `move-to-monitor-n` | honoured | Unbound by default; once bound, moves the focused window to the output that shares the top side of the one it's most on, and does nothing with none there. As in Marco, the window keeps its share of the output: its place and its size are scaled by the two outputs' sizes, so between outputs of one size it only moves. Its size is kept within its hints, and its Frame is then moved inside the work area, or to its top-left where it doesn't fit, where Marco lets most of it lie outside. A maximised or fullscreen window is maximised or fullscreen there and a tiled one keeps its tile, as in Marco; the desktop and a dock don't move (160). | `caminito-policy/src/tests/move_to.rs`, `caminito/src/input/bindings/tests.rs`, `caminito/src/tests/move_to.rs` |
+| `move-to-monitor-s` | honoured | As `move-to-monitor-n`, to the output below (160). | the same |
+| `move-to-monitor-e` | honoured | As `move-to-monitor-n`, to the output on the right (160). | the same |
+| `move-to-monitor-w` | honoured | As `move-to-monitor-n`, to the output on the left (160). | the same |
 
 ## Keys of other schemas Marco read
 

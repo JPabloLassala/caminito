@@ -1298,6 +1298,37 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's `tile` and
   geometry, and its bindings in force.
 
+### The bindings that move a window to a corner, a side, the centre or another monitor
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, at different scales (100%
+     and 200%, say, set in *Displays*), and the panel along the top of the first. In
+     mate-control-center's *Keyboard Shortcuts*, under *Window Management*, set the four
+     *Move window to … corner* actions, the four *Move window to … side of screen* actions,
+     *Move window to center of screen* and the four *Move window to … monitor* actions to
+     keys of your choice. Open pluma (native GTK3) and xterm (X11).
+  2. With pluma focused on the first monitor, press each corner's binding, each side's and
+     the centre's.
+  3. Press the binding to the monitor the second one is towards, each corner's binding
+     there, and the binding back. Press a binding to a monitor where there is none.
+  4. Maximise pluma with Alt+F10, press a corner's binding, then the binding to the other
+     monitor and back, and unmaximise it with Alt+F5.
+  5. Repeat steps 2 to 4 with xterm, then open a menu of it after each move.
+  6. Run as part of M8's closing run (173).
+- **Expected:** in step 2 the window's frame, shadow apart, lies against each corner and
+  side of the work area, the panel left clear, and in its middle, and the window keeps its
+  size; a side's binding moves it one way only. In step 3 the window goes to the other
+  monitor, at the same share of the way across and down it and of the same share of its
+  size, wholly inside that monitor's work area and drawn sharp at its scale; the corners
+  there are that monitor's; the binding back returns it to the first monitor; and with no
+  monitor that way nothing moves. In step 4 the maximised window doesn't move for the
+  corner, is maximised on the other monitor and back, and goes back to its earlier size and
+  place when unmaximised. In step 5 xterm does the same, and its menus open at the window,
+  not where it was before the move (160).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry and
+  outputs, the outputs' work areas, and the bindings in force.
+
 ## caminito-displays
 
 ### The page with MATE's theme, at 100% and at a fractional scale
