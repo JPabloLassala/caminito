@@ -151,10 +151,10 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
     // M8's keys a user can set to something Caminito doesn't do yet (147), each with the
     // ticket that honours it. Caminito does what each one's default asks, except
     // `resize-with-right-button`, whose values it matches none of. A key whose other value is
-    // what Caminito already does (`audible-bell`, `reduced-resources`) isn't here. Master's
-    // keys are logged only where the installed schema has them. The keybindings' schemas have
-    // no key here: an action with no behaviour yet is read and binds nothing, and its
-    // default reaches the client (148).
+    // what Caminito already does (`audible-bell`) isn't here. Master's keys are logged only
+    // where the installed schema has them. The keybindings' schemas have no key here: an
+    // action with no behaviour yet is read and binds nothing, and its default reaches the
+    // client (148).
     // 162.
     (MARCO_GENERAL, "mouse-button-modifier"),
     (MARCO_GENERAL, "resize-with-right-button"),
@@ -399,6 +399,12 @@ pub struct Settings {
     pub commands: Commands,
     pub frames: Frames,
     pub switcher: SwitcherSettings,
+    /// Whether a minimised window shrinks into its button (172): `compositing-manager` on,
+    /// `reduced-resources` off and `org.mate.interface enable-animations` on. Marco reads
+    /// the last two for it (`window.c:1502-1503`, `effects.c:run_handler`); its box
+    /// animation needs no compositing manager, but Caminito's is drawn from the window's
+    /// content, which is the compositing manager's work.
+    pub minimize_animation: bool,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -1101,6 +1107,10 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         icon_size: r.int_clamped(MARCO_GENERAL, "icon-size", 48, 8, 256),
     };
 
+    let minimize_animation = r.bool(MARCO_GENERAL, "compositing-manager", true)
+        && !r.bool(MARCO_GENERAL, "reduced-resources", false)
+        && r.bool(INTERFACE, "enable-animations", true);
+
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
     let frames = Frames {
@@ -1172,6 +1182,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         commands,
         frames,
         switcher,
+        minimize_animation,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,

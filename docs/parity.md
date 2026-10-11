@@ -43,9 +43,9 @@ The Window switcher's keys are 108's: Caminito has one Window switcher, a grid o
 | `visual-bell` | honoured | On, every bell flashes as `visual-bell-type` says, from any source (105), for 100 ms on Caminito's clock; a second bell during a flash starts it again (169). | `caminito/src/tests/bell.rs`, the checklist's *The visual bell flashes* |
 | `audible-bell` | to do (170) | Read; nothing plays (105). | the same |
 | `visual-bell-type` | honoured | `fullscreen` flashes every output white; `frame_flash` draws the bell's window's Frame in the other focus state, or flashes the output of a window with no Frame (CSD, fullscreen, hidden) or of the pointer for a bell for no window (169). | the same |
-| `compositing-manager` | honoured | Off: the Window switcher's grid shows icons with no thumbnails. Caminito always composites; the shadows (171) and the minimise animation (172) it turns off come with their tickets. | `caminito/src/tests/switcher.rs` |
+| `compositing-manager` | honoured | Off: the Window switcher's grid shows icons with no thumbnails, and a minimised window is hidden with no animation, since Caminito's is drawn from the window's content, where Marco's outline needs no compositing manager (172). Caminito always composites; the shadows (171) it turns off come with their ticket. | `caminito/src/tests/switcher.rs`, `caminito/src/tests/minimise_animation.rs`, `caminito/src/settings/translate/tests.rs` |
 | `compositing-fast-alt-tab` | honoured | On: the grid shows icons with no thumbnails. | the same |
-| `reduced-resources` | to do (172) | There is no minimise animation for it to turn off yet. | |
+| `reduced-resources` | honoured | On: a minimised window is hidden with no animation, as in Marco. Off, its default: the window shrinks into the rectangle the window list set for it (65) for Marco's 250 ms, at a constant speed, drawn from its last content where Marco moves an outline, whichever way it was minimised; policy has it minimised from the start, so the focus moves on at once, and a window with no rectangle is hidden with no animation, where Marco's box goes to the screen's corner (172). Its wireframe moves and resizes are *never*: see below. | `caminito/src/tests/minimise_animation.rs`, `caminito/src/settings/translate/tests.rs` |
 | `application-based` | never | Marco never implemented it (05). | the checklist's *The parity table's rows that no test covers* |
 | `disable-workarounds` | never | Marco's misfeatures for old or broken X11 applications, which Caminito doesn't carry (05). | the checklist's *The parity table's rows that no test covers* |
 | `center-new-windows` | honoured | On, Marco's default, the `automatic` mode puts a new window in the middle of the work area of the focused window's output, over any windows there; one that doesn't fit there goes in its corner. It doesn't change `pointer` or `manual` placement, a position the client asks for, a dialog centred on its parent or the output, or the place a window that maps maximised or fullscreen goes back to (154). | `caminito-policy/src/tests/placement_modes.rs`, `caminito/src/tests/placement.rs` |
@@ -168,7 +168,7 @@ Read and watched as `global-keybindings` is ([148](../.scratch/issues/148-keybin
 
 | Key | Status | What Caminito does | Covered by |
 | --- | --- | --- | --- |
-| `enable-animations` | to do (172) | Not read: there's no minimise animation for it to turn off yet. | |
+| `enable-animations` | honoured | Off: a minimised window is hidden with no animation, as in Marco: see `reduced-resources` (172). | `caminito/src/tests/minimise_animation.rs`, `caminito/src/settings/translate/tests.rs` |
 
 ### `org.mate.sound`
 

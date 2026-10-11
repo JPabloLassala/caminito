@@ -1768,3 +1768,25 @@ session_env() {
   pager shows the new name once OK is pressed; Cancel leaves it (167).
 - **Debug tool:** `gsettings monitor org.mate.Marco.workspace-names`, and Caminito's log, which
   has a line for each command that can't run.
+
+### The minimise animation
+
+- **Milestone:** M8, run in M8's closing run (173).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with the panel's window list showing. Open pluma (a native
+     window) and `xterm` (X11), apart, away from the window list.
+  2. Minimise pluma with its Frame's minimise button, and bring it back by its button in the
+     window list. Then click its button in the window list while it has the focus, which
+     minimises it, and bring it back again.
+  3. Repeat step 2 with `xterm`.
+  4. Minimise pluma and click its button in the window list at once, before it's gone.
+  5. Run `gsettings set org.mate.Marco.general reduced-resources true` and repeat steps 2
+     and 3. Then run `gsettings reset org.mate.Marco.general reduced-resources`.
+- **Expected:** in steps 2 and 3 the window shrinks into its button in the window list in a
+  quarter of a second, drawn with its content and its Frame, over the other windows and the
+  panel, and the focus goes to the other window as it starts. In step 4 the window is back
+  in its place at once, with nothing left on its way. In step 5 each window is gone at
+  once, with no animation (172).
+- **Debug tool:** `WAYLAND_DEBUG=1` on the panel, or `wlrctl`, for the
+  `zwlr_foreign_toplevel_handle_v1.set_rectangle` it sends, and
+  `gsettings monitor org.mate.Marco.general`.

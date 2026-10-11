@@ -54,7 +54,8 @@ const RESIZE_BORDER_OUTLINE: Color32F = Color32F::new(0.0, 0.5, 1.0, 1.0);
 const TITLE_OUTLINE: Color32F = Color32F::new(0.0, 1.0, 0.0, 1.0);
 
 render_elements! {
-    /// A part of one window, as a thumbnail draws it smaller (108).
+    /// A part of one window, as a thumbnail (108) or the minimise animation (172) draws it
+    /// smaller.
     pub WindowPart<R> where R: ImportAll + ImportMem;
     /// One of the window's surfaces.
     Surface = WaylandSurfaceRenderElement<R>,
@@ -62,8 +63,8 @@ render_elements! {
     Strip = MemoryRenderBufferRenderElement<R>,
 }
 
-/// A part of a window in a thumbnail of the Window switcher: scaled down, moved into its
-/// cell and cut off at the thumbnail's edge.
+/// A part of a window in a thumbnail of the Window switcher, or in the minimise
+/// animation's box: scaled down, moved into its place and cut off at its edge.
 type ThumbnailPart<R> =
     CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowPart<R>>>>;
 
@@ -76,7 +77,8 @@ render_elements! {
     /// A side of one of frame debug's outlines, the lock's background, the blank, or the
     /// visual bell's flash.
     Solid = SolidColorRenderElement,
-    /// A part of a window in one of the Window switcher's thumbnails (108).
+    /// A part of a window in one of the Window switcher's thumbnails (108), or of one
+    /// shrinking into its button (172).
     Thumbnail = ThumbnailPart<R>,
 }
 
@@ -107,6 +109,10 @@ pub(crate) enum SceneLayer {
     /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
     /// no workspace (36).
     OverrideRedirect,
+    /// The windows shrinking into their buttons as they're minimised (172), over the
+    /// panel their buttons are on and every window, as Marco's box is its newest
+    /// override-redirect window, and under X's menus, which are a client's.
+    Minimizing,
     /// The current workspace's windows in Marco's fullscreen layer: a fullscreen window
     /// that has the focus, and its transients. They cover the top layer, as Marco puts
     /// them above docks (63).
@@ -133,7 +139,7 @@ pub(crate) enum SceneLayer {
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 15] = [
+pub(crate) const LAYERS: [SceneLayer; 16] = [
     SceneLayer::Blank,
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
@@ -143,6 +149,7 @@ pub(crate) const LAYERS: [SceneLayer; 15] = [
     SceneLayer::WorkspacePopup,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
+    SceneLayer::Minimizing,
     SceneLayer::FullscreenWindows,
     SceneLayer::Top,
     SceneLayer::LayerPopups,
@@ -285,6 +292,7 @@ fn layer_elements<R>(
         SceneLayer::OverrideRedirect => {
             override_redirect_elements(renderer, caminito, output, elements)
         }
+        SceneLayer::Minimizing => minimizing_elements(renderer, caminito, output, elements),
         SceneLayer::FullscreenWindows | SceneLayer::Windows => {
             window_elements(layer, renderer, caminito, output, elements)
         }
@@ -516,40 +524,83 @@ fn thumbnail_elements<R>(
     };
     // The grid is laid out again in the refresh pass, so it has a cell for each window.
     for (index, &id) in switcher.windows.iter().enumerate().take(grid.cells.len()) {
-        let (Some(mapped), Some(geometry), Some(frame)) = (
-            policy.window(id),
-            policy.geometry(id),
-            policy.frame_rect(id),
-        ) else {
+        let Some(frame) = policy.frame_rect(id) else {
             continue;
         };
-        if frame.size.w <= 0 || frame.size.h <= 0 {
+        let target = grid.thumbnail(index, frame.size);
+        scaled_window_elements(renderer, caminito, id, target, scale, elements);
+    }
+}
+
+/// Each window that's shrinking into its button (172), where it overlaps `output`, drawn as
+/// a thumbnail is: from the window's own surfaces, which keep their buffers while it's
+/// minimised, with its frame, in the box the animation has it in now.
+fn minimizing_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let output_geometry = output_geometry(output);
+    let scale = output.current_scale().fractional_scale();
+    for (id, target) in caminito.minimize_animations.boxes(caminito.now()) {
+        if !target.overlaps(output_geometry) {
             continue;
         }
-        let mut parts: Vec<WindowPart<R>> = Vec::new();
-        let shown = Rectangle::from_size(frame.size);
-        one_window_elements(
-            renderer,
-            mapped,
-            geometry.loc - frame.loc,
-            shown,
-            scale,
-            &mut parts,
-        );
-        let target = grid.thumbnail(index, frame.size);
-        let factor = Scale::from((
-            f64::from(target.size.w) / f64::from(frame.size.w),
-            f64::from(target.size.h) / f64::from(frame.size.h),
-        ));
-        let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
-        // A window's popups and subsurfaces can reach past its frame.
-        let crop: Rectangle<i32, Physical> = target.to_physical_precise_round(scale);
-        for part in parts {
-            let part = RescaleRenderElement::from_element(part, Point::default(), factor);
-            let part = RelocateRenderElement::from_element(part, location, Relocate::Relative);
-            if let Some(part) = CropRenderElement::from_element(part, scale, crop) {
-                elements.push(SceneElement::Thumbnail(part));
-            }
+        let target = Rectangle::new(target.loc - output_geometry.loc, target.size);
+        scaled_window_elements(renderer, caminito, id, target, scale, elements);
+    }
+}
+
+/// A window as a capture of it shows it (103), its surfaces over its frame, scaled to fill
+/// `target`, which is from the origin of what's drawn, and cut off at its edge.
+fn scaled_window_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    id: WindowId,
+    target: Rectangle<i32, Logical>,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let policy = &caminito.policy;
+    let (Some(mapped), Some(geometry), Some(frame)) = (
+        policy.window(id),
+        policy.geometry(id),
+        policy.frame_rect(id),
+    ) else {
+        return;
+    };
+    if frame.size.w <= 0 || frame.size.h <= 0 {
+        return;
+    }
+    let mut parts: Vec<WindowPart<R>> = Vec::new();
+    let shown = Rectangle::from_size(frame.size);
+    one_window_elements(
+        renderer,
+        mapped,
+        geometry.loc - frame.loc,
+        shown,
+        scale,
+        &mut parts,
+    );
+    let factor = Scale::from((
+        f64::from(target.size.w) / f64::from(frame.size.w),
+        f64::from(target.size.h) / f64::from(frame.size.h),
+    ));
+    let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
+    // A window's popups and subsurfaces can reach past its frame.
+    let crop: Rectangle<i32, Physical> = target.to_physical_precise_round(scale);
+    for part in parts {
+        let part = RescaleRenderElement::from_element(part, Point::default(), factor);
+        let part = RelocateRenderElement::from_element(part, location, Relocate::Relative);
+        if let Some(part) = CropRenderElement::from_element(part, scale, crop) {
+            elements.push(SceneElement::Thumbnail(part));
         }
     }
 }

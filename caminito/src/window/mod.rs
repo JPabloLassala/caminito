@@ -186,7 +186,7 @@ pub struct Mapped {
     frame_scale: i32,
     frame: WindowFrame,
     /// Where a foreign-toplevel client shows the window, as a rectangle on one of its
-    /// surfaces (65): the target of M8's minimise animation.
+    /// surfaces (65): the target of the minimise animation (172).
     minimize_rectangle: Option<(WlSurface, Rectangle<i32, Logical>)>,
 }
 
@@ -454,10 +454,6 @@ impl Mapped {
 
     /// Where a foreign-toplevel client last said it shows the window, if its surface is
     /// still there.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "M8's minimise animation reads it")
-    )]
     pub(crate) fn minimize_rectangle(&self) -> Option<(&WlSurface, Rectangle<i32, Logical>)> {
         let (surface, rectangle) = self.minimize_rectangle.as_ref()?;
         surface.is_alive().then_some((surface, *rectangle))

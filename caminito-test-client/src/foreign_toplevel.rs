@@ -22,6 +22,7 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_m
 
 pub use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::State as HandleState;
 
+use crate::layer_shell::LayerId;
 use crate::xfce_foreign_toplevel::raw::xfce_foreign_toplevel_handle_v1::XfceForeignToplevelHandleV1;
 use crate::xfce_foreign_toplevel::raw::xfce_foreign_toplevel_manager_private_v1::XfceForeignToplevelManagerPrivateV1;
 use crate::{Client, State, WindowId, decode_enums};
@@ -185,6 +186,24 @@ impl Client {
         let (x, y, width, height) = rectangle;
         self.toplevel_proxy(index)
             .set_rectangle(&self.window(on).surface, x, y, width, height);
+    }
+
+    /// Says where a toplevel's button is on the client's layer surface `on`, as a panel
+    /// whose window list is on its bar does.
+    pub fn set_toplevel_rectangle_on_layer(
+        &self,
+        index: usize,
+        on: LayerId,
+        rectangle: (i32, i32, i32, i32),
+    ) {
+        let (x, y, width, height) = rectangle;
+        self.toplevel_proxy(index).set_rectangle(
+            &self.layer_surface(on).surface,
+            x,
+            y,
+            width,
+            height,
+        );
     }
 }
 

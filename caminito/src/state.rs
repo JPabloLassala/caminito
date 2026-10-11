@@ -102,6 +102,7 @@ use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
+use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::{self, NightLight};
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
@@ -255,6 +256,8 @@ pub struct Caminito {
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
     pub(crate) bells: Bells,
+    /// The windows shrinking into their buttons as they're minimised (172).
+    pub(crate) minimize_animations: MinimizeAnimations,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -633,6 +636,8 @@ impl State {
         self.caminito.wake_policy();
         self.caminito.update_button_states();
         self.caminito.refresh_frames();
+        // Before the outputs are drawn, with what policy minimised since the last pass.
+        self.caminito.refresh_minimize_animations();
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
         self.update_keyboard_focus();
@@ -925,6 +930,7 @@ impl Caminito {
             suppressed_keys: HashSet::new(),
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
+            minimize_animations: MinimizeAnimations::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,
