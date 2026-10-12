@@ -603,7 +603,7 @@ fn frame_around(
 /// holds to the Scene's source. A query the Scene adds gets its answer here too.
 #[derive(Default, PartialEq)]
 struct SceneReads {
-    /// `showing_stacking`.
+    /// `active_stacking`.
     stacking: Vec<WindowId>,
     /// Each window `window` has, with what's asked of it.
     windows: Vec<WindowReads>,
@@ -1164,8 +1164,8 @@ impl<W: PolicyWindow> Policy<W> {
             Action::SwitchToWorkspaceUp => self.switch_workspace_towards(Direction::Up),
             Action::SwitchToWorkspaceDown => self.switch_workspace_towards(Direction::Down),
             Action::SwitchToWorkspacePrev => {
-                // The previous workspace every output has, where 231 takes the Active
-                // output's.
+                // The previous workspace every output has, where the Active output's is
+                // taken (231).
                 if let Some(previous) = self.active_workspaces.everywhere().previous {
                     self.switch_workspace(previous);
                 }
@@ -1207,8 +1207,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Shows the desktop on every output's active workspace, or stops, as Marco's `show-desktop` and
-    /// `_NET_SHOWING_DESKTOP` do. Showing it hides the workspace's windows, but for the
+    /// Shows the desktop on every output's active workspace, or stops, as Marco's
+    /// `show-desktop` and `_NET_SHOWING_DESKTOP` do. Showing it hides the workspace's windows, but for the
     /// desktop, docks and their transients, without minimising them, and focuses the
     /// desktop if it's a window (`meta_screen_show_desktop`, screen.c:2850-2882). Stopping
     /// brings them back as they were stacked, each seat with the focus it had. Marco gives
@@ -1267,7 +1267,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// The workspace beside the active one in the grid, where `wrap-style` takes a move past
     /// its edge, if the move goes anywhere. It's beside the one every output has, where
-    /// 231 takes the Active output's.
+    /// the Active output's is taken (231).
     fn workspace_towards(&self, direction: Direction) -> Option<usize> {
         let active = self.active_workspaces.everywhere().active;
         self.workspace_grid()
@@ -1301,7 +1301,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Makes `workspace` the active one of every output, and gives every seat its default
     /// focus. Every output switches from the one they all have: Spanning workspaces, which
-    /// 231 keeps as a mode.
+    /// stays as a mode (231).
     pub fn switch_workspace(&mut self, workspace: usize) {
         let workspace = workspace.min(self.workspace_count - 1);
         let from = self.active_workspaces.everywhere().active;
@@ -1327,8 +1327,9 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Notes the way a switch from `from` to `to` goes in `grid`, by their cells, as Marco's `workspace_switch_sound` has it (workspace.c:310-362): left or right
-    /// where the columns differ, and up or down only within a column. A switch that wraps
+    /// Notes the way a switch from `from` to `to` goes in `grid`, by their cells, as
+    /// Marco's `workspace_switch_sound` has it (workspace.c:310-362): left or right where
+    /// the columns differ, and up or down only within a column. A switch that wraps
     /// past the grid's edge so goes the other way.
     pub(super) fn note_switch(&mut self, grid: Grid, from: usize, to: usize) {
         let (from_column, from_row) = grid.cell(from);
@@ -1900,8 +1901,8 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The edges a grab's window meets (157): the work areas', and the frames of the other
-    /// windows showing whose edges Marco counts, all but desktops, menus
-    /// and splash screens (edge-resistance.c:33-39).
+    /// windows showing whose edges Marco counts, all but desktops, menus and splash
+    /// screens (edge-resistance.c:33-39).
     fn edges_for(&self, grabbed: WindowId) -> Edges {
         let windows: Vec<EdgeWindow> = self
             .active_stacking()
@@ -2044,7 +2045,7 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The primary output's active workspace, or the one an output added takes while policy
-    /// has no output. It stands in for the Active output's until 222 and 228.
+    /// has no output. It stands in for the Active output's (222, 228).
     pub fn primary_active_workspace(&self) -> usize {
         let primary = self.primary_output().map(|output| output.id);
         self.active_workspaces.of(primary).active

@@ -71,6 +71,8 @@ impl<W: PolicyWindow> Policy<W> {
         // workspace's windows instead. An empty one stays if it can, as in Marco, or the
         // first is activated, Marco's `safe_target`.
         let from = self.active_workspaces.everywhere().active;
+        // Worked out on a copy, so that the switcher closes on the workspaces it was open
+        // over, as before the count changed.
         let mut active_workspaces = self.active_workspaces.clone();
         let mut removed = false;
         for shown in active_workspaces.each_mut() {

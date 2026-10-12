@@ -1,6 +1,6 @@
 //! Each output's active workspace, and the one before it (ADR 0032). Every switch sets them
 //! all, so for now they're one: Spanning workspaces, which is a mode of this code path and
-//! not a second one. Ticket 230 has a window shown by its own output's.
+//! not a second one. A window is to be shown by its own output's (230).
 
 use super::*;
 
@@ -32,8 +32,9 @@ impl ActiveWorkspaces {
             .unwrap_or(self.unplaced)
     }
 
-    /// The one every output has, while every switch sets them all. Each caller is a place
-    /// where tickets 230 and 231 choose an output.
+    /// The one every output has, while every switch sets them all: the entry for no output,
+    /// which is set with them. Each caller is a place that has to choose an output (230,
+    /// 231).
     pub(super) fn everywhere(&self) -> Shown {
         self.unplaced
     }
@@ -84,8 +85,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// The workspace a new window opens on, unless it asks for one: the primary output's
     /// active workspace, which stands in for the Active output's until ticket 222.
     pub(super) fn new_window_workspace(&self) -> usize {
-        let primary = self.primary_output().map(|output| output.id);
-        self.active_workspaces.of(primary).active
+        self.primary_active_workspace()
     }
 
     /// Every output's active workspace, once each, or the one that stands for them while

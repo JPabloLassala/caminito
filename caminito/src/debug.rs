@@ -716,7 +716,7 @@ impl Caminito {
         let dump = StateDump {
             windows,
             workspaces,
-            // The primary output's, standing in for the Active output's until 222.
+            // The primary output's, standing in for the Active output's (222).
             active_workspace: policy.primary_active_workspace(),
             showing_desktop: policy.is_showing_desktop(),
             outputs,

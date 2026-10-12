@@ -708,7 +708,7 @@ impl Caminito {
         let scale = self.applied_x11_scale();
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
-            // The primary output's, standing in for the Active output's until 228.
+            // The primary output's, standing in for the Active output's (228).
             current_desktop: self.policy.primary_active_workspace(),
             work_areas: self
                 .policy
