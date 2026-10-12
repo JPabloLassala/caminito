@@ -13,7 +13,7 @@ _pkgname=mate-session-manager
 # so the package needs no -git suffix. The weekly job builds the patches on master instead.
 _commit=57a9178e766cd02176dc1c2d70cc48f963ee9fff
 pkgver=1.28.0.r23.g57a9178
-pkgrel=3
+pkgrel=4
 pkgdesc="The MATE Session Handler, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-session-manager'
@@ -60,7 +60,7 @@ groups=(mate)
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
-# Every patch is active only when MATE_WM_NAME=Caminito (08, ADR 0004; 78, ADR 0014).
+# Every patch is active only when MATE_WM_NAME=Caminito (08, ADR 0004; 78 and 206, ADR 0014).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-session-manager")"
@@ -69,16 +69,16 @@ source=(
   git+https://github.com/mate-desktop/mate-submodules.git
   "$_patches/0001-main-Unset-GDK_BACKEND-under-Caminito.patch"
   "$_patches/0002-main-Skip-the-windowmanager-required-component-under.patch"
-  "$_patches/0003-autostart-Skip-mate-screensaver-and-mate-maximus-und.patch"
-  "$_patches/0004-autostart-Start-mate-power-manager-on-X11-under-Cami.patch"
+  "$_patches/0003-autostart-Skip-X11-only-entries-under-Caminito.patch"
+  "$_patches/0004-autostart-Start-mate-power-manager-and-tilda-on-X11-.patch"
 )
 b2sums=(
   ef165f32eef80783df69906d7054bd51133099b10141a033a269c33086dd66a9f60315b6b10b95c72e1d25662a9d9870aba5c9546cb99865d6ba0b6716efa55b
   SKIP
   79e304146b97b1fcdd07f25aa88afa1f8b09cb692101c8d02fc8c023a0f630b9b1aa5be998fe0079669db8e46073df254e0e2aefbbc607a012420b6608e6db06
   c7425bf55dc429dd784a04ab9b4066db94198d33016b01483ae3193a118cd91d7d0cc6e4b12aa8f3410c074512774d0ce3fc5075d312d793bfecb52c28472d19
-  dc5b1e9287f37b45396bdd4452041e4b1c0dfc6a17d377ed66f9e66b6c8d77a7770f566c009445e55df6a5ca48bc250faa1f0caeeebb1466eb6deff8bbaf38c8
-  4232c801b1f309b17e2bfee413dd22bbd21c29d30a76d02f409d744d211279884e3945490f90f7080d467643770c06e28f0bf62f86db51f9a36633c948d6dca5
+  71c843d381de5d13eca4ad5421537a4fffc591c1a1b9ce6d2de751fc985cb6b96f55d3f603126aba13c5f0b90dd361df899c4ae4e9de13b5d8d34a5fc4dd5fb3
+  b3c5aeb7ed240d6075245b825e25ef794a959a86c64f654b63af03db0f0fa06a621858f9afdfe97bc13500bf540181059d1730fea2d74001ca87586c7e2d76a7
 )
 
 pkgver() {

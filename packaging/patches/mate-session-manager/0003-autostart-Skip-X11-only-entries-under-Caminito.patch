@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 5 Oct 2026 13:05:51 -0300
+Subject: [PATCH] autostart: Skip X11-only entries under Caminito
+
+Under Caminito, the Wayland compositor for MATE, mate-session unsets
+GDK_BACKEND, so what it starts opens GDK on Wayland. mate-screensaver and
+mate-maximus call Xlib without checking for an X display, and die with
+SIGSEGV at every login. plank, Ubuntu MATE's dock, calls GDK's X11
+functions unchecked too.
+
+None of these has work to do there, and on XWayland each would see the
+XWayland windows alone:
+
+- Caminito owns org.mate.ScreenSaver before mate-session starts, so
+  mate-screensaver would find the name taken and exit.
+- mate-maximus takes the decorations off maximised windows through X11,
+  which is the compositor's decision under Caminito.
+- mate-hud searches the focused window's menu, found through X11's active
+  window. Under Caminito, Caminito brokers the menus.
+- plank is a dock, through libwnck. mate-panel's tasklist lists the windows
+  under Caminito. It starts as the dock required component, and Ubuntu
+  MATE's dock-replace starts it again.
+- picom is an X compositor, and magnus a magnifier that reads the X root
+  window. Both are the compositor's work.
+
+Treat their autostart entries as disabled when MATE_WM_NAME is Caminito,
+whichever autostart directory they are read from. Without that variable,
+nothing changes.
+---
+ mate-session/gsm-autostart-app.c | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/mate-session/gsm-autostart-app.c b/mate-session/gsm-autostart-app.c
+index a23a132..b441a4c 100644
+--- a/mate-session/gsm-autostart-app.c
++++ b/mate-session/gsm-autostart-app.c
+@@ -108,6 +108,27 @@ gsm_autostart_app_init (GsmAutostartApp *app)
+         priv->autostart_delay = -1;
+ }
+ 
++/* Autostart entries that must not start under Caminito, the Wayland compositor
++ * for MATE. Each is X11-only, and its work is Caminito's or the compositor's, so
++ * on XWayland it would see the XWayland windows alone. plank is the dock
++ * required component, and dock-replace starts it again. */
++static const char * const caminito_skipped_ids[] = {
++        "mate-screensaver.desktop",       /* Caminito owns org.mate.ScreenSaver */
++        "mate-maximus-autostart.desktop", /* undecorates maximised windows */
++        "mate-hud.desktop",               /* searches the focused window's menu */
++        "plank.desktop",                  /* a dock: mate-panel's tasklist */
++        "dock-replace.desktop",
++        "picom.desktop",                  /* an X compositor */
++        "magnus-autostart.desktop",       /* a magnifier */
++        NULL
++};
++
++static gboolean
++is_under_caminito (void)
++{
++        return g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") == 0;
++}
++
+ static gboolean
+ is_disabled (GsmApp *app)
+ {
+@@ -115,6 +136,13 @@ is_disabled (GsmApp *app)
+ 
+         priv = gsm_autostart_app_get_instance_private (GSM_AUTOSTART_APP(app));
+ 
++        if (is_under_caminito () && priv->desktop_id != NULL &&
++            g_strv_contains (caminito_skipped_ids, priv->desktop_id)) {
++                g_debug ("app %s is disabled under Caminito",
++                         gsm_app_peek_id (app));
++                return TRUE;
++        }
++
+         /* Hidden key, used by autostart spec */
+         if (egg_desktop_file_get_boolean (priv->desktop_file,
+                                           EGG_DESKTOP_FILE_KEY_HIDDEN, NULL)) {
