@@ -46,7 +46,8 @@ Architecture: amd64
 # images, Menta from mate-themes, the Xwayland it spawns, glvnd's libEGL and mesa's drivers,
 # which it dlopens for GBM, zenity for Marco's two dialogs, mate-screensaver's PAM service and
 # lock dialogs for caminito-locker, the notification daemon and polkit agent mate-session
-# autostarts, and hicolor's directory for the logo.
+# autostarts, hicolor's directory for the logo, and mate-desktop's org.mate.background, which
+# caminito-wallpaperd reads on its first run.
 # The patched packages and marco join these in ticket 205, at versions no stock one has.
 Depends:
  ${shlibs:Depends},
@@ -62,6 +63,7 @@ Depends:
  mate-notification-daemon,
  mate-polkit,
  hicolor-icon-theme,
+ mate-desktop-common,
 Recommends:
  appmenu-gtk-module,
  caminito-vscode,

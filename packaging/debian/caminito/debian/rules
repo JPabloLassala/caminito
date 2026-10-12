@@ -38,7 +38,7 @@ endif
 override_dh_auto_install:
 	dh_auto_install
 	install -Dm755 target/release/caminito target/release/caminito-displays \
-		target/release/caminito-about -t debian/caminito/usr/bin
+		target/release/caminito-about target/release/caminito-wallpaperd -t debian/caminito/usr/bin
 
 override_dh_auto_clean:
 	dh_auto_clean
