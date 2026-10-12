@@ -27,9 +27,11 @@ in_container() {
   apt-get update
   apt-get install -y --no-install-recommends build-essential ca-certificates devscripts equivs \
     git lintian passwd rustup
-  # dpkg-buildpackage and lintian run as a user, as makepkg does on Arch.
+  # dpkg-buildpackage and lintian run as a user, as makepkg does on Arch, in its own home,
+  # where rustup keeps the toolchain.
   id builder >/dev/null 2>&1 || useradd -m builder
-  runuser -u builder -- rustup toolchain install stable --profile minimal
+  as_builder() { runuser -u builder -- env HOME=/home/builder "$@"; }
+  as_builder rustup toolchain install stable --profile minimal
   for package; do
     echo "==> $package"
     work=/build/$package
@@ -49,8 +51,8 @@ in_container() {
       rm -f ./*-build-deps_*
     )
     chown -R builder: "$work"
-    (cd "$work/src" && runuser -u builder -- dpkg-buildpackage -b -us -uc)
-    runuser -u builder -- lintian --fail-on error "$work"/*.changes
+    (cd "$work/src" && as_builder dpkg-buildpackage -b -us -uc)
+    as_builder lintian --fail-on error "$work"/*.changes
     apt-get install -y "$work"/*.deb
     cp "$work"/*.deb /out/
   done
