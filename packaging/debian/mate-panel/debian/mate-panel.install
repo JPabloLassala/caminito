@@ -1,10 +1,6 @@
 usr/bin/
-usr/libexec/mate-panel/clock-applet
-usr/libexec/mate-panel/fish-applet
-usr/libexec/mate-panel/notification-area-applet
-usr/libexec/mate-panel/wnck-applet
+usr/lib/*/mate-panel/
 usr/share/applications/
-usr/share/dbus-1/
 usr/share/glib-2.0/
 usr/share/man/
 usr/share/mate-panel/
