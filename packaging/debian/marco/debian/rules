@@ -1,0 +1,47 @@
+#!/usr/bin/make -f
+# Ubuntu 26.04's marco rules, moved to upstream's 1.29.1 (195).
+
+include /usr/share/dpkg/pkg-info.mk
+
+DHFLAGS=--parallel
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+# The apt pin (ADR 0029): /etc/apt/preferences.d/caminito-<source package> pins every binary
+# package in debian/control at its caminito version, at 1001, so that apt never swaps a stock
+# package in. PIN_PACKAGE is the binary package that installs it: a patched package copies
+# this and the lines in override_dh_install, and changes that name alone.
+PIN_PACKAGE = marco
+PIN = debian/$(PIN_PACKAGE)/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+%:
+	dh $@ $(DHFLAGS) --without autoreconf
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+override_dh_install:
+	rm -f debian/tmp/usr/lib/*/*.la
+	dh_install
+	install -d $(dir $(PIN))
+	printf 'Package: %s\nPin: version *caminito*\nPin-Priority: 1001\n' \
+		"$$(sed -n 's/^Package: *//p' debian/control | xargs)" > $(PIN)
+
+override_dh_installchangelogs:
+	dh_installchangelogs NEWS
+
+override_dh_auto_configure:
+	# 1.29.1's release tarball ships its configure, so autogen.sh, which needs
+	# mate-common, isn't run.
+	dh_auto_configure $(DHFLAGS) -- \
+		--enable-verbose-mode \
+		--disable-silent-rules \
+		--localstatedir=/var \
+		--libexecdir=/usr/lib/mate-window-manager \
+		--disable-static \
+		--enable-startup-notification=yes
+
+get-orig-source:
+	uscan --noconf --force-download --rename --download-current-version --destdir=..
