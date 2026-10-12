@@ -7,6 +7,7 @@
 //! into `Caminito::environment`, and from there to the D-Bus activation environment and to
 //! systemd's user manager (`dbus::systemd`), which then restarts the portal (232), and only
 //! once the bus has answered is the command spawned, with `GDK_BACKEND=x11` for itself alone.
+//! caminito-wallpaperd starts with it, as a helper (210).
 //!
 //! The Session ends when the command exits: Caminito stops its helpers and Xwayland, closes
 //! its socket, has systemd forget the variables, and stops the loop, for `run` to exit with
@@ -494,6 +495,13 @@ impl Caminito {
                     child.id()
                 );
                 session.phase = Phase::Running { child, stop: None };
+                // With the command, so that it has the bus and the variables the command
+                // has, and draws the wallpaper in msd's background plugin's place (210).
+                self.wallpaper.start(
+                    self.loop_handle.clone(),
+                    &self.environment,
+                    self.helper_stderr,
+                );
             }
             Err(err) => {
                 tracing::error!(
@@ -587,6 +595,7 @@ impl Caminito {
 
         self.palette.stop();
         self.locker.stop();
+        self.wallpaper.stop();
         self.end_xwayland();
         self.close_socket();
 

@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 12 Oct 2026 12:00:00 -0300
+Subject: [PATCH] background: Do not start under Caminito
+
+Caminito, the Wayland compositor for MATE, draws the wallpaper with a
+program of its own, caminito-wallpaperd, which has a wallpaper for each
+output. With both, the plugin's surfaces would be drawn in the same
+layer as caminito-wallpaperd's, and each output would show whichever
+was on top.
+
+When MATE_WM_NAME is Caminito, do not start the manager. Without that
+variable, nothing changes.
+---
+ plugins/background/msd-background-plugin.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/plugins/background/msd-background-plugin.c b/plugins/background/msd-background-plugin.c
+index 55d88f5..16d2e6e 100644
+--- a/plugins/background/msd-background-plugin.c
++++ b/plugins/background/msd-background-plugin.c
+@@ -72,6 +72,14 @@ impl_activate (MateSettingsPlugin* plugin)
+ 	gboolean res;
+ 	GError* error;
+ 
++	/* Caminito, the Wayland compositor for MATE, has its own program to
++	 * draw the wallpaper, with a wallpaper for each output, and this
++	 * plugin's would be drawn with it. */
++	if (g_strcmp0 (g_getenv ("MATE_WM_NAME"), "Caminito") == 0) {
++		g_debug ("Not activating background plugin under Caminito");
++		return;
++	}
++
+ 	g_debug("Activating background plugin");
+ 
+ 	error = NULL;

@@ -122,6 +122,7 @@ use crate::settings::translate::MARCO_GENERAL;
 use crate::settings::{self, Settings, SettingsThread, Value};
 use crate::sound::{Canberra, Player};
 use crate::switcher::OpenSwitcher;
+use crate::wallpaper::Wallpaper;
 use crate::window::{Mapped, PendingWindows};
 use crate::window_menu::OpenWindowMenu;
 use crate::workspace_popup::WorkspacePopup;
@@ -215,6 +216,8 @@ pub struct Caminito {
     pub(crate) lock: Lock,
     /// The locker Caminito spawns for its own lock requests (126).
     pub(crate) locker: Locker,
+    /// The wallpaper's drawer, which a Session starts (210).
+    pub(crate) wallpaper: Wallpaper,
     /// ext-idle-notify and idle-inhibit, which `idle` times and counts (128).
     pub idle_notify_state: IdleNotifyState,
     pub idle_inhibit_state: IdleInhibitManagerState,
@@ -919,6 +922,7 @@ impl Caminito {
             session_lock_state: SessionLockManagerState::new::<State, _>(dh, privileged),
             lock: Lock::default(),
             locker: Locker::new(loop_handle.clone()),
+            wallpaper: Wallpaper::new(),
             idle_notify_state: IdleNotifyState::new::<State>(dh),
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),

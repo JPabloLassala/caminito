@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer. It holds the decisions, and links the ADR that holds the one hard to reverse. Where the two differ, the ADR is right and this file is to be fixed.
 
-Nothing here is built.
+Ticket 210's drawer is built; the rest isn't.
 
 ## Problem
 
@@ -101,7 +101,7 @@ Each output's lock screen shows that output's current wallpaper, whatever its ki
 
 ## Not decided
 
-The gsettings schema's keys, which ticket 210 settles.
+Nothing. The gsettings schema's keys were left to ticket 210, and are in its Done section and in `data/org.mate.Caminito.gschema.xml`.
 
 ## Prototype
 

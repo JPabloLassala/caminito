@@ -14,6 +14,22 @@
     <value nick="constant" value="1"/>
   </enum>
 
+  <enum id="org.mate.Caminito.WallpaperKind">
+    <value nick="picture" value="0"/>
+    <value nick="colour" value="1"/>
+    <value nick="slideshow" value="2"/>
+    <value nick="picture-of-the-day" value="3"/>
+    <value nick="dynamic" value="4"/>
+  </enum>
+
+  <enum id="org.mate.Caminito.WallpaperPositioning">
+    <value nick="fill" value="0"/>
+    <value nick="fit" value="1"/>
+    <value nick="stretch" value="2"/>
+    <value nick="centre" value="3"/>
+    <value nick="tile" value="4"/>
+  </enum>
+
   <schema id="org.mate.Caminito" path="/org/mate/caminito/">
     <!--
       The workspace grid, as _NET_DESKTOP_LAYOUT has it on X11, where the pager sets it and
@@ -86,6 +102,63 @@
       <default>nothing</default>
       <summary>The last location geoclue gave</summary>
       <description>The latitude and longitude, in degrees, that geoclue last gave Caminito, which the sun schedule follows while geoclue gives none. Caminito writes it.</description>
+    </key>
+  </schema>
+
+  <!--
+    The wallpaper (210, ADR 0031), which caminito-wallpaperd draws and the Wallpaper dialog
+    sets. Each output's keys are an org.mate.Caminito.wallpaper.output: every output's at
+    all/, and each monitor's at outputs/ and the monitor's identity, as edid-<make>-<model>-<serial>
+    or connector-<connector>, with every byte but a letter or a digit as _ and its hex.
+  -->
+  <schema id="org.mate.Caminito.wallpaper" path="/org/mate/caminito/wallpaper/">
+    <key name="same-on-all-outputs" type="b">
+      <default>true</default>
+      <summary>Whether every output has the same wallpaper</summary>
+      <description>While it's on, every output shows the wallpaper at /org/mate/caminito/wallpaper/all/. While it's off, each monitor shows its own, at /org/mate/caminito/wallpaper/outputs/ and its identity.</description>
+    </key>
+    <key name="outputs" type="as">
+      <default>[]</default>
+      <summary>The monitors seen</summary>
+      <description>The identity of each monitor caminito-wallpaperd has drawn on, as its keys' path has it. A monitor not listed is new, and starts with the primary output's wallpaper. caminito-wallpaperd writes it.</description>
+    </key>
+    <key name="pictures" type="as">
+      <default>[]</default>
+      <summary>The pictures the user added</summary>
+      <description>The picture files added in the Wallpaper dialog, which it lists beside MATE's and Plasma's.</description>
+    </key>
+    <key name="folders" type="as">
+      <default>[]</default>
+      <summary>The folders the user added</summary>
+      <description>The folders added in the Wallpaper dialog, whose pictures it lists beside MATE's and Plasma's.</description>
+    </key>
+    <key name="took-mate-background" type="b">
+      <default>false</default>
+      <summary>Whether MATE's picture was taken</summary>
+      <description>Whether caminito-wallpaperd has made the picture org.mate.background names every output's wallpaper, which it does on its first run alone. caminito-wallpaperd writes it.</description>
+    </key>
+  </schema>
+
+  <schema id="org.mate.Caminito.wallpaper.output">
+    <key name="kind" enum="org.mate.Caminito.WallpaperKind">
+      <default>'colour'</default>
+      <summary>The wallpaper's kind</summary>
+      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names. "slideshow", "picture-of-the-day" and "dynamic" are shown as their colour until caminito-wallpaperd draws them.</description>
+    </key>
+    <key name="picture" type="s">
+      <default>''</default>
+      <summary>The picture</summary>
+      <description>The picture file a "picture" wallpaper shows. With none, or one that can't be read, the output shows its colour.</description>
+    </key>
+    <key name="positioning" enum="org.mate.Caminito.WallpaperPositioning">
+      <default>'fill'</default>
+      <summary>How the picture fits the output</summary>
+      <description>"fill" covers the output and crops the picture, "fit" shows all of it with bars of the colour, "stretch" scales it to the output's shape, "centre" shows it at its own size in the middle, and "tile" repeats it at its own size from the top left.</description>
+    </key>
+    <key name="colour" type="s">
+      <default>'#5891bc'</default>
+      <summary>The colour</summary>
+      <description>The colour, as #rrggbb, that a "colour" wallpaper shows, and that shows where a picture doesn't cover the output.</description>
     </key>
   </schema>
 </schemalist>
