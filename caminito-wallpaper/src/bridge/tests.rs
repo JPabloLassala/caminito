@@ -1,8 +1,8 @@
 use super::*;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
-use crate::settings::tests::{Memory, aoc, colour, lg, picture, store_with_both};
-use crate::settings::{OutputSettings, settings_for};
+use crate::settings::tests::{aoc, colour, lg, picture, store_with_both};
+use crate::settings::{Memory, OutputSettings, settings_for};
 
 /// MATE's keys as they are with nothing written.
 fn mate_defaults() -> MateBackground {

@@ -56,6 +56,9 @@ zbus = "5.19.0"
 # Caminito (84).
 caminito-displays = { path = "../caminito-displays" }
 caminito-test-client = { path = "../caminito-test-client" }
+# The Wallpaper dialog's client of output management and its page, which the headless tests
+# drive against Caminito (212).
+caminito-wallpaper = { path = "../caminito-wallpaper" }
 insta = "1.48.0"
 # The stand-in logind's inhibitor pipes, and whether Caminito closed its end (130).
 rustix = { workspace = true, features = ["event", "pipe"] }

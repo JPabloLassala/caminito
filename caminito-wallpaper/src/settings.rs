@@ -151,6 +151,9 @@ pub enum Set {
 pub trait Store {
     /// Whether every output has the same settings.
     fn same_on_all_outputs(&self) -> bool;
+    /// Turns "same on all outputs" on or off, and nothing else: what each output shows is
+    /// the page's to keep.
+    fn set_same_on_all_outputs(&mut self, same: bool);
     /// The monitors seen so far, by their path elements.
     fn seen(&self) -> Vec<String>;
     fn set_seen(&mut self, seen: &[String]);
@@ -159,13 +162,80 @@ pub trait Store {
     /// Whether the first run took `org.mate.background`'s picture already.
     fn took_mate_background(&self) -> bool;
     fn set_took_mate_background(&mut self);
+    /// The pictures the user added, each a file.
+    fn pictures(&self) -> Vec<String>;
+    fn set_pictures(&mut self, pictures: &[String]);
+    /// The folders the user added.
+    fn folders(&self) -> Vec<String>;
+    fn set_folders(&mut self, folders: &[String]);
+}
+
+/// The store in memory, as GSettings has it with nothing written: "same on all outputs" on,
+/// and every set at its defaults. The tests' store, and the dialog's `--demo`.
+#[derive(Debug, Default)]
+pub struct Memory {
+    pub(crate) different: bool,
+    pub(crate) seen: Vec<String>,
+    sets: std::collections::HashMap<String, OutputSettings>,
+    took: bool,
+    pictures: Vec<String>,
+    folders: Vec<String>,
+}
+
+impl Memory {
+    fn key(set: &Set) -> String {
+        match set {
+            Set::All => "all".into(),
+            Set::Output(identity) => identity.path_element(),
+            Set::Seen(element) => element.clone(),
+        }
+    }
+}
+
+impl Store for Memory {
+    fn same_on_all_outputs(&self) -> bool {
+        !self.different
+    }
+    fn set_same_on_all_outputs(&mut self, same: bool) {
+        self.different = !same;
+    }
+    fn seen(&self) -> Vec<String> {
+        self.seen.clone()
+    }
+    fn set_seen(&mut self, seen: &[String]) {
+        self.seen = seen.to_vec();
+    }
+    fn read(&self, set: &Set) -> OutputSettings {
+        self.sets.get(&Self::key(set)).cloned().unwrap_or_default()
+    }
+    fn write(&mut self, set: &Set, settings: &OutputSettings) {
+        self.sets.insert(Self::key(set), settings.clone());
+    }
+    fn took_mate_background(&self) -> bool {
+        self.took
+    }
+    fn set_took_mate_background(&mut self) {
+        self.took = true;
+    }
+    fn pictures(&self) -> Vec<String> {
+        self.pictures.clone()
+    }
+    fn set_pictures(&mut self, pictures: &[String]) {
+        self.pictures = pictures.to_vec();
+    }
+    fn folders(&self) -> Vec<String> {
+        self.folders.clone()
+    }
+    fn set_folders(&mut self, folders: &[String]) {
+        self.folders = folders.to_vec();
+    }
 }
 
 /// The settings of the output that shows `identity`, with `primary` the primary output's.
 /// A monitor seen for the first time is given the primary output's wallpaper, or every
 /// output's if the primary output's is new too, and is seen from then on.
 pub fn settings_for(
-    store: &mut impl Store,
+    store: &mut (impl Store + ?Sized),
     identity: &Identity,
     primary: Option<&Identity>,
 ) -> OutputSettings {
@@ -207,7 +277,7 @@ pub struct MateBackground {
 
 /// On the first run, makes MATE's picture every output's wallpaper, and returns `true`.
 /// Every run after does nothing and returns `false`, whatever MATE's picture is by then.
-pub fn take_mate_background(store: &mut impl Store, mate: &MateBackground) -> bool {
+pub fn take_mate_background(store: &mut (impl Store + ?Sized), mate: &MateBackground) -> bool {
     if store.took_mate_background() {
         return false;
     }
