@@ -781,17 +781,14 @@ pub(crate) fn is_above_windows(layer: Layer) -> bool {
 pub(crate) fn top_layer_is_covered(caminito: &Caminito, output: &Output) -> bool {
     let policy = &caminito.policy;
     let output_geometry = output_geometry(output);
-    policy
-        .stacking(policy.active_workspace())
-        .iter()
-        .any(|&id| {
-            policy.is_showing(id)
-                && policy.is_fullscreen(id)
-                && window_is_in(caminito, id, SceneLayer::FullscreenWindows)
-                && policy
-                    .geometry(id)
-                    .is_some_and(|geometry| geometry.contains_rect(output_geometry))
-        })
+    policy.active_stacking().iter().any(|&id| {
+        policy.is_showing(id)
+            && policy.is_fullscreen(id)
+            && window_is_in(caminito, id, SceneLayer::FullscreenWindows)
+            && policy
+                .geometry(id)
+                .is_some_and(|geometry| geometry.contains_rect(output_geometry))
+    })
 }
 
 /// Whether a window is drawn in `layer`, of the two that hold windows.
@@ -1014,7 +1011,7 @@ fn window_elements<R>(
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
 
-    for &id in policy.stacking(policy.active_workspace()).iter().rev() {
+    for &id in policy.active_stacking().iter().rev() {
         let (Some(mapped), Some(geometry)) = (policy.window(id), policy.geometry(id)) else {
             continue;
         };

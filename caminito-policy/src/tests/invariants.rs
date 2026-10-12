@@ -633,6 +633,22 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
         policy.active_workspace() < stacks.len(),
         "the active workspace exists"
     );
+    // Every output has the same active workspace, through switches, outputs coming and
+    // going, dynamic workspaces and a change of the count: every switch sets them all
+    // (221), and an output added takes the one the others have.
+    for output in policy.outputs() {
+        assert_eq!(
+            policy.active_workspace_on(output.id),
+            policy.active_workspace(),
+            "{:?}'s active workspace is every output's",
+            output.id
+        );
+    }
+    assert_eq!(
+        policy.primary_active_workspace(),
+        policy.active_workspace(),
+        "the primary output's active workspace is every output's"
+    );
     let mut all = policy.stacking_all().to_vec();
     all.sort();
     let mut managed = windows.clone();
@@ -805,15 +821,14 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
 /// The queries `caminito/src/scene.rs` makes of policy, in the alphabet's order. `SceneView`
 /// holds the answer to each, and `the_scene_view_has_every_query_the_scene_makes` holds
 /// this list to the Scene's source (179).
-const SCENE_QUERIES: [&str; 11] = [
-    "active_workspace",
+const SCENE_QUERIES: [&str; 10] = [
+    "active_stacking",
     "frame_rect",
     "geometry",
     "grab",
     "is_fullscreen",
     "is_showing",
     "layer",
-    "stacking",
     "switcher",
     "tile_preview",
     "window",
@@ -822,7 +837,7 @@ const SCENE_QUERIES: [&str; 11] = [
 /// What the Scene reads from policy, by the queries it reads it with (179).
 #[derive(Debug, PartialEq)]
 struct SceneView {
-    /// `stacking` of `active_workspace`.
+    /// `active_stacking`.
     stacking: Vec<WindowId>,
     /// Each managed window, as `window` has them, with its answers.
     windows: Vec<WindowView>,
@@ -850,7 +865,7 @@ struct WindowView {
 
 fn scene_view(policy: &Policy<TestWindow>) -> SceneView {
     SceneView {
-        stacking: policy.stacking(policy.active_workspace()),
+        stacking: policy.active_stacking(),
         windows: policy
             .windows()
             .map(|window| {

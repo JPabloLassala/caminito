@@ -38,9 +38,11 @@ impl ExtWorkspaceHandler for State {
 
 impl Caminito {
     /// Tells ext-workspace's clients of the outputs and workspaces that changed. Each
-    /// workspace's coordinates are its cell in policy's grid (96).
+    /// workspace's coordinates are its cell in policy's grid (96). The one group, of every
+    /// output, has the primary output's active workspace, until 226 gives each output a
+    /// group of its own.
     pub(crate) fn refresh_ext_workspace(&mut self) {
-        let active = self.policy.active_workspace();
+        let active = self.policy.primary_active_workspace();
         let grid = self.policy.workspace_grid();
         let names = self.policy.workspace_names().iter();
         let workspaces = names

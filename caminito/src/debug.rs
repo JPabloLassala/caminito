@@ -72,8 +72,9 @@ struct StateDump {
     /// By id.
     windows: Vec<WindowDump>,
     workspaces: Vec<WorkspaceDump>,
+    /// The primary output's active workspace.
     active_workspace: usize,
-    /// Whether the active workspace shows its desktop (94).
+    /// Whether every output's active workspace shows its desktop (94).
     showing_desktop: bool,
     outputs: Vec<OutputDump>,
     /// The primary output's name (81): the user's choice, or its stand-in.
@@ -416,6 +417,8 @@ struct OutputDump {
     /// The output less what layer surfaces' exclusive zones and XWayland windows' struts
     /// reserve along its edges (64).
     work_area: RectDump,
+    /// The workspace it shows (ADR 0032).
+    active_workspace: usize,
     /// In the order they were made.
     layer_surfaces: Vec<LayerSurfaceDump>,
     /// Whether the locker that holds the lock has a lock surface on it (12).
@@ -576,6 +579,7 @@ impl Caminito {
                 geometry: output_geometry(output).into(),
                 scale: output.current_scale().fractional_scale(),
                 work_area: work_area(output).into(),
+                active_workspace: policy.active_workspace_on(output_id(output)),
                 layer_surfaces: self
                     .layer_surfaces(output)
                     .iter()
@@ -647,7 +651,7 @@ impl Caminito {
                 },
                 columns: popup.layout.columns,
                 rows: popup.layout.rows,
-                selected: policy.active_workspace(),
+                selected: policy.active_workspace_on(output_id(&popup.output)),
                 popup: popup.layout.popup.into(),
                 cells: cells.iter().map(|cell| cell.rect.into()).collect(),
                 previews: cells.iter().map(|cell| cell.preview.into()).collect(),
@@ -715,7 +719,8 @@ impl Caminito {
         let dump = StateDump {
             windows,
             workspaces,
-            active_workspace: policy.active_workspace(),
+            // The primary output's, standing in for the Active output's until 222.
+            active_workspace: policy.primary_active_workspace(),
             showing_desktop: policy.is_showing_desktop(),
             outputs,
             primary_output: self.primary_output().map(|output| output.name()),

@@ -1087,7 +1087,7 @@ impl Caminito {
     fn managed_under(&self, layer: SceneLayer, location: Point<f64, Logical>) -> Option<Under> {
         let policy = &self.policy;
         policy
-            .stacking(policy.active_workspace())
+            .active_stacking()
             .iter()
             .rev()
             .filter(|id| policy.is_showing(**id) && scene::window_is_in(self, **id, layer))

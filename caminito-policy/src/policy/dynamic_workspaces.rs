@@ -65,33 +65,43 @@ impl<W: PolicyWindow> Policy<W> {
         let grid = self.workspace_grid();
         self.workspace_count = count;
 
-        // The previous workspace follows its windows too (150), or is kept as the active one
-        // is, and forgotten if it's gone.
-        if let Some(to) = self
-            .previous
-            .and_then(|previous| occupied.iter().position(|from| *from == previous))
-        {
-            self.previous = Some(to);
+        // Each output's previous workspace follows its windows too (150), or is kept as the
+        // active one is, and forgotten if it's gone. Each output's active workspace follows
+        // its windows, and the focus with them. Marco keeps the index, which shows the next
+        // workspace's windows instead. An empty one stays if it can, as in Marco, or the
+        // first is activated, Marco's `safe_target`.
+        let from = self.active_workspaces.everywhere().active;
+        let mut active_workspaces = self.active_workspaces.clone();
+        let mut removed = false;
+        for shown in active_workspaces.each_mut() {
+            if let Some(to) = shown
+                .previous
+                .and_then(|previous| occupied.iter().position(|from| *from == previous))
+            {
+                shown.previous = Some(to);
+            }
+            match occupied.iter().position(|from| *from == shown.active) {
+                Some(to) => shown.active = to,
+                None if shown.active < count => {}
+                None => {
+                    shown.active = 0;
+                    removed = true;
+                }
+            }
         }
-        // The active workspace follows its windows, and the focus with them. Marco keeps the
-        // index, which shows the next workspace's windows instead. An empty one stays if it
-        // can, as in Marco.
-        let active = occupied.iter().position(|from| *from == self.active);
-        match active {
-            Some(to) => self.active = to,
-            None if self.active < count => {}
-            None => {
-                // Or the first is activated, Marco's `safe_target`, as a switch does, with
-                // the default focus (`safely_remove_workspaces`, screen.c:1427-1428), and
-                // the open switcher closed (ruling 9 of 108).
-                self.close_switcher(switcher::Close::Dropped);
-                self.note_switch(grid, 0);
-                self.active = 0;
-                self.focus.clear();
-                if let Some(id) = self.default_focus() {
-                    for seat in &self.seats {
-                        self.focus.insert(*seat, id);
-                    }
+        if removed {
+            // As a switch does, with the default focus (`safely_remove_workspaces`,
+            // screen.c:1427-1428), and the open switcher closed (ruling 9 of 108). The sound
+            // is one for every output's switch, from the active workspace they all had.
+            self.close_switcher(switcher::Close::Dropped);
+            self.note_switch(grid, from, 0);
+        }
+        self.active_workspaces = active_workspaces;
+        if removed {
+            self.focus.clear();
+            if let Some(id) = self.default_focus() {
+                for seat in &self.seats {
+                    self.focus.insert(*seat, id);
                 }
             }
         }

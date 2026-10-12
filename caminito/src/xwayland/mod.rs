@@ -203,9 +203,10 @@ impl Caminito {
     pub(crate) fn refresh_x11_stacking(&mut self) {
         let policy = &self.policy;
         // Bottom to top: Smithay moves each window above the one before it, whatever its
-        // doc comment says. Windows on other workspaces aren't in the scene, and go below.
-        // A sticky window is on the active workspace, and goes there once (155).
-        let on_active = policy.stacking(policy.active_workspace());
+        // doc comment says. Windows on a workspace their output doesn't show aren't in the
+        // scene, and go below. A sticky window is on its output's active workspace, and goes
+        // there once (155).
+        let on_active = policy.active_stacking();
         let others = policy
             .stacking_all()
             .iter()
@@ -707,7 +708,8 @@ impl Caminito {
         let scale = self.applied_x11_scale();
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
-            current_desktop: self.policy.active_workspace(),
+            // The primary output's, standing in for the Active output's until 228.
+            current_desktop: self.policy.primary_active_workspace(),
             work_areas: self
                 .policy
                 .work_areas()
