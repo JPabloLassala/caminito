@@ -46,7 +46,7 @@ override_dh_installchangelogs:
 # because Wayland has nothing to embed another process's applet with. The clock links
 # evolution-data-server when it's installed, which isn't a build dependency, so that's off.
 override_dh_auto_configure:
-	# upstream tarball is without configure. autogen.sh will create it
+	# Upstream's git has no configure.
 	NOCONFIGURE=1 ./autogen.sh
 	dh_auto_configure $(DHFLAGS) -- \
 		--disable-silent-rules \

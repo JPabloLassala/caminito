@@ -55,6 +55,10 @@ in_container() {
       git='' commit='' patches=''
       # shellcheck source=/dev/null
       . "$work/head/packaging/debian/$package/upstream"
+      if [ -z "$git" ] || [ -z "$commit" ] || [ -z "$patches" ]; then
+        echo "debian-build: $package's upstream needs git, commit and patches" >&2
+        exit 1
+      fi
       git init -q "$work/src"
       git -C "$work/src" fetch -q --depth 1 "$git" "$commit"
       git -C "$work/src" checkout -q FETCH_HEAD
