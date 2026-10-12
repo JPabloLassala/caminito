@@ -208,7 +208,7 @@ pub fn run() -> Result<(), Error> {
     let refresh = Refresh::default();
     let store = {
         let refresh = refresh.clone();
-        GioStore::open(move |settings| {
+        GioStore::open(DOMAIN, move |settings| {
             let refresh = refresh.clone();
             settings.connect_changed(None, move |_, _| refresh.schedule());
         })

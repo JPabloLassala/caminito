@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Wallpaper
+Comment=Set a picture or a colour as each monitor's wallpaper
+Exec=caminito-wallpaper
+Icon=preferences-desktop-wallpaper
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;DesktopSettings;
+Keywords=mate-control-center;MATE;wallpaper;background;picture;colour;color;desktop;
+OnlyShowIn=MATE;

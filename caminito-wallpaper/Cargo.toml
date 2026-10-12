@@ -8,11 +8,15 @@ repository.workspace = true
 publish = false
 
 # The drawer links no GTK (ADR 0031): GLib's loop and GSettings through gio, the pictures
-# decoded by gdk-pixbuf and drawn with cairo, and its own Wayland connection.
+# decoded by gdk-pixbuf and drawn with cairo, and its own Wayland connection. Only the
+# dialog, `caminito-wallpaper` (212), uses GTK, and a binary links only the crates it uses.
 [dependencies]
 cairo-rs = "0.22.9"
 gdk-pixbuf = "0.22.0"
 gio = "0.22.10"
+# The dialog, without libadwaita (ADR 0014). v4_12: FileDialog, ColorDialogButton, and CSS
+# from a string.
+gtk = { workspace = true, features = ["v4_12"] }
 # The Wayland connection's fd in GLib's loop.
 glib-unix = "0.22.8"
 rustix = { workspace = true, features = ["fs"] }
