@@ -20,11 +20,12 @@ if [ "${1-}" = --deps ]; then
   # from the headless fixture (14). seatd, systemd-libs, mesa, libdisplay-info, libinput: the
   # tty backend links them. gtk4: caminito-displays (84). gtk-session-lock, mate-desktop, pam:
   # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
-  # passwords against. nodejs, npm: the global menu extension (116).
+  # passwords against. nodejs, npm: the global menu extension (116). desktop-file-utils:
+  # desktop-file-validate, for the System Shortcuts entry (183).
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm
+    nodejs npm desktop-file-utils
   rustup toolchain install
 fi
 
@@ -54,6 +55,19 @@ step "the palette helper"
 meson compile -C target/meson
 CAMINITO_GTK_PALETTE=$PWD/target/meson/helpers/caminito-gtk-palette/caminito-gtk-palette \
   xvfb-run -a cargo test -p caminito-theme --test palette_helper -- --ignored
+
+# The launcher that names Keyboard Shortcuts System Shortcuts (183) shadows the stock one only
+# from the directory a Session alone has on its data path. Anywhere else it would rename the
+# dialog under X11 MATE.
+step "the System Shortcuts entry's place"
+rm -rf target/meson-destdir
+meson install -C target/meson --no-rebuild --quiet --destdir "$PWD/target/meson-destdir"
+entries=$(cd target/meson-destdir && find . -name mate-keybinding.desktop)
+[ "$entries" = ./usr/local/share/caminito/xdg/applications/mate-keybinding.desktop ] || {
+  echo "mate-keybinding.desktop is installed at: ${entries:-nowhere}" >&2
+  exit 1
+}
+desktop-file-validate "target/meson-destdir/$entries"
 
 # caminito-locker's PAM conversation (131), against pam_wrapper's stand-in service.
 step "the helpers' tests"

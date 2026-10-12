@@ -739,7 +739,7 @@ session_env() {
      ticket 100's change (a grab named by the keysym its press types), log into *MATE on
      Caminito*.
   2. Add a shortcut for `mate-calc` on Ctrl+Alt+K. With `mate-control-center-caminito`
-     installed, use *Add* in *Keyboard Shortcuts* and press the keys there. Without it:
+     installed, use *Add* in *System Shortcuts* and press the keys there. Without it:
 
      ```sh
      d=/org/mate/desktop/keybindings/custom-check
@@ -750,9 +750,9 @@ session_env() {
 
   3. Click in a text editor's window, and press Ctrl+Alt+K. Close the calculator, then hold
      Ctrl+Alt+K for two seconds.
-  4. Change the shortcut's keys to Shift+Super+1, in *Keyboard Shortcuts* or with `dconf
+  4. Change the shortcut's keys to Shift+Super+1, in *System Shortcuts* or with `dconf
      write $d/binding "'<Shift><Mod4>exclam'"`. Press Ctrl+Alt+K, then Shift+Super+1.
-  5. Remove the shortcut, in *Keyboard Shortcuts* or with `dconf reset -f $d/`. Press
+  5. Remove the shortcut, in *System Shortcuts* or with `dconf reset -f $d/`. Press
      Shift+Super+1 in a terminal running `wev`.
   6. Add the shortcut again as in step 2, with `XF86AudioMute` for its keys, which the mute
      key has, and press the mute key. Then remove the shortcut.
@@ -1294,7 +1294,7 @@ session_env() {
 - **Milestone:** M8
 - **Steps:**
   1. Log into *MATE on Caminito*, with the panel along the top. In mate-control-center's
-     *Keyboard Shortcuts*, under *Window Management*, set the six *Tile window to …* actions
+     *System Shortcuts*, under *Window Management*, set the six *Tile window to …* actions
      to Super with Q (west side), W (east side), E (north-west corner), R (north-east),
      T (south-west) and A (south-east). Open pluma (native GTK3) and xterm (X11).
   2. With pluma focused, press each of the six once.
@@ -1322,7 +1322,7 @@ session_env() {
 - **Steps:**
   1. Log into *MATE on Caminito* with two monitors side by side, at different scales (100%
      and 200%, say, set in *Displays*), and the panel along the top of the first. In
-     mate-control-center's *Keyboard Shortcuts*, under *Window Management*, set the four
+     mate-control-center's *System Shortcuts*, under *Window Management*, set the four
      *Move window to … corner* actions, the four *Move window to … side of screen* actions,
      *Move window to center of screen* and the four *Move window to … monitor* actions to
      keys of your choice. Open pluma (native GTK3) and xterm (X11).
@@ -1468,20 +1468,26 @@ session_env() {
 
 ## The control center
 
-### Windows and Keyboard Shortcuts open under Caminito, and name it
+### Windows and System Shortcuts open under Caminito, and name it
 
 - **Milestone:** M8, for step 4, which applies a changed shortcut at once (148). It's run in
   M8's closing run (173). The other steps are M6's.
 - **Steps:**
-  1. With `mate-control-center-caminito` installed, and `caminito-git` at a build that has the
-     `50-caminito-*.xml` manifests (`ls /usr/share/mate-control-center/keybindings`), log into
-     *MATE on Caminito*.
+  1. With `mate-control-center-caminito` 1.29.1-5 or later installed, and `caminito-git` at a
+     build that has the `50-caminito-*.xml` manifests (`ls
+     /usr/share/mate-control-center/keybindings`) and the launcher (`ls
+     /usr/share/caminito/xdg/applications/mate-keybinding.desktop`), log into *MATE on
+     Caminito*.
   2. Open *Windows* from the control center, with a window that Caminito decorates beside it.
      On *Behaviour*, set the titlebar's double-click action to *Toggle Shade*, double-click that
      window's titlebar, and set it back. On *Placement*, move the titlebar buttons to the
      left and back.
-  3. Open *Keyboard Shortcuts* from the control center. Find *Window Management*, and
-     *Desktop*'s *Show the panel's "Run Application" dialog box*.
+  3. Find *System Shortcuts* in the control center, under *Hardware*, and in the panel's
+     menu, under *System*, *Preferences*, *Hardware*. Open it from the control center, and
+     read its window's title. Find *Window Management*, and *Desktop*'s *Show the panel's "Run
+     Application" dialog box*. Then, from a terminal, run `LANG=es_ES.UTF-8
+     mate-control-center`, with that locale generated (`locale -a`), and find and open the
+     dialog there.
   4. Click the shortcut of *Toggle maximization state*, press Super+Up, and run:
 
      ```sh
@@ -1492,19 +1498,23 @@ session_env() {
      again, press Backspace, run the command again, and press Super+Up and Alt+F10. Last,
      run `gsettings reset org.mate.Marco.window-keybindings toggle-maximized` and press
      Alt+F10.
-  5. Log out, log into *MATE*, the X11 session, and open both dialogs there. Then log into the
-     Wayfire session and open both.
+  5. Log out, log into *MATE*, the X11 session, and open both dialogs there, the second one
+     as *Keyboard Shortcuts*. Run `LANG=es_ES.UTF-8 mate-control-center` there too, and open
+     it. Then log into the Wayfire session and open both.
 - **Expected:** in step 2 the dialog opens, with no *The current window manager is
   unsupported*, and it offers Alt and Super for moving a window. The window shades at the
   double click, and each window's buttons move as the setting does, with the dialog still
-  open (06). In step 3 the dialog opens without a crash, and lists Caminito's window management
-  actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
+  open (06). In step 3 the control center and the menu each list *System Shortcuts* once, and
+  no *Keyboard Shortcuts*, and the dialog's title is *System Shortcuts*. In Spanish the
+  launcher and the title are both *Atajos del sistema* (183). The dialog opens without a
+  crash, and lists Caminito's window management actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
   Ctrl+Alt+D. In step 4 the key is a string that names Super and Up, `'<Mod4>Up'` or
   `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. **The shortcut applies at
   once**, with no restart (148): the first Super+Up maximises the window and the second
   restores it, while Alt+F10 reaches the window and maximises nothing. Once it's disabled,
   neither maximises, and after the reset Alt+F10 maximises the window again. In X11 MATE both dialogs are as they were, with Marco's shortcuts
-  listed, since the variables aren't read on X11. In the Wayfire session *Windows* says the
+  listed, since the variables aren't read on X11: the launcher and the title are *Keyboard
+  Shortcuts*, and in Spanish both are *Atajos de teclado*, as stock. In the Wayfire session *Windows* says the
   window manager is unsupported, as the stock one does, and *Keyboard Shortcuts* opens, where
   the stock one crashed, and lists no window management actions (101, ADR 0011).
 - **Debug tool:** `mate-window-properties` and `mate-keybinding-properties` run from a
@@ -1666,13 +1676,13 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
   `gsettings monitor org.mate.Marco.general`.
 
-### The window and workspace actions work from Keyboard Shortcuts on a native and an X11 window
+### The window and workspace actions work from System Shortcuts on a native and an X11 window
 
 - **Milestone:** M8, run in M8's closing run (173).
 - **Steps:**
   1. Log into *MATE on Caminito*. Open `pluma` (native) with a frame, `gnome-calculator` or
      another header-bar app (native, its own titlebar), and `xterm` (X11), overlapping.
-  2. Open *Keyboard Shortcuts* from the control center. Under *Window Management*, give a
+  2. Open *System Shortcuts* from the control center. Under *Window Management*, give a
      shortcut to each of *Maximize window*, *Toggle fullscreen mode*, *Toggle shaded state*,
      *Raise window if it's covered by another window, otherwise lower it*, *Raise window
      above other windows*, *Lower window below other windows*, *Maximize window vertically*,
@@ -1906,7 +1916,7 @@ session_env() {
 
 - **Milestone:** M8, run in M8's closing run (173).
 - **Steps:**
-  1. Log into *MATE on Caminito*, with `zenity` installed. Open *Keyboard Shortcuts* from the
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open *System Shortcuts* from the
      control center, or use `gsettings`, to bind `run-command-1` to Super+1, leaving
      `org.mate.Marco.keybinding-commands command-1` at its default, and press it.
   2. Run `gsettings set org.mate.Marco.keybinding-commands command-1 'no-such-program'` and

@@ -12,7 +12,7 @@
 pkgname=mate-control-center-caminito
 _pkgname=mate-control-center
 pkgver=1.29.1
-pkgrel=4
+pkgrel=5
 pkgdesc="The Control Center for MATE, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-control-center'
@@ -70,6 +70,8 @@ conflicts=("$_pkgname")
 # XWayland, and Mouse always shows its touchpad page, since XWayland's devices aren't the
 # machine's (06, 102). 0006 is gated on MATE_WM_NAME alone, on XWayland as well: System Info's
 # Windowing System row reads "Caminito (Wayland)", or "Caminito (X11)" on XWayland (181).
+# 0007 is gated on MATE_WM_NAME alone too: Keyboard Shortcuts takes its title from its
+# launcher, which caminito-git shadows with one named System Shortcuts (183).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-control-center")"
@@ -81,6 +83,7 @@ source=(
   "$_patches/0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch"
   "$_patches/0005-mouse-Show-the-touchpad-page-under-Caminito.patch"
   "$_patches/0006-system-info-Name-Caminito-in-the-Windowing-System-row.patch"
+  "$_patches/0007-keybindings-Title-the-dialog-as-its-launcher-under-C.patch"
 )
 b2sums=(
   5125854bee37563c54b9e22b23dc2b6670cc7453e2669b547c577394ea2250959fa76c0c7fe5df656a4b237a201835762ed7be4d49643ae99febe74ca9d7065a
@@ -90,6 +93,7 @@ b2sums=(
   c2e1bbc9eca4545f90e90b4601ec574404834108820edb114ae2a7dfe5989deccf4bd0a7c4c342e8939123146d096bc9dbdec5fb75b1bc3a4475c1cc78a6cf0b
   12d7a2018fb7b01327c7daa3134060f7de67752a2f1cc35cb048c4fba55e04b5f13fc037f42017d2d02ea9f3d09a51e1e181640406be084482041a7f73bbf109
   c01988497e63fede7196d98f2fe842b3208461ece48842c81de86ff9f46ace14ad562a57adfef27127c3bf2804ac359255e8b36600a5eb61cd50cdd338ee9414
+  9b2926a010bf8cef027f22d42d747f6fdec9f69d26200d160e64ff77282fdafd7c0002bf9e421d94c6dcc540c13aba501d14ce0a83a133ccde9e00496b847696
 )
 
 prepare() {

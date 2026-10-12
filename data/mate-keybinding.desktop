@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=System Shortcuts
+Name[es]=Atajos del sistema
+Comment=Assign shortcut keys to commands
+Comment[es]=Asignar teclas de atajo a órdenes
+Exec=mate-keybinding-properties
+Icon=preferences-desktop-keyboard-shortcuts
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;HardwareSettings;
+Keywords=mate-control-center;MATE;assign;keyboard;shortcuts;keybindings;
+Keywords[es]=control;centro;MATE;asignación;teclado;atajos;combinaciones;
+OnlyShowIn=MATE;

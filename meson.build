@@ -55,6 +55,15 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# The launcher of the control center's Keyboard Shortcuts dialog (183), under the stock entry's
+# id and in the same directory, so that it shadows it in a Session alone. There the dialog is
+# System Shortcuts, and the patched dialog takes its title from this entry's name, so the
+# Spanish is carried here. X11 MATE and the Wayfire session still find the stock entry.
+install_data(
+  'data/mate-keybinding.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+
 # What the control center's Keyboard Shortcuts dialog lists under Caminito (05, 101): Marco's
 # own manifests from marco 1.29.0, with Caminito's name in wm_name, which the dialog matches
 # against MATE_WM_KEYBINDINGS. They point at the org.mate.Marco.* keys, and their names are

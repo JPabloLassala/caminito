@@ -44,7 +44,7 @@ keybinding actions, has one of four answers in [docs/parity.md](docs/parity.md),
 or the checklist item that covers it:
 
 - **honoured:** Caminito does what Marco does with it, or what its row says. Every keybinding
-  action is, and the control center's _Keyboard Shortcuts_ lists them.
+  action is, and the control center's _System Shortcuts_ lists them.
 - **never:** Caminito will not implement it, for the reason beside it: what only an X11 window
   manager can do, and what Marco itself never finished.
 - **left to another component:** another program of the Session does it.

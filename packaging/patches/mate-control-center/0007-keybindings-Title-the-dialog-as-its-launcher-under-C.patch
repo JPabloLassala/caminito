@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 12 Oct 2026 01:41:29 -0300
+Subject: [PATCH] keybindings: Title the dialog as its launcher under Caminito
+
+Under Caminito what the dialog lists is a System shortcut: Caminito acts
+on it before any client sees it, and it can be a mouse button as well as
+a key. So there the dialog is System Shortcuts.
+
+A program can't gate its launcher's name, so Caminito installs an entry
+of its own under mate-keybinding.desktop's id, in the directory it puts
+first on its session's data path, and that entry has the name in the
+languages Caminito carries. Where MATE_WM_NAME says Caminito the dialog
+takes its title from that entry, so the two can't differ and no
+catalogue of upstream's is touched.
+
+Anywhere else the title is as it was.
+---
+ .../keybindings/mate-keybinding-properties.c  | 23 +++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/capplets/keybindings/mate-keybinding-properties.c b/capplets/keybindings/mate-keybinding-properties.c
+index 8bcbe914..34051b76 100644
+--- a/capplets/keybindings/mate-keybinding-properties.c
++++ b/capplets/keybindings/mate-keybinding-properties.c
+@@ -8,6 +8,7 @@
+ #include <string.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
++#include <gio/gdesktopappinfo.h>
+ #include <gdk/gdkx.h>
+ #include <X11/Xatom.h>
+ #include <glib/gi18n.h>
+@@ -1868,6 +1869,27 @@ cb_app_dialog_response (GtkWidget *dialog, gint response_id, gpointer data)
+   gtk_widget_hide (dialog);
+ }
+ 
++/* Under Caminito what the dialog lists is a System shortcut, which can be
++ * a mouse button too, so it takes its title from its launcher: Caminito
++ * installs an entry of its own under this one's id, first on the session's
++ * data path, with the name in the languages it has. Without that entry the
++ * title is the launcher's stock name. */
++static void
++set_caminito_title (GtkWindow *dialog)
++{
++  GDesktopAppInfo *launcher;
++
++  if (!wm_common_is_caminito ())
++    return;
++
++  launcher = g_desktop_app_info_new ("mate-keybinding.desktop");
++  if (launcher == NULL)
++    return;
++
++  gtk_window_set_title (dialog, g_app_info_get_name (G_APP_INFO (launcher)));
++  g_object_unref (launcher);
++}
++
+ static void
+ setup_dialog (GtkBuilder *builder, GSettings *marco_settings)
+ {
+@@ -1937,6 +1959,7 @@ setup_dialog (GtkBuilder *builder, GSettings *marco_settings)
+ 
+   widget = _gtk_builder_get_widget (builder, "mate-keybinding-dialog");
+   capplet_set_icon (widget, "preferences-desktop-keyboard-shortcuts");
++  set_caminito_title (GTK_WINDOW (widget));
+   gtk_widget_show (widget);
+ 
+   g_signal_connect (widget, "key_press_event", G_CALLBACK (maybe_block_accels), NULL);
