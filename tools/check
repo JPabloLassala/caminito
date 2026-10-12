@@ -62,12 +62,15 @@ CAMINITO_GTK_PALETTE=$PWD/target/meson/helpers/caminito-gtk-palette/caminito-gtk
 step "the System Shortcuts entry's place"
 rm -rf target/meson-destdir
 meson install -C target/meson --no-rebuild --quiet --destdir "$PWD/target/meson-destdir"
-entries=$(cd target/meson-destdir && find . -name mate-keybinding.desktop)
-[ "$entries" = ./usr/local/share/caminito/xdg/applications/mate-keybinding.desktop ] || {
-  echo "mate-keybinding.desktop is installed at: ${entries:-nowhere}" >&2
-  exit 1
-}
-desktop-file-validate "target/meson-destdir/$entries"
+installed=$(find target/meson-destdir -name mate-keybinding.desktop)
+case $installed in
+  */share/caminito/xdg/applications/mate-keybinding.desktop) ;;
+  *)
+    echo "mate-keybinding.desktop is installed at: ${installed:-nowhere}" >&2
+    exit 1
+    ;;
+esac
+desktop-file-validate "$installed"
 
 # caminito-locker's PAM conversation (131), against pam_wrapper's stand-in service.
 step "the helpers' tests"

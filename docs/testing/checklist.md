@@ -1509,9 +1509,10 @@ session_env() {
   3. Find *System Shortcuts* in the control center, under *Hardware*, and in the panel's
      menu, under *System*, *Preferences*, *Hardware*. Open it from the control center, and
      read its window's title. Find *Window Management*, and *Desktop*'s *Show the panel's "Run
-     Application" dialog box*. Then, from a terminal, run `LANG=es_ES.UTF-8
-     mate-control-center`, with that locale generated (`locale -a`), and find and open the
-     dialog there.
+     Application" dialog box*. Then close the dialog and the control center, since a second
+     control center only raises the first, and from a terminal run `LANGUAGE= LC_ALL=
+     LANG=es_ES.UTF-8 mate-control-center`, with that locale generated (`locale -a`), and
+     find and open the dialog there.
   4. Click the shortcut of *Toggle maximization state*, press Super+Up, and run:
 
      ```sh
@@ -1523,8 +1524,8 @@ session_env() {
      run `gsettings reset org.mate.Marco.window-keybindings toggle-maximized` and press
      Alt+F10.
   5. Log out, log into *MATE*, the X11 session, and open both dialogs there, the second one
-     as *Keyboard Shortcuts*. Run `LANG=es_ES.UTF-8 mate-control-center` there too, and open
-     it. Then log into the Wayfire session and open both.
+     as *Keyboard Shortcuts*. Close the control center, run `LANGUAGE= LC_ALL=
+     LANG=es_ES.UTF-8 mate-control-center`, and open it from there too. Then log into the Wayfire session and open both.
 - **Expected:** in step 2 the dialog opens, with no *The current window manager is
   unsupported*, and it offers Alt and Super for moving a window. The window shades at the
   double click, and each window's buttons move as the setting does, with the dialog still
