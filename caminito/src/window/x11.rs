@@ -3,13 +3,13 @@
 
 use std::sync::Mutex;
 
-use caminito_policy::{SizeHints, WindowStates, WindowType};
+use caminito_policy::{PreMapConfigure, SizeHints, WindowStates, WindowType};
 use smithay::reexports::x11rb::protocol::xproto::Gravity;
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Serial, Size};
 use smithay::xwayland::X11Surface;
 use smithay::xwayland::xwm::{PingError, WmInputModel, WmWindowType};
 
-use super::{Adapter, PreMapConfigure, Skips, WindowKey};
+use super::{Adapter, Skips, WindowKey};
 use crate::decoration::{IconSource, NetWmIcon};
 use crate::input::KeyboardFocus;
 

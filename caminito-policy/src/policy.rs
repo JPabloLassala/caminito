@@ -24,6 +24,7 @@ mod interaction;
 mod keyboard_grab;
 mod move_to;
 mod pointer;
+mod pre_map;
 mod state_requests;
 mod switcher;
 mod window_actions;
@@ -35,6 +36,7 @@ pub use focus_stealing::{
 pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
+pub use pre_map::{PreMapConfigure, PreMapWindow};
 pub use state_requests::{MapStates, StateRequest};
 pub use switcher::{LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
 pub use window_menu::{MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection, WindowMenu};
@@ -458,6 +460,27 @@ impl<W> Managed<W> {
     }
 }
 
+/// Where `place` put a new window.
+struct Placed {
+    /// At the pointer, by `pointer` or `manual` placement.
+    by_pointer: bool,
+    /// On this output, unless it went by a position of its own.
+    on: Option<OutputId>,
+}
+
+/// How a new window with no position of its own is placed (154).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NewPlacement {
+    /// A dialog, centred over its parent.
+    OverParent(WindowId),
+    /// A dialog with no parent, or a splash screen, centred on the output.
+    Centred,
+    /// Centred on the pointer, by `pointer` or `manual` placement.
+    AtPointer(Point<i32, Logical>),
+    /// The first fit or a cascade, or the middle of the work area.
+    Automatic,
+}
+
 /// A window's tile: which half or quarter of which output's work area (158), and how wide
 /// (159).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -860,12 +883,20 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn map_window_with(&mut self, window: W, states: MapStates, now: Duration) {
         let id = window.id();
         self.holding = true;
-        self.map(window, states, now);
+        let placed_on = self.map(window, states, now);
         // The setters refuse a state the window has no function for (177).
         if let Some(output) = states.fullscreen {
             self.set_fullscreen(id, true, output);
         } else if states.maximized {
             self.set_maximized(id, true);
+        }
+        // On the output it was placed on, as it was configured before it mapped (190),
+        // though the frame it drew may be more on another. Fullscreen on an output policy
+        // has goes there.
+        if let Some(output) = placed_on {
+            let named = self.windows[&id].fullscreen_output;
+            let named = self.output_named(named).map(|named| named.id);
+            self.relayout_on(id, named.or(Some(output)));
         }
         if states.above {
             self.set_above(id, true);
@@ -887,7 +918,9 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    fn map(&mut self, window: W, states: MapStates, now: Duration) {
+    /// Returns the output a window that maps maximised or fullscreen was placed on, unless
+    /// it went by a position of its own.
+    fn map(&mut self, window: W, states: MapStates, now: Duration) -> Option<OutputId> {
         let id = window.id();
         let size = window.size();
         let geometry = Rectangle::new(Point::default(), size);
@@ -949,7 +982,7 @@ impl<W: PolicyWindow> Policy<W> {
         let functions = self.windows[&id].functions();
         let constrained = (states.maximized && functions.maximize)
             || (states.fullscreen.is_some() && functions.fullscreen);
-        let by_pointer = self.place(id, !constrained);
+        let Placed { by_pointer, on } = self.place(id, !constrained);
         // Marco's pointer placement skips its maximising of a window too big for its work
         // area (place.c:898-905).
         if !by_pointer {
@@ -969,6 +1002,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.begin_manual_placement(id);
         }
         self.apply();
+        on.filter(|_| constrained)
     }
 
     /// Has the last seat move a new window with its pointer until it's put down, as Marco's
@@ -2275,6 +2309,11 @@ impl<W: PolicyWindow> Policy<W> {
             .or(self.outputs.first())
     }
 
+    /// The output policy has of those named `named`, as a client names one for fullscreen.
+    fn output_named(&self, named: Option<OutputId>) -> Option<&Output> {
+        named.and_then(|named| self.outputs.iter().find(|output| output.id == named))
+    }
+
     /// The output a frame is most on, if it's on any.
     fn output_of(&self, frame: Rectangle<i32, Logical>) -> Option<&Output> {
         self.outputs
@@ -2331,7 +2370,8 @@ impl<W: PolicyWindow> Policy<W> {
             .or(managed.fullscreen_output.filter(|_| managed.fullscreen))
             .or(managed.tile.map(|tiled| tiled.output))
             .and_then(|o| self.outputs.iter().find(|output| output.id == o))
-            .or_else(|| self.output_of(managed.frame()))
+            // The frame it was laid out in: one the client hasn't drawn yet may be on another.
+            .or_else(|| self.output_of(managed.frame_of(managed.geometry)))
             .or(self.primary_output());
         let Some(output) = output else {
             return;
@@ -2447,8 +2487,8 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Places a newly mapped window as Marco's `meta_window_place` does (place.c:700-905),
     /// with the placement keys if `by_mode` (154), else with the automatic mode as if
-    /// `center-new-windows` were off. Returns whether it was placed at the pointer.
-    fn place(&mut self, id: WindowId, by_mode: bool) -> bool {
+    /// `center-new-windows` were off.
+    fn place(&mut self, id: WindowId, by_mode: bool) -> Placed {
         let managed = &self.windows[&id];
         let e = managed.visible_extents();
         let (left, top) = (e.left, e.top);
@@ -2456,74 +2496,98 @@ impl<W: PolicyWindow> Policy<W> {
         let size = managed.size;
 
         let mut by_pointer = false;
+        let mut placed_on = None;
         let loc = if let Some(requested) = managed.window.requested_position(e) {
             // Marco honours USPosition and PPosition with its workarounds on (the default).
             requested
-        } else if let (WindowType::Dialog | WindowType::ModalDialog, Some(parent)) =
-            (managed.window_type, managed.parent)
-        {
-            // Centred over the parent, leaving twice as much space below as above.
-            let parent_frame = self.windows[&parent].frame();
-            let parent = self.geometry(parent).unwrap();
-            let loc = Point::new(
-                parent.loc.x + parent.size.w / 2 - size.w / 2,
-                parent.loc.y + (parent.size.h - size.h) / 3 + top,
-            );
-            match self.output_of(parent_frame) {
-                Some(output) => {
-                    let frame = Rectangle::new((loc.x - left, loc.y - top).into(), frame_size);
-                    let frame_loc = placement::constrain(frame, Self::work_area(output));
-                    Point::new(frame_loc.x + left, frame_loc.y + top)
+        } else {
+            let (placement, output) =
+                self.new_window_placement(managed.window_type, managed.parent, by_mode);
+            placed_on = output.map(|output| output.id);
+            match (placement, output) {
+                (NewPlacement::OverParent(parent), output) => {
+                    // Centred over the parent, leaving twice as much space below as above.
+                    let parent = self.geometry(parent).unwrap();
+                    let loc = Point::new(
+                        parent.loc.x + parent.size.w / 2 - size.w / 2,
+                        parent.loc.y + (parent.size.h - size.h) / 3 + top,
+                    );
+                    match output {
+                        Some(output) => {
+                            let frame =
+                                Rectangle::new((loc.x - left, loc.y - top).into(), frame_size);
+                            let frame_loc = placement::constrain(frame, Self::work_area(output));
+                            Point::new(frame_loc.x + left, frame_loc.y + top)
+                        }
+                        None => loc,
+                    }
                 }
-                None => loc,
-            }
-        } else if matches!(
-            managed.window_type,
-            WindowType::Dialog | WindowType::ModalDialog | WindowType::Splashscreen
-        ) {
-            // Marco centres the window geometry, not the frame, on the output.
-            match self.placement_output() {
-                None => Point::new(left, top),
-                Some(output) => {
+                // Marco centres the window geometry, not the frame, on the output.
+                (NewPlacement::Centred, Some(output)) => {
                     let area = output.geometry;
                     Point::new(
                         area.loc.x + (area.size.w - size.w) / 2,
                         area.loc.y + (area.size.h - size.h) / 2,
                     )
                 }
+                (NewPlacement::AtPointer(pointer), output) => {
+                    // Kept within the work area of the output the pointer is on (154), as
+                    // Marco's constraints keep a new window on its monitor.
+                    by_pointer = true;
+                    let frame_loc = placement::at_pointer(frame_size, pointer);
+                    let frame_loc = match output {
+                        Some(output) => placement::constrain(
+                            Rectangle::new(frame_loc, frame_size),
+                            Self::work_area(output),
+                        ),
+                        None => frame_loc,
+                    };
+                    Point::new(frame_loc.x + left, frame_loc.y + top)
+                }
+                (NewPlacement::Automatic, Some(output)) => {
+                    let center = by_mode && self.config.center_new_windows;
+                    self.place_on(id, output, frame_size, (left, top), center)
+                }
+                (NewPlacement::Centred | NewPlacement::Automatic, None) => Point::new(left, top),
             }
+        };
+        self.windows.get_mut(&id).unwrap().geometry.loc = loc;
+        Placed {
+            by_pointer,
+            on: placed_on,
+        }
+    }
+
+    /// How a new window of `window_type`, transient for the managed window `parent`, is
+    /// placed when it has no position of its own, and on which output: the one choice of
+    /// output that both `place` and `pre_map_configure` make (190). The placement keys
+    /// count if `by_mode` (154): a window that maps maximised or fullscreen is placed as if
+    /// the mode were automatic.
+    fn new_window_placement(
+        &self,
+        window_type: WindowType,
+        parent: Option<WindowId>,
+        by_mode: bool,
+    ) -> (NewPlacement, Option<&Output>) {
+        let dialog = matches!(window_type, WindowType::Dialog | WindowType::ModalDialog);
+        if let (true, Some(parent)) = (dialog, parent) {
+            let output = self.output_of(self.windows[&parent].frame());
+            (NewPlacement::OverParent(parent), output)
+        } else if dialog || window_type == WindowType::Splashscreen {
+            (NewPlacement::Centred, self.placement_output())
         } else if let (true, PlacementMode::Pointer | PlacementMode::Manual, Some(pointer)) =
             (by_mode, self.config.placement_mode, self.pointer)
         {
-            // Kept within the work area of the output the pointer is on (154), as Marco's
-            // constraints keep a new window on its monitor.
-            by_pointer = true;
             let pointer = pointer.to_i32_round();
             let output = self
                 .outputs
                 .iter()
                 .find(|o| o.geometry.contains(pointer))
                 .or(self.primary_output());
-            let frame_loc = placement::at_pointer(frame_size, pointer);
-            let frame_loc = match output {
-                Some(output) => placement::constrain(
-                    Rectangle::new(frame_loc, frame_size),
-                    Self::work_area(output),
-                ),
-                None => frame_loc,
-            };
-            Point::new(frame_loc.x + left, frame_loc.y + top)
+            (NewPlacement::AtPointer(pointer), output)
         } else {
-            match self.placement_output() {
-                None => Point::new(left, top),
-                Some(output) => {
-                    let center = by_mode && self.config.center_new_windows;
-                    self.place_on(id, output, frame_size, (left, top), center)
-                }
-            }
-        };
-        self.windows.get_mut(&id).unwrap().geometry.loc = loc;
-        by_pointer
+            (NewPlacement::Automatic, self.placement_output())
+        }
     }
 
     /// The output a new window goes on with nothing else to go by: the focused window's,

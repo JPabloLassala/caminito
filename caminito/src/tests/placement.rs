@@ -2,7 +2,7 @@
 //! window shows. Policy's tests work the positions out; these check that the keys, the
 //! pointer, a click and the keyboard reach it, on both kinds of window.
 
-use caminito_policy::PlacementMode;
+use caminito_policy::{Action, Direction, PlacementMode};
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
@@ -149,4 +149,62 @@ on_both_kinds! {
 
         assert_eq!(frame_corner(&f, second), centred_on(&f, second, 1000, 500));
     }
+}
+
+// The bounds a new xdg toplevel is first configured with (190), which X has no word for:
+// those of the output policy will place it on.
+
+/// The bounds `window` of `id` is first configured with.
+fn first_bounds(
+    f: &mut Fixture,
+    id: ClientId,
+    window: caminito_test_client::WindowId,
+) -> (i32, i32) {
+    f.client(id).window(window).configures[0]
+        .bounds
+        .expect("a toplevel is told its bounds")
+}
+
+#[test]
+fn a_dialog_is_first_configured_with_the_bounds_of_its_parents_output() {
+    let (mut f, id) = connected_with(Kind::Xdg, "automatic", false);
+    f.add_output((1280, 720), 1.0);
+    // The parent on the second output, and the focus on a window on the first.
+    let parent = f.map(id, WindowSpec::plain((400, 300)));
+    let other = f.map(id, WindowSpec::plain((400, 300)));
+    let (parent_id, other_id) = (f.pid(parent), f.pid(other));
+    let now = f.state.caminito.now();
+    let policy = &mut f.state.caminito.policy;
+    policy.activate(crate::state::SEAT, parent_id, now);
+    policy.action(
+        crate::state::SEAT,
+        Action::MoveToMonitor(Direction::Right),
+        now,
+    );
+    policy.activate(crate::state::SEAT, other_id, now);
+    f.dispatch();
+    assert!(
+        f.visible_frame(parent).loc.x >= 1920,
+        "the parent is on the second output"
+    );
+
+    let dialog = f.client(id).create_window();
+    f.client(id).set_parent(dialog, Some(parent.xdg()));
+    f.client(id).commit(dialog);
+    f.roundtrip(id);
+
+    assert_eq!(first_bounds(&mut f, id, dialog), (1280, 720));
+}
+
+#[test]
+fn pointer_placement_first_configures_a_window_with_the_bounds_of_the_pointers_output() {
+    let (mut f, id) = connected_with(Kind::Xdg, "pointer", false);
+    f.add_output((1280, 720), 1.0);
+    f.pointer_move(2200., 300.);
+
+    let window = f.client(id).create_window();
+    f.client(id).commit(window);
+    f.roundtrip(id);
+
+    assert_eq!(first_bounds(&mut f, id, window), (1280, 720));
 }

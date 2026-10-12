@@ -3,6 +3,7 @@
 
 use caminito_policy::PolicyWindow;
 use caminito_test_client::format_configures;
+use caminito_test_client::layer_shell::LayerSpec;
 use insta::assert_snapshot;
 
 use super::fixture::{ClientWindow, Fixture, Kind, WINDOW_COLOR, WindowSpec};
@@ -155,6 +156,22 @@ fn fullscreen_before_mapping_starts_fullscreen() {
     let policy_id = f.policy_id(ClientWindow::Xdg(id, window)).unwrap();
     assert!(f.state.caminito.policy.is_fullscreen(policy_id));
     assert_snapshot!(format_configures(&f.client(id).window(window).configures));
+}
+
+#[test]
+fn fullscreen_before_mapping_is_first_configured_with_the_outputs_size_past_a_panel() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let panel = f.connect(Kind::Xdg);
+    f.map_layer(panel, LayerSpec::top_bar(28), 0xff00ff00);
+
+    let window = f.client(id).create_window();
+    f.client(id).set_fullscreen(window, None);
+    f.client(id).commit(window);
+    f.roundtrip(id);
+
+    // The whole output, as policy gives it at the map (190), not the work area.
+    let first = &f.client(id).window(window).configures[0];
+    assert_eq!(first.size, (1920, 1080));
 }
 
 #[test]

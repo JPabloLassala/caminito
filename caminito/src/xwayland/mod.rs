@@ -19,7 +19,7 @@ use std::os::unix::net::UnixStream;
 use std::process::Stdio;
 
 use caminito_policy::{
-    Action, ActivationSource, FunctionFacts, MAX_WORKSPACES, PolicyWindow, SizeHints, WindowStates,
+    Action, ActivationSource, MAX_WORKSPACES, PolicyWindow, PreMapWindow, SizeHints,
 };
 use smithay::backend::input::InputTime;
 use smithay::reexports::calloop::RegistrationToken;
@@ -477,9 +477,9 @@ impl Caminito {
     }
 
     /// `_NET_REQUEST_FRAME_EXTENTS` (11). A managed window's are policy's, which the
-    /// refresh pass writes again. Any other window isn't in policy, so the answer is
-    /// written here: the frame it would map with, focused, from the theme and what it says
-    /// of itself, which it waits for before it maps.
+    /// refresh pass writes again. Any other window isn't in policy yet, so policy says the
+    /// state its frame will be in once it maps (190), and the answer is written here from
+    /// the theme and what it says of itself, which it waits for before it maps.
     fn x_frame_extents_request(&mut self, window: X11Window) {
         if self.mapped_for_key(&WindowKey::X11(window)).is_some() {
             if let Some(xconn) = self.xwayland.as_mut().and_then(|x| x.xconn.as_mut()) {
@@ -493,28 +493,25 @@ impl Caminito {
         let Some(Some(request)) = request else {
             return;
         };
-        let has_parent = request
+        let parent = request
             .transient_for
-            .is_some_and(|parent| self.mapped_for_key(&WindowKey::X11(parent)).is_some());
+            .and_then(|parent| self.mapped_for_key(&WindowKey::X11(parent)));
         let window_type = marco_type(request.window_type, request.transient_for.is_some(), false);
         let facts = WindowFacts {
             window_type,
             // A fullscreen window shows no frame.
             wants_frame: request.decorated && !request.fullscreen,
         };
-        let states = WindowStates {
-            maximized: request.maximized,
-            ..WindowStates::default()
-        };
         // Its size hints aren't read with the request, so it's framed as one that resizes.
-        let functions = self.functions_before_managed(FunctionFacts {
-            window_type,
-            hints: SizeHints::default(),
-            has_parent,
-            ssd: facts.wants_frame,
-            fullscreen: false,
-        });
-        let state = states.frame_state(true, functions);
+        let state = self.policy.pre_map_frame_state(
+            &PreMapWindow {
+                window_type,
+                hints: SizeHints::default(),
+                parent,
+                ssd: facts.wants_frame,
+            },
+            request.maximized,
+        );
         let extents = self
             .applied_x11_scale()
             .extents_to_x(self.frame_context.extents(&facts, state));

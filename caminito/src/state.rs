@@ -27,7 +27,7 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
-use smithay::utils::{Clock, Logical, Monotonic, Point, Serial, Size};
+use smithay::utils::{Clock, Logical, Monotonic, Point, Serial};
 use smithay::wayland::alpha_modifier::AlphaModifierState;
 use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState};
 use smithay::wayland::compositor::{
@@ -106,9 +106,9 @@ use crate::lock::{Lock, Locker};
 use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::{self, NightLight};
 use crate::not_responding::NotResponding;
+use crate::output::OutputRecord;
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
-use crate::output::{OutputRecord, output_id};
 use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -1253,23 +1253,5 @@ impl Caminito {
         self.refresh_x_root_cursor();
         self.refresh_numlock();
         self.popups.cleanup();
-    }
-
-    /// The bounds a new toplevel is told to fit in: the work area of the focused window's
-    /// output, where policy places new windows, or else the primary output's.
-    pub fn placement_bounds(&self) -> Option<Size<i32, Logical>> {
-        let focused = self
-            .policy
-            .focus(SEAT)
-            .and_then(|id| self.policy.geometry(id));
-        let areas: Vec<_> = self.policy.work_areas().collect();
-        let outputs = self.policy.outputs();
-        focused
-            .and_then(|geometry| outputs.iter().position(|o| o.geometry.overlaps(geometry)))
-            .or_else(|| {
-                let primary = output_id(self.primary_output()?);
-                outputs.iter().position(|o| o.id == primary)
-            })
-            .map(|output| areas[output].size)
     }
 }
