@@ -4,8 +4,9 @@
 #
 #   tools/debian-build [package…]
 #
-# With no package, it builds every one under packaging/debian/, in dependency order. Each
-# package's build dependencies are installed with mk-build-deps, its tests run
+# With no package, it builds every one under packaging/debian/, in dependency order. A patched
+# or backported package has an `upstream` file beside its debian/, naming the tag it's built
+# from. Each package's build dependencies are installed with mk-build-deps, its tests run
 # (dh_auto_test), lintian fails it on an error, and its .debs are installed in the container
 # before the next package is built, so the next one builds against them.
 #
@@ -15,7 +16,7 @@
 set -euo pipefail
 
 # In dependency order. The patched packages and marco come before caminito (205).
-all=(caminito)
+all=(caja caminito)
 
 image=ubuntu:26.04
 
@@ -39,19 +40,53 @@ in_container() {
   # tests spawn Xwayland, and smithay doesn't make it.
   mkdir -p -m 1777 /tmp/.X11-unix
   as_builder rustup toolchain install stable --profile minimal
+  # A patched or backported package (200): upstream's tag, from the url packaging/debian/
+  # <package>/upstream names, checked against its commit; the orig tarball is that tag's
+  # git archive, as Ubuntu's are; and packaging/patches/<patches>/'s series, then its
+  # debian/ build patches, become debian/patches/ (ADR 0030). The version is the changelog's.
+  fetch_upstream() {
+    local work=$1 package=$2 url tag commit patches name upstream patch
+    # shellcheck disable=SC1090
+    . "$work/caminito/packaging/debian/$package/upstream"
+    git clone --quiet --depth 1 --branch "$tag" "$url" "$work/upstream"
+    if [ "$(git -C "$work/upstream" rev-parse HEAD)" != "$commit" ]; then
+      echo "debian-build: $package's $tag is not $commit" >&2
+      return 1
+    fi
+    name=$(dpkg-parsechangelog -l "$work/caminito/packaging/debian/$package/debian/changelog" -S Source)
+    upstream=$(dpkg-parsechangelog -l "$work/caminito/packaging/debian/$package/debian/changelog" -S Version)
+    upstream=${upstream%-*}
+    git -C "$work/upstream" archive --prefix="$name-$upstream/" HEAD | xz > "$work/${name}_$upstream.orig.tar.xz"
+    tar -xJf "$work/${name}_$upstream.orig.tar.xz" -C "$work/src" --strip-components=1
+    cp -r "$work/caminito/packaging/debian/$package/debian" "$work/src/"
+    mkdir -p "$work/src/debian/patches"
+    for patch in "$work/caminito/packaging/patches/$patches"/*.patch \
+      "$work/caminito/packaging/patches/$patches/debian"/*.patch; do
+      [ -f "$patch" ] || continue
+      cp "$patch" "$work/src/debian/patches/"
+      echo "${patch##*/}" >> "$work/src/debian/patches/series"
+    done
+  }
   for package; do
     echo "==> $package"
     work=/build/$package
     rm -rf "$work"
     mkdir -p "$work/src"
-    # Caminito's own packages are its committed HEAD, versioned 0.0~r<count>.g<hash>-1 until
-    # v0.1.0 is tagged. The checkout belongs to another user in the container, which git
-    # refuses unless told.
-    git -c safe.directory='*' -C "$root" archive HEAD | tar -x -C "$work/src"
-    version="0.0~r$(git -c safe.directory='*' -C "$root" rev-list --count HEAD)"
-    version+=".g$(git -c safe.directory='*' -C "$root" rev-parse --short=7 HEAD)-1"
-    cp -r "$work/src/packaging/debian/$package/debian" "$work/src/"
-    sed -i "1s/([^)]*)/($version)/" "$work/src/debian/changelog"
+    # The checkout belongs to another user in the container, which git refuses unless told.
+    if git -c safe.directory='*' -C "$root" cat-file -e "HEAD:packaging/debian/$package/upstream" 2>/dev/null; then
+      # Its debian/ and the patches are the committed HEAD's too.
+      mkdir -p "$work/caminito"
+      git -c safe.directory='*' -C "$root" archive HEAD | tar -x -C "$work/caminito"
+      fetch_upstream "$work" "$package"
+    else
+      # Caminito's own packages are its committed HEAD, versioned 0.0~r<count>.g<hash>-1
+      # until v0.1.0 is tagged.
+      git -c safe.directory='*' -C "$root" archive HEAD | tar -x -C "$work/src"
+      version="0.0~r$(git -c safe.directory='*' -C "$root" rev-list --count HEAD)"
+      version+=".g$(git -c safe.directory='*' -C "$root" rev-parse --short=7 HEAD)-1"
+      cp -r "$work/src/packaging/debian/$package/debian" "$work/src/"
+      sed -i "1s/([^)]*)/($version)/" "$work/src/debian/changelog"
+    fi
     (
       cd "$work"
       mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' src/debian/control
