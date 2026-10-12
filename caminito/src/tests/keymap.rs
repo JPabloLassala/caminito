@@ -26,12 +26,13 @@ fn focused_client(f: &mut Fixture) -> ClientId {
 
 /// The names of the client's keymap's groups, such as `["English (US)", "Spanish"]`.
 /// The symbols section's own name isn't read: libxkbcommon 1.6, Ubuntu 24.04's, writes it as
-/// `(unnamed)`.
+/// `(unnamed)`. It writes a group's name as `name[Group1]`, and libxkbcommon 1.13, Arch's, as
+/// `name[1]`.
 fn groups(f: &Fixture, id: ClientId) -> Vec<String> {
     let keymap = f.client_state(id).keymap.as_deref().expect("a keymap");
     keymap
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("name[Group"))
+        .filter_map(|line| line.trim().strip_prefix("name["))
         .filter_map(|line| line.split('"').nth(1))
         .map(str::to_owned)
         .collect()
