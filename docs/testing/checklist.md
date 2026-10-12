@@ -793,6 +793,49 @@ session_env() {
   of its own. `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's
   side.
 
+### A mouse button runs a command
+
+- **Milestone:** M8
+- **Steps:**
+  1. With `mate-settings-daemon-caminito` 1.29.1-6 or later installed, and a `caminito-git` with
+     ticket 185's change (a grab of a mouse button), log into *MATE on Caminito* with a mouse
+     that has back and forward buttons. Open Firefox, and open two pages one after the other
+     in a tab.
+  2. Add a shortcut for `mate-calc` on Super and the back button. The dialog can't capture a
+     button until 186:
+
+     ```sh
+     d=/org/mate/desktop/keybindings/custom-check
+     dconf write $d/name "'Calculator'"
+     dconf write $d/action "'mate-calc'"
+     dconf write $d/binding "'<Super>Button8'"
+     ```
+
+  3. With Super held, click the back button over Firefox's page, and then over the panel.
+     Close the calculators. Then click the back button over the page without Super.
+  4. Go forward to the second page again. Change the shortcut to the forward button alone,
+     with `dconf write $d/binding "'Button9'"`. With Super held, click the back button over
+     a terminal running `wev`, and then click the forward button over Firefox's page.
+  5. Remove the shortcut with `dconf reset -f $d/`, go back a page in Firefox, and click the
+     forward button over the page.
+  6. Run `gsettings set org.mate.SettingsDaemon.plugins.media-keys volume-mute "'Button9'"`,
+     click the forward button twice, and run `gsettings reset
+     org.mate.SettingsDaemon.plugins.media-keys volume-mute`.
+  7. Add the shortcut again as in step 2, log out, log into *MATE*, the X11 session, and
+     click the back button with Super held. Change the shortcut to `<Primary><Alt>k` and
+     press Ctrl+Alt+K. Then remove it.
+- **Expected:** in step 3 each click with Super opens a calculator, wherever the pointer is,
+  and Firefox doesn't go back; without Super it goes back. In step 4 `wev` shows the back
+  button's press, which is the focused window's again, and the forward button opens a
+  calculator while Firefox stays on its page. In step 5 Firefox goes forward. In step 6 the
+  two clicks mute and unmute, with the OSD. In step 7 the button opens nothing, as with the
+  stock package, which can't read a button (ADR 0028), and Ctrl+Alt+K opens the calculator
+  (ADR 0011).
+- **Debug tool:** `DumpState`'s `accelerator_grabs`, where `<Super>Button8` is listed under
+  msd's unique name; Caminito's log, which names a button it won't grab, such as `Button1`
+  with no modifier, or `Button4`, the wheel's; `wev` or `xev` for the button's number.
+  `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's side.
+
 ### The brightness keys change the backlight with a Wayland window focused
 
 - **Milestone:** M7

@@ -208,16 +208,6 @@ impl Grabs {
     /// for no accelerator, for one that doesn't parse and for one another caller has.
     pub(crate) fn grab(&mut self, owner: &str, accelerator: &str) -> u32 {
         let combination = match parse(accelerator) {
-            // A button is granted once it can be signalled (185).
-            Ok(Some(Accelerator {
-                trigger: Trigger::Button(_),
-                ..
-            })) => {
-                tracing::warn!(
-                    "can't grab the accelerator {accelerator:?} for {owner}: a mouse button can't be grabbed yet"
-                );
-                return 0;
-            }
             Ok(Some(combination)) => combination,
             Ok(None) => return 0,
             Err(err) => {
@@ -275,6 +265,14 @@ impl Grabs {
     pub(crate) fn pressed(&self, mods: &ModifiersState, keysyms: &[Keysym]) -> Option<(u32, &str)> {
         self.iter()
             .find(|(_, grab)| grab.combination.matches(mods, keysyms))
+            .map(|(action, grab)| (action, grab.owner.as_str()))
+    }
+
+    /// The grab of a press of `button`, by X's number, with `mods` held, if there is one:
+    /// its action id and its owner (185).
+    pub(crate) fn pressed_button(&self, mods: &ModifiersState, button: u32) -> Option<(u32, &str)> {
+        self.iter()
+            .find(|(_, grab)| grab.combination.matches_button(mods, button))
             .map(|(action, grab)| (action, grab.owner.as_str()))
     }
 
@@ -567,10 +565,25 @@ mod tests {
     }
 
     #[test]
-    fn a_button_cant_be_grabbed_before_185() {
+    fn a_button_is_grabbed_as_a_key_is() {
+        let logo = ModifiersState { logo: true, ..NONE };
         let mut grabs = Grabs::default();
-        assert_eq!(grabs.grab(":1.5", "<Super>Button8"), 0);
-        assert_eq!(grabs.iter().count(), 0);
-        assert_ne!(grabs.grab(":1.5", "<Super>8"), 0);
+        let back = grabs.grab(":1.5", "<Super>Button8");
+        assert_ne!(back, 0);
+        // Its owner has the id it had, however the button is written, and no other caller
+        // gets one.
+        assert_eq!(grabs.grab(":1.5", "<mod4>button8"), back);
+        assert_eq!(grabs.grab(":1.6", "<Super>Button8"), 0);
+        // The key named by the button's number is another combination.
+        let key = grabs.grab(":1.6", "<Super>8");
+        assert!(key != 0 && key != back);
+
+        assert_eq!(grabs.pressed_button(&logo, 8), Some((back, ":1.5")));
+        assert_eq!(grabs.pressed_button(&NONE, 8), None);
+        assert_eq!(grabs.pressed_button(&logo, 9), None);
+        assert_eq!(grabs.pressed(&logo, &[Keysym::_8]), Some((key, ":1.6")));
+
+        grabs.owner_left(":1.5");
+        assert_eq!(grabs.pressed_button(&logo, 8), None);
     }
 }
