@@ -224,6 +224,28 @@ session_env() {
 - **Debug tool:** `systemctl --user show-environment`, `loginctl`, the journal, and the
   `outputs` of `DumpState` for the panels' and the desktop's layer surfaces.
 
+### A link opens in the browser after a second login
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Caminito*, log out, and log in again, with the user's systemd manager
+     left running between the two: a second login of the user elsewhere, or lingering.
+  2. Run:
+
+     ```sh
+     pid=$(systemctl --user show -p MainPID --value xdg-desktop-portal.service)
+     tr '\0' '\n' </proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|DISPLAY)='
+     ```
+
+  3. Open *About Caminito* and press one of its links, with Firefox closed and again with it
+     open.
+- **Expected:** in step 2 the portal has both variables, with this Session's values, or has no
+  process yet. In step 3 the link opens in the browser each time (232). The journal has no
+  `no DISPLAY environment variable specified` from the browser, and no `can't restart the
+  portal` from Caminito.
+- **Debug tool:** `journalctl --user -b -t caminito`, `journalctl --user -u xdg-desktop-portal`,
+  and `systemctl --user restart xdg-desktop-portal.service`, which is what Caminito asks for.
+
 ### Log Out and Shut Down from the panel
 
 - **Milestone:** M5
