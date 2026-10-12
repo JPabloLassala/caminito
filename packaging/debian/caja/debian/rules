@@ -53,11 +53,21 @@ override_dh_auto_configure:
 		--enable-wayland
 
 # Ubuntu's skips the tests. They are eel's check program and `caja --check`, which open a
-# display, so they run on Xvfb with a session bus of their own.
+# display, so they run on Xvfb with a session bus of their own, and caja's schemas, which
+# aren't installed yet, compiled from the tree.
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	xvfb-run -a dbus-run-session -- dh_auto_test $(DHFLAGS)
+	rm -rf debian/test-schemas
+	install -d debian/test-schemas
+	cp libcaja-private/*.gschema.xml debian/test-schemas/
+	glib-compile-schemas debian/test-schemas
+	GSETTINGS_SCHEMA_DIR=$(CURDIR)/debian/test-schemas GSETTINGS_BACKEND=memory \
+		xvfb-run -a dbus-run-session -- dh_auto_test $(DHFLAGS)
 endif
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf debian/test-schemas
 
 override_dh_installchangelogs:
 	dh_installchangelogs NEWS
