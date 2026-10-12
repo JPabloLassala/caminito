@@ -21,7 +21,7 @@ The first location source under "The location" in [the spec](../night-light/spec
   It runs off the main loop, as the settings thread does.
 - **Failure is never waited on.** That covers no geoclue, no agent (about 5 s), denied, or offline. The next source is in use from the start, and a location that comes later replaces it with a fade.
 - **Each location** is written to `night-light-last-location`, and becomes the source `geoclue`.
-- **It starts only while Night Light is enabled.** The sun schedule and a pause both need the location.
+- **It runs whether or not Night Light is enabled.** The sun schedule and a pause need the location, and so does the sun a dynamic wallpaper follows, which Caminito publishes with Night Light off too ([215](215-caminito-publishes-the-suns-position.md)). Its location goes into the same working-out of the sun, so the `Sun` property's `location-source` reads `geoclue` as `NightLight`'s does.
 - **Packaging:** `caminito-git` lists `geoclue: Night Light's location` as an optional dependency.
 - **Find out on Arch** whether `geoclue` ships the demo agent and its autostart file, and whether mate-session starts it in a Session. Write the answer here and in the spec's further notes. If it doesn't, decide with the developer whether `caminito-desktop` should start it.
 

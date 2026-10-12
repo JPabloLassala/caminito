@@ -71,6 +71,10 @@ pub trait Caminito {
     #[zbus(property)]
     fn night_light(&self) -> zbus::Result<HashMap<String, zbus::zvariant::OwnedValue>>;
 
+    /// The sun's position (215): `elevation`, `azimuth` and `location-source`.
+    #[zbus(property)]
+    fn sun(&self) -> zbus::Result<HashMap<String, zbus::zvariant::OwnedValue>>;
+
     /// Flips `night-light-enabled` (137).
     fn toggle_night_light(&self) -> zbus::Result<()>;
 
