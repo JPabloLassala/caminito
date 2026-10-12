@@ -24,6 +24,9 @@ in_container() {
   local root=$1 package work version
   shift
   export DEBIAN_FRONTEND=noninteractive
+  # The maintainer of mk-build-deps's dummy package, which equivs otherwise makes of the
+  # host's name, and which dpkg rejects when that has no domain.
+  export DEBEMAIL=root@localhost
   apt-get update
   apt-get install -y --no-install-recommends build-essential ca-certificates devscripts equivs \
     git lintian passwd rustup
