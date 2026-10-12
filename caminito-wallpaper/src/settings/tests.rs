@@ -1,47 +1,4 @@
-use std::collections::HashMap;
-
 use super::*;
-
-/// The store in memory, as GSettings has it with nothing written: "same on all outputs" on,
-/// and every set at its defaults.
-#[derive(Default)]
-struct Memory {
-    different: bool,
-    seen: Vec<String>,
-    sets: HashMap<String, OutputSettings>,
-    took: bool,
-}
-
-fn key(set: &Set) -> String {
-    match set {
-        Set::All => "all".into(),
-        Set::Output(identity) => identity.path_element(),
-    }
-}
-
-impl Store for Memory {
-    fn same_on_all_outputs(&self) -> bool {
-        !self.different
-    }
-    fn seen(&self) -> Vec<String> {
-        self.seen.clone()
-    }
-    fn set_seen(&mut self, seen: &[String]) {
-        self.seen = seen.to_vec();
-    }
-    fn read(&self, set: &Set) -> OutputSettings {
-        self.sets.get(&key(set)).cloned().unwrap_or_default()
-    }
-    fn write(&mut self, set: &Set, settings: &OutputSettings) {
-        self.sets.insert(key(set), settings.clone());
-    }
-    fn took_mate_background(&self) -> bool {
-        self.took
-    }
-    fn set_took_mate_background(&mut self) {
-        self.took = true;
-    }
-}
 
 fn aoc() -> Identity {
     Identity::of("AOC", "G2490W1G4", "AB12", "HDMI-A-1")

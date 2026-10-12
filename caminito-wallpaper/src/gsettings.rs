@@ -91,6 +91,22 @@ impl GioStore {
         settings
     }
 
+    /// A list of the main schema's.
+    fn list(&self, key: &str) -> Vec<String> {
+        self.main
+            .strv(key)
+            .iter()
+            .map(|element| element.as_str().to_owned())
+            .collect()
+    }
+
+    fn set_list(&self, key: &str, list: &[String]) {
+        let list: Vec<&str> = list.iter().map(String::as_str).collect();
+        if let Err(err) = self.main.set_strv(key, list.as_slice()) {
+            glib::g_warning!(DOMAIN, "can't write {key}: {err}");
+        }
+    }
+
     /// MATE's background, or `None` if its schema isn't installed.
     pub fn mate_background() -> Option<MateBackground> {
         if !has_schema(MATE_SCHEMA) {
@@ -110,19 +126,18 @@ impl Store for GioStore {
         self.main.boolean("same-on-all-outputs")
     }
 
+    fn set_same_on_all_outputs(&mut self, same: bool) {
+        if let Err(err) = self.main.set_boolean("same-on-all-outputs", same) {
+            glib::g_warning!(DOMAIN, "can't set same-on-all-outputs: {err}");
+        }
+    }
+
     fn seen(&self) -> Vec<String> {
-        self.main
-            .strv("outputs")
-            .iter()
-            .map(|element| element.as_str().to_owned())
-            .collect()
+        self.list("outputs")
     }
 
     fn set_seen(&mut self, seen: &[String]) {
-        let seen: Vec<&str> = seen.iter().map(String::as_str).collect();
-        if let Err(err) = self.main.set_strv("outputs", seen.as_slice()) {
-            glib::g_warning!(DOMAIN, "can't note the monitors seen: {err}");
-        }
+        self.set_list("outputs", seen);
     }
 
     fn read(&self, set: &Set) -> OutputSettings {
@@ -159,5 +174,21 @@ impl Store for GioStore {
         if let Err(err) = self.main.set_boolean("took-mate-background", true) {
             glib::g_warning!(DOMAIN, "can't note the first run: {err}");
         }
+    }
+
+    fn pictures(&self) -> Vec<String> {
+        self.list("pictures")
+    }
+
+    fn set_pictures(&mut self, pictures: &[String]) {
+        self.set_list("pictures", pictures);
+    }
+
+    fn folders(&self) -> Vec<String> {
+        self.list("folders")
+    }
+
+    fn set_folders(&mut self, folders: &[String]) {
+        self.set_list("folders", folders);
     }
 }
