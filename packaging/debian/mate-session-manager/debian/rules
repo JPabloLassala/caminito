@@ -1,0 +1,50 @@
+#!/usr/bin/make -f
+# Ubuntu's rules, moved to master 57a9178. The differences: mate-submodules comes with the
+# source, dh_auto_test runs make check, which Ubuntu's turned off, sound events are off, and the
+# apt pin (ADR 0029).
+
+DHFLAGS=--parallel
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+include /usr/share/dpkg/pkg-info.mk
+
+DEB_HOST_ARCH_OS ?= $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
+ifeq (kfreebsd,$(DEB_HOST_ARCH_OS))
+	SYSTEMD_OPTS := "--without-systemd"
+else
+	SYSTEMD_OPTS := ""
+endif
+
+%:
+	dh $@ $(DHFLAGS) --without autoreconf
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+# The pin of ADR 0029, as mate-panel's: every binary package of this source, at a caminito
+# version, before any other, and Ubuntu's versions of them at 99.
+execute_after_dh_install:
+	mkdir -p debian/mate-session-manager/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/mate-session-manager/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+override_dh_installchangelogs:
+	dh_installchangelogs NEWS
+
+# Master's login and logout sounds link libcanberra when it's installed. It isn't a build
+# dependency, here or on Arch, so it's off rather than left to whatever the builder has.
+override_dh_auto_configure:
+	# Upstream's git has no configure.
+	NOCONFIGURE=1 ./autogen.sh
+	dh_auto_configure $(DHFLAGS) -- \
+		--disable-silent-rules \
+		--localstatedir=/var/lib \
+		--libexecdir=/usr/libexec \
+		--without-libcanberra \
+		$(SYSTEMD_OPTS)
+
+get-orig-source:
+	uscan --noconf --force-download --rename --download-current-version --destdir=..
