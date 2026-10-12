@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use gio::glib;
 use gio::prelude::*;
 
-use crate::DOMAIN;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, MateBackground, OutputSettings, Set, Store};
 
@@ -49,6 +48,8 @@ impl std::error::Error for Error {}
 /// The store in GSettings. Each set's `Settings` is kept once made, so that its changes
 /// are signalled.
 pub struct GioStore {
+    /// The log domain of the program that opened it.
+    domain: &'static str,
     main: gio::Settings,
     sets: RefCell<HashMap<String, gio::Settings>>,
     /// Called with every set made, for its `changed` signal.
@@ -61,9 +62,13 @@ fn has_schema(id: &str) -> bool {
 }
 
 impl GioStore {
-    /// Opens the store. `watch` is given each `Settings` the store reads, the main one
-    /// first, so that the drawer hears of every change.
-    pub fn open(watch: impl Fn(&gio::Settings) + 'static) -> Result<Self, Error> {
+    /// Opens the store, which logs under `domain`. `watch` is given each `Settings` the
+    /// store reads, the main one first, so that the drawer and the dialog hear of every
+    /// change.
+    pub fn open(
+        domain: &'static str,
+        watch: impl Fn(&gio::Settings) + 'static,
+    ) -> Result<Self, Error> {
         for id in [SCHEMA, OUTPUT_SCHEMA] {
             if !has_schema(id) {
                 return Err(Error::NoSchema(id));
@@ -72,6 +77,7 @@ impl GioStore {
         let main = gio::Settings::new(SCHEMA);
         watch(&main);
         Ok(GioStore {
+            domain,
             main,
             sets: RefCell::new(HashMap::new()),
             watch: Box::new(watch),
@@ -103,7 +109,7 @@ impl GioStore {
     fn set_list(&self, key: &str, list: &[String]) {
         let list: Vec<&str> = list.iter().map(String::as_str).collect();
         if let Err(err) = self.main.set_strv(key, list.as_slice()) {
-            glib::g_warning!(DOMAIN, "can't write {key}: {err}");
+            glib::g_warning!(self.domain, "can't write {key}: {err}");
         }
     }
 
@@ -128,7 +134,7 @@ impl Store for GioStore {
 
     fn set_same_on_all_outputs(&mut self, same: bool) {
         if let Err(err) = self.main.set_boolean("same-on-all-outputs", same) {
-            glib::g_warning!(DOMAIN, "can't set same-on-all-outputs: {err}");
+            glib::g_warning!(self.domain, "can't set same-on-all-outputs: {err}");
         }
     }
 
@@ -162,7 +168,7 @@ impl Store for GioStore {
         ];
         settings.apply();
         if let Some(Err(err)) = results.into_iter().find(Result::is_err) {
-            glib::g_warning!(DOMAIN, "can't write {}: {err}", path(set));
+            glib::g_warning!(self.domain, "can't write {}: {err}", path(set));
         }
     }
 
@@ -172,7 +178,7 @@ impl Store for GioStore {
 
     fn set_took_mate_background(&mut self) {
         if let Err(err) = self.main.set_boolean("took-mate-background", true) {
-            glib::g_warning!(DOMAIN, "can't note the first run: {err}");
+            glib::g_warning!(self.domain, "can't note the first run: {err}");
         }
     }
 

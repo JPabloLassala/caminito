@@ -19,8 +19,8 @@ pub mod page;
 mod positioning;
 mod settings;
 
-pub use gsettings::{Error as StoreError, GioStore};
-pub use positioning::{Positioning, Rect, place};
+pub use gsettings::GioStore;
+pub use positioning::{Positioning, place};
 pub use settings::{Colour, Kind, Memory, OutputSettings, Set, Store};
 
 /// The log domain of everything the drawer logs.

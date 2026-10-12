@@ -19,6 +19,7 @@ pub struct Output {
     pub connector: String,
     /// What the user reads for it.
     pub title: String,
+    /// What the store knows its monitor by.
     pub identity: Identity,
     /// Its left edge in the layout.
     pub x: i32,

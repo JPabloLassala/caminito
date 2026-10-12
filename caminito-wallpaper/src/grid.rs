@@ -39,17 +39,38 @@ impl Default for Roots {
 /// One heading of the grid and its pictures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
+    /// What the heading says: the source, or the added folder's name.
     pub heading: String,
+    /// The source's pictures, in the grid's order.
     pub pictures: Vec<PathBuf>,
 }
 
+/// The pictures already on the disk, MATE's and Plasma's, scanned once when the dialog
+/// opens: they change with a package, not while the dialog is open.
+#[derive(Debug, Clone, Default)]
+pub struct Installed {
+    mate: Vec<PathBuf>,
+    plasma: Vec<PathBuf>,
+}
+
+impl Installed {
+    /// Scans `roots`.
+    pub fn scan(roots: &Roots) -> Self {
+        Installed {
+            mate: pictures_in(&roots.mate, DEPTH),
+            plasma: plasma(&roots.plasma),
+        }
+    }
+}
+
 /// The grid's groups, in order, with none empty. `current` is the selected output's picture,
-/// `pictures` and `folders` the user's.
+/// `pictures` and `folders` the user's. A folder the user added is read each time, at its
+/// own level alone, so that a picture saved into it shows at the next click.
 pub fn groups(
     current: Option<&str>,
     pictures: &[String],
     folders: &[String],
-    roots: &Roots,
+    installed: &Installed,
 ) -> Vec<Group> {
     let mut groups = Vec::new();
     let mut push = |heading: String, pictures: Vec<PathBuf>| {
@@ -77,8 +98,8 @@ pub fn groups(
         );
         push(heading, pictures_in(folder, 1));
     }
-    push("MATE".into(), pictures_in(&roots.mate, DEPTH));
-    push("Plasma".into(), plasma(&roots.plasma));
+    push("MATE".into(), installed.mate.clone());
+    push("Plasma".into(), installed.plasma.clone());
     groups
 }
 
@@ -140,7 +161,7 @@ fn plasma(root: &Path) -> Vec<PathBuf> {
 /// The picture a Plasma package is shown by, of its `contents/images/`'s file names, which
 /// are its pictures' sizes, as `1920x1080.png`: the largest landscape one, or the largest of
 /// any shape if none is landscape, or the first by name if none is named by its size.
-pub fn package_picture(names: &[String]) -> Option<&str> {
+fn package_picture(names: &[String]) -> Option<&str> {
     let size = |name: &str| {
         let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
         let (width, height) = stem.split_once('x')?;
@@ -230,7 +251,7 @@ mod tests {
             Some("/home/me/sea.jpg"),
             &["/home/me/sea.jpg".into(), "/home/me/sky.png".into()],
             &[walls.clone(), root.join("Missing").to_str().unwrap().into()],
-            &roots,
+            &Installed::scan(&roots),
         );
 
         let headings: Vec<&str> = groups.iter().map(|g| g.heading.as_str()).collect();
@@ -275,7 +296,8 @@ mod tests {
             mate: "/nonexistent/backgrounds".into(),
             plasma: "/nonexistent/wallpapers".into(),
         };
-        assert_eq!(groups(Some(""), &[], &[], &roots), []);
-        assert_eq!(groups(None, &[], &[], &roots), []);
+        let installed = Installed::scan(&roots);
+        assert_eq!(groups(Some(""), &[], &[], &installed), []);
+        assert_eq!(groups(None, &[], &[], &installed), []);
     }
 }

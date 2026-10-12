@@ -148,6 +148,8 @@ pub enum Set {
 pub trait Store {
     /// Whether every output has the same settings.
     fn same_on_all_outputs(&self) -> bool;
+    /// Turns "same on all outputs" on or off, and nothing else: what each output shows is
+    /// the page's to keep.
     fn set_same_on_all_outputs(&mut self, same: bool);
     /// The monitors seen so far, by their path elements.
     fn seen(&self) -> Vec<String>;

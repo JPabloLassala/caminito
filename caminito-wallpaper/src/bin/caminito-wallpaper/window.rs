@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
-use caminito_wallpaper::grid::{self, Group, Roots};
+use caminito_wallpaper::grid::{self, Group, Installed, Roots};
 use caminito_wallpaper::monitors::Monitors;
 use caminito_wallpaper::page::{Output, Page};
 use caminito_wallpaper::{
@@ -18,10 +18,11 @@ use gtk::{gdk, gio, glib};
 
 use crate::decoder::{Decoded, Decoder};
 
+/// The log domain of everything the dialog logs.
+const DOMAIN: &str = "caminito-wallpaper";
+
 /// The width of every output's picture in the sidebar.
 const PREVIEW_WIDTH: i32 = 200;
-/// The tallest an output's picture in the sidebar is, for a monitor turned on its side.
-const PREVIEW_MAX_HEIGHT: i32 = 240;
 /// A thumbnail of the grid.
 const THUMBNAIL: (i32, i32) = (160, 100);
 /// The space between the window's parts and around them.
@@ -64,7 +65,8 @@ struct Ui {
     /// take them for the user's.
     rendering: Cell<bool>,
     decoder: Rc<Decoder>,
-    roots: Roots,
+    /// MATE's and Plasma's pictures, scanned as the window opens.
+    installed: Installed,
     /// The groups the grid shows now.
     shown_groups: RefCell<Vec<Group>>,
     /// The grid's thumbnails, by their picture.
@@ -111,10 +113,10 @@ pub(crate) fn open(application: &gtk::Application, demo: bool) {
     let (store, monitors, caminito): (Box<dyn Store>, _, _) = if demo {
         (Box::new(demo_store()), None, None)
     } else {
-        let store = match GioStore::open(watch(&changed)) {
+        let store = match GioStore::open(DOMAIN, watch(&changed)) {
             Ok(store) => store,
             Err(err) => {
-                glib::g_critical!("caminito-wallpaper", "{err}");
+                glib::g_critical!(DOMAIN, "can't open the settings: {err}");
                 window.set_child(Some(&message(&format!(
                     "The wallpaper's settings can't be opened: {err}."
                 ))));
@@ -125,7 +127,10 @@ pub(crate) fn open(application: &gtk::Application, demo: bool) {
         let monitors = match Monitors::connect() {
             Ok(monitors) => Some(monitors),
             Err(err) => {
-                glib::g_warning!("caminito-wallpaper", "{err}; every output is set at once");
+                glib::g_warning!(
+                    DOMAIN,
+                    "can't read the outputs, so every output is set at once: {err}"
+                );
                 None
             }
         };
@@ -238,7 +243,7 @@ fn follow(ui: &Rc<Ui>, monitors: Monitors) {
                     glib::ControlFlow::Continue
                 }
                 Err(err) => {
-                    glib::g_warning!("caminito-wallpaper", "{err}");
+                    glib::g_warning!(DOMAIN, "can't follow the outputs: {err}");
                     glib::ControlFlow::Break
                 }
             }
@@ -279,7 +284,6 @@ fn build(
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     window.set_child(Some(&body));
 
-    // The sidebar.
     let sidebar = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(SPACING)
@@ -322,7 +326,6 @@ fn build(
     body.append(&sidebar);
     body.append(&gtk::Separator::new(gtk::Orientation::Vertical));
 
-    // The controls.
     let panes = gtk::Stack::builder().hexpand(true).vexpand(true).build();
     body.append(&panes);
 
@@ -400,7 +403,7 @@ fn build(
         page: RefCell::new(Page::new(&mut Memory::default(), Vec::new(), None)),
         rendering: Cell::new(false),
         decoder: Rc::new(Decoder::default()),
-        roots: Roots::default(),
+        installed: Installed::scan(&Roots::default()),
         shown_groups: RefCell::new(Vec::new()),
         thumbnails: RefCell::new(Vec::new()),
         caminito,
@@ -664,7 +667,7 @@ impl Ui {
             (current.kind == Kind::Picture).then_some(current.picture.as_str()),
             &store.pictures(),
             &store.folders(),
-            &self.roots,
+            &self.installed,
         );
         drop(store);
         self.render_previews(&page);
@@ -738,7 +741,8 @@ impl Ui {
     /// An output's picture, with its wallpaper drawn as the drawer draws it.
     fn preview(&self, index: usize, output: &Output) -> gtk::DrawingArea {
         let (width, height) = (output.size.0.max(1), output.size.1.max(1));
-        let preview_height = ((PREVIEW_WIDTH * height) / width).clamp(1, PREVIEW_MAX_HEIGHT);
+        // A monitor on its side is as wide as the others, and taller: its shape is kept.
+        let preview_height = ((PREVIEW_WIDTH * height) / width).max(1);
         let area = gtk::DrawingArea::builder()
             .content_width(PREVIEW_WIDTH)
             .content_height(preview_height)
@@ -751,8 +755,10 @@ impl Ui {
         let decoder = self.decoder.clone();
         let picture = (settings.kind == Kind::Picture && !settings.picture.is_empty())
             .then(|| PathBuf::from(&settings.picture));
-        // Decoded at twice the preview's width, for a scale of 2.
-        let size = (PREVIEW_WIDTH * 2, PREVIEW_MAX_HEIGHT * 2);
+        // Decoded to fit a square twice the preview's longer side, so that a picture of any
+        // shape still covers it at a scale of 2 once Fill crops it.
+        let side = PREVIEW_WIDTH.max(preview_height) * 2;
+        let size = (side, side);
         if let Some(picture) = &picture
             && decoder.get(picture, size.0, size.1).is_none()
         {
@@ -879,6 +885,8 @@ impl Ui {
             }
         });
         let weak = area.downgrade();
+        // Decoded to fit a square twice the thumbnail's width, so that a picture of any shape
+        // still covers it at a scale of 2 once cropped.
         self.decoder
             .request(path, THUMBNAIL.0 * 2, THUMBNAIL.0 * 2, move |decoded| {
                 if let Some(area) = weak.upgrade() {
