@@ -415,6 +415,8 @@ impl State {
         mods: &ModifiersState,
         time: InputTime,
     ) {
+        // The pointer is held for a move or resize, which outlasts one that Policy ended
+        // itself. Policy refuses for the seat's Interaction (187).
         if self.caminito.window_grab.is_some() {
             return;
         }

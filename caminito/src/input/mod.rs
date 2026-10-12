@@ -14,7 +14,9 @@ pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
 pub(crate) use serials::InputSerials;
 
-use caminito_policy::{Action, Crossing, GrabKey, PointerTarget, ResizeEdges, WindowId};
+use caminito_policy::{
+    Action, Crossing, GrabKey, Interaction, PointerTarget, ResizeEdges, WindowId,
+};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device, Event,
     InputBackend, InputEvent, InputTime, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent,
@@ -467,42 +469,27 @@ impl State {
         if self.caminito.lock.is_locked() {
             return FilterResult::Forward;
         }
-        // A keyboard move or resize has the keyboard while it lasts (156), as Marco's does,
-        // a manual placement among them (154), and nothing can open over it: Alt+Tab puts the
-        // window down. A shortcuts inhibitor doesn't take the keys from one under way.
-        if self.caminito.policy.keyboard_grab(SEAT).is_some()
-            && let Some(key) = grab::grab_key(mods, keysym)
-        {
-            self.caminito.suppressed_keys.insert(keycode);
-            return FilterResult::Intercept(Some(Bound::GrabKey(key)));
-        }
-        // The open Window switcher has the keyboard (108), before an inhibitor has its say:
-        // it never opens under one.
-        if let Some(result) = self.caminito.switcher_key_pressed(keycode, mods, keysym) {
-            return result;
-        }
-        // And so has the open window menu (161), as a GTK menu's grab has.
-        if let Some(result) = self.caminito.window_menu_key_pressed(keycode, keysym) {
-            return result;
-        }
-        // So has the Workspace popup while it shows (152), as Marco's grab has
-        // (`process_workspace_switch_grab`, keybindings.c:2760-2899): a binding to the
-        // workspace beside steps it, and any other key closes it and goes no further. A
-        // modifier goes on to the client, as with the Window switcher open.
-        if self.caminito.workspace_popup.is_some() {
-            if keysym.modified_sym().is_modifier_key() {
-                return FilterResult::Forward;
+        // The seat's Interaction has the keyboard while it lasts (187), before an inhibitor
+        // has its say: none opens under one, and an inhibitor doesn't take the keys from one
+        // under way. Each says which keys are its own.
+        let caminito = &mut self.caminito;
+        let theirs = match caminito.policy.interaction(SEAT) {
+            // The keyboard's move or resize, and not the pointer's (156).
+            Some(Interaction::MoveOrResize) => {
+                caminito.keyboard_grab_key_pressed(keycode, mods, keysym)
             }
-            self.caminito.suppressed_keys.insert(keycode);
-            let bindings = &self.caminito.settings.bindings;
-            let step = match bindings.binding_for(mods, &press_keysyms(keysym)) {
-                Some(Binding::Policy(action)) => self.caminito.workspace_popup_step(action),
-                _ => None,
-            };
-            if step.is_none() {
-                self.caminito.close_workspace_popup();
+            Some(Interaction::WindowSwitcher) => {
+                caminito.switcher_key_pressed(keycode, mods, keysym)
             }
-            return FilterResult::Intercept(step.map(Bound::Action));
+            // As a GTK menu's grab has it (161).
+            Some(Interaction::WindowMenu) => caminito.window_menu_key_pressed(keycode, keysym),
+            Some(Interaction::WorkspacePopup) => {
+                caminito.workspace_popup_key_pressed(keycode, mods, keysym)
+            }
+            None => None,
+        };
+        if let Some(result) = theirs {
+            return result;
         }
         if self.shortcuts_inhibited() {
             return FilterResult::Forward;
@@ -922,7 +909,7 @@ enum Constraint {
 }
 
 /// What a key press that reaches no client does instead.
-enum Bound {
+pub(crate) enum Bound {
     /// One of Caminito's bindings, with the key that fired it.
     Binding { binding: Binding, key: Keysym },
     /// What a binding does while the Workspace popup shows (152): something policy does.

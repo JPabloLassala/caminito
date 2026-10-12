@@ -711,6 +711,8 @@ fn a_window_with_its_titlebar_on_an_output_has_no_move_titlebar_on_screen() {
     assert!(policy.titlebar_is_onscreen(id(1)));
     policy.open_window_menu(SEAT, id(1));
     assert!(!entries(&policy).contains(&"Recover".to_owned()));
+    // No move begins over the open menu (187).
+    policy.close_window_menu();
 
     // And with 50, which isn't more.
     put_frame_at(&mut policy, 1, 1870, 500);

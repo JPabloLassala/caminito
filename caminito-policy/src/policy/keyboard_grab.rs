@@ -49,21 +49,21 @@ impl GrabStep {
 
 impl<W: PolicyWindow> Policy<W> {
     /// Starts moving a window with `seat`'s keys. Returns false if the window can't be
-    /// moved, or the seat has another grab.
+    /// moved, or the seat has an Interaction.
     pub fn begin_keyboard_move(&mut self, seat: SeatId, id: WindowId) -> bool {
         self.begin_keyboard_grab(seat, id, false)
     }
 
     /// Starts resizing a window with `seat`'s keys, from no edge until the first arrow picks
-    /// one. Returns false if the window can't be resized, or the seat has another grab.
+    /// one. Returns false if the window can't be resized, or the seat has an Interaction.
     pub fn begin_keyboard_resize(&mut self, seat: SeatId, id: WindowId) -> bool {
         self.begin_keyboard_grab(seat, id, true)
     }
 
     /// Like Marco's `meta_window_begin_grab_op`, a keyboard grab doesn't start while the
-    /// seat has another, and a resize needs a window Marco gives `has_resize_func`.
+    /// seat has an Interaction, and a resize needs a window Marco gives `has_resize_func`.
     pub(super) fn begin_keyboard_grab(&mut self, seat: SeatId, id: WindowId, resize: bool) -> bool {
-        if self.grabs.contains_key(&seat)
+        if self.interaction(seat).is_some()
             || (resize
                 && !self
                     .windows

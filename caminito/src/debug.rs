@@ -641,7 +641,10 @@ impl Caminito {
             let cells = &popup.layout.cells;
             WorkspacePopupDump {
                 output: popup.output.name(),
-                mode: if popup.moves { "move" } else { "switch" },
+                mode: match policy.workspace_popup() {
+                    Some(open) if open.moves => "move",
+                    _ => "switch",
+                },
                 columns: popup.layout.columns,
                 rows: popup.layout.rows,
                 selected: policy.active_workspace(),

@@ -106,8 +106,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// `seat`'s pointer crossed onto `target`, leaving what it was over. With a pointer
     /// focus mode, entering a window focuses it, or the modal dialog over it, and queues its
     /// auto-raise; entering the desktop, or a desktop window, takes the focus away under
-    /// `mouse`. A dock or anything else isn't focused, as in Marco. The Window switcher and
-    /// a move or resize hold the modes off while they last.
+    /// `mouse`. A dock or anything else isn't focused, as in Marco. The seat's Interaction
+    /// holds the modes off while it lasts.
     pub fn pointer_entered(
         &mut self,
         seat: SeatId,
@@ -185,11 +185,10 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Whether the pointer focus modes are held off for `seat`: while the Window switcher
-    /// is open (108), and during the seat's move or resize, whose window has the pointer.
-    /// The workspace popup is to hold them off too when it comes, with 152.
+    /// Whether the pointer focus modes are held off for `seat`: while it has an
+    /// Interaction (187), as Marco's grab keeps the crossings from it.
     fn pointer_modes_held(&self, seat: SeatId) -> bool {
-        self.switcher.is_some() || self.grabs.contains_key(&seat)
+        self.interaction(seat).is_some()
     }
 
     /// Takes `seat`'s focus away on user input at `now`, as Marco's
