@@ -1,0 +1,45 @@
+#!/usr/bin/make -f
+# Caminito's binaries and helpers, as caminito-git's PKGBUILD builds them: the compositor
+# with Cargo, through rustup's stable toolchain, and the helpers and data with Meson.
+
+include /usr/share/dpkg/pkg-info.mk
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# debhelper 13 points HOME at a directory of its own while it runs a build step, so rustup
+# and cargo are told where the builder's toolchain and crates are before it does.
+export RUSTUP_HOME := $(or $(RUSTUP_HOME),$(HOME)/.rustup)
+export CARGO_HOME := $(or $(CARGO_HOME),$(HOME)/.cargo)
+export RUSTUP_TOOLCHAIN = stable
+export CARGO_TARGET_DIR = $(CURDIR)/target
+# The revision in the version string (182), which `caminito --version` prints and
+# caminito-about shows: this package's, so they agree with `dpkg -l`.
+export CAMINITO_REVISION = $(DEB_VERSION_UPSTREAM)
+
+%:
+	dh $@ --buildsystem=meson
+
+# The one step with the network: every later cargo command is offline.
+override_dh_auto_configure:
+	cargo fetch --locked --target "$$(rustc -vV | sed -n 's/host: //p')"
+	dh_auto_configure
+
+override_dh_auto_build:
+	cargo build --frozen --release
+	dh_auto_build
+
+# The workspace's tests, on a private session bus, as the PKGBUILD's check() runs them: in
+# release, so they reuse the build's dependencies.
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	dbus-run-session -- cargo test --frozen --release
+endif
+
+override_dh_auto_install:
+	dh_auto_install
+	install -Dm755 target/release/caminito target/release/caminito-displays \
+		target/release/caminito-about -t debian/caminito/usr/bin
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf target

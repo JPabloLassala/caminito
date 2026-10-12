@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Builds Caminito's Debian source packages for Ubuntu 26.04 in a podman container of
+# ubuntu:26.04, and leaves their .debs in packaging/debian/out/ (194).
+#
+#   tools/debian-build [package…]
+#
+# With no package, it builds every one under packaging/debian/, in dependency order. Each
+# package's build dependencies are installed with mk-build-deps, its tests run
+# (dh_auto_test), lintian fails it on an error, and its .debs are installed in the container
+# before the next package is built, so the next one builds against them.
+#
+# The host needs podman alone. The checkout is mounted read-only, and Caminito's own packages
+# are built from its committed HEAD, through `git archive` in the container, so uncommitted
+# work is never packaged.
+set -euo pipefail
+
+# In dependency order. The patched packages and marco come before caminito (205).
+all=(caminito)
+
+image=ubuntu:26.04
+
+# What runs in the container, as root: $1 is the checkout's path, the rest the packages.
+in_container() {
+  local root=$1 package work version
+  shift
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends build-essential ca-certificates devscripts equivs \
+    git lintian rustup
+  # dpkg-buildpackage and lintian run as a user, as makepkg does on Arch.
+  useradd -m builder
+  runuser -u builder -- rustup toolchain install stable --profile minimal
+  for package; do
+    echo "==> $package"
+    work=/build/$package
+    mkdir -p "$work/src"
+    # Caminito's own packages are its committed HEAD, versioned 0.0~r<count>.g<hash>-1 until
+    # v0.1.0 is tagged. The checkout belongs to another user in the container, which git
+    # refuses unless told.
+    git -c safe.directory='*' -C "$root" archive HEAD | tar -x -C "$work/src"
+    version="0.0~r$(git -c safe.directory='*' -C "$root" rev-list --count HEAD)"
+    version+=".g$(git -c safe.directory='*' -C "$root" rev-parse --short=7 HEAD)-1"
+    cp -r "$work/src/packaging/debian/$package/debian" "$work/src/"
+    sed -i "1s/([^)]*)/($version)/" "$work/src/debian/changelog"
+    (
+      cd "$work"
+      mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' src/debian/control
+      rm -f ./*-build-deps_*
+    )
+    chown -R builder: "$work"
+    (cd "$work/src" && runuser -u builder -- dpkg-buildpackage -b -us -uc)
+    runuser -u builder -- lintian --fail-on error "$work"/*.changes
+    apt-get install -y "$work"/*.deb
+    cp "$work"/*.deb /out/
+  done
+}
+
+if [ "${1-}" = --in-container ]; then
+  shift
+  in_container "$@"
+  exit
+fi
+
+root=$(realpath "$(dirname "$(realpath "$0")")/..")
+
+packages=("$@")
+[ ${#packages[@]} -gt 0 ] || packages=("${all[@]}")
+for package in "${packages[@]}"; do
+  if [[ ! " ${all[*]} " =~ " $package " ]]; then
+    echo "debian-build: no package $package; there are: ${all[*]}" >&2
+    exit 1
+  fi
+done
+# In dependency order whatever the order of the arguments.
+ordered=()
+for package in "${all[@]}"; do
+  [[ " ${packages[*]} " =~ " $package " ]] && ordered+=("$package")
+done
+
+out=$root/packaging/debian/out
+mkdir -p "$out"
+
+# The checkout at its own path, so that a worktree's .git, which names the main checkout's
+# by its path, still leads git there; and then the main checkout's .git too.
+mounts=(-v "$root:$root:ro")
+if [ -f "$root/.git" ]; then
+  common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)
+  mounts+=(-v "$common:$common:ro")
+fi
+
+podman run --rm "${mounts[@]}" -v "$out:/out" "$image" \
+  "$root/tools/debian-build" --in-container "$root" "${ordered[@]}"
