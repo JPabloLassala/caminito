@@ -34,10 +34,9 @@ use smithay::wayland::shell::xdg::XDG_POPUP_ROLE;
 use smithay::xwayland::X11Surface;
 
 use self::bindings::Binding;
+use self::bindings::accelerators::{Trigger, x_button};
 use self::grab::FrameHold;
-use crate::commands::Command;
 use crate::dbus::a11y;
-use crate::dbus::panel::PanelAction;
 use crate::decoration::control::FrameControl;
 use crate::output::output_geometry;
 use crate::scene::{self, SceneLayer};
@@ -337,31 +336,10 @@ impl State {
             },
         );
         match intercepted {
-            Some(Some(Bound::Action(action))) => {
-                // A client's open menu gives way to the window menu (161).
-                if action == Action::ActivateWindowMenu {
-                    self.dismiss_menus(time);
-                }
-                let now = self.caminito.now();
-                // Before the action, which may leave no window with the focus a move needs.
-                let shows_popup = self.caminito.workspace_popup_shows_for(action);
-                self.caminito.policy.action(SEAT, action, now);
-                // A switch or a move to the workspace beside shows the Workspace popup (152).
-                if shows_popup {
-                    let mods = keyboard.modifier_state();
-                    self.caminito.show_workspace_popup(action, &mods);
-                }
+            Some(Some(Bound::Binding { binding, key })) => {
+                self.run_binding(binding, Trigger::Key(key), time);
             }
-            Some(Some(Bound::Switch { action, key })) => {
-                let mods = keyboard.modifier_state();
-                self.switch_action(action, key, &mods, time);
-            }
-            Some(Some(Bound::Panel(action))) => {
-                // The time a client would have for the event.
-                self.caminito.ask_panel(action, time.millis());
-            }
-            Some(Some(Bound::Command(command))) => self.caminito.run_command(command),
-            Some(Some(Bound::RenameWorkspace)) => self.caminito.rename_workspace(),
+            Some(Some(Bound::Action(action))) => self.run_action(action, time),
             Some(Some(Bound::GrabKey(key))) => self.keyboard_grab_key(key, time),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 let time = time.millis();
@@ -376,6 +354,40 @@ impl State {
                 let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
                 self.caminito.input_serials.sent(serial, surface.as_deref());
             }
+        }
+    }
+
+    /// Runs one of Caminito's bindings, which the press of `trigger` at `time` fired: a key
+    /// in the keyboard path, or a mouse button in the pointer's (184).
+    fn run_binding(&mut self, binding: Binding, trigger: Trigger, time: InputTime) {
+        match binding {
+            Binding::Policy(action @ (Action::Switch { .. } | Action::Cycle { .. })) => {
+                let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
+                self.switch_action(action, trigger, &mods, time);
+            }
+            Binding::Policy(action) => self.run_action(action, time),
+            // The time a client would have for the event.
+            Binding::Panel(action) => self.caminito.ask_panel(action, time.millis()),
+            Binding::Command(command) => self.caminito.run_command(command),
+            Binding::RenameWorkspace => self.caminito.rename_workspace(),
+        }
+    }
+
+    /// Has policy do a binding's `action`, and shows the Workspace popup if it's one that
+    /// does.
+    pub(crate) fn run_action(&mut self, action: Action, time: InputTime) {
+        // A client's open menu gives way to the window menu (161).
+        if action == Action::ActivateWindowMenu {
+            self.dismiss_menus(time);
+        }
+        let now = self.caminito.now();
+        // Before the action, which may leave no window with the focus a move needs.
+        let shows_popup = self.caminito.workspace_popup_shows_for(action);
+        self.caminito.policy.action(SEAT, action, now);
+        // A switch or a move to the workspace beside shows the Workspace popup (152).
+        if shows_popup {
+            let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
+            self.caminito.show_workspace_popup(action, &mods);
         }
     }
 
@@ -501,16 +513,7 @@ impl State {
         match binding {
             Some(binding) => {
                 self.caminito.suppressed_keys.insert(keycode);
-                let bound = match binding {
-                    Binding::Policy(action @ (Action::Switch { .. } | Action::Cycle { .. })) => {
-                        Bound::Switch { action, key }
-                    }
-                    Binding::Policy(action) => Bound::Action(action),
-                    Binding::Panel(action) => Bound::Panel(action),
-                    Binding::Command(command) => Bound::Command(command),
-                    Binding::RenameWorkspace => Bound::RenameWorkspace,
-                };
-                FilterResult::Intercept(Some(bound))
+                FilterResult::Intercept(Some(Bound::Binding { binding, key }))
             }
             None => FilterResult::Forward,
         }
@@ -601,10 +604,14 @@ impl State {
 
     /// A pointer button, as a Linux input event code. With `mouse-button-modifier`'s
     /// modifiers held, the left button moves the window, and the middle and right ones
-    /// resize it and open its menu, as `resize-with-right-button` says which (162). A press
-    /// on a frame does what Marco's frames do. Otherwise a press on a window focuses and
-    /// raises it through policy before the client sees the press. The client never sees a
-    /// press with the modifiers held or a press on the frame.
+    /// resize it and open its menu, as `resize-with-right-button` says which (162). A
+    /// button one of Caminito's bindings names runs it, wherever the pointer is, but where
+    /// such a click on a window has the press (184). A press on a frame does what Marco's
+    /// frames do. Otherwise a press on a window focuses and raises it through policy before
+    /// the client sees the press. The client never sees a press with the modifiers held, a
+    /// bound button's or a press on the frame. An active shortcuts inhibitor on the focused
+    /// client keeps both the modifier clicks and the bindings from Caminito, as it keeps
+    /// the keys' bindings: the press is that client's.
     pub fn on_pointer_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
         self.idle_activity();
         let pointer = self.caminito.seat.get_pointer().unwrap();
@@ -612,13 +619,31 @@ impl State {
         let location = pointer.current_location();
         if self.window_menu_button(button, state, location)
             || self.switcher_button(button, state, location)
-            || self.caminito.workspace_popup_button(button, state)
+            || self.workspace_popup_button(button, state, time)
         {
             return;
         }
         let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
             .then(|| self.caminito.under(location))
             .flatten();
+        let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
+        let inhibited = self.shortcuts_inhibited();
+        let click = under
+            .as_ref()
+            .and_then(Under::window)
+            .filter(|_| !inhibited)
+            .and_then(|_| self.caminito.settings.modifier_click.does(button, &mods));
+        if state == ButtonState::Pressed
+            && click.is_none()
+            && !inhibited
+            && let Some((trigger, binding)) = self.button_binding(button, &mods)
+        {
+            // The release is swallowed with the Window switcher's, so the press ends under
+            // the table it started under, and focus and stacking are as they were.
+            self.caminito.suppressed_buttons.insert(button);
+            self.run_binding(binding, trigger, time);
+            return;
+        }
         if let Some(Under::Layer(layer, ..)) = &under {
             self.caminito.layer_pressed(layer);
             self.update_keyboard_focus();
@@ -629,8 +654,6 @@ impl State {
             && let Some(id) = under.window()
         {
             self.caminito.window_pressed();
-            let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
-            let click = self.caminito.settings.modifier_click.does(button, &mods);
             match (click, under) {
                 (None, Under::Frame(id, control)) if control != FrameControl::ClientArea => {
                     self.frame_press(id, control, button, location, serial, time);
@@ -686,6 +709,28 @@ impl State {
         self.caminito.input_serials.sent(serial, surface.as_deref());
         pointer.button(self, &event);
         pointer.frame(self);
+    }
+
+    /// The binding a press of `button` with `mods` held runs, and the button as bindings
+    /// name it (184). None runs while the session is locked, or while something holds the
+    /// pointer or the keyboard: a move or a resize, a drag-and-drop, a client's popup, or a
+    /// button already down on a client. The press is then the holder's.
+    fn button_binding(&self, button: u32, mods: &ModifiersState) -> Option<(Trigger, Binding)> {
+        let caminito = &self.caminito;
+        let pointer = caminito.seat.get_pointer().unwrap();
+        if caminito.lock.is_locked()
+            || pointer.is_grabbed()
+            || caminito.window_grab.is_some()
+            || caminito.policy.keyboard_grab(SEAT).is_some()
+        {
+            return None;
+        }
+        let button = x_button(button)?;
+        let binding = caminito
+            .settings
+            .bindings
+            .binding_for_button(mods, button)?;
+        Some((Trigger::Button(button), binding))
     }
 
     /// Gives the keyboard to the layer surface that takes it (63), or else to the window
@@ -875,16 +920,10 @@ enum Constraint {
 
 /// What a key press that reaches no client does instead.
 enum Bound {
-    /// One of Caminito's bindings: something policy does.
+    /// One of Caminito's bindings, with the key that fired it.
+    Binding { binding: Binding, key: Keysym },
+    /// What a binding does while the Workspace popup shows (152): something policy does.
     Action(Action),
-    /// One of Caminito's bindings: a `switch-*` action (108), with the key that fired it.
-    Switch { action: Action, key: Keysym },
-    /// One of Caminito's bindings: something it asks the panel for (95).
-    Panel(PanelAction),
-    /// One of Caminito's bindings: a command to run (104).
-    Command(Command),
-    /// One of Caminito's bindings: `rename-workspace`'s dialog (167).
-    RenameWorkspace,
     /// A grabbed accelerator (98): its owner's unique name on the bus, and the action id
     /// to signal it.
     Accelerator { owner: String, action: u32 },

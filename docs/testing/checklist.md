@@ -2065,6 +2065,35 @@ session_env() {
   use; `org.mate.Caminito.Debug`'s state dump, whose `window_menu` member shows the open
   menu.
 
+### A mouse button as a System shortcut
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with a mouse that has back and forward buttons. Open
+     `pluma` (a native window) and Firefox, open two pages one after the other in a Firefox
+     tab, and click the back button over the page.
+  2. Run `dconf write /org/mate/marco/window-keybindings/toggle-maximized "'<Super>Button8'"`.
+     The dialog can't capture a button until 186.
+  3. Click pluma to focus it. With Super held, click the back button over pluma, then over
+     the panel, then over the desktop.
+  4. Focus Firefox, go forward to the second page, and with Super held click the back button
+     over the page. Then click it without Super.
+  5. Run `dconf write /org/mate/marco/window-keybindings/minimize "'<Shift><Super>Button8'"`,
+     and right-click pluma's titlebar or press Alt+Space.
+  6. Run `dconf write /org/mate/marco/global-keybindings/switch-windows "'<Super>Button9'"`.
+     With Super held, click the forward button twice, and let go of Super.
+  7. Put the keys back: `dconf reset` for `/org/mate/marco/window-keybindings/toggle-maximized`,
+     `/org/mate/marco/window-keybindings/minimize` and
+     `/org/mate/marco/global-keybindings/switch-windows`.
+- **Expected:** in step 1 Firefox goes back. In step 3 each click maximises or restores
+  pluma, wherever the pointer is, and pluma stays focused and on top. In step 4 Super and
+  the back button maximise Firefox and it doesn't go back a page; without Super it goes
+  back. In step 5 the menu shows *Shift+Super+Back Button* beside *Minimize*. In step 6 the
+  Window switcher opens, each click steps it, and letting go of Super picks the window. After step 7 Super and the back button go back in Firefox again (184).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `bindings` lists
+  `toggle-maximized` with `<Super>Button8`; Caminito's log, which names a value it can't
+  bind, such as `Button1` with no modifier; `wev` or `xev` for the button's number.
+
 ### "Not responding" and Force Quit
 
 - **Milestone:** M8, run in M8's closing run (173).

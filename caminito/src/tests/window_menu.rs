@@ -15,7 +15,7 @@ use super::fixture::{
 use crate::output::output_geometry;
 use crate::scene::SceneLayer;
 use crate::settings::Value;
-use crate::settings::translate::{CAMINITO, MARCO_GENERAL};
+use crate::settings::translate::{CAMINITO, MARCO_GENERAL, MARCO_WINDOW_KEYBINDINGS};
 use crate::state::SEAT;
 
 /// The debug dump's `window_menu` member: `null` while the window menu is closed.
@@ -106,6 +106,29 @@ fn with_window(kind: Kind) -> (Fixture, ClientId, ClientWindow) {
     let (mut f, id) = Fixture::connected(kind);
     let window = f.map(id, WindowSpec::default());
     (f, id, window)
+}
+
+on_both_kinds! {
+    fn an_item_bound_to_a_mouse_button_names_the_button(kind: Kind) {
+        let bind = |key: &str, value: &str| {
+            (MARCO_WINDOW_KEYBINDINGS, key.to_owned(), Value::Str(value.into()))
+        };
+        let mut f = Fixture::with_settings(vec![
+            bind("minimize", "<Super>Button8"),
+            bind("maximize", "Button2"),
+            bind("close", "<Control><Shift>Button10"),
+        ]);
+        f.add_output((1920, 1080), 1.0);
+        let id = f.connect(kind);
+        f.map(id, WindowSpec::default());
+
+        alt_space(&mut f);
+
+        let lines = lines(&menu(&f)["items"]);
+        assert_eq!(lines[0], "Minimize (n)  Super+Back Button");
+        assert_eq!(lines[1], "Maximize (x)  Middle Button");
+        assert_eq!(lines.last().unwrap(), "Close (c)  Shift+Ctrl+Button 10");
+    }
 }
 
 on_both_kinds! {
