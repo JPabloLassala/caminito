@@ -54,7 +54,8 @@ fn the_primary_outputs_picture_and_positioning_go_out() {
 
     assert_eq!(mate.picture, "/aoc.png");
     assert_eq!(mate.options, "zoom");
-    assert_eq!(mate.colour, "#5891bc");
+    // The test's pictures are over black.
+    assert_eq!(mate.colour, "#000000");
 
     let mut fit = picture("/aoc.png");
     fit.positioning = Positioning::Tile;
@@ -83,7 +84,7 @@ fn nothing_goes_out_when_mate_says_so_already() {
     let mate = MateBackground {
         picture: "/aoc.png".into(),
         options: "zoom".into(),
-        colour: "#5891BC".into(),
+        colour: "#000000000000".into(),
     };
 
     let writes = bridge.out(&mate, &picture("/aoc.png").drawn());
