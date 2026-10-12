@@ -26,7 +26,7 @@ _basever=1.28.7
 # weekly job knows this source by its -stock name, and leaves it at the tag.
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=10
+pkgrel=11
 pkgdesc="The MATE Panel, with Caminito's carried patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -56,6 +56,8 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # MainMenu and RunDialog Caminito calls for Alt+F1 and Alt+F2 (95).
 # The tenth is a fix to master's pack model, with no gate: an object that is drawn at its old
 # pixel position, which "Add to Panel" still writes, can be moved to the left of it.
+# The eleventh is active only while org.mate.Caminito has an owner: a panel's properties
+# have a Display row, which chooses the panel's monitor where it can't be dragged to one (209).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-panel")"
@@ -71,7 +73,8 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "$_patches/0007-workspace-switcher-Lay-the-workspaces-out-by-the-com.patch"
         "$_patches/0008-showdesktop-Show-Caminito-s-desktop-on-Wayland.patch"
         "$_patches/0009-main-Export-the-main-menu-and-the-run-dialog-on-D-Bu.patch"
-        "$_patches/0010-panel-Let-an-object-held-by-a-pixel-position-move-le.patch")
+        "$_patches/0010-panel-Let-an-object-held-by-a-pixel-position-move-le.patch"
+        "$_patches/0011-properties-Choose-the-panel-s-display-under-Caminito.patch")
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
@@ -84,7 +87,8 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '8ca9cda9a75edb8ccda807538a2952083013c18912caf62131386edb2bedb983'
             'b586f22ceb2c0d77ee9b60a15b4138144628f820dbe2102286c02f55c110725f'
             '5cabe2cb85e0a569ae4b240be7ffd0652ba62ccadfd6f8e70b66ece3ae8a948a'
-            '5ab26ded65a28dadd760e85c2035c495c78c1be0199d6f339e22ae702a001ab7')
+            '5ab26ded65a28dadd760e85c2035c495c78c1be0199d6f339e22ae702a001ab7'
+            '95d1fe862d03d95b74f0584d43738c0559598b0a92924dbfc3edaf2f911b39c7')
 
 pkgver() {
     cd "${_pkgname}"
