@@ -67,25 +67,87 @@ pub(crate) enum Request {
     ToggleNightLight(oneshot::Sender<()>),
 }
 
-/// A property Caminito signals itself, when it changes without a caller writing it.
-#[derive(Clone, Copy)]
+/// A property Caminito signals itself, when it changes without a caller writing it, in the
+/// order they're signalled.
+#[derive(Debug, Clone, Copy)]
 enum Property {
+    /// The stand-in went in, or the choice returned (81).
     PrimaryOutput,
+    /// The key changed it, a window mapped or activated ended it, or the active workspace
+    /// is another, which shows its desktop or doesn't for itself (94).
     ShowingDesktop,
-    GlobalMenu,
-    GlobalMenuOffered,
+    /// Night Light's target or its schedule's next sunrise (137).
     NightLight,
+    /// The applet came, or the grace period after it ended (115).
+    GlobalMenuOffered,
+    /// The focus is another window's, or the focused window said where its menus are
+    /// (110).
+    GlobalMenu,
 }
 
 impl Property {
-    fn name(self) -> &'static str {
-        match self {
-            Self::PrimaryOutput => "PrimaryOutput",
-            Self::ShowingDesktop => "ShowingDesktop",
-            Self::GlobalMenu => "GlobalMenu",
-            Self::GlobalMenuOffered => "GlobalMenuOffered",
-            Self::NightLight => "NightLight",
+    /// Each property, in the enum's order, which `Heard` indexes by.
+    const ALL: [Self; 5] = [
+        Self::PrimaryOutput,
+        Self::ShowingDesktop,
+        Self::NightLight,
+        Self::GlobalMenuOffered,
+        Self::GlobalMenu,
+    ];
+    /// That `ALL` is in the enum's order, checked as `Heard` is first made, so that each
+    /// property's value is at its own index.
+    const ALL_IN_ORDER: () = {
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            assert!(Self::ALL[index] as usize == index);
+            index += 1;
         }
+    };
+
+    /// The property as it is now. The global menu and Night Light are compared as the
+    /// event loop has them, before they're made into what goes on the bus.
+    fn read(self, caminito: &Caminito) -> Value {
+        match self {
+            Self::PrimaryOutput => Value::PrimaryOutput(caminito.primary_output_name()),
+            Self::ShowingDesktop => Value::ShowingDesktop(caminito.policy.is_showing_desktop()),
+            Self::NightLight => Value::NightLight(caminito.night_light.published()),
+            Self::GlobalMenuOffered => Value::GlobalMenuOffered(caminito.global_menu_offered),
+            Self::GlobalMenu => Value::GlobalMenu(caminito.global_menu()),
+        }
+    }
+}
+
+/// A property's value, of the one [`Property`] of the same name.
+#[derive(PartialEq)]
+enum Value {
+    PrimaryOutput(String),
+    ShowingDesktop(bool),
+    NightLight(night_light::Published),
+    GlobalMenuOffered(bool),
+    GlobalMenu(GlobalMenu),
+}
+
+/// The properties as `org.mate.Caminito`'s callers last heard them: a value for each, by
+/// [`Property::ALL`]'s order. They're read when the interface is served, since a caller
+/// reads them as they are then, so nothing is signalled until one changes (188).
+pub(super) struct Heard([Value; Property::ALL.len()]);
+
+impl Heard {
+    /// The properties as they are now.
+    pub(super) fn now(caminito: &Caminito) -> Self {
+        let () = Property::ALL_IN_ORDER;
+        Self(Property::ALL.map(|property| property.read(caminito)))
+    }
+
+    /// Records that the callers heard `property` as `value`. Returns whether that's news to
+    /// them.
+    fn record(&mut self, property: Property, value: Value) -> bool {
+        let heard = &mut self.0[property as usize];
+        if *heard == value {
+            return false;
+        }
+        *heard = value;
+        true
     }
 }
 
@@ -357,8 +419,7 @@ impl Caminito {
             Request::ChoosePrimaryOutput(name, reply) => {
                 let chosen = self.choose_primary_output(&name);
                 if chosen.is_ok() {
-                    // zbus signals a property that its own setter changed.
-                    self.primary_output_signalled = Some(self.primary_output_name());
+                    self.property_written(Property::PrimaryOutput);
                 }
                 let _ = reply.send(chosen);
             }
@@ -370,8 +431,7 @@ impl Caminito {
             }
             Request::SetShowingDesktop(showing, reply) => {
                 self.policy.set_showing_desktop(showing);
-                // zbus signals this one too.
-                self.showing_desktop_signalled = Some(showing);
+                self.property_written(Property::ShowingDesktop);
                 let _ = reply.send(());
             }
             Request::GlobalMenu(reply) => {
@@ -450,16 +510,6 @@ impl Caminito {
             .detach();
     }
 
-    /// The interface is served: a caller reads the properties as they are now, so nothing
-    /// is signalled until one changes.
-    pub(super) fn properties_read_from_now_on(&mut self) {
-        self.primary_output_signalled = Some(self.primary_output_name());
-        self.showing_desktop_signalled = Some(self.policy.is_showing_desktop());
-        self.global_menu_signalled = Some(self.global_menu());
-        self.global_menu_offered_signalled = Some(self.global_menu_offered);
-        self.night_light_signalled = Some(self.night_light.published());
-    }
-
     /// The primary output's name as the property has it.
     fn primary_output_name(&self) -> String {
         self.primary_output()
@@ -467,63 +517,29 @@ impl Caminito {
             .unwrap_or_default()
     }
 
-    /// Signals `PrimaryOutput` if it's not what the callers last heard: the stand-in went
-    /// in, or the choice returned (81).
-    pub(crate) fn refresh_primary_output_property(&mut self) {
-        let name = self.primary_output_name();
-        if self.dbus.is_none() || self.primary_output_signalled.as_ref() == Some(&name) {
-            return;
+    /// Signals each property that isn't what the callers last heard, in [`Property::ALL`]'s
+    /// order.
+    pub(crate) fn refresh_properties(&mut self) {
+        for property in Property::ALL {
+            let now = property.read(self);
+            let Some(dbus) = &mut self.dbus else {
+                return;
+            };
+            if dbus.heard.record(property, now) {
+                self.signal(property);
+            }
         }
-        self.signal(Property::PrimaryOutput);
-        self.primary_output_signalled = Some(name);
     }
 
-    /// Signals `ShowingDesktop` if it's not what the callers last heard (94): the key
-    /// changed it, a window mapped or activated ended it, or the active workspace is
-    /// another, which shows its desktop or doesn't for itself.
-    pub(crate) fn refresh_showing_desktop_property(&mut self) {
-        let showing = self.policy.is_showing_desktop();
-        if self.dbus.is_none() || self.showing_desktop_signalled == Some(showing) {
-            return;
+    /// A caller wrote `property`, whose setter's arm calls this once it's written. zbus
+    /// signals a property after its own setter, so the callers hear it as it is now and the
+    /// refresh pass mustn't signal it again. It's read, not taken from what the caller
+    /// wrote, since Policy may have it otherwise.
+    fn property_written(&mut self, property: Property) {
+        let now = property.read(self);
+        if let Some(dbus) = &mut self.dbus {
+            dbus.heard.record(property, now);
         }
-        self.signal(Property::ShowingDesktop);
-        self.showing_desktop_signalled = Some(showing);
-    }
-
-    /// Signals `GlobalMenu` if it's not what the callers last heard (110).
-    pub(super) fn refresh_global_menu_property(&mut self) {
-        if self.dbus.is_none() {
-            return;
-        }
-        let menu = self.global_menu();
-        if self.global_menu_signalled.as_ref() == Some(&menu) {
-            return;
-        }
-        self.signal(Property::GlobalMenu);
-        self.global_menu_signalled = Some(menu);
-    }
-
-    /// Signals `GlobalMenuOffered` if it's not what the callers last heard (115).
-    pub(super) fn refresh_global_menu_offered_property(&mut self) {
-        let offered = self.global_menu_offered;
-        if self.dbus.is_none() || self.global_menu_offered_signalled == Some(offered) {
-            return;
-        }
-        self.signal(Property::GlobalMenuOffered);
-        self.global_menu_offered_signalled = Some(offered);
-    }
-
-    /// Signals `NightLight` if it's not what the callers last heard (137).
-    pub(crate) fn refresh_night_light_property(&mut self) {
-        if self.dbus.is_none() {
-            return;
-        }
-        let published = self.night_light.published();
-        if self.night_light_signalled.as_ref() == Some(&published) {
-            return;
-        }
-        self.signal(Property::NightLight);
-        self.night_light_signalled = Some(published);
     }
 
     /// Signals that `property` changed.
@@ -553,7 +569,7 @@ impl Caminito {
                 }
             };
             if let Err(err) = signalled.await {
-                tracing::warn!("can't signal {} on D-Bus: {err}", property.name());
+                tracing::warn!("can't signal {property:?} on D-Bus: {err}");
             }
         };
         dbus.connection()

@@ -146,6 +146,8 @@ pub struct Dbus {
     connection: zbus::Connection,
     /// The bus's address, if it isn't the session bus's: a test's own bus.
     address: Option<String>,
+    /// `org.mate.Caminito`'s properties as its callers last heard them.
+    heard: caminito::Heard,
 }
 
 impl Dbus {
@@ -258,10 +260,10 @@ impl Caminito {
             key_events,
             connection,
             address: address.map(str::to_owned),
+            heard: caminito::Heard::now(self),
         };
         tracing::info!("on the bus as {}", dbus.unique_name().unwrap_or_default());
         self.dbus = Some(dbus);
-        self.properties_read_from_now_on();
         Ok(())
     }
 
