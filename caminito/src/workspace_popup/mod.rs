@@ -19,7 +19,6 @@ use smithay::utils::{Logical, Rectangle, Size};
 use self::draw::Workspace;
 use self::layout::Layout;
 use crate::input::bindings::Binding;
-use crate::input::bindings::accelerators::x_button;
 use crate::output::output_geometry;
 use crate::state::{Caminito, SEAT, State};
 use crate::switcher::Holding;
@@ -114,11 +113,8 @@ impl State {
         }
         caminito.suppressed_buttons.insert(button);
         let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
-        let bindings = &caminito.settings.bindings;
-        let binding =
-            x_button(button).and_then(|button| bindings.binding_for_button(&mods, button));
-        let step = match binding {
-            Some(Binding::Policy(action)) => caminito.workspace_popup_step(action),
+        let step = match caminito.bound_to_button(button, &mods) {
+            Some((_, Binding::Policy(action))) => caminito.workspace_popup_step(action),
             _ => None,
         };
         match step {

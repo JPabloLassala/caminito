@@ -8,6 +8,7 @@ use std::fmt;
 use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
 
 use super::Held;
+use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, BTN_SIDE};
 
 /// What a combination's press is of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,12 +40,8 @@ impl Accelerator {
     }
 }
 
-// Linux input event codes.
-const BTN_LEFT: u32 = 0x110;
-const BTN_RIGHT: u32 = 0x111;
-const BTN_MIDDLE: u32 = 0x112;
-const BTN_SIDE: u32 = 0x113;
-/// The last of the kernel's mouse buttons: `BTN_JOYSTICK` is next.
+/// The last of the kernel's mouse buttons, by its Linux input event code: `BTN_JOYSTICK` is
+/// next.
 const BTN_MOUSE_LAST: u32 = 0x11f;
 
 /// The highest button an accelerator names, which is `BTN_MOUSE_LAST`'s number.

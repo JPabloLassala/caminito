@@ -8,6 +8,7 @@ use caminito_policy::WindowId;
 use caminito_test_client::InputEvent;
 use caminito_theme::ButtonFunction;
 use smithay::utils::Point;
+use x11rb::protocol::xproto::GrabStatus;
 
 use super::fixture::{
     BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, ClientId, ClientWindow, Fixture, KEY_ESC, KEY_LEFTALT,
@@ -20,7 +21,8 @@ use crate::settings::translate::{
 };
 use crate::state::SEAT;
 
-// The kernel's codes for X's buttons 8 and 9, the back and forward buttons.
+// The kernel's codes for X's buttons 8 and 9, the back and forward buttons, written out
+// here so the tests don't take the mapping from the code they check.
 const BTN_SIDE: u32 = 0x113;
 const BTN_EXTRA: u32 = 0x114;
 
@@ -279,6 +281,24 @@ on_both_kinds! {
         assert!(!window_menu_is_open(&f));
         assert!(!is_maximized(&f, window));
     }
+}
+
+/// An X11 app's menu is an override-redirect window that grabs the keyboard through Xwayland,
+/// and the pointer inside it, where Caminito can't see the grab.
+#[test]
+fn with_an_x11_clients_menu_open_a_bound_button_runs_nothing() {
+    let settings = vec![binding(WINDOW, "toggle-maximized", "<Super>Button8")];
+    let (mut f, x, window) = with_window(Kind::X11, settings);
+    let at = f.geometry(window).loc + Point::from((150, 100));
+    let corner = (i16::try_from(at.x).unwrap(), i16::try_from(at.y).unwrap());
+    let menu = f.map_override_redirect(x, corner, (100, 100), 0xff0000);
+    let status = f.x11_call(x, move |x| x.grab_keyboard(menu)).unwrap();
+    assert_eq!(status, GrabStatus::SUCCESS);
+    f.dispatch_until(|f| f.override_redirect_with_keyboard() == Some(menu));
+
+    f.pointer_move(f64::from(at.x + 50), f64::from(at.y + 50));
+    press(&mut f, &[KEY_LEFTMETA], BTN_SIDE);
+    assert!(!is_maximized(&f, window));
 }
 
 // The popups.

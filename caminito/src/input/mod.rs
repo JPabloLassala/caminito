@@ -48,6 +48,7 @@ use crate::window::takes_pointer_at;
 pub(crate) const BTN_LEFT: u32 = 0x110;
 pub(crate) const BTN_RIGHT: u32 = 0x111;
 pub(crate) const BTN_MIDDLE: u32 = 0x112;
+pub(crate) const BTN_SIDE: u32 = 0x113;
 
 impl State {
     /// Handles one event from a backend's input devices, turning it into the calls below,
@@ -713,24 +714,23 @@ impl State {
 
     /// The binding a press of `button` with `mods` held runs, and the button as bindings
     /// name it (184). None runs while the session is locked, or while something holds the
-    /// pointer or the keyboard: a move or a resize, a drag-and-drop, a client's popup, or a
-    /// button already down on a client. The press is then the holder's.
+    /// pointer or the keyboard: a move or a resize, a drag-and-drop, a client's popup, a
+    /// button already down on a client, or an X11 client's menu, whose grab of the pointer
+    /// is inside Xwayland and whose grab of the keyboard is all Caminito sees of it. The
+    /// press is then the holder's.
     fn button_binding(&self, button: u32, mods: &ModifiersState) -> Option<(Trigger, Binding)> {
         let caminito = &self.caminito;
         let pointer = caminito.seat.get_pointer().unwrap();
+        let x11_menu = caminito.xwayland_keyboard_grab.as_ref();
         if caminito.lock.is_locked()
             || pointer.is_grabbed()
             || caminito.window_grab.is_some()
             || caminito.policy.keyboard_grab(SEAT).is_some()
+            || x11_menu.is_some_and(|(grab, _)| grab.is_alive())
         {
             return None;
         }
-        let button = x_button(button)?;
-        let binding = caminito
-            .settings
-            .bindings
-            .binding_for_button(mods, button)?;
-        Some((Trigger::Button(button), binding))
+        caminito.bound_to_button(button, mods)
     }
 
     /// Gives the keyboard to the layer surface that takes it (63), or else to the window
@@ -951,6 +951,18 @@ fn vt_switch(keysym: Keysym) -> Option<i32> {
 }
 
 impl Caminito {
+    /// What's bound to a press of `button`, a Linux input event code, with `mods` held, and
+    /// the button as bindings name it (184).
+    pub(crate) fn bound_to_button(
+        &self,
+        button: u32,
+        mods: &ModifiersState,
+    ) -> Option<(Trigger, Binding)> {
+        let button = x_button(button)?;
+        let binding = self.settings.bindings.binding_for_button(mods, button)?;
+        Some((Trigger::Button(button), binding))
+    }
+
     /// `location` moved onto the nearest output, so the pointer never leaves them.
     fn clamp_to_outputs(&self, location: Point<f64, Logical>) -> Point<f64, Logical> {
         let clamp = |geometry: Rectangle<i32, Logical>| {

@@ -83,7 +83,7 @@ pub(crate) struct OpenSwitcher {
     holding: Holding,
     /// The key or the mouse button of the binding that opened it, which steps it as Tab
     /// does.
-    key: Trigger,
+    trigger: Trigger,
     /// When the popup appears, until it has: `deadlines` shows it then (175).
     popup_due: Option<Duration>,
     /// The popup, once it has appeared.
@@ -323,7 +323,7 @@ impl Caminito {
         keysym: &KeysymHandle<'_>,
     ) -> Option<FilterResult<Option<T>>> {
         self.refresh_switcher();
-        let key = self.switcher.as_ref()?.key;
+        let trigger = self.switcher.as_ref()?.trigger;
         let selected = self.policy.switcher()?.selected;
         if keysym.modified_sym().is_modifier_key() {
             return Some(FilterResult::Forward);
@@ -343,7 +343,7 @@ impl Caminito {
         let binding = bindings.binding_for(mods, &press_keysyms(keysym));
         if !self.switcher_binding_pressed(binding) {
             match sym {
-                Some(sym) if Trigger::Key(sym) == key || sym == Keysym::Tab => {
+                Some(sym) if Trigger::Key(sym) == trigger || sym == Keysym::Tab => {
                     self.policy.switcher_step(mods.shift);
                 }
                 Some(Keysym::Return | Keysym::KP_Enter) => self.policy.switcher_commit(now),
@@ -405,13 +405,13 @@ impl Caminito {
 }
 
 impl State {
-    /// A `switch-*` or `cycle-*` binding fired with the Window switcher closed: `key`, a
-    /// key or a mouse button, with `mods` down. Nothing opens during a move or resize. A
+    /// A `switch-*` or `cycle-*` binding fired with the Window switcher closed: `trigger`,
+    /// a key or a mouse button, with `mods` down. Nothing opens during a move or resize. A
     /// client's open menu is dismissed first. A `cycle-*` action times no popup (163).
     pub(crate) fn switch_action(
         &mut self,
         action: Action,
-        key: Trigger,
+        trigger: Trigger,
         mods: &ModifiersState,
         time: InputTime,
     ) {
@@ -427,7 +427,7 @@ impl State {
             let popup_due = switcher.popup.then(|| now + POPUP_DELAY);
             self.caminito.switcher = Some(OpenSwitcher {
                 holding: Holding::of(mods),
-                key,
+                trigger,
                 popup_due,
                 popup: None,
             });
@@ -458,11 +458,11 @@ impl State {
         }
         caminito.suppressed_buttons.insert(button);
         let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
-        let pressed = x_button(button);
-        let bindings = &caminito.settings.bindings;
-        let binding = pressed.and_then(|button| bindings.binding_for_button(&mods, button));
-        let opened_it = |open: &OpenSwitcher| pressed.map(Trigger::Button) == Some(open.key);
-        if caminito.switcher_binding_pressed(binding) {
+        let binding = caminito.bound_to_button(button, &mods);
+        let opened_it = |open: &OpenSwitcher| {
+            x_button(button).is_some_and(|button| open.trigger == Trigger::Button(button))
+        };
+        if caminito.switcher_binding_pressed(binding.map(|(_, binding)| binding)) {
             caminito.refresh_switcher();
             return true;
         }
