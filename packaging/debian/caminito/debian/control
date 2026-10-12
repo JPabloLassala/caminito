@@ -1,0 +1,75 @@
+Source: caminito
+Section: x11
+Priority: optional
+Maintainer: jpablo <jpablolassala@gmail.com>
+Rules-Requires-Root: no
+# rustup provides cargo and rustc: rules builds with RUSTUP_TOOLCHAIN=stable, whose toolchain
+# tools/debian-build installs. The rest are what the binaries and helpers link, and, after
+# dbus, what the tests need: a private session bus, pixman for the headless backend,
+# libwayland-client for the fixture's clients and the Xwayland the X11 tier spawns.
+# libaudit-dev: Ubuntu's pam.pc requires audit's, and libpam0g-dev doesn't bring it.
+Build-Depends:
+ debhelper-compat (= 13),
+ rustup,
+ meson,
+ pkgconf,
+ libxkbcommon-dev,
+ libglib2.0-dev,
+ libcairo2-dev,
+ libpango1.0-dev,
+ libgdk-pixbuf-2.0-dev,
+ libgtk-3-dev,
+ libgtk-4-dev,
+ libseat-dev,
+ libudev-dev,
+ libgbm-dev,
+ libdisplay-info-dev,
+ libinput-dev,
+ libcanberra-dev,
+ libgtk-session-lock-dev,
+ libmate-desktop-dev,
+ libpam0g-dev,
+ libaudit-dev,
+ dbus-daemon,
+ libpixman-1-dev,
+ libwayland-dev,
+ xwayland,
+Standards-Version: 4.7.2
+Homepage: https://github.com/JPabloLassala/caminito
+Vcs-Git: https://github.com/JPabloLassala/caminito.git
+Vcs-Browser: https://github.com/JPabloLassala/caminito
+
+Package: caminito
+Architecture: amd64
+# ${shlibs:Depends} has what the binaries and helpers link. The rest is what caminito-git's
+# depends names at run time, by Ubuntu's names: librsvg's pixbuf loader for SVG theme
+# images, Menta from mate-themes, the Xwayland it spawns, glvnd's libEGL and mesa's drivers,
+# which it dlopens for GBM, zenity for Marco's two dialogs, mate-screensaver's PAM service and
+# lock dialogs for caminito-locker, the notification daemon and polkit agent mate-session
+# autostarts, and hicolor's directory for the logo.
+# The patched packages and marco join these in ticket 205, at versions no stock one has.
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ librsvg2-common,
+ mate-themes,
+ xwayland,
+ libegl1,
+ libegl-mesa0,
+ libgl1-mesa-dri,
+ zenity,
+ mate-screensaver,
+ mate-notification-daemon,
+ mate-polkit,
+ hicolor-icon-theme,
+Recommends:
+ appmenu-gtk-module,
+ caminito-vscode,
+Description: Wayland compositor for the MATE desktop
+ Caminito is a Wayland compositor for MATE, the counterpart of Marco: it
+ reads Marco's settings, draws its themes and binds its keys, so that MATE
+ runs on Wayland as it does on X11.
+ .
+ This package has the compositor, caminito-displays, caminito-about, the
+ palette and locker helpers, and the "MATE on Caminito" session that display
+ managers list.
