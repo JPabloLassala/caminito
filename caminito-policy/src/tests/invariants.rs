@@ -7,8 +7,8 @@ use super::*;
 use smithay::utils::Size;
 
 use crate::{
-    Crossing, FocusMode, GrabKey, GrabStep, MenuKey, PointerTarget, PolicyWindow, ResizeEdges,
-    SwitchEntry, SwitchList, WrapStyle,
+    Crossing, FocusMode, GrabKey, GrabStep, MenuKey, PlacementMode, PointerTarget, PolicyWindow,
+    PreMapWindow, ResizeEdges, SwitchEntry, SwitchList, WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -934,5 +934,107 @@ proptest! {
     #[test]
     fn random_operations_keep_the_invariants(ops in proptest::collection::vec(op(), 1..60)) {
         check_ops(ops);
+    }
+}
+
+/// A window that asks to map maximised or fullscreen is first configured with the size
+/// policy sends it at the map (190), with nothing changed between the two: no operation
+/// between them, so the same focus, pointer, outputs and config.
+///
+/// But, on purpose:
+///
+/// - **A maximised window that policy doesn't focus as it maps.** The answer takes the frame
+///   as a new window's, focused (ADR 0012), and the window's frame can be another size
+///   unfocused. Whether policy will focus it isn't known before the map: it can take no
+///   input, or map on another workspace, or `focus-new-windows` can refuse it.
+/// - **A window with a position of its own.** It's laid out on the output its frame is most
+///   on there, and the position isn't known before the map, so the answer takes the
+///   automatic choice of output.
+/// - **Outputs that overlap**, as mirrored ones do. A frame as much on one as on the other is
+///   on either, as `output_of` breaks the tie, and the output a window is laid out on is
+///   found again from its frame each time it's laid out.
+fn check_pre_map_size(
+    ops: Vec<Op>,
+    placement_mode: PlacementMode,
+    pointer: (i16, i16),
+    window: TestWindow,
+    states: MapStates,
+) {
+    let mut policy = Policy::new(Config {
+        allow_tiling: true,
+        placement_mode,
+        ..Config::default()
+    });
+    for (step, op) in ops.into_iter().enumerate() {
+        op.apply(&mut policy, step as u64);
+    }
+    // The compositor never maps an id twice.
+    if policy.window(window.id).is_some() || window.requested_position.is_some() {
+        return;
+    }
+    let outputs = policy.outputs();
+    let overlap = outputs.iter().enumerate().any(|(i, a)| {
+        outputs[i + 1..]
+            .iter()
+            .any(|b| a.geometry.overlaps(b.geometry))
+    });
+    if overlap {
+        return;
+    }
+    policy.set_pointer(Point::from((f64::from(pointer.0), f64::from(pointer.1))));
+    let pending = PreMapWindow {
+        window_type: window.window_type,
+        hints: window.hints,
+        parent: window.parent,
+        ssd: window.ssd,
+    };
+    let answer = policy.pre_map_configure(&pending, &states, |state| window.frame_extents(state));
+
+    let id = window.id;
+    policy.map_window_with(window, states, ms(100_000));
+
+    assert!(
+        !answer.maximized || policy.is_maximized(id),
+        "it maps maximised"
+    );
+    assert_eq!(
+        answer.fullscreen,
+        policy.is_fullscreen(id),
+        "it maps fullscreen or not"
+    );
+    let Some(size) = answer.size else {
+        return;
+    };
+    let mapped = policy.window(id).unwrap();
+    if answer.maximized && !mapped.is_activated() {
+        return;
+    }
+    let (sent, _) = mapped.last_geometry().expect("a geometry is sent");
+    assert_eq!(
+        size, sent.size,
+        "the size it was configured with is the one it maps at"
+    );
+}
+
+proptest! {
+    #[test]
+    fn a_window_maps_at_the_size_it_was_configured_with_before_it_mapped(
+        ops in proptest::collection::vec(op(), 0..40),
+        placement_mode in prop_oneof![
+            Just(PlacementMode::Automatic),
+            Just(PlacementMode::Pointer),
+            Just(PlacementMode::Manual),
+        ],
+        pointer in (any::<i16>(), any::<i16>()),
+        window in test_window(),
+        maximized in any::<bool>(),
+        fullscreen in proptest::option::of(proptest::option::of(1..=4u64)),
+    ) {
+        let states = MapStates {
+            maximized,
+            fullscreen: fullscreen.map(|output| output.map(OutputId)),
+            ..MapStates::default()
+        };
+        check_pre_map_size(ops, placement_mode, pointer, window, states);
     }
 }

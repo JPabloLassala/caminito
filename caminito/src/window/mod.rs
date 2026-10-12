@@ -20,7 +20,8 @@ use std::cell::Cell;
 use std::sync::Mutex;
 
 use caminito_policy::{
-    FrameState, Functions, OutputId, PolicyWindow, SizeHints, WindowId, WindowStates, WindowType,
+    FrameState, Functions, OutputId, PolicyWindow, PreMapConfigure, SizeHints, WindowId,
+    WindowStates, WindowType,
 };
 use caminito_theme::PaletteColors;
 use smithay::backend::renderer::element::{
@@ -128,17 +129,6 @@ fn skips(window_type: WindowType, transient: bool, asked: Skips) -> Skips {
             pager: true,
         },
     }
-}
-
-/// A pending window's configure before it maps, from the states it has asked for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct PreMapConfigure {
-    /// Where the window will likely map, inside the frame it'll have.
-    bounds: Option<Size<i32, Logical>>,
-    /// The size it'll map at, if Caminito sets it.
-    size: Option<Size<i32, Logical>>,
-    maximized: bool,
-    fullscreen: bool,
 }
 
 /// The adapter for a window's protocol.

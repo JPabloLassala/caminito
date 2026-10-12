@@ -20,6 +20,7 @@ mod outputs;
 mod placement;
 mod placement_modes;
 mod pointer_focus;
+mod pre_map;
 mod requests;
 mod scene_changed;
 mod shade;

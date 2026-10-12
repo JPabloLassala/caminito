@@ -5,16 +5,14 @@
 //! destroyed.
 
 use caminito_policy::{
-    ActivationToken, FocusClaim, FunctionFacts, Functions, MapStates, StateRequest, WindowId,
-    WindowStates, functions,
+    ActivationToken, FocusClaim, MapStates, PreMapWindow, StateRequest, WindowId,
 };
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{FrameExtents, Logical, Size};
 use smithay::wayland::seat::WaylandFocus;
 
-use super::{Mapped, PreMapConfigure, WindowKey, adapter, send_preferred_scale};
+use super::{Mapped, WindowKey, adapter, send_preferred_scale};
 use crate::decoration::WindowFacts;
 use crate::state::{Caminito, SEAT};
 
@@ -204,10 +202,10 @@ impl Caminito {
         }
     }
 
-    /// Configures a pending window from the states it has asked for and has the function
-    /// for (177): the size it'll map at if it's maximised or fullscreen, and the bounds of
-    /// the output it'll likely map on, both inside the frame it'll have.
-    pub(crate) fn configure_pending(&self, key: &WindowKey) {
+    /// Configures a pending window as policy says it'll map (190): the bounds of the output
+    /// it'll go on, and the size it'll map at if it's maximised or fullscreen, with the
+    /// states it has asked for and has the function for (177).
+    pub(crate) fn configure_pending(&mut self, key: &WindowKey) {
         let Some(pending) = self.pending.get(key) else {
             return;
         };
@@ -218,87 +216,25 @@ impl Caminito {
                 send_preferred_scale(surface, data, &output);
             });
         }
-        let output = self.placement_bounds();
-        let functions = self.pending_functions(&pending.window);
-        let (extents, maximized_extents) = self.pending_extents(&pending.window, functions);
-        let bounds = output.map(|size| inside(size, extents));
-        // Policy's setters will refuse the window a state it has no function for.
-        let maximized = pending.states.maximized && functions.maximize;
-        let fullscreen = pending.states.fullscreen.filter(|_| functions.fullscreen);
-        let fullscreen_size = fullscreen.map(|output| {
-            output
-                .and_then(|id| self.policy.outputs().iter().find(|o| o.id == id))
-                .map(|o| o.geometry.size)
-                .or(bounds)
-        });
-        let size = if let Some(size) = fullscreen_size {
-            size
-        } else if maximized {
-            output.map(|size| inside(size, maximized_extents))
-        } else {
-            None
-        };
-        adapter(&pending.window).configure_pending(&PreMapConfigure {
-            bounds,
-            size,
-            maximized,
-            fullscreen: fullscreen.is_some(),
-        });
-    }
-
-    /// The extents, unmaximised and maximised, of the frame a pending window of `functions`
-    /// will have, if it'll want a frame once configured.
-    fn pending_extents(
-        &self,
-        window: &Window,
-        functions: Functions,
-    ) -> (FrameExtents<i32, Logical>, FrameExtents<i32, Logical>) {
-        let adapter = adapter(window);
-        if !adapter.wants_frame_pending() {
-            return Default::default();
-        }
-        let has_parent = self.transient_parent(window).is_some();
-        let facts = WindowFacts {
-            window_type: adapter.window_type(has_parent),
-            wants_frame: true,
-        };
-        let extents = |maximized| {
-            let states = WindowStates {
-                maximized,
-                ..WindowStates::default()
-            };
-            // A new window is focused.
-            let state = states.frame_state(true, functions);
-            self.frame_context.extents(&facts, state)
-        };
-        (extents(false), extents(true))
-    }
-
-    /// The functions policy will give a pending window once it maps.
-    fn pending_functions(&self, window: &Window) -> Functions {
-        let adapter = adapter(window);
-        let has_parent = self.transient_parent(window).is_some();
-        self.functions_before_managed(FunctionFacts {
-            window_type: adapter.window_type(has_parent),
+        let adapter = adapter(&pending.window);
+        let ssd = adapter.wants_frame_pending();
+        let window = PreMapWindow {
+            window_type: adapter.window_type(parent.is_some()),
             hints: adapter.size_hints(),
-            has_parent,
-            ssd: adapter.wants_frame_pending(),
-            fullscreen: false,
-        })
+            parent,
+            ssd,
+        };
+        let facts = WindowFacts {
+            window_type: window.window_type,
+            wants_frame: ssd,
+        };
+        let states = pending.states;
+        // For the placement modes that put a new window at the pointer (154), as at the map.
+        let pointer = self.seat.get_pointer().unwrap().current_location();
+        self.policy.set_pointer(pointer);
+        let configure = self.policy.pre_map_configure(&window, &states, |state| {
+            self.frame_context.extents(&facts, state)
+        });
+        adapter.configure_pending(&configure);
     }
-
-    /// The functions of a window policy doesn't manage yet, a Pending window or an XWayland
-    /// window that asks for its frame extents before it maps: the one place the compositor gives
-    /// the facts itself, until policy knows Pending windows (177).
-    pub(crate) fn functions_before_managed(&self, facts: FunctionFacts) -> Functions {
-        functions(&facts, self.settings.policy.attach_modal_dialogs)
-    }
-}
-
-/// The size inside a frame of `extents` that fills `size`.
-fn inside(size: Size<i32, Logical>, extents: FrameExtents<i32, Logical>) -> Size<i32, Logical> {
-    Size::new(
-        (size.w - extents.left - extents.right).max(1),
-        (size.h - extents.top - extents.bottom).max(1),
-    )
 }

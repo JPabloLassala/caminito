@@ -15,6 +15,7 @@ Up to ticket 35, `Mapped` worked the extents out in `update_frame_facts` from th
 - **Policy owns the extents in use.** `Policy::frame_extents(id)` is what the debug dump, X11 configure requests and `_NET_FRAME_EXTENTS` read. `PolicyWindow::requested_position` takes the extents from policy instead of working them out.
 - **Policy lays out again the windows whose focus changed**, because their extents may have changed with it.
 - **The flags' `allows_*` inputs and "border only" come from Policy, with the state** (ticket 177). Policy works out a window's functions and sends them to the window, and "border only" and the two ways it resizes, which a theme's extents can depend on, are in the `FrameState` too.
+- **A window policy doesn't manage yet is asked about the same way** (ticket 190). Before a Pending window maps, and when an XWayland window asks for its frame extents before it maps, policy builds the `FrameState` it'll have once it maps (`Policy::pre_map_frame_state`): focused, as a new window is, with the functions it'll have. The compositor gives `Policy::pre_map_configure` a function from a `FrameState` to extents, from the theme and the window's facts, and keeps the Pending window itself.
 - **`caminito`'s `WindowFrame` owns the one derivation** from facts and a `FrameState` to a frame type, flags and extents. It draws with the state policy last sent, so what's drawn and what policy left room for agree by construction.
 
 ## Consequences

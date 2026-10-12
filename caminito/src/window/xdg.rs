@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use caminito_policy::{SizeHints, Tile, WindowStates, WindowType};
+use caminito_policy::{PreMapConfigure, SizeHints, Tile, WindowStates, WindowType};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{DisplayHandle, Resource};
@@ -15,7 +15,7 @@ use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData};
 use smithay::wayland::xdg_toplevel_icon::ToplevelIconCachedState;
 
-use super::{Adapter, PreMapConfigure, Skips, WindowKey};
+use super::{Adapter, Skips, WindowKey};
 use crate::decoration::IconSource;
 use crate::handlers::kde_server_side;
 use crate::input::KeyboardFocus;
