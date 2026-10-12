@@ -73,6 +73,7 @@ mod shadows;
 mod show_desktop;
 mod sounds;
 mod switcher;
+mod system_shortcuts_entry;
 mod tiling;
 mod window_actions;
 mod window_menu;

@@ -40,8 +40,9 @@ license=(GPL-2.0-or-later)
 # /usr/share/caminito/xdg. The control center's Windows and Keyboard Shortcuts dialogs are the
 # patched package's (101), and Meson installs the keybinding manifests they list into its
 # keybindings directory, which marco's own are in too; they list every action Caminito binds
-# (173). The logo (109) is in hicolor's
-# scalable apps, a directory hicolor-icon-theme owns.
+# (173). Keyboard Shortcuts is System Shortcuts in a Session: its launcher is shadowed from
+# /usr/share/caminito/xdg too, and the patched dialog takes its title from it (183). The
+# logo (109) is in hicolor's scalable apps, a directory hicolor-icon-theme owns.
 #
 # caminito-about (182) links gtk4 and nothing else. Its entry is in /usr/share/caminito/xdg
 # too.
