@@ -31,9 +31,13 @@ in_container() {
   apt-get install -y --no-install-recommends build-essential ca-certificates devscripts equivs \
     git lintian passwd rustup
   # dpkg-buildpackage and lintian run as a user, as makepkg does on Arch, in its own home,
-  # where rustup keeps the toolchain.
+  # where rustup keeps the toolchain. setpriv, not runuser: runuser's PAM session drops the
+  # open files' soft limit to 1024, which caminito's tests, run in parallel, go past.
   id builder >/dev/null 2>&1 || useradd -m builder
-  as_builder() { runuser -u builder -- env HOME=/home/builder "$@"; }
+  as_builder() { setpriv --reuid builder --regid builder --init-groups env HOME=/home/builder "$@"; }
+  # Xwayland's sockets' directory, which systemd-tmpfiles makes on a machine: the X11 tier's
+  # tests spawn Xwayland, and smithay doesn't make it.
+  mkdir -p -m 1777 /tmp/.X11-unix
   as_builder rustup toolchain install stable --profile minimal
   for package; do
     echo "==> $package"
