@@ -4,13 +4,14 @@
 # Contributor: Kaizhao Zhang <zhangkaizhao@gmail.com>
 
 # Arch's appmenu-gtk-module PKGBUILD with the smallest diff (16), so a change there shows
-# what to carry over. The differences: the name, provides and conflicts, and the two patches,
-# which are upstream fixes and not carried patches (ADR 0011).
+# what to carry over. The differences: the name, provides and conflicts, the two patches,
+# which are upstream fixes and not carried patches (ADR 0011), and the empty file the session
+# finds the patched module by (192).
 
 pkgname=appmenu-gtk-module-caminito
 _pkgname=appmenu-gtk-module
 pkgver=25.04
-pkgrel=2
+pkgrel=3
 pkgdesc="Application Menu GTK Module, with fixes for Wayland"
 depends=(bash
          dconf
@@ -68,4 +69,7 @@ build() {
 package() {
   DESTDIR="$pkgdir" ninja install -C build
   install -Dm755 80-appmenu-gtk-module.sh -t "$pkgdir"/etc/X11/xinit/xinitrc.d/
+  # Caminito adds the module to its session's GTK_MODULES while this file is there: the
+  # stock package has the same module, without the patches.
+  install -Dm644 /dev/null "$pkgdir"/usr/share/caminito/appmenu-gtk-module
 }
