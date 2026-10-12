@@ -460,6 +460,14 @@ impl<W> Managed<W> {
     }
 }
 
+/// Where `place` put a new window.
+struct Placed {
+    /// At the pointer, by `pointer` or `manual` placement.
+    by_pointer: bool,
+    /// On this output, unless it went by a position of its own.
+    on: Option<OutputId>,
+}
+
 /// How a new window with no position of its own is placed (154).
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum NewPlacement {
@@ -886,10 +894,8 @@ impl<W: PolicyWindow> Policy<W> {
         // though the frame it drew may be more on another. Fullscreen on an output policy
         // has goes there.
         if let Some(output) = placed_on {
-            let managed = &self.windows[&id];
-            let named = managed
-                .fullscreen_output
-                .filter(|named| self.outputs.iter().any(|output| output.id == *named));
+            let named = self.windows[&id].fullscreen_output;
+            let named = self.output_named(named).map(|named| named.id);
             self.relayout_on(id, named.or(Some(output)));
         }
         if states.above {
@@ -976,7 +982,7 @@ impl<W: PolicyWindow> Policy<W> {
         let functions = self.windows[&id].functions();
         let constrained = (states.maximized && functions.maximize)
             || (states.fullscreen.is_some() && functions.fullscreen);
-        let (by_pointer, placed_on) = self.place(id, !constrained);
+        let Placed { by_pointer, on } = self.place(id, !constrained);
         // Marco's pointer placement skips its maximising of a window too big for its work
         // area (place.c:898-905).
         if !by_pointer {
@@ -996,7 +1002,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.begin_manual_placement(id);
         }
         self.apply();
-        placed_on.filter(|_| constrained)
+        on.filter(|_| constrained)
     }
 
     /// Has the last seat move a new window with its pointer until it's put down, as Marco's
@@ -2303,6 +2309,11 @@ impl<W: PolicyWindow> Policy<W> {
             .or(self.outputs.first())
     }
 
+    /// The output policy has of those named `named`, as a client names one for fullscreen.
+    fn output_named(&self, named: Option<OutputId>) -> Option<&Output> {
+        named.and_then(|named| self.outputs.iter().find(|output| output.id == named))
+    }
+
     /// The output a frame is most on, if it's on any.
     fn output_of(&self, frame: Rectangle<i32, Logical>) -> Option<&Output> {
         self.outputs
@@ -2476,9 +2487,8 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Places a newly mapped window as Marco's `meta_window_place` does (place.c:700-905),
     /// with the placement keys if `by_mode` (154), else with the automatic mode as if
-    /// `center-new-windows` were off. Returns whether it was placed at the pointer, and the
-    /// output it was placed on, unless it went by a position of its own.
-    fn place(&mut self, id: WindowId, by_mode: bool) -> (bool, Option<OutputId>) {
+    /// `center-new-windows` were off.
+    fn place(&mut self, id: WindowId, by_mode: bool) -> Placed {
         let managed = &self.windows[&id];
         let e = managed.visible_extents();
         let (left, top) = (e.left, e.top);
@@ -2542,7 +2552,10 @@ impl<W: PolicyWindow> Policy<W> {
             }
         };
         self.windows.get_mut(&id).unwrap().geometry.loc = loc;
-        (by_pointer, placed_on)
+        Placed {
+            by_pointer,
+            on: placed_on,
+        }
     }
 
     /// How a new window of `window_type`, transient for the managed window `parent`, is

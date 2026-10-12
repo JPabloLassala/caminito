@@ -7,7 +7,9 @@ use super::*;
 /// What the compositor knows of a window before it maps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreMapWindow {
+    /// Its type, as `PolicyWindow::window_type` will say once it maps.
     pub window_type: WindowType,
+    /// Its size hints, which its functions depend on (177).
     pub hints: SizeHints,
     /// The window it says it's transient for, if policy manages it.
     pub parent: Option<WindowId>,
@@ -22,8 +24,10 @@ pub struct PreMapConfigure {
     pub bounds: Option<Size<i32, Logical>>,
     /// The size it'll map at, if policy sets it.
     pub size: Option<Size<i32, Logical>>,
-    /// It'll map maximised, or fullscreen: it asked to and has the function for it (177).
+    /// It'll map maximised: it asked to, has the function for it (177), and doesn't map
+    /// fullscreen.
     pub maximized: bool,
+    /// It'll map fullscreen: it asked to and has the function for it.
     pub fullscreen: bool,
 }
 
@@ -64,8 +68,7 @@ impl<W: PolicyWindow> Policy<W> {
         let bounds = output.map(|output| inside(work_area(output), extents(false)));
         let size = if let Some(named) = fullscreen {
             // `relayout`'s: the output named, if policy has it, else the one it's on.
-            named
-                .and_then(|named| self.outputs.iter().find(|output| output.id == named))
+            self.output_named(named)
                 .or(output)
                 .map(|output| output.geometry.size)
         } else if maximized {
