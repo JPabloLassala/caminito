@@ -142,6 +142,9 @@ pub enum Set {
     All,
     /// The monitor's own.
     Output(Identity),
+    /// A monitor's own, by its path element as `outputs` lists it, for a monitor that may
+    /// not be plugged in (211).
+    Seen(String),
 }
 
 /// Where the settings are kept: GSettings for the drawer, memory for the tests.
@@ -226,4 +229,4 @@ pub fn take_mate_background(store: &mut impl Store, mate: &MateBackground) -> bo
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
