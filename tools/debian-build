@@ -11,25 +11,28 @@
 #
 # The host needs podman alone. The checkout is mounted read-only, and Caminito's own packages
 # are built from its committed HEAD, through `git archive` in the container, so uncommitted
-# work is never packaged.
+# work is never packaged. A backported or patched package is built from the upstream tarball
+# that the `upstream` file beside its debian/ names, checked against that file's sha256, with
+# the committed HEAD's debian/ (195).
 set -euo pipefail
 
-# In dependency order. The patched packages and marco come before caminito (205).
-all=(caminito)
+# In dependency order. marco comes first, for mate-control-center (195), and the patched
+# packages come before caminito (205).
+all=(marco caminito)
 
 image=ubuntu:26.04
 
 # What runs in the container, as root: $1 is the checkout's path, the rest the packages.
 in_container() {
-  local root=$1 package work version
+  local root=$1 package work version upstream url orig
   shift
   export DEBIAN_FRONTEND=noninteractive
   # The maintainer of mk-build-deps's dummy package, which equivs otherwise makes of the
   # host's name, and which dpkg rejects when that has no domain.
   export DEBEMAIL=root@localhost
   apt-get update
-  apt-get install -y --no-install-recommends build-essential ca-certificates devscripts equivs \
-    git lintian passwd rustup
+  apt-get install -y --no-install-recommends build-essential ca-certificates curl devscripts \
+    equivs git lintian passwd rustup
   # dpkg-buildpackage and lintian run as a user, as makepkg does on Arch, in its own home,
   # where rustup keeps the toolchain. setpriv, not runuser: runuser's PAM session drops the
   # open files' soft limit to 1024, which caminito's tests, run in parallel, go past.
@@ -44,14 +47,29 @@ in_container() {
     work=/build/$package
     rm -rf "$work"
     mkdir -p "$work/src"
-    # Caminito's own packages are its committed HEAD, versioned 0.0~r<count>.g<hash>-1 until
-    # v0.1.0 is tagged. The checkout belongs to another user in the container, which git
-    # refuses unless told.
-    git -c safe.directory='*' -C "$root" archive HEAD | tar -x -C "$work/src"
-    version="0.0~r$(git -c safe.directory='*' -C "$root" rev-list --count HEAD)"
-    version+=".g$(git -c safe.directory='*' -C "$root" rev-parse --short=7 HEAD)-1"
-    cp -r "$work/src/packaging/debian/$package/debian" "$work/src/"
-    sed -i "1s/([^)]*)/($version)/" "$work/src/debian/changelog"
+    # The checkout belongs to another user in the container, which git refuses unless told.
+    if upstream=$(git -c safe.directory='*' -C "$root" show \
+      "HEAD:packaging/debian/$package/upstream" 2>/dev/null); then
+      # A backported or patched package: its debian/, then upstream's tarball under it, kept
+      # beside it as <source>_<upstream version>.orig.tar.* for dpkg-source.
+      git -c safe.directory='*' -C "$root" archive HEAD "packaging/debian/$package/debian" |
+        tar -x -C "$work/src" --strip-components=3
+      version=$(dpkg-parsechangelog -l "$work/src/debian/changelog" -S Version)
+      version=${version#*:}
+      url=$(sed -n 's/^url=//p' <<<"$upstream")
+      orig=$work/${package}_${version%-*}.orig.tar.${url##*.tar.}
+      curl -fsSL -o "$orig" "$url"
+      echo "$(sed -n 's/^sha256=//p' <<<"$upstream")  $orig" | sha256sum -c -
+      tar -x -f "$orig" -C "$work/src" --strip-components=1
+    else
+      # Caminito's own packages are its committed HEAD, versioned 0.0~r<count>.g<hash>-1
+      # until v0.1.0 is tagged.
+      git -c safe.directory='*' -C "$root" archive HEAD | tar -x -C "$work/src"
+      version="0.0~r$(git -c safe.directory='*' -C "$root" rev-list --count HEAD)"
+      version+=".g$(git -c safe.directory='*' -C "$root" rev-parse --short=7 HEAD)-1"
+      cp -r "$work/src/packaging/debian/$package/debian" "$work/src/"
+      sed -i "1s/([^)]*)/($version)/" "$work/src/debian/changelog"
+    fi
     (
       cd "$work"
       mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' src/debian/control
