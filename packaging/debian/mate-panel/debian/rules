@@ -23,12 +23,16 @@ override_dh_install:
 	dh_install
 
 # The pin of ADR 0029: every binary package of this source, at a caminito version, before any
-# other. Another patched package copies this target with its first binary package's name.
+# other. apt gives a version pin only to a version it finds in a source, and a .deb installed
+# from a file is in dpkg's status alone, at 100, so the second stanza puts Ubuntu's versions
+# below that: an upgrade keeps the patched package, and asking for Ubuntu's by its version
+# still installs it. Another patched package copies this target with its first binary
+# package's name.
 execute_after_dh_install:
 	mkdir -p debian/mate-panel/etc/apt/preferences.d
-	printf 'Package: %s\nPin: version *caminito*\nPin-Priority: 1001\n' \
-		"$$(sed -n 's/^Package: //p' debian/control | xargs)" \
-		> debian/mate-panel/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version *caminito*\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/mate-panel/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
 
 # Master's library has no symbols file yet: every applet built against it needs this version.
 override_dh_makeshlibs:

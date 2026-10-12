@@ -1,7 +1,7 @@
 # 29. On Debian, a patched package keeps the stock names and is pinned
 
 Date: 2026-10-11
-Status: Accepted. Qualifies ADR 0011 for Debian and Ubuntu.
+Status: Accepted. Qualifies ADR 0011 for Debian and Ubuntu. Qualified on 2026-10-12 by ticket 196, and still to be confirmed by the developer: apt gives a `version` pin only to a version it finds in a source, and a package installed from a `.deb` file is in dpkg's status alone, at priority 100, so the pin held nothing, and an `apt upgrade` took a newer `mate-panel` from an Ubuntu-origin repository. Each pin file has a second stanza for the same binaries, `Pin: release o=Ubuntu` at priority 99, which keeps the installed package on an upgrade and still installs Ubuntu's when it's asked for by version. The first stanza stays for when the packages come from a repository.
 
 ## Context
 
