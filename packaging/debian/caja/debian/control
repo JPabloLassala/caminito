@@ -5,8 +5,9 @@ Maintainer: jpablo <jpablolassala@gmail.com>
 XSBC-Original-Maintainer: Debian+Ubuntu MATE Packaging Team <debian-mate@lists.debian.org>
 # Ubuntu 26.04's caja 1.26.4-2, at 1.28.0 with Caminito's carried patches (200). The
 # differences from Ubuntu's: libgtk-layer-shell-dev and libwayland-dev, for the Wayland
-# desktop the patches change (rules passes --enable-wayland); and xauth, xvfb and dbus, for
-# the tests, which rules runs where Ubuntu's skips them.
+# desktop the patches change (rules passes --enable-wayland); and dbus, mate-desktop-common
+# (org.mate.background, which `caja --check` reads), xauth and xvfb, for the tests, which
+# rules runs where Ubuntu's skips them.
 Build-Depends: debhelper-compat (= 13),
                dpkg-dev (>= 1.16.1.1),
                gir1.2-gio-2.0-dev,
@@ -34,6 +35,7 @@ Build-Depends: debhelper-compat (= 13),
                quilt,
                shared-mime-info,
                dbus <!nocheck>,
+               mate-desktop-common <!nocheck>,
                xauth <!nocheck>,
                xvfb <!nocheck>,
 Standards-Version: 4.7.2
