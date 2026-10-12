@@ -9,8 +9,8 @@ use caminito_theme::ButtonFunction;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WINDOW_COLOR,
-    WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_SPACE,
+    KEY_TAB, Kind, WINDOW_COLOR, WindowSpec, on_both_kinds,
 };
 use crate::decoration::control::FrameControl;
 use crate::settings::Value;
@@ -305,5 +305,50 @@ on_both_kinds! {
         assert!(f.has_keyboard(b));
         f.key(KEY_LEFTALT, false);
         assert_eq!(focus(&f), f.policy_id(a));
+    }
+}
+
+on_both_kinds! {
+    fn the_focus_stays_put_under_the_pointer_while_the_workspace_popup_shows(kind: Kind) {
+        let (mut f, id) = connected_with(kind, &[focus_mode("sloppy")]);
+        let (a, b) = two_windows(&mut f, id);
+        let at = bottom_right_of(&f, b);
+        move_to(&mut f, at);
+
+        // At the first workspace the switch goes nowhere, and the popup shows (152).
+        f.key(KEY_LEFTCTRL, true);
+        f.key(KEY_LEFTALT, true);
+        f.key(KEY_LEFT, true);
+        f.key(KEY_LEFT, false);
+        assert!(f.state.caminito.workspace_popup.is_some());
+        let at = top_left_of(&f, a);
+        move_to(&mut f, at);
+
+        assert_eq!(focus(&f), f.policy_id(b));
+        assert!(f.has_keyboard(b));
+        f.key(KEY_LEFTALT, false);
+        f.key(KEY_LEFTCTRL, false);
+        assert!(f.state.caminito.workspace_popup.is_none());
+        assert_eq!(focus(&f), f.policy_id(b));
+    }
+}
+
+on_both_kinds! {
+    fn the_focus_stays_put_under_the_pointer_while_the_window_menu_is_open(kind: Kind) {
+        let (mut f, id) = connected_with(kind, &[focus_mode("sloppy")]);
+        let (a, b) = two_windows(&mut f, id);
+        let at = bottom_right_of(&f, b);
+        move_to(&mut f, at);
+
+        f.key(KEY_LEFTALT, true);
+        f.key(KEY_SPACE, true);
+        f.key(KEY_SPACE, false);
+        f.key(KEY_LEFTALT, false);
+        assert!(f.state.caminito.policy.window_menu().is_some());
+        let at = top_left_of(&f, a);
+        move_to(&mut f, at);
+
+        assert_eq!(focus(&f), f.policy_id(b));
+        assert!(f.has_keyboard(b));
     }
 }

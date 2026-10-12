@@ -7,8 +7,8 @@ use super::*;
 use smithay::utils::Size;
 
 use crate::{
-    Crossing, FocusMode, GrabKey, GrabStep, PointerTarget, PolicyWindow, ResizeEdges, SwitchEntry,
-    SwitchList, WrapStyle,
+    Crossing, FocusMode, GrabKey, GrabStep, MenuKey, PointerTarget, PolicyWindow, ResizeEdges,
+    SwitchEntry, SwitchList, WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -149,6 +149,18 @@ enum Op {
     SwitcherSelect(usize),
     SwitcherCommit,
     SwitcherCancel,
+    /// The Window menu (161) opens some other way than by its binding.
+    OpenWindowMenu {
+        seat: u32,
+        id: u64,
+    },
+    WindowMenuKey(MenuKey),
+    CloseWindowMenu,
+    /// The compositor asks for the Workspace popup (152), and says that it closed.
+    OpenWorkspacePopup {
+        moves: bool,
+    },
+    CloseWorkspacePopup,
     /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
     SetFocusMode {
         mode: FocusMode,
@@ -257,6 +269,7 @@ fn action() -> impl Strategy<Value = Action> {
         direction().prop_map(Action::MoveToMonitor),
         Just(Action::BeginMove),
         Just(Action::BeginResize),
+        Just(Action::ActivateWindowMenu),
     ]
 }
 
@@ -387,6 +400,11 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0..10usize).prop_map(Op::SwitcherSelect),
         1 => Just(Op::SwitcherCommit),
         1 => Just(Op::SwitcherCancel),
+        2 => (seat(), window_id()).prop_map(|(seat, id)| Op::OpenWindowMenu { seat, id }),
+        2 => menu_key().prop_map(Op::WindowMenuKey),
+        1 => Just(Op::CloseWindowMenu),
+        2 => any::<bool>().prop_map(|moves| Op::OpenWorkspacePopup { moves }),
+        1 => Just(Op::CloseWorkspacePopup),
         1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
             Op::SetFocusMode { mode, raise_on_click, auto_raise }
         }),
@@ -394,6 +412,19 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(seat, target, crossing)| Op::PointerEntered { seat, target, crossing }),
         1 => window_id().prop_map(Op::TitlebarReleased),
         1 => (0..1000u64).prop_map(Op::Elapse),
+    ]
+}
+
+fn menu_key() -> impl Strategy<Value = MenuKey> {
+    prop_oneof![
+        3 => Just(MenuKey::Down),
+        1 => Just(MenuKey::Up),
+        1 => Just(MenuKey::Home),
+        1 => Just(MenuKey::End),
+        1 => Just(MenuKey::Left),
+        1 => Just(MenuKey::Right),
+        3 => Just(MenuKey::Activate),
+        1 => Just(MenuKey::Escape),
     ]
 }
 
@@ -534,6 +565,15 @@ impl Op {
             Op::SwitcherSelect(index) => policy.switcher_select(index),
             Op::SwitcherCommit => policy.switcher_commit(now),
             Op::SwitcherCancel => policy.switcher_cancel(now),
+            Op::OpenWindowMenu { seat, id } => {
+                policy.open_window_menu(SeatId(seat), WindowId(id));
+            }
+            Op::WindowMenuKey(key) => policy.window_menu_key(key, now),
+            Op::CloseWindowMenu => policy.close_window_menu(),
+            Op::OpenWorkspacePopup { moves } => {
+                policy.open_workspace_popup(moves);
+            }
+            Op::CloseWorkspacePopup => policy.close_workspace_popup(),
             Op::SetFocusMode {
                 mode,
                 raise_on_click,
@@ -729,6 +769,26 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                 "{id:?} is listed twice"
             );
         }
+    }
+
+    // A seat has one Interaction at most (187). The Window switcher, the Window menu and
+    // the Workspace popup are every seat's, so one of them is open at most, and with none
+    // of the seats moving or resizing a window.
+    let shared = [
+        policy.switcher().is_some(),
+        policy.window_menu().is_some(),
+        policy.workspace_popup().is_some(),
+    ];
+    let shared = shared.into_iter().filter(|open| *open).count();
+    assert!(shared <= 1, "{shared} Interactions are every seat's");
+    for seat in 0..SEATS {
+        let own = usize::from(policy.grab(SeatId(seat)).is_some());
+        assert!(own + shared <= 1, "seat {seat} has two Interactions");
+        assert_eq!(
+            policy.interaction(SeatId(seat)).is_some(),
+            own + shared == 1,
+            "seat {seat}'s Interaction is what it has open"
+        );
     }
 
     // At most one focused window per seat, and it is on screen.

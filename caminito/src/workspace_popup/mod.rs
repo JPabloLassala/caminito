@@ -1,9 +1,12 @@
 //! The Workspace popup (152): Marco's popup of the Workspace grid, which a switch or a move
 //! to the workspace beside shows while the binding's modifiers are held
-//! (`handle_workspace_switch_or_move`, keybindings.c:3505-3586). Policy has no state for
-//! it: the selected workspace is the active one, since each press switches at once, as in
-//! Marco. Here are when it shows and closes, where, and what it's drawn from. `layout` has
-//! its rectangles, `draw` draws it, and `scene` puts it on the output.
+//! (`handle_workspace_switch_or_move`, keybindings.c:3505-3586). Policy holds that it's
+//! open, and whether a move opened it, since it's the seat's Interaction (187): Policy
+//! opens it only when the seat has none, and nothing else opens while it shows. Policy has
+//! no selection for it: the selected workspace is the active one, since each press switches
+//! at once, as in Marco. Here are when it shows and closes, the modifiers that hold it
+//! open, where it is, and what it's drawn from. `layout` has its rectangles, `draw` draws
+//! it, and `scene` puts it on the output.
 
 pub(crate) mod draw;
 pub(crate) mod layout;
@@ -12,25 +15,23 @@ use caminito_policy::{Action, default_workspace_name};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime};
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
-use smithay::input::keyboard::ModifiersState;
+use smithay::input::keyboard::{FilterResult, Keycode, KeysymHandle, ModifiersState};
 use smithay::output::Output;
 use smithay::utils::{Logical, Rectangle, Size};
 
 use self::draw::Workspace;
 use self::layout::Layout;
 use crate::input::bindings::Binding;
+use crate::input::{Bound, press_keysyms};
 use crate::output::output_geometry;
 use crate::state::{Caminito, SEAT, State};
 use crate::switcher::Holding;
 
 /// The open Workspace popup, on the output it appeared on. It doesn't follow the pointer
-/// to another.
+/// to another. Policy has whether a move opened it.
 pub(crate) struct WorkspacePopup {
     /// The modifiers of the binding that opened it. Letting go of one closes it.
     holding: Holding,
-    /// Whether a move opened it, so that each further direction moves the focused window
-    /// too, as Marco's `META_GRAB_OP_KEYBOARD_WORKSPACE_MOVING` does.
-    pub(crate) moves: bool,
     /// The output it's on.
     pub(crate) output: Output,
     /// Its rectangles there, as last laid out.
@@ -145,19 +146,18 @@ impl Caminito {
             && (!beside.is_move || movable())
     }
 
-    /// What the popup gives way to: the session lock, a move or resize, and the Window
-    /// switcher.
+    /// What the popup gives way to that Policy doesn't hold: the session lock, which is no
+    /// Interaction, and the pointer held for a move or resize, which outlasts one that
+    /// Policy ended itself until the pointer next moves or its button goes up.
     fn workspace_popup_gives_way(&self) -> bool {
-        self.lock.is_locked()
-            || self.window_grab.is_some()
-            || self.policy.keyboard_grab(SEAT).is_some()
-            || self.policy.switcher().is_some()
+        self.lock.is_locked() || self.window_grab.is_some()
     }
 
     /// A binding's `action` ran with `mods` down, and shows the popup: it appears at once,
-    /// as Marco's does, on the output the pointer is on. An open popup stays as it is. A
-    /// binding with no modifier shows none, since no release would close it; Marco ends
-    /// such a grab as it begins (keybindings.c:3541-3552).
+    /// as Marco's does, on the output the pointer is on, unless Policy refuses it for the
+    /// seat's Interaction. An open popup stays as it is. A binding with no modifier shows
+    /// none, since no release would close it; Marco ends such a grab as it begins
+    /// (keybindings.c:3541-3552).
     pub(crate) fn show_workspace_popup(&mut self, action: Action, mods: &ModifiersState) {
         let holding = Holding::with_shift_of(mods);
         let Some(beside) = Beside::of(action) else {
@@ -166,11 +166,11 @@ impl Caminito {
         if self.workspace_popup.is_none()
             && !holding.is_empty()
             && let Some(output) = self.popup_output()
+            && self.policy.open_workspace_popup(beside.is_move)
         {
             let layout = self.workspace_popup_layout(&output);
             self.workspace_popup = Some(WorkspacePopup {
                 holding,
-                moves: beside.is_move,
                 output,
                 layout,
                 chrome: None,
@@ -185,7 +185,7 @@ impl Caminito {
     /// looks the key up with the modifiers the popup opened with (keybindings.c:2828-2882).
     /// `None` for any other action.
     pub(crate) fn workspace_popup_step(&self, action: Action) -> Option<Action> {
-        let popup = self.workspace_popup.as_ref()?;
+        let popup = self.policy.workspace_popup()?;
         let beside = Beside::of(action)?;
         Some(if popup.moves {
             beside.move_window
@@ -203,8 +203,37 @@ impl Caminito {
         }
     }
 
-    /// Takes the popup off the outputs, if it shows.
+    /// A key went down while the Workspace popup may show. Returns what the keyboard path
+    /// does with it, or `None` if the popup is closed and the key is the other stages'. The
+    /// popup has the keyboard while it shows, as Marco's grab has
+    /// (`process_workspace_switch_grab`, keybindings.c:2760-2899): a binding to the
+    /// workspace beside steps it, and any other key closes it and goes no further. A
+    /// modifier goes on to the client, as with the Window switcher open.
+    pub(crate) fn workspace_popup_key_pressed(
+        &mut self,
+        keycode: Keycode,
+        mods: &ModifiersState,
+        keysym: &KeysymHandle<'_>,
+    ) -> Option<FilterResult<Option<Bound>>> {
+        self.workspace_popup.as_ref()?;
+        if keysym.modified_sym().is_modifier_key() {
+            return Some(FilterResult::Forward);
+        }
+        self.suppressed_keys.insert(keycode);
+        let bindings = &self.settings.bindings;
+        let step = match bindings.binding_for(mods, &press_keysyms(keysym)) {
+            Some(Binding::Policy(action)) => self.workspace_popup_step(action),
+            _ => None,
+        };
+        if step.is_none() {
+            self.close_workspace_popup();
+        }
+        Some(FilterResult::Intercept(step.map(Bound::Action)))
+    }
+
+    /// Takes the popup off the outputs, if it shows, and tells Policy that it closed.
     pub(crate) fn close_workspace_popup(&mut self) {
+        self.policy.close_workspace_popup();
         if self.workspace_popup.take().is_some() {
             self.queue_redraw_all();
         }

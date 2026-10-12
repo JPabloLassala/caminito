@@ -20,6 +20,7 @@ use crate::{
 
 mod dynamic_workspaces;
 mod focus_stealing;
+mod interaction;
 mod keyboard_grab;
 mod move_to;
 mod pointer;
@@ -30,6 +31,7 @@ mod window_menu;
 pub use focus_stealing::{
     ActivationSource, ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
 };
+pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use switcher::{LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
@@ -662,6 +664,8 @@ pub struct Policy<W: PolicyWindow> {
     switcher: Option<switcher::Open>,
     /// The window menu (161), while it's open.
     window_menu: Option<WindowMenu>,
+    /// The Workspace popup (152), while it's open.
+    workspace_popup: Option<WorkspacePopup>,
     /// The Layer surfaces that accept the keyboard, most recently used first (163).
     layers: Vec<LayerSurfaceId>,
     /// The one that has the keyboard in place of the focused window.
@@ -699,6 +703,7 @@ impl<W: PolicyWindow> Policy<W> {
             mru: Vec::new(),
             switcher: None,
             window_menu: None,
+            workspace_popup: None,
             layers: Vec::new(),
             keyboard_layer: None,
             chosen: None,
@@ -953,12 +958,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Has the last seat move a new window with its pointer until it's put down, as Marco's
     /// `move_after_placement` begins a keyboard move (window.c:2329-2334). Like Marco's
-    /// `meta_window_begin_grab_op`, it doesn't start while the seat has another grab.
+    /// `meta_window_begin_grab_op`, it doesn't start while the seat has an Interaction.
     fn begin_manual_placement(&mut self, id: WindowId) {
         let (seat, Some(pointer)) = (self.last_seat, self.pointer) else {
             return;
         };
-        if self.grabs.contains_key(&seat) || !self.begin_grab(seat, id, None, pointer, false) {
+        if self.interaction(seat).is_some() || !self.begin_grab(seat, id, None, pointer, false) {
             return;
         }
         let grab = self.grabs.get_mut(&seat).unwrap();
@@ -1878,8 +1883,9 @@ impl<W: PolicyWindow> Policy<W> {
                 .windows
                 .get(&id)
                 .is_some_and(|m| m.maximized() && !m.fullscreen);
+        // In place of the seat's own move or resize, and of no other Interaction.
         let movable = (held || self.can_grab(id, resize.is_some()))
-            && self.switcher.is_none()
+            && self.shared_interaction().is_none()
             && !self.grabs.iter().any(|(s, g)| g.window == id && *s != seat);
         if !movable {
             return false;
