@@ -192,8 +192,16 @@ _Avoid_: system menu, context menu, app menu (that's the Global menu's or the Fr
 The popup that a switch or a move to the workspace beside shows while the binding's modifiers are held: the Workspace grid, each workspace's cell with its name and an outline of its windows, and the active workspace marked. It's Marco's workspace popup, drawn by Caminito.
 _Avoid_: workspace switcher (the panel's pager), workspace OSD, tab popup (Marco's widget for it and for Alt+Tab)
 
+**Overview**:
+A view of each output's active workspace with its windows shrunk and set side by side, none over another, and a bar of the workspaces beside them. A window is clicked to activate it, or dragged onto a workspace of the bar to move it there. It's Plasma's Overview, without its search field.
+_Avoid_: exposé, present windows (KWin's older effect, with no workspaces), activities overview (GNOME's, which has a launcher), workspace switcher (the panel's pager)
+
+**Workspace slide**:
+The movement that shows a change of an output's active workspace: the old workspace's windows leave and the new one's arrive, along the line between the two in the Workspace grid. Whatever is the same on both stays still: sticky windows, the panel, caja's desktop and the wallpaper. It's Plasma's Slide effect.
+_Avoid_: desktop slide (the glossary's word is workspace), transition (the Overview has one too), workspace animation
+
 **Interaction**:
-What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu or the Workspace popup. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
+What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup or the Overview. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
 _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)
 
 **System shortcut**:
