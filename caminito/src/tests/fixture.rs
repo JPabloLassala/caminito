@@ -36,7 +36,7 @@ use x11rb::protocol::Event;
 use crate::decoration::control::FrameControl;
 use crate::input::{AxisScroll, Scroll, V120_CLICK, WHEEL_CLICK};
 use crate::output::saved::{self, SavedLayouts};
-use crate::settings::translate::MARCO_GENERAL;
+use crate::settings::translate::{CAMINITO, MARCO_GENERAL};
 use crate::settings::{self, Value};
 use crate::sound::Recorder;
 use crate::state::{ClientState, State};
@@ -430,7 +430,8 @@ impl Fixture {
     /// Caminito with no outputs and no clients, on settings of its own with `initial` set
     /// before the first snapshot. `center-new-windows` is off unless `initial` sets it: the
     /// tests were written for the automatic placement's first fit, before Caminito honoured
-    /// Marco's default, on (154).
+    /// Marco's default, on (154). So is `workspaces-per-output`: they were written for
+    /// Spanning workspaces, before Caminito had Per-output workspaces (230).
     pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
         Self::on_schemas(test_schemas(), initial)
     }
@@ -442,17 +443,21 @@ impl Fixture {
     }
 
     /// Caminito with no outputs and no clients, on the schemas compiled into `schema_dir`,
-    /// with `center-new-windows` off unless `initial` sets it.
+    /// with `center-new-windows` and `workspaces-per-output` off unless `initial` sets them.
     fn on_schemas(
         schema_dir: &std::path::Path,
         mut initial: Vec<(&'static str, String, Value)>,
     ) -> Self {
-        let center = (MARCO_GENERAL, "center-new-windows");
-        if !initial
-            .iter()
-            .any(|(schema, key, _)| (*schema, key.as_str()) == center)
-        {
-            initial.insert(0, (center.0, center.1.into(), Value::Bool(false)));
+        for off in [
+            (MARCO_GENERAL, "center-new-windows"),
+            (CAMINITO, "workspaces-per-output"),
+        ] {
+            if !initial
+                .iter()
+                .any(|(schema, key, _)| (*schema, key.as_str()) == off)
+            {
+                initial.insert(0, (off.0, off.1.into(), Value::Bool(false)));
+            }
         }
         let event_loop = EventLoop::try_new().unwrap();
         let settings = settings::Source::Test {

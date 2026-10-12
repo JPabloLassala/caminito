@@ -40,6 +40,11 @@
       <summary>The order workspaces fill the grid in</summary>
       <description>With "horizontal" the workspaces fill each row from the left, starting with the top row. With "vertical" they fill each column from the top, starting with the left column.</description>
     </key>
+    <key name="workspaces-per-output" type="b">
+      <default>true</default>
+      <summary>Each monitor has its own workspaces</summary>
+      <description>When true, each monitor has its own active workspace, and switching the workspace of one leaves the others as they are. Every monitor has the same number of workspaces, with the same names in the same grid. When false, switching the workspace switches every monitor, as Marco does.</description>
+    </key>
     <key name="workspace-layout-rows" type="i">
       <default>1</default>
       <range min="0" max="36"/>
