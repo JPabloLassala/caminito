@@ -168,3 +168,29 @@ fn a_submenus_grab_needs_no_serial_of_its_own() {
     assert!(!f.client(id).popup(menu).done);
     assert!(!f.client(id).popup(submenu).done);
 }
+
+#[test]
+fn a_submenu_grabbed_with_its_menus_serial_keeps_the_grab() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let geometry = f.geometry(window);
+    f.click(geometry.loc.x as f64 + 10., geometry.loc.y as f64 + 10.);
+    f.roundtrip(id);
+    let press = f.client(id).state.last_press_serial.unwrap();
+    let place = || bottom_right((10, 20, 30, 40), ConstraintAdjustment::None);
+    let menu = f.client(id).create_popup(window.xdg(), place());
+    f.client(id).grab_popup(menu, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, POPUP_COLOR);
+    f.roundtrip(id);
+
+    // As GTK does (146): the menu's pointer grab, let go, mustn't end the submenu's.
+    let submenu = f.client(id).create_nested_popup(menu, place(), press);
+    f.roundtrip(id);
+
+    let keyboard = f.state.caminito.seat.get_keyboard().unwrap();
+    assert!(keyboard.is_grabbed());
+    assert!(!f.has_keyboard(window));
+    assert!(!f.client(id).popup(submenu).done);
+}
