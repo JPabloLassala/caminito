@@ -1,5 +1,6 @@
-//! Caminito's keybindings, read from `org.mate.Marco.global-keybindings` and
-//! `org.mate.Marco.window-keybindings` as Marco reads them (148). The accelerators other
+//! Caminito's bindings, read from `org.mate.Marco.global-keybindings` and
+//! `org.mate.Marco.window-keybindings` as Marco reads them (148), and with a mouse button
+//! where Marco reads none (184, ADR 0028). The accelerators other
 //! programs grab are `accelerators`' (98), and the modifier a click on a window is held
 //! with is `button_modifier`'s (162).
 
@@ -11,10 +12,11 @@ use std::fmt;
 use caminito_policy::{Action, Anchor, Direction, SwitchList, Tile};
 use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
 
-use self::accelerators::{Accelerator, parse};
+use self::accelerators::{Accelerator, Trigger, parse};
 use crate::commands::Command;
 use crate::dbus::panel::PanelAction;
 use crate::settings::translate::{MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS, Problem};
+use crate::window_menu::labels;
 
 /// The modifiers a binding names. Locks don't count.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -598,6 +600,15 @@ impl Bindings {
             .map(|row| row.binding)
     }
 
+    /// What's bound to a press of a mouse button, by X's number for it, with exactly `mods`
+    /// held (184). The first row that matches wins, as for a key.
+    pub(crate) fn binding_for_button(&self, mods: &ModifiersState, button: u32) -> Option<Binding> {
+        self.rows
+            .iter()
+            .find(|row| row.combination.matches_button(mods, button))
+            .map(|row| row.binding)
+    }
+
     /// The first combination in force for `key`, as a menu shows one beside an item:
     /// `Alt+F9` (161).
     pub(crate) fn label_of(&self, key: &str) -> Option<String> {
@@ -626,7 +637,8 @@ impl Accelerator {
     /// The combination as GTK's accelerator labels write one, which Marco's menu shows
     /// (`meta_accel_label_update`, metaaccellabel.c:336-461): `Shift+Ctrl+Alt+Super+` and the key,
     /// a character in upper case, `Space` and `Backslash` by name, and any other key by its
-    /// keysym's name. The modifiers' names aren't translated, as Marco's are.
+    /// keysym's name. The modifiers' names aren't translated, as Marco's are. A mouse button,
+    /// which Marco's menu never shows, has the window menu's name for it (184).
     fn label(&self) -> String {
         let held = self.held;
         let mut label = String::new();
@@ -640,11 +652,18 @@ impl Accelerator {
                 label.push_str(name);
             }
         }
-        match self.keysym.key_char() {
+        let keysym = match self.trigger {
+            Trigger::Key(keysym) => keysym,
+            Trigger::Button(button) => {
+                label.push_str(&labels::button(button));
+                return label;
+            }
+        };
+        match keysym.key_char() {
             Some(' ') => label.push_str("Space"),
             Some('\\') => label.push_str("Backslash"),
             Some(c) if !c.is_control() => label.extend(c.to_uppercase()),
-            _ => label.push_str(&xkb::keysym_get_name(self.keysym)),
+            _ => label.push_str(&xkb::keysym_get_name(keysym)),
         }
         label
     }
@@ -663,7 +682,10 @@ impl fmt::Display for Accelerator {
                 f.write_str(name)?;
             }
         }
-        f.write_str(&xkb::keysym_get_name(self.keysym))
+        match self.trigger {
+            Trigger::Key(keysym) => f.write_str(&xkb::keysym_get_name(keysym)),
+            Trigger::Button(button) => write!(f, "Button{button}"),
+        }
     }
 }
 

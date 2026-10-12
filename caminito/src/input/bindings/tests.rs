@@ -685,3 +685,159 @@ fn a_cycle_binding_with_no_modifier_but_shift_binds_nothing_and_is_a_problem() {
         )]
     );
 }
+
+// Mouse buttons (184, ADR 0028).
+
+fn bound_button(bindings: &Bindings, mods: Mods, button: u32) -> Option<Binding> {
+    bindings.binding_for_button(&state(mods), button)
+}
+
+#[test]
+fn a_button_binds_beside_the_keys() {
+    let t = table(&[(WINDOW, "close", "<Super>Button8")]);
+    assert_eq!(bound_button(&t, SUPER, 8), policy(Action::Close));
+    // With exactly its modifiers, and no other button.
+    assert_eq!(bound_button(&t, NONE, 8), None);
+    assert_eq!(bound_button(&t, SUPER_SHIFT, 8), None);
+    assert_eq!(bound_button(&t, SUPER, 9), None);
+    // The key of that number isn't it, and the keys keep their bindings.
+    assert_eq!(bound(&t, SUPER, Keysym::_8), None);
+    assert_eq!(bound(&t, ALT, Keysym::F4), None);
+    assert_eq!(bound(&t, ALT, Keysym::F10), policy(Action::ToggleMaximized));
+}
+
+#[test]
+fn marcos_defaults_bind_no_button() {
+    let t = Bindings::default();
+    for mods in [NONE, SHIFT, ALT, CTRL_ALT, SUPER] {
+        for button in 1..=20 {
+            assert_eq!(bound_button(&t, mods, button), None, "{button}");
+        }
+    }
+}
+
+#[test]
+fn a_button_with_no_modifier_binds_an_action() {
+    let t = table(&[(GLOBAL, "show-desktop", "Button2")]);
+    assert_eq!(bound_button(&t, NONE, 2), policy(Action::ShowDesktop));
+    assert_eq!(bound_button(&t, ALT, 2), None);
+}
+
+#[test]
+fn of_two_keys_on_one_button_the_first_in_marcos_order_wins() {
+    let t = table(&[
+        (WINDOW, "close", "<Super>Button8"),
+        (WINDOW, "toggle-maximized", "<Super>Button8"),
+    ]);
+    assert_eq!(bound_button(&t, SUPER, 8), policy(Action::ToggleMaximized));
+    let t = table(&[
+        (WINDOW, "close", "<Super>Button8"),
+        (GLOBAL, "show-desktop", "<Super>Button8"),
+    ]);
+    assert_eq!(bound_button(&t, SUPER, 8), policy(Action::ShowDesktop));
+}
+
+#[test]
+fn a_changed_key_moves_its_button() {
+    let t = table(&[(WINDOW, "close", "<Super>Button8")]);
+    assert_eq!(bound_button(&t, SUPER, 8), policy(Action::Close));
+    let t = table(&[(WINDOW, "close", "<Super>Button9")]);
+    assert_eq!(bound_button(&t, SUPER, 8), None);
+    assert_eq!(bound_button(&t, SUPER, 9), policy(Action::Close));
+    // And back to a key.
+    let t = table(&[(WINDOW, "close", "<Super>q")]);
+    assert_eq!(bound_button(&t, SUPER, 9), None);
+    assert_eq!(bound(&t, SUPER, Keysym::q), policy(Action::Close));
+}
+
+#[test]
+fn disabled_binds_no_button() {
+    let t = table(&[
+        (WINDOW, "close", "<Super>Button8"),
+        (WINDOW, "toggle-maximized", "disabled"),
+        (WINDOW, "minimize", ""),
+    ]);
+    assert_eq!(bound_button(&t, SUPER, 8), policy(Action::Close));
+    assert!(t.iter().all(|(key, _)| key != "toggle-maximized"));
+    assert!(t.iter().all(|(key, _)| key != "minimize"));
+}
+
+#[test]
+fn a_button_that_doesnt_parse_binds_nothing_and_is_a_problem() {
+    for (value, reason) in [
+        ("Button1", "Button1 needs a modifier"),
+        ("Button3", "Button3 needs a modifier"),
+        ("<Super>Button4", "Button4 is the wheel's"),
+        ("<Super>Button0", "Button0 isn't a mouse button"),
+        ("<Super>Button", "Button isn't a mouse button"),
+    ] {
+        let (t, problems) = Bindings::from_keys([(WINDOW, "close", value)]);
+        assert_eq!(problems, [unbindable(WINDOW, "close", value, reason)]);
+        assert!(t.iter().all(|(key, _)| key != "close"), "{value}");
+    }
+}
+
+#[test]
+fn a_switch_binding_on_a_button_is_bound_with_shift_too() {
+    let t = table(&[(GLOBAL, "switch-windows", "<Super>Button9")]);
+    assert_eq!(
+        bound_button(&t, SUPER, 9),
+        switch(SwitchList::Windows, false)
+    );
+    assert_eq!(
+        bound_button(&t, SUPER_SHIFT, 9),
+        switch(SwitchList::Windows, true)
+    );
+}
+
+#[test]
+fn a_switch_binding_on_a_button_with_no_modifier_binds_nothing_and_is_a_problem() {
+    let (t, problems) = Bindings::from_keys([(GLOBAL, "switch-windows", "Button9")]);
+    assert_eq!(bound_button(&t, NONE, 9), None);
+    assert_eq!(
+        problems,
+        [unbindable(
+            GLOBAL,
+            "switch-windows",
+            "Button9",
+            "a binding Shift reverses needs a modifier such as Ctrl or Alt"
+        )]
+    );
+}
+
+#[test]
+fn a_button_is_written_as_the_window_menus_hints_name_it() {
+    let t = table(&[
+        (WINDOW, "close", "<Super>Button8"),
+        (WINDOW, "minimize", "Button2"),
+        (WINDOW, "maximize", "<Control><Shift>Button9"),
+        (WINDOW, "toggle-above", "<Alt>Button1"),
+        (WINDOW, "toggle-shaded", "<Alt>Button3"),
+        (WINDOW, "raise", "<Super>Button10"),
+    ]);
+    assert_eq!(t.label_of("close").as_deref(), Some("Super+Back Button"));
+    assert_eq!(t.label_of("minimize").as_deref(), Some("Middle Button"));
+    assert_eq!(
+        t.label_of("maximize").as_deref(),
+        Some("Shift+Ctrl+Forward Button")
+    );
+    assert_eq!(
+        t.label_of("toggle-above").as_deref(),
+        Some("Alt+Left Button")
+    );
+    assert_eq!(
+        t.label_of("toggle-shaded").as_deref(),
+        Some("Alt+Right Button")
+    );
+    assert_eq!(t.label_of("raise").as_deref(), Some("Super+Button 10"));
+}
+
+#[test]
+fn the_table_lists_a_button_with_its_key() {
+    let t = table(&[(WINDOW, "close", "<Mod4>button8")]);
+    let rows: Vec<(&str, String)> = t.iter().collect();
+    assert!(
+        rows.contains(&("close", "<Super>Button8".into())),
+        "{rows:?}"
+    );
+}

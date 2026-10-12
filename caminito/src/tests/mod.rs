@@ -6,6 +6,7 @@ mod active_toplevel;
 mod app_menu_registrar;
 mod bell;
 mod bindings;
+mod button_bindings;
 mod caminito_displays;
 mod caminito_locker;
 mod client;

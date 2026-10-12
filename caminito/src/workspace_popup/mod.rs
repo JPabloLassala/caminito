@@ -10,7 +10,7 @@ pub(crate) mod layout;
 
 use caminito_policy::{Action, default_workspace_name};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
-use smithay::backend::input::ButtonState;
+use smithay::backend::input::{ButtonState, InputTime};
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::keyboard::ModifiersState;
 use smithay::output::Output;
@@ -18,8 +18,9 @@ use smithay::utils::{Logical, Rectangle, Size};
 
 use self::draw::Workspace;
 use self::layout::Layout;
+use crate::input::bindings::Binding;
 use crate::output::output_geometry;
-use crate::state::{Caminito, SEAT};
+use crate::state::{Caminito, SEAT, State};
 use crate::switcher::Holding;
 
 /// The open Workspace popup, on the output it appeared on. It doesn't follow the pointer
@@ -92,6 +93,35 @@ impl Beside {
             move_window,
             is_move: action == move_window,
         })
+    }
+}
+
+impl State {
+    /// A pointer button. Returns whether its press was the popup's, and so is no client's:
+    /// a press closes it, as a press ends Marco's grab (display.c:1859-1903), but that of a
+    /// button with a binding to the workspace beside, which steps it as such a key does
+    /// (184). The release of such a press is swallowed with the Window switcher's.
+    pub(crate) fn workspace_popup_button(
+        &mut self,
+        button: u32,
+        state: ButtonState,
+        time: InputTime,
+    ) -> bool {
+        let caminito = &mut self.caminito;
+        if state == ButtonState::Released || caminito.workspace_popup.is_none() {
+            return false;
+        }
+        caminito.suppressed_buttons.insert(button);
+        let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
+        let step = match caminito.bound_to_button(button, &mods) {
+            Some((_, Binding::Policy(action))) => caminito.workspace_popup_step(action),
+            _ => None,
+        };
+        match step {
+            Some(action) => self.run_action(action, time),
+            None => caminito.close_workspace_popup(),
+        }
+        true
     }
 }
 
@@ -171,18 +201,6 @@ impl Caminito {
         if !self.workspace_popup.as_ref().is_none_or(held) {
             self.close_workspace_popup();
         }
-    }
-
-    /// A pointer button. Returns whether its press closed the popup, and so is no
-    /// client's, as a press ends Marco's grab (display.c:1859-1903). The release of such
-    /// a press is swallowed with the Window switcher's.
-    pub(crate) fn workspace_popup_button(&mut self, button: u32, state: ButtonState) -> bool {
-        if state == ButtonState::Released || self.workspace_popup.is_none() {
-            return false;
-        }
-        self.suppressed_buttons.insert(button);
-        self.close_workspace_popup();
-        true
     }
 
     /// Takes the popup off the outputs, if it shows.

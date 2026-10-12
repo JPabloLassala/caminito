@@ -146,6 +146,20 @@ pub(crate) fn binding_key(op: MenuOp) -> Option<String> {
     Some(key.to_owned())
 }
 
+/// A mouse button as an item's hint names one (184), by X's number for it: the five with a
+/// name, and a further side button by its number. Marco's menu shows no button and has no
+/// words for one, so they aren't translated, as the modifiers' names aren't.
+pub(crate) fn button(button: u32) -> String {
+    match button {
+        1 => "Left Button".into(),
+        2 => "Middle Button".into(),
+        3 => "Right Button".into(),
+        8 => "Back Button".into(),
+        9 => "Forward Button".into(),
+        other => format!("Button {other}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +260,16 @@ mod tests {
             Some("move-to-workspace-12")
         );
         assert_eq!(binding_key(MenuOp::MoveToWorkspace(12)), None);
+    }
+
+    #[test]
+    fn a_mouse_button_has_a_name_or_its_number() {
+        assert_eq!(button(1), "Left Button");
+        assert_eq!(button(2), "Middle Button");
+        assert_eq!(button(3), "Right Button");
+        assert_eq!(button(8), "Back Button");
+        assert_eq!(button(9), "Forward Button");
+        assert_eq!(button(10), "Button 10");
+        assert_eq!(button(20), "Button 20");
     }
 }
