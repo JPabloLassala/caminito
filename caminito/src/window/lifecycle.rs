@@ -5,8 +5,8 @@
 //! destroyed.
 
 use caminito_policy::{
-    ActivationSource, ActivationToken, FocusClaim, FunctionFacts, Functions, MapStates, OutputId,
-    WindowId, WindowStates, functions,
+    ActivationToken, FocusClaim, FunctionFacts, Functions, MapStates, StateRequest, WindowId,
+    WindowStates, functions,
 };
 use smithay::desktop::Window;
 use smithay::desktop::space::SpaceElement;
@@ -23,18 +23,7 @@ use crate::state::{Caminito, SEAT};
 #[derive(Debug)]
 struct Pending {
     window: Window,
-    maximized: bool,
-    /// Fullscreen was asked for, on this output if the client named one.
-    fullscreen: Option<Option<OutputId>>,
-    above: bool,
-    below: bool,
-    sticky: bool,
-    /// It was asked to be the active window, which policy judges once it has mapped (166).
-    active: Option<ActivationSource>,
-    /// It asked for attention with `_NET_WM_STATE_DEMANDS_ATTENTION` (166).
-    demands_attention: bool,
-    /// What it claims the focus with as it maps (165).
-    focus: FocusClaim,
+    states: MapStates,
 }
 
 /// The pending windows.
@@ -62,40 +51,17 @@ impl PendingWindows {
     }
 }
 
-/// A state a window asks for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StateRequest {
-    Maximized(bool),
-    /// Fullscreen, on this output if the client named one.
-    Fullscreen(Option<OutputId>),
-    Unfullscreen,
-    Minimized,
-    /// Kept above others, or not (155).
-    Above(bool),
-    Below(bool),
-    Sticky(bool),
-    /// The active window, as `_NET_ACTIVE_WINDOW` asks: if policy honours the one who asks,
-    /// it switches to its workspace, unminimises it, raises it and focuses it (166).
-    Active(ActivationSource),
-    /// `_NET_WM_STATE_DEMANDS_ATTENTION`, set or unset (166).
-    DemandsAttention(bool),
-}
-
 impl Caminito {
     /// Created: the client has asked to show `window`, which is pending until it commits
     /// content.
     pub(crate) fn window_created(&mut self, window: Window) {
         self.pending.0.push(Pending {
-            maximized: false,
-            fullscreen: None,
-            above: false,
-            below: false,
-            sticky: false,
-            active: None,
-            demands_attention: false,
-            // An XWayland window carries no token either (166).
-            focus: FocusClaim::NoToken,
             window,
+            states: MapStates {
+                // An XWayland window carries no token either (166).
+                focus: FocusClaim::NoToken,
+                ..MapStates::default()
+            },
         });
     }
 
@@ -105,57 +71,15 @@ impl Caminito {
     pub(crate) fn window_state_request(&mut self, key: &WindowKey, request: StateRequest) -> bool {
         if let Some(id) = self.mapped_for_key(key) {
             let now = self.now();
-            let policy = &mut self.policy;
-            match request {
-                StateRequest::Maximized(maximized) => policy.set_maximized(id, maximized),
-                StateRequest::Fullscreen(output) => policy.set_fullscreen(id, true, output),
-                StateRequest::Unfullscreen => policy.set_fullscreen(id, false, None),
-                StateRequest::Minimized => policy.minimize(id),
-                StateRequest::Above(above) => policy.set_above(id, above),
-                StateRequest::Below(below) => policy.set_below(id, below),
-                StateRequest::Sticky(sticky) => policy.set_sticky(id, sticky),
-                StateRequest::Active(source) => {
-                    policy.request_activation_from(SEAT, id, source, now)
-                }
-                StateRequest::DemandsAttention(demands_attention) => {
-                    policy.set_demands_attention(id, demands_attention)
-                }
-            }
+            self.policy.request_state(SEAT, id, request, now);
             return true;
         }
         let Some(index) = self.pending.position(key) else {
             return false;
         };
-        let pending = &mut self.pending.0[index];
-        match request {
-            StateRequest::Maximized(maximized) => pending.maximized = maximized,
-            StateRequest::Fullscreen(output) => pending.fullscreen = Some(output),
-            StateRequest::Unfullscreen => pending.fullscreen = None,
-            // A window that isn't managed has nothing to minimise.
-            StateRequest::Minimized => return false,
-            // Neither changes how the window is configured before it maps.
-            StateRequest::Above(above) => {
-                pending.above = above;
-                return false;
-            }
-            StateRequest::Below(below) => {
-                pending.below = below;
-                return false;
-            }
-            StateRequest::Sticky(sticky) => {
-                pending.sticky = sticky;
-                return false;
-            }
-            StateRequest::Active(source) => {
-                pending.active = Some(source);
-                return false;
-            }
-            StateRequest::DemandsAttention(demands_attention) => {
-                pending.demands_attention = demands_attention;
-                return false;
-            }
+        if self.pending.0[index].states.request(request) {
+            self.configure_pending(key);
         }
-        self.configure_pending(key);
         false
     }
 
@@ -171,7 +95,8 @@ impl Caminito {
             let now = self.now();
             self.policy.request_activation(SEAT, id, token, now);
         } else if let Some(index) = self.pending.position(key) {
-            self.pending.0[index].focus = token.map_or(FocusClaim::NoToken, FocusClaim::Token);
+            self.pending.0[index].states.focus =
+                token.map_or(FocusClaim::NoToken, FocusClaim::Token);
         }
     }
 
@@ -255,17 +180,7 @@ impl Caminito {
         let id = WindowId(self.next_window_id);
         self.next_window_id += 1;
 
-        let Pending {
-            window,
-            maximized,
-            fullscreen,
-            above,
-            below,
-            sticky,
-            active,
-            demands_attention,
-            focus,
-        } = pending;
+        let Pending { window, states } = pending;
         let mut mapped = Mapped::new(id, window);
         mapped.read_facts(self.transient_parent(mapped.window()), &self.frame_context);
 
@@ -273,22 +188,7 @@ impl Caminito {
         // For the placement modes that put a new window at the pointer (154).
         let pointer = self.seat.get_pointer().unwrap().current_location();
         self.policy.set_pointer(pointer);
-        let states = MapStates {
-            maximized,
-            fullscreen,
-            focus,
-        };
         self.policy.map_window_with(mapped, states, now);
-        self.policy.set_above(id, above);
-        self.policy.set_below(id, below);
-        self.policy.set_sticky(id, sticky);
-        // Not unset: policy has made the demand itself for a window it refused the focus.
-        if demands_attention {
-            self.policy.set_demands_attention(id, true);
-        }
-        if let Some(source) = active {
-            self.policy.request_activation_from(SEAT, id, source, now);
-        }
         id
     }
 
@@ -323,8 +223,8 @@ impl Caminito {
         let (extents, maximized_extents) = self.pending_extents(&pending.window, functions);
         let bounds = output.map(|size| inside(size, extents));
         // Policy's setters will refuse the window a state it has no function for.
-        let maximized = pending.maximized && functions.maximize;
-        let fullscreen = pending.fullscreen.filter(|_| functions.fullscreen);
+        let maximized = pending.states.maximized && functions.maximize;
+        let fullscreen = pending.states.fullscreen.filter(|_| functions.fullscreen);
         let fullscreen_size = fullscreen.map(|output| {
             output
                 .and_then(|id| self.policy.outputs().iter().find(|o| o.id == id))

@@ -14,6 +14,7 @@ mod interactive;
 mod invariants;
 mod keyboard_grab;
 mod keyboard_tiling;
+mod map_states;
 mod move_to;
 mod outputs;
 mod placement;

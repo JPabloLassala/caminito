@@ -24,6 +24,7 @@ mod interaction;
 mod keyboard_grab;
 mod move_to;
 mod pointer;
+mod state_requests;
 mod switcher;
 mod window_actions;
 mod window_menu;
@@ -34,6 +35,7 @@ pub use focus_stealing::{
 pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
+pub use state_requests::{MapStates, StateRequest};
 pub use switcher::{LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
 pub use window_menu::{MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection, WindowMenu};
 
@@ -201,18 +203,6 @@ impl Default for Config {
             attach_modal_dialogs: false,
         }
     }
-}
-
-/// The states a window asks to map with, which change how it's placed (154), and its claim
-/// to the focus (165).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct MapStates {
-    /// Maximised both ways.
-    pub maximized: bool,
-    /// Fullscreen, on the output named if one is.
-    pub fullscreen: Option<Option<OutputId>>,
-    /// What it claims the focus with (165).
-    pub focus: FocusClaim,
 }
 
 /// Marco's name for a workspace with none set, numbered from 1.
@@ -677,6 +667,8 @@ pub struct Policy<W: PolicyWindow> {
     pointer: Option<Point<f64, Logical>>,
     /// The pointer focus modes' and auto-raise's state (153).
     pointer_focus: pointer::PointerFocus,
+    /// Whether `apply` waits for the end of a change made of several, which applies once.
+    holding: bool,
     /// What the Scene read when `take_scene_changed` was last asked (179).
     last_scene_reads: SceneReads,
 }
@@ -709,6 +701,7 @@ impl<W: PolicyWindow> Policy<W> {
             chosen: None,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
+            holding: false,
             last_scene_reads: SceneReads::default(),
         };
         policy.apply_config();
@@ -858,11 +851,15 @@ impl<W: PolicyWindow> Policy<W> {
         self.map_window_with(window, MapStates::default(), now);
     }
 
-    /// Starts managing a window the client has mapped with `states`. A window that maps
-    /// maximised or fullscreen keeps the automatic placement, for the geometry it goes back
-    /// to, whatever the placement keys say (154).
+    /// Starts managing a window the client has mapped with `states`, applied as one. A
+    /// window that maps maximised or fullscreen keeps the automatic placement, for the
+    /// geometry it goes back to, whatever the placement keys say (154). The others are set
+    /// once it's placed and focused, and only those it asked for: a transient of a sticky
+    /// window is sticky with it unasked. Asking to be active is judged for the seat it's
+    /// focused for, at `now`.
     pub fn map_window_with(&mut self, window: W, states: MapStates, now: Duration) {
         let id = window.id();
+        self.holding = true;
         self.map(window, states, now);
         // The setters refuse a state the window has no function for (177).
         if let Some(output) = states.fullscreen {
@@ -870,6 +867,24 @@ impl<W: PolicyWindow> Policy<W> {
         } else if states.maximized {
             self.set_maximized(id, true);
         }
+        if states.above {
+            self.set_above(id, true);
+        }
+        if states.below {
+            self.set_below(id, true);
+        }
+        if states.sticky {
+            self.set_sticky(id, true);
+        }
+        // Not unset: policy has made the demand itself for a window it refused the focus.
+        if states.demands_attention {
+            self.set_demands_attention(id, true);
+        }
+        if let Some(source) = states.active {
+            self.request_activation_from(self.last_seat, id, source, now);
+        }
+        self.holding = false;
+        self.apply();
     }
 
     fn map(&mut self, window: W, states: MapStates, now: Duration) {
@@ -2769,6 +2784,9 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Sends each window whatever policy now wants of it that it hasn't been sent.
     fn apply(&mut self) {
+        if self.holding {
+            return;
+        }
         // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
         self.update_dynamic_workspaces();
         self.end_stale_grabs();
