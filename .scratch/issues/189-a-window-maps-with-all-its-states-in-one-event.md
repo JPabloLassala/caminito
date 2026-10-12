@@ -2,7 +2,7 @@
 
 Epic: caminito-v0.1
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Map: [Caminito v0.1](../caminito-v0.1/map.md)
 
 ## Why
@@ -29,12 +29,12 @@ Left alone: `configure_pending` and what it works out, which are [190](190-polic
 
 ## Acceptance criteria
 
-- [ ] Policy tests with `TestWindow`, written before the code: a window that maps with each of `above`, `below`, `sticky` and `active` has that state after the map, and one that maps with all seven is sent its geometry once.
-- [ ] A Policy table test, written before the code: each `StateRequest` on a `MapStates`, with what it leaves and whether it asks for a new configure.
-- [ ] `grep -n "match request" caminito/src/window/lifecycle.rs` finds nothing.
-- [ ] `tests::xdg_shell`, `tests::xwayland_windows`, `tests::placement`, `tests::window_actions`, `tests::window_menu`, `tests::xfce_foreign_toplevel` and `tests::focus_stealing` pass with no test changed.
-- [ ] `cargo test -p caminito-policy` passes.
-- [ ] `tools/check` passes, or the Done section lists what was run and what was not.
+- [x] Policy tests with `TestWindow`, written before the code: a window that maps with each of `above`, `below`, `sticky` and `active` has that state after the map, and one that maps with all seven is sent its geometry once.
+- [x] A Policy table test, written before the code: each `StateRequest` on a `MapStates`, with what it leaves and whether it asks for a new configure.
+- [x] `grep -n "match request" caminito/src/window/lifecycle.rs` finds nothing.
+- [x] `tests::xdg_shell`, `tests::xwayland_windows`, `tests::placement`, `tests::window_actions`, `tests::window_menu`, `tests::xfce_foreign_toplevel` and `tests::focus_stealing` pass with no test changed.
+- [x] `cargo test -p caminito-policy` passes.
+- [x] `tools/check` passes, or the Done section lists what was run and what was not.
 
 ## For the implementing agent to settle
 
@@ -43,3 +43,29 @@ Recorded in the Done section:
 - **The order inside the map.** Today the four states are set after the window is placed and focused. Say whether any goes before (a sticky window is on every workspace as it's placed, or not), and that the result is the same as now.
 - **`active` beside `focus`.** A window that asked to be active is activated whatever its focus claim says. Say whether the two stay two fields.
 - **The seat and the time** of the managed window's request, which `activate` needs.
+
+## Done (2026-10-11)
+
+- **Tests first.** `caminito-policy/src/tests/map_states.rs` was written before the code and failed to compile against it. It has one test each for above, below, sticky and active, a test that a window mapping with every state is sent its geometry once, and the `StateRequest` table on a `MapStates`. Then the single apply was disabled to see the geometry test fail: it was sent twice.
+- **`MapStates` has eight fields, not seven.** `demands_attention` went in too, since `Pending` is now the window and one `MapStates`.
+- **One apply.** `map_window_with` sets a `holding` flag, so `apply()` returns at once until the map and every state are done, and then applies once. The setters keep their own `apply()` for every other caller. Deferring it changes no outcome:
+  - The activation judge reads `focus` and `focus_time`, which `map` sets directly.
+  - `switch_workspace` picks its default focus from the stack, not from `mru`.
+  - Restacking is order-independent.
+  - The final apply lays out a maximised window again for its focus.
+- **The order inside the map is as before.** The window is placed and focused, then maximised or fullscreen, then above, below, sticky, the demand for attention and the activation request. None goes before placement. A sticky window placed first would also be focused on a workspace it didn't ask for, which is a change in behaviour.
+- **Only the states asked for are set.** This is the one change in behaviour. `map_pending` used to call `set_sticky(id, false)` for every window. A transient of a sticky window, which `map` makes sticky with its parent, then unstuck its whole family and moved it to the active workspace. Calling setters for unasked states would also have changed `map_window` (`a_sticky_window_takes_its_family_along`). `set_above(false)` and `set_below(false)` on a new window were no-ops anyway.
+- **`active` and `focus` stay two fields.** `focus` is the xdg-activation claim that `focus-new-windows` judges as the window maps. `active` is a `_NET_ACTIVE_WINDOW` request, judged by its source after the map. An X window has both a `NoToken` claim and maybe a request.
+- **The seat and the time.**
+  - A managed window's request takes them as arguments: `Policy::request_state(seat, id, request, now)`. Caminito passes `SEAT` and its clock, as before.
+  - A Pending window's activation is judged for `last_seat`, the seat the map focuses for, at the map's `now`. Caminito has only `SEAT`, which is always `last_seat`.
+- **What ran.**
+  - `cargo fmt --all --check` passed.
+  - Clippy on `caminito` and `caminito-policy` passed with `-A clippy::manual_range_contains`.
+  - `cargo test -p caminito-policy` passed: 536 tests.
+  - The seven named caminito groups passed unchanged.
+  - Caminito's full suite passed 1753 tests and failed 1. `tiling::a_sides_binding_pressed_again_cycles_its_width_then_untiles::x11` is flaky on the base commit too: 3 failures in 6 runs.
+- **What failed, outside this ticket.** These are in `caminito-theme`, which this ticket doesn't touch, and were run on Ubuntu in a cloud session, not on the Arch machine:
+  - Clippy 1.97 flags `manual_range_contains` there.
+  - `caminito-theme`'s goldens differ by a few pixels.
+- **What wasn't run.** `cargo deny`, the palette helper, the meson helpers, the locker and the VS Code extension. The full `tools/check` wants Arch.

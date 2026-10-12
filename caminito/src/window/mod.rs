@@ -8,8 +8,8 @@ mod lifecycle;
 mod x11;
 mod xdg;
 
+pub(crate) use caminito_policy::StateRequest;
 pub(crate) use lifecycle::PendingWindows;
-pub(crate) use lifecycle::StateRequest;
 pub(crate) use x11::{
     STICKY, Side, Strut, configure_request_geometry, marco_type, request_modal, request_skips,
     struts, takes_pointer_at, with_x_facts,
