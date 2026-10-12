@@ -5,6 +5,9 @@ marco (1.29.1-0caminito1) resolute; urgency=medium
   * debian/control: build-depend on libmate-desktop-dev (>= 1.27.1), which
     1.29.1 links, and no longer on autoconf-archive, intltool and
     mate-common.
+  * debian/libmarco-private2.symbols: 1.29.1's five new symbols, and not
+    meta_ui_get_{mini,window}_icon_from_name, which it drops at the same
+    soname.
   * debian/patches: drop 0001_check-availability-of-compositing-1.patch,
     0002_check-availability-of-compositing-2.patch and
     1001_marco-Add-cmdline-option-no-keybindings-for-disablin.patch, which

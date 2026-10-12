@@ -289,11 +289,14 @@ libmarco-private.so.2 libmarco-private2 #MINVER#
  meta_prefs_get_action_double_click_titlebar@Base 1.22.2
  meta_prefs_get_action_middle_click_titlebar@Base 1.22.2
  meta_prefs_get_action_right_click_titlebar@Base 1.22.2
+ meta_prefs_get_action_scroll_down_titlebar@Base 1.29.1
+ meta_prefs_get_action_scroll_up_titlebar@Base 1.29.1
  meta_prefs_get_allow_tile_cycling@Base 1.24.0
  meta_prefs_get_allow_tiling@Base 1.22.2
  meta_prefs_get_allow_top_tiling@Base 1.22.2
  meta_prefs_get_alt_tab_expand_to_fit_title@Base 1.24.0
  meta_prefs_get_alt_tab_max_columns@Base 1.24.0
+ meta_prefs_get_alt_tab_raise_windows@Base 1.29.1
  meta_prefs_get_application_based@Base 1.22.2
  meta_prefs_get_attach_modal_dialogs@Base 1.22.2
  meta_prefs_get_auto_raise@Base 1.22.2
@@ -528,9 +531,9 @@ libmarco-private.so.2 libmarco-private2 #MINVER#
  meta_ui_get_drag_threshold@Base 1.22.2
  meta_ui_get_frame_borders@Base 1.22.2
  meta_ui_get_frame_bounds@Base 1.22.2
- meta_ui_get_mini_icon_from_name@Base 1.26.0
+ meta_ui_get_mini_icon_from_desktop_id@Base 1.29.1
  meta_ui_get_pixbuf_from_surface@Base 1.22.2
- meta_ui_get_window_icon_from_name@Base 1.26.0
+ meta_ui_get_window_icon_from_desktop_id@Base 1.29.1
  meta_ui_have_a_theme@Base 1.22.2
  meta_ui_init@Base 1.22.2
  meta_ui_map_frame@Base 1.22.2
