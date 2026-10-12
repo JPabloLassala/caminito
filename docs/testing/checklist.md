@@ -224,6 +224,28 @@ session_env() {
 - **Debug tool:** `systemctl --user show-environment`, `loginctl`, the journal, and the
   `outputs` of `DumpState` for the panels' and the desktop's layer surfaces.
 
+### A link opens in the browser after a second login
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Caminito*, log out, and log in again, with the user's systemd manager
+     left running between the two: a second login of the user elsewhere, or lingering.
+  2. Run:
+
+     ```sh
+     pid=$(systemctl --user show -p MainPID --value xdg-desktop-portal.service)
+     tr '\0' '\n' </proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|DISPLAY)='
+     ```
+
+  3. Open *About Caminito* and press one of its links, with Firefox closed and again with it
+     open.
+- **Expected:** in step 2 the portal has both variables, with this Session's values, or has no
+  process yet. In step 3 the link opens in the browser each time (232). The journal has no
+  `no DISPLAY environment variable specified` from the browser, and no `can't restart the
+  portal` from Caminito.
+- **Debug tool:** `journalctl --user -b -t caminito`, `journalctl --user -u xdg-desktop-portal`,
+  and `systemctl --user restart xdg-desktop-portal.service`, which is what Caminito asks for.
+
 ### Log Out and Shut Down from the panel
 
 - **Milestone:** M5
@@ -1239,6 +1261,23 @@ session_env() {
 - **Debug tool:** `primary_output` and each output's `layer_surfaces` in `DumpState`,
   `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Caminito` for the property's
   signal.
+
+### The desktop's menu is on every output
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected and `caja-caminito` at `pkgrel` 4 or later, log into *MATE
+     on Caminito*.
+  2. Right-click the wallpaper of the output that isn't primary, and choose *Create Folder*.
+  3. Choose the other output as primary, with `choose` from the item above or in
+     caminito-displays, and right-click the wallpaper of each output.
+  4. Unplug the cable of the output that isn't primary, plug it back in, and right-click its
+     wallpaper.
+- **Expected:** the desktop's menu pops up at the pointer, on the output clicked, each time.
+  The wallpaper of the output that isn't primary looks as it does with no caja running. The
+  new folder appears among the icons, on the primary output (208).
+- **Debug tool:** each output's `layer_surfaces` in `DumpState`: `desktop` on the primary
+  output and `desktop-menu` on each of the others.
 
 ### A panel's properties choose its display
 

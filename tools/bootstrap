@@ -13,5 +13,7 @@ for package in mate-session-manager-caminito mate-panel-caminito mate-settings-d
   mate-control-center-caminito caja-caminito mate-utils-caminito mate-power-manager-caminito \
   caminito-git caminito-desktop; do
   cd "$root/packaging/arch/$package"
-  makepkg -si "$@"
+  # -C: makepkg resets a git source left in src/ by an earlier build but keeps its untracked
+  # files, so a patch that adds a file then fails on the one it added last time.
+  makepkg -siC "$@"
 done
