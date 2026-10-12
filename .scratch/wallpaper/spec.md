@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer. It holds the decisions, and links the ADR that holds the one hard to reverse. Where the two differ, the ADR is right and this file is to be fixed.
 
-Nothing here is built, and no tickets are cut yet.
+Nothing here is built.
 
 ## Problem
 
@@ -33,7 +33,7 @@ Each output has its own **wallpaper** (CONTEXT.md), of one of five **wallpaper k
 ### Who draws
 
 - caminito-wallpaper draws, as a layer-shell client with one surface per output in the background layer. mate-settings-daemon's background plugin is off in a Session. See ADR 0031.
-- One crate, `caminito-wallpaper`, with two programs: the drawer, started with the Session and free of GTK, and the dialog, in GTK4 without libadwaita as caminito-displays and caminito-about are (ADR 0014). The two programs' names are not decided.
+- One crate, `caminito-wallpaper`, with two programs: the drawer, started with the Session and free of GTK, and the dialog, in GTK4 without libadwaita as caminito-displays and caminito-about are (ADR 0014). The drawer is `caminito-wallpaperd` and the dialog is `caminito-wallpaper`, the name the Control Center entry starts.
 - Every change of wallpaper cross-fades over about a second.
 
 ### An output's wallpaper
@@ -78,7 +78,7 @@ Each output has its own **wallpaper** (CONTEXT.md), of one of five **wallpaper k
 
 ### The lock screen
 
-Each output's lock screen shows that output's current wallpaper, whatever its kind. caminito-locker reads `org.mate.background` today, so it needs a way to learn each output's current picture from caminito-wallpaper. How is not decided.
+Each output's lock screen shows that output's current wallpaper, whatever its kind. caminito-locker reads `org.mate.background` today, which only the primary output's picture reaches now. So the drawer writes a small state file: per output, a picture ready to show (for a dynamic wallpaper mid-fade, the nearer of the two), the positioning and the colour. The locker reads the file and never asks the drawer, since the lock must come up when the drawer has crashed or hung. With no file it does as it does today.
 
 ### The dialog
 
@@ -96,15 +96,12 @@ Each output's lock screen shows that output's current wallpaper, whatever its ki
 
 ### The Control Center
 
-- The entry is "Wallpaper", installed to `share/caminito/xdg/applications` as the other Caminito entries are, so only a Session has it.
+- The entry is "Wallpaper", in the category Appearance is in, installed to `share/caminito/xdg/applications` as the other Caminito entries are, so only a Session has it.
 - A carried patch to mate-control-center hides the Background tab of Appearance under Caminito. X11 MATE keeps it.
 
 ## Not decided
 
-- The names of the two programs.
-- How caminito-locker learns each output's current picture.
-- The gsettings schema's keys.
-- What the dialog's entry is categorised as in the Control Center.
+The gsettings schema's keys, which ticket 210 settles.
 
 ## Prototype
 
@@ -114,4 +111,18 @@ The prototype is `tools/prototype-wallpaper.py` on the branch `prototype/wallpap
 
 ## Tickets
 
-None yet. They are cut once the developer has read this spec.
+Eleven slices, filed in `.scratch/issues/` as tickets 210 to 220. Each is run by itself once the ones it's blocked by are in.
+
+| | Slice | Blocked by |
+| --- | --- | --- |
+| 210 | [**caminito-wallpaperd draws a picture or a colour on each output.**](../issues/210-caminito-wallpaperd-draws-a-picture-or-a-colour-on-each-output.md) |  |
+| 211 | [**The two bridges to org.mate.background.**](../issues/211-the-bridges-to-org-mate-background.md) | 210 |
+| 212 | [**The Wallpaper dialog, with pictures and colours.**](../issues/212-the-wallpaper-dialog-with-pictures-and-colours.md) | 210 |
+| 213 | [**Slideshow.**](../issues/213-slideshow.md) | 210, 212 |
+| 214 | [**Picture of the day.**](../issues/214-picture-of-the-day.md) | 210, 212 |
+| 215 | [**Caminito publishes the sun's position.**](../issues/215-caminito-publishes-the-suns-position.md) |  |
+| 216 | [**Dynamic wallpapers from KDE's pairs and timed XML.**](../issues/216-dynamic-wallpapers-from-kde-pairs-and-timed-xml.md) | 210, 212, 215 |
+| 217 | [**Dynamic wallpapers from HEIC files.**](../issues/217-dynamic-wallpapers-from-heic-files.md) | 216 |
+| 218 | [**The lock screen shows each output's wallpaper.**](../issues/218-the-lock-screen-shows-each-outputs-wallpaper.md) | 210 |
+| 219 | [**Appearance hides its Background tab under Caminito.**](../issues/219-appearance-hides-its-background-tab-under-caminito.md) | 212 |
+| 220 | [**Wallpaper in a real Session, by hand.**](../issues/220-wallpaper-in-a-real-session.md) | 211, 213, 214, 217, 218, 219 |

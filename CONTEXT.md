@@ -101,12 +101,16 @@ An output whose monitor idle has put to standby (DPMS) after mate-power-manager'
 _Avoid_: DPMS (the mechanism, on the tty only), asleep
 
 **Primary output**:
-The one output the user chooses as primary. The panel and caja's desktop go there, new windows open there when nothing says otherwise, and X11 apps see it as the RandR primary. When it is unplugged or disabled, the built-in panel stands in, else the leftmost output, until it returns.
+The one output the user chooses as primary. The panel and caja's desktop go there, new windows open there while a session has no Active output yet, and X11 apps see it as the RandR primary. When it is unplugged or disabled, the built-in panel stands in, else the leftmost output, until it returns.
 _Avoid_: main output, default output
 
 **Main output**:
 The output a surface is mostly on, which decides the scale the surface is asked to render at.
 _Avoid_: primary output (that's the user's choice; Smithay's name for this is "primary scanout output")
+
+**Active output**:
+The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused or the user clicks on anything on another output: a window, a panel, caja's desktop or the wallpaper. Moving the pointer there doesn't change it.
+_Avoid_: current output, focused output (an output has no focus), primary output (that's the user's choice)
 
 **Layout**:
 The enabled outputs with their places, modes and output scales, and which one is the primary output. Its outputs are always contiguous: no gaps, no overlaps, and each touches another along a shared edge of at least 100 logical pixels.
@@ -163,6 +167,14 @@ _Avoid_: layout (niri's term for its tiling model), shell (cosmic-comp's term)
 **Tile**:
 A half or quarter of an output's work area that a window dropped at the output's side or corner fills, and keeps filling until it's untiled. The tiling keybindings tile a window there too, and with tile cycling repeated presses change the tile's width to another share of the work area's. A tiled window is in a state of its own beside maximise (ADR 0024); a window dropped at the top is maximised, not tiled. The tile preview is the translucent rectangle that shows where a drop will put the window.
 _Avoid_: snapped (144's word for a window maximised one way), half-maximised, tiling model (Caminito isn't a tiling compositor)
+
+**Per-output workspaces**:
+Each output has its own workspaces and its own active one, so switching on one output leaves the others alone. The count, the names and the Workspace grid are the same on every output. A window is on a workspace of its Main output, and a sticky window is on every workspace of that output. A transient family is the exception: all of it is on the workspace of its root's Main output, wherever a dialog of it has been dragged. It is Caminito's default, from `org.mate.Caminito`'s `workspaces-per-output`.
+_Avoid_: per-monitor workspaces, independent workspaces, separate workspaces
+
+**Spanning workspaces**:
+One set of workspaces and one active workspace for every output, as in Marco. It is what Caminito does when Per-output workspaces is off.
+_Avoid_: shared workspaces, global workspaces
 
 **Workspace grid**:
 The rows and columns the workspaces are in, which the workspace switcher shows and the bindings for the workspace to the left or right move through. It comes from `org.mate.Caminito`'s three `workspace-layout-*` keys and the number of workspaces, and each workspace's cell is its ext-workspace coordinates.
