@@ -417,8 +417,6 @@ struct OutputDump {
     /// The output less what layer surfaces' exclusive zones and XWayland windows' struts
     /// reserve along its edges (64).
     work_area: RectDump,
-    /// The workspace it shows (ADR 0032).
-    active_workspace: usize,
     /// In the order they were made.
     layer_surfaces: Vec<LayerSurfaceDump>,
     /// Whether the locker that holds the lock has a lock surface on it (12).
@@ -579,7 +577,6 @@ impl Caminito {
                 geometry: output_geometry(output).into(),
                 scale: output.current_scale().fractional_scale(),
                 work_area: work_area(output).into(),
-                active_workspace: policy.active_workspace_on(output_id(output)),
                 layer_surfaces: self
                     .layer_surfaces(output)
                     .iter()
