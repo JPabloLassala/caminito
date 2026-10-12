@@ -208,6 +208,30 @@ _Avoid_: Caminito integration (the working name, for an extension that would do 
 The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order with the tile preview beneath the window being moved, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::Space`, which Caminito doesn't use)
 
+**Wallpaper**:
+What an output shows behind caja's desktop and every window. Each output has its own, of one wallpaper kind, unless the user keeps them the same on all outputs.
+_Avoid_: background (that's the layer the wallpaper's surface sits in, and MATE's word for its own setting), desktop background, backdrop
+
+**Wallpaper kind**:
+Which of five things an output's wallpaper is: a picture, a colour, a slideshow, a picture of the day or a dynamic wallpaper.
+_Avoid_: wallpaper type and wallpaper plugin (Plasma's words), mode
+
+**Slideshow**:
+A wallpaper that shows the pictures of a folder one after another, changing on a timer.
+_Avoid_: rotation, dynamic wallpaper
+
+**Picture of the day**:
+A wallpaper that is the picture an online source publishes for the day, and changes when the source's does.
+_Avoid_: daily wallpaper, online wallpaper
+
+**Dynamic wallpaper**:
+A wallpaper that is one set of pictures of the same scene, and shows the one that fits the time of day.
+_Avoid_: slideshow (its pictures are unrelated and follow a timer), live wallpaper, animated wallpaper
+
+**caminito-wallpaper**:
+Caminito's wallpaper program, which draws each output's wallpaper in place of mate-settings-daemon's background plugin, and whose dialog replaces the Background tab of MATE's Appearance capplet in a Session.
+_Avoid_: the background plugin, wallpaper daemon, swaybg
+
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
 _Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift
