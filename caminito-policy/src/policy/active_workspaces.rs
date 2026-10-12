@@ -84,16 +84,23 @@ impl<W: PolicyWindow> Policy<W> {
             *shown = primary;
         }
         if switches {
+            // As a switch closes them: the workspace changing under an open switcher (ruling
+            // 9 of 108), and the window menu, whose moves are from the active workspace (161).
             self.close_switcher(switcher::Close::Dropped);
             self.window_menu = None;
         }
+    }
+
+    /// The Main output of `id`'s frame now, if it's on one.
+    fn main_output_now(&self, id: WindowId) -> Option<OutputId> {
+        self.output_of(self.windows[&id].frame()).map(|o| o.id)
     }
 
     /// Notes each window's Main output, with no window following it.
     pub(super) fn note_main_outputs(&mut self) {
         let ids: Vec<WindowId> = self.windows.keys().copied().collect();
         for id in ids {
-            let output = self.output_of(self.windows[&id].frame()).map(|o| o.id);
+            let output = self.main_output_now(id);
             self.windows.get_mut(&id).unwrap().main_output = output;
         }
     }
@@ -107,8 +114,8 @@ impl<W: PolicyWindow> Policy<W> {
     pub(super) fn follow_main_outputs(&mut self) {
         let ids: Vec<WindowId> = self.windows.keys().copied().collect();
         for id in ids {
+            let now = self.main_output_now(id);
             let managed = &self.windows[&id];
-            let now = self.output_of(managed.frame()).map(|o| o.id);
             let was = managed.main_output;
             let follows =
                 self.config.workspaces_per_output && managed.parent.is_none() && !managed.sticky;

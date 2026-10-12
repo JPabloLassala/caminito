@@ -845,7 +845,7 @@ impl Caminito {
             return false;
         }
         let output = output_id(output);
-        tracing::info!("switching {name} to workspace {}", workspace + 1);
+        tracing::debug!("switching {name} to workspace {}", workspace + 1);
         self.policy.switch_output_workspace(output, workspace);
         true
     }

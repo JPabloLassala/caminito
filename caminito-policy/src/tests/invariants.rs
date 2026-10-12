@@ -669,7 +669,7 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     // With `workspaces-per-output` off, every output has the same active workspace, through
     // switches, outputs coming and going, dynamic workspaces, a change of the count and the
     // key turned off: every switch sets them all (221, 230), and an output added takes the
-    // one the others have.
+    // one the others have. `active_workspace` is the primary output's.
     if !policy.workspaces_per_output() {
         for output in policy.outputs() {
             assert_eq!(
@@ -679,11 +679,6 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                 output.id
             );
         }
-        assert_eq!(
-            policy.primary_active_workspace(),
-            policy.active_workspace(),
-            "the primary output's active workspace is every output's"
-        );
     }
     let mut all = policy.stacking_all().to_vec();
     all.sort();
