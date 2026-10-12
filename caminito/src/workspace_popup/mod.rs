@@ -23,7 +23,7 @@ use self::draw::Workspace;
 use self::layout::Layout;
 use crate::input::bindings::Binding;
 use crate::input::{Bound, press_keysyms};
-use crate::output::output_geometry;
+use crate::output::{output_geometry, output_id};
 use crate::state::{Caminito, SEAT, State};
 use crate::switcher::Holding;
 
@@ -286,7 +286,7 @@ impl Caminito {
     fn workspace_popup_inputs(&self, output: &Output) -> Drawn {
         let policy = &self.policy;
         let geometry = output_geometry(output);
-        let active = policy.active_workspace();
+        let active = policy.active_workspace_on(output_id(output));
         let names = policy.workspace_names();
         // A workspace's windows as Marco's popup has them (tabpopup.c:1151-1180): those
         // showing there, without the desktop and the docks, which skip its pager, and
