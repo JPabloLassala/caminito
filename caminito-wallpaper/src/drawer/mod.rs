@@ -633,6 +633,15 @@ impl App {
         let Some((logical_width, logical_height)) = surface.size else {
             return;
         };
+        // Ended before the frame is drawn, not after: a fade ended after would show its
+        // last blend, a frame short of the picture, and ask for no frame to follow it (211).
+        if surface
+            .fade
+            .as_ref()
+            .is_some_and(|(_, start)| start.elapsed() >= FADE)
+        {
+            surface.fade = None;
+        }
         // Every frame of a fade comes here, so a failure is logged at debug alone; the
         // frame stays as it was until the next.
         let frame = match current(surface) {
@@ -643,13 +652,6 @@ impl App {
             }
             None => return,
         };
-        if surface
-            .fade
-            .as_ref()
-            .is_some_and(|(_, start)| start.elapsed() >= FADE)
-        {
-            surface.fade = None;
-        }
         let buffer = match surface.buffers.write(&frame, &self.shm, &self.qh, global) {
             Ok(Some(buffer)) => buffer,
             Ok(None) => {
