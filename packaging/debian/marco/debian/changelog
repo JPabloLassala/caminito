@@ -2,6 +2,9 @@ marco (1.29.1-0caminito1) resolute; urgency=medium
 
   * Backported to upstream's 1.29.1 for Caminito, whose mate-control-center
     1.29.1 needs it.
+  * debian/control: build-depend on libmate-desktop-dev (>= 1.27.1), which
+    1.29.1 links, and no longer on autoconf-archive, intltool and
+    mate-common.
   * debian/patches: drop 0001_check-availability-of-compositing-1.patch,
     0002_check-availability-of-compositing-2.patch and
     1001_marco-Add-cmdline-option-no-keybindings-for-disablin.patch, which
