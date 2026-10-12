@@ -2,7 +2,7 @@
 
 Epic: system-shortcuts
 Type: implementation
-Status: ready-for-agent
+Status: open: the code is in, the full suite wasn't run at the developer's word, and the checklist item needs a Session
 Blocked by: none
 Spec: [System shortcuts](../system-shortcuts/spec.md)
 
@@ -68,3 +68,20 @@ Recorded in the Done section:
 
 - the highest button number read, and how X's numbers above 9 map to the kernel's button codes;
 - whether a shortcuts inhibitor already kept modifier clicks from Caminito, and if so what changed.
+
+## Done (2026-10-12)
+
+- **Tests first for the parser, the table and the first presses.** The parser's and the table's unit tests were written and seen to fail before their code, and so were the first headless tests in `caminito/src/tests/button_bindings.rs`: a bound button runs its action, the client sees nothing, focus and stacking stay. The tests of the lock, a move, the menus, the popups, a modifier click and the inhibitor were written after the pointer path, so each guard was then broken in turn, and each break failed a test.
+- **The highest button read is 20.** X's numbers from 8 up are the kernel's codes from `BTN_SIDE` (0x113) in order, as xf86-input-libinput and Xwayland number them: 8 is `BTN_SIDE`, 9 `BTN_EXTRA`, 10 `BTN_FORWARD`, 11 `BTN_BACK`, 12 `BTN_TASK`, and so on to 20, which is 0x11f, the last code before `BTN_JOYSTICK`. 1, 2 and 3 are `BTN_LEFT`, `BTN_MIDDLE` and `BTN_RIGHT`. `Button21` and up don't parse. `x_button` in `caminito/src/input/bindings/accelerators.rs` has the mapping.
+- **A number is written as X writes it.** `Button08` and `Button+8` don't parse, since the syntax is in users' settings for good (ADR 0028) and a strict one can be loosened later.
+- **A shortcuts inhibitor didn't keep modifier clicks from Caminito, and now does.** Before this ticket `on_pointer_button` asked `mouse-button-modifier` what a press did with no look at the inhibitor, so Alt and the left button moved a window whose client held one. Now an active inhibitor on the focused client turns off both the modifier clicks and the button bindings, and the press takes the ordinary path: it goes to whatever is under the pointer, and focuses and raises a window there as a plain click does.
+- **What holds the pointer.** A binding gives way to the session lock, a Smithay pointer grab (a move, a resize, a drag-and-drop, an xdg popup, a button already down on a client), a keyboard move or resize, the Window menu, and an X11 client's menu. The last takes no pointer grab Caminito can see, so its keyboard grab through Xwayland stands for it; the code review found that one, and its test failed first. A drag-and-drop and an xdg popup have no test of their own.
+- **The popups take a button before the inhibitor does,** as they take a key: an open Window switcher or Workspace popup is stepped by a bound button whether or not the focused client holds an inhibitor.
+- **The button that opened the Window switcher steps it,** as the opening key does, with other modifiers held too. Any other button still picks a cell or cancels (108), and any button with no binding to the workspace beside still closes the Workspace popup (152).
+- **A button with no modifier on a `switch-*` or `cycle-*` action binds nothing and is logged,** as a key with none is today, and one on a workspace switch switches and shows no popup.
+- **`GrabAccelerators` refuses a button until 185.** The one parser now reads a button for both paths, and nothing signals a grabbed one yet, so `Grabs::grab` returns 0 with a log line. 185 takes that arm out.
+- **The button's label is in `caminito/src/window_menu/labels.rs`,** with its unit test there, and `caminito/src/tests/window_menu.rs` checks the hint through the debug dump. The names are Caminito's own English and aren't translated, since Marco's catalogue has none.
+- **The Window menu's *Maximize* item shows `maximize`'s binding, not `toggle-maximized`'s,** as before, so the checklist item binds `minimize` to see a hint.
+- **Not run: the full suite and `tools/check`.** The developer asked for the relevant tests alone. Run, on a private bus with clippy and rustfmt clean: the `input`, `switcher`, `workspace_popup` and `window_menu` modules and the headless tests of bindings, button bindings, modifier clicks, the Window switcher, the Workspace popup, the Window menu, accelerators, grabs, frames, parity, popups, the lock, the keybinding manifests, the debug dump, override-redirect windows, keyboard grabs, drag icons and the focus modes. `frames::any_mouse_button_on_a_maximised_windows_button_unmaximises_it::x11` failed once in a parallel run and passed in ten reruns.
+- **Not run: the checklist item,** *A mouse button as a System shortcut*, which needs a Session and a mouse with back and forward buttons.
+- **Not done: line numbers for the two citations in `x_button`'s doc,** which name the function and file in xf86-input-libinput and Xwayland; neither source was at hand.

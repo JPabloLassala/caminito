@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=About Caminito
+Comment=See which build of Caminito is installed
+Exec=caminito-about
+Icon=caminito
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;HardwareSettings;
+Keywords=mate-control-center;MATE;caminito;version;compositor;about;
+OnlyShowIn=MATE;

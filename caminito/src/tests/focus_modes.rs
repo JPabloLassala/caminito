@@ -9,8 +9,8 @@ use caminito_theme::ButtonFunction;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_TAB, Kind, WINDOW_COLOR,
-    WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_SPACE,
+    KEY_TAB, Kind, WINDOW_COLOR, WindowSpec, on_both_kinds,
 };
 use crate::decoration::control::FrameControl;
 use crate::settings::Value;
@@ -57,6 +57,13 @@ fn bottom_right_of(f: &Fixture, window: ClientWindow) -> (f64, f64) {
     let frame = f.visible_frame(window);
     let at = (frame.loc + frame.size).to_f64() - Point::<f64, Logical>::from((5., 5.));
     (at.x, at.y)
+}
+
+/// Whether the debug dump has `member`, as it has `workspace_popup` and `window_menu`
+/// while each is open.
+fn is_open(f: &Fixture, member: &str) -> bool {
+    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
+    !dump[member].is_null()
 }
 
 fn focus(f: &Fixture) -> Option<WindowId> {
@@ -305,5 +312,50 @@ on_both_kinds! {
         assert!(f.has_keyboard(b));
         f.key(KEY_LEFTALT, false);
         assert_eq!(focus(&f), f.policy_id(a));
+    }
+}
+
+on_both_kinds! {
+    fn the_focus_stays_put_under_the_pointer_while_the_workspace_popup_shows(kind: Kind) {
+        let (mut f, id) = connected_with(kind, &[focus_mode("sloppy")]);
+        let (a, b) = two_windows(&mut f, id);
+        let at = bottom_right_of(&f, b);
+        move_to(&mut f, at);
+
+        // At the first workspace the switch goes nowhere, and the popup shows (152).
+        f.key(KEY_LEFTCTRL, true);
+        f.key(KEY_LEFTALT, true);
+        f.key(KEY_LEFT, true);
+        f.key(KEY_LEFT, false);
+        assert!(is_open(&f, "workspace_popup"));
+        let at = top_left_of(&f, a);
+        move_to(&mut f, at);
+
+        assert_eq!(focus(&f), f.policy_id(b));
+        assert!(f.has_keyboard(b));
+        f.key(KEY_LEFTALT, false);
+        f.key(KEY_LEFTCTRL, false);
+        assert!(!is_open(&f, "workspace_popup"));
+        assert_eq!(focus(&f), f.policy_id(b));
+    }
+}
+
+on_both_kinds! {
+    fn the_focus_stays_put_under_the_pointer_while_the_window_menu_is_open(kind: Kind) {
+        let (mut f, id) = connected_with(kind, &[focus_mode("sloppy")]);
+        let (a, b) = two_windows(&mut f, id);
+        let at = bottom_right_of(&f, b);
+        move_to(&mut f, at);
+
+        f.key(KEY_LEFTALT, true);
+        f.key(KEY_SPACE, true);
+        f.key(KEY_SPACE, false);
+        f.key(KEY_LEFTALT, false);
+        assert!(is_open(&f, "window_menu"));
+        let at = top_left_of(&f, a);
+        move_to(&mut f, at);
+
+        assert_eq!(focus(&f), f.policy_id(b));
+        assert!(f.has_keyboard(b));
     }
 }

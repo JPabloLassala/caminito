@@ -171,15 +171,13 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Opens `id`'s window menu for `seat`, in place of the one that's open. Returns false
-    /// if it doesn't open: the window isn't showing, or the seat is moving or resizing a
-    /// window, or the Window switcher is open, as a GTK menu doesn't open under another
-    /// grab.
+    /// if it doesn't open: the window isn't showing, or a seat has another Interaction, as
+    /// a GTK menu doesn't open under another grab.
     pub fn open_window_menu(&mut self, seat: SeatId, id: WindowId) -> bool {
         self.window_menu = None;
         if !self.windows.contains_key(&id)
             || !self.is_showing(id)
-            || self.grabs.contains_key(&seat)
-            || self.switcher.is_some()
+            || self.a_seat_has_an_interaction()
         {
             return false;
         }

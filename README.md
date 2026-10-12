@@ -44,7 +44,7 @@ keybinding actions, has one of four answers in [docs/parity.md](docs/parity.md),
 or the checklist item that covers it:
 
 - **honoured:** Caminito does what Marco does with it, or what its row says. Every keybinding
-  action is, and the control center's _Keyboard Shortcuts_ lists them.
+  action is, and the control center's _System Shortcuts_ lists them.
 - **never:** Caminito will not implement it, for the reason beside it: what only an X11 window
   manager can do, and what Marco itself never finished.
 - **left to another component:** another program of the Session does it.
@@ -412,6 +412,8 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 | [caminito-policy](caminito-policy/)           | Window-management policy (focus, stacking, placement, workspaces, transients), free of protocol types                                |
 | [caminito-layout](caminito-layout/)           | Docking and healing a layout of outputs, with no dependencies, for Caminito and caminito-displays                                        |
 | [caminito-displays](caminito-displays/)       | The display settings program, in GTK4: a library with the page's state and its client of output management, and the window over them |
+| [caminito-about](caminito-about/)             | The "About Caminito" of the control center, in GTK4                                                                                  |
+| [caminito-version](caminito-version/)         | The version string with the build's revision, for `caminito --version` and caminito-about                                            |
 | [caminito-theme](caminito-theme/)             | Marco's theme engine, with no Smithay or GTK (from M2)                                                                               |
 | [caminito-test-client](caminito-test-client/) | The Wayland client the integration tests drive                                                                                       |
 

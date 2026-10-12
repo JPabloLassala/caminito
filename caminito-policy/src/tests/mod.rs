@@ -9,6 +9,7 @@ mod focus;
 mod focus_stealing;
 mod functions;
 mod grid;
+mod interaction;
 mod interactive;
 mod invariants;
 mod keyboard_grab;

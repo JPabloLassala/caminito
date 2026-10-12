@@ -26,6 +26,7 @@ use self::draw::{Chrome, Entry};
 use self::layout::{CellStyle, Direction, Grid};
 use crate::decoration::IconSource;
 use crate::input::bindings::Binding;
+use crate::input::bindings::accelerators::{Trigger, x_button};
 use crate::input::press_keysyms;
 use crate::output::output_geometry;
 use crate::scene;
@@ -80,8 +81,9 @@ impl Holding {
 /// The compositor's side of the open Window switcher.
 pub(crate) struct OpenSwitcher {
     holding: Holding,
-    /// The key of the binding that opened it, which steps it as Tab does.
-    key: Keysym,
+    /// The key or the mouse button of the binding that opened it, which steps it as Tab
+    /// does.
+    trigger: Trigger,
     /// When the popup appears, until it has: `deadlines` shows it then (175).
     popup_due: Option<Duration>,
     /// The popup, once it has appeared.
@@ -321,9 +323,8 @@ impl Caminito {
         keysym: &KeysymHandle<'_>,
     ) -> Option<FilterResult<Option<T>>> {
         self.refresh_switcher();
-        let key = self.switcher.as_ref()?.key;
-        let switcher = self.policy.switcher()?;
-        let (selected, popup, list) = (switcher.selected, switcher.popup, switcher.list);
+        let trigger = self.switcher.as_ref()?.trigger;
+        let selected = self.policy.switcher()?.selected;
         if keysym.modified_sym().is_modifier_key() {
             return Some(FilterResult::Forward);
         }
@@ -338,43 +339,54 @@ impl Caminito {
             Some(Keysym::Down) => Some(Direction::Down),
             _ => None,
         };
-        // A `switch-*` binding steps the Window switcher and a `cycle-*` one a cycle, and
-        // each ends the other's, as in Marco (`process_tab_grab`,
-        // core/keybindings.c:2141-2199), which also sets the stacking back. A cycle has no
-        // Escape of its own, so a `cycle-*` binding of another list ends it too, as there
-        // between the group's and the others'; the Window switcher is stepped by any
-        // `switch-*` binding (108).
         let bindings = &self.settings.bindings;
-        let bound = match bindings.binding_for(mods, &press_keysyms(keysym)) {
-            Some(Binding::Policy(Action::Switch { backward, .. })) => Some((popup, backward)),
-            Some(Binding::Policy(Action::Cycle {
-                list: its,
-                backward,
-            })) => Some((!popup && its == list, backward)),
-            _ => None,
-        };
-        match sym {
-            _ if let Some((steps, backward)) = bound => {
-                if steps {
-                    self.policy.switcher_step(backward);
-                } else {
-                    self.policy.switcher_cancel(now);
+        let binding = bindings.binding_for(mods, &press_keysyms(keysym));
+        if !self.switcher_binding_pressed(binding) {
+            match sym {
+                Some(sym) if Trigger::Key(sym) == trigger || sym == Keysym::Tab => {
+                    self.policy.switcher_step(mods.shift);
                 }
-            }
-            Some(sym) if sym == key || sym == Keysym::Tab => {
-                self.policy.switcher_step(mods.shift);
-            }
-            Some(Keysym::Return | Keysym::KP_Enter) => self.policy.switcher_commit(now),
-            Some(Keysym::Escape) => self.policy.switcher_cancel(now),
-            _ => {
-                if let (Some(direction), Some(grid)) = (direction, self.switcher_grid()) {
-                    self.policy
-                        .switcher_select(grid.neighbour(selected, direction));
+                Some(Keysym::Return | Keysym::KP_Enter) => self.policy.switcher_commit(now),
+                Some(Keysym::Escape) => self.policy.switcher_cancel(now),
+                _ => {
+                    if let (Some(direction), Some(grid)) = (direction, self.switcher_grid()) {
+                        self.policy
+                            .switcher_select(grid.neighbour(selected, direction));
+                    }
                 }
             }
         }
         self.refresh_switcher();
         Some(FilterResult::Intercept(None))
+    }
+
+    /// What the press of a key or a mouse button with this `binding` does to the open
+    /// switcher, and whether it did anything. A `switch-*` binding steps the Window switcher
+    /// and a `cycle-*` one a cycle, and each ends the other's, as in Marco
+    /// (`process_tab_grab`, core/keybindings.c:2141-2199), which also sets the stacking
+    /// back. A cycle has no Escape of its own, so a `cycle-*` binding of another list ends
+    /// it too, as there between the group's and the others'; the Window switcher is stepped
+    /// by any `switch-*` binding (108).
+    fn switcher_binding_pressed(&mut self, binding: Option<Binding>) -> bool {
+        let Some(switcher) = self.policy.switcher() else {
+            return false;
+        };
+        let (popup, list) = (switcher.popup, switcher.list);
+        let (steps, backward) = match binding {
+            Some(Binding::Policy(Action::Switch { backward, .. })) => (popup, backward),
+            Some(Binding::Policy(Action::Cycle {
+                list: its,
+                backward,
+            })) => (!popup && its == list, backward),
+            _ => return false,
+        };
+        if steps {
+            self.policy.switcher_step(backward);
+        } else {
+            let now = self.now();
+            self.policy.switcher_cancel(now);
+        }
+        true
     }
 
     /// A key went up, leaving `mods` down: the switcher commits once the modifiers that
@@ -393,16 +405,18 @@ impl Caminito {
 }
 
 impl State {
-    /// A `switch-*` or `cycle-*` binding fired with the Window switcher closed: `key` with
-    /// `mods` down. Nothing opens during a move or resize. A client's open menu is
-    /// dismissed first. A `cycle-*` action times no popup (163).
+    /// A `switch-*` or `cycle-*` binding fired with the Window switcher closed: `trigger`,
+    /// a key or a mouse button, with `mods` down. Nothing opens during a move or resize. A
+    /// client's open menu is dismissed first. A `cycle-*` action times no popup (163).
     pub(crate) fn switch_action(
         &mut self,
         action: Action,
-        key: Keysym,
+        trigger: Trigger,
         mods: &ModifiersState,
         time: InputTime,
     ) {
+        // The pointer is held for a move or resize, which outlasts one that Policy ended
+        // itself. Policy refuses for the seat's Interaction (187).
         if self.caminito.window_grab.is_some() {
             return;
         }
@@ -415,7 +429,7 @@ impl State {
             let popup_due = switcher.popup.then(|| now + POPUP_DELAY);
             self.caminito.switcher = Some(OpenSwitcher {
                 holding: Holding::of(mods),
-                key,
+                trigger,
                 popup_due,
                 popup: None,
             });
@@ -425,7 +439,9 @@ impl State {
     /// A pointer button with the pointer at `location`. Returns whether it was the Window
     /// switcher's, and so no client's: while the switcher is open, a press in a cell of
     /// its popup commits that window and any other press cancels, as a click ends Marco's
-    /// grab; and the release of such a press is swallowed with it.
+    /// grab; and the release of such a press is swallowed with it. A button with a
+    /// `switch-*` or `cycle-*` binding drives the switcher as such a key does instead, and
+    /// so does the button that opened it (184).
     pub(crate) fn switcher_button(
         &mut self,
         button: u32,
@@ -443,6 +459,20 @@ impl State {
             return false;
         }
         caminito.suppressed_buttons.insert(button);
+        let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
+        let binding = caminito.bound_to_button(button, &mods);
+        let opened_it = |open: &OpenSwitcher| {
+            x_button(button).is_some_and(|button| open.trigger == Trigger::Button(button))
+        };
+        if caminito.switcher_binding_pressed(binding.map(|(_, binding)| binding)) {
+            caminito.refresh_switcher();
+            return true;
+        }
+        if caminito.switcher.as_ref().is_some_and(opened_it) {
+            caminito.policy.switcher_step(mods.shift);
+            caminito.refresh_switcher();
+            return true;
+        }
         let cell = caminito.visible_switcher().and_then(|popup| {
             let origin = output_geometry(&popup.output).loc.to_f64();
             popup.grid.cell_at(location - origin)

@@ -151,7 +151,7 @@ on_both_kinds! {
         assert_eq!(tile(&f, window), json!("left"));
 
         grab_title(&mut f, window);
-        draw_as_asked(&mut f, window);
+        f.draw_at_asked_size(window, (floating.w, floating.h));
 
         assert_eq!(tile(&f, window), Value::Null);
         assert_eq!(f.geometry(window).size, floating);
@@ -296,13 +296,16 @@ on_both_kinds! {
         // Half, a third, a quarter, all, three quarters and two thirds of 1920.
         for width in [960, 640, 480, 1920, 1440, 1280] {
             press_tile_key(&mut f, window, KEY_W);
-            assert_eq!(as_rect(f.visible_frame(window)), rect(1920 - width, 0, width, 1080));
+            // Xwayland redraws an X window some time after X has resized it, and each
+            // width here differs from the last.
+            let area = rect(1920 - width, 0, width, 1080);
+            f.dispatch_until(|f| as_rect(f.visible_frame(window)) == area);
         }
 
         press_tile_key(&mut f, window, KEY_W);
 
         assert_eq!(tile(&f, window), Value::Null);
-        assert_eq!(f.visible_frame(window), floating);
+        f.dispatch_until(|f| f.visible_frame(window) == floating);
     }
 }
 

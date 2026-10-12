@@ -27,10 +27,10 @@ pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
     ActivationSource, ActivationToken, Config, Crossing, FocusClaim, FocusMode, FocusNewWindows,
-    GrabKey, GrabStep, LayerSurfaceId, MAX_WORKSPACES, MapStates, MenuEntry, MenuItem, MenuKey,
-    MenuMark, MenuOp, MenuSelection, MinimizedPlacement, PointerTarget, Policy, ResizeEdges,
-    SeatId, StateRequest, SwitchEntry, SwitchList, Switcher, TOKEN_LIFETIME, UrgentPlacement,
-    WindowMenu, default_workspace_name,
+    GrabKey, GrabStep, Interaction, LayerSurfaceId, MAX_WORKSPACES, MapStates, MenuEntry, MenuItem,
+    MenuKey, MenuMark, MenuOp, MenuSelection, MinimizedPlacement, PointerTarget, Policy,
+    ResizeEdges, SeatId, StateRequest, SwitchEntry, SwitchList, Switcher, TOKEN_LIFETIME,
+    UrgentPlacement, WindowMenu, WorkspacePopup, default_workspace_name,
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;

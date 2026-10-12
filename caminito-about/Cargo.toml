@@ -1,0 +1,17 @@
+[package]
+name = "caminito-about"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shipped through the PKGBUILD (16), never crates.io.
+publish = false
+
+[dependencies]
+# The version string, which `caminito --version` prints too (182).
+caminito-version = { path = "../caminito-version" }
+# GTK4 without libadwaita, as caminito-displays is (ADR 0014).
+gtk.workspace = true
+
+[lints]
+workspace = true

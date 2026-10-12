@@ -224,6 +224,28 @@ session_env() {
 - **Debug tool:** `systemctl --user show-environment`, `loginctl`, the journal, and the
   `outputs` of `DumpState` for the panels' and the desktop's layer surfaces.
 
+### A link opens in the browser after a second login
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Caminito*, log out, and log in again, with the user's systemd manager
+     left running between the two: a second login of the user elsewhere, or lingering.
+  2. Run:
+
+     ```sh
+     pid=$(systemctl --user show -p MainPID --value xdg-desktop-portal.service)
+     tr '\0' '\n' </proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|DISPLAY)='
+     ```
+
+  3. Open *About Caminito* and press one of its links, with Firefox closed and again with it
+     open.
+- **Expected:** in step 2 the portal has both variables, with this Session's values, or has no
+  process yet. In step 3 the link opens in the browser each time (232). The journal has no
+  `no DISPLAY environment variable specified` from the browser, and no `can't restart the
+  portal` from Caminito.
+- **Debug tool:** `journalctl --user -b -t caminito`, `journalctl --user -u xdg-desktop-portal`,
+  and `systemctl --user restart xdg-desktop-portal.service`, which is what Caminito asks for.
+
 ### Log Out and Shut Down from the panel
 
 - **Milestone:** M5
@@ -739,7 +761,7 @@ session_env() {
      ticket 100's change (a grab named by the keysym its press types), log into *MATE on
      Caminito*.
   2. Add a shortcut for `mate-calc` on Ctrl+Alt+K. With `mate-control-center-caminito`
-     installed, use *Add* in *Keyboard Shortcuts* and press the keys there. Without it:
+     installed, use *Add* in *System Shortcuts* and press the keys there. Without it:
 
      ```sh
      d=/org/mate/desktop/keybindings/custom-check
@@ -750,9 +772,9 @@ session_env() {
 
   3. Click in a text editor's window, and press Ctrl+Alt+K. Close the calculator, then hold
      Ctrl+Alt+K for two seconds.
-  4. Change the shortcut's keys to Shift+Super+1, in *Keyboard Shortcuts* or with `dconf
+  4. Change the shortcut's keys to Shift+Super+1, in *System Shortcuts* or with `dconf
      write $d/binding "'<Shift><Mod4>exclam'"`. Press Ctrl+Alt+K, then Shift+Super+1.
-  5. Remove the shortcut, in *Keyboard Shortcuts* or with `dconf reset -f $d/`. Press
+  5. Remove the shortcut, in *System Shortcuts* or with `dconf reset -f $d/`. Press
      Shift+Super+1 in a terminal running `wev`.
   6. Add the shortcut again as in step 2, with `XF86AudioMute` for its keys, which the mute
      key has, and press the mute key. Then remove the shortcut.
@@ -770,6 +792,49 @@ session_env() {
   a unique name of msd's that isn't the one the media keys have: the plugin has a connection
   of its own. `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's
   side.
+
+### A mouse button runs a command
+
+- **Milestone:** M8
+- **Steps:**
+  1. With `mate-settings-daemon-caminito` 1.29.1-6 or later installed, and a `caminito-git` with
+     ticket 185's change (a grab of a mouse button), log into *MATE on Caminito* with a mouse
+     that has back and forward buttons. Open Firefox, and open two pages one after the other
+     in a tab.
+  2. Add a shortcut for `mate-calc` on Super and the back button. The dialog can't capture a
+     button until 186:
+
+     ```sh
+     d=/org/mate/desktop/keybindings/custom-check
+     dconf write $d/name "'Calculator'"
+     dconf write $d/action "'mate-calc'"
+     dconf write $d/binding "'<Super>Button8'"
+     ```
+
+  3. With Super held, click the back button over Firefox's page, and then over the panel.
+     Close the calculators. Then click the back button over the page without Super.
+  4. Go forward to the second page again. Change the shortcut to the forward button alone,
+     with `dconf write $d/binding "'Button9'"`. With Super held, click the back button over
+     a terminal running `wev`, and then click the forward button over Firefox's page.
+  5. Remove the shortcut with `dconf reset -f $d/`, go back a page in Firefox, and click the
+     forward button over the page.
+  6. Run `gsettings set org.mate.SettingsDaemon.plugins.media-keys volume-mute "'Button9'"`,
+     click the forward button twice, and run `gsettings reset
+     org.mate.SettingsDaemon.plugins.media-keys volume-mute`.
+  7. Add the shortcut again as in step 2, log out, log into *MATE*, the X11 session, and
+     click the back button with Super held. Change the shortcut to `<Primary><Alt>k` and
+     press Ctrl+Alt+K. Then remove it.
+- **Expected:** in step 3 each click with Super opens a calculator, wherever the pointer is,
+  and Firefox doesn't go back; without Super it goes back. In step 4 `wev` shows the back
+  button's press, which is the focused window's again, and the forward button opens a
+  calculator while Firefox stays on its page. In step 5 Firefox goes forward. In step 6 the
+  two clicks mute and unmute, with the OSD. In step 7 the button opens nothing, as with the
+  stock package, which can't read a button (ADR 0028), and Ctrl+Alt+K opens the calculator
+  (ADR 0011).
+- **Debug tool:** `DumpState`'s `accelerator_grabs`, where `<Super>Button8` is listed under
+  msd's unique name; Caminito's log, which names a button it won't grab, such as `Button1`
+  with no modifier, or `Button4`, the wheel's; `wev` or `xev` for the button's number.
+  `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's side.
 
 ### The brightness keys change the backlight with a Wayland window focused
 
@@ -1197,6 +1262,47 @@ session_env() {
   `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Caminito` for the property's
   signal.
 
+### The desktop's menu is on every output
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected and `caja-caminito` at `pkgrel` 4 or later, log into *MATE
+     on Caminito*.
+  2. Right-click the wallpaper of the output that isn't primary, and choose *Create Folder*.
+  3. Choose the other output as primary, with `choose` from the item above or in
+     caminito-displays, and right-click the wallpaper of each output.
+  4. Unplug the cable of the output that isn't primary, plug it back in, and right-click its
+     wallpaper.
+- **Expected:** the desktop's menu pops up at the pointer, on the output clicked, each time.
+  The wallpaper of the output that isn't primary looks as it does with no caja running. The
+  new folder appears among the icons, on the primary output (208).
+- **Debug tool:** each output's `layer_surfaces` in `DumpState`: `desktop` on the primary
+  output and `desktop-menu` on each of the others.
+
+### A panel's properties choose its display
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected and `mate-panel-caminito` at `pkgrel` 11 or later, log into
+     *MATE on Caminito*.
+  2. Right-click the bottom panel, choose *Properties*, and read the *Display* row.
+  3. Choose the other display in it. Then right-click the top panel, choose *New Panel*, and
+     in the new panel's properties choose the display that isn't primary.
+  4. With both dialogs open, choose the other output as primary, with `choose` from the item
+     above or in caminito-displays.
+  5. Unplug the cable of the output that isn't primary, look, and plug it back in.
+  6. Log out and in again.
+- **Expected:** the row is below *Orientation*, and lists both displays as caminito-displays
+  names them, the primary one with `(primary)`, and the bottom panel's is chosen. In step 3
+  each panel goes to the display chosen, at that display's size, with its applets, and the
+  windows of both outputs keep clear of the panels there. In step 4 the panels swap outputs,
+  and each dialog's row lists the displays in their new order with its panel's still chosen.
+  In step 5 the panels of the unplugged output go to the one that's left, where the row is
+  gone, and they return with the monitor. After step 6 each panel is where it was chosen to
+  be. A drawer's properties have no row (209).
+- **Debug tool:** each output's `layer_surfaces` and `work_area` in `DumpState`, and
+  `dconf watch /org/mate/panel/toplevels/` for the `monitor` key.
+
 ### Turning an output off leaves the others touching
 
 - **Milestone:** M6
@@ -1294,7 +1400,7 @@ session_env() {
 - **Milestone:** M8
 - **Steps:**
   1. Log into *MATE on Caminito*, with the panel along the top. In mate-control-center's
-     *Keyboard Shortcuts*, under *Window Management*, set the six *Tile window to …* actions
+     *System Shortcuts*, under *Window Management*, set the six *Tile window to …* actions
      to Super with Q (west side), W (east side), E (north-west corner), R (north-east),
      T (south-west) and A (south-east). Open pluma (native GTK3) and xterm (X11).
   2. With pluma focused, press each of the six once.
@@ -1322,7 +1428,7 @@ session_env() {
 - **Steps:**
   1. Log into *MATE on Caminito* with two monitors side by side, at different scales (100%
      and 200%, say, set in *Displays*), and the panel along the top of the first. In
-     mate-control-center's *Keyboard Shortcuts*, under *Window Management*, set the four
+     mate-control-center's *System Shortcuts*, under *Window Management*, set the four
      *Move window to … corner* actions, the four *Move window to … side of screen* actions,
      *Move window to center of screen* and the four *Move window to … monitor* actions to
      keys of your choice. Open pluma (native GTK3) and xterm (X11).
@@ -1435,22 +1541,60 @@ session_env() {
 - **Debug tool:** `gtk-launch mate-display-properties`, and `ls
   /usr/share/caminito/xdg/applications`.
 
+## caminito-about
+
+### About Caminito is in the control center, under Caminito only, and shows the installed build
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built from the PKGBUILD and installed, log into *MATE on Caminito*.
+     Run `caminito --version` and `pacman -Q caminito-git`.
+  2. Open the control center and the panel's *System ▸ Preferences ▸ Hardware* menu, and open
+     *About Caminito* from each.
+  3. Press each of the four links: *Marco*, *Smithay*, *GPL-2.0-or-later* and the repository.
+  4. With the window open, open *About Caminito* again, or run `caminito-about`.
+  5. Try to resize the window, and press Escape.
+  6. Run `ls /usr/share/applications | grep -i caminito-about`. Log out, log into *MATE*, the
+     X11 session, and look for *About Caminito* in its control center.
+  7. In a checkout, run `cargo build -p caminito -p caminito-about`, then
+     `target/debug/caminito --version` and `target/debug/caminito-about`.
+- **Expected:** in step 1 `caminito --version` prints `0.1.0 (r<count>.<hash>)` and
+  exits, and the part in brackets is the package's `pkgver`. In step 2 the entry is under
+  *Hardware* with Caminito's logo, and opens the prototype's compact card (182): the logo on
+  the left, *Caminito* in large bold type with the same version string after it on one line,
+  *A Wayland compositor for the MATE desktop* under them, and two small dim lines, *Built on
+  Marco and Smithay. GPL-2.0-or-later.* and the repository. There is no Close button. In step
+  3 each link opens in the browser: Marco's and Smithay's repositories, the GNU page of the
+  GPL 2's text, and `https://github.com/JPabloLassala/caminito`. In step 4 the open window is
+  raised and there is still one. In step 5 the window doesn't resize, and Escape closes it. In
+  step 6 `ls` prints nothing, and X11 MATE has no *About Caminito*. In step 7 both show the
+  checkout's `r$(git rev-list --count HEAD).$(git rev-parse --short=7 HEAD)`.
+- **Debug tool:** `ls /usr/share/caminito/xdg/applications`, `gtk-launch caminito-about`, and
+  `caminito-about` run from a terminal for GTK's warnings.
+
 ## The control center
 
-### Windows and Keyboard Shortcuts open under Caminito, and name it
+### Windows and System Shortcuts open under Caminito, and name it
 
 - **Milestone:** M8, for step 4, which applies a changed shortcut at once (148). It's run in
   M8's closing run (173). The other steps are M6's.
 - **Steps:**
-  1. With `mate-control-center-caminito` installed, and `caminito-git` at a build that has the
-     `50-caminito-*.xml` manifests (`ls /usr/share/mate-control-center/keybindings`), log into
-     *MATE on Caminito*.
+  1. With `mate-control-center-caminito` 1.29.1-5 or later installed, and `caminito-git` at a
+     build that has the `50-caminito-*.xml` manifests (`ls
+     /usr/share/mate-control-center/keybindings`) and the launcher (`ls
+     /usr/share/caminito/xdg/applications/mate-keybinding.desktop`), log into *MATE on
+     Caminito*.
   2. Open *Windows* from the control center, with a window that Caminito decorates beside it.
      On *Behaviour*, set the titlebar's double-click action to *Toggle Shade*, double-click that
      window's titlebar, and set it back. On *Placement*, move the titlebar buttons to the
      left and back.
-  3. Open *Keyboard Shortcuts* from the control center. Find *Window Management*, and
-     *Desktop*'s *Show the panel's "Run Application" dialog box*.
+  3. Find *System Shortcuts* in the control center, under *Hardware*, and in the panel's
+     menu, under *System*, *Preferences*, *Hardware*. Open it from the control center, and
+     read its window's title. Find *Window Management*, and *Desktop*'s *Show the panel's "Run
+     Application" dialog box*. Then close the dialog and the control center, since a second
+     control center only raises the first, and from a terminal run `LANGUAGE= LC_ALL=
+     LANG=es_ES.UTF-8 mate-control-center`, with that locale generated (`locale -a`), and
+     find and open the dialog there.
   4. Click the shortcut of *Toggle maximization state*, press Super+Up, and run:
 
      ```sh
@@ -1461,19 +1605,23 @@ session_env() {
      again, press Backspace, run the command again, and press Super+Up and Alt+F10. Last,
      run `gsettings reset org.mate.Marco.window-keybindings toggle-maximized` and press
      Alt+F10.
-  5. Log out, log into *MATE*, the X11 session, and open both dialogs there. Then log into the
-     Wayfire session and open both.
+  5. Log out, log into *MATE*, the X11 session, and open both dialogs there, the second one
+     as *Keyboard Shortcuts*. Close the control center, run `LANGUAGE= LC_ALL=
+     LANG=es_ES.UTF-8 mate-control-center`, and open it from there too. Then log into the Wayfire session and open both.
 - **Expected:** in step 2 the dialog opens, with no *The current window manager is
   unsupported*, and it offers Alt and Super for moving a window. The window shades at the
   double click, and each window's buttons move as the setting does, with the dialog still
-  open (06). In step 3 the dialog opens without a crash, and lists Caminito's window management
-  actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
+  open (06). In step 3 the control center and the menu each list *System Shortcuts* once, and
+  no *Keyboard Shortcuts*, and the dialog's title is *System Shortcuts*. In Spanish the
+  launcher and the title are both *Atajos del sistema* (183). The dialog opens without a
+  crash, and lists Caminito's window management actions once each, with the shortcuts Marco's defaults give them: Alt+Tab, Alt+F4,
   Ctrl+Alt+D. In step 4 the key is a string that names Super and Up, `'<Mod4>Up'` or
   `'<Super>Up'`, and then `'disabled'`: the dialog writes the key. **The shortcut applies at
   once**, with no restart (148): the first Super+Up maximises the window and the second
   restores it, while Alt+F10 reaches the window and maximises nothing. Once it's disabled,
   neither maximises, and after the reset Alt+F10 maximises the window again. In X11 MATE both dialogs are as they were, with Marco's shortcuts
-  listed, since the variables aren't read on X11. In the Wayfire session *Windows* says the
+  listed, since the variables aren't read on X11: the launcher and the title are *Keyboard
+  Shortcuts*, and in Spanish both are *Atajos de teclado*, as stock. In the Wayfire session *Windows* says the
   window manager is unsupported, as the stock one does, and *Keyboard Shortcuts* opens, where
   the stock one crashed, and lists no window management actions (101, ADR 0011).
 - **Debug tool:** `mate-window-properties` and `mate-keybinding-properties` run from a
@@ -1635,13 +1783,13 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, for each window's geometry, and
   `gsettings monitor org.mate.Marco.general`.
 
-### The window and workspace actions work from Keyboard Shortcuts on a native and an X11 window
+### The window and workspace actions work from System Shortcuts on a native and an X11 window
 
 - **Milestone:** M8, run in M8's closing run (173).
 - **Steps:**
   1. Log into *MATE on Caminito*. Open `pluma` (native) with a frame, `gnome-calculator` or
      another header-bar app (native, its own titlebar), and `xterm` (X11), overlapping.
-  2. Open *Keyboard Shortcuts* from the control center. Under *Window Management*, give a
+  2. Open *System Shortcuts* from the control center. Under *Window Management*, give a
      shortcut to each of *Maximize window*, *Toggle fullscreen mode*, *Toggle shaded state*,
      *Raise window if it's covered by another window, otherwise lower it*, *Raise window
      above other windows*, *Lower window below other windows*, *Maximize window vertically*,
@@ -1875,7 +2023,7 @@ session_env() {
 
 - **Milestone:** M8, run in M8's closing run (173).
 - **Steps:**
-  1. Log into *MATE on Caminito*, with `zenity` installed. Open *Keyboard Shortcuts* from the
+  1. Log into *MATE on Caminito*, with `zenity` installed. Open *System Shortcuts* from the
      control center, or use `gsettings`, to bind `run-command-1` to Super+1, leaving
      `org.mate.Marco.keybinding-commands command-1` at its default, and press it.
   2. Run `gsettings set org.mate.Marco.keybinding-commands command-1 'no-such-program'` and
@@ -1998,6 +2146,35 @@ session_env() {
 - **Debug tool:** Caminito's log, which names a value of `mouse-button-modifier` it can't
   use; `org.mate.Caminito.Debug`'s state dump, whose `window_menu` member shows the open
   menu.
+
+### A mouse button as a System shortcut
+
+- **Milestone:** M8
+- **Steps:**
+  1. Log into *MATE on Caminito* with a mouse that has back and forward buttons. Open
+     `pluma` (a native window) and Firefox, open two pages one after the other in a Firefox
+     tab, and click the back button over the page.
+  2. Run `dconf write /org/mate/marco/window-keybindings/toggle-maximized "'<Super>Button8'"`.
+     The dialog can't capture a button until 186.
+  3. Click pluma to focus it. With Super held, click the back button over pluma, then over
+     the panel, then over the desktop.
+  4. Focus Firefox, go forward to the second page, and with Super held click the back button
+     over the page. Then click it without Super.
+  5. Run `dconf write /org/mate/marco/window-keybindings/minimize "'<Shift><Super>Button8'"`,
+     and right-click pluma's titlebar or press Alt+Space.
+  6. Run `dconf write /org/mate/marco/global-keybindings/switch-windows "'<Super>Button9'"`.
+     With Super held, click the forward button twice, and let go of Super.
+  7. Put the keys back: `dconf reset` for `/org/mate/marco/window-keybindings/toggle-maximized`,
+     `/org/mate/marco/window-keybindings/minimize` and
+     `/org/mate/marco/global-keybindings/switch-windows`.
+- **Expected:** in step 1 Firefox goes back. In step 3 each click maximises or restores
+  pluma, wherever the pointer is, and pluma stays focused and on top. In step 4 Super and
+  the back button maximise Firefox and it doesn't go back a page; without Super it goes
+  back. In step 5 the menu shows *Shift+Super+Back Button* beside *Minimize*. In step 6 the
+  Window switcher opens, each click steps it, and letting go of Super picks the window. After step 7 Super and the back button go back in Firefox again (184).
+- **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `bindings` lists
+  `toggle-maximized` with `<Super>Button8`; Caminito's log, which names a value it can't
+  bind, such as `Button1` with no modifier; `wev` or `xev` for the button's number.
 
 ### "Not responding" and Force Quit
 

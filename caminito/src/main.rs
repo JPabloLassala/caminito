@@ -13,6 +13,11 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if args.version {
+        // The program's answer, not a log line, so it's on stdout and tracing isn't asked.
+        println!("{}", caminito_version::VERSION);
+        return ExitCode::SUCCESS;
+    }
     caminito::logging::init(args.session.is_some());
     set_messages_locale();
 
@@ -66,6 +71,8 @@ fn report(err: &dyn std::error::Error) -> String {
 struct Args {
     /// What to run as the Session (08), rather than bare.
     session: Option<SessionCommand>,
+    /// Print the version string and exit, with no compositor started (182).
+    version: bool,
 }
 
 impl Args {
@@ -78,6 +85,8 @@ impl Args {
                 let command = SessionCommand::parse(OsStr::from_bytes(command))
                     .ok_or("--session= needs a command")?;
                 parsed.session = Some(command);
+            } else if arg == "--version" {
+                parsed.version = true;
             } else {
                 return Err(format!("unknown argument {}", arg.to_string_lossy()));
             }
@@ -107,7 +116,7 @@ mod tests {
 
     #[test]
     fn no_arguments_is_a_bare_run() {
-        assert_eq!(parse(&[]), Ok(Args { session: None }));
+        assert_eq!(parse(&[]), Ok(Args::default()));
     }
 
     #[test]
@@ -138,9 +147,17 @@ mod tests {
     }
 
     #[test]
+    fn version_is_asked_for_wherever_it_stands() {
+        assert!(parse(&["--version"]).unwrap().version);
+        assert!(parse(&["--session", "--version"]).unwrap().version);
+        assert!(!parse(&["--session"]).unwrap().version);
+    }
+
+    #[test]
     fn unknown_arguments_are_refused() {
         assert!(parse(&["--nested"]).is_err());
         assert!(parse(&["--sessions"]).is_err());
+        assert!(parse(&["--versions"]).is_err());
     }
 
     #[derive(Debug)]

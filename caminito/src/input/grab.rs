@@ -5,8 +5,8 @@
 
 use caminito_policy::{Crossing, GrabKey, GrabStep, ResizeEdges, WindowId};
 use caminito_theme::ButtonFunction;
-use smithay::backend::input::{ButtonState, InputTime};
-use smithay::input::keyboard::{Keysym, KeysymHandle, ModifiersState};
+use smithay::backend::input::{ButtonState, InputTime, Keycode};
+use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, Focus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -15,7 +15,7 @@ use smithay::input::pointer::{
 };
 use smithay::utils::{Logical, Point, SERIAL_COUNTER, Serial};
 
-use super::PointerFocus;
+use super::{Bound, PointerFocus};
 use crate::state::{Caminito, SEAT, State};
 
 /// What an interactive grab does to its window.
@@ -104,6 +104,23 @@ pub(super) fn start_data(button: u32, location: Point<f64, Logical>) -> GrabStar
 }
 
 impl Caminito {
+    /// A key went down during the seat's move or resize. Returns what the keyboard path
+    /// does with it, or `None` if the key isn't the move's or the resize's: any key while
+    /// the pointer alone moves or resizes the window, and a modifier, which Marco lets by.
+    /// A keyboard move or resize has the keyboard while it lasts (156), as Marco's does, a
+    /// manual placement among them (154): Alt+Tab puts the window down.
+    pub(crate) fn keyboard_grab_key_pressed(
+        &mut self,
+        keycode: Keycode,
+        mods: &ModifiersState,
+        keysym: &KeysymHandle<'_>,
+    ) -> Option<FilterResult<Option<Bound>>> {
+        self.policy.keyboard_grab(SEAT)?;
+        let key = grab_key(mods, keysym)?;
+        self.suppressed_keys.insert(keycode);
+        Some(FilterResult::Intercept(Some(Bound::GrabKey(key))))
+    }
+
     /// Starts policy's move or resize of a window from the pointer at `location`. Returns
     /// false if policy won't move or resize it.
     fn start_window_grab(

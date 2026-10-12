@@ -1,0 +1,298 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 12 Oct 2026 12:00:00 -0300
+Subject: [PATCH] properties: Choose the panel's display under Caminito
+
+A panel is moved to another monitor by dragging it there, and dragging a
+panel is off on Wayland, so nothing there could change a panel's monitor
+but writing its key by hand.
+
+Under Caminito, the Wayland compositor, the panel names its output, and its
+first monitor is Caminito's primary output. There, with more than one
+monitor, the panel's properties have a Display row below the orientation's,
+which lists the panel's monitors by make and model as caminito-displays
+names them, with the connector for two that are alike, and writes the
+panel's monitor key. The primary output's entry says so: a panel there
+follows the primary output when the user chooses another. The list follows
+the monitors, the primary output and the key.
+
+A drawer has no row: it is on its panel's monitor. Without an owner of
+org.mate.Caminito, which is X11 and any other Wayland compositor, and with
+one monitor, the dialog is as it was.
+---
+ mate-panel/panel-properties-dialog.c | 227 +++++++++++++++++++++++++++
+ 1 file changed, 227 insertions(+)
+
+diff --git a/mate-panel/panel-properties-dialog.c b/mate-panel/panel-properties-dialog.c
+index 24642a91..bc7e8875 100644
+--- a/mate-panel/panel-properties-dialog.c
++++ b/mate-panel/panel-properties-dialog.c
+@@ -36,6 +36,7 @@
+ #include <libpanel-util/panel-icon-chooser.h>
+ #include <libpanel-util/panel-show.h>
+ 
++#include "panel-multimonitor.h"
+ #include "panel-profile.h"
+ #include "panel-schemas.h"
+ #include "panel-util.h"
+@@ -53,6 +54,9 @@ typedef struct {
+ 	GtkWidget     *general_vbox;
+ 	GtkWidget     *orientation_combo;
+ 	GtkWidget     *orientation_label;
++	GtkWidget     *display_combo;
++	GtkWidget     *display_label;
++	char          *display_names;
+ 	GtkWidget     *size_widgets;
+ 	GtkWidget     *size_spin;
+ 	GtkWidget     *size_label;
+@@ -102,6 +106,7 @@ panel_properties_dialog_free (PanelPropertiesDialog *dialog)
+ 		gtk_widget_destroy (dialog->properties_dialog);
+ 	dialog->properties_dialog = NULL;
+ 
++	g_free (dialog->display_names);
+ 	g_free (dialog);
+ }
+ 
+@@ -211,6 +216,221 @@ panel_properties_dialog_setup_orientation_combo (PanelPropertiesDialog *dialog,
+ 	panel_properties_dialog_setup_orientation_combo_sensitivty (dialog, NULL);
+ }
+ 
++/* What the user reads for a monitor, as caminito-displays has it: a built-in
++ * panel as that, another by its make and model, and one that reports neither
++ * by its connector. */
++static char *
++panel_properties_dialog_get_display_title (GdkDisplay *display,
++					   int         gdk_monitor,
++					   char      **connector_ret)
++{
++	GdkMonitor *monitor;
++	const char *make;
++	const char *model;
++	char       *connector;
++	char       *title;
++
++	monitor = gdk_display_get_monitor (display, gdk_monitor);
++	make = gdk_monitor_get_manufacturer (monitor);
++	model = gdk_monitor_get_model (monitor);
++	if (make != NULL && (make[0] == '\0' || strcmp (make, "Unknown") == 0))
++		make = NULL;
++	if (model != NULL && (model[0] == '\0' || strcmp (model, "Unknown") == 0))
++		model = NULL;
++
++	G_GNUC_BEGIN_IGNORE_DEPRECATIONS
++	connector = gdk_screen_get_monitor_plug_name (gdk_display_get_default_screen (display),
++						      gdk_monitor);
++	G_GNUC_END_IGNORE_DEPRECATIONS
++	if (connector == NULL)
++		connector = g_strdup ("");
++
++	if (g_str_has_prefix (connector, "eDP-") ||
++	    g_str_has_prefix (connector, "LVDS-") ||
++	    g_str_has_prefix (connector, "DSI-"))
++		title = g_strdup (_("Built-in display"));
++	else if (make != NULL && model != NULL)
++		title = g_strdup_printf ("%s %s", make, model);
++	else if (model != NULL)
++		title = g_strdup (model);
++	else if (make != NULL)
++		title = g_strdup (make);
++	else
++		title = g_strdup (connector);
++
++	if (connector_ret != NULL)
++		*connector_ret = connector;
++	else
++		g_free (connector);
++
++	return title;
++}
++
++/* The name of one of the panel's monitors under Caminito, with its connector
++ * when another monitor has the same title, as two of a model have. The panel's
++ * first monitor is Caminito's primary output, and a panel there follows it.
++ * NULL anywhere else: the panel doesn't name its output on another Wayland
++ * compositor. */
++static char *
++panel_properties_dialog_get_display_name (int monitor)
++{
++	GdkDisplay *display;
++	GdkMonitor *gdk_monitor;
++	char       *title = NULL;
++	char       *connector = NULL;
++	char       *name;
++	gboolean    alike = FALSE;
++	int         i;
++
++	gdk_monitor = panel_multimonitor_get_caminito_monitor (monitor);
++	if (gdk_monitor == NULL)
++		return NULL;
++
++	display = gdk_display_get_default ();
++	for (i = 0; i < gdk_display_get_n_monitors (display); i++) {
++		if (gdk_display_get_monitor (display, i) == gdk_monitor)
++			title = panel_properties_dialog_get_display_title (display, i, &connector);
++	}
++	if (title == NULL)
++		return NULL;
++
++	for (i = 0; i < gdk_display_get_n_monitors (display); i++) {
++		char *other;
++
++		if (gdk_display_get_monitor (display, i) == gdk_monitor)
++			continue;
++
++		other = panel_properties_dialog_get_display_title (display, i, NULL);
++		alike = alike || strcmp (other, title) == 0;
++		g_free (other);
++	}
++
++	if (alike && strcmp (title, connector) != 0) {
++		name = g_strdup_printf ("%s (%s)", title, connector);
++		g_free (title);
++		title = name;
++	}
++	g_free (connector);
++
++	if (monitor == 0) {
++		/* Translators: the name of a display, which is the primary one */
++		name = g_strdup_printf (_("%s (primary)"), title);
++		g_free (title);
++		title = name;
++	}
++
++	return title;
++}
++
++static void
++panel_properties_dialog_display_changed (PanelPropertiesDialog *dialog,
++					 GtkComboBox           *combo_box)
++{
++	int monitor;
++
++	g_assert (dialog->display_combo == GTK_WIDGET (combo_box));
++
++	monitor = gtk_combo_box_get_active (combo_box);
++	if (monitor < 0 || monitor == panel_toplevel_get_monitor (dialog->toplevel))
++		return;
++
++	g_settings_set_int (dialog->settings, PANEL_TOPLEVEL_MONITOR_KEY, monitor);
++}
++
++/* Lists the panel's monitors again if they changed, and chooses the panel's.
++ * The chooser is shown only under Caminito, with more than one monitor. */
++static void
++panel_properties_dialog_update_display_combo (PanelPropertiesDialog *dialog)
++{
++	GString  *names;
++	gboolean  shown;
++	int       monitors;
++	int       i;
++
++	monitors = panel_multimonitor_monitors ();
++	names = g_string_new (NULL);
++	for (i = 0; i < monitors; i++) {
++		char *name;
++
++		name = panel_properties_dialog_get_display_name (i);
++		if (name == NULL)
++			break;
++
++		g_string_append (names, name);
++		g_string_append_c (names, '\n');
++		g_free (name);
++	}
++	shown = monitors > 1 && i == monitors;
++
++	g_signal_handlers_block_by_func (dialog->display_combo,
++					 panel_properties_dialog_display_changed,
++					 dialog);
++
++	/* The panel is allocated a size for more than a change of its monitors,
++	 * and listing them again would close the open list. */
++	if (g_strcmp0 (names->str, dialog->display_names) != 0) {
++		char **namev;
++
++		gtk_combo_box_text_remove_all (GTK_COMBO_BOX_TEXT (dialog->display_combo));
++		namev = g_strsplit (names->str, "\n", -1);
++		for (i = 0; shown && namev[i] != NULL && namev[i][0] != '\0'; i++)
++			gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (dialog->display_combo),
++							namev[i]);
++		g_strfreev (namev);
++
++		g_free (dialog->display_names);
++		dialog->display_names = g_strdup (names->str);
++	}
++	g_string_free (names, TRUE);
++
++	if (shown)
++		gtk_combo_box_set_active (GTK_COMBO_BOX (dialog->display_combo),
++					  panel_toplevel_get_monitor (dialog->toplevel));
++
++	g_signal_handlers_unblock_by_func (dialog->display_combo,
++					   panel_properties_dialog_display_changed,
++					   dialog);
++
++	gtk_widget_set_visible (dialog->display_label, shown);
++	gtk_widget_set_visible (dialog->display_combo, shown);
++}
++
++/* Dragging a panel to another monitor is off on Wayland, so under Caminito the
++ * monitor is chosen here, in a row below the orientation's. */
++static void
++panel_properties_dialog_setup_display_combo (PanelPropertiesDialog *dialog)
++{
++	GtkGrid *grid = GTK_GRID (dialog->general_table);
++
++	dialog->display_label = gtk_label_new_with_mnemonic (_("_Display:"));
++	gtk_widget_set_halign (dialog->display_label, GTK_ALIGN_START);
++	dialog->display_combo = gtk_combo_box_text_new ();
++	gtk_label_set_mnemonic_widget (GTK_LABEL (dialog->display_label),
++				       dialog->display_combo);
++
++	gtk_grid_insert_row (grid, 1);
++	gtk_grid_attach (grid, dialog->display_label, 0, 1, 1, 1);
++	gtk_grid_attach (grid, dialog->display_combo, 1, 1, 1, 1);
++
++	if (! panel_profile_key_is_writable (dialog->toplevel, PANEL_TOPLEVEL_MONITOR_KEY)) {
++		gtk_widget_set_sensitive (dialog->display_combo, FALSE);
++		gtk_widget_set_sensitive (dialog->display_label, FALSE);
++		gtk_widget_show (dialog->writability_warn_general);
++	}
++
++	g_signal_connect_swapped (dialog->display_combo, "changed",
++				  G_CALLBACK (panel_properties_dialog_display_changed),
++				  dialog);
++
++	/* The panel is allocated its size again when its monitors change, when
++	 * the primary output does, and when it has moved to another monitor. */
++	g_signal_connect_swapped (dialog->toplevel, "size-allocate",
++				  G_CALLBACK (panel_properties_dialog_update_display_combo),
++				  dialog);
++
++	panel_properties_dialog_update_display_combo (dialog);
++}
++
+ static void
+ panel_properties_dialog_size_changed (PanelPropertiesDialog *dialog,
+ 				      GtkSpinButton         *spin_button)
+@@ -594,6 +814,9 @@ panel_properties_dialog_response (PanelPropertiesDialog *dialog,
+ static void
+ panel_properties_dialog_destroy (PanelPropertiesDialog *dialog)
+ {
++	g_signal_handlers_disconnect_by_func (dialog->toplevel,
++					      panel_properties_dialog_update_display_combo,
++					      dialog);
+ 	panel_toplevel_pop_autohide_disabler (PANEL_TOPLEVEL (dialog->toplevel));
+ 	g_object_set_qdata (G_OBJECT (dialog->toplevel),
+ 			    panel_properties_dialog_quark,
+@@ -926,6 +1149,10 @@ panel_properties_dialog_new (PanelToplevel *toplevel)
+ 	panel_properties_dialog_update_for_attached (dialog,
+ 						     panel_toplevel_get_is_attached (dialog->toplevel));
+ 
++	/* A drawer is on its panel's monitor. */
++	if (!panel_toplevel_get_is_attached (dialog->toplevel))
++		panel_properties_dialog_setup_display_combo (dialog);
++
+ 	panel_toplevel_push_autohide_disabler (dialog->toplevel);
+ 	panel_widget_register_open_dialog (panel_toplevel_get_panel_widget (dialog->toplevel),
+ 					   dialog->properties_dialog);

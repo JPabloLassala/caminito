@@ -190,8 +190,8 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// A `switch-*` action, or with no `popup` a `cycle-*` one: steps the open switcher, or
-    /// opens one over `list`. Nothing opens during a move or resize, nor with nothing to
-    /// list, and one entry alone is activated with no switcher (108).
+    /// opens one over `list`. Nothing opens while a seat has another Interaction, nor with
+    /// nothing to list, and one entry alone is activated with no switcher (108).
     pub(super) fn switch(
         &mut self,
         seat: SeatId,
@@ -204,7 +204,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.switcher_step(backward);
             return;
         }
-        if self.grab(seat).is_some() {
+        if self.a_seat_has_an_interaction() {
             return;
         }
         let entries = self.switch_list(seat, list);

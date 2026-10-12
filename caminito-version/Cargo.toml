@@ -1,0 +1,15 @@
+[package]
+name = "caminito-version"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shipped through the PKGBUILD (16), never crates.io.
+publish = false
+build = "build.rs"
+
+# None: the build script runs git, and links nothing.
+[dependencies]
+
+[lints]
+workspace = true
