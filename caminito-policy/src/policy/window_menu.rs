@@ -395,7 +395,7 @@ impl<W: PolicyWindow> Policy<W> {
             )));
         }
         if !on_all {
-            // Those the grid has from the active workspace, with no wrapping
+            // Those the grid has from its output's active workspace, with no wrapping
             // (window.c:7120-7134).
             for (op, direction) in [
                 (MenuOp::MoveLeft, Direction::Left),
@@ -403,7 +403,7 @@ impl<W: PolicyWindow> Policy<W> {
                 (MenuOp::MoveUp, Direction::Up),
                 (MenuOp::MoveDown, Direction::Down),
             ] {
-                if self.workspace_beside(direction).is_some() {
+                if self.workspace_beside(id, direction).is_some() {
                     entries.push(MenuEntry::Item(item(op, true)));
                 }
             }
@@ -426,11 +426,11 @@ impl<W: PolicyWindow> Policy<W> {
         entries
     }
 
-    /// The workspace beside the active one in the grid, with no wrapping, as the menu's
-    /// moves have it.
-    fn workspace_beside(&self, direction: Direction) -> Option<usize> {
+    /// The workspace beside the active one of `id`'s output in the grid, with no wrapping,
+    /// as the menu's moves have it.
+    fn workspace_beside(&self, id: WindowId, direction: Direction) -> Option<usize> {
         self.workspace_grid()
-            .neighbour(self.active, direction, WrapStyle::NoWrap)
+            .neighbour(self.active_workspace_of(id), direction, WrapStyle::NoWrap)
     }
 
     /// Runs an item of `id`'s menu for `seat`, as Marco's `menu_callback` does.
@@ -477,10 +477,10 @@ impl<W: PolicyWindow> Policy<W> {
                 self.set_sticky(id, false);
                 None
             }
-            MenuOp::MoveLeft => self.workspace_beside(Direction::Left),
-            MenuOp::MoveRight => self.workspace_beside(Direction::Right),
-            MenuOp::MoveUp => self.workspace_beside(Direction::Up),
-            MenuOp::MoveDown => self.workspace_beside(Direction::Down),
+            MenuOp::MoveLeft => self.workspace_beside(id, Direction::Left),
+            MenuOp::MoveRight => self.workspace_beside(id, Direction::Right),
+            MenuOp::MoveUp => self.workspace_beside(id, Direction::Up),
+            MenuOp::MoveDown => self.workspace_beside(id, Direction::Down),
             MenuOp::MoveToWorkspace(workspace) => {
                 Some(workspace).filter(|workspace| *workspace < self.workspace_count)
             }

@@ -55,6 +55,14 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# The Wallpaper dialog's entry (212), in the same directory, so that only a Session lists it:
+# under X11 MATE msd's background plugin draws, and the dialog would set what nothing draws.
+# Its categories are Appearance's, which put it under Look and Feel in the control center.
+install_data(
+  'data/caminito-wallpaper.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+
 # The launcher of the control center's Keyboard Shortcuts dialog (183), under the stock entry's
 # id and in the same directory, so that it shadows it in a Session alone. There the dialog is
 # System Shortcuts, and the patched dialog takes its title from this entry's name, so the

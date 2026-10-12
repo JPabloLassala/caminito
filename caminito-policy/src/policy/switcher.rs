@@ -393,18 +393,16 @@ impl<W: PolicyWindow> Policy<W> {
             _ => None,
         };
 
-        // Every window in the fallback order: stacking, from the top, the active
-        // workspace's windows first, sticky ones among them, and then the others' from the
-        // first.
+        // Every window in the fallback order: stacking, from the top, the windows on their
+        // output's active workspace first, sticky ones among them, and then the others' by
+        // their workspace from the first.
         let top_down = || self.stack.iter().rev().copied();
-        let on_active = top_down().filter(|id| self.is_on_workspace(*id, self.active));
-        let others = (0..self.workspace_count)
-            .filter(|w| *w != self.active)
-            .flat_map(|w| {
-                top_down().filter(move |id| {
-                    !self.is_on_workspace(*id, self.active) && self.windows[id].workspace == w
-                })
-            });
+        let on_active = top_down().filter(|id| self.is_on_shown_workspace(*id));
+        let others = (0..self.workspace_count).flat_map(|w| {
+            top_down().filter(move |id| {
+                !self.is_on_shown_workspace(*id) && self.windows[id].workspace == w
+            })
+        });
         let in_stacking_order = on_active.chain(others);
 
         let mut entries: Vec<_> = in_stacking_order
@@ -454,7 +452,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// for their parents. `group` is the root of the focused window, for `Group`.
     fn is_switch_candidate(&self, id: WindowId, list: SwitchList, group: Option<WindowId>) -> bool {
         let managed = &self.windows[&id];
-        let on_workspace = self.is_on_workspace(id, self.active);
+        let on_workspace = self.is_on_shown_workspace(id);
         let panel = matches!(managed.window_type, WindowType::Dock | WindowType::Desktop);
         match list {
             SwitchList::Panels => on_workspace && panel,

@@ -52,6 +52,9 @@ license=(GPL-2.0-or-later)
 # and no GTK. Its Wayland connection is pure Rust. It reads org.mate.background, which
 # mate-desktop has, on its first run. msd's background plugin is off under Caminito from
 # mate-settings-daemon-caminito 1.29.1-8.
+#
+# caminito-wallpaper (212), the Wallpaper dialog that sets it, links gtk4. Its entry is in
+# /usr/share/caminito/xdg too.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver
@@ -126,5 +129,6 @@ package() {
   cd "$_pkgname"
   meson install -C build --destdir "$pkgdir"
   install -Dm755 target/release/caminito target/release/caminito-displays \
-    target/release/caminito-about target/release/caminito-wallpaperd -t "$pkgdir/usr/bin"
+    target/release/caminito-about target/release/caminito-wallpaperd \
+    target/release/caminito-wallpaper -t "$pkgdir/usr/bin"
 }
