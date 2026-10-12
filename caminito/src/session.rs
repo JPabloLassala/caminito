@@ -5,8 +5,8 @@
 //! bus names (62) are `run`'s, before [`Caminito::start_session`]. From there the refresh
 //! pass waits for Xwayland to be ready, or to be given up on. Then the environment goes
 //! into `Caminito::environment`, and from there to the D-Bus activation environment and to
-//! systemd's user manager (`dbus::systemd`), and only once the bus has answered is the
-//! command spawned, with `GDK_BACKEND=x11` for itself alone.
+//! systemd's user manager (`dbus::systemd`), which then restarts the portal (232), and only
+//! once the bus has answered is the command spawned, with `GDK_BACKEND=x11` for itself alone.
 //!
 //! The Session ends when the command exits: Caminito stops its helpers and Xwayland, closes
 //! its socket, has systemd forget the variables, and stops the loop, for `run` to exit with
@@ -266,7 +266,7 @@ enum Phase {
 
 /// What a bus task answers.
 enum Event {
-    Exported(Exported),
+    Exported(Box<Exported>),
     Unset(zbus::Result<()>),
 }
 
@@ -401,7 +401,7 @@ impl Caminito {
         let task = dbus.connection().executor().spawn(
             async move {
                 let exported = systemd::export(&connection, &variables).await;
-                let _ = events.send(Event::Exported(exported));
+                let _ = events.send(Event::Exported(Box::new(exported)));
             },
             "session environment",
         );
@@ -427,6 +427,9 @@ impl Caminito {
                         systemd::NAME
                     ),
                     Err(err) => tracing::warn!("can't export the environment to systemd: {err}"),
+                }
+                if let Err(err) = exported.portal {
+                    tracing::warn!("can't restart the portal, which may have no display: {err}");
                 }
                 if quit {
                     self.end_session(FAILURE);

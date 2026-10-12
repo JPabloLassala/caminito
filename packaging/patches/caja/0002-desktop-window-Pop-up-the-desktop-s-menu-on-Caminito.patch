@@ -1,0 +1,191 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 12 Oct 2026 12:00:00 -0300
+Subject: [PATCH] desktop-window: Pop up the desktop's menu on Caminito's other
+ outputs
+
+On Wayland the desktop is one layer surface, on one output. Under Caminito,
+the Wayland compositor, that is the primary output, and the others show the
+wallpaper alone: a right click on one of them reaches no client, so it has
+no desktop menu. X11's desktop spans every monitor, and has the menu on each.
+
+While org.mate.Caminito has an owner, keep a layer surface on each output but
+the primary one, as big as the output and with nothing drawn in it, and pop
+up the desktop's background menu on a right click there. The menu is the
+desktop view's, so what it makes goes on the desktop, where there is room.
+The icons stay on the primary output.
+
+The surfaces follow the primary output and the monitors as the desktop does.
+The compositor closes the surface of an output that goes, which destroys its
+window, so each window is kept by a reference.
+
+Without an owner of org.mate.Caminito, which is any other Wayland compositor,
+nothing changes. X11 is as it was.
+---
+ src/caja-desktop-window.c | 132 +++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 129 insertions(+), 3 deletions(-)
+
+diff --git a/src/caja-desktop-window.c b/src/caja-desktop-window.c
+index 7b2e6437..d70e8abf 100644
+--- a/src/caja-desktop-window.c
++++ b/src/caja-desktop-window.c
+@@ -42,6 +42,10 @@
+ #include "caja-desktop-window.h"
+ #include "caja-window-private.h"
+ #include "caja-actions.h"
++#ifdef HAVE_WAYLAND
++#include "caja-window-slot.h"
++#include "file-manager/fm-directory-view.h"
++#endif
+ 
+ /* Tell screen readers that this is a desktop window */
+ 
+@@ -142,9 +146,126 @@ caja_desktop_window_get_caminito_monitor (CajaDesktopWindow *window)
+     return monitor;
+ }
+ 
+-/* Puts the desktop on Caminito's primary output, at its size. A change of
+- * output maps the layer surface again. Elsewhere the compositor places the
+- * desktop, as before.
++/* Pops up the desktop's menu on an output that has no icons. With no event
++ * of its own, the menu comes up at the pointer, from the current event, and
++ * what it makes goes where the desktop has room, since the click was nowhere
++ * on it.
++ */
++static gboolean
++caja_desktop_window_menu_button_press (GtkWidget         *menu,
++                                       GdkEventButton    *event,
++                                       CajaDesktopWindow *window)
++{
++    CajaWindowSlot *slot;
++
++    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY)
++        return GDK_EVENT_PROPAGATE;
++
++    slot = caja_window_get_active_slot (CAJA_WINDOW (window));
++    if (slot == NULL || !FM_IS_DIRECTORY_VIEW (slot->content_view))
++        return GDK_EVENT_PROPAGATE;
++
++    fm_directory_view_pop_up_background_context_menu (FM_DIRECTORY_VIEW (slot->content_view),
++                                                      NULL);
++
++    return GDK_EVENT_STOP;
++}
++
++/* A layer surface as big as an output, with nothing drawn in it, so the
++ * wallpaper under it shows. A right click on it is one on the desktop.
++ */
++static GtkWidget *
++caja_desktop_window_new_caminito_menu (CajaDesktopWindow *window,
++                                       GdkMonitor        *monitor)
++{
++    GtkWidget *menu;
++    GtkWindow *gtkwin;
++    GdkVisual *visual;
++
++    menu = gtk_window_new (GTK_WINDOW_TOPLEVEL);
++    gtkwin = GTK_WINDOW (menu);
++
++    gtk_widget_set_app_paintable (menu, TRUE);
++    visual = gdk_screen_get_rgba_visual (gtk_widget_get_screen (GTK_WIDGET (window)));
++    if (visual != NULL)
++        gtk_widget_set_visual (menu, visual);
++
++    gtk_layer_init_for_window (gtkwin);
++    gtk_layer_set_layer (gtkwin, GTK_LAYER_SHELL_LAYER_BOTTOM);
++    gtk_layer_set_namespace (gtkwin, "desktop-menu");
++    gtk_layer_set_monitor (gtkwin, monitor);
++    gtk_layer_set_anchor (gtkwin, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
++    gtk_layer_set_anchor (gtkwin, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
++    gtk_layer_set_anchor (gtkwin, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
++    gtk_layer_set_anchor (gtkwin, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
++
++    gtk_widget_add_events (menu, GDK_BUTTON_PRESS_MASK);
++    g_signal_connect_object (menu, "button-press-event",
++                             G_CALLBACK (caja_desktop_window_menu_button_press),
++                             window, 0);
++
++    gtk_widget_show (menu);
++
++    return g_object_ref (menu);
++}
++
++/* The compositor closes a layer surface whose output goes, which destroys
++ * its window, so each is kept by a reference of its own.
++ */
++static void
++caja_desktop_window_free_caminito_menu (gpointer menu)
++{
++    gtk_widget_destroy (GTK_WIDGET (menu));
++    g_object_unref (menu);
++}
++
++/* Keeps a menu on every output but the primary one. The desktop is one layer
++ * surface, on one output, so the others would have no desktop menu, where
++ * X11's desktop spans every monitor. With no primary output there are none.
++ */
++static void
++caja_desktop_window_sync_caminito_menus (CajaDesktopWindow *window,
++                                         GdkMonitor        *primary)
++{
++    GHashTable *menus;
++    GHashTableIter iter;
++    gpointer key;
++    GdkDisplay *display;
++    GdkMonitor *monitor;
++    int i;
++
++    menus = g_object_get_data (G_OBJECT (window), "caminito-menus");
++    display = gtk_widget_get_display (GTK_WIDGET (window));
++
++    g_hash_table_iter_init (&iter, menus);
++    while (g_hash_table_iter_next (&iter, &key, NULL))
++    {
++        gboolean connected = FALSE;
++
++        for (i = 0; !connected && i < gdk_display_get_n_monitors (display); i++)
++            connected = gdk_display_get_monitor (display, i) == key;
++
++        if (primary == NULL || key == primary || !connected)
++            g_hash_table_iter_remove (&iter);
++    }
++
++    if (primary == NULL)
++        return;
++
++    for (i = 0; i < gdk_display_get_n_monitors (display); i++)
++    {
++        monitor = gdk_display_get_monitor (display, i);
++        if (monitor == primary || g_hash_table_contains (menus, monitor))
++            continue;
++
++        g_hash_table_insert (menus, g_object_ref (monitor),
++                             caja_desktop_window_new_caminito_menu (window, monitor));
++    }
++}
++
++/* Puts the desktop on Caminito's primary output, at its size, and its menu on
++ * the others. A change of output maps the layer surface again. Elsewhere the
++ * compositor places the desktop, as before.
+  */
+ static void
+ caja_desktop_window_follow_caminito (CajaDesktopWindow *window)
+@@ -153,6 +274,7 @@ caja_desktop_window_follow_caminito (CajaDesktopWindow *window)
+     GdkRectangle geometry = {0};
+ 
+     monitor = caja_desktop_window_get_caminito_monitor (window);
++    caja_desktop_window_sync_caminito_menus (window, monitor);
+     if (monitor == NULL)
+         return;
+ 
+@@ -188,6 +310,10 @@ caja_desktop_window_watch_caminito (CajaDesktopWindow *window)
+         return;
+ 
+     g_object_set_data_full (G_OBJECT (window), "caminito", caminito, g_object_unref);
++    g_object_set_data_full (G_OBJECT (window), "caminito-menus",
++                            g_hash_table_new_full (NULL, NULL, g_object_unref,
++                                                   caja_desktop_window_free_caminito_menu),
++                            (GDestroyNotify) g_hash_table_unref);
+     g_signal_connect_object (caminito, "g-properties-changed",
+                              G_CALLBACK (caja_desktop_window_follow_caminito),
+                              window, G_CONNECT_SWAPPED);

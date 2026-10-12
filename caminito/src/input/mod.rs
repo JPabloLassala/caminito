@@ -594,12 +594,13 @@ impl State {
     /// modifiers held, the left button moves the window, and the middle and right ones
     /// resize it and open its menu, as `resize-with-right-button` says which (162). A
     /// button one of Caminito's bindings names runs it, wherever the pointer is, but where
-    /// such a click on a window has the press (184). A press on a frame does what Marco's
-    /// frames do. Otherwise a press on a window focuses and raises it through policy before
-    /// the client sees the press. The client never sees a press with the modifiers held, a
-    /// bound button's or a press on the frame. An active shortcuts inhibitor on the focused
-    /// client keeps both the modifier clicks and the bindings from Caminito, as it keeps
-    /// the keys' bindings: the press is that client's.
+    /// such a click on a window has the press (184), and one an accelerator grab names is
+    /// its grabber's then, as a key is after Caminito's bindings (185). A press on a frame
+    /// does what Marco's frames do. Otherwise a press on a window focuses and raises it
+    /// through policy before the client sees the press. The client never sees a press with
+    /// the modifiers held, a bound or grabbed button's or a press on the frame. An active
+    /// shortcuts inhibitor on the focused client keeps the modifier clicks, the bindings and
+    /// the grabs from Caminito, as it keeps the keys': the press is that client's.
     pub fn on_pointer_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
         self.idle_activity();
         let pointer = self.caminito.seat.get_pointer().unwrap();
@@ -621,16 +622,23 @@ impl State {
             .and_then(Under::window)
             .filter(|_| !inhibited)
             .and_then(|_| self.caminito.settings.modifier_click.does(button, &mods));
-        if state == ButtonState::Pressed
-            && click.is_none()
-            && !inhibited
-            && let Some((trigger, binding)) = self.button_binding(button, &mods)
+        if state == ButtonState::Pressed && click.is_none() && !inhibited && !self.pointer_is_held()
         {
-            // The release is swallowed with the Window switcher's, so the press ends under
-            // the table it started under, and focus and stacking are as they were.
-            self.caminito.suppressed_buttons.insert(button);
-            self.run_binding(binding, trigger, time);
-            return;
+            // Either way the release is swallowed with the Window switcher's, so the press
+            // ends under the table it started under, and focus and stacking are as they were.
+            if let Some((trigger, binding)) = self.caminito.bound_to_button(button, &mods) {
+                self.caminito.suppressed_buttons.insert(button);
+                self.run_binding(binding, trigger, time);
+                return;
+            }
+            // Caminito's binding wins, as it does for a key (98). A held button doesn't
+            // repeat.
+            if let Some((action, owner)) = self.caminito.grabbed_button(button, &mods) {
+                self.caminito.suppressed_buttons.insert(button);
+                self.caminito
+                    .signal_accelerator(&owner, action, time.millis(), false);
+                return;
+            }
         }
         if let Some(Under::Layer(layer, ..)) = &under {
             self.caminito.layer_pressed(layer);
@@ -699,25 +707,20 @@ impl State {
         pointer.frame(self);
     }
 
-    /// The binding a press of `button` with `mods` held runs, and the button as bindings
-    /// name it (184). None runs while the session is locked, or while something holds the
-    /// pointer or the keyboard: a move or a resize, a drag-and-drop, a client's popup, a
-    /// button already down on a client, or an X11 client's menu, whose grab of the pointer
-    /// is inside Xwayland and whose grab of the keyboard is all Caminito sees of it. The
-    /// press is then the holder's.
-    fn button_binding(&self, button: u32, mods: &ModifiersState) -> Option<(Trigger, Binding)> {
+    /// Whether the session is locked, or something holds the pointer or the keyboard: a
+    /// move or a resize, a drag-and-drop, a client's popup, a button already down on a
+    /// client, or an X11 client's menu, whose grab of the pointer is inside Xwayland and
+    /// whose grab of the keyboard is all Caminito sees of it. A button's press then runs no
+    /// binding (184) and is no accelerator grab's (185): it's the holder's.
+    fn pointer_is_held(&self) -> bool {
         let caminito = &self.caminito;
         let pointer = caminito.seat.get_pointer().unwrap();
         let x11_menu = caminito.xwayland_keyboard_grab.as_ref();
-        if caminito.lock.is_locked()
+        caminito.lock.is_locked()
             || pointer.is_grabbed()
             || caminito.window_grab.is_some()
             || caminito.policy.keyboard_grab(SEAT).is_some()
             || x11_menu.is_some_and(|(grab, _)| grab.is_alive())
-        {
-            return None;
-        }
-        caminito.bound_to_button(button, mods)
     }
 
     /// Gives the keyboard to the layer surface that takes it (63), or else to the window
@@ -948,6 +951,18 @@ impl Caminito {
         let button = x_button(button)?;
         let binding = self.settings.bindings.binding_for_button(mods, button)?;
         Some((Trigger::Button(button), binding))
+    }
+
+    /// The accelerator grab of a press of `button`, a Linux input event code, with `mods`
+    /// held (185): its action id, and its owner's unique name on the bus.
+    pub(crate) fn grabbed_button(
+        &self,
+        button: u32,
+        mods: &ModifiersState,
+    ) -> Option<(u32, String)> {
+        let grabs = &self.accelerator_grabs;
+        let (action, owner) = grabs.pressed_button(mods, x_button(button)?)?;
+        Some((action, owner.to_owned()))
     }
 
     /// `location` moved onto the nearest output, so the pointer never leaves them.

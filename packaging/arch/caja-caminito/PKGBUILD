@@ -5,14 +5,14 @@
 
 # Arch's caja PKGBUILD with the smallest diff (16), so a change there shows what to carry
 # over. The differences: the name, provides and conflicts in place of replaces, and the
-# carried patch (ADR 0011). The version is Arch's: caja's desktop is already a layer surface
+# carried patches (ADR 0011). The version is Arch's: caja's desktop is already a layer surface
 # in 1.28.0, so nothing here needs a 1.29 tag.
 
 pkgname=caja-caminito
 _pkgname=caja
 pkgver=1.28.0
-pkgrel=3
-pkgdesc="File manager for the MATE desktop, with Caminito's carried patch"
+pkgrel=4
+pkgdesc="File manager for the MATE desktop, with Caminito's carried patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
 license=('GPL-2.0-or-later AND LGPL-2.0-or-later')
@@ -24,17 +24,20 @@ groups=('mate')
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("${_pkgname}=${pkgver}")
 conflicts=("${_pkgname}" 'caja-gtk3')
-# 0001 is active only while org.mate.Caminito has an owner (ADR 0011): the desktop goes on
-# Caminito's primary output and follows it (81, 89).
+# Both are active only while org.mate.Caminito has an owner (ADR 0011). 0001: the desktop
+# goes on Caminito's primary output and follows it (81, 89). 0002: a right click on another
+# output pops up the desktop's menu (208).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/caja")"
 source=("git+https://github.com/mate-desktop/caja.git#tag=v${pkgver}"
         git+https://github.com/mate-desktop/mate-submodules.git
-        "$_patches/0001-desktop-window-Put-the-desktop-on-Caminito-s-primary.patch")
+        "$_patches/0001-desktop-window-Put-the-desktop-on-Caminito-s-primary.patch"
+        "$_patches/0002-desktop-window-Pop-up-the-desktop-s-menu-on-Caminito.patch")
 sha256sums=('1d3387cdf0acc9d7c01a563143ab91e097e8201a183a0fcece37beb03e0009f6'
             'SKIP'
-            'cb453b71e75751b2f302b8ef141a0710e6db76adfee8f9bf43d4fceda2458e90')
+            'cb453b71e75751b2f302b8ef141a0710e6db76adfee8f9bf43d4fceda2458e90'
+            '093f4f8fb5b644da29f270f61b932bc593a0b1400801e4f258798ad709f0e8e9')
 
 
 prepare() {

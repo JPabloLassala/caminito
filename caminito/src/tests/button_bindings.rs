@@ -23,8 +23,8 @@ use crate::state::SEAT;
 
 // The kernel's codes for X's buttons 8 and 9, the back and forward buttons, written out
 // here so the tests don't take the mapping from the code they check.
-const BTN_SIDE: u32 = 0x113;
-const BTN_EXTRA: u32 = 0x114;
+pub(super) const BTN_SIDE: u32 = 0x113;
+pub(super) const BTN_EXTRA: u32 = 0x114;
 
 const GLOBAL: &str = MARCO_GLOBAL_KEYBINDINGS;
 const WINDOW: &str = MARCO_WINDOW_KEYBINDINGS;
@@ -50,7 +50,7 @@ fn with_window(
 }
 
 /// Holds `keys`, presses and releases `button`, and lets go of the keys.
-fn press(f: &mut Fixture, keys: &[u32], button: u32) {
+pub(super) fn press(f: &mut Fixture, keys: &[u32], button: u32) {
     for key in keys {
         f.key(*key, true);
     }
@@ -81,7 +81,7 @@ fn stacking(f: &Fixture) -> Vec<WindowId> {
 
 /// The presses and releases the xdg client saw since it last forgot its input, as the
 /// button and whether it went down.
-fn buttons_seen(f: &mut Fixture, client: ClientId) -> Vec<(u32, bool)> {
+pub(super) fn buttons_seen(f: &mut Fixture, client: ClientId) -> Vec<(u32, bool)> {
     f.roundtrip(client);
     let input = std::mem::take(&mut f.client(client).state.input);
     input

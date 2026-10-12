@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use caminito_test_client::dbus::session;
 use zbus::blocking::Connection;
 use zbus::blocking::fdo::DBusProxy;
+use zbus::zvariant::OwnedObjectPath;
 
 use super::fixture::{Bus, Fixture, Logs};
 use crate::decoration::palette::PaletteSource;
@@ -147,6 +148,17 @@ struct Manager {
     started: PathBuf,
     /// How many more calls of `UnsetEnvironment` are never answered.
     unanswered: AtomicU32,
+    /// Whether it has the portal's unit, as a machine with xdg-desktop-portal installed.
+    has_portal: bool,
+}
+
+/// systemd's own errors, by the names it gives them on the bus.
+#[derive(Debug, zbus::DBusError)]
+#[zbus(prefix = "org.freedesktop.systemd1")]
+enum ManagerError {
+    #[zbus(error)]
+    ZBus(zbus::Error),
+    NoSuchUnit(String),
 }
 
 impl Manager {
@@ -161,6 +173,18 @@ impl Manager {
 impl Manager {
     fn set_environment(&self, assignments: Vec<String>) {
         self.called("SetEnvironment", assignments);
+    }
+
+    fn try_restart_unit(
+        &self,
+        name: String,
+        mode: String,
+    ) -> Result<OwnedObjectPath, ManagerError> {
+        if !self.has_portal {
+            return Err(ManagerError::NoSuchUnit(format!("Unit {name} not found.")));
+        }
+        self.called("TryRestartUnit", vec![name, mode]);
+        Ok(OwnedObjectPath::try_from("/org/freedesktop/systemd1/job/1").unwrap())
     }
 
     async fn unset_environment(&self, names: Vec<String>) {
@@ -178,32 +202,38 @@ impl Manager {
 
 impl Systemd {
     fn new(started: PathBuf) -> Self {
-        Self::with(None, started, 0)
+        Self::with(None, started, 0, true)
+    }
+
+    /// One with no unit for the portal, as a machine without xdg-desktop-portal.
+    fn without_the_portal(started: PathBuf) -> Self {
+        Self::with(None, started, 0, false)
     }
 
     /// One whose `UnsetEnvironment` never answers, as a systemd that's shutting down.
     fn that_hangs(started: PathBuf) -> Self {
-        Self::with(None, started, u32::MAX)
+        Self::with(None, started, u32::MAX, true)
     }
 
     /// One that never answers its first `UnsetEnvironment`, and answers the ones after.
     fn that_hangs_once(started: PathBuf) -> Self {
-        Self::with(None, started, 1)
+        Self::with(None, started, 1, true)
     }
 
     /// One on `bus`, a test's own.
     fn on(bus: &Bus, started: PathBuf) -> Self {
-        Self::with(Some(&bus.address), started, 0)
+        Self::with(Some(&bus.address), started, 0, true)
     }
 
     /// On the bus at `address`, or on the tests' bus, with `unanswered` calls of
-    /// `UnsetEnvironment` that it never answers.
-    fn with(address: Option<&str>, started: PathBuf, unanswered: u32) -> Self {
+    /// `UnsetEnvironment` that it never answers, and the portal's unit if `has_portal`.
+    fn with(address: Option<&str>, started: PathBuf, unanswered: u32, has_portal: bool) -> Self {
         let calls = Calls::default();
         let manager = Manager {
             calls: calls.clone(),
             started,
             unanswered: unanswered.into(),
+            has_portal,
         };
         let builder = match address {
             Some(address) => zbus::blocking::connection::Builder::address(address),
@@ -395,8 +425,13 @@ fn systemd_is_given_the_environment_before_the_command_starts_and_forgets_it_on_
     f.dispatch_until(|f| f.state.caminito.session_exit().is_some());
 
     let calls = systemd.calls();
-    let [(set, assignments, false), (unset, names, true)] = &calls[..] else {
-        panic!("one call before the command and one after it: {calls:?}");
+    let [
+        (set, assignments, false),
+        ("TryRestartUnit", _, false),
+        (unset, names, true),
+    ] = &calls[..]
+    else {
+        panic!("two calls before the command and one after it: {calls:?}");
     };
     assert_eq!((*set, *unset), ("SetEnvironment", "UnsetEnvironment"));
     for name in EXPORTED {
@@ -420,6 +455,42 @@ fn systemd_is_given_the_environment_before_the_command_starts_and_forgets_it_on_
             "XCURSOR_THEME"
         ]
     );
+}
+
+#[test]
+fn the_portal_is_restarted_once_systemd_has_the_environment_and_before_the_command_starts() {
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::new(scripts.path("started"));
+    let command = scripts.session_command("touch \"$dir/started\"");
+
+    start(&mut f, command);
+    f.dispatch_until(|f| f.state.caminito.session_exit().is_some());
+
+    // One left from the Session before has no display to give what it launches (232).
+    let calls = systemd.calls();
+    let restart = [
+        "replace".to_owned(),
+        "xdg-desktop-portal.service".to_owned(),
+    ];
+    assert_eq!(calls[0].0, "SetEnvironment", "{calls:?}");
+    assert_eq!(calls[1], ("TryRestartUnit", restart.to_vec(), false));
+}
+
+#[test]
+fn a_systemd_without_the_portals_unit_is_no_failure() {
+    let logs = Logs::capture();
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let _systemd = Systemd::without_the_portal(scripts.path("started"));
+    let command = scripts.session_command("touch \"$dir/started\"");
+
+    start(&mut f, command);
+    f.dispatch_until(|f| f.state.caminito.session_exit().is_some());
+
+    assert!(scripts.exists("started"));
+    let logs = logs.text();
+    assert!(!logs.contains("can't restart the portal"), "{logs}");
 }
 
 #[test]
@@ -529,7 +600,10 @@ fn a_systemd_that_doesnt_answer_the_unset_is_given_up_on_after_the_wait() {
     f.dispatch_until(|f| f.state.caminito.session_exit().is_some());
 
     let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
-    assert_eq!(calls[..2], ["SetEnvironment", "UnsetEnvironment"]);
+    assert_eq!(
+        calls[..3],
+        ["SetEnvironment", "TryRestartUnit", "UnsetEnvironment"]
+    );
     let logs = logs.text();
     assert!(
         logs.contains("systemd didn't unset the environment"),
@@ -553,7 +627,10 @@ fn a_stop_during_the_export_spawns_no_command_and_systemd_still_forgets() {
     assert_eq!(f.state.caminito.session_exit(), Some(1));
     assert!(!scripts.exists("started"));
     let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
-    assert_eq!(calls, ["SetEnvironment", "UnsetEnvironment"]);
+    assert_eq!(
+        calls,
+        ["SetEnvironment", "TryRestartUnit", "UnsetEnvironment"]
+    );
 }
 
 #[test]
@@ -570,7 +647,12 @@ fn a_systemd_that_doesnt_answer_the_unset_is_asked_again() {
     let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
     assert_eq!(
         calls,
-        ["SetEnvironment", "UnsetEnvironment", "UnsetEnvironment"]
+        [
+            "SetEnvironment",
+            "TryRestartUnit",
+            "UnsetEnvironment",
+            "UnsetEnvironment"
+        ]
     );
     let logs = logs.text();
     assert!(!logs.contains("systemd didn't unset"), "{logs}");
@@ -592,7 +674,7 @@ fn the_systemd_on_the_bus_that_replaces_one_that_stops_with_the_command_forgets(
 
     assert_eq!(f.state.caminito.session_exit(), Some(0));
     let asked: Vec<&str> = first.calls().iter().map(|call| call.0).collect();
-    assert_eq!(asked, ["SetEnvironment"]);
+    assert_eq!(asked, ["SetEnvironment", "TryRestartUnit"]);
     let names = [
         "DISPLAY",
         "MATE_WM_KEYBINDINGS",

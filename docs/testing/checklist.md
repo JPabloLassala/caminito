@@ -224,6 +224,28 @@ session_env() {
 - **Debug tool:** `systemctl --user show-environment`, `loginctl`, the journal, and the
   `outputs` of `DumpState` for the panels' and the desktop's layer surfaces.
 
+### A link opens in the browser after a second login
+
+- **Milestone:** M5
+- **Steps:**
+  1. Log into *MATE on Caminito*, log out, and log in again, with the user's systemd manager
+     left running between the two: a second login of the user elsewhere, or lingering.
+  2. Run:
+
+     ```sh
+     pid=$(systemctl --user show -p MainPID --value xdg-desktop-portal.service)
+     tr '\0' '\n' </proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|DISPLAY)='
+     ```
+
+  3. Open *About Caminito* and press one of its links, with Firefox closed and again with it
+     open.
+- **Expected:** in step 2 the portal has both variables, with this Session's values, or has no
+  process yet. In step 3 the link opens in the browser each time (232). The journal has no
+  `no DISPLAY environment variable specified` from the browser, and no `can't restart the
+  portal` from Caminito.
+- **Debug tool:** `journalctl --user -b -t caminito`, `journalctl --user -u xdg-desktop-portal`,
+  and `systemctl --user restart xdg-desktop-portal.service`, which is what Caminito asks for.
+
 ### Log Out and Shut Down from the panel
 
 - **Milestone:** M5
@@ -771,6 +793,49 @@ session_env() {
   of its own. `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's
   side.
 
+### A mouse button runs a command
+
+- **Milestone:** M8
+- **Steps:**
+  1. With `mate-settings-daemon-caminito` 1.29.1-6 or later installed, and a `caminito-git` with
+     ticket 185's change (a grab of a mouse button), log into *MATE on Caminito* with a mouse
+     that has back and forward buttons. Open Firefox, and open two pages one after the other
+     in a tab.
+  2. Add a shortcut for `mate-calc` on Super and the back button. The dialog can't capture a
+     button until 186:
+
+     ```sh
+     d=/org/mate/desktop/keybindings/custom-check
+     dconf write $d/name "'Calculator'"
+     dconf write $d/action "'mate-calc'"
+     dconf write $d/binding "'<Super>Button8'"
+     ```
+
+  3. With Super held, click the back button over Firefox's page, and then over the panel.
+     Close the calculators. Then click the back button over the page without Super.
+  4. Go forward to the second page again. Change the shortcut to the forward button alone,
+     with `dconf write $d/binding "'Button9'"`. With Super held, click the back button over
+     a terminal running `wev`, and then click the forward button over Firefox's page.
+  5. Remove the shortcut with `dconf reset -f $d/`, go back a page in Firefox, and click the
+     forward button over the page.
+  6. Run `gsettings set org.mate.SettingsDaemon.plugins.media-keys volume-mute "'Button9'"`,
+     click the forward button twice, and run `gsettings reset
+     org.mate.SettingsDaemon.plugins.media-keys volume-mute`.
+  7. Add the shortcut again as in step 2, log out, log into *MATE*, the X11 session, and
+     click the back button with Super held. Change the shortcut to `<Primary><Alt>k` and
+     press Ctrl+Alt+K. Then remove it.
+- **Expected:** in step 3 each click with Super opens a calculator, wherever the pointer is,
+  and Firefox doesn't go back; without Super it goes back. In step 4 `wev` shows the back
+  button's press, which is the focused window's again, and the forward button opens a
+  calculator while Firefox stays on its page. In step 5 Firefox goes forward. In step 6 the
+  two clicks mute and unmute, with the OSD. In step 7 the button opens nothing, as with the
+  stock package, which can't read a button (ADR 0028), and Ctrl+Alt+K opens the calculator
+  (ADR 0011).
+- **Debug tool:** `DumpState`'s `accelerator_grabs`, where `<Super>Button8` is listed under
+  msd's unique name; Caminito's log, which names a button it won't grab, such as `Button1`
+  with no modifier, or `Button4`, the wheel's; `wev` or `xev` for the button's number.
+  `/usr/lib/mate-settings-daemon/mate-settings-daemon --debug --replace` for msd's side.
+
 ### The brightness keys change the backlight with a Wayland window focused
 
 - **Milestone:** M7
@@ -1196,6 +1261,23 @@ session_env() {
 - **Debug tool:** `primary_output` and each output's `layer_surfaces` in `DumpState`,
   `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Caminito` for the property's
   signal.
+
+### The desktop's menu is on every output
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected and `caja-caminito` at `pkgrel` 4 or later, log into *MATE
+     on Caminito*.
+  2. Right-click the wallpaper of the output that isn't primary, and choose *Create Folder*.
+  3. Choose the other output as primary, with `choose` from the item above or in
+     caminito-displays, and right-click the wallpaper of each output.
+  4. Unplug the cable of the output that isn't primary, plug it back in, and right-click its
+     wallpaper.
+- **Expected:** the desktop's menu pops up at the pointer, on the output clicked, each time.
+  The wallpaper of the output that isn't primary looks as it does with no caja running. The
+  new folder appears among the icons, on the primary output (208).
+- **Debug tool:** each output's `layer_surfaces` in `DumpState`: `desktop` on the primary
+  output and `desktop-menu` on each of the others.
 
 ### A panel's properties choose its display
 
