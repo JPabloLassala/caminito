@@ -1,8 +1,8 @@
 //! The sun schedule's curve (138): the temperature for the sun's elevation, and the fixed
-//! times' stand-in for it when there's no location. Temperatures are interpolated in mireds,
-//! 10⁶ / K, in which equal steps look equal.
+//! times' stand-in for it when there's no location, and for the sun itself (215).
+//! Temperatures are interpolated in mireds, 10⁶ / K, in which equal steps look equal.
 
-use super::sun::TWILIGHT;
+use super::sun::{Position, TWILIGHT};
 
 /// The sun schedule's temperatures, in kelvin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +48,24 @@ pub(crate) fn fixed_times_temperature(temperatures: Temperatures, local: f64) ->
     }
     let daylight = (std::f64::consts::PI * (local - FIXED_RISE) / (FIXED_SET - FIXED_RISE)).sin();
     between(temperatures, daylight)
+}
+
+/// The fixed times' sun at its highest, at 13:00, in degrees.
+pub(crate) const FIXED_HIGHEST: f64 = 45.0;
+
+/// The fixed times' sun at `local`, seconds into the local day, for a dynamic wallpaper with
+/// no location (215). Its elevation is a sine about −6° that crosses it at 07:00 and 19:00
+/// and peaks at 13:00 at [`FIXED_HIGHEST`], so that [`sun_temperature`] of it is
+/// [`fixed_times_temperature`]: the two agree about dusk. Its azimuth goes round at 15° an
+/// hour, east at 07:00, south at 13:00 and west at 19:00, as the sun does north of the
+/// tropics.
+pub(crate) fn fixed_times_position(local: f64) -> Position {
+    let local = local.rem_euclid(24.0 * HOUR);
+    let phase = std::f64::consts::PI * (local - FIXED_RISE) / (FIXED_SET - FIXED_RISE);
+    Position {
+        elevation: TWILIGHT + (FIXED_HIGHEST - TWILIGHT) * phase.sin(),
+        azimuth: (90.0 + 15.0 * (local - FIXED_RISE) / HOUR).rem_euclid(360.0),
+    }
 }
 
 /// The next 07:00 after `unix`, local time being `offset` seconds ahead of UTC: the fixed
@@ -175,5 +193,33 @@ mod tests {
         // At 07:00 local itself, it's the next day's.
         let rise = DECEMBER + 10.0 * HOUR;
         assert_eq!(fixed_times_next_rise(rise, offset), rise + 24.0 * HOUR);
+    }
+
+    #[test]
+    fn the_fixed_times_sun_crosses_civil_twilight_at_seven_and_nineteen() {
+        let at = |hour: f64| fixed_times_position(hour * HOUR);
+        assert_eq!(at(7.0).elevation, TWILIGHT);
+        assert!((at(19.0).elevation - TWILIGHT).abs() < 1e-9);
+        assert_eq!(at(13.0).elevation, FIXED_HIGHEST);
+        assert_eq!(at(1.0).elevation, 2.0 * TWILIGHT - FIXED_HIGHEST);
+        // East at 07:00, south at 13:00, west at 19:00 and north at 01:00, a day later too.
+        assert_eq!(at(7.0).azimuth, 90.0);
+        assert_eq!(at(13.0).azimuth, 180.0);
+        assert_eq!(at(19.0).azimuth, 270.0);
+        assert_eq!(at(1.0).azimuth, 0.0);
+        assert_eq!(at(25.0).azimuth, 0.0);
+    }
+
+    #[test]
+    fn the_fixed_times_sun_gives_the_fixed_times_temperature() {
+        for half_hour in 0..48 {
+            let local = f64::from(half_hour) * 1800.0;
+            let elevation = fixed_times_position(local).elevation;
+            assert_eq!(
+                sun_temperature(DEFAULTS, elevation, FIXED_HIGHEST),
+                fixed_times_temperature(DEFAULTS, local),
+                "{half_hour}"
+            );
+        }
     }
 }

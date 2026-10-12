@@ -2,7 +2,7 @@
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
 //! grabs (98), the window a window screenshot is of (104), the global menu (110), the
-//! menu claim (115), and Night Light (137).
+//! menu claim (115), Night Light (137), and the sun's position (215).
 
 use std::collections::HashMap;
 
@@ -65,6 +65,8 @@ pub(crate) enum Request {
     NightLight(oneshot::Sender<night_light::Published>),
     /// Calls `ToggleNightLight`.
     ToggleNightLight(oneshot::Sender<()>),
+    /// Reads `Sun`.
+    Sun(oneshot::Sender<night_light::PublishedSun>),
 }
 
 /// A property Caminito signals itself, when it changes without a caller writing it, in the
@@ -78,6 +80,9 @@ enum Property {
     ShowingDesktop,
     /// Night Light's target or its schedule's next sunrise (137).
     NightLight,
+    /// The sun moved, which it does at each minute's working-out, or its location did
+    /// (215).
+    Sun,
     /// The applet came, or the grace period after it ended (115).
     GlobalMenuOffered,
     /// The focus is another window's, or the focused window said where its menus are
@@ -87,10 +92,11 @@ enum Property {
 
 impl Property {
     /// Each property, in the enum's order, which `Heard` indexes by.
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::PrimaryOutput,
         Self::ShowingDesktop,
         Self::NightLight,
+        Self::Sun,
         Self::GlobalMenuOffered,
         Self::GlobalMenu,
     ];
@@ -111,6 +117,7 @@ impl Property {
             Self::PrimaryOutput => Value::PrimaryOutput(caminito.primary_output_name()),
             Self::ShowingDesktop => Value::ShowingDesktop(caminito.policy.is_showing_desktop()),
             Self::NightLight => Value::NightLight(caminito.night_light.published()),
+            Self::Sun => Value::Sun(caminito.night_light.published_sun()),
             Self::GlobalMenuOffered => Value::GlobalMenuOffered(caminito.global_menu_offered),
             Self::GlobalMenu => Value::GlobalMenu(caminito.global_menu()),
         }
@@ -123,6 +130,7 @@ enum Value {
     PrimaryOutput(String),
     ShowingDesktop(bool),
     NightLight(night_light::Published),
+    Sun(night_light::PublishedSun),
     GlobalMenuOffered(bool),
     GlobalMenu(GlobalMenu),
 }
@@ -364,6 +372,29 @@ impl CaminitoInterface {
         ]))
     }
 
+    /// Where the sun is (215), for a dynamic wallpaper, which does no sun sums of its own.
+    /// It's worked out with Night Light's sun schedule, whether or not Night Light is on,
+    /// and signalled at each minute's working-out, when it has moved by a quarter of a
+    /// degree at most:
+    ///
+    /// - `elevation` (`d`): above the horizon, in degrees, without refraction.
+    /// - `azimuth` (`d`): clockwise from north, in degrees, 0 to 360.
+    /// - `location-source` (`s`): as `NightLight`'s. With `none`, the sun is the fixed
+    ///   times': below −6° until 07:00 and from 19:00, at 45° due south at 13:00, and
+    ///   going round at 15° an hour.
+    #[zbus(property)]
+    async fn sun(&self) -> zbus::fdo::Result<HashMap<String, OwnedValue>> {
+        let published = super::ask(&self.requests, Request::Sun).await?;
+        Ok(HashMap::from([
+            ("elevation".into(), published.position.elevation.into()),
+            ("azimuth".into(), published.position.azimuth.into()),
+            (
+                "location-source".into(),
+                Str::from_static(published.location_source).into(),
+            ),
+        ]))
+    }
+
     /// Turns Night Light on if it's off, and off if it's on, by writing
     /// `night-light-enabled`. It's what a shortcut the user binds to
     /// `caminito-displays --toggle-night-light` calls.
@@ -478,6 +509,9 @@ impl Caminito {
                 self.toggle_night_light();
                 let _ = reply.send(());
             }
+            Request::Sun(reply) => {
+                let _ = reply.send(self.night_light.published_sun());
+            }
         }
     }
 
@@ -566,6 +600,7 @@ impl Caminito {
                         interface.global_menu_offered_changed(emitter).await
                     }
                     Property::NightLight => interface.night_light_changed(emitter).await,
+                    Property::Sun => interface.sun_changed(emitter).await,
                 }
             };
             if let Err(err) = signalled.await {
