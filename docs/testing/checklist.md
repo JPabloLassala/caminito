@@ -797,29 +797,24 @@ session_env() {
 
 - **Milestone:** M8
 - **Steps:**
-  1. With `mate-settings-daemon-caminito` 1.29.1-6 or later installed, and a `caminito-git` with
-     ticket 185's change (a grab of a mouse button), log into *MATE on Caminito* with a mouse
-     that has back and forward buttons. Open Firefox, and open two pages one after the other
-     in a tab.
-  2. Add a shortcut for `mate-calc` on Super and the back button. The dialog can't capture a
-     button until 186:
-
-     ```sh
-     d=/org/mate/desktop/keybindings/custom-check
-     dconf write $d/name "'Calculator'"
-     dconf write $d/action "'mate-calc'"
-     dconf write $d/binding "'<Super>Button8'"
-     ```
-
+  1. With `mate-settings-daemon-caminito` 1.29.1-6 or later and `mate-control-center-caminito`
+     1.29.1-6 or later installed, and a `caminito-git` with ticket 185's change (a grab of a
+     mouse button), log into *MATE on Caminito* with a mouse that has back and forward
+     buttons. Open Firefox, and open two pages one after the other in a tab.
+  2. In *System Shortcuts*, click *Add*, name the shortcut *Calculator* with the command
+     `mate-calc`, click its shortcut, and with Super held click the back button over the
+     dialog. Then run `dconf dump /org/mate/desktop/keybindings/` to find its directory, and
+     set `d` to it, as in `d=/org/mate/desktop/keybindings/custom0`.
   3. With Super held, click the back button over Firefox's page, and then over the panel.
      Close the calculators. Then click the back button over the page without Super.
-  4. Go forward to the second page again. Change the shortcut to the forward button alone,
-     with `dconf write $d/binding "'Button9'"`. With Super held, click the back button over
-     a terminal running `wev`, and then click the forward button over Firefox's page.
-  5. Remove the shortcut with `dconf reset -f $d/`, go back a page in Firefox, and click the
-     forward button over the page.
-  6. Run `gsettings set org.mate.SettingsDaemon.plugins.media-keys volume-mute "'Button9'"`,
-     click the forward button twice, and run `gsettings reset
+  4. Go forward to the second page again. In *System Shortcuts*, click the shortcut again and
+     click the forward button alone over the dialog. With Super held, click the back button
+     over a terminal running `wev`, and then click the forward button over Firefox's page.
+  5. Remove the shortcut with *Remove* in *System Shortcuts*, go back a page in Firefox, and
+     click the forward button over the page.
+  6. In *System Shortcuts*, click *Volume mute*'s shortcut and click the forward button over
+     the dialog. Click the forward button twice, then click *Volume mute*'s shortcut again and
+     press the mute key, or Backspace and then `gsettings reset
      org.mate.SettingsDaemon.plugins.media-keys volume-mute`.
   7. Add the shortcut again as in step 2, log out, log into *MATE*, the X11 session, and
      click the back button with Super held. Change the shortcut to `<Primary><Alt>k` and
@@ -827,8 +822,9 @@ session_env() {
 - **Expected:** in step 3 each click with Super opens a calculator, wherever the pointer is,
   and Firefox doesn't go back; without Super it goes back. In step 4 `wev` shows the back
   button's press, which is the focused window's again, and the forward button opens a
-  calculator while Firefox stays on its page. In step 5 Firefox goes forward. In step 6 the
-  two clicks mute and unmute, with the OSD. In step 7 the button opens nothing, as with the
+  calculator while Firefox stays on its page. In step 2 the row reads *Super+Back Button*
+  and `dconf read $d/binding` is `'<Super>Button8'`. In step 5 Firefox goes forward. In step
+  6 the two clicks mute and unmute, with the OSD. In step 7 the button opens nothing, as with the
   stock package, which can't read a button (ADR 0028), and Ctrl+Alt+K opens the calculator
   (ADR 0011).
 - **Debug tool:** `DumpState`'s `accelerator_grabs`, where `<Super>Button8` is listed under
@@ -2154,20 +2150,23 @@ session_env() {
   1. Log into *MATE on Caminito* with a mouse that has back and forward buttons. Open
      `pluma` (a native window) and Firefox, open two pages one after the other in a Firefox
      tab, and click the back button over the page.
-  2. Run `dconf write /org/mate/marco/window-keybindings/toggle-maximized "'<Super>Button8'"`.
-     The dialog can't capture a button until 186.
+  2. With `mate-control-center-caminito` 1.29.1-6 or later installed, open *System Shortcuts*,
+     click *Toggle maximization state*'s shortcut, and with Super held click the back button
+     over the dialog. Close the dialog.
   3. Click pluma to focus it. With Super held, click the back button over pluma, then over
      the panel, then over the desktop.
   4. Focus Firefox, go forward to the second page, and with Super held click the back button
      over the page. Then click it without Super.
-  5. Run `dconf write /org/mate/marco/window-keybindings/minimize "'<Shift><Super>Button8'"`,
-     and right-click pluma's titlebar or press Alt+Space.
-  6. Run `dconf write /org/mate/marco/global-keybindings/switch-windows "'<Super>Button9'"`.
-     With Super held, click the forward button twice, and let go of Super.
+  5. In *System Shortcuts*, set *Minimize window* to Shift, Super and the back button as in
+     step 2, and right-click pluma's titlebar or press Alt+Space.
+  6. In *System Shortcuts*, set *Move between windows, using a popup window* to Super and the
+     forward button. With Super held, click the forward button twice, and let go of Super.
   7. Put the keys back: `dconf reset` for `/org/mate/marco/window-keybindings/toggle-maximized`,
      `/org/mate/marco/window-keybindings/minimize` and
      `/org/mate/marco/global-keybindings/switch-windows`.
-- **Expected:** in step 1 Firefox goes back. In step 3 each click maximises or restores
+- **Expected:** in step 1 Firefox goes back. In step 2 the row reads *Super+Back Button*, and
+  `dconf read /org/mate/marco/window-keybindings/toggle-maximized` is `'<Super>Button8'`.
+  In step 3 each click maximises or restores
   pluma, wherever the pointer is, and pluma stays focused and on top. In step 4 Super and
   the back button maximise Firefox and it doesn't go back a page; without Super it goes
   back. In step 5 the menu shows *Shift+Super+Back Button* beside *Minimize*. In step 6 the
@@ -2175,6 +2174,51 @@ session_env() {
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `bindings` lists
   `toggle-maximized` with `<Super>Button8`; Caminito's log, which names a value it can't
   bind, such as `Button1` with no modifier; `wev` or `xev` for the button's number.
+
+### System Shortcuts captures a mouse button
+
+- **Milestone:** M8
+- **Steps:**
+  1. With `mate-control-center-caminito` 1.29.1-6 or later installed, log into *MATE on
+     Caminito* with a mouse that has back and forward buttons. Open `pluma`, and *System
+     Shortcuts*. Each click below that sets a shortcut is over the dialog.
+  2. Click *Toggle maximization state*'s shortcut, and with Super held click the back button.
+     Run `dconf read /org/mate/marco/window-keybindings/toggle-maximized`. Focus pluma, and
+     with Super held click the back button over pluma, then over the panel.
+  3. Click *Add*, name a shortcut *Calculator* with the command `mate-calc`, click its
+     shortcut, and click the forward button alone. Click the forward button over pluma.
+  4. Click the calculator's shortcut and click the middle button alone. Click *Cancel*.
+  5. Click the calculator's shortcut and, with Alt held, click the middle button. Click
+     *Cancel*.
+  6. Click the calculator's shortcut, then click another row with the left button. Click the
+     calculator's shortcut again and press Backspace.
+  7. Click the calculator's shortcut and, with Super held, click the back button. Click
+     *Cancel*, then do it again and click *Reassign*.
+  8. Close the dialog and open it again. Then run `LANGUAGE= LC_ALL= LANG=es_ES.UTF-8
+     mate-keybinding-properties` from a terminal, with that locale generated (`locale -a`),
+     and set a row to the middle button alone there, then cancel.
+  9. Remove the calculator's shortcut, `dconf reset
+     /org/mate/marco/window-keybindings/toggle-maximized`, and set it to `<Super>Button8`
+     with `dconf write` again. Log out, log into *MATE*, the X11 session, and open *Keyboard
+     Shortcuts*. Click *Toggle maximization state*'s shortcut and click the back button with
+     Super held, then press Super+Up. Then `dconf reset` the key.
+- **Expected:** in step 2 the row reads *Super+Back Button*, the key is `'<Super>Button8'`,
+  and each click maximises or restores pluma at once, over pluma and over the panel. In step
+  3 the row reads *Forward Button* and the click opens a calculator. In step 4 the dialog asks
+  first, saying the middle button would no longer paste, and after *Cancel* the row reads
+  *Forward Button* again. In step 5 it warns that over a window Alt and the middle button
+  still act on the window, and the row is unchanged after *Cancel*; *OK* would set it. In
+  step 6 the left click ends the capture with the row as it was, and Backspace makes it
+  *Disabled*. In step 7 the dialog says *Super+Back Button* is already used for *Toggle
+  maximization state*; after *Reassign* the calculator has it and *Toggle maximization state*
+  is *Disabled*. In step 8 the rows read as they did, and in Spanish the labels are *Botón
+  atrás*, *Botón adelante* and *Botón central*, and the question is in Spanish. In step 9
+  the row reads *Disabled*, the back button with Super held captures nothing and the row
+  stays capturing, Super+Up is captured as before, as `'<Mod4>Up'`, and the key keeps
+  `'<Super>Button8'` until then (ADR 0011, ADR 0028).
+- **Debug tool:** `dconf watch /org/mate/`; `mate-keybinding-properties` run from a terminal;
+  `org.mate.Caminito.Debug`'s state dump, whose `bindings` lists the combinations in force;
+  `wev` for the button's number.
 
 ### "Not responding" and Force Quit
 
