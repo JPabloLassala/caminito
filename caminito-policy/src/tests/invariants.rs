@@ -58,6 +58,13 @@ enum Op {
         action: Action,
     },
     SwitchWorkspace(usize),
+    /// One output's switch, which switches it alone with `workspaces-per-output` on (230).
+    SwitchOutputWorkspace {
+        output: u64,
+        workspace: usize,
+    },
+    /// `workspaces-per-output` is turned on or off (230).
+    SetWorkspacesPerOutput(bool),
     MoveToWorkspace {
         id: u64,
         workspace: usize,
@@ -354,6 +361,9 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(seat, id, stale)| Op::Click { seat, id, stale }),
         1 => (seat(), action()).prop_map(|(seat, action)| Op::Action { seat, action }),
         1 => (0..6usize).prop_map(Op::SwitchWorkspace),
+        2 => (1..=3u64, 0..6usize)
+            .prop_map(|(output, workspace)| Op::SwitchOutputWorkspace { output, workspace }),
+        1 => any::<bool>().prop_map(Op::SetWorkspacesPerOutput),
         1 => (window_id(), 0..6usize).prop_map(|(id, workspace)| Op::MoveToWorkspace { id, workspace }),
         1 => (window_id(), any::<bool>())
             .prop_map(|(id, maximized)| Op::SetMaximized { id, maximized }),
@@ -495,6 +505,14 @@ impl Op {
             }
             Op::Action { seat, action } => policy.action(SeatId(seat), action, now),
             Op::SwitchWorkspace(workspace) => policy.switch_workspace(workspace),
+            Op::SwitchOutputWorkspace { output, workspace } => {
+                policy.switch_output_workspace(OutputId(output), workspace)
+            }
+            Op::SetWorkspacesPerOutput(workspaces_per_output) => policy.settings_changed(Config {
+                workspace_count: policy.workspace_count(),
+                workspaces_per_output,
+                ..Config::default()
+            }),
             Op::MoveToWorkspace { id, workspace } => {
                 policy.move_to_workspace(WindowId(id), workspace)
             }
@@ -539,11 +557,11 @@ impl Op {
             Op::SetWorkspaceCount(workspace_count) => policy.settings_changed(Config {
                 workspace_count,
                 workspace_names: Vec::new(),
-                ..Config::default()
+                ..keeping_the_key(policy)
             }),
             Op::SetDynamicWorkspaces(dynamic_workspaces) => policy.settings_changed(Config {
                 dynamic_workspaces,
-                ..Config::default()
+                ..keeping_the_key(policy)
             }),
             Op::SetWorkspaceGrid { rows, wrap } => policy.settings_changed(Config {
                 workspace_count: policy.workspace_count(),
@@ -552,7 +570,7 @@ impl Op {
                     ..WorkspaceLayout::default()
                 },
                 wrap_style: wrap,
-                ..Config::default()
+                ..keeping_the_key(policy)
             }),
             Op::RequestGeometry { id, loc, size } => {
                 policy.request_geometry(WindowId(id), loc.map(Point::from), size.map(Size::from))
@@ -584,7 +602,7 @@ impl Op {
                 raise_on_click,
                 auto_raise,
                 auto_raise_delay: ms(200),
-                ..Config::default()
+                ..keeping_the_key(policy)
             }),
             Op::PointerEntered {
                 seat,
@@ -594,6 +612,14 @@ impl Op {
             Op::TitlebarReleased(id) => policy.titlebar_released(WindowId(id)),
             Op::Elapse(by) => policy.elapse(now + ms(by)),
         }
+    }
+}
+
+/// The default settings, but for `workspaces-per-output`, which stays as it is.
+fn keeping_the_key(policy: &Policy<TestWindow>) -> Config {
+    Config {
+        workspaces_per_output: policy.workspaces_per_output(),
+        ..Config::default()
     }
 }
 
@@ -633,22 +659,27 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
         policy.active_workspace() < stacks.len(),
         "the active workspace exists"
     );
-    // Every output has the same active workspace, through switches, outputs coming and
-    // going, dynamic workspaces and a change of the count: every switch sets them all
-    // (221), and an output added takes the one the others have.
     for output in policy.outputs() {
-        assert_eq!(
-            policy.active_workspace_on(output.id),
-            policy.active_workspace(),
-            "{:?}'s active workspace is every output's",
+        assert!(
+            policy.active_workspace_on(output.id) < stacks.len(),
+            "{:?}'s active workspace exists",
             output.id
         );
     }
-    assert_eq!(
-        policy.primary_active_workspace(),
-        policy.active_workspace(),
-        "the primary output's active workspace is every output's"
-    );
+    // With `workspaces-per-output` off, every output has the same active workspace, through
+    // switches, outputs coming and going, dynamic workspaces, a change of the count and the
+    // key turned off: every switch sets them all (221, 230), and an output added takes the
+    // one the others have. `active_workspace` is the primary output's.
+    if !policy.workspaces_per_output() {
+        for output in policy.outputs() {
+            assert_eq!(
+                policy.active_workspace_on(output.id),
+                policy.active_workspace(),
+                "{:?}'s active workspace is every output's",
+                output.id
+            );
+        }
+    }
     let mut all = policy.stacking_all().to_vec();
     all.sort();
     let mut managed = windows.clone();
@@ -921,10 +952,11 @@ fn the_scene_view_has_every_query_the_scene_makes() {
     );
 }
 
-fn check_ops(ops: Vec<Op>) {
+fn check_ops(workspaces_per_output: bool, ops: Vec<Op>) {
     // Tiling on, as Marco's default has it, so the drags can tile (158).
     let mut policy = Policy::new(Config {
         allow_tiling: true,
+        workspaces_per_output,
         ..Config::default()
     });
     policy.take_scene_changed();
@@ -948,7 +980,16 @@ fn check_ops(ops: Vec<Op>) {
 proptest! {
     #[test]
     fn random_operations_keep_the_invariants(ops in proptest::collection::vec(op(), 1..60)) {
-        check_ops(ops);
+        check_ops(false, ops);
+    }
+
+    /// The same with `workspaces-per-output` on to start with, as Caminito's default has it
+    /// (230).
+    #[test]
+    fn random_operations_keep_the_invariants_with_workspaces_per_output(
+        ops in proptest::collection::vec(op(), 1..60)
+    ) {
+        check_ops(true, ops);
     }
 }
 

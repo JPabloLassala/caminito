@@ -70,7 +70,7 @@ impl<W: PolicyWindow> Policy<W> {
         // its windows, and the focus with them. Marco keeps the index, which shows the next
         // workspace's windows instead. An empty one stays if it can, as in Marco, or the
         // first is activated, Marco's `safe_target`.
-        let from = self.active_workspaces.everywhere().active;
+        let from = self.primary_shown().active;
         // Worked out on a copy, so that the switcher closes on the workspaces it was open
         // over, as before the count changed.
         let mut active_workspaces = self.active_workspaces.clone();
@@ -94,7 +94,8 @@ impl<W: PolicyWindow> Policy<W> {
         if removed {
             // As a switch does, with the default focus (`safely_remove_workspaces`,
             // screen.c:1427-1428), and the open switcher closed (ruling 9 of 108). The sound
-            // is one for every output's switch, from the active workspace they all had.
+            // is one for every output's switch, from the primary output's active workspace,
+            // which stands in for the Active output's (231).
             self.close_switcher(switcher::Close::Dropped);
             self.note_switch(grid, from, 0);
         }

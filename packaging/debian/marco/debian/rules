@@ -1,0 +1,48 @@
+#!/usr/bin/make -f
+# Ubuntu 26.04's marco rules, moved to upstream's 1.29.1 (195).
+
+include /usr/share/dpkg/pkg-info.mk
+
+DHFLAGS=--parallel
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@ $(DHFLAGS) --without autoreconf
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+override_dh_install:
+	rm -f debian/tmp/usr/lib/*/*.la
+	dh_install
+
+# The pin of ADR 0029, as mate-panel's (196): every binary package of this source, at a
+# caminito version, at 1001, and Ubuntu's versions of them at 99, so an upgrade keeps the
+# installed package and asking for Ubuntu's by its version still installs it. The version is a
+# regex: apt matches no version to the glob `*caminito*`. Another patched package copies this
+# target with its first binary package's name.
+execute_after_dh_install:
+	mkdir -p debian/marco/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/marco/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+override_dh_installchangelogs:
+	dh_installchangelogs NEWS
+
+override_dh_auto_configure:
+	# 1.29.1's release tarball ships its configure, so autogen.sh, which needs
+	# mate-common, isn't run.
+	dh_auto_configure $(DHFLAGS) -- \
+		--enable-verbose-mode \
+		--disable-silent-rules \
+		--localstatedir=/var \
+		--libexecdir=/usr/lib/mate-window-manager \
+		--disable-static \
+		--enable-startup-notification=yes
+
+get-orig-source:
+	uscan --noconf --force-download --rename --download-current-version --destdir=..

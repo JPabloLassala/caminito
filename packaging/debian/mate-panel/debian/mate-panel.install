@@ -1,0 +1,6 @@
+usr/bin/
+usr/lib/*/mate-panel/
+usr/share/applications/
+usr/share/glib-2.0/
+usr/share/man/
+usr/share/mate-panel/

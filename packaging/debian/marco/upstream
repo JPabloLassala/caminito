@@ -1,0 +1,4 @@
+# Where tools/debian-build takes this package's source: upstream's release tarball, checked
+# against its sha256 (195). marco has no carried patch.
+url=https://github.com/mate-desktop/marco/releases/download/v1.29.1/marco-1.29.1.tar.xz
+sha256=94066fff18837179a08b3400960bb80602d912363c134743d3c24f802ab940ed

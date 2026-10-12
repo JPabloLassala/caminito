@@ -17,6 +17,7 @@ mod keyboard_tiling;
 mod map_states;
 mod move_to;
 mod outputs;
+mod per_output_workspaces;
 mod placement;
 mod placement_modes;
 mod pointer_focus;

@@ -833,6 +833,23 @@ impl Caminito {
         }
     }
 
+    /// Switches the output named `name` to `workspace`, which with `workspaces-per-output`
+    /// on leaves the other outputs alone (230). Until the bindings switch the Active
+    /// output's (231), it's the one way to make the outputs' workspaces differ. Returns
+    /// whether there's such an output and such a workspace.
+    pub fn switch_output_workspace(&mut self, name: &str, workspace: usize) -> bool {
+        let Some(output) = self.outputs.iter().find(|output| output.name() == name) else {
+            return false;
+        };
+        if workspace >= self.policy.workspace_count() {
+            return false;
+        }
+        let output = output_id(output);
+        tracing::debug!("switching {name} to workspace {}", workspace + 1);
+        self.policy.switch_output_workspace(output, workspace);
+        true
+    }
+
     /// Turns frame debug on or off, and returns whether it's now on.
     pub fn toggle_frame_debug(&mut self) -> bool {
         self.debug.frame_debug = !self.debug.frame_debug;

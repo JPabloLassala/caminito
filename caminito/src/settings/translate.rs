@@ -1079,6 +1079,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let drag_threshold = r.int_at_least(MOUSE, "drag-threshold", 8, 0);
     let policy = Config {
         workspace_count,
+        // Caminito's default, unlike Marco's (ADR 0032).
+        workspaces_per_output: r.bool(CAMINITO, "workspaces-per-output", true),
         workspace_names,
         dynamic_workspaces,
         workspace_layout,

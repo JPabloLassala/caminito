@@ -1,0 +1,19 @@
+Description: Use Y2K38-unsafe startup-notification API
+ sn_startup_sequence_get_last_active_time has a long where time_t should have
+ been the right choice. This patch should be dropped as soon as Debian pkg
+ startup-notification has moved on to contain an upstream fix.
+Author: Bastian Germann
+Bug: https://gitlab.freedesktop.org/xdg/startup-notification/-/issues/6
+Bug-Debian: https://bugs.debian.org/1086472
+---
+--- marco-1.26.2.orig/src/core/screen.c
++++ marco-1.26.2/src/core/screen.c
+@@ -2666,7 +2666,7 @@ collect_timed_out_foreach (void *element
+   SnStartupSequence *sequence = element;
+   double elapsed;
+ 
+-  time_t tv_sec;
++  long tv_sec;
+   suseconds_t  tv_usec;
+   gint64 tv;
+ 

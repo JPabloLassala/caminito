@@ -19,6 +19,10 @@ pub trait Debug {
 
     /// Turns frame debug on or off, and returns whether it's now on.
     fn toggle_frame_debug(&self) -> zbus::Result<bool>;
+
+    /// Switches the output named `output` to `workspace`, from 0, and returns whether there
+    /// was such an output and such a workspace.
+    fn switch_output_workspace(&self, output: &str, workspace: u32) -> zbus::Result<bool>;
 }
 
 /// A proxy for `org.mate.Caminito.Debug` at `destination`, a unique or well-known name, on a

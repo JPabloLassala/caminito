@@ -61,7 +61,7 @@ Every Arch package under `packaging/arch/` gets a Debian source package under `p
 - **Patched and backported packages** ([ADR 0029](../../docs/adr/0029-on-debian-a-patched-package-keeps-the-stock-names-and-is-pinned.md)):
   - keep the source and binary names of Ubuntu's package, with Ubuntu's split into binary packages;
   - are versioned `<baseline>-0caminito<n>`, where `<baseline>` is the upstream version, with `~git<date>.<hash>` for a commit;
-  - each install `/etc/apt/preferences.d/caminito-<source package>`, pinning its own binaries at `version /caminito/` with priority 1001;
+  - each install `/etc/apt/preferences.d/caminito-<source package>`, pinning its own binaries at `version /caminito/` with priority 1001, and Ubuntu's versions of them (`release o=Ubuntu`) at 99 (ADR 0029's qualification by 196 and 195);
   - start their `debian/` from Ubuntu's, moved to the baseline, with Ubuntu's own patches dropped where the baseline has them, and Debian's libexec and multiarch paths kept.
 - **mate-panel** builds the master library, `libmate-panel-applet-4.so.2`, as `libmate-panel-applet-4-2`, and doesn't build `.so.1`: Ubuntu's `libmate-panel-applet-4-1` stays installed for the applets linked to it. `mate-notification-daemon`'s in-process applet stays broken, as on Arch.
 - **marco** is built at 1.29.1 with no patch. mate-control-center 1.29.1 needs `libmarco-private` ≥ 1.29.0 and the `action-scroll-*-titlebar` keys, and the parity table is written against 1.29's schema. X11 MATE on the machine then runs marco 1.29.1.

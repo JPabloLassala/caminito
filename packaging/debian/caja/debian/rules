@@ -24,16 +24,16 @@ override_dh_install:
 	mv debian/tmp/usr/share/gtk-doc/html/libcaja-extension debian/tmp/usr/share/doc/libcaja-extension-doc/html
 	dh_install
 
-# The pin of ADR 0029: the binary package named as the source installs
-# /etc/apt/preferences.d/caminito-<source>, pinning every binary of debian/control at its
-# caminito version, so no newer stock caja replaces it. It names no package of its own, so it
-# reads the same in every patched or backported package. The version is matched by a regex:
-# apt takes a pattern ending in `*` as a prefix, so `*caminito*` matches nothing.
-PIN = debian/$(DEB_SOURCE)/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
-execute_after_dh_install-arch:
-	install -d $(dir $(PIN))
-	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n' \
-		"$$(sed -n 's/^Package: *//p' debian/control | xargs)" > $(PIN)
+# The pin of ADR 0029: every binary package of this source, at a caminito version, before any
+# other, and Ubuntu's versions of them at 99: an upgrade keeps the patched package, and asking
+# for Ubuntu's by its version still installs it. The version is a regex: apt matches no version
+# to the glob `*caminito*`, and the regex gives 1001 to a .deb installed from a file too (195).
+# Copied from mate-panel's (196), with this package's name.
+execute_after_dh_install:
+	mkdir -p debian/caja/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/caja/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
 
 # --enable-wayland: Ubuntu's builds without gtk-layer-shell, so its desktop isn't a layer
 # surface, and the carried patches change that surface's code.
