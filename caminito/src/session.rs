@@ -31,6 +31,7 @@ use std::io::{self, Read};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
@@ -97,23 +98,16 @@ fn data_dirs(has: Option<&OsStr>) -> OsString {
 /// directory.
 const MENU_MODULE: &str = "appmenu-gtk-module";
 
-/// Where pacman keeps a directory for each installed package, named by the package and its
-/// version.
-const PACKAGES: &str = "/var/lib/pacman/local";
+/// The empty file the patched module's package installs, so that the session knows it's
+/// there whatever the distribution's package manager. The stock package has the same module,
+/// and isn't enough: it tells Caminito nothing of a menubar in a window that isn't a
+/// `GtkApplicationWindow`, which then has no menu at all while an applet is there. The
+/// stock one is enough once it has the fix.
+const MENU_MODULE_FILE: &str = "/usr/share/caminito/appmenu-gtk-module";
 
-/// What the directory of the patched module's package starts with. The stock package has
-/// the same file, and isn't enough: it tells Caminito nothing of a menubar in a window
-/// that isn't a `GtkApplicationWindow`, which then has no menu at all while an applet is
-/// there. The stock one is enough once it has the fix.
-const MENU_MODULE_PACKAGE: &str = "appmenu-gtk-module-caminito-";
-
-/// Whether the patched menu module is installed.
-fn menu_module_is_installed() -> bool {
-    let Ok(packages) = std::fs::read_dir(PACKAGES) else {
-        return false;
-    };
-    let mut names = packages.flatten().map(|package| package.file_name());
-    names.any(|name| name.as_bytes().starts_with(MENU_MODULE_PACKAGE.as_bytes()))
+/// Whether the patched menu module is installed: whether its package's `file` is there.
+fn menu_module_is_installed(file: &Path) -> bool {
+    file.exists()
 }
 
 /// The session command's `GTK_MODULES`, if it isn't what Caminito `has`: the menu module
@@ -482,7 +476,10 @@ impl Caminito {
             )
             .stdin(Stdio::null());
         let has = std::env::var_os("GTK_MODULES");
-        if let Some(modules) = gtk_modules(has.as_deref(), menu_module_is_installed()) {
+        if let Some(modules) = gtk_modules(
+            has.as_deref(),
+            menu_module_is_installed(Path::new(MENU_MODULE_FILE)),
+        ) {
             command.env("GTK_MODULES", modules);
         }
         // A nested run has its host's, which isn't the Session's.
@@ -807,6 +804,20 @@ mod tests {
         assert_eq!(
             gtk_modules(Some("appmenu-gtk-module-wayland".as_ref()), true).unwrap(),
             "appmenu-gtk-module-wayland:appmenu-gtk-module"
+        );
+    }
+
+    #[test]
+    fn the_menu_module_counts_as_installed_by_its_packages_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("appmenu-gtk-module");
+        assert!(!menu_module_is_installed(&file));
+        assert_eq!(gtk_modules(None, menu_module_is_installed(&file)), None);
+        std::fs::write(&file, "").unwrap();
+        assert!(menu_module_is_installed(&file));
+        assert_eq!(
+            gtk_modules(None, menu_module_is_installed(&file)).unwrap(),
+            "appmenu-gtk-module"
         );
     }
 

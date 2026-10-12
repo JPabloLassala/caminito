@@ -54,8 +54,9 @@ depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gt
   mate-notification-daemon mate-polkit hicolor-icon-theme)
 makedepends=(cargo git meson)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
-# which it finds in pacman's database (111). It's named by its real name, as the patched
-# packages above are: the stock one tells Caminito nothing of a menubar in a plain GtkWindow.
+# which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module
+# (111, 192). It's named by its real name, as the patched packages above are: the stock one
+# tells Caminito nothing of a menubar in a plain GtkWindow.
 # caminito-vscode-git is the global menu extension, linked into each editor (ADR 0022).
 optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the panel's global menu"
   "caminito-vscode-git: the menus of VS Code, VSCodium, Code - OSS and Cursor in the panel's global menu")
