@@ -1219,6 +1219,23 @@ session_env() {
   `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Caminito` for the property's
   signal.
 
+### The desktop's menu is on every output
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected and `caja-caminito` at `pkgrel` 4 or later, log into *MATE
+     on Caminito*.
+  2. Right-click the wallpaper of the output that isn't primary, and choose *Create Folder*.
+  3. Choose the other output as primary, with `choose` from the item above or in
+     caminito-displays, and right-click the wallpaper of each output.
+  4. Unplug the cable of the output that isn't primary, plug it back in, and right-click its
+     wallpaper.
+- **Expected:** the desktop's menu pops up at the pointer, on the output clicked, each time.
+  The wallpaper of the output that isn't primary looks as it does with no caja running. The
+  new folder appears among the icons, on the primary output (208).
+- **Debug tool:** each output's `layer_surfaces` in `DumpState`: `desktop` on the primary
+  output and `desktop-menu` on each of the others.
+
 ### A panel's properties choose its display
 
 - **Milestone:** M6
