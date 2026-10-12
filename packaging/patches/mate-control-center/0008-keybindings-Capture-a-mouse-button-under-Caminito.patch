@@ -1,0 +1,911 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Mon, 12 Oct 2026 15:00:20 +0000
+Subject: [PATCH] keybindings: Capture a mouse button under Caminito
+
+Under Caminito a System shortcut can be a mouse button as well as a key,
+written where a keysym's name would be, as "Button" and X's number for
+it: "<Super>Button8". While a row captures, a press of the middle
+button, or of a side button, alone or with modifiers, or of the left or
+right button with a modifier, becomes the row's shortcut. A bare left
+or right click goes to the list as before, so a click outside the row
+still ends the capture, and the wheel is never a shortcut.
+
+The keyboard is grabbed on its own before the rest of the seat, since
+that's the grab GDK holds a shortcuts inhibitor for on Wayland, and
+with one Caminito gives the dialog the presses it would otherwise take.
+
+A row shows a button as Caminito's Window menu does, "Super+Back
+Button", in English and in Spanish. A bare middle button asks first,
+since it ends middle-click paste, and so does a click that
+mouse-button-modifier takes over a window. A button another row has
+gets the question a key gets.
+
+Under Marco the dialog captures keys alone, as stock, and a row whose
+value names a button shows as disabled, with its value kept until the
+row is set.
+---
+ capplets/keybindings/eggaccelerators.c        | 171 +++++++++++++++
+ capplets/keybindings/eggaccelerators.h        |  14 ++
+ capplets/keybindings/eggcellrendererkeys.c    | 167 +++++++++++++--
+ capplets/keybindings/eggcellrendererkeys.h    |   8 +
+ .../keybindings/mate-keybinding-properties.c  | 194 +++++++++++++++---
+ 5 files changed, 515 insertions(+), 39 deletions(-)
+
+diff --git a/capplets/keybindings/eggaccelerators.c b/capplets/keybindings/eggaccelerators.c
+index 5816cac..4c7848c 100644
+--- a/capplets/keybindings/eggaccelerators.c
++++ b/capplets/keybindings/eggaccelerators.c
+@@ -472,6 +472,177 @@ egg_virtual_accelerator_label (guint                  accelerator_key,
+ 	return gtk_label;
+ }
+ 
++/* The highest button a System shortcut can be: X's number for BTN_SIDE + 12,
++ * the last code before the joystick's, as Caminito reads it (184). */
++#define EGG_LAST_BUTTON 20
++
++/* The modifiers a button is held with, named as Caminito reads them: Super
++ * for Mod4 and Hyper, which a press's state has with it, and Alt for Mod1
++ * and Meta. The locks, and the modifiers Caminito has no name for, go. */
++EggVirtualModifierType
++egg_button_modifiers (EggVirtualModifierType mods)
++{
++  EggVirtualModifierType named = mods & (EGG_VIRTUAL_SHIFT_MASK | EGG_VIRTUAL_CONTROL_MASK);
++
++  if (mods & (EGG_VIRTUAL_ALT_MASK | EGG_VIRTUAL_META_MASK))
++    named |= EGG_VIRTUAL_ALT_MASK;
++  if (mods & (EGG_VIRTUAL_MOD4_MASK | EGG_VIRTUAL_SUPER_MASK | EGG_VIRTUAL_HYPER_MASK))
++    named |= EGG_VIRTUAL_SUPER_MASK;
++
++  return named;
++}
++
++/* Whether a press of @button with @button_mods can be a System shortcut:
++ * the middle button and the side buttons alone or held, and the left and
++ * right ones held. Not the wheel's 4 to 7. */
++gboolean
++egg_button_is_shortcut (guint button, EggVirtualModifierType button_mods)
++{
++  if (button == 1 || button == 3)
++    return egg_button_modifiers (button_mods) != 0;
++
++  return button == 2 || (button >= 8 && button <= EGG_LAST_BUTTON);
++}
++
++/**
++ * egg_accelerator_parse_button:
++ * @accelerator: a setting's value
++ * @button:      return location for X's number of the button
++ * @button_mods: return location for the modifiers, as egg_button_modifiers() names them
++ *
++ * Parses a mouse button as ADR 0028 writes it: GTK's modifiers, then "Button"
++ * in any case and X's number for the button, as X writes it, "&lt;Super&gt;Button8".
++ * It reads what Caminito reads, and no more.
++ *
++ * Returns: %TRUE if @accelerator is a button that can be a System shortcut.
++ */
++gboolean
++egg_accelerator_parse_button (const gchar            *accelerator,
++                              guint                  *button,
++                              EggVirtualModifierType *button_mods)
++{
++  const gchar *rest;
++  const gchar *digit;
++  gchar *held;
++  guint keyval;
++  guint64 number;
++  EggVirtualModifierType mods;
++  gboolean parsed;
++
++  *button = 0;
++  *button_mods = 0;
++
++  if (accelerator == NULL)
++    return FALSE;
++
++  rest = strrchr (accelerator, '>');
++  rest = rest != NULL ? rest + 1 : accelerator;
++  if (g_ascii_strncasecmp (rest, "Button", 6) != 0)
++    return FALSE;
++
++  /* The number as X writes it, 8 and not 08 or +8. */
++  rest += 6;
++  if (*rest < '1' || *rest > '9')
++    return FALSE;
++  for (digit = rest; *digit != '\0'; digit++)
++    if (!g_ascii_isdigit (*digit) || digit - rest > 2)
++      return FALSE;
++  number = g_ascii_strtoull (rest, NULL, 10);
++
++  /* What's before it is modifiers alone, as mouse-button-modifier's value is. */
++  held = g_strndup (accelerator, rest - 6 - accelerator);
++  parsed = egg_accelerator_parse_virtual (held, &keyval, NULL, &mods);
++  g_free (held);
++  if (!parsed || keyval != 0 ||
++      (mods & ~(EGG_VIRTUAL_SHIFT_MASK | EGG_VIRTUAL_CONTROL_MASK | EGG_VIRTUAL_ALT_MASK |
++                EGG_VIRTUAL_MOD4_MASK | EGG_VIRTUAL_SUPER_MASK | EGG_VIRTUAL_HYPER_MASK |
++                EGG_VIRTUAL_META_MASK)))
++    return FALSE;
++
++  mods = egg_button_modifiers (mods);
++  if (!egg_button_is_shortcut (number, mods))
++    return FALSE;
++
++  *button = number;
++  *button_mods = mods;
++  return TRUE;
++}
++
++static GdkModifierType
++button_gdk_modifiers (EggVirtualModifierType button_mods)
++{
++  /* Shift, Control, Alt (Mod1) and Super are the same bits in GDK's mask */
++  return (GdkModifierType) egg_button_modifiers (button_mods);
++}
++
++/* The value ADR 0028 has for a button: "<Super>Button8". */
++gchar *
++egg_virtual_button_name (guint button, EggVirtualModifierType button_mods)
++{
++  gchar *held;
++  gchar *name;
++
++  held = gtk_accelerator_name (0, button_gdk_modifiers (button_mods));
++  name = g_strdup_printf ("%sButton%u", held, button);
++  g_free (held);
++
++  return name;
++}
++
++/* @english, or @spanish where the messages' language is Spanish. Caminito
++ * carries these strings in its patch, as it does its launcher's name, and
++ * no catalogue of upstream's has them. */
++const gchar *
++egg_caminito_text (const gchar *english, const gchar *spanish)
++{
++  const gchar *language = g_get_language_names ()[0];
++
++  if (g_str_has_prefix (language, "es") &&
++      (language[2] == '\0' || strchr ("_.@", language[2]) != NULL))
++    return spanish;
++
++  return english;
++}
++
++/* The Window menu's words for a button (184), joined to the modifiers as a
++ * key's are: "Super+Back Button". */
++gchar *
++egg_virtual_button_label (guint button, EggVirtualModifierType button_mods)
++{
++  gchar *held;
++  gchar *named;
++  gchar *label;
++
++  switch (button)
++    {
++    case 1:
++      named = g_strdup (egg_caminito_text ("Left Button", "Botón izquierdo"));
++      break;
++    case 2:
++      named = g_strdup (egg_caminito_text ("Middle Button", "Botón central"));
++      break;
++    case 3:
++      named = g_strdup (egg_caminito_text ("Right Button", "Botón derecho"));
++      break;
++    case 8:
++      named = g_strdup (egg_caminito_text ("Back Button", "Botón atrás"));
++      break;
++    case 9:
++      named = g_strdup (egg_caminito_text ("Forward Button", "Botón adelante"));
++      break;
++    default:
++      named = g_strdup_printf (egg_caminito_text ("Button %u", "Botón %u"), button);
++      break;
++    }
++
++  held = gtk_accelerator_get_label (0, button_gdk_modifiers (button_mods));
++  label = *held != '\0' ? g_strconcat (held, "+", named, NULL) : g_strdup (named);
++  g_free (held);
++  g_free (named);
++
++  return label;
++}
++
+ void egg_keymap_resolve_virtual_modifiers (GdkKeymap* keymap, EggVirtualModifierType virtual_mods, GdkModifierType* concrete_mods)
+ {
+ 	GdkModifierType concrete;
+diff --git a/capplets/keybindings/eggaccelerators.h b/capplets/keybindings/eggaccelerators.h
+index 794879b..30bd96d 100644
+--- a/capplets/keybindings/eggaccelerators.h
++++ b/capplets/keybindings/eggaccelerators.h
+@@ -90,6 +90,20 @@ gchar* egg_virtual_accelerator_label (guint                  accelerator_key,
+ 				      guint		     keycode,
+ 				      EggVirtualModifierType accelerator_mods);
+ 
++/* A mouse button as a System shortcut, under Caminito (ADR 0028) */
++gboolean egg_accelerator_parse_button   (const gchar            *accelerator,
++                                         guint                  *button,
++                                         EggVirtualModifierType *button_mods);
++EggVirtualModifierType egg_button_modifiers (EggVirtualModifierType mods);
++gboolean egg_button_is_shortcut         (guint                   button,
++                                         EggVirtualModifierType  button_mods);
++gchar*   egg_virtual_button_name        (guint                   button,
++                                         EggVirtualModifierType  button_mods);
++gchar*   egg_virtual_button_label       (guint                   button,
++                                         EggVirtualModifierType  button_mods);
++const gchar* egg_caminito_text          (const gchar            *english,
++                                         const gchar            *spanish);
++
+ G_END_DECLS
+ 
+ #endif /* __EGG_ACCELERATORS_H__ */
+diff --git a/capplets/keybindings/eggcellrendererkeys.c b/capplets/keybindings/eggcellrendererkeys.c
+index 61b369c..f943128 100644
+--- a/capplets/keybindings/eggcellrendererkeys.c
++++ b/capplets/keybindings/eggcellrendererkeys.c
+@@ -6,6 +6,7 @@
+ #include <gdk/gdkkeysyms.h>
+ #include "eggcellrendererkeys.h"
+ #include "eggaccelerators.h"
++#include "wm-common.h"
+ 
+ #define EGG_CELL_RENDERER_TEXT_PATH "egg-cell-renderer-text"
+ 
+@@ -46,7 +47,8 @@ enum {
+   PROP_ACCEL_KEY,
+   PROP_ACCEL_MASK,
+   PROP_KEYCODE,
+-  PROP_ACCEL_MODE
++  PROP_ACCEL_MODE,
++  PROP_BUTTON
+ };
+ 
+ static GtkCellRendererTextClass* parent_class = NULL;
+@@ -185,6 +187,16 @@ egg_cell_renderer_keys_class_init (EggCellRendererKeysClass *cell_keys_class)
+ 						     0,
+ 						     G_PARAM_READABLE | G_PARAM_WRITABLE));
+ 
++  g_object_class_install_property (object_class,
++                                   PROP_BUTTON,
++                                   g_param_spec_uint ("button",
++                                                      "Button",
++                                                      "X's number of the mouse button, or 0 for a key",
++                                                      0,
++                                                      G_MAXINT,
++                                                      0,
++                                                      G_PARAM_READABLE | G_PARAM_WRITABLE));
++
+   g_signal_new ("accel_edited",
+                 EGG_TYPE_CELL_RENDERER_KEYS,
+                 G_SIGNAL_RUN_LAST,
+@@ -205,6 +217,19 @@ egg_cell_renderer_keys_class_init (EggCellRendererKeysClass *cell_keys_class)
+                 g_cclosure_marshal_VOID__STRING,
+                 G_TYPE_NONE, 1,
+ 		G_TYPE_STRING);
++
++  /* A mouse button captured under Caminito (ADR 0028): the path, X's number
++   * for the button, and the modifiers held, as egg_button_modifiers() names them */
++  g_signal_new ("button_edited",
++                EGG_TYPE_CELL_RENDERER_KEYS,
++                G_SIGNAL_RUN_LAST,
++                G_STRUCT_OFFSET (EggCellRendererKeysClass, button_edited),
++                NULL, NULL,
++                NULL,
++                G_TYPE_NONE, 3,
++                G_TYPE_STRING,
++                G_TYPE_UINT,
++                GDK_TYPE_MODIFIER_TYPE);
+ }
+ 
+ GtkCellRenderer* egg_cell_renderer_keys_new(void)
+@@ -217,9 +242,13 @@ static void egg_cell_renderer_keys_finalize(GObject* object)
+ 	(*G_OBJECT_CLASS(parent_class)->finalize)(object);
+ }
+ 
+-static gchar* convert_keysym_state_to_string(guint keysym, guint keycode, EggVirtualModifierType mask)
++static gchar* convert_keysym_state_to_string(guint keysym, guint keycode, guint button, EggVirtualModifierType mask)
+ {
+-	if (keysym == 0 && keycode == 0)
++	if (button != 0)
++	{
++		return egg_virtual_button_label (button, mask);
++	}
++	else if (keysym == 0 && keycode == 0)
+ 	{
+ 		return g_strdup (_("Disabled"));
+ 	}
+@@ -244,7 +273,7 @@ static void update_text (EggCellRendererKeys *keys)
+   else
+   {
+     /* sync string to the key values */
+-    gchar *text = convert_keysym_state_to_string (keys->accel_key, keys->keycode, keys->accel_mask);
++    gchar *text = convert_keysym_state_to_string (keys->accel_key, keys->keycode, keys->button, keys->accel_mask);
+     g_object_set (keys, "text", text, NULL);
+     g_free (text);
+   }
+@@ -276,6 +305,10 @@ egg_cell_renderer_keys_get_property  (GObject                  *object,
+       g_value_set_int (value, keys->accel_mode);
+       break;
+ 
++    case PROP_BUTTON:
++      g_value_set_uint (value, keys->button);
++      break;
++
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, param_id, pspec);
+     }
+@@ -319,6 +352,10 @@ egg_cell_renderer_keys_set_property  (GObject                  *object,
+       egg_cell_renderer_keys_set_accel_mode (keys, g_value_get_int (value));
+       break;
+ 
++    case PROP_BUTTON:
++      egg_cell_renderer_keys_set_button (keys, g_value_get_uint (value));
++      break;
++
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, param_id, pspec);
+     }
+@@ -510,6 +547,65 @@ static gboolean grab_key_callback(GtkWidget* widget, GdkEventKey* event, void* d
+ 	return TRUE;
+ }
+ 
++/* Ends a capture: the grab, and the row's editing. Returns the row's path. */
++static char* end_capture(EggCellRendererKeys* keys, GtkWidget* widget)
++{
++	char *path;
++
++	gdk_seat_ungrab (gdk_display_get_default_seat (gtk_widget_get_display (widget)));
++
++	path = g_strdup(g_object_get_data(G_OBJECT(keys->edit_widget), EGG_CELL_RENDERER_TEXT_PATH));
++
++	gtk_cell_editable_editing_done(GTK_CELL_EDITABLE(keys->edit_widget));
++	gtk_cell_editable_remove_widget(GTK_CELL_EDITABLE(keys->edit_widget));
++	keys->edit_widget = NULL;
++	keys->grab_widget = NULL;
++
++	return path;
++}
++
++/* Under Caminito a press of a button that can be a System shortcut becomes
++ * the row's shortcut, with the modifiers held (ADR 0028). A bare left click
++ * ends the capture, as Escape does, and then goes to the list. Any other
++ * press, a bare right click or the wheel, goes to the list as before. */
++static gboolean grab_button_callback(GtkWidget* widget, GdkEventButton* event, void* data)
++{
++	EggCellRendererKeys *keys;
++	EggVirtualModifierType mods;
++	GdkModifierType ignored_modifiers;
++	char *path;
++
++	keys = EGG_CELL_RENDERER_KEYS(data);
++
++	if (event->type != GDK_BUTTON_PRESS)
++	{
++		return FALSE;
++	}
++
++	egg_keymap_resolve_virtual_modifiers (gdk_keymap_get_for_display (gdk_display_get_default ()),
++		EGG_VIRTUAL_NUM_LOCK_MASK |
++		EGG_VIRTUAL_SCROLL_LOCK_MASK |
++		EGG_VIRTUAL_LOCK_MASK,
++		&ignored_modifiers);
++
++	mods = egg_button_modifiers (event->state & GDK_MODIFIER_MASK & ~ignored_modifiers);
++
++	if (!egg_button_is_shortcut (event->button, mods))
++	{
++		if (event->button == GDK_BUTTON_PRIMARY && mods == 0)
++		{
++			g_free (end_capture (keys, widget));
++		}
++		return FALSE;
++	}
++
++	path = end_capture (keys, widget);
++	g_signal_emit_by_name(G_OBJECT(keys), "button_edited", path, event->button, mods);
++	g_free (path);
++
++	return TRUE;
++}
++
+ static void ungrab_stuff(GtkWidget* widget, gpointer data)
+ {
+ 	EggCellRendererKeys* keys = EGG_CELL_RENDERER_KEYS(data);
+@@ -522,6 +618,7 @@ static void ungrab_stuff(GtkWidget* widget, gpointer data)
+ 	gdk_seat_ungrab (seat);
+ 
+ 	g_signal_handlers_disconnect_by_func(G_OBJECT(keys->grab_widget), G_CALLBACK(grab_key_callback), data);
++	g_signal_handlers_disconnect_by_func(G_OBJECT(keys->grab_widget), G_CALLBACK(grab_button_callback), data);
+ }
+ 
+ static void pointless_eventbox_start_editing(GtkCellEditable* cell_editable, GdkEvent* event)
+@@ -609,6 +706,30 @@ override_color (GtkWidget *widget,
+   g_object_unref (provider);
+ }
+ 
++/* The seat's grab while a row captures, under Caminito. The keyboard is
++ * grabbed on its own first, since that's the grab GDK holds a shortcuts
++ * inhibitor for on Wayland, and with one Caminito gives the dialog the
++ * presses its System shortcuts would otherwise take (184). Then the rest
++ * of the seat, as the stock grab has it. */
++static gboolean
++grab_for_caminito (GdkSeat        *seat,
++                   GdkWindow      *window,
++                   GdkEvent       *event)
++{
++  if (gdk_seat_grab (seat, window, GDK_SEAT_CAPABILITY_KEYBOARD,
++                     FALSE, NULL, event, NULL, NULL) != GDK_GRAB_SUCCESS)
++    return FALSE;
++
++  if (gdk_seat_grab (seat, window, GDK_SEAT_CAPABILITY_ALL & ~GDK_SEAT_CAPABILITY_KEYBOARD,
++                     FALSE, NULL, event, NULL, NULL) != GDK_GRAB_SUCCESS)
++    {
++      gdk_seat_ungrab (seat);
++      return FALSE;
++    }
++
++  return TRUE;
++}
++
+ static GtkCellEditable *
+ egg_cell_renderer_keys_start_editing (GtkCellRenderer      *cell,
+ 				      GdkEvent             *event,
+@@ -642,14 +763,19 @@ egg_cell_renderer_keys_start_editing (GtkCellRenderer      *cell,
+   display = gtk_widget_get_display (widget);
+   seat = gdk_display_get_default_seat (display);
+ 
+-  if (gdk_seat_grab (seat,
+-                     gtk_widget_get_window (widget),
+-                     GDK_SEAT_CAPABILITY_ALL,
+-                     FALSE,
+-                     NULL,
+-                     event,
+-                     NULL,
+-                     NULL) != GDK_GRAB_SUCCESS)
++  if (wm_common_is_caminito ())
++    {
++      if (!grab_for_caminito (seat, gtk_widget_get_window (widget), event))
++        return NULL;
++    }
++  else if (gdk_seat_grab (seat,
++                          gtk_widget_get_window (widget),
++                          GDK_SEAT_CAPABILITY_ALL,
++                          FALSE,
++                          NULL,
++                          event,
++                          NULL,
++                          NULL) != GDK_GRAB_SUCCESS)
+     return NULL;
+ 
+   keys->grab_widget = widget;
+@@ -658,6 +784,11 @@ egg_cell_renderer_keys_start_editing (GtkCellRenderer      *cell,
+                     G_CALLBACK (grab_key_callback),
+                     keys);
+ 
++  if (wm_common_is_caminito ())
++    g_signal_connect (widget, "button_press_event",
++                      G_CALLBACK (grab_button_callback),
++                      keys);
++
+   eventbox = g_object_new (pointless_eventbox_subclass_get_type (),
+ 			   "tooltip-text", _("Press the keys for the new accelerator, Backspace to clear, or Escape to cancel edition"),
+ 			   "can-focus", TRUE,
+@@ -762,3 +893,15 @@ void egg_cell_renderer_keys_set_accel_mode (EggCellRendererKeys* keys, EggCellRe
+ 	keys->accel_mode = accel_mode;
+ 	g_object_notify(G_OBJECT(keys), "accel_mode");
+ }
++
++void egg_cell_renderer_keys_set_button (EggCellRendererKeys* keys, guint button)
++{
++	g_return_if_fail(EGG_IS_CELL_RENDERER_KEYS(keys));
++
++	if (button == keys->button)
++		return;
++
++	keys->button = button;
++	g_object_notify(G_OBJECT(keys), "button");
++	update_text (keys);
++}
+diff --git a/capplets/keybindings/eggcellrendererkeys.h b/capplets/keybindings/eggcellrendererkeys.h
+index 061bd07..d7d5b60 100644
+--- a/capplets/keybindings/eggcellrendererkeys.h
++++ b/capplets/keybindings/eggcellrendererkeys.h
+@@ -54,6 +54,7 @@ struct _EggCellRendererKeys
+   guint edit_key;
+   GtkWidget *sizing_label;
+   EggCellRendererKeysMode accel_mode;
++  guint button;
+ };
+ 
+ struct _EggCellRendererKeysClass
+@@ -68,6 +69,11 @@ struct _EggCellRendererKeysClass
+ 
+   void (* accel_cleared) (EggCellRendererKeys    *keys,
+ 			  const char             *path_string);
++
++  void (* button_edited) (EggCellRendererKeys    *keys,
++			  const char             *path_string,
++			  guint                   button,
++			  EggVirtualModifierType  mask);
+ };
+ 
+ GType            egg_cell_renderer_keys_get_type        (void);
+@@ -82,6 +88,8 @@ void             egg_cell_renderer_keys_get_accelerator (EggCellRendererKeys
+ 							 EggVirtualModifierType  *mask);
+ void             egg_cell_renderer_keys_set_accel_mode  (EggCellRendererKeys     *keys,
+ 							 EggCellRendererKeysMode  accel_mode);
++void             egg_cell_renderer_keys_set_button      (EggCellRendererKeys     *keys,
++							 guint                    button);
+ 
+ G_END_DECLS
+ 
+diff --git a/capplets/keybindings/mate-keybinding-properties.c b/capplets/keybindings/mate-keybinding-properties.c
+index 34051b7..30152ad 100644
+--- a/capplets/keybindings/mate-keybinding-properties.c
++++ b/capplets/keybindings/mate-keybinding-properties.c
+@@ -76,6 +76,7 @@ typedef struct
+   char *gsettings_key;
+   guint keyval;
+   guint keycode;
++  guint button;
+   EggVirtualModifierType mask;
+   gboolean editable;
+   GtkTreeModel *model;
+@@ -100,9 +101,13 @@ static GtkWidget* _gtk_builder_get_widget(GtkBuilder* builder, const gchar* name
+     return GTK_WIDGET (gtk_builder_get_object (builder, name));
+ }
+ 
+-static char* binding_name(guint keyval, guint keycode, EggVirtualModifierType mask, gboolean translate)
++static char* binding_name(guint keyval, guint keycode, guint button, EggVirtualModifierType mask, gboolean translate)
+ {
+-    if (keyval != 0 || keycode != 0)
++    if (button != 0)
++    {
++        return translate ? egg_virtual_button_label (button, mask) : egg_virtual_button_name (button, mask);
++    }
++    else if (keyval != 0 || keycode != 0)
+     {
+         if (translate)
+         {
+@@ -123,10 +128,13 @@ static gboolean
+ binding_from_string (const char             *str,
+                      guint                  *accelerator_key,
+              guint          *keycode,
++                     guint                  *button,
+                      EggVirtualModifierType *accelerator_mods)
+ {
+   g_return_val_if_fail (accelerator_key != NULL, FALSE);
+ 
++  *button = 0;
++
+   if (str == NULL || strcmp (str, "disabled") == 0)
+     {
+       *accelerator_key = 0;
+@@ -135,6 +143,21 @@ binding_from_string (const char             *str,
+       return TRUE;
+     }
+ 
++  /* Only Caminito reads a button (ADR 0028). Under Marco, which would
++   * take it for an unknown key, the row shows as disabled, and its value
++   * is kept until the row is set. */
++  if (egg_accelerator_parse_button (str, button, accelerator_mods))
++    {
++      *accelerator_key = 0;
++      *keycode = 0;
++      if (!wm_common_is_caminito ())
++        {
++          *button = 0;
++          *accelerator_mods = 0;
++        }
++      return TRUE;
++    }
++
+   egg_accelerator_parse_virtual (str, accelerator_key, keycode, accelerator_mods);
+ 
+   if (*accelerator_key == 0)
+@@ -167,6 +190,7 @@ accel_set_func (GtkTreeViewColumn *tree_column,
+           "accel_key", key_entry->keyval,
+           "accel_mask", key_entry->mask,
+           "keycode", key_entry->keycode,
++          "button", key_entry->button,
+           "style", PANGO_STYLE_ITALIC,
+           NULL);
+   else
+@@ -176,6 +200,7 @@ accel_set_func (GtkTreeViewColumn *tree_column,
+           "accel_key", key_entry->keyval,
+           "accel_mask", key_entry->mask,
+           "keycode", key_entry->keycode,
++          "button", key_entry->button,
+           "style", PANGO_STYLE_NORMAL,
+           NULL);
+ }
+@@ -235,7 +260,7 @@ keybinding_key_changed (GSettings *settings,
+ 
+   key_value = g_settings_get_string (settings, key);
+ 
+-  binding_from_string (key_value, &key_entry->keyval, &key_entry->keycode, &key_entry->mask);
++  binding_from_string (key_value, &key_entry->keyval, &key_entry->keycode, &key_entry->button, &key_entry->mask);
+   key_entry->editable = g_settings_is_writable (settings, key);
+ 
+   /* update the model */
+@@ -301,18 +326,20 @@ keyentry_sort_func (GtkTreeModel *model,
+ 
+   if (key_entry_a && key_entry_b)
+     {
+-      if ((key_entry_a->keyval || key_entry_a->keycode) &&
+-          (key_entry_b->keyval || key_entry_b->keycode))
++      if ((key_entry_a->keyval || key_entry_a->keycode || key_entry_a->button) &&
++          (key_entry_b->keyval || key_entry_b->keycode || key_entry_b->button))
+         {
+           gchar *name_a, *name_b;
+ 
+           name_a = binding_name (key_entry_a->keyval,
+                                  key_entry_a->keycode,
++                                 key_entry_a->button,
+                                  key_entry_a->mask,
+                                  TRUE);
+ 
+           name_b = binding_name (key_entry_b->keyval,
+                                  key_entry_b->keycode,
++                                 key_entry_b->button,
+                                  key_entry_b->mask,
+                                  TRUE);
+ 
+@@ -321,9 +348,9 @@ keyentry_sort_func (GtkTreeModel *model,
+           g_free (name_a);
+           g_free (name_b);
+         }
+-      else if (key_entry_a->keyval || key_entry_a->keycode)
++      else if (key_entry_a->keyval || key_entry_a->keycode || key_entry_a->button)
+         retval = -1;
+-      else if (key_entry_b->keyval || key_entry_b->keycode)
++      else if (key_entry_b->keyval || key_entry_b->keycode || key_entry_b->button)
+         retval = 1;
+       else
+         retval = 0;
+@@ -696,7 +723,7 @@ append_keys_to_tree (GtkBuilder         *builder,
+       g_free (gsettings_signal);
+ 
+       key_value = g_settings_get_string (settings, key_string);
+-      binding_from_string (key_value, &key_entry->keyval, &key_entry->keycode, &key_entry->mask);
++      binding_from_string (key_value, &key_entry->keyval, &key_entry->keycode, &key_entry->button, &key_entry->mask);
+       g_free (key_value);
+ 
+       ensure_scrollbar (builder, i);
+@@ -1110,8 +1137,8 @@ static gboolean cb_check_for_uniqueness(GtkTreeModel* model, GtkTreePath* path,
+         KEYENTRY_COLUMN, &element,
+         -1);
+ 
+-    /* no conflict for : blanks, different modifiers, or ourselves */
+-    if (element == NULL || new_key->mask != element->mask)
++    /* no conflict for : blanks, different modifiers or buttons, or ourselves */
++    if (element == NULL || new_key->mask != element->mask || new_key->button != element->button)
+     {
+         return FALSE;
+     }
+@@ -1213,9 +1240,81 @@ static void show_error(GtkWindow* parent, GError* err)
+   gtk_widget_destroy (dialog);
+ }
+ 
+-static void accel_edited_callback(GtkCellRendererText* cell, const char* path_string, guint keyval, EggVirtualModifierType mask, guint keycode, gpointer data)
++/* The row's own shortcut, back in the cell, when a new one isn't set. */
++static void restore_cell(GtkCellRendererText* cell, KeyEntry* key_entry)
++{
++    egg_cell_renderer_keys_set_accelerator(
++        EGG_CELL_RENDERER_KEYS(cell),
++        key_entry->keyval,
++        key_entry->keycode,
++        key_entry->mask);
++    egg_cell_renderer_keys_set_button(EGG_CELL_RENDERER_KEYS(cell), key_entry->button);
++}
++
++/* Whether a click with this button and these modifiers is one that
++ * mouse-button-modifier takes over a window: its modifiers with the left,
++ * middle or right button, and with Shift too for the left one, a move that
++ * snaps. Caminito does the same over a window, and runs the shortcut only
++ * elsewhere (162, 184). */
++static gboolean is_modifier_click(guint button, EggVirtualModifierType mask)
++{
++    GSettingsSchemaSource *source;
++    GSettingsSchema *schema;
++    GSettings *settings;
++    gchar *value;
++    guint keyval;
++    EggVirtualModifierType modifier = 0;
++
++    if (button < 1 || button > 3)
++        return FALSE;
++
++    source = g_settings_schema_source_get_default ();
++    schema = source ? g_settings_schema_source_lookup (source, "org.mate.Marco.general", TRUE) : NULL;
++    if (schema == NULL)
++        return FALSE;
++
++    settings = g_settings_new_full (schema, NULL, NULL);
++    value = g_settings_get_string (settings, "mouse-button-modifier");
++    if (value[0] != '\0' && strcmp (value, "disabled") != 0)
++        egg_accelerator_parse_virtual (value, &keyval, NULL, &modifier);
++    modifier = egg_button_modifiers (modifier);
++    g_free (value);
++    g_object_unref (settings);
++    g_settings_schema_unref (schema);
++
++    return modifier != 0 &&
++           (mask == modifier || (button == 1 && mask == (modifier | EGG_VIRTUAL_SHIFT_MASK)));
++}
++
++/* Asks with OK and Cancel whether to set a button that @message, in which
++ * %s is the shortcut, warns of. */
++static gboolean confirm_button(GtkTreeView* view, const char* message, guint button, EggVirtualModifierType mask)
++{
++    GtkWidget *dialog;
++    char *name;
++    char *text;
++    int response;
++
++    name = binding_name (0, 0, button, mask, TRUE);
++    text = g_strdup_printf (message, name);
++    dialog = gtk_message_dialog_new (
++        GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (view))),
++        GTK_DIALOG_DESTROY_WITH_PARENT | GTK_DIALOG_MODAL,
++        GTK_MESSAGE_WARNING,
++        GTK_BUTTONS_OK_CANCEL,
++        "%s",
++        text);
++    g_free (text);
++    g_free (name);
++
++    response = gtk_dialog_run (GTK_DIALOG (dialog));
++    gtk_widget_destroy (dialog);
++
++    return response == GTK_RESPONSE_OK;
++}
++
++static void binding_edited(GtkCellRendererText* cell, const char* path_string, guint keyval, guint keycode, guint button, EggVirtualModifierType mask, GtkTreeView* view)
+ {
+-    GtkTreeView* view = (GtkTreeView*) data;
+     GtkTreeModel* model;
+     GtkTreePath* path = gtk_tree_path_new_from_string (path_string);
+     GtkTreeIter iter;
+@@ -1243,13 +1342,14 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+     tmp_key.model  = model;
+     tmp_key.keyval = keyval;
+     tmp_key.keycode = keycode;
++    tmp_key.button = button;
+     tmp_key.mask   = mask;
+     tmp_key.settings = key_entry->settings;
+     tmp_key.gsettings_key = key_entry->gsettings_key;
+     tmp_key.description = NULL;
+     tmp_key.editable = TRUE; /* kludge to stuff in a return flag */
+ 
+-    if (keyval != 0 || keycode != 0) /* any number of keys can be disabled */
++    if (keyval != 0 || keycode != 0 || button != 0) /* any number of keys can be disabled */
+     {
+         gtk_tree_model_foreach(model, (GtkTreeModelForeachFunc) cb_check_for_uniqueness, &tmp_key);
+     }
+@@ -1274,7 +1374,7 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+             GtkWidget *dialog;
+             char *name;
+ 
+-            name = binding_name (keyval, keycode, mask, TRUE);
++            name = binding_name (keyval, keycode, button, mask, TRUE);
+ 
+             dialog = gtk_message_dialog_new (
+                 GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (view))),
+@@ -1290,15 +1390,45 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+             gtk_widget_destroy (dialog);
+ 
+             /* set it back to its previous value. */
+-            egg_cell_renderer_keys_set_accelerator(
+-                EGG_CELL_RENDERER_KEYS(cell),
+-                key_entry->keyval,
+-                key_entry->keycode,
+-                key_entry->mask);
++            restore_cell (cell, key_entry);
+             return;
+         }
+     }
+ 
++    /* A bare middle button ends middle-click paste, and the middle click on
++     * a titlebar, so it's asked for as a bare letter would be. */
++    if (button == 2 && mask == 0 &&
++        !confirm_button (view,
++                         egg_caminito_text (
++                             "The shortcut \"%s\" will take the middle button: it will no longer "
++                             "paste the selection, or act on a window's title bar.\n"
++                             "Set it anyway?",
++                             "El atajo «%s» ocupará el botón central: ya no pegará la selección "
++                             "ni actuará sobre la barra de título de una ventana.\n"
++                             "¿Asignarlo de todos modos?"),
++                         button, mask))
++    {
++        restore_cell (cell, key_entry);
++        return;
++    }
++
++    if (is_modifier_click (button, mask) &&
++        !confirm_button (view,
++                         egg_caminito_text (
++                             "Over a window, \"%s\" will still move it, resize it or open its "
++                             "menu, as the Windows preferences have it, and the shortcut will run "
++                             "only elsewhere.\n"
++                             "Set it anyway?",
++                             "Sobre una ventana, «%s» seguirá moviéndola, redimensionándola o "
++                             "abriendo su menú, como lo indican las preferencias de Ventanas, y el "
++                             "atajo solo funcionará en otros sitios.\n"
++                             "¿Asignarlo de todos modos?"),
++                         button, mask))
++    {
++        restore_cell (cell, key_entry);
++        return;
++    }
++
+     /* flag to see if the new accelerator was in use by something */
+     if (!tmp_key.editable)
+     {
+@@ -1306,7 +1436,7 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+         char* name;
+         int response;
+ 
+-        name = binding_name(keyval, keycode, mask, TRUE);
++        name = binding_name(keyval, keycode, button, mask, TRUE);
+ 
+         dialog = gtk_message_dialog_new(
+             GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(view))),
+@@ -1336,7 +1466,7 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+         {
+             g_settings_set_string (tmp_key.settings, tmp_key.gsettings_key, "disabled");
+ 
+-            str = binding_name (keyval, keycode, mask, FALSE);
++            str = binding_name (keyval, keycode, button, mask, FALSE);
+             g_settings_set_string (key_entry->settings, key_entry->gsettings_key, str);
+ 
+             g_free (str);
+@@ -1344,17 +1474,13 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+         else
+         {
+             /* set it back to its previous value. */
+-            egg_cell_renderer_keys_set_accelerator(
+-                EGG_CELL_RENDERER_KEYS(cell),
+-                key_entry->keyval,
+-                key_entry->keycode,
+-                key_entry->mask);
++            restore_cell (cell, key_entry);
+         }
+ 
+         return;
+     }
+ 
+-    str = binding_name (keyval, keycode, mask, FALSE);
++    str = binding_name (keyval, keycode, button, mask, FALSE);
+ 
+     g_settings_set_string(
+         key_entry->settings,
+@@ -1365,6 +1491,16 @@ static void accel_edited_callback(GtkCellRendererText* cell, const char* path_st
+ 
+ }
+ 
++static void accel_edited_callback(GtkCellRendererText* cell, const char* path_string, guint keyval, EggVirtualModifierType mask, guint keycode, gpointer data)
++{
++    binding_edited (cell, path_string, keyval, keycode, 0, mask, (GtkTreeView*) data);
++}
++
++static void button_edited_callback(GtkCellRendererText* cell, const char* path_string, guint button, EggVirtualModifierType mask, gpointer data)
++{
++    binding_edited (cell, path_string, 0, 0, button, mask, (GtkTreeView*) data);
++}
++
+ static void
+ accel_cleared_callback (GtkCellRendererText *cell,
+             const char          *path_string,
+@@ -1936,6 +2072,10 @@ setup_dialog (GtkBuilder *builder, GSettings *marco_settings)
+                     G_CALLBACK (accel_cleared_callback),
+                     treeview);
+ 
++  g_signal_connect (renderer, "button_edited",
++                    G_CALLBACK (button_edited_callback),
++                    treeview);
++
+   column = gtk_tree_view_column_new_with_attributes (_("Shortcut"), renderer, NULL);
+   gtk_tree_view_column_set_cell_data_func (column, renderer, accel_set_func, NULL, NULL);
+   gtk_tree_view_column_set_resizable (column, FALSE);
