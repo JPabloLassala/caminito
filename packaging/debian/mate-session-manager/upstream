@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's git, at a commit, with its
+# submodules, and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+git=https://github.com/mate-desktop/mate-session-manager.git
+commit=57a9178e766cd02176dc1c2d70cc48f963ee9fff
+patches=mate-session-manager
