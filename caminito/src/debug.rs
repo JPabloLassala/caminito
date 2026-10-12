@@ -108,6 +108,8 @@ struct StateDump {
     bell: BellDump,
     /// Night Light (137).
     night_light: NightLightDump,
+    /// The sun's position, as `org.mate.Caminito`'s `Sun` (215).
+    sun: SunDump,
     /// Where letting go of the move in progress would tile or maximise its window, frame
     /// and all, while the tile preview shows it (158).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,6 +139,16 @@ struct NightLightDump {
     /// Each output's temperature now, partway through a fade or not. Only the tty writes it
     /// to a gamma table.
     outputs: Vec<NightLightOutputDump>,
+}
+
+#[derive(Serialize)]
+struct SunDump {
+    /// In degrees above the horizon: the real sun's, or the fixed times' with no location.
+    elevation: f64,
+    /// In degrees clockwise from north.
+    azimuth: f64,
+    /// As Night Light's.
+    location_source: &'static str,
 }
 
 #[derive(Serialize)]
@@ -742,6 +754,7 @@ impl Caminito {
                 }),
             },
             night_light: self.night_light_dump(),
+            sun: self.sun_dump(),
             tile_preview: policy.tile_preview(SEAT).map(RectDump::from),
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
@@ -773,6 +786,15 @@ impl Caminito {
                     gamma_client: self.gamma_control_state.holds(output),
                 })
                 .collect(),
+        }
+    }
+
+    fn sun_dump(&self) -> SunDump {
+        let sun = self.night_light.published_sun();
+        SunDump {
+            elevation: sun.position.elevation,
+            azimuth: sun.position.azimuth,
+            location_source: sun.location_source,
         }
     }
 

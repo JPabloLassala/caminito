@@ -1,0 +1,6 @@
+caminito (0.0~r0.g0000000-1) resolute; urgency=medium
+
+  * Built from the checkout's committed HEAD. tools/debian-build sets this
+    entry's version to the commit's.
+
+ -- jpablo <jpablolassala@gmail.com>  Mon, 12 Oct 2026 00:00:00 +0000

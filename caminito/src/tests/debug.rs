@@ -24,14 +24,22 @@ fn titled(
     )
 }
 
-/// The dump with its X window ids, which differ from run to run, as `[X id]`.
-fn without_x_ids(dump: &str) -> String {
+/// The dump with what differs from run to run in place: its X window ids as `[X id]`, and
+/// the sun's elevation and azimuth (215), which the test wall clock moves by as long as the
+/// start took, as `[moves]`.
+fn without_what_varies(dump: &str) -> String {
     let lines = dump.lines().map(|line| {
         let key = "\"window\": ";
-        match line.find(key) {
-            Some(at) => format!("{}{key}\"[X id]\",", &line[..at]),
-            None => line.to_owned(),
+        if let Some(at) = line.find(key) {
+            return format!("{}{key}\"[X id]\",", &line[..at]);
         }
+        for key in ["\"elevation\": ", "\"azimuth\": "] {
+            if let Some(at) = line.find(key) {
+                let comma = if line.ends_with(',') { "," } else { "" };
+                return format!("{}{key}\"[moves]\"{comma}", &line[..at]);
+            }
+        }
+        line.to_owned()
     });
     lines.collect::<Vec<_>>().join("\n")
 }
@@ -63,7 +71,7 @@ on_both_kinds! {
         let bus = f.start_dbus();
         let dump = f.dbus_call(move || debug_proxy(&bus).unwrap().dump_state().unwrap());
 
-        insta::assert_snapshot!(format!("{kind:?}").to_lowercase(), without_x_ids(&dump));
+        insta::assert_snapshot!(format!("{kind:?}").to_lowercase(), without_what_varies(&dump));
     }
 }
 
