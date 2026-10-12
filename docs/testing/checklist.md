@@ -1197,6 +1197,30 @@ session_env() {
   `wlr-randr`, `xrandr`, and `gdbus monitor --session --dest org.mate.Caminito` for the property's
   signal.
 
+### A panel's properties choose its display
+
+- **Milestone:** M6
+- **Steps:**
+  1. With both monitors connected and `mate-panel-caminito` at `pkgrel` 11 or later, log into
+     *MATE on Caminito*.
+  2. Right-click the bottom panel, choose *Properties*, and read the *Display* row.
+  3. Choose the other display in it. Then right-click the top panel, choose *New Panel*, and
+     in the new panel's properties choose the display that isn't primary.
+  4. With both dialogs open, choose the other output as primary, with `choose` from the item
+     above or in caminito-displays.
+  5. Unplug the cable of the output that isn't primary, look, and plug it back in.
+  6. Log out and in again.
+- **Expected:** the row is below *Orientation*, and lists both displays as caminito-displays
+  names them, the primary one with `(primary)`, and the bottom panel's is chosen. In step 3
+  each panel goes to the display chosen, at that display's size, with its applets, and the
+  windows of both outputs keep clear of the panels there. In step 4 the panels swap outputs,
+  and each dialog's row lists the displays in their new order with its panel's still chosen.
+  In step 5 the panels of the unplugged output go to the one that's left, where the row is
+  gone, and they return with the monitor. After step 6 each panel is where it was chosen to
+  be. A drawer's properties have no row (209).
+- **Debug tool:** each output's `layer_surfaces` and `work_area` in `DumpState`, and
+  `dconf watch /org/mate/panel/toplevels/` for the `monitor` key.
+
 ### Turning an output off leaves the others touching
 
 - **Milestone:** M6
