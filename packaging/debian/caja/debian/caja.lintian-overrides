@@ -1,0 +1,3 @@
+# The pin of ADR 0029, which rules writes: the package pins its own binaries, so an apt
+# upgrade never swaps Ubuntu's caja back in.
+caja: package-installs-apt-preferences [etc/apt/preferences.d/caminito-caja]

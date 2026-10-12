@@ -13,10 +13,11 @@ On Ubuntu 26.04, the first Debian target (`debian-packaging`), Debian splits eac
 
 - **The stock names, a `caminito` version.** A patched or backported package keeps the source and binary names of Ubuntu's, and is versioned `<baseline>-0caminito<n>`. Because the baseline is newer, apt takes it as an upgrade, and the packages that depend on the stock names are satisfied.
 - **Caminito depends on the baselines' versions** (`mate-panel (>= <baseline>)`), which no stock version reaches. This is ADR 0011's rule that a stock package never satisfies Caminito.
-- **Each package pins its own binaries.** It installs `/etc/apt/preferences.d/caminito-<source package>`, which pins its binaries at `version *caminito*` with priority 1001. A newer MATE from Ubuntu then doesn't replace it on an upgrade, and removing the package removes its pin.
+- **Each package pins its own binaries.** It installs `/etc/apt/preferences.d/caminito-<source package>`, which pins its binaries at `version /caminito/` with priority 1001. A newer MATE from Ubuntu then doesn't replace it on an upgrade, and removing the package removes its pin.
 
 ## Consequences
 
 - The pins do on apt what ADR 0011's missing `replaces` does on pacman: nothing switches between stock and patched by itself.
+- The pin is a regex, `/caminito/`. It was `*caminito*` until 2026-10-12, when 200 found that apt takes a version pattern ending in `*` as a prefix, so that one pinned nothing.
 - When Ubuntu's version passes a baseline, the pin still holds the patched package, and moving the baseline is a manual rebase, as on Arch.
 - Rejected: `-caminito` names with `Provides`, `Conflicts` and `Replaces`, as on Arch. That needs a renamed twin of every split binary package, and a versioned `Provides` for each to satisfy versioned dependencies on the stock names.

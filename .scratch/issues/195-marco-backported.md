@@ -12,7 +12,7 @@ Map: [Debian packaging](../debian-packaging/map.md)
 Under "The packages" in [the spec](../debian-packaging/spec.md) and [ADR 0029](../../docs/adr/0029-on-debian-a-patched-package-keeps-the-stock-names-and-is-pinned.md).
 
 - `packaging/debian/marco/debian/`, from Ubuntu 26.04's marco 1.26.2 `debian/`, moved to upstream's 1.29.1 with Ubuntu's patches dropped where 1.29.1 has them. The version is `1.29.1-0caminito1`.
-- The pin: `debian/<binary>.install` or `rules` installs `/etc/apt/preferences.d/caminito-marco`, pinning each of the source's binaries at `version *caminito*`, priority 1001. Write it so 196 to 203 copy it with one name changed.
+- The pin: `debian/<binary>.install` or `rules` installs `/etc/apt/preferences.d/caminito-marco`, pinning each of the source's binaries at `version /caminito/`, priority 1001 (not `*caminito*`, which apt reads as a prefix: 200). caja's `rules` (200) already writes it naming no package, so it can be copied as it is.
 - `tools/debian-build` builds it before the packages that need it.
 
 ## Acceptance criteria

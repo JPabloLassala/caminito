@@ -1,0 +1,7 @@
+# The baseline tools/debian-build fetches for this patched package (200): upstream's tag, by
+# git, checked against its commit, and archived as the orig tarball without submodules, as
+# Ubuntu's watch file has it from git.mate-desktop.org. The series is packaging/patches/caja/.
+url=https://github.com/mate-desktop/caja.git
+tag=v1.28.0
+commit=27fdb849de02f551eab46eb78f48065da9d1d1ec
+patches=caja
