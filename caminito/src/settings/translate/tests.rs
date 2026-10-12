@@ -175,6 +175,7 @@ fn defaults() -> Reading {
     put(SOUND, "input-feedback-sounds", Value::Bool(false));
     put(CAMINITO, "workspace-layout-orientation", s("horizontal"));
     put(CAMINITO, "workspace-layout-rows", Value::Int(1));
+    put(CAMINITO, "workspaces-per-output", Value::Bool(true));
     put(CAMINITO, "workspace-layout-columns", Value::Int(0));
     put(
         CAMINITO,
@@ -291,6 +292,14 @@ fn workspace_names_are_used_when_set() {
 fn names_beyond_the_count_are_not_passed_on() {
     let reading = with(MARCO_WORKSPACE_NAMES, "name-5", string("Spare"));
     assert_eq!(settings(&reading).policy.workspace_names.len(), 4);
+}
+
+#[test]
+fn each_output_has_its_own_workspaces_unless_the_key_is_off() {
+    // On by default, unlike Marco (ADR 0032).
+    assert!(settings(&defaults()).policy.workspaces_per_output);
+    let reading = with(CAMINITO, "workspaces-per-output", Value::Bool(false));
+    assert!(!settings(&reading).policy.workspaces_per_output);
 }
 
 #[test]
