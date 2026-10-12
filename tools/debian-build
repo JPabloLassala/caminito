@@ -26,13 +26,14 @@ in_container() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   apt-get install -y --no-install-recommends build-essential ca-certificates devscripts equivs \
-    git lintian rustup
+    git lintian passwd rustup
   # dpkg-buildpackage and lintian run as a user, as makepkg does on Arch.
-  useradd -m builder
+  id builder >/dev/null 2>&1 || useradd -m builder
   runuser -u builder -- rustup toolchain install stable --profile minimal
   for package; do
     echo "==> $package"
     work=/build/$package
+    rm -rf "$work"
     mkdir -p "$work/src"
     # Caminito's own packages are its committed HEAD, versioned 0.0~r<count>.g<hash>-1 until
     # v0.1.0 is tagged. The checkout belongs to another user in the container, which git
