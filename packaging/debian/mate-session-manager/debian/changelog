@@ -3,7 +3,7 @@ mate-session-manager (1.28.0+git20260721.57a9178-0caminito1) resolute; urgency=m
   * Master 57a9178, with Caminito's carried patches, which tools/debian-build
     puts in debian/patches from packaging/patches/mate-session-manager/.
   * Drop the patches master has: 0006 and 0009. Keep 0005.
-  * Turn sound events off, as on Arch.
+  * Turn sound events off: libcanberra isn't a build dependency.
   * Pin every binary package at its caminito version, in
     /etc/apt/preferences.d/caminito-mate-session-manager.
 
