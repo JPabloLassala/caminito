@@ -8,7 +8,10 @@
 #![forbid(unsafe_code)]
 
 pub mod drawer;
-pub mod gsettings;
-pub mod identity;
-pub mod positioning;
-pub mod settings;
+mod gsettings;
+mod identity;
+mod positioning;
+mod settings;
+
+/// The log domain of everything the drawer logs.
+const DOMAIN: &str = "caminito-wallpaperd";

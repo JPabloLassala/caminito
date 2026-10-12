@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use gio::glib;
 
+use crate::DOMAIN;
 use crate::positioning::{Positioning, place};
 use crate::settings::{Colour, Drawn};
 
@@ -38,10 +39,7 @@ fn decode(file: &str) -> Option<cairo::ImageSurface> {
     let pixbuf = match gdk_pixbuf::Pixbuf::from_file(file) {
         Ok(pixbuf) => pixbuf,
         Err(err) => {
-            glib::g_warning!(
-                "caminito-wallpaperd",
-                "can't load the picture {file}: {err}"
-            );
+            glib::g_warning!(DOMAIN, "can't load the picture {file}: {err}");
             return None;
         }
     };
@@ -50,10 +48,7 @@ fn decode(file: &str) -> Option<cairo::ImageSurface> {
     match surface_of(&pixbuf) {
         Ok(surface) => Some(surface),
         Err(err) => {
-            glib::g_warning!(
-                "caminito-wallpaperd",
-                "can't draw the picture {file}: {err}"
-            );
+            glib::g_warning!(DOMAIN, "can't draw the picture {file}: {err}");
             None
         }
     }

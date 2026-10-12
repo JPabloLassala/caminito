@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use gio::glib;
 use gio::prelude::*;
 
+use crate::DOMAIN;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, MateBackground, OutputSettings, Set, Store};
 
@@ -120,7 +121,7 @@ impl Store for GioStore {
     fn set_seen(&mut self, seen: &[String]) {
         let seen: Vec<&str> = seen.iter().map(String::as_str).collect();
         if let Err(err) = self.main.set_strv("outputs", seen.as_slice()) {
-            glib::g_warning!("caminito-wallpaperd", "can't note the monitors seen: {err}");
+            glib::g_warning!(DOMAIN, "can't note the monitors seen: {err}");
         }
     }
 
@@ -146,7 +147,7 @@ impl Store for GioStore {
         ];
         settings.apply();
         if let Some(Err(err)) = results.into_iter().find(Result::is_err) {
-            glib::g_warning!("caminito-wallpaperd", "can't write {}: {err}", path(set));
+            glib::g_warning!(DOMAIN, "can't write {}: {err}", path(set));
         }
     }
 
@@ -156,7 +157,7 @@ impl Store for GioStore {
 
     fn set_took_mate_background(&mut self) {
         if let Err(err) = self.main.set_boolean("took-mate-background", true) {
-            glib::g_warning!("caminito-wallpaperd", "can't note the first run: {err}");
+            glib::g_warning!(DOMAIN, "can't note the first run: {err}");
         }
     }
 }

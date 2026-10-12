@@ -52,6 +52,8 @@ use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::{
     self, ZwlrOutputModeV1,
 };
 
+use crate::DOMAIN;
+pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::GioStore;
 use crate::identity::Identity;
 use crate::settings::{Drawn, settings_for, take_mate_background};
@@ -59,15 +61,12 @@ use buffer::Buffers;
 use paint::Pictures;
 
 /// How long a change of wallpaper takes to cross-fade.
-pub const FADE: Duration = Duration::from_secs(1);
+const FADE: Duration = Duration::from_secs(1);
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
 /// caja's desktop among them (63). It's msd's background plugin's, whose place the drawer
 /// takes.
-pub const NAMESPACE: &str = "mate-background";
-
-/// The log domain.
-const DOMAIN: &str = "caminito-wallpaperd";
+const NAMESPACE: &str = "mate-background";
 
 /// Fractional scale's denominator.
 const SCALE_DENOMINATOR: u32 = 120;
@@ -84,7 +83,7 @@ pub enum Error {
     /// The connection failed.
     Connection(wayland_client::backend::WaylandError),
     /// The store can't be opened.
-    Store(crate::gsettings::Error),
+    Store(StoreError),
 }
 
 impl std::fmt::Display for Error {
@@ -108,6 +107,15 @@ struct Head {
     make: String,
     model: String,
     serial: String,
+    /// Whether a `done` came since it was made, so it's whole: a monitor plugged in is
+    /// named before its make, model and serial come.
+    described: bool,
+}
+
+impl Head {
+    fn identity(&self) -> Identity {
+        Identity::of(&self.make, &self.model, &self.serial, &self.name)
+    }
 }
 
 /// An output, from its `wl_output` global.
@@ -174,7 +182,7 @@ impl Surface {
 }
 
 /// The drawer's state, which the Wayland events and the settings' changes act on.
-pub struct App {
+pub(crate) struct App {
     qh: QueueHandle<App>,
     compositor: WlCompositor,
     shm: WlShm,
@@ -185,8 +193,6 @@ pub struct App {
     heads: HashMap<ObjectId, Head>,
     /// Whether output management describes the monitors.
     managed: bool,
-    /// Whether output management has described them at least once.
-    heads_done: bool,
     store: GioStore,
     /// Caminito's D-Bus interface, for the primary output.
     caminito: Option<gio::DBusProxy>,
@@ -223,7 +229,6 @@ pub fn run() -> Result<(), Error> {
         outputs: Vec::new(),
         heads: HashMap::new(),
         managed: false,
-        heads_done: false,
         store,
         caminito: caminito_proxy(),
         pictures: Pictures::default(),
@@ -399,7 +404,11 @@ impl App {
     /// Whether the monitor at `connector` is described, so that its identity is known. A
     /// compositor without output management knows monitors by their connectors alone.
     fn described(&self, connector: &str) -> bool {
-        !self.managed || (self.heads_done && self.heads.values().any(|h| h.name == connector))
+        !self.managed
+            || self
+                .heads
+                .values()
+                .any(|head| head.described && head.name == connector)
     }
 
     /// Gives a surface to each output whose monitor is described, so that the settings it
@@ -463,7 +472,7 @@ impl App {
     fn identity(&self, connector: &str) -> Identity {
         let head = self.heads.values().find(|head| head.name == connector);
         match head {
-            Some(head) => Identity::of(&head.make, &head.model, &head.serial, connector),
+            Some(head) => head.identity(),
             None => Identity::Connector(connector.to_owned()),
         }
     }
@@ -538,14 +547,14 @@ impl App {
         };
         if same_size {
             // A fade that's under way goes on from where it is.
-            let from = match current(surface) {
-                Ok(from) => from,
-                Err(err) => {
+            match current(surface) {
+                Some(Ok(from)) => surface.fade = Some((from, Instant::now())),
+                Some(Err(err)) => {
                     glib::g_warning!(DOMAIN, "can't draw the wallpaper: {err}");
                     return;
                 }
-            };
-            surface.fade = Some((from, Instant::now()));
+                None => surface.fade = None,
+            }
         } else {
             surface.fade = None;
         }
@@ -569,12 +578,15 @@ impl App {
         let Some((logical_width, logical_height)) = surface.size else {
             return;
         };
+        // Every frame of a fade comes here, so a failure is logged at debug alone; the
+        // frame stays as it was until the next.
         let frame = match current(surface) {
-            Ok(frame) => frame,
-            Err(err) => {
-                glib::g_warning!(DOMAIN, "can't draw the wallpaper: {err}");
+            Some(Ok(frame)) => frame,
+            Some(Err(err)) => {
+                glib::g_debug!(DOMAIN, "can't draw the wallpaper: {err}");
                 return;
             }
+            None => return,
         };
         if surface
             .fade
@@ -590,7 +602,7 @@ impl App {
                 return;
             }
             Err(err) => {
-                glib::g_warning!(DOMAIN, "can't show the wallpaper: {err}");
+                glib::g_debug!(DOMAIN, "can't show the wallpaper: {err}");
                 return;
             }
         };
@@ -632,19 +644,17 @@ impl App {
     }
 }
 
-/// What the surface shows now: its frame, or a fade's frame for this moment. Without a
-/// frame, which only a surface never drawn lacks, it's an error.
-fn current(surface: &Surface) -> Result<cairo::ImageSurface, cairo::Error> {
-    let Some((_, to)) = &surface.shown else {
-        return Err(cairo::Error::NullPointer);
-    };
-    match &surface.fade {
+/// What the surface shows now: its frame, or a fade's frame for this moment, or `None` for
+/// a surface never drawn.
+fn current(surface: &Surface) -> Option<Result<cairo::ImageSurface, cairo::Error>> {
+    let (_, to) = surface.shown.as_ref()?;
+    Some(match &surface.fade {
         Some((from, start)) => {
             let progress = start.elapsed().as_secs_f64() / FADE.as_secs_f64();
             paint::blend(from, to, progress)
         }
         None => Ok(to.clone()),
-    }
+    })
 }
 
 impl Dispatch<WlRegistry, GlobalListContents> for App {
@@ -773,7 +783,9 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for App {
                 app.heads.insert(head.id(), Head::default());
             }
             zwlr_output_manager_v1::Event::Done { .. } => {
-                app.heads_done = true;
+                for head in app.heads.values_mut() {
+                    head.described = true;
+                }
                 app.make_surfaces();
                 app.refresh();
             }
