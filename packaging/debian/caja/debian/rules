@@ -27,11 +27,12 @@ override_dh_install:
 # The pin of ADR 0029: the binary package named as the source installs
 # /etc/apt/preferences.d/caminito-<source>, pinning every binary of debian/control at its
 # caminito version, so no newer stock caja replaces it. It names no package of its own, so it
-# reads the same in every patched or backported package.
+# reads the same in every patched or backported package. The version is matched by a regex:
+# apt takes a pattern ending in `*` as a prefix, so `*caminito*` matches nothing.
 PIN = debian/$(DEB_SOURCE)/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
 execute_after_dh_install-arch:
 	install -d $(dir $(PIN))
-	printf 'Package: %s\nPin: version *caminito*\nPin-Priority: 1001\n' \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n' \
 		"$$(sed -n 's/^Package: *//p' debian/control | xargs)" > $(PIN)
 
 # --enable-wayland: Ubuntu's builds without gtk-layer-shell, so its desktop isn't a layer
