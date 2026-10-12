@@ -9,6 +9,7 @@ mod bindings;
 mod button_bindings;
 mod caminito_displays;
 mod caminito_locker;
+mod caminito_wallpaper;
 mod caminito_wallpaperd;
 mod client;
 mod commands;
