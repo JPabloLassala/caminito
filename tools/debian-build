@@ -48,7 +48,8 @@ in_container() {
     rm -rf "$work"
     mkdir -p "$work/src"
     # The checkout belongs to another user in the container, which git refuses unless told.
-    if upstream=$(git -c safe.directory='*' -C "$root" show "HEAD:packaging/debian/$package/upstream" 2>/dev/null); then
+    if upstream=$(git -c safe.directory='*' -C "$root" show \
+      "HEAD:packaging/debian/$package/upstream" 2>/dev/null); then
       # A backported or patched package: its debian/, then upstream's tarball under it, kept
       # beside it as <source>_<upstream version>.orig.tar.* for dpkg-source.
       git -c safe.directory='*' -C "$root" archive HEAD "packaging/debian/$package/debian" |
