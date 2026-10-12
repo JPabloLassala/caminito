@@ -1614,6 +1614,32 @@ session_env() {
   org.mate.Caminito.Debug DumpState`, `journalctl --user -t caminito-wallpaperd`, and `dconf
   dump /org/mate/caminito/wallpaper/`.
 
+### caja's "Set as wallpaper" sets every output, and `org.mate.background` follows the primary
+
+- **Milestone:** M9
+- **Steps:**
+  1. In *MATE on Caminito* with two monitors and caminito-wallpaperd running, give each monitor
+     a picture of its own, as in the item above's step 3.
+  2. Run `gsettings get org.mate.background picture-filename`, then give the primary monitor
+     another picture, `gsettings set "$(out "$first")" picture "$c"`, and set its `positioning`
+     to `tile`. Run `gsettings get` for `picture-filename`, `picture-options` and
+     `primary-color` again.
+  3. Set the primary monitor's `kind` to `colour`, and run the three `gsettings get` again.
+  4. In caja, right-click a picture under `~/Pictures` and choose *Set as wallpaper*.
+  5. Choose *Set as wallpaper* on the same picture again, after setting the second monitor's
+     `picture` back to `$b`.
+- **Expected:** in step 2 `picture-filename` names the primary monitor's picture, and then
+  `$c`, with `picture-options` `'wallpaper'`; neither change reaches the second monitor. In
+  step 3 `picture-filename` is `''` and `primary-color` is the primary monitor's colour. In
+  step 4 both monitors cross-fade to the picture, and `dconf dump /org/mate/caminito/wallpaper/`
+  has it as the `picture` of `all/` and of each monitor, each keeping its `positioning`. In
+  step 5 the second monitor fades to the picture again, though `picture-filename` already
+  named it. `journalctl --user -t caminito-wallpaperd` has no line of the drawer taking its own
+  write for another's, and the wallpaper doesn't flicker between pictures.
+- **Debug tool:** `dconf watch /org/mate/desktop/background/` beside `dconf watch
+  /org/mate/caminito/wallpaper/`, and `G_MESSAGES_DEBUG=caminito-wallpaperd` in the drawer's
+  environment for its `took org.mate.background's new picture` line.
+
 ## The control center
 
 ### Windows and System Shortcuts open under Caminito, and name it

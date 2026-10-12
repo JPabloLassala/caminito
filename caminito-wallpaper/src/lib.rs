@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+mod bridge;
 pub mod drawer;
 mod gsettings;
 mod identity;

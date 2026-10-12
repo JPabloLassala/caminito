@@ -1,6 +1,7 @@
 //! The store in GSettings (210): `org.mate.Caminito.wallpaper`, and one relocatable
 //! `org.mate.Caminito.wallpaper.output` per monitor under its path, and one more for every
-//! output's. MATE's `org.mate.background` is read for the first run.
+//! output's. MATE's `org.mate.background` is read for the first run, and bridged to after
+//! (211).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -9,6 +10,7 @@ use gio::glib;
 use gio::prelude::*;
 
 use crate::DOMAIN;
+use crate::bridge::Writes;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, MateBackground, OutputSettings, Set, Store};
 
@@ -18,7 +20,7 @@ pub const SCHEMA: &str = "org.mate.Caminito.wallpaper";
 pub const OUTPUT_SCHEMA: &str = "org.mate.Caminito.wallpaper.output";
 /// The path every output's keys are at, and below which each monitor's are.
 pub const PATH: &str = "/org/mate/caminito/wallpaper/";
-/// MATE's background, which the first run reads.
+/// MATE's background, which the first run reads and the bridges write and hear.
 pub const MATE_SCHEMA: &str = "org.mate.background";
 
 /// The path of a set of an output's keys.
@@ -26,6 +28,7 @@ pub fn path(set: &Set) -> String {
     match set {
         Set::All => format!("{PATH}all/"),
         Set::Output(identity) => format!("{PATH}outputs/{}/", identity.path_element()),
+        Set::Seen(element) => format!("{PATH}outputs/{element}/"),
     }
 }
 
@@ -90,19 +93,6 @@ impl GioStore {
         sets.insert(path, settings.clone());
         settings
     }
-
-    /// MATE's background, or `None` if its schema isn't installed.
-    pub fn mate_background() -> Option<MateBackground> {
-        if !has_schema(MATE_SCHEMA) {
-            return None;
-        }
-        let mate = gio::Settings::new(MATE_SCHEMA);
-        Some(MateBackground {
-            picture: mate.string("picture-filename").into(),
-            options: mate.string("picture-options").into(),
-            colour: mate.string("primary-color").into(),
-        })
-    }
 }
 
 impl Store for GioStore {
@@ -159,5 +149,52 @@ impl Store for GioStore {
         if let Err(err) = self.main.set_boolean("took-mate-background", true) {
             glib::g_warning!(DOMAIN, "can't note the first run: {err}");
         }
+    }
+}
+
+/// MATE's background, `org.mate.background`, as the first run and the bridges see it (211).
+pub struct Mate {
+    settings: gio::Settings,
+}
+
+impl Mate {
+    /// Opens MATE's keys, or `None` if their schema isn't installed. `heard` is given
+    /// `picture-filename` each time it changes, whoever wrote it, the drawer included.
+    pub fn open(heard: impl Fn(&str) + 'static) -> Option<Self> {
+        if !has_schema(MATE_SCHEMA) {
+            return None;
+        }
+        let settings = gio::Settings::new(MATE_SCHEMA);
+        settings.connect_changed(Some("picture-filename"), move |settings, key| {
+            heard(&settings.string(key));
+        });
+        Some(Mate { settings })
+    }
+
+    /// The keys the first run and the bridges read.
+    pub fn read(&self) -> MateBackground {
+        MateBackground {
+            picture: self.settings.string("picture-filename").into(),
+            options: self.settings.string("picture-options").into(),
+            colour: self.settings.string("primary-color").into(),
+        }
+    }
+
+    /// Writes the keys in `writes`, and no other, since a key written signals a change even
+    /// when its value is the same. A colour is solid, as Caminito's are.
+    pub fn write(&self, writes: &Writes) -> Result<(), glib::BoolError> {
+        if let Some(options) = writes.options {
+            self.settings.set_string("picture-options", options)?;
+        }
+        if let Some(colour) = writes.colour {
+            self.settings.set_string("primary-color", &colour.text())?;
+            if self.settings.string("color-shading-type") != "solid" {
+                self.settings.set_string("color-shading-type", "solid")?;
+            }
+        }
+        if let Some(picture) = &writes.picture {
+            self.settings.set_string("picture-filename", picture)?;
+        }
+        Ok(())
     }
 }

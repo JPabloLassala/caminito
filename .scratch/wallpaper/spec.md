@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer. It holds the decisions, and links the ADR that holds the one hard to reverse. Where the two differ, the ADR is right and this file is to be fixed.
 
-Ticket 210's drawer is built; the rest isn't.
+Ticket 210's drawer and 211's bridges to `org.mate.background` are built; the rest isn't.
 
 ## Problem
 

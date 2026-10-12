@@ -8,6 +8,9 @@
 //! behind (88). An output's buffer is its pixels at its fractional scale, shown at its
 //! logical size through a viewport. A change of what's drawn cross-fades over [`FADE`]; a
 //! change of size draws at once.
+//!
+//! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
+//! it after every refresh, and a picture another program writes to it comes in first.
 
 mod buffer;
 mod paint;
@@ -53,8 +56,9 @@ use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::{
 };
 
 use crate::DOMAIN;
+use crate::bridge::Bridge;
 pub use crate::gsettings::Error as StoreError;
-use crate::gsettings::GioStore;
+use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
 use crate::settings::{Drawn, settings_for, take_mate_background};
 use buffer::Buffers;
@@ -196,6 +200,10 @@ pub(crate) struct App {
     store: GioStore,
     /// Caminito's D-Bus interface, for the primary output.
     caminito: Option<gio::DBusProxy>,
+    /// MATE's background, if its schema is installed.
+    mate: Option<Mate>,
+    /// Shared with `mate`'s signal, which hears the changes the bridge brings in.
+    bridge: Rc<RefCell<Bridge>>,
     pictures: Pictures,
 }
 
@@ -214,6 +222,24 @@ pub fn run() -> Result<(), Error> {
         })
         .map_err(Error::Store)?
     };
+    let bridge = Rc::new(RefCell::new(Bridge::default()));
+    let mate = {
+        let (bridge, refresh) = (bridge.clone(), refresh.clone());
+        Mate::open(move |file| {
+            if bridge.borrow_mut().heard(file) {
+                refresh.schedule();
+            }
+        })
+    };
+    let caminito = caminito_proxy();
+    if let Some(proxy) = &caminito {
+        // The primary output's wallpaper is the one that goes out.
+        let refresh = refresh.clone();
+        proxy.connect_local("g-properties-changed", false, move |_| {
+            refresh.schedule();
+            None
+        });
+    }
     let mut app = App {
         compositor: globals
             .bind(&qh, 4..=6, ())
@@ -230,7 +256,9 @@ pub fn run() -> Result<(), Error> {
         heads: HashMap::new(),
         managed: false,
         store,
-        caminito: caminito_proxy(),
+        caminito,
+        mate,
+        bridge,
         pictures: Pictures::default(),
         qh: qh.clone(),
     };
@@ -238,7 +266,7 @@ pub fn run() -> Result<(), Error> {
     app.managed = globals
         .bind::<ZwlrOutputManagerV1, _, _>(&qh, 2..=4, ())
         .is_ok();
-    if let Some(mate) = GioStore::mate_background()
+    if let Some(mate) = app.mate.as_ref().map(Mate::read)
         && take_mate_background(&mut app.store, &mate)
     {
         glib::g_debug!(
@@ -489,17 +517,28 @@ impl App {
         Some(self.identity(&name))
     }
 
-    /// Draws every output whose wallpaper or size changed.
+    /// Draws every output whose wallpaper or size changed, after bringing in a picture
+    /// another program gave `org.mate.background`, and sends the primary output's out.
     fn refresh(&mut self) {
+        if self.bridge.borrow_mut().bring_in(&mut self.store) {
+            glib::g_debug!(DOMAIN, "took org.mate.background's new picture");
+        }
         let primary = self.primary();
         let mut drawn = Vec::new();
+        let mut primary_drawn = None;
         for output in &self.outputs {
             let (Some(name), Some(_)) = (&output.name, &output.surface) else {
                 continue;
             };
             let identity = self.identity(name);
             let settings = settings_for(&mut self.store, &identity, primary.as_ref());
+            if primary.as_ref() == Some(&identity) {
+                primary_drawn = Some(settings.drawn());
+            }
             drawn.push((output.global, settings.drawn()));
+        }
+        if let Some(primary) = primary_drawn {
+            self.bridge_out(&primary);
         }
         let files = drawn.iter().filter_map(|(_, drawn)| match drawn {
             Drawn::Picture { file, .. } => Some(file.as_str()),
@@ -509,6 +548,22 @@ impl App {
         self.pictures.keep_only(files.iter().map(String::as_str));
         for (global, drawn) in drawn {
             self.update(global, drawn);
+        }
+    }
+
+    /// Writes what the primary output shows to `org.mate.background`, where it differs.
+    fn bridge_out(&self, primary: &Drawn) {
+        let Some(mate) = &self.mate else {
+            return;
+        };
+        // Not borrowed while writing: the write is heard at once.
+        let writes = self.bridge.borrow_mut().out(&mate.read(), primary);
+        if writes.is_empty() {
+            return;
+        }
+        if let Err(err) = mate.write(&writes) {
+            glib::g_warning!(DOMAIN, "can't write org.mate.background: {err}");
+            self.bridge.borrow_mut().not_written();
         }
     }
 
