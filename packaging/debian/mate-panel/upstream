@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's git, at a commit, with its
+# submodules, and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+git=https://github.com/mate-desktop/mate-panel.git
+commit=58ac6c101bdf2e2975c0395723ad16e9c9764f5c
+patches=mate-panel
