@@ -72,8 +72,9 @@ struct StateDump {
     /// By id.
     windows: Vec<WindowDump>,
     workspaces: Vec<WorkspaceDump>,
+    /// The primary output's active workspace.
     active_workspace: usize,
-    /// Whether the active workspace shows its desktop (94).
+    /// Whether every output's active workspace shows its desktop (94).
     showing_desktop: bool,
     outputs: Vec<OutputDump>,
     /// The primary output's name (81): the user's choice, or its stand-in.
@@ -659,7 +660,7 @@ impl Caminito {
                 },
                 columns: popup.layout.columns,
                 rows: popup.layout.rows,
-                selected: policy.active_workspace(),
+                selected: policy.active_workspace_on(output_id(&popup.output)),
                 popup: popup.layout.popup.into(),
                 cells: cells.iter().map(|cell| cell.rect.into()).collect(),
                 previews: cells.iter().map(|cell| cell.preview.into()).collect(),
@@ -727,7 +728,8 @@ impl Caminito {
         let dump = StateDump {
             windows,
             workspaces,
-            active_workspace: policy.active_workspace(),
+            // The primary output's, standing in for the Active output's (222).
+            active_workspace: policy.primary_active_workspace(),
             showing_desktop: policy.is_showing_desktop(),
             outputs,
             primary_output: self.primary_output().map(|output| output.name()),
