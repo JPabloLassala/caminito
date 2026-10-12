@@ -1,24 +1,28 @@
 #!/bin/sh
 # Links the global menu extension into each editor's built-in extensions directory, or
-# unlinks it (ADR 0022). The alpm hooks and the package's install script run it.
+# unlinks it (ADR 0022). It's both distributions' (193): on Arch, the alpm hooks and the
+# package's install script run it; on Debian, the package's maintainer scripts will, for its
+# triggers too (204).
 #
-#   caminito-vscode-link link                 link in each of the five directories that exists
+#   caminito-vscode-link link                 link in each of the six directories that holds an
+#                                             editor's built-ins, and unlink from each that
+#                                             holds nothing else, its editor gone
 #   caminito-vscode-link unlink               remove the link from each of them
 #   caminito-vscode-link unlink --targets     remove it only from the directories that the
-#                                             paths on stdin, a hook's targets, lie in
-#   caminito-vscode-link directories          print the five, from which the PKGBUILD writes
-#                                             the hooks' targets
+#                                             paths on stdin, a hook's targets, lie in (Arch's)
+#   caminito-vscode-link directories          print the six, from which the packages write
+#                                             their hooks' and triggers' directories
 #
 # A path that holds anything but this package's own link is left alone, so a user's own link
-# or copy survives. pacman doesn't own the links. CAMINITO_VSCODE_ROOT is put before each
-# directory, for the tests (117).
+# or copy survives. Neither package manager owns the links. CAMINITO_VSCODE_ROOT is put before
+# each directory, for the tests (117).
 set -eu
 
 extension=/usr/share/caminito-vscode/global-menu
 name=caminito.global-menu
 
-# The one list of the editors' built-in directories: visual-studio-code-bin's, code's,
-# vscodium-bin's, vscodium's and cursor-bin's.
+# The one list of the editors' built-in directories: visual-studio-code-bin's (and Microsoft's
+# .deb's), code's, vscodium-bin's, vscodium's, cursor-bin's, and VSCodium's .deb's.
 directories() {
   cat <<'EOF'
 /usr/share/code/resources/app/extensions
@@ -26,6 +30,7 @@ directories() {
 /opt/vscodium-bin/resources/app/extensions
 /usr/share/vscodium/resources/app/extensions
 /usr/share/cursor/resources/app/extensions
+/usr/share/codium/resources/app/extensions
 EOF
 }
 
@@ -41,6 +46,19 @@ make_link() {
     return
   fi
   ln -s "$extension" "$path"
+}
+
+# Whether the directory holds anything but this package's link: an editor's built-ins. An
+# editor's removal leaves the directory behind with the link alone in it, since dpkg won't
+# remove a directory that isn't empty.
+has_editor() {
+  dir=$root$1
+  for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    if [ "$entry" != "$dir/$name" ] && { [ -e "$entry" ] || [ -L "$entry" ]; }; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 remove_link() {
@@ -65,8 +83,13 @@ targeted() {
 case ${1-} in
 link)
   directories | while read -r directory; do
-    if [ -d "$root$directory" ]; then
+    if [ ! -d "$root$directory" ]; then
+      continue
+    fi
+    if has_editor "$directory"; then
       make_link "$directory"
+    else
+      remove_link "$directory"
     fi
   done
   ;;
