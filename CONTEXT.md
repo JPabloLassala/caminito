@@ -57,7 +57,7 @@ The light or dark preference that apps read through the portal. It is separate f
 _Avoid_: dark mode, dark theme (a GTK theme that happens to be dark)
 
 **Helper**:
-A process that Caminito itself starts and supervises: Xwayland, the palette helper and the locker. MATE components aren't helpers, because mate-session starts and restarts them.
+A process that Caminito itself starts and supervises: Xwayland, the palette helper, the locker and, in a Session, caminito-wallpaperd. MATE components aren't helpers, because mate-session starts and restarts them.
 _Avoid_: daemon, child (for MATE components)
 
 **Session**:

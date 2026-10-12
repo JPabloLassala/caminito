@@ -1,5 +1,5 @@
-//! The supervisor for Caminito's helper processes (15): the palette helper and the locker
-//! (126).
+//! The supervisor for Caminito's helper processes (15): the palette helper, the locker
+//! (126) and the wallpaper's drawer (210).
 //!
 //! A helper is spawned with its stdin and stdout piped to Caminito. Its stdout is a calloop
 //! fd source, and its stderr goes to the journal under the helper's own identifier, or to
