@@ -1,0 +1,32 @@
+[package]
+name = "caminito-wallpaper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shipped through the PKGBUILD (16), never crates.io.
+publish = false
+
+# The drawer links no GTK (ADR 0031): GLib's loop and GSettings through gio, the pictures
+# decoded by gdk-pixbuf and drawn with cairo, and its own Wayland connection.
+[dependencies]
+cairo-rs = "0.22.9"
+gdk-pixbuf = "0.22.0"
+gio = "0.22.10"
+# The Wayland connection's fd in GLib's loop.
+glib-unix = "0.22.8"
+rustix = { workspace = true, features = ["fs"] }
+wayland-client.workspace = true
+# The viewport and the fractional scale, so a buffer is an output's pixels at any scale.
+wayland-protocols = { workspace = true, features = ["client", "staging"] }
+# Layer shell for the surfaces, and output management for the monitors' make, model and
+# serial.
+wayland-protocols-wlr = { workspace = true, features = ["client"] }
+
+[dev-dependencies]
+# The tests' pictures are PNGs cairo writes.
+cairo-rs = { version = "0.22.9", features = ["png"] }
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

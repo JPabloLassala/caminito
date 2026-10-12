@@ -12,7 +12,7 @@ _pkgname=mate-settings-daemon
 # The first tag with the Wayland background and clipboard. Its wlrandr plugin is off under
 # Caminito, which keeps the saved layouts itself (0005, ADR 0014).
 pkgver=1.29.1
-pkgrel=7
+pkgrel=8
 pkgdesc="The MATE Settings daemon, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-settings-daemon'
@@ -57,7 +57,7 @@ groups=(mate)
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
-# 0001 to 0003, 0005 and 0007 to 0011 are active only when MATE_WM_NAME=Caminito (ADR 0011).
+# 0001 to 0003, 0005 and 0007 to 0012 are active only when MATE_WM_NAME=Caminito (ADR 0011).
 # 0004 isn't Caminito's: it takes out the one upstream commit that needs mate-desktop 1.29,
 # which Arch doesn't have. It goes when Arch's mate-desktop is 1.29. It's Arch's build patch,
 # so it's in the series' arch/ and applies after the rest (ADR 0030). 0006 has no gate: it
@@ -65,6 +65,9 @@ conflicts=("$_pkgname")
 # 0007 to 0010 are the media keys and their OSD (99): 0007 lets an X11Only plugin that says
 # Caminito=true load under Caminito, and 0010 is the plugin that says it. 0011 is the custom
 # shortcuts (100), whose plugin says it too.
+# 0012 turns the background plugin off under Caminito: caminito-wallpaperd draws the wallpaper
+# (210, ADR 0031). 0002 has no effect from then on, and can go, as the ADR has it; 0006 fixes
+# the plugin on any compositor, so it stays.
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-settings-daemon")"
@@ -80,6 +83,7 @@ source=(
   "$_patches/0009-input-helper-Take-a-touchpad-to-be-present-under-Cam.patch"
   "$_patches/0010-media-keys-Grab-the-keys-through-Caminito.patch"
   "$_patches/0011-keybindings-Grab-the-shortcuts-through-Caminito.patch"
+  "$_patches/0012-background-Do-not-start-under-Caminito.patch"
   "$_patches/arch/0004-Revert-xrandr-Handle-hotplug_mode_update-for-VM-gues.patch"
 )
 b2sums=(
@@ -94,6 +98,7 @@ b2sums=(
   76af655128c4fd47fa4c62ed427db8da6217ce6314c88a1330f9b3226e9b42a95299c62735637f213b6db528dc805140f76be4f1de813cfbc7dcbb1d255773c4
   587b451c525fdfc64d2c4c2ba2db03c85c6b5d1fe60a2ed1554841b4892108c1b779a0e1153e8909c66f3dfadc5d934814eed0633f5fc6f2fec708d6cc9701a7
   f9bd53b2a3842b948cde2d379586f8e2a0bacd1a903358a2904433b3f4a3675c18733c35568fa7420103c2480fa3f207778c5da317f4ce7149953fb8122286bf
+  f6e82de1cdc772d8df581faef34717e09e25d56db7182d8e15806e3f67295ff3026dbf4780c1dbb88cc1b53c8f2dcbfbe650fe6e7520f340f35a2d616f4557e0
   74f95d5b718a8c3c3387ac7f4b36c6fef8a9aacf11f88401d98ae77b3ca2a1574319912b1fbd27670d7dbfa2d56b7837227c1a9a2c95ba8809209c399258f48b
 )
 

@@ -46,10 +46,16 @@ license=(GPL-2.0-or-later)
 #
 # caminito-about (182) links gtk4 and nothing else. Its entry is in /usr/share/caminito/xdg
 # too.
+#
+# caminito-wallpaperd (210, ADR 0031), which the session starts to draw the wallpaper, links
+# glib2 for its loop and GSettings, gdk-pixbuf2 to decode the pictures and cairo to draw them,
+# and no GTK. Its Wayland connection is pure Rust. It reads org.mate.background, which
+# mate-desktop has, on its first run. msd's background plugin is off under Caminito from
+# mate-settings-daemon-caminito 1.29.1-8.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver
-  mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito caja-caminito
+  mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
   mate-notification-daemon mate-polkit hicolor-icon-theme)
 makedepends=(cargo git meson)
@@ -120,5 +126,5 @@ package() {
   cd "$_pkgname"
   meson install -C build --destdir "$pkgdir"
   install -Dm755 target/release/caminito target/release/caminito-displays \
-    target/release/caminito-about -t "$pkgdir/usr/bin"
+    target/release/caminito-about target/release/caminito-wallpaperd -t "$pkgdir/usr/bin"
 }
