@@ -6,3 +6,5 @@
 /helpers/.wraplock
 # What insta writes beside a test whose snapshot it didn't accept.
 .*.pending-snap
+# What tools/debian-build leaves: the .debs it built (194).
+/packaging/debian/out/

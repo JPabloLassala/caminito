@@ -75,6 +75,7 @@ mod settings;
 mod shadows;
 mod show_desktop;
 mod sounds;
+mod sun;
 mod switcher;
 mod system_shortcuts_entry;
 mod tiling;

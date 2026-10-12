@@ -8,6 +8,10 @@
 //! location, by `sun`, `curve` and `zone`, and at once on a key change, a resume, or a jump
 //! of the clock. The pause is 140's, and geoclue 139's.
 //!
+//! The sun's position is worked out with it, whether or not Night Light is on, and published
+//! for a dynamic wallpaper (215): the real sun at the location, or the fixed times' with
+//! none.
+//!
 //! A gamma client (141) wins its own output: while its table is on it, Night Light steps
 //! back from that output alone, and fades back in when the client lets go.
 
@@ -27,7 +31,7 @@ use smithay::output::Output;
 use self::curve::Temperatures;
 pub(crate) use self::ramp::{NEUTRAL, ramp};
 use self::state::NightLightState;
-use self::sun::Location;
+use self::sun::{Location, Position};
 use crate::output::output_id;
 use crate::settings::Value;
 use crate::settings::translate::{CAMINITO, NightLightSettings};
@@ -92,6 +96,8 @@ pub(crate) struct Sun {
     pub(crate) elevation: Option<f64>,
     /// The day's highest elevation, in degrees, while there's a location.
     pub(crate) highest: Option<f64>,
+    /// Where the sun is, or the fixed times' sun with no location, for a dynamic wallpaper.
+    pub(crate) position: Position,
     /// The Unix time the sun next climbs past −6°, or the fixed times' 07:00, or 0 when it
     /// doesn't in the next two days, in a polar night or under the midnight sun.
     pub(crate) next_sunrise: i64,
@@ -138,6 +144,14 @@ pub(crate) struct Published {
     pub(crate) next_sunrise: i64,
 }
 
+/// `org.mate.Caminito`'s `Sun` (215), as its callers last heard it or are to.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PublishedSun {
+    pub(crate) position: Position,
+    /// Where the location comes from, as `Published` has it.
+    pub(crate) location_source: &'static str,
+}
+
 impl NightLight {
     pub(crate) fn new(settings: NightLightSettings) -> Self {
         NightLight {
@@ -149,6 +163,10 @@ impl NightLight {
                 location: None,
                 elevation: None,
                 highest: None,
+                position: Position {
+                    elevation: 0.0,
+                    azimuth: 0.0,
+                },
                 next_sunrise: 0,
                 temperature: NEUTRAL,
             },
@@ -220,6 +238,7 @@ impl NightLight {
                 location: None,
                 elevation: None,
                 highest: None,
+                position: curve::fixed_times_position(unix + offset),
                 next_sunrise: curve::fixed_times_next_rise(unix, offset).round() as i64,
                 temperature: curve::fixed_times_temperature(temperatures, unix + offset),
             };
@@ -231,6 +250,10 @@ impl NightLight {
             location: Some(location),
             elevation: Some(elevation),
             highest: Some(highest),
+            position: Position {
+                elevation,
+                azimuth: sun::azimuth(location, unix),
+            },
             next_sunrise: sun::next_rise(location, unix).map_or(0, |rise| rise.round() as i64),
             temperature: curve::sun_temperature(temperatures, elevation, highest),
         }
@@ -289,6 +312,14 @@ impl NightLight {
             temperature: self.target(),
             location_source: self.sun.source.name(),
             next_sunrise: self.sun.next_sunrise,
+        }
+    }
+
+    /// The sun as `Sun` publishes it, for a dynamic wallpaper.
+    pub(crate) fn published_sun(&self) -> PublishedSun {
+        PublishedSun {
+            position: self.sun.position,
+            location_source: self.sun.source.name(),
         }
     }
 }
