@@ -1,57 +1,16 @@
-use std::collections::HashMap;
-
 use super::*;
 
-/// The store in memory, as GSettings has it with nothing written: "same on all outputs" on,
-/// and every set at its defaults.
-#[derive(Default)]
-struct Memory {
-    different: bool,
-    seen: Vec<String>,
-    sets: HashMap<String, OutputSettings>,
-    took: bool,
-}
+// The helpers are the bridge's tests' too (211).
 
-fn key(set: &Set) -> String {
-    match set {
-        Set::All => "all".into(),
-        Set::Output(identity) => identity.path_element(),
-    }
-}
-
-impl Store for Memory {
-    fn same_on_all_outputs(&self) -> bool {
-        !self.different
-    }
-    fn seen(&self) -> Vec<String> {
-        self.seen.clone()
-    }
-    fn set_seen(&mut self, seen: &[String]) {
-        self.seen = seen.to_vec();
-    }
-    fn read(&self, set: &Set) -> OutputSettings {
-        self.sets.get(&key(set)).cloned().unwrap_or_default()
-    }
-    fn write(&mut self, set: &Set, settings: &OutputSettings) {
-        self.sets.insert(key(set), settings.clone());
-    }
-    fn took_mate_background(&self) -> bool {
-        self.took
-    }
-    fn set_took_mate_background(&mut self) {
-        self.took = true;
-    }
-}
-
-fn aoc() -> Identity {
+pub(crate) fn aoc() -> Identity {
     Identity::of("AOC", "G2490W1G4", "AB12", "HDMI-A-1")
 }
 
-fn lg() -> Identity {
+pub(crate) fn lg() -> Identity {
     Identity::of("LG", "HDR 4K", "CD34", "DP-1")
 }
 
-fn picture(file: &str) -> OutputSettings {
+pub(crate) fn picture(file: &str) -> OutputSettings {
     OutputSettings {
         kind: Kind::Picture,
         picture: file.into(),
@@ -59,7 +18,7 @@ fn picture(file: &str) -> OutputSettings {
     }
 }
 
-fn colour(text: &str) -> OutputSettings {
+pub(crate) fn colour(text: &str) -> OutputSettings {
     OutputSettings {
         kind: Kind::Colour,
         colour: Colour::parse(text).unwrap(),
@@ -69,7 +28,7 @@ fn colour(text: &str) -> OutputSettings {
 
 /// A store where the AOC and the LG were seen, each with a picture of its own, and every
 /// output's is a colour.
-fn store_with_both(same_on_all_outputs: bool) -> Memory {
+pub(crate) fn store_with_both(same_on_all_outputs: bool) -> Memory {
     let mut store = Memory {
         different: !same_on_all_outputs,
         seen: vec![aoc().path_element(), lg().path_element()],
@@ -231,7 +190,7 @@ fn a_kind_drawn_by_a_later_ticket_is_its_colour_until_then() {
 }
 
 #[test]
-fn colours_are_read_in_three_lengths() {
+pub(crate) fn colours_are_read_in_three_lengths() {
     let expected = Colour {
         red: 0x60,
         green: 0x80,

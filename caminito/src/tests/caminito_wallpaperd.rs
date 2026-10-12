@@ -1,7 +1,8 @@
 //! caminito-wallpaperd against Caminito (210, ADR 0031): the real drawer puts one
 //! wallpaper surface on every output, in the namespace the scene puts behind caja's desktop,
 //! follows the outputs as they come and go without leaving any behind (88), draws a change
-//! of its settings without a restart, and takes MATE's picture on its first run alone.
+//! of its settings without a restart, takes MATE's picture on its first run alone, and keeps
+//! `org.mate.background` bridged both ways (211).
 //!
 //! It needs the built drawer, named by `CAMINITO_WALLPAPERD`, so these are ignored by
 //! default and `tools/check` runs them after the workspace's build. As the locker's tests
@@ -288,6 +289,136 @@ fn the_first_run_takes_mates_picture_and_the_second_doesnt() {
         || drawer.seen(),
     );
     wait_for_color(&mut f, &outputs, 0x804060);
+}
+
+/// The two headless outputs, each with a colour of its own, `0x608040` the first's and
+/// `0x406080` the second's, "same on all outputs" off.
+const EACH_ITS_OWN: &str = "\
+[org/mate/caminito/wallpaper]
+took-mate-background=true
+same-on-all-outputs=false
+outputs=['connector-headless_2D1', 'connector-headless_2D2']
+
+[org/mate/caminito/wallpaper/outputs/connector-headless_2D1]
+kind='colour'
+colour='#608040'
+
+[org/mate/caminito/wallpaper/outputs/connector-headless_2D2]
+kind='colour'
+colour='#406080'
+";
+
+/// `settings` with the key `key` of the group `group` set to `value`, as GVariant text.
+fn with_key(settings: &str, group: &str, key: &str, value: &str) -> String {
+    let mut lines: Vec<String> = settings.lines().map(str::to_owned).collect();
+    let header = format!("[{group}]");
+    let start = match lines.iter().position(|line| *line == header) {
+        Some(start) => start,
+        None => {
+            lines.extend([String::new(), header]);
+            lines.len() - 1
+        }
+    };
+    let end = lines[start + 1..]
+        .iter()
+        .position(|line| line.starts_with('['))
+        .map_or(lines.len(), |end| start + 1 + end);
+    let prefix = format!("{key}=");
+    let line = format!("{key}={value}");
+    match (start + 1..end).find(|&index| lines[index].starts_with(&prefix)) {
+        Some(index) => lines[index] = line,
+        None => lines.insert(end, line),
+    }
+    lines.join("\n") + "\n"
+}
+
+/// The group of MATE's keys in a keyfile.
+const MATE: &str = "org/mate/desktop/background";
+
+#[test]
+#[ignore = "needs CAMINITO_WALLPAPERD; tools/check runs it"]
+fn mates_picture_follows_the_primary_output() {
+    let mut f = Fixture::new();
+    let outputs = [
+        f.add_output((1920, 1080), 1.0),
+        f.add_output((1280, 1024), 1.0),
+    ];
+    let pictures = tempfile::tempdir().unwrap();
+    let file = pictures.path().join("primary.png");
+    std::fs::write(&file, png(0x804060)).unwrap();
+    let drawer = Drawer::start_with(&mut f, EACH_ITS_OWN);
+    let seen = || format!("{}\n{}", drawer.settings(), drawer.seen());
+
+    // A colour goes out as its colour and no picture.
+    wait_for_color(&mut f, &outputs[..1], 0x608040);
+    f.dispatch_until_explained(
+        |_| {
+            let settings = drawer.settings();
+            settings.contains("primary-color='#608040'")
+                && settings.contains("picture-filename=''")
+                && settings.contains("color-shading-type='solid'")
+        },
+        seen,
+    );
+
+    // The primary output's picture goes out, with its positioning.
+    let primary = "org/mate/caminito/wallpaper/outputs/connector-headless_2D1";
+    let settings = with_key(&drawer.settings(), primary, "kind", "'picture'");
+    let settings = with_key(
+        &settings,
+        primary,
+        "picture",
+        &format!("'{}'", file.display()),
+    );
+    drawer.set_settings(&with_key(&settings, primary, "positioning", "'tile'"));
+    let named = format!("picture-filename='{}'", file.display());
+    f.dispatch_until_explained(
+        |_| {
+            let settings = drawer.settings();
+            settings.contains(&named) && settings.contains("picture-options='wallpaper'")
+        },
+        seen,
+    );
+    // The drawer's own write isn't taken for another's: the second output keeps its colour.
+    wait_for_color(&mut f, &outputs[..1], 0x804060);
+    // Taken for another's, it would have started the second output's fade by the first's
+    // end, and a fade is under way within a frame.
+    f.dispatch_for(std::time::Duration::from_millis(300));
+    wait_for_color(&mut f, &outputs[1..], 0x406080);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_WALLPAPERD; tools/check runs it"]
+fn a_picture_another_program_gives_mate_is_every_outputs() {
+    let mut f = Fixture::new();
+    let outputs = [
+        f.add_output((1920, 1080), 1.0),
+        f.add_output((1280, 1024), 1.0),
+    ];
+    let pictures = tempfile::tempdir().unwrap();
+    let file = pictures.path().join("caja.png");
+    std::fs::write(&file, png(0x804060)).unwrap();
+    let drawer = Drawer::start_with(&mut f, EACH_ITS_OWN);
+    let seen = || format!("{}\n{}", drawer.settings(), drawer.seen());
+    wait_for_color(&mut f, &outputs[..1], 0x608040);
+    wait_for_color(&mut f, &outputs[1..], 0x406080);
+    f.dispatch_until_explained(
+        |_| drawer.settings().contains("primary-color='#608040'"),
+        seen,
+    );
+
+    // As caja's "Set as wallpaper" does.
+    drawer.set_settings(&with_key(
+        &drawer.settings(),
+        MATE,
+        "picture-filename",
+        &format!("'{}'", file.display()),
+    ));
+
+    wait_for_color(&mut f, &outputs, 0x804060);
+    let settings = drawer.settings();
+    let set = format!("picture='{}'", file.display());
+    assert_eq!(settings.matches(&set).count(), 3, "{settings}");
 }
 
 /// A PNG of 8 by 8 pixels of `rgb`, `0xrrggbb`, uncompressed.

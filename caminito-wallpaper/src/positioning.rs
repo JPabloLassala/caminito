@@ -59,6 +59,17 @@ impl Positioning {
             _ => Self::Fill,
         }
     }
+
+    /// The `picture-options` of `org.mate.background` that says this positioning (211).
+    pub fn mate(self) -> &'static str {
+        match self {
+            Self::Fill => "zoom",
+            Self::Fit => "scaled",
+            Self::Stretch => "stretched",
+            Self::Centre => "centered",
+            Self::Tile => "wallpaper",
+        }
+    }
 }
 
 /// A rectangle in an output's pixels.
@@ -222,6 +233,13 @@ mod tests {
                 Positioning::Fill,
             ]
         );
+    }
+
+    #[test]
+    fn each_positioning_is_written_to_mate_as_the_options_it_is_read_from() {
+        for positioning in Positioning::ALL {
+            assert_eq!(Positioning::from_mate(positioning.mate()), positioning);
+        }
     }
 
     #[test]

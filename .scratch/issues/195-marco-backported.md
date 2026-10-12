@@ -13,6 +13,7 @@ Under "The packages" in [the spec](../debian-packaging/spec.md) and [ADR 0029](.
 
 - `packaging/debian/marco/debian/`, from Ubuntu 26.04's marco 1.26.2 `debian/`, moved to upstream's 1.29.1 with Ubuntu's patches dropped where 1.29.1 has them. The version is `1.29.1-0caminito1`.
 - The pin: `debian/<binary>.install` or `rules` installs `/etc/apt/preferences.d/caminito-marco`, pinning each of the source's binaries at `version *caminito*`, priority 1001. Write it so 196 to 203 copy it with one name changed.
+  - 196 came first (2026-10-12): mate-panel's `rules` has the target to copy, `execute_after_dh_install`, and its pin file has a second stanza, Ubuntu's versions at 99 (ADR 0029's qualification). `apt-cache policy` lists 1001 only for a version from a source, so on a `.deb` installed from a file it shows the 99s, not 1001.
 - `tools/debian-build` builds it before the packages that need it.
 
 ## Acceptance criteria

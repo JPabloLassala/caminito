@@ -1,0 +1,60 @@
+#!/usr/bin/make -f
+# Ubuntu's rules, moved to master 58ac6c1. The differences: mate-submodules comes with the
+# source, the Wayland window list and pager are built as on Arch, the applets are in the
+# panel's process, the library is .so.2, and the apt pin (ADR 0029).
+
+DHFLAGS=--parallel
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+include /usr/share/dpkg/pkg-info.mk
+
+%:
+	dh $@ $(DHFLAGS) --without autoreconf
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+override_dh_install:
+	rm -f debian/tmp/usr/lib/*/*.la debian/tmp/usr/lib/*/mate-panel/*.la
+	mkdir -p debian/tmp/usr/share/doc/libmate-panel-applet-doc/
+	mv debian/tmp/usr/share/gtk-doc/html/mate-panel-applet debian/tmp/usr/share/doc/libmate-panel-applet-doc/html
+	dh_install
+
+# The pin of ADR 0029: every binary package of this source, at a caminito version, before any
+# other. apt gives a version pin only to a version it finds in a source, and a .deb installed
+# from a file is in dpkg's status alone, at 100, so the second stanza puts Ubuntu's versions
+# below that: an upgrade keeps the patched package, and asking for Ubuntu's by its version
+# still installs it. Another patched package copies this target with its first binary
+# package's name.
+execute_after_dh_install:
+	mkdir -p debian/mate-panel/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version *caminito*\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/mate-panel/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+# Master's library has no symbols file yet: every applet built against it needs this version.
+override_dh_makeshlibs:
+	dh_makeshlibs -V 'libmate-panel-applet-4-2 (>= $(DEB_VERSION_UPSTREAM))'
+
+override_dh_installchangelogs:
+	dh_installchangelogs NEWS
+
+# --enable-wayland makes a missing gtk-layer-shell or libxfce4windowing an error. Without it,
+# configure turns Wayland off and says nothing. The applets are in the panel's process,
+# because Wayland has nothing to embed another process's applet with. The clock links
+# evolution-data-server when it's installed, which isn't a build dependency, so that's off.
+override_dh_auto_configure:
+	# Upstream's git has no configure.
+	NOCONFIGURE=1 ./autogen.sh
+	dh_auto_configure $(DHFLAGS) -- \
+		--disable-silent-rules \
+		--localstatedir=/var \
+		--libexecdir=/usr/libexec/mate-panel \
+		--disable-static \
+		--enable-introspection \
+		--enable-gtk-doc \
+		--enable-wayland \
+		--with-in-process-applets=all \
+		--disable-eds
