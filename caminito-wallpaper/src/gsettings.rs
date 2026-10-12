@@ -32,17 +32,21 @@ pub fn path(set: &Set) -> String {
     }
 }
 
-/// Why the store can't be opened.
+/// Why the store can't be opened, or MATE's keys can't be written.
 #[derive(Debug)]
 pub enum Error {
     /// A schema isn't installed, or isn't compiled.
     NoSchema(&'static str),
+    /// A key of `org.mate.background` can't be written: it's locked down, or the backend
+    /// failed (211).
+    MateKey(&'static str, glib::BoolError),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::NoSchema(id) => write!(f, "the schema {id} isn't installed"),
+            Error::MateKey(key, err) => write!(f, "can't write org.mate.background's {key}: {err}"),
         }
     }
 }
@@ -182,18 +186,24 @@ impl Mate {
 
     /// Writes the keys in `writes`, and no other, since a key written signals a change even
     /// when its value is the same. A colour is solid, as Caminito's are.
-    pub fn write(&self, writes: &Writes) -> Result<(), glib::BoolError> {
+    pub fn write(&self, writes: &Writes) -> Result<(), Error> {
+        let set = |key: &'static str, value: &str| {
+            self.settings
+                .set_string(key, value)
+                .map_err(|err| Error::MateKey(key, err))
+        };
         if let Some(options) = writes.options {
-            self.settings.set_string("picture-options", options)?;
+            set("picture-options", options)?;
         }
         if let Some(colour) = writes.colour {
-            self.settings.set_string("primary-color", &colour.text())?;
+            set("primary-color", &colour.text())?;
             if self.settings.string("color-shading-type") != "solid" {
-                self.settings.set_string("color-shading-type", "solid")?;
+                set("color-shading-type", "solid")?;
             }
         }
+        // Last, so that a reader hearing it finds the options and colour already its.
         if let Some(picture) = &writes.picture {
-            self.settings.set_string("picture-filename", picture)?;
+            set("picture-filename", picture)?;
         }
         Ok(())
     }

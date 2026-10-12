@@ -6,7 +6,8 @@
 //! The drawer hears its own writes to `picture-filename` as it hears anyone's, so each is
 //! noted before it's written and passed over when it comes back. A guard on the value alone
 //! wouldn't do: another program writing the file the primary output already shows means
-//! every other output is to show it too.
+//! every other output is to show it too, wherever GSettings signals that write. The keyfile
+//! backend doesn't, and dconf may not either, since it can drop a write that changes nothing.
 
 use crate::settings::{Colour, Drawn, Kind, MateBackground, Set, Store};
 
@@ -31,6 +32,7 @@ pub struct Writes {
 }
 
 impl Writes {
+    /// Whether there's nothing to write.
     pub fn is_empty(&self) -> bool {
         *self == Writes::default()
     }

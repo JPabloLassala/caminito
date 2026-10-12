@@ -1626,15 +1626,12 @@ session_env() {
      `primary-color` again.
   3. Set the primary monitor's `kind` to `colour`, and run the three `gsettings get` again.
   4. In caja, right-click a picture under `~/Pictures` and choose *Set as wallpaper*.
-  5. Choose *Set as wallpaper* on the same picture again, after setting the second monitor's
-     `picture` back to `$b`.
 - **Expected:** in step 2 `picture-filename` names the primary monitor's picture, and then
   `$c`, with `picture-options` `'wallpaper'`; neither change reaches the second monitor. In
   step 3 `picture-filename` is `''` and `primary-color` is the primary monitor's colour. In
   step 4 both monitors cross-fade to the picture, and `dconf dump /org/mate/caminito/wallpaper/`
-  has it as the `picture` of `all/` and of each monitor, each keeping its `positioning`. In
-  step 5 the second monitor fades to the picture again, though `picture-filename` already
-  named it. `journalctl --user -t caminito-wallpaperd` has no line of the drawer taking its own
+  has it as the `picture` of `all/` and of each monitor, each keeping its `positioning`.
+  `journalctl --user -t caminito-wallpaperd` has no line of the drawer taking its own
   write for another's, and the wallpaper doesn't flicker between pictures.
 - **Debug tool:** `dconf watch /org/mate/desktop/background/` beside `dconf watch
   /org/mate/caminito/wallpaper/`, and `G_MESSAGES_DEBUG=caminito-wallpaperd` in the drawer's

@@ -562,7 +562,7 @@ impl App {
             return;
         }
         if let Err(err) = mate.write(&writes) {
-            glib::g_warning!(DOMAIN, "can't write org.mate.background: {err}");
+            glib::g_warning!(DOMAIN, "{err}");
             self.bridge.borrow_mut().not_written();
         }
     }
