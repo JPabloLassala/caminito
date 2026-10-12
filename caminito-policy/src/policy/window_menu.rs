@@ -177,7 +177,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.window_menu = None;
         if !self.windows.contains_key(&id)
             || !self.is_showing(id)
-            || !self.no_seat_has_an_interaction()
+            || self.a_seat_has_an_interaction()
         {
             return false;
         }

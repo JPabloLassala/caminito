@@ -62,9 +62,9 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Whether no seat has an Interaction, so that one that's every seat's can open.
-    pub(super) fn no_seat_has_an_interaction(&self) -> bool {
-        self.grabs.is_empty() && self.shared_interaction().is_none()
+    /// Whether any seat has an Interaction, so that none that's every seat's can open.
+    pub(super) fn a_seat_has_an_interaction(&self) -> bool {
+        !self.grabs.is_empty() || self.shared_interaction().is_some()
     }
 
     /// The Workspace popup, while it's open.
@@ -77,7 +77,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// it is. The compositor asks once the binding's action has run, since only it knows
     /// that a binding with no modifier shows none, and says when the popup closes.
     pub fn open_workspace_popup(&mut self, moves: bool) -> bool {
-        if !self.no_seat_has_an_interaction() {
+        if self.a_seat_has_an_interaction() {
             return false;
         }
         self.workspace_popup = Some(WorkspacePopup { moves });

@@ -11,7 +11,7 @@
 pub(crate) mod draw;
 pub(crate) mod layout;
 
-use caminito_policy::{Action, default_workspace_name};
+use caminito_policy::{Action, Interaction, default_workspace_name};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime};
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -131,7 +131,8 @@ impl Caminito {
     /// the workspace beside, with more than one workspace, as in Marco
     /// (keybindings.c:3516-3518), and for a move a window that can be moved. It shows
     /// when the move goes nowhere too, at an edge of a grid that doesn't wrap, as
-    /// Marco's does.
+    /// Marco's does. It shows over no other Interaction, one the action is about to end
+    /// among them: a switch closes the Window switcher and the Window menu.
     pub(crate) fn workspace_popup_shows_for(&self, action: Action) -> bool {
         let Some(beside) = Beside::of(action) else {
             return false;
@@ -141,7 +142,9 @@ impl Caminito {
             let focus = policy.focus(SEAT);
             focus.is_some_and(|id| !policy.is_desktop_or_dock(id))
         };
+        let interaction = policy.interaction(SEAT);
         policy.workspace_count() > 1
+            && matches!(interaction, None | Some(Interaction::WorkspacePopup))
             && !self.workspace_popup_gives_way()
             && (!beside.is_move || movable())
     }

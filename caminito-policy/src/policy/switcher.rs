@@ -204,7 +204,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.switcher_step(backward);
             return;
         }
-        if !self.no_seat_has_an_interaction() {
+        if self.a_seat_has_an_interaction() {
             return;
         }
         let entries = self.switch_list(seat, list);

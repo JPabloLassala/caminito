@@ -59,6 +59,13 @@ fn bottom_right_of(f: &Fixture, window: ClientWindow) -> (f64, f64) {
     (at.x, at.y)
 }
 
+/// Whether the debug dump has `member`, as it has `workspace_popup` and `window_menu`
+/// while each is open.
+fn is_open(f: &Fixture, member: &str) -> bool {
+    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
+    !dump[member].is_null()
+}
+
 fn focus(f: &Fixture) -> Option<WindowId> {
     f.state.caminito.policy.focus(SEAT)
 }
@@ -320,7 +327,7 @@ on_both_kinds! {
         f.key(KEY_LEFTALT, true);
         f.key(KEY_LEFT, true);
         f.key(KEY_LEFT, false);
-        assert!(f.state.caminito.workspace_popup.is_some());
+        assert!(is_open(&f, "workspace_popup"));
         let at = top_left_of(&f, a);
         move_to(&mut f, at);
 
@@ -328,7 +335,7 @@ on_both_kinds! {
         assert!(f.has_keyboard(b));
         f.key(KEY_LEFTALT, false);
         f.key(KEY_LEFTCTRL, false);
-        assert!(f.state.caminito.workspace_popup.is_none());
+        assert!(!is_open(&f, "workspace_popup"));
         assert_eq!(focus(&f), f.policy_id(b));
     }
 }
@@ -344,7 +351,7 @@ on_both_kinds! {
         f.key(KEY_SPACE, true);
         f.key(KEY_SPACE, false);
         f.key(KEY_LEFTALT, false);
-        assert!(f.state.caminito.policy.window_menu().is_some());
+        assert!(is_open(&f, "window_menu"));
         let at = top_left_of(&f, a);
         move_to(&mut f, at);
 

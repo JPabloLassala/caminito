@@ -53,11 +53,11 @@ impl Opening {
         }
     }
 
-    fn is_grab(self) -> bool {
+    fn is_move_or_resize(self) -> bool {
         self.interaction() == Interaction::MoveOrResize
     }
 
-    fn is_switcher(self) -> bool {
+    fn is_window_switcher(self) -> bool {
         self.interaction() == Interaction::WindowSwitcher
     }
 
@@ -146,8 +146,8 @@ fn with_each_interaction_open_no_other_opens() {
                 Some(first.interaction()),
                 "{second:?} over {first:?}"
             );
-            assert_eq!(policy.grab(SEAT).is_some(), first.is_grab());
-            assert_eq!(policy.switcher().is_some(), first.is_switcher());
+            assert_eq!(policy.grab(SEAT).is_some(), first.is_move_or_resize());
+            assert_eq!(policy.switcher().is_some(), first.is_window_switcher());
             assert_eq!(policy.window_menu().is_some(), first == Opening::WindowMenu);
             let popup = policy.workspace_popup().is_some();
             assert_eq!(popup, first == Opening::WorkspacePopup);
@@ -160,7 +160,10 @@ fn with_each_interaction_open_no_other_opens() {
 
 #[test]
 fn the_window_switcher_the_window_menu_and_the_workspace_popup_are_every_seats() {
-    for opening in OPENINGS.into_iter().filter(|opening| !opening.is_grab()) {
+    for opening in OPENINGS
+        .into_iter()
+        .filter(|opening| !opening.is_move_or_resize())
+    {
         let mut policy = three();
 
         assert!(opening.open(&mut policy, SEAT, 1), "{opening:?}");
@@ -190,11 +193,11 @@ fn none_opens_for_a_seat_over_another_seats() {
     for first in OPENINGS {
         for second in OPENINGS {
             // Two seats each move or resize a window of their own.
-            if first.is_grab() && second.is_grab() {
+            if first.is_move_or_resize() && second.is_move_or_resize() {
                 continue;
             }
             // A `switch-*` or `cycle-*` action steps the one switcher, whoever's it is.
-            if first.is_switcher() && second.is_switcher() {
+            if first.is_window_switcher() && second.is_window_switcher() {
                 continue;
             }
             // The one menu opens in place of itself.
@@ -214,7 +217,7 @@ fn none_opens_for_a_seat_over_another_seats() {
                 Some(first.interaction()),
                 "{second:?} over {first:?}"
             );
-            let others = (!first.is_grab()).then_some(first.interaction());
+            let others = (!first.is_move_or_resize()).then_some(first.interaction());
             assert_eq!(
                 policy.interaction(OTHER),
                 others,
