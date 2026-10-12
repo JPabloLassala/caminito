@@ -348,9 +348,7 @@ impl Caminito {
         }
     }
 
-    /// Tells the apps whether an applet shows their menubars, and signals `GlobalMenu`
-    /// if it's not what the callers last heard: the focus is another window's, or the
-    /// focused window said where its menus are. `GlobalMenuOffered` is signalled likewise.
+    /// Tells the apps whether an applet shows their menubars.
     ///
     /// The registrar's name is never there without the appmenu global: a Qt app that finds
     /// the name alone has no menu anywhere (112). So the name is asked for after the global
@@ -363,8 +361,6 @@ impl Caminito {
             .set_offered::<State>(&self.display_handle, offered);
         self.globals_to_withdraw.extend(withdrawn);
         self.refresh_registrar(self.global_menu_switch.is_on());
-        self.refresh_global_menu_offered_property();
-        self.refresh_global_menu_property();
     }
 }
 

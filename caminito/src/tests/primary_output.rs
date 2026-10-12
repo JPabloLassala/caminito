@@ -12,6 +12,7 @@ use caminito_test_client::output_management::HeadChange;
 use smithay::output::Output;
 
 use super::fixture::{Fixture, Kind, WindowSpec, on_both_kinds};
+use crate::dbus::caminito::PATH;
 
 /// The AOC G2490W1G4: its EDID's size and preferred mode. It's 1920 logical pixels wide.
 const AOC: ((i32, i32), (i32, i32)) = ((527, 296), (1920, 1080));
@@ -65,6 +66,43 @@ fn signalled(f: &mut Fixture, listener: thread::JoinHandle<String>) -> String {
     listener.join().unwrap()
 }
 
+/// Listens on another thread for `org.mate.Caminito` at `bus` to signal `PrimaryOutput`
+/// `count` times, and returns a handle to what each signal said, in order. It returns once
+/// the thread listens. It reads the signals themselves, not a proxy's cache of the property,
+/// so that one sent twice is heard twice.
+fn listen(f: &mut Fixture, bus: &str, count: usize) -> thread::JoinHandle<Vec<String>> {
+    let bus = bus.to_owned();
+    let (listening, is_listening) = mpsc::channel();
+    let listener = thread::spawn(move || {
+        let connection = caminito_test_client::dbus::session().unwrap();
+        let properties = zbus::blocking::fdo::PropertiesProxy::builder(&connection)
+            .destination(bus)
+            .unwrap()
+            .path(PATH)
+            .unwrap()
+            .build()
+            .unwrap();
+        let changes = properties.receive_properties_changed().unwrap();
+        listening.send(()).unwrap();
+        changes
+            .filter_map(|change| {
+                let args = change.args().unwrap();
+                let name = args.changed_properties().get("PrimaryOutput")?;
+                Some(String::try_from(name.try_clone().unwrap()).unwrap())
+            })
+            .take(count)
+            .collect()
+    });
+    f.dispatch_until(|_| is_listening.try_recv().is_ok());
+    listener
+}
+
+/// What a listener from `listen` heard.
+fn heard(f: &mut Fixture, listener: thread::JoinHandle<Vec<String>>) -> Vec<String> {
+    f.dispatch_until(|_| listener.is_finished());
+    listener.join().unwrap()
+}
+
 #[test]
 fn with_no_outputs_there_is_no_primary_output() {
     let f = Fixture::new();
@@ -113,6 +151,27 @@ fn a_choice_set_over_dbus_is_read_back_and_signalled() {
     assert_eq!(signalled(&mut f, listener), "headless-2");
     assert_eq!(read(&mut f), "headless-2");
     assert_eq!(primary(&f).as_deref(), Some("headless-2"));
+}
+
+/// zbus signals a property its setter changed, and the refresh pass mustn't as well.
+#[test]
+fn a_choice_set_over_dbus_is_signalled_once() {
+    let (mut f, _aoc, _lg) = aoc_and_lg();
+    let bus = f.start_dbus();
+    let listener = listen(&mut f, &bus, 2);
+    let choose = |f: &mut Fixture, name: &'static str| {
+        let bus = bus.clone();
+        f.dbus_call(move || {
+            let proxy = caminito_proxy(&bus).unwrap();
+            proxy.set_primary_output(name).unwrap();
+        });
+    };
+
+    choose(&mut f, "headless-2");
+    choose(&mut f, "headless-1");
+
+    // A signal sent twice for the first choice would be heard as `["headless-2", "headless-2"]`.
+    assert_eq!(heard(&mut f, listener), ["headless-2", "headless-1"]);
 }
 
 #[test]

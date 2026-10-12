@@ -210,26 +210,36 @@ impl XdgShellHandler for State {
         };
 
         // The grab must come from the input event that holds the seat's current grab, if any.
-        if let Some(keyboard) = seat.get_keyboard() {
-            if keyboard.is_grabbed()
-                && !(keyboard.has_grab(serial)
-                    || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
-            {
-                grab.ungrab(PopupUngrabStrategy::All);
-                return;
-            }
+        let keyboard = seat.get_keyboard();
+        let pointer = seat.get_pointer();
+        let previous = grab.previous_serial();
+        let held_elsewhere = keyboard.as_ref().is_some_and(|keyboard| {
+            keyboard.is_grabbed()
+                && !(keyboard.has_grab(serial) || keyboard.has_grab(previous.unwrap_or(serial)))
+        }) || pointer.as_ref().is_some_and(|pointer| {
+            pointer.is_grabbed()
+                && !(pointer.has_grab(serial)
+                    || pointer.has_grab(previous.unwrap_or_else(|| grab.serial())))
+        });
+        if held_elsewhere {
+            grab.ungrab(PopupUngrabStrategy::All);
+            return;
+        }
+        // A menu's pointer grab, as it's replaced, ends the keyboard grab with its serial,
+        // and GTK grabs for a submenu with its menu's: the submenu would lose the keyboard
+        // grab it was just given, and the window would get the keyboard back (146). So the
+        // menu's keyboard grab is let go first, and the submenu's taken last.
+        if let Some(keyboard) = &keyboard
+            && keyboard.is_grabbed()
+        {
+            keyboard.unset_grab(self);
+        }
+        if let Some(pointer) = pointer {
+            pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+        }
+        if let Some(keyboard) = keyboard {
             keyboard.set_focus(self, grab.current_grab(), serial);
             keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
-        }
-        if let Some(pointer) = seat.get_pointer() {
-            if pointer.is_grabbed()
-                && !(pointer.has_grab(serial)
-                    || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
-            {
-                grab.ungrab(PopupUngrabStrategy::All);
-                return;
-            }
-            pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
         }
     }
 }

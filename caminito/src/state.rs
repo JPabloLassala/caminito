@@ -83,7 +83,7 @@ use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
 use crate::dbus::a11y::KeyboardMonitor;
-use crate::dbus::global_menu::{GlobalMenu, Switch};
+use crate::dbus::global_menu::Switch;
 use crate::dbus::logind::Logind;
 use crate::dbus::menu_claim::Claims;
 use crate::dbus::panel::Panel;
@@ -104,7 +104,7 @@ use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
 use crate::minimize_animation::MinimizeAnimations;
-use crate::night_light::{self, NightLight};
+use crate::night_light::NightLight;
 use crate::not_responding::NotResponding;
 use crate::output::OutputRecord;
 use crate::output::primary::PrimaryChoice;
@@ -224,8 +224,6 @@ pub struct Caminito {
     pub(crate) deadline_timer: DeadlineTimer,
     /// Night Light's temperatures and fades (ADR 0023).
     pub(crate) night_light: NightLight,
-    /// `NightLight` as `org.mate.Caminito`'s callers last heard it (137).
-    pub(crate) night_light_signalled: Option<night_light::Published>,
     /// wlr-gamma-control, offered only by a backend with gamma tables (141).
     pub(crate) gamma_control_state: GammaControlState,
     /// How far a test has moved Caminito's clock on, so that idle's timers come due
@@ -304,12 +302,6 @@ pub struct Caminito {
     /// Whether a monitor was plugged in or unplugged since a saved layout was last looked
     /// for.
     pub(crate) monitors_changed: bool,
-    /// The primary output's name as `org.mate.Caminito`'s callers last heard it (81).
-    pub(crate) primary_output_signalled: Option<String>,
-    /// `ShowingDesktop` as `org.mate.Caminito`'s callers last heard it (94).
-    pub(crate) showing_desktop_signalled: Option<bool>,
-    /// `GlobalMenu` as `org.mate.Caminito`'s callers last heard it (110).
-    pub(crate) global_menu_signalled: Option<GlobalMenu>,
     /// Whether the apps should give up their own menubars, which follows the Global menu
     /// applet's bus name and outlasts it by a grace period (ADR 0017, 114).
     pub(crate) global_menu_switch: Switch,
@@ -320,8 +312,6 @@ pub struct Caminito {
     /// Whether the apps are told to give up their own menubars: while the switch is on,
     /// and after it until the registrar's name is given up (112).
     pub(crate) global_menu_offered: bool,
-    /// `GlobalMenuOffered` as `org.mate.Caminito`'s callers last heard it (115).
-    pub(crate) global_menu_offered_signalled: Option<bool>,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
 
@@ -934,7 +924,6 @@ impl Caminito {
             idle: Idle::new(settings.idle, clock.now().into()),
             deadline_timer: DeadlineTimer::default(),
             night_light: NightLight::new(settings.night_light),
-            night_light_signalled: None,
             gamma_control_state: GammaControlState::default(),
             #[cfg(test)]
             clock_offset: Duration::ZERO,
@@ -979,14 +968,10 @@ impl Caminito {
             primary_choice: None,
             saved_layouts: SavedLayouts::default(),
             monitors_changed: false,
-            primary_output_signalled: None,
-            showing_desktop_signalled: None,
-            global_menu_signalled: None,
             global_menu_switch: Switch::default(),
             app_menu_registrations: Registrations::default(),
             menu_claims: Claims::default(),
             global_menu_offered: false,
-            global_menu_offered_signalled: None,
             redraws: HashSet::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
@@ -1226,10 +1211,10 @@ impl Caminito {
         self.refresh_window_outputs();
         self.refresh_layers();
         self.refresh_output_management();
-        self.refresh_primary_output_property();
-        self.refresh_showing_desktop_property();
-        self.refresh_night_light_property();
         self.refresh_global_menu();
+        // After the global menu's refresh, so that a caller that hears the menu offered
+        // finds the appmenu global and the registrar's name asked for.
+        self.refresh_properties();
         self.refresh_foreign_toplevels();
         self.refresh_foreign_toplevel_list();
         // On both sides of ext-workspace's refresh: a window leaves a workspace that's

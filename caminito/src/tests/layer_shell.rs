@@ -466,6 +466,46 @@ fn a_layer_surfaces_popup_maps_and_takes_a_grab() {
     assert!(f.has_keyboard(window));
 }
 
+#[test]
+fn a_layer_surfaces_submenu_keeps_the_keyboard_from_the_window() {
+    let (mut f, id, window) = with_a_focused_window();
+    let bar = f.map_layer(id, LayerSpec::top_bar(28), BAR_COLOR);
+    f.pointer_move(100., 10.);
+    f.pointer_button(BTN_LEFT, true);
+    f.roundtrip(id);
+    let serial = f.client(id).state.last_press_serial.unwrap();
+    let place = |anchor_rect| Positioner {
+        size: (300, 200),
+        anchor_rect,
+        anchor: Anchor::BottomLeft,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::None,
+    };
+    let menu = f
+        .client(id)
+        .create_layer_popup(bar, place((90, 0, 20, 28)), Some(serial));
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, RED);
+    f.pointer_button(BTN_LEFT, false);
+    f.roundtrip(id);
+    keyboard_events(&mut f, id);
+
+    // GTK grabs for a submenu with the serial it grabbed for the menu (146).
+    let submenu = f
+        .client(id)
+        .create_nested_popup(menu, place((300, 0, 1, 20)), serial);
+    f.roundtrip(id);
+    f.client(id).map_popup(submenu, RED);
+
+    assert_snapshot!(keyboard_events(&mut f, id), @"
+    keyboard leaves popup 0
+    keyboard enters popup 1
+    ");
+    assert!(!f.has_keyboard(window));
+    assert!(!f.client(id).popup(menu).done);
+    assert!(!f.client(id).popup(submenu).done);
+}
+
 /// A bar along the bottom edge, as mate-panel's second one is.
 fn bottom_bar(height: u32) -> LayerSpec {
     LayerSpec {
