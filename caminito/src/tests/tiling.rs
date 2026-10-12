@@ -151,7 +151,7 @@ on_both_kinds! {
         assert_eq!(tile(&f, window), json!("left"));
 
         grab_title(&mut f, window);
-        draw_as_asked(&mut f, window);
+        f.draw_at_asked_size(window, (floating.w, floating.h));
 
         assert_eq!(tile(&f, window), Value::Null);
         assert_eq!(f.geometry(window).size, floating);
