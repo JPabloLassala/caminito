@@ -60,7 +60,7 @@ Every Arch package under `packaging/arch/` gets a Debian source package under `p
   - `caminito-desktop` depends on `caminito` and `mate-desktop-environment-extras`, as Arch's depends on `caminito-git` and the `mate` and `mate-extra` groups. It leaves out `ubuntu-mate-desktop`'s branding.
 - **Patched and backported packages** ([ADR 0029](../../docs/adr/0029-on-debian-a-patched-package-keeps-the-stock-names-and-is-pinned.md)):
   - keep the source and binary names of Ubuntu's package, with Ubuntu's split into binary packages;
-  - are versioned `<baseline>-0caminito<n>`, where `<baseline>` is the upstream version, with `~git<date>.<hash>` for a commit;
+  - are versioned `<baseline>-0caminito<n>`, where `<baseline>` is the upstream version, with `~git<date>.<hash>` for a commit before the version's release, as mate-panel's, and `+git<date>.<hash>` for one after it, as mate-session-manager's (197);
   - each install `/etc/apt/preferences.d/caminito-<source package>`, pinning its own binaries at `version /caminito/` with priority 1001, and Ubuntu's versions of them (`release o=Ubuntu`) at 99 (ADR 0029's qualification by 196 and 195);
   - start their `debian/` from Ubuntu's, moved to the baseline, with Ubuntu's own patches dropped where the baseline has them, and Debian's libexec and multiarch paths kept.
 - **mate-panel** builds the master library, `libmate-panel-applet-4.so.2`, as `libmate-panel-applet-4-2`, and doesn't build `.so.1`: Ubuntu's `libmate-panel-applet-4-1` stays installed for the applets linked to it. `mate-notification-daemon`'s in-process applet stays broken, as on Arch.
