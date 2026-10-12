@@ -12,6 +12,11 @@ pub const PATH: &str = "/org/mate/Caminito/Debug";
 pub enum Request {
     DumpState(oneshot::Sender<String>),
     ToggleFrameDebug(oneshot::Sender<bool>),
+    SwitchOutputWorkspace {
+        output: String,
+        workspace: u32,
+        reply: oneshot::Sender<bool>,
+    },
 }
 
 pub struct DebugInterface {
@@ -35,6 +40,23 @@ impl DebugInterface {
     async fn toggle_frame_debug(&self) -> zbus::fdo::Result<bool> {
         super::ask(&self.requests, Request::ToggleFrameDebug).await
     }
+
+    /// Switches the output named `output` (its connector, as `wlr-randr` names it) to
+    /// `workspace`, numbered from 0, as a binding will switch the Active output's (230,
+    /// 231). With `workspaces-per-output` off it switches every output. Returns whether
+    /// there's such an output and such a workspace.
+    async fn switch_output_workspace(
+        &self,
+        output: String,
+        workspace: u32,
+    ) -> zbus::fdo::Result<bool> {
+        super::ask(&self.requests, |reply| Request::SwitchOutputWorkspace {
+            output,
+            workspace,
+            reply,
+        })
+        .await
+    }
 }
 
 impl Caminito {
@@ -46,6 +68,13 @@ impl Caminito {
             }
             Request::ToggleFrameDebug(reply) => {
                 let _ = reply.send(self.toggle_frame_debug());
+            }
+            Request::SwitchOutputWorkspace {
+                output,
+                workspace,
+                reply,
+            } => {
+                let _ = reply.send(self.switch_output_workspace(&output, workspace as usize));
             }
         }
     }

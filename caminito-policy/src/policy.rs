@@ -171,11 +171,15 @@ pub struct Config {
     pub urgent_placement: UrgentPlacement,
     /// `attach-modal-dialogs`: a modal dialog with a parent has a border only (177).
     pub attach_modal_dialogs: bool,
+    /// `org.mate.Caminito`'s `workspaces-per-output` (ADR 0032): each output switches its
+    /// own active workspace. Off, every switch switches them all: Spanning workspaces.
+    pub workspaces_per_output: bool,
 }
 
 impl Default for Config {
-    /// Marco's defaults, except `center-new-windows` and `allow-tiling`, which are off: the
-    /// tests were written for Caminito before 154 and 158.
+    /// Marco's defaults, except `center-new-windows`, `allow-tiling` and
+    /// `workspaces-per-output`, which are off: the tests were written for Caminito before
+    /// 154, 158 and 230.
     fn default() -> Self {
         // Marco's default `num-workspaces`, with its default names.
         let workspace_count = 4;
@@ -204,6 +208,9 @@ impl Default for Config {
             // Marco 1.29.0's, which has no key (165).
             urgent_placement: UrgentPlacement::Mru,
             attach_modal_dialogs: false,
+            // Spanning workspaces, as Marco has them: the tests were written for them,
+            // before 230. The schema's default is on.
+            workspaces_per_output: false,
         }
     }
 }
@@ -273,6 +280,9 @@ struct Managed<W> {
     demands_attention: bool,
     /// `attach-modal-dialogs`, which the window's functions depend on (177).
     attach_modal_dialogs: bool,
+    /// The Main output `apply` last saw the window on, to notice a drag across (230). It
+    /// isn't the window's output, which is always its frame's: only a memo of it.
+    main_output: Option<OutputId>,
     sent: Sent,
 }
 
@@ -775,6 +785,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.active_workspaces.set_outputs(&outputs);
         self.outputs = outputs;
         self.rehome_windows();
+        // A window an output change put on another output hasn't been dragged there.
+        self.note_main_outputs();
         self.apply();
     }
 
@@ -794,7 +806,11 @@ impl<W: PolicyWindow> Policy<W> {
         // A dialog that's attached or let go has another frame to be laid out with (177).
         let attach_modal_dialogs = config.attach_modal_dialogs;
         let attaches_changed = self.config.attach_modal_dialogs != attach_modal_dialogs;
+        let spans = self.config.workspaces_per_output && !config.workspaces_per_output;
         self.config = config;
+        if spans {
+            self.span_workspaces();
+        }
         if attaches_changed {
             let ids: Vec<WindowId> = self.windows.keys().copied().collect();
             for id in ids {
@@ -827,8 +843,9 @@ impl<W: PolicyWindow> Policy<W> {
                 managed.workspace = managed.workspace.min(last);
             }
             // In the grid as it was, which had the workspace. The sound is one for every
-            // output's switch, from the active workspace they all have.
-            let from = self.active_workspaces.everywhere().active;
+            // output's switch, from the primary output's, which stands in for the Active
+            // output's (231).
+            let from = self.primary_shown().active;
             self.note_switch(self.workspace_grid(), from, from.min(last));
             self.workspace_count = count;
             for shown in self.active_workspaces.each_mut() {
@@ -979,6 +996,7 @@ impl<W: PolicyWindow> Policy<W> {
                 floating: None,
                 demands_attention: false,
                 attach_modal_dialogs: self.config.attach_modal_dialogs,
+                main_output: None,
                 sent: Sent::default(),
             },
         );
@@ -1164,9 +1182,9 @@ impl<W: PolicyWindow> Policy<W> {
             Action::SwitchToWorkspaceUp => self.switch_workspace_towards(Direction::Up),
             Action::SwitchToWorkspaceDown => self.switch_workspace_towards(Direction::Down),
             Action::SwitchToWorkspacePrev => {
-                // The previous workspace every output has, where the Active output's is
+                // The primary output's previous workspace, where the Active output's is
                 // taken (231).
-                if let Some(previous) = self.active_workspaces.everywhere().previous {
+                if let Some(previous) = self.primary_shown().previous {
                     self.switch_workspace(previous);
                 }
             }
@@ -1266,10 +1284,10 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The workspace beside the active one in the grid, where `wrap-style` takes a move past
-    /// its edge, if the move goes anywhere. It's beside the one every output has, where
-    /// the Active output's is taken (231).
+    /// its edge, if the move goes anywhere. It's beside the primary output's, where the
+    /// Active output's is taken (231).
     fn workspace_towards(&self, direction: Direction) -> Option<usize> {
-        let active = self.active_workspaces.everywhere().active;
+        let active = self.primary_shown().active;
         self.workspace_grid()
             .neighbour(active, direction, self.config.wrap_style)
     }
@@ -1300,27 +1318,86 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Makes `workspace` the active one of every output, and gives every seat its default
-    /// focus. Every output switches from the one they all have: Spanning workspaces, which
-    /// stays as a mode (231).
+    /// focus. Every switch there is switches every output, until the bindings switch the
+    /// Active output's (231).
     pub fn switch_workspace(&mut self, workspace: usize) {
+        self.switch_shown(None, workspace);
+    }
+
+    /// Makes `workspace` `output`'s active one, and leaves the other outputs as they are,
+    /// with `workspaces-per-output` on (230). Off, it switches every output, as
+    /// `switch_workspace` does. An output policy doesn't have is left alone.
+    pub fn switch_output_workspace(&mut self, output: OutputId, workspace: usize) {
+        if !self.outputs.iter().any(|o| o.id == output) {
+            return;
+        }
+        let only = self.config.workspaces_per_output.then_some(output);
+        self.switch_shown(only, workspace);
+    }
+
+    /// Switches `only`'s active workspace to `workspace`, or every output's for none.
+    ///
+    /// Switching every output gives every seat the default focus, as Marco's
+    /// `meta_workspace_activate_with_focus` does. Switching one gives it to the seats whose
+    /// focused window is on that output, from that output's windows, and leaves the other
+    /// seats theirs.
+    fn switch_shown(&mut self, only: Option<OutputId>, workspace: usize) {
         let workspace = workspace.min(self.workspace_count - 1);
-        let from = self.active_workspaces.everywhere().active;
-        if workspace != from {
+        // The sound is one for the switch, from the output's workspace, or the primary
+        // output's for every output, which stands in for the Active output's (231).
+        let from = match only {
+            Some(output) => self.active_workspaces.of(Some(output)).active,
+            None => self.primary_shown().active,
+        };
+        let switches = match only {
+            Some(_) => from != workspace,
+            None => self
+                .active_workspaces
+                .each()
+                .any(|shown| shown.active != workspace),
+        };
+        if switches {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
             self.close_switcher(switcher::Close::Dropped);
             // And closes the window menu, whose moves are from the active workspace (161).
             self.window_menu = None;
             self.note_switch(self.workspace_grid(), from, workspace);
-            for shown in self.active_workspaces.each_mut() {
+            let switch = |shown: &mut active_workspaces::Shown| {
                 if shown.active != workspace {
                     shown.previous = Some(shown.active);
                     shown.active = workspace;
                 }
-            }
-            self.focus.clear();
-            if let Some(id) = self.default_focus() {
-                for seat in &self.seats {
-                    self.focus.insert(*seat, id);
+            };
+            match only {
+                None => {
+                    self.active_workspaces.each_mut().for_each(switch);
+                    self.focus.clear();
+                    if let Some(id) = self.default_focus() {
+                        for seat in &self.seats {
+                            self.focus.insert(*seat, id);
+                        }
+                    }
+                }
+                Some(output) => {
+                    self.active_workspaces.of_mut(output).map(switch);
+                    let on_output = |policy: &Self, id: WindowId| {
+                        policy
+                            .output_of(policy.windows[&id].frame())
+                            .is_some_and(|o| o.id == output)
+                    };
+                    let seats: Vec<SeatId> = self
+                        .focus
+                        .iter()
+                        .filter(|(_, id)| on_output(self, **id))
+                        .map(|(seat, _)| *seat)
+                        .collect();
+                    let default = self.default_focus_where(|id| on_output(self, id));
+                    for seat in seats {
+                        match default {
+                            Some(id) => self.focus.insert(seat, id),
+                            None => self.focus.remove(&seat),
+                        };
+                    }
                 }
             }
         }
@@ -2031,11 +2108,17 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows.get(&id).map(|m| &m.window)
     }
 
-    /// The active workspace every output has, while every switch sets them all (221). It
+    /// The primary output's active workspace, which every output has while every switch
+    /// sets them all (221) and with `workspaces-per-output` off (230). It
     /// takes one for all, so the compositor asks by output instead, and the tests, which
     /// mostly have one output or none, ask this.
     pub fn active_workspace(&self) -> usize {
-        self.active_workspaces.everywhere().active
+        self.primary_shown().active
+    }
+
+    /// Whether each output switches its own active workspace: `workspaces-per-output` (230).
+    pub fn workspaces_per_output(&self) -> bool {
+        self.config.workspaces_per_output
     }
 
     /// `output`'s active workspace, or the one an output added takes if policy has no such
@@ -2854,12 +2937,17 @@ impl<W: PolicyWindow> Policy<W> {
     /// The window Marco focuses when the focused one goes away: the topmost showing window in
     /// the stack that isn't a dock, or failing that the desktop.
     fn default_focus(&self) -> Option<WindowId> {
+        self.default_focus_where(|_| true)
+    }
+
+    /// `default_focus`, of the windows `among` takes.
+    fn default_focus_where(&self, among: impl Fn(WindowId) -> bool) -> Option<WindowId> {
         let candidates = || {
             self.stack
                 .iter()
                 .rev()
                 .copied()
-                .filter(|id| self.is_showing(*id))
+                .filter(|id| self.is_showing(*id) && among(*id))
         };
         let window_type = |id: &WindowId| self.windows[id].window_type;
         candidates()
@@ -2902,6 +2990,9 @@ impl<W: PolicyWindow> Policy<W> {
         if self.holding {
             return;
         }
+        // A window dragged across joins what the other output shows, before anything goes
+        // by what's showing.
+        self.follow_main_outputs();
         // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
         self.update_dynamic_workspaces();
         self.end_stale_grabs();
