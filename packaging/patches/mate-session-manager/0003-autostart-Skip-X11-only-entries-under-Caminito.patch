@@ -6,7 +6,8 @@ Subject: [PATCH] autostart: Skip X11-only entries under Caminito
 Under Caminito, the Wayland compositor for MATE, mate-session unsets
 GDK_BACKEND, so what it starts opens GDK on Wayland. mate-screensaver and
 mate-maximus call Xlib without checking for an X display, and die with
-SIGSEGV at every login. plank, Ubuntu MATE's dock, does the same.
+SIGSEGV at every login. plank, Ubuntu MATE's dock, calls GDK's X11
+functions unchecked too.
 
 None of these has work to do there, and on XWayland each would see the
 XWayland windows alone:
