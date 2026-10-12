@@ -7,6 +7,7 @@ Rules-Requires-Root: no
 # tools/debian-build installs. The rest are what the binaries and helpers link, and, after
 # dbus, what the tests need: a private session bus, pixman for the headless backend,
 # libwayland-client for the fixture's clients and the Xwayland the X11 tier spawns.
+# libaudit-dev: Ubuntu's pam.pc requires audit's, and libpam0g-dev doesn't bring it.
 Build-Depends:
  debhelper-compat (= 13),
  rustup,
@@ -28,6 +29,7 @@ Build-Depends:
  libgtk-session-lock-dev,
  libmate-desktop-dev,
  libpam0g-dev,
+ libaudit-dev,
  dbus-daemon,
  libpixman-1-dev,
  libwayland-dev,
