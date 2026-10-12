@@ -533,6 +533,42 @@ fn the_commands_status_ends_the_session_once_xwayland_and_the_palette_helper_are
 }
 
 #[test]
+fn the_session_starts_the_wallpaper_drawer_again_when_it_exits_and_stops_it_at_the_end() {
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let drawer = scripts.write(
+        "drawer",
+        &format!(
+            "trap 'touch \"$dir/drawer-stopped\"; exit 0' TERM\n\
+             {}\necho $$ >>\"$dir/drawer-processes\"\n{WAIT}",
+            write_environment("drawer-environment")
+        ),
+    );
+    f.state.caminito.wallpaper.program = Some(drawer);
+    let command = scripts.session_command(&format!("{}\nexit 0", wait_for("end")));
+
+    start(&mut f, command);
+    f.dispatch_until(|_| scripts.exists("drawer-processes"));
+
+    // On Caminito's socket, with what tells it it's under Caminito.
+    let environment = scripts.environment("drawer-environment");
+    assert_eq!(environment["WAYLAND_DISPLAY"], SOCKET);
+    assert_eq!(environment["MATE_WM_NAME"], "Caminito");
+    // Killed, as `killall caminito-wallpaperd` would, it's started again.
+    let processes = || scripts.read("drawer-processes");
+    let first: i32 = processes().trim().parse().unwrap();
+    let first = rustix::process::Pid::from_raw(first).unwrap();
+    rustix::process::kill_process(first, rustix::process::Signal::KILL).unwrap();
+    f.dispatch_until(|_| processes().lines().count() == 2);
+    assert!(!scripts.exists("drawer-stopped"));
+
+    fs::write(scripts.path("end"), "").unwrap();
+    f.dispatch_until(|f| {
+        f.state.caminito.session_exit().is_some() && scripts.exists("drawer-stopped")
+    });
+}
+
+#[test]
 fn a_stop_reaches_the_command_as_sigterm_and_the_session_ends_with_its_status() {
     let mut f = fixture();
     let scripts = Scripts::new();

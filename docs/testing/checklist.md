@@ -1568,6 +1568,52 @@ session_env() {
 - **Debug tool:** `ls /usr/share/caminito/xdg/applications`, `gtk-launch caminito-about`, and
   `caminito-about` run from a terminal for GTK's warnings.
 
+## The wallpaper
+
+### caminito-wallpaperd draws each output's wallpaper, and follows the monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` and `mate-settings-daemon-caminito` at `pkgrel` 8 or later built and
+     installed, log into *MATE on Caminito* with two monitors. Run `pgrep -a
+     caminito-wallpaper` and `gsettings get org.mate.Caminito.wallpaper outputs`.
+  2. Note the picture `gsettings get org.mate.background picture-filename` names: on the first
+     run it's on both monitors.
+  3. Give each monitor a picture of its own: set `first` and `second` to the two identities
+     from step 1, and `a` and `b` to two pictures under `/usr/share/backgrounds/mate/`.
+
+     ```sh
+     gsettings set org.mate.Caminito.wallpaper same-on-all-outputs false
+     out() { echo "org.mate.Caminito.wallpaper.output:/org/mate/caminito/wallpaper/outputs/$1/"; }
+     gsettings set "$(out "$first")" kind picture
+     gsettings set "$(out "$first")" picture "$a"
+     gsettings set "$(out "$second")" kind picture
+     gsettings set "$(out "$second")" picture "$b"
+     ```
+
+  4. On the first, set `positioning` to each of `fill`, `fit`, `stretch`, `centre` and `tile`
+     in turn, with a picture whose shape isn't the monitor's, and `colour` to `'#c03030'`. Then
+     set `kind` to `colour`.
+  5. Unplug the second monitor, wait five seconds and plug it back. Then run `killall
+     caminito-wallpaperd`, and `killall -9 caminito-wallpaperd`.
+  6. Run `gsettings set org.mate.Caminito.wallpaper same-on-all-outputs true`.
+- **Expected:** in step 1 one `caminito-wallpaperd` runs, no `mate-settings-daemon` draws a
+  background (msd's log has `Not activating background plugin under Caminito` with
+  `G_MESSAGES_DEBUG=all`), and `outputs` lists both monitors, by make, model and serial where
+  they report one. Caja's desktop icons are over the wallpaper on the primary output. In step 3
+  each monitor shows its own picture, and each change cross-fades over about a second rather
+  than jumping. In step 4 Fill covers the monitor and crops the picture, Fit shows all of it with
+  red bars on the short sides, Stretch distorts it to the monitor's shape, Centre shows it at its
+  own size in the middle with red around it if it's smaller, Tile repeats it from the top left,
+  and Colour is plain red; the picture is sharp, pixel for pixel at the monitor's scale. In
+  step 5 the monitor comes back with its own picture, and `DumpState`'s `layer_surfaces` has one
+  `mate-background` on each output (88). After each `killall` the wallpaper is back within a
+  second or two, and `pgrep` shows one new drawer. In step 6 both monitors cross-fade to the
+  same wallpaper.
+- **Debug tool:** `busctl --user call org.mate.Caminito.Debug /org/mate/Caminito/Debug
+  org.mate.Caminito.Debug DumpState`, `journalctl --user -t caminito-wallpaperd`, and `dconf
+  dump /org/mate/caminito/wallpaper/`.
+
 ## The control center
 
 ### Windows and System Shortcuts open under Caminito, and name it

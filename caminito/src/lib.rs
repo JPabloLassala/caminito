@@ -29,6 +29,7 @@ pub mod settings;
 mod sound;
 pub mod state;
 mod switcher;
+mod wallpaper;
 pub mod window;
 mod window_menu;
 mod work_area;

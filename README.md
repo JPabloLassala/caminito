@@ -413,6 +413,7 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 | [caminito-layout](caminito-layout/)           | Docking and healing a layout of outputs, with no dependencies, for Caminito and caminito-displays                                        |
 | [caminito-displays](caminito-displays/)       | The display settings program, in GTK4: a library with the page's state and its client of output management, and the window over them |
 | [caminito-about](caminito-about/)             | The "About Caminito" of the control center, in GTK4                                                                                  |
+| [caminito-wallpaper](caminito-wallpaper/)     | The wallpaper: `caminito-wallpaperd`, which draws each output's, with no GTK                                                         |
 | [caminito-version](caminito-version/)         | The version string with the build's revision, for `caminito --version` and caminito-about                                            |
 | [caminito-theme](caminito-theme/)             | Marco's theme engine, with no Smithay or GTK (from M2)                                                                               |
 | [caminito-test-client](caminito-test-client/) | The Wayland client the integration tests drive                                                                                       |

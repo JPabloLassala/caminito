@@ -139,13 +139,15 @@ pub(crate) enum SceneLayer {
     Windows,
     /// The bottom layer-shell layer (63), without its surfaces' popups.
     Bottom,
-    /// The background layer-shell layer (63), with msd's wallpaper behind caja's desktop,
+    /// The background layer-shell layer (63), with the wallpaper behind caja's desktop,
     /// and without its surfaces' popups.
     Background,
 }
 
-/// The namespace of msd's wallpaper, which is behind every other surface of the background
+/// The namespace of the wallpaper, which is behind every other surface of the background
 /// layer, whichever mapped first: caja's `desktop` covers it where caja draws one (06).
+/// caminito-wallpaperd draws it under msd's background plugin's namespace, which it took
+/// over (210).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
 pub(crate) const LAYERS: [SceneLayer; 17] = [

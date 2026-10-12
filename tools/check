@@ -90,6 +90,12 @@ CAMINITO_LOCKER=$PWD/target/meson/helpers/caminito-locker/caminito-locker \
   XDG_DATA_HOME=$HOME/.local/share dbus-run-session -- \
   cargo test -p caminito tests::caminito_locker -- --ignored
 
+# The real caminito-wallpaperd against the headless fixture (210), as the workspace's build
+# step built it. Its settings are a keyfile of each test's own.
+step "caminito-wallpaperd against caminito"
+CAMINITO_WALLPAPERD=${CARGO_TARGET_DIR:-$PWD/target}/debug/caminito-wallpaperd \
+  cargo test -p caminito tests::caminito_wallpaperd -- --ignored
+
 # The global menu extension (116): type-checked, tested on a private dbus-daemon of each
 # test's own, and bundled.
 step "the extension"

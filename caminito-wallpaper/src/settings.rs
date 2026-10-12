@@ -1,0 +1,229 @@
+//! An output's wallpaper settings, and which ones it gets from the store (210): its own,
+//! by its monitor's identity, or every output's while "same on all outputs" is on. A
+//! monitor never seen before starts with the primary output's, and the first run starts
+//! every output with the picture `org.mate.background` names.
+
+use crate::identity::Identity;
+use crate::positioning::Positioning;
+
+/// Which of the five things an output's wallpaper is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Kind {
+    /// One picture file.
+    Picture,
+    /// One plain colour.
+    #[default]
+    Colour,
+    /// A folder of pictures on a timer (213).
+    Slideshow,
+    /// Today's picture from an online source (214).
+    PictureOfTheDay,
+    /// Pictures that follow the time of day (216, 217).
+    Dynamic,
+}
+
+impl Kind {
+    /// Each kind, in the schema's order.
+    pub const ALL: [Self; 5] = [
+        Self::Picture,
+        Self::Colour,
+        Self::Slideshow,
+        Self::PictureOfTheDay,
+        Self::Dynamic,
+    ];
+
+    /// Its nick in the schema's `org.mate.Caminito.WallpaperKind`.
+    pub fn nick(self) -> &'static str {
+        match self {
+            Self::Picture => "picture",
+            Self::Colour => "colour",
+            Self::Slideshow => "slideshow",
+            Self::PictureOfTheDay => "picture-of-the-day",
+            Self::Dynamic => "dynamic",
+        }
+    }
+
+    /// The kind of a nick, or Colour for one the schema doesn't have.
+    pub fn from_nick(nick: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|kind| kind.nick() == nick)
+            .unwrap_or_default()
+    }
+}
+
+/// A colour, from its `#rrggbb` text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Colour {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl Colour {
+    /// The colour of `#rgb`, `#rrggbb` or `#rrrrggggbbbb`, the last as GdkColor writes it
+    /// and older MATE settings have it, or `None` for any other text.
+    pub fn parse(text: &str) -> Option<Self> {
+        let digits = text.strip_prefix('#')?;
+        if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+        let per_channel = match digits.len() {
+            3 => 1,
+            6 => 2,
+            12 => 4,
+            _ => return None,
+        };
+        let channel = |index: usize| {
+            let start = index * per_channel;
+            let value = u16::from_str_radix(&digits[start..start + per_channel], 16).ok()?;
+            Some(match per_channel {
+                1 => (value * 0x11) as u8,
+                2 => value as u8,
+                _ => (value >> 8) as u8,
+            })
+        };
+        Some(Colour {
+            red: channel(0)?,
+            green: channel(1)?,
+            blue: channel(2)?,
+        })
+    }
+
+    /// The colour as `#rrggbb`.
+    pub fn text(self) -> String {
+        format!("#{:02x}{:02x}{:02x}", self.red, self.green, self.blue)
+    }
+}
+
+/// One output's wallpaper, or every output's.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OutputSettings {
+    pub kind: Kind,
+    /// The Picture's file.
+    pub picture: String,
+    pub positioning: Positioning,
+    /// The Colour's, and what shows where a picture doesn't.
+    pub colour: Colour,
+}
+
+/// What is drawn on an output, of its settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Drawn {
+    /// A picture, placed by the positioning over the colour.
+    Picture {
+        file: String,
+        positioning: Positioning,
+        colour: Colour,
+    },
+    /// The colour alone.
+    Colour(Colour),
+}
+
+impl OutputSettings {
+    /// What's drawn. A Picture with no file is its colour, and the three kinds that later
+    /// tickets draw are their colour until then.
+    pub fn drawn(&self) -> Drawn {
+        match self.kind {
+            Kind::Picture if !self.picture.is_empty() => Drawn::Picture {
+                file: self.picture.clone(),
+                positioning: self.positioning,
+                colour: self.colour,
+            },
+            _ => Drawn::Colour(self.colour),
+        }
+    }
+}
+
+/// One set of an output's keys in the store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Set {
+    /// Every output's, while "same on all outputs" is on.
+    All,
+    /// The monitor's own.
+    Output(Identity),
+}
+
+/// Where the settings are kept: GSettings for the drawer, memory for the tests.
+pub trait Store {
+    /// Whether every output has the same settings.
+    fn same_on_all_outputs(&self) -> bool;
+    /// The monitors seen so far, by their path elements.
+    fn seen(&self) -> Vec<String>;
+    fn set_seen(&mut self, seen: &[String]);
+    fn read(&self, set: &Set) -> OutputSettings;
+    fn write(&mut self, set: &Set, settings: &OutputSettings);
+    /// Whether the first run took `org.mate.background`'s picture already.
+    fn took_mate_background(&self) -> bool;
+    fn set_took_mate_background(&mut self);
+}
+
+/// The settings of the output that shows `identity`, with `primary` the primary output's.
+/// A monitor seen for the first time is given the primary output's wallpaper, or every
+/// output's if the primary output's is new too, and is seen from then on.
+pub fn settings_for(
+    store: &mut impl Store,
+    identity: &Identity,
+    primary: Option<&Identity>,
+) -> OutputSettings {
+    let mut seen = store.seen();
+    let element = identity.path_element();
+    if !seen.contains(&element) {
+        let source = match primary {
+            Some(primary)
+                if !store.same_on_all_outputs()
+                    && primary != identity
+                    && seen.contains(&primary.path_element()) =>
+            {
+                Set::Output(primary.clone())
+            }
+            _ => Set::All,
+        };
+        let settings = store.read(&source);
+        store.write(&Set::Output(identity.clone()), &settings);
+        seen.push(element);
+        store.set_seen(&seen);
+    }
+    if store.same_on_all_outputs() {
+        store.read(&Set::All)
+    } else {
+        store.read(&Set::Output(identity.clone()))
+    }
+}
+
+/// `org.mate.background`'s keys that the first run reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MateBackground {
+    /// `picture-filename`, empty for none.
+    pub picture: String,
+    /// `picture-options`.
+    pub options: String,
+    /// `primary-color`.
+    pub colour: String,
+}
+
+/// On the first run, makes MATE's picture every output's wallpaper, and returns `true`.
+/// Every run after does nothing and returns `false`, whatever MATE's picture is by then.
+pub fn take_mate_background(store: &mut impl Store, mate: &MateBackground) -> bool {
+    if store.took_mate_background() {
+        return false;
+    }
+    let colour = Colour::parse(&mate.colour).unwrap_or(store.read(&Set::All).colour);
+    let kind = if mate.picture.is_empty() {
+        Kind::Colour
+    } else {
+        Kind::Picture
+    };
+    let settings = OutputSettings {
+        kind,
+        picture: mate.picture.clone(),
+        positioning: Positioning::from_mate(&mate.options),
+        colour,
+    };
+    store.write(&Set::All, &settings);
+    store.set_took_mate_background();
+    true
+}
+
+#[cfg(test)]
+mod tests;
