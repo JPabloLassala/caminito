@@ -1,13 +1,21 @@
-//! The sun's position (138): its elevation at a place and a time, the day's highest, and when
-//! it next climbs past civil twilight. NOAA's solar position equations, as in its solar
-//! calculator's spreadsheet (`NOAA_Solar_Calculations_day.xls`), which are good to about a
-//! minute of arc for the years around now. Time is an argument, as a Unix time in seconds.
+//! The sun's position (138): its elevation and azimuth (215) at a place and a time, the day's
+//! highest, and when it next climbs past civil twilight. NOAA's solar position equations, as
+//! in its solar calculator's spreadsheet (`NOAA_Solar_Calculations_day.xls`), which are good
+//! to about a minute of arc for the years around now. Time is an argument, as a Unix time in
+//! seconds.
 
 /// Where the sun is looked at from, in degrees: north and east are positive.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Location {
     pub(crate) latitude: f64,
     pub(crate) longitude: f64,
+}
+
+/// Where the sun is in the sky, in degrees: its elevation and its azimuth (215).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Position {
+    pub(crate) elevation: f64,
+    pub(crate) azimuth: f64,
 }
 
 /// Civil twilight: the sun's centre this far below the horizon, in degrees. Below it is
@@ -50,19 +58,37 @@ fn declination_and_equation_of_time(unix: f64) -> (f64, f64) {
     (declination.to_degrees(), equation_of_time)
 }
 
-/// The sun's elevation above the horizon at `location` and `unix`, in degrees, without
-/// the atmosphere's refraction, which civil twilight's −6° doesn't count either.
-pub(crate) fn elevation(location: Location, unix: f64) -> f64 {
+/// The sun's hour angle and declination at `location` and `unix`, in radians: how far past
+/// the local meridian it is, west positive, and how far north of the equator.
+fn hour_angle_and_declination(location: Location, unix: f64) -> (f64, f64) {
     let (declination, equation_of_time) = declination_and_equation_of_time(unix);
     let minutes = unix.rem_euclid(DAY) / 60.0;
     let true_solar_time =
         (minutes + equation_of_time + 4.0 * location.longitude).rem_euclid(1440.0);
     let hour_angle = (true_solar_time / 4.0 - 180.0).to_radians();
+    (hour_angle, declination.to_radians())
+}
+
+/// The sun's elevation above the horizon at `location` and `unix`, in degrees, without
+/// the atmosphere's refraction, which civil twilight's −6° doesn't count either.
+pub(crate) fn elevation(location: Location, unix: f64) -> f64 {
+    let (hour_angle, declination) = hour_angle_and_declination(location, unix);
     let latitude = location.latitude.to_radians();
-    let declination = declination.to_radians();
     let cos_zenith =
         latitude.sin() * declination.sin() + latitude.cos() * declination.cos() * hour_angle.cos();
     90.0 - cos_zenith.clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// The sun's azimuth at `location` and `unix`, in degrees clockwise from north, 0 to 360:
+/// 90 is east and 270 west. The sun has one below the horizon too.
+pub(crate) fn azimuth(location: Location, unix: f64) -> f64 {
+    let (hour_angle, declination) = hour_angle_and_declination(location, unix);
+    let latitude = location.latitude.to_radians();
+    // From the south, west positive, as the hour angle is; then from the north.
+    let from_south = hour_angle
+        .sin()
+        .atan2(hour_angle.cos() * latitude.sin() - declination.tan() * latitude.cos());
+    (from_south.to_degrees() + 180.0).rem_euclid(360.0)
 }
 
 /// The Unix time of solar noon on the day of `unix`, the day running from one solar midnight
@@ -167,6 +193,30 @@ mod tests {
         // 2026-12-15 at 11:00 and 00:00 UTC.
         assert_near(elevation(TROMSO, 1_797_332_400.0), -3.003, 0.5);
         assert_near(elevation(TROMSO, 1_797_292_800.0), -42.065, 0.5);
+    }
+
+    #[test]
+    fn montevideos_sun_goes_round_by_the_north() {
+        // 2026-12-21 at 15:00, 22:30 and 08:00 UTC, as in its elevation's test: in the
+        // southern summer the sun rises south of east and sets south of west, by the north.
+        assert_near(azimuth(MONTEVIDEO, 1_797_865_200.0), 41.924, 0.5);
+        assert_near(azimuth(MONTEVIDEO, 1_797_892_200.0), 244.250, 0.5);
+        assert_near(azimuth(MONTEVIDEO, 1_797_840_000.0), 123.794, 0.5);
+    }
+
+    #[test]
+    fn oslos_sun_goes_round_by_the_south() {
+        // 2026-03-20 at 11:00, 06:00 and 16:30 UTC.
+        assert_near(azimuth(OSLO, 1_774_004_400.0), 172.952, 0.5);
+        assert_near(azimuth(OSLO, 1_773_986_400.0), 97.766, 0.5);
+        assert_near(azimuth(OSLO, 1_774_024_200.0), 258.197, 0.5);
+    }
+
+    #[test]
+    fn tromsos_sun_below_the_horizon_has_an_azimuth_too() {
+        // 2026-12-15 at 11:00 and 00:00 UTC: just south of south, and north by north-east.
+        assert_near(azimuth(TROMSO, 1_797_332_400.0), 184.763, 0.5);
+        assert_near(azimuth(TROMSO, 1_797_292_800.0), 25.342, 0.5);
     }
 
     #[test]
