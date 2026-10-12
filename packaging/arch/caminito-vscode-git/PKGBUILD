@@ -60,12 +60,14 @@ package() {
   install -Dm644 caminito-vscode/package.json -t "$extension"
   install -Dm644 caminito-vscode/dist/extension.js -t "$extension/dist"
 
-  cd packaging/arch/caminito-vscode-git
-  install -Dm755 caminito-vscode-link -t "$pkgdir/usr/share/libalpm/scripts"
-  # The hooks' targets come from the script's list, so the five directories are written once.
+  # The link script is both distributions' (193). It goes where the hooks name it.
+  local script=caminito-vscode/link/caminito-vscode-link
+  install -Dm755 "$script" -t "$pkgdir/usr/share/libalpm/scripts"
+  # The hooks' targets come from the script's list, so the six directories are written once.
   # pacman's targets have no leading slash.
   local targets hook line
-  targets=$(sh caminito-vscode-link directories | sed 's|^/\(.*\)$|Target = \1/*|')
+  targets=$(sh "$script" directories | sed 's|^/\(.*\)$|Target = \1/*|')
+  cd packaging/arch/caminito-vscode-git
   install -dm755 "$pkgdir/usr/share/libalpm/hooks"
   for hook in caminito-vscode-link.hook caminito-vscode-unlink.hook; do
     while IFS= read -r line; do
