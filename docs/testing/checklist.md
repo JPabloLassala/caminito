@@ -1614,6 +1614,72 @@ session_env() {
   org.mate.Caminito.Debug DumpState`, `journalctl --user -t caminito-wallpaperd`, and `dconf
   dump /org/mate/caminito/wallpaper/`.
 
+### caja's "Set as wallpaper" sets every output, and `org.mate.background` follows the primary
+
+- **Milestone:** M9
+- **Steps:**
+  1. In *MATE on Caminito* with two monitors and caminito-wallpaperd running, give each monitor
+     a picture of its own, as in the item above's step 3.
+  2. Run `gsettings get org.mate.background picture-filename`, then give the primary monitor
+     another picture, `gsettings set "$(out "$first")" picture "$c"`, and set its `positioning`
+     to `tile`. Run `gsettings get` for `picture-filename`, `picture-options` and
+     `primary-color` again.
+  3. Set the primary monitor's `kind` to `colour`, and run the three `gsettings get` again.
+  4. In caja, right-click a picture under `~/Pictures` and choose *Set as wallpaper*.
+- **Expected:** in step 2 `picture-filename` names the primary monitor's picture, and then
+  `$c`, with `picture-options` `'wallpaper'`; neither change reaches the second monitor. In
+  step 3 `picture-filename` is `''` and `primary-color` is the primary monitor's colour. In
+  step 4 both monitors cross-fade to the picture, and `dconf dump /org/mate/caminito/wallpaper/`
+  has it as the `picture` of `all/` and of each monitor, each keeping its `positioning`.
+  `journalctl --user -t caminito-wallpaperd` has no line of the drawer taking its own
+  write for another's, and the wallpaper doesn't flicker between pictures.
+- **Debug tool:** `dconf watch /org/mate/desktop/background/` beside `dconf watch
+  /org/mate/caminito/wallpaper/`, and `G_MESSAGES_DEBUG=caminito-wallpaperd` in the drawer's
+  environment for its `took org.mate.background's new picture` line.
+
+### The Wallpaper dialog sets a picture or a colour on each output at a click
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built from the PKGBUILD and installed, log into *MATE on Caminito*
+     with two monitors. Open the control center and find *Wallpaper*, and *Appearance*.
+     Open *Wallpaper*.
+  2. Read the sidebar: a picture of each monitor, *Same on all outputs*, and the five kinds.
+     Choose *Picture*, and scroll the grid.
+  3. With *Same on all outputs* on, click a picture under *MATE*, then one under *Plasma*
+     if `plasma-workspace-wallpapers` is installed. Set *Positioning* to *Fit*, then *Tile*.
+  4. Turn *Same on all outputs* off. Select the second monitor's picture in the sidebar,
+     choose *Colour*, and click a swatch, then pick another colour with the button beside
+     *Another colour*.
+  5. Choose *Picture*, press *Add folder…* and choose a folder of your pictures, then press
+     *Add picture…* and choose a picture outside it. Click a picture of the folder's.
+  6. Choose *Slideshow*, *Picture of the day* and *Dynamic* in turn.
+  7. With the window open, open *Wallpaper* again from the control center, or run
+     `caminito-wallpaper`. Then press Escape.
+  8. Unplug the second monitor and open the dialog; plug it back in.
+  9. Run `ls /usr/share/applications | grep -i caminito-wallpaper`. Log out, log into *MATE*,
+     the X11 session, and look for *Wallpaper* in its control center. In a checkout, run
+     `cargo run -p caminito-wallpaper --bin caminito-wallpaper -- --demo` anywhere.
+- **Expected:** in step 1 *Wallpaper* is under *Look and Feel* beside *Appearance*, with the
+  wallpaper icon. In step 2 the monitors' pictures are as wide as each other, in the order
+  they stand left to right, each showing its monitor's wallpaper with the monitor's name under
+  it. The grid has a heading per source, in this order: *Current picture*, then the user's,
+  *MATE* and *Plasma*, with one picture per Plasma package. The window doesn't stall while the
+  thumbnails come in. In step 3 each click is on both monitors at once, with the cross-fade,
+  and the sidebar's pictures show it, the positioning included; there is no Apply button. In
+  step 4 the first monitor keeps its picture and the second turns to the colour at each click.
+  In step 5 the folder is a heading of its own, named after it, with its pictures; the
+  picture is under *Your pictures* and is on the second monitor at once, as the folder's is
+  after it. In step 6 each says it isn't there yet, and nothing on the desktop changes. In
+  step 7 the open window is raised and there is still one, and Escape closes it. In step 8
+  the dialog shows one monitor's picture as a plain preview, with no *Same on all outputs*,
+  and the monitor plugged back in comes back with its own wallpaper. In step 9 `ls` prints
+  nothing, X11 MATE has no *Wallpaper*, and the demo shows two made-up monitors and changes
+  nothing outside the window.
+- **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/`, `dconf watch
+  /org/mate/caminito/wallpaper/` while clicking, and `caminito-wallpaper` run from a
+  terminal for GTK's warnings.
+
 ## The control center
 
 ### Windows and System Shortcuts open under Caminito, and name it
