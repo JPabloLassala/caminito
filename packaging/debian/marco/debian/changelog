@@ -14,7 +14,8 @@ marco (1.29.1-0caminito1) resolute; urgency=medium
     1.29.1 has.
   * debian/rules: configure from the release tarball's configure, not
     autogen.sh, and install the apt pin
-    /etc/apt/preferences.d/caminito-marco.
+    /etc/apt/preferences.d/caminito-marco, with an override of lintian's
+    package-installs-apt-preferences.
 
  -- jpablo <jpablolassala@gmail.com>  Mon, 12 Oct 2026 00:00:00 +0000
 
