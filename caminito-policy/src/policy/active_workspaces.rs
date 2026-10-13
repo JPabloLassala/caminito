@@ -133,12 +133,63 @@ impl<W: PolicyWindow> Policy<W> {
         for shown in self.active_workspaces.each_mut() {
             *shown = active;
         }
+        // The one workspace of a number shows its desktop if the Active output's did.
+        self.give_shown_desktops(self.active_output(self.last_seat), &[None]);
         if switches {
             // As a switch closes them: the workspace changing under an open switcher (ruling
             // 9 of 108), and the window menu, whose moves are from the active workspace (161).
             self.close_switcher(switcher::Close::Dropped);
             self.window_menu = None;
         }
+    }
+
+    /// Gives the desktops `from`'s workspaces show to the workspaces of the same numbers of
+    /// each of `to`, and no other workspace shows one: as `workspaces-per-output` changes,
+    /// and as policy's first output comes or its last one goes (224).
+    pub(super) fn give_shown_desktops(&mut self, from: Option<OutputId>, to: &[Option<OutputId>]) {
+        let shown = std::mem::take(&mut self.showing_desktop);
+        for ((_, workspace), shown) in shown.into_iter().filter(|((of, _), _)| *of == from) {
+            for output in to {
+                self.showing_desktop
+                    .insert((*output, workspace), shown.clone());
+            }
+        }
+    }
+
+    /// The desktops shown follow policy's outputs as they become `outputs`: those of an
+    /// output that goes go with it. With no output the primary one's are kept for the
+    /// first that comes.
+    pub(super) fn desktops_follow_outputs(&mut self, outputs: &[Output]) {
+        if !self.config.workspaces_per_output {
+            return;
+        }
+        let to: Vec<Option<OutputId>> = outputs.iter().map(|output| Some(output.id)).collect();
+        if outputs.is_empty() {
+            let primary = self.primary_output().map(|output| output.id);
+            self.give_shown_desktops(primary, &[None]);
+        } else if self.outputs.is_empty() {
+            self.give_shown_desktops(None, &to);
+        } else {
+            self.showing_desktop
+                .retain(|(output, _), _| to.contains(output));
+        }
+    }
+
+    /// What a workspace that shows its desktop is `output`'s by: `output`, or none with
+    /// `workspaces-per-output` off, where a workspace is every output's.
+    pub(super) fn desktop_output(&self, output: Option<OutputId>) -> Option<OutputId> {
+        output.filter(|_| self.config.workspaces_per_output)
+    }
+
+    /// Each output, as `desktop_output` has it, or none while policy has no output.
+    pub(super) fn desktop_outputs(&self) -> Vec<Option<OutputId>> {
+        let none = self.outputs.is_empty().then_some(None);
+        let outputs = self.outputs.iter().map(|output| Some(output.id));
+        let mut outputs: Vec<_> = (outputs.chain(none))
+            .map(|output| self.desktop_output(output))
+            .collect();
+        outputs.dedup();
+        outputs
     }
 
     /// The Main output of `id`'s frame now, if it's on one.
@@ -225,12 +276,17 @@ impl<W: PolicyWindow> Policy<W> {
         self.is_on_workspace(id, self.active_workspace_of(id))
     }
 
-    /// Every output's active workspace, once each, or the one that stands for them while
-    /// policy has no output.
-    pub(super) fn shown_workspaces(&self) -> BTreeSet<usize> {
-        self.active_workspaces
-            .each()
-            .map(|shown| shown.active)
+    /// Every output's active workspace, as the one that shows its desktop for itself: an
+    /// output's own with `workspaces-per-output` on, and else the one of that number. With
+    /// no output it's the one that stands for them.
+    pub(super) fn shown_desktops(&self) -> BTreeSet<DesktopOf> {
+        let outputs = self.outputs.iter().map(|output| Some(output.id));
+        let none = self.outputs.is_empty().then_some(None);
+        (outputs.chain(none))
+            .map(|output| {
+                let workspace = self.active_workspaces.of(output).active;
+                (self.desktop_output(output), workspace)
+            })
             .collect()
     }
 }

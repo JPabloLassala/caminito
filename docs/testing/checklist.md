@@ -906,6 +906,40 @@ session_env() {
 - **Debug tool:** `DumpState`'s `outputs`, each with its `active_workspace`, and each
   window's `workspace`.
 
+### Alt+Tab and Show Desktop on two monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, four workspaces in one row
+     and `workspaces-per-output` at `true`. The panel is on the first monitor, with a Show
+     Desktop button. Open a `pluma` on the first workspace of the first monitor and a
+     terminal on the first workspace of the second.
+  2. Click the terminal, press Ctrl+Alt+Right, and open a second terminal: the second
+     monitor shows its second workspace. Hold Alt and press Tab, and look at the popup.
+     Release Alt on `pluma`.
+  3. Hold the binding of `switch-windows-all`, if it has one, look at the popup, and cancel
+     with Escape.
+  4. Click the panel's Show Desktop button.
+  5. Click the second monitor's wallpaper and press Ctrl+Alt+Left, then Ctrl+Alt+Right.
+  6. Click `pluma`'s button in the window list.
+  7. Click the Show Desktop button two times.
+  8. Run `gsettings set org.mate.Caminito workspaces-per-output false`, and do steps 4 and 6
+     again. Set the key back with `gsettings reset`.
+- **Expected:** in step 2 the popup has `pluma` and the second terminal, and not the first
+  terminal, which no monitor shows; `pluma` takes the focus on the first monitor and no
+  monitor switches. In step 3 the popup has all three windows. In step 4 both monitors show
+  the bare desktop, and the button stays pressed. In step 5 Ctrl+Alt+Left shows the first
+  terminal on the second monitor and the button is no longer pressed; Ctrl+Alt+Right shows
+  the bare desktop there again and the button is pressed again. The first monitor shows the
+  bare desktop all the time. In step 6 `pluma` comes back on the first monitor with the
+  focus, the second monitor still shows the bare desktop with the second terminal hidden
+  and not minimised, and the button is not pressed. In step 7 the first click clears both
+  monitors and the second brings the windows of both back. In step 8, with the key off,
+  step 4 clears both monitors and step 6 brings `pluma` back and leaves every other window
+  of the workspace minimised, as Marco does (224).
+- **Debug tool:** `DumpState`'s `showing_desktop`, which is `true` only while every monitor
+  shows its desktop, and `outputs`, each with its `active_workspace`.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

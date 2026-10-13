@@ -11,13 +11,13 @@ use super::Policy;
 /// The windows a `switch-*` action lists, as Marco's `MetaTabList` has them (108).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwitchList {
-    /// `switch-windows`: the active workspace's windows.
+    /// `switch-windows`: the windows on every output's active workspace (224).
     Windows,
-    /// `switch-windows-all`: every workspace's.
+    /// `switch-windows-all`: every workspace's, of every output.
     WindowsAll,
-    /// `switch-group`: the focused application's, on the active workspace.
+    /// `switch-group`: the focused application's, on every output's active workspace.
     Group,
-    /// `switch-panels`: docks and the desktop.
+    /// `switch-panels`: docks and the desktop, on every output's active workspace.
     Panels,
 }
 
