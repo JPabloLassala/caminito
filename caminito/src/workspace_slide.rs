@@ -73,7 +73,7 @@ impl Slide {
     }
 
     /// A slide from `switch.from`'s place to `switch.to`'s on an output of `size`, which
-    /// has no windows yet.
+    /// has no windows until `with_windows` gives it them.
     fn new(switch: &OutputSwitch, size: Size<i32, Logical>, now: Duration) -> Self {
         let distance = Point::from((switch.cells.0 * size.w, switch.cells.1 * size.h));
         Self {
@@ -89,6 +89,20 @@ impl Slide {
             }],
             arriving: HashSet::new(),
         }
+    }
+
+    /// The slide with the windows of the workspace the last switch left, `leaving`, and
+    /// of the one it went to, `arriving`.
+    fn with_windows(mut self, leaving: HashSet<WindowId>, arriving: HashSet<WindowId>) -> Self {
+        let last_left = self
+            .left
+            .iter_mut()
+            .find(|left| left.workspace == self.from);
+        last_left
+            .expect("a slide has the workspace it left")
+            .windows = leaving;
+        self.arriving = arriving;
+        self
     }
 
     /// The slide that goes on from where `running` has the windows at `now` to
@@ -107,7 +121,7 @@ impl Slide {
         let passed = running
             .left
             .into_iter()
-            .filter(|left| left.workspace != switch.from && left.workspace != switch.to)
+            .filter(|left| left.workspace != switch.to)
             .map(|left| Left {
                 place: left.place - distance,
                 ..left
@@ -120,8 +134,8 @@ impl Slide {
     /// workspace the slide left are that far from where their workspace ends up, off the
     /// output.
     pub(crate) fn offset(&self, now: Duration) -> Point<i32, Logical> {
-        let left = way_left(now.saturating_sub(self.start));
-        let at = |way: i32| (f64::from(way) * left).round() as i32;
+        let remaining = way_left(now.saturating_sub(self.start));
+        let at = |way: i32| (f64::from(way) * remaining).round() as i32;
         Point::from((at(self.way.x), at(self.way.y)))
     }
 
@@ -137,9 +151,9 @@ impl Slide {
         if showing {
             self.arriving.contains(&window).then(|| self.offset(now))
         } else {
-            let mut left = self.left.iter();
-            let left = left.find(|left| left.windows.contains(&window))?;
-            Some(self.offset(now) + left.place)
+            let mut workspaces = self.left.iter();
+            let its_own = workspaces.find(|left| left.windows.contains(&window))?;
+            Some(self.offset(now) + its_own.place)
         }
     }
 
@@ -241,7 +255,7 @@ impl Caminito {
                 continue;
             }
             let size = output_geometry(output).size;
-            let mut slide = match retargeted {
+            let slide = match retargeted {
                 Some(running) => Slide::retargeted(running, &switch, size, now),
                 None => Slide::new(&switch, size, now),
             };
@@ -254,8 +268,8 @@ impl Caminito {
                 .filter(|id| {
                     policy.workspace_of(**id) == Some(switch.from) && !policy.is_minimized(**id)
                 })
-                .copied();
-            slide.left[0].windows = leaving.collect();
+                .copied()
+                .collect();
             // One that maps or is restored on another workspace in the same pass isn't the
             // new workspace's.
             let arriving = shown
@@ -263,8 +277,7 @@ impl Caminito {
                 .filter(on_output)
                 .filter(|id| policy.workspace_of(**id) == Some(switch.to))
                 .copied();
-            slide.arriving = arriving.collect();
-            running.push(slide);
+            running.push(slide.with_windows(leaving, arriving.collect()));
             started.push(output.clone());
         }
         for output in started {
@@ -340,10 +353,12 @@ mod tests {
     /// A slide over `cells` of the grid from workspace 0 to workspace 1, with window 1
     /// leaving and window 2 arriving.
     fn slide(cells: (i32, i32)) -> Slide {
-        let mut slide = Slide::new(&switch(1, 0, 1, cells), SIZE.into(), after(0));
-        slide.left[0].windows = HashSet::from([WindowId(1)]);
-        slide.arriving = HashSet::from([WindowId(2)]);
-        slide
+        Slide::new(&switch(1, 0, 1, cells), SIZE.into(), after(0))
+            .with_windows(windows([1]), windows([2]))
+    }
+
+    fn windows<const N: usize>(ids: [u64; N]) -> HashSet<WindowId> {
+        ids.into_iter().map(WindowId).collect()
     }
 
     fn after(millis: u64) -> Duration {
@@ -421,9 +436,8 @@ mod tests {
         ];
 
         // On to workspace 2, on the right, where window 3 is.
-        let mut second = Slide::retargeted(first, &switch(1, 1, 2, (1, 0)), SIZE.into(), now);
-        second.left[0].windows = HashSet::from([WindowId(2)]);
-        second.arriving = HashSet::from([WindowId(3)]);
+        let second = Slide::retargeted(first, &switch(1, 1, 2, (1, 0)), SIZE.into(), now)
+            .with_windows(windows([2]), windows([3]));
 
         let after_it = [
             second.shift(WindowId(1), false, now),
@@ -452,9 +466,8 @@ mod tests {
         let now = after(125);
         let out = slide((1, 0));
 
-        let mut back = Slide::retargeted(out, &switch(1, 1, 0, (-1, 0)), SIZE.into(), now);
-        back.left[0].windows = HashSet::from([WindowId(2)]);
-        back.arriving = HashSet::from([WindowId(1)]);
+        let back = Slide::retargeted(out, &switch(1, 1, 0, (-1, 0)), SIZE.into(), now)
+            .with_windows(windows([2]), windows([1]));
 
         // The first workspace is the one that arrives, and isn't one that leaves too.
         assert_eq!(back.left.len(), 1);
@@ -463,6 +476,22 @@ mod tests {
         let end = now + LENGTH;
         assert_eq!(back.shift(WindowId(1), true, end), Some((0, 0).into()));
         assert_eq!(back.shift(WindowId(2), false, end), Some((800, 0).into()));
+    }
+
+    #[test]
+    fn a_wrap_back_to_the_workspace_it_left_draws_that_one_where_it_arrives_alone() {
+        let now = after(125);
+        let out = slide((1, 0));
+
+        // Right again from the last of two workspaces, which wraps to the first: one cell
+        // the way of the key.
+        let round = Slide::retargeted(out, &switch(1, 1, 0, (1, 0)), SIZE.into(), now)
+            .with_windows(windows([2]), windows([1]));
+
+        assert_eq!(round.left.len(), 1);
+        assert_eq!(round.shift(WindowId(2), false, now), Some((100, 0).into()));
+        // It was 700 to the left, on its way out, and comes in from the right.
+        assert_eq!(round.shift(WindowId(1), true, now), Some((900, 0).into()));
     }
 
     #[test]

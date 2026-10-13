@@ -597,6 +597,29 @@ fn three_switches_each_part_way_through_the_last_are_one_movement() {
 }
 
 #[test]
+fn a_workspace_passed_over_is_drawn_as_it_goes_by() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let windows: Vec<ClientWindow> = (0..3).map(|w| map_on(&mut f, id, w, BIG)).collect();
+    f.stop_clock();
+    // So soon that the first workspace is still on the output after the second switch.
+    let soon = Duration::from_millis(20);
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(soon);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(soon);
+
+    let slide = slide(&f);
+    assert_eq!((slide.from, slide.to), (1, 2));
+    let (passed, left) = (slide.drawn(&f, windows[0]), slide.drawn(&f, windows[1]));
+    // A spot of the first workspace's window that the second one's, on its right, isn't
+    // over.
+    let spot = middle_on_output(passed);
+    assert!(!left.contains(spot), "{slide:?}");
+    assert_eq!(pixel(&mut f, spot), WINDOW, "{slide:?}");
+}
+
+#[test]
 fn a_second_switch_another_way_bends_the_movement() {
     let (mut f, id) = desk(Kind::Xdg, two_rows());
     let first = map_on(&mut f, id, 0, BIG);
