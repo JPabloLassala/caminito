@@ -2,7 +2,7 @@
 
 Epic: workspace-slide
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Blocked by: 235
 Spec: [Workspace slide](../workspace-slide/spec.md)
 
@@ -30,7 +30,20 @@ The developer decided on 2026-10-13: Caminito does what Plasma's Slide effect do
 
 ## Acceptance criteria
 
-- [ ] A headless test with two workspaces and `wrap-style` on: right, and right again part-way. Each rectangle the dump had before the second switch is in the dump after it, and the first workspace's window is in the dump two times, one output's width times two apart.
-- [ ] The same test reads the output's pixels at a spot of each of the two drawings that is on the output.
-- [ ] A switch right and back with no wrap still has each window in the dump one time.
-- [ ] A click part-way reaches the window at its own place, and not at the second drawing.
+- [x] A headless test with two workspaces and `wrap-style` on: right, and right again part-way. Each rectangle the dump had before the second switch is in the dump after it, and the first workspace's window is in the dump two times, one output's width times two apart.
+- [x] The same test reads the output's pixels at a spot of each of the two drawings that is on the output.
+- [x] A switch right and back with no wrap still has each window in the dump one time.
+- [x] A click part-way reaches the window at its own place, and not at the second drawing.
+
+## Done (2026-10-13)
+
+- **How it's built:** `Slide::retargeted` (`caminito/src/workspace_slide.rs`) dropped the `Left` of the workspace the switch goes to. It now drops it only when its place is the one the workspace arrives at, which is the switch back's case. After a wrap the place is another one, the `Left` stays, and the workspace also arrives. `Slide::shifts` replaces `Slide::shift`: it gives one offset for each place of a window, and `window_elements` (`caminito/src/scene.rs`) draws the window at each, with its Frame, shadow and popups, one after the other in the stack. Policy, focus and input have no change.
+- **For the developer: the places of one slide have no limit.** The ticket says to keep each place until the slide ends. Each retarget gives the slide another 250 ms, so a binding held down with `wrap-style` on adds one place for each repeat, and the slide doesn't end while it's held. The places are far off the output, so each costs one overlap check for each of its windows in a frame, and one line in the debug dump. I measured nothing. A later ticket can drop a place that can't come back onto the output, if 237's Session shows a cost.
+- **The two drawings are never on the output at one time** for a window that fits on it: they're the grid's width or height apart, two outputs at the least. So the test of the second criterion reads the pixels at two times: the drawing on its way out directly after the second switch, and the one on its way in 100 ms later. Only the first read fails on 235's code. The spec's "Timing" says this now.
+- **Two places of one workspace are never the same**, so there's no code for the ticket's "unless two of them are the same place": a switch moves every place by one distance, and the one place that could meet the arriving workspace's is the one that's dropped. A unit test has a wrap and then a switch back, which leaves the first workspace on each side of the second.
+- **The damage tracker** (smithay's `OutputDamageTracker`) keeps several instances of one element id, so one surface drawn two times in a frame is correct. `shifts` gives a window's own place last, so the scene draws it there under its other drawings: when those go at the slide's end, its index among the frame's elements changes and the tracker draws again where they were. No test has this; a window must be larger than the output to show it.
+- **A window that left a workspace and shows again without arriving** (made sticky during the slide) is drawn at its own place alone, as 234 has it.
+- **Tests:** written with the code, and not seen to fail before it. Unit tests beside the code: the wrap back (235's `..._where_it_arrives_alone`, changed), two more wraps during one slide, and a wrap then a switch back. Headless tests: the wrap back under `toroidal` and under `classic`, with the dump and the pixels; a switch right and back with no wrap, `wrap-style` on; a click at the drawing on its way out, which reaches no window, and one at the window's own place, which reaches it.
+- **Not tested:** a wrap back on two outputs, a wrap up or down, an XWayland window, and a real Session (237's).
+- **What was run** (OrbStack machine, aarch64): `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the slide's 47 tests, and 114 of `caminito`'s beside them: `debug`, `minimise_animation`, `workspace_popup`, `workspace_moves`, `per_output_workspaces`, `deadlines`, `tests::lock` and `scene`. All passed. **Not run:** the full suite, at the developer's standing word.
+- **Code review:** two reviews, of the standards and of the spec, found no bug. Fixed from them: the commit's body, names in `shifts` and in the unit tests, the word "pictures", and a helper for the two drawings in the tests. Left: `shifts` gives a `Vec` whose order has a meaning that only its doc says, and the click test has its press and release two times.

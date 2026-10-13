@@ -131,7 +131,8 @@ struct WorkspaceSlideDump {
     /// the slide left are that far from where their workspace ends up, off the output.
     offset: OffsetDump,
     /// Each window the slide moves, by id, with where its frame is drawn now: those of a
-    /// retargeted slide's earlier workspaces too (235).
+    /// retargeted slide's earlier workspaces too (235). A window of a workspace the slide
+    /// draws at more than one place is here one time for each (239).
     windows: Vec<SlidingWindowDump>,
     /// The windows on the output that the slide leaves in their places, by id (234).
     still: Vec<u64>,
