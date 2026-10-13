@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. What tickets 235 and 236 add isn't built.
+Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. Ticket 235 built the retarget and the lock's end. What ticket 236 adds isn't built.
 
 ## Problem
 
@@ -59,20 +59,22 @@ These don't slide:
 - 250 ms, with an ease-out curve, drawn on every frame of the output and not in the minimise animation's 15 ms steps. It is read from Caminito's clock.
 - The curve is a cubic ease-out (233): with `t` the part of the 250 ms that has passed, the windows have `(1 − t)³` of their way left. They start at their fastest, three times the mean speed, and slow down into their places: half the time leaves an eighth of the way.
 - **A second switch during a slide retargets it** from where the windows are, so the movement is continuous. The workspaces passed over are drawn as they go by.
+- A retargeted slide takes 250 ms from the second switch, on the same curve, so its speed changes at the switch and its place doesn't (235). Each workspace the slide has left is drawn at its cell's place from the new one, until the slide ends. A switch back to the workspace the slide left returns its windows from where they are.
+- A workspace is drawn at one place. After a wrap round the grid during a slide, the workspace the output comes back to is drawn where it arrives, and not where it left as well (235).
 - There are no keys for the length or the curve.
 
 ### Policy and input
 
 - Policy switches at once, as it does for the minimise animation. Focus, keys, the Active output, ext-workspace, the toplevel protocols and X11's properties change at the first frame.
 - Input follows policy: a click during the slide reaches the new workspace's windows at their final places, not where they are drawn.
-- The session lock ends a slide at once.
+- The session lock ends a slide at once, and so does its output going. A switch under the lock is a cut (235).
 - The switch's sounds (170) are unchanged.
 
 ### Settings
 
 - `workspace-slide` in `org.mate.Caminito` (`data/org.mate.Caminito.gschema.xml`), a boolean, default `true`.
 - The slide runs when that key is on and the minimise animation's three are as it needs them: `compositing-manager` on, `reduced-resources` off and `org.mate.interface enable-animations` on.
-- A change applies to the next switch.
+- A change applies to the next switch: a slide that runs finishes. With a key against it, a switch during a slide is a cut, which ends the slide (235).
 
 ## Testing
 

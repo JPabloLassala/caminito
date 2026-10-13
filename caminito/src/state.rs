@@ -234,6 +234,11 @@ pub struct Caminito {
     /// without waiting for them (128).
     #[cfg(test)]
     pub(crate) clock_offset: Duration,
+    /// What the clock read when a test stopped it, from which only `clock_offset` moves it
+    /// on: a test of the Workspace slide reads the frame before a switch and the one after
+    /// at the same time (235).
+    #[cfg(test)]
+    pub(crate) stopped_clock: Option<Duration>,
     /// The tests' wall clock: the Unix time it read when `now` was the second value, from
     /// which it runs with Caminito's clock (138). It starts at `TEST_WALL_CLOCK`, so that
     /// what follows the sun is the same on every run, and `Fixture::set_wall_clock` sets it.
@@ -945,6 +950,8 @@ impl Caminito {
             #[cfg(test)]
             clock_offset: Duration::ZERO,
             #[cfg(test)]
+            stopped_clock: None,
+            #[cfg(test)]
             wall_clock: (TEST_WALL_CLOCK, clock.now().into()),
 
             viewporter_state: ViewporterState::new::<State>(dh),
@@ -1198,7 +1205,7 @@ impl Caminito {
     pub fn now(&self) -> Duration {
         let now: Duration = self.clock.now().into();
         #[cfg(test)]
-        let now = now + self.clock_offset;
+        let now = self.stopped_clock.unwrap_or(now) + self.clock_offset;
         now
     }
 

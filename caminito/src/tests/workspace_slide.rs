@@ -1,4 +1,4 @@
-//! The Workspace slide (233, 234): a change of the output's active workspace shows the old
+//! The Workspace slide (233, 234, 235): a change of the output's active workspace shows the old
 //! workspace's windows leaving and the new one's arriving, for 250 ms of Caminito's clock,
 //! read from the debug dump and from the output's pixels. Policy has switched from the
 //! start.
@@ -521,31 +521,239 @@ fn the_workspace_popup_is_drawn_over_the_sliding_windows() {
     assert!(popup < windows, "{layers:?}");
 }
 
+// A second switch part-way retargets the slide (235). The clock is stopped, so the dump
+// before a switch and the one after it are read at the same time.
+
+/// Checks that `after`, read straight after a switch, draws each window that `before`
+/// moved where `before` drew it.
+#[track_caller]
+fn assert_no_jump(before: &Sliding, after: &Sliding) {
+    for window in &before.windows {
+        assert!(
+            after.windows.contains(window),
+            "{window:?} is where it was: {after:?}"
+        );
+    }
+}
+
+/// Checks that each window `slide` draws on the output is in the output's pixels, and
+/// that there are `count` of them at the least.
+#[track_caller]
+fn assert_drawn_on_the_output(f: &mut Fixture, slide: &Sliding, count: usize) {
+    let on_output = slide
+        .windows
+        .iter()
+        .filter_map(|(_, rect)| rect.intersection(output()));
+    let on_output: Vec<_> = on_output.collect();
+    assert!(on_output.len() >= count, "{slide:?}");
+    for rect in on_output {
+        assert_eq!(pixel(f, middle(rect)), WINDOW, "{rect:?} of {slide:?}");
+    }
+}
+
 #[test]
-fn a_second_switch_ends_the_running_slide_and_starts_its_own() {
+fn three_switches_each_part_way_through_the_last_are_one_movement() {
+    // Marco's four workspaces in one row.
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let windows: Vec<ClientWindow> = (0..4).map(|w| map_on(&mut f, id, w, BIG)).collect();
+    f.stop_clock();
+
+    let mut before: Option<Sliding> = None;
+    for to in 1..=3 {
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+        assert_eq!(active(&f), to);
+        let after = slide(&f);
+        assert_eq!((after.from, after.to), (to as u64 - 1, to as u64));
+        // Each workspace so far is at its cell's place, a whole output from the next.
+        assert_eq!(after.windows.len(), to + 1, "{after:?}");
+        for (workspace, &window) in windows[..=to].iter().enumerate() {
+            let cells = workspace as i32 - to as i32;
+            let place = after.offset + Point::from((cells * OUTPUT.0, 0));
+            assert_eq!(
+                after.drawn(&f, window),
+                moved(f.visible_frame(window), place),
+                "workspace {workspace} of {after:?}"
+            );
+        }
+        if let Some(before) = &before {
+            assert_no_jump(before, &after);
+        }
+
+        f.advance_clock(PART_WAY);
+        let part_way = slide(&f);
+        assert!(
+            0 < part_way.offset.x && part_way.offset.x < after.offset.x,
+            "{part_way:?} is nearer than {after:?}"
+        );
+        // The workspace that leaves and the one before it, or the one that arrives.
+        assert_drawn_on_the_output(&mut f, &part_way, 2);
+        before = Some(part_way);
+    }
+
+    f.advance_clock(LENGTH);
+    assert!(slides(&f).is_empty(), "the slide is over");
+    let last = f.visible_frame(windows[3]);
+    assert_eq!(pixel(&mut f, middle(last)), WINDOW);
+}
+
+#[test]
+fn a_workspace_passed_over_is_drawn_as_it_goes_by() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let windows: Vec<ClientWindow> = (0..3).map(|w| map_on(&mut f, id, w, BIG)).collect();
+    f.stop_clock();
+    // So soon that the first workspace is still on the output after the second switch.
+    let soon = Duration::from_millis(20);
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(soon);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(soon);
+
+    let slide = slide(&f);
+    assert_eq!((slide.from, slide.to), (1, 2));
+    let (passed, left) = (slide.drawn(&f, windows[0]), slide.drawn(&f, windows[1]));
+    // A spot of the first workspace's window that the second one's, on its right, isn't
+    // over.
+    let spot = middle_on_output(passed);
+    assert!(!left.contains(spot), "{slide:?}");
+    assert_eq!(pixel(&mut f, spot), WINDOW, "{slide:?}");
+}
+
+#[test]
+fn a_second_switch_another_way_bends_the_movement() {
     let (mut f, id) = desk(Kind::Xdg, two_rows());
     let first = map_on(&mut f, id, 0, BIG);
-    map_on(&mut f, id, 1, BIG);
+    let second = map_on(&mut f, id, 1, BIG);
     let last = map_on(&mut f, id, 3, BIG);
+    f.stop_clock();
 
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
     f.advance_clock(PART_WAY);
+    let right = slide(&f);
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_DOWN]);
-    f.advance_clock(PART_WAY);
 
-    let slide = slide(&f);
-    assert_eq!((slide.from, slide.to), (1, 3));
-    assert_eq!(slide.offset.x, 0);
-    assert_eq!(
-        slide.drawn(&f, last),
-        moved(f.visible_frame(last), slide.offset)
-    );
-    // The first workspace's window, which the first slide was moving out, is gone.
-    let first = f.pid(first).0;
+    let down = slide(&f);
+    assert_eq!((down.from, down.to), (1, 3));
+    assert_no_jump(&right, &down);
+    assert_eq!(down.offset, right.offset + Point::from((0, OUTPUT.1)));
+    // The first workspace is up and to the left of the last, and the second is above it.
+    for (window, place) in [
+        (first, (-OUTPUT.0, -OUTPUT.1)),
+        (second, (0, -OUTPUT.1)),
+        (last, (0, 0)),
+    ] {
+        assert_eq!(
+            down.drawn(&f, window),
+            moved(f.visible_frame(window), down.offset + Point::from(place))
+        );
+    }
+
+    f.advance_clock(LENGTH);
+    assert!(slides(&f).is_empty());
+}
+
+#[test]
+fn a_switch_back_part_way_returns_the_windows_from_where_they_are() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let first = map_on(&mut f, id, 0, SMALL);
+    let second = map_on(&mut f, id, 1, BIG);
+    let (first_frame, second_frame) = (f.visible_frame(first), f.visible_frame(second));
+    // A spot the second workspace's window covers in its place, and the first one's doesn't.
+    let second_alone = second_frame.loc + second_frame.size.to_point() - Point::from((50, 50));
+    assert!(!first_frame.contains(second_alone));
+    f.stop_clock();
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    let out = slide(&f);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT]);
+    assert_eq!(active(&f), 0);
+
+    let back = slide(&f);
+    assert_eq!((back.from, back.to), (1, 0));
+    assert_no_jump(&out, &back);
+    assert_eq!(back.windows.len(), 2, "{back:?}");
+    // The first workspace's window comes back from the left, where it had got to.
+    assert!(-OUTPUT.0 < back.offset.x && back.offset.x < 0, "{back:?}");
+    assert_eq!(back.drawn(&f, first), moved(first_frame, back.offset));
+
+    f.advance_clock(PART_WAY);
+    let nearer = slide(&f);
     assert!(
-        slide.windows.iter().all(|(id, _)| *id != first),
-        "{slide:?}"
+        back.offset.x < nearer.offset.x && nearer.offset.x < 0,
+        "{nearer:?} is nearer than {back:?}"
     );
+
+    f.advance_clock(LENGTH);
+    assert!(slides(&f).is_empty());
+    assert_eq!(pixel(&mut f, middle(first_frame)), WINDOW);
+    assert_eq!(pixel(&mut f, second_alone), clear(), "the second is gone");
+}
+
+#[test]
+fn the_session_lock_ends_a_slide_at_once() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let old = map_on(&mut f, id, 0, BIG);
+    let new = map_on(&mut f, id, 1, SMALL);
+    let (old_frame, new_frame) = (f.visible_frame(old), f.visible_frame(new));
+    let old_alone = old_frame.loc + old_frame.size.to_point() - Point::from((50, 50));
+    assert!(!new_frame.contains(old_alone));
+    let locker = f.connect(Kind::Xdg);
+    // The slide doesn't end for the time that passes.
+    f.stop_clock();
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    assert_eq!(slides(&f).len(), 1);
+
+    let lock = f.client(locker).lock_session();
+    f.roundtrip(locker);
+    assert_ne!(f.lock_state(), "unlocked");
+    assert!(slides(&f).is_empty(), "the lock ended it");
+
+    f.client(locker).unlock_and_destroy(lock);
+    f.roundtrip(locker);
+    assert_eq!(f.lock_state(), "unlocked");
+    assert!(slides(&f).is_empty());
+    let at = middle(new_frame);
+    f.wait_for_pixel(at.x, at.y, WINDOW);
+    assert_eq!(pixel(&mut f, old_alone), clear(), "the old one is gone");
+}
+
+#[test]
+fn the_key_turned_off_part_way_lets_the_running_slide_finish() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    map_on(&mut f, id, 0, BIG);
+    map_on(&mut f, id, 1, BIG);
+    f.stop_clock();
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    let before = slide(&f);
+
+    f.set_setting(CAMINITO, "workspace-slide", Setting::Bool(false));
+    f.dispatch_until(|f| !f.state.caminito.settings.workspace_slide);
+
+    let after = slide(&f);
+    assert_eq!(after.windows, before.windows);
+    f.advance_clock(LENGTH - PART_WAY);
+    assert!(slides(&f).is_empty());
+}
+
+#[test]
+fn a_slide_ends_with_its_output() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    map_on(&mut f, id, 0, BIG);
+    map_on(&mut f, id, 1, BIG);
+    let output = f.state.caminito.outputs[0].clone();
+    f.stop_clock();
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    assert_eq!(slides(&f).len(), 1);
+
+    f.unplug(&output);
+    f.dispatch();
+
+    // The dump has a slide by its output, so with none it has no slide to show.
+    assert_eq!(f.state.caminito.workspace_slides.deadline(), None);
 }
 
 // The windows that are the same on both workspaces stay still (234).

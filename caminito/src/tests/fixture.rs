@@ -1481,6 +1481,13 @@ impl Fixture {
         self.dispatch();
     }
 
+    /// Stops Caminito's clock, which `advance_clock` alone moves on from here: what a test
+    /// reads before and after a step is then read at the same time.
+    pub fn stop_clock(&mut self) {
+        let caminito = &mut self.state.caminito;
+        caminito.stopped_clock = Some(caminito.now() - caminito.clock_offset);
+    }
+
     /// Sets the wall clock to `unix`, in seconds, from which it moves with Caminito's
     /// clock, and works the sun out again at it as though the clock had jumped there.
     pub fn set_wall_clock(&mut self, unix: f64) {
