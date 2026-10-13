@@ -431,7 +431,8 @@ impl Fixture {
     /// before the first snapshot. `center-new-windows` is off unless `initial` sets it: the
     /// tests were written for the automatic placement's first fit, before Caminito honoured
     /// Marco's default, on (154). So is `workspaces-per-output`: they were written for
-    /// Spanning workspaces, before Caminito had Per-output workspaces (230).
+    /// Spanning workspaces, before Caminito had Per-output workspaces (230). And so is
+    /// `workspace-slide`: they read a frame straight after a switch, which was a cut (233).
     pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
         Self::on_schemas(test_schemas(), initial)
     }
@@ -443,7 +444,8 @@ impl Fixture {
     }
 
     /// Caminito with no outputs and no clients, on the schemas compiled into `schema_dir`,
-    /// with `center-new-windows` and `workspaces-per-output` off unless `initial` sets them.
+    /// with `center-new-windows`, `workspaces-per-output` and `workspace-slide` off unless
+    /// `initial` sets them.
     fn on_schemas(
         schema_dir: &std::path::Path,
         mut initial: Vec<(&'static str, String, Value)>,
@@ -451,6 +453,7 @@ impl Fixture {
         for off in [
             (MARCO_GENERAL, "center-new-windows"),
             (CAMINITO, "workspaces-per-output"),
+            (CAMINITO, "workspace-slide"),
         ] {
             if !initial
                 .iter()

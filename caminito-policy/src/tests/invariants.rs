@@ -852,7 +852,7 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
 /// The queries `caminito/src/scene.rs` makes of policy, in the alphabet's order. `SceneView`
 /// holds the answer to each, and `the_scene_view_has_every_query_the_scene_makes` holds
 /// this list to the Scene's source (179).
-const SCENE_QUERIES: [&str; 10] = [
+const SCENE_QUERIES: [&str; 11] = [
     "active_stacking",
     "frame_rect",
     "geometry",
@@ -860,6 +860,7 @@ const SCENE_QUERIES: [&str; 10] = [
     "is_fullscreen",
     "is_showing",
     "layer",
+    "stacking_all",
     "switcher",
     "tile_preview",
     "window",
@@ -870,6 +871,8 @@ const SCENE_QUERIES: [&str; 10] = [
 struct SceneView {
     /// `active_stacking`.
     stacking: Vec<WindowId>,
+    /// `stacking_all`.
+    stack: Vec<WindowId>,
     /// Each managed window, as `window` has them, with its answers.
     windows: Vec<WindowView>,
     /// Each seat's answers.
@@ -897,6 +900,7 @@ struct WindowView {
 fn scene_view(policy: &Policy<TestWindow>) -> SceneView {
     SceneView {
         stacking: policy.active_stacking(),
+        stack: policy.stacking_all().to_vec(),
         windows: policy
             .windows()
             .map(|window| {

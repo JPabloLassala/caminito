@@ -126,6 +126,7 @@ use crate::wallpaper::Wallpaper;
 use crate::window::{Mapped, PendingWindows};
 use crate::window_menu::OpenWindowMenu;
 use crate::workspace_popup::WorkspacePopup;
+use crate::workspace_slide::WorkspaceSlides;
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
@@ -266,6 +267,8 @@ pub struct Caminito {
     pub(crate) player: Box<dyn Player>,
     /// The windows shrinking into their buttons as they're minimised (172).
     pub(crate) minimize_animations: MinimizeAnimations,
+    /// The outputs whose windows slide between two workspaces (233).
+    pub(crate) workspace_slides: WorkspaceSlides,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -651,6 +654,9 @@ impl State {
         // With the windows the handlers and the bindings before this pass asked to close.
         self.caminito.refresh_close_pings();
         self.update_keyboard_focus();
+        // After the last step that changes policy, so that no frame shows a switch of
+        // workspace before its slide starts (233).
+        self.caminito.refresh_workspace_slides();
         // After the last step that changes policy, and before the outputs are drawn: what
         // a handler or a step above changed in policy is drawn in this pass (179).
         self.caminito.queue_redraw_for_policy();
@@ -669,10 +675,17 @@ impl State {
 
     fn redraw_queued_outputs(&mut self) {
         let mut rendered = Vec::new();
+        let now = self.caminito.now();
         for output in self.caminito.take_queued_redraws() {
             match self.backend.render(&mut self.caminito, &output) {
                 Some(states) => {
                     self.caminito.lock.frame_drawn(&output);
+                    // A Workspace slide is drawn at every frame of its output (233): the
+                    // backend takes the next one when the output can show it.
+                    let slides = &self.caminito.workspace_slides;
+                    if slides.on(crate::output::output_id(&output), now).is_some() {
+                        self.caminito.queue_redraw(&output);
+                    }
                     rendered.push((output, states));
                 }
                 // While the outputs are powered off no frame is drawn, and none shows the
@@ -951,6 +964,7 @@ impl Caminito {
             bells: Bells::default(),
             player,
             minimize_animations: MinimizeAnimations::default(),
+            workspace_slides: WorkspaceSlides::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,

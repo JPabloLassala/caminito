@@ -34,6 +34,7 @@ pub mod window;
 mod window_menu;
 mod work_area;
 mod workspace_popup;
+mod workspace_slide;
 pub mod xwayland;
 
 #[cfg(test)]

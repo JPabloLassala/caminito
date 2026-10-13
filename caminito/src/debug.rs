@@ -115,6 +115,35 @@ struct StateDump {
     /// and all, while the tile preview shows it (158).
     #[serde(skip_serializing_if = "Option::is_none")]
     tile_preview: Option<RectDump>,
+    /// The Workspace slides that run (233), in the outputs' order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    workspace_slides: Vec<WorkspaceSlideDump>,
+}
+
+#[derive(Serialize)]
+struct WorkspaceSlideDump {
+    /// The name of the output that switched.
+    output: String,
+    /// The workspace whose windows leave, and the one whose windows arrive.
+    from: usize,
+    to: usize,
+    /// How far the arriving windows are from their own places now. The leaving ones are
+    /// that far from where the old workspace ends up, off the output.
+    offset: OffsetDump,
+    /// Each window the slide moves, by id, with where its frame is drawn now.
+    windows: Vec<SlidingWindowDump>,
+}
+
+#[derive(Serialize)]
+struct OffsetDump {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Serialize)]
+struct SlidingWindowDump {
+    id: u64,
+    rect: RectDump,
 }
 
 #[derive(Serialize)]
@@ -518,8 +547,9 @@ impl Caminito {
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
     /// with their keys, the accelerator grabs with their owners, the Window switcher, the
-    /// Workspace popup, the bells rung with the last one, Night Light, and each window's tile
-    /// with the tile preview (158), as pretty-printed JSON.
+    /// Workspace popup, the bells rung with the last one, Night Light, each window's tile
+    /// with the tile preview (158), and the Workspace slides that run (233), as
+    /// pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -725,6 +755,32 @@ impl Caminito {
                 }),
             }
         });
+        let now = self.now();
+        let workspace_slides = self
+            .outputs
+            .iter()
+            .filter_map(|output| {
+                let slide = self.workspace_slides.on(output_id(output), now)?;
+                let offset = slide.offset(now);
+                Some(WorkspaceSlideDump {
+                    output: output.name(),
+                    from: slide.from,
+                    to: slide.to,
+                    offset: OffsetDump {
+                        x: offset.x,
+                        y: offset.y,
+                    },
+                    windows: self
+                        .sliding_windows(slide, now)
+                        .into_iter()
+                        .map(|(id, rect)| SlidingWindowDump {
+                            id: id.0,
+                            rect: rect.into(),
+                        })
+                        .collect(),
+                })
+            })
+            .collect();
         let dump = StateDump {
             windows,
             workspaces,
@@ -758,6 +814,7 @@ impl Caminito {
             night_light: self.night_light_dump(),
             sun: self.sun_dump(),
             tile_preview: policy.tile_preview(SEAT).map(RectDump::from),
+            workspace_slides,
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

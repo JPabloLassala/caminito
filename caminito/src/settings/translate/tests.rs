@@ -176,6 +176,7 @@ fn defaults() -> Reading {
     put(CAMINITO, "workspace-layout-orientation", s("horizontal"));
     put(CAMINITO, "workspace-layout-rows", Value::Int(1));
     put(CAMINITO, "workspaces-per-output", Value::Bool(true));
+    put(CAMINITO, "workspace-slide", Value::Bool(true));
     put(CAMINITO, "workspace-layout-columns", Value::Int(0));
     put(
         CAMINITO,
@@ -1198,6 +1199,33 @@ fn each_of_three_keys_turns_the_minimise_animation_off() {
         let reading = with(schema, key, Value::Bool(value));
         assert!(!settings(&reading).minimize_animation, "{key}");
     }
+}
+
+// The Workspace slide (233).
+
+#[test]
+fn the_defaults_slide_a_workspace_switch() {
+    assert!(settings(&defaults()).workspace_slide);
+    assert!(settings(&Reading::default()).workspace_slide);
+}
+
+#[test]
+fn its_own_key_and_the_minimise_animations_three_turn_the_workspace_slide_off() {
+    for (schema, key, value) in [
+        (CAMINITO, "workspace-slide", false),
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let reading = with(schema, key, Value::Bool(value));
+        assert!(!settings(&reading).workspace_slide, "{key}");
+    }
+}
+
+#[test]
+fn the_workspace_slides_key_leaves_the_minimise_animation_on() {
+    let reading = with(CAMINITO, "workspace-slide", Value::Bool(false));
+    assert!(settings(&reading).minimize_animation);
 }
 
 #[test]

@@ -135,7 +135,9 @@ pub(crate) enum SceneLayer {
     LayerPopups,
     /// The current workspace's other windows in policy's stacking order, each with its
     /// frame, and the tile preview just beneath the window being moved, as Marco lowers its
-    /// preview beneath the focused window (tile-preview.c:182-184) (158).
+    /// preview beneath the focused window (tile-preview.c:182-184) (158). While the output
+    /// slides between two workspaces (233), the windows of the one it left are here too,
+    /// and those of both are away from their own places.
     Windows,
     /// The bottom layer-shell layer (63), without its surfaces' popups.
     Bottom,
@@ -996,7 +998,11 @@ pub(crate) fn override_redirect_bbox(window: &X11Surface) -> Rectangle<i32, Logi
     Rectangle::new(window.last_configure().loc, window.bbox().size)
 }
 
-/// The current workspace's windows of `layer`, of the two that hold windows.
+/// The current workspace's windows of `layer`, of the two that hold windows. While
+/// `output` slides between two workspaces (233), the windows that arrive are drawn on it
+/// away from their places, and so are those that left, which don't show: each in its
+/// place in the one stack, with its frame, its shadow and its popups. Another output draws
+/// them as policy has them, so nothing of a slide shows on it.
 fn window_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -1010,19 +1016,28 @@ fn window_elements<R>(
     let policy = &caminito.policy;
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
+    let now = caminito.now();
+    let slide = caminito.workspace_slides.on(output_id(output), now);
+    let stacking = match slide {
+        Some(_) => policy.stacking_all().to_vec(),
+        None => policy.active_stacking(),
+    };
 
-    for &id in policy.active_stacking().iter().rev() {
+    for &id in stacking.iter().rev() {
         let (Some(mapped), Some(geometry)) = (policy.window(id), policy.geometry(id)) else {
             continue;
         };
-        if !policy.is_showing(id) || !window_is_in(caminito, id, layer) {
+        let showing = policy.is_showing(id);
+        let shift = slide.and_then(|slide| slide.shift(id, showing, now));
+        if !(showing || shift.is_some()) || !window_is_in(caminito, id, layer) {
             continue;
         }
+        let drawn_at = geometry.loc + shift.unwrap_or_default();
         if caminito.debug.frame_debug {
-            frame_debug_elements(renderer, caminito, mapped, geometry.loc, output, elements);
+            frame_debug_elements(renderer, caminito, mapped, drawn_at, output, elements);
         }
 
-        let origin = geometry.loc - output_geometry.loc;
+        let origin = drawn_at - output_geometry.loc;
         let shown = Rectangle::from_size(output_geometry.size);
         one_window_elements(renderer, mapped, origin, shown, scale, elements);
         // The shadow is the output's alone: a capture of the window and its thumbnail
