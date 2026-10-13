@@ -1,4 +1,4 @@
-//! The Workspace slide (233): a change of the output's active workspace shows the old
+//! The Workspace slide (233, 234): a change of the output's active workspace shows the old
 //! workspace's windows leaving and the new one's arriving, for 250 ms of Caminito's clock,
 //! read from the debug dump and from the output's pixels. Policy has switched from the
 //! start.
@@ -200,7 +200,7 @@ fn map_bar(f: &mut Fixture) {
 }
 
 /// The spot on the bar that's `x` from the output's left.
-fn on_bar(x: i32) -> Point<i32, Logical> {
+fn bar_at(x: i32) -> Point<i32, Logical> {
     Point::from((x, OUTPUT.1 - BAR_HEIGHT / 2))
 }
 
@@ -247,7 +247,7 @@ on_both_kinds! {
     fn part_way_both_workspaces_windows_are_drawn_and_the_panel_stays(kind: Kind) {
         let (mut f, id) = desk(kind, two_rows());
         map_bar(&mut f);
-        let on_bar = on_bar(OUTPUT.0 / 2);
+        let on_bar = bar_at(OUTPUT.0 / 2);
         let old = map_on(&mut f, id, 0, BIG);
         let new = map_on(&mut f, id, 1, (300, 200));
         let (old_frame, new_frame) = (f.visible_frame(old), f.visible_frame(new));
@@ -553,10 +553,13 @@ fn a_second_switch_ends_the_running_slide_and_starts_its_own() {
 /// A window so small that one dragged `RIGHT` is clear of the band the others slide down
 /// in.
 const SMALL: (i32, i32) = (300, 200);
+
+/// How far `drag_right` takes a window.
 const RIGHT: i32 = 400;
 
 /// Presses the left button inside `window`, starts its move as its client asks for one,
 /// and moves the pointer `RIGHT` with the button still down.
+#[track_caller]
 fn drag_right(f: &mut Fixture, window: ClientWindow) {
     let id = window.client();
     let press = (f.geometry(window).loc + Point::from((50, 10))).to_f64();
@@ -678,7 +681,7 @@ fn a_fullscreen_window_slides_and_the_panel_shows() {
     let frame = f.visible_frame(full);
     assert_eq!(frame, output());
     // Focused, it covers the panel.
-    let (left, right) = (on_bar(OUTPUT.0 / 4), on_bar(OUTPUT.0 - 5));
+    let (left, right) = (bar_at(OUTPUT.0 / 4), bar_at(OUTPUT.0 - 5));
     f.wait_for_pixel(left.x, left.y, WINDOW);
 
     // To the empty workspace on the right: it leaves below the panel, as a fullscreen

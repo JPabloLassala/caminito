@@ -781,7 +781,7 @@ impl Caminito {
                         })
                         .collect(),
                     still: self
-                        .still_windows(slide, now)
+                        .still_windows(slide)
                         .into_iter()
                         .map(|id| id.0)
                         .collect(),

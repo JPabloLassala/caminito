@@ -197,7 +197,7 @@ A view of each output's active workspace with its windows shrunk and set side by
 _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), activities overview (GNOME's, which has a launcher), workspace switcher (the panel's pager)
 
 **Workspace slide**:
-The movement that shows a change of an output's active workspace: the old workspace's windows leave and the new one's arrive, along the line between the two in the Workspace grid. Whatever is the same on both stays still: sticky windows, the panel, caja's desktop and the wallpaper. It's Plasma's Slide effect.
+The movement that shows a change of an output's active workspace: the old workspace's windows leave and the new one's arrive, along the line between the two in the Workspace grid. Whatever is the same on both stays still: sticky windows, a window that is carried or being moved to the new workspace, the panel, caja's desktop and the wallpaper. It's Plasma's Slide effect.
 _Avoid_: desktop slide (the glossary's word is workspace), transition (the Overview has one too), workspace animation
 
 **Interaction**:

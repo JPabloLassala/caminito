@@ -240,7 +240,7 @@ fn a_switch_carries_the_window_being_moved() {
 }
 
 #[test]
-fn a_switch_leaves_a_window_being_resized_and_a_sticky_one_being_moved() {
+fn a_switch_leaves_a_window_being_resized() {
     let mut policy = grid(4, 2, WrapStyle::NoWrap);
     policy.map_window(TestWindow::new(1, 400, 300), ms(1));
     let loc = policy.geometry(id(1)).unwrap().loc;
@@ -250,8 +250,13 @@ fn a_switch_leaves_a_window_being_resized_and_a_sticky_one_being_moved() {
 
     assert_eq!(policy.workspace_of(id(1)), Some(0));
     assert_eq!(policy.grab(SEAT), None);
+}
 
-    policy.switch_workspace(0);
+#[test]
+fn a_switch_leaves_a_sticky_window_being_moved_sticky() {
+    let mut policy = grid(4, 2, WrapStyle::NoWrap);
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    let loc = policy.geometry(id(1)).unwrap().loc;
     policy.set_sticky(id(1), true);
     assert!(policy.begin_move(SEAT, id(1), loc.to_f64()));
 

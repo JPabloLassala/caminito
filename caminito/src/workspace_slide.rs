@@ -235,16 +235,16 @@ impl Caminito {
         windows
     }
 
-    /// The windows on `slide`'s output that it leaves in their places at `now`, in the
-    /// order of their ids, for the debug dump: those that are the same on both workspaces,
-    /// as a sticky window, one a move carries and one being dragged are (234).
-    pub(crate) fn still_windows(&self, slide: &Slide, now: Duration) -> Vec<WindowId> {
+    /// The windows on `slide`'s output that it leaves in their places, in the order of
+    /// their ids, for the debug dump: those that are the same on both workspaces, as a
+    /// sticky window, one a move carries and one being dragged are (234).
+    pub(crate) fn still_windows(&self, slide: &Slide) -> Vec<WindowId> {
         let policy = &self.policy;
         let mut windows: Vec<WindowId> = policy
             .windows()
             .map(|mapped| mapped.id())
             .filter(|&id| policy.is_showing(id) && policy.output_showing(id) == Some(slide.output))
-            .filter(|&id| slide.shift(id, true, now).is_none())
+            .filter(|id| !slide.arriving.contains(id))
             .collect();
         windows.sort();
         windows
