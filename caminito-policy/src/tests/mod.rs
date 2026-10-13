@@ -17,6 +17,7 @@ mod keyboard_tiling;
 mod map_states;
 mod move_to;
 mod outputs;
+mod outputs_coming_and_going;
 mod per_output_moves;
 mod per_output_show_desktop;
 mod per_output_workspaces;

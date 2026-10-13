@@ -956,6 +956,64 @@ fn the_scene_view_has_every_query_the_scene_makes() {
     );
 }
 
+/// What outputs coming and going keep (225), as it was before an operation.
+struct OutputsBefore {
+    outputs: Vec<OutputId>,
+    per_output: bool,
+    workspaces: Vec<(WindowId, Option<usize>)>,
+}
+
+impl OutputsBefore {
+    fn of(policy: &Policy<TestWindow>) -> Self {
+        Self {
+            outputs: policy.outputs().iter().map(|o| o.id).collect(),
+            per_output: policy.workspaces_per_output(),
+            workspaces: workspaces(policy),
+        }
+    }
+
+    /// With `workspaces-per-output` on, an output that joins others starts on the first
+    /// workspace. With it on or off, no window changes its workspace's number as outputs
+    /// come, go, move or change: the windows of one that went are on the same numbers of
+    /// the output they're on now.
+    fn verify(self, policy: &Policy<TestWindow>, done: &Op) {
+        let stays = |id: &OutputId| policy.outputs().iter().any(|o| o.id == *id);
+        if self.per_output && self.outputs.iter().any(stays) {
+            for output in policy.outputs() {
+                if !self.outputs.contains(&output.id) {
+                    assert_eq!(
+                        policy.active_workspace_on(output.id),
+                        0,
+                        "{:?} starts on the first workspace",
+                        output.id
+                    );
+                }
+            }
+        }
+        let of_outputs = matches!(
+            done,
+            Op::AddOutput { .. }
+                | Op::RemoveOutput(_)
+                | Op::Plug { .. }
+                | Op::Unplug(_)
+                | Op::Reserve { .. }
+        );
+        if of_outputs {
+            assert_eq!(
+                workspaces(policy),
+                self.workspaces,
+                "{done:?} left every window on its workspace"
+            );
+        }
+    }
+}
+
+/// Each window's workspace.
+fn workspaces(policy: &Policy<TestWindow>) -> Vec<(WindowId, Option<usize>)> {
+    let workspace = |w: &TestWindow| (w.id, policy.workspace_of(w.id));
+    policy.windows().map(workspace).collect()
+}
+
 fn check_ops(workspaces_per_output: bool, ops: Vec<Op>) {
     // Tiling on, as Marco's default has it, so the drags can tile (158).
     let mut policy = Policy::new(Config {
@@ -967,7 +1025,9 @@ fn check_ops(workspaces_per_output: bool, ops: Vec<Op>) {
     let mut seen = scene_view(&policy);
     for (step, op) in ops.into_iter().enumerate() {
         let done = op.clone();
+        let before = OutputsBefore::of(&policy);
         op.apply(&mut policy, step as u64);
+        before.verify(&policy, &done);
         // A change in what the Scene reads comes with policy saying so (179). Saying so
         // with no change is allowed.
         let view = scene_view(&policy);

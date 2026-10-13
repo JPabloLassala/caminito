@@ -38,8 +38,10 @@ pub struct OutputSwitch {
 #[derive(Debug, Clone, Default)]
 pub(super) struct ActiveWorkspaces {
     outputs: BTreeMap<OutputId, Shown>,
-    /// What an output added takes, and what stands for the outputs while policy has none.
-    /// Every change to them all changes it too, and a switch of one output doesn't.
+    /// What stands for the outputs while policy has none, and what the first to come
+    /// takes. With Spanning workspaces it's the one every output has, which an output added
+    /// takes too. Every change to them all changes it too, and a switch of one output
+    /// doesn't: `set_outputs` takes the primary output's as the last output goes.
     unplaced: Shown,
 }
 
@@ -70,13 +72,32 @@ impl ActiveWorkspaces {
             .chain(std::iter::once(&mut self.unplaced))
     }
 
-    /// Follows policy's outputs: an output added takes the active workspace the others
-    /// have, and one removed takes its entry with it.
-    pub(super) fn set_outputs(&mut self, outputs: &[Output]) {
-        self.outputs
-            .retain(|id, _| outputs.iter().any(|output| output.id == *id));
+    /// Follows policy's outputs as they become `outputs`: one removed takes its entry with
+    /// it, and one added starts on the first workspace, with none before it (225). With
+    /// Spanning workspaces, `spanning`, it takes the active workspace the others have.
+    ///
+    /// Where no output stays, `primary`'s is kept for those that come, at once or later,
+    /// so that a user's only monitor shows what it did after it's unplugged, or swapped
+    /// for another.
+    pub(super) fn set_outputs(
+        &mut self,
+        outputs: &[Output],
+        primary: Option<OutputId>,
+        spanning: bool,
+    ) {
+        let stays = |id: &OutputId| outputs.iter().any(|output| output.id == *id);
+        let joins = self.outputs.keys().any(stays) && !spanning;
+        if !joins && !spanning {
+            self.unplaced = self.of(primary);
+        }
+        let added = if joins {
+            Shown::default()
+        } else {
+            self.unplaced
+        };
+        self.outputs.retain(|id, _| stays(id));
         for output in outputs {
-            self.outputs.entry(output.id).or_insert(self.unplaced);
+            self.outputs.entry(output.id).or_insert(added);
         }
     }
 }

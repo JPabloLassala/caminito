@@ -940,6 +940,38 @@ session_env() {
 - **Debug tool:** `DumpState`'s `showing_desktop`, which is `true` only while every monitor
   shows its desktop, and `outputs`, each with its `active_workspace`.
 
+### Unplugging a monitor keeps its windows on their workspaces
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, four workspaces in one row
+     and `workspaces-per-output` at `true`. The first monitor is the primary one, with the
+     panel. Open a `pluma` on the first workspace of the first monitor.
+  2. Click the second monitor's wallpaper. Open a terminal there, press Ctrl+Alt+Right and
+     open a second one, and press Ctrl+Alt+Right again and open a third. Press
+     Ctrl+Alt+Left, so that the second monitor shows its second workspace.
+  3. Unplug the second monitor's cable. Look at the first monitor, then press Ctrl+Alt+Right
+     two times, and Ctrl+Alt+Left two times.
+  4. Plug the cable back in. Click the second monitor's wallpaper and press Ctrl+Alt+Right.
+  5. Run `gsettings set org.mate.Marco.general dynamic-workspaces true`. Close the second
+     terminal, on the first monitor's second workspace. Set the key back with `gsettings
+     reset`.
+  6. Run `gsettings set org.mate.Caminito workspaces-per-output false`, drag `pluma` to the
+     second monitor, press Ctrl+Alt+Right, and do steps 3 and 4 again. Set the key back with
+     `gsettings reset`.
+- **Expected:** in step 3 the first monitor shows its first workspace still, with `pluma`
+  and the first terminal, and the focus on one of them. The two presses of Ctrl+Alt+Right
+  show the second terminal alone and then the third alone, each on the workspace of the
+  number it had on the second monitor, and the workspace switcher shows them there. In step
+  4 the second monitor comes back on its first workspace with no window, every window stays
+  on the first monitor, and the binding switches the second monitor to an empty second
+  workspace. In step 5 there are three workspaces on both monitors, the third terminal is on
+  the second, and `num-workspaces` is 3. In step 6, with the key off, `pluma` goes to the
+  first workspace of the first monitor, which shows the second, and the monitor that comes
+  back shows the second workspace too, as the first does (225).
+- **Debug tool:** `DumpState`'s `outputs`, each with its `active_workspace`, `active_output`,
+  and each window's `workspace`. `gsettings get org.mate.Marco.general num-workspaces`.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

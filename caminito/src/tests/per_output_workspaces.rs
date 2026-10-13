@@ -556,3 +556,43 @@ on_both_kinds! {
         f.key(KEY_LEFTCTRL, false);
     }
 }
+
+// Outputs coming and going (225).
+
+on_both_kinds! {
+    fn an_unplugged_outputs_windows_keep_their_numbers_and_it_returns_on_the_first_workspace(kind: Kind) {
+        let (mut f, client, left, right) = two_outputs(kind);
+        let on_left = window_at(&mut f, client, (100, 100), 0);
+        let first = window_at(&mut f, client, (2100, 100), 0);
+        let third = window_at(&mut f, client, (2500, 600), 2);
+        switch(&mut f, &right, 2);
+        assert_eq!(active_workspaces(&f, &left, &right), (0, 2));
+        let workspaces = |f: &Fixture| {
+            let policy = &f.state.caminito.policy;
+            [on_left, first, third].map(|window| policy.workspace_of(f.pid(window)).unwrap())
+        };
+        let on_the_left_output = |f: &Fixture| {
+            let policy = &f.state.caminito.policy;
+            [on_left, first, third]
+                .iter()
+                .all(|window| policy.main_output_of(f.pid(*window)) == Some(output_id(&left)))
+        };
+
+        f.unplug(&right);
+
+        // The left output shows its first workspace still, with the window that came to it.
+        assert_eq!(workspaces(&f), [0, 0, 2]);
+        assert!(on_the_left_output(&f));
+        let policy = &f.state.caminito.policy;
+        assert_eq!(policy.active_workspace_on(output_id(&left)), 0);
+        assert!(policy.is_showing(f.pid(first)));
+        assert!(!policy.is_showing(f.pid(third)));
+        assert_eq!(dump(&f)["active_output"], left.name());
+
+        let right = f.replug(&right);
+
+        assert_eq!(active_workspaces(&f, &left, &right), (0, 0));
+        assert_eq!(workspaces(&f), [0, 0, 2]);
+        assert!(on_the_left_output(&f));
+    }
+}
