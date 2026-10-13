@@ -55,6 +55,42 @@ fn the_windows_of_an_output_that_goes_keep_their_numbers_on_the_primary_output()
 }
 
 #[test]
+fn the_windows_of_an_output_that_goes_are_the_primary_outputs_where_another_takes_its_place() {
+    let mut policy = two_outputs(true);
+    policy.add_output(output(3, 3200, 0, 1920, 1080));
+    map_on_the_right(&mut policy, 3, 1);
+    policy.set_maximized(id(3), true);
+
+    // As Caminito lays them out again (51): the third output is where the second was.
+    policy.set_outputs(vec![
+        output(1, 0, 0, 1920, 1080),
+        output(3, 1920, 0, 1920, 1080),
+    ]);
+
+    for (window, workspace) in [(2, 0), (3, 1)] {
+        assert_eq!(policy.workspace_of(id(window)), Some(workspace));
+        assert_eq!(policy.main_output_of(id(window)), Some(OutputId(1)));
+    }
+    assert_eq!(
+        window(&policy, 3).last_geometry().unwrap().0,
+        Rectangle::new((0, 0).into(), (1920, 1080).into())
+    );
+}
+
+#[test]
+fn with_the_key_off_a_window_stays_where_another_output_takes_its_outputs_place() {
+    let mut policy = two_outputs(false);
+    policy.add_output(output(3, 3200, 0, 1920, 1080));
+
+    policy.set_outputs(vec![
+        output(1, 0, 0, 1920, 1080),
+        output(3, 1920, 0, 1920, 1080),
+    ]);
+
+    assert_eq!(policy.main_output_of(id(2)), Some(OutputId(3)));
+}
+
+#[test]
 fn the_output_added_again_shows_workspace_1_and_no_window_moves_back() {
     let mut policy = windows_on_three_workspaces(true);
     // The left output shows another workspace than the first, which the one that comes

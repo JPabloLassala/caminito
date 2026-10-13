@@ -86,12 +86,13 @@ impl ActiveWorkspaces {
         spanning: bool,
     ) {
         let stays = |id: &OutputId| outputs.iter().any(|output| output.id == *id);
-        let added = if self.outputs.keys().any(stays) && !spanning {
+        let joins = self.outputs.keys().any(stays) && !spanning;
+        if !joins && !spanning {
+            self.unplaced = self.of(primary);
+        }
+        let added = if joins {
             Shown::default()
         } else {
-            if !spanning {
-                self.unplaced = self.of(primary);
-            }
             self.unplaced
         };
         self.outputs.retain(|id, _| stays(id));

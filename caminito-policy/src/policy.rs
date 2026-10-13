@@ -804,12 +804,23 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let primary = self.primary_output().map(|output| output.id);
         let spanning = !self.config.workspaces_per_output;
+        let stays = |output: &OutputId| outputs.iter().any(|o| o.id == *output);
+        // The windows of an output that goes. Each output's workspaces are its own, so they
+        // go to the primary output's, also where another output takes the gone one's
+        // place in the new layout (225). With Spanning workspaces a window stays where it
+        // is if that's on an output still, as before.
+        let gone: Vec<WindowId> = (self.windows.iter())
+            .filter(|(_, managed)| {
+                let main = self.output_of(managed.frame());
+                !spanning && main.is_some_and(|output| !stays(&output.id))
+            })
+            .map(|(id, _)| *id)
+            .collect();
         self.active_workspaces
             .set_outputs(&outputs, primary, spanning);
         // A seat whose Active output went has none, and the primary output stands in, until
         // its focus says another.
-        let stays = |output: &OutputId| outputs.iter().any(|o| o.id == *output);
-        let left: Vec<SeatId> = (self.active_outputs.iter())
+        let orphaned: Vec<SeatId> = (self.active_outputs.iter())
             .filter(|(_, active)| !stays(active))
             .map(|(seat, _)| *seat)
             .collect();
@@ -818,17 +829,17 @@ impl<W: PolicyWindow> Policy<W> {
             .retain(|seat, _| self.active_outputs.contains_key(seat));
         self.desktops_follow_outputs(&outputs);
         self.outputs = outputs;
-        self.rehome_windows();
+        self.rehome_windows(&gone);
         // A window an output change put on another output hasn't been dragged there: it
         // keeps its workspace's number on the output it's on now (225).
         self.note_main_outputs();
         // A seat left with no focus on an output that went, as after a switch to an empty
         // workspace, takes the default focus of the primary output, as a seat whose focused
         // window is put away there does in `fix_focus` (225).
-        if !spanning {
-            for seat in left {
-                if let Some(id) = self.default_focus_for(seat)
-                    && !self.focus.contains_key(&seat)
+        if !spanning && !self.outputs.is_empty() {
+            for seat in orphaned {
+                if !self.focus.contains_key(&seat)
+                    && let Some(id) = self.default_focus_for(seat)
                 {
                     self.focus.insert(seat, id);
                 }
@@ -2704,18 +2715,21 @@ impl<W: PolicyWindow> Policy<W> {
         managed.tile = tile;
     }
 
-    /// After outputs change: moves every window that's on no output onto the primary
-    /// output, and lays out maximised and fullscreen windows again.
-    fn rehome_windows(&mut self) {
+    /// After outputs change: moves every window that's on no output, and each of `gone`,
+    /// the windows of an output that went, onto the primary output, and lays out maximised
+    /// and fullscreen windows again.
+    fn rehome_windows(&mut self, gone: &[WindowId]) {
         let Some(primary) = self.primary_output() else {
             return;
         };
         let area = Self::work_area(primary);
+        let primary = primary.id;
         let ids: Vec<WindowId> = self.windows.keys().copied().collect();
         for id in ids {
             let managed = &self.windows[&id];
             let frame = managed.frame();
-            if self.output_of(frame).is_none() {
+            let gone = gone.contains(&id);
+            if gone || self.output_of(frame).is_none() {
                 let e = managed.visible_extents();
                 let frame_loc = placement::constrain(frame, area);
                 let managed = self.windows.get_mut(&id).unwrap();
@@ -2726,7 +2740,7 @@ impl<W: PolicyWindow> Policy<W> {
             if let Some(floating) = managed.floating {
                 let e = managed.floating_extents();
                 let frame = frame_around(floating, e);
-                if self.output_of(frame).is_none() {
+                if gone || self.output_of(frame).is_none() {
                     let frame_loc = placement::constrain(frame, area);
                     let floating = self
                         .windows
@@ -2745,7 +2759,9 @@ impl<W: PolicyWindow> Policy<W> {
             {
                 managed.fullscreen_output = None;
             }
-            self.relayout(id);
+            // A maximised one of `gone` is as big as the output it left, which may be most
+            // on another output still.
+            self.relayout_on(id, gone.then_some(primary));
         }
     }
 
