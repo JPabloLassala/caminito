@@ -1,4 +1,4 @@
-//! The Workspace slide (233 to 236): a change of an output's active workspace shows the old
+//! The Workspace slide (233 to 236, 239): a change of an output's active workspace shows the old
 //! workspace's windows leaving and the new one's arriving, for 250 ms of Caminito's clock,
 //! read from the debug dump and from the output's pixels. Policy has switched from the
 //! start.
@@ -89,13 +89,31 @@ struct Sliding {
 }
 
 impl Sliding {
-    /// Where the slide draws `window`'s frame.
+    /// Where the slide draws `window`'s frame, at the one place it draws it.
     #[track_caller]
     fn drawn(&self, f: &Fixture, window: ClientWindow) -> Rectangle<i32, Logical> {
+        let drawn = self.drawn_at_each_place(f, window);
+        assert_eq!(drawn.len(), 1, "{self:?} draws {window:?} one time");
+        drawn[0]
+    }
+
+    /// Where the slide draws `window`'s frame at the two places it draws it, from the left.
+    #[track_caller]
+    fn drawn_two_times(&self, f: &Fixture, window: ClientWindow) -> [Rectangle<i32, Logical>; 2] {
+        let drawn = self.drawn_at_each_place(f, window);
+        let two = <[_; 2]>::try_from(drawn);
+        two.unwrap_or_else(|_| panic!("{self:?} draws {window:?} two times"))
+    }
+
+    /// Where the slide draws `window`'s frame, at each place it draws it, from the left.
+    fn drawn_at_each_place(
+        &self,
+        f: &Fixture,
+        window: ClientWindow,
+    ) -> Vec<Rectangle<i32, Logical>> {
         let pid = f.pid(window).0;
-        let mut windows = self.windows.iter();
-        let found = windows.find(|(id, _)| *id == pid);
-        found.unwrap_or_else(|| panic!("{self:?} moves {pid}")).1
+        let its_own = self.windows.iter().filter(|(id, _)| *id == pid);
+        its_own.map(|(_, rect)| *rect).collect()
     }
 }
 
@@ -705,6 +723,142 @@ fn a_switch_back_part_way_returns_the_windows_from_where_they_are() {
     assert!(slides(&f).is_empty());
     assert_eq!(pixel(&mut f, middle(first_frame)), WINDOW);
     assert_eq!(pixel(&mut f, second_alone), clear(), "the second is gone");
+}
+
+// A wrap back to a workspace the slide still draws (239): two workspaces in one row.
+
+/// Two workspaces in one row, with `wrap-style` at `style`.
+fn two_that_wrap(style: &str) -> Settings {
+    vec![
+        (MARCO_GENERAL, "num-workspaces".into(), Setting::Int(2)),
+        (
+            MARCO_GENERAL,
+            "wrap-style".into(),
+            Setting::Str(style.into()),
+        ),
+    ]
+}
+
+#[test]
+fn a_wrap_back_part_way_draws_the_workspace_where_it_leaves_and_where_it_arrives() {
+    for style in ["toroidal", "classic"] {
+        let (mut f, id) = desk(Kind::Xdg, two_that_wrap(style));
+        let first = map_on(&mut f, id, 0, BIG);
+        let second = map_on(&mut f, id, 1, BIG);
+        let first_frame = f.visible_frame(first);
+        f.stop_clock();
+
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+        f.advance_clock(PART_WAY);
+        let out = slide(&f);
+        // Right of the last workspace is the first.
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+        assert_eq!(active(&f), 0, "{style}");
+
+        let round = slide(&f);
+        assert_eq!((round.from, round.to), (1, 0));
+        assert_no_jump(&out, &round);
+        assert_eq!(round.windows.len(), 3, "{round:?}");
+        // The first workspace's window is on its way out on the left, as it was, and on
+        // its way in from the right, the two workspaces' widths away.
+        let [leaving, arriving] = round.drawn_two_times(&f, first);
+        assert_eq!(leaving, out.drawn(&f, first));
+        assert_eq!(arriving, moved(leaving, (2 * OUTPUT.0, 0).into()));
+        assert_eq!(arriving, moved(first_frame, round.offset));
+        // The one on its way out is in the output's pixels, where the second workspace's
+        // window, of the same colour, isn't.
+        let spot = middle_on_output(leaving);
+        assert!(!round.drawn(&f, second).contains(spot), "{round:?}");
+        assert_eq!(pixel(&mut f, spot), WINDOW, "{round:?}");
+
+        // The two are further apart than the output is wide, so the one on its way in is
+        // read later, when some of it is on the output.
+        f.advance_clock(2 * PART_WAY);
+        let later = slide(&f);
+        let [leaving, arriving] = later.drawn_two_times(&f, first);
+        assert!(!leaving.overlaps(output()), "{later:?}");
+        let spot = middle_on_output(arriving);
+        assert!(!later.drawn(&f, second).contains(spot), "{later:?}");
+        assert_eq!(pixel(&mut f, spot), WINDOW, "{later:?}");
+
+        f.advance_clock(LENGTH);
+        assert!(slides(&f).is_empty(), "the slide is over");
+        assert_eq!(pixel(&mut f, middle(first_frame)), WINDOW);
+    }
+}
+
+#[test]
+fn a_switch_back_with_no_wrap_draws_each_window_one_time() {
+    let (mut f, id) = desk(Kind::Xdg, two_that_wrap("toroidal"));
+    let first = map_on(&mut f, id, 0, BIG);
+    let second = map_on(&mut f, id, 1, BIG);
+    f.stop_clock();
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    let out = slide(&f);
+    // Left of the last workspace is the first with no wrap.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT]);
+    assert_eq!(active(&f), 0);
+
+    let back = slide(&f);
+    assert_eq!((back.from, back.to), (1, 0));
+    assert_no_jump(&out, &back);
+    assert_eq!(back.windows.len(), 2, "{back:?}");
+    assert_eq!(back.drawn(&f, first), out.drawn(&f, first));
+    assert_eq!(back.drawn(&f, second), out.drawn(&f, second));
+}
+
+#[test]
+fn a_click_part_way_reaches_a_window_at_its_own_place_and_not_at_its_other_drawing() {
+    let (mut f, id) = desk(Kind::Xdg, two_that_wrap("toroidal"));
+    f.client(id).bind_input();
+    let first = map_on(&mut f, id, 0, BIG);
+    map_on(&mut f, id, 1, BIG);
+    let first_frame = f.visible_frame(first);
+    // The client's first window.
+    let surface = "window 0";
+    f.pointer_move(f64::from(OUTPUT.0 - 1), f64::from(OUTPUT.1 - 1));
+    f.stop_clock();
+
+    // Round to the first workspace again, whose window is on its way out on the left.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    let round = slide(&f);
+    let drawn = round.drawn_two_times(&f, first);
+    let leaving = drawn[0];
+    f.roundtrip(id);
+    f.client(id).state.input.clear();
+
+    // A spot of that drawing on the output, left of the window's own place.
+    let other = Point::from((first_frame.loc.x / 2, middle(first_frame).y));
+    assert!(leaving.contains(other), "{round:?}");
+    assert!(!first_frame.contains(other), "{first_frame:?}");
+    f.pointer_move(f64::from(other.x), f64::from(other.y));
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_button(BTN_LEFT, false);
+    f.roundtrip(id);
+    let input = format_input(&f.client(id).state.input);
+    assert!(!input.contains("pointer enters"), "{input}");
+    assert!(!input.contains("button"), "{input}");
+
+    // And a spot in its own place, where neither of its drawings is.
+    let spot = f.geometry(first).loc + Point::from((600, 100));
+    assert!(drawn.iter().all(|drawn| !drawn.contains(spot)), "{round:?}");
+    f.pointer_move(f64::from(spot.x), f64::from(spot.y));
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_button(BTN_LEFT, false);
+    f.roundtrip(id);
+    let input = format_input(&f.client(id).state.input);
+    assert!(
+        input.contains(&format!("pointer enters {surface} at 600, 100")),
+        "{input}"
+    );
+    assert!(
+        input.contains(&format!("button {BTN_LEFT:#x} pressed")),
+        "{input}"
+    );
 }
 
 #[test]

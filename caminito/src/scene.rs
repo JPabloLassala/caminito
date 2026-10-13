@@ -1001,8 +1001,9 @@ pub(crate) fn override_redirect_bbox(window: &X11Surface) -> Rectangle<i32, Logi
 /// The current workspace's windows of `layer`, of the two that hold windows. While
 /// `output` slides between two workspaces (233), the windows that arrive are drawn on it
 /// away from their places, and so are those that left, which don't show: each in its
-/// place in the one stack, with its frame, its shadow and its popups. Another output draws
-/// them as policy has them, so nothing of a slide shows on it.
+/// place in the one stack, with its frame, its shadow and its popups. A window of a
+/// workspace the slide has at more than one place is drawn at each (239). Another output
+/// draws them as policy has them, so nothing of a slide shows on it.
 fn window_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -1028,22 +1029,29 @@ fn window_elements<R>(
             continue;
         };
         let showing = policy.is_showing(id);
-        let shift = slide.and_then(|slide| slide.shift(id, showing, now));
-        if !(showing || shift.is_some()) || !window_is_in(caminito, id, layer) {
+        let mut shifts = slide.map_or_else(Vec::new, |slide| slide.shifts(id, showing, now));
+        let drawn = showing || !shifts.is_empty();
+        if !drawn || !window_is_in(caminito, id, layer) {
             continue;
         }
-        let drawn_at = geometry.loc + shift.unwrap_or_default();
-        if caminito.debug.frame_debug {
-            frame_debug_elements(renderer, caminito, mapped, drawn_at, output, elements);
+        if shifts.is_empty() {
+            // The slide moves it nowhere.
+            shifts.push(Point::default());
         }
+        for shift in shifts {
+            let drawn_at = geometry.loc + shift;
+            if caminito.debug.frame_debug {
+                frame_debug_elements(renderer, caminito, mapped, drawn_at, output, elements);
+            }
 
-        let origin = drawn_at - output_geometry.loc;
-        let shown = Rectangle::from_size(output_geometry.size);
-        one_window_elements(renderer, mapped, origin, shown, scale, elements);
-        // The shadow is the output's alone: a capture of the window and its thumbnail
-        // are the window with its frame (103, 171).
-        let shadow = mapped.frame().shadow();
-        buffer_elements(renderer, shadow, origin, shown, scale, "shadow", elements);
+            let origin = drawn_at - output_geometry.loc;
+            let shown = Rectangle::from_size(output_geometry.size);
+            one_window_elements(renderer, mapped, origin, shown, scale, elements);
+            // The shadow is the output's alone: a capture of the window and its thumbnail
+            // are the window with its frame (103, 171).
+            let shadow = mapped.frame().shadow();
+            buffer_elements(renderer, shadow, origin, shown, scale, "shadow", elements);
+        }
         if layer == SceneLayer::Windows && policy.grab(SEAT) == Some(id) {
             tile_preview_elements(caminito, output, elements);
         }
