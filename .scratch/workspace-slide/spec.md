@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. Ticket 235 built the retarget and the lock's end. What ticket 236 adds isn't built.
+Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. Ticket 235 built the retarget and the lock's end. What tickets 236 and 239 add isn't built.
 
 ## Problem
 
@@ -60,7 +60,7 @@ These don't slide:
 - The curve is a cubic ease-out (233): with `t` the part of the 250 ms that has passed, the windows have `(1 − t)³` of their way left. They start at their fastest, three times the mean speed, and slow down into their places: half the time leaves an eighth of the way.
 - **A second switch during a slide retargets it** from where the windows are, so the movement is continuous. The workspaces passed over are drawn as they go by.
 - A retargeted slide takes 250 ms from the second switch, on the same curve, so its speed changes at the switch and its place doesn't (235). Each workspace the slide has left is drawn at its cell's place from the new one, until the slide ends. A switch back to the workspace the slide left returns its windows from where they are.
-- A workspace is drawn at one place. After a wrap round the grid during a slide, the workspace the output comes back to is drawn where it arrives, and not where it left as well (235).
+- After a wrap round the grid during a slide, the workspace the output comes back to is drawn at both its places, where it leaves and where it arrives, as Plasma draws it, so nothing jumps (239; the developer's decision of 2026-10-13). Until 239 is built, it is drawn where it arrives alone (235).
 - There are no keys for the length or the curve.
 
 ### Policy and input
@@ -88,7 +88,7 @@ Nothing. The curve's formula was ticket 233's to choose, and is under "Timing". 
 
 ## Tickets
 
-Five slices, filed in `.scratch/issues/` as tickets 233 to 237. The first waits on per-output workspaces' ticket 230, which changes what the scene draws for each output.
+Six slices, filed in `.scratch/issues/` as tickets 233 to 237 and 239. The first waits on per-output workspaces' ticket 230, which changes what the scene draws for each output.
 
 | | Slice | Blocked by |
 | --- | --- | --- |
@@ -96,4 +96,5 @@ Five slices, filed in `.scratch/issues/` as tickets 233 to 237. The first waits 
 | 234 | [**Windows that stay still through a slide.**](../issues/234-windows-that-stay-still-through-a-slide.md) | 233 |
 | 235 | [**A second switch retargets the slide.**](../issues/235-a-second-switch-retargets-the-slide.md) | 233 |
 | 236 | [**The slide on two outputs.**](../issues/236-the-slide-on-two-outputs.md) | 233, 231, 225 |
-| 237 | [**The Workspace slide in a real Session, by hand.**](../issues/237-the-workspace-slide-in-a-real-session.md) | 234, 235, 236 |
+| 237 | [**The Workspace slide in a real Session, by hand.**](../issues/237-the-workspace-slide-in-a-real-session.md) | 234, 235, 236, 239 |
+| 239 | [**A workspace the slide wraps back to is drawn at both its places.**](../issues/239-a-wrapped-workspace-is-drawn-at-both-its-places.md) | 235 |

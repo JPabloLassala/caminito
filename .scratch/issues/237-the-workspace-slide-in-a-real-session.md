@@ -3,7 +3,7 @@
 Epic: workspace-slide
 Type: implementation
 Status: ready-for-human
-Blocked by: 234, 235, 236
+Blocked by: 234, 235, 236, 239
 Spec: [Workspace slide](../workspace-slide/spec.md)
 
 ## What to do
