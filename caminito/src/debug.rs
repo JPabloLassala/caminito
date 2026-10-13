@@ -124,13 +124,14 @@ struct StateDump {
 struct WorkspaceSlideDump {
     /// The name of the output that switched.
     output: String,
-    /// The workspace whose windows leave, and the one whose windows arrive.
+    /// The workspace the last switch left, and the one whose windows arrive.
     from: usize,
     to: usize,
-    /// How far the arriving windows are from their own places now. The leaving ones are
-    /// that far from where the old workspace ends up, off the output.
+    /// How far the arriving windows are from their own places now. Those of a workspace
+    /// the slide left are that far from where their workspace ends up, off the output.
     offset: OffsetDump,
-    /// Each window the slide moves, by id, with where its frame is drawn now.
+    /// Each window the slide moves, by id, with where its frame is drawn now: those of a
+    /// retargeted slide's earlier workspaces too (235).
     windows: Vec<SlidingWindowDump>,
     /// The windows on the output that the slide leaves in their places, by id (234).
     still: Vec<u64>,
