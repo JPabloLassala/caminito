@@ -678,6 +678,107 @@ session_env() {
   the popup's output, its mode, the grid's shape, the workspace marked and each cell's
   rectangles while it shows.
 
+### The Workspace slide on one monitor
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with one monitor, four workspaces in one
+     row and the workspace switcher on the panel. Run `gsettings get org.mate.Caminito
+     workspace-slide`, which prints `true`. Open a terminal on each of the first three
+     workspaces, each at a different place and size, and maximise the third.
+  2. On the first workspace press Ctrl+Alt+Right three times, with a second between, then
+     Ctrl+Alt+Left three times. Type a letter as soon as each key is pressed.
+  3. Click the third workspace in the switcher, then the first.
+  4. Set the switcher's rows to 2 in its *Preferences*. From the first workspace press
+     Ctrl+Alt+Down, then Ctrl+Alt+Up, then click the fourth workspace in the switcher, and
+     the first. Set the rows back to 1.
+  5. On the first workspace hold Ctrl+Alt+Right until the fourth workspace shows. Hold
+     Ctrl+Alt+Left until the first shows. Then press Ctrl+Alt+Right and, before the slide
+     ends, Ctrl+Alt+Left.
+  6. `gsettings set org.mate.Marco.general wrap-style toroidal`, then on the fourth workspace
+     press Ctrl+Alt+Right. Go to the fourth again and hold Ctrl+Alt+Right until the workspaces
+     have gone round two times. Reset `wrap-style`.
+  7. Focus the first workspace's terminal and press Ctrl+Shift+Alt+Right, then
+     Ctrl+Shift+Alt+Left.
+  8. Pick *Always on Visible Workspace* in that terminal's window menu, and press
+     Ctrl+Alt+Right and Ctrl+Alt+Left. Pick *Only on This Workspace* after.
+  9. Hold Alt, start to move the terminal with the left button, and press Ctrl+Right with
+     them held. Release, and move the terminal back to the first workspace.
+  10. `gsettings set org.mate.Caminito workspace-slide false`, and press Ctrl+Alt+Right and
+      Ctrl+Alt+Left. Set it back to `true`, press Ctrl+Alt+Right and, before the slide ends,
+      set it to `false` from a second login. Set it back to `true`.
+  11. With `workspace-slide` on, turn each of these against the slide in turn, switch, and set
+      it back: `org.mate.Marco.general compositing-manager false`, `org.mate.Marco.general
+      reduced-resources true` and `org.mate.interface enable-animations false`.
+  12. Lock the screen during a slide: run `sleep 3; mate-screensaver-command --lock` in a
+      terminal, and press Ctrl+Alt+Right as the three seconds end. Unlock.
+- **Expected:** in step 2 the old workspace's windows go out to the left as the new one's come
+  in from the right, with their Frames and shadows and with no gap between the two, and the
+  other way for Left. The panel, the desktop icons and the wallpaper stay still, and the
+  maximised terminal comes in over them. The letter goes to the new workspace's terminal,
+  which has the focus from the first frame. In step 3 the slide to the third workspace is one
+  movement, two monitor widths long, and the second workspace's terminal isn't drawn on the
+  way. In step 4 Down and Up slide down and up, and the click on the fourth is one diagonal
+  line. In step 5 the movement is continuous across the workspaces, with no stop and no jump at
+  each repeat of the key, and the workspaces passed over are drawn as they go by. The switch
+  back returns the windows from where they are. In step 6 the wrap slides one cell to the
+  left, in the key's direction, and not back across the grid. With the key held no window
+  jumps from one side to the other: a workspace that comes back is drawn where it leaves and
+  where it arrives (239). In step 7 the terminal stays under the eyes while the others move
+  beneath it, and keeps the focus. In step 8 the sticky terminal stays still, the others
+  sliding beneath it. In step 9 the terminal stays under the pointer through the slide, and the
+  move goes on. In step 10 each switch is a cut with the key off, and the slide that runs when
+  the key goes off finishes. In step 11 each switch is a cut. In step 12 the locker shows no
+  window that slides, and after the unlock the windows are in their places.
+
+  In every step the slide is smooth at the monitor's refresh rate, with no frame that stutters
+  or tears. It takes a quarter of a second, starts fast and slows down into its place. After
+  its end no frame shows a window of the old workspace, and no window is a pixel off its place.
+  The developer judges if the length and the curve feel right. If not, the developer changes
+  them and records it in the [spec](../../.scratch/workspace-slide/spec.md)'s "Timing" (237).
+- **Debug tool:** `DumpState`'s `workspace_slides`, there while a slide runs: each has its
+  `output`, `from`, `to` and `offset`, the `windows` it moves with their drawn rectangles, and
+  the `still` ones. `wlr-randr` for the monitor's refresh rate. A phone's slow-motion video of
+  the monitor shows a frame of the old workspace after the end.
+
+### The Workspace slide on two monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with two monitors side by side and four
+     workspaces in one row. Run `gsettings get org.mate.Caminito workspaces-per-output`,
+     which prints `true`. Open a terminal on the first and second workspaces of each monitor,
+     and a `pluma` on the first monitor's first workspace, moved to straddle the two
+     monitors with its larger part on the first.
+  2. With the pointer on the first monitor, press Ctrl+Alt+Right, then Ctrl+Alt+Left. Do the
+     same with the pointer on the second monitor.
+  3. Click another workspace in the workspace switcher of each monitor's panel, if each has
+     one.
+  4. With the pointer on the first monitor, hold Ctrl+Alt+Right across three workspaces, and
+     back.
+  5. Focus a terminal on the first monitor and press Ctrl+Shift+Alt+Right, then
+     Ctrl+Shift+Alt+Left.
+  6. `gsettings set org.mate.Caminito workspaces-per-output false`, and press Ctrl+Alt+Right
+     and Ctrl+Alt+Left. Set it back to `true`.
+  7. If the monitors differ in size or scale, do step 6 again and watch each.
+  8. `gsettings set org.mate.Marco.general dynamic-workspaces true`, open a terminal on the
+     second workspace of the first monitor, and close it there. Set the key back to `false`
+     and `num-workspaces` to 4.
+- **Expected:** in step 2 only the monitor with the pointer slides, and the other is as it
+  was, to the pixel. A sliding window is cut at the edge of its monitor and no part of it
+  shows on the other. `pluma` slides on the first monitor alone: on the second its part isn't
+  drawn as it leaves, and is at its place from the first frame as it arrives. When the second
+  monitor switches, `pluma` stays at its place on both. In step 3 the pager's switch slides
+  its own monitor. In step 4 the movement is continuous, on the first monitor alone. In step 5
+  the terminal stays still and the others of its monitor move beneath it. In step 6 both
+  monitors slide at the same time, and the workspace changes on both. In step 7 each slides by
+  its own width, and both end together. In step 8 the first monitor slides to the first
+  workspace when the terminal closes, and the second monitor doesn't move. In every step the
+  slide is smooth on each monitor at that monitor's refresh rate, with no frame of the old
+  workspace after its end (237).
+- **Debug tool:** `DumpState`'s `workspace_slides`, with one slide for each monitor that
+  switches. `wlr-randr` for the refresh rates.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print
