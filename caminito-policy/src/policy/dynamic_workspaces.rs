@@ -67,10 +67,14 @@ impl<W: PolicyWindow> Policy<W> {
         // workspace's windows instead. An empty one stays if it can, as in Marco, or the
         // first is activated, Marco's `safe_target`.
         let from = self.active_shown(self.last_seat).active;
+        // Whether a workspace is removed with no windows to follow down.
+        let goes = |workspace: usize| !occupied.contains(&workspace) && workspace >= count;
+        // Whether an output showed one. What stands for the outputs counts only while
+        // policy has none: no output shows it.
+        let removed = (self.active_workspaces.each()).any(|shown| goes(shown.active));
         // Worked out on a copy, so that the switcher closes on the workspaces it was open
         // over, as before the count changed.
         let mut active_workspaces = self.active_workspaces.clone();
-        let mut removed = false;
         for shown in active_workspaces.each_mut() {
             if let Some(to) = shown
                 .previous
@@ -81,10 +85,7 @@ impl<W: PolicyWindow> Policy<W> {
             match occupied.iter().position(|from| *from == shown.active) {
                 Some(to) => shown.active = to,
                 None if shown.active < count => {}
-                None => {
-                    shown.active = 0;
-                    removed = true;
-                }
+                None => shown.active = 0,
             }
         }
         if removed {
@@ -98,7 +99,7 @@ impl<W: PolicyWindow> Policy<W> {
             // workspace followed its windows down shows what it did, and has no switch.
             for output in &self.outputs {
                 let from = self.active_workspaces.of(Some(output.id)).active;
-                if occupied.contains(&from) || from < count {
+                if !goes(from) {
                     continue;
                 }
                 self.output_switches.push(OutputSwitch {
@@ -109,14 +110,19 @@ impl<W: PolicyWindow> Policy<W> {
                 });
             }
         }
+        // The seats that take the default focus: every one with Spanning workspaces, and
+        // else those whose Active output showed a removed workspace. The other outputs
+        // show what they did, so their seats keep their focus (225).
+        let spanning = !self.config.workspaces_per_output;
+        let refocused: Vec<SeatId> = (self.seats.iter().copied())
+            .filter(|seat| removed && (spanning || goes(self.active_shown(*seat).active)))
+            .collect();
         self.active_workspaces = active_workspaces;
-        if removed {
-            self.focus.clear();
-            if let Some(id) = self.default_focus() {
-                for seat in &self.seats {
-                    self.focus.insert(*seat, id);
-                }
-            }
+        for seat in refocused {
+            match self.default_focus_for(seat) {
+                Some(id) => self.focus.insert(seat, id),
+                None => self.focus.remove(&seat),
+            };
         }
         self.forget_removed_previous();
         self.name_workspaces();

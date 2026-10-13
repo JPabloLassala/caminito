@@ -771,7 +771,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.set_outputs(outputs);
     }
 
-    /// Removes an output. Windows left on no output move onto the primary output.
+    /// Removes an output. Windows left on no output move onto the primary output, and keep
+    /// their workspaces' numbers there.
     pub fn remove_output(&mut self, id: OutputId) {
         let mut outputs = self.outputs.clone();
         outputs.retain(|o| o.id != id);
@@ -801,18 +802,38 @@ impl<W: PolicyWindow> Policy<W> {
                 floating.loc += delta;
             }
         }
-        self.active_workspaces.set_outputs(&outputs);
+        let primary = self.primary_output().map(|output| output.id);
+        let spanning = !self.config.workspaces_per_output;
+        self.active_workspaces
+            .set_outputs(&outputs, primary, spanning);
         // A seat whose Active output went has none, and the primary output stands in, until
         // its focus says another.
-        self.active_outputs
-            .retain(|_, active| outputs.iter().any(|output| output.id == *active));
+        let stays = |output: &OutputId| outputs.iter().any(|o| o.id == *output);
+        let left: Vec<SeatId> = (self.active_outputs.iter())
+            .filter(|(_, active)| !stays(active))
+            .map(|(seat, _)| *seat)
+            .collect();
+        self.active_outputs.retain(|_, active| stays(active));
         self.followed_focus
             .retain(|seat, _| self.active_outputs.contains_key(seat));
         self.desktops_follow_outputs(&outputs);
         self.outputs = outputs;
         self.rehome_windows();
-        // A window an output change put on another output hasn't been dragged there.
+        // A window an output change put on another output hasn't been dragged there: it
+        // keeps its workspace's number on the output it's on now (225).
         self.note_main_outputs();
+        // A seat left with no focus on an output that went, as after a switch to an empty
+        // workspace, takes the default focus of the primary output, as a seat whose focused
+        // window is put away there does in `fix_focus` (225).
+        if !spanning {
+            for seat in left {
+                if let Some(id) = self.default_focus_for(seat)
+                    && !self.focus.contains_key(&seat)
+                {
+                    self.focus.insert(seat, id);
+                }
+            }
+        }
         self.apply();
     }
 
