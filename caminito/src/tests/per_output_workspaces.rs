@@ -4,12 +4,13 @@
 
 use caminito_test_client::dbus::debug_proxy;
 use caminito_test_client::layer_shell::LayerSpec;
+use caminito_theme::ButtonFunction;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, KEY_TAB, Kind,
-    WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT,
+    KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use crate::output::{output_geometry, output_id};
 use crate::settings::Value;
@@ -367,13 +368,13 @@ on_both_kinds! {
         assert_eq!(opens(&mut f, client), (right.name(), Some(0), true));
 
         // And on the primary output with no window left.
-        f.state.caminito.policy.switch_workspace(1);
-        f.dispatch();
+        switch_right(&mut f);
         assert_eq!(dump(&f)["focus"], serde_json::Value::Null);
         assert_eq!(opens(&mut f, client), (left.name(), Some(1), true));
     }
 }
 
+// On one kind: where the popup opens goes by the outputs, whatever the windows are.
 #[test]
 fn the_window_switchers_popup_opens_on_the_pointers_output_and_not_the_active_one() {
     let (mut f, client, left, right) = two_outputs(Kind::Xdg);
@@ -390,4 +391,22 @@ fn the_window_switchers_popup_opens_on_the_pointers_output_and_not_the_active_on
     assert_eq!(dump(&f)["switcher"]["visible"], true);
     assert_eq!(dump(&f)["switcher"]["output"], left.name());
     f.key(KEY_LEFTALT, false);
+}
+
+on_both_kinds! {
+    fn a_press_on_a_frames_button_makes_the_windows_output_the_active_output(kind: Kind) {
+        let (mut f, client, left, right) = two_outputs(kind);
+        let on_left = f.map(client, WindowSpec::default());
+        window_at(&mut f, client, (2500, 600), 0);
+        assert_eq!(dump(&f)["active_output"], right.name());
+
+        // The press alone, which minimises nothing yet and focuses nothing.
+        let minimize = f.button_rect(on_left, ButtonFunction::Minimize).to_f64();
+        f.pointer_move(minimize.loc.x + 2., minimize.loc.y + 2.);
+        f.wait_between_inputs(1000);
+        f.pointer_button(BTN_LEFT, true);
+
+        assert_eq!(dump(&f)["active_output"], left.name());
+        f.pointer_button(BTN_LEFT, false);
+    }
 }

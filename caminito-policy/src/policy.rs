@@ -1025,10 +1025,7 @@ impl<W: PolicyWindow> Policy<W> {
         let constrained = (states.maximized && functions.maximize)
             || (states.fullscreen.is_some() && functions.fullscreen);
         if opens_anew {
-            // On the active workspace of the output it's placed on: the Active output, or
-            // the pointer's with the `pointer` and `manual` modes (222).
-            let (_, output) = self.new_window_placement(window_type, parent, !constrained);
-            let output = output.map(|output| output.id);
+            let output = self.opening_output(id, states, !constrained);
             let workspace = self.active_workspaces.of(output).active;
             self.windows.get_mut(&id).unwrap().workspace = workspace;
         }
@@ -1186,11 +1183,18 @@ impl<W: PolicyWindow> Policy<W> {
             if (dock || self.focus_window(seat, id, now)) && self.config.raise_on_click {
                 self.raise_family(id);
             }
-            // The window's output is the Active output, also for a dock, which isn't
-            // focused, and for the window that has the focus already (222).
-            if let Some(output) = self.output_showing(id) {
-                self.active_outputs.insert(seat, output);
-            }
+            // Also for a dock, which isn't focused.
+            self.make_active_output_of(seat, id);
+        }
+        self.apply();
+    }
+
+    /// A button press on a window that's no click on it: on one of its Frame's buttons, or
+    /// for its menu. Its output is the seat's Active output, as with a click (222).
+    pub fn press_on_window(&mut self, seat: SeatId, id: WindowId) {
+        self.set_last_seat(seat);
+        if self.is_showing(id) {
+            self.make_active_output_of(seat, id);
         }
         self.apply();
     }
@@ -2222,9 +2226,8 @@ impl<W: PolicyWindow> Policy<W> {
         active.or(self.primary_output().map(|output| output.id))
     }
 
-    /// The active workspace of `seat`'s Active output, which a new window opens on and
-    /// `rename-workspace` renames (222), or the one an output added takes while policy has
-    /// no output.
+    /// The active workspace of `seat`'s Active output, which `rename-workspace` renames
+    /// (222), or the one an output added takes while policy has no output.
     pub fn active_output_workspace(&self, seat: SeatId) -> usize {
         self.active_shown(seat).active
     }
@@ -2825,6 +2828,26 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// The output a window that maps with `states` opens on, whose active workspace it
+    /// takes so that it opens in view (222): the output it names for fullscreen, the one a
+    /// position it asks for is on, or else the one it's placed on, which is the Active
+    /// output, or the pointer's with the `pointer` and `manual` modes.
+    fn opening_output(&self, id: WindowId, states: MapStates, by_mode: bool) -> Option<OutputId> {
+        let managed = &self.windows[&id];
+        let named = states.fullscreen.filter(|_| managed.functions().fullscreen);
+        let output = if let Some(named) = self.output_named(named.flatten()) {
+            Some(named)
+        } else if let Some(requested) = managed.window.requested_position(managed.visible_extents())
+        {
+            let frame = Rectangle::new(requested, managed.size);
+            self.output_of(frame).or(self.primary_output())
+        } else {
+            self.new_window_placement(managed.window_type, managed.parent, by_mode)
+                .1
+        };
+        output.map(|output| output.id)
+    }
+
     /// The output a new window goes on with nothing else to go by: the Active output of
     /// the seat that last acted (222). With `workspaces-per-output` off it's the focused
     /// window's, else the primary output, as Marco's.
@@ -2896,8 +2919,18 @@ impl<W: PolicyWindow> Policy<W> {
         }
         self.seats.insert(seat);
         self.focus_time.insert(seat, now);
-        self.focus.insert(seat, self.modal_transient(id));
+        let focused = self.modal_transient(id);
+        self.focus.insert(seat, focused);
+        // Also for the window that has the focus already, after a press on another output.
+        self.make_active_output_of(seat, focused);
         true
+    }
+
+    /// Makes the output `id` shows by `seat`'s Active output.
+    fn make_active_output_of(&mut self, seat: SeatId, id: WindowId) {
+        if let Some(output) = self.output_showing(id) {
+            self.active_outputs.insert(seat, output);
+        }
     }
 
     /// The window that takes the focus `id` is given: the last of the modal dialogs over

@@ -2,7 +2,7 @@
 //! `workspaces-per-output` on and off.
 
 use super::*;
-use crate::{Direction, OutputSwitch, PlacementMode, WrapStyle};
+use crate::{Direction, MapStates, OutputSwitch, PlacementMode, WrapStyle};
 
 fn at(x: f64, y: f64) -> Point<f64, Logical> {
     Point::new(x, y)
@@ -582,6 +582,60 @@ fn pointer_placement_opens_a_window_on_the_pointers_output_and_its_workspace() {
         assert_eq!(policy.workspace_of(id(3)), Some(1), "{mode:?}");
         assert!(policy.is_showing(id(3)), "{mode:?}");
     }
+}
+
+#[test]
+fn a_window_that_asks_for_a_position_opens_on_the_workspace_its_output_shows() {
+    let mut policy = two_outputs(true);
+    // The Active output is the right one, on workspace 1.
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+
+    policy.map_window(
+        TestWindow::new(3, 400, 300).with_requested_position(100, 500),
+        ms(4),
+    );
+
+    assert_eq!(policy.output_showing(id(3)), Some(OutputId(1)));
+    assert_eq!(policy.workspace_of(id(3)), Some(0));
+    assert!(policy.is_showing(id(3)));
+}
+
+#[test]
+fn a_window_that_maps_fullscreen_on_an_output_opens_on_the_workspace_it_shows() {
+    let mut policy = two_outputs(true);
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+    let states = MapStates {
+        fullscreen: Some(Some(OutputId(1))),
+        ..MapStates::default()
+    };
+
+    policy.map_window_with(TestWindow::new(3, 400, 300), states, ms(4));
+
+    assert_eq!(policy.output_showing(id(3)), Some(OutputId(1)));
+    assert_eq!(policy.workspace_of(id(3)), Some(0));
+    assert!(policy.is_showing(id(3)));
+}
+
+#[test]
+fn a_press_on_a_windows_frame_button_makes_its_output_the_active_output() {
+    let mut policy = two_outputs(true);
+
+    policy.press_on_window(SEAT, id(1));
+
+    // Window 2 keeps the focus.
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+}
+
+#[test]
+fn activating_the_focused_window_brings_the_active_output_back_to_it() {
+    let mut policy = two_outputs(true);
+    policy.press_on_output(SEAT, OutputId(1));
+
+    // As the window list's click on its button does, or the Window switcher's choice of it.
+    policy.activate(SEAT, id(2), ms(3));
+
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
 }
 
 #[test]
