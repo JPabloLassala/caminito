@@ -15,9 +15,8 @@ use super::fixture::{
     ClientWindow, Fixture, KEY_D, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, WindowSpec,
     on_both_kinds,
 };
-use super::per_output_workspaces::{two_outputs_with, window_at};
+use super::per_output_workspaces::{switch_on, two_outputs_with, window_at};
 use crate::dbus::caminito::PATH;
-use crate::output::output_id;
 use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
 use crate::state::SEAT;
@@ -215,13 +214,6 @@ fn a_window_on_each_output(per_output: bool) -> (Fixture, [ClientWindow; 2], Out
     (f, [on_left, on_right], right, bus)
 }
 
-/// Switches `output`, and with `workspaces-per-output` off every output, to `workspace`.
-fn switch(f: &mut Fixture, output: &Output, workspace: usize) {
-    let policy = &mut f.state.caminito.policy;
-    policy.switch_output_workspace(output_id(output), workspace);
-    f.dispatch();
-}
-
 #[test]
 fn the_property_is_true_while_every_outputs_active_workspace_shows_its_desktop() {
     let (mut f, [on_left, on_right], right, bus) = a_window_on_each_output(true);
@@ -232,10 +224,10 @@ fn the_property_is_true_while_every_outputs_active_workspace_shows_its_desktop()
     assert!(!showing(&f, on_left) && !showing(&f, on_right));
 
     // The right output goes to a workspace that doesn't show its desktop, and comes back.
-    switch(&mut f, &right, 1);
+    switch_on(&mut f, &bus, &right, 1);
     assert!(!read(&mut f, &bus));
     assert!(!showing(&f, on_left));
-    switch(&mut f, &right, 0);
+    switch_on(&mut f, &bus, &right, 0);
     assert!(read(&mut f, &bus));
 
     // A window activated on the left output ends it there, and the right one keeps it.
@@ -259,9 +251,9 @@ fn with_the_key_off_the_property_is_the_one_workspaces() {
     assert!(!showing(&f, on_left) && !showing(&f, on_right));
 
     // A switch of one output is a switch of both.
-    switch(&mut f, &right, 1);
+    switch_on(&mut f, &bus, &right, 1);
     assert!(!read(&mut f, &bus));
-    switch(&mut f, &right, 0);
+    switch_on(&mut f, &bus, &right, 0);
     assert!(read(&mut f, &bus));
 
     // A window activated ends it for both outputs, and the other window is minimised.

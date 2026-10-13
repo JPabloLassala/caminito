@@ -321,3 +321,22 @@ fn an_output_that_goes_takes_the_desktops_it_showed_with_it() {
     policy.switch_output_workspace(OutputId(1), 1);
     assert_eq!(showing(&policy), [3, 4]);
 }
+
+#[test]
+fn the_last_output_going_and_coming_back_keeps_its_desktop_shown() {
+    let mut policy = Policy::new(Config {
+        workspaces_per_output: true,
+        ..Config::default()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.set_showing_desktop(true);
+
+    policy.remove_output(OutputId(1));
+    assert!(policy.is_showing_desktop());
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+
+    assert!(policy.is_showing_desktop());
+    assert!(!policy.is_showing(id(1)));
+    assert!(!policy.is_minimized(id(1)));
+}

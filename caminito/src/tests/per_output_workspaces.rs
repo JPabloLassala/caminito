@@ -102,7 +102,13 @@ fn click_focuses(f: &mut Fixture, at: (i32, i32), window: ClientWindow) -> bool 
 
 fn switch(f: &mut Fixture, output: &Output, workspace: u32) {
     let bus = f.start_dbus();
-    let name = output.name();
+    switch_on(f, &bus, output, workspace);
+}
+
+/// Switches `output` to `workspace` through the debug interface at `bus`, which
+/// `start_dbus` gave: a test that listens there can't start another.
+pub(super) fn switch_on(f: &mut Fixture, bus: &str, output: &Output, workspace: u32) {
+    let (bus, name) = (bus.to_owned(), output.name());
     let switched = f.dbus_call(move || {
         debug_proxy(&bus)
             .unwrap()

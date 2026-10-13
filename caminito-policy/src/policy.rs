@@ -808,10 +808,7 @@ impl<W: PolicyWindow> Policy<W> {
             .retain(|_, active| outputs.iter().any(|output| output.id == *active));
         self.followed_focus
             .retain(|seat, _| self.active_outputs.contains_key(seat));
-        // The desktops an output that went was showing go with it.
-        self.showing_desktop.retain(|(output, _), _| {
-            output.is_none_or(|output| outputs.iter().any(|o| o.id == output))
-        });
+        self.desktops_follow_outputs(&outputs);
         self.outputs = outputs;
         self.rehome_windows();
         // A window an output change put on another output hasn't been dragged there.
@@ -839,7 +836,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.config = config;
         match (was_per_output, self.config.workspaces_per_output) {
             (true, false) => self.span_workspaces(),
-            (false, true) => self.split_shown_desktops(),
+            (false, true) => self.give_shown_desktops(None, &self.desktop_outputs()),
             _ => {}
         }
         if attaches_changed {
@@ -1044,15 +1041,14 @@ impl<W: PolicyWindow> Policy<W> {
             self.windows.get_mut(&id).unwrap().workspace = workspace;
         }
         let desktop = match opening {
-            Some(output) => {
-                let output = output.filter(|_| self.config.workspaces_per_output);
-                (output, self.windows[&id].workspace)
-            }
+            Some(output) => (self.desktop_output(output), self.windows[&id].workspace),
             None => self.desktop_of(id),
         };
         // Before it's placed, which is among the windows that show.
         self.leave_show_desktop_of(id, desktop);
         let Placed { by_pointer, on } = self.place(id, !constrained);
+        // And again where it is, if that's on another output than the one it opened for.
+        self.leave_show_desktop(id);
         // Marco's pointer placement skips its maximising of a window too big for its work
         // area (place.c:898-905).
         if !by_pointer {
@@ -3099,8 +3095,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// The output whose workspaces `id` shows its desktop with: the one it shows by, or
     /// none with `workspaces-per-output` off, where a workspace is every output's.
     fn desktop_output_of(&self, id: WindowId) -> Option<OutputId> {
-        self.output_showing(id)
-            .filter(|_| self.config.workspaces_per_output)
+        self.desktop_output(self.output_showing(id))
     }
 
     /// The workspace whose desktop showing hides `id`, of its output's (224).
