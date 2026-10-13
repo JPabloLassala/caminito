@@ -36,18 +36,14 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         }
 
-        let mut showing_desktop = std::mem::take(&mut self.showing_desktop);
-        for (to, &from) in occupied.iter().enumerate() {
-            if let Some(focus) = showing_desktop.remove(&from) {
-                self.showing_desktop.insert(to, focus);
-            }
-        }
-        // The empty workspace after the others keeps its desktop shown, if it stays.
+        // The empty workspace after the others keeps its desktop shown, if it stays. The
+        // numbers are one set for every output, so each output's workspaces move alike.
         let spare = occupied.len();
-        if spare < count
-            && let Some(focus) = showing_desktop.remove(&spare)
-        {
-            self.showing_desktop.insert(spare, focus);
+        for ((output, from), shown) in std::mem::take(&mut self.showing_desktop) {
+            let to = occupied.iter().position(|o| *o == from);
+            if let Some(to) = to.or((from == spare && spare < count).then_some(spare)) {
+                self.showing_desktop.insert((output, to), shown);
+            }
         }
         // A workspace with windows takes its place in order. What's left on a removed
         // workspace is on every workspace, and goes to the first, Marco's `safe_target` when

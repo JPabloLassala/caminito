@@ -1,7 +1,7 @@
 //! Per-output workspaces (ADR 0032, 230): with `workspaces-per-output` on, two outputs on
 //! different workspaces, each drawing its own workspace's windows, and input reaching only
-//! the windows that show. Then the Active output (222), and activation and a dragged
-//! dialog (223).
+//! the windows that show. Then the Active output (222), activation and a dragged dialog
+//! (223), and the Window switcher's list (224).
 
 use caminito_test_client::dbus::debug_proxy;
 use caminito_test_client::layer_shell::LayerSpec;
@@ -28,7 +28,7 @@ fn two_outputs(kind: Kind) -> (Fixture, ClientId, Output, Output) {
 }
 
 /// `two_outputs`, with `workspaces-per-output` as `per_output` says and `settings` besides.
-fn two_outputs_with(
+pub(super) fn two_outputs_with(
     kind: Kind,
     per_output: bool,
     mut settings: Vec<(&'static str, String, Value)>,
@@ -50,7 +50,12 @@ fn two_outputs_with(
 /// Maps a 400 × 300 window, drags it so that its geometry is at the global point `at`, and
 /// puts it on `workspace`. A drag can leave it across two outputs, where a client's request
 /// would be kept on one.
-fn window_at(f: &mut Fixture, client: ClientId, at: (i32, i32), workspace: usize) -> ClientWindow {
+pub(super) fn window_at(
+    f: &mut Fixture,
+    client: ClientId,
+    at: (i32, i32),
+    workspace: usize,
+) -> ClientWindow {
     let window = f.map(client, WindowSpec::plain((400, 300)));
     put_at(f, window, at, workspace);
     window
@@ -379,6 +384,29 @@ on_both_kinds! {
         assert_eq!(dump(&f)["focus"], serde_json::Value::Null);
         assert_eq!(opens(&mut f, client), (left.name(), Some(1), true));
     }
+}
+
+// On one kind: what the switcher lists goes by the workspaces, whatever the windows are.
+#[test]
+fn alt_tab_reaches_a_window_on_the_other_outputs_workspace_and_no_hidden_one() {
+    let (mut f, client, _left, right) = two_outputs(Kind::Xdg);
+    let on_left = window_at(&mut f, client, (100, 100), 0);
+    window_at(&mut f, client, (2100, 100), 0);
+    let on_right = window_at(&mut f, client, (2500, 600), 1);
+    switch(&mut f, &right, 1);
+    let (on_left, on_right) = (f.pid(on_left), f.pid(on_right));
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(on_right));
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_TAB, true);
+    f.key(KEY_TAB, false);
+
+    let switcher = f.state.caminito.policy.switcher().expect("it's open");
+    assert_eq!(switcher.entries, [on_right, on_left]);
+    f.key(KEY_LEFTALT, false);
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(on_left));
+    // Nothing switched: the window was showing.
+    assert!(f.state.caminito.policy.is_showing(on_right));
 }
 
 // On one kind: where the popup opens goes by the outputs, whatever the windows are.

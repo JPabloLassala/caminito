@@ -15,9 +15,12 @@ use super::fixture::{
     ClientWindow, Fixture, KEY_D, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, WindowSpec,
     on_both_kinds,
 };
+use super::per_output_workspaces::{two_outputs_with, window_at};
 use crate::dbus::caminito::PATH;
+use crate::output::output_id;
 use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
+use crate::state::SEAT;
 
 /// A window of `kind` on the first workspace, with Caminito on the bus at the name returned.
 fn one_window(kind: Kind) -> (Fixture, ClientWindow, Output, String) {
@@ -197,6 +200,79 @@ fn switching_between_workspaces_that_agree_signals_nothing() {
 
     // The switch sent none, or it would be heard first, as `false`.
     assert_eq!(heard(&mut f, listener), [true]);
+}
+
+// Per-output workspaces (224): the property is true while every output's active workspace
+// shows its desktop. On one kind, as the workspaces are the same for both.
+
+/// Two outputs with `workspaces-per-output` as `per_output` says, a window on each, both on
+/// the first workspace, and Caminito on the bus at the name returned.
+fn a_window_on_each_output(per_output: bool) -> (Fixture, [ClientWindow; 2], Output, String) {
+    let (mut f, client, _left, right) = two_outputs_with(Kind::Xdg, per_output, vec![]);
+    let on_left = window_at(&mut f, client, (100, 100), 0);
+    let on_right = window_at(&mut f, client, (2100, 100), 0);
+    let bus = f.start_dbus();
+    (f, [on_left, on_right], right, bus)
+}
+
+/// Switches `output`, and with `workspaces-per-output` off every output, to `workspace`.
+fn switch(f: &mut Fixture, output: &Output, workspace: usize) {
+    let policy = &mut f.state.caminito.policy;
+    policy.switch_output_workspace(output_id(output), workspace);
+    f.dispatch();
+}
+
+#[test]
+fn the_property_is_true_while_every_outputs_active_workspace_shows_its_desktop() {
+    let (mut f, [on_left, on_right], right, bus) = a_window_on_each_output(true);
+    let listener = listen(&mut f, &bus, 4);
+
+    write(&mut f, &bus, true);
+    assert!(read(&mut f, &bus));
+    assert!(!showing(&f, on_left) && !showing(&f, on_right));
+
+    // The right output goes to a workspace that doesn't show its desktop, and comes back.
+    switch(&mut f, &right, 1);
+    assert!(!read(&mut f, &bus));
+    assert!(!showing(&f, on_left));
+    switch(&mut f, &right, 0);
+    assert!(read(&mut f, &bus));
+
+    // A window activated on the left output ends it there, and the right one keeps it.
+    let (id, now) = (f.pid(on_left), f.state.caminito.now());
+    f.state.caminito.policy.activate(SEAT, id, now);
+    f.dispatch();
+    assert!(!read(&mut f, &bus));
+    assert!(showing(&f, on_left) && !showing(&f, on_right));
+    assert!(!f.state.caminito.policy.is_minimized(f.pid(on_right)));
+
+    assert_eq!(heard(&mut f, listener), [true, false, true, false]);
+}
+
+#[test]
+fn with_the_key_off_the_property_is_the_one_workspaces() {
+    let (mut f, [on_left, on_right], right, bus) = a_window_on_each_output(false);
+    let listener = listen(&mut f, &bus, 4);
+
+    write(&mut f, &bus, true);
+    assert!(read(&mut f, &bus));
+    assert!(!showing(&f, on_left) && !showing(&f, on_right));
+
+    // A switch of one output is a switch of both.
+    switch(&mut f, &right, 1);
+    assert!(!read(&mut f, &bus));
+    switch(&mut f, &right, 0);
+    assert!(read(&mut f, &bus));
+
+    // A window activated ends it for both outputs, and the other window is minimised.
+    let (id, now) = (f.pid(on_left), f.state.caminito.now());
+    f.state.caminito.policy.activate(SEAT, id, now);
+    f.dispatch();
+    assert!(!read(&mut f, &bus));
+    assert!(showing(&f, on_left));
+    assert!(f.state.caminito.policy.is_minimized(f.pid(on_right)));
+
+    assert_eq!(heard(&mut f, listener), [true, false, true, false]);
 }
 
 // `show-desktop-skip-list` (164): a native window listed by its app id, and an X11 one by

@@ -133,11 +133,34 @@ impl<W: PolicyWindow> Policy<W> {
         for shown in self.active_workspaces.each_mut() {
             *shown = active;
         }
+        // The one workspace of a number shows its desktop if the Active output's did.
+        let output = self.active_output(self.last_seat);
+        let shown = std::mem::take(&mut self.showing_desktop);
+        self.showing_desktop = shown
+            .into_iter()
+            .filter(|((of, _), _)| *of == output)
+            .map(|((_, workspace), shown)| ((None, workspace), shown))
+            .collect();
         if switches {
             // As a switch closes them: the workspace changing under an open switcher (ruling
             // 9 of 108), and the window menu, whose moves are from the active workspace (161).
             self.close_switcher(switcher::Close::Dropped);
             self.window_menu = None;
+        }
+    }
+
+    /// Each output's workspace of a number shows its desktop if the one every output had
+    /// did, as `workspaces-per-output` is turned on (224).
+    pub(super) fn split_shown_desktops(&mut self) {
+        if self.outputs.is_empty() {
+            return;
+        }
+        let shown = std::mem::take(&mut self.showing_desktop);
+        for ((_, workspace), shown) in shown {
+            for output in &self.outputs {
+                self.showing_desktop
+                    .insert((Some(output.id), workspace), shown.clone());
+            }
         }
     }
 
@@ -225,12 +248,19 @@ impl<W: PolicyWindow> Policy<W> {
         self.is_on_workspace(id, self.active_workspace_of(id))
     }
 
-    /// Every output's active workspace, once each, or the one that stands for them while
-    /// policy has no output.
-    pub(super) fn shown_workspaces(&self) -> BTreeSet<usize> {
-        self.active_workspaces
-            .each()
-            .map(|shown| shown.active)
+    /// Every output's active workspace, as the one that shows its desktop for itself: an
+    /// output's own with `workspaces-per-output` on, and else the one of that number. With
+    /// no output it's the one that stands for them.
+    pub(super) fn shown_desktops(&self) -> BTreeSet<DesktopOf> {
+        let per_output = self.config.workspaces_per_output;
+        let outputs = self.outputs.iter().map(|output| Some(output.id));
+        let none = self.outputs.is_empty().then_some(None);
+        outputs
+            .chain(none)
+            .map(|output| {
+                let workspace = self.active_workspaces.of(output).active;
+                (output.filter(|_| per_output), workspace)
+            })
             .collect()
     }
 }

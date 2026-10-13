@@ -221,6 +221,10 @@ pub fn default_workspace_name(number: usize) -> String {
     format!("Workspace {number}")
 }
 
+/// A workspace that can show its desktop: one output's with `workspaces-per-output` on
+/// (224), and with it off the one of that number, which every output shows together.
+type DesktopOf = (Option<OutputId>, usize);
+
 /// A workspace showing its desktop (94).
 #[derive(Clone)]
 struct ShownDesktop {
@@ -671,8 +675,8 @@ pub struct Policy<W: PolicyWindow> {
     /// compositor's Workspace slide (233).
     output_switches: Vec<OutputSwitch>,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
-    /// (workspace.h:79).
-    showing_desktop: BTreeMap<usize, ShownDesktop>,
+    /// (workspace.h:79). Each output's workspaces show theirs for themselves (224).
+    showing_desktop: BTreeMap<DesktopOf, ShownDesktop>,
     /// Each workspace's name, one per stack.
     workspace_names: Vec<String>,
     outputs: Vec<Output>,
@@ -804,6 +808,10 @@ impl<W: PolicyWindow> Policy<W> {
             .retain(|_, active| outputs.iter().any(|output| output.id == *active));
         self.followed_focus
             .retain(|seat, _| self.active_outputs.contains_key(seat));
+        // The desktops an output that went was showing go with it.
+        self.showing_desktop.retain(|(output, _), _| {
+            output.is_none_or(|output| outputs.iter().any(|o| o.id == output))
+        });
         self.outputs = outputs;
         self.rehome_windows();
         // A window an output change put on another output hasn't been dragged there.
@@ -827,10 +835,12 @@ impl<W: PolicyWindow> Policy<W> {
         // A dialog that's attached or let go has another frame to be laid out with (177).
         let attach_modal_dialogs = config.attach_modal_dialogs;
         let attaches_changed = self.config.attach_modal_dialogs != attach_modal_dialogs;
-        let spans = self.config.workspaces_per_output && !config.workspaces_per_output;
+        let was_per_output = self.config.workspaces_per_output;
         self.config = config;
-        if spans {
-            self.span_workspaces();
+        match (was_per_output, self.config.workspaces_per_output) {
+            (true, false) => self.span_workspaces(),
+            (false, true) => self.split_shown_desktops(),
+            _ => {}
         }
         if attaches_changed {
             let ids: Vec<WindowId> = self.windows.keys().copied().collect();
@@ -873,7 +883,7 @@ impl<W: PolicyWindow> Policy<W> {
             }
             self.forget_removed_previous();
             self.showing_desktop
-                .retain(|workspace, _| *workspace < count);
+                .retain(|(_, workspace), _| *workspace < count);
         } else {
             self.workspace_count = count;
         }
@@ -1024,13 +1034,24 @@ impl<W: PolicyWindow> Policy<W> {
         let functions = self.windows[&id].functions();
         let constrained = (states.maximized && functions.maximize)
             || (states.fullscreen.is_some() && functions.fullscreen);
+        // A transient is on its root's output. Another window has no place yet to say its
+        // own, so it's the one it opens on.
+        let opening = parent
+            .is_none()
+            .then(|| self.opening_output(id, states, !constrained));
         if opens_anew {
-            let output = self.opening_output(id, states, !constrained);
-            let workspace = self.active_workspaces.of(output).active;
+            let workspace = self.active_workspaces.of(opening.flatten()).active;
             self.windows.get_mut(&id).unwrap().workspace = workspace;
         }
+        let desktop = match opening {
+            Some(output) => {
+                let output = output.filter(|_| self.config.workspaces_per_output);
+                (output, self.windows[&id].workspace)
+            }
+            None => self.desktop_of(id),
+        };
         // Before it's placed, which is among the windows that show.
-        self.leave_show_desktop(id);
+        self.leave_show_desktop_of(id, desktop);
         let Placed { by_pointer, on } = self.place(id, !constrained);
         // Marco's pointer placement skips its maximising of a window too big for its work
         // area (place.c:898-905).
@@ -1290,39 +1311,47 @@ impl<W: PolicyWindow> Policy<W> {
                 focus: self.focus.clone(),
                 skip_list: self.config.show_desktop_skip_list.clone(),
             };
-            for workspace in self.shown_workspaces() {
-                self.showing_desktop.insert(workspace, shown.clone());
+            for desktop in self.shown_desktops() {
+                self.showing_desktop.insert(desktop, shown.clone());
             }
             // Marco focuses the most recently used desktop window. One that never had the
-            // focus isn't in `mru`, so the stack is looked through after it.
+            // focus isn't in `mru`, so the stack is looked through after it. With
+            // `workspaces-per-output` on it's one on the seat's Active output, as the
+            // default focus is (231).
             let top_down = self.active_stacking().into_iter().rev();
-            let desktop = self.mru.iter().copied().chain(top_down).find(|id| {
-                self.windows[id].window_type == WindowType::Desktop && self.is_showing(*id)
-            });
-            if let Some(desktop) = desktop {
-                for seat in &self.seats {
-                    // A seat on a listed window keeps it, which Marco's focusing of the
-                    // desktop takes away.
-                    if !self.focus.get(seat).is_some_and(|id| self.is_skipped(*id)) {
-                        self.focus.insert(*seat, desktop);
-                    }
+            let desktops: Vec<WindowId> = (self.mru.iter().copied().chain(top_down))
+                .filter(|id| {
+                    self.windows[id].window_type == WindowType::Desktop && self.is_showing(*id)
+                })
+                .collect();
+            let per_output = self.config.workspaces_per_output;
+            for seat in self.seats.clone() {
+                let active = self.active_output(seat);
+                let desktop = desktops
+                    .iter()
+                    .find(|id| !per_output || self.main_output_of(**id) == active);
+                // A seat on a listed window keeps it, which Marco's focusing of the
+                // desktop takes away.
+                if let Some(desktop) = desktop
+                    && !self.focus.get(&seat).is_some_and(|id| self.is_skipped(*id))
+                {
+                    self.focus.insert(seat, *desktop);
                 }
             }
         } else {
             // Each seat's focus as the first of the workspaces had it.
             let mut before = BTreeMap::new();
-            for workspace in self.shown_workspaces() {
-                if let Some(shown) = self.showing_desktop.remove(&workspace) {
+            for desktop in self.shown_desktops() {
+                if let Some(shown) = self.showing_desktop.remove(&desktop) {
                     for (seat, id) in shown.focus {
                         before.entry(seat).or_insert(id);
                     }
                 }
             }
-            let default = self.default_focus();
-            for seat in &self.seats {
-                let had = before.get(seat).copied().filter(|id| self.is_showing(*id));
-                if let Some(id) = had.or(default) {
-                    self.focus.insert(*seat, id);
+            for seat in self.seats.clone() {
+                let had = before.get(&seat).copied().filter(|id| self.is_showing(*id));
+                if let Some(id) = had.or_else(|| self.default_focus_for(seat)) {
+                    self.focus.insert(seat, id);
                 }
             }
         }
@@ -2243,9 +2272,9 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Whether every output's active workspace shows its desktop (94).
     pub fn is_showing_desktop(&self) -> bool {
-        self.shown_workspaces()
+        self.shown_desktops()
             .iter()
-            .all(|workspace| self.showing_desktop.contains_key(workspace))
+            .all(|desktop| self.showing_desktop.contains_key(desktop))
     }
 
     pub fn outputs(&self) -> &[Output] {
@@ -2984,7 +3013,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// or a transient ancestor, so that a listed app's dialogs stay with it. Marco matches
     /// each window by its own class, which a toolkit gives its dialogs too.
     fn is_skipped(&self, id: WindowId) -> bool {
-        let Some(shown) = self.showing_desktop.get(&self.workspace_shown_on(id)) else {
+        self.is_skipped_on(id, self.desktop_of(id))
+    }
+
+    /// `is_skipped`, for a window that `desktop` hides.
+    fn is_skipped_on(&self, id: WindowId, desktop: DesktopOf) -> bool {
+        let Some(shown) = self.showing_desktop.get(&desktop) else {
             return false;
         };
         let mut current = Some(id);
@@ -3008,21 +3042,32 @@ impl<W: PolicyWindow> Policy<W> {
     /// whichever one the window is on, where this looks at the window's own. And Marco
     /// minimises a new dialog's parents with the rest, which hides the dialog with them;
     /// here they're kept, as Marco itself keeps an activated window's.
+    ///
+    /// With `workspaces-per-output` on the workspace is its output's, so another output's
+    /// windows stay as they are, hidden if that output shows its desktop (224).
     fn leave_show_desktop(&mut self, id: WindowId) {
-        let workspace = self.workspace_shown_on(id);
-        if !self.showing_desktop.contains_key(&workspace) || self.stays_on_desktop(id) {
+        self.leave_show_desktop_of(id, self.desktop_of(id));
+    }
+
+    /// `leave_show_desktop`, for a window that `desktop` hides: one that maps has no place
+    /// yet to say its output by.
+    fn leave_show_desktop_of(&mut self, id: WindowId, desktop: DesktopOf) {
+        let stays = self.is_desktop_component(id) || self.is_skipped_on(id, desktop);
+        if !self.showing_desktop.contains_key(&desktop) || stays {
             return;
         }
+        let (output, workspace) = desktop;
         for other in self.stacking(workspace) {
             let managed = &self.windows[&other];
             if matches!(managed.window_type, WindowType::Normal | WindowType::Dialog)
+                && self.desktop_output_of(other) == output
                 && !self.is_ancestor(other, id)
                 && !self.is_skipped(other)
             {
                 self.windows.get_mut(&other).unwrap().minimized = true;
             }
         }
-        self.showing_desktop.remove(&workspace);
+        self.showing_desktop.remove(&desktop);
     }
 
     /// Whether a window is on screen: managed, and shown on its Main output's active
@@ -3051,14 +3096,24 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// The output whose workspaces `id` shows its desktop with: the one it shows by, or
+    /// none with `workspaces-per-output` off, where a workspace is every output's.
+    fn desktop_output_of(&self, id: WindowId) -> Option<OutputId> {
+        self.output_showing(id)
+            .filter(|_| self.config.workspaces_per_output)
+    }
+
+    /// The workspace whose desktop showing hides `id`, of its output's (224).
+    fn desktop_of(&self, id: WindowId) -> DesktopOf {
+        (self.desktop_output_of(id), self.workspace_shown_on(id))
+    }
+
     /// Whether a window would show if its workspace were active: neither it nor a transient
     /// ancestor is minimised, and its workspace doesn't show its desktop instead, as in
     /// Marco's `meta_window_showing_on_its_workspace` (window.c:1385-1425).
     fn is_visible_on_workspace(&self, id: WindowId) -> bool {
         if self.windows.contains_key(&id)
-            && self
-                .showing_desktop
-                .contains_key(&self.workspace_shown_on(id))
+            && self.showing_desktop.contains_key(&self.desktop_of(id))
             && !self.stays_on_desktop(id)
         {
             return false;
