@@ -7,7 +7,9 @@
 //! and only the drawing takes its time. The refresh pass takes the switches policy noted
 //! and the windows that were on screen at the pass before, and the scene draws the windows
 //! that left and those that came away from their own places until the slide's over. A
-//! window that shows before and after, as a sticky one does, is none of the slide's.
+//! window that shows before and after is none of the slide's and stays still (234): a
+//! sticky one, one that a `move-to-workspace-*` binding carries, and one being dragged,
+//! which policy takes along.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -230,6 +232,21 @@ impl Caminito {
             })
             .collect();
         windows.sort_by_key(|(id, _)| *id);
+        windows
+    }
+
+    /// The windows on `slide`'s output that it leaves in their places at `now`, in the
+    /// order of their ids, for the debug dump: those that are the same on both workspaces,
+    /// as a sticky window, one a move carries and one being dragged are (234).
+    pub(crate) fn still_windows(&self, slide: &Slide, now: Duration) -> Vec<WindowId> {
+        let policy = &self.policy;
+        let mut windows: Vec<WindowId> = policy
+            .windows()
+            .map(|mapped| mapped.id())
+            .filter(|&id| policy.is_showing(id) && policy.output_showing(id) == Some(slide.output))
+            .filter(|&id| slide.shift(id, true, now).is_none())
+            .collect();
+        windows.sort();
         windows
     }
 }

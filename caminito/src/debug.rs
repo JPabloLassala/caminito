@@ -132,6 +132,8 @@ struct WorkspaceSlideDump {
     offset: OffsetDump,
     /// Each window the slide moves, by id, with where its frame is drawn now.
     windows: Vec<SlidingWindowDump>,
+    /// The windows on the output that the slide leaves in their places, by id (234).
+    still: Vec<u64>,
 }
 
 #[derive(Serialize)]
@@ -777,6 +779,11 @@ impl Caminito {
                             id: id.0,
                             rect: rect.into(),
                         })
+                        .collect(),
+                    still: self
+                        .still_windows(slide, now)
+                        .into_iter()
+                        .map(|id| id.0)
                         .collect(),
                 })
             })

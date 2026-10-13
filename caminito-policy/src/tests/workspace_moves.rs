@@ -2,7 +2,7 @@
 //! Workspace grid that the bindings make.
 
 use super::*;
-use crate::{Direction, WrapStyle};
+use crate::{Direction, ResizeEdges, WrapStyle};
 
 /// A policy with `count` workspaces in `rows` rows, wrapping by `wrap`.
 fn grid(count: usize, rows: usize, wrap: WrapStyle) -> Policy<TestWindow> {
@@ -216,6 +216,49 @@ fn move_to_workspace_down_carries_the_focused_window_and_keeps_its_focus() {
     assert_eq!(policy.active_workspace(), 0);
     assert_eq!(policy.workspace_of(id(1)), Some(0));
     assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+// A window being moved goes with a switch (234).
+
+#[test]
+fn a_switch_carries_the_window_being_moved() {
+    let mut policy = grid(4, 2, WrapStyle::NoWrap);
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 200, 100).with_parent(1), ms(2));
+    policy.map_window(TestWindow::new(3, 400, 300), ms(3));
+    let loc = policy.geometry(id(1)).unwrap().loc;
+    assert!(policy.begin_move(SEAT, id(1), loc.to_f64()));
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(4));
+
+    assert_eq!(policy.active_workspace(), 1);
+    assert_eq!(policy.stacking(1), [id(1), id(2)]);
+    assert_eq!(policy.stacking(0), [id(3)]);
+    assert_eq!(policy.grab(SEAT), Some(id(1)), "the move goes on");
+    assert_eq!(policy.geometry(id(1)).unwrap().loc, loc);
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
+#[test]
+fn a_switch_leaves_a_window_being_resized_and_a_sticky_one_being_moved() {
+    let mut policy = grid(4, 2, WrapStyle::NoWrap);
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    let loc = policy.geometry(id(1)).unwrap().loc;
+    assert!(policy.begin_resize(SEAT, id(1), ResizeEdges::TOP_LEFT, loc.to_f64()));
+
+    policy.switch_workspace(1);
+
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert_eq!(policy.grab(SEAT), None);
+
+    policy.switch_workspace(0);
+    policy.set_sticky(id(1), true);
+    assert!(policy.begin_move(SEAT, id(1), loc.to_f64()));
+
+    policy.switch_workspace(1);
+
+    assert!(policy.is_sticky(id(1)), "it's on the new workspace already");
+    assert_eq!(policy.grab(SEAT), Some(id(1)));
 }
 
 #[test]
