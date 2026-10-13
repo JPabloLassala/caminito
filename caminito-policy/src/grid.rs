@@ -136,6 +136,16 @@ impl Grid {
         }
     }
 
+    /// How far `to`'s cell is from `from`'s, in columns to the right and in rows down.
+    pub(crate) fn cells_between(&self, from: usize, to: usize) -> (i32, i32) {
+        let (from_column, from_row) = self.cell(from);
+        let (column, row) = self.cell(to);
+        (
+            column as i32 - from_column as i32,
+            row as i32 - from_row as i32,
+        )
+    }
+
     /// The workspace in a cell, if the cell is in the grid and isn't empty.
     pub(crate) fn workspace_at(&self, column: usize, row: usize) -> Option<usize> {
         if column >= self.columns || row >= self.rows {

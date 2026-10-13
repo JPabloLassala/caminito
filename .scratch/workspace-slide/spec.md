@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. Ticket 235 built the retarget and the lock's end. What tickets 236 and 239 add isn't built.
+Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. Ticket 235 built the retarget and the lock's end. Ticket 236 built the slide on two outputs. What ticket 239 adds isn't built.
 
 ## Problem
 
@@ -52,7 +52,9 @@ These don't slide:
 ### Outputs
 
 - A sliding window is clipped to the output that is switching. It never shows on another output during the slide. A window that straddles two outputs keeps being drawn on the other at its place, as ADR 0032 has it.
-- Under Spanning workspaces every output slides its own windows, at the same time.
+- An output slides the windows it is the Main output of (236). A straddling window of another output stays at its place on both. One of the output that switches slides on that output alone: on the other, its part is at its place from the first frame if it arrives, and isn't drawn if it leaves.
+- Under Spanning workspaces every output slides its own windows, at the same time, each by its own width and height.
+- When dynamic workspaces remove the workspace an output shows, that output slides to the first workspace, the way between the two cells of the grid as it was. An output whose workspace's number changes with its windows shows what it did, and doesn't slide (236).
 
 ### Timing
 

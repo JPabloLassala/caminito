@@ -98,6 +98,21 @@ impl<W: PolicyWindow> Policy<W> {
             // which stands in for the Active output's (231).
             self.close_switcher(switcher::Close::Dropped);
             self.note_switch(grid, from, 0);
+            // And each output that showed a removed workspace slides to the first (236),
+            // the way between the two cells of the grid as it was. One whose active
+            // workspace followed its windows down shows what it did, and has no switch.
+            for output in &self.outputs {
+                let from = self.active_workspaces.of(Some(output.id)).active;
+                if occupied.contains(&from) || from < count {
+                    continue;
+                }
+                self.output_switches.push(OutputSwitch {
+                    output: output.id,
+                    from,
+                    to: 0,
+                    cells: grid.cells_between(from, 0),
+                });
+            }
         }
         self.active_workspaces = active_workspaces;
         if removed {

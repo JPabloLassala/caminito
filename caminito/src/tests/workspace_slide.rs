@@ -1,4 +1,4 @@
-//! The Workspace slide (233, 234, 235): a change of the output's active workspace shows the old
+//! The Workspace slide (233 to 236): a change of an output's active workspace shows the old
 //! workspace's windows leaving and the new one's arriving, for 250 ms of Caminito's clock,
 //! read from the debug dump and from the output's pixels. Policy has switched from the
 //! start.
@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use caminito_test_client::format_input;
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
@@ -15,6 +16,7 @@ use super::fixture::{
     on_both_kinds,
 };
 use crate::backend::headless::argb8888;
+use crate::output::{output_geometry, output_id};
 use crate::scene::{CLEAR_COLOR, SceneLayer};
 use crate::settings::Value as Setting;
 use crate::settings::translate::{CAMINITO, INTERFACE, MARCO_GENERAL, MARCO_GLOBAL_KEYBINDINGS};
@@ -158,18 +160,33 @@ fn middle(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
 /// The middle of the part of `rect` that's on the output.
 #[track_caller]
 fn middle_on_output(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
-    let on_output = rect.intersection(output());
-    middle(on_output.unwrap_or_else(|| panic!("some of {rect:?} is on the output")))
+    middle_within(rect, output())
 }
 
-/// The output's pixel at the global point `at`, as `0xRRGGBB`.
+/// The middle of the part of `rect` that's in `area`.
+#[track_caller]
+fn middle_within(
+    rect: Rectangle<i32, Logical>,
+    area: Rectangle<i32, Logical>,
+) -> Point<i32, Logical> {
+    let within = rect.intersection(area);
+    middle(within.unwrap_or_else(|| panic!("some of {rect:?} is in {area:?}")))
+}
+
+/// The first output's pixel at the global point `at`, as `0xRRGGBB`.
 fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
     let output = f.state.caminito.outputs[0].clone();
+    pixel_on(f, &output, at)
+}
+
+/// `output`'s pixel at the global point `at`, as `0xRRGGBB`.
+fn pixel_on(f: &mut Fixture, output: &Output, at: Point<i32, Logical>) -> u32 {
+    let local = at - output_geometry(output).loc;
     let pixel = f
         .state
         .backend
         .headless_mut()
-        .pixel(&output, at.to_physical(1));
+        .pixel(output, local.to_physical(1));
     pixel.expect("the output is drawn") & 0xff_ffff
 }
 
@@ -918,4 +935,365 @@ fn a_fullscreen_window_slides_and_the_panel_shows() {
     assert_eq!(pixel(&mut f, right), BAR_COLOR & 0xff_ffff);
     f.advance_clock(LENGTH - PART_WAY);
     assert_eq!(pixel(&mut f, right), WINDOW);
+}
+
+// Two outputs (236): the left one of `OUTPUT`, and one of another size on its right.
+
+/// The output on the right, wider and higher than the first.
+const WIDE: (i32, i32) = (1024, 768);
+
+/// A window that slides in a band along the top of an output, clear of what's put below
+/// it, and so wide that some of it is on the other output part-way in from there.
+const LONG: (i32, i32) = (600, 200);
+
+/// Where a `LONG` window is put on the left output and on the right one.
+const TOP_LEFT: (i32, i32) = (50, 50);
+const TOP_RIGHT: (i32, i32) = (OUTPUT.0 + 100, 50);
+
+/// Where a `SMALL` window is across both outputs below that band, a third of it on the
+/// left one, so the right one is its Main output.
+const ACROSS: (i32, i32) = (OUTPUT.0 - 100, 380);
+
+/// Where a `SMALL` window is on the right output alone, below the band and clear of
+/// `ACROSS`.
+const LOW_RIGHT: (i32, i32) = (OUTPUT.0 + 600, 500);
+
+/// Two outputs side by side, the left one the primary, with `workspaces-per-output` as
+/// `per_output` says, `workspace-slide` on and a Wayland client.
+fn two_outputs(per_output: bool, mut settings: Settings) -> (Fixture, ClientId, Output, Output) {
+    let key = "workspaces-per-output".into();
+    settings.push((CAMINITO, key, Setting::Bool(per_output)));
+    let (mut f, id) = desk(Kind::Xdg, settings);
+    let left = f.state.caminito.outputs[0].clone();
+    let right = f.add_output(WIDE, 1.0);
+    f.choose_primary_output(&left);
+    assert_eq!(output_geometry(&right).loc, (OUTPUT.0, 0).into());
+    (f, id, left, right)
+}
+
+/// Maps a window of `size`, drags it so that its geometry is at the global point `at`,
+/// and puts it on `workspace`. A drag can leave it across two outputs.
+fn put_at(
+    f: &mut Fixture,
+    id: ClientId,
+    at: (i32, i32),
+    workspace: usize,
+    size: (i32, i32),
+) -> ClientWindow {
+    let window = f.map(id, WindowSpec::plain(size));
+    let pid = f.pid(window);
+    let from = f.geometry(window).loc.to_f64();
+    let to = Point::<i32, Logical>::from(at).to_f64();
+    let policy = &mut f.state.caminito.policy;
+    assert!(policy.begin_move(SEAT, pid, from));
+    policy.grab_motion(SEAT, to, false);
+    policy.end_grab(SEAT);
+    policy.move_to_workspace(pid, workspace);
+    f.dispatch();
+    assert_eq!(f.geometry(window).loc, at.into(), "it's where it was put");
+    window
+}
+
+/// Switches `output` alone to `workspace`, as the debug interface does.
+#[track_caller]
+fn switch_output(f: &mut Fixture, output: &Output, workspace: usize) {
+    let caminito = &mut f.state.caminito;
+    assert!(caminito.switch_output_workspace(&output.name(), workspace));
+    f.dispatch();
+}
+
+/// Each output's active workspace.
+fn active_on(f: &Fixture, outputs: [&Output; 2]) -> [usize; 2] {
+    let policy = &f.state.caminito.policy;
+    outputs.map(|output| policy.active_workspace_on(output_id(output)))
+}
+
+/// Checks that nothing slides, and that nothing waits for a slide to end.
+#[track_caller]
+fn assert_no_slide(f: &Fixture) {
+    assert!(slides(f).is_empty(), "nothing slides: {:?}", slides(f));
+    assert_eq!(f.state.caminito.workspace_slides.deadline(), None);
+}
+
+#[test]
+fn a_switch_of_one_output_slides_it_alone_and_shows_nothing_on_the_other() {
+    let (mut f, id, left, right) = two_outputs(true, Vec::new());
+    let old = put_at(&mut f, id, TOP_LEFT, 0, LONG);
+    let new = put_at(&mut f, id, TOP_LEFT, 1, LONG);
+    let other = put_at(&mut f, id, LOW_RIGHT, 0, SMALL);
+    let on_other = middle(f.visible_frame(other));
+    let right_area = output_geometry(&right);
+    let local = on_other - right_area.loc;
+    f.wait_for_pixel_on(&right, local.x, local.y, WINDOW);
+    f.stop_clock();
+
+    switch_output(&mut f, &left, 1);
+    assert_eq!(active_on(&f, [&left, &right]), [1, 0]);
+    f.advance_clock(PART_WAY);
+    f.draw(&right);
+
+    let slide = slide(&f);
+    assert_eq!(slide.output, left.name());
+    assert_eq!((slide.from, slide.to), (0, 1));
+    assert!(0 < slide.offset.x && slide.offset.x < OUTPUT.0, "{slide:?}");
+    assert_eq!(slide.windows.len(), 2, "{slide:?}");
+    assert!(slide.still.is_empty(), "{slide:?}");
+    assert_eq!(slide.drawn(&f, old).loc.y, f.visible_frame(old).loc.y);
+    // The new workspace's window comes in from the right, over where the other output is,
+    // and is drawn on its own output alone.
+    let arriving = slide.drawn(&f, new);
+    let over_the_other = middle_within(arriving, right_area);
+    assert_eq!(pixel(&mut f, middle_on_output(arriving)), WINDOW);
+    assert_eq!(pixel_on(&mut f, &right, over_the_other), clear());
+    assert_eq!(pixel_on(&mut f, &right, on_other), WINDOW);
+
+    f.advance_clock(LENGTH - PART_WAY);
+    f.draw(&right);
+    assert_no_slide(&f);
+    assert_eq!(pixel_on(&mut f, &right, over_the_other), clear());
+    assert_eq!(pixel_on(&mut f, &right, on_other), WINDOW);
+}
+
+#[test]
+fn a_switch_towards_the_other_output_sends_nothing_onto_it() {
+    let (mut f, id, left, right) = two_outputs(true, Vec::new());
+    put_at(&mut f, id, TOP_LEFT, 0, LONG);
+    let old = put_at(&mut f, id, TOP_LEFT, 1, LONG);
+    let other = put_at(&mut f, id, LOW_RIGHT, 0, SMALL);
+    let on_other = middle(f.visible_frame(other));
+    let right_area = output_geometry(&right);
+    switch_output(&mut f, &left, 1);
+    f.advance_clock(LENGTH);
+    f.stop_clock();
+
+    // Back to the first workspace, on the left in the grid: the second one's window
+    // leaves to the right.
+    switch_output(&mut f, &left, 0);
+    f.advance_clock(PART_WAY);
+    f.draw(&right);
+
+    let slide = slide(&f);
+    assert_eq!((slide.from, slide.to), (1, 0));
+    let leaving = slide.drawn(&f, old);
+    let over_the_other = middle_within(leaving, right_area);
+    assert_eq!(pixel(&mut f, middle_on_output(leaving)), WINDOW);
+    assert_eq!(pixel_on(&mut f, &right, over_the_other), clear());
+    assert_eq!(pixel_on(&mut f, &right, on_other), WINDOW);
+}
+
+#[test]
+fn a_straddling_window_of_the_other_output_stays_drawn_on_both_through_the_slide() {
+    let (mut f, id, left, right) = two_outputs(true, Vec::new());
+    let old = put_at(&mut f, id, TOP_LEFT, 0, LONG);
+    let new = put_at(&mut f, id, TOP_LEFT, 1, LONG);
+    let across = put_at(&mut f, id, ACROSS, 0, SMALL);
+    let pid = f.pid(across);
+    assert_eq!(
+        f.state.caminito.policy.output_showing(pid),
+        Some(output_id(&right))
+    );
+    let frame = f.visible_frame(across);
+    let on_left = middle_within(frame, output());
+    let on_right = middle_within(frame, output_geometry(&right));
+    f.wait_for_pixel(on_left.x, on_left.y, WINDOW);
+    f.stop_clock();
+
+    switch_output(&mut f, &left, 1);
+
+    // As the slide starts, part-way and when it's over.
+    for step in [Duration::ZERO, PART_WAY, LENGTH] {
+        f.advance_clock(step);
+        f.draw(&right);
+        assert!(f.state.caminito.policy.is_showing(pid));
+        assert_eq!(f.visible_frame(across), frame);
+        assert_eq!(pixel(&mut f, on_left), WINDOW, "after {step:?}");
+        assert_eq!(pixel_on(&mut f, &right, on_right), WINDOW, "after {step:?}");
+        if step < LENGTH {
+            // The two others slide by in their band above it, and it's none of theirs.
+            let slide = slide(&f);
+            assert_eq!(slide.windows.len(), 2, "{slide:?}");
+            slide.drawn(&f, old);
+            slide.drawn(&f, new);
+            assert!(slide.still.is_empty(), "{slide:?}");
+        }
+    }
+    assert_no_slide(&f);
+}
+
+#[test]
+fn a_sliding_window_that_straddles_is_at_its_place_on_the_other_output() {
+    let (mut f, id, left, right) = two_outputs(true, Vec::new());
+    put_at(&mut f, id, TOP_LEFT, 0, SMALL);
+    // Most of it on the left output, its Main output, and the rest on the right one.
+    let at = (OUTPUT.0 - 200, 380);
+    let new = put_at(&mut f, id, at, 1, SMALL);
+    let frame = f.visible_frame(new);
+    let on_right = middle_within(frame, output_geometry(&right));
+    f.draw(&right);
+    assert_eq!(
+        pixel_on(&mut f, &right, on_right),
+        clear(),
+        "it doesn't show"
+    );
+    f.stop_clock();
+
+    switch_output(&mut f, &left, 1);
+    f.advance_clock(PART_WAY);
+    f.draw(&right);
+
+    let out = slide(&f);
+    let arriving = out.drawn(&f, new);
+    assert_eq!(arriving, moved(frame, out.offset));
+    // Its own output draws it on its way in. The other draws its part at its place, and
+    // nothing of it further right, where its own output has it now.
+    let further = Point::from((arriving.loc.x + arriving.size.w - 20, on_right.y));
+    assert!(!frame.contains(further), "{out:?}");
+    assert_eq!(pixel_on(&mut f, &right, on_right), WINDOW);
+    assert_eq!(pixel_on(&mut f, &right, further), clear());
+
+    // And back: it leaves on its own output, and the other doesn't draw its part.
+    f.advance_clock(LENGTH);
+    switch_output(&mut f, &left, 0);
+    f.advance_clock(PART_WAY);
+    f.draw(&right);
+    let back = slide(&f);
+    // The slide has it over the other output by now, which draws it nowhere.
+    let leaving = back.drawn(&f, new);
+    assert_eq!(pixel_on(&mut f, &right, middle(leaving)), clear());
+    assert_eq!(pixel_on(&mut f, &right, on_right), clear());
+}
+
+#[test]
+fn under_spanning_workspaces_each_output_slides_its_own_windows_by_its_own_size() {
+    let (mut f, id, left, right) = two_outputs(false, two_rows());
+    // Each workspace's window on the left output, and its window on the right one.
+    let windows: Vec<[ClientWindow; 2]> = [0, 1, 3]
+        .into_iter()
+        .map(|w| [TOP_LEFT, TOP_RIGHT].map(|at| put_at(&mut f, id, at, w, LONG)))
+        .collect();
+    let outputs = [&left, &right];
+    f.stop_clock();
+
+    // Right, and then down.
+    let ways = [
+        (KEY_RIGHT, 0, 1, [(OUTPUT.0, 0), (WIDE.0, 0)]),
+        (KEY_DOWN, 1, 2, [(0, OUTPUT.1), (0, WIDE.1)]),
+    ];
+    for (key, from, to, distances) in ways {
+        f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, key]);
+        let at_once = slides(&f);
+        f.advance_clock(LENGTH / 2);
+        let half_way = slides(&f);
+        assert_eq!(at_once.len(), 2, "both outputs slide: {at_once:?}");
+        assert_eq!(half_way.len(), 2, "both outputs slide: {half_way:?}");
+
+        for (index, output) in outputs.into_iter().enumerate() {
+            let distance = Point::<i32, Logical>::from(distances[index]);
+            let (old, new) = (windows[from][index], windows[to][index]);
+            let (old_frame, new_frame) = (f.visible_frame(old), f.visible_frame(new));
+            assert_eq!(at_once[index].output, output.name());
+            // The whole of its own width or height at the start.
+            assert_eq!(at_once[index].offset, distance);
+            // Half the time leaves an eighth of the way.
+            let slide = &half_way[index];
+            let offset = Point::from((distance.x / 8, distance.y / 8));
+            assert_eq!(slide.offset, offset, "{slide:?}");
+            assert_eq!(slide.windows.len(), 2, "its own windows alone: {slide:?}");
+            assert_eq!(slide.drawn(&f, new), moved(new_frame, offset));
+            assert_eq!(slide.drawn(&f, old), moved(old_frame, offset - distance));
+            let arriving = middle_within(slide.drawn(&f, new), output_geometry(output));
+            assert_eq!(pixel_on(&mut f, output, arriving), WINDOW);
+        }
+
+        f.advance_clock(LENGTH / 2);
+        assert_no_slide(&f);
+    }
+}
+
+#[test]
+fn turning_per_output_workspaces_on_or_off_and_an_output_coming_or_going_slide_nothing() {
+    let (mut f, id, left, right) = two_outputs(true, Vec::new());
+    put_at(&mut f, id, TOP_LEFT, 0, LONG);
+    let first = put_at(&mut f, id, LOW_RIGHT, 0, SMALL);
+    let second = put_at(&mut f, id, TOP_RIGHT, 1, LONG);
+    let (first_frame, second_frame) = (f.visible_frame(first), f.visible_frame(second));
+    switch_output(&mut f, &right, 1);
+    f.advance_clock(LENGTH);
+    assert_no_slide(&f);
+    // A slide that started from here on wouldn't end for the time that passes.
+    f.stop_clock();
+    assert_eq!(pixel_on(&mut f, &right, middle(second_frame)), WINDOW);
+
+    // Off: the right output takes the primary output's workspace, at once.
+    f.set_setting(CAMINITO, "workspaces-per-output", Setting::Bool(false));
+    f.dispatch_until(|f| !f.state.caminito.policy.workspaces_per_output());
+    assert_eq!(active_on(&f, [&left, &right]), [0, 0]);
+    assert_no_slide(&f);
+    assert_eq!(pixel_on(&mut f, &right, middle(first_frame)), WINDOW);
+    assert_eq!(pixel_on(&mut f, &right, middle(second_frame)), clear());
+
+    f.set_setting(CAMINITO, "workspaces-per-output", Setting::Bool(true));
+    f.dispatch_until(|f| f.state.caminito.policy.workspaces_per_output());
+    assert_no_slide(&f);
+
+    // An output that appears.
+    let third = f.add_output((640, 480), 1.0);
+    f.dispatch();
+    assert_no_slide(&f);
+    switch_output(&mut f, &third, 1);
+    assert_eq!(slide(&f).output, third.name(), "it slides as the others do");
+    f.advance_clock(LENGTH);
+
+    // And one that goes, from another workspace: the left output takes its windows.
+    switch_output(&mut f, &right, 1);
+    f.advance_clock(LENGTH);
+    assert_eq!(active_on(&f, [&left, &right]), [0, 1]);
+    f.unplug(&right);
+    assert_eq!(
+        f.state.caminito.policy.output_showing(f.pid(first)),
+        Some(output_id(&left))
+    );
+    assert_no_slide(&f);
+    f.unplug(&third);
+    assert_no_slide(&f);
+}
+
+#[test]
+fn dynamic_workspaces_removing_the_workspace_an_output_shows_slides_it_to_the_first() {
+    let settings = vec![
+        (
+            MARCO_GENERAL,
+            "dynamic-workspaces".into(),
+            Setting::Bool(true),
+        ),
+        (CAMINITO, "workspace-slide".into(), Setting::Bool(true)),
+    ];
+    let mut f = Fixture::with_marco_master_settings(settings);
+    f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    let first = f.map(id, WindowSpec::plain(BIG));
+    let second = map_on(&mut f, id, 1, SMALL);
+    let frame = f.visible_frame(first);
+    // The empty workspace after the two.
+    f.state.caminito.policy.switch_workspace(2);
+    f.dispatch();
+    f.advance_clock(LENGTH);
+    assert_no_slide(&f);
+    f.stop_clock();
+
+    // The second workspace's one window goes, and the empty one after it with it.
+    f.client(id).destroy_window(second.xdg());
+    f.roundtrip(id);
+    assert_eq!(f.state.caminito.policy.workspace_count(), 2);
+    assert_eq!(active(&f), 0);
+
+    // Two columns to the left.
+    let slide = slide(&f);
+    assert_eq!((slide.from, slide.to), (2, 0));
+    assert_eq!(slide.offset, Point::from((-2 * OUTPUT.0, 0)));
+    assert_eq!(slide.windows.len(), 1, "{slide:?}");
+    assert_eq!(slide.drawn(&f, first), moved(frame, slide.offset));
+    f.advance_clock(LENGTH);
+    assert_no_slide(&f);
+    assert_eq!(pixel(&mut f, middle(frame)), WINDOW);
 }
