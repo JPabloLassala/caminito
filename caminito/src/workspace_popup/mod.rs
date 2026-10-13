@@ -157,7 +157,7 @@ impl Caminito {
     }
 
     /// A binding's `action` ran with `mods` down, and shows the popup: it appears at once,
-    /// as Marco's does, on the output the pointer is on, unless Policy refuses it for the
+    /// as Marco's does, on the output the action switched, unless Policy refuses it for the
     /// seat's Interaction. An open popup stays as it is. A binding with no modifier shows
     /// none, since no release would close it; Marco ends such a grab as it begins
     /// (keybindings.c:3541-3552).
@@ -168,7 +168,7 @@ impl Caminito {
         };
         if self.workspace_popup.is_none()
             && !holding.is_empty()
-            && let Some(output) = self.popup_output()
+            && let Some(output) = self.workspace_popup_output()
             && self.policy.open_workspace_popup(beside.is_move)
         {
             let layout = self.workspace_popup_layout(&output);
@@ -253,7 +253,7 @@ impl Caminito {
         let output = if self.outputs.contains(shown) {
             Some(shown.clone())
         } else {
-            self.popup_output()
+            self.workspace_popup_output()
         };
         let Some(output) = output.filter(|_| !self.workspace_popup_gives_way()) else {
             self.close_workspace_popup();
@@ -273,6 +273,17 @@ impl Caminito {
             popup.drawn = Some(drawn);
         }
         self.queue_redraw_all();
+    }
+
+    /// The output the popup appears on: the seat's Active output, whose workspace the
+    /// bindings switch (ADR 0032). With Spanning workspaces every output switches, and it's
+    /// the output the pointer is on, as the Window switcher's.
+    fn workspace_popup_output(&self) -> Option<Output> {
+        let active = self.policy.active_output(SEAT);
+        let active = active.filter(|_| self.policy.workspaces_per_output());
+        let is_active = |output: &&Output| Some(output_id(output)) == active;
+        let output = self.outputs.iter().find(is_active).cloned();
+        output.or_else(|| self.popup_output())
     }
 
     /// The popup's rectangles on `output`, for the Workspace grid as it is now.
@@ -298,7 +309,13 @@ impl Caminito {
                     && !policy.is_desktop_or_dock(*id)
                     && (workspace == active || !policy.is_sticky(*id))
             });
-            let frames = shown.filter_map(|id| policy.frame_rect(id));
+            // The output's own windows, those it's the Main output of (ADR 0032). With
+            // Spanning workspaces a workspace is every output's, and it's those on it.
+            let own = shown.filter(|id| {
+                !policy.workspaces_per_output()
+                    || policy.output_showing(*id) == Some(output_id(output))
+            });
+            let frames = own.filter_map(|id| policy.frame_rect(id));
             let on_output = frames.filter(|frame| frame.overlaps(geometry));
             on_output
                 .map(|frame| Rectangle::new(frame.loc - geometry.loc, frame.size))

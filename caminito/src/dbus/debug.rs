@@ -42,7 +42,7 @@ impl DebugInterface {
     }
 
     /// Switches the output named `output` (its connector, as `wlr-randr` names it) to
-    /// `workspace`, numbered from 0, as a binding will switch the Active output's (230,
+    /// `workspace`, numbered from 0, as a binding switches the Active output's (230,
     /// 231). With `workspaces-per-output` off it switches every output. Returns whether
     /// there's such an output and such a workspace.
     async fn switch_output_workspace(

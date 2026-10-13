@@ -651,14 +651,17 @@ session_env() {
 - **Steps:**
   1. Log into *MATE on Caminito* with four workspaces and two monitors. Set the workspace
      switcher's rows to 2 in its *Preferences*, and name the workspaces there, the last one
-     with a name longer than the others. Open a terminal on the first workspace.
-  2. With the pointer on the first monitor, hold Ctrl+Alt and press Right, then Down, Left
-     and Up, slowly, and release Ctrl+Alt.
+     with a name longer than the others. Open a terminal on the first workspace of the
+     first monitor.
+  2. With the terminal focused, hold Ctrl+Alt and press Right, then Down, Left and Up,
+     slowly, and release Ctrl+Alt.
   3. Hold Ctrl+Alt, press Left, and release Alt alone.
   4. Hold Ctrl+Alt, press Right, and press A. Hold Ctrl+Alt, press Left, and click a window.
   5. Tap Ctrl+Alt+Right, then Ctrl+Alt+Left, quickly.
   6. With the terminal focused, hold Ctrl+Shift+Alt and press Right, then Down, and release.
-  7. Move the pointer to the second monitor and do step 2 again.
+  7. Open a terminal on the second monitor, move the pointer back to the first monitor and
+     do step 2 again. Run `gsettings set org.mate.Caminito workspaces-per-output false`, do
+     step 2 once more, and set the key back to `true`.
   8. Hold Alt, start to move a window with the left button, and press Ctrl+Right with them
      held. Lock the screen and press Ctrl+Alt+Right.
   9. Set the rows back to 1. Run as part of M8's closing run (173).
@@ -672,7 +675,8 @@ session_env() {
   click closes it and doesn't reach the window. In step 5 the workspace changes and back, and
   the popup at most flashes. In step 6 the terminal goes to the second workspace and then
   the fourth, its outline with it, and keeps the focus. In step 7 the popup is on the second
-  monitor. In step 8 the workspace changes under the move and no popup shows, and under the
+  monitor, the Active output, and shows that monitor's workspaces and windows; with the key
+  off it is on the first monitor, where the pointer is (231). In step 8 the workspace changes under the move and no popup shows, and under the
   lock nothing happens (152).
 - **Debug tool:** `org.mate.Caminito.Debug`'s state dump, whose `workspace_popup` member has
   the popup's output, its mode, the grid's shape, the workspace marked and each cell's
@@ -750,12 +754,12 @@ session_env() {
      which prints `true`. Open a terminal on the first and second workspaces of each monitor,
      and a `pluma` on the first monitor's first workspace, moved to straddle the two
      monitors with its larger part on the first.
-  2. With the pointer on the first monitor, press Ctrl+Alt+Right, then Ctrl+Alt+Left. Do the
-     same with the pointer on the second monitor.
+  2. Click a terminal on the first monitor, and press Ctrl+Alt+Right, then Ctrl+Alt+Left. Do
+     the same after a click on a terminal on the second monitor.
   3. Click another workspace in the workspace switcher of each monitor's panel, if each has
      one.
-  4. With the pointer on the first monitor, hold Ctrl+Alt+Right across three workspaces, and
-     back.
+  4. Click a terminal on the first monitor, and hold Ctrl+Alt+Right across three workspaces,
+     and back.
   5. Focus a terminal on the first monitor and press Ctrl+Shift+Alt+Right, then
      Ctrl+Shift+Alt+Left.
   6. `gsettings set org.mate.Caminito workspaces-per-output false`, and press Ctrl+Alt+Right
@@ -764,8 +768,8 @@ session_env() {
   8. `gsettings set org.mate.Marco.general dynamic-workspaces true`, open a terminal on the
      second workspace of the first monitor, and close it there. Set the key back to `false`
      and `num-workspaces` to 4.
-- **Expected:** in step 2 only the monitor with the pointer slides, and the other is as it
-  was, to the pixel. A sliding window is cut at the edge of its monitor and no part of it
+- **Expected:** in step 2 only the monitor of the terminal that was clicked slides, wherever
+  the pointer is, and the other is as it was, to the pixel. A sliding window is cut at the edge of its monitor and no part of it
   shows on the other. `pluma` slides on the first monitor alone: on the second its part isn't
   drawn as it leaves, and is at its place from the first frame as it arrives. When the second
   monitor switches, `pluma` stays at its place on both. In step 3 the pager's switch slides
@@ -778,6 +782,54 @@ session_env() {
   workspace after its end (237).
 - **Debug tool:** `DumpState`'s `workspace_slides`, with one slide for each monitor that
   switches. `wlr-randr` for the refresh rates.
+
+### The workspace bindings switch the Active output
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side and four workspaces in one
+     row. Run `gsettings get org.mate.Caminito workspaces-per-output`, which prints `true`.
+     Open a terminal on the first workspace of each monitor.
+  2. Click the first monitor's terminal, and press Ctrl+Alt+Right, then Ctrl+Alt+Left. Click
+     the second monitor's terminal, leave the pointer on the first monitor, and press the
+     same keys.
+  3. With the second monitor's terminal focused and the pointer on the first monitor, press
+     Ctrl+Alt+Right two times, with a second between, and type a letter after each. Then
+     press Ctrl+Alt+Left two times.
+  4. With the second monitor's terminal focused, press the binding of
+     `switch-to-workspace-3`, then that of `switch-to-workspace-prev` two times, if they
+     have bindings.
+  5. Close the second monitor's terminal with its close button, and type a letter. Click the
+     first monitor's terminal and press Ctrl+Alt+Right, then Ctrl+Alt+Left.
+  6. Press Ctrl+Alt+Right on the second monitor first, as in step 2, if it shows its first
+     workspace. Then drag the first monitor's terminal across to the second monitor, and
+     press Ctrl+Alt+Right, then Ctrl+Alt+Left.
+  7. In that terminal, on the second monitor, switch the first monitor to its third
+     workspace with the `SwitchOutputWorkspace` call below, and run `gsettings set
+     org.mate.Caminito workspaces-per-output false`. Press Ctrl+Alt+Right and
+     Ctrl+Alt+Left. Set the key back to `true`, and press Ctrl+Alt+Right.
+- **Expected:** in step 2 each press switches the monitor of the terminal that was clicked,
+  and the other monitor is as it was, wherever the pointer is. The Workspace popup is on the
+  monitor that switches, and the switch sound goes the way that monitor went. In step 3 the
+  second monitor goes to its second workspace and then its third, both empty: no window has
+  the focus, the first monitor's terminal gets no letter, and the second press acts on the
+  second monitor still. The way back gives the focus to the second monitor's terminal. In
+  step 4 the second monitor goes to its third workspace, back to the one before, and to the
+  third again, and the first monitor doesn't change. In step 5 nothing has the focus after
+  the close and the first monitor's terminal gets no letter; after the click, the first
+  monitor switches. In step 6 the terminal stays in view on the second monitor with the
+  focus, though that monitor shows another workspace than the one the terminal left, and
+  the presses switch the second monitor alone. In step 7 the first monitor alone goes to
+  its third workspace at the call. When the key goes off, the first monitor shows the
+  workspace the second one shows, with the terminal still in view, and the two presses
+  switch both monitors together. With the key on again both keep what they show, and the
+  last press switches the second monitor alone. The terminal's workspace number doesn't
+  change in step 7 (231).
+- **Debug tool:** `DumpState`'s `active_output`, the name of the seat's Active output, and
+  each of its `outputs`' `active_workspace`. `busctl --user call org.mate.Caminito.Debug
+  /org/mate/Caminito/Debug org.mate.Caminito.Debug SwitchOutputWorkspace su HDMI-A-1 2`
+  switches the monitor of that name, as `wlr-randr` gives it, to its third workspace with no
+  binding.
 
 ## Screenshots
 

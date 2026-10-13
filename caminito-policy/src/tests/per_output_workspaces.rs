@@ -2,7 +2,7 @@
 //! `workspaces-per-output` on and off.
 
 use super::*;
-use crate::{OutputSwitch, WrapStyle};
+use crate::{Direction, OutputSwitch, WrapStyle};
 
 fn at(x: f64, y: f64) -> Point<f64, Logical> {
     Point::new(x, y)
@@ -97,18 +97,6 @@ fn a_switch_of_the_focused_windows_output_focuses_that_outputs_windows() {
 
     policy.switch_output_workspace(OutputId(2), 2);
     assert_eq!(policy.focus(SEAT), None);
-}
-
-#[test]
-fn switch_to_workspace_prev_goes_by_the_primary_outputs() {
-    let mut policy = two_outputs(true);
-    policy.switch_output_workspace(OutputId(1), 2);
-    policy.switch_output_workspace(OutputId(2), 3);
-
-    policy.action(SEAT, Action::SwitchToWorkspacePrev, ms(3));
-
-    // Every output, to the primary output's previous, until the Active output's (231).
-    assert_eq!(active(&policy), (0, 0));
 }
 
 #[test]
@@ -252,22 +240,23 @@ fn with_the_key_off_a_dragged_window_keeps_its_workspace() {
 }
 
 #[test]
-fn turning_the_key_off_gives_every_output_the_primary_outputs_workspace() {
+fn turning_the_key_off_gives_every_output_the_active_outputs_workspace() {
     let mut policy = two_outputs(true);
-    policy.set_primary_output(Some(OutputId(2)));
+    policy.switch_output_workspace(OutputId(1), 3);
     policy.switch_output_workspace(OutputId(2), 2);
     policy.move_to_workspace(id(2), 2);
-    policy.activate(SEAT, id(1), ms(3));
+    policy.click(SEAT, id(2), ms(3));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
 
     set_per_output(&mut policy, false);
 
+    // The Active output's, and not the primary output's.
     assert_eq!(active(&policy), (2, 2));
     // No window's workspace changes.
     assert_eq!(policy.workspace_of(id(1)), Some(0));
     assert_eq!(policy.workspace_of(id(2)), Some(2));
     assert!(!policy.is_showing(id(1)));
     assert!(policy.is_showing(id(2)));
-    // The focus that's hidden goes, to what shows.
     assert_eq!(policy.focus(SEAT), Some(id(2)));
 
     // And the outputs switch together from there.
@@ -311,6 +300,195 @@ fn with_one_output_the_key_changes_nothing() {
         )
     };
     assert_eq!(run(true), run(false));
+}
+
+// The Active output (231): the focused window's Main output, which the bindings switch.
+
+#[test]
+fn a_binding_switches_the_focused_windows_output_and_not_the_other() {
+    let mut policy = two_outputs(true);
+    // Window 2, on the right output, is focused as the last one mapped.
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+    assert_eq!(active(&policy), (0, 1));
+    assert!(policy.is_showing(id(1)));
+    assert!(!policy.is_showing(id(2)));
+
+    policy.click(SEAT, id(1), ms(4));
+    policy.action(SEAT, Action::SwitchToWorkspace(2), ms(5));
+    assert_eq!(active(&policy), (2, 1));
+}
+
+#[test]
+fn a_binding_switches_to_the_workspace_beside_the_active_outputs() {
+    let mut policy = two_outputs(true);
+    policy.switch_output_workspace(OutputId(1), 2);
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(3));
+
+    // Beside the right output's workspace 0, and not the primary output's 2.
+    assert_eq!(active(&policy), (2, 1));
+}
+
+#[test]
+fn a_switch_to_an_empty_workspace_focuses_nothing_and_keeps_the_active_output() {
+    let mut policy = two_outputs(true);
+    // The pointer is on the left output, which decides nothing.
+    policy.set_pointer(at(300., 300.));
+
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+
+    // Window 1 shows on the left output, and isn't focused for it.
+    assert_eq!(policy.focus(SEAT), None);
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+    // A second switch acts on the same output.
+    policy.action(SEAT, Action::SwitchToWorkspace(2), ms(4));
+    assert_eq!(active(&policy), (0, 2));
+    assert_eq!(policy.focus(SEAT), None);
+
+    // And back to the top window showing on it.
+    policy.action(SEAT, Action::SwitchToWorkspace(0), ms(5));
+    assert_eq!(active(&policy), (0, 0));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
+#[test]
+fn switch_to_workspace_prev_goes_back_on_the_active_output_only() {
+    let mut policy = two_outputs(true);
+    policy.switch_output_workspace(OutputId(1), 2);
+
+    policy.action(SEAT, Action::SwitchToWorkspace(3), ms(3));
+    assert_eq!(active(&policy), (2, 3));
+
+    // The right output's previous, 0, and not the left one's.
+    policy.action(SEAT, Action::SwitchToWorkspacePrev, ms(4));
+    assert_eq!(active(&policy), (2, 0));
+    policy.action(SEAT, Action::SwitchToWorkspacePrev, ms(5));
+    assert_eq!(active(&policy), (2, 3));
+}
+
+#[test]
+fn the_focus_stays_off_the_other_output_until_the_user_focuses_a_window_there() {
+    let mut policy = two_outputs(true);
+
+    // The focused window goes, and the other output's window isn't focused for it.
+    policy.unmap_window(id(2));
+    assert_eq!(policy.focus(SEAT), None);
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+    policy.click(SEAT, id(1), ms(3));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(4));
+    assert_eq!(active(&policy), (1, 0));
+}
+
+#[test]
+fn a_minimised_focused_window_gives_the_focus_to_its_own_outputs_windows() {
+    let mut policy = two_outputs(true);
+    policy.map_window(
+        TestWindow::new(3, 400, 300).with_requested_position(2200, 200),
+        ms(3),
+    );
+    policy.click(SEAT, id(1), ms(4));
+    policy.click(SEAT, id(3), ms(5));
+
+    // Window 1 was focused before window 3, and is on the other output.
+    policy.minimize(id(3));
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+
+    policy.minimize(id(2));
+    assert_eq!(policy.focus(SEAT), None);
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+}
+
+#[test]
+fn lowering_the_only_window_of_its_output_keeps_the_focus_there() {
+    let mut policy = two_outputs(true);
+
+    policy.lower(SEAT, id(2), ms(3));
+
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+}
+
+#[test]
+fn the_active_output_follows_the_focused_window_across() {
+    let mut policy = two_outputs(true);
+
+    policy.request_geometry(id(2), Some(Point::from((200, 200))), None);
+
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+}
+
+#[test]
+fn the_primary_output_stands_in_while_a_seat_has_no_active_output() {
+    let mut policy = Policy::<TestWindow>::new(Config {
+        workspaces_per_output: true,
+        ..Config::default()
+    });
+    assert_eq!(policy.active_output(SEAT), None);
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.add_output(output(2, 1920, 0, 1280, 1024));
+    policy.set_primary_output(Some(OutputId(2)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(1));
+
+    assert_eq!(active(&policy), (0, 1));
+}
+
+#[test]
+fn the_primary_output_stands_in_once_the_active_output_is_gone() {
+    let mut policy = two_outputs(true);
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+    policy.remove_output(OutputId(2));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+
+    // It isn't the Active output again for coming back.
+    policy.add_output(output(2, 1920, 0, 1280, 1024));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+}
+
+#[test]
+fn the_switch_sound_goes_the_way_of_the_output_that_switched() {
+    let mut policy = two_outputs(true);
+    policy.switch_output_workspace(OutputId(2), 2);
+    policy.move_to_workspace(id(2), 2);
+    policy.take_workspace_switches();
+
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+
+    // From the right output's workspace 2, and not from the primary output's 0.
+    assert_eq!(policy.take_workspace_switches(), [Direction::Left]);
+}
+
+#[test]
+fn with_the_key_off_the_bindings_switch_every_output() {
+    let mut policy = two_outputs(false);
+
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(3));
+    assert_eq!(active(&policy), (1, 1));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(4));
+    assert_eq!(active(&policy), (2, 2));
+    policy.action(SEAT, Action::SwitchToWorkspacePrev, ms(5));
+    assert_eq!(active(&policy), (1, 1));
+}
+
+#[test]
+fn with_the_key_off_the_focus_goes_to_a_window_on_any_output() {
+    let mut policy = two_outputs(false);
+
+    policy.unmap_window(id(2));
+
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
 }
 
 // What the compositor's Workspace slide is told of a switch (233).
@@ -425,7 +603,8 @@ fn turning_the_key_off_and_an_output_that_comes_note_no_switch() {
     policy.take_output_switches();
 
     set_per_output(&mut policy, false);
-    assert_eq!(active(&policy), (0, 0));
+    // The right output's, the Active output, where window 2 had the focus.
+    assert_eq!(active(&policy), (1, 1));
     policy.add_output(output(3, 3200, 0, 1280, 1024));
 
     assert_eq!(policy.take_output_switches(), []);

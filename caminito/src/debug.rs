@@ -79,6 +79,9 @@ struct StateDump {
     outputs: Vec<OutputDump>,
     /// The primary output's name (81): the user's choice, or its stand-in.
     primary_output: Option<String>,
+    /// The name of the seat's Active output (ADR 0032), which its workspace bindings
+    /// switch.
+    active_output: Option<String>,
     /// The one scale of every XWayland window (41).
     x11_scale: u32,
     focus: Option<u64>,
@@ -459,6 +462,8 @@ struct OutputDump {
     name: String,
     geometry: RectDump,
     scale: f64,
+    /// Its active workspace, which is every output's with Spanning workspaces (ADR 0032).
+    active_workspace: usize,
     /// The output less what layer surfaces' exclusive zones and XWayland windows' struts
     /// reserve along its edges (64).
     work_area: RectDump,
@@ -622,6 +627,7 @@ impl Caminito {
                 name: output.name(),
                 geometry: output_geometry(output).into(),
                 scale: output.current_scale().fractional_scale(),
+                active_workspace: policy.active_workspace_on(output_id(output)),
                 work_area: work_area(output).into(),
                 layer_surfaces: self
                     .layer_surfaces(output)
@@ -790,6 +796,12 @@ impl Caminito {
                 })
             })
             .collect();
+        let active_output = policy.active_output(SEAT);
+        let active_output = self
+            .outputs
+            .iter()
+            .find(|output| Some(output_id(output)) == active_output)
+            .map(|output| output.name());
         let dump = StateDump {
             windows,
             workspaces,
@@ -798,6 +810,7 @@ impl Caminito {
             showing_desktop: policy.is_showing_desktop(),
             outputs,
             primary_output: self.primary_output().map(|output| output.name()),
+            active_output,
             x11_scale: self.x11_scale(),
             focus: policy.focus(SEAT).map(|id| id.0),
             lock: self.lock.state().name(),
@@ -900,8 +913,7 @@ impl Caminito {
     }
 
     /// Switches the output named `name` to `workspace`, which with `workspaces-per-output`
-    /// on leaves the other outputs alone (230). Until the bindings switch the Active
-    /// output's (231), it's the one way to make the outputs' workspaces differ. Returns
+    /// on leaves the other outputs alone (230), whichever is the Active output. Returns
     /// whether there's such an output and such a workspace.
     pub fn switch_output_workspace(&mut self, name: &str, workspace: usize) -> bool {
         let Some(output) = self.outputs.iter().find(|output| output.name() == name) else {

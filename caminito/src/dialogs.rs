@@ -39,7 +39,7 @@ impl Caminito {
         if self.workspace_rename.is_some() {
             return;
         }
-        // The primary output's, standing in for the Active output's (231).
+        // The primary output's, standing in for the Active output's (222).
         let workspace = self.policy.primary_active_workspace();
         let Some(name) = self.policy.workspace_names().get(workspace) else {
             return;

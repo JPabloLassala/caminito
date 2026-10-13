@@ -81,11 +81,15 @@ impl ActiveWorkspaces {
 }
 
 impl<W: PolicyWindow> Policy<W> {
-    /// The primary output's, or the one an output added takes while policy has none. It
-    /// stands in for the Active output's until ticket 231 gives the seat one.
+    /// The primary output's, or the one an output added takes while policy has none.
     pub(super) fn primary_shown(&self) -> Shown {
         let primary = self.primary_output().map(|output| output.id);
         self.active_workspaces.of(primary)
+    }
+
+    /// `seat`'s Active output's, or the one an output added takes while policy has none.
+    pub(super) fn active_shown(&self, seat: SeatId) -> Shown {
+        self.active_workspaces.of(self.active_output(seat))
     }
 
     /// Notes the switch to `workspace` of each output that shows another, of `only` or of
@@ -115,18 +119,18 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Every output takes the primary output's active and previous workspace, as
-    /// `workspaces-per-output` is turned off (230): it stands in for the Active output's
-    /// (231). No window changes its workspace, and an output that shows another one stops
-    /// showing it, as a switch does.
+    /// Every output takes the active and previous workspace of the Active output, that of
+    /// the seat that last acted, as `workspaces-per-output` is turned off (230, 231). No
+    /// window changes its workspace, and an output that shows another one stops showing
+    /// it, as a switch does.
     pub(super) fn span_workspaces(&mut self) {
-        let primary = self.primary_shown();
+        let active = self.active_shown(self.last_seat);
         let switches = self
             .active_workspaces
             .each()
-            .any(|shown| shown.active != primary.active);
+            .any(|shown| shown.active != active.active);
         for shown in self.active_workspaces.each_mut() {
-            *shown = primary;
+            *shown = active;
         }
         if switches {
             // As a switch closes them: the workspace changing under an open switcher (ruling
