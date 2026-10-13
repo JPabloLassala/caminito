@@ -865,6 +865,47 @@ session_env() {
 - **Debug tool:** `DumpState`'s `active_output`, and its `active_workspace`, which is that
   output's.
 
+### A dialog follows its window's workspace, and a sticky window stays, on two monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, four workspaces in one row
+     and `workspaces-per-output` at `true`. The panel is on the first monitor, and its
+     window list shows the windows of all workspaces. Open a `pluma` on the first workspace
+     of the first monitor and a terminal on the first workspace of the second.
+  2. In `pluma`, open *Search > Find…* and drag the Find dialog to the second monitor. Click
+     the `pluma` window and press Ctrl+Alt+Right, then Ctrl+Alt+Left. Click the Find dialog
+     and press the same keys. Close the dialog.
+  3. In the terminal's Window menu (Alt+Space), choose *Always on Visible Workspace*. Press
+     Ctrl+Alt+Right two times, then Ctrl+Alt+Left two times. Drag the terminal to the first
+     monitor and press the same keys. Press Ctrl+Alt+Right, and choose *Only on This
+     Workspace* in its Window menu. Press Ctrl+Alt+Left, then Ctrl+Alt+Right.
+  4. With the terminal focused on the first monitor's second workspace, press
+     Ctrl+Shift+Alt+Right, then Ctrl+Shift+Alt+Left.
+  5. Drag the terminal back to the second monitor. Click it, and press Ctrl+Alt+Right until
+     the second monitor shows its last workspace, where the terminal isn't. Open a second
+     terminal there, and open its Window menu.
+  6. Press the binding of `move-to-monitor-w` with the second terminal focused, if it has
+     one, and that of `move-to-monitor-e` after it.
+  7. Click the first monitor's panel, press Ctrl+Alt+Left until the first monitor shows
+     `pluma`, and click the `pluma` window. In the window list, click the button of the
+     first terminal, which no monitor shows.
+- **Expected:** in step 2, with `pluma` clicked, the first monitor switches and the Find
+  dialog leaves the second monitor with `pluma`, and comes back with it; the second monitor
+  shows its first workspace all the time. With the dialog clicked, the second monitor
+  switches, and the dialog stays in view with the focus, as `pluma` does on the first. In
+  step 3 the terminal stays in view through each switch of the monitor it's on, and, made
+  not sticky, it's on the first monitor's second workspace alone. In step 4 the terminal
+  goes to the first monitor's third workspace and back, the first monitor goes with it, and
+  the second monitor doesn't change. In step 5 the menu has *Move to Workspace Left* and no
+  *Move to Workspace Right*, though the first monitor shows another workspace. In step 6 the
+  terminal goes to the first monitor, in view on the workspace that monitor shows, and back
+  to the second one's last workspace. In step 7 the second monitor alone switches to the
+  first terminal's workspace, the terminal has the focus, and the first monitor still shows
+  `pluma` (223).
+- **Debug tool:** `DumpState`'s `outputs`, each with its `active_workspace`, and each
+  window's `workspace`.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

@@ -282,7 +282,9 @@ impl Caminito {
                 Some(running) => Slide::retargeted(running, &switch, size, now),
                 None => Slide::new(&switch, size, now),
             };
-            let on_output = |id: &&WindowId| policy.output_showing(**id) == Some(switch.output);
+            // Those drawn there. A dialog dragged to another output leaves and arrives
+            // with its root (223), and isn't the switched output's to slide.
+            let on_output = |id: &&WindowId| policy.main_output_of(**id) == Some(switch.output);
             let leaving = was_shown
                 .difference(shown)
                 .filter(on_output)
@@ -361,7 +363,7 @@ impl Caminito {
         let mut windows: Vec<WindowId> = policy
             .windows()
             .map(|mapped| mapped.id())
-            .filter(|&id| policy.is_showing(id) && policy.output_showing(id) == Some(slide.output))
+            .filter(|&id| policy.is_showing(id) && policy.main_output_of(id) == Some(slide.output))
             .filter(|id| !slide.arriving.contains(id))
             .collect();
         windows.sort();

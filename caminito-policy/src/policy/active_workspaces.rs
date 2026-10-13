@@ -1,7 +1,8 @@
 //! Each output's active workspace, and the one before it (ADR 0032). With
 //! `workspaces-per-output` on an output can switch by itself; off, every switch sets them
 //! all, so they're one: Spanning workspaces, which is a mode of this code path and not a
-//! second one. A window is shown by its own Main output's (230).
+//! second one. A window is shown by its own Main output's (230), and a transient by its
+//! family's root's (223).
 
 use super::*;
 
@@ -157,9 +158,10 @@ impl<W: PolicyWindow> Policy<W> {
     /// A window whose Main output changed since `apply` last looked, because most of it
     /// has crossed to another output, takes the active workspace of the output it's on now
     /// if it was showing on the one it left, so that it stays in view (230). Its family
-    /// goes with it, so it's a root's crossing that counts: a transient's is ticket 223's,
-    /// as is a sticky window's, which is on every workspace. Spanning workspaces have
-    /// one active workspace, so there it's always the same.
+    /// goes with it, so it's a root's crossing that counts: a transient that crosses alone
+    /// stays on its family's workspace, and shows with its root (223). A sticky window is
+    /// on every workspace of the output it's on now. Spanning workspaces have one active
+    /// workspace, so there it's always the same.
     pub(super) fn follow_main_outputs(&mut self) {
         let ids: Vec<WindowId> = self.windows.keys().copied().collect();
         for id in ids {
@@ -184,15 +186,25 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// The active workspace of `id`'s Main output, the output its frame is most on, or of
-    /// the primary output for a window on none.
+    /// The active workspace of the output `id` shows by.
     pub(super) fn active_workspace_of(&self, id: WindowId) -> usize {
         self.active_workspaces.of(self.output_showing(id)).active
     }
 
-    /// The output whose active workspace says whether `id` shows: its Main output, the
-    /// output its frame is most on, or the primary output for a window on none.
+    /// The output whose active workspace says whether `id` shows: the Main output of its
+    /// transient family's root, wherever `id` itself has been dragged, so that a dialog
+    /// shows and hides with its root (ADR 0032). That's the primary output for a root on
+    /// none.
     pub fn output_showing(&self, id: WindowId) -> Option<OutputId> {
+        // A window policy doesn't manage has no root, and takes the primary output.
+        let root = self.windows.contains_key(&id).then(|| self.root(id));
+        self.main_output_of(root.unwrap_or(id))
+    }
+
+    /// `id`'s own Main output, the output its frame is most on, or the primary output for a
+    /// window on none. It's where the user sees `id`, so a seat's Active output, an
+    /// output's default focus and the Workspace slide go by it.
+    pub fn main_output_of(&self, id: WindowId) -> Option<OutputId> {
         self.windows
             .get(&id)
             .and_then(|managed| self.output_of(managed.frame()))
@@ -200,8 +212,15 @@ impl<W: PolicyWindow> Policy<W> {
             .map(|output| output.id)
     }
 
-    /// Whether a managed window is on the workspace its Main output shows: it's sticky, or
-    /// that's its workspace.
+    /// The output a switch made for `id` switches, to bring it into view or to go with it:
+    /// the one it shows by. None is every output, as with `workspaces-per-output` off.
+    pub(super) fn output_switched_for(&self, id: WindowId) -> Option<OutputId> {
+        self.output_showing(id)
+            .filter(|_| self.config.workspaces_per_output)
+    }
+
+    /// Whether a managed window is on the workspace the output it shows by has active:
+    /// it's sticky, or that's its workspace.
     pub(super) fn is_on_shown_workspace(&self, id: WindowId) -> bool {
         self.is_on_workspace(id, self.active_workspace_of(id))
     }

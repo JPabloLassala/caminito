@@ -1,6 +1,7 @@
 //! Per-output workspaces (ADR 0032, 230): with `workspaces-per-output` on, two outputs on
 //! different workspaces, each drawing its own workspace's windows, and input reaching only
-//! the windows that show.
+//! the windows that show. Then the Active output (222), and activation and a dragged
+//! dialog (223).
 
 use caminito_test_client::dbus::debug_proxy;
 use caminito_test_client::layer_shell::LayerSpec;
@@ -9,8 +10,8 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT,
-    KEY_TAB, Kind, WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTSHIFT,
+    KEY_RIGHT, KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use crate::output::{output_geometry, output_id};
 use crate::settings::Value;
@@ -51,6 +52,13 @@ fn two_outputs_with(
 /// would be kept on one.
 fn window_at(f: &mut Fixture, client: ClientId, at: (i32, i32), workspace: usize) -> ClientWindow {
     let window = f.map(client, WindowSpec::plain((400, 300)));
+    put_at(f, window, at, workspace);
+    window
+}
+
+/// Drags `window` so that its geometry is at the global point `at`, and puts it on
+/// `workspace`.
+fn put_at(f: &mut Fixture, window: ClientWindow, at: (i32, i32), workspace: usize) {
     let id = f.pid(window);
     let from = f.geometry(window).loc.to_f64();
     let to = Point::<i32, Logical>::from(at).to_f64();
@@ -65,7 +73,6 @@ fn window_at(f: &mut Fixture, client: ClientId, at: (i32, i32), workspace: usize
         at.into(),
         "the window is where it was put"
     );
-    window
 }
 
 /// `output`'s pixel at the global point `at`, as `0xRRGGBB`. Nothing asks for a frame but
@@ -408,5 +415,110 @@ on_both_kinds! {
 
         assert_eq!(dump(&f)["active_output"], left.name());
         f.pointer_button(BTN_LEFT, false);
+    }
+}
+
+// Activation switches the window's own output (223).
+
+on_both_kinds! {
+    fn activate_over_foreign_toplevel_brings_a_hidden_window_into_view_on_its_output(kind: Kind) {
+        let (mut f, client, left, right) = two_outputs(kind);
+        let on_left = window_at(&mut f, client, (100, 100), 0);
+        // On the right output's workspace 1, which it doesn't show.
+        let spec = WindowSpec {
+            title: Some("Put away"),
+            ..WindowSpec::plain((400, 300))
+        };
+        let put_away = f.map(client, spec);
+        put_at(&mut f, put_away, (2100, 100), 1);
+        assert!(click_focuses(&mut f, (300, 250), on_left));
+        assert!(!f.state.caminito.policy.is_showing(f.pid(put_away)));
+        assert_ne!(pixel(&mut f, &right, (2300, 250)), GREEN, "the put away window");
+        // A panel's window list.
+        let panel = f.connect(Kind::Xdg);
+        f.client(panel).bind_outputs();
+        f.client(panel).bind_foreign_toplevels();
+        f.roundtrip(panel);
+        let listed = f.client(panel).foreign_toplevels().titled("Put away");
+
+        f.client(panel).activate_toplevel(listed);
+        f.roundtrip(panel);
+
+        assert_eq!(active_workspaces(&f, &left, &right), (0, 1));
+        let policy = &f.state.caminito.policy;
+        assert_eq!(policy.focus(SEAT), Some(f.pid(put_away)));
+        assert!(policy.is_showing(f.pid(on_left)));
+        assert_eq!(dump(&f)["active_output"], right.name());
+        assert_eq!(pixel(&mut f, &right, (2300, 250)), GREEN, "the activated window");
+        // Away from the pointer, which the click left on it.
+        assert_eq!(pixel(&mut f, &left, (450, 350)), GREEN, "the left output's window");
+    }
+}
+
+// A dialog dragged to the other output goes with its root (223).
+
+/// `two_outputs` with `workspace-slide` on, a window on the left output and a dialog of it
+/// dragged to the right output, which has the focus.
+fn dialog_on_the_other_output(kind: Kind) -> (Fixture, ClientWindow, ClientWindow, Output, Output) {
+    let slide = (CAMINITO, "workspace-slide".into(), Value::Bool(true));
+    let (mut f, client, left, right) = two_outputs_with(kind, true, vec![slide]);
+    let root = window_at(&mut f, client, (100, 100), 0);
+    let spec = WindowSpec {
+        parent: Some(root),
+        ..WindowSpec::plain((200, 100))
+    };
+    let dialog = f.map(client, spec);
+    put_at(&mut f, dialog, (2100, 500), 0);
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(f.pid(dialog)));
+    (f, root, dialog, left, right)
+}
+
+on_both_kinds! {
+    fn a_dialog_on_the_other_output_hides_with_its_root_and_is_in_no_slide(kind: Kind) {
+        let (mut f, root, dialog, left, right) = dialog_on_the_other_output(kind);
+        assert_eq!(pixel(&mut f, &right, (2200, 550)), GREEN, "the dialog");
+        f.stop_clock();
+
+        switch(&mut f, &left, 1);
+
+        let policy = &f.state.caminito.policy;
+        assert!(!policy.is_showing(f.pid(dialog)));
+        assert_eq!(active_workspaces(&f, &left, &right), (1, 0));
+        // The left output's slide moves the root alone: the dialog was never drawn there.
+        let slides = dump(&f)["workspace_slides"].clone();
+        let slides = slides.as_array().expect("a slide runs");
+        assert_eq!(slides.len(), 1, "{slides:?}");
+        assert_eq!(slides[0]["output"], left.name());
+        let moved: Vec<u64> = slides[0]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|window| window["id"].as_u64().unwrap())
+            .collect();
+        assert_eq!(moved, [f.pid(root).0]);
+        assert_ne!(pixel(&mut f, &right, (2200, 550)), GREEN, "the dialog is gone");
+    }
+}
+
+on_both_kinds! {
+    fn the_workspace_popup_of_a_dialogs_move_is_on_its_roots_output(kind: Kind) {
+        let (mut f, root, dialog, left, right) = dialog_on_the_other_output(kind);
+        assert_eq!(dump(&f)["active_output"], right.name());
+
+        f.key(KEY_LEFTCTRL, true);
+        f.key(KEY_LEFTSHIFT, true);
+        f.key(KEY_LEFTALT, true);
+        f.key(KEY_RIGHT, true);
+        f.key(KEY_RIGHT, false);
+
+        // The left output switched, with the family, and the popup shows its workspaces.
+        assert_eq!(active_workspaces(&f, &left, &right), (1, 0));
+        let policy = &f.state.caminito.policy;
+        assert_eq!(policy.workspace_of(f.pid(root)), Some(1));
+        assert!(policy.is_showing(f.pid(dialog)));
+        assert_eq!(dump(&f)["workspace_popup"]["output"], left.name());
+        f.key(KEY_LEFTALT, false);
+        f.key(KEY_LEFTSHIFT, false);
+        f.key(KEY_LEFTCTRL, false);
     }
 }
