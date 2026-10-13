@@ -97,19 +97,14 @@ impl<W: PolicyWindow> Policy<W> {
         towards: Option<Direction>,
     ) {
         let grid = self.workspace_grid();
-        let (column, row) = grid.cell(workspace);
         for output in &self.outputs {
             let from = self.active_workspaces.of(Some(output.id)).active;
             if from == workspace || only.is_some_and(|only| only != output.id) {
                 continue;
             }
-            let (from_column, from_row) = grid.cell(from);
             let cells = match towards {
                 Some(direction) => direction.step(),
-                None => (
-                    column as i32 - from_column as i32,
-                    row as i32 - from_row as i32,
-                ),
+                None => grid.cells_between(from, workspace),
             };
             self.output_switches.push(OutputSwitch {
                 output: output.id,

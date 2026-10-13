@@ -106,16 +106,11 @@ impl<W: PolicyWindow> Policy<W> {
                 if occupied.contains(&from) || from < count {
                     continue;
                 }
-                let (from_column, from_row) = grid.cell(from);
-                let (column, row) = grid.cell(0);
                 self.output_switches.push(OutputSwitch {
                     output: output.id,
                     from,
                     to: 0,
-                    cells: (
-                        column as i32 - from_column as i32,
-                        row as i32 - from_row as i32,
-                    ),
+                    cells: grid.cells_between(from, 0),
                 });
             }
         }

@@ -1023,7 +1023,8 @@ fn a_switch_of_one_output_slides_it_alone_and_shows_nothing_on_the_other() {
     let other = put_at(&mut f, id, LOW_RIGHT, 0, SMALL);
     let on_other = middle(f.visible_frame(other));
     let right_area = output_geometry(&right);
-    f.wait_for_pixel_on(&right, on_other.x - right_area.loc.x, on_other.y, WINDOW);
+    let local = on_other - right_area.loc;
+    f.wait_for_pixel_on(&right, local.x, local.y, WINDOW);
     f.stop_clock();
 
     switch_output(&mut f, &left, 1);
@@ -1140,15 +1141,26 @@ fn a_sliding_window_that_straddles_is_at_its_place_on_the_other_output() {
     f.advance_clock(PART_WAY);
     f.draw(&right);
 
-    let slide = slide(&f);
-    let arriving = slide.drawn(&f, new);
-    assert_eq!(arriving, moved(frame, slide.offset));
+    let out = slide(&f);
+    let arriving = out.drawn(&f, new);
+    assert_eq!(arriving, moved(frame, out.offset));
     // Its own output draws it on its way in. The other draws its part at its place, and
     // nothing of it further right, where its own output has it now.
     let further = Point::from((arriving.loc.x + arriving.size.w - 20, on_right.y));
-    assert!(!frame.contains(further), "{slide:?}");
+    assert!(!frame.contains(further), "{out:?}");
     assert_eq!(pixel_on(&mut f, &right, on_right), WINDOW);
     assert_eq!(pixel_on(&mut f, &right, further), clear());
+
+    // And back: it leaves on its own output, and the other doesn't draw its part.
+    f.advance_clock(LENGTH);
+    switch_output(&mut f, &left, 0);
+    f.advance_clock(PART_WAY);
+    f.draw(&right);
+    let back = slide(&f);
+    // The slide has it over the other output by now, which draws it nowhere.
+    let leaving = back.drawn(&f, new);
+    assert_eq!(pixel_on(&mut f, &right, middle(leaving)), clear());
+    assert_eq!(pixel_on(&mut f, &right, on_right), clear());
 }
 
 #[test]
@@ -1232,7 +1244,10 @@ fn turning_per_output_workspaces_on_or_off_and_an_output_coming_or_going_slide_n
     assert_eq!(slide(&f).output, third.name(), "it slides as the others do");
     f.advance_clock(LENGTH);
 
-    // And one that goes: the left output takes its windows.
+    // And one that goes, from another workspace: the left output takes its windows.
+    switch_output(&mut f, &right, 1);
+    f.advance_clock(LENGTH);
+    assert_eq!(active_on(&f, [&left, &right]), [0, 1]);
     f.unplug(&right);
     assert_eq!(
         f.state.caminito.policy.output_showing(f.pid(first)),
