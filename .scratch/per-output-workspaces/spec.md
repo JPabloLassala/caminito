@@ -102,7 +102,7 @@ It decides:
 
 ### The panel
 
-- **The pager** shows and switches the workspaces of the output its panel is on, through a carried patch to mate-panel's Wayland pager (`applets/wncklet/wayland-workspace.c`), which lists every group's workspaces flat today. It isn't gated on Caminito (ADR 0011) where a compositor with one group gives the same result as before.
+- **The pager** shows and switches the workspaces of the output its panel is on, through a carried patch to mate-panel's Wayland pager (`applets/wncklet/wayland-workspace.c`), patch `0012`, which listed every group's workspaces flat before. The pager takes its output from its panel's layer surface, the one the panel asked for, and shows the group that holds it. It has no gate of its own (ADR 0011): only under Caminito does the panel name its output, and a compositor with one group gives the same result as before.
 - **The window list** shows the windows showing on any output: each window compared with its own group's active workspace, which patch `0003` nearly does already. `display-all-workspaces` lists every workspace of every output.
 - An output with no panel has no pager.
 
@@ -122,7 +122,7 @@ It decides:
 ## Not decided
 
 - **The ext-workspace ids**, which ticket 226 settles.
-- **How the pager learns its panel's output**, which ticket 227 settles.
+- **How the pager learns its panel's output**, which ticket 227 settled: see "The panel".
 
 ## Tickets
 
@@ -140,4 +140,5 @@ Eleven slices, filed in `.scratch/issues/` as tickets 221 to 231. The first thre
 | 226 | [**ext-workspace offers a group per output.**](../issues/226-ext-workspace-offers-a-group-per-output.md) | 230 |
 | 227 | [**The pager shows its own output's workspaces.**](../issues/227-the-pager-shows-its-own-outputs-workspaces.md) | 226 |
 | 228 | [**X11 clients are told of the Active output.**](../issues/228-x11-clients-are-told-of-the-active-output.md) | 222 |
-| 229 | [**Per-output workspaces in a real Session, by hand.**](../issues/229-per-output-workspaces-in-a-real-session.md) | 222, 223, 224, 225, 227, 228 |
+| 240 | [**The pager shows two pressed buttons after a switch down.**](../issues/240-the-pager-shows-two-pressed-buttons-after-a-switch-down.md), found by 227's check |  |
+| 229 | [**Per-output workspaces in a real Session, by hand.**](../issues/229-per-output-workspaces-in-a-real-session.md) | 222, 223, 224, 225, 227, 228, 240 |

@@ -1,0 +1,267 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 13 Oct 2026 12:00:00 -0300
+Subject: [PATCH] wayland-workspace: Show the workspaces of the panel's output
+
+The Wayland switcher listed every workspace the compositor has, whatever
+group it is in. A compositor that gives each output workspaces of its own
+has an ext-workspace group for each output, so a switcher there had a
+button for each workspace of each output, with one active button for each
+output, and no way to tell whose a button was.
+
+Where the panel names its output, which it does under Caminito, the
+Wayland compositor, show the workspaces of the group that output is in. A
+click then switches that output, the scroll wheel moves through that
+output's workspaces, and the preferences count and name them. The buttons
+are built again when the panel moves to another output, which maps its
+surface again, when the switcher moves to another panel, and when a group's
+outputs change.
+
+Where the panel names no output, or no group has that output, the switcher
+lists every workspace, as before. With one group for every output, the
+group's workspaces are every workspace, so nothing changes there.
+
+The applet now uses gtk-layer-shell, which the panel it is loaded into
+links already.
+---
+ applets/wncklet/Makefile.am         |  2 +
+ applets/wncklet/meson.build         |  2 +-
+ applets/wncklet/wayland-workspace.c | 99 ++++++++++++++++++++++++++---
+ 3 files changed, 93 insertions(+), 10 deletions(-)
+
+diff --git a/applets/wncklet/Makefile.am b/applets/wncklet/Makefile.am
+index dfcca241..445f13e5 100644
+--- a/applets/wncklet/Makefile.am
++++ b/applets/wncklet/Makefile.am
+@@ -47,9 +47,11 @@ WNCKLET_SOURCES += \
+ 	wayland-window-menu.h
+ 
+ WNCKLET_LDADD += \
++	$(WAYLAND_LIBS) \
+ 	$(XFW_LIBS)
+ 
+ AM_CPPFLAGS += \
++	$(WAYLAND_CFLAGS) \
+ 	$(XFW_CFLAGS)
+ endif
+ 
+diff --git a/applets/wncklet/meson.build b/applets/wncklet/meson.build
+index 55d19080..500cd918 100644
+--- a/applets/wncklet/meson.build
++++ b/applets/wncklet/meson.build
+@@ -76,7 +76,7 @@ if have_x11
+ endif
+ 
+ if have_wayland
+-  wncklet_deps += [xfw_dep]
++  wncklet_deps += wayland_deps + [xfw_dep]
+ endif
+ 
+ wncklet_inc_dirs = [
+diff --git a/applets/wncklet/wayland-workspace.c b/applets/wncklet/wayland-workspace.c
+index e06886e0..fc6ebe33 100644
+--- a/applets/wncklet/wayland-workspace.c
++++ b/applets/wncklet/wayland-workspace.c
+@@ -20,6 +20,7 @@
+ #include <config.h>
+ 
+ #include <gtk/gtk.h>
++#include <gtk-layer-shell.h>
+ #include <libxfce4windowing/libxfce4windowing.h>
+ 
+ #include "wayland-workspace.h"
+@@ -28,7 +29,7 @@ typedef struct _GroupSignal GroupSignal;
+ 
+ struct _GroupSignal {
+ 	XfwWorkspaceGroup *group;
+-	gulong             handlers[3]; /* active-changed, added, removed */
++	gulong             handlers[4]; /* active-changed, added, removed, monitors-changed */
+ };
+ 
+ typedef struct _WaylandWorkspaceData WaylandWorkspaceData;
+@@ -52,16 +53,65 @@ struct _WaylandWorkspaceData {
+ };
+ 
+ static void rebuild_ui (WaylandWorkspaceData *data);
++static void rebuild_ui_and_tell (WaylandWorkspaceData *data);
+ 
+ /* ---- Helpers ---- */
+ 
++/* The workspace group of the output the pager's panel is on. A compositor
++ * that gives each output workspaces of its own has a group for each output.
++ * NULL where the panel names no output, or no group has that output. */
++static XfwWorkspaceGroup *
++get_panel_group (WaylandWorkspaceData *data)
++{
++	GtkWidget *toplevel;
++	GdkMonitor *monitor;
++	GList *groups, *monitors;
++
++	toplevel = gtk_widget_get_toplevel (data->grid);
++	if (!GTK_IS_WINDOW (toplevel) || !gtk_layer_is_layer_window (GTK_WINDOW (toplevel)))
++		return NULL;
++
++	/* The output the panel asked for, which is known before the compositor
++	 * says where the surface is. */
++	monitor = gtk_layer_get_monitor (GTK_WINDOW (toplevel));
++	if (monitor == NULL)
++		return NULL;
++
++	groups = xfw_workspace_manager_list_workspace_groups (data->workspace_manager);
++	for (; groups != NULL; groups = groups->next)
++	{
++		monitors = xfw_workspace_group_get_monitors (groups->data);
++		for (; monitors != NULL; monitors = monitors->next)
++		{
++			if (xfw_monitor_get_gdk_monitor (monitors->data) == monitor)
++				return groups->data;
++		}
++	}
++
++	return NULL;
++}
++
++/* The workspaces the pager is for: those of its panel's output, or every
++ * group's where the output or its group is not known. With one group for
++ * every output the two are the same. */
++static GList *
++list_workspaces (WaylandWorkspaceData *data)
++{
++	XfwWorkspaceGroup *group = get_panel_group (data);
++
++	if (group != NULL)
++		return xfw_workspace_group_list_workspaces (group);
++
++	return xfw_workspace_manager_list_workspaces (data->workspace_manager);
++}
++
+ static int
+ count_visible_workspaces (WaylandWorkspaceData *data)
+ {
+ 	GList *workspaces, *l;
+ 	int n = 0;
+ 
+-	workspaces = xfw_workspace_manager_list_workspaces (data->workspace_manager);
++	workspaces = list_workspaces (data);
+ 
+ 	for (l = workspaces; l != NULL; l = l->next)
+ 	{
+@@ -81,7 +131,7 @@ get_nth_workspace (WaylandWorkspaceData *data, int index)
+ 	GList *workspaces, *l;
+ 	int i = 0;
+ 
+-	workspaces = xfw_workspace_manager_list_workspaces (data->workspace_manager);
++	workspaces = list_workspaces (data);
+ 
+ 	for (l = workspaces; l != NULL; l = l->next)
+ 	{
+@@ -107,7 +157,7 @@ workspaces_have_coordinates (WaylandWorkspaceData *data)
+ {
+ 	GList *workspaces, *l, *other;
+ 
+-	workspaces = xfw_workspace_manager_list_workspaces (data->workspace_manager);
++	workspaces = list_workspaces (data);
+ 
+ 	for (l = workspaces; l != NULL; l = l->next)
+ 	{
+@@ -276,11 +326,18 @@ rebuild_ui_idle (gpointer user_data)
+ 	WaylandWorkspaceData *data = user_data;
+ 
+ 	data->rebuild_idle = 0;
+-	rebuild_ui (data);
++	rebuild_ui_and_tell (data);
+ 
+ 	return G_SOURCE_REMOVE;
+ }
+ 
++static void
++queue_rebuild_ui (WaylandWorkspaceData *data)
++{
++	if (data->rebuild_idle == 0)
++		data->rebuild_idle = g_idle_add (rebuild_ui_idle, data);
++}
++
+ /* A change of the compositor's grid moves many workspaces, each with a
+  * notify for its row and one for its column, so the buttons are built again
+  * once, when all of them have come. */
+@@ -291,8 +348,8 @@ on_workspace_layout_changed (XfwWorkspace *workspace,
+ {
+ 	WaylandWorkspaceData *data = g_object_get_data (G_OBJECT (grid), "wayland_pager_data");
+ 
+-	if (data != NULL && data->rebuild_idle == 0)
+-		data->rebuild_idle = g_idle_add (rebuild_ui_idle, data);
++	if (data != NULL)
++		queue_rebuild_ui (data);
+ }
+ 
+ static void
+@@ -332,6 +389,22 @@ on_workspace_removed (XfwWorkspaceGroup *group,
+ 	rebuild_ui (data);
+ }
+ 
++static void
++on_group_monitors_changed (XfwWorkspaceGroup    *group,
++			   WaylandWorkspaceData *data)
++{
++	rebuild_ui_and_tell (data);
++}
++
++/* The panel maps its surface again when it moves to another output, and the
++ * pager can be moved to another panel. The buttons are built again later,
++ * and not while the grid is being mapped. */
++static void
++on_panel_changed (WaylandWorkspaceData *data)
++{
++	queue_rebuild_ui (data);
++}
++
+ /* ---- Group signal management ---- */
+ 
+ static void
+@@ -343,6 +416,7 @@ disconnect_group_signals (WaylandWorkspaceData *data)
+ 		g_signal_handler_disconnect (gs->group, gs->handlers[0]);
+ 		g_signal_handler_disconnect (gs->group, gs->handlers[1]);
+ 		g_signal_handler_disconnect (gs->group, gs->handlers[2]);
++		g_signal_handler_disconnect (gs->group, gs->handlers[3]);
+ 		g_free (gs);
+ 	}
+ 
+@@ -373,6 +447,8 @@ connect_group_signals (WaylandWorkspaceData *data)
+ 						    G_CALLBACK (on_workspace_added), data);
+ 		gs->handlers[2] = g_signal_connect (group, "workspace-removed",
+ 						    G_CALLBACK (on_workspace_removed), data);
++		gs->handlers[3] = g_signal_connect (group, "monitors-changed",
++						    G_CALLBACK (on_group_monitors_changed), data);
+ 
+ 		data->group_signals = g_list_append (data->group_signals, gs);
+ 	}
+@@ -511,6 +587,11 @@ wayland_workspace_new (void)
+ 	connect_group_signals (data);
+ 	rebuild_ui (data);
+ 
++	g_signal_connect_swapped (data->grid, "map",
++				  G_CALLBACK (on_panel_changed), data);
++	g_signal_connect_swapped (data->grid, "hierarchy-changed",
++				  G_CALLBACK (on_panel_changed), data);
++
+ 	return data->grid;
+ }
+ 
+@@ -593,7 +674,7 @@ wayland_workspace_get_count (GtkWidget *pager_widget)
+ 
+ 	g_return_val_if_fail (data, 0);
+ 
+-	return g_list_length (xfw_workspace_manager_list_workspaces (data->workspace_manager));
++	return g_list_length (list_workspaces (data));
+ }
+ 
+ const char *
+@@ -625,7 +706,7 @@ wayland_workspace_get_active_index (GtkWidget *pager_widget)
+ 
+ 	g_return_val_if_fail (data, 0);
+ 
+-	workspaces = xfw_workspace_manager_list_workspaces (data->workspace_manager);
++	workspaces = list_workspaces (data);
+ 
+ 	for (l = workspaces; l != NULL; l = l->next)
+ 	{

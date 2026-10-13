@@ -3,7 +3,7 @@
 Epic: per-output-workspaces
 Type: implementation
 Status: ready-for-human
-Blocked by: 222, 223, 224, 225, 227, 228
+Blocked by: 222, 223, 224, 225, 227, 228, 240
 Spec: [Per-output workspaces](../per-output-workspaces/spec.md)
 
 ## What to do
