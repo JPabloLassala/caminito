@@ -3,7 +3,7 @@
 //! at Marco `8522ed1`).
 
 use super::*;
-use crate::{Direction, MAX_WORKSPACES};
+use crate::{Direction, MAX_WORKSPACES, OutputSwitch};
 
 /// A policy with one output and `dynamic-workspaces` on, from Marco's four workspaces.
 fn dynamic() -> Policy<TestWindow> {
@@ -128,6 +128,72 @@ fn the_active_workspace_following_its_windows_down_is_no_switch() {
 
     assert_eq!(policy.active_workspace(), 0);
     assert_eq!(policy.take_workspace_switches(), []);
+}
+
+// What the compositor's Workspace slide is told of it (236).
+
+#[test]
+fn the_active_workspace_removed_is_noted_for_its_output_as_a_switch_to_the_first() {
+    let mut policy = dynamic();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.move_to_workspace(id(2), 1);
+    policy.switch_workspace(2);
+    policy.take_output_switches();
+
+    policy.unmap_window(id(2));
+
+    let to_the_first = OutputSwitch {
+        output: OutputId(1),
+        from: 2,
+        to: 0,
+        cells: (-2, 0),
+    };
+    assert_eq!(policy.take_output_switches(), [to_the_first]);
+}
+
+#[test]
+fn the_active_workspace_following_its_windows_down_is_noted_for_no_output() {
+    let mut policy = dynamic();
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.move_to_workspace(id(2), 1);
+    policy.switch_workspace(1);
+    policy.take_output_switches();
+
+    policy.unmap_window(id(1));
+
+    assert_eq!(policy.active_workspace(), 0);
+    assert_eq!(policy.take_output_switches(), []);
+}
+
+#[test]
+fn a_workspace_removed_is_noted_for_the_output_that_showed_it_alone() {
+    let mut policy = policy();
+    policy.add_output(output(2, 1920, 0, 1280, 1024));
+    policy.settings_changed(Config {
+        dynamic_workspaces: true,
+        workspaces_per_output: true,
+        ..Config::default()
+    });
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    policy.map_window(TestWindow::new(2, 400, 300), ms(2));
+    policy.move_to_workspace(id(2), 1);
+    // The second output shows the empty workspace after the others.
+    policy.switch_output_workspace(OutputId(2), 2);
+    policy.take_output_switches();
+
+    policy.unmap_window(id(2));
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 0);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 0);
+    let to_the_first = OutputSwitch {
+        output: OutputId(2),
+        from: 2,
+        to: 0,
+        cells: (-2, 0),
+    };
+    assert_eq!(policy.take_output_switches(), [to_the_first]);
 }
 
 #[test]

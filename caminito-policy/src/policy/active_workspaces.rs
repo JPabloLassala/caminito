@@ -15,9 +15,10 @@ pub(super) struct Shown {
     pub(super) previous: Option<usize>,
 }
 
-/// One output's change of active workspace, as a switch made it (233). What turns
-/// `workspaces-per-output` on or off, an output that comes or goes, and a change of the
-/// workspaces' count aren't switches, and give none.
+/// One output's change of active workspace, as a switch made it (233), or as
+/// `dynamic-workspaces` removing the workspace it showed did (236). What turns
+/// `workspaces-per-output` on or off, an output that comes or goes, and a lower
+/// `num-workspaces` aren't switches, and give none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputSwitch {
     /// The output that switched.

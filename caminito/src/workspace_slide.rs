@@ -14,6 +14,11 @@
 //! A switch while a slide runs retargets it (235): the windows go on from where they are
 //! to the new workspace, for another 250 ms, and each workspace the slide has left is drawn
 //! at its own place in the grid as it goes by. The session lock ends a slide at once.
+//!
+//! Each output has its own slide (236), of the windows it's the Main output of, and the
+//! scene draws them away from their places on that output alone: nothing of a slide shows
+//! on another output, where a window across the two is at its place or isn't drawn. Under
+//! Spanning workspaces every output switches, and each slides by its own size.
 
 use std::collections::HashSet;
 use std::time::Duration;
