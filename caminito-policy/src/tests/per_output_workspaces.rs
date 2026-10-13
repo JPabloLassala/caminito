@@ -10,7 +10,7 @@ fn at(x: f64, y: f64) -> Point<f64, Logical> {
 
 /// Two outputs side by side, the first the primary, with `workspaces-per-output` as `on`
 /// says, window 1 on the left one and window 2 on the right one, both on workspace 0.
-fn two_outputs(on: bool) -> Policy<TestWindow> {
+pub(super) fn two_outputs(on: bool) -> Policy<TestWindow> {
     let mut policy = Policy::new(Config {
         workspaces_per_output: on,
         ..Config::default()
@@ -35,7 +35,7 @@ fn set_per_output(policy: &mut Policy<TestWindow>, on: bool) {
     });
 }
 
-fn active(policy: &Policy<TestWindow>) -> (usize, usize) {
+pub(super) fn active(policy: &Policy<TestWindow>) -> (usize, usize) {
     (
         policy.active_workspace_on(OutputId(1)),
         policy.active_workspace_on(OutputId(2)),

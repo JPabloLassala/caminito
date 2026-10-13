@@ -1356,30 +1356,32 @@ impl<W: PolicyWindow> Policy<W> {
         self.switch_shown(only, workspace, towards);
     }
 
-    /// Moves `seat`'s focused window to the workspace beside the active one, with its
-    /// transient family, and switches there with the window focused and raised, as Marco's
-    /// `handle_workspace_switch_or_move` does (keybindings.c:3560-3576). Marco gives the
-    /// desktop and docks no such move: they're on every workspace.
+    /// Moves `seat`'s focused window to the workspace beside its own output's active one,
+    /// with its transient family, and switches that output there with the window focused
+    /// and raised, as Marco's `handle_workspace_switch_or_move` does
+    /// (keybindings.c:3560-3576). The other outputs stay as they are (223). The output is
+    /// the one the family shows by, its root's. Marco gives the desktop and docks no such
+    /// move: they're on every workspace.
     fn move_to_workspace_towards(&mut self, seat: SeatId, direction: Direction, now: Duration) {
         let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) else {
             return;
         };
-        // Beside the primary output's, and every output switches, until the move is within
-        // the window's own output (223).
-        let active = self.primary_shown().active;
+        let root = self.root(id);
+        let active = self.active_workspace_of(root);
         let Some(workspace) = self.workspace_towards(active, direction) else {
             return;
         };
-        self.move_tree(self.root(id), workspace);
-        self.switch_shown(None, workspace, Some(direction));
+        self.move_tree(root, workspace);
+        self.switch_shown(self.output_switched_for(root), workspace, Some(direction));
         if self.focus_window(seat, id, now) {
             self.raise_family(id);
         }
     }
 
     /// Makes `workspace` the active one of every output, and gives every seat its default
-    /// focus. The bindings switch the Active output alone (231); what else switches still
-    /// switches every output (223, 226, 228).
+    /// focus. The bindings switch the Active output alone (231), and a move or an
+    /// activation the window's own (223); what else switches still switches every output
+    /// (226, 228).
     pub fn switch_workspace(&mut self, workspace: usize) {
         self.switch_shown(None, workspace, None);
     }
@@ -1526,8 +1528,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// Brings a window to the user, as the window list or Alt+Tab does: switches to its
-    /// workspace, then focuses and raises it.
+    /// Brings a window to the user, as the window list or Alt+Tab does: switches the output
+    /// it shows by to its workspace, and no other output (223), then focuses and raises it.
     pub fn activate(&mut self, seat: SeatId, id: WindowId, now: Duration) {
         let Some(workspace) = self.workspace_of(id) else {
             return;
@@ -1536,7 +1538,7 @@ impl<W: PolicyWindow> Policy<W> {
         // A sticky window is on the active workspace already, which Marco's
         // `meta_window_activate` then stays on (window.c:3246-3258).
         if !self.is_on_shown_workspace(id) {
-            self.switch_workspace(workspace);
+            self.switch_shown(self.output_switched_for(id), workspace, None);
         }
         // Marco drops an activation older than the user's last input before it looks at
         // the desktop (window.c:3179-3201), so a stale one hides nothing.
@@ -2926,9 +2928,9 @@ impl<W: PolicyWindow> Policy<W> {
         true
     }
 
-    /// Makes the output `id` shows by `seat`'s Active output.
+    /// Makes `id`'s Main output `seat`'s Active output.
     fn make_active_output_of(&mut self, seat: SeatId, id: WindowId) {
-        if let Some(output) = self.output_showing(id) {
+        if let Some(output) = self.main_output_of(id) {
             self.active_outputs.insert(seat, output);
         }
     }
@@ -3097,7 +3099,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// `default_focus`, of the windows whose Main output is `output`.
     fn default_focus_on(&self, output: OutputId) -> Option<WindowId> {
-        self.default_focus_where(|id| self.output_showing(id) == Some(output))
+        self.default_focus_where(|id| self.main_output_of(id) == Some(output))
     }
 
     /// The default focus for `seat`. With `workspaces-per-output` on that's from its Active
@@ -3126,15 +3128,15 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Each seat's Active output follows the output its focused window shows by, its Main
-    /// output, when the focus goes to another window or the window to another output. It
-    /// stays where it was for a seat with no focus, and where a press put it for a seat
-    /// whose focus is as it was (222).
+    /// Each seat's Active output follows its focused window's Main output when the focus
+    /// goes to another window or the window to another output. It stays where it was for a
+    /// seat with no focus, and where a press put it for a seat whose focus is as it was
+    /// (222).
     fn note_active_outputs(&mut self) {
         self.followed_focus
             .retain(|seat, _| self.focus.contains_key(seat));
         for (seat, id) in &self.focus {
-            let Some(output) = self.output_showing(*id) else {
+            let Some(output) = self.main_output_of(*id) else {
                 continue;
             };
             if self.followed_focus.insert(*seat, (*id, output)) != Some((*id, output)) {

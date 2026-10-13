@@ -51,6 +51,13 @@ fn two_outputs_with(
 /// would be kept on one.
 fn window_at(f: &mut Fixture, client: ClientId, at: (i32, i32), workspace: usize) -> ClientWindow {
     let window = f.map(client, WindowSpec::plain((400, 300)));
+    put_at(f, window, at, workspace);
+    window
+}
+
+/// Drags `window` so that its geometry is at the global point `at`, and puts it on
+/// `workspace`.
+fn put_at(f: &mut Fixture, window: ClientWindow, at: (i32, i32), workspace: usize) {
     let id = f.pid(window);
     let from = f.geometry(window).loc.to_f64();
     let to = Point::<i32, Logical>::from(at).to_f64();
@@ -65,7 +72,6 @@ fn window_at(f: &mut Fixture, client: ClientId, at: (i32, i32), workspace: usize
         at.into(),
         "the window is where it was put"
     );
-    window
 }
 
 /// `output`'s pixel at the global point `at`, as `0xRRGGBB`. Nothing asks for a frame but
@@ -408,5 +414,42 @@ on_both_kinds! {
 
         assert_eq!(dump(&f)["active_output"], left.name());
         f.pointer_button(BTN_LEFT, false);
+    }
+}
+
+// Activation switches the window's own output (223).
+
+on_both_kinds! {
+    fn activate_over_foreign_toplevel_brings_a_hidden_window_into_view_on_its_output(kind: Kind) {
+        let (mut f, client, left, right) = two_outputs(kind);
+        let on_left = window_at(&mut f, client, (100, 100), 0);
+        // On the right output's workspace 1, which it doesn't show.
+        let spec = WindowSpec {
+            title: Some("Put away"),
+            ..WindowSpec::plain((400, 300))
+        };
+        let put_away = f.map(client, spec);
+        put_at(&mut f, put_away, (2100, 100), 1);
+        assert!(click_focuses(&mut f, (300, 250), on_left));
+        assert!(!f.state.caminito.policy.is_showing(f.pid(put_away)));
+        assert_ne!(pixel(&mut f, &right, (2300, 250)), GREEN, "the put away window");
+        // A panel's window list.
+        let panel = f.connect(Kind::Xdg);
+        f.client(panel).bind_outputs();
+        f.client(panel).bind_foreign_toplevels();
+        f.roundtrip(panel);
+        let listed = f.client(panel).foreign_toplevels().titled("Put away");
+
+        f.client(panel).activate_toplevel(listed);
+        f.roundtrip(panel);
+
+        assert_eq!(active_workspaces(&f, &left, &right), (0, 1));
+        let policy = &f.state.caminito.policy;
+        assert_eq!(policy.focus(SEAT), Some(f.pid(put_away)));
+        assert!(policy.is_showing(f.pid(on_left)));
+        assert_eq!(dump(&f)["active_output"], right.name());
+        assert_eq!(pixel(&mut f, &right, (2300, 250)), GREEN, "the activated window");
+        // Away from the pointer, which the click left on it.
+        assert_eq!(pixel(&mut f, &left, (450, 350)), GREEN, "the left output's window");
     }
 }
