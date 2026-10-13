@@ -2,11 +2,13 @@
 //! through libxfce4windowing, see the workspaces with their names and places and which is
 //! active, and ask for one to be activated.
 //!
-//! This module owns the protocol's objects and its rules: the one group and the workspace
-//! handles each client has, what each was last sent, and the requests a client has made
-//! since its last `commit`. It knows nothing of policy. The compositor gives it the outputs
-//! and the workspaces there are in its refresh pass, through [`ExtWorkspaceState::refresh`],
-//! and answers a committed `activate` through [`ExtWorkspaceHandler`].
+//! This module owns the protocol's objects and its rules: the group and workspace handles
+//! each client has, what each was last sent, and the requests a client has made since its
+//! last `commit`. It knows nothing of policy. The compositor gives it the groups there are,
+//! each with its outputs and workspaces, in its refresh pass, through
+//! [`ExtWorkspaceState::refresh`], and answers a committed `activate` through
+//! [`ExtWorkspaceHandler`]. The groups are one that holds every output, or one for each
+//! output (ADR 0032, 226).
 //!
 //! Smithay has no ext-workspace at the pinned revision. Written from the protocol's XML;
 //! niri's and cosmic-comp's implementations are GPL-3, so they weren't used (03).
@@ -33,17 +35,29 @@ use super::GlobalFilter;
 /// The version of the protocol Caminito offers.
 const VERSION: u32 = 1;
 
+/// A group of workspaces as ext-workspace shows it, with the outputs that show them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Group {
+    /// What names the group from one refresh to the next. No two groups share one.
+    pub id: String,
+    /// The outputs that show the group's workspaces.
+    pub outputs: Vec<Output>,
+    /// The group's workspaces, in their order.
+    pub workspaces: Vec<Workspace>,
+}
+
 /// A workspace as ext-workspace shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
     /// What names the workspace from one session to the next, and to the handler. No two
-    /// workspaces share one, and it never changes while the workspace is there.
+    /// workspaces share one, in any group, and it never changes while the workspace is
+    /// there.
     pub id: String,
     /// What the user calls it.
     pub name: String,
     /// Where it is in the group's grid: its column, then its row.
     pub coordinates: [u32; 2],
-    /// Whether it's the one shown.
+    /// Whether it's the one its group's outputs show.
     pub active: bool,
 }
 
@@ -69,40 +83,58 @@ pub trait ExtWorkspaceHandler: 'static {
     /// The compositor's ext-workspace state.
     fn ext_workspace_state(&mut self) -> &mut ExtWorkspaceState;
 
-    /// Makes the workspace with this id the active one. It may be gone since the last
-    /// refresh, which the compositor ignores.
+    /// Makes the workspace with this id the active one of its group. It may be gone since
+    /// the last refresh, which the compositor ignores.
     fn activate_workspace(&mut self, id: &str);
 }
 
-/// The manager's global, the outputs and workspaces last sent, and every client's objects
-/// for them.
+/// The manager's global, the groups last sent, and every client's objects for them.
 #[derive(Debug)]
 pub struct ExtWorkspaceState {
     _global: GlobalId,
-    outputs: Vec<Output>,
-    workspaces: Vec<Workspace>,
+    groups: Vec<Group>,
     managers: Vec<Manager>,
 }
 
-/// One client's manager, its handle for the one group, and its workspace handles.
+/// One client's manager, its group handles, and its workspace handles.
 #[derive(Debug)]
 struct Manager {
     resource: ExtWorkspaceManagerV1,
     client: Client,
-    /// `None` once the client has destroyed it.
-    group: Option<ExtWorkspaceGroupHandleV1>,
-    /// The client's `wl_output`s the group has entered.
-    outputs: Vec<WlOutput>,
+    /// The groups the client was sent that weren't sent `removed`.
+    groups: Vec<GroupHandle>,
     handles: Vec<Handle>,
-    /// The ids of the workspaces the client asked to activate since its last `commit`,
-    /// oldest first.
-    pending: Vec<String>,
+    /// The workspaces the client asked to activate since its last `commit`, oldest first.
+    pending: Vec<Activation>,
 }
 
+/// A client's handle for a group.
+#[derive(Debug)]
+struct GroupHandle {
+    /// The group's id.
+    id: String,
+    /// `None` once the client has destroyed it.
+    resource: Option<ExtWorkspaceGroupHandleV1>,
+    /// The client's `wl_output`s the group has entered.
+    outputs: Vec<WlOutput>,
+}
+
+/// A client's handle for a workspace.
 #[derive(Debug)]
 struct Handle {
     id: String,
+    /// The id of the workspace's group.
+    group: String,
     resource: ExtWorkspaceHandleV1,
+}
+
+/// A client's request to activate a workspace, not yet committed.
+#[derive(Debug)]
+struct Activation {
+    /// The workspace's id.
+    id: String,
+    /// The id of the workspace's group.
+    group: String,
 }
 
 /// The manager global's data: the clients it's offered to.
@@ -114,7 +146,7 @@ pub struct ManagerGlobalData {
 #[derive(Debug)]
 pub struct ManagerData;
 
-/// The group handle's data.
+/// A group handle's data.
 #[derive(Debug)]
 pub struct GroupData;
 
@@ -135,30 +167,27 @@ impl ExtWorkspaceState {
         let global = display.create_global::<D, ExtWorkspaceManagerV1, _>(VERSION, data);
         Self {
             _global: global,
-            outputs: Vec::new(),
-            workspaces: Vec::new(),
+            groups: Vec::new(),
             managers: Vec::new(),
         }
     }
 
-    /// Tells every client what changed since the outputs and workspaces were last sent: the
-    /// outputs that entered and left the group, the workspaces that are new and those that
-    /// are gone, and for the rest only what differs, then one `done` if anything was sent.
-    pub fn refresh<D>(
-        &mut self,
-        display: &DisplayHandle,
-        outputs: Vec<Output>,
-        workspaces: Vec<Workspace>,
-    ) where
-        D: Dispatch<ExtWorkspaceHandleV1, HandleData> + 'static,
+    /// Tells every client what changed since the groups were last sent: the groups that
+    /// are gone and those that are new, the outputs that entered and left each, the
+    /// workspaces that are new and those that are gone, and for the rest only what differs,
+    /// then one `done` if anything was sent.
+    pub fn refresh<D>(&mut self, display: &DisplayHandle, groups: Vec<Group>)
+    where
+        D: Dispatch<ExtWorkspaceGroupHandleV1, GroupData>
+            + Dispatch<ExtWorkspaceHandleV1, HandleData>
+            + 'static,
     {
         for manager in &mut self.managers {
-            if manager.refresh::<D>(display, &outputs, &self.workspaces, &workspaces) {
+            if manager.refresh::<D>(display, &self.groups, &groups) {
                 manager.resource.done();
             }
         }
-        self.outputs = outputs;
-        self.workspaces = workspaces;
+        self.groups = groups;
     }
 
     /// A client's handle for the workspace with this id, if it has one that wasn't sent
@@ -172,25 +201,26 @@ impl ExtWorkspaceState {
 }
 
 impl Manager {
-    /// Sends what differs between `old`, which the client has, and `new`, and the outputs
-    /// that entered and left the group. Returns whether anything was sent.
-    fn refresh<D>(
-        &mut self,
-        display: &DisplayHandle,
-        outputs: &[Output],
-        old: &[Workspace],
-        new: &[Workspace],
-    ) -> bool
+    /// Sends what differs between `old`, which the client has, and `new`. Returns whether
+    /// anything was sent.
+    fn refresh<D>(&mut self, display: &DisplayHandle, old: &[Group], new: &[Group]) -> bool
     where
-        D: Dispatch<ExtWorkspaceHandleV1, HandleData> + 'static,
+        D: Dispatch<ExtWorkspaceGroupHandleV1, GroupData>
+            + Dispatch<ExtWorkspaceHandleV1, HandleData>
+            + 'static,
     {
-        let mut changed = self.send_outputs(outputs);
-        let group = self.group.as_ref();
+        let mut changed = false;
+        let is_there = |group: &str, id: &str| {
+            let mut groups = new.iter().filter(|g| g.id == group);
+            groups.any(|g| g.workspaces.iter().any(|workspace| workspace.id == id))
+        };
+        let groups = &self.groups;
         self.handles.retain(|handle| {
-            let kept = new.iter().any(|workspace| workspace.id == handle.id);
+            let kept = is_there(&handle.group, &handle.id);
             if !kept {
                 // A workspace leaves its group before it's removed.
-                if let Some(group) = group {
+                let group = groups.iter().find(|group| group.id == handle.group);
+                if let Some(group) = group.and_then(|group| group.resource.as_ref()) {
                     group.workspace_leave(&handle.resource);
                 }
                 handle.resource.removed();
@@ -200,39 +230,87 @@ impl Manager {
         });
         // A request for a workspace that's gone is for that one, not the next with its id.
         self.pending
-            .retain(|id| new.iter().any(|workspace| workspace.id == *id));
-        for workspace in new {
-            let Some(sent) = old.iter().find(|sent| sent.id == workspace.id) else {
-                self.add_workspace::<D>(display, workspace);
-                changed = true;
-                continue;
-            };
-            // A workspace the client was sent and has no handle for is one it destroyed.
-            let Some(handle) = self.handles.iter().find(|h| h.id == workspace.id) else {
-                continue;
-            };
-            let handle = &handle.resource;
-            if sent.name != workspace.name {
-                handle.name(workspace.name.clone());
+            .retain(|activation| is_there(&activation.group, &activation.id));
+        // A group goes once its workspaces have left it, as the protocol asks.
+        self.groups.retain(|group| {
+            let kept = new.iter().any(|g| g.id == group.id);
+            if !kept && let Some(resource) = &group.resource {
+                // A `wl_output` the client released needs no leave.
+                for left in group.outputs.iter().filter(|output| output.is_alive()) {
+                    resource.output_leave(left);
+                }
+                resource.removed();
                 changed = true;
             }
-            if sent.coordinates != workspace.coordinates {
-                handle.coordinates(workspace.coordinates_array());
+            kept
+        });
+        for group in new {
+            if !self.groups.iter().any(|g| g.id == group.id) {
+                self.add_group::<D>(display, &group.id);
                 changed = true;
             }
-            if sent.active != workspace.active {
-                handle.state(workspace.state());
-                changed = true;
+            changed |= self.send_outputs(&group.id, &group.outputs);
+            let old = old.iter().find(|sent| sent.id == group.id);
+            for workspace in &group.workspaces {
+                let sent = old.and_then(|old| old.workspaces.iter().find(|s| s.id == workspace.id));
+                let Some(sent) = sent else {
+                    self.add_workspace::<D>(display, &group.id, workspace);
+                    changed = true;
+                    continue;
+                };
+                // A workspace the client was sent and has no handle for is one it
+                // destroyed.
+                let Some(handle) = self.handles.iter().find(|h| h.id == workspace.id) else {
+                    continue;
+                };
+                let handle = &handle.resource;
+                if sent.name != workspace.name {
+                    handle.name(workspace.name.clone());
+                    changed = true;
+                }
+                if sent.coordinates != workspace.coordinates {
+                    handle.coordinates(workspace.coordinates_array());
+                    changed = true;
+                }
+                if sent.active != workspace.active {
+                    handle.state(workspace.state());
+                    changed = true;
+                }
             }
         }
         changed
     }
 
-    /// Sends the group the outputs it entered and left. A client may bind a `wl_output`
-    /// after it has the group, so what it was sent is compared by `wl_output`, not by
-    /// output. Returns whether anything was sent.
-    fn send_outputs(&mut self, outputs: &[Output]) -> bool {
-        let Some(group) = &self.group else {
+    /// Announces a new group, which has no output and no workspace yet.
+    fn add_group<D>(&mut self, display: &DisplayHandle, id: &str)
+    where
+        D: Dispatch<ExtWorkspaceGroupHandleV1, GroupData> + 'static,
+    {
+        let version = self.resource.version();
+        let resource = self
+            .client
+            .create_resource::<ExtWorkspaceGroupHandleV1, _, D>(display, version, GroupData)
+            .ok();
+        if let Some(resource) = &resource {
+            self.resource.workspace_group(resource);
+            // Read-only (06): a client can't create a workspace.
+            resource.capabilities(GroupCapabilities::empty());
+        }
+        self.groups.push(GroupHandle {
+            id: id.to_owned(),
+            resource,
+            outputs: Vec::new(),
+        });
+    }
+
+    /// Sends the group with this id the outputs it entered and left. A client may bind a
+    /// `wl_output` after it has the group, so what it was sent is compared by `wl_output`,
+    /// not by output. Returns whether anything was sent.
+    fn send_outputs(&mut self, group: &str, outputs: &[Output]) -> bool {
+        let Some(group) = self.groups.iter_mut().find(|g| g.id == group) else {
+            return false;
+        };
+        let Some(resource) = &group.resource else {
             return false;
         };
         let outputs: Vec<WlOutput> = outputs
@@ -240,23 +318,24 @@ impl Manager {
             .flat_map(|output| output.client_outputs(&self.client))
             .collect();
         let mut changed = false;
-        for left in self.outputs.iter().filter(|o| !outputs.contains(o)) {
+        for left in group.outputs.iter().filter(|o| !outputs.contains(o)) {
             // A `wl_output` the client released needs no leave.
             if left.is_alive() {
-                group.output_leave(left);
+                resource.output_leave(left);
                 changed = true;
             }
         }
-        for entered in outputs.iter().filter(|o| !self.outputs.contains(o)) {
-            group.output_enter(entered);
+        for entered in outputs.iter().filter(|o| !group.outputs.contains(o)) {
+            resource.output_enter(entered);
             changed = true;
         }
-        self.outputs = outputs;
+        group.outputs = outputs;
         changed
     }
 
-    /// Announces a new workspace, with its details, and puts it in the group.
-    fn add_workspace<D>(&mut self, display: &DisplayHandle, workspace: &Workspace)
+    /// Announces a new workspace, with its details, and puts it in the group with the id
+    /// `group`.
+    fn add_workspace<D>(&mut self, display: &DisplayHandle, group: &str, workspace: &Workspace)
     where
         D: Dispatch<ExtWorkspaceHandleV1, HandleData> + 'static,
     {
@@ -275,11 +354,13 @@ impl Manager {
         handle.state(workspace.state());
         // Read-only (06): a client can't deactivate, remove or assign one.
         handle.capabilities(WorkspaceCapabilities::Activate);
-        if let Some(group) = &self.group {
-            group.workspace_enter(&handle);
+        let entered = self.groups.iter().find(|g| g.id == group);
+        if let Some(entered) = entered.and_then(|g| g.resource.as_ref()) {
+            entered.workspace_enter(&handle);
         }
         self.handles.push(Handle {
             id: workspace.id.clone(),
+            group: group.to_owned(),
             resource: handle,
         });
     }
@@ -300,27 +381,15 @@ where
         resource: New<ExtWorkspaceManagerV1>,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let resource = data_init.init(resource, ManagerData);
-        let version = resource.version();
-        // The one group, which holds every output: Marco's workspaces span all monitors.
-        let group = client
-            .create_resource::<ExtWorkspaceGroupHandleV1, _, D>(display, version, GroupData)
-            .ok();
-        if let Some(group) = &group {
-            resource.workspace_group(group);
-            // Read-only (06): a client can't create a workspace.
-            group.capabilities(GroupCapabilities::empty());
-        }
         let mut manager = Manager {
-            resource,
+            resource: data_init.init(resource, ManagerData),
             client: client.clone(),
-            group,
-            outputs: Vec::new(),
+            groups: Vec::new(),
             handles: Vec::new(),
             pending: Vec::new(),
         };
         let state = state.ext_workspace_state();
-        manager.refresh::<D>(display, &state.outputs, &[], &state.workspaces);
+        manager.refresh::<D>(display, &[], &state.groups);
         manager.resource.done();
         state.managers.push(manager);
     }
@@ -345,9 +414,15 @@ impl<D: ExtWorkspaceHandler> Dispatch2<ExtWorkspaceManagerV1, D> for ManagerData
             ext_workspace_manager_v1::Request::Commit => {
                 let manager = managers.iter_mut().find(|m| m.resource == *resource);
                 let pending = manager.map(|manager| std::mem::take(&mut manager.pending));
-                // One workspace is active, so of a series of activations the last counts.
-                if let Some(id) = pending.as_ref().and_then(|pending| pending.last()) {
-                    state.activate_workspace(id);
+                // One workspace is active in a group, so of a series of activations in one
+                // group the last counts.
+                let mut last: Vec<Activation> = Vec::new();
+                for activation in pending.unwrap_or_default() {
+                    last.retain(|earlier| earlier.group != activation.group);
+                    last.push(activation);
+                }
+                for activation in last {
+                    state.activate_workspace(&activation.id);
                 }
             }
             ext_workspace_manager_v1::Request::Stop => {
@@ -387,10 +462,11 @@ impl<D: ExtWorkspaceHandler> Dispatch2<ExtWorkspaceGroupHandleV1, D> for GroupDa
     }
 
     fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtWorkspaceGroupHandleV1) {
-        for manager in &mut state.ext_workspace_state().managers {
-            if manager.group.as_ref() == Some(resource) {
-                manager.group = None;
-                manager.outputs.clear();
+        let managers = &mut state.ext_workspace_state().managers;
+        for group in managers.iter_mut().flat_map(|m| &mut m.groups) {
+            if group.resource.as_ref() == Some(resource) {
+                group.resource = None;
+                group.outputs.clear();
             }
         }
     }
@@ -413,11 +489,14 @@ impl<D: ExtWorkspaceHandler> Dispatch2<ExtWorkspaceHandleV1, D> for HandleData {
                 // A handle that was sent `removed` is no longer among its manager's, so
                 // it's inert, though a newer workspace may have its id.
                 let managers = &mut state.ext_workspace_state().managers;
-                let manager = managers
-                    .iter_mut()
-                    .find(|m| m.handles.iter().any(|handle| handle.resource == *resource));
-                if let Some(manager) = manager {
-                    manager.pending.push(self.0.clone());
+                for manager in managers {
+                    let mut handles = manager.handles.iter();
+                    if let Some(handle) = handles.find(|handle| handle.resource == *resource) {
+                        manager.pending.push(Activation {
+                            id: self.0.clone(),
+                            group: handle.group.clone(),
+                        });
+                    }
                 }
             }
             // The workspace hasn't these capabilities, so the requests are ignored, as the
