@@ -21,13 +21,13 @@ use crate::state::{Caminito, State};
 /// 4. AccessX, whose keys go on to the clients and whose beeps ring the bell (134).
 /// 5. The repeat of a held accelerator (99), which signals a key AccessX let through.
 /// 6. The Global menu's grace period (114), which nothing else here looks at.
-/// 7. The Window switcher's popup (108), the bell's flash (169) and the minimise animations
-///    (172), which only draw.
+/// 7. The Window switcher's popup (108), the bell's flash (169), the minimise animations
+///    (172) and the Workspace slides (233), which only draw.
 /// 8. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 10] = [
+const HOLDERS: [Holder; 11] = [
     Holder::Policy,
     Holder::ClosePings,
     Holder::Idle,
@@ -37,6 +37,7 @@ const HOLDERS: [Holder; 10] = [
     Holder::SwitcherPopup,
     Holder::Bell,
     Holder::MinimizeAnimations,
+    Holder::WorkspaceSlides,
     Holder::NightLight,
 ];
 
@@ -51,6 +52,7 @@ enum Holder {
     SwitcherPopup,
     Bell,
     MinimizeAnimations,
+    WorkspaceSlides,
     NightLight,
 }
 
@@ -67,6 +69,7 @@ impl Holder {
             Holder::SwitcherPopup => caminito.switcher_popup_deadline(),
             Holder::Bell => caminito.bells.deadline(),
             Holder::MinimizeAnimations => caminito.minimize_animations.deadline(),
+            Holder::WorkspaceSlides => caminito.workspace_slides.deadline(),
             Holder::NightLight => caminito.night_light.deadline(caminito.now()),
         }
     }
@@ -85,6 +88,7 @@ impl Holder {
             Holder::SwitcherPopup => state.caminito.switcher_popup_elapse(now),
             Holder::Bell => state.caminito.bell_elapse(now),
             Holder::MinimizeAnimations => state.caminito.minimize_animation_elapse(now),
+            Holder::WorkspaceSlides => state.caminito.workspace_slide_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),
         }
     }

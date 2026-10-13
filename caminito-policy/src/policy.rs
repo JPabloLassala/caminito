@@ -31,6 +31,7 @@ mod switcher;
 mod window_actions;
 mod window_menu;
 
+pub use active_workspaces::OutputSwitch;
 pub use focus_stealing::{
     ActivationSource, ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
 };
@@ -615,6 +616,8 @@ fn frame_around(
 struct SceneReads {
     /// `active_stacking`.
     stacking: Vec<WindowId>,
+    /// `stacking_all`.
+    stack: Vec<WindowId>,
     /// Each window `window` has, with what's asked of it.
     windows: Vec<WindowReads>,
     /// Each seat's grab.
@@ -664,6 +667,9 @@ pub struct Policy<W: PolicyWindow> {
     /// The way each switch went since `take_workspace_switches` last took them, for the
     /// compositor's switch sounds (170).
     switches: Vec<Direction>,
+    /// Each output's switch since `take_output_switches` last took them, for the
+    /// compositor's Workspace slide (233).
+    output_switches: Vec<OutputSwitch>,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
     /// (workspace.h:79).
     showing_desktop: BTreeMap<usize, ShownDesktop>,
@@ -715,6 +721,7 @@ impl<W: PolicyWindow> Policy<W> {
             workspace_count: 1,
             active_workspaces: Default::default(),
             switches: Vec::new(),
+            output_switches: Vec::new(),
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             outputs: Vec::new(),
@@ -1295,7 +1302,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// Switches to the workspace beside the active one in the grid, if there is one.
     fn switch_workspace_towards(&mut self, direction: Direction) {
         if let Some(workspace) = self.workspace_towards(direction) {
-            self.switch_workspace(workspace);
+            self.switch_shown(None, workspace, Some(direction));
         }
     }
 
@@ -1311,7 +1318,7 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         self.move_tree(self.root(id), workspace);
-        self.switch_workspace(workspace);
+        self.switch_shown(None, workspace, Some(direction));
         if self.focus_window(seat, id, now) {
             self.raise_family(id);
         }
@@ -1321,7 +1328,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// focus. Every switch there is switches every output, until the bindings switch the
     /// Active output's (231).
     pub fn switch_workspace(&mut self, workspace: usize) {
-        self.switch_shown(None, workspace);
+        self.switch_shown(None, workspace, None);
     }
 
     /// Makes `workspace` `output`'s active one, and leaves the other outputs as they are,
@@ -1332,7 +1339,7 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         }
         let only = self.config.workspaces_per_output.then_some(output);
-        self.switch_shown(only, workspace);
+        self.switch_shown(only, workspace, None);
     }
 
     /// Switches `only`'s active workspace to `workspace`, or every output's for none.
@@ -1341,7 +1348,15 @@ impl<W: PolicyWindow> Policy<W> {
     /// `meta_workspace_activate_with_focus` does. Switching one gives it to the seats whose
     /// focused window is on that output, from that output's windows, and leaves the other
     /// seats theirs.
-    fn switch_shown(&mut self, only: Option<OutputId>, workspace: usize) {
+    ///
+    /// `towards` is the way a binding asked to go, if one did: the Workspace slide then
+    /// goes that way, also where the switch wraps past the grid's edge (233).
+    fn switch_shown(
+        &mut self,
+        only: Option<OutputId>,
+        workspace: usize,
+        towards: Option<Direction>,
+    ) {
         let workspace = workspace.min(self.workspace_count - 1);
         // The sound is one for the switch, from the output's workspace, or the primary
         // output's for every output, which stands in for the Active output's (231).
@@ -1362,6 +1377,7 @@ impl<W: PolicyWindow> Policy<W> {
             // And closes the window menu, whose moves are from the active workspace (161).
             self.window_menu = None;
             self.note_switch(self.workspace_grid(), from, workspace);
+            self.note_output_switches(only, workspace, towards);
             let switch = |shown: &mut active_workspaces::Shown| {
                 if shown.active != workspace {
                     shown.previous = Some(shown.active);
@@ -1425,6 +1441,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// oldest first, however the switch came (170).
     pub fn take_workspace_switches(&mut self) -> Vec<Direction> {
         std::mem::take(&mut self.switches)
+    }
+
+    /// Each output's change of active workspace since this was last called, the oldest
+    /// first, however the switch came (233).
+    pub fn take_output_switches(&mut self) -> Vec<OutputSwitch> {
+        std::mem::take(&mut self.output_switches)
     }
 
     /// Moves a window to `workspace`, with every window in its transient tree. A sticky
@@ -2079,6 +2101,7 @@ impl<W: PolicyWindow> Policy<W> {
     fn scene_reads(&self) -> SceneReads {
         SceneReads {
             stacking: self.active_stacking(),
+            stack: self.stack.clone(),
             windows: self
                 .windows
                 .iter()

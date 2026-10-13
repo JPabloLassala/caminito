@@ -59,6 +59,18 @@ pub enum Direction {
     Down,
 }
 
+impl Direction {
+    /// One cell this way, in columns to the right and in rows down.
+    pub(crate) fn step(self) -> (i32, i32) {
+        match self {
+            Direction::Left => (-1, 0),
+            Direction::Right => (1, 0),
+            Direction::Up => (0, -1),
+            Direction::Down => (0, 1),
+        }
+    }
+}
+
 /// The grid for a number of workspaces: enough cells for all of them, filled from the top
 /// left in the orientation's order. The last cells are empty when there are more than workspaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

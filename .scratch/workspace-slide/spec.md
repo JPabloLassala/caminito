@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Nothing here is built.
+Ticket 233 built the first slice: the slide on one output, each way, with its key. What tickets 234 to 236 add isn't built.
 
 ## Problem
 
@@ -57,6 +57,7 @@ These don't slide:
 ### Timing
 
 - 250 ms, with an ease-out curve, drawn on every frame of the output and not in the minimise animation's 15 ms steps. It is read from Caminito's clock.
+- The curve is a cubic ease-out (233): with `t` the part of the 250 ms that has passed, the windows have `(1 − t)³` of their way left. They start at their fastest, three times the mean speed, and slow down into their places: half the time leaves an eighth of the way.
 - **A second switch during a slide retargets it** from where the windows are, so the movement is continuous. The workspaces passed over are drawn as they go by.
 - There are no keys for the length or the curve.
 
@@ -81,7 +82,7 @@ These don't slide:
 
 ## Not decided
 
-- **The curve's formula.** "Ease-out" is settled; which one is the ticket's.
+Nothing. The curve's formula was ticket 233's to choose, and is under "Timing". Ticket 237 checks in a Session that the length and the curve feel right.
 
 ## Tickets
 

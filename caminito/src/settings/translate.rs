@@ -394,6 +394,10 @@ pub struct Settings {
     /// animation needs no compositing manager, but Caminito's is drawn from the window's
     /// content, which is the compositing manager's work.
     pub minimize_animation: bool,
+    /// Whether a change of an output's active workspace slides (233): `org.mate.Caminito`'s
+    /// `workspace-slide` on, and the minimise animation's three keys as it needs them
+    /// (ADR 0033).
+    pub workspace_slide: bool,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -1136,6 +1140,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let minimize_animation = r.bool(MARCO_GENERAL, "compositing-manager", true)
         && !r.bool(MARCO_GENERAL, "reduced-resources", false)
         && r.bool(INTERFACE, "enable-animations", true);
+    let workspace_slide = minimize_animation && r.bool(CAMINITO, "workspace-slide", true);
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
@@ -1225,6 +1230,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         modifier_click,
         switcher,
         minimize_animation,
+        workspace_slide,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,

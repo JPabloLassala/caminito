@@ -2,6 +2,7 @@
 //! `workspaces-per-output` on and off.
 
 use super::*;
+use crate::{OutputSwitch, WrapStyle};
 
 fn at(x: f64, y: f64) -> Point<f64, Logical> {
     Point::new(x, y)
@@ -310,4 +311,132 @@ fn with_one_output_the_key_changes_nothing() {
         )
     };
     assert_eq!(run(true), run(false));
+}
+
+// What the compositor's Workspace slide is told of a switch (233).
+
+/// Four workspaces in two rows, on one output:
+///
+/// ```text
+/// 0 1
+/// 2 3
+/// ```
+fn two_rows(wrap_style: WrapStyle) -> Policy<TestWindow> {
+    let mut policy = Policy::new(Config {
+        workspace_layout: WorkspaceLayout {
+            rows: 2,
+            ..WorkspaceLayout::default()
+        },
+        wrap_style,
+        ..Config::default()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy
+}
+
+fn switch(output: u64, from: usize, to: usize, cells: (i32, i32)) -> OutputSwitch {
+    OutputSwitch {
+        output: OutputId(output),
+        from,
+        to,
+        cells,
+    }
+}
+
+#[test]
+fn a_switch_is_noted_with_the_way_between_the_two_cells() {
+    let mut policy = two_rows(WrapStyle::NoWrap);
+
+    policy.action(SEAT, Action::SwitchToWorkspace(3), ms(1));
+    assert_eq!(policy.take_output_switches(), [switch(1, 0, 3, (1, 1))]);
+
+    policy.action(SEAT, Action::SwitchToWorkspace(2), ms(2));
+    policy.action(SEAT, Action::SwitchToWorkspaceUp, ms(3));
+    assert_eq!(
+        policy.take_output_switches(),
+        [switch(1, 3, 2, (-1, 0)), switch(1, 2, 0, (0, -1))]
+    );
+    assert_eq!(policy.take_output_switches(), []);
+}
+
+#[test]
+fn a_switch_that_goes_nowhere_isnt_noted() {
+    let mut policy = two_rows(WrapStyle::NoWrap);
+
+    policy.action(SEAT, Action::SwitchToWorkspace(0), ms(1));
+    policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(2));
+
+    assert_eq!(policy.take_output_switches(), []);
+}
+
+#[test]
+fn a_switch_that_wraps_is_noted_one_cell_the_way_of_its_binding() {
+    let mut policy = two_rows(WrapStyle::Toroidal);
+    policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(1));
+    assert_eq!(policy.take_output_switches(), [switch(1, 0, 1, (-1, 0))]);
+
+    // On to the next row, which is a column back and a row down in the grid.
+    let mut policy = two_rows(WrapStyle::Classic);
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(1));
+    policy.take_output_switches();
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(2));
+    assert_eq!(policy.take_output_switches(), [switch(1, 1, 2, (1, 0))]);
+}
+
+#[test]
+fn a_window_carried_past_the_grids_edge_notes_its_bindings_way() {
+    let mut policy = two_rows(WrapStyle::Toroidal);
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+
+    policy.action(SEAT, Action::MoveToWorkspaceUp, ms(2));
+
+    assert_eq!(policy.take_output_switches(), [switch(1, 0, 2, (0, -1))]);
+}
+
+#[test]
+fn a_switch_of_one_output_is_noted_for_it_alone() {
+    let mut policy = two_outputs(true);
+
+    policy.switch_output_workspace(OutputId(2), 1);
+
+    assert_eq!(policy.take_output_switches(), [switch(2, 0, 1, (1, 0))]);
+}
+
+#[test]
+fn a_switch_of_every_output_is_noted_for_each_that_changes() {
+    let mut policy = two_outputs(true);
+    policy.switch_output_workspace(OutputId(2), 2);
+    policy.take_output_switches();
+
+    policy.switch_workspace(2);
+    assert_eq!(policy.take_output_switches(), [switch(1, 0, 2, (2, 0))]);
+
+    policy.switch_workspace(0);
+    assert_eq!(
+        policy.take_output_switches(),
+        [switch(1, 2, 0, (-2, 0)), switch(2, 2, 0, (-2, 0))]
+    );
+}
+
+#[test]
+fn turning_the_key_off_and_an_output_that_comes_note_no_switch() {
+    let mut policy = two_outputs(true);
+    policy.switch_output_workspace(OutputId(2), 1);
+    policy.take_output_switches();
+
+    set_per_output(&mut policy, false);
+    assert_eq!(active(&policy), (0, 0));
+    policy.add_output(output(3, 3200, 0, 1280, 1024));
+
+    assert_eq!(policy.take_output_switches(), []);
+}
+
+#[test]
+fn the_output_showing_a_window_is_its_main_output_or_the_primary_one() {
+    let policy = two_outputs(true);
+
+    assert_eq!(policy.output_showing(id(1)), Some(OutputId(1)));
+    assert_eq!(policy.output_showing(id(2)), Some(OutputId(2)));
+    // A window policy doesn't manage is on no output.
+    assert_eq!(policy.output_showing(id(9)), Some(OutputId(1)));
 }

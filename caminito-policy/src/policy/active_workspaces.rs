@@ -15,6 +15,23 @@ pub(super) struct Shown {
     pub(super) previous: Option<usize>,
 }
 
+/// One output's change of active workspace, as a switch made it (233). What turns
+/// `workspaces-per-output` on or off, an output that comes or goes, and a change of the
+/// workspaces' count aren't switches, and give none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutputSwitch {
+    /// The output that switched.
+    pub output: OutputId,
+    /// The workspace that was active.
+    pub from: usize,
+    /// The one that is.
+    pub to: usize,
+    /// How far the switch goes in the Workspace grid, in columns to the right and in rows
+    /// down: from the old workspace's cell to the new one's, or one cell the way a binding
+    /// asked to go, which a switch that wraps past the grid's edge keeps to.
+    pub cells: (i32, i32),
+}
+
 /// Every output's [`Shown`], by its id, and the one an output added takes.
 #[derive(Debug, Clone, Default)]
 pub(super) struct ActiveWorkspaces {
@@ -68,6 +85,38 @@ impl<W: PolicyWindow> Policy<W> {
     pub(super) fn primary_shown(&self) -> Shown {
         let primary = self.primary_output().map(|output| output.id);
         self.active_workspaces.of(primary)
+    }
+
+    /// Notes the switch to `workspace` of each output that shows another, of `only` or of
+    /// them all, before it's made. `towards` is the way a binding asked to go.
+    pub(super) fn note_output_switches(
+        &mut self,
+        only: Option<OutputId>,
+        workspace: usize,
+        towards: Option<Direction>,
+    ) {
+        let grid = self.workspace_grid();
+        let (column, row) = grid.cell(workspace);
+        for output in &self.outputs {
+            let from = self.active_workspaces.of(Some(output.id)).active;
+            if from == workspace || only.is_some_and(|only| only != output.id) {
+                continue;
+            }
+            let (from_column, from_row) = grid.cell(from);
+            let cells = match towards {
+                Some(direction) => direction.step(),
+                None => (
+                    column as i32 - from_column as i32,
+                    row as i32 - from_row as i32,
+                ),
+            };
+            self.output_switches.push(OutputSwitch {
+                output: output.id,
+                from,
+                to: workspace,
+                cells,
+            });
+        }
     }
 
     /// Every output takes the primary output's active and previous workspace, as
@@ -138,13 +187,17 @@ impl<W: PolicyWindow> Policy<W> {
     /// The active workspace of `id`'s Main output, the output its frame is most on, or of
     /// the primary output for a window on none.
     pub(super) fn active_workspace_of(&self, id: WindowId) -> usize {
-        let output = self
-            .windows
+        self.active_workspaces.of(self.output_showing(id)).active
+    }
+
+    /// The output whose active workspace says whether `id` shows: its Main output, the
+    /// output its frame is most on, or the primary output for a window on none.
+    pub fn output_showing(&self, id: WindowId) -> Option<OutputId> {
+        self.windows
             .get(&id)
             .and_then(|managed| self.output_of(managed.frame()))
             .or(self.primary_output())
-            .map(|output| output.id);
-        self.active_workspaces.of(output).active
+            .map(|output| output.id)
     }
 
     /// Whether a managed window is on the workspace its Main output shows: it's sticky, or
