@@ -102,7 +102,7 @@ impl WorkspaceSlides {
     }
 
     /// The slides that run at `now`.
-    pub(crate) fn running(&self, now: Duration) -> impl Iterator<Item = &Slide> {
+    fn running(&self, now: Duration) -> impl Iterator<Item = &Slide> {
         self.running.iter().filter(move |slide| !slide.is_over(now))
     }
 }
@@ -166,7 +166,13 @@ impl Caminito {
                 })
                 .copied()
                 .collect();
-            let arriving = shown.difference(&was_shown).filter(on_output).copied();
+            // One that maps or is restored on another workspace in the same pass isn't the
+            // new workspace's.
+            let arriving = shown
+                .difference(&was_shown)
+                .filter(on_output)
+                .filter(|id| policy.workspace_of(**id) == Some(switch.to))
+                .copied();
             running.push(Slide {
                 output: switch.output,
                 from: switch.from,

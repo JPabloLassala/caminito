@@ -20,6 +20,7 @@ pub(super) struct Shown {
 /// workspaces' count aren't switches, and give none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputSwitch {
+    /// The output that switched.
     pub output: OutputId,
     /// The workspace that was active.
     pub from: usize,
