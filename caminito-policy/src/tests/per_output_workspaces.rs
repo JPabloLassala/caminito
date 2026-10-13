@@ -407,6 +407,16 @@ fn a_minimised_focused_window_gives_the_focus_to_its_own_outputs_windows() {
 }
 
 #[test]
+fn lowering_the_only_window_of_its_output_keeps_the_focus_there() {
+    let mut policy = two_outputs(true);
+
+    policy.lower(SEAT, id(2), ms(3));
+
+    assert_eq!(policy.focus(SEAT), Some(id(2)));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+}
+
+#[test]
 fn the_active_output_follows_the_focused_window_across() {
     let mut policy = two_outputs(true);
 

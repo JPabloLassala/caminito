@@ -1435,7 +1435,6 @@ impl<W: PolicyWindow> Policy<W> {
                     let seats: Vec<SeatId> = self
                         .seats
                         .iter()
-                        .chain(self.focus.keys())
                         .copied()
                         .filter(|seat| self.active_output(*seat) == Some(output))
                         .collect();
@@ -1736,7 +1735,7 @@ impl<W: PolicyWindow> Policy<W> {
         if self.focus(seat) == Some(id) {
             // Restacked first, so the default window is the one now on top.
             self.apply();
-            if let Some(next) = self.default_focus().filter(|next| *next != id) {
+            if let Some(next) = self.default_focus_for(seat).filter(|next| *next != id) {
                 self.focus_window(seat, next, now);
             }
         }
@@ -2186,7 +2185,7 @@ impl<W: PolicyWindow> Policy<W> {
     /// output of its focused window, or of the last one it focused while it has none, as
     /// after a switch to an empty workspace. The primary output stands in while the seat
     /// has focused no window, or once that output is gone. `None` while policy has no
-    /// output.
+    /// output. A click on what isn't a window doesn't change it yet (222).
     pub fn active_output(&self, seat: SeatId) -> Option<OutputId> {
         let active = self.active_outputs.get(&seat).copied();
         active.or(self.primary_output().map(|output| output.id))
@@ -3025,9 +3024,17 @@ impl<W: PolicyWindow> Policy<W> {
         self.default_focus_where(|id| self.output_showing(id) == Some(output))
     }
 
-    /// Gives every seat whose focused window is no longer showing the default focus. With
-    /// `workspaces-per-output` on that's from its Active output's windows, or none: the
-    /// focus doesn't go to another output's window because this one has none left (231).
+    /// The default focus for `seat`. With `workspaces-per-output` on that's from its Active
+    /// output's windows, or none: the focus doesn't go to another output's window because
+    /// this one has none left (231).
+    fn default_focus_for(&self, seat: SeatId) -> Option<WindowId> {
+        match self.active_output(seat) {
+            Some(output) if self.config.workspaces_per_output => self.default_focus_on(output),
+            _ => self.default_focus(),
+        }
+    }
+
+    /// Gives every seat whose focused window is no longer showing its default focus.
     fn fix_focus(&mut self) {
         let lost: Vec<SeatId> = self
             .focus
@@ -3036,23 +3043,19 @@ impl<W: PolicyWindow> Policy<W> {
             .map(|(seat, _)| *seat)
             .collect();
         for seat in lost {
-            let default = match self.active_output(seat) {
-                Some(output) if self.config.workspaces_per_output => self.default_focus_on(output),
-                _ => self.default_focus(),
-            };
-            match default {
+            match self.default_focus_for(seat) {
                 Some(id) => self.focus.insert(seat, id),
                 None => self.focus.remove(&seat),
             };
         }
     }
 
-    /// Each seat's Active output follows its focused window's Main output, and stays where
-    /// it was for a seat with no focus, or whose focused window is on no output.
+    /// Each seat's Active output follows the output its focused window shows by, its Main
+    /// output, and stays where it was for a seat with no focus.
     fn note_active_outputs(&mut self) {
         for (seat, id) in &self.focus {
-            if let Some(output) = self.output_of(self.windows[id].frame()) {
-                self.active_outputs.insert(*seat, output.id);
+            if let Some(output) = self.output_showing(*id) {
+                self.active_outputs.insert(*seat, output);
             }
         }
     }

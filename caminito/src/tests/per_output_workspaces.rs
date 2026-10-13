@@ -201,13 +201,14 @@ fn dump(f: &Fixture) -> serde_json::Value {
     serde_json::from_str(&f.state.caminito.state_dump()).unwrap()
 }
 
+// On one kind: where the popup opens goes by the outputs, whatever the windows are.
 #[test]
 fn the_workspace_popup_is_on_the_active_output_with_the_pointer_on_the_other() {
     let (mut f, client, left, right) = two_outputs(Kind::Xdg);
     window_at(&mut f, client, (100, 100), 0);
     let on_right = window_at(&mut f, client, (2500, 600), 0);
-    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(f.pid(on_right)));
     f.pointer_move(300., 900.);
+    assert_eq!(dump(&f)["focus"], f.pid(on_right).0);
     assert_eq!(dump(&f)["active_output"], right.name());
 
     f.key(KEY_LEFTCTRL, true);

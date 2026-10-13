@@ -309,7 +309,13 @@ impl Caminito {
                     && !policy.is_desktop_or_dock(*id)
                     && (workspace == active || !policy.is_sticky(*id))
             });
-            let frames = shown.filter_map(|id| policy.frame_rect(id));
+            // The output's own windows, those it's the Main output of (ADR 0032). With
+            // Spanning workspaces a workspace is every output's, and it's those on it.
+            let own = shown.filter(|id| {
+                !policy.workspaces_per_output()
+                    || policy.output_showing(*id) == Some(output_id(output))
+            });
+            let frames = own.filter_map(|id| policy.frame_rect(id));
             let on_output = frames.filter(|frame| frame.overlaps(geometry));
             on_output
                 .map(|frame| Rectangle::new(frame.loc - geometry.loc, frame.size))
