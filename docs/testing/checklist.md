@@ -972,6 +972,55 @@ session_env() {
 - **Debug tool:** `DumpState`'s `outputs`, each with its `active_workspace`, `active_output`,
   and each window's `workspace`. `gsettings get org.mate.Marco.general num-workspaces`.
 
+### Each monitor's workspace switcher is its own, and the window list shows both monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, `mate-panel-caminito` at
+     `pkgrel` 12 or later, four workspaces in one row and `workspaces-per-output` at `true`.
+     The first monitor is the primary one, with the bottom panel, its window list and its
+     workspace switcher.
+  2. Right-click the top panel, choose *New Panel*, and in the new panel's properties choose
+     the second display. Right-click the new panel, choose *Add to Panel* and add a
+     *Workspace Switcher*.
+  3. Open a `pluma` on the first monitor and a terminal on the second. Click the third button
+     of the second monitor's switcher, then the second button of the first monitor's.
+  4. Click the first button of each switcher. Click the second monitor's wallpaper, press
+     Ctrl+Alt+Right, and roll the wheel over the first monitor's switcher.
+  5. Open the *Preferences* of the second monitor's switcher, read the number of workspaces
+     and the names, and change the name of the second workspace.
+  6. Put each monitor on its first workspace. Look at the window list. Switch the second
+     monitor to its second workspace, look again, and click the terminal's button if there
+     is one. In the window list's *Preferences* choose *Show windows from all workspaces*,
+     look, click the terminal's button, and choose *Show windows from current workspace*
+     again.
+  7. In the second panel's properties choose the first display, look at its switcher, and
+     choose the second display again.
+  8. Unplug the second monitor's cable, look at the switchers, and plug it back in.
+  9. Run `gsettings set org.mate.Caminito workspaces-per-output false`, look at the two
+     switchers and the window list, click a button of each switcher, and set the key back
+     with `gsettings reset`.
+- **Expected:** each switcher has four buttons. In step 3 the second monitor's switcher shows
+  its third button pressed and the terminal goes, while the first monitor and its switcher
+  stay; then the first monitor's shows its second pressed and `pluma` goes, while the second
+  monitor stays. In step 4 each binding and each roll of the wheel changes one monitor and
+  that monitor's switcher alone. In step 5 the dialog shows four workspaces and the one set
+  of names, and the new name shows in both switchers with *Workspace names* shown. In step 6
+  the list has a button for `pluma` and one for the terminal, on the first monitor's panel,
+  though the terminal is on the second monitor; with the second monitor on its second
+  workspace the terminal's button is gone and `pluma`'s stays. With all workspaces shown the
+  terminal's button is back, and a click on it switches the second monitor to its first
+  workspace and no other. In step 7 the moved panel's switcher shows the first monitor's
+  active workspace, with no restart of the panel, and the second monitor's again when it is
+  back. In step 8 the one monitor's switchers both show its workspaces, and the second
+  panel's shows the second monitor's first workspace when the monitor returns. In step 9
+  both switchers have four buttons with the same one pressed, a click on either switches
+  both monitors, and the window list shows the windows of the one active workspace on both
+  monitors, as before the key (226, 227).
+- **Debug tool:** `DumpState`'s `outputs`, each with its `active_workspace`.
+  `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep ext_workspace` for the groups, each with
+  its `output_enter`, and for the `activate` a click sends.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

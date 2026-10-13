@@ -1,3 +1,10 @@
+mate-panel (1.29.0~git20260925.58ac6c1-0caminito2) resolute; urgency=medium
+
+  * Take the twelfth carried patch: the workspace switcher shows the
+    workspaces of its panel's output.
+
+ -- jpablo <jpablolassala@gmail.com>  Tue, 13 Oct 2026 00:00:00 +0000
+
 mate-panel (1.29.0~git20260925.58ac6c1-0caminito1) resolute; urgency=medium
 
   * Master 58ac6c1, with Caminito's carried patches, which tools/debian-build
