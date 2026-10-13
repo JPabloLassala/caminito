@@ -16,7 +16,7 @@ use smithay::reexports::calloop::{Interest, Mode, PostAction};
 use crate::commands::{child_environment, spawn_argv};
 use crate::settings::Value;
 use crate::settings::translate::MARCO_WORKSPACE_NAMES;
-use crate::state::Caminito;
+use crate::state::{Caminito, SEAT};
 
 /// The title of Marco's dialogs.
 pub(crate) const TITLE: &str = "Marco";
@@ -39,8 +39,8 @@ impl Caminito {
         if self.workspace_rename.is_some() {
             return;
         }
-        // The primary output's, standing in for the Active output's (222).
-        let workspace = self.policy.primary_active_workspace();
+        // The Active output's (ADR 0032): the names are one set for every output.
+        let workspace = self.policy.active_output_workspace(SEAT);
         let Some(name) = self.policy.workspace_names().get(workspace) else {
             return;
         };

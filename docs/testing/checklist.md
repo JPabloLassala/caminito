@@ -831,6 +831,40 @@ session_env() {
   switches the monitor of that name, as `wlr-randr` gives it, to its third workspace with no
   binding.
 
+### A click says the Active output, and a new window opens on it
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors side by side, four workspaces in one row
+     and `workspaces-per-output` at `true`. The panel is on the first monitor. Open a
+     terminal on the first workspace of each monitor.
+  2. Click the second monitor's terminal, and press Ctrl+Alt+Right: the second monitor is on
+     an empty workspace. Leave the pointer on the first monitor, and open a terminal with
+     its binding (`run-command-terminal`).
+  3. Click an empty part of the first monitor's panel, and open a terminal from the panel's
+     menu.
+  4. Move the pointer to the second monitor, with no click, and press Ctrl+Alt+Right, then
+     Ctrl+Alt+Left.
+  5. Click the second monitor's wallpaper, or caja's desktop if it is there, and press
+     Ctrl+Alt+Right, then Ctrl+Alt+Left. Then press the binding of `rename-workspace`, if
+     it has one, and cancel the dialog.
+  6. Run `gsettings set org.mate.Marco.general placement-mode pointer`. Click the first
+     monitor's panel, put the pointer on the second monitor and open a terminal with its
+     binding. Set the key back with `gsettings reset`.
+  7. Click the first monitor's terminal, leave the pointer on the second monitor, and hold
+     Alt and press Tab.
+- **Expected:** in step 2 the new terminal is on the second monitor, on the empty workspace
+  that monitor shows, with the focus. In step 3 the click on the panel leaves the focus
+  where it was, and the terminal from the menu is on the first monitor, on the workspace it
+  shows. In step 4 the presses switch the first monitor, where the last terminal has the
+  focus, and not the monitor the pointer is on. In step 5 the presses switch the second
+  monitor, and the dialog offers the name of the workspace the second monitor shows. In
+  step 6 the terminal opens under the pointer on the second monitor, on the workspace that
+  monitor shows. In step 7 the Window switcher's popup is on the second monitor, where the
+  pointer is (222).
+- **Debug tool:** `DumpState`'s `active_output`, and its `active_workspace`, which is that
+  output's.
+
 ## Screenshots
 
 ### Print, Shift+Print and Alt+Print

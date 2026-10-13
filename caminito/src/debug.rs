@@ -72,7 +72,7 @@ struct StateDump {
     /// By id.
     windows: Vec<WindowDump>,
     workspaces: Vec<WorkspaceDump>,
-    /// The primary output's active workspace.
+    /// The Active output's active workspace.
     active_workspace: usize,
     /// Whether every output's active workspace shows its desktop (94).
     showing_desktop: bool,
@@ -805,8 +805,7 @@ impl Caminito {
         let dump = StateDump {
             windows,
             workspaces,
-            // The primary output's, standing in for the Active output's (222).
-            active_workspace: policy.primary_active_workspace(),
+            active_workspace: policy.active_output_workspace(SEAT),
             showing_desktop: policy.is_showing_desktop(),
             outputs,
             primary_output: self.primary_output().map(|output| output.name()),

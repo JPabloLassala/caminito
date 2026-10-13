@@ -612,9 +612,8 @@ impl State {
         {
             return;
         }
-        let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
-            .then(|| self.caminito.under(location))
-            .flatten();
+        let pressed = state == ButtonState::Pressed && !pointer.is_grabbed();
+        let under = pressed.then(|| self.caminito.under(location)).flatten();
         let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
         let inhibited = self.shortcuts_inhibited();
         let click = under
@@ -643,6 +642,11 @@ impl State {
         if let Some(Under::Layer(layer, ..)) = &under {
             self.caminito.layer_pressed(layer);
             self.update_keyboard_focus();
+        }
+        // A press on what's no window, a layer surface or an output's bare background,
+        // makes that output the Active output (222). A window's press says its own below.
+        if pressed && under.as_ref().and_then(Under::window).is_none() {
+            self.caminito.output_pressed(location);
         }
         // A press on an override-redirect window goes to it alone: it's never focused or
         // raised, and can't be dragged.

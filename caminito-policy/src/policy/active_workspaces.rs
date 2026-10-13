@@ -206,12 +206,6 @@ impl<W: PolicyWindow> Policy<W> {
         self.is_on_workspace(id, self.active_workspace_of(id))
     }
 
-    /// The workspace a new window opens on, unless it asks for one: the primary output's
-    /// active workspace, which stands in for the Active output's until ticket 222.
-    pub(super) fn new_window_workspace(&self) -> usize {
-        self.primary_active_workspace()
-    }
-
     /// Every output's active workspace, once each, or the one that stands for them while
     /// policy has no output.
     pub(super) fn shown_workspaces(&self) -> BTreeSet<usize> {

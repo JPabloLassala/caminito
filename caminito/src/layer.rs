@@ -7,13 +7,13 @@ use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{IsAlive, Logical, Rectangle};
+use smithay::utils::{IsAlive, Logical, Point, Rectangle};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::{
     KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
 };
 
-use crate::output::output_geometry;
+use crate::output::{output_geometry, output_id};
 use crate::scene;
 use crate::state::{Caminito, SEAT};
 use crate::window::send_preferred_scale;
@@ -208,6 +208,20 @@ impl Caminito {
     pub(crate) fn layer_pressed(&mut self, layer: &LayerSurface) {
         if takes_keyboard_on_demand(layer) {
             self.keyboard_layer = Some((layer.clone(), self.policy.focus(SEAT)));
+        }
+    }
+
+    /// A button was pressed at `location` on what's no managed window: a panel or any
+    /// other layer surface, caja's desktop, the wallpaper or an output's bare background.
+    /// Its output becomes the Active output (ADR 0032), and the focus stays where it is.
+    /// The lock screen's press says nothing.
+    pub(crate) fn output_pressed(&mut self, location: Point<f64, Logical>) {
+        if self.lock.is_locked() {
+            return;
+        }
+        let pressed = |output: &&Output| output_geometry(output).to_f64().contains(location);
+        if let Some(output) = self.outputs.iter().find(pressed) {
+            self.policy.press_on_output(SEAT, output_id(output));
         }
     }
 
