@@ -1,4 +1,4 @@
-//! The Workspace slide (233): a change of the output's active workspace shows the old
+//! The Workspace slide (233, 234): a change of the output's active workspace shows the old
 //! workspace's windows leaving and the new one's arriving, for 250 ms of Caminito's clock,
 //! read from the debug dump and from the output's pixels. Policy has switched from the
 //! start.
@@ -11,7 +11,8 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
     BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_A, KEY_DOWN, KEY_LEFT, KEY_LEFTALT,
-    KEY_LEFTCTRL, KEY_LEFTMETA, KEY_RIGHT, KEY_UP, Kind, WINDOW_COLOR, WindowSpec, on_both_kinds,
+    KEY_LEFTCTRL, KEY_LEFTMETA, KEY_LEFTSHIFT, KEY_RIGHT, KEY_UP, Kind, WINDOW_COLOR, WindowSpec,
+    on_both_kinds,
 };
 use crate::backend::headless::argb8888;
 use crate::scene::{CLEAR_COLOR, SceneLayer};
@@ -81,6 +82,8 @@ struct Sliding {
     offset: Point<i32, Logical>,
     /// Each window it moves, by policy's id, with where its frame is drawn.
     windows: Vec<(u64, Rectangle<i32, Logical>)>,
+    /// The windows it leaves in their places, by policy's id.
+    still: Vec<u64>,
 }
 
 impl Sliding {
@@ -119,6 +122,12 @@ fn slides(f: &Fixture) -> Vec<Sliding> {
                 );
                 (window["id"].as_u64().unwrap(), rect)
             })
+            .collect(),
+        still: slide["still"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_u64().unwrap())
             .collect(),
     });
     slides.collect()
@@ -174,6 +183,27 @@ fn moved(rect: Rectangle<i32, Logical>, by: Point<i32, Logical>) -> Rectangle<i3
     Rectangle::new(rect.loc + by, rect.size)
 }
 
+/// Maps the panel's bar along the output's bottom, on the top layer.
+fn map_bar(f: &mut Fixture) {
+    let panel = f.connect(Kind::Xdg);
+    f.client(panel).bind_outputs();
+    let bar = LayerSpec {
+        layer: Layer::Top,
+        namespace: "panel",
+        output: None,
+        anchor: LayerAnchor::Bottom | LayerAnchor::Left | LayerAnchor::Right,
+        size: (0, BAR_HEIGHT as u32),
+        exclusive_zone: BAR_HEIGHT,
+        keyboard: KeyboardInteractivity::None,
+    };
+    f.map_layer(panel, bar, BAR_COLOR);
+}
+
+/// The spot on the bar that's `x` from the output's left.
+fn bar_at(x: i32) -> Point<i32, Logical> {
+    Point::from((x, OUTPUT.1 - BAR_HEIGHT / 2))
+}
+
 on_both_kinds! {
     fn a_switch_each_way_slides_the_way_of_the_grid(kind: Kind) {
         let (mut f, id) = desk(kind, two_rows());
@@ -216,19 +246,8 @@ on_both_kinds! {
 on_both_kinds! {
     fn part_way_both_workspaces_windows_are_drawn_and_the_panel_stays(kind: Kind) {
         let (mut f, id) = desk(kind, two_rows());
-        let panel = f.connect(Kind::Xdg);
-        f.client(panel).bind_outputs();
-        let bar = LayerSpec {
-            layer: Layer::Top,
-            namespace: "panel",
-            output: None,
-            anchor: LayerAnchor::Bottom | LayerAnchor::Left | LayerAnchor::Right,
-            size: (0, BAR_HEIGHT as u32),
-            exclusive_zone: BAR_HEIGHT,
-            keyboard: KeyboardInteractivity::None,
-        };
-        f.map_layer(panel, bar, BAR_COLOR);
-        let on_bar = Point::from((OUTPUT.0 / 2, OUTPUT.1 - BAR_HEIGHT / 2));
+        map_bar(&mut f);
+        let on_bar = bar_at(OUTPUT.0 / 2);
         let old = map_on(&mut f, id, 0, BIG);
         let new = map_on(&mut f, id, 1, (300, 200));
         let (old_frame, new_frame) = (f.visible_frame(old), f.visible_frame(new));
@@ -527,4 +546,168 @@ fn a_second_switch_ends_the_running_slide_and_starts_its_own() {
         slide.windows.iter().all(|(id, _)| *id != first),
         "{slide:?}"
     );
+}
+
+// The windows that are the same on both workspaces stay still (234).
+
+/// A window so small that one dragged `RIGHT` is clear of the band the others slide down
+/// in.
+const SMALL: (i32, i32) = (300, 200);
+
+/// How far `drag_right` takes a window.
+const RIGHT: i32 = 400;
+
+/// Presses the left button inside `window`, starts its move as its client asks for one,
+/// and moves the pointer `RIGHT` with the button still down.
+#[track_caller]
+fn drag_right(f: &mut Fixture, window: ClientWindow) {
+    let id = window.client();
+    let press = (f.geometry(window).loc + Point::from((50, 10))).to_f64();
+    f.pointer_move(press.x, press.y);
+    f.pointer_button(BTN_LEFT, true);
+    f.roundtrip(id);
+    let serial = f.client(id).state.last_press_serial;
+    f.client(id)
+        .start_move(window.xdg(), serial.expect("the client saw the press"));
+    f.roundtrip(id);
+    f.pointer_move(press.x + f64::from(RIGHT), press.y);
+    assert_eq!(f.state.caminito.policy.grab(SEAT), Some(f.pid(window)));
+}
+
+/// Checks that the slide moves `old` out and `new` in, the workspace below's, and leaves
+/// `still` alone in its place, where it's drawn.
+#[track_caller]
+fn assert_only_stays(f: &mut Fixture, still: ClientWindow, old: ClientWindow, new: ClientWindow) {
+    let slide = slide(f);
+    let distance = Point::from((0, OUTPUT.1));
+    let offset = slide.offset;
+    assert!(0 < offset.y && offset.y < OUTPUT.1, "{slide:?}");
+    assert_eq!(slide.still, [f.pid(still).0], "{slide:?}");
+    assert_eq!(slide.windows.len(), 2, "{slide:?}");
+    assert_eq!(slide.drawn(f, new), moved(f.visible_frame(new), offset));
+    assert_eq!(
+        slide.drawn(f, old),
+        moved(f.visible_frame(old), offset - distance)
+    );
+    // It's to the right of the band the two others slide in.
+    let frame = f.visible_frame(still);
+    let band = f.visible_frame(old).merge(f.visible_frame(new));
+    assert!(frame.loc.x > band.loc.x + band.size.w + 40, "{frame:?}");
+    assert_eq!(pixel(f, middle(frame)), WINDOW, "it's drawn in its place");
+    let beside = Point::from((frame.loc.x - 20, frame.loc.y + frame.size.h / 2));
+    assert_eq!(pixel(f, beside), clear(), "and nowhere else");
+}
+
+#[test]
+fn a_sticky_window_stays_while_the_others_slide() {
+    let (mut f, id) = desk(Kind::Xdg, two_rows());
+    f.client(id).bind_input();
+    let old = map_on(&mut f, id, 0, SMALL);
+    let new = map_on(&mut f, id, 2, SMALL);
+    let sticky = f.map(id, WindowSpec::plain(SMALL));
+    drag_right(&mut f, sticky);
+    f.pointer_button(BTN_LEFT, false);
+    let pid = f.pid(sticky);
+    f.state.caminito.policy.set_sticky(pid, true);
+    f.dispatch();
+    let frame = f.visible_frame(sticky);
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_DOWN]);
+    f.advance_clock(PART_WAY);
+
+    assert_eq!(f.visible_frame(sticky), frame);
+    assert_only_stays(&mut f, sticky, old, new);
+}
+
+#[test]
+fn the_window_a_binding_carries_stays_while_the_others_slide() {
+    let (mut f, id) = desk(Kind::Xdg, two_rows());
+    f.client(id).bind_input();
+    let old = map_on(&mut f, id, 0, SMALL);
+    let new = map_on(&mut f, id, 2, SMALL);
+    let carried = f.map(id, WindowSpec::plain(SMALL));
+    drag_right(&mut f, carried);
+    f.pointer_button(BTN_LEFT, false);
+    let pid = f.pid(carried);
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(pid));
+    let frame = f.visible_frame(carried);
+
+    // `move-to-workspace-down`.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_LEFTALT, KEY_DOWN]);
+    assert_eq!(active(&f), 2);
+    assert_eq!(f.state.caminito.policy.workspace_of(pid), Some(2));
+    f.advance_clock(PART_WAY);
+
+    assert_eq!(f.visible_frame(carried), frame);
+    assert_only_stays(&mut f, carried, old, new);
+}
+
+#[test]
+fn a_window_being_dragged_stays_under_the_pointer_while_the_others_slide() {
+    let (mut f, id) = desk(Kind::Xdg, two_rows());
+    f.client(id).bind_input();
+    let old = map_on(&mut f, id, 0, SMALL);
+    let new = map_on(&mut f, id, 2, SMALL);
+    let dragged = f.map(id, WindowSpec::plain(SMALL));
+    drag_right(&mut f, dragged);
+    let pid = f.pid(dragged);
+    let frame = f.visible_frame(dragged);
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_DOWN]);
+    assert_eq!(active(&f), 2);
+    assert_eq!(f.state.caminito.policy.workspace_of(pid), Some(2));
+    f.advance_clock(PART_WAY);
+
+    assert_eq!(f.visible_frame(dragged), frame);
+    assert_only_stays(&mut f, dragged, old, new);
+    // The drag goes on, part-way through the slide.
+    assert_eq!(f.state.caminito.policy.grab(SEAT), Some(pid));
+    f.pointer_move_by(-40., 20.);
+    assert_eq!(f.visible_frame(dragged), moved(frame, (-40, 20).into()));
+    f.pointer_button(BTN_LEFT, false);
+    assert_eq!(f.state.caminito.policy.grab(SEAT), None);
+    assert_eq!(f.visible_frame(dragged), moved(frame, (-40, 20).into()));
+}
+
+#[test]
+fn a_fullscreen_window_slides_and_the_panel_shows() {
+    let (mut f, id) = desk(Kind::Xdg, two_rows());
+    map_bar(&mut f);
+    let full = f.map(id, WindowSpec::plain(SMALL));
+    let pid = f.pid(full);
+    f.client(id).set_fullscreen(full.xdg(), None);
+    f.dispatch_until(|f| f.state.caminito.policy.is_fullscreen(pid));
+    f.draw_at_asked_size(full, OUTPUT);
+    let frame = f.visible_frame(full);
+    assert_eq!(frame, output());
+    // Focused, it covers the panel.
+    let (left, right) = (bar_at(OUTPUT.0 / 4), bar_at(OUTPUT.0 - 5));
+    f.wait_for_pixel(left.x, left.y, WINDOW);
+
+    // To the empty workspace on the right: it leaves below the panel, as a fullscreen
+    // window that isn't focused is.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    f.advance_clock(PART_WAY);
+    let out = slide(&f);
+    let distance = Point::from((OUTPUT.0, 0));
+    assert!(0 < out.offset.x && out.offset.x < OUTPUT.0, "{out:?}");
+    assert_eq!(out.drawn(&f, full), moved(frame, out.offset - distance));
+    assert!(out.still.is_empty(), "{out:?}");
+    let above_bar = Point::from((10, OUTPUT.1 / 2));
+    assert_eq!(pixel(&mut f, above_bar), WINDOW, "it's on its way out");
+    assert_eq!(pixel(&mut f, left), BAR_COLOR & 0xff_ffff);
+    assert_eq!(pixel(&mut f, right), BAR_COLOR & 0xff_ffff);
+    f.advance_clock(LENGTH - PART_WAY);
+    assert_eq!(pixel(&mut f, above_bar), clear());
+
+    // And back: focused again, it comes in over the panel, which shows where it isn't yet.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT]);
+    f.advance_clock(PART_WAY);
+    let back = slide(&f);
+    assert!(-OUTPUT.0 < back.offset.x && back.offset.x < 0, "{back:?}");
+    assert_eq!(back.drawn(&f, full), moved(frame, back.offset));
+    assert_eq!(pixel(&mut f, left), WINDOW, "it's on its way in");
+    assert_eq!(pixel(&mut f, right), BAR_COLOR & 0xff_ffff);
+    f.advance_clock(LENGTH - PART_WAY);
+    assert_eq!(pixel(&mut f, right), WINDOW);
 }

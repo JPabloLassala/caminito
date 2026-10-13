@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 233 built the first slice: the slide on one output, each way, with its key. What tickets 234 to 236 add isn't built.
+Ticket 233 built the first slice: the slide on one output, each way, with its key. Ticket 234 built the windows that stay still. What tickets 235 and 236 add isn't built.
 
 ## Problem
 

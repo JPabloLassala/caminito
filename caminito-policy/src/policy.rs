@@ -1378,6 +1378,23 @@ impl<W: PolicyWindow> Policy<W> {
             self.window_menu = None;
             self.note_switch(self.workspace_grid(), from, workspace);
             self.note_output_switches(only, workspace, towards);
+            // A window being moved goes with the switch, with its transient family, as
+            // Marco's `meta_workspace_activate_with_focus` takes the window being moved
+            // along unless it's on every workspace (workspace.c:416-456): it stays under
+            // the pointer, and the Workspace slide leaves it still (234). The family is on
+            // the workspace of its root's Main output (ADR 0032).
+            let moved: Vec<WindowId> = self
+                .grabs
+                .values()
+                .filter(|grab| grab.resize.is_none())
+                .map(|grab| grab.window)
+                .map(|id| self.root(id))
+                .filter(|root| only.is_none_or(|only| self.output_showing(*root) == Some(only)))
+                .filter(|root| !self.is_on_workspace(*root, workspace))
+                .collect();
+            for root in moved {
+                self.move_tree(root, workspace);
+            }
             let switch = |shown: &mut active_workspaces::Shown| {
                 if shown.active != workspace {
                     shown.previous = Some(shown.active);
