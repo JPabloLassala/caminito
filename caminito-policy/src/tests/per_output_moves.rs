@@ -9,6 +9,14 @@ use crate::{ActivationSource, Direction, MenuEntry, MenuOp, MenuSelection};
 /// dialog has the focus.
 fn dialog_on_the_other_output(on: bool) -> Policy<TestWindow> {
     let mut policy = two_outputs(on);
+    map_dialog(&mut policy);
+    policy.request_geometry(id(3), Some(Point::from((2100, 500))), None);
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    policy
+}
+
+/// Maps window 3, a dialog of window 1, on the left output with it.
+fn map_dialog(policy: &mut Policy<TestWindow>) {
     policy.map_window(
         TestWindow::new(3, 200, 100)
             .with_type(WindowType::Dialog)
@@ -16,9 +24,6 @@ fn dialog_on_the_other_output(on: bool) -> Policy<TestWindow> {
             .with_requested_position(200, 200),
         ms(3),
     );
-    policy.request_geometry(id(3), Some(Point::from((2100, 500))), None);
-    assert_eq!(policy.focus(SEAT), Some(id(3)));
-    policy
 }
 
 /// Whether the menu open on a window has `op` among its entries, and not greyed.
@@ -254,13 +259,7 @@ fn a_dialog_stays_through_its_own_outputs_switch_with_the_focus() {
 #[test]
 fn a_root_dragged_across_takes_its_dialog_left_behind() {
     let mut policy = two_outputs(true);
-    policy.map_window(
-        TestWindow::new(3, 200, 100)
-            .with_type(WindowType::Dialog)
-            .with_parent(1)
-            .with_requested_position(200, 200),
-        ms(3),
-    );
+    map_dialog(&mut policy);
     policy.switch_output_workspace(OutputId(2), 1);
 
     policy.request_geometry(id(1), Some(Point::from((2000, 100))), None);
@@ -338,4 +337,29 @@ fn with_the_key_off_activation_switches_every_output() {
     assert_eq!(active(&policy), (1, 1));
     assert!(!policy.is_showing(id(1)));
     assert_eq!(policy.focus(SEAT), Some(id(2)));
+}
+
+#[test]
+fn a_dialogs_own_main_output_isnt_the_one_it_shows_by() {
+    let policy = dialog_on_the_other_output(true);
+
+    assert_eq!(policy.main_output_of(id(3)), Some(OutputId(2)));
+    assert_eq!(policy.output_showing(id(3)), Some(OutputId(1)));
+}
+
+#[test]
+fn with_the_key_off_a_dialog_and_a_sticky_window_are_as_with_one_workspace_for_all() {
+    let mut policy = dialog_on_the_other_output(false);
+    policy.set_sticky(id(2), true);
+
+    policy.switch_workspace(1);
+    assert_eq!(active(&policy), (1, 1));
+    assert!(!policy.is_showing(id(3)));
+    assert!(policy.is_showing(id(2)));
+
+    policy.set_sticky(id(2), false);
+    assert_eq!(policy.workspace_of(id(2)), Some(1));
+    policy.switch_workspace(0);
+    assert!(policy.is_showing(id(3)));
+    assert!(!policy.is_showing(id(2)));
 }

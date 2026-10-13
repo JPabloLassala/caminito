@@ -196,14 +196,15 @@ impl<W: PolicyWindow> Policy<W> {
     /// shows and hides with its root (ADR 0032). That's the primary output for a root on
     /// none.
     pub fn output_showing(&self, id: WindowId) -> Option<OutputId> {
+        // A window policy doesn't manage has no root, and takes the primary output.
         let root = self.windows.contains_key(&id).then(|| self.root(id));
         self.main_output_of(root.unwrap_or(id))
     }
 
     /// `id`'s own Main output, the output its frame is most on, or the primary output for a
-    /// window on none. It's where the user sees `id`, so a seat's Active output and an
-    /// output's default focus go by it.
-    pub(super) fn main_output_of(&self, id: WindowId) -> Option<OutputId> {
+    /// window on none. It's where the user sees `id`, so a seat's Active output, an
+    /// output's default focus and the Workspace slide go by it.
+    pub fn main_output_of(&self, id: WindowId) -> Option<OutputId> {
         self.windows
             .get(&id)
             .and_then(|managed| self.output_of(managed.frame()))

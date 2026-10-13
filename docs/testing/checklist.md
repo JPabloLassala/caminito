@@ -887,8 +887,9 @@ session_env() {
      terminal there, and open its Window menu.
   6. Press the binding of `move-to-monitor-w` with the second terminal focused, if it has
      one, and that of `move-to-monitor-e` after it.
-  7. Click the `pluma` window. In the window list, click the button of the first terminal,
-     which no monitor shows.
+  7. Click the first monitor's panel, press Ctrl+Alt+Left until the first monitor shows
+     `pluma`, and click the `pluma` window. In the window list, click the button of the
+     first terminal, which no monitor shows.
 - **Expected:** in step 2, with `pluma` clicked, the first monitor switches and the Find
   dialog leaves the second monitor with `pluma`, and comes back with it; the second monitor
   shows its first workspace all the time. With the dialog clicked, the second monitor

@@ -168,7 +168,7 @@ impl Caminito {
         };
         if self.workspace_popup.is_none()
             && !holding.is_empty()
-            && let Some(output) = self.workspace_popup_output()
+            && let Some(output) = self.workspace_popup_output(beside.is_move)
             && self.policy.open_workspace_popup(beside.is_move)
         {
             let layout = self.workspace_popup_layout(&output);
@@ -253,7 +253,11 @@ impl Caminito {
         let output = if self.outputs.contains(shown) {
             Some(shown.clone())
         } else {
-            self.workspace_popup_output()
+            let moves = self
+                .policy
+                .workspace_popup()
+                .is_some_and(|popup| popup.moves);
+            self.workspace_popup_output(moves)
         };
         let Some(output) = output.filter(|_| !self.workspace_popup_gives_way()) else {
             self.close_workspace_popup();
@@ -275,11 +279,18 @@ impl Caminito {
         self.queue_redraw_all();
     }
 
-    /// The output the popup appears on: the seat's Active output, whose workspace the
-    /// bindings switch (ADR 0032). With Spanning workspaces every output switches, and it's
-    /// the output the pointer is on, as the Window switcher's.
-    fn workspace_popup_output(&self) -> Option<Output> {
-        let active = self.policy.active_output(SEAT);
+    /// The output the popup appears on: the one its bindings switch (ADR 0032). That's the
+    /// seat's Active output, or for a popup that `moves` the focused window, the output
+    /// that window shows by, which is its root's for a dialog dragged to another (223).
+    /// With Spanning workspaces every output switches, and it's the output the pointer is
+    /// on, as the Window switcher's.
+    fn workspace_popup_output(&self, moves: bool) -> Option<Output> {
+        let policy = &self.policy;
+        let moved = policy.focus(SEAT).filter(|_| moves);
+        let active = match moved {
+            Some(id) => policy.output_showing(id),
+            None => policy.active_output(SEAT),
+        };
         let active = active.filter(|_| self.policy.workspaces_per_output());
         let is_active = |output: &&Output| Some(output_id(output)) == active;
         let output = self.outputs.iter().find(is_active).cloned();

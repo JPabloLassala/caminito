@@ -787,7 +787,7 @@ fn turning_the_key_off_and_an_output_that_comes_note_no_switch() {
 }
 
 #[test]
-fn the_output_showing_a_window_is_its_main_output_or_the_primary_one() {
+fn the_output_a_window_shows_by_is_its_main_output_or_the_primary_one() {
     let policy = two_outputs(true);
 
     assert_eq!(policy.output_showing(id(1)), Some(OutputId(1)));
