@@ -19,8 +19,9 @@ use crate::{Client, State};
 #[derive(Default)]
 pub struct Workspaces {
     manager: Option<ExtWorkspaceManagerV1>,
-    /// Every group the compositor has announced, in the order it did.
-    groups: Vec<ExtWorkspaceGroupHandleV1>,
+    /// Every group the compositor has announced, in the order it did. A removed one stays,
+    /// so a group's index names it for as long as the client lives.
+    pub groups: Vec<Group>,
     /// Every workspace the compositor has announced, in the order it did. A removed one
     /// stays, so a workspace's index names it for as long as the client lives.
     pub workspaces: Vec<Workspace>,
@@ -31,9 +32,22 @@ pub struct Workspaces {
     keep_removed_handles: bool,
 }
 
+/// A group, as its last events left it.
+pub struct Group {
+    proxy: ExtWorkspaceGroupHandleV1,
+    /// The names of the outputs it has entered and not left.
+    pub outputs: Vec<String>,
+    /// Whether the compositor said it's gone.
+    pub removed: bool,
+}
+
 /// A workspace, as its last events left it.
 pub struct Workspace {
     proxy: ExtWorkspaceHandleV1,
+    /// Its `id`, once the compositor has sent it.
+    pub id: Option<String>,
+    /// The index of the group it has entered and not left.
+    pub group: Option<usize>,
     pub name: Option<String>,
     /// Its last `coordinates`: every value the event had.
     pub coordinates: Vec<u32>,
@@ -79,7 +93,9 @@ impl Client {
 
     /// Asks for a new workspace in the first group, which a read-only compositor ignores.
     pub fn create_workspace(&self, name: &str) {
-        self.state.workspaces.groups[0].create_workspace(name.to_owned());
+        self.state.workspaces.groups[0]
+            .proxy
+            .create_workspace(name.to_owned());
     }
 
     /// Asks for no more events. The compositor answers `finished`.
@@ -97,6 +113,12 @@ impl Client {
     /// allows: the client is told no more of it.
     pub fn destroy_workspace_handle(&self, index: usize) {
         self.workspace_proxy(index).destroy();
+    }
+
+    /// Destroys the client's handle for a group that's still there, which the protocol
+    /// allows: the client is told no more of it.
+    pub fn destroy_workspace_group_handle(&self, index: usize) {
+        self.state.workspaces.groups[index].proxy.destroy();
     }
 
     /// Keeps the handles of workspaces removed from now on, so the client can make requests
@@ -145,13 +167,19 @@ impl Dispatch<ExtWorkspaceManagerV1, ()> for State {
             Event::WorkspaceGroup { workspace_group } => {
                 let index = workspaces.groups.len();
                 workspaces.events.push(format!("group {index}: new"));
-                workspaces.groups.push(workspace_group);
+                workspaces.groups.push(Group {
+                    proxy: workspace_group,
+                    outputs: Vec::new(),
+                    removed: false,
+                });
             }
             Event::Workspace { workspace } => {
                 let index = workspaces.workspaces.len();
                 workspaces.events.push(format!("workspace {index}: new"));
                 workspaces.workspaces.push(Workspace {
                     proxy: workspace,
+                    id: None,
+                    group: None,
                     name: None,
                     coordinates: Vec::new(),
                     active: false,
@@ -181,7 +209,8 @@ impl Dispatch<ExtWorkspaceGroupHandleV1, ()> for State {
     ) {
         use ext_workspace_group_handle_v1::Event;
 
-        let Some(index) = state.workspaces.groups.iter().position(|g| g == proxy) else {
+        let groups = &state.workspaces.groups;
+        let Some(index) = groups.iter().position(|group| group.proxy == *proxy) else {
             return;
         };
         let workspace = |state: &Self, workspace: &ExtWorkspaceHandleV1| match state
@@ -194,8 +223,16 @@ impl Dispatch<ExtWorkspaceGroupHandleV1, ()> for State {
             Event::Capabilities {
                 capabilities: WEnum::Value(capabilities),
             } => format!("capabilities {capabilities:?}"),
-            Event::OutputEnter { output } => format!("output_enter {}", state.output_name(&output)),
+            Event::OutputEnter { output } => {
+                let name = state.output_name(&output);
+                state.workspaces.groups[index].outputs.push(name.clone());
+                format!("output_enter {name}")
+            }
             Event::OutputLeave { output } => {
+                let name = state.output_name(&output);
+                state.workspaces.groups[index]
+                    .outputs
+                    .retain(|entered| *entered != name);
                 // libxfce4windowing can only take a monitor out of the group while it still
                 // has it, which is until its global is removed (91).
                 let late = if state.output_is_advertised(&output) {
@@ -206,12 +243,23 @@ impl Dispatch<ExtWorkspaceGroupHandleV1, ()> for State {
                 format!("output_leave {}{late}", state.output_name(&output))
             }
             Event::WorkspaceEnter { workspace: entered } => {
+                if let Some(entered) = state.workspace_index(&entered) {
+                    state.workspaces.workspaces[entered].group = Some(index);
+                }
                 format!("workspace_enter {}", workspace(state, &entered))
             }
             Event::WorkspaceLeave { workspace: left } => {
+                if let Some(left) = state.workspace_index(&left) {
+                    state.workspaces.workspaces[left].group = None;
+                }
                 format!("workspace_leave {}", workspace(state, &left))
             }
-            Event::Removed => "removed".to_owned(),
+            Event::Removed => {
+                let group = &mut state.workspaces.groups[index];
+                group.removed = true;
+                group.proxy.destroy();
+                "removed".to_owned()
+            }
             _ => return,
         };
         let events = &mut state.workspaces.events;
@@ -236,7 +284,11 @@ impl Dispatch<ExtWorkspaceHandleV1, ()> for State {
         let keep_removed = state.workspaces.keep_removed_handles;
         let workspace = &mut state.workspaces.workspaces[index];
         let text = match event {
-            Event::Id { id } => format!("id {id}"),
+            Event::Id { id } => {
+                let text = format!("id {id}");
+                workspace.id = Some(id);
+                text
+            }
             Event::Name { name } => {
                 let text = format!("name {name}");
                 workspace.name = Some(name);

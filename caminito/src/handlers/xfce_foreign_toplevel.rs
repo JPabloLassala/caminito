@@ -10,7 +10,7 @@ use crate::protocols::xfce_foreign_toplevel::{
 };
 use crate::state::{Caminito, State};
 
-use super::ext_workspace::workspace_id;
+use super::ext_workspace::workspace_id_of;
 use super::foreign_toplevel::window_id;
 
 impl XfceForeignToplevelHandler for State {
@@ -42,16 +42,18 @@ impl XfceForeignToplevelHandler for State {
 impl Caminito {
     /// Tells the clients of Xfce's foreign toplevel protocol of the windows that changed
     /// workspace or state. A sticky window is on every workspace, which the panel learns
-    /// from its state, and is said to be on the one policy keeps for it.
+    /// from its state, and is said to be on the one policy keeps for it. A window's
+    /// workspace is one of its output's group (226).
     pub(crate) fn refresh_toplevel_workspaces(&mut self) {
         let policy = &self.policy;
+        let outputs = &self.outputs;
         self.xfce_foreign_toplevel_state.refresh(
             &self.foreign_toplevel_state,
             &self.ext_workspace_state,
             |toplevel| {
                 let id = window_id(toplevel);
                 XfceToplevel {
-                    workspace: policy.workspace_of(id).map(workspace_id),
+                    workspace: workspace_id_of(policy, outputs, id),
                     sticky: policy.is_sticky(id),
                     above: policy.is_above(id),
                     below: policy.is_below(id),

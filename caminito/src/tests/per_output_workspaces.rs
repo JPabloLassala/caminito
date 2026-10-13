@@ -63,7 +63,7 @@ pub(super) fn window_at(
 
 /// Drags `window` so that its geometry is at the global point `at`, and puts it on
 /// `workspace`.
-fn put_at(f: &mut Fixture, window: ClientWindow, at: (i32, i32), workspace: usize) {
+pub(super) fn put_at(f: &mut Fixture, window: ClientWindow, at: (i32, i32), workspace: usize) {
     let id = f.pid(window);
     let from = f.geometry(window).loc.to_f64();
     let to = Point::<i32, Logical>::from(at).to_f64();
