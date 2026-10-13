@@ -6,7 +6,10 @@ use caminito_test_client::dbus::debug_proxy;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
-use super::fixture::{ClientId, ClientWindow, Fixture, Kind, WindowSpec, on_both_kinds};
+use super::fixture::{
+    ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, WindowSpec,
+    on_both_kinds,
+};
 use crate::output::{output_geometry, output_id};
 use crate::settings::Value;
 use crate::settings::translate::CAMINITO;
@@ -162,7 +165,9 @@ fn turning_the_key_off_and_on_applies_at_once() {
     };
     assert_eq!(active(&f), (0, 2));
 
-    // Off: every output takes the primary output's, and no window's number changes.
+    // Off: every output takes the Active output's, the left one's once its window is
+    // focused, and no window's number changes.
+    assert!(click_focuses(&mut f, (150, 150), on_left));
     f.set_setting(CAMINITO, "workspaces-per-output", Value::Bool(false));
     f.dispatch_until(|f| !f.state.caminito.policy.workspaces_per_output());
     assert_eq!(active(&f), (0, 0));
@@ -189,4 +194,49 @@ fn turning_the_key_off_and_on_applies_at_once() {
         f.state.caminito.policy.workspace_of(f.pid(on_left)),
         Some(0)
     );
+}
+
+/// The debug dump.
+fn dump(f: &Fixture) -> serde_json::Value {
+    serde_json::from_str(&f.state.caminito.state_dump()).unwrap()
+}
+
+#[test]
+fn the_workspace_popup_is_on_the_active_output_with_the_pointer_on_the_other() {
+    let (mut f, client, left, right) = two_outputs(Kind::Xdg);
+    window_at(&mut f, client, (100, 100), 0);
+    let on_right = window_at(&mut f, client, (2500, 600), 0);
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(f.pid(on_right)));
+    f.pointer_move(300., 900.);
+    assert_eq!(dump(&f)["active_output"], right.name());
+
+    f.key(KEY_LEFTCTRL, true);
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_RIGHT, true);
+    f.key(KEY_RIGHT, false);
+
+    // The binding switched the right output, where the focused window is, and the popup
+    // shows that output's workspaces there.
+    let dumped = dump(&f);
+    assert_eq!(dumped["workspace_popup"]["output"], right.name());
+    assert_eq!(dumped["workspace_popup"]["selected"], 1);
+    assert_eq!(dumped["outputs"][0]["name"], left.name());
+    assert_eq!(dumped["outputs"][0]["active_workspace"], 0);
+    assert_eq!(dumped["outputs"][1]["active_workspace"], 1);
+    // The workspace is empty, so nothing is focused, and it's the Active output still.
+    assert_eq!(dumped["focus"], serde_json::Value::Null);
+    assert_eq!(dumped["active_output"], right.name());
+
+    // A second press acts on the same output, and the popup stays.
+    f.key(KEY_RIGHT, true);
+    f.key(KEY_RIGHT, false);
+    let dumped = dump(&f);
+    assert_eq!(dumped["workspace_popup"]["output"], right.name());
+    assert_eq!(dumped["workspace_popup"]["selected"], 2);
+    assert_eq!(dumped["outputs"][0]["active_workspace"], 0);
+    assert_eq!(dumped["outputs"][1]["active_workspace"], 2);
+
+    f.key(KEY_LEFTALT, false);
+    f.key(KEY_LEFTCTRL, false);
+    assert!(dump(&f)["workspace_popup"].is_null());
 }

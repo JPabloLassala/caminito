@@ -681,6 +681,9 @@ pub struct Policy<W: PolicyWindow> {
     /// Every seat seen so far.
     seats: BTreeSet<SeatId>,
     focus: BTreeMap<SeatId, WindowId>,
+    /// Each seat's Active output (ADR 0032), once it has focused a window on one: see
+    /// `active_output`.
+    active_outputs: BTreeMap<SeatId, OutputId>,
     /// When each seat's focus last changed on user input, to drop stale focus requests as
     /// Marco does.
     focus_time: BTreeMap<SeatId, Duration>,
@@ -728,6 +731,7 @@ impl<W: PolicyWindow> Policy<W> {
             primary_output: None,
             seats: BTreeSet::new(),
             focus: BTreeMap::new(),
+            active_outputs: BTreeMap::new(),
             focus_time: BTreeMap::new(),
             last_seat: SeatId(0),
             grabs: BTreeMap::new(),
@@ -790,6 +794,9 @@ impl<W: PolicyWindow> Policy<W> {
             }
         }
         self.active_workspaces.set_outputs(&outputs);
+        // A seat whose Active output went has none, and the primary output stands in.
+        self.active_outputs
+            .retain(|_, active| outputs.iter().any(|output| output.id == *active));
         self.outputs = outputs;
         self.rehome_windows();
         // A window an output change put on another output hasn't been dragged there.
@@ -850,9 +857,8 @@ impl<W: PolicyWindow> Policy<W> {
                 managed.workspace = managed.workspace.min(last);
             }
             // In the grid as it was, which had the workspace. The sound is one for every
-            // output's switch, from the primary output's, which stands in for the Active
-            // output's (231).
-            let from = self.primary_shown().active;
+            // output's switch, from the Active output's.
+            let from = self.active_shown(self.last_seat).active;
             self.note_switch(self.workspace_grid(), from, from.min(last));
             self.workspace_count = count;
             for shown in self.active_workspaces.each_mut() {
@@ -1184,15 +1190,15 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn action(&mut self, seat: SeatId, action: Action, now: Duration) {
         self.set_last_seat(seat);
         match action {
-            Action::SwitchToWorkspaceLeft => self.switch_workspace_towards(Direction::Left),
-            Action::SwitchToWorkspaceRight => self.switch_workspace_towards(Direction::Right),
-            Action::SwitchToWorkspaceUp => self.switch_workspace_towards(Direction::Up),
-            Action::SwitchToWorkspaceDown => self.switch_workspace_towards(Direction::Down),
+            Action::SwitchToWorkspaceLeft => self.switch_workspace_towards(seat, Direction::Left),
+            Action::SwitchToWorkspaceRight => {
+                self.switch_workspace_towards(seat, Direction::Right);
+            }
+            Action::SwitchToWorkspaceUp => self.switch_workspace_towards(seat, Direction::Up),
+            Action::SwitchToWorkspaceDown => self.switch_workspace_towards(seat, Direction::Down),
             Action::SwitchToWorkspacePrev => {
-                // The primary output's previous workspace, where the Active output's is
-                // taken (231).
-                if let Some(previous) = self.primary_shown().previous {
-                    self.switch_workspace(previous);
+                if let Some(previous) = self.active_shown(seat).previous {
+                    self.switch_active_output(seat, previous, None);
                 }
             }
             Action::MoveToWorkspaceLeft => {
@@ -1207,7 +1213,7 @@ impl<W: PolicyWindow> Policy<W> {
             }
             // A number past the count does nothing (`handle_switch_to_workspace`).
             Action::SwitchToWorkspace(workspace) if workspace < self.workspace_count => {
-                self.switch_workspace(workspace);
+                self.switch_active_output(seat, workspace, None);
             }
             Action::SwitchToWorkspace(_) => {}
             Action::Switch { list, backward } => self.switch(seat, list, backward, true, now),
@@ -1290,20 +1296,30 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// The workspace beside the active one in the grid, where `wrap-style` takes a move past
-    /// its edge, if the move goes anywhere. It's beside the primary output's, where the
-    /// Active output's is taken (231).
-    fn workspace_towards(&self, direction: Direction) -> Option<usize> {
-        let active = self.primary_shown().active;
+    /// The workspace beside `workspace` in the grid, where `wrap-style` takes a move past
+    /// its edge, if the move goes anywhere.
+    fn workspace_towards(&self, workspace: usize, direction: Direction) -> Option<usize> {
         self.workspace_grid()
-            .neighbour(active, direction, self.config.wrap_style)
+            .neighbour(workspace, direction, self.config.wrap_style)
     }
 
-    /// Switches to the workspace beside the active one in the grid, if there is one.
-    fn switch_workspace_towards(&mut self, direction: Direction) {
-        if let Some(workspace) = self.workspace_towards(direction) {
-            self.switch_shown(None, workspace, Some(direction));
+    /// Switches `seat`'s Active output to the workspace beside its active one in the grid,
+    /// if there is one.
+    fn switch_workspace_towards(&mut self, seat: SeatId, direction: Direction) {
+        let active = self.active_shown(seat).active;
+        if let Some(workspace) = self.workspace_towards(active, direction) {
+            self.switch_active_output(seat, workspace, Some(direction));
         }
+    }
+
+    /// Switches `seat`'s Active output to `workspace`, as the `switch-to-workspace-*`
+    /// bindings do (231), and leaves the other outputs as they are. With
+    /// `workspaces-per-output` off, or while policy has no output, it switches them all.
+    fn switch_active_output(&mut self, seat: SeatId, workspace: usize, towards: Option<Direction>) {
+        let only = self
+            .active_output(seat)
+            .filter(|_| self.config.workspaces_per_output);
+        self.switch_shown(only, workspace, towards);
     }
 
     /// Moves `seat`'s focused window to the workspace beside the active one, with its
@@ -1314,7 +1330,10 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(id) = self.focus(seat).filter(|id| !self.is_desktop_or_dock(*id)) else {
             return;
         };
-        let Some(workspace) = self.workspace_towards(direction) else {
+        // Beside the primary output's, and every output switches, until the move is within
+        // the window's own output (223).
+        let active = self.primary_shown().active;
+        let Some(workspace) = self.workspace_towards(active, direction) else {
             return;
         };
         self.move_tree(self.root(id), workspace);
@@ -1325,8 +1344,8 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Makes `workspace` the active one of every output, and gives every seat its default
-    /// focus. Every switch there is switches every output, until the bindings switch the
-    /// Active output's (231).
+    /// focus. The bindings switch the Active output alone (231); what else switches still
+    /// switches every output (223, 226, 228).
     pub fn switch_workspace(&mut self, workspace: usize) {
         self.switch_shown(None, workspace, None);
     }
@@ -1346,8 +1365,8 @@ impl<W: PolicyWindow> Policy<W> {
     ///
     /// Switching every output gives every seat the default focus, as Marco's
     /// `meta_workspace_activate_with_focus` does. Switching one gives it to the seats whose
-    /// focused window is on that output, from that output's windows, and leaves the other
-    /// seats theirs.
+    /// Active output it is, from that output's windows, or leaves them with no focus, and
+    /// leaves the other seats theirs.
     ///
     /// `towards` is the way a binding asked to go, if one did: the Workspace slide then
     /// goes that way, also where the switch wraps past the grid's edge (233).
@@ -1358,11 +1377,11 @@ impl<W: PolicyWindow> Policy<W> {
         towards: Option<Direction>,
     ) {
         let workspace = workspace.min(self.workspace_count - 1);
-        // The sound is one for the switch, from the output's workspace, or the primary
-        // output's for every output, which stands in for the Active output's (231).
+        // The sound is one for the switch, from the output's workspace, or the Active
+        // output's for every output.
         let from = match only {
             Some(output) => self.active_workspaces.of(Some(output)).active,
-            None => self.primary_shown().active,
+            None => self.active_shown(self.last_seat).active,
         };
         let switches = match only {
             Some(_) => from != workspace,
@@ -1413,18 +1432,14 @@ impl<W: PolicyWindow> Policy<W> {
                 }
                 Some(output) => {
                     self.active_workspaces.of_mut(output).map(switch);
-                    let on_output = |policy: &Self, id: WindowId| {
-                        policy
-                            .output_of(policy.windows[&id].frame())
-                            .is_some_and(|o| o.id == output)
-                    };
                     let seats: Vec<SeatId> = self
-                        .focus
+                        .seats
                         .iter()
-                        .filter(|(_, id)| on_output(self, **id))
-                        .map(|(seat, _)| *seat)
+                        .chain(self.focus.keys())
+                        .copied()
+                        .filter(|seat| self.active_output(*seat) == Some(output))
                         .collect();
-                    let default = self.default_focus_where(|id| on_output(self, id));
+                    let default = self.default_focus_on(output);
                     for seat in seats {
                         match default {
                             Some(id) => self.focus.insert(seat, id),
@@ -2165,6 +2180,16 @@ impl<W: PolicyWindow> Policy<W> {
     /// output.
     pub fn active_workspace_on(&self, output: OutputId) -> usize {
         self.active_workspaces.of(Some(output)).active
+    }
+
+    /// `seat`'s Active output (ADR 0032), which its workspace bindings switch: the Main
+    /// output of its focused window, or of the last one it focused while it has none, as
+    /// after a switch to an empty workspace. The primary output stands in while the seat
+    /// has focused no window, or once that output is gone. `None` while policy has no
+    /// output.
+    pub fn active_output(&self, seat: SeatId) -> Option<OutputId> {
+        let active = self.active_outputs.get(&seat).copied();
+        active.or(self.primary_output().map(|output| output.id))
     }
 
     /// The primary output's active workspace, or the one an output added takes while policy
@@ -2995,7 +3020,14 @@ impl<W: PolicyWindow> Policy<W> {
             .or_else(|| candidates().find(|id| window_type(id) == WindowType::Desktop))
     }
 
-    /// Gives every seat whose focused window is no longer showing the default focus.
+    /// `default_focus`, of the windows whose Main output is `output`.
+    fn default_focus_on(&self, output: OutputId) -> Option<WindowId> {
+        self.default_focus_where(|id| self.output_showing(id) == Some(output))
+    }
+
+    /// Gives every seat whose focused window is no longer showing the default focus. With
+    /// `workspaces-per-output` on that's from its Active output's windows, or none: the
+    /// focus doesn't go to another output's window because this one has none left (231).
     fn fix_focus(&mut self) {
         let lost: Vec<SeatId> = self
             .focus
@@ -3004,10 +3036,24 @@ impl<W: PolicyWindow> Policy<W> {
             .map(|(seat, _)| *seat)
             .collect();
         for seat in lost {
-            match self.default_focus() {
+            let default = match self.active_output(seat) {
+                Some(output) if self.config.workspaces_per_output => self.default_focus_on(output),
+                _ => self.default_focus(),
+            };
+            match default {
                 Some(id) => self.focus.insert(seat, id),
                 None => self.focus.remove(&seat),
             };
+        }
+    }
+
+    /// Each seat's Active output follows its focused window's Main output, and stays where
+    /// it was for a seat with no focus, or whose focused window is on no output.
+    fn note_active_outputs(&mut self) {
+        for (seat, id) in &self.focus {
+            if let Some(output) = self.output_of(self.windows[id].frame()) {
+                self.active_outputs.insert(*seat, output.id);
+            }
         }
     }
 
@@ -3038,6 +3084,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.end_stale_grabs();
         self.close_stale_window_menu();
         self.fix_focus();
+        self.note_active_outputs();
         self.mru.retain(|id| self.windows.contains_key(id));
         if let Some(focused) = self.focus(self.last_seat) {
             self.mru.retain(|id| *id != focused);

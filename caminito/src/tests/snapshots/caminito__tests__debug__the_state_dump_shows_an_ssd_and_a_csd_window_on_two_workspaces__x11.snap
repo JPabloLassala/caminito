@@ -105,6 +105,7 @@ expression: without_what_varies(&dump)
         "height": 1080
       },
       "scale": 1.0,
+      "active_workspace": 0,
       "work_area": {
         "x": 0,
         "y": 0,
@@ -124,6 +125,7 @@ expression: without_what_varies(&dump)
         "height": 720
       },
       "scale": 2.0,
+      "active_workspace": 0,
       "work_area": {
         "x": 1920,
         "y": 0,
@@ -135,6 +137,7 @@ expression: without_what_varies(&dump)
     }
   ],
   "primary_output": "headless-1",
+  "active_output": "headless-1",
   "x11_scale": 2,
   "focus": 0,
   "lock": "unlocked",

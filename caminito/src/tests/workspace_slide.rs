@@ -1378,7 +1378,10 @@ fn turning_per_output_workspaces_on_or_off_and_an_output_coming_or_going_slide_n
     f.stop_clock();
     assert_eq!(pixel_on(&mut f, &right, middle(second_frame)), WINDOW);
 
-    // Off: the right output takes the primary output's workspace, at once.
+    // Off: the right output takes the workspace of the left one, the Active output once a
+    // window there is focused, at once.
+    f.wait_between_inputs(1000);
+    f.click(100., 100.);
     f.set_setting(CAMINITO, "workspaces-per-output", Setting::Bool(false));
     f.dispatch_until(|f| !f.state.caminito.policy.workspaces_per_output());
     assert_eq!(active_on(&f, [&left, &right]), [0, 0]);

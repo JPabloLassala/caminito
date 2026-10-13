@@ -125,8 +125,8 @@ impl Caminito {
         self.switcher_grid_on(&shown.or_else(|| self.popup_output())?)
     }
 
-    /// The output a popup appears on, the Workspace popup too (152): the one the pointer is
-    /// on, else the primary output.
+    /// The output a popup appears on, the Workspace popup's too with Spanning workspaces
+    /// (152): the one the pointer is on, else the primary output.
     pub(crate) fn popup_output(&self) -> Option<Output> {
         self.outputs
             .iter()
