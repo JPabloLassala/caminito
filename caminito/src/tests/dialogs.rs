@@ -12,9 +12,10 @@ use super::commands::{first_in_path, write_program};
 use super::fixture::{
     Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTMETA, KEY_Q, KEY_R, KEY_RIGHT, Logs,
 };
+use crate::output::output_id;
 use crate::settings::Value;
 use crate::settings::translate::{
-    MARCO_GLOBAL_KEYBINDINGS, MARCO_KEYBINDING_COMMANDS, MARCO_WORKSPACE_NAMES,
+    CAMINITO, MARCO_GLOBAL_KEYBINDINGS, MARCO_KEYBINDING_COMMANDS, MARCO_WORKSPACE_NAMES,
 };
 
 /// A stand-in for zenity in a directory of its own.
@@ -243,6 +244,31 @@ fn rename_workspace_asks_for_the_active_workspaces_name_and_writes_the_answer() 
     assert_eq!(zenity.arguments(&mut f), entry_dialog("Mail"));
     // The pager's names are policy's (97).
     f.dispatch_until(|f| name(f, 2) == "Post");
+    assert_eq!(name(&f, 0), "Workspace 1");
+}
+
+#[test]
+fn rename_workspace_asks_for_the_active_outputs_workspace() {
+    let mut f = with_rename_bound(vec![
+        set(MARCO_WORKSPACE_NAMES, "name-2", "Mail"),
+        (CAMINITO, "workspaces-per-output".into(), Value::Bool(true)),
+    ]);
+    let left = f.add_output((1920, 1080), 1.0);
+    let right = f.add_output((1920, 1080), 1.0);
+    f.choose_primary_output(&left);
+    // A press on the right output makes it the Active output, which then switches alone.
+    f.click(2500., 500.);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    let policy = &f.state.caminito.policy;
+    assert_eq!(policy.active_workspace_on(output_id(&left)), 0);
+    assert_eq!(policy.active_workspace_on(output_id(&right)), 1);
+    let zenity = Zenity::install(&mut f, Some("Post"));
+
+    f.chord(&[KEY_LEFTMETA, KEY_R]);
+
+    // The right output's workspace 2, and not the primary output's workspace 1.
+    assert_eq!(zenity.arguments(&mut f), entry_dialog("Mail"));
+    f.dispatch_until(|f| name(f, 1) == "Post");
     assert_eq!(name(&f, 0), "Workspace 1");
 }
 

@@ -40,7 +40,7 @@ use self::bindings::accelerators::{Trigger, x_button};
 use self::grab::FrameHold;
 use crate::dbus::a11y;
 use crate::decoration::control::FrameControl;
-use crate::output::output_geometry;
+use crate::output::{output_geometry, output_id};
 use crate::scene::{self, SceneLayer};
 use crate::settings::translate::ModifierClick;
 use crate::state::{Caminito, SEAT, State};
@@ -612,9 +612,8 @@ impl State {
         {
             return;
         }
-        let under = (state == ButtonState::Pressed && !pointer.is_grabbed())
-            .then(|| self.caminito.under(location))
-            .flatten();
+        let pressed = state == ButtonState::Pressed && !pointer.is_grabbed();
+        let under = pressed.then(|| self.caminito.under(location)).flatten();
         let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
         let inhibited = self.shortcuts_inhibited();
         let click = under
@@ -644,12 +643,19 @@ impl State {
             self.caminito.layer_pressed(layer);
             self.update_keyboard_focus();
         }
+        // A press on what's no window, a layer surface or an output's bare background,
+        // makes that output the Active output (222). A window's press says its own below.
+        if pressed && under.as_ref().and_then(Under::window).is_none() {
+            self.caminito.output_pressed(location);
+        }
         // A press on an override-redirect window goes to it alone: it's never focused or
         // raised, and can't be dragged.
         if let Some(under) = under
             && let Some(id) = under.window()
         {
             self.caminito.window_pressed();
+            // Whatever the press does: a Frame button's and the menu's are no click.
+            self.caminito.policy.press_on_window(SEAT, id);
             match (click, under) {
                 (None, Under::Frame(id, control)) if control != FrameControl::ClientArea => {
                     self.frame_press(id, control, button, location, serial, time);
@@ -1038,6 +1044,23 @@ impl Caminito {
                 self.managed_under(layer, location)
             }
         })
+    }
+
+    /// A button was pressed at `location` on what's no managed window: a panel or any
+    /// other layer surface, caja's desktop, the wallpaper or an output's bare background.
+    /// Its output becomes the Active output (ADR 0032), and the focus stays where it is.
+    /// The lock screen's press says nothing.
+    pub(crate) fn output_pressed(&mut self, location: Point<f64, Logical>) {
+        if self.lock.is_locked() {
+            return;
+        }
+        let pressed = self
+            .outputs
+            .iter()
+            .find(|output| output_geometry(output).to_f64().contains(location));
+        if let Some(output) = pressed {
+            self.policy.press_on_output(SEAT, output_id(output));
+        }
     }
 
     /// What's at `location` in the topmost layer surface of one of the scene's layers that

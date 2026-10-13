@@ -681,9 +681,12 @@ pub struct Policy<W: PolicyWindow> {
     /// Every seat seen so far.
     seats: BTreeSet<SeatId>,
     focus: BTreeMap<SeatId, WindowId>,
-    /// Each seat's Active output (ADR 0032), once it has focused a window on one: see
-    /// `active_output`.
+    /// Each seat's Active output (ADR 0032), once it has focused a window on one or pressed
+    /// on one: see `active_output`.
     active_outputs: BTreeMap<SeatId, OutputId>,
+    /// The focused window, and its Main output, that each seat's Active output last
+    /// followed. A press on another output stays the Active output until they change.
+    followed_focus: BTreeMap<SeatId, (WindowId, OutputId)>,
     /// When each seat's focus last changed on user input, to drop stale focus requests as
     /// Marco does.
     focus_time: BTreeMap<SeatId, Duration>,
@@ -732,6 +735,7 @@ impl<W: PolicyWindow> Policy<W> {
             seats: BTreeSet::new(),
             focus: BTreeMap::new(),
             active_outputs: BTreeMap::new(),
+            followed_focus: BTreeMap::new(),
             focus_time: BTreeMap::new(),
             last_seat: SeatId(0),
             grabs: BTreeMap::new(),
@@ -794,9 +798,12 @@ impl<W: PolicyWindow> Policy<W> {
             }
         }
         self.active_workspaces.set_outputs(&outputs);
-        // A seat whose Active output went has none, and the primary output stands in.
+        // A seat whose Active output went has none, and the primary output stands in, until
+        // its focus says another.
         self.active_outputs
             .retain(|_, active| outputs.iter().any(|output| output.id == *active));
+        self.followed_focus
+            .retain(|seat, _| self.active_outputs.contains_key(seat));
         self.outputs = outputs;
         self.rehome_windows();
         // A window an output change put on another output hasn't been dragged there.
@@ -970,19 +977,18 @@ impl<W: PolicyWindow> Policy<W> {
         // Marco honours `_NET_WM_DESKTOP` for a desktop it has. A transient goes with its
         // parent, sticky if it is, since policy keeps a transient family on one workspace,
         // or on all of them (window.c:747-768).
+        let requested = window
+            .requested_workspace()
+            .filter(|workspace| *workspace < self.workspace_count);
         let (workspace, sticky) = match parent {
             Some(parent) => {
                 let parent = &self.windows[&parent];
                 (parent.workspace, parent.sticky)
             }
-            None => (
-                window
-                    .requested_workspace()
-                    .filter(|workspace| *workspace < self.workspace_count)
-                    .unwrap_or(self.new_window_workspace()),
-                false,
-            ),
+            None => (requested.unwrap_or_default(), false),
         };
+        // With no parent's workspace and none of its own to go to.
+        let opens_anew = parent.is_none() && requested.is_none();
         self.windows.insert(
             id,
             Managed {
@@ -1014,12 +1020,17 @@ impl<W: PolicyWindow> Policy<W> {
             },
         );
         self.stack.push(id);
-        // Before it's placed, which is among the windows that show.
-        self.leave_show_desktop(id);
         // A state the window has no function for is one it won't map with (177).
         let functions = self.windows[&id].functions();
         let constrained = (states.maximized && functions.maximize)
             || (states.fullscreen.is_some() && functions.fullscreen);
+        if opens_anew {
+            let output = self.opening_output(id, states, !constrained);
+            let workspace = self.active_workspaces.of(output).active;
+            self.windows.get_mut(&id).unwrap().workspace = workspace;
+        }
+        // Before it's placed, which is among the windows that show.
+        self.leave_show_desktop(id);
         let Placed { by_pointer, on } = self.place(id, !constrained);
         // Marco's pointer placement skips its maximising of a window too big for its work
         // area (place.c:898-905).
@@ -1172,6 +1183,29 @@ impl<W: PolicyWindow> Policy<W> {
             if (dock || self.focus_window(seat, id, now)) && self.config.raise_on_click {
                 self.raise_family(id);
             }
+            // Also for a dock, which isn't focused.
+            self.make_active_output_of(seat, id);
+        }
+        self.apply();
+    }
+
+    /// A button press on a window that's no click on it: on one of its Frame's buttons, or
+    /// for its menu. Its output is the seat's Active output, as with a click (222).
+    pub fn press_on_window(&mut self, seat: SeatId, id: WindowId) {
+        self.set_last_seat(seat);
+        if self.is_showing(id) {
+            self.make_active_output_of(seat, id);
+        }
+        self.apply();
+    }
+
+    /// A button press on `output` that's on no window of policy's: a panel or any other
+    /// layer surface, caja's desktop or the wallpaper. It makes `output` the seat's Active
+    /// output (222), and leaves its focus alone.
+    pub fn press_on_output(&mut self, seat: SeatId, output: OutputId) {
+        self.set_last_seat(seat);
+        if self.outputs.iter().any(|o| o.id == output) {
+            self.active_outputs.insert(seat, output);
         }
         self.apply();
     }
@@ -2185,14 +2219,21 @@ impl<W: PolicyWindow> Policy<W> {
     /// output of its focused window, or of the last one it focused while it has none, as
     /// after a switch to an empty workspace. The primary output stands in while the seat
     /// has focused no window, or once that output is gone. `None` while policy has no
-    /// output. A click on what isn't a window doesn't change it yet (222).
+    /// output. A press on another output makes that one the Active output, until the focus
+    /// goes to another window or the focused window to another output (222).
     pub fn active_output(&self, seat: SeatId) -> Option<OutputId> {
         let active = self.active_outputs.get(&seat).copied();
         active.or(self.primary_output().map(|output| output.id))
     }
 
+    /// The active workspace of `seat`'s Active output, which `rename-workspace` renames
+    /// (222), or the one an output added takes while policy has no output.
+    pub fn active_output_workspace(&self, seat: SeatId) -> usize {
+        self.active_shown(seat).active
+    }
+
     /// The primary output's active workspace, or the one an output added takes while policy
-    /// has no output. It stands in for the Active output's (222, 228).
+    /// has no output. It stands in for the Active output's (228).
     pub fn primary_active_workspace(&self) -> usize {
         let primary = self.primary_output().map(|output| output.id);
         self.active_workspaces.of(primary).active
@@ -2787,9 +2828,34 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// The output a new window goes on with nothing else to go by: the focused window's,
-    /// else the primary output.
+    /// The output a window that maps with `states` opens on, whose active workspace it
+    /// takes so that it opens in view (222): the output it names for fullscreen, the one a
+    /// position it asks for is on, or else the one it's placed on, which is the Active
+    /// output, or the pointer's with the `pointer` and `manual` modes.
+    fn opening_output(&self, id: WindowId, states: MapStates, by_mode: bool) -> Option<OutputId> {
+        let managed = &self.windows[&id];
+        let named = states.fullscreen.filter(|_| managed.functions().fullscreen);
+        let output = if let Some(named) = self.output_named(named.flatten()) {
+            Some(named)
+        } else if let Some(requested) = managed.window.requested_position(managed.visible_extents())
+        {
+            let frame = Rectangle::new(requested, managed.size);
+            self.output_of(frame).or(self.primary_output())
+        } else {
+            self.new_window_placement(managed.window_type, managed.parent, by_mode)
+                .1
+        };
+        output.map(|output| output.id)
+    }
+
+    /// The output a new window goes on with nothing else to go by: the Active output of
+    /// the seat that last acted (222). With `workspaces-per-output` off it's the focused
+    /// window's, else the primary output, as Marco's.
     fn placement_output(&self) -> Option<&Output> {
+        if self.config.workspaces_per_output {
+            let active = self.active_output(self.last_seat);
+            return self.outputs.iter().find(|o| Some(o.id) == active);
+        }
         self.focus(self.last_seat)
             .and_then(|f| self.output_of(self.windows[&f].frame()))
             .or(self.primary_output())
@@ -2853,8 +2919,18 @@ impl<W: PolicyWindow> Policy<W> {
         }
         self.seats.insert(seat);
         self.focus_time.insert(seat, now);
-        self.focus.insert(seat, self.modal_transient(id));
+        let focused = self.modal_transient(id);
+        self.focus.insert(seat, focused);
+        // Also for the window that has the focus already, after a press on another output.
+        self.make_active_output_of(seat, focused);
         true
+    }
+
+    /// Makes the output `id` shows by `seat`'s Active output.
+    fn make_active_output_of(&mut self, seat: SeatId, id: WindowId) {
+        if let Some(output) = self.output_showing(id) {
+            self.active_outputs.insert(seat, output);
+        }
     }
 
     /// The window that takes the focus `id` is given: the last of the modal dialogs over
@@ -3051,10 +3127,17 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Each seat's Active output follows the output its focused window shows by, its Main
-    /// output, and stays where it was for a seat with no focus.
+    /// output, when the focus goes to another window or the window to another output. It
+    /// stays where it was for a seat with no focus, and where a press put it for a seat
+    /// whose focus is as it was (222).
     fn note_active_outputs(&mut self) {
+        self.followed_focus
+            .retain(|seat, _| self.focus.contains_key(seat));
         for (seat, id) in &self.focus {
-            if let Some(output) = self.output_showing(*id) {
+            let Some(output) = self.output_showing(*id) else {
+                continue;
+            };
+            if self.followed_focus.insert(*seat, (*id, output)) != Some((*id, output)) {
                 self.active_outputs.insert(*seat, output);
             }
         }
