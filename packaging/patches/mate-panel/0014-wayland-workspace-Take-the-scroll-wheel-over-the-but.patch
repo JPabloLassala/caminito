@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 13 Oct 2026 14:00:00 -0300
+Subject: [PATCH] wayland-workspace: Take the scroll wheel over the buttons
+
+The workspace switcher changes the workspace with the scroll wheel. Its
+handler is on the pager widget, which on Wayland is a grid of toggle
+buttons. The grid has no window, and a button does not ask for scroll
+events, so GDK gave a scroll over a button to the panel's window, and the
+handler never ran: the wheel did nothing over the Wayland switcher.
+
+Ask for scroll events on each button, as the Wayland window list does for
+its own, so that the event goes up from the button through the grid.
+---
+ applets/wncklet/wayland-workspace.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/applets/wncklet/wayland-workspace.c b/applets/wncklet/wayland-workspace.c
+index 4d16027c..c8bd268c 100644
+--- a/applets/wncklet/wayland-workspace.c
++++ b/applets/wncklet/wayland-workspace.c
+@@ -297,6 +297,9 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 		g_free (free_name);
+ 
+ 		gtk_widget_set_name (button, "wnck-pager-button");
++		/* A button takes no scroll events of its own, and the applet's
++		 * handler for the wheel is on the grid, which has no window. */
++		gtk_widget_add_events (button, GDK_SCROLL_MASK);
+ 		g_object_set_data (G_OBJECT (button), "ws-index", GINT_TO_POINTER (i));
+ 
+ 		/* Set active state */

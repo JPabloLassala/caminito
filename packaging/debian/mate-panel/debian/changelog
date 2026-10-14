@@ -1,3 +1,12 @@
+mate-panel (1.29.0~git20260925.58ac6c1-0caminito3) resolute; urgency=medium
+
+  * Take the thirteenth carried patch: the workspace switcher shows one
+    pressed button after a switch to a lower workspace.
+  * Take the fourteenth carried patch: the scroll wheel over the workspace
+    switcher changes the workspace.
+
+ -- jpablo <jpablolassala@gmail.com>  Tue, 13 Oct 2026 00:00:00 +0000
+
 mate-panel (1.29.0~git20260925.58ac6c1-0caminito2) resolute; urgency=medium
 
   * Take the twelfth carried patch: the workspace switcher shows the

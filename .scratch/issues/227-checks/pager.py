@@ -2,6 +2,7 @@
 
   pager.py buttons          each button's label, with a star on the pressed one
   pager.py click <label>
+  pager.py where <label>    the button's centre in its panel, then the panel's width and height
 """
 import sys
 import gi
@@ -36,6 +37,14 @@ found = list(toggles(panel()))
 if sys.argv[1] == "buttons":
     pressed = Atspi.StateType.CHECKED
     print(", ".join(b.get_name() + ("*" if b.get_state_set().contains(pressed) else "") for b in found))
+elif sys.argv[1] == "where":
+    button = next(b for b in found if b.get_name() == sys.argv[2])
+    spot = button.get_extents(Atspi.CoordType.WINDOW)
+    frame = button
+    while frame.get_role() not in (Atspi.Role.FRAME, Atspi.Role.WINDOW):
+        frame = frame.get_parent()
+    size = frame.get_extents(Atspi.CoordType.WINDOW)
+    print(spot.x + spot.width // 2, spot.y + spot.height // 2, size.width, size.height)
 else:
     button = next((b for b in found if b.get_name() == sys.argv[2]), None)
     print(f"clicked {sys.argv[2]}: {button.do_action(0)}" if button else f"no button {sys.argv[2]}")

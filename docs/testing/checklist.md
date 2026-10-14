@@ -977,7 +977,7 @@ session_env() {
 - **Milestone:** M9
 - **Steps:**
   1. Log into *MATE on Caminito* with two monitors side by side, `mate-panel-caminito` at
-     `pkgrel` 12 or later, four workspaces in one row and `workspaces-per-output` at `true`.
+     `pkgrel` 13 or later, four workspaces in one row and `workspaces-per-output` at `true`.
      The first monitor is the primary one, with the bottom panel, its window list and its
      workspace switcher.
   2. Right-click the top panel, choose *New Panel*, and in the new panel's properties choose
@@ -1003,8 +1003,9 @@ session_env() {
 - **Expected:** each switcher has four buttons. In step 3 the second monitor's switcher shows
   its third button pressed and the terminal goes, while the first monitor and its switcher
   stay; then the first monitor's shows its second pressed and `pluma` goes, while the second
-  monitor stays. In step 4 each binding and each roll of the wheel changes one monitor and
-  that monitor's switcher alone. In step 5 the dialog shows four workspaces and the one set
+  monitor stays. In step 4 each switcher shows its first button pressed and no other, and
+  each binding and each roll of the wheel changes one monitor and that monitor's switcher
+  alone, one workspace for each notch (240). In step 5 the dialog shows four workspaces and the one set
   of names, and the new name shows in both switchers with *Workspace names* shown. In step 6
   the list has a button for `pluma` and one for the terminal, on the first monitor's panel,
   though the terminal is on the second monitor; with the second monitor on its second
