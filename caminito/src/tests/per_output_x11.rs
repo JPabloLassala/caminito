@@ -12,7 +12,20 @@ use super::window_properties::{property, send};
 use super::xwayland_windows::client_list_stacking;
 use crate::output::output_id;
 
-const CURRENT: &[&str] = &["_NET_CURRENT_DESKTOP"];
+/// The root's `_NET_CURRENT_DESKTOP`, as the X client `x` reads it.
+fn current_desktop(f: &mut Fixture, x: ClientId) -> u32 {
+    let line = root_properties(f, x, &["_NET_CURRENT_DESKTOP"]);
+    let value = line.strip_prefix("_NET_CURRENT_DESKTOP(CARDINAL) = ");
+    value.and_then(|n| n.parse().ok()).expect(&line)
+}
+
+/// Asks for `desktop` as the current one, as a pager does.
+fn request_current_desktop(f: &mut Fixture, x: ClientId, desktop: u32) {
+    f.x11_call(x, move |x| {
+        x.send_client_message(x.root(), "_NET_CURRENT_DESKTOP", [desktop, 0, 0, 0, 0])
+    })
+    .unwrap();
+}
 
 /// The windows of `two_outputs_on_different_workspaces`.
 struct Windows {
@@ -21,9 +34,9 @@ struct Windows {
     /// On the right output's workspace 1, which it shows.
     on_right: ClientWindow,
     /// On the right output's workspace 0.
-    right_away: ClientWindow,
+    put_away_right: ClientWindow,
     /// On the left output's workspace 1.
-    left_away: ClientWindow,
+    put_away_left: ClientWindow,
 }
 
 /// Two outputs with `workspaces-per-output` as `per_output` says, a window on each one's
@@ -36,16 +49,16 @@ fn two_outputs_on_different_workspaces(
     let (mut f, x, left, right) = two_outputs_with(Kind::X11, per_output, vec![]);
     let on_left = window_at(&mut f, x, (100, 100), 0);
     let on_right = window_at(&mut f, x, (2500, 600), 1);
-    let right_away = window_at(&mut f, x, (2100, 100), 0);
-    let left_away = window_at(&mut f, x, (600, 500), 1);
+    let put_away_right = window_at(&mut f, x, (2100, 100), 0);
+    let put_away_left = window_at(&mut f, x, (600, 500), 1);
     let policy = &mut f.state.caminito.policy;
     policy.switch_output_workspace(output_id(&right), 1);
     f.dispatch();
     let windows = Windows {
         on_left,
         on_right,
-        right_away,
-        left_away,
+        put_away_right,
+        put_away_left,
     };
     (f, x, windows, left, right)
 }
@@ -62,24 +75,15 @@ fn net_current_desktop_is_the_active_outputs_and_follows_a_click_with_no_switch(
     assert_eq!(active_workspaces(&f, &left, &right), (0, 1));
 
     assert!(click_focuses(&mut f, (300, 250), windows.on_left));
-    assert_eq!(
-        root_properties(&mut f, x, CURRENT),
-        "_NET_CURRENT_DESKTOP(CARDINAL) = 0"
-    );
+    assert_eq!(current_desktop(&mut f, x), 0);
 
     // The press makes the right output the Active output, and switches nothing.
     press_on_the_right_output(&mut f);
     assert_eq!(active_workspaces(&f, &left, &right), (0, 1));
-    assert_eq!(
-        root_properties(&mut f, x, CURRENT),
-        "_NET_CURRENT_DESKTOP(CARDINAL) = 1"
-    );
+    assert_eq!(current_desktop(&mut f, x), 1);
 
     assert!(click_focuses(&mut f, (300, 250), windows.on_left));
-    assert_eq!(
-        root_properties(&mut f, x, CURRENT),
-        "_NET_CURRENT_DESKTOP(CARDINAL) = 0"
-    );
+    assert_eq!(current_desktop(&mut f, x), 0);
 }
 
 #[test]
@@ -88,18 +92,12 @@ fn a_current_desktop_message_switches_the_active_output_only() {
     assert!(click_focuses(&mut f, (300, 250), windows.on_left));
     press_on_the_right_output(&mut f);
 
-    f.x11_call(x, |x| {
-        x.send_client_message(x.root(), "_NET_CURRENT_DESKTOP", [2, 0, 0, 0, 0])
-    })
-    .unwrap();
+    request_current_desktop(&mut f, x, 2);
     let right_id = output_id(&right);
     f.dispatch_until(|f| f.state.caminito.policy.active_workspace_on(right_id) == 2);
 
     assert_eq!(active_workspaces(&f, &left, &right), (0, 2));
-    assert_eq!(
-        root_properties(&mut f, x, CURRENT),
-        "_NET_CURRENT_DESKTOP(CARDINAL) = 2"
-    );
+    assert_eq!(current_desktop(&mut f, x), 2);
 }
 
 #[test]
@@ -152,8 +150,8 @@ fn a_desktop_message_moves_a_window_of_the_other_output_within_that_output() {
     );
 }
 
-/// The X windows put away and those showing, each sorted, as X's stacking order has them:
-/// the bottom two and the top two.
+/// The XWayland windows put away and those showing, each sorted, as X's stacking order has
+/// them: the bottom two and the top two.
 fn stacked(f: &mut Fixture, x: ClientId) -> (Vec<u32>, Vec<u32>) {
     let stacking = client_list_stacking(f, x);
     assert_eq!(stacking.len(), 4, "{stacking:?}");
@@ -163,6 +161,7 @@ fn stacked(f: &mut Fixture, x: ClientId) -> (Vec<u32>, Vec<u32>) {
     (below, above)
 }
 
+/// The X ids of `windows`, sorted as `stacked` sorts each half.
 fn sorted(windows: [ClientWindow; 2]) -> Vec<u32> {
     let mut ids = windows.map(ClientWindow::x11).to_vec();
     ids.sort();
@@ -176,7 +175,7 @@ fn xs_stacking_order_has_every_showing_window_above_every_hidden_one() {
     assert_eq!(
         stacked(&mut f, x),
         (
-            sorted([windows.right_away, windows.left_away]),
+            sorted([windows.put_away_right, windows.put_away_left]),
             sorted([windows.on_left, windows.on_right])
         )
     );
@@ -188,8 +187,8 @@ fn xs_stacking_order_has_every_showing_window_above_every_hidden_one() {
     assert_eq!(
         stacked(&mut f, x),
         (
-            sorted([windows.on_right, windows.left_away]),
-            sorted([windows.on_left, windows.right_away])
+            sorted([windows.on_right, windows.put_away_left]),
+            sorted([windows.on_left, windows.put_away_right])
         )
     );
 }
@@ -198,38 +197,29 @@ fn xs_stacking_order_has_every_showing_window_above_every_hidden_one() {
 fn with_the_key_off_x11_clients_are_told_of_the_one_active_workspace() {
     let (mut f, x, windows, left, right) = two_outputs_on_different_workspaces(false);
     assert_eq!(active_workspaces(&f, &left, &right), (1, 1));
-    assert_eq!(
-        root_properties(&mut f, x, CURRENT),
-        "_NET_CURRENT_DESKTOP(CARDINAL) = 1"
-    );
+    assert_eq!(current_desktop(&mut f, x), 1);
     assert_eq!(
         stacked(&mut f, x),
         (
-            sorted([windows.on_left, windows.right_away]),
-            sorted([windows.on_right, windows.left_away])
+            sorted([windows.on_left, windows.put_away_right]),
+            sorted([windows.on_right, windows.put_away_left])
         )
     );
 
     // A message switches every output.
-    f.x11_call(x, |x| {
-        x.send_client_message(x.root(), "_NET_CURRENT_DESKTOP", [0, 0, 0, 0, 0])
-    })
-    .unwrap();
+    request_current_desktop(&mut f, x, 0);
     f.dispatch_until(|f| f.state.caminito.policy.active_workspace() == 0);
     assert_eq!(active_workspaces(&f, &left, &right), (0, 0));
     // And a press on the other output changes nothing.
     press_on_the_right_output(&mut f);
-    assert_eq!(
-        root_properties(&mut f, x, CURRENT),
-        "_NET_CURRENT_DESKTOP(CARDINAL) = 0"
-    );
+    assert_eq!(current_desktop(&mut f, x), 0);
 
-    let right_away = windows.right_away;
-    send(&mut f, right_away, "_NET_WM_DESKTOP", [1, 2, 0, 0, 0]);
-    f.dispatch_until(|f| f.state.caminito.policy.workspace_of(f.pid(right_away)) == Some(1));
-    f.sync(right_away);
+    let put_away_right = windows.put_away_right;
+    send(&mut f, put_away_right, "_NET_WM_DESKTOP", [1, 2, 0, 0, 0]);
+    f.dispatch_until(|f| f.state.caminito.policy.workspace_of(f.pid(put_away_right)) == Some(1));
+    f.sync(put_away_right);
     assert_eq!(
-        property(&mut f, right_away, "_NET_WM_DESKTOP"),
+        property(&mut f, put_away_right, "_NET_WM_DESKTOP"),
         "_NET_WM_DESKTOP(CARDINAL) = 1"
     );
     assert_eq!(active_workspaces(&f, &left, &right), (0, 0));
