@@ -8,12 +8,13 @@ Spec: [Bluetooth](../bluetooth/spec.md)
 
 ## What to build
 
-"The popup" in [the spec](../bluetooth/spec.md), in the manner of Plasma's.
+"The popup" in [the spec](../bluetooth/spec.md), in the manner of Plasma's. The developer chose "Popup A" from the prototype on the `prototype/bluetooth-ui` branch (`--variant 4`). That prototype is GTK4, so redo it in GTK3, keeping its layout.
 
 - Left-click toggles a GTK3 popup of the panel.
 - The popup has:
   - A header switch for Bluetooth, for every adapter.
-  - The connected devices, then the paired ones that aren't connected, from all adapters merged. Each row has its icon, name and battery.
+  - A "Connected" section, then an "Available" one with the paired devices that aren't connected, from all adapters merged. Each row has its icon, name and battery, in red below 20%.
+  - A footer with "Add New Device…" and a ⚙ button for "Configure Bluetooth…".
 - A row expands to Connect or Disconnect, and the device's type and address.
 - "Add New Device…" runs `caminito-bluetooth --scan` and closes the popup.
 - With Bluetooth off, a line says so in place of the list.

@@ -10,9 +10,9 @@ Spec: [Bluetooth](../bluetooth/spec.md)
 
 Add New Device, under "The settings window" in [the spec](../bluetooth/spec.md).
 
-- A page of the window that scans while it's shown. It lists devices that have a name and aren't paired, with their icons.
+- The window's **+** button (257) and `--scan` show Add New Device in the detail pane, as in the prototype's "Window C". It scans while it's shown. It lists devices that have a name and aren't paired, with their icons.
 - A click pairs the device: the agent's dialogs (256) come up as needed, then the device connects and moves to Devices. A failure is shown on its row.
-- `caminito-bluetooth --scan` opens the window on this page.
+- `caminito-bluetooth --scan` opens the window with this in the detail pane.
 
 ## Acceptance criteria
 

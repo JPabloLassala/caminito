@@ -67,7 +67,7 @@ Two pieces (CONTEXT.md):
 
 ### The Bluetooth applet
 
-- **The icon** has three states: off, on with nothing connected, and connected. It uses the icon theme's Bluetooth names (`bluetooth-disabled`, `bluetooth-active` and a connected variant), falling back to the plain symbolic name.
+- **The icon** has three states: off, on with nothing connected, and connected. Icon themes disagree on the names: Breeze has no `bluetooth-active` or `bluetooth-disabled`, only `network-bluetooth-activated` and `network-bluetooth-inactive`. So the applet asks for a themed icon with fallbacks, the MATE and Adwaita names first and then Breeze's.
 - **The tooltip** names the connected devices and their battery levels.
 - **No adapter, no icon:** the applet hides itself, and comes back when one appears.
 - **Left-click** toggles the popup, which is a GTK3 popup of the panel.
@@ -75,7 +75,7 @@ Two pieces (CONTEXT.md):
 
 ### The popup
 
-Plasma's layout:
+Plasma's layout, which the developer chose from the prototype ("Popup A") on 2026-10-14:
 
 - A header with a switch for Bluetooth.
 - The connected devices, then the paired ones that aren't connected. Each row has the device's icon (from `Device1.Icon`), its name and its battery when `Battery1` is there.
@@ -86,9 +86,21 @@ Plasma's layout:
 
 ### The settings window
 
+Its layout is a list beside a detail pane, like Plasma's settings page. The developer chose it from the prototype ("Window C", on the `prototype/bluetooth-ui` branch) on 2026-10-14.
+
+- **The list** on the left:
+  - A header with the switch for Bluetooth.
+  - **This computer**, pinned at the top.
+  - The paired devices, each with its icon, name and "Connected" when it is.
+  - A **+** button at the bottom, for Add New Device.
+- **The detail pane** on the right shows what is selected: This computer, a device, or Add New Device.
 - **This computer:** the switch for Bluetooth, the adapter's name (`Alias`), editable, and the adapter chooser when needed. The computer is discoverable while the window is open, and stops being so when it closes.
-- **Devices:** the paired devices, each with Connect or Disconnect, Rename (sets `Alias`) and Forget (`RemoveDevice`).
-- **Add New Device:** scans while it's shown. It lists devices that have a name and aren't paired, and a click pairs one. The agent's dialogs come up as needed, and the device then connects and moves to Devices.
+- **A device:**
+  - A large icon, its name, and its status.
+  - A battery bar when `Battery1` is there, red below 20%.
+  - Its type and address, and a name field that renames it (sets `Alias`).
+  - Connect or Disconnect, and Forget (`RemoveDevice`).
+- **Add New Device**, from **+** or `--scan`, fills the detail pane and scans while it's shown. It lists devices that have a name and aren't paired, and a click pairs one. The agent's dialogs come up as needed, and the device then connects and moves to Devices.
 - No trust or block toggles. Pairing trusts, and blocking is left to `bluetoothctl`.
 
 ### Not in v1
