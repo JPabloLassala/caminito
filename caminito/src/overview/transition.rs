@@ -51,6 +51,11 @@ impl Transition {
         }
     }
 
+    /// The same, started at `now` instead.
+    pub(crate) fn starting_at(self, now: Duration) -> Self {
+        Self { start: now, ..self }
+    }
+
     /// When it's over.
     pub(crate) fn end(&self) -> Duration {
         self.start + LENGTH
