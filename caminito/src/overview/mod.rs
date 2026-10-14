@@ -22,8 +22,13 @@
 //! place and its place in the layout, and the rest fades. Policy has it open or closed
 //! from the first frame, so the keys and the clicks act on what policy has at once: here
 //! the Overview stays for the closing's frames after policy has closed its own. Without
-//! `overview-animation`, it opens and closes in one frame. A drag onto the bar is 245's,
-//! and every output at once 246's.
+//! `overview-animation`, it opens and closes in one frame.
+//!
+//! A window of the layout is dragged onto a workspace of the bar to move it there (245).
+//! Policy has the press and the drag, and what a drop does: here the pointer's moves and
+//! the release are told to it, with the cell under the pointer. The dragged window is
+//! drawn under the pointer, over the layout and the bar, and the cell under it is marked.
+//! Every output at once is 246's.
 //!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
@@ -83,6 +88,8 @@ pub(crate) struct Overview {
     pub(crate) active: usize,
     /// The sides of the active workspace's mark, the same ones at every frame.
     pub(crate) mark: [Id; 4],
+    /// The mark over the cell a drag is on (245), the same one at every frame.
+    pub(crate) target_mark: Id,
     /// When the windows that only the bar shows next get frame callbacks, on Caminito's
     /// clock.
     next_bar_frames: Duration,
@@ -217,6 +224,39 @@ impl Caminito {
         open.bar.cell_at(location - origin)
     }
 
+    /// The pointer moved to `location`, in global logical coordinates: policy hears it
+    /// with the cell it's on, while a press is held on a window of the Overview (245).
+    pub(crate) fn overview_motion(&mut self, location: Point<f64, Logical>) {
+        let held = self
+            .policy
+            .overview()
+            .is_some_and(|open| open.drag.is_some());
+        if held {
+            let cell = self.overview_cell_at(location);
+            self.policy.overview_pointer(location, cell);
+        }
+    }
+
+    /// The window that a drag of `open`'s takes (245), drawn under the pointer: at its
+    /// place in the layout, as far from it as the pointer is from where the button went
+    /// down. None while there's no drag, and for one past the threshold not yet.
+    pub(crate) fn overview_dragged(&self, open: &Overview) -> Option<DrawnWindow> {
+        let drag = self.policy.overview()?.drag.filter(|drag| drag.dragging)?;
+        let place = open.laid.windows.iter().position(|id| *id == drag.window)?;
+        let slot = open.laid.layout.slots.get(place)?;
+        let moved = (drag.pointer - drag.from).to_i32_round();
+        Some(DrawnWindow {
+            id: drag.window,
+            rect: Rectangle::new(slot.window.loc + moved, slot.window.size),
+            alpha: 1.0,
+        })
+    }
+
+    /// The workspace whose cell a drag of the Overview's is on (245), which is marked.
+    pub(crate) fn overview_drop_target(&self) -> Option<usize> {
+        self.policy.overview()?.drag?.target
+    }
+
     /// Brings the compositor's side up to date with policy's Overview, in the refresh
     /// pass: lets go of it when policy has closed its own, lays out the bar and the listed
     /// windows again, and those of the workspaces a Workspace slide leaves (244), and draws
@@ -297,7 +337,7 @@ impl Caminito {
             return;
         }
         let old = self.overview.take().filter(|old| old.output == output);
-        let (dim, mut cell_backs, mark, next_bar_frames, mut previous) = match old {
+        let (dim, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];
                 previous.extend(old.leaving);
@@ -305,6 +345,7 @@ impl Caminito {
                     old.dim,
                     old.cell_backs,
                     old.mark,
+                    old.target_mark,
                     old.next_bar_frames,
                     previous,
                 )
@@ -313,6 +354,7 @@ impl Caminito {
                 Id::new(),
                 Vec::new(),
                 [Id::new(), Id::new(), Id::new(), Id::new()],
+                Id::new(),
                 now + BAR_FRAME_INTERVAL,
                 Vec::new(),
             ),
@@ -347,6 +389,7 @@ impl Caminito {
             cell_windows,
             active: workspace,
             mark,
+            target_mark,
             next_bar_frames,
             transition,
         });
@@ -517,6 +560,11 @@ impl Caminito {
         let keysyms = press_keysyms(keysym);
         let binding = self.settings.bindings.binding_for(mods, &keysyms);
         let sym = keysym.raw_latin_sym_or_raw_current_sym();
+        // Esc during a drag ends the drag, and the Overview stays open (245).
+        if sym == Some(Keysym::Escape) && self.policy.overview_end_drag() {
+            self.refresh_overview();
+            return Some(FilterResult::Intercept(None));
+        }
         let closes =
             binding == Some(Binding::Policy(Action::Overview)) || sym == Some(Keysym::Escape);
         if closes {
@@ -675,6 +723,11 @@ impl State {
     /// the empty area closes the Overview, as does that of a button with the Overview's
     /// shortcut. Another button on a workspace of the bar does nothing. The release of such
     /// a press is swallowed with the Window switcher's.
+    ///
+    /// A press of the left button on a window is held instead (245): its release chooses
+    /// the window if the pointer stayed within `drag-threshold`, and drops it on the cell
+    /// under the pointer, or on nothing, if it went past. That release is the Overview's,
+    /// so it's asked here before the Window switcher swallows it.
     pub(crate) fn overview_button(
         &mut self,
         button: u32,
@@ -682,7 +735,22 @@ impl State {
         location: Point<f64, Logical>,
     ) -> bool {
         let caminito = &mut self.caminito;
-        if state == ButtonState::Released || caminito.policy.overview().is_none() {
+        if state == ButtonState::Released {
+            let held = caminito
+                .policy
+                .overview()
+                .is_some_and(|open| open.drag.is_some());
+            if button != BTN_LEFT || !held {
+                return false;
+            }
+            caminito.overview_motion(location);
+            let now = caminito.now();
+            caminito.policy.overview_release(now);
+            caminito.refresh_overview();
+            caminito.suppressed_buttons.remove(&button);
+            return true;
+        }
+        if caminito.policy.overview().is_none() {
             return false;
         }
         // The layout as policy's list is now: a window may have closed since the refresh
@@ -703,10 +771,7 @@ impl State {
                     caminito.policy.overview_switch(workspace);
                 }
             }
-            Some(id) if button == BTN_LEFT => {
-                let now = caminito.now();
-                caminito.policy.overview_choose(id, now);
-            }
+            Some(id) if button == BTN_LEFT => caminito.policy.overview_press(id, location),
             Some(id) if button == BTN_MIDDLE => caminito.policy.overview_close_window(id),
             Some(_) => {}
             None => caminito.policy.close_overview(),

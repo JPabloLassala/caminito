@@ -640,3 +640,203 @@ fn fewer_workspaces_while_it_is_open_list_the_new_active_ones_windows() {
     assert_eq!(overview.workspace, 0);
     assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
 }
+
+// A drag onto the bar (245). The default `drag-threshold` is 8.
+
+fn at(x: f64, y: f64) -> Point<f64, Logical> {
+    Point::from((x, y))
+}
+
+/// The open Overview's drag.
+fn drag(policy: &Policy<TestWindow>) -> Option<crate::OverviewDrag> {
+    policy.overview().expect("the Overview is open").drag
+}
+
+/// `three`, open, with window `w` pressed at (500, 500) and dragged to (600, 50), over the
+/// bar's cell of `target` or no cell.
+fn dragged(w: u64, target: Option<usize>) -> Policy<TestWindow> {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.overview_press(id(w), at(500.0, 500.0));
+    policy.overview_pointer(at(600.0, 50.0), target);
+    policy
+}
+
+#[test]
+fn a_press_and_a_release_within_the_drag_threshold_is_a_click() {
+    let mut policy = three();
+    toggle(&mut policy);
+
+    policy.overview_press(id(1), at(500.0, 500.0));
+    policy.overview_pointer(at(508.0, 492.0), Some(1));
+    assert!(!drag(&policy).unwrap().dragging);
+    assert_eq!(drag(&policy).unwrap().target, None);
+    policy.overview_release(ms(200));
+
+    assert!(policy.overview().is_none());
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+}
+
+#[test]
+fn past_the_drag_threshold_the_press_is_a_drag_wherever_the_pointer_goes_after() {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.overview_press(id(1), at(500.0, 500.0));
+
+    policy.overview_pointer(at(509.0, 500.0), Some(2));
+    let moved = drag(&policy).unwrap();
+    assert!(moved.dragging);
+    assert_eq!(moved.window, id(1));
+    assert_eq!(moved.pointer, at(509.0, 500.0));
+    assert_eq!(moved.target, Some(2));
+
+    policy.overview_pointer(at(500.0, 500.0), None);
+    assert!(drag(&policy).unwrap().dragging);
+    assert_eq!(drag(&policy).unwrap().target, None);
+}
+
+#[test]
+fn a_drop_on_a_cell_moves_the_window_there_and_the_overview_stays_open() {
+    let mut policy = dragged(1, Some(2));
+    let geometry = policy.geometry(id(1));
+
+    policy.overview_release(ms(200));
+
+    assert_eq!(policy.workspace_of(id(1)), Some(2));
+    assert_eq!(policy.geometry(id(1)), geometry);
+    assert_eq!(policy.active_workspace(), 0);
+    assert_eq!(policy.interaction(SEAT), Some(Interaction::Overview));
+    assert_eq!(listed(&policy), [id(2), id(3)]);
+    assert_eq!(drag(&policy), None);
+}
+
+#[test]
+fn a_drop_of_the_focused_window_on_a_cell_keeps_the_selection_among_those_listed() {
+    let mut policy = dragged(3, Some(1));
+
+    policy.overview_release(ms(200));
+
+    assert_eq!(policy.workspace_of(id(3)), Some(1));
+    assert_eq!(listed(&policy), [id(1), id(2)]);
+    assert!(selected(&policy).is_none_or(|selected| listed(&policy).contains(&selected)));
+}
+
+#[test]
+fn a_drop_on_the_active_workspaces_cell_leaves_the_window_where_it_was() {
+    let mut policy = dragged(1, Some(0));
+
+    policy.overview_release(ms(200));
+
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
+    assert!(policy.overview().is_some());
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+}
+
+#[test]
+fn a_drop_on_nothing_leaves_the_window_where_it_was() {
+    let mut policy = dragged(1, None);
+
+    policy.overview_release(ms(200));
+
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
+    assert!(policy.overview().is_some());
+    assert_eq!(drag(&policy), None);
+}
+
+#[test]
+fn a_drop_on_a_workspace_past_the_count_leaves_the_window_where_it_was() {
+    let mut policy = dragged(1, Some(4));
+
+    policy.overview_release(ms(200));
+
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert!(policy.overview().is_some());
+}
+
+#[test]
+fn a_sticky_window_dropped_on_a_cell_is_no_longer_sticky() {
+    let mut policy = three();
+    policy.set_sticky(id(2), true);
+    toggle(&mut policy);
+    policy.overview_press(id(2), at(500.0, 500.0));
+    policy.overview_pointer(at(600.0, 50.0), Some(3));
+
+    policy.overview_release(ms(200));
+
+    assert!(!policy.is_sticky(id(2)));
+    assert_eq!(policy.workspace_of(id(2)), Some(3));
+    assert_eq!(listed(&policy), [id(1), id(3)]);
+}
+
+#[test]
+fn a_sticky_window_dropped_on_the_active_workspaces_cell_stays_sticky() {
+    let mut policy = three();
+    policy.set_sticky(id(2), true);
+    toggle(&mut policy);
+    policy.overview_press(id(2), at(500.0, 500.0));
+    policy.overview_pointer(at(600.0, 50.0), Some(0));
+
+    policy.overview_release(ms(200));
+
+    assert!(policy.is_sticky(id(2)));
+}
+
+#[test]
+fn esc_during_a_drag_ends_it_and_the_overview_stays_open() {
+    let mut policy = dragged(1, Some(2));
+
+    assert!(policy.overview_end_drag());
+
+    assert_eq!(drag(&policy), None);
+    assert!(policy.overview().is_some());
+    // The release after is no drop and no click.
+    policy.overview_release(ms(200));
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert!(policy.overview().is_some());
+}
+
+#[test]
+fn esc_with_a_press_that_isnt_a_drag_yet_is_no_drag_to_end() {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.overview_press(id(1), at(500.0, 500.0));
+
+    assert!(!policy.overview_end_drag());
+
+    assert!(drag(&policy).is_some());
+}
+
+#[test]
+fn closing_the_overview_ends_the_drag() {
+    let mut policy = dragged(1, Some(2));
+
+    policy.close_overview();
+    toggle(&mut policy);
+
+    assert_eq!(drag(&policy), None);
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+}
+
+#[test]
+fn the_dragged_window_going_ends_the_drag() {
+    let mut policy = dragged(1, Some(2));
+
+    policy.unmap_window(id(1));
+
+    assert_eq!(drag(&policy), None);
+    assert!(policy.overview().is_some());
+}
+
+#[test]
+fn a_press_on_a_window_that_isnt_listed_is_no_press() {
+    let mut policy = three();
+    policy.move_to_workspace(id(2), 1);
+    toggle(&mut policy);
+
+    policy.overview_press(id(2), at(500.0, 500.0));
+
+    assert_eq!(drag(&policy), None);
+}

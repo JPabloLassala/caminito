@@ -38,7 +38,7 @@ pub use focus_stealing::{
 };
 pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
-pub use overview::Overview;
+pub use overview::{Overview, OverviewDrag};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use pre_map::{PreMapConfigure, PreMapWindow};
 pub use state_requests::{MapStates, StateRequest};

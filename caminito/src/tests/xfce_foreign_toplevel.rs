@@ -18,7 +18,7 @@ use crate::settings::Value;
 use crate::settings::translate::{CAMINITO, MARCO_GENERAL};
 
 /// A window titled `title`.
-fn titled(title: &'static str) -> WindowSpec {
+pub(super) fn titled(title: &'static str) -> WindowSpec {
     WindowSpec {
         title: Some(title),
         app_id: Some("caja"),
@@ -29,7 +29,7 @@ fn titled(title: &'static str) -> WindowSpec {
 /// A client that has bound what libxfce4windowing binds, in its order: the outputs,
 /// ext-workspace, Xfce's manager, and foreign toplevel management, whose toplevels it asks
 /// for the Xfce handles of as they're announced. It has seen the toplevels there are.
-fn panel(f: &mut Fixture) -> ClientId {
+pub(super) fn panel(f: &mut Fixture) -> ClientId {
     let client = f.connect(Kind::Xdg);
     f.client(client).bind_outputs();
     f.client(client).bind_workspaces();
@@ -58,7 +58,7 @@ fn events(f: &mut Fixture, panel: ClientId) -> String {
 }
 
 /// The index of the workspace the panel has each open toplevel on, by title.
-fn placements(f: &mut Fixture, panel: ClientId) -> String {
+pub(super) fn placements(f: &mut Fixture, panel: ClientId) -> String {
     f.roundtrip(panel);
     let toplevels = &f.client(panel).foreign_toplevels().toplevels;
     toplevels

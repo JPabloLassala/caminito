@@ -1278,3 +1278,207 @@ fn a_change_of_num_workspaces_while_it_is_open_changes_the_bar() {
     let cells = cells(&f);
     assert!(cells[0].1.size.w > 0 && cells[1].1.loc.x > cells[0].1.loc.x);
 }
+
+// A drag onto the bar (245).
+
+/// The open Overview's drag, from the dump: `null` with none.
+fn drag(f: &Fixture) -> serde_json::Value {
+    overview(f)["drag"].clone()
+}
+
+/// Presses the left button on `window`'s place in the layout, and moves the pointer past
+/// `drag-threshold` and on to `to`, in steps as a mouse does. Returns where the button
+/// went down.
+fn drag_to(f: &mut Fixture, window: ClientWindow, to: Point<i32, Logical>) -> Point<i32, Logical> {
+    let from = middle(place(f, window));
+    f.pointer_move(f64::from(from.x), f64::from(from.y));
+    f.pointer_button(BTN_LEFT, true);
+    for step in 1..=4 {
+        let at = from
+            + (to - from)
+                .to_f64()
+                .upscale(f64::from(step) / 4.0)
+                .to_i32_round();
+        f.pointer_move(f64::from(at.x), f64::from(at.y));
+    }
+    from
+}
+
+/// A spot in the area beneath the bar that's on no window of the layout.
+fn empty_spot(f: &Fixture, windows: &[ClientWindow]) -> Point<i32, Logical> {
+    let area = rect(&overview(f)["area"]);
+    let spot = area.loc + Point::from((2, area.size.h - 2));
+    for window in windows {
+        let place = place(f, *window);
+        assert!(!place.contains(spot), "{window:?} is at {place:?}");
+    }
+    spot
+}
+
+on_both_kinds! {
+    fn a_window_dragged_onto_another_workspaces_cell_goes_there(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let [first, second, third] = map_three(&mut f, id);
+        let geometry = f.geometry(first);
+        open(&mut f);
+        let was_at = middle(place(&f, first));
+        let target = middle(cell(&f, 1));
+
+        drag_to(&mut f, first, target);
+
+        let dragged = drag(&f);
+        assert_eq!(dragged["window"], f.pid(first).0);
+        assert_eq!(dragged["dragging"], true);
+        assert_eq!(dragged["target"], 1);
+        assert_eq!(dragged["pointer"]["x"], f64::from(target.x));
+        assert_eq!(dragged["pointer"]["y"], f64::from(target.y));
+        // It's drawn under the pointer, in front of the bar, and not at its place. The
+        // cursor is right of the pointer and below it.
+        let beside = target - Point::from((10, 10));
+        assert!(rect(&dragged["rect"]).contains(beside));
+        assert!(cell(&f, 1).contains(beside));
+        assert_eq!(pixel(&mut f, beside), WINDOW);
+        if !place(&f, second).contains(was_at) && !place(&f, third).contains(was_at) {
+            assert_ne!(pixel(&mut f, was_at), WINDOW);
+        }
+
+        f.pointer_button(BTN_LEFT, false);
+
+        assert!(is_open(&f));
+        assert!(drag(&f).is_null());
+        assert_eq!(f.state.caminito.policy.workspace_of(f.pid(first)), Some(1));
+        assert_eq!(f.state.caminito.policy.active_workspace(), 0);
+        assert_eq!(f.geometry(first), geometry);
+        assert_eq!(listed(&f), [f.pid(second).0, f.pid(third).0]);
+        // And its new workspace's cell shows it.
+        let at = in_cell(&f, 1, first);
+        assert_eq!(pixel(&mut f, at), WINDOW);
+    }
+}
+
+on_both_kinds! {
+    fn a_window_dropped_on_the_empty_area_is_back_at_its_place(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_three(&mut f, id);
+        open(&mut f);
+        let places = windows.map(|window| place(&f, window));
+        let spot = empty_spot(&f, &windows);
+
+        drag_to(&mut f, windows[0], spot);
+        assert_eq!(drag(&f)["dragging"], true);
+        assert!(drag(&f)["target"].is_null());
+        f.pointer_button(BTN_LEFT, false);
+
+        assert!(is_open(&f));
+        assert!(drag(&f).is_null());
+        assert_eq!(f.state.caminito.policy.workspace_of(f.pid(windows[0])), Some(0));
+        assert_eq!(listed(&f), stacking(&f));
+        assert_eq!(windows.map(|window| place(&f, window)), places);
+        assert_eq!(pixel(&mut f, middle(places[0])), WINDOW);
+    }
+}
+
+#[test]
+fn a_window_dropped_on_the_active_workspaces_cell_is_back_at_its_place() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let windows = map_three(&mut f, id);
+    open(&mut f);
+    let places = windows.map(|window| place(&f, window));
+
+    let target = middle(cell(&f, 0));
+    drag_to(&mut f, windows[0], target);
+    assert_eq!(drag(&f)["target"], 0);
+    f.pointer_button(BTN_LEFT, false);
+
+    assert!(is_open(&f));
+    assert_eq!(
+        f.state.caminito.policy.workspace_of(f.pid(windows[0])),
+        Some(0)
+    );
+    assert_eq!(windows.map(|window| place(&f, window)), places);
+}
+
+#[test]
+fn a_press_and_a_release_within_the_drag_threshold_chooses_the_window() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let [first, ..] = map_three(&mut f, id);
+    open(&mut f);
+    let at = middle(place(&f, first));
+
+    f.pointer_move(f64::from(at.x), f64::from(at.y));
+    f.pointer_button(BTN_LEFT, true);
+    // A press, which is no drag yet.
+    assert!(is_open(&f));
+    assert_eq!(drag(&f)["dragging"], false);
+    f.pointer_move(f64::from(at.x + 8), f64::from(at.y - 8));
+    assert_eq!(drag(&f)["dragging"], false);
+    assert!(drag(&f)["rect"].is_null());
+    f.pointer_button(BTN_LEFT, false);
+
+    assert!(!is_open(&f));
+    assert_eq!(focus(&f), Some(f.pid(first).0));
+}
+
+#[test]
+fn esc_during_a_drag_ends_it_and_the_overview_stays_open() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let windows = map_three(&mut f, id);
+    open(&mut f);
+    let places = windows.map(|window| place(&f, window));
+    let target = middle(cell(&f, 1));
+    drag_to(&mut f, windows[0], target);
+
+    f.chord(&[KEY_ESC]);
+
+    assert!(is_open(&f));
+    assert!(drag(&f).is_null());
+    assert_eq!(pixel(&mut f, middle(places[0])), WINDOW);
+    // The release after is no drop, and no click.
+    f.pointer_button(BTN_LEFT, false);
+    assert!(is_open(&f));
+    assert_eq!(
+        f.state.caminito.policy.workspace_of(f.pid(windows[0])),
+        Some(0)
+    );
+    assert_eq!(windows.map(|window| place(&f, window)), places);
+    // Esc again closes it.
+    f.chord(&[KEY_ESC]);
+    assert!(!is_open(&f));
+}
+
+#[test]
+fn the_session_lock_ends_a_drag_and_the_overview() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let [first, ..] = map_three(&mut f, id);
+    open(&mut f);
+    let target = middle(cell(&f, 1));
+    drag_to(&mut f, first, target);
+
+    let (locker, lock) = lock_the_session(&mut f);
+    f.pointer_button(BTN_LEFT, false);
+
+    assert!(!is_open(&f));
+    f.client(locker).unlock_and_destroy(lock);
+    f.roundtrip(locker);
+    assert!(!is_open(&f));
+    assert_eq!(f.state.caminito.policy.workspace_of(f.pid(first)), Some(0));
+}
+
+on_both_kinds! {
+    fn a_panel_is_told_the_dropped_windows_new_workspace(kind: Kind) {
+        use crate::tests::xfce_foreign_toplevel::{panel, placements, titled};
+
+        let (mut f, id) = Fixture::connected(kind);
+        let caja = f.map(id, titled("Caja"));
+        let panel = panel(&mut f);
+        assert_eq!(placements(&mut f, panel), "Caja on workspace 0");
+        open(&mut f);
+
+        let target = middle(cell(&f, 2));
+        drag_to(&mut f, caja, target);
+        f.pointer_button(BTN_LEFT, false);
+
+        assert!(is_open(&f));
+        assert_eq!(placements(&mut f, panel), "Caja on workspace 2");
+    }
+}

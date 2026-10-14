@@ -1,6 +1,6 @@
 //! The Overview (241, ADR 0033): whether it's open, the output it's on, the windows it
-//! lists and the one selected (242), and what a choice, an arrow key, a middle click and a
-//! click on a workspace of its bar (244) do. The compositor has its layout, its bar, its
+//! lists and the one selected (242), the drag of a window (245), and what a choice, an
+//! arrow key, a middle click, a click on a workspace of its bar (244) and a drop do. The compositor has its layout, its bar, its
 //! drawing, its keys and its clicks, and asks here for what they do.
 //!
 //! It's the seat's Interaction (187), and every seat's, as the Window switcher is: the
@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use smithay::utils::{Logical, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::{Direction, OutputId, PolicyWindow, SeatId, WindowId};
 
@@ -16,7 +16,7 @@ use super::Policy;
 use super::switcher::SwitchList;
 
 /// The open Overview.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Overview {
     /// The seat that opened it, which a chosen window is activated for.
     pub seat: SeatId,
@@ -32,6 +32,27 @@ pub struct Overview {
     /// a switch of workspace (244), or none. It's always one of `windows`: none is selected
     /// once it goes.
     pub selected: Option<WindowId>,
+    /// The left button held down on a listed window, and the drag it became once the
+    /// pointer went past `drag-threshold` (245). It ends with the window's going.
+    pub drag: Option<OverviewDrag>,
+}
+
+/// A press of the left button on a window of the Overview's layout, which is a drag of the
+/// window once the pointer goes past `drag-threshold` (245). Until then its release is a
+/// click.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverviewDrag {
+    pub window: WindowId,
+    /// Where the button went down, in global logical coordinates.
+    pub from: Point<f64, Logical>,
+    /// Where the pointer is now.
+    pub pointer: Point<f64, Logical>,
+    /// Whether the pointer has gone past `drag-threshold` from `from`, as the titlebar's
+    /// drag has it: a press is a drag from then on, wherever the pointer goes after.
+    pub dragging: bool,
+    /// The workspace of the bar the pointer is on, which a drop sends the window to: none
+    /// on anything else, and none before the drag.
+    pub target: Option<usize>,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -58,6 +79,7 @@ impl<W: PolicyWindow> Policy<W> {
             workspace,
             windows,
             selected,
+            drag: None,
         });
     }
 
@@ -150,6 +172,71 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// The left button went down at `at` on a listed window (245): a click on it, or a
+    /// drag of it once the pointer goes past `drag-threshold`. Does nothing for a window
+    /// the Overview doesn't list, or while a press is held already.
+    pub fn overview_press(&mut self, id: WindowId, at: Point<f64, Logical>) {
+        let Some(open) = &mut self.overview else {
+            return;
+        };
+        if open.drag.is_none() && open.windows.contains(&id) {
+            open.drag = Some(OverviewDrag {
+                window: id,
+                from: at,
+                pointer: at,
+                dragging: false,
+                target: None,
+            });
+        }
+    }
+
+    /// The pointer moved to `at` with a press held on a window of the Overview (245),
+    /// onto the bar's cell of `target` or onto no cell. Past `drag-threshold` from where
+    /// the button went down, the press is a drag, whose drop is on `target`.
+    pub fn overview_pointer(&mut self, at: Point<f64, Logical>, target: Option<usize>) {
+        let threshold = f64::from(self.config.drag_threshold);
+        let Some(drag) = self.overview.as_mut().and_then(|open| open.drag.as_mut()) else {
+            return;
+        };
+        let moved = at - drag.from;
+        drag.pointer = at;
+        drag.dragging |= moved.x.abs() > threshold || moved.y.abs() > threshold;
+        drag.target = target.filter(|_| drag.dragging);
+    }
+
+    /// The left button came up with a press held on a window of the Overview (245). Within
+    /// `drag-threshold` it's a click, which chooses the window. A drag dropped on another
+    /// workspace's cell moves the window there, as the Window menu's move does, so a sticky
+    /// one stops being sticky, and it leaves the list. Dropped on the active workspace's
+    /// cell or on no cell, it stays where it was. The Overview stays open after a drop.
+    pub fn overview_release(&mut self, now: Duration) {
+        let Some(open) = &mut self.overview else {
+            return;
+        };
+        let workspace = open.workspace;
+        let Some(drag) = open.drag.take() else {
+            return;
+        };
+        if !drag.dragging {
+            self.overview_choose(drag.window, now);
+            return;
+        }
+        let elsewhere = |target: &usize| *target != workspace && *target < self.workspace_count;
+        if let Some(target) = drag.target.filter(elsewhere) {
+            self.move_to_workspace(drag.window, target);
+        }
+    }
+
+    /// Esc during a drag of a window of the Overview (245): ends the drag, and the window
+    /// stays where it was. Returns whether a drag was under way. A press that isn't a drag
+    /// yet stays, as Esc closes the Overview then.
+    pub fn overview_end_drag(&mut self) -> bool {
+        let Some(open) = &mut self.overview else {
+            return false;
+        };
+        open.drag.take_if(|drag| drag.dragging).is_some()
+    }
+
     /// The windows the open Overview would list on `workspace` of its output, bottom to
     /// top, as it lists those of the active one: the compositor lays out those of a
     /// workspace a Workspace slide leaves (244). None with the Overview closed.
@@ -189,6 +276,7 @@ impl<W: PolicyWindow> Policy<W> {
                 open.selected = focus;
             }
             open.selected = open.selected.filter(|selected| windows.contains(selected));
+            open.drag = open.drag.filter(|drag| windows.contains(&drag.window));
             open.windows = windows;
         }
     }

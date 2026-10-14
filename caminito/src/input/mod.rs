@@ -565,6 +565,8 @@ impl State {
         let pointer = self.caminito.seat.get_pointer().unwrap();
         // The open window menu's row under the pointer is selected (161).
         self.caminito.window_menu_motion(location);
+        // A press held on a window of the Overview drags it (245).
+        self.caminito.overview_motion(location);
         let target = self.caminito.under(location);
         let under = target.as_ref().and_then(Under::surface);
         let hover = target.as_ref().and_then(Under::frame_control);
@@ -608,10 +610,12 @@ impl State {
         let pointer = self.caminito.seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let location = pointer.current_location();
-        if self.window_menu_button(button, state, location)
+        // The Overview's first: the release of a press held on one of its windows is its
+        // own (245), and the Window switcher swallows the others'.
+        if self.overview_button(button, state, location)
+            || self.window_menu_button(button, state, location)
             || self.switcher_button(button, state, location)
             || self.workspace_popup_button(button, state, time)
-            || self.overview_button(button, state, location)
         {
             return;
         }

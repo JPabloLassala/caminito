@@ -316,11 +316,27 @@ struct OverviewDump {
     /// draws away from its place, with where it's drawn, in the order of the windows' ids:
     /// one time for each place, as `workspace_slides` has it.
     sliding: Vec<OverviewSlidingDump>,
+    /// The left button held on a window, and the drag it became (245).
+    drag: Option<OverviewDragDump>,
     /// How much of black is over the wallpaper.
     dim: f32,
     /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
     /// the order they were made: the panel's and caja's desktop's.
     hidden_layer_surfaces: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct OverviewDragDump {
+    window: u64,
+    /// Where the pointer is, in global logical coordinates.
+    pointer: PointDump,
+    /// Whether it's past `drag-threshold`, a drag. Until then, the release is a click.
+    dragging: bool,
+    /// The workspace whose cell the pointer is on, which a drop sends the window to.
+    target: Option<usize>,
+    /// Where the window is drawn under the pointer, from the output's top left corner,
+    /// while it's a drag.
+    rect: Option<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -621,6 +637,21 @@ impl From<Rectangle<i32, Logical>> for RectDump {
 }
 
 #[derive(Serialize)]
+struct PointDump {
+    x: f64,
+    y: f64,
+}
+
+impl From<Point<f64, Logical>> for PointDump {
+    fn from(point: Point<f64, Logical>) -> Self {
+        Self {
+            x: point.x,
+            y: point.y,
+        }
+    }
+}
+
+#[derive(Serialize)]
 struct ExtentsDump {
     left: i32,
     right: i32,
@@ -842,6 +873,15 @@ impl Caminito {
                 bar,
                 area: laid_out.map(|laid_out| laid_out.bar.area_beneath(size).into()),
                 sliding,
+                drag: open.drag.map(|drag| OverviewDragDump {
+                    window: drag.window.0,
+                    pointer: drag.pointer.into(),
+                    dragging: drag.dragging,
+                    target: drag.target,
+                    rect: laid_out
+                        .and_then(|laid_out| self.overview_dragged(laid_out))
+                        .map(|dragged| dragged.rect.into()),
+                }),
                 dim: crate::overview::DIM,
                 hidden_layer_surfaces: self
                     .layer_surfaces(output)
