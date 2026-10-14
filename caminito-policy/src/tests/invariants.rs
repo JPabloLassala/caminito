@@ -181,6 +181,10 @@ enum Op {
     /// (x, y) over a cell or none, the release, and Esc during a drag (245).
     OverviewPress(u64, (i16, i16)),
     OverviewPointer((i16, i16), Option<usize>),
+    /// A click on a workspace of an output's bar, and the pointer's move onto an output and
+    /// a cell of its bar or none, during a drag (246).
+    OverviewSwitchOn(u64, usize),
+    OverviewPointerOn((i16, i16), Option<u64>, Option<usize>),
     OverviewRelease,
     OverviewEndDrag,
     /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
@@ -440,6 +444,9 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (window_id(), any::<(i16, i16)>()).prop_map(|(id, at)| Op::OverviewPress(id, at)),
         2 => (any::<(i16, i16)>(), proptest::option::of(0..5usize))
             .prop_map(|(at, target)| Op::OverviewPointer(at, target)),
+        1 => (1..=3u64, 0..5usize).prop_map(|(output, workspace)| Op::OverviewSwitchOn(output, workspace)),
+        2 => (any::<(i16, i16)>(), proptest::option::of(1..=3u64), proptest::option::of(0..5usize))
+            .prop_map(|(at, onto, target)| Op::OverviewPointerOn(at, onto, target)),
         1 => Just(Op::OverviewRelease),
         1 => Just(Op::OverviewEndDrag),
         1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
@@ -638,6 +645,13 @@ impl Op {
             }
             Op::OverviewPointer((x, y), target) => {
                 policy.overview_pointer(Point::from((f64::from(x), f64::from(y))), target);
+            }
+            Op::OverviewSwitchOn(output, workspace) => {
+                policy.overview_switch_on(OutputId(output), workspace);
+            }
+            Op::OverviewPointerOn((x, y), onto, target) => {
+                let at = Point::from((f64::from(x), f64::from(y)));
+                policy.overview_pointer_on(at, onto.map(OutputId), target);
             }
             Op::OverviewRelease => policy.overview_release(now),
             Op::OverviewEndDrag => {
@@ -881,14 +895,32 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     let shared = shared.into_iter().filter(|open| *open).count();
     assert!(shared <= 1, "{shared} Interactions are every seat's");
 
-    // The open Overview (241) is on an output policy has, and lists managed windows, each
-    // once, of that output's active workspace (244). Its selection (242) is one of them.
+    // The open Overview (241) is on every output policy has (246), and lists managed
+    // windows, each once, of each output's active workspace (244), shown by that output.
+    // Its selection (242) is one of the selection's output's.
     if let Some(overview) = policy.overview() {
+        let on: Vec<OutputId> = overview.outputs().map(|on| on.output).collect();
+        let outputs: Vec<OutputId> = policy.outputs().iter().map(|o| o.id).collect();
         assert_eq!(
-            overview.workspace,
-            policy.active_workspace_on(overview.output),
-            "the Overview lists another workspace than its output's"
+            on.len(),
+            outputs.len(),
+            "the Overview isn't on every output"
         );
+        assert!(outputs.iter().all(|output| on.contains(output)));
+        let listed: Vec<WindowId> = overview.outputs().flat_map(|on| on.windows).collect();
+        for (place, id) in listed.iter().enumerate() {
+            assert!(!listed[..place].contains(id), "{id:?} is listed twice");
+        }
+        for on in overview.outputs() {
+            assert_eq!(
+                on.workspace,
+                policy.active_workspace_on(on.output),
+                "the Overview lists another workspace than its output's"
+            );
+            for id in &on.windows {
+                assert_eq!(policy.output_showing(*id), Some(on.output));
+            }
+        }
         if let Some(selected) = overview.selected {
             assert!(
                 overview.windows.contains(&selected),
@@ -898,11 +930,12 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
         // A press or a drag (245) is of a listed window, and has a target only as a drag.
         if let Some(drag) = overview.drag {
             assert!(
-                overview.windows.contains(&drag.window),
+                listed.contains(&drag.window),
                 "{:?} is dragged and not listed",
                 drag.window
             );
-            assert!(drag.dragging || drag.target.is_none());
+            assert!(drag.dragging || drag.onto.is_none());
+            assert!(drag.onto.is_some() || drag.target.is_none());
         }
         let on = overview.output;
         assert!(policy.outputs().iter().any(|output| output.id == on));

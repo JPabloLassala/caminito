@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 243 added the transition, and ticket 244 the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. Ticket 245 added the drag of a window onto a workspace of the bar, on one output. The rest isn't built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
+Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 243 added the transition, and ticket 244 the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. Ticket 245 added the drag of a window onto a workspace of the bar, on one output, and ticket 246 the Overview on every output at once, with the drag from one to another. The rest isn't built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
 
 ## Problem
 

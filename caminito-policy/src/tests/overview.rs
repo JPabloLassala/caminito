@@ -840,3 +840,288 @@ fn a_press_on_a_window_that_isnt_listed_is_no_press() {
 
     assert_eq!(drag(&policy), None);
 }
+
+// Two outputs (246).
+
+/// Four workspaces on two outputs, with `workspaces-per-output` as `per_output` says: 1 of
+/// 1920 × 1080 on the left with windows 1 and 2, and 2 of 1280 × 1024 on the right with
+/// window 3, which is focused.
+fn on_two(per_output: bool) -> Policy<TestWindow> {
+    let mut policy = Policy::new(Config {
+        workspaces_per_output: per_output,
+        ..four_workspaces()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.add_output(output(2, 1920, 0, 1280, 1024));
+    for (w, x) in [(1, 100), (2, 600), (3, 2100)] {
+        let window = TestWindow::new(w, 400, 300).with_requested_position(x, 100);
+        policy.map_window(window, ms(w));
+    }
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    policy
+}
+
+/// What the open Overview lists on `output`: its workspace and its windows.
+fn listed_on(policy: &Policy<TestWindow>, output: u64) -> (usize, Vec<WindowId>) {
+    let open = policy.overview().expect("the Overview is open");
+    let on = open
+        .on(OutputId(output))
+        .expect("the Overview is on the output");
+    (on.workspace, on.windows)
+}
+
+/// The geometry policy last asked of window `w`.
+fn sent(policy: &Policy<TestWindow>, w: u64) -> Rectangle<i32, Logical> {
+    let window = policy.window(id(w)).expect("the window is managed");
+    window.last_geometry().expect("the window was configured").0
+}
+
+/// `policy`, open, with window `w` pressed at (500, 500) and dragged to (2500, 50), onto
+/// output `onto` and the cell of `target` of its bar or none, then dropped.
+fn dropped(policy: &mut Policy<TestWindow>, w: u64, onto: u64, target: Option<usize>) {
+    policy.overview_press(id(w), at(500.0, 500.0));
+    policy.overview_pointer_on(at(2500.0, 50.0), Some(OutputId(onto)), target);
+    policy.overview_release(ms(200));
+}
+
+#[test]
+fn it_lists_each_outputs_windows_with_the_selection_on_the_focused_windows() {
+    for per_output in [true, false] {
+        let mut policy = on_two(per_output);
+
+        toggle(&mut policy);
+
+        let open = policy.overview().unwrap();
+        assert_eq!(open.output, OutputId(2));
+        assert_eq!(listed_on(&policy, 2), (0, vec![id(3)]));
+        assert_eq!(listed_on(&policy, 1), (0, vec![id(1), id(2)]));
+        assert_eq!(selected(&policy), Some(id(3)));
+    }
+}
+
+#[test]
+fn with_no_window_focused_the_selection_is_on_the_active_output() {
+    let mut policy = on_two(true);
+    for w in 1..=3 {
+        policy.minimize(id(w));
+    }
+    policy.press_on_output(SEAT, OutputId(1));
+    assert_eq!(policy.focus(SEAT), None);
+
+    toggle(&mut policy);
+
+    assert_eq!(policy.overview().unwrap().output, OutputId(1));
+    assert_eq!(listed(&policy), [id(1), id(2)]);
+    assert_eq!(selected(&policy), None);
+}
+
+#[test]
+fn a_window_across_two_outputs_is_listed_by_its_main_output_alone() {
+    let mut policy = on_two(true);
+    // 220 pixels of it on the left output, and 180 on the right one.
+    policy.request_geometry(id(2), Some(Point::from((1700, 100))), None);
+
+    toggle(&mut policy);
+
+    assert_eq!(listed_on(&policy, 1), (0, vec![id(1), id(2)]));
+    assert_eq!(listed_on(&policy, 2), (0, vec![id(3)]));
+}
+
+#[test]
+fn a_click_on_a_cell_switches_that_output_alone_with_workspaces_per_output() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+
+    policy.overview_switch_on(OutputId(1), 2);
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 2);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 0);
+    assert_eq!(listed_on(&policy, 1), (2, vec![]));
+    assert_eq!(listed_on(&policy, 2), (0, vec![id(3)]));
+    assert_eq!(selected(&policy), Some(id(3)));
+}
+
+#[test]
+fn a_click_on_a_cell_switches_every_output_with_spanning_workspaces() {
+    let mut policy = on_two(false);
+    policy.move_to_workspace(id(1), 2);
+    toggle(&mut policy);
+
+    policy.overview_switch_on(OutputId(1), 2);
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 2);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 2);
+    assert_eq!(listed_on(&policy, 1), (2, vec![id(1)]));
+    assert_eq!(listed_on(&policy, 2), (2, vec![]));
+    assert!(policy.overview().is_some());
+}
+
+#[test]
+fn a_workspace_binding_switches_the_active_output_with_the_overview_open_on_two() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(200));
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 0);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 1);
+    assert_eq!(listed_on(&policy, 2), (1, vec![]));
+    assert_eq!(selected(&policy), None);
+}
+
+#[test]
+fn the_arrow_keys_move_the_selection_within_its_output() {
+    let mut policy = on_two(true);
+    policy.activate(SEAT, id(1), ms(10));
+    toggle(&mut policy);
+    assert_eq!(policy.overview().unwrap().output, OutputId(1));
+    let places = [rect(0, 0, 100, 100), rect(200, 0, 100, 100)];
+
+    // 1 is focused, so it's on top: the second in the list.
+    assert_eq!(listed(&policy), [id(2), id(1)]);
+    policy.overview_select(Direction::Right, &places);
+    assert_eq!(selected(&policy), Some(id(1)));
+    policy.overview_select(Direction::Left, &places);
+    assert_eq!(selected(&policy), Some(id(2)));
+    policy.overview_select(Direction::Left, &places);
+    assert_eq!(selected(&policy), Some(id(2)));
+}
+
+#[test]
+fn a_window_dropped_on_the_other_outputs_layout_goes_to_its_active_workspace() {
+    let mut policy = on_two(true);
+    policy.switch_output_workspace(OutputId(2), 1);
+    toggle(&mut policy);
+
+    dropped(&mut policy, 1, 2, None);
+
+    assert!(policy.overview().is_some());
+    assert_eq!(policy.output_showing(id(1)), Some(OutputId(2)));
+    assert_eq!(policy.workspace_of(id(1)), Some(1));
+    // At the same place in the work area.
+    assert_eq!(
+        policy.geometry(id(1)).unwrap().loc,
+        (1920 + 100, 100).into()
+    );
+    assert_eq!(listed_on(&policy, 2), (1, vec![id(1)]));
+    assert_eq!(listed_on(&policy, 1), (0, vec![id(2)]));
+}
+
+#[test]
+fn a_window_dropped_on_a_cell_of_the_other_outputs_bar_goes_to_that_workspace() {
+    for per_output in [true, false] {
+        let mut policy = on_two(per_output);
+        toggle(&mut policy);
+
+        dropped(&mut policy, 1, 2, Some(3));
+
+        assert!(policy.overview().is_some());
+        assert_eq!(policy.output_showing(id(1)), Some(OutputId(2)));
+        assert_eq!(
+            policy.workspace_of(id(1)),
+            Some(3),
+            "per output: {per_output}"
+        );
+        assert_eq!(
+            policy.geometry(id(1)).unwrap().loc,
+            (1920 + 100, 100).into()
+        );
+        assert_eq!(listed_on(&policy, 1), (0, vec![id(2)]));
+        assert_eq!(listed_on(&policy, 2), (0, vec![id(3)]));
+    }
+}
+
+#[test]
+fn a_window_dropped_on_the_active_workspaces_cell_of_the_other_output_stays_sticky() {
+    let mut policy = on_two(true);
+    policy.set_sticky(id(1), true);
+    toggle(&mut policy);
+
+    dropped(&mut policy, 1, 2, Some(0));
+
+    assert_eq!(policy.output_showing(id(1)), Some(OutputId(2)));
+    assert!(policy.is_sticky(id(1)));
+}
+
+#[test]
+fn with_spanning_workspaces_a_window_dropped_on_the_other_outputs_layout_keeps_its_workspace() {
+    let mut policy = on_two(false);
+    toggle(&mut policy);
+
+    dropped(&mut policy, 1, 2, None);
+
+    assert_eq!(policy.output_showing(id(1)), Some(OutputId(2)));
+    assert_eq!(policy.workspace_of(id(1)), Some(0));
+    assert_eq!(listed_on(&policy, 2), (0, vec![id(1), id(3)]));
+}
+
+#[test]
+fn a_window_dropped_on_its_own_outputs_layout_stays_where_it_was() {
+    let mut policy = on_two(true);
+    let geometry = policy.geometry(id(1));
+    toggle(&mut policy);
+
+    dropped(&mut policy, 1, 1, None);
+
+    assert_eq!(policy.geometry(id(1)), geometry);
+    assert_eq!(listed_on(&policy, 1), (0, vec![id(1), id(2)]));
+}
+
+#[test]
+fn a_window_larger_than_the_other_outputs_work_area_is_shrunk_to_fit_it() {
+    let mut policy = on_two(true);
+    policy.request_geometry(
+        id(1),
+        Some(Point::from((50, 50))),
+        Some(smithay::utils::Size::from((1800, 1000))),
+    );
+    toggle(&mut policy);
+
+    dropped(&mut policy, 1, 2, None);
+
+    assert_eq!(sent(&policy, 1), rect(1920, 24, 1280, 1000));
+}
+
+#[test]
+fn a_maximised_and_a_tiled_window_keep_their_state_on_the_other_output() {
+    let mut policy = on_two(true);
+    policy.set_maximized(id(1), true);
+    policy.activate(SEAT, id(2), ms(10));
+    policy.action(SEAT, Action::Tile(crate::Tile::Left), ms(11));
+    assert_eq!(policy.tile(id(2)), Some(crate::Tile::Left));
+    toggle(&mut policy);
+
+    dropped(&mut policy, 1, 2, None);
+    dropped(&mut policy, 2, 2, None);
+
+    assert!(policy.is_maximized(id(1)));
+    assert_eq!(sent(&policy, 1), rect(1920, 0, 1280, 1024));
+    assert_eq!(policy.tile(id(2)), Some(crate::Tile::Left));
+    assert_eq!(sent(&policy, 2), rect(1920, 0, 640, 1024));
+    assert_eq!(listed_on(&policy, 2), (0, vec![id(1), id(3), id(2)]));
+}
+
+#[test]
+fn an_output_that_goes_leaves_it_open_with_the_other_listing_the_windows_it_took() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+
+    policy.remove_output(OutputId(2));
+
+    let open = policy.overview().expect("the Overview stays open");
+    assert_eq!(open.output, OutputId(1));
+    assert!(open.others.is_empty());
+    assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
+    assert_eq!(selected(&policy), Some(id(3)));
+}
+
+#[test]
+fn an_output_that_comes_joins_it() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+
+    policy.add_output(output(3, 3200, 0, 1920, 1080));
+
+    assert_eq!(listed_on(&policy, 3), (0, vec![]));
+    assert_eq!(policy.overview().unwrap().output, OutputId(2));
+}
