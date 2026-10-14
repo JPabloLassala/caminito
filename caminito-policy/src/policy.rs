@@ -1437,8 +1437,9 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Makes `workspace` the active one of every output, and gives every seat its default
     /// focus. The bindings switch the Active output alone (231), and a move or an
-    /// activation the window's own (223), and ext-workspace's `activate` its group's
-    /// (226); what else switches still switches every output (228).
+    /// activation the window's own (223), ext-workspace's `activate` its group's (226), and
+    /// an X client's `_NET_CURRENT_DESKTOP` request the Active output (228), so the
+    /// compositor has no switch left that asks for this.
     pub fn switch_workspace(&mut self, workspace: usize) {
         self.switch_shown(None, workspace, None);
     }
@@ -2292,7 +2293,7 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The primary output's active workspace, or the one an output added takes while policy
-    /// has no output. It stands in for the Active output's (228).
+    /// has no output: the one every output has with `workspaces-per-output` off.
     pub fn primary_active_workspace(&self) -> usize {
         let primary = self.primary_output().map(|output| output.id);
         self.active_workspaces.of(primary).active

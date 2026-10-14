@@ -46,7 +46,7 @@ fn net_wm_state(f: &mut Fixture, window: ClientWindow, action: u32, states: [&st
 }
 
 /// The root's `_NET_CLIENT_LIST_STACKING`, bottom to top.
-fn client_list_stacking(f: &mut Fixture, x: ClientId) -> Vec<u32> {
+pub(super) fn client_list_stacking(f: &mut Fixture, x: ClientId) -> Vec<u32> {
     let property = f
         .x11_call(x, |x| x.property(x.root(), "_NET_CLIENT_LIST_STACKING"))
         .unwrap();

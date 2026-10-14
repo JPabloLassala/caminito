@@ -14,7 +14,7 @@ use crate::settings::Value;
 use crate::settings::translate::MARCO_GENERAL;
 
 /// A property of an X window, as `Names` writes it.
-fn property(f: &mut Fixture, window: ClientWindow, name: &'static str) -> String {
+pub(super) fn property(f: &mut Fixture, window: ClientWindow, name: &'static str) -> String {
     let id = window.x11();
     f.x11_call(window.client(), move |x| {
         Names::new(x).property(x, id, name)
@@ -23,7 +23,7 @@ fn property(f: &mut Fixture, window: ClientWindow, name: &'static str) -> String
 }
 
 /// Sends a client message about the window to the root, as EWMH's requests go.
-fn send(f: &mut Fixture, window: ClientWindow, type_: &'static str, data: [u32; 5]) {
+pub(super) fn send(f: &mut Fixture, window: ClientWindow, type_: &'static str, data: [u32; 5]) {
     let id = window.x11();
     f.x11_call(window.client(), move |x| {
         x.send_client_message(id, type_, data)

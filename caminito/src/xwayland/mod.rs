@@ -400,7 +400,7 @@ impl Caminito {
     /// Runs a message X has sent that only needs Caminito's state.
     fn x_request(&mut self, request: Request) {
         match request {
-            // Marco ignores a desktop it doesn't have.
+            // Marco ignores a desktop it doesn't have. It's the Active output's switch (228).
             Request::CurrentDesktop(n) if n < self.policy.workspace_count() => {
                 let now = self.now();
                 self.policy.action(SEAT, Action::SwitchToWorkspace(n), now);
@@ -529,7 +529,7 @@ impl Caminito {
 
     /// `_NET_WM_DESKTOP` for a managed window, as Marco takes it: every desktop makes it
     /// sticky, and one it has moves it there, with its transient family (window.c's
-    /// `meta_window_client_message`).
+    /// `meta_window_client_message`). Both are within its own output's workspaces (228).
     fn x_desktop_request(&mut self, window: X11Window, desktop: u32) {
         let Some(id) = self.mapped_for_key(&WindowKey::X11(window)) else {
             return;
@@ -708,8 +708,8 @@ impl Caminito {
         let scale = self.applied_x11_scale();
         RootProperties {
             desktop_names: self.policy.workspace_names().to_vec(),
-            // The primary output's, standing in for the Active output's (228).
-            current_desktop: self.policy.primary_active_workspace(),
+            // The Active output's (228), so it changes with the Active output too.
+            current_desktop: self.policy.active_output_workspace(SEAT),
             work_areas: self
                 .policy
                 .work_areas()
