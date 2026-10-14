@@ -200,6 +200,10 @@ _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), act
 The movement that shows a change of an output's active workspace: the old workspace's windows leave and the new one's arrive, along the line between the two in the Workspace grid. Whatever is the same on both stays still: sticky windows, a window that is carried or being moved to the new workspace, the panel, caja's desktop and the wallpaper. It's Plasma's Slide effect.
 _Avoid_: desktop slide (the glossary's word is workspace), transition (the Overview has one too), workspace animation
 
+**Opening animation**, **Closing animation**:
+The zoom and fade that show a window coming on screen or leaving it: the window grows into its place as it appears, or shrinks and fades away from it. A window opens when it is shown for the first time or again after its client hid it, and closes when its client destroys or hides it while it's on screen. Minimising, unminimising and a move to another workspace aren't either. It's Plasma's Scale effect.
+_Avoid_: window animation (the minimise animation is one too), map or unmap animation (X11's and Wayland's words, and an unmapped window isn't always closed), scale effect (KWin's name), fade alone
+
 **Interaction**:
 What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup or the Overview. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
 _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)
