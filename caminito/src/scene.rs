@@ -8,6 +8,8 @@
 //! `SCENE_QUERIES` (`caminito-policy/src/tests/invariants.rs`), whose test fails until it
 //! does, and in policy's `SceneReads`.
 
+use std::time::Duration;
+
 use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
@@ -34,6 +36,8 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
 use crate::output::{output_geometry, output_id};
+use crate::overview::transition::between;
+use crate::overview::{DrawnWindow, Overview};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -131,7 +135,8 @@ pub(crate) enum SceneLayer {
     /// wallpaper. In its place the output shows none of its windows as they are, nor one
     /// shrinking into its button, nothing of
     /// the top and bottom layers, where the panel is, and of the background layer the
-    /// wallpaper alone, without caja's desktop.
+    /// wallpaper alone, without caja's desktop. While it's on its way open or closed
+    /// (243), the windows are between their places and the rest fades.
     Overview,
     /// The top layer-shell layer (63).
     Top,
@@ -273,7 +278,7 @@ where
         cursor_elements_at(renderer, caminito, pointer, scale, &mut elements);
     }
     let origin = geometry.loc - frame.loc;
-    one_window_elements(renderer, mapped, origin, shown, scale, &mut elements);
+    one_window_elements(renderer, mapped, origin, shown, scale, 1.0, &mut elements);
     elements
 }
 
@@ -447,13 +452,15 @@ where
     ))
 }
 
-/// Whether the Overview is open on `output` (241), as policy has it.
-pub(crate) fn overview_is_on(caminito: &Caminito, output: &Output) -> bool {
+/// Whether the Overview is drawn on `output`: while policy has it open there (241), and
+/// while it's drawn closing after policy closed it (243).
+fn overview_is_drawn(caminito: &Caminito, output: &Output) -> bool {
     let open = caminito.policy.overview();
-    open.is_some_and(|open| open.output == output_id(output))
+    let open_there = open.is_some_and(|open| open.output == output_id(output));
+    open_there || caminito.overview_on(output).is_some()
 }
 
-/// Whether the Overview, open on `output`, is drawn in place of all of `layer`: the
+/// Whether the Overview, drawn on `output`, is drawn in place of all of `layer`: the
 /// windows as they are, and one that was shrinking into its button as it opened, which
 /// is in the layout at its place.
 fn overview_replaces(caminito: &Caminito, output: &Output, layer: SceneLayer) -> bool {
@@ -461,31 +468,48 @@ fn overview_replaces(caminito: &Caminito, output: &Output, layer: SceneLayer) ->
         layer,
         SceneLayer::Minimizing | SceneLayer::FullscreenWindows | SceneLayer::Windows
     );
-    windows && overview_is_on(caminito, output)
+    windows && overview_is_drawn(caminito, output)
 }
 
-/// Whether the Overview, open on `output`, keeps a layer surface of `layer` with this
-/// `namespace` from being drawn there, and its popups with it: the panel, which is one of
-/// the top or bottom layer's, and caja's desktop, which is one of the background layer's
-/// that isn't the wallpaper.
+/// How opaque a layer surface of `layer` with this `namespace` is drawn on `output`, and
+/// its popups with it. The Overview fades out the panel, which is one of the top or bottom
+/// layer's, and caja's desktop, which is one of the background layer's that isn't the
+/// wallpaper: they're not drawn while it's open, and part-way while it's on its way open
+/// or closed (243).
+pub(crate) fn layer_surface_alpha(
+    caminito: &Caminito,
+    output: &Output,
+    layer: Layer,
+    namespace: &str,
+) -> f32 {
+    let faded = match layer {
+        Layer::Top | Layer::Bottom => true,
+        Layer::Background => namespace != WALLPAPER_NAMESPACE,
+        Layer::Overlay => false,
+    };
+    match caminito.overview_on(output) {
+        Some(open) if faded => open.faded_alpha(caminito.now()),
+        _ => 1.0,
+    }
+}
+
+/// Whether the Overview, drawn on `output`, keeps a layer surface of `layer` with this
+/// `namespace` from being drawn there at all, and its popups with it.
 pub(crate) fn overview_hides(
     caminito: &Caminito,
     output: &Output,
     layer: Layer,
     namespace: &str,
 ) -> bool {
-    let hidden = match layer {
-        Layer::Top | Layer::Bottom => true,
-        Layer::Background => namespace != WALLPAPER_NAMESPACE,
-        Layer::Overlay => false,
-    };
-    hidden && overview_is_on(caminito, output)
+    layer_surface_alpha(caminito, output, layer, namespace) <= 0.0
 }
 
-/// The Overview (241), if it's open on `output`, front to back: each listed window's
+/// The Overview (241), if it's drawn on `output`, front to back: each listed window's
 /// label, the windows at their places in the layout, and the dimming over all of the
 /// output. A window is drawn from its own surfaces at every frame, as a thumbnail of the
-/// Window switcher is, so it's live, and a minimised one shows as any other does.
+/// Window switcher is, so it's live, and a minimised one shows as any other does. While
+/// it's on its way open or closed (243), each window is between its real place and its
+/// place in the layout, and the labels, the dimming and the minimised windows fade.
 fn overview_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -495,15 +519,13 @@ fn overview_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    if !overview_is_on(caminito, output) {
-        return;
-    }
     // Policy's Overview is laid out in the refresh pass, before the output is drawn.
     let Some(open) = caminito.overview_on(output) else {
         return;
     };
     let policy = &caminito.policy;
     let scale = output.current_scale().fractional_scale();
+    let now = caminito.now();
     for (slot, label) in open.layout.slots.iter().zip(&open.labels) {
         let Some(label) = label else {
             continue;
@@ -513,7 +535,7 @@ fn overview_elements<R>(
             renderer,
             location.to_f64(),
             label,
-            None,
+            Some(open.labels_alpha(now)),
             None,
             Some(slot.label.size),
             Kind::Unspecified,
@@ -524,15 +546,19 @@ fn overview_elements<R>(
             Err(err) => tracing::debug!("can't draw the overview's label: {err:?}"),
         }
     }
-    for (id, slot) in open.windows.iter().zip(&open.layout.slots) {
+    // Front to back.
+    for drawn in overview_drawn_windows(caminito, open, now)
+        .into_iter()
+        .rev()
+    {
         let (Some(mapped), Some(geometry), Some(frame)) = (
-            policy.window(*id),
-            policy.geometry(*id),
-            policy.frame_rect(*id),
+            policy.window(drawn.id),
+            policy.geometry(drawn.id),
+            policy.frame_rect(drawn.id),
         ) else {
             continue;
         };
-        if frame.size.w <= 0 || frame.size.h <= 0 {
+        if frame.size.w <= 0 || frame.size.h <= 0 || drawn.rect.is_empty() {
             continue;
         }
         let mut parts: Vec<WindowPart<R>> = Vec::new();
@@ -543,18 +569,56 @@ fn overview_elements<R>(
             geometry.loc - frame.loc,
             shown,
             scale,
+            drawn.alpha,
             &mut parts,
         );
-        scaled_elements(parts, frame.size, slot.window, scale, elements);
+        scaled_elements(parts, frame.size, drawn.rect, scale, elements);
     }
     let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
     elements.push(SceneElement::Solid(SolidColorRenderElement::new(
         open.dim.clone(),
         covered,
         CommitCounter::default(),
-        Color32F::new(0.0, 0.0, 0.0, crate::overview::DIM),
+        Color32F::new(0.0, 0.0, 0.0, open.dim(now)),
         Kind::Unspecified,
     )));
+}
+
+/// Each window `open` draws at `now`, bottom to top: between its real place and its place
+/// in the layout, as far as the transition has it (243). A minimised window stays at its
+/// place and fades instead, in as it opens and out as it closes; one that was chosen is
+/// shown again, and moves back with the others. They're in policy's stacking order, so a
+/// window chosen is at the top as they go.
+pub(crate) fn overview_drawn_windows(
+    caminito: &Caminito,
+    open: &Overview,
+    now: Duration,
+) -> Vec<DrawnWindow> {
+    let policy = &caminito.policy;
+    let origin = output_geometry(&open.output).loc;
+    let part = open.part(now);
+    let mut drawn: Vec<DrawnWindow> = open
+        .windows
+        .iter()
+        .zip(&open.layout.slots)
+        .filter_map(|(id, slot)| {
+            let frame = policy.frame_rect(*id)?;
+            let real = Rectangle::new(frame.loc - origin, frame.size);
+            let (rect, alpha) = if policy.is_minimized(*id) {
+                (slot.window, part as f32)
+            } else {
+                (between(real, slot.window, part), 1.0)
+            };
+            Some(DrawnWindow {
+                id: *id,
+                rect,
+                alpha,
+            })
+        })
+        .collect();
+    let stacking = policy.stacking_all();
+    drawn.sort_by_key(|window| stacking.iter().position(|id| *id == window.id));
+    drawn
 }
 
 /// The Window switcher's popup, if it's on `output`, front to back: the thumbnails'
@@ -719,6 +783,7 @@ fn thumbnail_elements<R>(
                     geometry.loc - frame.loc,
                     shown,
                     scale,
+                    1.0,
                     &mut parts,
                 );
                 frame.size
@@ -779,6 +844,7 @@ fn minimizing_elements<R>(
             geometry.loc - frame.loc,
             shown,
             scale,
+            1.0,
             &mut parts,
         );
         let target = Rectangle::new(target.loc - output_geometry.loc, target.size);
@@ -937,7 +1003,8 @@ fn layer_shell_elements<R>(
     let scale = output.current_scale().fractional_scale();
     let part = layer_surface_part(layer);
     for (surface, geometry) in layer_surfaces_in(caminito, output, layer) {
-        if overview_hides(caminito, output, surface.layer(), surface.namespace()) {
+        let alpha = layer_surface_alpha(caminito, output, surface.layer(), surface.namespace());
+        if alpha <= 0.0 {
             continue;
         }
         let origin = geometry.loc - output_geometry.loc;
@@ -955,7 +1022,7 @@ fn layer_shell_elements<R>(
                     &tree,
                     (origin + offset).to_physical_precise_round(scale),
                     scale,
-                    1.0,
+                    alpha,
                     Kind::Unspecified,
                 )
                 .into_iter()
@@ -1171,11 +1238,13 @@ fn window_elements<R>(
 
             let origin = drawn_at - output_geometry.loc;
             let shown = Rectangle::from_size(output_geometry.size);
-            one_window_elements(renderer, mapped, origin, shown, scale, elements);
+            one_window_elements(renderer, mapped, origin, shown, scale, 1.0, elements);
             // The shadow is the output's alone: a capture of the window and its thumbnail
             // are the window with its frame (103, 171).
             let shadow = mapped.frame().shadow();
-            buffer_elements(renderer, shadow, origin, shown, scale, "shadow", elements);
+            elements.extend(buffer_elements(
+                renderer, shadow, origin, shown, scale, 1.0, "shadow",
+            ));
         }
         if layer == SceneLayer::Windows && policy.grab(SEAT) == Some(id) {
             tile_preview_elements(caminito, output, elements);
@@ -1249,15 +1318,16 @@ fn tile_preview_elements<R>(
     }
 }
 
-/// One window's elements, front to back, at `scale`: its surfaces with their popups, over
-/// its frame's strips. `origin` is where its geometry is from the origin of what's drawn,
-/// and `shown` is the part of that space that's drawn.
+/// One window's elements, front to back, at `scale` and `alpha`: its surfaces with their
+/// popups, over its frame's strips. `origin` is where its geometry is from the origin of
+/// what's drawn, and `shown` is the part of that space that's drawn.
 fn one_window_elements<R, E>(
     renderer: &mut R,
     mapped: &Mapped,
     origin: Point<i32, Logical>,
     shown: Rectangle<i32, Logical>,
     scale: f64,
+    alpha: f32,
     elements: &mut Vec<E>,
 ) where
     R: Renderer + ImportAll + ImportMem,
@@ -1272,30 +1342,34 @@ fn one_window_elements<R, E>(
     bbox.loc += surface_origin;
     if !mapped.is_shaded() && bbox.overlaps(shown) {
         let location = surface_origin.to_physical_precise_round(scale);
-        elements.extend(window.render_elements(renderer, location, Scale::from(scale), 1.0));
+        elements.extend(window.render_elements(renderer, location, Scale::from(scale), alpha));
     }
 
     // The strips lie around the window geometry, behind the window and its popups.
     let strips = mapped.frame().strips();
-    buffer_elements(renderer, strips, origin, shown, scale, "strip", elements);
+    elements.extend(buffer_elements(
+        renderer, strips, origin, shown, scale, alpha, "strip",
+    ));
 }
 
 /// The elements of the `buffers` of a frame, its strips or its shadow's bands, that are in
-/// `shown`, at `scale`. Each has its place from the window geometry's origin, which is at
-/// `origin`.
+/// `shown`, at `scale` and `alpha`. Each has its place from the window geometry's origin,
+/// which is at `origin`.
 fn buffer_elements<'a, R, E>(
     renderer: &mut R,
     buffers: impl Iterator<Item = (Rectangle<i32, Logical>, &'a MemoryRenderBuffer)>,
     origin: Point<i32, Logical>,
     shown: Rectangle<i32, Logical>,
     scale: f64,
+    alpha: f32,
     what: &str,
-    elements: &mut Vec<E>,
-) where
+) -> Vec<E>
+where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
     E: From<MemoryRenderBufferRenderElement<R>>,
 {
+    let mut elements = Vec::new();
     for (mut rect, buffer) in buffers {
         rect.loc += origin;
         if !rect.overlaps(shown) {
@@ -1306,7 +1380,7 @@ fn buffer_elements<'a, R, E>(
             renderer,
             location,
             buffer,
-            None,
+            Some(alpha),
             None,
             Some(rect.size),
             Kind::Unspecified,
@@ -1316,6 +1390,7 @@ fn buffer_elements<'a, R, E>(
             Err(err) => tracing::warn!("can't draw a frame's {what}: {err:?}"),
         }
     }
+    elements
 }
 
 /// Frame debug's outlines of a frame's strips, invisible resize border and title rect, and

@@ -27,34 +27,34 @@ use crate::state::SEAT;
 use crate::workspace_slide::LENGTH;
 
 /// The window's colour, as `pixel` reads it.
-const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
+pub(super) const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
 
 /// The output every test here has.
-const OUTPUT: (i32, i32) = (1920, 1080);
+pub(super) const OUTPUT: (i32, i32) = (1920, 1080);
 
 /// The debug dump's `overview` member: `null` while the Overview is closed.
-fn overview(f: &Fixture) -> serde_json::Value {
+pub(super) fn overview(f: &Fixture) -> serde_json::Value {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     dump["overview"].clone()
 }
 
-fn is_open(f: &Fixture) -> bool {
+pub(super) fn is_open(f: &Fixture) -> bool {
     !overview(f).is_null()
 }
 
 /// Presses the Overview's default shortcut, Super+W.
-fn press_shortcut(f: &mut Fixture) {
+pub(super) fn press_shortcut(f: &mut Fixture) {
     f.chord(&[KEY_LEFTMETA, KEY_W]);
 }
 
 /// Opens the Overview with its shortcut.
 #[track_caller]
-fn open(f: &mut Fixture) {
+pub(super) fn open(f: &mut Fixture) {
     press_shortcut(f);
     assert!(is_open(f), "the shortcut opens the Overview");
 }
 
-fn rect(dump: &serde_json::Value) -> Rectangle<i32, Logical> {
+pub(super) fn rect(dump: &serde_json::Value) -> Rectangle<i32, Logical> {
     let field = |name: &str| dump[name].as_i64().unwrap() as i32;
     Rectangle::new(
         (field("x"), field("y")).into(),
@@ -82,16 +82,16 @@ fn part(f: &Fixture, window: ClientWindow, part: &str) -> Rectangle<i32, Logical
 
 /// Where the layout draws `window`.
 #[track_caller]
-fn place(f: &Fixture, window: ClientWindow) -> Rectangle<i32, Logical> {
+pub(super) fn place(f: &Fixture, window: ClientWindow) -> Rectangle<i32, Logical> {
     part(f, window, "rect")
 }
 
-fn middle(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
+pub(super) fn middle(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
     rect.loc + Point::from((rect.size.w / 2, rect.size.h / 2))
 }
 
 /// Clicks the left button at `at`.
-fn click(f: &mut Fixture, at: Point<i32, Logical>) {
+pub(super) fn click(f: &mut Fixture, at: Point<i32, Logical>) {
     f.click(f64::from(at.x), f64::from(at.y));
 }
 
@@ -103,7 +103,7 @@ fn middle_click(f: &mut Fixture, at: Point<i32, Logical>) {
 }
 
 /// The output's pixel at `at`, as `0xRRGGBB`.
-fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
+pub(super) fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
     let output = f.state.caminito.outputs[0].clone();
     let pixel = f
         .state
@@ -115,30 +115,30 @@ fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
 
 /// Whether `pixel` is `color` under the Overview's dimming, which is half of black: each
 /// channel halved, give or take the rounding.
-fn is_dimmed(pixel: u32, color: u32) -> bool {
+pub(super) fn is_dimmed(pixel: u32, color: u32) -> bool {
     [16, 8, 0].into_iter().all(|shift| {
         let (drawn, whole) = ((pixel >> shift) & 0xff, (color >> shift) & 0xff);
         drawn.abs_diff(whole / 2) <= 1
     })
 }
 
-fn focus(f: &Fixture) -> Option<u64> {
+pub(super) fn focus(f: &Fixture) -> Option<u64> {
     f.state.caminito.policy.focus(SEAT).map(|id| id.0)
 }
 
-fn stacking(f: &Fixture) -> Vec<u64> {
+pub(super) fn stacking(f: &Fixture) -> Vec<u64> {
     let stacking = f.state.caminito.policy.active_stacking();
     stacking.iter().map(|id| id.0).collect()
 }
 
-fn minimise(f: &mut Fixture, window: ClientWindow) {
+pub(super) fn minimise(f: &mut Fixture, window: ClientWindow) {
     let id = f.pid(window);
     f.state.caminito.policy.minimize(id);
     f.dispatch();
 }
 
 /// Three windows of different sizes, the last one focused and on top.
-fn map_three(f: &mut Fixture, id: ClientId) -> [ClientWindow; 3] {
+pub(super) fn map_three(f: &mut Fixture, id: ClientId) -> [ClientWindow; 3] {
     [(400, 300), (640, 480), (300, 500)].map(|size| f.map(id, WindowSpec::plain(size)))
 }
 
@@ -274,27 +274,27 @@ on_both_kinds! {
 // The rest of the output.
 
 /// The wallpaper, caja's desktop and the panel, in colours of their own.
-const WALLPAPER: u32 = 0xff40_80c0;
-const DESKTOP: u32 = 0xffc0_4040;
-const PANEL: u32 = 0xff20_c020;
+pub(super) const WALLPAPER: u32 = 0xff40_80c0;
+pub(super) const DESKTOP: u32 = 0xffc0_4040;
+pub(super) const PANEL: u32 = 0xff20_c020;
 const PANEL_HEIGHT: i32 = 30;
 
 /// Where the desktop's surface is, which doesn't cover the output as caja's does, so that
 /// the wallpaper shows beside it.
-fn desktop_spot() -> Point<i32, Logical> {
+pub(super) fn desktop_spot() -> Point<i32, Logical> {
     Point::from((100, 540))
 }
 
-fn panel_spot() -> Point<i32, Logical> {
+pub(super) fn panel_spot() -> Point<i32, Logical> {
     Point::from((960, PANEL_HEIGHT / 2))
 }
 
-fn wallpaper_spot() -> Point<i32, Logical> {
+pub(super) fn wallpaper_spot() -> Point<i32, Logical> {
     Point::from((1500, 900))
 }
 
 /// Maps the wallpaper, a desktop of 300 × 300 at the left and the panel along the top.
-fn map_the_desktop(f: &mut Fixture) {
+pub(super) fn map_the_desktop(f: &mut Fixture) {
     let shell = f.connect(Kind::Xdg);
     f.client(shell).bind_outputs();
     // Under the panel too, as the wallpaper's drawer has it.

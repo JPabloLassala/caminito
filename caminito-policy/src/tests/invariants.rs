@@ -898,12 +898,13 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
 /// The queries `caminito/src/scene.rs` makes of policy, in the alphabet's order. `SceneView`
 /// holds the answer to each, and `the_scene_view_has_every_query_the_scene_makes` holds
 /// this list to the Scene's source (179).
-const SCENE_QUERIES: [&str; 12] = [
+const SCENE_QUERIES: [&str; 13] = [
     "active_stacking",
     "frame_rect",
     "geometry",
     "grab",
     "is_fullscreen",
+    "is_minimized",
     "is_showing",
     "layer",
     "overview",
@@ -943,6 +944,7 @@ struct WindowView {
     frame_rect: Option<Rectangle<i32, Logical>>,
     is_showing: bool,
     is_fullscreen: bool,
+    is_minimized: bool,
     layer: Option<Layer>,
 }
 
@@ -960,6 +962,7 @@ fn scene_view(policy: &Policy<TestWindow>) -> SceneView {
                     frame_rect: policy.frame_rect(id),
                     is_showing: policy.is_showing(id),
                     is_fullscreen: policy.is_fullscreen(id),
+                    is_minimized: policy.is_minimized(id),
                     layer: policy.layer(id),
                 }
             })

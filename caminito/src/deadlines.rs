@@ -22,12 +22,13 @@ use crate::state::{Caminito, State};
 /// 5. The repeat of a held accelerator (99), which signals a key AccessX let through.
 /// 6. The Global menu's grace period (114), which nothing else here looks at.
 /// 7. The Window switcher's popup (108), the bell's flash (169), the minimise animations
-///    (172) and the Workspace slides (233), which only draw.
+///    (172), the Workspace slides (233) and the Overview's transition (243), which only
+///    draw.
 /// 8. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 11] = [
+const HOLDERS: [Holder; 12] = [
     Holder::Policy,
     Holder::ClosePings,
     Holder::Idle,
@@ -38,6 +39,7 @@ const HOLDERS: [Holder; 11] = [
     Holder::Bell,
     Holder::MinimizeAnimations,
     Holder::WorkspaceSlides,
+    Holder::OverviewTransition,
     Holder::NightLight,
 ];
 
@@ -53,6 +55,7 @@ enum Holder {
     Bell,
     MinimizeAnimations,
     WorkspaceSlides,
+    OverviewTransition,
     NightLight,
 }
 
@@ -70,6 +73,7 @@ impl Holder {
             Holder::Bell => caminito.bells.deadline(),
             Holder::MinimizeAnimations => caminito.minimize_animations.deadline(),
             Holder::WorkspaceSlides => caminito.workspace_slides.deadline(),
+            Holder::OverviewTransition => caminito.overview_transition_deadline(),
             Holder::NightLight => caminito.night_light.deadline(caminito.now()),
         }
     }
@@ -89,6 +93,7 @@ impl Holder {
             Holder::Bell => state.caminito.bell_elapse(now),
             Holder::MinimizeAnimations => state.caminito.minimize_animation_elapse(now),
             Holder::WorkspaceSlides => state.caminito.workspace_slide_elapse(now),
+            Holder::OverviewTransition => state.caminito.overview_transition_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),
         }
     }

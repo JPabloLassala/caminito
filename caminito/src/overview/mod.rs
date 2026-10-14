@@ -11,13 +11,20 @@
 //! joins the layout or leaves it at the next refresh pass, and the others take their new
 //! places in that frame.
 //!
-//! It opens and closes in one frame: the transition is 243's. Its bar of workspaces is
-//! 244's, and every output at once 246's.
+//! It opens and closes with its transition (243): each window moves between its real
+//! place and its place in the layout, and the rest fades. Policy has it open or closed
+//! from the first frame, so the keys and the clicks act on what policy has at once: here
+//! the Overview stays for the closing's frames after policy has closed its own. Without
+//! `overview-animation`, it opens and closes in one frame. Its bar of workspaces is 244's,
+//! and every output at once 246's.
 //!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
 pub(crate) mod draw;
 pub(crate) mod layout;
+pub(crate) mod transition;
+
+use std::time::Duration;
 
 use caminito_policy::{Action, Direction, WindowId};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
@@ -30,6 +37,7 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use self::draw::Label;
 use self::layout::Layout;
+use self::transition::{Heading, Transition};
 use crate::decoration::IconSource;
 use crate::input::bindings::Binding;
 use crate::input::{BTN_LEFT, BTN_MIDDLE, Bound, press_keysyms};
@@ -39,7 +47,8 @@ use crate::state::{Caminito, SEAT, State};
 /// How much of black is over the wallpaper while the Overview is open.
 pub(crate) const DIM: f32 = 0.5;
 
-/// The compositor's side of the open Overview, as the refresh pass last laid it out.
+/// The compositor's side of the Overview, as the refresh pass last laid it out: while
+/// policy has it open, and while it's drawn closing after (243).
 pub(crate) struct Overview {
     /// The output it's on.
     pub(crate) output: Output,
@@ -54,6 +63,49 @@ pub(crate) struct Overview {
     drawn: Drawn,
     /// The dimming's render element, the same one at every frame.
     pub(crate) dim: Id,
+    /// The transition, while it's on its way open or closed (243).
+    pub(crate) transition: Option<Transition>,
+}
+
+impl Overview {
+    /// How open it's drawn at `now`, from 0, closed, to 1, open.
+    pub(crate) fn part(&self, now: Duration) -> f64 {
+        self.transition
+            .map_or(1.0, |transition| transition.part(now))
+    }
+
+    /// Whether it's drawn on its way closed, after policy has closed it.
+    fn is_closing(&self) -> bool {
+        self.transition
+            .is_some_and(|transition| transition.heading == Heading::Closing)
+    }
+
+    /// How much of black is over the wallpaper at `now`: the dimming fades in as it opens
+    /// and out as it closes.
+    pub(crate) fn dim(&self, now: Duration) -> f32 {
+        DIM * self.part(now) as f32
+    }
+
+    /// How opaque the labels are drawn at `now`, which fade with the dimming.
+    pub(crate) fn labels_alpha(&self, now: Duration) -> f32 {
+        self.part(now) as f32
+    }
+
+    /// How opaque the panel and caja's desktop are drawn at `now`: they fade out as it
+    /// opens and in as it closes.
+    pub(crate) fn faded_alpha(&self, now: Duration) -> f32 {
+        1.0 - self.part(now) as f32
+    }
+}
+
+/// One window as the Overview draws it at one time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DrawnWindow {
+    pub(crate) id: WindowId,
+    /// Where it's drawn, from the output's top left corner.
+    pub(crate) rect: Rectangle<i32, Logical>,
+    /// How opaque it's drawn.
+    pub(crate) alpha: f32,
 }
 
 /// Everything the labels are drawn from.
@@ -82,7 +134,8 @@ struct LabelInputs {
 }
 
 impl Caminito {
-    /// The Overview on `output`, while it's open there and laid out.
+    /// The Overview on `output`, while it's open there and laid out, and while it's drawn
+    /// closing there after (243).
     pub(crate) fn overview_on(&self, output: &Output) -> Option<&Overview> {
         self.overview.as_ref().filter(|open| open.output == *output)
     }
@@ -97,12 +150,19 @@ impl Caminito {
     }
 
     /// Brings the compositor's side up to date with policy's Overview, in the refresh
-    /// pass: lets go of it when policy has closed its own, lays the listed windows out
-    /// again, and draws the labels again if anything they're drawn from changed. The
-    /// session lock closes it, as it ends every Interaction.
+    /// pass: lays the listed windows out again, and draws the labels again if anything
+    /// they're drawn from changed. The session lock closes it, as it ends every
+    /// Interaction.
+    ///
+    /// With the transition on (243), one that opens starts on its way open, from where
+    /// the closing had it if it was on its way closed, and one that policy closes stays,
+    /// on its way closed from where it is. The lock ends it at once, and so does the end
+    /// of its output.
     pub(crate) fn refresh_overview(&mut self) {
+        let now = self.now();
+        let locked = self.lock.is_locked();
         let policy = &self.policy;
-        let open = policy.overview().filter(|_| !self.lock.is_locked());
+        let open = policy.overview().filter(|_| !locked);
         let on = open.and_then(|open| {
             let mut outputs = self.outputs.iter();
             let output = outputs.find(|output| output_id(output) == open.output)?;
@@ -112,9 +172,7 @@ impl Caminito {
             if self.policy.overview().is_some() {
                 self.policy.close_overview();
             }
-            if self.overview.take().is_some() {
-                self.queue_redraw_all();
-            }
+            self.overview_closed(now);
             return;
         };
         let geometry = output_geometry(&output);
@@ -127,17 +185,29 @@ impl Caminito {
             .collect();
         let layout = Layout::new(&frames, Rectangle::from_size(geometry.size));
         let drawn = self.overview_label_inputs(&output, &windows, selected, &layout);
-        let fresh = self.overview.as_ref().is_some_and(|open| {
-            open.output == output
-                && open.windows == windows
-                && open.layout == layout
-                && open.drawn == drawn
+        // The one that was drawn there, if it's open or closing.
+        let before = self
+            .overview
+            .take()
+            .filter(|before| before.output == output);
+        let transition = match &before {
+            Some(before) if !before.is_closing() => before.transition,
+            _ if !self.settings.overview_animation => None,
+            Some(closing) => Some(Transition::new(Heading::Opening, closing.part(now), now)),
+            None => Some(Transition::new(Heading::Opening, 0.0, now)),
+        };
+        let fresh = before.as_ref().is_some_and(|before| {
+            before.windows == windows
+                && before.layout == layout
+                && before.drawn == drawn
+                && before.transition == transition
         });
         if fresh {
+            self.overview = before;
             return;
         }
         let labels = self.draw_overview_labels(&drawn);
-        let dim = self.overview.take().map_or_else(Id::new, |open| open.dim);
+        let dim = before.map_or_else(Id::new, |before| before.dim);
         self.overview = Some(Overview {
             output,
             windows,
@@ -145,8 +215,63 @@ impl Caminito {
             labels,
             drawn,
             dim,
+            transition,
         });
         self.queue_redraw_all();
+    }
+
+    /// Policy has no Overview open: the one drawn goes on its way closed from where it is,
+    /// with the transition on and its output still there, or goes at once. One that's
+    /// closing already goes on, and the lock ends it.
+    fn overview_closed(&mut self, now: Duration) {
+        let Some(shown) = &mut self.overview else {
+            return;
+        };
+        let animated = self.settings.overview_animation
+            && !self.lock.is_locked()
+            && self.outputs.contains(&shown.output);
+        if animated && shown.is_closing() {
+            return;
+        }
+        if animated {
+            let from = shown.part(now);
+            shown.transition = Some(Transition::new(Heading::Closing, from, now));
+        } else {
+            self.overview = None;
+        }
+        self.queue_redraw_all();
+    }
+
+    /// When the running transition is over: `deadlines` then draws the Overview at rest
+    /// (174).
+    pub(crate) fn overview_transition_deadline(&self) -> Option<Duration> {
+        let open = self.overview.as_ref()?;
+        open.transition.map(|transition| transition.end())
+    }
+
+    /// Ends the transition if it's over at `now`, and draws the output at rest: the
+    /// Overview open, or gone once it's closed. While it runs, its output is drawn again
+    /// at each of its frames (`State::redraw_queued_outputs`).
+    pub(crate) fn overview_transition_elapse(&mut self, now: Duration) {
+        let Some(open) = &mut self.overview else {
+            return;
+        };
+        let Some(transition) = open.transition.filter(|t| t.is_over(now)) else {
+            return;
+        };
+        if transition.heading == Heading::Opening {
+            open.transition = None;
+        } else {
+            self.overview = None;
+        }
+        self.queue_redraw_all();
+    }
+
+    /// Whether the Overview's transition runs on `output` at `now`.
+    pub(crate) fn overview_transition_on(&self, output: &Output, now: Duration) -> bool {
+        let open = self.overview_on(output);
+        open.and_then(|open| open.transition)
+            .is_some_and(|transition| !transition.is_over(now))
     }
 
     /// What the labels of `windows` are drawn from on `output`, in `layout`, with
