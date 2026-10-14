@@ -17,6 +17,9 @@ gio = "0.22.10"
 # The dialog, without libadwaita (ADR 0014). v4_12: FileDialog, ColorDialogButton, and CSS
 # from a string.
 gtk = { workspace = true, features = ["v4_12"] }
+# GNOME's timed XML, a dynamic wallpaper (216). Already in the tree through
+# wayland-scanner, and with no features, no more crates.
+quick-xml = "0.41.0"
 # The Wayland connection's fd in GLib's loop.
 glib-unix = "0.22.8"
 rustix = { workspace = true, features = ["fs"] }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::dynamic::Moment;
 
 // The helpers are the bridge's tests' too (211).
 
@@ -144,6 +145,7 @@ fn the_first_run_takes_mates_picture_and_the_second_doesnt() {
         picture: mate.picture.clone(),
         positioning: Positioning::Fit,
         colour: Colour::parse("#5891bc").unwrap(),
+        ..OutputSettings::default()
     };
     assert_eq!(settings_for(&mut store, &aoc(), None), taken);
     store.different = true;
@@ -169,24 +171,61 @@ fn mates_colour_alone_is_a_colour() {
     take_mate_background(&mut store, &mate);
 
     assert_eq!(
-        store.read(&Set::All).drawn(),
+        store.read(&Set::All).drawn(None),
         Drawn::Colour(Colour::default())
     );
 }
 
 #[test]
 fn a_kind_drawn_by_a_later_ticket_is_its_colour_until_then() {
-    for kind in [Kind::Slideshow, Kind::PictureOfTheDay, Kind::Dynamic] {
+    for kind in [Kind::Slideshow, Kind::PictureOfTheDay] {
         let settings = OutputSettings {
             kind,
             ..colour("#123456")
         };
         assert_eq!(
-            settings.drawn(),
+            settings.drawn(None),
             Drawn::Colour(Colour::parse("#123456").unwrap())
         );
     }
-    assert_eq!(picture("").drawn(), Drawn::Colour(Colour::default()));
+    assert_eq!(picture("").drawn(None), Drawn::Colour(Colour::default()));
+}
+
+#[test]
+fn a_dynamic_is_its_moments_pictures_blended_in_whole_percent() {
+    let settings = OutputSettings {
+        kind: Kind::Dynamic,
+        dynamic: "/usr/share/wallpapers/Next".into(),
+        positioning: Positioning::Fit,
+        ..colour("#123456")
+    };
+    let moment = |blend| Moment {
+        from: "/light.png".into(),
+        to: "/dark.png".into(),
+        blend,
+    };
+    let still = |file: &str| Drawn::Picture {
+        file: file.into(),
+        positioning: Positioning::Fit,
+        colour: settings.colour,
+    };
+
+    assert_eq!(settings.drawn(Some(&moment(0.0))), still("/light.png"));
+    assert_eq!(settings.drawn(Some(&moment(0.004))), still("/light.png"));
+    assert_eq!(
+        settings.drawn(Some(&moment(0.375))),
+        Drawn::Blend {
+            from: "/light.png".into(),
+            to: "/dark.png".into(),
+            percent: 38,
+            positioning: Positioning::Fit,
+            colour: settings.colour,
+        }
+    );
+    assert_eq!(settings.drawn(Some(&moment(0.999))), still("/dark.png"));
+    assert_eq!(settings.drawn(Some(&moment(1.0))), still("/dark.png"));
+    // Without its moment, one that can't be read, it's the colour.
+    assert_eq!(settings.drawn(None), Drawn::Colour(settings.colour));
 }
 
 #[test]

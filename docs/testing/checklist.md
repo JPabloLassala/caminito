@@ -1997,7 +1997,7 @@ session_env() {
      *Another colour*.
   5. Choose *Picture*, press *Add folder…* and choose a folder of your pictures, then press
      *Add picture…* and choose a picture outside it. Click a picture of the folder's.
-  6. Choose *Slideshow*, *Picture of the day* and *Dynamic* in turn.
+  6. Choose *Slideshow* and *Picture of the day* in turn.
   7. With the window open, open *Wallpaper* again from the control center, or run
      `caminito-wallpaper`. Then press Escape.
   8. Unplug the second monitor and open the dialog; plug it back in.
@@ -2023,6 +2023,57 @@ session_env() {
 - **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/`, `dconf watch
   /org/mate/caminito/wallpaper/` while clicking, and `caminito-wallpaper` run from a
   terminal for GTK's warnings.
+
+### A Plasma pair turns dark as Night Light warms, and a timed XML is on its picture for the hour
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, `mate-screensaver` installed (it has
+     `/usr/share/backgrounds/cosmos/`), and a Plasma package with `contents/images_dark/`
+     under `/usr/share/wallpapers` (`plasma-workspace-wallpapers` has several), log into
+     *MATE on Caminito*. Turn Night Light on with the sun schedule: `gsettings set
+     org.mate.Caminito night-light-enabled true` and `gsettings set org.mate.Caminito
+     night-light-schedule sun`.
+  2. Open *Wallpaper* and choose *Dynamic*. Read the grid, then click a Plasma pair.
+  3. Put the sun where the pair is light, then at the horizon, then below civil twilight, by
+     giving Caminito a place on the equator whose solar time is 17:00, 18:00 and 18:30 in
+     turn, as minutes of the day. A minute after each, read the `Sun` property and look at the
+     desktop.
+
+     ```sh
+     at() { echo $(( ($1 - $(date -u +%-H) * 60 - $(date -u +%-M)) / 4 + 540 )); }
+     place() { gsettings set org.mate.Caminito night-light-last-location "(0.0, $(( $(at $1) % 360 - 180 )).0)"; }
+     sun() { busctl --user get-property org.mate.Caminito /org/mate/Caminito org.mate.Caminito Sun; }
+     place 1020; sleep 70; sun
+     place 1080; sleep 70; sun
+     place 1110; sleep 70; sun
+     ```
+
+  4. In the dialog, click *cosmos*. Work out which of its pictures the hour is on: numbering
+     its `<static>` pictures from 0, the one shown now is
+
+     ```sh
+     python3 -c 'import datetime as d; print(int((d.datetime.now() - d.datetime(2009, 8, 4)).total_seconds() % 16200 // 1800))'
+     ```
+
+     Leave it until that number changes, half an hour at most.
+  5. Run `gsettings reset org.mate.Caminito night-light-last-location`, and turn Night Light
+     off if it was.
+- **Expected:** in step 2 the grid has a heading *MATE* with *cosmos* and a heading *Plasma*
+  with each pair, each thumbnail its day picture on the left and its night picture on the
+  right; under the grid are *Add…*, a line, and *Positioning*. The click cross-fades the
+  desktop to the pair, and the line says it follows the sun. In step 3 the `Sun` elevation is
+  about 15°, then about 0°, then about −7°. At 15° the desktop is the light picture and Night
+  Light is near its noon temperature; at 0° it is halfway between the light and dark pictures
+  as Night Light warms; at −7° it is the dark picture, and Night Light is at its night
+  temperature. Each change fades over about a second rather than jumping. In step 4 the line
+  says it follows the clock, and the desktop and the sidebar show the picture numbered;
+  within a minute of the number changing, the desktop cross-fades to the next.
+  `gsettings get org.mate.background picture-filename` names the picture shown, and for a
+  pair part way, the one that shows most.
+- **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/` for `kind='dynamic'` and its
+  `dynamic`, `journalctl --user -t caminito-wallpaperd` for a dynamic wallpaper that can't be
+  read, and the `Sun` property's `location-source`, which is `stored` in step 3.
 
 ## The control center
 

@@ -2,7 +2,8 @@
 //! wallpaper surface on every output, in the namespace the scene puts behind caja's desktop,
 //! follows the outputs as they come and go without leaving any behind (88), draws a change
 //! of its settings without a restart, takes MATE's picture on its first run alone, and keeps
-//! `org.mate.background` bridged both ways (211).
+//! `org.mate.background` bridged both ways (211). A dynamic wallpaper's pair is drawn by
+//! the local time (216).
 //!
 //! It needs the built drawer, named by `CAMINITO_WALLPAPERD`, so these are ignored by
 //! default and `tools/check` runs them after the workspace's build. As the locker's tests
@@ -38,6 +39,8 @@ struct Drawer {
     dir: tempfile::TempDir,
     listener: UnixListener,
     child: Option<Child>,
+    /// The drawer's `TZ`, or none for UTC.
+    tz: Option<String>,
 }
 
 impl Drawer {
@@ -50,6 +53,7 @@ impl Drawer {
             dir,
             listener,
             child: None,
+            tz: None,
         };
         drawer.set_settings(keyfile);
         drawer
@@ -75,8 +79,12 @@ impl Drawer {
             .append(true)
             .open(self.path("log"))
             .unwrap();
-        let child = Command::new(program)
-            .env_clear()
+        let mut command = Command::new(program);
+        command.env_clear();
+        if let Some(tz) = &self.tz {
+            command.env("TZ", tz);
+        }
+        let child = command
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("XDG_RUNTIME_DIR", self.dir.path())
             .env("WAYLAND_DISPLAY", "wayland-test")
@@ -419,6 +427,48 @@ fn a_picture_another_program_gives_mate_is_every_outputs() {
     let settings = drawer.settings();
     let set = format!("picture='{}'", file.display());
     assert_eq!(settings.matches(&set).count(), 3, "{settings}");
+}
+
+/// The POSIX `TZ` whose local time is `hour` o'clock and some minutes now.
+fn tz_at(hour: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let utc_hour = (now / 3600).rem_euclid(24);
+    let ahead = (hour - utc_hour + 12).rem_euclid(24) - 12;
+    // POSIX counts west of Greenwich as positive.
+    format!("XXX{}", -ahead)
+}
+
+#[test]
+#[ignore = "needs CAMINITO_WALLPAPERD; tools/check runs it"]
+fn a_plasma_pair_is_light_at_noon_and_dark_at_midnight() {
+    let mut f = Fixture::new();
+    let outputs = [f.add_output((1920, 1080), 1.0)];
+    let package = tempfile::tempdir().unwrap();
+    for (images, rgb) in [("images", 0xc0c0a0), ("images_dark", 0x202040)] {
+        let images = package.path().join("contents").join(images);
+        std::fs::create_dir_all(&images).unwrap();
+        std::fs::write(images.join("1920x1080.png"), png(rgb)).unwrap();
+    }
+    let settings = format!(
+        "{GREEN}kind='dynamic'\ndynamic='{}'\n",
+        package.path().display()
+    )
+    .replace("kind='colour'\n", "");
+
+    // Without Caminito on the bus, the fixed times stand in for the sun.
+    let mut drawer = Drawer::new(&settings);
+    drawer.tz = Some(tz_at(12));
+    drawer.start(&mut f);
+    wait_for_color(&mut f, &outputs, 0xc0c0a0);
+
+    drawer.kill();
+    f.dispatch_until(|f| wallpapers(f).iter().all(|(_, count)| *count == 0));
+    drawer.tz = Some(tz_at(0));
+    drawer.start(&mut f);
+    wait_for_color(&mut f, &outputs, 0x202040);
 }
 
 /// A PNG of 8 by 8 pixels of `rgb`, `0xrrggbb`, uncompressed.
