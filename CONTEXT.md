@@ -109,7 +109,7 @@ The output a surface is mostly on, which decides the scale the surface is asked 
 _Avoid_: primary output (that's the user's choice; Smithay's name for this is "primary scanout output")
 
 **Active output**:
-The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused or the user clicks on anything on another output: a window, a panel, caja's desktop or the wallpaper. Moving the pointer there doesn't change it.
+The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused or the user clicks on anything on another output: a window, a panel, caja's desktop, the wallpaper or a workspace of the Overview's bar. Moving the pointer there doesn't change it. While the Overview is open, the output its selection is on is the Active output.
 _Avoid_: current output, focused output (an output has no focus), primary output (that's the user's choice)
 
 **Layout**:

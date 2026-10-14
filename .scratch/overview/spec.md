@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 243 added the transition, and ticket 244 the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. Ticket 245 added the drag of a window onto a workspace of the bar, on one output, and ticket 246 the Overview on every output at once, with the drag from one to another. The rest isn't built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
+Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 243 added the transition, and ticket 244 the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. Ticket 245 added the drag of a window onto a workspace of the bar, on one output, and ticket 246 the Overview on every output at once, with the drag from one to another. Ticket 248 adds the workspace bindings on mouse buttons, and keeps the selection on the Active output. The rest isn't built. Its tickets are 241 to 248, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
 
 ## Problem
 
@@ -42,6 +42,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - It opens on every output at once. Each shows its own active workspace's windows and its own bar.
 - Under Spanning workspaces every output's bar shows the same workspaces, and switching in one switches all.
+- The output the selection is on is the seat's Active output while the Overview is open. At opening it's the focused window's output, or the Active output with none focused.
 
 ### Which windows
 
@@ -72,7 +73,8 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - **A click on a window** activates it and closes the Overview. A minimised window is unminimised.
 - **A middle click on a window** closes that window. The Overview stays open.
-- **A click on a workspace of the bar** switches that output to it. The Overview stays open, and the Workspace slide moves the laid-out windows.
+- **A click on a workspace of the bar** switches that output to it. The Overview stays open, and the Workspace slide moves the laid-out windows. On another output's bar it also makes that output the Active output, as a click on its wallpaper does, and the selection goes there with nothing selected. The focus is left alone.
+- **A button bound to a workspace switch** does what the binding's key would, wherever the pointer is: over a window, a cell or the empty area (see "The keys").
 - **A click on the empty area** closes the Overview.
 - **A drag of a window**, past `drag-threshold`:
   - onto a workspace of the same output's bar: the window goes to that workspace and keeps its geometry;
@@ -85,9 +87,9 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - The arrow keys move the selection, Enter chooses it, and Esc closes.
 - The focused window is selected at opening, or none when no window is focused.
-- **The workspace bindings switch the Active output's workspace**, with the Workspace slide and without the Workspace popup, since the seat already has an Interaction.
+- **The workspace bindings switch the Active output's workspace**, with the Workspace slide and without the Workspace popup, since the seat already has an Interaction. A binding on a mouse button does the same as one on a key.
 - Media keys work. A media key is an accelerator grab of a key whose keysym is one of XFree86's, as `XF86AudioMute`: `GrabAccelerators` doesn't say what a grab is for.
-- Every other key and System shortcut is swallowed, Alt+Tab among them.
+- Every other key and System shortcut is swallowed, Alt+Tab and `move-to-workspace-*` among them. A bound button other than a workspace switch's is swallowed over a window or a cell, and closes the Overview over the empty area, as any press there does.
 
 ### The transition
 
@@ -129,7 +131,7 @@ Nothing of ticket 244's is left: the reduced rate and the size of the bar are in
 
 ## Tickets
 
-Seven slices, filed in `.scratch/issues/` as tickets 241 to 247.
+Eight slices, filed in `.scratch/issues/` as tickets 241 to 248.
 
 | | Slice | Blocked by |
 | --- | --- | --- |
@@ -140,3 +142,4 @@ Seven slices, filed in `.scratch/issues/` as tickets 241 to 247.
 | 245 | [**A window is dragged onto a workspace of the Overview's bar.**](../issues/245-a-window-is-dragged-onto-a-workspace-of-the-overviews-bar.md) | 244 |
 | 246 | [**The Overview on two outputs.**](../issues/246-the-overview-on-two-outputs.md) | 244, 245 |
 | 247 | [**The Overview in a real Session, by hand.**](../issues/247-the-overview-in-a-real-session.md) | 242, 243, 245, 246 |
+| 248 | [**Workspace buttons in the Overview, and its selection on the Active output.**](../issues/248-workspace-buttons-in-the-overview.md) | 246 |
