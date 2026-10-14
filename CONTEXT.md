@@ -272,6 +272,14 @@ _Avoid_: battery monitor, mate-power-manager's tray icon, power capplet (mate-po
 The user's own switch in the Power applet that keeps the computer from sleeping and the screen from locking until it's turned off. An application doing the same is just an application keeping the computer awake.
 _Avoid_: inhibit, caffeine, presentation mode, block sleep
 
+**Thermal applet**:
+Caminito's mate-panel applet for temperatures and fans: a thermometer in the panel with the panel sensors' temperatures over the fans' speed, and its popup of the computer's temperatures and fan speeds, in the manner of TG Pro. It only watches; it never sets a fan's speed.
+_Avoid_: sensors applet (MATE's own mate-sensors-applet), temperature applet, thermal capplet, TG Pro
+
+**Panel sensor**:
+One of the temperatures, two at most, that the Thermal applet shows in the panel, chosen by pinning it in the popup. By default they're the CPU's and, when there's a GPU, the GPU's.
+_Avoid_: main sensor, primary temperature, pinned sensor
+
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
 _Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift

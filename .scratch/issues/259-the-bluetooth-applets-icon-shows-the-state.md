@@ -11,6 +11,7 @@ Spec: [Bluetooth](../bluetooth/spec.md)
 The **Bluetooth applet** (CONTEXT.md) without its popup, under "The two pieces" and "The Bluetooth applet" in [the spec](../bluetooth/spec.md), and [ADR 0035](../../docs/adr/0035-the-bluetooth-popup-is-an-in-process-mate-panel-applet.md).
 
 - `helpers/caminito-bluetooth-applet/`: an in-process mate-panel applet in C and GTK3, as a Meson subproject of the root `meson.build`, with its `.mate-panel-applet` file. It's called "Bluetooth" in Add to Panel.
+- **`helpers/caminito-applet-common/`**, the static library the Bluetooth, Power and Thermal applets share (ADR 0035): the popup window placed against the applet's button, left-click toggling it and losing focus closing it, and themed icons with fallbacks. If it doesn't exist yet, this ticket extracts it. If it does, this ticket uses it.
 - It reads BlueZ directly over GDBus, through the object manager, `Adapter1`, `Device1` and `Battery1`, and follows changes.
 - **The icon** is a themed icon with fallbacks, because Breeze has none of MATE's Bluetooth names (see the spec). It has three states: off, on with nothing connected, and connected. **The tooltip** shows the connected devices and their battery.
 - **No adapter, no icon.** It comes back when an adapter appears.

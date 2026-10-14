@@ -35,7 +35,7 @@ It is Plasma's Power and Battery, laid out as the prototype's "Popup C". Its set
 
 ### The applet
 
-- An in-process mate-panel applet in C and GTK3, in `helpers/caminito-power-applet/`, as a Meson subproject of the root [meson.build](../../meson.build). It's called "Power" in Add to Panel. It shares no code with the Bluetooth applet: whatever both need is copied.
+- An in-process mate-panel applet in C and GTK3, in `helpers/caminito-power-applet/`, as a Meson subproject of the root [meson.build](../../meson.build). It's called "Power" in Add to Panel. It shares only `helpers/caminito-applet-common/` with the Bluetooth and Thermal applets: the popup window and themed icons with fallbacks (ADR 0035).
 - It reads its sources directly over GDBus. There's no Rust half and no private interface.
 - Neither the applet nor its files depend on Caminito. They go in the normal XDG directories.
 

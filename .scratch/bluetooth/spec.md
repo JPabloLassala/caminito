@@ -32,7 +32,7 @@ Two pieces (CONTEXT.md):
 
 ### The two pieces
 
-- **The Bluetooth applet** is a mate-panel applet in C and GTK3, loaded in-process, in `helpers/caminito-bluetooth-applet/` as a Meson subproject of the root [meson.build](../../meson.build), like `caminito-locker`. It's called "Bluetooth" in Add to Panel.
+- **The Bluetooth applet** is a mate-panel applet in C and GTK3, loaded in-process, in `helpers/caminito-bluetooth-applet/` as a Meson subproject of the root [meson.build](../../meson.build), like `caminito-locker`. It's called "Bluetooth" in Add to Panel. It shares only `helpers/caminito-applet-common/` with the Power and Thermal applets: the popup window and themed icons with fallbacks (ADR 0035).
 - **caminito-bluetooth** is a crate in the Cargo workspace, Rust and GTK4 without libadwaita (ADR 0014), like `caminito-displays`.
 - **They share only BlueZ's D-Bus API** (`org.bluez`: the object manager, `Adapter1`, `Device1`, `Battery1`, `AgentManager1`). The applet uses GDBus, and `caminito-bluetooth` uses gio's D-Bus from gtk-rs, so the workspace gets no zbus. There's no private interface. The applet starts `caminito-bluetooth` (or `caminito-bluetooth --scan`) to open the window.
 - **Any MATE desktop.** Neither piece depends on Caminito. Their files go in the normal XDG directories, not `share/caminito/xdg/`: the applet's `.mate-panel-applet` file, `caminito-bluetooth.desktop` (`Categories=GTK;Settings;HardwareSettings;`, `OnlyShowIn=MATE;`) and its autostart entry.
