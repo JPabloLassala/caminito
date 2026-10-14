@@ -1,7 +1,8 @@
 //! The Overview (241, ADR 0033): whether it's open, the output it's on, the windows it
 //! lists and the one selected (242), the drag of a window (245), and what a choice, an
-//! arrow key, a middle click, a click on a workspace of its bar (244) and a drop do. The compositor has its layout, its bar, its
-//! drawing, its keys and its clicks, and asks here for what they do.
+//! arrow key, a middle click, a click on a workspace of its bar (244) and a drop do. The
+//! compositor has its layout, its bar, its drawing, its keys and its clicks, and asks here
+//! for what they do.
 //!
 //! It's the seat's Interaction (187), and every seat's, as the Window switcher is: the
 //! shortcut opens it only while no seat has one, and nothing else opens while it's open.
@@ -42,6 +43,7 @@ pub struct Overview {
 /// click.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OverviewDrag {
+    /// The window pressed, which a drop moves.
     pub window: WindowId,
     /// Where the button went down, in global logical coordinates.
     pub from: Point<f64, Logical>,

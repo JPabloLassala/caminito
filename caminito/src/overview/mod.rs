@@ -227,14 +227,17 @@ impl Caminito {
     /// The pointer moved to `location`, in global logical coordinates: policy hears it
     /// with the cell it's on, while a press is held on a window of the Overview (245).
     pub(crate) fn overview_motion(&mut self, location: Point<f64, Logical>) {
-        let held = self
-            .policy
-            .overview()
-            .is_some_and(|open| open.drag.is_some());
-        if held {
+        if self.overview_press_held() {
             let cell = self.overview_cell_at(location);
             self.policy.overview_pointer(location, cell);
         }
+    }
+
+    /// Whether the left button is held on a window of the open Overview (245).
+    fn overview_press_held(&self) -> bool {
+        self.policy
+            .overview()
+            .is_some_and(|open| open.drag.is_some())
     }
 
     /// The window that a drag of `open`'s takes (245), drawn under the pointer: at its
@@ -736,11 +739,7 @@ impl State {
     ) -> bool {
         let caminito = &mut self.caminito;
         if state == ButtonState::Released {
-            let held = caminito
-                .policy
-                .overview()
-                .is_some_and(|open| open.drag.is_some());
-            if button != BTN_LEFT || !held {
+            if button != BTN_LEFT || !caminito.overview_press_held() {
                 return false;
             }
             caminito.overview_motion(location);

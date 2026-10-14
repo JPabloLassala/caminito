@@ -4,7 +4,8 @@
 //! one frame. Its selection, the arrow keys and Enter, the middle click, and windows that
 //! map or go while it's open are 242's. Its bar of workspaces, a switch from the bar or a
 //! binding with the Workspace slide moving the layouts, and the frame callbacks of a
-//! window that only the bar shows are 244's.
+//! window that only the bar shows are 244's. A drag of a window onto a workspace of the
+//! bar, or onto nothing, is 245's.
 //!
 //! What both kinds of window share runs on both. The tests of what a client sees of the
 //! keys and the clicks, and of what only the Overview's own state shows (the shortcut, the

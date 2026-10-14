@@ -680,7 +680,8 @@ fn faded(color: Color32F, alpha: f32) -> Color32F {
 /// active workspace's cell, the theme's selected background over the cell a drag is on
 /// (245), then in each cell that workspace on the output as a small picture, its windows
 /// at their real places over the wallpaper, over the cell's back. It's drawn from the
-/// windows' and the wallpaper's own surfaces at every frame, so it's live. It fades in and out with the labels as the Overview opens and closes (243).
+/// windows' and the wallpaper's own surfaces at every frame, so it's live. It fades in and
+/// out with the labels as the Overview opens and closes (243).
 fn overview_bar_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
