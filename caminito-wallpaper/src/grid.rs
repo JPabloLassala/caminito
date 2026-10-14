@@ -212,7 +212,7 @@ fn entries(directory: &Path) -> Vec<PathBuf> {
 
 /// The pictures in `folder` and its folders `depth` deep, 1 being the folder's own, in the
 /// order of their paths.
-fn pictures_in(folder: &Path, depth: usize) -> Vec<PathBuf> {
+pub(crate) fn pictures_in(folder: &Path, depth: usize) -> Vec<PathBuf> {
     let mut pictures = Vec::new();
     if depth == 0 {
         return pictures;

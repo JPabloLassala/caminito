@@ -76,7 +76,8 @@ pub struct Moment {
 }
 
 impl Moment {
-    fn still(file: &Path) -> Self {
+    /// One picture, with nothing over it: a slideshow's (213).
+    pub(crate) fn still(file: &Path) -> Self {
         Moment {
             from: file.to_owned(),
             to: file.to_owned(),

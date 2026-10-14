@@ -11,6 +11,7 @@ use caminito_wallpaper::dynamic::Dynamic;
 use caminito_wallpaper::grid::{self, DynamicGroup, Group, Installed, Roots};
 use caminito_wallpaper::monitors::Monitors;
 use caminito_wallpaper::page::{Output, Page};
+use caminito_wallpaper::slideshow::Interval;
 use caminito_wallpaper::sun::sky_now;
 use caminito_wallpaper::{
     Colour, GioStore, Kind, Memory, OutputSettings, Positioning, Set, Store, place,
@@ -50,6 +51,14 @@ fn kind_label(kind: Kind) -> (&'static str, &'static str) {
 
 /// What the positionings are called, in [`Positioning::ALL`]'s order.
 const POSITIONINGS: [&str; 5] = ["Fill", "Fit", "Stretch", "Centre", "Tile"];
+
+/// What the Slideshow's intervals are called, in [`Interval::ALL`]'s order.
+const INTERVALS: [&str; 4] = ["5 minutes", "15 minutes", "1 hour", "1 day"];
+
+/// How often the window is rendered again without a change of the settings, so that the
+/// sidebar's Slideshow or Dynamic follows the desktop's, and the Slideshow's count its
+/// folder, within this.
+const RENDER_TICK: u32 = 60;
 
 const CSS: &str = "
 .caminito-wallpaper-output { padding: 4px; border-radius: 6px; }
@@ -98,6 +107,13 @@ struct Ui {
     /// Whether the selected dynamic wallpaper follows the sun or fixed times.
     dynamic_line: gtk::Label,
     dynamic_positioning: gtk::DropDown,
+    /// The Slideshow's folder, named on the button that chooses it.
+    slideshow_folder: gtk::Button,
+    interval: gtk::DropDown,
+    in_order: gtk::CheckButton,
+    /// How many pictures the Slideshow's folder has.
+    slideshow_count: gtk::Label,
+    slideshow_positioning: gtk::DropDown,
 }
 
 /// Opens the window, on the store and the compositor's outputs or, for `demo`, on made-up
@@ -160,6 +176,16 @@ pub(crate) fn open(application: &gtk::Application, demo: bool) {
     ui.set_outputs(outputs);
     if let Some(monitors) = monitors {
         follow(&ui, monitors);
+    }
+    {
+        let ui = Rc::downgrade(&ui);
+        glib::timeout_add_seconds_local(RENDER_TICK, move || {
+            let Some(ui) = ui.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            ui.render();
+            glib::ControlFlow::Continue
+        });
     }
     // The handlers hold the state weakly, so the window holds it, until it's disposed of with
     // its handlers.
@@ -445,6 +471,40 @@ fn build(
     dynamic_pane.append(&dynamic_bar);
     panes.add_named(&dynamic_pane, Some("dynamic"));
 
+    let slideshow_pane = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(SPACING)
+        .margin_top(SPACING)
+        .margin_bottom(SPACING)
+        .margin_start(SPACING)
+        .margin_end(SPACING)
+        .build();
+    slideshow_pane.append(&heading("Folder"));
+    let slideshow_folder = gtk::Button::builder()
+        .halign(gtk::Align::Start)
+        .tooltip_text("Choose the folder of pictures to show")
+        .build();
+    slideshow_pane.append(&slideshow_folder);
+    let slideshow_count = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["dim-label"])
+        .build();
+    slideshow_pane.append(&slideshow_count);
+    let interval_row = gtk::Box::new(gtk::Orientation::Horizontal, SPACING);
+    interval_row.append(&gtk::Label::new(Some("Change every")));
+    let interval = gtk::DropDown::from_strings(&INTERVALS);
+    interval_row.append(&interval);
+    slideshow_pane.append(&interval_row);
+    let in_order = gtk::CheckButton::with_label("In order, not at random");
+    slideshow_pane.append(&in_order);
+    let slideshow_positioning_row = gtk::Box::new(gtk::Orientation::Horizontal, SPACING);
+    slideshow_positioning_row.append(&gtk::Label::new(Some("Positioning")));
+    let slideshow_positioning = gtk::DropDown::from_strings(&POSITIONINGS);
+    slideshow_positioning_row.append(&slideshow_positioning);
+    slideshow_pane.append(&slideshow_positioning_row);
+    panes.add_named(&slideshow_pane, Some("slideshow"));
+
     let later = message("");
     later.add_css_class("dim-label");
     panes.add_named(&later, Some("later"));
@@ -477,6 +537,11 @@ fn build(
         dynamic_scrolled,
         dynamic_line,
         dynamic_positioning,
+        slideshow_folder,
+        interval,
+        in_order,
+        slideshow_count,
+        slideshow_positioning,
     });
     ui.connect(&add_picture, &add_folder, &add_dynamic, &swatches);
     ui
@@ -595,6 +660,28 @@ impl Ui {
         });
         self.dynamic_positioning
             .connect_selected_notify(move |dropdown| on(dropdown.selected()));
+        let on = self.handler(|ui, index: u32| {
+            if let Some(&positioning) = Positioning::ALL.get(index as usize) {
+                ui.act(|page, store| page.choose_positioning(store, positioning));
+            }
+        });
+        self.slideshow_positioning
+            .connect_selected_notify(move |dropdown| on(dropdown.selected()));
+
+        let on = self.handler(|ui, ()| ui.choose_slideshow());
+        self.slideshow_folder.connect_clicked(move |_| on(()));
+        let on = self.handler(|ui, index: u32| {
+            if let Some(&interval) = Interval::ALL.get(index as usize) {
+                ui.act(|page, store| page.choose_interval(store, interval));
+            }
+        });
+        self.interval
+            .connect_selected_notify(move |dropdown| on(dropdown.selected()));
+        let on = self.handler(|ui, in_order: bool| {
+            ui.act(|page, store| page.choose_in_order(store, in_order));
+        });
+        self.in_order
+            .connect_active_notify(move |check| on(check.is_active()));
 
         let on = self.handler(|ui, colour: Colour| {
             ui.act(|page, store| page.choose_colour(store, colour));
@@ -666,6 +753,30 @@ impl Ui {
             move |result| {
                 if let Some(path) = result.ok().and_then(|file| file.path()) {
                     on(path);
+                }
+            },
+        );
+    }
+
+    /// Asks for a folder, and makes its pictures the selected output's Slideshow.
+    fn choose_slideshow(&self) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Choose Slideshow Folder")
+            .modal(true)
+            .build();
+        let current = self.page.borrow().current(self.store.borrow().as_ref());
+        if !current.slideshow.is_empty() {
+            dialog.set_initial_folder(Some(&gio::File::for_path(&current.slideshow)));
+        }
+        let on = self.handler(|ui, folder: String| {
+            ui.act(|page, store| page.choose_slideshow(store, &folder));
+        });
+        dialog.select_folder(
+            Some(&self.window),
+            None::<&gio::Cancellable>,
+            move |result| {
+                if let Some(path) = result.ok().and_then(|file| file.path()) {
+                    on(path.to_string_lossy().into_owned());
                 }
             },
         );
@@ -776,6 +887,7 @@ impl Ui {
         match page.kind() {
             Kind::Picture => self.panes.set_visible_child_name("picture"),
             Kind::Colour => self.panes.set_visible_child_name("colour"),
+            Kind::Slideshow => self.panes.set_visible_child_name("slideshow"),
             Kind::Dynamic => self.panes.set_visible_child_name("dynamic"),
             kind => {
                 self.later.set_label(&format!(
@@ -791,7 +903,9 @@ impl Ui {
             .unwrap_or(0);
         self.positioning.set_selected(positioning as u32);
         self.dynamic_positioning.set_selected(positioning as u32);
+        self.slideshow_positioning.set_selected(positioning as u32);
         self.colour.set_rgba(&rgba(current.colour));
+        self.render_slideshow(&current);
 
         let groups = grid::groups(
             (current.kind == Kind::Picture).then_some(current.picture.as_str()),
@@ -839,6 +953,46 @@ impl Ui {
         }
     }
 
+    /// The Slideshow pane's values: the folder, how many pictures it has, the interval and
+    /// the order.
+    fn render_slideshow(&self, current: &OutputSettings) {
+        let interval = Interval::ALL
+            .iter()
+            .position(|&i| i == current.interval)
+            .unwrap_or(0);
+        self.interval.set_selected(interval as u32);
+        self.in_order.set_active(current.in_order);
+        if current.slideshow.is_empty() {
+            self.slideshow_folder.set_label("Choose a folder…");
+            self.slideshow_folder
+                .set_tooltip_text(Some("Choose the folder of pictures to show"));
+            self.slideshow_count
+                .set_label("Choose a folder of pictures to show one after another.");
+            return;
+        }
+        let folder = Path::new(&current.slideshow);
+        let name = folder.file_name().map_or_else(
+            || current.slideshow.clone(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        self.slideshow_folder.set_label(&name);
+        self.slideshow_folder
+            .set_tooltip_text(Some(&current.slideshow));
+        if !folder.is_dir() {
+            self.slideshow_count
+                .set_label("The folder isn't there, so the output shows its colour.");
+            return;
+        }
+        let count = current
+            .read_slideshow()
+            .map_or(0, |slideshow| slideshow.len());
+        self.slideshow_count.set_label(&match count {
+            0 => "The folder has no pictures, so the output shows its colour.".to_owned(),
+            1 => "1 picture in the folder.".to_owned(),
+            count => format!("{count} pictures in the folder."),
+        });
+    }
+
     /// The Dynamic pane's line: why a file wasn't added, or whether the selected output's
     /// dynamic wallpaper follows the sun or fixed times.
     fn dynamic_line_text(&self, current: &OutputSettings) -> String {
@@ -875,8 +1029,10 @@ impl Ui {
             page.outputs().to_vec()
         };
         let several = outputs.len() > 1;
+        let ranks = page.slideshow_ranks(self.store.borrow().as_ref());
         for (index, output) in outputs.iter().enumerate() {
-            let preview = self.preview(index, output);
+            let rank = ranks.get(index).copied().flatten().unwrap_or_default();
+            let preview = self.preview(index, rank, output);
             let label = gtk::Label::builder()
                 .label(&output.title)
                 .ellipsize(gtk::pango::EllipsizeMode::End)
@@ -911,8 +1067,9 @@ impl Ui {
         }
     }
 
-    /// An output's picture, with its wallpaper drawn as the drawer draws it.
-    fn preview(&self, index: usize, output: &Output) -> gtk::DrawingArea {
+    /// An output's picture, with its wallpaper drawn as the drawer draws it, `rank` its rank
+    /// among the outputs on its Slideshow's folder.
+    fn preview(&self, index: usize, rank: usize, output: &Output) -> gtk::DrawingArea {
         let (width, height) = (output.size.0.max(1), output.size.1.max(1));
         // A monitor on its side is as wide as the others, and taller: its shape is kept.
         let preview_height = ((PREVIEW_WIDTH * height) / width).max(1);
@@ -928,6 +1085,11 @@ impl Ui {
         let decoder = self.decoder.clone();
         let picture = match settings.kind {
             Kind::Picture if !settings.picture.is_empty() => Some(PathBuf::from(&settings.picture)),
+            // The picture the drawer shows on this output now.
+            Kind::Slideshow => settings.read_slideshow().and_then(|slideshow| {
+                let local = sky_now(self.caminito.as_ref()).local;
+                slideshow.picture(local, rank).map(Path::to_owned)
+            }),
             // The picture that shows most now, as the drawer draws it.
             Kind::Dynamic if !settings.dynamic.is_empty() => {
                 Dynamic::read(Path::new(&settings.dynamic))

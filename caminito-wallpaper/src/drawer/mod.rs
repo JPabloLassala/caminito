@@ -9,6 +9,11 @@
 //! logical size through a viewport. A change of what's drawn cross-fades over [`FADE`]; a
 //! change of size draws at once.
 //!
+//! A dynamic wallpaper (216) and a slideshow (213) are drawn again as the clock moves: each
+//! minute, and at the moment a timed XML's picture or a slideshow's ends if sooner. A
+//! slideshow's folder is read again each time, so a picture added to it or taken from it is
+//! picked up by the next change.
+//!
 //! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
 //! it after every refresh, and a picture another program writes to it comes in first.
 
@@ -62,6 +67,7 @@ pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
+use crate::slideshow;
 use crate::sun::sky_now;
 use buffer::Buffers;
 use paint::Pictures;
@@ -69,9 +75,10 @@ use paint::Pictures;
 /// How long a change of wallpaper takes to cross-fade.
 const FADE: Duration = Duration::from_secs(1);
 
-/// How often a dynamic wallpaper is drawn for the moment again (216), besides each time the
-/// sun moves, and a timed XML's picture ending sooner: its blend shows in whole percent.
-const DYNAMIC_TICK: u32 = 60;
+/// How often a dynamic wallpaper (216) and a slideshow (213) are drawn for the moment again,
+/// besides each time the sun moves, and a timed XML's or a slideshow's picture ending
+/// sooner: a pair's blend shows in whole percent.
+const CLOCK_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
 /// caja's desktop among them (63). It's msd's background plugin's, whose place the drawer
@@ -214,7 +221,8 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
-    /// For a wake before the next tick, when a timed XML's picture ends sooner.
+    /// For a wake before the next tick, when a timed XML's or a slideshow's picture ends
+    /// sooner.
     refresh: Refresh,
     /// Whether such a wake is set.
     waking: Rc<Cell<bool>>,
@@ -327,7 +335,7 @@ pub fn run() -> Result<(), Error> {
     }
     {
         let refresh = refresh.clone();
-        glib::timeout_add_seconds_local(DYNAMIC_TICK, move || {
+        glib::timeout_add_seconds_local(CLOCK_TICK, move || {
             refresh.schedule();
             glib::ControlFlow::Continue
         });
@@ -554,27 +562,47 @@ impl App {
             };
             let identity = self.identity(name);
             let settings = settings_for(&mut self.store, &identity, primary.as_ref());
-            shown.push((output.global, primary.as_ref() == Some(&identity), settings));
+            shown.push(Shown {
+                global: output.global,
+                is_primary: primary.as_ref() == Some(&identity),
+                element: identity.path_element(),
+                settings,
+            });
         }
         let dynamics: Vec<&str> = shown
             .iter()
-            .filter(|(_, _, settings)| settings.kind == Kind::Dynamic)
-            .map(|(_, _, settings)| settings.dynamic.as_str())
+            .filter(|shown| shown.settings.kind == Kind::Dynamic)
+            .map(|shown| shown.settings.dynamic.as_str())
             .collect();
         self.dynamics
             .retain(|path, _| dynamics.contains(&path.as_str()));
+        // Each output on a slideshow's folder shows another of its pictures (213).
+        let ranks = slideshow::ranks(
+            &shown
+                .iter()
+                .map(|shown| (shown.element.as_str(), &shown.settings))
+                .collect::<Vec<_>>(),
+        );
         let sky = sky_now(self.caminito.as_ref());
         let mut drawn = Vec::new();
         let mut primary_drawn = None;
-        for (global, is_primary, settings) in shown {
-            let moment = self.moment(&settings, &sky);
-            let output_drawn = settings.drawn(moment.as_ref());
-            if is_primary {
+        let mut next_slide = None;
+        for (shown, rank) in shown.into_iter().zip(ranks) {
+            let moment = match rank {
+                Some(rank) => {
+                    let (moment, next) = slideshow_moment(&shown.settings, rank, &sky);
+                    next_slide = next_slide.into_iter().chain(next).min();
+                    moment
+                }
+                None => self.moment(&shown.settings, &sky),
+            };
+            let output_drawn = shown.settings.drawn(moment.as_ref());
+            if shown.is_primary {
                 primary_drawn = Some(output_drawn.clone());
             }
-            drawn.push((global, output_drawn));
+            drawn.push((shown.global, output_drawn));
         }
-        self.wake_for_timed(&sky);
+        self.wake_for_clock(&sky, next_slide);
         if let Some(primary) = primary_drawn {
             self.bridge_out(&primary);
         }
@@ -589,16 +617,18 @@ impl App {
         }
     }
 
-    /// Wakes the drawer when the soonest timed XML shown next changes, if before the next
-    /// tick: at its next picture, or each second of its transition.
-    fn wake_for_timed(&mut self, sky: &Sky) {
+    /// Wakes the drawer when the soonest timed XML shown next changes, at its next picture or
+    /// each second of its transition, or at `next_slide`, a slideshow's next picture, if
+    /// either is before the next tick.
+    fn wake_for_clock(&mut self, sky: &Sky, next_slide: Option<u64>) {
         let soonest = self
             .dynamics
             .values()
             .flatten()
             .filter_map(|dynamic| dynamic.next_change(sky))
+            .chain(next_slide)
             .min();
-        let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(DYNAMIC_TICK)) else {
+        let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(CLOCK_TICK)) else {
             return;
         };
         if self.waking.replace(true) {
@@ -776,6 +806,37 @@ impl App {
             self.present(global);
         }
     }
+}
+
+/// An output's settings as a refresh reads them, before what it draws is worked out.
+struct Shown {
+    global: u32,
+    is_primary: bool,
+    /// Its monitor's identity, as a path element, by which it's ranked on a slideshow.
+    element: String,
+    settings: OutputSettings,
+}
+
+/// What the Slideshow of `settings` shows at `sky` on the output of rank `rank` among those
+/// on its folder, read again from the folder, and how many seconds until it changes. A
+/// folder with no picture, or none chosen, has no moment, and is the output's colour.
+fn slideshow_moment(
+    settings: &OutputSettings,
+    rank: usize,
+    sky: &Sky,
+) -> (Option<Moment>, Option<u64>) {
+    let Some(slideshow) = settings.read_slideshow() else {
+        return (None, None);
+    };
+    if slideshow.is_empty() {
+        glib::g_debug!(
+            DOMAIN,
+            "the slideshow {} has no pictures",
+            settings.slideshow
+        );
+    }
+    let moment = slideshow.picture(sky.local, rank).map(Moment::still);
+    (moment, slideshow.next_change(sky.local))
 }
 
 /// What the surface shows now: its frame, or a fade's frame for this moment, or `None` for
