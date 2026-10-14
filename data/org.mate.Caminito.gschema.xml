@@ -156,6 +156,11 @@
       <summary>The folders the user added</summary>
       <description>The folders added in the Wallpaper dialog, whose pictures it lists beside MATE's and Plasma's.</description>
     </key>
+    <key name="dynamics" type="as">
+      <default>[]</default>
+      <summary>The dynamic wallpapers the user added</summary>
+      <description>The timed XML files added in the Wallpaper dialog, which it lists beside the ones under /usr/share/backgrounds and /usr/share/wallpapers.</description>
+    </key>
     <key name="took-mate-background" type="b">
       <default>false</default>
       <summary>Whether MATE's picture was taken</summary>
@@ -167,12 +172,17 @@
     <key name="kind" enum="org.mate.Caminito.WallpaperKind">
       <default>'colour'</default>
       <summary>The wallpaper's kind</summary>
-      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names. "slideshow", "picture-of-the-day" and "dynamic" are shown as their colour until caminito-wallpaperd draws them.</description>
+      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names, or "dynamic", the dynamic wallpaper "dynamic" names. "slideshow" and "picture-of-the-day" are shown as their colour until caminito-wallpaperd draws them.</description>
     </key>
     <key name="picture" type="s">
       <default>''</default>
       <summary>The picture</summary>
       <description>The picture file a "picture" wallpaper shows. With none, or one that can't be read, the output shows its colour.</description>
+    </key>
+    <key name="dynamic" type="s">
+      <default>''</default>
+      <summary>The dynamic wallpaper</summary>
+      <description>What a "dynamic" wallpaper shows: the folder of a Plasma package with light and dark pictures, which follow the sun, or a GNOME timed XML file, which follows the clock. With none, or one that can't be read, the output shows its colour.</description>
     </key>
     <key name="positioning" enum="org.mate.Caminito.WallpaperPositioning">
       <default>'fill'</default>

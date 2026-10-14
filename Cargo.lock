@@ -432,6 +432,7 @@ dependencies = [
  "gio",
  "glib-unix",
  "gtk4",
+ "quick-xml",
  "rustix 1.1.5",
  "tempfile",
  "wayland-client",

@@ -170,6 +170,7 @@ fn a_colour_and_a_positioning_are_kept_with_the_picture() {
             picture: "/lg.png".into(),
             positioning: Positioning::Tile,
             colour: red,
+            ..OutputSettings::default()
         }
     );
 
@@ -213,6 +214,57 @@ fn an_added_picture_is_listed_once_and_chosen() {
     assert_eq!(store.pictures(), ["/home/me/sea.jpg"]);
     assert_eq!(store.folders(), ["/home/me/Walls"]);
     assert_eq!(page.current(&store), picture("/home/me/sea.jpg"));
+}
+
+#[test]
+fn a_dynamic_chosen_is_the_selected_outputs_and_keeps_its_positioning() {
+    let mut store = store(false);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+    page.choose_positioning(&mut store, Positioning::Fit);
+
+    page.choose_dynamic(&mut store, "/usr/share/wallpapers/Next");
+
+    assert_eq!(page.kind(), Kind::Dynamic);
+    assert_eq!(
+        page.current(&store),
+        OutputSettings {
+            kind: Kind::Dynamic,
+            dynamic: "/usr/share/wallpapers/Next".into(),
+            positioning: Positioning::Fit,
+            ..picture("/lg.png")
+        }
+    );
+    assert_eq!(page.wallpaper(&store, 1), picture("/aoc.png"));
+
+    // Back to Picture, and to Dynamic again: each shows what it had.
+    page.show_kind(&mut store, Kind::Picture);
+    assert_eq!(page.current(&store).kind, Kind::Picture);
+    page.show_kind(&mut store, Kind::Dynamic);
+    assert_eq!(page.current(&store).kind, Kind::Dynamic);
+}
+
+#[test]
+fn dynamic_with_none_chosen_is_shown_and_not_written() {
+    let mut store = store(false);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+
+    page.show_kind(&mut store, Kind::Dynamic);
+
+    assert_eq!(page.kind(), Kind::Dynamic);
+    assert_eq!(page.current(&store), picture("/lg.png"));
+}
+
+#[test]
+fn an_added_dynamic_is_listed_once_and_chosen() {
+    let mut store = store(true);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+
+    page.add_dynamic(&mut store, "/home/me/cosmos.xml");
+    page.add_dynamic(&mut store, "/home/me/cosmos.xml");
+
+    assert_eq!(store.dynamics(), ["/home/me/cosmos.xml"]);
+    assert_eq!(page.current(&store).kind, Kind::Dynamic);
+    assert_eq!(page.current(&store).dynamic, "/home/me/cosmos.xml");
 }
 
 #[test]

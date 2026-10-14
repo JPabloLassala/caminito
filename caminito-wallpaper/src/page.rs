@@ -194,14 +194,15 @@ impl Page {
         store.set_same_on_all_outputs(same);
     }
 
-    /// Shows `kind`'s controls. A Picture with a picture to show and a Colour are the
-    /// selected output's at once; the kinds that later tickets build are only shown.
+    /// Shows `kind`'s controls. A Picture or a Dynamic with something to show, and a Colour,
+    /// are the selected output's at once; the kinds that later tickets build are only shown.
     pub fn show_kind(&mut self, store: &mut (impl Store + ?Sized), kind: Kind) {
         self.kind = kind;
         let applies = match kind {
             Kind::Picture => !self.current(store).picture.is_empty(),
             Kind::Colour => true,
-            Kind::Slideshow | Kind::PictureOfTheDay | Kind::Dynamic => false,
+            Kind::Dynamic => !self.current(store).dynamic.is_empty(),
+            Kind::Slideshow | Kind::PictureOfTheDay => false,
         };
         if applies {
             self.change(store, |settings| settings.kind = kind);
@@ -244,6 +245,27 @@ impl Page {
             store.set_pictures(&pictures);
         }
         self.choose_picture(store, file);
+    }
+
+    /// Makes the dynamic wallpaper at `path`, a Plasma package's folder or a timed XML, the
+    /// selected output's.
+    pub fn choose_dynamic(&mut self, store: &mut (impl Store + ?Sized), path: &str) {
+        self.kind = Kind::Dynamic;
+        self.change(store, |settings| {
+            settings.kind = Kind::Dynamic;
+            settings.dynamic = path.to_owned();
+        });
+    }
+
+    /// Adds the timed XML `file` to the dynamic wallpapers the user added, once, and makes
+    /// it the selected output's. The dialog reads it first, so as to add only one that is.
+    pub fn add_dynamic(&mut self, store: &mut (impl Store + ?Sized), file: &str) {
+        let mut dynamics = store.dynamics();
+        if !dynamics.iter().any(|added| added == file) {
+            dynamics.push(file.to_owned());
+            store.set_dynamics(&dynamics);
+        }
+        self.choose_dynamic(store, file);
     }
 
     /// Adds `folder` to the folders the user added, once.

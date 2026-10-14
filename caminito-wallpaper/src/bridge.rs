@@ -49,6 +49,17 @@ impl Bridge {
                 positioning,
                 colour,
             } => (file.as_str(), Some(positioning.mate()), *colour),
+            // MATE has one picture: the one that shows most (216).
+            Drawn::Blend {
+                from,
+                to,
+                percent,
+                positioning,
+                colour,
+            } => {
+                let nearer = if *percent < 50 { from } else { to };
+                (nearer.as_str(), Some(positioning.mate()), *colour)
+            }
             // MATE has no options for no picture, so they stay as they are.
             Drawn::Colour(colour) => ("", None, *colour),
         };
