@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Nothing here is built. It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
+Nothing here is built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
 
 ## Problem
 
@@ -122,10 +122,23 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 ## Not decided
 
-- **Whether Super+W is free** in Marco's and mate-settings-daemon's defaults, which the first ticket checks.
-- **The reduced rate** of frame callbacks for a window only the bar shows.
-- **The size of the bar** and how its cells shrink with many workspaces.
+- **Whether Super+W is free** in Marco's and mate-settings-daemon's defaults, which ticket 241 checks.
+
+The developer gave two start values on 2026-10-13, which ticket 247 checks in a Session:
+
+- **The reduced rate** of frame callbacks for a window only the bar shows is 10 a second.
+- **The size of the bar** is 15% of the output's height. Each cell has the output's aspect, and when the cells are wider than the output together they are all made smaller by the same amount to fit.
 
 ## Tickets
 
-None yet.
+Seven slices, filed in `.scratch/issues/` as tickets 241 to 247.
+
+| | Slice | Blocked by |
+| --- | --- | --- |
+| 241 | [**The Overview opens and closes.**](../issues/241-the-overview-opens-and-closes.md) | None |
+| 242 | [**The Overview's keys, the middle click and windows that come and go.**](../issues/242-the-overviews-keys-the-middle-click-and-windows-that-come-and-go.md) | 241 |
+| 243 | [**The Overview's transition.**](../issues/243-the-overviews-transition.md) | 241 |
+| 244 | [**The Overview's bar of workspaces.**](../issues/244-the-overviews-bar-of-workspaces.md) | 241 |
+| 245 | [**A window is dragged onto a workspace of the Overview's bar.**](../issues/245-a-window-is-dragged-onto-a-workspace-of-the-overviews-bar.md) | 244 |
+| 246 | [**The Overview on two outputs.**](../issues/246-the-overview-on-two-outputs.md) | 244, 245 |
+| 247 | [**The Overview in a real Session, by hand.**](../issues/247-the-overview-in-a-real-session.md) | 242, 243, 245, 246 |
