@@ -73,6 +73,16 @@ impl Backend {
         }
     }
 
+    /// Whether `output` can take a new frame now: the last one drawn is on screen.
+    pub(crate) fn takes_frame(&self, output: &Output) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.takes_frame(output),
+            Backend::Winit(winit) => winit.takes_frame(),
+            #[cfg(test)]
+            Backend::Headless(headless) => !headless.is_powered_off(),
+        }
+    }
+
     /// Copies a capture's frame into a client's buffer with the backend's renderer, if what
     /// it shows changed since the session's last, and returns what changed (103).
     pub(crate) fn copy_capture(
