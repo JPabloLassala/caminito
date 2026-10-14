@@ -756,6 +756,9 @@ impl State {
         };
         let main = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
         let no_flags = |_: &WlSurface, _: &SurfaceData| wp_presentation_feedback::Kind::empty();
+        // Those that only the Overview's bar shows get theirs at a reduced rate (244), from
+        // its deadline.
+        let bar_only = self.caminito.overview_bar_only_windows();
 
         for mapped in self.caminito.policy.windows() {
             if mapped.main_output() != Some(output) {
@@ -763,7 +766,9 @@ impl State {
             }
             let window = mapped.window();
             window.with_surfaces(&mut release_barriers);
-            window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
+            if !bar_only.contains(&mapped.id()) {
+                window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
+            }
             // Every frame is composited; nothing is scanned out directly.
             window.take_presentation_feedback(&mut feedback, main, no_flags);
         }

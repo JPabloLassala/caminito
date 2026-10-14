@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. The rest isn't built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
+Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 244 added the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. The rest isn't built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
 
 ## Problem
 
@@ -58,7 +58,8 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 ### The bar
 
-- One row along the top of the output, in workspace order, whatever the Workspace grid's shape.
+- One row along the top of the output, in workspace order, whatever the Workspace grid's shape. The layout of the windows takes the area beneath it.
+- **Its height is 15% of the output's height** (the developer's start value of 2026-10-13, which ticket 247 checks in a Session). Each cell has the output's aspect. When the cells at that height are wider than the output together, they are all made smaller by the same amount to fit.
 - Each cell is a small live picture of that workspace on that output, with its wallpaper. The active workspace is marked.
 - It has no buttons to add or remove a workspace. The count is `num-workspaces`'s or `dynamic-workspaces`'s.
 
@@ -99,7 +100,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 ### Live content
 
 - The windows in the layout and in the bar's cells are live: clients keep drawing and keep getting frame callbacks.
-- A window that only a bar's cell shows gets them at a reduced rate.
+- A window that only a bar's cell shows gets them at a reduced rate: **10 a second** (the developer's start value of 2026-10-13, which ticket 247 checks in a Session).
 
 ### Where its state lives
 
@@ -124,10 +125,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 Nothing of ticket 241's is left. It checked that **Super+W is free**: no default in the schemas of marco 1.29.0 (`org.mate.Marco.global-keybindings` and `window-keybindings`) or of mate-settings-daemon 1.29.1 (its media keys among them) has Super, so Super+W is the default.
 
-The developer gave two start values on 2026-10-13, which ticket 247 checks in a Session:
-
-- **The reduced rate** of frame callbacks for a window only the bar shows is 10 a second.
-- **The size of the bar** is 15% of the output's height. Each cell has the output's aspect, and when the cells are wider than the output together they are all made smaller by the same amount to fit.
+Nothing of ticket 244's is left: the reduced rate and the size of the bar are in "Live content" and "The bar".
 
 ## Tickets
 
