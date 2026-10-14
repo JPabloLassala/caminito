@@ -11,7 +11,7 @@ use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::desktop::LayerSurface;
-use smithay::utils::{FrameExtents, Logical, Rectangle};
+use smithay::utils::{FrameExtents, Logical, Point, Rectangle};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, Layer};
 
 use crate::decoration::memory_buffer;
@@ -305,11 +305,40 @@ struct OverviewDump {
     windows: Vec<OverviewWindowDump>,
     /// The selected window (242), if one is.
     selected: Option<u64>,
+    /// The workspace it lists the windows of: its output's active one (244).
+    workspace: usize,
+    /// Its bar's cells (244), one for each workspace from the first, once the refresh pass
+    /// has laid it out.
+    bar: Vec<OverviewCellDump>,
+    /// The area beneath the bar that the windows are laid out in.
+    area: Option<RectDump>,
+    /// While a Workspace slide runs on the output (244), each window of a layout that it
+    /// draws away from its place, with where it's drawn, in the order of the windows' ids:
+    /// one time for each place, as `workspace_slides` has it.
+    sliding: Vec<OverviewSlidingDump>,
     /// How much of black is over the wallpaper.
     dim: f32,
     /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
     /// the order they were made: the panel's and caja's desktop's.
     hidden_layer_surfaces: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct OverviewCellDump {
+    workspace: usize,
+    /// From the output's top left corner.
+    rect: RectDump,
+    /// Whether it's the active workspace's, which is marked.
+    active: bool,
+}
+
+#[derive(Serialize)]
+struct OverviewSlidingDump {
+    /// The workspace whose layout it's in.
+    workspace: usize,
+    window: u64,
+    /// Where it's drawn now, from the output's top left corner.
+    rect: RectDump,
 }
 
 #[derive(Serialize)]
@@ -756,10 +785,47 @@ impl Caminito {
             let output = outputs.find(|output| output_id(output) == open.output)?;
             let laid_out = self.overview_on(output);
             let slot = |id: &WindowId| {
-                let laid_out = laid_out?;
-                let place = laid_out.windows.iter().position(|listed| listed == id)?;
-                laid_out.layout.slots.get(place)
+                let laid = &laid_out?.laid;
+                let place = laid.windows.iter().position(|listed| listed == id)?;
+                laid.layout.slots.get(place)
             };
+            let bar = laid_out.map_or_else(Vec::new, |laid_out| {
+                let cells = laid_out.bar.cells.iter().enumerate();
+                cells
+                    .map(|(workspace, cell)| OverviewCellDump {
+                        workspace,
+                        rect: (*cell).into(),
+                        active: workspace == laid_out.active,
+                    })
+                    .collect()
+            });
+            let size = output_geometry(output).size;
+            let mut sliding: Vec<OverviewSlidingDump> = laid_out
+                .map(|laid_out| {
+                    laid_out
+                        .layouts()
+                        .flat_map(|laid| {
+                            let shifts = self.overview_shifts(laid_out, laid);
+                            let places = laid.windows.iter().zip(&laid.layout.slots);
+                            places.flat_map(move |(id, slot)| {
+                                let shifts = shifts.clone().into_iter();
+                                shifts.filter(|shift| *shift != Point::default()).map(
+                                    move |shift| OverviewSlidingDump {
+                                        workspace: laid.workspace,
+                                        window: id.0,
+                                        rect: Rectangle::new(
+                                            slot.window.loc + shift,
+                                            slot.window.size,
+                                        )
+                                        .into(),
+                                    },
+                                )
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            sliding.sort_by_key(|dump| (dump.window, dump.rect.x, dump.rect.y));
             Some(OverviewDump {
                 output: output.name(),
                 windows: open
@@ -772,6 +838,10 @@ impl Caminito {
                     })
                     .collect(),
                 selected: open.selected.map(|id| id.0),
+                workspace: open.workspace,
+                bar,
+                area: laid_out.map(|laid_out| laid_out.bar.area_beneath(size).into()),
+                sliding,
                 dim: crate::overview::DIM,
                 hidden_layer_surfaces: self
                     .layer_surfaces(output)
@@ -869,14 +939,20 @@ impl Caminito {
                 dim: open.dim(now),
                 layer_surfaces: open.faded_alpha(now),
                 labels: open.labels_alpha(now),
-                windows: scene::overview_drawn_windows(self, open, now)
-                    .into_iter()
-                    .map(|drawn| OverviewDrawnDump {
-                        window: drawn.id.0,
-                        rect: drawn.rect.into(),
-                        alpha: drawn.alpha,
-                    })
-                    .collect(),
+                windows: scene::overview_drawn_windows(
+                    self,
+                    open,
+                    &open.laid,
+                    Point::default(),
+                    now,
+                )
+                .into_iter()
+                .map(|drawn| OverviewDrawnDump {
+                    window: drawn.id.0,
+                    rect: drawn.rect.into(),
+                    alpha: drawn.alpha,
+                })
+                .collect(),
             })
         });
         let workspace_slides = self

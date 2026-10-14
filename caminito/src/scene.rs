@@ -37,7 +37,7 @@ use smithay::xwayland::X11Surface;
 
 use crate::output::{output_geometry, output_id};
 use crate::overview::transition::between;
-use crate::overview::{DrawnWindow, Overview};
+use crate::overview::{DrawnWindow, Laid, Overview};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -130,13 +130,13 @@ pub(crate) enum SceneLayer {
     /// that has the focus, and its transients. They cover the top layer, as Marco puts
     /// them above docks (63).
     FullscreenWindows,
-    /// While the Overview is open on the output (241), all of it: each listed window at
-    /// its place in the layout, over its label, over the dimming, which covers the
-    /// wallpaper. In its place the output shows none of its windows as they are, nor one
-    /// shrinking into its button, nothing of
-    /// the top and bottom layers, where the panel is, and of the background layer the
-    /// wallpaper alone, without caja's desktop. While it's on its way open or closed
-    /// (243), the windows are between their places and the rest fades.
+    /// While the Overview is open on the output (241), all of it: its bar of workspaces
+    /// (244), over each listed window at its place in the layout, over its label, over the
+    /// dimming, which covers the wallpaper. In its place the output shows none of its
+    /// windows as they are, nor one shrinking into its button, nothing of the top and
+    /// bottom layers, where the panel is, and of the background layer the wallpaper alone,
+    /// without caja's desktop. While it's on its way open or closed (243), the windows are
+    /// between their places and the rest fades.
     Overview,
     /// The top layer-shell layer (63).
     Top,
@@ -504,12 +504,14 @@ pub(crate) fn overview_hides(
     layer_surface_alpha(caminito, output, layer, namespace) <= 0.0
 }
 
-/// The Overview (241), if it's drawn on `output`, front to back: each listed window's
-/// label, the windows at their places in the layout, and the dimming over all of the
-/// output. A window is drawn from its own surfaces at every frame, as a thumbnail of the
-/// Window switcher is, so it's live, and a minimised one shows as any other does. While
-/// it's on its way open or closed (243), each window is between its real place and its
-/// place in the layout, and the labels, the dimming and the minimised windows fade.
+/// The Overview (241), if it's drawn on `output`, front to back: its bar of workspaces
+/// (244), each listed window's label, the windows at their places in the layout, and the
+/// dimming over all of the output. While a Workspace slide runs on the output, each
+/// workspace's layout is where the slide has that workspace, the one that leaves too. A
+/// window is drawn from its own surfaces at every frame, as a thumbnail of the Window
+/// switcher is, so it's live, and a minimised one shows as any other does. While it's on
+/// its way open or closed (243), each window is between its real place and its place in
+/// the layout, and the bar, the labels, the dimming and the minimised windows fade.
 fn overview_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -523,14 +525,44 @@ fn overview_elements<R>(
     let Some(open) = caminito.overview_on(output) else {
         return;
     };
-    let policy = &caminito.policy;
     let scale = output.current_scale().fractional_scale();
     let now = caminito.now();
-    for (slot, label) in open.layout.slots.iter().zip(&open.labels) {
+    overview_bar_elements(renderer, caminito, output, open, now, elements);
+    for laid in open.layouts() {
+        for shift in caminito.overview_shifts(open, laid) {
+            overview_layout_elements(renderer, caminito, open, laid, shift, now, elements);
+        }
+    }
+    let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
+    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+        open.dim.clone(),
+        covered,
+        CommitCounter::default(),
+        Color32F::new(0.0, 0.0, 0.0, open.dim(now)),
+        Kind::Unspecified,
+    )));
+}
+
+/// One of `open`'s layouts, `laid`, `shift` away from its places, front to back: each
+/// window's label, then the windows as `overview_drawn_windows` has them at `now`.
+fn overview_layout_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    open: &Overview,
+    laid: &Laid,
+    shift: Point<i32, Logical>,
+    now: Duration,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let scale = open.output.current_scale().fractional_scale();
+    for (slot, label) in laid.layout.slots.iter().zip(&laid.labels) {
         let Some(label) = label else {
             continue;
         };
-        let location = slot.label.loc.to_physical_precise_round::<_, i32>(scale);
+        let location = (slot.label.loc + shift).to_physical_precise_round::<_, i32>(scale);
         let element = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             location.to_f64(),
@@ -547,67 +579,205 @@ fn overview_elements<R>(
         }
     }
     // Front to back.
-    for drawn in overview_drawn_windows(caminito, open, now)
+    for drawn in overview_drawn_windows(caminito, open, laid, shift, now)
         .into_iter()
         .rev()
     {
-        let (Some(mapped), Some(geometry), Some(frame)) = (
-            policy.window(drawn.id),
-            policy.geometry(drawn.id),
-            policy.frame_rect(drawn.id),
-        ) else {
-            continue;
-        };
-        if frame.size.w <= 0 || frame.size.h <= 0 || drawn.rect.is_empty() {
+        if drawn.rect.is_empty() {
             continue;
         }
-        let mut parts: Vec<WindowPart<R>> = Vec::new();
-        let shown = Rectangle::from_size(frame.size);
-        one_window_elements(
+        let place = |_| (drawn.rect, drawn.rect);
+        scaled_window_elements(
             renderer,
-            mapped,
-            geometry.loc - frame.loc,
-            shown,
+            caminito,
+            drawn.id,
+            place,
             scale,
             drawn.alpha,
-            &mut parts,
+            elements,
         );
-        scaled_elements(parts, frame.size, drawn.rect, scale, elements);
     }
-    let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
-    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
-        open.dim.clone(),
-        covered,
-        CommitCounter::default(),
-        Color32F::new(0.0, 0.0, 0.0, open.dim(now)),
-        Kind::Unspecified,
-    )));
 }
 
-/// Each window `open` draws at `now`, bottom to top: between its real place and its place
-/// in the layout, as far as the transition has it (243). A minimised window stays at its
-/// place and fades instead, in as it opens and out as it closes; one that was chosen is
-/// shown again, and moves back with the others. They're in policy's stacking order, so a
-/// window chosen is at the top as they go.
+/// Window `id` with its frame at `alpha`, as a thumbnail draws it, from its own surfaces:
+/// scaled to fill the target that `place` gives for its frame rect, and cut off at the
+/// edge of the other rectangle it gives, if they meet.
+fn scaled_window_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    id: WindowId,
+    place: impl Fn(Rectangle<i32, Logical>) -> (Rectangle<i32, Logical>, Rectangle<i32, Logical>),
+    scale: f64,
+    alpha: f32,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let policy = &caminito.policy;
+    let (Some(mapped), Some(geometry), Some(frame)) = (
+        policy.window(id),
+        policy.geometry(id),
+        policy.frame_rect(id),
+    ) else {
+        return;
+    };
+    if frame.size.w <= 0 || frame.size.h <= 0 {
+        return;
+    }
+    let (target, within) = place(frame);
+    let Some(crop) = target.intersection(within) else {
+        return;
+    };
+    let mut parts: Vec<WindowPart<R>> = Vec::new();
+    let shown = Rectangle::from_size(frame.size);
+    one_window_elements(
+        renderer,
+        mapped,
+        geometry.loc - frame.loc,
+        shown,
+        scale,
+        alpha,
+        &mut parts,
+    );
+    scaled_elements_in(parts, frame.size, target, crop, scale, elements);
+}
+
+/// How wide the mark around the active workspace's cell of the Overview's bar is (244).
+const CELL_MARK: i32 = 3;
+
+/// What's behind a cell of the Overview's bar where the wallpaper doesn't cover it.
+const CELL_BACK: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
+
+/// `color`, which is premultiplied, at `alpha` of its opacity.
+fn faded(color: Color32F, alpha: f32) -> Color32F {
+    Color32F::new(
+        color.r() * alpha,
+        color.g() * alpha,
+        color.b() * alpha,
+        color.a() * alpha,
+    )
+}
+
+/// The Overview's bar of workspaces on `output` (244), front to back: the mark around the
+/// active workspace's cell, then in each cell that workspace on the output as a small
+/// picture, its windows at their real places over the wallpaper, over the cell's back. It's
+/// drawn from the windows' and the wallpaper's own surfaces at every frame, so it's live.
+/// It fades in and out with the labels as the Overview opens and closes (243).
+fn overview_bar_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    open: &Overview,
+    now: Duration,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let output_geometry = output_geometry(output);
+    let scale = output.current_scale().fractional_scale();
+    let alpha = open.labels_alpha(now);
+    let wallpapers: Vec<_> = layer_surfaces_in(caminito, output, SceneLayer::Background)
+        .into_iter()
+        .filter(|(surface, _)| surface.namespace() == WALLPAPER_NAMESPACE)
+        .collect();
+    if let Some(cell) = open.bar.cells.get(open.active) {
+        let color = faded(selection_color(caminito), alpha);
+        let around = Rectangle::new(
+            cell.loc - Point::from((CELL_MARK, CELL_MARK)),
+            cell.size + Size::from((2 * CELL_MARK, 2 * CELL_MARK)),
+        );
+        let rect = around.to_physical_precise_round::<_, i32>(scale);
+        let width = (f64::from(CELL_MARK) * scale).round() as i32;
+        let (w, h) = (rect.size.w, rect.size.h);
+        let sides = [
+            Rectangle::new(rect.loc, (w, width).into()),
+            Rectangle::new(rect.loc + Point::from((0, h - width)), (w, width).into()),
+            Rectangle::new(rect.loc, (width, h).into()),
+            Rectangle::new(rect.loc + Point::from((w - width, 0)), (width, h).into()),
+        ];
+        for (id, side) in open.mark.iter().zip(sides) {
+            elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+                id.clone(),
+                side,
+                CommitCounter::default(),
+                color,
+                Kind::Unspecified,
+            )));
+        }
+    }
+    let cells = open.bar.cells.iter().zip(&open.cell_windows);
+    for ((cell, windows), back) in cells.zip(&open.cell_backs) {
+        // Where something at `rect` on the output is in the cell, which has the output's
+        // aspect.
+        let factor = f64::from(cell.size.w) / f64::from(output_geometry.size.w.max(1));
+        let in_cell = |rect: Rectangle<i32, Logical>| {
+            let at = |n: i32| (f64::from(n) * factor).round() as i32;
+            let loc = rect.loc - output_geometry.loc;
+            Rectangle::new(
+                cell.loc + Point::from((at(loc.x), at(loc.y))),
+                Size::from((at(rect.size.w).max(1), at(rect.size.h).max(1))),
+            )
+        };
+        let place = |frame| (in_cell(frame), *cell);
+        for id in windows.iter().rev() {
+            scaled_window_elements(renderer, caminito, *id, place, scale, alpha, elements);
+        }
+        for (wallpaper, geometry) in &wallpapers {
+            if geometry.size.w <= 0 || geometry.size.h <= 0 {
+                continue;
+            }
+            let parts = AsRenderElements::<R>::render_elements::<WindowPart<R>>(
+                wallpaper,
+                renderer,
+                Point::default(),
+                Scale::from(scale),
+                alpha,
+            );
+            let target = in_cell(*geometry);
+            if let Some(crop) = target.intersection(*cell) {
+                scaled_elements_in(parts, geometry.size, target, crop, scale, elements);
+            }
+        }
+        elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+            back.clone(),
+            cell.to_physical_precise_round(scale),
+            CommitCounter::default(),
+            faded(CELL_BACK, alpha),
+            Kind::Unspecified,
+        )));
+    }
+}
+
+/// Each window of `laid`, one of `open`'s layouts, drawn at `now` with its places `shift`
+/// away, as a Workspace slide has them (244), bottom to top: between its real place and
+/// its place in the layout, as far as the transition has it (243). A minimised window
+/// stays at its place and fades instead, in as it opens and out as it closes; one that was
+/// chosen is shown again, and moves back with the others. They're in policy's stacking
+/// order, so a window chosen is at the top as they go.
 pub(crate) fn overview_drawn_windows(
     caminito: &Caminito,
     open: &Overview,
+    laid: &Laid,
+    shift: Point<i32, Logical>,
     now: Duration,
 ) -> Vec<DrawnWindow> {
     let policy = &caminito.policy;
     let origin = output_geometry(&open.output).loc;
     let part = open.part(now);
-    let mut drawn: Vec<DrawnWindow> = open
+    let mut drawn: Vec<DrawnWindow> = laid
         .windows
         .iter()
-        .zip(&open.layout.slots)
+        .zip(&laid.layout.slots)
         .filter_map(|(id, slot)| {
             let frame = policy.frame_rect(*id)?;
             let real = Rectangle::new(frame.loc - origin, frame.size);
+            let place = Rectangle::new(slot.window.loc + shift, slot.window.size);
             let (rect, alpha) = if policy.is_minimized(*id) {
-                (slot.window, part as f32)
+                (place, part as f32)
             } else {
-                (between(real, slot.window, part), 1.0)
+                (between(real, place, part), 1.0)
             };
             Some(DrawnWindow {
                 id: *id,
@@ -864,13 +1034,29 @@ fn scaled_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
+    scaled_elements_in(parts, size, target, target, scale, elements);
+}
+
+/// `parts` as `scaled_elements` has them, cut off at the edge of `crop` instead, which is
+/// from the origin of what's drawn too.
+fn scaled_elements_in<R>(
+    parts: Vec<WindowPart<R>>,
+    size: Size<i32, Logical>,
+    target: Rectangle<i32, Logical>,
+    crop: Rectangle<i32, Logical>,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
     let factor = Scale::from((
         f64::from(target.size.w) / f64::from(size.w),
         f64::from(target.size.h) / f64::from(size.h),
     ));
     let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
     // A window's popups and subsurfaces can reach past its frame.
-    let crop: Rectangle<i32, Physical> = target.to_physical_precise_round(scale);
+    let crop: Rectangle<i32, Physical> = crop.to_physical_precise_round(scale);
     for part in parts {
         let part = RescaleRenderElement::from_element(part, Point::default(), factor);
         let part = RelocateRenderElement::from_element(part, location, Relocate::Relative);
@@ -1271,18 +1457,8 @@ fn tile_preview_elements<R>(
     else {
         return;
     };
-    let colors = caminito.palette.palette().variant(Variant::Default);
-    // A theme, or the neutral palette, that selects in the background of anything else
-    // would hide the preview: the text colour draws it then, as the Window switcher's
-    // selection does.
-    let selected = colors.background(GtkState::Selected);
-    let color = if selected == colors.background(GtkState::Normal) {
-        colors.text(GtkState::Normal)
-    } else {
-        selected
-    };
-    let (r, g, b) = (color.red as f32, color.green as f32, color.blue as f32);
-    let line = Color32F::new(r, g, b, 1.0);
+    let line = selection_color(caminito);
+    let (r, g, b) = (line.r(), line.g(), line.b());
     let a = TILE_PREVIEW_ALPHA;
     let fill = Color32F::new(r * a, g * a, b * a, a);
 
@@ -1316,6 +1492,21 @@ fn tile_preview_elements<R>(
     if !inside.is_empty() {
         elements.push(solid(inside, fill));
     }
+}
+
+/// The theme's selected background, opaque, which the tile preview and the mark of the
+/// Overview's active workspace (244) are drawn in. A theme, or the neutral palette, that
+/// selects in the background of anything else would hide them: the text colour draws them
+/// then, as the Window switcher's selection does.
+fn selection_color(caminito: &Caminito) -> Color32F {
+    let colors = caminito.palette.palette().variant(Variant::Default);
+    let selected = colors.background(GtkState::Selected);
+    let color = if selected == colors.background(GtkState::Normal) {
+        colors.text(GtkState::Normal)
+    } else {
+        selected
+    };
+    Color32F::new(color.red as f32, color.green as f32, color.blue as f32, 1.0)
 }
 
 /// One window's elements, front to back, at `scale` and `alpha`: its surfaces with their

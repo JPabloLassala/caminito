@@ -18,6 +18,11 @@
 //! its windows are each one window to policy and to input, and are only drawn elsewhere.
 //! The session lock ends a slide at once.
 //!
+//! With the Overview open on the output (244) a switch slides its laid-out windows: the
+//! scene draws each workspace's layout where the slide has that workspace. A slide that
+//! started under the Overview ends when it closes, and one that started without it when it
+//! opens, since what they move isn't drawn any more.
+//!
 //! Each output has its own slide (236), of the windows it's the Main output of, and the
 //! scene draws them away from their places on that output alone: nothing of a slide shows
 //! on another output, where a window across the two is at its place or isn't drawn. Under
@@ -75,6 +80,9 @@ pub(crate) struct Slide {
     left: Vec<Left>,
     /// The new workspace's windows, which weren't on screen.
     arriving: HashSet<WindowId>,
+    /// Whether the Overview was open on the output when it started (244): it moves the
+    /// Overview's layouts then, and the windows as they are otherwise.
+    under_overview: bool,
 }
 
 impl Slide {
@@ -98,6 +106,7 @@ impl Slide {
                 windows: HashSet::new(),
             }],
             arriving: HashSet::new(),
+            under_overview: false,
         }
     }
 
@@ -179,6 +188,36 @@ impl Slide {
         leaving.chain(arrives.then_some(offset)).collect()
     }
 
+    /// The workspaces the slide leaves, each one time, the one the last switch left first.
+    /// The one that arrives is among them after a wrap round the grid (239).
+    pub(crate) fn left_workspaces(&self) -> Vec<usize> {
+        let mut workspaces = Vec::new();
+        for left in &self.left {
+            if !workspaces.contains(&left.workspace) {
+                workspaces.push(left.workspace);
+            }
+        }
+        workspaces
+    }
+
+    /// How far from its own place the slide draws what's on `workspace` at `now`, for each
+    /// place it draws that workspace at, as `shifts` has it for a window: where it ended up
+    /// for each time the slide left it, and last where it arrives, if it's the one that
+    /// does. None for a workspace that's none of the slide's. The Overview's layouts are
+    /// drawn so (244).
+    pub(crate) fn workspace_shifts(
+        &self,
+        workspace: usize,
+        now: Duration,
+    ) -> Vec<Point<i32, Logical>> {
+        let offset = self.offset(now);
+        let left = self.left.iter().filter(|left| left.workspace == workspace);
+        let leaving = left.map(|left| offset + left.place);
+        leaving
+            .chain((workspace == self.to).then_some(offset))
+            .collect()
+    }
+
     /// The windows the slide moves, or would if they showed as they did at its start,
     /// each one time.
     fn windows(&self) -> HashSet<WindowId> {
@@ -250,7 +289,7 @@ impl Caminito {
         let outputs = &self.outputs;
         self.workspace_slides.running.retain(|slide| {
             !locked
-                && Some(slide.output) != overview
+                && slide.under_overview == (Some(slide.output) == overview)
                 && outputs
                     .iter()
                     .any(|output| output_id(output) == slide.output)
@@ -278,14 +317,15 @@ impl Caminito {
             let Some(output) = outputs.find(|output| output_id(output) == switch.output) else {
                 continue;
             };
-            if !self.settings.workspace_slide || locked || Some(switch.output) == overview {
+            if !self.settings.workspace_slide || locked {
                 continue;
             }
             let size = output_geometry(output).size;
-            let slide = match retargeted {
+            let mut slide = match retargeted {
                 Some(running) => Slide::retargeted(running, &switch, size, now),
                 None => Slide::new(&switch, size, now),
             };
+            slide.under_overview = Some(switch.output) == overview;
             // Those drawn there. A dialog dragged to another output leaves and arrives
             // with its root (223), and isn't the switched output's to slide.
             let on_output = |id: &&WindowId| policy.main_output_of(**id) == Some(switch.output);
@@ -309,9 +349,15 @@ impl Caminito {
             running.push(slide.with_windows(leaving, arriving.collect()));
             started.push(output.clone());
         }
+        if started.is_empty() {
+            return;
+        }
         for output in started {
             self.queue_redraw(&output);
         }
+        // The Overview lays out the workspaces a slide leaves, which it's drawn with from
+        // this pass on.
+        self.refresh_overview();
     }
 
     /// Ends the slides that are over at `now`, and draws their outputs at rest, for
@@ -434,6 +480,30 @@ mod tests {
         // One that left and shows again, and one that came and went.
         assert_eq!(slide.shifts(WindowId(1), true, now), []);
         assert_eq!(slide.shifts(WindowId(2), false, now), []);
+    }
+
+    #[test]
+    fn a_workspace_is_drawn_where_its_windows_are() {
+        let slide = slide((1, 0));
+        let now = after(125);
+
+        assert_eq!(slide.workspace_shifts(1, now), [(100, 0).into()]);
+        assert_eq!(slide.workspace_shifts(0, now), [(-700, 0).into()]);
+        assert_eq!(slide.workspace_shifts(2, now), []);
+        assert_eq!(slide.left_workspaces(), [0]);
+    }
+
+    #[test]
+    fn a_workspace_a_wrap_comes_back_to_is_drawn_where_it_leaves_and_arrives() {
+        let now = after(125);
+
+        let round = wrapped_round(now);
+
+        assert_eq!(
+            round.workspace_shifts(0, now),
+            [(-700, 0).into(), (900, 0).into()]
+        );
+        assert_eq!(round.left_workspaces(), [1, 0]);
     }
 
     #[test]

@@ -3,30 +3,38 @@
 //! Policy has whether it's open, its output, the windows listed and what a choice does,
 //! since it's the seat's Interaction (187). Here are the keys and the clicks that drive it
 //! while it's open, and what it's laid out and drawn from. `layout` has each window's
-//! place, `draw` draws the labels, and `scene` puts the windows, the labels and the
-//! dimming on the output, in place of what the output shows otherwise.
+//! place, `bar` each workspace's cell, `draw` draws the labels, and `scene` puts the bar,
+//! the windows, the labels and the dimming on the output, in place of what the output
+//! shows otherwise.
 //!
 //! The arrow keys move policy's selection in the layout and Enter chooses it, and a middle
 //! click on a window asks it to close (242). A window that opens or closes while it's open
 //! joins the layout or leaves it at the next refresh pass, and the others take their new
 //! places in that frame.
 //!
+//! The bar of workspaces (244) is one row along the top, of a live picture of each
+//! workspace on the output, and the layout is beneath it. A click on a workspace, or a
+//! workspace binding, switches the output there with the Overview open, and the Workspace
+//! slide moves the laid-out windows: the old workspace's layout leaves and the new one's
+//! arrives. A window that only the bar shows gets its frame callbacks at a reduced rate.
+//!
 //! It opens and closes with its transition (243): each window moves between its real
 //! place and its place in the layout, and the rest fades. Policy has it open or closed
 //! from the first frame, so the keys and the clicks act on what policy has at once: here
 //! the Overview stays for the closing's frames after policy has closed its own. Without
-//! `overview-animation`, it opens and closes in one frame. Its bar of workspaces is 244's,
+//! `overview-animation`, it opens and closes in one frame. A drag onto the bar is 245's,
 //! and every output at once 246's.
 //!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
+pub(crate) mod bar;
 pub(crate) mod draw;
 pub(crate) mod layout;
 pub(crate) mod transition;
 
 use std::time::Duration;
 
-use caminito_policy::{Action, Direction, WindowId};
+use caminito_policy::{Action, Direction, PolicyWindow, WindowId};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::backend::renderer::element::Id;
@@ -35,6 +43,7 @@ use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersStat
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
+use self::bar::Bar;
 use self::draw::Label;
 use self::layout::Layout;
 use self::transition::{Heading, Transition};
@@ -47,27 +56,113 @@ use crate::state::{Caminito, SEAT, State};
 /// How much of black is over the wallpaper while the Overview is open.
 pub(crate) const DIM: f32 = 0.5;
 
+/// How often a window that only the bar shows gets frame callbacks (244): 10 a second,
+/// the developer's start value of 2026-10-13, which 247 checks in a Session.
+pub(crate) const BAR_FRAME_INTERVAL: Duration = Duration::from_millis(100);
+
 /// The compositor's side of the Overview, as the refresh pass last laid it out: while
 /// policy has it open, and while it's drawn closing after (243).
 pub(crate) struct Overview {
     /// The output it's on.
     pub(crate) output: Output,
-    /// The windows policy listed, bottom to top.
-    pub(crate) windows: Vec<WindowId>,
-    /// Each listed window's place, from the output's top left corner, in `windows`' order.
-    pub(crate) layout: Layout,
-    /// Each listed window's label as last drawn, in `windows`' order. A label with no room
-    /// has none, and neither has one cairo couldn't draw.
-    pub(crate) labels: Vec<Option<MemoryRenderBuffer>>,
-    /// What the labels were drawn from, to draw them again only when that changes.
-    drawn: Drawn,
+    /// Its bar of workspaces (244).
+    pub(crate) bar: Bar,
+    /// The active workspace's windows, which policy listed, laid out beneath the bar.
+    pub(crate) laid: Laid,
+    /// The windows of each workspace that a Workspace slide on the output leaves (244),
+    /// laid out as they were, while it runs.
+    pub(crate) leaving: Vec<Laid>,
     /// The dimming's render element, the same one at every frame.
     pub(crate) dim: Id,
+    /// Each cell's backing render element, the same ones at every frame.
+    pub(crate) cell_backs: Vec<Id>,
+    /// The windows each cell shows, from the first workspace's, bottom to top: those of
+    /// the workspace whose Main output's this one, minimised ones aside.
+    pub(crate) cell_windows: Vec<Vec<WindowId>>,
+    /// The active workspace, whose cell is marked.
+    pub(crate) active: usize,
+    /// The sides of the active workspace's mark, the same ones at every frame.
+    pub(crate) mark: [Id; 4],
+    /// When the windows that only the bar shows next get frame callbacks, on Caminito's
+    /// clock.
+    next_bar_frames: Duration,
     /// The transition, while it's on its way open or closed (243).
     pub(crate) transition: Option<Transition>,
 }
 
+/// One window as the Overview draws it at one time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DrawnWindow {
+    pub(crate) id: WindowId,
+    /// Where it's drawn, from the output's top left corner.
+    pub(crate) rect: Rectangle<i32, Logical>,
+    /// How opaque it's drawn.
+    pub(crate) alpha: f32,
+}
+
+/// One workspace's windows laid out beneath the bar.
+pub(crate) struct Laid {
+    pub(crate) workspace: usize,
+    /// The windows listed, bottom to top.
+    pub(crate) windows: Vec<WindowId>,
+    /// Each window's place, from the output's top left corner, in `windows`' order.
+    pub(crate) layout: Layout,
+    /// Each window's label as last drawn, in `windows`' order. A label with no room has
+    /// none, and neither has one cairo couldn't draw.
+    pub(crate) labels: Vec<Option<MemoryRenderBuffer>>,
+    /// What the labels were drawn from, to draw them again only when that changes.
+    drawn: Drawn,
+}
+
+/// What one workspace's layout is made from, before its labels are drawn.
+struct Planned {
+    workspace: usize,
+    windows: Vec<WindowId>,
+    layout: Layout,
+    drawn: Drawn,
+}
+
+impl Planned {
+    /// Whether `laid` is this as it was laid out, labels and all.
+    fn matches(&self, laid: &Laid) -> bool {
+        self.workspace == laid.workspace
+            && self.windows == laid.windows
+            && self.layout == laid.layout
+            && self.drawn == laid.drawn
+    }
+}
+
+/// Everything the labels are drawn from.
+#[derive(PartialEq)]
+struct Drawn {
+    /// Each listed window's label.
+    labels: Vec<LabelInputs>,
+    scale: i32,
+    colors: PaletteColors,
+    font: String,
+    /// The frames' generation, which counts the changes to the font rendering and the
+    /// icon theme.
+    generation: u64,
+}
+
+/// What one window's label is drawn from.
+#[derive(PartialEq)]
+struct LabelInputs {
+    /// Where it is.
+    rect: Rectangle<i32, Logical>,
+    title: String,
+    /// Where its icon comes from.
+    icon: IconSource,
+    /// Whether the window is the selected one (242).
+    selected: bool,
+}
+
 impl Overview {
+    /// The active workspace's layout, then those a Workspace slide leaves.
+    pub(crate) fn layouts(&self) -> impl Iterator<Item = &Laid> {
+        std::iter::once(&self.laid).chain(&self.leaving)
+    }
+
     /// How open it's drawn at `now`, from 0, closed, to 1, open.
     pub(crate) fn part(&self, now: Duration) -> f64 {
         self.transition
@@ -98,41 +193,6 @@ impl Overview {
     }
 }
 
-/// One window as the Overview draws it at one time.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct DrawnWindow {
-    pub(crate) id: WindowId,
-    /// Where it's drawn, from the output's top left corner.
-    pub(crate) rect: Rectangle<i32, Logical>,
-    /// How opaque it's drawn.
-    pub(crate) alpha: f32,
-}
-
-/// Everything the labels are drawn from.
-#[derive(PartialEq)]
-struct Drawn {
-    /// Each listed window's label.
-    labels: Vec<LabelInputs>,
-    scale: i32,
-    colors: PaletteColors,
-    font: String,
-    /// The frames' generation, which counts the changes to the font rendering and the
-    /// icon theme.
-    generation: u64,
-}
-
-/// What one window's label is drawn from.
-#[derive(PartialEq)]
-struct LabelInputs {
-    /// Where it is.
-    rect: Rectangle<i32, Logical>,
-    title: String,
-    /// Where its icon comes from.
-    icon: IconSource,
-    /// Whether the window is the selected one (242).
-    selected: bool,
-}
-
 impl Caminito {
     /// The Overview on `output`, while it's open there and laid out, and while it's drawn
     /// closing there after (243).
@@ -145,14 +205,23 @@ impl Caminito {
     fn overview_window_at(&self, location: Point<f64, Logical>) -> Option<WindowId> {
         let open = self.overview.as_ref()?;
         let origin = output_geometry(&open.output).loc.to_f64();
-        let slot = open.layout.slot_at(location - origin)?;
-        open.windows.get(slot).copied()
+        let slot = open.laid.layout.slot_at(location - origin)?;
+        open.laid.windows.get(slot).copied()
+    }
+
+    /// The workspace of the Overview's bar at `location`, in global logical coordinates:
+    /// the one whose cell it's on (244).
+    fn overview_cell_at(&self, location: Point<f64, Logical>) -> Option<usize> {
+        let open = self.overview.as_ref()?;
+        let origin = output_geometry(&open.output).loc.to_f64();
+        open.bar.cell_at(location - origin)
     }
 
     /// Brings the compositor's side up to date with policy's Overview, in the refresh
-    /// pass: lays the listed windows out again, and draws the labels again if anything
-    /// they're drawn from changed. The session lock closes it, as it ends every
-    /// Interaction.
+    /// pass: lets go of it when policy has closed its own, lays out the bar and the listed
+    /// windows again, and those of the workspaces a Workspace slide leaves (244), and draws
+    /// the labels again if anything they're drawn from changed. The session lock closes
+    /// it, as it ends every Interaction.
     ///
     /// With the transition on (243), one that opens starts on its way open, from where
     /// the closing had it if it was on its way closed, and one that policy closes stays,
@@ -166,55 +235,119 @@ impl Caminito {
         let on = open.and_then(|open| {
             let mut outputs = self.outputs.iter();
             let output = outputs.find(|output| output_id(output) == open.output)?;
-            Some((output.clone(), open.windows.clone(), open.selected))
+            Some((
+                output.clone(),
+                open.workspace,
+                open.windows.clone(),
+                open.selected,
+            ))
         });
-        let Some((output, windows, selected)) = on else {
+        let Some((output, workspace, windows, selected)) = on else {
             if self.policy.overview().is_some() {
                 self.policy.close_overview();
             }
             self.overview_closed(now);
             return;
         };
-        let geometry = output_geometry(&output);
-        let frames: Vec<Rectangle<i32, Logical>> = windows
-            .iter()
-            .map(|id| {
-                let frame = policy.frame_rect(*id).unwrap_or_default();
-                Rectangle::new(frame.loc - geometry.loc, frame.size)
+        let size = output_geometry(&output).size;
+        let bar = Bar::new(size, policy.workspace_count());
+        let area = bar.area_beneath(size);
+        let slide = self.workspace_slides.on(output_id(&output), now);
+        let on_output = |id: &WindowId| policy.output_showing(*id) == Some(output_id(&output));
+        let cell_windows: Vec<Vec<WindowId>> = (0..bar.cells.len())
+            .map(|cell| {
+                let stacking = policy.stacking(cell).into_iter();
+                let shown = stacking.filter(|id| on_output(id) && !policy.is_minimized(*id));
+                shown.collect()
             })
             .collect();
-        let layout = Layout::new(&frames, Rectangle::from_size(geometry.size));
-        let drawn = self.overview_label_inputs(&output, &windows, selected, &layout);
+        let mut planned = vec![self.plan_overview(&output, workspace, windows, selected, area)];
+        for left in slide
+            .map(|slide| slide.left_workspaces())
+            .unwrap_or_default()
+        {
+            if left != workspace {
+                let windows = self.policy.overview_windows_on(left);
+                planned.push(self.plan_overview(&output, left, windows, None, area));
+            }
+        }
         // The one that was drawn there, if it's open or closing.
         let before = self
             .overview
-            .take()
+            .as_ref()
             .filter(|before| before.output == output);
-        let transition = match &before {
+        let transition = match before {
             Some(before) if !before.is_closing() => before.transition,
             _ if !self.settings.overview_animation => None,
             Some(closing) => Some(Transition::new(Heading::Opening, closing.part(now), now)),
             None => Some(Transition::new(Heading::Opening, 0.0, now)),
         };
-        let fresh = before.as_ref().is_some_and(|before| {
-            before.windows == windows
-                && before.layout == layout
-                && before.drawn == drawn
-                && before.transition == transition
+        let fresh = before.is_some_and(|open| {
+            open.transition == transition
+                && open.bar == bar
+                && open.cell_windows == cell_windows
+                && open.active == workspace
+                && planned.len() == open.layouts().count()
+                && planned
+                    .iter()
+                    .zip(open.layouts())
+                    .all(|(plan, laid)| plan.matches(laid))
         });
         if fresh {
-            self.overview = before;
             return;
         }
-        let labels = self.draw_overview_labels(&drawn);
-        let dim = before.map_or_else(Id::new, |before| before.dim);
+        let old = self.overview.take().filter(|old| old.output == output);
+        let (dim, mut cell_backs, mark, next_bar_frames, mut previous) = match old {
+            Some(old) => {
+                let mut previous = vec![old.laid];
+                previous.extend(old.leaving);
+                (
+                    old.dim,
+                    old.cell_backs,
+                    old.mark,
+                    old.next_bar_frames,
+                    previous,
+                )
+            }
+            None => (
+                Id::new(),
+                Vec::new(),
+                [Id::new(), Id::new(), Id::new(), Id::new()],
+                now + BAR_FRAME_INTERVAL,
+                Vec::new(),
+            ),
+        };
+        cell_backs.resize_with(bar.cells.len(), Id::new);
+        let mut layouts = planned.into_iter().map(|plan| {
+            // Labels drawn from the same are drawn already.
+            let same = previous
+                .iter_mut()
+                .find(|laid| laid.workspace == plan.workspace && laid.drawn == plan.drawn);
+            let labels = match same {
+                Some(laid) => std::mem::take(&mut laid.labels),
+                None => self.draw_overview_labels(&plan.drawn),
+            };
+            Laid {
+                workspace: plan.workspace,
+                windows: plan.windows,
+                layout: plan.layout,
+                labels,
+                drawn: plan.drawn,
+            }
+        });
+        let laid = layouts.next().expect("the active workspace is laid out");
+        let leaving = layouts.collect();
         self.overview = Some(Overview {
             output,
-            windows,
-            layout,
-            labels,
-            drawn,
+            bar,
+            laid,
+            leaving,
             dim,
+            cell_backs,
+            cell_windows,
+            active: workspace,
+            mark,
+            next_bar_frames,
             transition,
         });
         self.queue_redraw_all();
@@ -272,6 +405,34 @@ impl Caminito {
         let open = self.overview_on(output);
         open.and_then(|open| open.transition)
             .is_some_and(|transition| !transition.is_over(now))
+    }
+
+    /// `windows` of `workspace` on `output` laid out in `area`, with `selected` selected,
+    /// and what their labels are drawn from.
+    fn plan_overview(
+        &self,
+        output: &Output,
+        workspace: usize,
+        windows: Vec<WindowId>,
+        selected: Option<WindowId>,
+        area: Rectangle<i32, Logical>,
+    ) -> Planned {
+        let origin = output_geometry(output).loc;
+        let frames: Vec<Rectangle<i32, Logical>> = windows
+            .iter()
+            .map(|id| {
+                let frame = self.policy.frame_rect(*id).unwrap_or_default();
+                Rectangle::new(frame.loc - origin, frame.size)
+            })
+            .collect();
+        let layout = Layout::new(&frames, area);
+        let drawn = self.overview_label_inputs(output, &windows, selected, &layout);
+        Planned {
+            workspace,
+            windows,
+            layout,
+            drawn,
+        }
     }
 
     /// What the labels of `windows` are drawn from on `output`, in `layout`, with
@@ -334,7 +495,9 @@ impl Caminito {
     /// A key went down while the Overview may be open. Returns what the keyboard path does
     /// with it, or `None` if the Overview is closed and the key is the other stages'. Esc
     /// and the Overview's own shortcut close it. An arrow key that's no binding moves the
-    /// selection in the layout, and Enter chooses the selected window (242). A media key,
+    /// selection in the layout, and Enter chooses the selected window (242). A workspace
+    /// binding switches the Active output's workspace as ever (244), with no Workspace
+    /// popup since the seat has an Interaction already. A media key,
     /// which is an accelerator grab of a key with an `XF86` keysym, is its grabber's as
     /// ever. Every other key but a modifier is swallowed, the other System shortcuts among
     /// them, and reaches no client. A modifier goes on to the client, as with the Window
@@ -359,6 +522,11 @@ impl Caminito {
         if closes {
             self.policy.close_overview();
             return Some(FilterResult::Intercept(None));
+        }
+        if let Some(Binding::Policy(action)) = binding
+            && switches_workspace(action)
+        {
+            return Some(FilterResult::Intercept(Some(Bound::Action(action))));
         }
         if binding.is_none() {
             let direction = match sym {
@@ -395,9 +563,92 @@ impl Caminito {
         let Some(open) = &self.overview else {
             return;
         };
-        let places: Vec<_> = open.layout.slots.iter().map(|slot| slot.window).collect();
+        let places: Vec<_> = open
+            .laid
+            .layout
+            .slots
+            .iter()
+            .map(|slot| slot.window)
+            .collect();
         self.policy.overview_select(direction, &places);
         self.refresh_overview();
+    }
+}
+
+/// Whether `action` is one of the workspace bindings that switch the Active output's
+/// workspace, which work with the Overview open (244). Those that move a window there too
+/// don't.
+fn switches_workspace(action: Action) -> bool {
+    matches!(
+        action,
+        Action::SwitchToWorkspace(_)
+            | Action::SwitchToWorkspaceLeft
+            | Action::SwitchToWorkspaceRight
+            | Action::SwitchToWorkspaceUp
+            | Action::SwitchToWorkspaceDown
+            | Action::SwitchToWorkspacePrev
+    )
+}
+
+impl Caminito {
+    /// How far from its places `laid`, one of `open`'s layouts, is drawn now, once for each
+    /// place: where the Workspace slide on its output has its workspace (244), or at its
+    /// places with no slide. A layout that a slide which is over left isn't drawn, until
+    /// the refresh pass lets go of it.
+    pub(crate) fn overview_shifts(&self, open: &Overview, laid: &Laid) -> Vec<Point<i32, Logical>> {
+        let now = self.now();
+        match self.workspace_slides.on(output_id(&open.output), now) {
+            Some(slide) => slide.workspace_shifts(laid.workspace, now),
+            None if laid.workspace == open.laid.workspace => vec![Point::default()],
+            None => Vec::new(),
+        }
+    }
+
+    /// The windows the open Overview shows in its bar alone (244): those whose main output
+    /// is its output and that are in none of its layouts. A minimised window of another
+    /// workspace, which nothing shows, is among them. None while it's closed.
+    pub(crate) fn overview_bar_only_windows(&self) -> Vec<WindowId> {
+        let Some(open) = &self.overview else {
+            return Vec::new();
+        };
+        self.policy
+            .windows()
+            .filter(|mapped| mapped.main_output() == Some(&open.output))
+            .map(|mapped| mapped.id())
+            .filter(|id| !open.layouts().any(|laid| laid.windows.contains(id)))
+            .collect()
+    }
+
+    /// When the windows that only the Overview's bar shows next get frame callbacks, while
+    /// it's open and has one.
+    pub(crate) fn overview_deadline(&self) -> Option<Duration> {
+        let open = self.overview.as_ref()?;
+        let waiting = !self.overview_bar_only_windows().is_empty();
+        waiting.then_some(open.next_bar_frames)
+    }
+
+    /// Sends the windows that only the Overview's bar shows their frame callbacks, if
+    /// they're due at `now`: at [`BAR_FRAME_INTERVAL`], in place of each frame of the
+    /// output, which the windows of the layout get theirs at (`State::post_render`).
+    pub(crate) fn overview_elapse(&mut self, now: Duration) {
+        let Some(open) = &self.overview else {
+            return;
+        };
+        if now < open.next_bar_frames {
+            return;
+        }
+        let output = open.output.clone();
+        // What a client is told, as after a frame.
+        let time = self.clock.now();
+        for id in self.overview_bar_only_windows() {
+            if let Some(mapped) = self.policy.window(id) {
+                let main = |_: &_, _: &_| Some(output.clone());
+                mapped.window().send_frame(&output, time, None, main);
+            }
+        }
+        if let Some(open) = &mut self.overview {
+            open.next_bar_frames = now + BAR_FRAME_INTERVAL;
+        }
     }
 }
 
@@ -419,9 +670,11 @@ impl State {
     /// A pointer button with the pointer at `location`. Returns whether its press was the
     /// Overview's, and so no client's: while the Overview is open, a press of the left
     /// button on a window of the layout chooses that window, one of the middle button asks
-    /// it to close and leaves the Overview open (242), and a press of any button on the
-    /// empty area closes the Overview, as does that of a button with the Overview's
-    /// shortcut. The release of such a press is swallowed with the Window switcher's.
+    /// it to close and leaves the Overview open (242), one of the left button on a
+    /// workspace of the bar switches the output there (244), and a press of any button on
+    /// the empty area closes the Overview, as does that of a button with the Overview's
+    /// shortcut. Another button on a workspace of the bar does nothing. The release of such
+    /// a press is swallowed with the Window switcher's.
     pub(crate) fn overview_button(
         &mut self,
         button: u32,
@@ -442,8 +695,14 @@ impl State {
         let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
         let binding = caminito.bound_to_button(button, &mods);
         let is_shortcut = matches!(binding, Some((_, Binding::Policy(Action::Overview))));
+        let cell = caminito.overview_cell_at(location);
         match caminito.overview_window_at(location) {
             _ if is_shortcut => caminito.policy.close_overview(),
+            _ if cell.is_some() => {
+                if let Some(workspace) = cell.filter(|_| button == BTN_LEFT) {
+                    caminito.policy.overview_switch(workspace);
+                }
+            }
             Some(id) if button == BTN_LEFT => {
                 let now = caminito.now();
                 caminito.policy.overview_choose(id, now);

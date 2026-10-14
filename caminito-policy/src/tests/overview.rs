@@ -513,3 +513,130 @@ fn a_middle_click_on_a_window_that_isnt_listed_does_nothing() {
 
     assert!(!window(&policy, 2).calls.contains(&Call::Close));
 }
+
+// The bar of workspaces (244).
+
+/// `three` with 2 and 3 on the second workspace, 1 alone on the first.
+fn two_on_the_second() -> Policy<TestWindow> {
+    let mut policy = three();
+    policy.move_to_workspace(id(2), 1);
+    policy.move_to_workspace(id(3), 1);
+    policy
+}
+
+#[test]
+fn a_click_on_a_workspace_switches_the_output_and_the_overview_stays_open() {
+    let mut policy = two_on_the_second();
+    toggle(&mut policy);
+    assert_eq!(listed(&policy), [id(1)]);
+
+    policy.overview_switch(1);
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 1);
+    assert_eq!(policy.interaction(SEAT), Some(Interaction::Overview));
+    assert_eq!(listed(&policy), [id(2), id(3)]);
+    assert_eq!(policy.overview().unwrap().workspace, 1);
+}
+
+#[test]
+fn after_a_switch_the_new_workspaces_focused_window_is_selected() {
+    let mut policy = two_on_the_second();
+    toggle(&mut policy);
+    assert_eq!(selected(&policy), Some(id(1)));
+
+    policy.overview_switch(1);
+
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    assert_eq!(selected(&policy), Some(id(3)));
+}
+
+#[test]
+fn after_a_switch_to_an_empty_workspace_none_is_selected() {
+    let mut policy = three();
+    toggle(&mut policy);
+
+    policy.overview_switch(2);
+
+    assert_eq!(listed(&policy), []);
+    assert_eq!(selected(&policy), None);
+}
+
+#[test]
+fn a_click_on_the_active_workspace_keeps_the_selection() {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.set_overview_selection(Some(id(1)));
+
+    policy.overview_switch(0);
+
+    assert_eq!(selected(&policy), Some(id(1)));
+}
+
+#[test]
+fn a_click_on_a_workspace_past_the_count_does_nothing() {
+    let mut policy = three();
+    toggle(&mut policy);
+
+    policy.overview_switch(4);
+
+    assert_eq!(policy.active_workspace(), 0);
+    assert!(policy.overview().is_some());
+}
+
+#[test]
+fn a_click_on_a_workspace_switches_its_output_alone_with_workspaces_per_output() {
+    let mut policy = Policy::new(Config {
+        workspaces_per_output: true,
+        ..four_workspaces()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.add_output(output(2, 1920, 0, 1920, 1080));
+    policy.map_window(TestWindow::new(1, 400, 300), ms(1));
+    toggle(&mut policy);
+
+    policy.overview_switch(3);
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 3);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 0);
+}
+
+#[test]
+fn a_workspace_binding_switches_the_active_output_with_the_overview_open() {
+    let mut policy = two_on_the_second();
+    toggle(&mut policy);
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(200));
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 1);
+    assert_eq!(listed(&policy), [id(2), id(3)]);
+    assert_eq!(selected(&policy), Some(id(3)));
+    // The seat has an Interaction, so the Workspace popup doesn't open.
+    assert!(!policy.open_workspace_popup(false));
+}
+
+#[test]
+fn the_windows_of_another_workspace_are_listed_for_its_layout() {
+    let mut policy = two_on_the_second();
+    toggle(&mut policy);
+
+    assert_eq!(policy.overview_windows_on(1), [id(2), id(3)]);
+    assert_eq!(policy.overview_windows_on(0), [id(1)]);
+    assert_eq!(policy.overview_windows_on(2), []);
+}
+
+#[test]
+fn fewer_workspaces_while_it_is_open_list_the_new_active_ones_windows() {
+    let mut policy = two_on_the_second();
+    policy.switch_workspace(1);
+    toggle(&mut policy);
+    assert_eq!(listed(&policy), [id(2), id(3)]);
+
+    policy.settings_changed(Config {
+        workspace_count: 1,
+        ..Config::default()
+    });
+
+    let overview = policy.overview().unwrap();
+    assert_eq!(overview.workspace, 0);
+    assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
+}

@@ -2,12 +2,16 @@
 //! them out, what it draws in place of the output's own, and the keys and the clicks that
 //! close it, read from the debug dump and from the output's pixels. It opens and closes in
 //! one frame. Its selection, the arrow keys and Enter, the middle click, and windows that
-//! map or go while it's open are 242's.
+//! map or go while it's open are 242's. Its bar of workspaces, a switch from the bar or a
+//! binding with the Workspace slide moving the layouts, and the frame callbacks of a
+//! window that only the bar shows are 244's.
 //!
 //! What both kinds of window share runs on both. The tests of what a client sees of the
 //! keys and the clicks, and of what only the Overview's own state shows (the shortcut, the
 //! lock, the Window menu), map xdg toplevels only: the keys are checked as a Wayland client
 //! sees them (45), and the rest doesn't depend on the kind.
+
+use std::time::Duration;
 
 use caminito_test_client::InputEvent;
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
@@ -22,7 +26,7 @@ use super::fixture::{
 };
 use crate::scene::SceneLayer;
 use crate::settings::Value;
-use crate::settings::translate::CAMINITO;
+use crate::settings::translate::{CAMINITO, MARCO_GENERAL};
 use crate::state::SEAT;
 use crate::workspace_slide::LENGTH;
 
@@ -930,4 +934,347 @@ on_both_kinds! {
         f.chord(&[KEY_RIGHT]);
         assert_eq!(selected(&f), Some(f.pid(first).0));
     }
+}
+
+// The bar of workspaces (244).
+
+/// The open Overview's bar: each cell's workspace, rectangle and whether it's marked as
+/// the active one.
+fn cells(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, bool)> {
+    let bar = overview(f)["bar"].as_array().unwrap().clone();
+    bar.iter()
+        .map(|cell| {
+            let workspace = cell["workspace"].as_u64().unwrap();
+            (
+                workspace,
+                rect(&cell["rect"]),
+                cell["active"].as_bool().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// The cell of `workspace`.
+#[track_caller]
+fn cell(f: &Fixture, workspace: u64) -> Rectangle<i32, Logical> {
+    let cells = cells(f);
+    let found = cells.iter().find(|(number, ..)| *number == workspace);
+    found.expect("the workspace has a cell").1
+}
+
+/// Where the middle of `window`'s geometry shows in `workspace`'s cell, which is the
+/// output at a smaller size.
+fn in_cell(f: &Fixture, workspace: u64, window: ClientWindow) -> Point<i32, Logical> {
+    let cell = cell(f, workspace);
+    let at = middle(f.geometry(window));
+    let factor = f64::from(cell.size.w) / f64::from(OUTPUT.0);
+    let scaled = |n: i32| (f64::from(n) * factor).round() as i32;
+    cell.loc + Point::from((scaled(at.x), scaled(at.y)))
+}
+
+/// Clicks the left button on `workspace`'s cell.
+fn click_cell(f: &mut Fixture, workspace: u64) {
+    let at = middle(cell(f, workspace));
+    click(f, at);
+}
+
+/// Moves `window` to `workspace`.
+fn move_to(f: &mut Fixture, window: ClientWindow, workspace: usize) {
+    let id = f.pid(window);
+    f.state.caminito.policy.move_to_workspace(id, workspace);
+    f.dispatch();
+}
+
+/// The workspace the open Overview lists the windows of.
+fn listed_workspace(f: &Fixture) -> u64 {
+    overview(f)["workspace"].as_u64().unwrap()
+}
+
+/// One window on the first workspace and one on the second, which is focused there.
+fn one_on_each_of_two(f: &mut Fixture, id: ClientId) -> [ClientWindow; 2] {
+    let first = f.map(id, WindowSpec::plain((700, 500)));
+    let second = f.map(id, WindowSpec::plain((600, 400)));
+    move_to(f, second, 1);
+    [first, second]
+}
+
+on_both_kinds! {
+    fn the_bar_has_each_workspace_the_active_one_marked_and_the_layout_beneath(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let windows = map_three(&mut f, id);
+
+        open(&mut f);
+
+        let cells = cells(&f);
+        let numbers: Vec<u64> = cells.iter().map(|(number, ..)| *number).collect();
+        assert_eq!(numbers, [0, 1, 2, 3]);
+        let marked: Vec<bool> = cells.iter().map(|(_, _, active)| *active).collect();
+        assert_eq!(marked, [true, false, false, false]);
+        // One row along the top, 15% of the output's height, in workspace order.
+        for pair in cells.windows(2) {
+            assert_eq!(pair[0].1.loc.y, pair[1].1.loc.y);
+            assert!(pair[0].1.loc.x + pair[0].1.size.w < pair[1].1.loc.x);
+        }
+        let area = rect(&overview(&f)["area"]);
+        assert_eq!(area, Rectangle::new((0, 162).into(), (1920, 918).into()));
+        for (_, cell, _) in &cells {
+            assert!(cell.loc.y + cell.size.h <= area.loc.y, "{cell:?}");
+        }
+        for window in windows {
+            assert!(area.contains_rect(place(&f, window)), "{window:?}");
+            // And the active workspace's cell shows it at its real place.
+            let at = in_cell(&f, 0, window);
+            assert_eq!(pixel(&mut f, at), WINDOW, "{window:?} at {at:?}");
+        }
+        // The mark is around the active workspace's cell alone.
+        let beside = |cell: Rectangle<i32, Logical>| cell.loc - Point::from((1, 1));
+        let (first, second) = (beside(cells[0].1), beside(cells[1].1));
+        assert_ne!(pixel(&mut f, first), pixel(&mut f, second));
+    }
+}
+
+#[test]
+fn a_grid_of_two_rows_gives_one_row_of_cells_in_workspace_order() {
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "workspace-layout-rows".into(),
+        Value::Int(2),
+    )]);
+    f.add_output(OUTPUT, 1.0);
+    f.connect(Kind::Xdg);
+
+    open(&mut f);
+
+    let cells = cells(&f);
+    assert_eq!(cells.len(), 4);
+    for (index, pair) in cells.windows(2).enumerate() {
+        assert_eq!(pair[0].0, index as u64);
+        assert_eq!(pair[0].1.loc.y, pair[1].1.loc.y);
+        assert!(pair[0].1.loc.x < pair[1].1.loc.x);
+    }
+}
+
+on_both_kinds! {
+    fn a_window_of_a_workspace_that_isnt_active_shows_in_its_cell(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let [first, second] = one_on_each_of_two(&mut f, id);
+
+        open(&mut f);
+
+        assert_eq!(listed(&f), [f.pid(first).0]);
+        let at = in_cell(&f, 1, second);
+        assert_eq!(pixel(&mut f, at), WINDOW);
+        // And not in the first workspace's, where the first window isn't either.
+        if !f.geometry(first).contains(middle(f.geometry(second))) {
+            let at = in_cell(&f, 0, second);
+            assert_ne!(pixel(&mut f, at), WINDOW);
+        }
+    }
+}
+
+on_both_kinds! {
+    fn a_click_on_a_cell_switches_the_workspace_and_the_overview_stays_open(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let [first, second] = one_on_each_of_two(&mut f, id);
+        open(&mut f);
+
+        click_cell(&mut f, 1);
+
+        assert!(is_open(&f));
+        assert_eq!(listed_workspace(&f), 1);
+        assert_eq!(listed(&f), [f.pid(second).0]);
+        let marked: Vec<bool> = cells(&f).iter().map(|(_, _, active)| *active).collect();
+        assert_eq!(marked, [false, true, false, false]);
+        // The selection is the new workspace's focused window.
+        assert_eq!(selected(&f), Some(f.pid(second).0));
+        assert_eq!(focus(&f), selected(&f));
+        // With the slide off it's a cut.
+        assert!(!slides(&f));
+        let at = middle(place(&f, second));
+        assert_eq!(pixel(&mut f, at), WINDOW);
+        let at = in_cell(&f, 0, first);
+        assert_eq!(pixel(&mut f, at), WINDOW);
+
+        // A click on the active workspace's cell changes nothing, and Esc closes it.
+        click_cell(&mut f, 1);
+        assert!(is_open(&f));
+        assert_eq!(listed_workspace(&f), 1);
+        f.chord(&[KEY_ESC]);
+        assert!(!is_open(&f));
+        assert_eq!(f.state.caminito.policy.active_workspace(), 1);
+    }
+}
+
+#[test]
+fn a_click_on_a_cell_with_another_button_does_nothing() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    one_on_each_of_two(&mut f, id);
+    open(&mut f);
+
+    let at = middle(cell(&f, 1));
+    middle_click(&mut f, at);
+
+    assert!(is_open(&f));
+    assert_eq!(listed_workspace(&f), 0);
+}
+
+/// Each window the dump has a slide drawing away from its place, by policy's id, with the
+/// workspace of its layout and where it's drawn.
+fn sliding(f: &Fixture) -> Vec<(u64, u64, Rectangle<i32, Logical>)> {
+    let sliding = overview(f)["sliding"].as_array().unwrap().clone();
+    sliding
+        .iter()
+        .map(|drawn| {
+            let workspace = drawn["workspace"].as_u64().unwrap();
+            (
+                drawn["window"].as_u64().unwrap(),
+                workspace,
+                rect(&drawn["rect"]),
+            )
+        })
+        .collect()
+}
+
+/// Caminito with one output and the Workspace slide on, and a client of `kind`.
+fn with_the_slide(kind: Kind) -> (Fixture, ClientId) {
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "workspace-slide".into(),
+        Value::Bool(true),
+    )]);
+    f.add_output(OUTPUT, 1.0);
+    let id = f.connect(kind);
+    (f, id)
+}
+
+on_both_kinds! {
+    fn with_the_slide_on_a_click_on_a_cell_slides_both_layouts(kind: Kind) {
+        let (mut f, id) = with_the_slide(kind);
+        let [first, second] = one_on_each_of_two(&mut f, id);
+        open(&mut f);
+        let leaving = place(&f, first);
+        f.stop_clock();
+
+        click_cell(&mut f, 1);
+        f.advance_clock(LENGTH / 2);
+
+        assert!(is_open(&f));
+        assert!(slides(&f));
+        let arriving = place(&f, second);
+        let drawn = sliding(&f);
+        let (first_id, second_id) = (f.pid(first).0, f.pid(second).0);
+        let [(gone, 0, gone_at), (coming, 1, coming_at)] = drawn[..] else {
+            panic!("both layouts are drawn part-way: {drawn:?}");
+        };
+        assert_eq!((gone, coming), (first_id, second_id));
+        // The second workspace is right of the first: its layout comes in from the right,
+        // and the first's leaves to the left, a whole output behind it.
+        assert!(gone_at.loc.x < leaving.loc.x && gone_at.loc.y == leaving.loc.y);
+        assert!(coming_at.loc.x > arriving.loc.x && coming_at.loc.y == arriving.loc.y);
+        assert_eq!(coming_at.loc.x - gone_at.loc.x, arriving.loc.x - leaving.loc.x + OUTPUT.0);
+        assert!(coming_at.loc.x < OUTPUT.0, "{coming_at:?} shows");
+        let at = middle(coming_at);
+        assert_eq!(pixel(&mut f, at), WINDOW);
+
+        f.advance_clock(LENGTH);
+        assert!(!slides(&f));
+        assert!(is_open(&f));
+        assert_eq!(sliding(&f), []);
+        assert_eq!(pixel(&mut f, middle(arriving)), WINDOW);
+        // The first window's place is empty, where the second, smaller, isn't on it.
+        let corner = leaving.loc + Point::from((5, 5));
+        assert!(!arriving.contains(corner));
+        assert_ne!(pixel(&mut f, corner), WINDOW);
+    }
+}
+
+#[test]
+fn closing_it_during_its_slide_ends_the_slide() {
+    let (mut f, id) = with_the_slide(Kind::Xdg);
+    one_on_each_of_two(&mut f, id);
+    open(&mut f);
+    f.stop_clock();
+    click_cell(&mut f, 1);
+    f.advance_clock(LENGTH / 2);
+    assert!(slides(&f));
+
+    f.chord(&[KEY_ESC]);
+
+    assert!(!is_open(&f));
+    assert!(!slides(&f));
+}
+
+#[test]
+fn a_workspace_binding_switches_with_the_overview_open_and_shows_no_popup() {
+    let (mut f, id) = with_the_slide(Kind::Xdg);
+    let [_, second] = one_on_each_of_two(&mut f, id);
+    open(&mut f);
+
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+
+    assert!(is_open(&f));
+    assert_eq!(listed_workspace(&f), 1);
+    assert_eq!(listed(&f), [f.pid(second).0]);
+    assert_eq!(selected(&f), Some(f.pid(second).0));
+    assert!(slides(&f), "it slides");
+    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
+    assert!(dump["workspace_popup"].is_null());
+
+    // And back, with the key's own number this time: Ctrl+Alt+Left.
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT]);
+    assert!(is_open(&f));
+    assert_eq!(listed_workspace(&f), 0);
+}
+
+/// The test's Wayland client draws its windows again while the Overview is open; the
+/// fixture's X clients draw once (45).
+#[test]
+fn a_window_only_the_bar_shows_gets_frame_callbacks_ten_times_a_second() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let [shown, hidden] = one_on_each_of_two(&mut f, id);
+    open(&mut f);
+    f.stop_clock();
+
+    // The layout's window gets one at the output's frame, with no wait.
+    let frames = f.client(id).window(shown.xdg()).frames_done;
+    f.client(id).request_frame(shown.xdg());
+    f.client(id).commit(shown.xdg());
+    f.roundtrip(id);
+    f.dispatch_until_mut(|f| f.client(id).window(shown.xdg()).frames_done > frames);
+
+    // The bar's alone gets one each tenth of a second of Caminito's clock, however often
+    // it asks.
+    let start = f.client(id).window(hidden.xdg()).frames_done;
+    let mut asked = start;
+    for _ in 0..50 {
+        let done = f.client(id).window(hidden.xdg()).frames_done;
+        if done == asked {
+            asked += 1;
+            f.client(id).request_frame(hidden.xdg());
+            f.client(id).commit(hidden.xdg());
+            f.roundtrip(id);
+        }
+        f.advance_clock(Duration::from_millis(20));
+        f.roundtrip(id);
+    }
+    let got = f.client(id).window(hidden.xdg()).frames_done - start;
+    assert!((9..=11).contains(&got), "{got} frame callbacks in a second");
+    assert!(is_open(&f));
+}
+
+#[test]
+fn a_change_of_num_workspaces_while_it_is_open_changes_the_bar() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.map(id, WindowSpec::plain((400, 300)));
+    open(&mut f);
+    assert_eq!(cells(&f).len(), 4);
+
+    f.set_setting(MARCO_GENERAL, "num-workspaces", Value::Int(6));
+    f.dispatch_until(|f| cells(f).len() == 6);
+
+    f.set_setting(MARCO_GENERAL, "num-workspaces", Value::Int(2));
+    f.dispatch_until(|f| cells(f).len() == 2);
+    assert!(is_open(&f));
+    let cells = cells(&f);
+    assert!(cells[0].1.size.w > 0 && cells[1].1.loc.x > cells[0].1.loc.x);
 }

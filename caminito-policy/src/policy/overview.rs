@@ -1,7 +1,7 @@
 //! The Overview (241, ADR 0033): whether it's open, the output it's on, the windows it
-//! lists and the one selected (242), and what a choice, an arrow key and a middle click
-//! do. The compositor has its layout, its drawing, its keys and
-//! its clicks, and asks here for what they do.
+//! lists and the one selected (242), and what a choice, an arrow key, a middle click and a
+//! click on a workspace of its bar (244) do. The compositor has its layout, its bar, its
+//! drawing, its keys and its clicks, and asks here for what they do.
 //!
 //! It's the seat's Interaction (187), and every seat's, as the Window switcher is: the
 //! shortcut opens it only while no seat has one, and nothing else opens while it's open.
@@ -22,11 +22,15 @@ pub struct Overview {
     pub seat: SeatId,
     /// The output it's on, whose active workspace's windows it lists.
     pub output: OutputId,
+    /// That output's active workspace, as the list has it. A switch while it's open (244)
+    /// lists the new one's windows.
+    pub workspace: usize,
     /// The windows listed, bottom to top. Policy keeps the list as the windows are now: one
     /// that goes leaves it.
     pub windows: Vec<WindowId>,
-    /// The selected window, which Enter chooses (242): the focused one at opening, or none.
-    /// It's always one of `windows`: none is selected once it goes.
+    /// The selected window, which Enter chooses (242): the focused one at opening, and after
+    /// a switch of workspace (244), or none. It's always one of `windows`: none is selected
+    /// once it goes.
     pub selected: Option<WindowId>,
 }
 
@@ -45,11 +49,13 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(output) = self.active_output(seat) else {
             return;
         };
-        let windows = self.overview_windows(output);
+        let workspace = self.active_workspace_on(output);
+        let windows = self.overview_windows(output, workspace);
         let selected = self.focus(seat).filter(|focused| windows.contains(focused));
         self.overview = Some(Overview {
             seat,
             output,
+            workspace,
             windows,
             selected,
         });
@@ -131,6 +137,29 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// A click on a workspace of the bar (244): switches the Overview's output to it, as
+    /// `switch_output_workspace` does, so every output with `workspaces-per-output` off.
+    /// The Overview stays open and lists the new workspace's windows, with its focused one
+    /// selected. Does nothing with the Overview closed, or for a workspace past the count.
+    pub fn overview_switch(&mut self, workspace: usize) {
+        let Some(output) = self.overview.as_ref().map(|open| open.output) else {
+            return;
+        };
+        if workspace < self.workspace_count {
+            self.switch_output_workspace(output, workspace);
+        }
+    }
+
+    /// The windows the open Overview would list on `workspace` of its output, bottom to
+    /// top, as it lists those of the active one: the compositor lays out those of a
+    /// workspace a Workspace slide leaves (244). None with the Overview closed.
+    pub fn overview_windows_on(&self, workspace: usize) -> Vec<WindowId> {
+        self.overview
+            .as_ref()
+            .map(|open| self.overview_windows(open.output, workspace))
+            .unwrap_or_default()
+    }
+
     /// Selects `selected` in the open Overview, as the arrow keys would.
     #[cfg(test)]
     pub(crate) fn set_overview_selection(&mut self, selected: Option<WindowId>) {
@@ -140,31 +169,44 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// Brings the open Overview's list up to date, and closes it if its output has gone.
+    /// After a switch of its output's workspace (244) it lists the new one's windows, and
+    /// selects the seat's focused window among them, or none.
     pub(super) fn refresh_overview(&mut self) {
-        let Some(output) = self.overview.as_ref().map(|open| open.output) else {
+        let Some((seat, output)) = self.overview.as_ref().map(|open| (open.seat, open.output))
+        else {
             return;
         };
         if !self.outputs.iter().any(|o| o.id == output) {
             self.overview = None;
             return;
         }
-        let windows = self.overview_windows(output);
+        let workspace = self.active_workspace_on(output);
+        let windows = self.overview_windows(output, workspace);
+        let focus = self.focus(seat);
         if let Some(open) = &mut self.overview {
+            if open.workspace != workspace {
+                open.workspace = workspace;
+                open.selected = focus;
+            }
             open.selected = open.selected.filter(|selected| windows.contains(selected));
             open.windows = windows;
         }
     }
 
-    /// The windows the Overview lists on `output`, bottom to top: those the Window
-    /// switcher lists for the output's active workspace, so the minimised ones are among
-    /// them, one that skips the taskbar isn't, and a modal dialog stands in for its
-    /// parent. A sticky window is on every workspace of its output.
-    fn overview_windows(&self, output: OutputId) -> Vec<WindowId> {
+    /// The windows the Overview lists for `workspace` on `output`, bottom to top: those the
+    /// Window switcher lists for it, so the minimised ones are among them, one that skips
+    /// the taskbar isn't, and a modal dialog stands in for its parent. A sticky window is
+    /// on every workspace of its output.
+    fn overview_windows(&self, output: OutputId, workspace: usize) -> Vec<WindowId> {
         let mut listed = Vec::new();
         let on_output = |id: &WindowId| self.output_showing(*id) == Some(output);
         let candidates = self.stack.iter().copied().filter(on_output);
-        for base in candidates.filter(|id| self.is_switch_candidate(*id, SwitchList::Windows, None))
-        {
+        // The Window switcher's list for the active workspace, of any workspace.
+        let listable = |id: &WindowId| {
+            self.is_switch_candidate(*id, SwitchList::WindowsAll, None)
+                && self.is_on_workspace(*id, workspace)
+        };
+        for base in candidates.filter(listable) {
             let window = self.modal_transient(base);
             if !listed.contains(&window) {
                 listed.push(window);

@@ -175,6 +175,8 @@ enum Op {
     OverviewSelect(crate::Direction),
     OverviewEnter,
     OverviewCloseWindow(u64),
+    /// A click on a workspace of the Overview's bar (244).
+    OverviewSwitch(usize),
     /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
     SetFocusMode {
         mode: FocusMode,
@@ -428,6 +430,7 @@ fn op() -> impl Strategy<Value = Op> {
         2 => direction().prop_map(Op::OverviewSelect),
         1 => Just(Op::OverviewEnter),
         1 => window_id().prop_map(Op::OverviewCloseWindow),
+        1 => (0..5usize).prop_map(Op::OverviewSwitch),
         1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
             Op::SetFocusMode { mode, raise_on_click, auto_raise }
         }),
@@ -617,6 +620,7 @@ impl Op {
             }
             Op::OverviewEnter => policy.overview_enter(now),
             Op::OverviewCloseWindow(id) => policy.overview_close_window(WindowId(id)),
+            Op::OverviewSwitch(workspace) => policy.overview_switch(workspace),
             Op::SetFocusMode {
                 mode,
                 raise_on_click,
@@ -856,8 +860,13 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     assert!(shared <= 1, "{shared} Interactions are every seat's");
 
     // The open Overview (241) is on an output policy has, and lists managed windows, each
-    // once. Its selection (242) is one of them.
+    // once, of that output's active workspace (244). Its selection (242) is one of them.
     if let Some(overview) = policy.overview() {
+        assert_eq!(
+            overview.workspace,
+            policy.active_workspace_on(overview.output),
+            "the Overview lists another workspace than its output's"
+        );
         if let Some(selected) = overview.selected {
             assert!(
                 overview.windows.contains(&selected),
