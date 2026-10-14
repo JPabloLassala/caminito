@@ -239,14 +239,18 @@ impl Caminito {
     /// where the windows are (235). With `workspace-slide` off, or one of the minimise
     /// animation's three keys against it, the switch is a cut, which ends a running slide
     /// too; a change of those keys alone lets it finish. The session lock ends every slide
-    /// at once and makes each switch under it a cut, and a slide ends with its output.
+    /// at once and makes each switch under it a cut, and a slide ends with its output. So
+    /// does the Overview on its output (241): it opens at once, with the slide cut to its
+    /// end, and a switch under it is a cut until its bar has the workspaces (244).
     pub(crate) fn refresh_workspace_slides(&mut self) {
         let now = self.now();
         let switches = self.policy.take_output_switches();
         let locked = self.lock.is_locked();
+        let overview = self.policy.overview().map(|open| open.output);
         let outputs = &self.outputs;
         self.workspace_slides.running.retain(|slide| {
             !locked
+                && Some(slide.output) != overview
                 && outputs
                     .iter()
                     .any(|output| output_id(output) == slide.output)
@@ -274,7 +278,7 @@ impl Caminito {
             let Some(output) = outputs.find(|output| output_id(output) == switch.output) else {
                 continue;
             };
-            if !self.settings.workspace_slide || locked {
+            if !self.settings.workspace_slide || locked || Some(switch.output) == overview {
                 continue;
             }
             let size = output_geometry(output).size;

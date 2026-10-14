@@ -27,7 +27,7 @@ use crate::state::SEAT;
 
 /// A caller of `org.mate.Caminito` on a connection of its own, and the activations and
 /// repeats it's signalled.
-struct Caller {
+pub(super) struct Caller {
     caminito: CaminitoProxy<'static>,
     activations: Option<AcceleratorActivatedIterator>,
     repeats: Option<AcceleratorRepeatedIterator>,
@@ -35,7 +35,7 @@ struct Caller {
 
 impl Caller {
     /// Connects to Caminito at `bus`, listening for activations and repeats from now on.
-    fn new(f: &mut Fixture, bus: &str) -> Self {
+    pub(super) fn new(f: &mut Fixture, bus: &str) -> Self {
         let bus = bus.to_owned();
         f.dbus_call(move || {
             let caminito = caminito_proxy(&bus).unwrap();
@@ -56,7 +56,7 @@ impl Caller {
     }
 
     /// Grabs `accelerators`, and returns their action ids.
-    fn grab(&self, f: &mut Fixture, accelerators: &[&'static str]) -> Vec<u32> {
+    pub(super) fn grab(&self, f: &mut Fixture, accelerators: &[&'static str]) -> Vec<u32> {
         let caminito = self.caminito.clone();
         let accelerators = accelerators.to_vec();
         f.dbus_call(move || caminito.grab_accelerators(&accelerators).unwrap())
@@ -71,7 +71,7 @@ impl Caller {
 
     /// The next activation the caller is signalled: its action id and time. It waits for
     /// one, so a test of a key that mustn't signal presses one that does after it.
-    fn next_activation(&mut self, f: &mut Fixture) -> (u32, u32) {
+    pub(super) fn next_activation(&mut self, f: &mut Fixture) -> (u32, u32) {
         let mut activations = self.activations.take().unwrap();
         let (activation, activations) = f.dbus_call(move || {
             let signal = activations.next().unwrap();

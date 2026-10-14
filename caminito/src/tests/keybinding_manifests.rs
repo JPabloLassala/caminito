@@ -2,15 +2,18 @@
 //! Keyboard Shortcuts dialog what Caminito binds. They need no fixture: they're data, checked
 //! against Marco's schema, whose keys they point at, and against the actions Caminito binds
 //! (173). That schema has no key for an action Caminito never implements (05), so a manifest
-//! that passes lists none.
+//! that passes lists none. The Overview's manifest points at Caminito's own schema, which
+//! has its key (241).
 
 use std::fs;
 
 use crate::input::bindings::bound_keys;
+use crate::settings::translate::CAMINITO;
 
-const MANIFESTS: [&str; 3] = [
+const MANIFESTS: [&str; 4] = [
     "50-caminito-desktop-key.xml",
     "50-caminito-global-key.xml",
+    "50-caminito-overview-key.xml",
     "50-caminito-window-key.xml",
 ];
 
@@ -22,16 +25,24 @@ fn attribute<'a>(element: &'a str, name: &str) -> Option<&'a str> {
     Some(&element[start..start + len])
 }
 
-/// The names of the keys of one schema in the vendored `org.mate.marco.gschema.xml`.
+/// The names of the keys of one schema: one of the vendored `org.mate.marco.gschema.xml`,
+/// or Caminito's own.
 pub(super) fn schema_keys(id: &str) -> Vec<String> {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../tests/schemas/org.mate.marco.gschema.xml"
-    );
+    let path = if id == CAMINITO {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/org.mate.Caminito.gschema.xml"
+        )
+    } else {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/schemas/org.mate.marco.gschema.xml"
+        )
+    };
     let schemas = fs::read_to_string(path).unwrap();
     let start = schemas
         .find(&format!("<schema id=\"{id}\""))
-        .unwrap_or_else(|| panic!("Marco has no schema {id}"));
+        .unwrap_or_else(|| panic!("{path} has no schema {id}"));
     let schema = &schemas[start..];
     let schema = &schema[..schema.find("</schema>").unwrap()];
     schema
@@ -42,7 +53,7 @@ pub(super) fn schema_keys(id: &str) -> Vec<String> {
 }
 
 #[test]
-fn each_manifest_is_caminitos_and_names_only_keys_marcos_schema_has() {
+fn each_manifest_is_caminitos_and_names_only_keys_its_schema_has() {
     for manifest in MANIFESTS {
         let path = format!(
             "{}/../data/keybindings/{manifest}",
@@ -58,7 +69,7 @@ fn each_manifest_is_caminitos_and_names_only_keys_marcos_schema_has() {
         assert_eq!(attribute(list, "package"), Some("marco"), "{manifest}");
         let schema = attribute(list, "schema").unwrap();
         assert!(
-            schema.starts_with("org.mate.Marco."),
+            schema.starts_with("org.mate.Marco.") || schema == CAMINITO,
             "{manifest}: {schema}"
         );
         let keys = schema_keys(schema);

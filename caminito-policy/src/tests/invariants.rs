@@ -7,8 +7,8 @@ use super::*;
 use smithay::utils::Size;
 
 use crate::{
-    Crossing, FocusMode, GrabKey, GrabStep, MenuKey, PlacementMode, PointerTarget, PolicyWindow,
-    PreMapWindow, ResizeEdges, SwitchEntry, SwitchList, WrapStyle,
+    Crossing, FocusMode, GrabKey, GrabStep, MenuKey, Overview, PlacementMode, PointerTarget,
+    PolicyWindow, PreMapWindow, ResizeEdges, SwitchEntry, SwitchList, WrapStyle,
 };
 
 const SEATS: u32 = 2;
@@ -168,6 +168,9 @@ enum Op {
         moves: bool,
     },
     CloseWorkspacePopup,
+    /// A click on a window of the Overview (241), and what closes it.
+    OverviewChoose(u64),
+    CloseOverview,
     /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
     SetFocusMode {
         mode: FocusMode,
@@ -277,6 +280,7 @@ fn action() -> impl Strategy<Value = Action> {
         Just(Action::BeginMove),
         Just(Action::BeginResize),
         Just(Action::ActivateWindowMenu),
+        Just(Action::Overview),
     ]
 }
 
@@ -415,6 +419,8 @@ fn op() -> impl Strategy<Value = Op> {
         1 => Just(Op::CloseWindowMenu),
         2 => any::<bool>().prop_map(|moves| Op::OpenWorkspacePopup { moves }),
         1 => Just(Op::CloseWorkspacePopup),
+        2 => window_id().prop_map(Op::OverviewChoose),
+        1 => Just(Op::CloseOverview),
         1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
             Op::SetFocusMode { mode, raise_on_click, auto_raise }
         }),
@@ -592,6 +598,8 @@ impl Op {
                 policy.open_workspace_popup(moves);
             }
             Op::CloseWorkspacePopup => policy.close_workspace_popup(),
+            Op::OverviewChoose(id) => policy.overview_choose(WindowId(id), now),
+            Op::CloseOverview => policy.close_overview(),
             Op::SetFocusMode {
                 mode,
                 raise_on_click,
@@ -818,16 +826,31 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
         }
     }
 
-    // A seat has one Interaction at most (187). The Window switcher, the Window menu and
-    // the Workspace popup are every seat's, so one of them is open at most, and with none
-    // of the seats moving or resizing a window.
+    // A seat has one Interaction at most (187). The Window switcher, the Window menu, the
+    // Workspace popup and the Overview are every seat's, so one of them is open at most,
+    // and with none of the seats moving or resizing a window.
     let shared = [
         policy.switcher().is_some(),
         policy.window_menu().is_some(),
         policy.workspace_popup().is_some(),
+        policy.overview().is_some(),
     ];
     let shared = shared.into_iter().filter(|open| *open).count();
     assert!(shared <= 1, "{shared} Interactions are every seat's");
+
+    // The open Overview (241) is on an output policy has, and lists managed windows, each
+    // once.
+    if let Some(overview) = policy.overview() {
+        let on = overview.output;
+        assert!(policy.outputs().iter().any(|output| output.id == on));
+        for (place, id) in overview.windows.iter().enumerate() {
+            assert!(policy.window(*id).is_some(), "{id:?} is listed and gone");
+            assert!(
+                !overview.windows[..place].contains(id),
+                "{id:?} is listed twice"
+            );
+        }
+    }
     for seat in 0..SEATS {
         let own = usize::from(policy.grab(SeatId(seat)).is_some());
         assert!(own + shared <= 1, "seat {seat} has two Interactions");
@@ -852,7 +875,7 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
 /// The queries `caminito/src/scene.rs` makes of policy, in the alphabet's order. `SceneView`
 /// holds the answer to each, and `the_scene_view_has_every_query_the_scene_makes` holds
 /// this list to the Scene's source (179).
-const SCENE_QUERIES: [&str; 11] = [
+const SCENE_QUERIES: [&str; 12] = [
     "active_stacking",
     "frame_rect",
     "geometry",
@@ -860,6 +883,7 @@ const SCENE_QUERIES: [&str; 11] = [
     "is_fullscreen",
     "is_showing",
     "layer",
+    "overview",
     "stacking_all",
     "switcher",
     "tile_preview",
@@ -879,6 +903,8 @@ struct SceneView {
     grabs: Vec<GrabView>,
     /// The entries of `switcher`.
     switcher: Option<Vec<SwitchEntry>>,
+    /// `overview`.
+    overview: Option<Overview>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -922,6 +948,7 @@ fn scene_view(policy: &Policy<TestWindow>) -> SceneView {
             })
             .collect(),
         switcher: policy.switcher().map(|switcher| switcher.entries.clone()),
+        overview: policy.overview().cloned(),
     }
 }
 

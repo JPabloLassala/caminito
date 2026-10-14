@@ -1,6 +1,7 @@
 //! Caminito's bindings, read from `org.mate.Marco.global-keybindings` and
 //! `org.mate.Marco.window-keybindings` as Marco reads them (148), and with a mouse button
-//! where Marco reads none (184, ADR 0028). The accelerators other
+//! where Marco reads none (184, ADR 0028). The Overview's, which Marco has no action
+//! for, is `org.mate.Caminito`'s (241). The accelerators other
 //! programs grab are `accelerators`' (98), and the modifier a click on a window is held
 //! with is `button_modifier`'s (162).
 
@@ -15,7 +16,9 @@ use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
 use self::accelerators::{Accelerator, Trigger, parse};
 use crate::commands::Command;
 use crate::dbus::panel::PanelAction;
-use crate::settings::translate::{MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS, Problem};
+use crate::settings::translate::{
+    CAMINITO, MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS, Problem,
+};
 use crate::window_menu::labels;
 
 /// The modifiers a binding names. Locks don't count.
@@ -101,6 +104,19 @@ const fn window(key: &'static str, default: &'static str, does: Does) -> Bindabl
     }
 }
 
+/// `org.mate.Caminito`'s key for the Overview's shortcut (241).
+pub(crate) const OVERVIEW_KEY: &str = "overview";
+
+/// An action Marco hasn't, whose key is `org.mate.Caminito`'s.
+const fn caminito(key: &'static str, default: &'static str, does: Does) -> Bindable {
+    Bindable {
+        schema: CAMINITO,
+        key,
+        default,
+        does,
+    }
+}
+
 const fn policy(action: Action) -> Does {
     Does::Run(Binding::Policy(action))
 }
@@ -165,7 +181,9 @@ const fn command(command: Command) -> Does {
 /// `switch-to-workspace-prev` is last (150). Every other action's key is read and parsed,
 /// and binds nothing until its ticket gives it a behaviour (147).
 /// `run-command-area-screenshot` is master's (`8522ed1`), after the window screenshot as
-/// there; where the installed schema hasn't the key, it has master's default.
+/// there; where the installed schema hasn't the key, it has master's default. The
+/// Overview's (241), which isn't Marco's, is after them all, so a combination of Marco's
+/// wins over it.
 fn bindable() -> impl Iterator<Item = Bindable> {
     let switch_to_workspace = numbered(twelve!("switch-to-workspace-"), global, |n| {
         policy(Action::SwitchToWorkspace(n - 1))
@@ -471,6 +489,7 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "disabled",
                 policy(Action::SwitchToWorkspacePrev),
             ),
+            caminito(OVERVIEW_KEY, "<Super>w", policy(Action::Overview)),
         ])
 }
 
@@ -507,7 +526,8 @@ impl Default for Bindings {
 
 impl Bindings {
     /// Builds the table from the keys' values, as `(schema, key, value)`: every key of
-    /// both schemas, whether Caminito binds its action or not, so every value is parsed.
+    /// Marco's two schemas, whether Caminito binds its action or not, so every value is
+    /// parsed, and the Overview's key of Caminito's own.
     /// An action Caminito binds whose key `keys` hasn't has Marco's default. A value that
     /// can't be bound binds nothing, and is a problem.
     pub(crate) fn from_keys<'a>(

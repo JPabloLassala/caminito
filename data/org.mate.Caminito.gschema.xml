@@ -50,6 +50,15 @@
       <summary>Slide the windows when the workspace changes</summary>
       <description>When true, a change of workspace shows the old workspace's windows leaving and the new one's arriving, the way the two are in the workspace grid. When false, the change is a cut, as in Marco. The slide also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface.</description>
     </key>
+    <!--
+      The Overview's shortcut (241). It's here since Marco has no such action, in the
+      syntax of Marco's keybinding keys, and System Shortcuts lists it.
+    -->
+    <key name="overview" type="s">
+      <default>'&lt;Super&gt;w'</default>
+      <summary>Show the Overview</summary>
+      <description>The shortcut that opens the Overview, which shows the windows of the workspace side by side, and closes it again. It is a key or a mouse button with its modifiers, written as the keys of org.mate.Marco.global-keybindings are: "&lt;Super&gt;w", or "&lt;Super&gt;Button9". With "disabled" or the empty string, nothing opens the Overview.</description>
+    </key>
     <key name="workspace-layout-rows" type="i">
       <default>1</default>
       <range min="0" max="36"/>

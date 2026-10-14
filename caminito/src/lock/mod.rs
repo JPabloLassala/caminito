@@ -276,6 +276,8 @@ impl State {
         caminito.policy.close_window_menu();
         caminito.refresh_window_menu();
         caminito.close_workspace_popup();
+        caminito.policy.close_overview();
+        caminito.refresh_overview();
         caminito.stop_accelerator_repeat();
         caminito.keyboard_layer = None;
         self.update_keyboard_focus();

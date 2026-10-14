@@ -177,6 +177,7 @@ fn defaults() -> Reading {
     put(CAMINITO, "workspace-layout-rows", Value::Int(1));
     put(CAMINITO, "workspaces-per-output", Value::Bool(true));
     put(CAMINITO, "workspace-slide", Value::Bool(true));
+    put(CAMINITO, "overview", s("<Super>w"));
     put(CAMINITO, "workspace-layout-columns", Value::Int(0));
     put(
         CAMINITO,
@@ -750,6 +751,27 @@ fn the_keybinding_keys_of_both_schemas_are_read() {
     let bindings = settings(&reading).bindings;
     assert_eq!(bindings, expected);
     assert_ne!(bindings, Bindings::default());
+}
+
+#[test]
+fn the_overviews_shortcut_is_read_from_caminitos_schema() {
+    let reading = with(CAMINITO, "overview", string("<Super>Tab"));
+    let (expected, _) = Bindings::from_keys([(CAMINITO, "overview", "<Super>Tab")]);
+    let bindings = settings(&reading).bindings;
+    assert_eq!(bindings, expected);
+    assert_ne!(bindings, Bindings::default());
+}
+
+#[test]
+fn an_overview_shortcut_that_doesnt_parse_is_a_problem() {
+    let reading = with(CAMINITO, "overview", string("<Super>F99"));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(
+        problem.to_string(),
+        "org.mate.Caminito overview is '<Super>F99', which isn't a key combination Caminito \
+         can bind: F99 isn't a keysym; binding nothing"
+    );
+    assert!(settings.bindings.iter().all(|(key, _)| key != "overview"));
 }
 
 #[test]

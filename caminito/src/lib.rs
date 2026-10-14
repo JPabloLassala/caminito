@@ -22,6 +22,7 @@ mod minimize_animation;
 mod night_light;
 mod not_responding;
 pub mod output;
+mod overview;
 pub mod protocols;
 pub mod scene;
 pub mod session;

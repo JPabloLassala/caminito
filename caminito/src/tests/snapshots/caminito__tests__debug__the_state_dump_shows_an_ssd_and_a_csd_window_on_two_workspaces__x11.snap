@@ -285,12 +285,17 @@ expression: without_what_varies(&dump)
     {
       "key": "begin-resize",
       "combination": "<Alt>F8"
+    },
+    {
+      "key": "overview",
+      "combination": "<Super>w"
     }
   ],
   "accelerator_grabs": [],
   "switcher": null,
   "workspace_popup": null,
   "window_menu": null,
+  "overview": null,
   "global_menu_switch": "off",
   "menu_claims": [],
   "bell": {

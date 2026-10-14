@@ -368,6 +368,7 @@ impl State {
                 let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
                 self.switch_action(action, trigger, &mods, time);
             }
+            Binding::Policy(Action::Overview) => self.toggle_overview(time),
             Binding::Policy(action) => self.run_action(action, time),
             // The time a client would have for the event.
             Binding::Panel(action) => self.caminito.ask_panel(action, time.millis()),
@@ -486,6 +487,7 @@ impl State {
             Some(Interaction::WorkspacePopup) => {
                 caminito.workspace_popup_key_pressed(keycode, mods, keysym)
             }
+            Some(Interaction::Overview) => caminito.overview_key_pressed(keycode, mods, keysym),
             None => None,
         };
         if let Some(result) = theirs {
@@ -609,6 +611,7 @@ impl State {
         if self.window_menu_button(button, state, location)
             || self.switcher_button(button, state, location)
             || self.workspace_popup_button(button, state, time)
+            || self.overview_button(button, state, location)
         {
             return;
         }
@@ -1024,6 +1027,11 @@ impl Caminito {
         if self.policy.window_menu().is_some() {
             return None;
         }
+        // And so has the open Overview (241): its windows are drawn away from their own
+        // places, and a click is the Overview's.
+        if self.policy.overview().is_some() {
+            return None;
+        }
         scene::LAYERS.into_iter().find_map(|layer| match layer {
             SceneLayer::Blank
             | SceneLayer::Cursor
@@ -1033,7 +1041,8 @@ impl Caminito {
             | SceneLayer::Minimizing
             | SceneLayer::Switcher
             | SceneLayer::WorkspacePopup
-            | SceneLayer::WindowMenu => None,
+            | SceneLayer::WindowMenu
+            | SceneLayer::Overview => None,
             SceneLayer::Overlay
             | SceneLayer::Top
             | SceneLayer::LayerPopups
