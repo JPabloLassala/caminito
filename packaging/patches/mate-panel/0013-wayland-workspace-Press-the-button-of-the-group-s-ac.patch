@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Tue, 13 Oct 2026 13:00:00 -0300
+Subject: [PATCH] wayland-workspace: Press the button of the group's active
+ workspace only
+
+After a switch to a workspace that is before the active one, the Wayland
+switcher showed two pressed buttons: the new active workspace's and the old
+one's.
+
+The switcher took a workspace as active when its own state said so. A
+compositor sends the states of its workspaces one after the other, and
+libxfce4windowing tells the group of its new active workspace as that
+workspace's state arrives. The buttons are built then. A later workspace
+that was active still says it is at that moment, and nothing tells the
+switcher when it stops, because the group has another active workspace by
+then and signals nothing.
+
+Ask the group for its active workspace instead, as the window list does,
+and keep the workspace's own state for one that has no group.
+---
+ applets/wncklet/wayland-workspace.c | 24 +++++++++++++++++-------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/applets/wncklet/wayland-workspace.c b/applets/wncklet/wayland-workspace.c
+index fc6ebe33..4d16027c 100644
+--- a/applets/wncklet/wayland-workspace.c
++++ b/applets/wncklet/wayland-workspace.c
+@@ -105,6 +105,21 @@ list_workspaces (WaylandWorkspaceData *data)
+ 	return xfw_workspace_manager_list_workspaces (data->workspace_manager);
+ }
+ 
++/* Whether the workspace is the active one. The group's, not the workspace's
++ * own state: as the active workspace changes, the one that was active can
++ * still say it is when the group tells us of the new one, and nothing tells
++ * us when it stops. */
++static gboolean
++workspace_is_active (XfwWorkspace *workspace)
++{
++	XfwWorkspaceGroup *group = xfw_workspace_get_workspace_group (workspace);
++
++	if (group == NULL)
++		return (xfw_workspace_get_state (workspace) & XFW_WORKSPACE_STATE_ACTIVE) != 0;
++
++	return xfw_workspace_group_get_active_workspace (group) == workspace;
++}
++
+ static int
+ count_visible_workspaces (WaylandWorkspaceData *data)
+ {
+@@ -261,7 +276,6 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 		const char *name;
+ 		char *free_name = NULL;
+ 		GtkWidget *button;
+-		XfwWorkspaceState ws_state;
+ 
+ 		ws = get_nth_workspace (data, i);
+ 
+@@ -286,10 +300,9 @@ rebuild_ui (WaylandWorkspaceData *data)
+ 		g_object_set_data (G_OBJECT (button), "ws-index", GINT_TO_POINTER (i));
+ 
+ 		/* Set active state */
+-		ws_state = ws ? xfw_workspace_get_state (ws) : XFW_WORKSPACE_STATE_NONE;
+ 		data->ignore_toggle = TRUE;
+ 		gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (button),
+-					      (ws_state & XFW_WORKSPACE_STATE_ACTIVE) != 0);
++					      ws != NULL && workspace_is_active (ws));
+ 		data->ignore_toggle = FALSE;
+ 
+ 		g_signal_connect (button, "toggled",
+@@ -710,10 +723,7 @@ wayland_workspace_get_active_index (GtkWidget *pager_widget)
+ 
+ 	for (l = workspaces; l != NULL; l = l->next)
+ 	{
+-		XfwWorkspace *ws = l->data;
+-		XfwWorkspaceState state = xfw_workspace_get_state (ws);
+-
+-		if (state & XFW_WORKSPACE_STATE_ACTIVE)
++		if (workspace_is_active (l->data))
+ 			return i;
+ 		i++;
+ 	}
