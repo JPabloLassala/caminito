@@ -2075,6 +2075,34 @@ session_env() {
   `dynamic`, `journalctl --user -t caminito-wallpaperd` for a dynamic wallpaper that can't be
   read, and the `Sun` property's `location-source`, which is `stored` in step 3.
 
+### A slideshow changes every 5 minutes with a cross-fade, and differs on two monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with two monitors.
+     Make a folder of five or more pictures of clearly different scenes, say `~/Pictures/Slides`.
+  2. Open *Wallpaper*, leave *Same on all outputs* on, and choose *Slideshow*. Press the folder's
+     button and choose `~/Pictures/Slides`. Set *Change every* to *5 minutes*.
+  3. Look at both monitors, then watch them across the next whole 5 minutes of the clock (as
+     10:05), and the one after.
+  4. Copy one more picture into the folder, and take one out, then wait for the next change and
+     read the dialog's count again.
+  5. Tick *In order, not at random*, and watch two more changes.
+  6. Move every picture out of the folder, and wait for the next minute; then rename the folder.
+- **Expected:** in step 2 the pane shows the folder's name on its button and how many pictures
+  it has, the desktop cross-fades to a picture of the folder on each monitor at once, and the
+  sidebar shows each monitor's. In step 3 the two monitors show different pictures of the folder,
+  and both change together on the whole 5 minutes, each with a cross-fade of about a second, and
+  never to the picture the other has. Over five changes neither monitor shows the same picture
+  twice. In step 4 the count follows within a minute, the new picture can come up, and the one
+  taken out doesn't. In step 5 each monitor goes through the pictures in the order of their
+  names, the second one picture ahead of the first. In step 6 both monitors fade to the
+  wallpaper's colour within a minute, and the pane says the folder has no pictures, then that
+  it isn't there; nothing crashes, and `pgrep caminito-wallpaperd` still shows one drawer.
+- **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/` for `kind='slideshow'`,
+  `slideshow`, `slideshow-interval` and `slideshow-in-order`, and `G_MESSAGES_DEBUG=caminito-wallpaperd`
+  in the drawer's environment for `the slideshow … has no pictures`.
+
 ## The control center
 
 ### Windows and System Shortcuts open under Caminito, and name it

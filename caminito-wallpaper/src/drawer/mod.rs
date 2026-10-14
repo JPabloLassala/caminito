@@ -9,6 +9,11 @@
 //! logical size through a viewport. A change of what's drawn cross-fades over [`FADE`]; a
 //! change of size draws at once.
 //!
+//! A dynamic wallpaper (216) and a slideshow (213) are drawn again as the clock moves: each
+//! minute, and at the moment a timed XML's picture or a slideshow's ends if sooner. A
+//! slideshow's folder is read again each time, so a picture added to it or taken from it is
+//! picked up by the next change.
+//!
 //! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
 //! it after every refresh, and a picture another program writes to it comes in first.
 
@@ -62,6 +67,7 @@ pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
+use crate::slideshow::{self, Slideshow};
 use crate::sun::sky_now;
 use buffer::Buffers;
 use paint::Pictures;
@@ -69,8 +75,9 @@ use paint::Pictures;
 /// How long a change of wallpaper takes to cross-fade.
 const FADE: Duration = Duration::from_secs(1);
 
-/// How often a dynamic wallpaper is drawn for the moment again (216), besides each time the
-/// sun moves, and a timed XML's picture ending sooner: its blend shows in whole percent.
+/// How often a dynamic wallpaper (216) and a slideshow (213) are drawn for the moment again,
+/// besides each time the sun moves, and a timed XML's or a slideshow's picture ending
+/// sooner: a pair's blend shows in whole percent.
 const DYNAMIC_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
@@ -214,7 +221,8 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
-    /// For a wake before the next tick, when a timed XML's picture ends sooner.
+    /// For a wake before the next tick, when a timed XML's or a slideshow's picture ends
+    /// sooner.
     refresh: Refresh,
     /// Whether such a wake is set.
     waking: Rc<Cell<bool>>,
@@ -554,27 +562,44 @@ impl App {
             };
             let identity = self.identity(name);
             let settings = settings_for(&mut self.store, &identity, primary.as_ref());
-            shown.push((output.global, primary.as_ref() == Some(&identity), settings));
+            let is_primary = primary.as_ref() == Some(&identity);
+            shown.push((output.global, is_primary, identity.path_element(), settings));
         }
         let dynamics: Vec<&str> = shown
             .iter()
-            .filter(|(_, _, settings)| settings.kind == Kind::Dynamic)
-            .map(|(_, _, settings)| settings.dynamic.as_str())
+            .filter(|(_, _, _, settings)| settings.kind == Kind::Dynamic)
+            .map(|(_, _, _, settings)| settings.dynamic.as_str())
             .collect();
         self.dynamics
             .retain(|path, _| dynamics.contains(&path.as_str()));
+        // Each output on a slideshow's folder shows another of its pictures (213).
+        let on_folders: Vec<(&str, &str)> = shown
+            .iter()
+            .filter(|(_, _, _, settings)| settings.kind == Kind::Slideshow)
+            .map(|(_, _, element, settings)| (element.as_str(), settings.slideshow.as_str()))
+            .collect();
+        let mut ranks = slideshow::ranks(&on_folders).into_iter();
         let sky = sky_now(self.caminito.as_ref());
         let mut drawn = Vec::new();
         let mut primary_drawn = None;
-        for (global, is_primary, settings) in shown {
-            let moment = self.moment(&settings, &sky);
+        let mut next_slide = None;
+        for (global, is_primary, _, settings) in shown {
+            let moment = match settings.kind {
+                Kind::Slideshow => {
+                    let rank = ranks.next().unwrap_or_default();
+                    let (moment, next) = slide(&settings, rank, &sky);
+                    next_slide = next_slide.into_iter().chain(next).min();
+                    moment
+                }
+                _ => self.moment(&settings, &sky),
+            };
             let output_drawn = settings.drawn(moment.as_ref());
             if is_primary {
                 primary_drawn = Some(output_drawn.clone());
             }
             drawn.push((global, output_drawn));
         }
-        self.wake_for_timed(&sky);
+        self.wake_for_clock(&sky, next_slide);
         if let Some(primary) = primary_drawn {
             self.bridge_out(&primary);
         }
@@ -589,14 +614,16 @@ impl App {
         }
     }
 
-    /// Wakes the drawer when the soonest timed XML shown next changes, if before the next
-    /// tick: at its next picture, or each second of its transition.
-    fn wake_for_timed(&mut self, sky: &Sky) {
+    /// Wakes the drawer when the soonest timed XML shown next changes, at its next picture or
+    /// each second of its transition, or at `next_slide`, a slideshow's next picture, if
+    /// either is before the next tick.
+    fn wake_for_clock(&mut self, sky: &Sky, next_slide: Option<u64>) {
         let soonest = self
             .dynamics
             .values()
             .flatten()
             .filter_map(|dynamic| dynamic.next_change(sky))
+            .chain(next_slide)
             .min();
         let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(DYNAMIC_TICK)) else {
             return;
@@ -776,6 +803,22 @@ impl App {
             self.present(global);
         }
     }
+}
+
+/// What the Slideshow of `settings` shows at `sky` on the output of rank `rank` among those
+/// on its folder, read again from the folder, and how many seconds until it changes. A
+/// folder with no picture, or none chosen, has no moment, and is the output's colour.
+fn slide(settings: &OutputSettings, rank: usize, sky: &Sky) -> (Option<Moment>, Option<u64>) {
+    if settings.slideshow.is_empty() {
+        return (None, None);
+    }
+    let folder = std::path::Path::new(&settings.slideshow);
+    let slideshow = Slideshow::read(folder, settings.interval, settings.in_order);
+    if slideshow.is_empty() {
+        glib::g_debug!(DOMAIN, "the slideshow {} has no pictures", folder.display());
+    }
+    let moment = slideshow.picture(sky.local, rank).map(Moment::still);
+    (moment, slideshow.next_change(sky.local))
 }
 
 /// What the surface shows now: its frame, or a fade's frame for this moment, or `None` for

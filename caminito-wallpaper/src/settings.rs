@@ -6,6 +6,7 @@
 use crate::dynamic::Moment;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
+use crate::slideshow::Interval;
 
 /// Which of the five things an output's wallpaper is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -105,6 +106,12 @@ pub struct OutputSettings {
     pub picture: String,
     /// The Dynamic's: a Plasma package's folder or a timed XML (216).
     pub dynamic: String,
+    /// The Slideshow's folder (213).
+    pub slideshow: String,
+    /// How long each of the Slideshow's pictures shows.
+    pub interval: Interval,
+    /// Whether the Slideshow goes by name rather than at random.
+    pub in_order: bool,
     pub positioning: Positioning,
     /// The Colour's, and what shows where a picture doesn't.
     pub colour: Colour,
@@ -164,10 +171,11 @@ impl Drawn {
 }
 
 impl OutputSettings {
-    /// What's drawn, with `moment` what the Dynamic shows now. A Picture with no file, and
-    /// a Dynamic with no moment, are their colour, and the two kinds that later tickets draw
-    /// are their colour until then. A Dynamic's blend is in whole percent, so a frame is
-    /// drawn again only when it shows.
+    /// What's drawn, with `moment` what the Dynamic or the Slideshow shows now: a Slideshow's
+    /// is still, its picture alone (213). A Picture with no file, and a Dynamic or a Slideshow
+    /// with no moment, are their colour, and the Picture of the day is its colour until 214
+    /// draws it. A Dynamic's blend is in whole percent, so a frame is drawn again only when
+    /// it shows.
     pub fn drawn(&self, moment: Option<&Moment>) -> Drawn {
         let picture = |file: &str| Drawn::Picture {
             file: file.to_owned(),
@@ -176,7 +184,7 @@ impl OutputSettings {
         };
         match (self.kind, moment) {
             (Kind::Picture, _) if !self.picture.is_empty() => picture(&self.picture),
-            (Kind::Dynamic, Some(moment)) => {
+            (Kind::Dynamic | Kind::Slideshow, Some(moment)) => {
                 let percent = (moment.blend.clamp(0.0, 1.0) * 100.0).round() as u8;
                 let (from, to) = (moment.from.to_string_lossy(), moment.to.to_string_lossy());
                 match percent {
@@ -362,9 +370,9 @@ pub fn take_mate_background(store: &mut (impl Store + ?Sized), mate: &MateBackgr
     let settings = OutputSettings {
         kind,
         picture: mate.picture.clone(),
-        dynamic: String::new(),
         positioning: Positioning::from_mate(&mate.options),
         colour,
+        ..OutputSettings::default()
     };
     store.write(&Set::All, &settings);
     store.set_took_mate_background();

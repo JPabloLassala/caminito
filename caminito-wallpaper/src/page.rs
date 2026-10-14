@@ -8,6 +8,7 @@
 use crate::identity::Identity;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, OutputSettings, Set, Store, settings_for};
+use crate::slideshow::{self, Interval};
 
 #[cfg(test)]
 mod tests;
@@ -194,15 +195,17 @@ impl Page {
         store.set_same_on_all_outputs(same);
     }
 
-    /// Shows `kind`'s controls. A Picture or a Dynamic with something to show, and a Colour,
-    /// are the selected output's at once; the kinds that later tickets build are only shown.
+    /// Shows `kind`'s controls. A Picture, a Slideshow or a Dynamic with something to show,
+    /// and a Colour, are the selected output's at once; the Picture of the day, which 214
+    /// builds, is only shown.
     pub fn show_kind(&mut self, store: &mut (impl Store + ?Sized), kind: Kind) {
         self.kind = kind;
         let applies = match kind {
             Kind::Picture => !self.current(store).picture.is_empty(),
             Kind::Colour => true,
+            Kind::Slideshow => !self.current(store).slideshow.is_empty(),
             Kind::Dynamic => !self.current(store).dynamic.is_empty(),
-            Kind::Slideshow | Kind::PictureOfTheDay => false,
+            Kind::PictureOfTheDay => false,
         };
         if applies {
             self.change(store, |settings| settings.kind = kind);
@@ -266,6 +269,51 @@ impl Page {
             store.set_dynamics(&dynamics);
         }
         self.choose_dynamic(store, file);
+    }
+
+    /// Makes the pictures of `folder` the selected output's, as a Slideshow (213).
+    pub fn choose_slideshow(&mut self, store: &mut (impl Store + ?Sized), folder: &str) {
+        self.kind = Kind::Slideshow;
+        self.change(store, |settings| {
+            settings.kind = Kind::Slideshow;
+            settings.slideshow = folder.to_owned();
+        });
+    }
+
+    /// Sets how long each of the selected output's Slideshow pictures shows.
+    pub fn choose_interval(&mut self, store: &mut (impl Store + ?Sized), interval: Interval) {
+        self.change(store, |settings| settings.interval = interval);
+    }
+
+    /// Sets whether the selected output's Slideshow goes by name rather than at random.
+    pub fn choose_in_order(&mut self, store: &mut (impl Store + ?Sized), in_order: bool) {
+        self.change(store, |settings| settings.in_order = in_order);
+    }
+
+    /// Each output's rank among the outputs on the same Slideshow's folder, as the drawer
+    /// ranks them, so the sidebar shows each the picture the drawer does; `None` for one
+    /// that isn't a Slideshow.
+    pub fn slideshow_ranks(&self, store: &(impl Store + ?Sized)) -> Vec<Option<usize>> {
+        let shown: Vec<(String, OutputSettings)> = (0..self.outputs.len())
+            .map(|index| {
+                let element = self.outputs[index].identity.path_element();
+                (element, self.wallpaper(store, index))
+            })
+            .collect();
+        let on_folders: Vec<(&str, &str)> = shown
+            .iter()
+            .filter(|(_, settings)| settings.kind == Kind::Slideshow)
+            .map(|(element, settings)| (element.as_str(), settings.slideshow.as_str()))
+            .collect();
+        let mut ranks = slideshow::ranks(&on_folders).into_iter();
+        shown
+            .iter()
+            .map(|(_, settings)| {
+                (settings.kind == Kind::Slideshow)
+                    .then(|| ranks.next())
+                    .flatten()
+            })
+            .collect()
     }
 
     /// Adds `folder` to the folders the user added, once.
