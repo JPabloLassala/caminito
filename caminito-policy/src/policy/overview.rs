@@ -50,6 +50,7 @@ pub struct Overview {
 /// What the Overview lists on one output (246).
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverviewOutput {
+    /// The output it's of.
     pub output: OutputId,
     /// Its active workspace, as the list has it.
     pub workspace: usize,

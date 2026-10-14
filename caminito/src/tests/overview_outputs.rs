@@ -6,6 +6,13 @@
 //!
 //! The outputs are `two_outputs_with`'s: two of 1920 × 1080 side by side, the left one the
 //! primary. Each test's windows are 400 × 300, put where it says.
+//!
+//! The layouts and a drop onto the other output run on both kinds of window, and an
+//! output that goes too. The rest map xdg toplevels only: the bars, the clicks on a cell,
+//! the bindings and the transition are the Overview's own state and don't depend on the
+//! kind, a window across both outputs is policy's Main output, which is the same for both,
+//! and the shrink, the maximised and the tiled window read the size Caminito asked for
+//! from an xdg client's configures, which an X client has no record of.
 
 use caminito_policy::{Action, Tile};
 use smithay::output::Output;
