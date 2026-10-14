@@ -5,7 +5,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use caminito_policy::{
-    MenuEntry, MenuItem, MenuMark, PolicyWindow, SwitchEntry, SwitchList, Tile, WindowId,
+    MenuEntry, MenuItem, MenuMark, OutputId, OverviewOutput, PolicyWindow, SwitchEntry, SwitchList,
+    Tile, WindowId,
 };
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
@@ -299,12 +300,24 @@ struct SwitcherPopupDump {
 
 #[derive(Serialize)]
 struct OverviewDump {
-    /// The name of the output it's on.
+    /// What it has on the output the selection is on (246).
+    #[serde(flatten)]
+    on: OverviewOutputDump,
+    /// The selected window (242), if one is.
+    selected: Option<u64>,
+    /// The left button held on a window, and the drag it became (245).
+    drag: Option<OverviewDragDump>,
+    /// What it has on each output (246), the selection's first, then in the order of the
+    /// outputs.
+    outputs: Vec<OverviewOutputDump>,
+}
+
+#[derive(Serialize)]
+struct OverviewOutputDump {
+    /// The name of the output.
     output: String,
     /// The windows listed, bottom to top.
     windows: Vec<OverviewWindowDump>,
-    /// The selected window (242), if one is.
-    selected: Option<u64>,
     /// The workspace it lists the windows of: its output's active one (244).
     workspace: usize,
     /// Its bar's cells (244), one for each workspace from the first, once the refresh pass
@@ -316,8 +329,6 @@ struct OverviewDump {
     /// draws away from its place, with where it's drawn, in the order of the windows' ids:
     /// one time for each place, as `workspace_slides` has it.
     sliding: Vec<OverviewSlidingDump>,
-    /// The left button held on a window, and the drag it became (245).
-    drag: Option<OverviewDragDump>,
     /// How much of black is over the wallpaper.
     dim: f32,
     /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
@@ -334,8 +345,10 @@ struct OverviewDragDump {
     dragging: bool,
     /// The workspace whose cell the pointer is on, which a drop sends the window to.
     target: Option<usize>,
-    /// Where the window is drawn under the pointer, from the output's top left corner,
-    /// while it's a drag.
+    /// The name of the output the pointer is on, while it's a drag (246).
+    onto: Option<String>,
+    /// Where the window is drawn under the pointer, from the top left corner of the output
+    /// the selection is on, while it's a drag.
     rect: Option<RectDump>,
 }
 
@@ -359,8 +372,11 @@ struct OverviewSlidingDump {
 
 #[derive(Serialize)]
 struct OverviewTransitionDump {
-    /// The name of the output it's on.
+    /// The name of the output it's on: the selection's, or the first while policy has it
+    /// closed.
     output: String,
+    /// The names of every output it runs on, at once (246).
+    outputs: Vec<String>,
     /// `opening` or `closing`.
     direction: &'static str,
     /// How open it's drawn, from 0, closed, to 1, open, on the ease-out.
@@ -812,86 +828,31 @@ impl Caminito {
             }),
         });
         let overview = policy.overview().and_then(|open| {
-            let mut outputs = self.outputs.iter();
-            let output = outputs.find(|output| output_id(output) == open.output)?;
-            let laid_out = self.overview_on(output);
-            let slot = |id: &WindowId| {
-                let laid = &laid_out?.laid;
-                let place = laid.windows.iter().position(|listed| listed == id)?;
-                laid.layout.slots.get(place)
+            let outputs: Vec<OverviewOutputDump> = open
+                .outputs()
+                .filter_map(|on| self.overview_output_dump(&on))
+                .collect();
+            let on = self.overview_output_dump(&open.on(open.output)?)?;
+            let selection = self.outputs.iter().find(|o| output_id(o) == open.output)?;
+            let laid_out = self.overview_on(selection);
+            let name = |id: OutputId| {
+                let output = self.outputs.iter().find(|o| output_id(o) == id);
+                output.map(|output| output.name())
             };
-            let bar = laid_out.map_or_else(Vec::new, |laid_out| {
-                let cells = laid_out.bar.cells.iter().enumerate();
-                cells
-                    .map(|(workspace, cell)| OverviewCellDump {
-                        workspace,
-                        rect: (*cell).into(),
-                        active: workspace == laid_out.active,
-                    })
-                    .collect()
-            });
-            let size = output_geometry(output).size;
-            let mut sliding: Vec<OverviewSlidingDump> = laid_out
-                .map(|laid_out| {
-                    laid_out
-                        .layouts()
-                        .flat_map(|laid| {
-                            let shifts = self.overview_shifts(laid_out, laid);
-                            let places = laid.windows.iter().zip(&laid.layout.slots);
-                            places.flat_map(move |(id, slot)| {
-                                let shifts = shifts.clone().into_iter();
-                                shifts.filter(|shift| *shift != Point::default()).map(
-                                    move |shift| OverviewSlidingDump {
-                                        workspace: laid.workspace,
-                                        window: id.0,
-                                        rect: Rectangle::new(
-                                            slot.window.loc + shift,
-                                            slot.window.size,
-                                        )
-                                        .into(),
-                                    },
-                                )
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            sliding.sort_by_key(|dump| (dump.window, dump.rect.x, dump.rect.y));
             Some(OverviewDump {
-                output: output.name(),
-                windows: open
-                    .windows
-                    .iter()
-                    .map(|id| OverviewWindowDump {
-                        window: id.0,
-                        rect: slot(id).map(|slot| slot.window.into()),
-                        label: slot(id).map(|slot| slot.label.into()),
-                    })
-                    .collect(),
                 selected: open.selected.map(|id| id.0),
-                workspace: open.workspace,
-                bar,
-                area: laid_out.map(|laid_out| laid_out.bar.area_beneath(size).into()),
-                sliding,
                 drag: open.drag.map(|drag| OverviewDragDump {
                     window: drag.window.0,
                     pointer: drag.pointer.into(),
                     dragging: drag.dragging,
                     target: drag.target,
+                    onto: drag.onto.and_then(name),
                     rect: laid_out
                         .and_then(|laid_out| self.overview_dragged(laid_out))
                         .map(|dragged| dragged.rect.into()),
                 }),
-                dim: crate::overview::DIM,
-                hidden_layer_surfaces: self
-                    .layer_surfaces(output)
-                    .iter()
-                    .filter(|(layer, _)| {
-                        let namespace = layer.namespace();
-                        scene::overview_hides(self, output, layer.layer(), namespace)
-                    })
-                    .map(|(layer, _)| layer.namespace().to_owned())
-                    .collect(),
+                outputs,
+                on,
             })
         });
         let workspace_popup = self.workspace_popup.as_ref().map(|popup| {
@@ -970,10 +931,14 @@ impl Caminito {
             }
         });
         let now = self.now();
-        let overview_transition = self.overview.as_ref().and_then(|open| {
+        let selection = policy.overview().map(|open| open.output);
+        let mut shown = self.overview.iter();
+        let shown = shown.find(|open| Some(output_id(&open.output)) == selection);
+        let overview_transition = shown.or(self.overview.first()).and_then(|open| {
             let transition = open.transition.filter(|t| !t.is_over(now))?;
             Some(OverviewTransitionDump {
                 output: open.output.name(),
+                outputs: self.overview.iter().map(|on| on.output.name()).collect(),
                 direction: transition.heading.name(),
                 part: open.part(now),
                 dim: open.dim(now),
@@ -1167,5 +1132,79 @@ impl Caminito {
         );
         self.queue_redraw_all();
         self.debug.frame_debug
+    }
+}
+
+impl Caminito {
+    /// What the open Overview has on one output, `on` (246): what policy lists there, and
+    /// how the refresh pass laid it out, once it has. None for an output there isn't.
+    fn overview_output_dump(&self, on: &OverviewOutput) -> Option<OverviewOutputDump> {
+        let output = self.outputs.iter().find(|o| output_id(o) == on.output)?;
+        let laid_out = self.overview_on(output);
+        let slot = |id: &WindowId| {
+            let laid = &laid_out?.laid;
+            let place = laid.windows.iter().position(|listed| listed == id)?;
+            laid.layout.slots.get(place)
+        };
+        let bar = laid_out.map_or_else(Vec::new, |laid_out| {
+            let cells = laid_out.bar.cells.iter().enumerate();
+            cells
+                .map(|(workspace, cell)| OverviewCellDump {
+                    workspace,
+                    rect: (*cell).into(),
+                    active: workspace == laid_out.active,
+                })
+                .collect()
+        });
+        let size = output_geometry(output).size;
+        let mut sliding: Vec<OverviewSlidingDump> = laid_out
+            .map(|laid_out| {
+                laid_out
+                    .layouts()
+                    .flat_map(|laid| {
+                        let shifts = self.overview_shifts(laid_out, laid);
+                        let places = laid.windows.iter().zip(&laid.layout.slots);
+                        places.flat_map(move |(id, slot)| {
+                            let shifts = shifts.clone().into_iter();
+                            shifts
+                                .filter(|shift| *shift != Point::default())
+                                .map(move |shift| OverviewSlidingDump {
+                                    workspace: laid.workspace,
+                                    window: id.0,
+                                    rect: Rectangle::new(slot.window.loc + shift, slot.window.size)
+                                        .into(),
+                                })
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        sliding.sort_by_key(|dump| (dump.window, dump.rect.x, dump.rect.y));
+        Some(OverviewOutputDump {
+            output: output.name(),
+            windows: on
+                .windows
+                .iter()
+                .map(|id| OverviewWindowDump {
+                    window: id.0,
+                    rect: slot(id).map(|slot| slot.window.into()),
+                    label: slot(id).map(|slot| slot.label.into()),
+                })
+                .collect(),
+            workspace: on.workspace,
+            bar,
+            area: laid_out.map(|laid_out| laid_out.bar.area_beneath(size).into()),
+            sliding,
+            dim: crate::overview::DIM,
+            hidden_layer_surfaces: self
+                .layer_surfaces(output)
+                .iter()
+                .filter(|(layer, _)| {
+                    let namespace = layer.namespace();
+                    scene::overview_hides(self, output, layer.layer(), namespace)
+                })
+                .map(|(layer, _)| layer.namespace().to_owned())
+                .collect(),
+        })
     }
 }

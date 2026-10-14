@@ -288,9 +288,9 @@ pub struct Caminito {
     pub(crate) switcher: Option<OpenSwitcher>,
     /// The Workspace popup while it shows (152).
     pub(crate) workspace_popup: Option<WorkspacePopup>,
-    /// The compositor's side of the open Overview (241), once the refresh pass has laid it
-    /// out. Policy has whether it's open.
-    pub(crate) overview: Option<Overview>,
+    /// The compositor's side of the open Overview (241), on each output it's laid out on
+    /// (246), once the refresh pass has laid it out. Policy has whether it's open.
+    pub(crate) overview: Vec<Overview>,
     /// The compositor's side of the window menu while it's open (161).
     pub(crate) window_menu: Option<OpenWindowMenu>,
     /// The cursor the client with pointer focus asked for.
@@ -991,7 +991,7 @@ impl Caminito {
             suppressed_buttons: HashSet::new(),
             switcher: None,
             workspace_popup: None,
-            overview: None,
+            overview: Vec::new(),
             window_menu: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,

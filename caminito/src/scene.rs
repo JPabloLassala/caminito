@@ -452,11 +452,11 @@ where
     ))
 }
 
-/// Whether the Overview is drawn on `output`: while policy has it open there (241), and
-/// while it's drawn closing after policy closed it (243).
+/// Whether the Overview is drawn on `output`: while policy has it open there (241), which
+/// is on every output (246), and while it's drawn closing after policy closed it (243).
 fn overview_is_drawn(caminito: &Caminito, output: &Output) -> bool {
     let open = caminito.policy.overview();
-    let open_there = open.is_some_and(|open| open.output == output_id(output));
+    let open_there = open.is_some_and(|open| open.on(output_id(output)).is_some());
     open_there || caminito.overview_on(output).is_some()
 }
 
@@ -513,7 +513,7 @@ pub(crate) fn overview_hides(
 /// its way open or closed (243), each window is between its real place and its place in
 /// the layout, and the bar, the labels, the dimming and the minimised windows fade. A
 /// window that's dragged (245) is in front of all, under the pointer, and not at its
-/// place.
+/// place: on each output it's over, whichever its own is (246).
 fn overview_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -530,7 +530,8 @@ fn overview_elements<R>(
     let scale = output.current_scale().fractional_scale();
     let now = caminito.now();
     if let Some(dragged) = caminito.overview_dragged(open) {
-        let place = |_| (dragged.rect, dragged.rect);
+        let whole = Rectangle::from_size(output_geometry(output).size);
+        let place = |_| (dragged.rect, whole);
         scaled_window_elements(renderer, caminito, dragged.id, place, scale, 1.0, elements);
     }
     overview_bar_elements(renderer, caminito, output, open, now, elements);
@@ -725,7 +726,7 @@ fn overview_bar_elements<R>(
             )));
         }
     }
-    let target = caminito.overview_drop_target();
+    let target = caminito.overview_drop_target(output);
     if let Some(cell) = target.and_then(|target| open.bar.cells.get(target)) {
         let color = faded(selection_color(caminito), TARGET_MARK * alpha);
         elements.push(SceneElement::Solid(SolidColorRenderElement::new(

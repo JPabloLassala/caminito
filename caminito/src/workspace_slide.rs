@@ -80,8 +80,8 @@ pub(crate) struct Slide {
     left: Vec<Left>,
     /// The new workspace's windows, which weren't on screen.
     arriving: HashSet<WindowId>,
-    /// Whether the Overview was open on the output when it started (244): it moves the
-    /// Overview's layouts then, and the windows as they are otherwise.
+    /// Whether the Overview was open when it started (244), which is on every output (246):
+    /// it moves the Overview's layouts then, and the windows as they are otherwise.
     under_overview: bool,
 }
 
@@ -279,17 +279,17 @@ impl Caminito {
     /// animation's three keys against it, the switch is a cut, which ends a running slide
     /// too; a change of those keys alone lets it finish. The session lock ends every slide
     /// at once and makes each switch under it a cut, and a slide ends with its output. So
-    /// does the Overview on its output (241): it opens at once, with the slide cut to its
-    /// end, and a switch under it is a cut until its bar has the workspaces (244).
+    /// does the Overview (241), on every output (246): it opens at once, with the slide cut
+    /// to its end, and closing it ends a slide that started under it (244).
     pub(crate) fn refresh_workspace_slides(&mut self) {
         let now = self.now();
         let switches = self.policy.take_output_switches();
         let locked = self.lock.is_locked();
-        let overview = self.policy.overview().map(|open| open.output);
+        let overview = self.policy.overview().is_some();
         let outputs = &self.outputs;
         self.workspace_slides.running.retain(|slide| {
             !locked
-                && slide.under_overview == (Some(slide.output) == overview)
+                && slide.under_overview == overview
                 && outputs
                     .iter()
                     .any(|output| output_id(output) == slide.output)
@@ -325,7 +325,7 @@ impl Caminito {
                 Some(running) => Slide::retargeted(running, &switch, size, now),
                 None => Slide::new(&switch, size, now),
             };
-            slide.under_overview = Some(switch.output) == overview;
+            slide.under_overview = overview;
             // Those drawn there. A dialog dragged to another output leaves and arrives
             // with its root (223), and isn't the switched output's to slide.
             let on_output = |id: &&WindowId| policy.main_output_of(**id) == Some(switch.output);

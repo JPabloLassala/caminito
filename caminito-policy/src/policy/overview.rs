@@ -1,8 +1,13 @@
-//! The Overview (241, ADR 0033): whether it's open, the output it's on, the windows it
-//! lists and the one selected (242), the drag of a window (245), and what a choice, an
+//! The Overview (241, ADR 0033): whether it's open, the windows it lists on each output
+//! (246) and the one selected (242), the drag of a window (245), and what a choice, an
 //! arrow key, a middle click, a click on a workspace of its bar (244) and a drop do. The
 //! compositor has its layout, its bar, its drawing, its keys and its clicks, and asks here
 //! for what they do.
+//!
+//! It's on every output at once (246), each with its own active workspace's windows. The
+//! selection is on one of them, whose layout the arrow keys move it in. A window dragged
+//! onto another output goes to that output's active workspace, or to the workspace of the
+//! cell it's dropped on.
 //!
 //! It's the seat's Interaction (187), and every seat's, as the Window switcher is: the
 //! shortcut opens it only while no seat has one, and nothing else opens while it's open.
@@ -21,14 +26,18 @@ use super::switcher::SwitchList;
 pub struct Overview {
     /// The seat that opened it, which a chosen window is activated for.
     pub seat: SeatId,
-    /// The output it's on, whose active workspace's windows it lists.
+    /// The output the selection is on, whose layout the arrow keys move it in (246): the
+    /// focused window's output at opening, or the seat's Active output with none focused.
+    /// When it goes, the output that would be chosen at opening takes its place.
     pub output: OutputId,
     /// That output's active workspace, as the list has it. A switch while it's open (244)
     /// lists the new one's windows.
     pub workspace: usize,
-    /// The windows listed, bottom to top. Policy keeps the list as the windows are now: one
-    /// that goes leaves it.
+    /// That output's windows listed, bottom to top. Policy keeps the list as the windows
+    /// are now: one that goes leaves it.
     pub windows: Vec<WindowId>,
+    /// Each other output's part (246), in the order of policy's outputs.
+    pub others: Vec<OverviewOutput>,
     /// The selected window, which Enter chooses (242): the focused one at opening, and after
     /// a switch of workspace (244), or none. It's always one of `windows`: none is selected
     /// once it goes.
@@ -36,6 +45,42 @@ pub struct Overview {
     /// The left button held down on a listed window, and the drag it became once the
     /// pointer went past `drag-threshold` (245). It ends with the window's going.
     pub drag: Option<OverviewDrag>,
+}
+
+/// What the Overview lists on one output (246).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverviewOutput {
+    pub output: OutputId,
+    /// Its active workspace, as the list has it.
+    pub workspace: usize,
+    /// Its windows listed, bottom to top.
+    pub windows: Vec<WindowId>,
+}
+
+impl Overview {
+    /// Each output's part, the selection's first.
+    pub fn outputs(&self) -> impl Iterator<Item = OverviewOutput> + '_ {
+        let own = OverviewOutput {
+            output: self.output,
+            workspace: self.workspace,
+            windows: self.windows.clone(),
+        };
+        std::iter::once(own).chain(self.others.iter().cloned())
+    }
+
+    /// The part of `output`, if it's one of the Overview's.
+    pub fn on(&self, output: OutputId) -> Option<OverviewOutput> {
+        self.outputs().find(|on| on.output == output)
+    }
+
+    /// The output that lists `id`, if one does.
+    pub fn output_listing(&self, id: WindowId) -> Option<OutputId> {
+        if self.windows.contains(&id) {
+            return Some(self.output);
+        }
+        let other = self.others.iter().find(|on| on.windows.contains(&id));
+        other.map(|on| on.output)
+    }
 }
 
 /// A press of the left button on a window of the Overview's layout, which is a drag of the
@@ -55,6 +100,10 @@ pub struct OverviewDrag {
     /// The workspace of the bar the pointer is on, which a drop sends the window to: none
     /// on anything else, and none before the drag.
     pub target: Option<usize>,
+    /// The output the pointer is on (246), whose bar's cell `target` is. A drop on another
+    /// output than the window's with no target sends it to that output's active workspace.
+    /// None before the drag, and on no output.
+    pub onto: Option<OutputId>,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -69,7 +118,7 @@ impl<W: PolicyWindow> Policy<W> {
         if self.overview.take().is_some() || self.a_seat_has_an_interaction() {
             return;
         }
-        let Some(output) = self.active_output(seat) else {
+        let Some(output) = self.overview_output(seat) else {
             return;
         };
         let workspace = self.active_workspace_on(output);
@@ -80,9 +129,33 @@ impl<W: PolicyWindow> Policy<W> {
             output,
             workspace,
             windows,
+            others: self.overview_others(output),
             selected,
             drag: None,
         });
+    }
+
+    /// The output the Overview's selection is on, as it opens for `seat` (246): the focused
+    /// window's, or the seat's Active output with none focused. None with no output.
+    fn overview_output(&self, seat: SeatId) -> Option<OutputId> {
+        let focused = self.focus(seat).and_then(|id| self.output_showing(id));
+        focused.or(self.active_output(seat))
+    }
+
+    /// What the Overview lists on each output but `output`, in the order of policy's
+    /// outputs.
+    fn overview_others(&self, output: OutputId) -> Vec<OverviewOutput> {
+        let others = self.outputs.iter().filter(|other| other.id != output);
+        others
+            .map(|other| {
+                let workspace = self.active_workspace_on(other.id);
+                OverviewOutput {
+                    output: other.id,
+                    workspace,
+                    windows: self.overview_windows(other.id, workspace),
+                }
+            })
+            .collect()
     }
 
     /// Closes the Overview, if it's open, and changes nothing else: Esc, a click on the
@@ -96,7 +169,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// `activate` does, which shows it again if it's minimised. Does nothing for a window
     /// the Overview doesn't list.
     pub fn overview_choose(&mut self, id: WindowId, now: Duration) {
-        let Some(overview) = self.overview.take_if(|open| open.windows.contains(&id)) else {
+        let listed = |open: &mut Overview| open.output_listing(id).is_some();
+        let Some(overview) = self.overview.take_if(listed) else {
             return;
         };
         // As the Window switcher's choice: the pointer, which is over some other window
@@ -155,21 +229,27 @@ impl<W: PolicyWindow> Policy<W> {
         if self
             .overview
             .as_ref()
-            .is_some_and(|open| open.windows.contains(&id))
+            .is_some_and(|open| open.output_listing(id).is_some())
         {
             self.close(id);
         }
     }
 
-    /// A click on a workspace of the bar (244): switches the Overview's output to it, as
+    /// A click on a workspace of the bar of the selection's output (244), as
+    /// `overview_switch_on` has it.
+    pub fn overview_switch(&mut self, workspace: usize) {
+        if let Some(output) = self.overview.as_ref().map(|open| open.output) {
+            self.overview_switch_on(output, workspace);
+        }
+    }
+
+    /// A click on a workspace of `output`'s bar (244, 246): switches that output to it, as
     /// `switch_output_workspace` does, so every output with `workspaces-per-output` off.
     /// The Overview stays open and lists the new workspace's windows, with its focused one
-    /// selected. Does nothing with the Overview closed, or for a workspace past the count.
-    pub fn overview_switch(&mut self, workspace: usize) {
-        let Some(output) = self.overview.as_ref().map(|open| open.output) else {
-            return;
-        };
-        if workspace < self.workspace_count {
+    /// selected if the switch was of the selection's output. Does nothing with the
+    /// Overview closed, or for a workspace past the count.
+    pub fn overview_switch_on(&mut self, output: OutputId, workspace: usize) {
+        if self.overview.is_some() && workspace < self.workspace_count {
             self.switch_output_workspace(output, workspace);
         }
     }
@@ -181,21 +261,37 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(open) = &mut self.overview else {
             return;
         };
-        if open.drag.is_none() && open.windows.contains(&id) {
+        if open.drag.is_none() && open.output_listing(id).is_some() {
             open.drag = Some(OverviewDrag {
                 window: id,
                 from: at,
                 pointer: at,
                 dragging: false,
                 target: None,
+                onto: None,
             });
         }
     }
 
     /// The pointer moved to `at` with a press held on a window of the Overview (245),
-    /// onto the bar's cell of `target` or onto no cell. Past `drag-threshold` from where
-    /// the button went down, the press is a drag, whose drop is on `target`.
+    /// onto the cell of `target` of the bar of the window's own output, or onto no cell,
+    /// as `overview_pointer_on` has it.
     pub fn overview_pointer(&mut self, at: Point<f64, Logical>, target: Option<usize>) {
+        let drag = self.overview.as_ref().and_then(|open| open.drag);
+        let own = drag.and_then(|drag| self.overview.as_ref()?.output_listing(drag.window));
+        self.overview_pointer_on(at, own, target);
+    }
+
+    /// The pointer moved to `at` with a press held on a window of the Overview (245), onto
+    /// `onto`, or no output, and there onto the bar's cell of `target` or onto no cell
+    /// (246). Past `drag-threshold` from where the button went down, the press is a drag,
+    /// whose drop is on `onto` and `target`.
+    pub fn overview_pointer_on(
+        &mut self,
+        at: Point<f64, Logical>,
+        onto: Option<OutputId>,
+        target: Option<usize>,
+    ) {
         let threshold = f64::from(self.config.drag_threshold);
         let Some(drag) = self.overview.as_mut().and_then(|open| open.drag.as_mut()) else {
             return;
@@ -203,19 +299,24 @@ impl<W: PolicyWindow> Policy<W> {
         let moved = at - drag.from;
         drag.pointer = at;
         drag.dragging |= moved.x.abs() > threshold || moved.y.abs() > threshold;
-        drag.target = target.filter(|_| drag.dragging);
+        drag.onto = onto.filter(|_| drag.dragging);
+        drag.target = target.filter(|_| drag.onto.is_some());
     }
 
     /// The left button came up with a press held on a window of the Overview (245). Within
     /// `drag-threshold` it's a click, which chooses the window. A drag dropped on another
-    /// workspace's cell moves the window there, as the Window menu's move does, so a sticky
-    /// one stops being sticky, and it leaves the list. Dropped on the active workspace's
-    /// cell or on no cell, it stays where it was. The Overview stays open after a drop.
+    /// workspace's cell of the window's own output moves the window there, as the Window
+    /// menu's move does, so a sticky one stops being sticky, and it leaves the list.
+    /// Dropped on the active workspace's cell or on no cell, it stays where it was.
+    ///
+    /// Dropped on another output (246), the window goes there as `move_to_output` moves
+    /// it, which brings it to that output's active workspace. Dropped on a cell of that
+    /// output's bar, it then goes to that cell's workspace as the Window menu's move takes
+    /// it, if that isn't the active one. The Overview stays open after a drop.
     pub fn overview_release(&mut self, now: Duration) {
         let Some(open) = &mut self.overview else {
             return;
         };
-        let workspace = open.workspace;
         let Some(drag) = open.drag.take() else {
             return;
         };
@@ -223,6 +324,14 @@ impl<W: PolicyWindow> Policy<W> {
             self.overview_choose(drag.window, now);
             return;
         }
+        let own = open.output_listing(drag.window);
+        let Some(onto) = drag.onto else {
+            return;
+        };
+        if Some(onto) != own {
+            self.move_to_output(drag.window, onto);
+        }
+        let workspace = self.active_workspace_on(onto);
         let elsewhere = |target: &usize| *target != workspace && *target < self.workspace_count;
         if let Some(target) = drag.target.filter(elsewhere) {
             self.move_to_workspace(drag.window, target);
@@ -239,14 +348,23 @@ impl<W: PolicyWindow> Policy<W> {
         open.drag.take_if(|drag| drag.dragging).is_some()
     }
 
-    /// The windows the open Overview would list on `workspace` of its output, bottom to
-    /// top, as it lists those of the active one: the compositor lays out those of a
-    /// workspace a Workspace slide leaves (244). None with the Overview closed.
+    /// The windows the open Overview would list on `workspace` of the selection's output,
+    /// as `overview_windows_of` has them.
     pub fn overview_windows_on(&self, workspace: usize) -> Vec<WindowId> {
         self.overview
             .as_ref()
             .map(|open| self.overview_windows(open.output, workspace))
             .unwrap_or_default()
+    }
+
+    /// The windows the open Overview would list on `workspace` of `output`, bottom to top,
+    /// as it lists those of the active one: the compositor lays out those of a workspace a
+    /// Workspace slide leaves (244). None with the Overview closed.
+    pub fn overview_windows_of(&self, output: OutputId, workspace: usize) -> Vec<WindowId> {
+        match self.overview {
+            Some(_) => self.overview_windows(output, workspace),
+            None => Vec::new(),
+        }
     }
 
     /// Selects `selected` in the open Overview, as the arrow keys would.
@@ -257,29 +375,37 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Brings the open Overview's list up to date, and closes it if its output has gone.
-    /// After a switch of its output's workspace (244) it lists the new one's windows, and
-    /// selects the seat's focused window among them, or none.
+    /// Brings the open Overview's lists up to date, on the outputs there are now (246), and
+    /// closes it once there's none. After a switch of the selection's output's workspace
+    /// (244) it lists the new one's windows, and selects the seat's focused window among
+    /// them, or none. When the selection's output goes, the selection goes to the output
+    /// that would be chosen at opening, as after a switch.
     pub(super) fn refresh_overview(&mut self) {
         let Some((seat, output)) = self.overview.as_ref().map(|open| (open.seat, open.output))
         else {
             return;
         };
-        if !self.outputs.iter().any(|o| o.id == output) {
+        let stays = self.outputs.iter().any(|o| o.id == output);
+        let Some(output) = stays.then_some(output).or(self.overview_output(seat)) else {
             self.overview = None;
             return;
-        }
+        };
         let workspace = self.active_workspace_on(output);
         let windows = self.overview_windows(output, workspace);
+        let others = self.overview_others(output);
         let focus = self.focus(seat);
         if let Some(open) = &mut self.overview {
-            if open.workspace != workspace {
+            if open.output != output || open.workspace != workspace {
+                open.output = output;
                 open.workspace = workspace;
                 open.selected = focus;
             }
             open.selected = open.selected.filter(|selected| windows.contains(selected));
-            open.drag = open.drag.filter(|drag| windows.contains(&drag.window));
             open.windows = windows;
+            open.others = others;
+            open.drag = open
+                .drag
+                .filter(|drag| open.output_listing(drag.window).is_some());
         }
     }
 

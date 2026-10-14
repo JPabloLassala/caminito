@@ -1,6 +1,6 @@
-//! The Overview's side in the compositor (241, [ADR 0033]): a view of an output's active
+//! The Overview's side in the compositor (241, [ADR 0033]): a view of each output's active
 //! workspace with its windows shrunk and set side by side, which a System shortcut opens.
-//! Policy has whether it's open, its output, the windows listed and what a choice does,
+//! Policy has whether it's open, the windows listed on each output and what a choice does,
 //! since it's the seat's Interaction (187). Here are the keys and the clicks that drive it
 //! while it's open, and what it's laid out and drawn from. `layout` has each window's
 //! place, `bar` each workspace's cell, `draw` draws the labels, and `scene` puts the bar,
@@ -28,7 +28,11 @@
 //! Policy has the press and the drag, and what a drop does: here the pointer's moves and
 //! the release are told to it, with the cell under the pointer. The dragged window is
 //! drawn under the pointer, over the layout and the bar, and the cell under it is marked.
-//! Every output at once is 246's.
+//!
+//! It's on every output at once (246), each laid out here from what policy lists there,
+//! with its own bar, and they share one transition. A window is dragged from one output's
+//! layout onto another output: policy hears which output the pointer is on, and the
+//! dragged window is drawn on each output it's over.
 //!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
@@ -39,7 +43,7 @@ pub(crate) mod transition;
 
 use std::time::Duration;
 
-use caminito_policy::{Action, Direction, PolicyWindow, WindowId};
+use caminito_policy::{Action, Direction, OutputId, OverviewOutput, PolicyWindow, WindowId};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::backend::renderer::element::Id;
@@ -65,8 +69,8 @@ pub(crate) const DIM: f32 = 0.5;
 /// the developer's start value of 2026-10-13, which 247 checks in a Session.
 pub(crate) const BAR_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 
-/// The compositor's side of the Overview, as the refresh pass last laid it out: while
-/// policy has it open, and while it's drawn closing after (243).
+/// The compositor's side of the Overview on one output, as the refresh pass last laid it
+/// out: while policy has it open, and while it's drawn closing after (243).
 pub(crate) struct Overview {
     /// The output it's on.
     pub(crate) output: Output,
@@ -93,7 +97,8 @@ pub(crate) struct Overview {
     /// When the windows that only the bar shows next get frame callbacks, on Caminito's
     /// clock.
     next_bar_frames: Duration,
-    /// The transition, while it's on its way open or closed (243).
+    /// The transition, while it's on its way open or closed (243): every output's is the
+    /// same (246).
     pub(crate) transition: Option<Transition>,
 }
 
@@ -204,32 +209,49 @@ impl Caminito {
     /// The Overview on `output`, while it's open there and laid out, and while it's drawn
     /// closing there after (243).
     pub(crate) fn overview_on(&self, output: &Output) -> Option<&Overview> {
-        self.overview.as_ref().filter(|open| open.output == *output)
+        self.overview.iter().find(|open| open.output == *output)
+    }
+
+    /// The Overview laid out on the output `location` is on, in global logical
+    /// coordinates, and `location` from that output's top left corner.
+    fn overview_at(
+        &self,
+        location: Point<f64, Logical>,
+    ) -> Option<(&Overview, Point<f64, Logical>)> {
+        self.overview.iter().find_map(|open| {
+            let geometry = output_geometry(&open.output);
+            let on = geometry.to_f64().contains(location);
+            on.then(|| (open, location - geometry.loc.to_f64()))
+        })
     }
 
     /// The window of the Overview's layout at `location`, in global logical coordinates:
-    /// the one whose place or whose label it's on.
+    /// the one whose place or whose label it's on, on any output (246).
     fn overview_window_at(&self, location: Point<f64, Logical>) -> Option<WindowId> {
-        let open = self.overview.as_ref()?;
-        let origin = output_geometry(&open.output).loc.to_f64();
-        let slot = open.laid.layout.slot_at(location - origin)?;
+        let (open, at) = self.overview_at(location)?;
+        let slot = open.laid.layout.slot_at(at)?;
         open.laid.windows.get(slot).copied()
     }
 
-    /// The workspace of the Overview's bar at `location`, in global logical coordinates:
-    /// the one whose cell it's on (244).
-    fn overview_cell_at(&self, location: Point<f64, Logical>) -> Option<usize> {
-        let open = self.overview.as_ref()?;
-        let origin = output_geometry(&open.output).loc.to_f64();
-        open.bar.cell_at(location - origin)
+    /// The output and the workspace of the Overview's bar at `location`, in global logical
+    /// coordinates: the one whose cell it's on (244), on any output (246).
+    fn overview_cell_at(&self, location: Point<f64, Logical>) -> Option<(OutputId, usize)> {
+        let (open, at) = self.overview_at(location)?;
+        let workspace = open.bar.cell_at(at)?;
+        Some((output_id(&open.output), workspace))
     }
 
     /// The pointer moved to `location`, in global logical coordinates: policy hears it
-    /// with the cell it's on, while a press is held on a window of the Overview (245).
+    /// with the output it's on and the cell it's on there (246), while a press is held on a
+    /// window of the Overview (245).
     pub(crate) fn overview_motion(&mut self, location: Point<f64, Logical>) {
         if self.overview_press_held() {
-            let cell = self.overview_cell_at(location);
-            self.policy.overview_pointer(location, cell);
+            let onto = self.overview_at(location);
+            let onto = onto.map(|(open, _)| output_id(&open.output));
+            let cell = self
+                .overview_cell_at(location)
+                .map(|(_, workspace)| workspace);
+            self.policy.overview_pointer_on(location, onto, cell);
         }
     }
 
@@ -240,58 +262,100 @@ impl Caminito {
             .is_some_and(|open| open.drag.is_some())
     }
 
-    /// The window that a drag of `open`'s takes (245), drawn under the pointer: at its
-    /// place in the layout, as far from it as the pointer is from where the button went
-    /// down. None while there's no drag, and for one past the threshold not yet.
+    /// The window that a drag takes (245), drawn under the pointer: at its place in the
+    /// layout of its own output, as far from it as the pointer is from where the button
+    /// went down. Its rectangle is from the top left corner of `open`'s output, which it
+    /// may be over or not (246). None while there's no drag, and for one past the
+    /// threshold not yet.
     pub(crate) fn overview_dragged(&self, open: &Overview) -> Option<DrawnWindow> {
         let drag = self.policy.overview()?.drag.filter(|drag| drag.dragging)?;
-        let place = open.laid.windows.iter().position(|id| *id == drag.window)?;
-        let slot = open.laid.layout.slots.get(place)?;
+        let own = self
+            .overview
+            .iter()
+            .find(|own| own.laid.windows.contains(&drag.window))?;
+        let place = own.laid.windows.iter().position(|id| *id == drag.window)?;
+        let slot = own.laid.layout.slots.get(place)?;
         let moved = (drag.pointer - drag.from).to_i32_round();
+        let shift = output_geometry(&own.output).loc - output_geometry(&open.output).loc;
         Some(DrawnWindow {
             id: drag.window,
-            rect: Rectangle::new(slot.window.loc + moved, slot.window.size),
+            rect: Rectangle::new(slot.window.loc + moved + shift, slot.window.size),
             alpha: 1.0,
         })
     }
 
-    /// The workspace whose cell a drag of the Overview's is on (245), which is marked.
-    pub(crate) fn overview_drop_target(&self) -> Option<usize> {
-        self.policy.overview()?.drag?.target
+    /// The workspace whose cell of `output`'s bar a drag of the Overview's is on (245),
+    /// which is marked.
+    pub(crate) fn overview_drop_target(&self, output: &Output) -> Option<usize> {
+        let drag = self.policy.overview()?.drag?;
+        drag.target.filter(|_| drag.onto == Some(output_id(output)))
     }
 
     /// Brings the compositor's side up to date with policy's Overview, in the refresh
-    /// pass: lets go of it when policy has closed its own, lays out the bar and the listed
-    /// windows again, and those of the workspaces a Workspace slide leaves (244), and draws
-    /// the labels again if anything they're drawn from changed. The session lock closes
-    /// it, as it ends every Interaction.
+    /// pass: lets go of it when policy has closed its own, and on each output policy lists
+    /// (246) lays out the bar and the listed windows again, and those of the workspaces a
+    /// Workspace slide there leaves (244), and draws the labels again if anything they're
+    /// drawn from changed. One on an output that's gone goes with it. The session lock
+    /// closes it, as it ends every Interaction.
     ///
     /// With the transition on (243), one that opens starts on its way open, from where
     /// the closing had it if it was on its way closed, and one that policy closes stays,
-    /// on its way closed from where it is. The lock ends it at once, and so does the end
-    /// of its output.
+    /// on its way closed from where it is. Every output has the same, and one that comes
+    /// while it runs takes it from where it is. The lock ends it at once.
     pub(crate) fn refresh_overview(&mut self) {
         let now = self.now();
         let locked = self.lock.is_locked();
-        let policy = &self.policy;
-        let open = policy.overview().filter(|_| !locked);
-        let on = open.and_then(|open| {
-            let mut outputs = self.outputs.iter();
-            let output = outputs.find(|output| output_id(output) == open.output)?;
-            Some((
-                output.clone(),
-                open.workspace,
-                open.windows.clone(),
-                open.selected,
-            ))
-        });
-        let Some((output, workspace, windows, selected)) = on else {
+        let Some(open) = self.policy.overview().filter(|_| !locked).cloned() else {
             if self.policy.overview().is_some() {
                 self.policy.close_overview();
             }
             self.overview_closed(now);
             return;
         };
+        // What policy lists on each output there is, in the order of the outputs.
+        let listed: Vec<(Output, OverviewOutput)> = self
+            .outputs
+            .iter()
+            .filter_map(|output| Some((output.clone(), open.on(output_id(output))?)))
+            .collect();
+        // The one drawn already, if it's open or closing: every output's is the same.
+        let transition = match self.overview.first() {
+            Some(before) if !before.is_closing() => before.transition,
+            _ if !self.settings.overview_animation => None,
+            Some(closing) => Some(Transition::new(Heading::Opening, closing.part(now), now)),
+            None => Some(Transition::new(Heading::Opening, 0.0, now)),
+        };
+        let mut before = std::mem::take(&mut self.overview);
+        let mut changed = before.len() != listed.len();
+        for (output, on) in listed {
+            let old = before
+                .iter()
+                .position(|old| old.output == output)
+                .map(|index| before.swap_remove(index));
+            let selected = open.selected.filter(|id| on.windows.contains(id));
+            let (laid_out, fresh) = self.lay_out_overview(output, on, selected, transition, old);
+            changed |= !fresh;
+            self.overview.push(laid_out);
+        }
+        if changed {
+            self.queue_redraw_all();
+        }
+    }
+
+    /// The Overview on `output`, laid out from what policy lists there, `on`, with
+    /// `selected` selected and with `transition`, and whether it's as `old`, the one laid
+    /// out there before, had it. What `old` drew and the ids of its elements are kept.
+    fn lay_out_overview(
+        &mut self,
+        output: Output,
+        on: OverviewOutput,
+        selected: Option<WindowId>,
+        transition: Option<Transition>,
+        old: Option<Overview>,
+    ) -> (Overview, bool) {
+        let now = self.now();
+        let policy = &self.policy;
+        let workspace = on.workspace;
         let size = output_geometry(&output).size;
         let bar = Bar::new(size, policy.workspace_count());
         let area = bar.area_beneath(size);
@@ -304,28 +368,17 @@ impl Caminito {
                 shown.collect()
             })
             .collect();
-        let mut planned = vec![self.plan_overview(&output, workspace, windows, selected, area)];
+        let mut planned = vec![self.plan_overview(&output, workspace, on.windows, selected, area)];
         for left in slide
             .map(|slide| slide.left_workspaces())
             .unwrap_or_default()
         {
             if left != workspace {
-                let windows = self.policy.overview_windows_on(left);
+                let windows = self.policy.overview_windows_of(output_id(&output), left);
                 planned.push(self.plan_overview(&output, left, windows, None, area));
             }
         }
-        // The one that was drawn there, if it's open or closing.
-        let before = self
-            .overview
-            .as_ref()
-            .filter(|before| before.output == output);
-        let transition = match before {
-            Some(before) if !before.is_closing() => before.transition,
-            _ if !self.settings.overview_animation => None,
-            Some(closing) => Some(Transition::new(Heading::Opening, closing.part(now), now)),
-            None => Some(Transition::new(Heading::Opening, 0.0, now)),
-        };
-        let fresh = before.is_some_and(|open| {
+        let fresh = old.as_ref().is_some_and(|open| {
             open.transition == transition
                 && open.bar == bar
                 && open.cell_windows == cell_windows
@@ -336,10 +389,6 @@ impl Caminito {
                     .zip(open.layouts())
                     .all(|(plan, laid)| plan.matches(laid))
         });
-        if fresh {
-            return;
-        }
-        let old = self.overview.take().filter(|old| old.output == output);
         let (dim, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];
@@ -382,7 +431,7 @@ impl Caminito {
         });
         let laid = layouts.next().expect("the active workspace is laid out");
         let leaving = layouts.collect();
-        self.overview = Some(Overview {
+        let laid_out = Overview {
             output,
             bar,
             laid,
@@ -395,28 +444,38 @@ impl Caminito {
             target_mark,
             next_bar_frames,
             transition,
-        });
-        self.queue_redraw_all();
+        };
+        (laid_out, fresh)
     }
 
-    /// Policy has no Overview open: the one drawn goes on its way closed from where it is,
-    /// with the transition on and its output still there, or goes at once. One that's
-    /// closing already goes on, and the lock ends it.
+    /// Policy has no Overview open: the one drawn goes on its way closed from where it is
+    /// on each output that's still there, with the transition on, or goes at once. One
+    /// that's closing already goes on, and the lock ends it.
     fn overview_closed(&mut self, now: Duration) {
-        let Some(shown) = &mut self.overview else {
+        let outputs = &self.outputs;
+        let before = self.overview.len();
+        self.overview
+            .retain(|shown| outputs.contains(&shown.output));
+        let Some(first) = self.overview.first() else {
+            if before > 0 {
+                self.queue_redraw_all();
+            }
             return;
         };
-        let animated = self.settings.overview_animation
-            && !self.lock.is_locked()
-            && self.outputs.contains(&shown.output);
-        if animated && shown.is_closing() {
+        let animated = self.settings.overview_animation && !self.lock.is_locked();
+        if animated && first.is_closing() {
+            if before > self.overview.len() {
+                self.queue_redraw_all();
+            }
             return;
         }
         if animated {
-            let from = shown.part(now);
-            shown.transition = Some(Transition::new(Heading::Closing, from, now));
+            let closing = Transition::new(Heading::Closing, first.part(now), now);
+            for shown in &mut self.overview {
+                shown.transition = Some(closing);
+            }
         } else {
-            self.overview = None;
+            self.overview.clear();
         }
         self.queue_redraw_all();
     }
@@ -424,24 +483,26 @@ impl Caminito {
     /// When the running transition is over: `deadlines` then draws the Overview at rest
     /// (174).
     pub(crate) fn overview_transition_deadline(&self) -> Option<Duration> {
-        let open = self.overview.as_ref()?;
+        let open = self.overview.first()?;
         open.transition.map(|transition| transition.end())
     }
 
-    /// Ends the transition if it's over at `now`, and draws the output at rest: the
-    /// Overview open, or gone once it's closed. While it runs, its output is drawn again
-    /// at each of its frames (`State::redraw_queued_outputs`).
+    /// Ends the transition if it's over at `now`, and draws the outputs at rest: the
+    /// Overview open, or gone once it's closed. While it runs, its outputs are drawn again
+    /// at each of their frames (`State::redraw_queued_outputs`).
     pub(crate) fn overview_transition_elapse(&mut self, now: Duration) {
-        let Some(open) = &mut self.overview else {
+        let Some(open) = self.overview.first() else {
             return;
         };
         let Some(transition) = open.transition.filter(|t| t.is_over(now)) else {
             return;
         };
         if transition.heading == Heading::Opening {
-            open.transition = None;
+            for open in &mut self.overview {
+                open.transition = None;
+            }
         } else {
-            self.overview = None;
+            self.overview.clear();
         }
         self.queue_redraw_all();
     }
@@ -606,12 +667,20 @@ impl Caminito {
         Some(FilterResult::Intercept(bound))
     }
 
-    /// An arrow key: moves policy's selection `direction`'s way in the layout as it is now.
+    /// An arrow key: moves policy's selection `direction`'s way in the layout of the
+    /// output it's on (246), as it is now.
     fn overview_select(&mut self, direction: Direction) {
         // The layout as policy's list is now: a window may have opened or closed since the
         // refresh pass.
         self.refresh_overview();
-        let Some(open) = &self.overview else {
+        let Some(output) = self.policy.overview().map(|open| open.output) else {
+            return;
+        };
+        let open = self
+            .overview
+            .iter()
+            .find(|open| output_id(&open.output) == output);
+        let Some(open) = open else {
             return;
         };
         let places: Vec<_> = open
@@ -655,13 +724,18 @@ impl Caminito {
         }
     }
 
-    /// The windows the open Overview shows in its bar alone (244): those whose main output
-    /// is its output and that are in none of its layouts. A minimised window of another
-    /// workspace, which nothing shows, is among them. None while it's closed.
+    /// The windows the open Overview shows in its bars alone (244): those whose main
+    /// output is one it's on and that are in none of its layouts there. A minimised window
+    /// of another workspace, which nothing shows, is among them. None while it's closed.
     pub(crate) fn overview_bar_only_windows(&self) -> Vec<WindowId> {
-        let Some(open) = &self.overview else {
-            return Vec::new();
-        };
+        self.overview
+            .iter()
+            .flat_map(|open| self.bar_only_windows_of(open))
+            .collect()
+    }
+
+    /// The windows `open` shows in its bar alone, on its output.
+    fn bar_only_windows_of(&self, open: &Overview) -> Vec<WindowId> {
         self.policy
             .windows()
             .filter(|mapped| mapped.main_output() == Some(&open.output))
@@ -670,35 +744,36 @@ impl Caminito {
             .collect()
     }
 
-    /// When the windows that only the Overview's bar shows next get frame callbacks, while
-    /// it's open and has one.
+    /// When the windows that only the Overview's bar shows next get frame callbacks, on
+    /// the first output that's due of those that have one, while it's open.
     pub(crate) fn overview_deadline(&self) -> Option<Duration> {
-        let open = self.overview.as_ref()?;
-        let waiting = !self.overview_bar_only_windows().is_empty();
-        waiting.then_some(open.next_bar_frames)
+        let waiting = self.overview.iter();
+        let waiting = waiting.filter(|open| !self.bar_only_windows_of(open).is_empty());
+        waiting.map(|open| open.next_bar_frames).min()
     }
 
-    /// Sends the windows that only the Overview's bar shows their frame callbacks, if
-    /// they're due at `now`: at [`BAR_FRAME_INTERVAL`], in place of each frame of the
-    /// output, which the windows of the layout get theirs at (`State::post_render`).
+    /// Sends the windows that only the Overview's bar shows their frame callbacks on each
+    /// output where they're due at `now`: at [`BAR_FRAME_INTERVAL`], in place of each frame
+    /// of the output, which the windows of the layout get theirs at (`State::post_render`).
     pub(crate) fn overview_elapse(&mut self, now: Duration) {
-        let Some(open) = &self.overview else {
-            return;
-        };
-        if now < open.next_bar_frames {
-            return;
-        }
-        let output = open.output.clone();
         // What a client is told, as after a frame.
         let time = self.clock.now();
-        for id in self.overview_bar_only_windows() {
-            if let Some(mapped) = self.policy.window(id) {
-                let main = |_: &_, _: &_| Some(output.clone());
-                mapped.window().send_frame(&output, time, None, main);
+        for open in &self.overview {
+            if now < open.next_bar_frames {
+                continue;
+            }
+            let output = &open.output;
+            for id in self.bar_only_windows_of(open) {
+                if let Some(mapped) = self.policy.window(id) {
+                    let main = |_: &_, _: &_| Some(output.clone());
+                    mapped.window().send_frame(output, time, None, main);
+                }
             }
         }
-        if let Some(open) = &mut self.overview {
-            open.next_bar_frames = now + BAR_FRAME_INTERVAL;
+        for open in &mut self.overview {
+            if now >= open.next_bar_frames {
+                open.next_bar_frames = now + BAR_FRAME_INTERVAL;
+            }
         }
     }
 }
@@ -720,9 +795,9 @@ impl State {
 
     /// A pointer button with the pointer at `location`. Returns whether its press was the
     /// Overview's, and so no client's: while the Overview is open, a press of the left
-    /// button on a window of the layout chooses that window, one of the middle button asks
+    /// button on a window of a layout chooses that window, one of the middle button asks
     /// it to close and leaves the Overview open (242), one of the left button on a
-    /// workspace of the bar switches the output there (244), and a press of any button on
+    /// workspace of a bar switches that bar's output there (244, 246), and a press of any button on
     /// the empty area closes the Overview, as does that of a button with the Overview's
     /// shortcut. Another button on a workspace of the bar does nothing. The release of such
     /// a press is swallowed with the Window switcher's.
@@ -755,7 +830,7 @@ impl State {
         // The layout as policy's list is now: a window may have closed since the refresh
         // pass, and its place would be another's.
         caminito.refresh_overview();
-        if caminito.overview.is_none() {
+        if caminito.overview.is_empty() {
             return false;
         }
         caminito.suppressed_buttons.insert(button);
@@ -766,8 +841,8 @@ impl State {
         match caminito.overview_window_at(location) {
             _ if is_shortcut => caminito.policy.close_overview(),
             _ if cell.is_some() => {
-                if let Some(workspace) = cell.filter(|_| button == BTN_LEFT) {
-                    caminito.policy.overview_switch(workspace);
+                if let Some((output, workspace)) = cell.filter(|_| button == BTN_LEFT) {
+                    caminito.policy.overview_switch_on(output, workspace);
                 }
             }
             Some(id) if button == BTN_LEFT => caminito.policy.overview_press(id, location),

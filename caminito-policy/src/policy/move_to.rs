@@ -5,7 +5,7 @@
 use smithay::utils::{FrameExtents, Logical, Point, Rectangle, Size};
 
 use crate::grid::Direction;
-use crate::{Anchor, Output, PolicyWindow, WindowId, placement};
+use crate::{Anchor, Output, OutputId, PolicyWindow, WindowId, placement};
 
 use super::{Policy, frame_around};
 
@@ -117,13 +117,73 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(to) = self.output_beside(&from, direction).copied() else {
             return;
         };
-        let area = Self::work_area(&to);
+        let scale = |geometry, _| transform_to_output(geometry, from.geometry, to.geometry);
+        self.move_between_outputs(id, &to, scale);
+    }
+
+    /// A window of the Overview dropped on output `to` (246), with its transient family:
+    /// each goes from the output the window shows by to `to`, at the same place relative to
+    /// the work area and shrunk to fit it if it must be, then moved inside it as
+    /// `move-to-monitor-*` moves a window. A maximised, tiled or fullscreen window is so on
+    /// `to`, as there. The window then shows by `to`, so it goes to `to`'s active
+    /// workspace as a window dragged there does (230), and is told of it at once.
+    pub(super) fn move_to_output(&mut self, id: WindowId, to: OutputId) {
+        if !self.windows.contains_key(&id) {
+            return;
+        }
+        let from = self.output_showing(id);
+        let from = self.outputs.iter().find(|output| Some(output.id) == from);
+        let to = self.outputs.iter().find(|output| output.id == to);
+        let (Some(from), Some(to)) = (from.copied(), to.copied()) else {
+            return;
+        };
+        if from.id == to.id {
+            return;
+        }
+        let (from_area, to_area) = (Self::work_area(&from), Self::work_area(&to));
+        let fit = |geometry: Rectangle<i32, Logical>, e: FrameExtents<i32, Logical>| {
+            let loc = to_area.loc + (geometry.loc - from_area.loc);
+            let fits = Size::new(
+                geometry
+                    .size
+                    .w
+                    .min(to_area.size.w - e.left - e.right)
+                    .max(1),
+                geometry
+                    .size
+                    .h
+                    .min(to_area.size.h - e.top - e.bottom)
+                    .max(1),
+            );
+            Rectangle::new(loc, fits)
+        };
+        for w in self.tree(self.root(id)) {
+            if self.moves_by_binding(w) {
+                self.move_between_outputs(w, &to, fit);
+            }
+        }
+        self.apply();
+    }
+
+    /// Moves `id` onto output `to`, where `transform` puts its geometry with a frame of
+    /// those extents, as `move_to_monitor` has it.
+    fn move_between_outputs(
+        &mut self,
+        id: WindowId,
+        to: &Output,
+        transform: impl Fn(
+            Rectangle<i32, Logical>,
+            FrameExtents<i32, Logical>,
+        ) -> Rectangle<i32, Logical>,
+    ) {
+        let managed = &self.windows[&id];
+        let area = Self::work_area(to);
         let hints = managed.hints;
         // `geometry` as it is on `to`, with a frame of extents `e` whose height is `shaded`
         // while the window is.
         let moved =
             |geometry: Rectangle<i32, Logical>, e: FrameExtents<i32, Logical>, shaded: bool| {
-                let scaled = transform_to_output(geometry, from.geometry, to.geometry);
+                let scaled = transform(geometry, e);
                 let size = hints.clamp(scaled.size);
                 let mut frame = frame_around(Rectangle::new(scaled.loc, size), e);
                 if shaded {
