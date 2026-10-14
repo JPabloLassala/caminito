@@ -4,6 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 unset DISPLAY
+# Ticket 239's directory, which is merged: the machine's disk has no room for another.
 export CARGO_TARGET_DIR="$HOME/target-239"
 ulimit -n "$(ulimit -Hn)"
 exec dbus-run-session -- cargo "$@"

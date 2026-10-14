@@ -2,6 +2,11 @@
 //! them out, what it draws in place of the output's own, and the keys and the clicks that
 //! close it, read from the debug dump and from the output's pixels. It opens and closes in
 //! one frame.
+//!
+//! What both kinds of window share runs on both. The tests of what a client sees of the
+//! keys and the clicks, and of what only the Overview's own state shows (the shortcut, the
+//! lock, the Window menu), map xdg toplevels only: the keys are checked as a Wayland client
+//! sees them (45), and the rest doesn't depend on the kind.
 
 use caminito_test_client::InputEvent;
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};

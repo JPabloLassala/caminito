@@ -128,7 +128,8 @@ pub(crate) enum SceneLayer {
     FullscreenWindows,
     /// While the Overview is open on the output (241), all of it: each listed window at
     /// its place in the layout, over its label, over the dimming, which covers the
-    /// wallpaper. In its place the output shows none of its windows as they are, nothing of
+    /// wallpaper. In its place the output shows none of its windows as they are, nor one
+    /// shrinking into its button, nothing of
     /// the top and bottom layers, where the panel is, and of the background layer the
     /// wallpaper alone, without caja's desktop.
     Overview,
@@ -453,9 +454,13 @@ pub(crate) fn overview_is_on(caminito: &Caminito, output: &Output) -> bool {
 }
 
 /// Whether the Overview, open on `output`, is drawn in place of all of `layer`: the
-/// windows as they are.
+/// windows as they are, and one that was shrinking into its button as it opened, which
+/// is in the layout at its place.
 fn overview_replaces(caminito: &Caminito, output: &Output, layer: SceneLayer) -> bool {
-    let windows = matches!(layer, SceneLayer::FullscreenWindows | SceneLayer::Windows);
+    let windows = matches!(
+        layer,
+        SceneLayer::Minimizing | SceneLayer::FullscreenWindows | SceneLayer::Windows
+    );
     windows && overview_is_on(caminito, output)
 }
 
