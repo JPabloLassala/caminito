@@ -39,5 +39,6 @@ Then append a `## Done (<YYYY-MM-DD>)` section: one bold-led bullet per decision
    ```
 
 3. Remove the worktree and the branch: `git worktree remove ../camino-ticket-<NN>` then `git branch -d ticket-<NN>`.
+4. Remove the ticket's build directory in the OrbStack machine, which is several GB and nothing uses after the merge: `orb -m camino bash -c 'rm -rf ~/target-<NN>'`. Remove only `target-<NN>` of this ticket: other sessions build in their own at the same time.
 
-Done when `master`'s log shows the merge commit and `git worktree list` no longer shows the worktree. Report the merge commit and the ticket's final `Status:` line; pushing `master` is the human's call.
+Done when `master`'s log shows the merge commit, `git worktree list` no longer shows the worktree, and `~/target-<NN>` is gone from the machine. Report the merge commit and the ticket's final `Status:` line; pushing `master` is the human's call.
