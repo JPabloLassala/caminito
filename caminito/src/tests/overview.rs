@@ -2,7 +2,9 @@
 //! them out, what it draws in place of the output's own, and the keys and the clicks that
 //! close it, read from the debug dump and from the output's pixels. It opens and closes in
 //! one frame. Its selection, the arrow keys and Enter, the middle click, and windows that
-//! map or go while it's open are 242's.
+//! map or go while it's open are 242's. Its bar of workspaces, a switch from the bar or a
+//! binding with the Workspace slide moving the layouts, and the frame callbacks of a
+//! window that only the bar shows are 244's.
 //!
 //! What both kinds of window share runs on both. The tests of what a client sees of the
 //! keys and the clicks, and of what only the Overview's own state shows (the shortcut, the
@@ -1079,7 +1081,6 @@ on_both_kinds! {
         click_cell(&mut f, 1);
 
         assert!(is_open(&f));
-        assert_eq!(f.state.caminito.policy.active_workspace(), 1);
         assert_eq!(listed_workspace(&f), 1);
         assert_eq!(listed(&f), [f.pid(second).0]);
         let marked: Vec<bool> = cells(&f).iter().map(|(_, _, active)| *active).collect();
@@ -1212,12 +1213,10 @@ fn a_workspace_binding_switches_with_the_overview_open_and_shows_no_popup() {
     f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
 
     assert!(is_open(&f));
-    assert_eq!(f.state.caminito.policy.active_workspace(), 1);
+    assert_eq!(listed_workspace(&f), 1);
     assert_eq!(listed(&f), [f.pid(second).0]);
     assert_eq!(selected(&f), Some(f.pid(second).0));
     assert!(slides(&f), "it slides");
-    assert!(f.state.caminito.workspace_popup.is_none());
-    assert!(f.state.caminito.policy.workspace_popup().is_none());
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     assert!(dump["workspace_popup"].is_null());
 

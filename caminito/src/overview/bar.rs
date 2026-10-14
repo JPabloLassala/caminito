@@ -28,7 +28,7 @@ impl Bar {
     /// The bar of `count` workspaces on an output of `output`.
     pub(crate) fn new(output: Size<i32, Logical>, count: usize) -> Self {
         let height = (f64::from(output.h) * HEIGHT).round() as i32;
-        let count_i32 = i32::try_from(count).expect("a workspace count fits an i32");
+        let columns = i32::try_from(count).expect("a workspace count fits an i32");
         if count == 0 || output.w <= 0 || output.h <= 0 {
             return Self {
                 cells: Vec::new(),
@@ -37,16 +37,16 @@ impl Bar {
         }
         let tall = f64::from((height - 2 * PADDING).max(0));
         let aspect = f64::from(output.w) / f64::from(output.h);
-        let room = f64::from((output.w - 2 * PADDING - (count_i32 - 1) * PADDING).max(0));
+        let room = f64::from((output.w - 2 * PADDING - (columns - 1) * PADDING).max(0));
         // One factor for all, so that they fit across.
-        let factor = (room / (tall * aspect * f64::from(count_i32))).min(1.0);
+        let factor = (room / (tall * aspect * f64::from(columns))).min(1.0);
         // The height from the width as it's rounded, to keep the aspect.
         let width = (tall * aspect * factor).floor();
         let cell = Size::<i32, Logical>::from((width as i32, (width / aspect).round() as i32));
-        let width = count_i32 * cell.w + (count_i32 - 1) * PADDING;
+        let width = columns * cell.w + (columns - 1) * PADDING;
         let left = (output.w - width) / 2;
         let top = (height - cell.h) / 2;
-        let cells = (0..count_i32)
+        let cells = (0..columns)
             .map(|n| Rectangle::new(Point::from((left + n * (cell.w + PADDING), top)), cell))
             .collect();
         Self { cells, height }

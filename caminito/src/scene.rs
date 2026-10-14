@@ -129,10 +129,10 @@ pub(crate) enum SceneLayer {
     FullscreenWindows,
     /// While the Overview is open on the output (241), all of it: its bar of workspaces
     /// (244), over each listed window at its place in the layout, over its label, over the
-    /// dimming, which covers the wallpaper. In its place the output shows none of its windows as they are, nor one
-    /// shrinking into its button, nothing of
-    /// the top and bottom layers, where the panel is, and of the background layer the
-    /// wallpaper alone, without caja's desktop.
+    /// dimming, which covers the wallpaper. In its place the output shows none of its
+    /// windows as they are, nor one shrinking into its button, nothing of the top and
+    /// bottom layers, where the panel is, and of the background layer the wallpaper alone,
+    /// without caja's desktop.
     Overview,
     /// The top layer-shell layer (63).
     Top,
@@ -507,16 +507,8 @@ fn overview_elements<R>(
     };
     let scale = output.current_scale().fractional_scale();
     overview_bar_elements(renderer, caminito, output, open, elements);
-    let now = caminito.now();
-    let slide = caminito.workspace_slides.on(output_id(output), now);
     for laid in open.layouts() {
-        let shifts = match slide {
-            Some(slide) => slide.workspace_shifts(laid.workspace, now),
-            None if laid.workspace == open.laid.workspace => vec![Point::default()],
-            // A slide that's over leaves the layouts it left until the refresh pass.
-            None => Vec::new(),
-        };
-        for shift in shifts {
+        for shift in caminito.overview_shifts(open, laid) {
             overview_layout_elements(renderer, caminito, laid, shift, scale, elements);
         }
     }
@@ -543,7 +535,6 @@ fn overview_layout_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let policy = &caminito.policy;
     for (slot, label) in laid.layout.slots.iter().zip(&laid.labels) {
         let Some(label) = label else {
             continue;
@@ -565,29 +556,56 @@ fn overview_layout_elements<R>(
         }
     }
     for (id, slot) in laid.windows.iter().zip(&laid.layout.slots) {
-        let (Some(mapped), Some(geometry), Some(frame)) = (
-            policy.window(*id),
-            policy.geometry(*id),
-            policy.frame_rect(*id),
-        ) else {
-            continue;
-        };
-        if frame.size.w <= 0 || frame.size.h <= 0 {
-            continue;
-        }
-        let mut parts: Vec<WindowPart<R>> = Vec::new();
-        let shown = Rectangle::from_size(frame.size);
-        one_window_elements(
-            renderer,
-            mapped,
-            geometry.loc - frame.loc,
-            shown,
-            scale,
-            &mut parts,
-        );
         let target = Rectangle::new(slot.window.loc + shift, slot.window.size);
-        scaled_elements(parts, frame.size, target, scale, elements);
+        scaled_window_elements(renderer, caminito, *id, |_| target, None, scale, elements);
     }
+}
+
+/// Window `id` with its frame, scaled to fill the target `place` gives its frame rect, and
+/// cut off at the edge of that target, or of `within` where it's given: as a thumbnail
+/// draws it, from its own surfaces.
+fn scaled_window_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    id: WindowId,
+    place: impl Fn(Rectangle<i32, Logical>) -> Rectangle<i32, Logical>,
+    within: Option<Rectangle<i32, Logical>>,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let policy = &caminito.policy;
+    let (Some(mapped), Some(geometry), Some(frame)) = (
+        policy.window(id),
+        policy.geometry(id),
+        policy.frame_rect(id),
+    ) else {
+        return;
+    };
+    if frame.size.w <= 0 || frame.size.h <= 0 {
+        return;
+    }
+    let target = place(frame);
+    let crop = match within {
+        Some(within) => target.intersection(within),
+        None => Some(target),
+    };
+    let Some(crop) = crop else {
+        return;
+    };
+    let mut parts: Vec<WindowPart<R>> = Vec::new();
+    let shown = Rectangle::from_size(frame.size);
+    one_window_elements(
+        renderer,
+        mapped,
+        geometry.loc - frame.loc,
+        shown,
+        scale,
+        &mut parts,
+    );
+    scaled_elements_in(parts, frame.size, target, crop, scale, elements);
 }
 
 /// How wide the mark around the active workspace's cell of the Overview's bar is (244).
@@ -610,7 +628,6 @@ fn overview_bar_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let policy = &caminito.policy;
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
     let wallpapers: Vec<_> = layer_surfaces_in(caminito, output, SceneLayer::Background)
@@ -656,30 +673,15 @@ fn overview_bar_elements<R>(
             )
         };
         for id in windows.iter().rev() {
-            let (Some(mapped), Some(geometry), Some(frame)) = (
-                policy.window(*id),
-                policy.geometry(*id),
-                policy.frame_rect(*id),
-            ) else {
-                continue;
-            };
-            if frame.size.w <= 0 || frame.size.h <= 0 {
-                continue;
-            }
-            let mut parts: Vec<WindowPart<R>> = Vec::new();
-            let shown = Rectangle::from_size(frame.size);
-            one_window_elements(
+            scaled_window_elements(
                 renderer,
-                mapped,
-                geometry.loc - frame.loc,
-                shown,
+                caminito,
+                *id,
+                in_cell,
+                Some(*cell),
                 scale,
-                &mut parts,
+                elements,
             );
-            let target = in_cell(frame);
-            if let Some(crop) = target.intersection(*cell) {
-                scaled_elements_in(parts, frame.size, target, crop, scale, elements);
-            }
         }
         for (wallpaper, geometry) in &wallpapers {
             if geometry.size.w <= 0 || geometry.size.h <= 0 {

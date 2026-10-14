@@ -770,15 +770,12 @@ impl Caminito {
                     .collect()
             });
             let size = output_geometry(output).size;
-            let now = self.now();
-            let slide = self.workspace_slides.on(open.output, now);
             let mut sliding: Vec<OverviewSlidingDump> = laid_out
-                .zip(slide)
-                .map(|(laid_out, slide)| {
+                .map(|laid_out| {
                     laid_out
                         .layouts()
                         .flat_map(|laid| {
-                            let shifts = slide.workspace_shifts(laid.workspace, now);
+                            let shifts = self.overview_shifts(laid_out, laid);
                             let places = laid.windows.iter().zip(&laid.layout.slots);
                             places.flat_map(move |(id, slot)| {
                                 let shifts = shifts.clone().into_iter();

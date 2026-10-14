@@ -105,7 +105,7 @@ struct Planned {
 
 impl Planned {
     /// Whether `laid` is this as it was laid out, labels and all.
-    fn is(&self, laid: &Laid) -> bool {
+    fn matches(&self, laid: &Laid) -> bool {
         self.workspace == laid.workspace
             && self.windows == laid.windows
             && self.layout == laid.layout
@@ -227,7 +227,7 @@ impl Caminito {
                 && planned
                     .iter()
                     .zip(open.layouts())
-                    .all(|(plan, laid)| plan.is(laid))
+                    .all(|(plan, laid)| plan.matches(laid))
         });
         if fresh {
             return;
@@ -472,8 +472,21 @@ fn switches_workspace(action: Action) -> bool {
 }
 
 impl Caminito {
+    /// How far from its places `laid`, one of `open`'s layouts, is drawn now, once for each
+    /// place: where the Workspace slide on its output has its workspace (244), or at its
+    /// places with no slide. A layout that a slide which is over left isn't drawn, until
+    /// the refresh pass lets go of it.
+    pub(crate) fn overview_shifts(&self, open: &Overview, laid: &Laid) -> Vec<Point<i32, Logical>> {
+        let now = self.now();
+        match self.workspace_slides.on(output_id(&open.output), now) {
+            Some(slide) => slide.workspace_shifts(laid.workspace, now),
+            None if laid.workspace == open.laid.workspace => vec![Point::default()],
+            None => Vec::new(),
+        }
+    }
+
     /// The windows the open Overview shows in its bar alone (244): those whose main output
-    /// is its output and that aren't in its layout. A minimised window of another
+    /// is its output and that are in none of its layouts. A minimised window of another
     /// workspace, which nothing shows, is among them. None while it's closed.
     pub(crate) fn overview_bar_only_windows(&self) -> Vec<WindowId> {
         let Some(open) = &self.overview else {
@@ -483,7 +496,7 @@ impl Caminito {
             .windows()
             .filter(|mapped| mapped.main_output() == Some(&open.output))
             .map(|mapped| mapped.id())
-            .filter(|id| !open.laid.windows.contains(id))
+            .filter(|id| !open.layouts().any(|laid| laid.windows.contains(id)))
             .collect()
     }
 
@@ -541,7 +554,8 @@ impl State {
     /// it to close and leaves the Overview open (242), one of the left button on a
     /// workspace of the bar switches the output there (244), and a press of any button on
     /// the empty area closes the Overview, as does that of a button with the Overview's
-    /// shortcut. Another button on a workspace of the bar does nothing. The release of such a press is swallowed with the Window switcher's.
+    /// shortcut. Another button on a workspace of the bar does nothing. The release of such
+    /// a press is swallowed with the Window switcher's.
     pub(crate) fn overview_button(
         &mut self,
         button: u32,
