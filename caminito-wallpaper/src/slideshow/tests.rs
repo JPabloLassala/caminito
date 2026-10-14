@@ -172,7 +172,7 @@ fn a_folder_is_read_for_its_own_pictures_by_name_and_read_again_for_new_ones() {
     }
     let read = Slideshow::read(folder.path(), Interval::Hour, true);
     assert_eq!(
-        read.pictures(),
+        read.pictures,
         [folder.path().join("a.PNG"), folder.path().join("b.jpg")]
     );
 
@@ -180,18 +180,29 @@ fn a_folder_is_read_for_its_own_pictures_by_name_and_read_again_for_new_ones() {
     fs::remove_file(folder.path().join("b.jpg")).unwrap();
     let read = Slideshow::read(folder.path(), Interval::Hour, true);
     assert_eq!(
-        read.pictures(),
+        read.pictures,
         [folder.path().join("0.webp"), folder.path().join("a.PNG")]
     );
 }
 
 #[test]
 fn outputs_are_ranked_among_those_on_the_same_folder_by_identity() {
+    let on = |folder: &str| OutputSettings {
+        kind: Kind::Slideshow,
+        slideshow: folder.into(),
+        ..OutputSettings::default()
+    };
+    let colour = OutputSettings {
+        slideshow: "/a".into(),
+        ..OutputSettings::default()
+    };
+    let (a, b) = (on("/a"), on("/b"));
     let shown = [
-        ("edid-LG", "/a"),
-        ("edid-AOC", "/a"),
-        ("connector-eDP_2d1", "/b"),
-        ("edid-BOE", "/a"),
+        ("edid-LG", &a),
+        ("edid-AOC", &a),
+        ("connector-eDP_2d1", &b),
+        ("edid-ASUS", &colour),
+        ("edid-BOE", &a),
     ];
-    assert_eq!(ranks(&shown), [2, 0, 0, 1]);
+    assert_eq!(ranks(&shown), [Some(2), Some(0), Some(0), None, Some(1)]);
 }

@@ -6,7 +6,7 @@
 use crate::dynamic::Moment;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
-use crate::slideshow::Interval;
+use crate::slideshow::{Interval, Slideshow};
 
 /// Which of the five things an output's wallpaper is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -171,6 +171,18 @@ impl Drawn {
 }
 
 impl OutputSettings {
+    /// The Slideshow's pictures as its folder has them now, or `None` with no folder
+    /// chosen (213).
+    pub fn read_slideshow(&self) -> Option<Slideshow> {
+        (!self.slideshow.is_empty()).then(|| {
+            Slideshow::read(
+                std::path::Path::new(&self.slideshow),
+                self.interval,
+                self.in_order,
+            )
+        })
+    }
+
     /// What's drawn, with `moment` what the Dynamic or the Slideshow shows now: a Slideshow's
     /// is still, its picture alone (213). A Picture with no file, and a Dynamic or a Slideshow
     /// with no moment, are their colour, and the Picture of the day is its colour until 214

@@ -11,7 +11,7 @@ use caminito_wallpaper::dynamic::Dynamic;
 use caminito_wallpaper::grid::{self, DynamicGroup, Group, Installed, Roots};
 use caminito_wallpaper::monitors::Monitors;
 use caminito_wallpaper::page::{Output, Page};
-use caminito_wallpaper::slideshow::{Interval, Slideshow};
+use caminito_wallpaper::slideshow::Interval;
 use caminito_wallpaper::sun::sky_now;
 use caminito_wallpaper::{
     Colour, GioStore, Kind, Memory, OutputSettings, Positioning, Set, Store, place,
@@ -978,11 +978,15 @@ impl Ui {
         self.slideshow_folder.set_label(&name);
         self.slideshow_folder
             .set_tooltip_text(Some(&current.slideshow));
-        let count = Slideshow::read(folder, current.interval, current.in_order).len();
+        if !folder.is_dir() {
+            self.slideshow_count
+                .set_label("The folder isn't there, so the output shows its colour.");
+            return;
+        }
+        let count = current
+            .read_slideshow()
+            .map_or(0, |slideshow| slideshow.len());
         self.slideshow_count.set_label(&match count {
-            _ if !folder.is_dir() => {
-                "The folder isn't there, so the output shows its colour.".to_owned()
-            }
             0 => "The folder has no pictures, so the output shows its colour.".to_owned(),
             1 => "1 picture in the folder.".to_owned(),
             count => format!("{count} pictures in the folder."),
@@ -1082,16 +1086,10 @@ impl Ui {
         let picture = match settings.kind {
             Kind::Picture if !settings.picture.is_empty() => Some(PathBuf::from(&settings.picture)),
             // The picture the drawer shows on this output now.
-            Kind::Slideshow if !settings.slideshow.is_empty() => {
+            Kind::Slideshow => settings.read_slideshow().and_then(|slideshow| {
                 let local = sky_now(self.caminito.as_ref()).local;
-                Slideshow::read(
-                    Path::new(&settings.slideshow),
-                    settings.interval,
-                    settings.in_order,
-                )
-                .picture(local, rank)
-                .map(Path::to_owned)
-            }
+                slideshow.picture(local, rank).map(Path::to_owned)
+            }),
             // The picture that shows most now, as the drawer draws it.
             Kind::Dynamic if !settings.dynamic.is_empty() => {
                 Dynamic::read(Path::new(&settings.dynamic))

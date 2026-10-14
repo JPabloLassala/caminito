@@ -67,7 +67,7 @@ pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
-use crate::slideshow::{self, Slideshow};
+use crate::slideshow;
 use crate::sun::sky_now;
 use buffer::Buffers;
 use paint::Pictures;
@@ -78,7 +78,7 @@ const FADE: Duration = Duration::from_secs(1);
 /// How often a dynamic wallpaper (216) and a slideshow (213) are drawn for the moment again,
 /// besides each time the sun moves, and a timed XML's or a slideshow's picture ending
 /// sooner: a pair's blend shows in whole percent.
-const DYNAMIC_TICK: u32 = 60;
+const CLOCK_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
 /// caja's desktop among them (63). It's msd's background plugin's, whose place the drawer
@@ -335,7 +335,7 @@ pub fn run() -> Result<(), Error> {
     }
     {
         let refresh = refresh.clone();
-        glib::timeout_add_seconds_local(DYNAMIC_TICK, move || {
+        glib::timeout_add_seconds_local(CLOCK_TICK, move || {
             refresh.schedule();
             glib::ControlFlow::Continue
         });
@@ -562,42 +562,45 @@ impl App {
             };
             let identity = self.identity(name);
             let settings = settings_for(&mut self.store, &identity, primary.as_ref());
-            let is_primary = primary.as_ref() == Some(&identity);
-            shown.push((output.global, is_primary, identity.path_element(), settings));
+            shown.push(Shown {
+                global: output.global,
+                is_primary: primary.as_ref() == Some(&identity),
+                element: identity.path_element(),
+                settings,
+            });
         }
         let dynamics: Vec<&str> = shown
             .iter()
-            .filter(|(_, _, _, settings)| settings.kind == Kind::Dynamic)
-            .map(|(_, _, _, settings)| settings.dynamic.as_str())
+            .filter(|shown| shown.settings.kind == Kind::Dynamic)
+            .map(|shown| shown.settings.dynamic.as_str())
             .collect();
         self.dynamics
             .retain(|path, _| dynamics.contains(&path.as_str()));
         // Each output on a slideshow's folder shows another of its pictures (213).
-        let on_folders: Vec<(&str, &str)> = shown
-            .iter()
-            .filter(|(_, _, _, settings)| settings.kind == Kind::Slideshow)
-            .map(|(_, _, element, settings)| (element.as_str(), settings.slideshow.as_str()))
-            .collect();
-        let mut ranks = slideshow::ranks(&on_folders).into_iter();
+        let ranks = slideshow::ranks(
+            &shown
+                .iter()
+                .map(|shown| (shown.element.as_str(), &shown.settings))
+                .collect::<Vec<_>>(),
+        );
         let sky = sky_now(self.caminito.as_ref());
         let mut drawn = Vec::new();
         let mut primary_drawn = None;
         let mut next_slide = None;
-        for (global, is_primary, _, settings) in shown {
-            let moment = match settings.kind {
-                Kind::Slideshow => {
-                    let rank = ranks.next().unwrap_or_default();
-                    let (moment, next) = slide(&settings, rank, &sky);
+        for (shown, rank) in shown.into_iter().zip(ranks) {
+            let moment = match rank {
+                Some(rank) => {
+                    let (moment, next) = slideshow_moment(&shown.settings, rank, &sky);
                     next_slide = next_slide.into_iter().chain(next).min();
                     moment
                 }
-                _ => self.moment(&settings, &sky),
+                None => self.moment(&shown.settings, &sky),
             };
-            let output_drawn = settings.drawn(moment.as_ref());
-            if is_primary {
+            let output_drawn = shown.settings.drawn(moment.as_ref());
+            if shown.is_primary {
                 primary_drawn = Some(output_drawn.clone());
             }
-            drawn.push((global, output_drawn));
+            drawn.push((shown.global, output_drawn));
         }
         self.wake_for_clock(&sky, next_slide);
         if let Some(primary) = primary_drawn {
@@ -625,7 +628,7 @@ impl App {
             .filter_map(|dynamic| dynamic.next_change(sky))
             .chain(next_slide)
             .min();
-        let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(DYNAMIC_TICK)) else {
+        let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(CLOCK_TICK)) else {
             return;
         };
         if self.waking.replace(true) {
@@ -805,17 +808,32 @@ impl App {
     }
 }
 
+/// An output's settings as a refresh reads them, before what it draws is worked out.
+struct Shown {
+    global: u32,
+    is_primary: bool,
+    /// Its monitor's identity, as a path element, by which it's ranked on a slideshow.
+    element: String,
+    settings: OutputSettings,
+}
+
 /// What the Slideshow of `settings` shows at `sky` on the output of rank `rank` among those
 /// on its folder, read again from the folder, and how many seconds until it changes. A
 /// folder with no picture, or none chosen, has no moment, and is the output's colour.
-fn slide(settings: &OutputSettings, rank: usize, sky: &Sky) -> (Option<Moment>, Option<u64>) {
-    if settings.slideshow.is_empty() {
+fn slideshow_moment(
+    settings: &OutputSettings,
+    rank: usize,
+    sky: &Sky,
+) -> (Option<Moment>, Option<u64>) {
+    let Some(slideshow) = settings.read_slideshow() else {
         return (None, None);
-    }
-    let folder = std::path::Path::new(&settings.slideshow);
-    let slideshow = Slideshow::read(folder, settings.interval, settings.in_order);
+    };
     if slideshow.is_empty() {
-        glib::g_debug!(DOMAIN, "the slideshow {} has no pictures", folder.display());
+        glib::g_debug!(
+            DOMAIN,
+            "the slideshow {} has no pictures",
+            settings.slideshow
+        );
     }
     let moment = slideshow.picture(sky.local, rank).map(Moment::still);
     (moment, slideshow.next_change(sky.local))

@@ -6,7 +6,9 @@
 //! (216), so a change of a day is at local midnight, and a restarted drawer shows what it
 //! showed. At random, the slots are taken in rounds as long as the folder: each round is a
 //! shuffle of every picture, seeded by the folder and the round, so every picture shows
-//! once before any shows again.
+//! once before any shows again. A round doesn't know the one before it, so where one ends
+//! and the next begins a picture can come twice in a row, one time in as many as the folder
+//! has pictures: the price of an order that follows from the clock alone.
 //!
 //! Each output on the same folder has a rank, and shows the picture `rank` places further
 //! on in the same order, so two outputs never show the same picture while the folder has
@@ -15,6 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::grid::pictures_in;
+use crate::settings::{Kind, OutputSettings};
 
 const HOUR: i64 = 3600;
 const DAY: i64 = 24 * HOUR;
@@ -22,10 +25,14 @@ const DAY: i64 = 24 * HOUR;
 /// How long each picture of a slideshow shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Interval {
+    /// Every 5 minutes of the clock.
     FiveMinutes,
+    /// Every 15 minutes, the default: neither restless nor stale.
     #[default]
     FifteenMinutes,
+    /// Every hour, on the hour.
     Hour,
+    /// Every day, at local midnight.
     Day,
 }
 
@@ -86,7 +93,7 @@ impl Slideshow {
     }
 
     /// The slideshow of `pictures`, by name, from `folder`.
-    pub fn new(
+    pub(crate) fn new(
         folder: &Path,
         mut pictures: Vec<PathBuf>,
         interval: Interval,
@@ -99,11 +106,6 @@ impl Slideshow {
             in_order,
             seed: fnv(folder.as_os_str().as_encoded_bytes()),
         }
-    }
-
-    /// Its pictures, by name.
-    pub fn pictures(&self) -> &[PathBuf] {
-        &self.pictures
     }
 
     /// How many pictures it has.
@@ -145,20 +147,28 @@ impl Slideshow {
     }
 }
 
-/// Each output's rank among the outputs showing the same folder, by the path elements of
-/// their identities: given each output's element and folder, in any order, the rank of
-/// each, in that order. Ranked by identity, a monitor keeps its rank whatever order the
-/// outputs come in, and the drawer and the dialog agree.
-pub fn ranks(shown: &[(&str, &str)]) -> Vec<usize> {
+/// Each output's rank among the outputs whose Slideshow shows the same folder, or `None` for
+/// an output that isn't a Slideshow. Each output is given as the path element of its
+/// monitor's identity and its settings, in any order, and the ranks come in that order.
+/// Ranked by identity, a monitor keeps its rank whatever order the outputs come in, and the
+/// drawer and the dialog's sidebar agree.
+pub(crate) fn ranks(shown: &[(&str, &OutputSettings)]) -> Vec<Option<usize>> {
     shown
         .iter()
-        .map(|&(element, folder)| {
-            shown
+        .map(|&(element, settings)| {
+            let folder = folder_of(settings)?;
+            let before = shown
                 .iter()
-                .filter(|&&(other, other_folder)| other_folder == folder && other < element)
-                .count()
+                .filter(|&&(other, others)| other < element && folder_of(others) == Some(folder))
+                .count();
+            Some(before)
         })
         .collect()
+}
+
+/// The folder of a Slideshow, or `None` for another kind.
+fn folder_of(settings: &OutputSettings) -> Option<&str> {
+    (settings.kind == Kind::Slideshow).then_some(settings.slideshow.as_str())
 }
 
 /// `0..count` shuffled by Fisher and Yates, with `seed`'s draws.

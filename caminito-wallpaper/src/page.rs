@@ -300,20 +300,11 @@ impl Page {
                 (element, self.wallpaper(store, index))
             })
             .collect();
-        let on_folders: Vec<(&str, &str)> = shown
+        let shown: Vec<(&str, &OutputSettings)> = shown
             .iter()
-            .filter(|(_, settings)| settings.kind == Kind::Slideshow)
-            .map(|(element, settings)| (element.as_str(), settings.slideshow.as_str()))
+            .map(|(element, settings)| (element.as_str(), settings))
             .collect();
-        let mut ranks = slideshow::ranks(&on_folders).into_iter();
-        shown
-            .iter()
-            .map(|(_, settings)| {
-                (settings.kind == Kind::Slideshow)
-                    .then(|| ranks.next())
-                    .flatten()
-            })
-            .collect()
+        slideshow::ranks(&shown)
     }
 
     /// Adds `folder` to the folders the user added, once.

@@ -2080,7 +2080,7 @@ session_env() {
 - **Milestone:** M9
 - **Steps:**
   1. With `caminito-git` built and installed, log into *MATE on Caminito* with two monitors.
-     Make a folder of five or more pictures of clearly different scenes, say `~/Pictures/Slides`.
+     Make a folder of eight pictures of clearly different scenes, say `~/Pictures/Slides`.
   2. Open *Wallpaper*, leave *Same on all outputs* on, and choose *Slideshow*. Press the folder's
      button and choose `~/Pictures/Slides`. Set *Change every* to *5 minutes*.
   3. Look at both monitors, then watch them across the next whole 5 minutes of the clock (as
@@ -2093,10 +2093,12 @@ session_env() {
   it has, the desktop cross-fades to a picture of the folder on each monitor at once, and the
   sidebar shows each monitor's. In step 3 the two monitors show different pictures of the folder,
   and both change together on the whole 5 minutes, each with a cross-fade of about a second, and
-  never to the picture the other has. Over five changes neither monitor shows the same picture
-  twice. In step 4 the count follows within a minute, the new picture can come up, and the one
+  never to the picture the other has. Over those changes a monitor seldom comes back to a
+  picture: each round of eight shows every picture once, and only where one round ends and the
+  next begins can a picture come twice in a row. In step 4 the count follows within a minute, the new picture can come up, and the one
   taken out doesn't. In step 5 each monitor goes through the pictures in the order of their
-  names, the second one picture ahead of the first. In step 6 both monitors fade to the
+  names, one monitor a picture ahead of the other (which one goes by the monitors' identities,
+  not by where they stand). In step 6 both monitors fade to the
   wallpaper's colour within a minute, and the pane says the folder has no pictures, then that
   it isn't there; nothing crashes, and `pgrep caminito-wallpaperd` still shows one drawer.
 - **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/` for `kind='slideshow'`,
