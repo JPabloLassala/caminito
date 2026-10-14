@@ -39,9 +39,10 @@
 pub(crate) mod bar;
 pub(crate) mod draw;
 pub(crate) mod layout;
+pub(crate) mod timing;
 pub(crate) mod transition;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use caminito_policy::{Action, Direction, OutputId, OverviewOutput, PolicyWindow, WindowId};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
@@ -100,6 +101,17 @@ pub(crate) struct Overview {
     /// The transition, while it's on its way open or closed (243): every output's is the
     /// same (246).
     pub(crate) transition: Option<Transition>,
+    /// Where this output's first frame of a held opening is.
+    first_frame: FirstFrame,
+}
+
+/// Where an output's first frame of a held opening is: its clock starts once every
+/// output's is on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FirstFrame {
+    Undrawn,
+    Drawn,
+    Shown,
 }
 
 /// One window as the Overview draws it at one time.
@@ -327,8 +339,10 @@ impl Caminito {
                 Some(Transition::new(Heading::Opening, closing.part(now), now)),
                 true,
             ),
-            None => (Some(Transition::new(Heading::Opening, 0.0, now)), true),
+            None => (Some(Transition::held(Heading::Opening, 0.0, now)), true),
         };
+        let began = Instant::now();
+        let mut labels = (0, 0);
         let mut before = std::mem::take(&mut self.overview);
         let mut changed = before.len() != listed.len();
         for (output, on) in listed {
@@ -337,17 +351,24 @@ impl Caminito {
                 .position(|old| old.output == output)
                 .map(|index| before.swap_remove(index));
             let selected = open.selected.filter(|id| on.windows.contains(id));
-            let (laid_out, fresh) = self.lay_out_overview(output, on, selected, transition, old);
+            let (laid_out, fresh) =
+                self.lay_out_overview(output, on, selected, transition, old, &mut labels);
             changed |= !fresh;
             self.overview.push(laid_out);
         }
         if starts {
+            let (drawn, kept) = labels;
+            let outputs = self.overview.len();
+            self.overview_timing
+                .laid_out(outputs, began.elapsed(), drawn, kept);
             // Its clock starts once the layouts are ready: what their labels took to draw,
             // a window's icon loaded or the font's first use, isn't taken from its first
-            // frames.
+            // frames. An opening that's held starts its clock later still, and its limit
+            // counts from here.
             let ready = self.now();
             for open in &mut self.overview {
                 open.transition = open.transition.map(|t| t.starting_at(ready));
+                open.first_frame = FirstFrame::Undrawn;
             }
         }
         if changed {
@@ -358,6 +379,7 @@ impl Caminito {
     /// The Overview on `output`, laid out from what policy lists there, `on`, with
     /// `selected` selected and with `transition`, and whether it's as `old`, the one laid
     /// out there before, had it. What `old` drew and the ids of its elements are kept.
+    /// `labels` counts the labels drawn anew and those kept, for the timing.
     fn lay_out_overview(
         &mut self,
         output: Output,
@@ -365,6 +387,7 @@ impl Caminito {
         selected: Option<WindowId>,
         transition: Option<Transition>,
         old: Option<Overview>,
+        labels: &mut (usize, usize),
     ) -> (Overview, bool) {
         let now = self.now();
         let policy = &self.policy;
@@ -402,6 +425,7 @@ impl Caminito {
                     .zip(open.layouts())
                     .all(|(plan, laid)| plan.matches(laid))
         });
+        let first_frame = old.as_ref().map_or(FirstFrame::Undrawn, |old| old.first_frame);
         let (dim, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];
@@ -431,8 +455,14 @@ impl Caminito {
                 .iter_mut()
                 .find(|laid| laid.workspace == plan.workspace && laid.drawn == plan.drawn);
             let labels = match same {
-                Some(laid) => std::mem::take(&mut laid.labels),
-                None => self.draw_overview_labels(&plan.drawn),
+                Some(laid) => {
+                    labels.1 += laid.labels.len();
+                    std::mem::take(&mut laid.labels)
+                }
+                None => {
+                    labels.0 += plan.drawn.labels.len();
+                    self.draw_overview_labels(&plan.drawn)
+                }
             };
             Laid {
                 workspace: plan.workspace,
@@ -457,6 +487,7 @@ impl Caminito {
             target_mark,
             next_bar_frames,
             transition,
+            first_frame,
         };
         (laid_out, fresh)
     }
@@ -502,11 +533,19 @@ impl Caminito {
 
     /// Ends the transition if it's over at `now`, and draws the outputs at rest: the
     /// Overview open, or gone once it's closed. While it runs, its outputs are drawn again
-    /// at each of their frames (`State::redraw_queued_outputs`).
+    /// at each of their frames (`State::redraw_queued_outputs`). An opening held for its
+    /// limit starts its clock instead.
     pub(crate) fn overview_transition_elapse(&mut self, now: Duration) {
         let Some(open) = self.overview.first() else {
             return;
         };
+        if open
+            .transition
+            .is_some_and(|t| t.is_held() && now >= t.end())
+        {
+            self.start_overview_transition(now);
+            return;
+        }
         let Some(transition) = open.transition.filter(|t| t.is_over(now)) else {
             return;
         };
@@ -518,6 +557,42 @@ impl Caminito {
             self.overview.clear();
         }
         self.queue_redraw_all();
+    }
+
+    /// `output` drew a frame: its first of a held opening, if the opening's held.
+    pub(crate) fn overview_frame_drawn(&mut self, output: &Output) {
+        let open = self.overview.iter_mut().find(|open| open.output == *output);
+        if let Some(open) = open
+            && open.transition.is_some_and(|t| t.is_held())
+            && open.first_frame == FirstFrame::Undrawn
+        {
+            open.first_frame = FirstFrame::Drawn;
+        }
+    }
+
+    /// `output` takes a new frame at `now`, so the last one it drew is on screen. A held
+    /// opening's clock starts once every output's first frame is: the frames after it are
+    /// drawn from there, however long the GPU took over it.
+    pub(crate) fn overview_output_ready(&mut self, output: &Output, now: Duration) {
+        let open = self.overview.iter_mut().find(|open| open.output == *output);
+        let Some(open) = open.filter(|open| open.transition.is_some_and(|t| t.is_held())) else {
+            return;
+        };
+        if open.first_frame == FirstFrame::Drawn {
+            open.first_frame = FirstFrame::Shown;
+        }
+        let shown = |open: &Overview| open.first_frame == FirstFrame::Shown;
+        if self.overview.iter().all(shown) {
+            self.start_overview_transition(now);
+        }
+    }
+
+    /// Starts a held opening's clock at `now`, on every output.
+    fn start_overview_transition(&mut self, now: Duration) {
+        for open in &mut self.overview {
+            open.transition = open.transition.map(|t| t.started(now));
+        }
+        self.overview_timing.started();
     }
 
     /// Whether the Overview's transition runs on `output` at `now`.
@@ -592,22 +667,36 @@ impl Caminito {
         drawn
             .labels
             .iter()
-            .map(|inputs| {
+            .enumerate()
+            .map(|(index, inputs)| {
                 if inputs.rect.is_empty() {
                     return None;
                 }
+                let start = Instant::now();
+                let icon =
+                    self.frame_context
+                        .window_icon(&inputs.icon, draw::ICON_SIZE, drawn.scale);
+                let loaded = Instant::now();
+                let context = self.frame_context.text_context();
+                let title = Title::new(context, &font, 1.0, &inputs.title);
+                let laid_out = Instant::now();
+                let found = icon.is_some();
                 let label = Label {
-                    icon: self.frame_context.window_icon(
-                        &inputs.icon,
-                        draw::ICON_SIZE,
-                        drawn.scale,
-                    ),
-                    title: Title::new(self.frame_context.text_context(), &font, 1.0, &inputs.title),
+                    icon,
+                    title,
                     selected: inputs.selected,
                 };
-                draw::draw(inputs.rect, &label, &drawn.colors, drawn.scale)
+                let buffer = draw::draw(inputs.rect, &label, &drawn.colors, drawn.scale)
                     .inspect_err(|err| tracing::warn!("can't draw the overview's label: {err}"))
-                    .ok()
+                    .ok();
+                timing::label(
+                    index,
+                    loaded - start,
+                    laid_out - loaded,
+                    laid_out.elapsed(),
+                    found,
+                );
+                buffer
             })
             .collect()
     }
@@ -803,6 +892,8 @@ impl State {
         }
         self.dismiss_menus(time);
         let now = self.caminito.now();
+        let opens = self.caminito.policy.overview().is_none();
+        self.caminito.overview_timing.pressed(opens);
         self.caminito.policy.action(SEAT, Action::Overview, now);
     }
 
