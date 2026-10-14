@@ -86,13 +86,13 @@ impl<W: PolicyWindow> Policy<W> {
     /// An arrow key: selects the nearest window `direction`'s way from the selected one in
     /// the layout, or the layout's first with none selected: the left one of the top row.
     /// A row's windows stand on one line, so it's the one whose bottom edge is highest, and
-    /// then the left one. `places`
-    /// are the listed windows' places in the layout, in the list's order.
+    /// then the left one. `places` are the listed windows' places in the layout, in the
+    /// list's order.
     ///
-    /// The window that way is one wholly past the selected one's edge on that side. Of
-    /// those, one beside it, on the same row for Left and Right or in the same column for
-    /// Up and Down, comes before any other, and then the one whose centre is nearest. At
-    /// the layout's edge the selection stays.
+    /// The window that way is one wholly past the selected one's edge on that side. For
+    /// Left and Right it's on the same row, and for Up and Down one in the same column comes
+    /// before any other. Of those, it's the one whose centre is nearest. At the layout's
+    /// edge, and at a row's end, the selection stays.
     pub fn overview_select(&mut self, direction: Direction, places: &[Rectangle<i32, Logical>]) {
         let Some(open) = &mut self.overview else {
             return;
@@ -198,9 +198,15 @@ fn nearest(
             Direction::Up => place.loc.y + place.size.h <= from.loc.y,
             Direction::Down => place.loc.y >= from.loc.y + from.size.h,
         })
+        // Left and Right stay on the row: a row's windows stand on one line, so another row's
+        // are below or above it.
+        .filter(|(_, place)| match direction {
+            Direction::Left | Direction::Right => overlaps(span_y(place), span_y(&from)),
+            Direction::Up | Direction::Down => true,
+        })
         .min_by_key(|(_, place)| {
             let beside = match direction {
-                Direction::Left | Direction::Right => overlaps(span_y(place), span_y(&from)),
+                Direction::Left | Direction::Right => true,
                 Direction::Up | Direction::Down => overlaps(span_x(place), span_x(&from)),
             };
             let (x, y) = centre(place);

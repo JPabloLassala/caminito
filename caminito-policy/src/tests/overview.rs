@@ -394,6 +394,25 @@ fn an_arrow_key_at_the_layouts_edge_keeps_the_selection() {
 }
 
 #[test]
+fn left_and_right_dont_leave_the_row() {
+    // 1 and 2 on the first row, and 3 alone on the second, centred, so 1 is wholly to its
+    // left.
+    let mut policy = three();
+    toggle(&mut policy);
+    let places = [
+        rect(0, 0, 100, 100),
+        rect(150, 0, 100, 100),
+        rect(200, 150, 100, 100),
+    ];
+    policy.set_overview_selection(Some(id(3)));
+
+    policy.overview_select(Direction::Left, &places);
+    assert_eq!(selected(&policy), Some(id(3)));
+    policy.overview_select(Direction::Right, &places);
+    assert_eq!(selected(&policy), Some(id(3)));
+}
+
+#[test]
 fn with_none_selected_an_arrow_key_selects_the_first_window_of_the_layout() {
     for direction in [
         Direction::Left,

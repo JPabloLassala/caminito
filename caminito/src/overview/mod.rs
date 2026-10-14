@@ -59,15 +59,26 @@ pub(crate) struct Overview {
 /// Everything the labels are drawn from.
 #[derive(PartialEq)]
 struct Drawn {
-    /// Each listed window's label: where it is, its title, where its icon comes from, and
-    /// whether the window is the selected one.
-    labels: Vec<(Rectangle<i32, Logical>, String, IconSource, bool)>,
+    /// Each listed window's label.
+    labels: Vec<LabelInputs>,
     scale: i32,
     colors: PaletteColors,
     font: String,
     /// The frames' generation, which counts the changes to the font rendering and the
     /// icon theme.
     generation: u64,
+}
+
+/// What one window's label is drawn from.
+#[derive(PartialEq)]
+struct LabelInputs {
+    /// Where it is.
+    rect: Rectangle<i32, Logical>,
+    title: String,
+    /// Where its icon comes from.
+    icon: IconSource,
+    /// Whether the window is the selected one (242).
+    selected: bool,
 }
 
 impl Caminito {
@@ -151,20 +162,12 @@ impl Caminito {
             .iter()
             .zip(&layout.slots)
             .map(|(id, slot)| {
-                let is_selected = selected == Some(*id);
-                match self.policy.window(*id) {
-                    Some(mapped) => (
-                        slot.label,
-                        mapped.title(),
-                        mapped.icon_source(),
-                        is_selected,
-                    ),
-                    None => (
-                        slot.label,
-                        String::new(),
-                        IconSource::AppId(None),
-                        is_selected,
-                    ),
+                let mapped = self.policy.window(*id);
+                LabelInputs {
+                    rect: slot.label,
+                    title: mapped.map(|mapped| mapped.title()).unwrap_or_default(),
+                    icon: mapped.map_or(IconSource::AppId(None), |mapped| mapped.icon_source()),
+                    selected: selected == Some(*id),
                 }
             })
             .collect();
@@ -183,18 +186,20 @@ impl Caminito {
         drawn
             .labels
             .iter()
-            .map(|(rect, title, source, selected)| {
-                if rect.is_empty() {
+            .map(|inputs| {
+                if inputs.rect.is_empty() {
                     return None;
                 }
                 let label = Label {
-                    icon: self
-                        .frame_context
-                        .window_icon(source, draw::ICON_SIZE, drawn.scale),
-                    title: Title::new(self.frame_context.text_context(), &font, 1.0, title),
-                    selected: *selected,
+                    icon: self.frame_context.window_icon(
+                        &inputs.icon,
+                        draw::ICON_SIZE,
+                        drawn.scale,
+                    ),
+                    title: Title::new(self.frame_context.text_context(), &font, 1.0, &inputs.title),
+                    selected: inputs.selected,
                 };
-                draw::draw(*rect, &label, &drawn.colors, drawn.scale)
+                draw::draw(inputs.rect, &label, &drawn.colors, drawn.scale)
                     .inspect_err(|err| tracing::warn!("can't draw the overview's label: {err}"))
                     .ok()
             })

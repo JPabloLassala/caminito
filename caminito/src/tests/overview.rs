@@ -95,6 +95,13 @@ fn click(f: &mut Fixture, at: Point<i32, Logical>) {
     f.click(f64::from(at.x), f64::from(at.y));
 }
 
+/// Clicks the middle button at `at`.
+fn middle_click(f: &mut Fixture, at: Point<i32, Logical>) {
+    f.pointer_move(f64::from(at.x), f64::from(at.y));
+    f.pointer_button(BTN_MIDDLE, true);
+    f.pointer_button(BTN_MIDDLE, false);
+}
+
 /// The output's pixel at `at`, as `0xRRGGBB`.
 fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
     let output = f.state.caminito.outputs[0].clone();
@@ -828,9 +835,8 @@ on_both_kinds! {
         assert!(!f.close_requested(first));
 
         let at = middle(place(&f, first));
-        f.pointer_move(f64::from(at.x), f64::from(at.y));
-        f.pointer_button(BTN_MIDDLE, true);
-        f.pointer_button(BTN_MIDDLE, false);
+
+        middle_click(&mut f, at);
 
         assert!(f.close_requested(first));
         assert!(!f.close_requested(second));
@@ -849,9 +855,8 @@ fn no_client_sees_the_middle_click() {
     f.client(id).state.input.clear();
 
     let at = middle(place(&f, first));
-    f.pointer_move(f64::from(at.x), f64::from(at.y));
-    f.pointer_button(BTN_MIDDLE, true);
-    f.pointer_button(BTN_MIDDLE, false);
+
+    middle_click(&mut f, at);
 
     f.roundtrip(id);
     let input = &f.client(id).state.input;
