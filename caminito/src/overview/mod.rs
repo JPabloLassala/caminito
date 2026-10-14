@@ -318,12 +318,16 @@ impl Caminito {
             .iter()
             .filter_map(|output| Some((output.clone(), open.on(output_id(output))?)))
             .collect();
-        // The one drawn already, if it's open or closing: every output's is the same.
-        let transition = match self.overview.first() {
-            Some(before) if !before.is_closing() => before.transition,
-            _ if !self.settings.overview_animation => None,
-            Some(closing) => Some(Transition::new(Heading::Opening, closing.part(now), now)),
-            None => Some(Transition::new(Heading::Opening, 0.0, now)),
+        // The one drawn already, if it's open or closing: every output's is the same. An
+        // opening starts here.
+        let (transition, starts) = match self.overview.first() {
+            Some(before) if !before.is_closing() => (before.transition, false),
+            _ if !self.settings.overview_animation => (None, false),
+            Some(closing) => (
+                Some(Transition::new(Heading::Opening, closing.part(now), now)),
+                true,
+            ),
+            None => (Some(Transition::new(Heading::Opening, 0.0, now)), true),
         };
         let mut before = std::mem::take(&mut self.overview);
         let mut changed = before.len() != listed.len();
@@ -336,6 +340,15 @@ impl Caminito {
             let (laid_out, fresh) = self.lay_out_overview(output, on, selected, transition, old);
             changed |= !fresh;
             self.overview.push(laid_out);
+        }
+        if starts {
+            // Its clock starts once the layouts are ready: what their labels took to draw,
+            // a window's icon loaded or the font's first use, isn't taken from its first
+            // frames.
+            let ready = self.now();
+            for open in &mut self.overview {
+                open.transition = open.transition.map(|t| t.starting_at(ready));
+            }
         }
         if changed {
             self.queue_redraw_all();
