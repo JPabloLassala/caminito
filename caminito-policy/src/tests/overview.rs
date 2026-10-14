@@ -3,7 +3,8 @@
 //! `interaction`'s.
 
 use super::*;
-use crate::Interaction;
+use crate::test_window::Call;
+use crate::{Direction, Interaction};
 
 fn four_workspaces() -> Config {
     Config {
@@ -300,4 +301,196 @@ fn opening_and_closing_change_what_the_scene_reads() {
 
     toggle(&mut policy);
     assert!(policy.take_scene_changed());
+}
+
+// The selection (242).
+
+/// The open Overview's selection.
+fn selected(policy: &Policy<TestWindow>) -> Option<WindowId> {
+    policy.overview().expect("the Overview is open").selected
+}
+
+fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
+    Rectangle::new((x, y).into(), (w, h).into())
+}
+
+/// Five windows on one output, 5 focused, laid out in two rows that aren't in the order
+/// they're listed in: 3, 1 and 5 on the first row, and 2 and 4 on the second, set off from
+/// the first row's columns. 3 is the first row's shortest, and stands on its line as
+/// the others do.
+fn two_rows() -> (Policy<TestWindow>, Vec<Rectangle<i32, Logical>>) {
+    let mut policy = Policy::new(four_workspaces());
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    for w in 1..=5 {
+        policy.map_window(TestWindow::new(w, 400, 300), ms(w));
+    }
+    toggle(&mut policy);
+    assert_eq!(listed(&policy), [id(1), id(2), id(3), id(4), id(5)]);
+    let places = vec![
+        rect(150, 0, 100, 100),
+        rect(50, 150, 100, 100),
+        rect(0, 20, 100, 80),
+        rect(210, 150, 100, 100),
+        rect(300, 0, 100, 100),
+    ];
+    (policy, places)
+}
+
+/// The selection after `direction` from `from`.
+fn after(from: u64, direction: Direction) -> Option<WindowId> {
+    let (mut policy, places) = two_rows();
+    policy.set_overview_selection(Some(id(from)));
+    policy.overview_select(direction, &places);
+    selected(&policy)
+}
+
+#[test]
+fn the_focused_window_is_selected_at_opening() {
+    let mut policy = three();
+
+    toggle(&mut policy);
+
+    assert_eq!(selected(&policy), Some(id(3)));
+}
+
+#[test]
+fn with_no_window_focused_none_is_selected_at_opening() {
+    let mut policy = three();
+    for w in 1..=3 {
+        policy.minimize(id(w));
+    }
+    assert_eq!(policy.focus(SEAT), None);
+
+    toggle(&mut policy);
+
+    assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
+    assert_eq!(selected(&policy), None);
+}
+
+#[test]
+fn left_and_right_move_along_a_row() {
+    assert_eq!(after(1, Direction::Left), Some(id(3)));
+    assert_eq!(after(1, Direction::Right), Some(id(5)));
+    assert_eq!(after(2, Direction::Right), Some(id(4)));
+    assert_eq!(after(4, Direction::Left), Some(id(2)));
+}
+
+#[test]
+fn up_and_down_move_to_the_nearest_window_of_the_next_row() {
+    assert_eq!(after(1, Direction::Down), Some(id(4)));
+    assert_eq!(after(3, Direction::Down), Some(id(2)));
+    assert_eq!(after(2, Direction::Up), Some(id(3)));
+    assert_eq!(after(4, Direction::Up), Some(id(1)));
+}
+
+#[test]
+fn an_arrow_key_at_the_layouts_edge_keeps_the_selection() {
+    assert_eq!(after(3, Direction::Left), Some(id(3)));
+    assert_eq!(after(5, Direction::Right), Some(id(5)));
+    assert_eq!(after(5, Direction::Up), Some(id(5)));
+    assert_eq!(after(4, Direction::Down), Some(id(4)));
+    // The second row's first window has the first row's beside it, not to its left.
+    assert_eq!(after(2, Direction::Left), Some(id(2)));
+}
+
+#[test]
+fn with_none_selected_an_arrow_key_selects_the_first_window_of_the_layout() {
+    for direction in [
+        Direction::Left,
+        Direction::Right,
+        Direction::Up,
+        Direction::Down,
+    ] {
+        let (mut policy, places) = two_rows();
+        policy.set_overview_selection(None);
+
+        policy.overview_select(direction, &places);
+
+        assert_eq!(selected(&policy), Some(id(3)), "{direction:?}");
+    }
+}
+
+#[test]
+fn enter_chooses_the_selected_window() {
+    let mut policy = three();
+    policy.minimize(id(1));
+    toggle(&mut policy);
+    policy.set_overview_selection(Some(id(1)));
+
+    policy.overview_enter(ms(200));
+
+    assert!(policy.overview().is_none());
+    assert!(!policy.is_minimized(id(1)));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn enter_with_none_selected_does_nothing() {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.set_overview_selection(None);
+    let stacking = policy.active_stacking();
+
+    policy.overview_enter(ms(200));
+
+    assert!(policy.overview().is_some());
+    assert_eq!(policy.active_stacking(), stacking);
+}
+
+#[test]
+fn the_selected_window_going_leaves_none_selected() {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.set_overview_selection(Some(id(2)));
+
+    policy.unmap_window(id(2));
+
+    assert_eq!(selected(&policy), None);
+}
+
+#[test]
+fn another_window_going_keeps_the_selection() {
+    let mut policy = three();
+    toggle(&mut policy);
+    policy.set_overview_selection(Some(id(2)));
+
+    policy.unmap_window(id(1));
+
+    assert_eq!(selected(&policy), Some(id(2)));
+}
+
+#[test]
+fn a_window_that_maps_while_it_is_open_joins_the_list() {
+    let mut policy = three();
+    toggle(&mut policy);
+
+    policy.map_window(TestWindow::new(4, 400, 300), ms(200));
+
+    assert!(listed(&policy).contains(&id(4)));
+    assert!(policy.overview().is_some());
+}
+
+// The middle click (242).
+
+#[test]
+fn a_middle_click_asks_the_window_to_close_and_the_overview_stays_open() {
+    let mut policy = three();
+    toggle(&mut policy);
+
+    policy.overview_close_window(id(2));
+
+    assert_eq!(window(&policy, 2).calls.last(), Some(&Call::Close));
+    assert!(policy.overview().is_some());
+    assert_eq!(listed(&policy), [id(1), id(2), id(3)]);
+}
+
+#[test]
+fn a_middle_click_on_a_window_that_isnt_listed_does_nothing() {
+    let mut policy = three();
+    policy.move_to_workspace(id(2), 1);
+    toggle(&mut policy);
+
+    policy.overview_close_window(id(2));
+
+    assert!(!window(&policy, 2).calls.contains(&Call::Close));
 }

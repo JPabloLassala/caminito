@@ -299,6 +299,8 @@ struct OverviewDump {
     output: String,
     /// The windows listed, bottom to top.
     windows: Vec<OverviewWindowDump>,
+    /// The selected window (242), if one is.
+    selected: Option<u64>,
     /// How much of black is over the wallpaper.
     dim: f32,
     /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
@@ -584,9 +586,10 @@ impl Caminito {
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
     /// with their keys, the accelerator grabs with their owners, the Window switcher, the
-    /// Workspace popup, the Overview with each listed window's place (241), the bells rung
-    /// with the last one, Night Light, each window's tile with the tile preview (158), and
-    /// the Workspace slides that run (233), as pretty-printed JSON.
+    /// Workspace popup, the Overview with each listed window's place (241) and the
+    /// selection (242), the bells rung with the last one, Night Light, each window's tile
+    /// with the tile preview (158), and the Workspace slides that run (233), as
+    /// pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -738,6 +741,7 @@ impl Caminito {
                         label: slot(id).map(|slot| slot.label.into()),
                     })
                     .collect(),
+                selected: open.selected.map(|id| id.0),
                 dim: crate::overview::DIM,
                 hidden_layer_surfaces: self
                     .layer_surfaces(output)

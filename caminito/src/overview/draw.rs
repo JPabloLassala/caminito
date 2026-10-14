@@ -1,6 +1,7 @@
 //! The Overview's chrome (241): each window's label, its icon and its title, drawn with
 //! cairo in the GTK theme's colours and font (ADR 0003), as the Window switcher's popup
-//! is, in a buffer of its own that the scene puts beneath the window.
+//! is, in a buffer of its own that the scene puts beneath the window. The selected
+//! window's label (242) is in the theme's selection, as the switcher's selected cell is.
 
 use caminito_theme::cairo::{self, ImageSurface};
 use caminito_theme::{GtkState, PaletteColors, Title};
@@ -8,7 +9,9 @@ use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::decoration::memory_buffer;
-use crate::switcher::draw::{context, draw_background, draw_text, surface};
+use crate::switcher::draw::{
+    context, draw_background, draw_text, fill_selected, selection_shows, surface,
+};
 
 /// The size a label's icon is drawn at, in logical pixels.
 pub(crate) const ICON_SIZE: i32 = 16;
@@ -21,6 +24,8 @@ pub(crate) struct Label {
     pub(crate) icon: Option<ImageSurface>,
     /// The window's title, laid out.
     pub(crate) title: Title,
+    /// Whether the window is the selected one (242).
+    pub(crate) selected: bool,
 }
 
 /// Draws `label` to fill `rect`, at `scale`: the icon at the left where the label has room
@@ -35,6 +40,9 @@ pub(crate) fn draw(
     {
         let cr = context(&surface, rect, scale)?;
         draw_background(&cr, rect, colors)?;
+        if label.selected {
+            fill_selected(&cr, rect, colors)?;
+        }
         let icon_room = 2 * PADDING + ICON_SIZE;
         let icon = label
             .icon
@@ -62,7 +70,13 @@ pub(crate) fn draw(
             text.size.w -= ICON_SIZE + PADDING;
         }
         if text.size.w > 0 {
-            draw_text(&cr, text, &label.title, colors.text(GtkState::Normal));
+            // On the theme's selection the title is in the theme's selected text.
+            let state = if label.selected && selection_shows(colors) {
+                GtkState::Selected
+            } else {
+                GtkState::Normal
+            };
+            draw_text(&cr, text, &label.title, colors.text(state));
         }
     }
     memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory)

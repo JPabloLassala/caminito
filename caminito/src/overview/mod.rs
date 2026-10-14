@@ -6,15 +6,20 @@
 //! place, `draw` draws the labels, and `scene` puts the windows, the labels and the
 //! dimming on the output, in place of what the output shows otherwise.
 //!
-//! It opens and closes in one frame: the transition is 243's. Its arrow keys and its
-//! middle click are 242's, its bar of workspaces 244's, and every output at once 246's.
+//! The arrow keys move policy's selection in the layout and Enter chooses it, and a middle
+//! click on a window asks it to close (242). A window that opens or closes while it's open
+//! joins the layout or leaves it at the next refresh pass, and the others take their new
+//! places in that frame.
+//!
+//! It opens and closes in one frame: the transition is 243's. Its bar of workspaces is
+//! 244's, and every output at once 246's.
 //!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
 pub(crate) mod draw;
 pub(crate) mod layout;
 
-use caminito_policy::{Action, WindowId};
+use caminito_policy::{Action, Direction, WindowId};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::backend::renderer::element::Id;
@@ -27,7 +32,7 @@ use self::draw::Label;
 use self::layout::Layout;
 use crate::decoration::IconSource;
 use crate::input::bindings::Binding;
-use crate::input::{BTN_LEFT, Bound, press_keysyms};
+use crate::input::{BTN_LEFT, BTN_MIDDLE, Bound, press_keysyms};
 use crate::output::{output_geometry, output_id};
 use crate::state::{Caminito, SEAT, State};
 
@@ -54,8 +59,9 @@ pub(crate) struct Overview {
 /// Everything the labels are drawn from.
 #[derive(PartialEq)]
 struct Drawn {
-    /// Each listed window's label: where it is, its title, and where its icon comes from.
-    labels: Vec<(Rectangle<i32, Logical>, String, IconSource)>,
+    /// Each listed window's label: where it is, its title, where its icon comes from, and
+    /// whether the window is the selected one.
+    labels: Vec<(Rectangle<i32, Logical>, String, IconSource, bool)>,
     scale: i32,
     colors: PaletteColors,
     font: String,
@@ -89,9 +95,9 @@ impl Caminito {
         let on = open.and_then(|open| {
             let mut outputs = self.outputs.iter();
             let output = outputs.find(|output| output_id(output) == open.output)?;
-            Some((output.clone(), open.windows.clone()))
+            Some((output.clone(), open.windows.clone(), open.selected))
         });
-        let Some((output, windows)) = on else {
+        let Some((output, windows, selected)) = on else {
             if self.policy.overview().is_some() {
                 self.policy.close_overview();
             }
@@ -109,7 +115,7 @@ impl Caminito {
             })
             .collect();
         let layout = Layout::new(&frames, Rectangle::from_size(geometry.size));
-        let drawn = self.overview_label_inputs(&output, &windows, &layout);
+        let drawn = self.overview_label_inputs(&output, &windows, selected, &layout);
         let fresh = self.overview.as_ref().is_some_and(|open| {
             open.output == output
                 && open.windows == windows
@@ -132,19 +138,34 @@ impl Caminito {
         self.queue_redraw_all();
     }
 
-    /// What the labels of `windows` are drawn from on `output`, in `layout`.
+    /// What the labels of `windows` are drawn from on `output`, in `layout`, with
+    /// `selected` selected.
     fn overview_label_inputs(
         &self,
         output: &Output,
         windows: &[WindowId],
+        selected: Option<WindowId>,
         layout: &Layout,
     ) -> Drawn {
         let labels = windows
             .iter()
             .zip(&layout.slots)
-            .map(|(id, slot)| match self.policy.window(*id) {
-                Some(mapped) => (slot.label, mapped.title(), mapped.icon_source()),
-                None => (slot.label, String::new(), IconSource::AppId(None)),
+            .map(|(id, slot)| {
+                let is_selected = selected == Some(*id);
+                match self.policy.window(*id) {
+                    Some(mapped) => (
+                        slot.label,
+                        mapped.title(),
+                        mapped.icon_source(),
+                        is_selected,
+                    ),
+                    None => (
+                        slot.label,
+                        String::new(),
+                        IconSource::AppId(None),
+                        is_selected,
+                    ),
+                }
             })
             .collect();
         Drawn {
@@ -162,7 +183,7 @@ impl Caminito {
         drawn
             .labels
             .iter()
-            .map(|(rect, title, source)| {
+            .map(|(rect, title, source, selected)| {
                 if rect.is_empty() {
                     return None;
                 }
@@ -171,6 +192,7 @@ impl Caminito {
                         .frame_context
                         .window_icon(source, draw::ICON_SIZE, drawn.scale),
                     title: Title::new(self.frame_context.text_context(), &font, 1.0, title),
+                    selected: *selected,
                 };
                 draw::draw(*rect, &label, &drawn.colors, drawn.scale)
                     .inspect_err(|err| tracing::warn!("can't draw the overview's label: {err}"))
@@ -181,10 +203,12 @@ impl Caminito {
 
     /// A key went down while the Overview may be open. Returns what the keyboard path does
     /// with it, or `None` if the Overview is closed and the key is the other stages'. Esc
-    /// and the Overview's own shortcut close it. A media key, which is an accelerator
-    /// grab of a key with an `XF86` keysym, is its grabber's as ever. Every other key but
-    /// a modifier is swallowed, the other System shortcuts among them, and reaches no
-    /// client. A modifier goes on to the client, as with the Window switcher open.
+    /// and the Overview's own shortcut close it. An arrow key that's no binding moves the
+    /// selection in the layout, and Enter chooses the selected window (242). A media key,
+    /// which is an accelerator grab of a key with an `XF86` keysym, is its grabber's as
+    /// ever. Every other key but a modifier is swallowed, the other System shortcuts among
+    /// them, and reaches no client. A modifier goes on to the client, as with the Window
+    /// switcher open.
     pub(crate) fn overview_key_pressed(
         &mut self,
         keycode: Keycode,
@@ -199,11 +223,31 @@ impl Caminito {
         // Keys are named as the first layout does, like the bindings.
         let keysyms = press_keysyms(keysym);
         let binding = self.settings.bindings.binding_for(mods, &keysyms);
-        let closes = binding == Some(Binding::Policy(Action::Overview))
-            || keysym.raw_latin_sym_or_raw_current_sym() == Some(Keysym::Escape);
+        let sym = keysym.raw_latin_sym_or_raw_current_sym();
+        let closes =
+            binding == Some(Binding::Policy(Action::Overview)) || sym == Some(Keysym::Escape);
         if closes {
             self.policy.close_overview();
             return Some(FilterResult::Intercept(None));
+        }
+        if binding.is_none() {
+            let direction = match sym {
+                Some(Keysym::Left) => Some(Direction::Left),
+                Some(Keysym::Right) => Some(Direction::Right),
+                Some(Keysym::Up) => Some(Direction::Up),
+                Some(Keysym::Down) => Some(Direction::Down),
+                _ => None,
+            };
+            if let Some(direction) = direction {
+                self.overview_select(direction);
+                return Some(FilterResult::Intercept(None));
+            }
+            if matches!(sym, Some(Keysym::Return | Keysym::KP_Enter)) {
+                let now = self.now();
+                self.policy.overview_enter(now);
+                self.refresh_overview();
+                return Some(FilterResult::Intercept(None));
+            }
         }
         let media_key = self.accelerator_grabs.pressed_media_key(mods, &keysyms);
         let bound = media_key.map(|(action, owner)| Bound::Accelerator {
@@ -211,6 +255,19 @@ impl Caminito {
             action,
         });
         Some(FilterResult::Intercept(bound))
+    }
+
+    /// An arrow key: moves policy's selection `direction`'s way in the layout as it is now.
+    fn overview_select(&mut self, direction: Direction) {
+        // The layout as policy's list is now: a window may have opened or closed since the
+        // refresh pass.
+        self.refresh_overview();
+        let Some(open) = &self.overview else {
+            return;
+        };
+        let places: Vec<_> = open.layout.slots.iter().map(|slot| slot.window).collect();
+        self.policy.overview_select(direction, &places);
+        self.refresh_overview();
     }
 }
 
@@ -231,8 +288,9 @@ impl State {
 
     /// A pointer button with the pointer at `location`. Returns whether its press was the
     /// Overview's, and so no client's: while the Overview is open, a press of the left
-    /// button on a window of the layout chooses that window, and a press of any button on
-    /// the empty area closes the Overview, as does that of a button with the Overview's
+    /// button on a window of the layout chooses that window, one of the middle button asks
+    /// it to close and leaves the Overview open (242), and a press of any button on the
+    /// empty area closes the Overview, as does that of a button with the Overview's
     /// shortcut. The release of such a press is swallowed with the Window switcher's.
     pub(crate) fn overview_button(
         &mut self,
@@ -260,7 +318,7 @@ impl State {
                 let now = caminito.now();
                 caminito.policy.overview_choose(id, now);
             }
-            // The middle button's click on a window is 242's.
+            Some(id) if button == BTN_MIDDLE => caminito.policy.overview_close_window(id),
             Some(_) => {}
             None => caminito.policy.close_overview(),
         }
