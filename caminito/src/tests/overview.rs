@@ -1,7 +1,8 @@
 //! The Overview (241): the shortcut that opens it, the windows it lists and where it lays
 //! them out, what it draws in place of the output's own, and the keys and the clicks that
 //! close it, read from the debug dump and from the output's pixels. It opens and closes in
-//! one frame.
+//! one frame. Its selection, the arrow keys and Enter, the middle click, and windows that
+//! map or go while it's open are 242's.
 //!
 //! What both kinds of window share runs on both. The tests of what a client sees of the
 //! keys and the clicks, and of what only the Overview's own state shows (the shortcut, the
@@ -15,9 +16,9 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use super::accelerators::Caller;
 use super::fixture::{
-    BTN_LEFT, BTN_RIGHT, ClientId, ClientWindow, Fixture, KEY_A, KEY_ESC, KEY_LEFTALT,
-    KEY_LEFTCTRL, KEY_LEFTMETA, KEY_MUTE, KEY_SPACE, KEY_TAB, KEY_W, Kind, WINDOW_COLOR,
-    WindowSpec, on_both_kinds,
+    BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, ClientId, ClientWindow, Fixture, KEY_A, KEY_DOWN, KEY_ENTER,
+    KEY_ESC, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTMETA, KEY_MUTE, KEY_RIGHT, KEY_SPACE,
+    KEY_TAB, KEY_UP, KEY_W, Kind, WINDOW_COLOR, WindowSpec, on_both_kinds,
 };
 use crate::scene::SceneLayer;
 use crate::settings::Value;
@@ -92,6 +93,13 @@ fn middle(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
 /// Clicks the left button at `at`.
 fn click(f: &mut Fixture, at: Point<i32, Logical>) {
     f.click(f64::from(at.x), f64::from(at.y));
+}
+
+/// Clicks the middle button at `at`.
+fn middle_click(f: &mut Fixture, at: Point<i32, Logical>) {
+    f.pointer_move(f64::from(at.x), f64::from(at.y));
+    f.pointer_button(BTN_MIDDLE, true);
+    f.pointer_button(BTN_MIDDLE, false);
 }
 
 /// The output's pixel at `at`, as `0xRRGGBB`.
@@ -694,5 +702,232 @@ on_both_kinds! {
         f.chord(&[KEY_ESC]);
         assert!(!slides(&f));
         assert_eq!(f.state.caminito.policy.active_workspace(), 1);
+    }
+}
+
+// The selection, the arrow keys and Enter (242).
+
+/// The open Overview's selected window, by policy's id.
+fn selected(f: &Fixture) -> Option<u64> {
+    overview(f)["selected"].as_u64()
+}
+
+/// A spot inside `window`'s label, in its padding before the icon.
+fn label_spot(f: &Fixture, window: ClientWindow) -> Point<i32, Logical> {
+    let label = part(f, window, "label");
+    label.loc + Point::from((2, label.size.h / 2))
+}
+
+on_both_kinds! {
+    fn the_focused_window_is_selected_at_opening_and_its_label_is_marked(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let [first, second, third] = map_three(&mut f, id);
+
+        open(&mut f);
+
+        assert_eq!(selected(&f), Some(f.pid(third).0));
+        assert_eq!(focus(&f), selected(&f));
+        let (first_spot, third_spot) = (label_spot(&f, first), label_spot(&f, third));
+        let second_spot = label_spot(&f, second);
+        let unmarked = pixel(&mut f, first_spot);
+        assert_eq!(pixel(&mut f, second_spot), unmarked);
+        assert_ne!(pixel(&mut f, third_spot), unmarked);
+
+        // The mark moves with the selection.
+        f.chord(&[KEY_LEFT]);
+        f.chord(&[KEY_LEFT]);
+        assert_eq!(selected(&f), Some(f.pid(first).0));
+        assert_eq!(pixel(&mut f, third_spot), unmarked);
+        assert_ne!(pixel(&mut f, first_spot), unmarked);
+    }
+}
+
+#[test]
+fn with_no_window_focused_none_is_selected() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    for window in map_three(&mut f, id) {
+        minimise(&mut f, window);
+    }
+    assert_eq!(focus(&f), None);
+
+    open(&mut f);
+
+    assert_eq!(selected(&f), None);
+    // Enter does nothing then.
+    f.chord(&[KEY_ENTER]);
+    assert!(is_open(&f));
+    assert_eq!(focus(&f), None);
+}
+
+on_both_kinds! {
+    fn the_arrow_keys_and_enter_activate_the_window_chosen_and_close_it(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        // One row, in the order they were mapped from the left; the third is focused.
+        let [first, second, third] = map_three(&mut f, id);
+        open(&mut f);
+        let pid = |f: &Fixture, window: ClientWindow| Some(f.pid(window).0);
+
+        f.chord(&[KEY_LEFT]);
+        assert_eq!(selected(&f), pid(&f, second));
+        f.chord(&[KEY_LEFT]);
+        assert_eq!(selected(&f), pid(&f, first));
+        // At the layout's edge, and on its one row, the selection stays.
+        for key in [KEY_LEFT, KEY_UP, KEY_DOWN] {
+            f.chord(&[key]);
+            assert_eq!(selected(&f), pid(&f, first), "{key}");
+        }
+        f.chord(&[KEY_RIGHT]);
+        f.chord(&[KEY_RIGHT]);
+        f.chord(&[KEY_RIGHT]);
+        assert_eq!(selected(&f), pid(&f, third));
+        f.chord(&[KEY_LEFT]);
+        assert!(is_open(&f));
+
+        f.chord(&[KEY_ENTER]);
+
+        assert!(!is_open(&f));
+        assert_eq!(focus(&f), pid(&f, second));
+        assert_eq!(stacking(&f).last().copied(), pid(&f, second));
+    }
+}
+
+#[test]
+fn an_arrow_key_with_none_selected_selects_the_first_and_enter_unminimises_it() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    let windows = map_three(&mut f, id);
+    for window in windows {
+        minimise(&mut f, window);
+    }
+    open(&mut f);
+
+    f.chord(&[KEY_DOWN]);
+    assert_eq!(selected(&f), Some(f.pid(windows[0]).0));
+    f.chord(&[KEY_ENTER]);
+
+    assert!(!is_open(&f));
+    let chosen = f.pid(windows[0]);
+    assert!(!f.state.caminito.policy.is_minimized(chosen));
+    assert_eq!(focus(&f), Some(chosen.0));
+}
+
+#[test]
+fn no_client_sees_the_arrow_keys_or_enter() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.client(id).bind_input();
+    map_three(&mut f, id);
+    open(&mut f);
+    keys_seen(&mut f, id);
+
+    f.chord(&[KEY_LEFT]);
+    f.chord(&[KEY_ENTER]);
+
+    assert!(!is_open(&f));
+    assert_eq!(keys_seen(&mut f, id), []);
+}
+
+// The middle click (242).
+
+on_both_kinds! {
+    fn a_middle_click_on_a_window_asks_it_to_close_and_the_overview_stays_open(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let [first, second, _] = map_three(&mut f, id);
+        open(&mut f);
+        assert!(!f.close_requested(first));
+
+        let at = middle(place(&f, first));
+
+        middle_click(&mut f, at);
+
+        assert!(f.close_requested(first));
+        assert!(!f.close_requested(second));
+        assert!(is_open(&f));
+        assert!(listed(&f).contains(&f.pid(first).0));
+    }
+}
+
+#[test]
+fn no_client_sees_the_middle_click() {
+    let (mut f, id) = Fixture::connected(Kind::Xdg);
+    f.client(id).bind_input();
+    let [first, ..] = map_three(&mut f, id);
+    open(&mut f);
+    f.roundtrip(id);
+    f.client(id).state.input.clear();
+
+    let at = middle(place(&f, first));
+
+    middle_click(&mut f, at);
+
+    f.roundtrip(id);
+    let input = &f.client(id).state.input;
+    let buttons = input
+        .iter()
+        .filter(|e| matches!(e, InputEvent::Button { .. }));
+    assert_eq!(buttons.count(), 0, "{input:?}");
+}
+
+// Windows that come and go (242).
+
+/// Has a window's client destroy it, and waits until Caminito no longer manages it.
+fn destroy(f: &mut Fixture, window: ClientWindow) {
+    match window {
+        ClientWindow::Xdg(id, xdg) => {
+            f.client(id).destroy_window(xdg);
+            f.roundtrip(id);
+        }
+        ClientWindow::X11(id, x11) => {
+            f.x11_call(id, move |x| x.destroy(x11)).unwrap();
+            f.dispatch_until(|f| f.policy_id(window).is_none());
+        }
+    }
+}
+
+on_both_kinds! {
+    fn a_window_that_maps_while_it_is_open_is_in_the_layouts_next_frame(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let first = f.map(id, WindowSpec::plain((400, 300)));
+        let second = f.map(id, WindowSpec::plain((640, 480)));
+        open(&mut f);
+        let before = place(&f, first);
+
+        let third = f.map(id, WindowSpec::plain((300, 500)));
+
+        assert!(is_open(&f));
+        assert_eq!(listed(&f), stacking(&f));
+        assert!(listed(&f).contains(&f.pid(third).0));
+        let places = [first, second, third].map(|window| place(&f, window));
+        assert_ne!(places[0], before, "the others take their new places");
+        for (index, drawn) in places.iter().enumerate() {
+            assert_eq!(pixel(&mut f, middle(*drawn)), WINDOW, "window {index}");
+            for other in &places[index + 1..] {
+                assert!(!drawn.overlaps(*other), "{drawn:?} is over {other:?}");
+            }
+        }
+    }
+}
+
+on_both_kinds! {
+    fn a_window_that_goes_leaves_the_layout_and_the_selection_with_it(kind: Kind) {
+        let (mut f, id) = Fixture::connected(kind);
+        let [first, second, third] = map_three(&mut f, id);
+        open(&mut f);
+        let gone = f.pid(third).0;
+        assert_eq!(selected(&f), Some(gone));
+        let before = place(&f, first);
+
+        destroy(&mut f, third);
+
+        assert!(is_open(&f));
+        assert_eq!(listed(&f), [f.pid(first).0, f.pid(second).0]);
+        assert_eq!(selected(&f), None);
+        let places = [first, second].map(|window| place(&f, window));
+        assert_ne!(places[0], before, "the others take their new places");
+        for drawn in places {
+            assert_eq!(pixel(&mut f, middle(drawn)), WINDOW, "{drawn:?}");
+        }
+
+        // An arrow key selects the first again.
+        f.chord(&[KEY_RIGHT]);
+        assert_eq!(selected(&f), Some(f.pid(first).0));
     }
 }

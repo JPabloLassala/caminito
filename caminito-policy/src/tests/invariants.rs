@@ -171,6 +171,10 @@ enum Op {
     /// A click on a window of the Overview (241), and what closes it.
     OverviewChoose(u64),
     CloseOverview,
+    /// An arrow key in the Overview, Enter, and a middle click on a window (242).
+    OverviewSelect(crate::Direction),
+    OverviewEnter,
+    OverviewCloseWindow(u64),
     /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
     SetFocusMode {
         mode: FocusMode,
@@ -421,6 +425,9 @@ fn op() -> impl Strategy<Value = Op> {
         1 => Just(Op::CloseWorkspacePopup),
         2 => window_id().prop_map(Op::OverviewChoose),
         1 => Just(Op::CloseOverview),
+        2 => direction().prop_map(Op::OverviewSelect),
+        1 => Just(Op::OverviewEnter),
+        1 => window_id().prop_map(Op::OverviewCloseWindow),
         1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
             Op::SetFocusMode { mode, raise_on_click, auto_raise }
         }),
@@ -600,6 +607,16 @@ impl Op {
             Op::CloseWorkspacePopup => policy.close_workspace_popup(),
             Op::OverviewChoose(id) => policy.overview_choose(WindowId(id), now),
             Op::CloseOverview => policy.close_overview(),
+            Op::OverviewSelect(direction) => {
+                // The listed windows on rows of three, as a layout might have them.
+                let count = policy.overview().map_or(0, |open| open.windows.len());
+                let places: Vec<_> = (0..count as i32)
+                    .map(|n| Rectangle::new((n % 3 * 200, n / 3 * 200).into(), (100, 100).into()))
+                    .collect();
+                policy.overview_select(direction, &places);
+            }
+            Op::OverviewEnter => policy.overview_enter(now),
+            Op::OverviewCloseWindow(id) => policy.overview_close_window(WindowId(id)),
             Op::SetFocusMode {
                 mode,
                 raise_on_click,
@@ -839,8 +856,14 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
     assert!(shared <= 1, "{shared} Interactions are every seat's");
 
     // The open Overview (241) is on an output policy has, and lists managed windows, each
-    // once.
+    // once. Its selection (242) is one of them.
     if let Some(overview) = policy.overview() {
+        if let Some(selected) = overview.selected {
+            assert!(
+                overview.windows.contains(&selected),
+                "{selected:?} is selected and not listed"
+            );
+        }
         let on = overview.output;
         assert!(policy.outputs().iter().any(|output| output.id == on));
         for (place, id) in overview.windows.iter().enumerate() {

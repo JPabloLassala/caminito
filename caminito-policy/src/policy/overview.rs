@@ -1,5 +1,6 @@
-//! The Overview (241, ADR 0033): whether it's open, the output it's on and the windows it
-//! lists, and what a choice does. The compositor has its layout, its drawing, its keys and
+//! The Overview (241, ADR 0033): whether it's open, the output it's on, the windows it
+//! lists and the one selected (242), and what a choice, an arrow key and a middle click
+//! do. The compositor has its layout, its drawing, its keys and
 //! its clicks, and asks here for what they do.
 //!
 //! It's the seat's Interaction (187), and every seat's, as the Window switcher is: the
@@ -7,7 +8,9 @@
 
 use std::time::Duration;
 
-use crate::{OutputId, PolicyWindow, SeatId, WindowId};
+use smithay::utils::{Logical, Rectangle};
+
+use crate::{Direction, OutputId, PolicyWindow, SeatId, WindowId};
 
 use super::Policy;
 use super::switcher::SwitchList;
@@ -22,6 +25,9 @@ pub struct Overview {
     /// The windows listed, bottom to top. Policy keeps the list as the windows are now: one
     /// that goes leaves it.
     pub windows: Vec<WindowId>,
+    /// The selected window, which Enter chooses (242): the focused one at opening, or none.
+    /// It's always one of `windows`: none is selected once it goes.
+    pub selected: Option<WindowId>,
 }
 
 impl<W: PolicyWindow> Policy<W> {
@@ -39,10 +45,13 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(output) = self.active_output(seat) else {
             return;
         };
+        let windows = self.overview_windows(output);
+        let selected = self.focus(seat).filter(|focused| windows.contains(focused));
         self.overview = Some(Overview {
             seat,
             output,
-            windows: self.overview_windows(output),
+            windows,
+            selected,
         });
     }
 
@@ -66,6 +75,70 @@ impl<W: PolicyWindow> Policy<W> {
         self.activate(overview.seat, id, now);
     }
 
+    /// Enter: chooses the selected window, as a click on it does. Does nothing with none
+    /// selected.
+    pub fn overview_enter(&mut self, now: Duration) {
+        if let Some(id) = self.overview.as_ref().and_then(|open| open.selected) {
+            self.overview_choose(id, now);
+        }
+    }
+
+    /// An arrow key: selects the nearest window `direction`'s way from the selected one in
+    /// the layout, or the layout's first with none selected: the left one of the top row.
+    /// A row's windows stand on one line, so it's the one whose bottom edge is highest, and
+    /// then the left one. `places` are the listed windows' places in the layout, in the
+    /// list's order.
+    ///
+    /// The window that way is one wholly past the selected one's edge on that side. For
+    /// Left and Right it's on the same row, and for Up and Down one in the same column comes
+    /// before any other. Of those, it's the one whose centre is nearest. At the layout's
+    /// edge, and at a row's end, the selection stays.
+    pub fn overview_select(&mut self, direction: Direction, places: &[Rectangle<i32, Logical>]) {
+        let Some(open) = &mut self.overview else {
+            return;
+        };
+        let laid_out: Vec<(WindowId, Rectangle<i32, Logical>)> = open
+            .windows
+            .iter()
+            .copied()
+            .zip(places.iter().copied())
+            .collect();
+        let from = open
+            .selected
+            .and_then(|selected| laid_out.iter().find(|(id, _)| *id == selected));
+        let next = match from {
+            Some(&(_, from)) => nearest(from, direction, &laid_out),
+            None => laid_out
+                .iter()
+                .min_by_key(|(_, place)| (place.loc.y + place.size.h, place.loc.x))
+                .map(|(id, _)| *id),
+        };
+        if next.is_some() {
+            open.selected = next;
+        }
+    }
+
+    /// A middle click on a listed window: asks it to close, as `close` does. The Overview
+    /// stays open, and the window leaves it once it goes. Does nothing for a window the
+    /// Overview doesn't list.
+    pub fn overview_close_window(&mut self, id: WindowId) {
+        if self
+            .overview
+            .as_ref()
+            .is_some_and(|open| open.windows.contains(&id))
+        {
+            self.close(id);
+        }
+    }
+
+    /// Selects `selected` in the open Overview, as the arrow keys would.
+    #[cfg(test)]
+    pub(crate) fn set_overview_selection(&mut self, selected: Option<WindowId>) {
+        if let Some(open) = &mut self.overview {
+            open.selected = selected;
+        }
+    }
+
     /// Brings the open Overview's list up to date, and closes it if its output has gone.
     pub(super) fn refresh_overview(&mut self) {
         let Some(output) = self.overview.as_ref().map(|open| open.output) else {
@@ -77,6 +150,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let windows = self.overview_windows(output);
         if let Some(open) = &mut self.overview {
+            open.selected = open.selected.filter(|selected| windows.contains(selected));
             open.windows = windows;
         }
     }
@@ -98,4 +172,45 @@ impl<W: PolicyWindow> Policy<W> {
         }
         listed
     }
+}
+
+/// The window of `laid_out` nearest `from` on `direction`'s side, as `overview_select` has it.
+fn nearest(
+    from: Rectangle<i32, Logical>,
+    direction: Direction,
+    laid_out: &[(WindowId, Rectangle<i32, Logical>)],
+) -> Option<WindowId> {
+    let overlaps = |a: (i32, i32), b: (i32, i32)| a.0 < b.1 && b.0 < a.1;
+    let span_x = |r: &Rectangle<i32, Logical>| (r.loc.x, r.loc.x + r.size.w);
+    let span_y = |r: &Rectangle<i32, Logical>| (r.loc.y, r.loc.y + r.size.h);
+    let centre = |r: &Rectangle<i32, Logical>| {
+        (
+            i64::from(r.loc.x) * 2 + i64::from(r.size.w),
+            i64::from(r.loc.y) * 2 + i64::from(r.size.h),
+        )
+    };
+    let (fx, fy) = centre(&from);
+    laid_out
+        .iter()
+        .filter(|(_, place)| match direction {
+            Direction::Left => place.loc.x + place.size.w <= from.loc.x,
+            Direction::Right => place.loc.x >= from.loc.x + from.size.w,
+            Direction::Up => place.loc.y + place.size.h <= from.loc.y,
+            Direction::Down => place.loc.y >= from.loc.y + from.size.h,
+        })
+        // Left and Right stay on the row: a row's windows stand on one line, so another row's
+        // are below or above it.
+        .filter(|(_, place)| match direction {
+            Direction::Left | Direction::Right => overlaps(span_y(place), span_y(&from)),
+            Direction::Up | Direction::Down => true,
+        })
+        .min_by_key(|(_, place)| {
+            let beside = match direction {
+                Direction::Left | Direction::Right => true,
+                Direction::Up | Direction::Down => overlaps(span_x(place), span_x(&from)),
+            };
+            let (x, y) = centre(place);
+            (!beside, (x - fx).pow(2) + (y - fy).pow(2))
+        })
+        .map(|(id, _)| *id)
 }
