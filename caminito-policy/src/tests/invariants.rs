@@ -177,6 +177,12 @@ enum Op {
     OverviewCloseWindow(u64),
     /// A click on a workspace of the Overview's bar (244).
     OverviewSwitch(usize),
+    /// The left button down on a window of the Overview at (x, y), the pointer's move to
+    /// (x, y) over a cell or none, the release, and Esc during a drag (245).
+    OverviewPress(u64, (i16, i16)),
+    OverviewPointer((i16, i16), Option<usize>),
+    OverviewRelease,
+    OverviewEndDrag,
     /// The settings change to a focus mode, `raise-on-click` and auto-raise (153).
     SetFocusMode {
         mode: FocusMode,
@@ -431,6 +437,11 @@ fn op() -> impl Strategy<Value = Op> {
         1 => Just(Op::OverviewEnter),
         1 => window_id().prop_map(Op::OverviewCloseWindow),
         1 => (0..5usize).prop_map(Op::OverviewSwitch),
+        2 => (window_id(), any::<(i16, i16)>()).prop_map(|(id, at)| Op::OverviewPress(id, at)),
+        2 => (any::<(i16, i16)>(), proptest::option::of(0..5usize))
+            .prop_map(|(at, target)| Op::OverviewPointer(at, target)),
+        1 => Just(Op::OverviewRelease),
+        1 => Just(Op::OverviewEndDrag),
         1 => (focus_mode(), any::<bool>(), any::<bool>()).prop_map(|(mode, raise_on_click, auto_raise)| {
             Op::SetFocusMode { mode, raise_on_click, auto_raise }
         }),
@@ -621,6 +632,17 @@ impl Op {
             Op::OverviewEnter => policy.overview_enter(now),
             Op::OverviewCloseWindow(id) => policy.overview_close_window(WindowId(id)),
             Op::OverviewSwitch(workspace) => policy.overview_switch(workspace),
+            Op::OverviewPress(id, (x, y)) => {
+                let at = Point::from((f64::from(x), f64::from(y)));
+                policy.overview_press(WindowId(id), at);
+            }
+            Op::OverviewPointer((x, y), target) => {
+                policy.overview_pointer(Point::from((f64::from(x), f64::from(y))), target);
+            }
+            Op::OverviewRelease => policy.overview_release(now),
+            Op::OverviewEndDrag => {
+                policy.overview_end_drag();
+            }
             Op::SetFocusMode {
                 mode,
                 raise_on_click,
@@ -872,6 +894,15 @@ fn verify_invariants(policy: &Policy<TestWindow>) {
                 overview.windows.contains(&selected),
                 "{selected:?} is selected and not listed"
             );
+        }
+        // A press or a drag (245) is of a listed window, and has a target only as a drag.
+        if let Some(drag) = overview.drag {
+            assert!(
+                overview.windows.contains(&drag.window),
+                "{:?} is dragged and not listed",
+                drag.window
+            );
+            assert!(drag.dragging || drag.target.is_none());
         }
         let on = overview.output;
         assert!(policy.outputs().iter().any(|output| output.id == on));

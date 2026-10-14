@@ -511,7 +511,9 @@ pub(crate) fn overview_hides(
 /// window is drawn from its own surfaces at every frame, as a thumbnail of the Window
 /// switcher is, so it's live, and a minimised one shows as any other does. While it's on
 /// its way open or closed (243), each window is between its real place and its place in
-/// the layout, and the bar, the labels, the dimming and the minimised windows fade.
+/// the layout, and the bar, the labels, the dimming and the minimised windows fade. A
+/// window that's dragged (245) is in front of all, under the pointer, and not at its
+/// place.
 fn overview_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -527,6 +529,10 @@ fn overview_elements<R>(
     };
     let scale = output.current_scale().fractional_scale();
     let now = caminito.now();
+    if let Some(dragged) = caminito.overview_dragged(open) {
+        let place = |_| (dragged.rect, dragged.rect);
+        scaled_window_elements(renderer, caminito, dragged.id, place, scale, 1.0, elements);
+    }
     overview_bar_elements(renderer, caminito, output, open, now, elements);
     for laid in open.layouts() {
         for shift in caminito.overview_shifts(open, laid) {
@@ -558,8 +564,15 @@ fn overview_layout_elements<R>(
     R::TextureId: Send + Clone + 'static,
 {
     let scale = open.output.current_scale().fractional_scale();
-    for (slot, label) in laid.layout.slots.iter().zip(&laid.labels) {
-        let Some(label) = label else {
+    // A dragged window's label stays behind with it (245).
+    let dragged = caminito.overview_dragged(open).map(|dragged| dragged.id);
+    let labels = laid
+        .windows
+        .iter()
+        .zip(&laid.layout.slots)
+        .zip(&laid.labels);
+    for ((id, slot), label) in labels {
+        let Some(label) = label.as_ref().filter(|_| dragged != Some(*id)) else {
             continue;
         };
         let location = (slot.label.loc + shift).to_physical_precise_round::<_, i32>(scale);
@@ -646,6 +659,10 @@ fn scaled_window_elements<R>(
 /// How wide the mark around the active workspace's cell of the Overview's bar is (244).
 const CELL_MARK: i32 = 3;
 
+/// How much of the selected background is over the cell a drag of the Overview's is on
+/// (245).
+const TARGET_MARK: f32 = 0.4;
+
 /// What's behind a cell of the Overview's bar where the wallpaper doesn't cover it.
 const CELL_BACK: Color32F = Color32F::new(0.0, 0.0, 0.0, 1.0);
 
@@ -660,10 +677,11 @@ fn faded(color: Color32F, alpha: f32) -> Color32F {
 }
 
 /// The Overview's bar of workspaces on `output` (244), front to back: the mark around the
-/// active workspace's cell, then in each cell that workspace on the output as a small
-/// picture, its windows at their real places over the wallpaper, over the cell's back. It's
-/// drawn from the windows' and the wallpaper's own surfaces at every frame, so it's live.
-/// It fades in and out with the labels as the Overview opens and closes (243).
+/// active workspace's cell, the theme's selected background over the cell a drag is on
+/// (245), then in each cell that workspace on the output as a small picture, its windows
+/// at their real places over the wallpaper, over the cell's back. It's drawn from the
+/// windows' and the wallpaper's own surfaces at every frame, so it's live. It fades in and
+/// out with the labels as the Overview opens and closes (243).
 fn overview_bar_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -706,6 +724,17 @@ fn overview_bar_elements<R>(
                 Kind::Unspecified,
             )));
         }
+    }
+    let target = caminito.overview_drop_target();
+    if let Some(cell) = target.and_then(|target| open.bar.cells.get(target)) {
+        let color = faded(selection_color(caminito), TARGET_MARK * alpha);
+        elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+            open.target_mark.clone(),
+            cell.to_physical_precise_round(scale),
+            CommitCounter::default(),
+            color,
+            Kind::Unspecified,
+        )));
     }
     let cells = open.bar.cells.iter().zip(&open.cell_windows);
     for ((cell, windows), back) in cells.zip(&open.cell_backs) {
@@ -755,7 +784,8 @@ fn overview_bar_elements<R>(
 /// its place in the layout, as far as the transition has it (243). A minimised window
 /// stays at its place and fades instead, in as it opens and out as it closes; one that was
 /// chosen is shown again, and moves back with the others. They're in policy's stacking
-/// order, so a window chosen is at the top as they go.
+/// order, so a window chosen is at the top as they go. A dragged window (245) isn't among
+/// them: it's drawn under the pointer.
 pub(crate) fn overview_drawn_windows(
     caminito: &Caminito,
     open: &Overview,
@@ -766,10 +796,12 @@ pub(crate) fn overview_drawn_windows(
     let policy = &caminito.policy;
     let origin = output_geometry(&open.output).loc;
     let part = open.part(now);
+    let dragged = caminito.overview_dragged(open).map(|dragged| dragged.id);
     let mut drawn: Vec<DrawnWindow> = laid
         .windows
         .iter()
         .zip(&laid.layout.slots)
+        .filter(|(id, _)| dragged != Some(**id))
         .filter_map(|(id, slot)| {
             let frame = policy.frame_rect(*id)?;
             let real = Rectangle::new(frame.loc - origin, frame.size);
