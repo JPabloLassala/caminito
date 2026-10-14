@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 243 added the transition, and ticket 244 the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. Ticket 245 added the drag of a window onto a workspace of the bar, on one output, and ticket 246 the Overview on every output at once, with the drag from one to another. Ticket 248 adds the workspace bindings on mouse buttons, and keeps the selection on the Active output. The rest isn't built. Its tickets are 241 to 248, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
+Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. Ticket 242 added the selection, the arrow keys and Enter, the middle click, and windows that open or close while it's open. Ticket 243 added the transition, and ticket 244 the bar of workspaces, its clicks, the workspace bindings and the reduced rate of frame callbacks. Ticket 245 added the drag of a window onto a workspace of the bar, on one output, and ticket 246 the Overview on every output at once, with the drag from one to another. Ticket 248 adds the workspace bindings on mouse buttons, and keeps the selection on the Active output. Ticket 249 shrinks a dragged window to the scale of the workspace it goes to, and ticket 250 eases the layout's other windows to their new slots. The rest isn't built. Its tickets are 241 to 250, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
 
 ## Problem
 
@@ -82,6 +82,9 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
   - onto nothing: it returns to its place in the layout.
 
   The Overview stays open after any of them.
+- **A dragged window over a cell** shrinks to that cell's scale, the cell's width over its output's: the share of the output it would cover is the share of the cell it covers, with its aspect. It shrinks about the point it was grabbed by, so that point stays under the pointer. Off the cell it grows back to its layout size. From one cell to another of the same bar its size stays, and onto another output's bar it takes that bar's scale.
+- **A dropped window eases to where it's drawn next:** dropped on a cell, from under the pointer to its place in that cell's picture, which is its real rectangle on that workspace scaled into the cell (on another output, its new geometry there); dropped anywhere else, to its slot in a layout. The cell's picture leaves it out until it's there.
+- **When a window leaves the layout**, the others ease to their new slots (250).
 
 ### The keys
 
@@ -98,6 +101,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 - **Closing:** every window moves back to its real place at once. A chosen window is raised as they go. A minimised window that wasn't chosen fades out.
 - The shortcut pressed again part-way reverses the transition from where it is.
 - Policy has the Overview open or closed from the first frame, and only the drawing takes time.
+- **A dragged window's shrink and its drop** (249) take the same 250 ms and curve. Entering or leaving a cell part-way reverses the shrink from where it is. Policy moves the window at the release, and only the drawing takes time. The Overview closing, a switch to the workspace it was dropped on, or a press on it cuts the drop to its end.
 
 ### Live content
 
@@ -112,7 +116,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 ### Settings
 
-- `overview-animation` in `org.mate.Caminito`, a boolean, default `true`. It turns off the transition, not the Overview.
+- `overview-animation` in `org.mate.Caminito`, a boolean, default `true`. It turns off the transition, the dragged window's shrink and its drop, not the Overview.
 - The transition runs when that key is on and the minimise animation's three are as it needs them: `compositing-manager` on, `reduced-resources` off and `org.mate.interface enable-animations` on. Without it the Overview opens and closes in one frame.
 - `overview` in `org.mate.Caminito`, a string, default `'<Super>w'`: the shortcut, written as the keys of `org.mate.Marco.global-keybindings` are, with a mouse button where a key's name would be (ADR 0028). `disabled` or the empty string removes it.
 
@@ -131,7 +135,7 @@ Nothing of ticket 244's is left: the reduced rate and the size of the bar are in
 
 ## Tickets
 
-Eight slices, filed in `.scratch/issues/` as tickets 241 to 248.
+Ten slices, filed in `.scratch/issues/` as tickets 241 to 250.
 
 | | Slice | Blocked by |
 | --- | --- | --- |
@@ -143,3 +147,5 @@ Eight slices, filed in `.scratch/issues/` as tickets 241 to 248.
 | 246 | [**The Overview on two outputs.**](../issues/246-the-overview-on-two-outputs.md) | 244, 245 |
 | 247 | [**The Overview in a real Session, by hand.**](../issues/247-the-overview-in-a-real-session.md) | 242, 243, 245, 246 |
 | 248 | [**Workspace buttons in the Overview, and its selection on the Active output.**](../issues/248-workspace-buttons-in-the-overview.md) | 246 |
+| 249 | [**A dragged window shrinks to the scale of the workspace it goes to.**](../issues/249-a-dragged-window-shrinks-to-its-workspaces-scale.md) | 246 |
+| 250 | [**The layout's windows ease to their new slots when one leaves.**](../issues/250-the-layouts-windows-ease-to-their-new-slots.md) | 249 |
