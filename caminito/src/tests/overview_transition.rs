@@ -4,6 +4,10 @@
 //! dump and from the output's pixels. Policy has it open or closed from the first frame.
 //!
 //! Each test stops Caminito's clock, so the transition is where `advance_clock` takes it.
+//!
+//! The movement and a choice run on both kinds of window. The fades, a reversal of the
+//! closing, the settings and the lock map xdg toplevels only: what they read is the
+//! Overview's own drawing and state, which doesn't depend on the kind.
 
 use std::time::Duration;
 
@@ -87,7 +91,7 @@ fn drawn_rect(f: &Fixture, window: ClientWindow) -> Rectangle<i32, Logical> {
 
 /// The window's real place, its frame as policy has it.
 fn real(f: &Fixture, window: ClientWindow) -> Rectangle<i32, Logical> {
-    f.state.caminito.policy.frame_rect(f.pid(window)).unwrap()
+    f.visible_frame(window)
 }
 
 /// Whether `drawn` is strictly between `from` and `to`, at a place that's neither.
@@ -192,6 +196,25 @@ on_both_kinds! {
             assert_eq!(pixel(&mut f, middle(real)), WINDOW, "{window:?}");
         }
     }
+}
+
+#[test]
+fn it_moves_under_per_output_workspaces_too() {
+    let settings = vec![(CAMINITO, "workspaces-per-output".into(), Value::Bool(true))];
+    let (mut f, id) = desk(Kind::Xdg, settings);
+    let [window, ..] = map_three(&mut f, id);
+    let real = real(&f, window);
+
+    press_shortcut(&mut f);
+    let place = place(&f, window);
+    f.advance_clock(MIDDLE);
+    let at = drawn_rect(&f, window);
+    assert!(is_between(at, real, place), "{at:?}");
+
+    press_shortcut(&mut f);
+    f.advance_clock(LENGTH);
+    assert!(transition(&f).is_null());
+    assert!(!overview_is_drawn(&mut f));
 }
 
 // The fades.

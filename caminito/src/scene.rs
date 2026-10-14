@@ -8,6 +8,8 @@
 //! `SCENE_QUERIES` (`caminito-policy/src/tests/invariants.rs`), whose test fails until it
 //! does, and in policy's `SceneReads`.
 
+use std::time::Duration;
+
 use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
@@ -34,6 +36,8 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
 use crate::output::{output_geometry, output_id};
+use crate::overview::transition::between;
+use crate::overview::{DrawnWindow, Overview};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -448,10 +452,12 @@ where
     ))
 }
 
-/// Whether the Overview is drawn on `output`: while it's open there (241), and while it's
-/// drawn closing after policy closed it (243).
+/// Whether the Overview is drawn on `output`: while policy has it open there (241), and
+/// while it's drawn closing after policy closed it (243).
 fn overview_is_drawn(caminito: &Caminito, output: &Output) -> bool {
-    caminito.overview_on(output).is_some()
+    let open = caminito.policy.overview();
+    let open_there = open.is_some_and(|open| open.output == output_id(output));
+    open_there || caminito.overview_on(output).is_some()
 }
 
 /// Whether the Overview, drawn on `output`, is drawn in place of all of `layer`: the
@@ -482,7 +488,7 @@ pub(crate) fn layer_surface_alpha(
         Layer::Overlay => false,
     };
     match caminito.overview_on(output) {
-        Some(open) if faded => 1.0 - open.part(caminito.now()) as f32,
+        Some(open) if faded => open.faded_alpha(caminito.now()),
         _ => 1.0,
     }
 }
@@ -520,7 +526,6 @@ fn overview_elements<R>(
     let policy = &caminito.policy;
     let scale = output.current_scale().fractional_scale();
     let now = caminito.now();
-    let part = open.part(now) as f32;
     for (slot, label) in open.layout.slots.iter().zip(&open.labels) {
         let Some(label) = label else {
             continue;
@@ -530,7 +535,7 @@ fn overview_elements<R>(
             renderer,
             location.to_f64(),
             label,
-            Some(part),
+            Some(open.labels_alpha(now)),
             None,
             Some(slot.label.size),
             Kind::Unspecified,
@@ -542,7 +547,10 @@ fn overview_elements<R>(
         }
     }
     // Front to back.
-    for drawn in caminito.overview_drawn_windows(open, now).into_iter().rev() {
+    for drawn in overview_drawn_windows(caminito, open, now)
+        .into_iter()
+        .rev()
+    {
         let (Some(mapped), Some(geometry), Some(frame)) = (
             policy.window(drawn.id),
             policy.geometry(drawn.id),
@@ -571,9 +579,46 @@ fn overview_elements<R>(
         open.dim.clone(),
         covered,
         CommitCounter::default(),
-        Color32F::new(0.0, 0.0, 0.0, crate::overview::DIM * part),
+        Color32F::new(0.0, 0.0, 0.0, open.dim(now)),
         Kind::Unspecified,
     )));
+}
+
+/// Each window `open` draws at `now`, bottom to top: between its real place and its place
+/// in the layout, as far as the transition has it (243). A minimised window stays at its
+/// place and fades instead, in as it opens and out as it closes; one that was chosen is
+/// shown again, and moves back with the others. They're in policy's stacking order, so a
+/// window chosen is at the top as they go.
+pub(crate) fn overview_drawn_windows(
+    caminito: &Caminito,
+    open: &Overview,
+    now: Duration,
+) -> Vec<DrawnWindow> {
+    let policy = &caminito.policy;
+    let origin = output_geometry(&open.output).loc;
+    let part = open.part(now);
+    let mut drawn: Vec<DrawnWindow> = open
+        .windows
+        .iter()
+        .zip(&open.layout.slots)
+        .filter_map(|(id, slot)| {
+            let frame = policy.frame_rect(*id)?;
+            let real = Rectangle::new(frame.loc - origin, frame.size);
+            let (rect, alpha) = if policy.is_minimized(*id) {
+                (slot.window, part as f32)
+            } else {
+                (between(real, slot.window, part), 1.0)
+            };
+            Some(DrawnWindow {
+                id: *id,
+                rect,
+                alpha,
+            })
+        })
+        .collect();
+    let stacking = policy.stacking_all();
+    drawn.sort_by_key(|window| stacking.iter().position(|id| *id == window.id));
+    drawn
 }
 
 /// The Window switcher's popup, if it's on `output`, front to back: the thumbnails'

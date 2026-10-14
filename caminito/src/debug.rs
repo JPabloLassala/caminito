@@ -862,20 +862,14 @@ impl Caminito {
         let now = self.now();
         let overview_transition = self.overview.as_ref().and_then(|open| {
             let transition = open.transition.filter(|t| !t.is_over(now))?;
-            let part = open.part(now);
             Some(OverviewTransitionDump {
                 output: open.output.name(),
-                direction: if transition.opening {
-                    "opening"
-                } else {
-                    "closing"
-                },
-                part,
-                dim: crate::overview::DIM * part as f32,
-                layer_surfaces: 1.0 - part as f32,
-                labels: part as f32,
-                windows: self
-                    .overview_drawn_windows(open, now)
+                direction: transition.heading.name(),
+                part: open.part(now),
+                dim: open.dim(now),
+                layer_surfaces: open.faded_alpha(now),
+                labels: open.labels_alpha(now),
+                windows: scene::overview_drawn_windows(self, open, now)
                     .into_iter()
                     .map(|drawn| OverviewDrawnDump {
                         window: drawn.id.0,

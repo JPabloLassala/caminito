@@ -37,7 +37,7 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use self::draw::Label;
 use self::layout::Layout;
-use self::transition::{Transition, between};
+use self::transition::{Heading, Transition};
 use crate::decoration::IconSource;
 use crate::input::bindings::Binding;
 use crate::input::{BTN_LEFT, BTN_MIDDLE, Bound, press_keysyms};
@@ -77,7 +77,24 @@ impl Overview {
     /// Whether it's drawn on its way closed, after policy has closed it.
     fn is_closing(&self) -> bool {
         self.transition
-            .is_some_and(|transition| !transition.opening)
+            .is_some_and(|transition| transition.heading == Heading::Closing)
+    }
+
+    /// How much of black is over the wallpaper at `now`: the dimming fades in as it opens
+    /// and out as it closes.
+    pub(crate) fn dim(&self, now: Duration) -> f32 {
+        DIM * self.part(now) as f32
+    }
+
+    /// How opaque the labels are drawn at `now`, which fade with the dimming.
+    pub(crate) fn labels_alpha(&self, now: Duration) -> f32 {
+        self.part(now) as f32
+    }
+
+    /// How opaque the panel and caja's desktop are drawn at `now`: they fade out as it
+    /// opens and in as it closes.
+    pub(crate) fn faded_alpha(&self, now: Duration) -> f32 {
+        1.0 - self.part(now) as f32
     }
 }
 
@@ -87,8 +104,6 @@ pub(crate) struct DrawnWindow {
     pub(crate) id: WindowId,
     /// Where it's drawn, from the output's top left corner.
     pub(crate) rect: Rectangle<i32, Logical>,
-    /// Its place in the layout.
-    pub(crate) slot: usize,
     /// How opaque it's drawn.
     pub(crate) alpha: f32,
 }
@@ -178,8 +193,8 @@ impl Caminito {
         let transition = match &before {
             Some(before) if !before.is_closing() => before.transition,
             _ if !self.settings.overview_animation => None,
-            Some(closing) => Some(Transition::new(true, closing.part(now), now)),
-            None => Some(Transition::new(true, 0.0, now)),
+            Some(closing) => Some(Transition::new(Heading::Opening, closing.part(now), now)),
+            None => Some(Transition::new(Heading::Opening, 0.0, now)),
         };
         let fresh = before.as_ref().is_some_and(|before| {
             before.windows == windows
@@ -209,17 +224,18 @@ impl Caminito {
     /// with the transition on and its output still there, or goes at once. One that's
     /// closing already goes on, and the lock ends it.
     fn overview_closed(&mut self, now: Duration) {
-        let Some(drawn) = &mut self.overview else {
+        let Some(shown) = &mut self.overview else {
             return;
         };
-        let output_is_there = self.outputs.contains(&drawn.output);
-        let animated = self.settings.overview_animation && !self.lock.is_locked();
-        if drawn.is_closing() && animated && output_is_there {
+        let animated = self.settings.overview_animation
+            && !self.lock.is_locked()
+            && self.outputs.contains(&shown.output);
+        if animated && shown.is_closing() {
             return;
         }
-        if animated && output_is_there {
-            let from = drawn.part(now);
-            drawn.transition = Some(Transition::new(false, from, now));
+        if animated {
+            let from = shown.part(now);
+            shown.transition = Some(Transition::new(Heading::Closing, from, now));
         } else {
             self.overview = None;
         }
@@ -243,7 +259,7 @@ impl Caminito {
         let Some(transition) = open.transition.filter(|t| t.is_over(now)) else {
             return;
         };
-        if transition.opening {
+        if transition.heading == Heading::Opening {
             open.transition = None;
         } else {
             self.overview = None;
@@ -256,45 +272,6 @@ impl Caminito {
         let open = self.overview_on(output);
         open.and_then(|open| open.transition)
             .is_some_and(|transition| !transition.is_over(now))
-    }
-
-    /// Each window `open` draws at `now`, bottom to top: between its real place and its
-    /// place in the layout, as far as the transition has it (243). A minimised window
-    /// stays at its place and fades instead, in as it opens and out as it closes; one
-    /// that was chosen is shown again, and moves back with the others. They're in
-    /// policy's stacking order, so a window chosen is at the top as they go.
-    pub(crate) fn overview_drawn_windows(
-        &self,
-        open: &Overview,
-        now: Duration,
-    ) -> Vec<DrawnWindow> {
-        let policy = &self.policy;
-        let origin = output_geometry(&open.output).loc;
-        let part = open.part(now);
-        let mut drawn: Vec<DrawnWindow> = open
-            .windows
-            .iter()
-            .zip(&open.layout.slots)
-            .enumerate()
-            .filter_map(|(index, (id, slot))| {
-                let frame = policy.frame_rect(*id)?;
-                let real = Rectangle::new(frame.loc - origin, frame.size);
-                let (rect, alpha) = if policy.is_minimized(*id) {
-                    (slot.window, part as f32)
-                } else {
-                    (between(real, slot.window, part), 1.0)
-                };
-                Some(DrawnWindow {
-                    id: *id,
-                    rect,
-                    slot: index,
-                    alpha,
-                })
-            })
-            .collect();
-        let stacking = policy.stacking_all();
-        drawn.sort_by_key(|window| stacking.iter().position(|id| *id == window.id));
-        drawn
     }
 
     /// What the labels of `windows` are drawn from on `output`, in `layout`, with

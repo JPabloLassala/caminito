@@ -13,11 +13,27 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::workspace_slide::{LENGTH, way_left};
 
+/// Which way a transition goes: open or closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Heading {
+    Opening,
+    Closing,
+}
+
+impl Heading {
+    /// Its name, for the debug dump.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Heading::Opening => "opening",
+            Heading::Closing => "closing",
+        }
+    }
+}
+
 /// The Overview's drawing on its way open or closed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Transition {
-    /// Whether it's on its way open, or closed.
-    pub(crate) opening: bool,
+    pub(crate) heading: Heading,
     /// How open the drawing was at `start`, from 0, closed, to 1, open: where the
     /// transition it reversed had it, or the whole way.
     from: f64,
@@ -26,10 +42,10 @@ pub(crate) struct Transition {
 }
 
 impl Transition {
-    /// One on its way open, or closed, from `from` at `now`.
-    pub(crate) fn new(opening: bool, from: f64, now: Duration) -> Self {
+    /// One on its way `heading`, from `from` at `now`.
+    pub(crate) fn new(heading: Heading, from: f64, now: Duration) -> Self {
         Self {
-            opening,
+            heading,
             from,
             start: now,
         }
@@ -46,7 +62,10 @@ impl Transition {
 
     /// How open the drawing is at `now`, from 0, closed, to 1, open.
     pub(crate) fn part(&self, now: Duration) -> f64 {
-        let to = if self.opening { 1.0 } else { 0.0 };
+        let to = match self.heading {
+            Heading::Opening => 1.0,
+            Heading::Closing => 0.0,
+        };
         to + (self.from - to) * way_left(now.saturating_sub(self.start))
     }
 }
@@ -75,7 +94,7 @@ mod tests {
 
     #[test]
     fn opening_starts_at_its_fastest_and_slows_down_into_the_layout() {
-        let opening = Transition::new(true, 0.0, after(0));
+        let opening = Transition::new(Heading::Opening, 0.0, after(0));
 
         assert_eq!(opening.part(after(0)), 0.0);
         // A cubic ease-out: half the time leaves an eighth of the way.
@@ -87,7 +106,7 @@ mod tests {
 
     #[test]
     fn closing_is_the_same_way_back() {
-        let closing = Transition::new(false, 1.0, after(0));
+        let closing = Transition::new(Heading::Closing, 1.0, after(0));
 
         assert_eq!(closing.part(after(0)), 1.0);
         assert_eq!(closing.part(after(125)), 0.125);
@@ -96,10 +115,10 @@ mod tests {
 
     #[test]
     fn a_reversal_goes_back_from_where_the_drawing_is() {
-        let opening = Transition::new(true, 0.0, after(0));
+        let opening = Transition::new(Heading::Opening, 0.0, after(0));
         let now = after(125);
 
-        let closing = Transition::new(false, opening.part(now), now);
+        let closing = Transition::new(Heading::Closing, opening.part(now), now);
 
         assert_eq!(closing.part(now), opening.part(now));
         assert_eq!(closing.part(now + LENGTH), 0.0);

@@ -656,6 +656,8 @@ struct WindowReads {
     showing: bool,
     /// `is_fullscreen`.
     fullscreen: bool,
+    /// `is_minimized`.
+    minimized: bool,
     /// `layer`.
     layer: Option<Layer>,
 }
@@ -2244,6 +2246,7 @@ impl<W: PolicyWindow> Policy<W> {
                     frame: managed.frame(),
                     showing: self.is_showing(*id),
                     fullscreen: managed.fullscreen,
+                    minimized: self.is_minimized(*id),
                     layer: self.layer(*id),
                 })
                 .collect(),
