@@ -62,6 +62,7 @@ mod palette_helper;
 mod panel;
 mod parity;
 mod per_output_workspaces;
+mod per_output_x11;
 mod placement;
 mod popups;
 mod preferred_scale;

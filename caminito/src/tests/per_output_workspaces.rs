@@ -94,7 +94,7 @@ fn pixel(f: &mut Fixture, output: &Output, at: (i32, i32)) -> u32 {
 }
 
 /// Whether a click at the global point `at` focuses `window`.
-fn click_focuses(f: &mut Fixture, at: (i32, i32), window: ClientWindow) -> bool {
+pub(super) fn click_focuses(f: &mut Fixture, at: (i32, i32), window: ClientWindow) -> bool {
     f.wait_between_inputs(1000);
     f.click(f64::from(at.0), f64::from(at.1));
     f.state.caminito.policy.focus(SEAT) == Some(f.pid(window))
@@ -276,7 +276,7 @@ fn the_workspace_popup_is_on_the_active_output_with_the_pointer_on_the_other() {
 // The Active output follows a press, and a new window opens on it (222).
 
 /// Each output's active workspace, left then right.
-fn active_workspaces(f: &Fixture, left: &Output, right: &Output) -> (usize, usize) {
+pub(super) fn active_workspaces(f: &Fixture, left: &Output, right: &Output) -> (usize, usize) {
     let policy = &f.state.caminito.policy;
     (
         policy.active_workspace_on(output_id(left)),

@@ -20,7 +20,11 @@ const DESKTOPS: &[&str] = &[
 ];
 
 /// The root properties `names`, one per line as `Names` writes them.
-fn root_properties(f: &mut Fixture, x: ClientId, names: &'static [&'static str]) -> String {
+pub(super) fn root_properties(
+    f: &mut Fixture,
+    x: ClientId,
+    names: &'static [&'static str],
+) -> String {
     f.x11_call(x, move |x| {
         let mut formatter = Names::new(x);
         let lines = names
