@@ -33,7 +33,7 @@ use smithay::wayland::shm::with_buffer_contents;
 use crate::decoration::control::FrameControl;
 use crate::decoration::shadow::{ShadowInputs, ShadowType};
 use crate::decoration::style::{FrameFacts, frame_style};
-use crate::icons::{IconLookup, load_icon};
+use crate::icons::IconLookup;
 use crate::settings::Settings;
 use crate::settings::translate::{Antialiasing, FontRendering, Hinting, RgbaOrder};
 
@@ -811,7 +811,7 @@ fn window_icon(
     let pixels = size * scale;
     let from_file = |lookup: &mut IconLookup, app_id: Option<&str>| {
         let path = lookup.window_icon(app_id, size, scale)?;
-        load_icon(&path, pixels)
+        lookup.load(&path, pixels)
     };
     match source {
         IconSource::Toplevel {
@@ -821,7 +821,7 @@ fn window_icon(
         } => name
             .as_deref()
             .and_then(|name| lookup.find_icon(name, size, scale))
-            .and_then(|path| load_icon(&path, pixels))
+            .and_then(|path| lookup.load(&path, pixels))
             .or_else(|| icon_from_buffers(buffers, pixels))
             .or_else(|| from_file(lookup, app_id.as_deref())),
         IconSource::X11 { icon, app_id } => {
