@@ -107,6 +107,10 @@ struct StateDump {
     window_menu: Option<WindowMenuDump>,
     /// The Overview (241), while it's open.
     overview: Option<OverviewDump>,
+    /// The Overview's transition (243), while it's drawn on its way open or closed: past
+    /// policy's closing, while `overview` is `null`, too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overview_transition: Option<OverviewTransitionDump>,
     /// Whether the apps are told to give up their own menubars (110): `on` while a Global
     /// menu applet is on the bus, `leaving` for the grace period after it left (114), and
     /// `off`.
@@ -335,6 +339,32 @@ struct OverviewSlidingDump {
     window: u64,
     /// Where it's drawn now, from the output's top left corner.
     rect: RectDump,
+}
+
+#[derive(Serialize)]
+struct OverviewTransitionDump {
+    /// The name of the output it's on.
+    output: String,
+    /// `opening` or `closing`.
+    direction: &'static str,
+    /// How open it's drawn, from 0, closed, to 1, open, on the ease-out.
+    part: f64,
+    /// How much of black is over the wallpaper now.
+    dim: f32,
+    /// How opaque the panel and caja's desktop are drawn now.
+    layer_surfaces: f32,
+    /// How opaque the labels are drawn now.
+    labels: f32,
+    /// Each window drawn, bottom to top, with where, from the output's top left corner, and
+    /// how opaque.
+    windows: Vec<OverviewDrawnDump>,
+}
+
+#[derive(Serialize)]
+struct OverviewDrawnDump {
+    window: u64,
+    rect: RectDump,
+    alpha: f32,
 }
 
 #[derive(Serialize)]
@@ -900,6 +930,31 @@ impl Caminito {
             }
         });
         let now = self.now();
+        let overview_transition = self.overview.as_ref().and_then(|open| {
+            let transition = open.transition.filter(|t| !t.is_over(now))?;
+            Some(OverviewTransitionDump {
+                output: open.output.name(),
+                direction: transition.heading.name(),
+                part: open.part(now),
+                dim: open.dim(now),
+                layer_surfaces: open.faded_alpha(now),
+                labels: open.labels_alpha(now),
+                windows: scene::overview_drawn_windows(
+                    self,
+                    open,
+                    &open.laid,
+                    Point::default(),
+                    now,
+                )
+                .into_iter()
+                .map(|drawn| OverviewDrawnDump {
+                    window: drawn.id.0,
+                    rect: drawn.rect.into(),
+                    alpha: drawn.alpha,
+                })
+                .collect(),
+            })
+        });
         let workspace_slides = self
             .outputs
             .iter()
@@ -958,6 +1013,7 @@ impl Caminito {
             workspace_popup,
             window_menu,
             overview,
+            overview_transition,
             global_menu_switch: self.global_menu_switch.name(),
             menu_claims,
             bell: BellDump {

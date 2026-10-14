@@ -690,10 +690,13 @@ impl State {
             match self.backend.render(&mut self.caminito, &output) {
                 Some(states) => {
                     self.caminito.lock.frame_drawn(&output);
-                    // A Workspace slide is drawn at every frame of its output (233): the
-                    // backend takes the next one when the output can show it.
-                    let slides = &self.caminito.workspace_slides;
-                    if slides.on(crate::output::output_id(&output), now).is_some() {
+                    // A Workspace slide is drawn at every frame of its output (233), and so
+                    // is the Overview's transition (243): the backend takes the next one
+                    // when the output can show it.
+                    let caminito = &self.caminito;
+                    let slides = &caminito.workspace_slides;
+                    let sliding = slides.on(crate::output::output_id(&output), now).is_some();
+                    if sliding || caminito.overview_transition_on(&output, now) {
                         self.caminito.queue_redraw(&output);
                     }
                     rendered.push((output, states));

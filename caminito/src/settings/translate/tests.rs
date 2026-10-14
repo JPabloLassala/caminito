@@ -1250,6 +1250,34 @@ fn the_workspace_slides_key_leaves_the_minimise_animation_on() {
     assert!(settings(&reading).minimize_animation);
 }
 
+// The Overview's transition (243).
+
+#[test]
+fn the_defaults_animate_the_overview() {
+    assert!(settings(&defaults()).overview_animation);
+    assert!(settings(&Reading::default()).overview_animation);
+}
+
+#[test]
+fn its_own_key_and_the_minimise_animations_three_turn_the_overviews_transition_off() {
+    for (schema, key, value) in [
+        (CAMINITO, "overview-animation", false),
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let reading = with(schema, key, Value::Bool(value));
+        assert!(!settings(&reading).overview_animation, "{key}");
+    }
+}
+
+#[test]
+fn the_overviews_key_leaves_the_other_animations_on() {
+    let reading = with(CAMINITO, "overview-animation", Value::Bool(false));
+    assert!(settings(&reading).minimize_animation);
+    assert!(settings(&reading).workspace_slide);
+}
+
 #[test]
 fn frames_have_no_shadows_without_the_compositing_manager() {
     let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
