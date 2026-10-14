@@ -5,7 +5,7 @@
 The issue tracker is local markdown under `.scratch/`.
 
 - Every ticket is one file at `.scratch/issues/<NN>-<slug>.md`, whatever its epic. Its check scripts sit beside it, in `.scratch/issues/<NN>-checks/` or as `<NN>-*.sh`.
-- An `Epic:` line at the top of a ticket's header names its epic: `caminito-v0.1`, `global-menu`, `vscode-global-menu`, `night-light`, `about-caminito`, `system-shortcuts`, `debian-packaging`, `wallpaper`, `per-output-workspaces`, `workspace-slide`, `overview` or `open-close-animation`.
+- An `Epic:` line at the top of a ticket's header names its epic: `caminito-v0.1`, `global-menu`, `vscode-global-menu`, `night-light`, `about-caminito`, `system-shortcuts`, `debian-packaging`, `wallpaper`, `per-output-workspaces`, `workspace-slide`, `overview`, `open-close-animation` or `bluetooth`.
 - An epic's map and spec are in `.scratch/<epic>/` (`map.md`, `spec.md`).
 - The numbers 01 to 13 are both `caminito-v0.1`'s and `vscode-global-menu`'s, so read the `Epic:` line when a ticket is named by one of those numbers alone.
 - A new ticket takes the next number after the highest in `.scratch/issues/`.

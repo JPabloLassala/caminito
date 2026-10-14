@@ -256,6 +256,14 @@ _Avoid_: slideshow (its pictures are unrelated and follow a timer), live wallpap
 Caminito's wallpaper program, which draws each output's wallpaper in place of mate-settings-daemon's background plugin, and whose dialog replaces the Background tab of MATE's Appearance capplet in a Session.
 _Avoid_: the background plugin, wallpaper daemon, swaybg
 
+**caminito-bluetooth**:
+Caminito's Bluetooth program, which runs through the whole session as the pairing agent and opens the Bluetooth settings window. Its popup in the panel is the Bluetooth applet.
+_Avoid_: the capplet, blueman, bluedevil
+
+**Bluetooth applet**:
+Caminito's mate-panel applet for Bluetooth: the icon in the panel and its popup of devices, in the manner of Plasma's.
+_Avoid_: widget, plasmoid, tray icon
+
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
 _Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift
