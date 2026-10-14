@@ -652,7 +652,7 @@ impl Ui {
             }
             Ok(Dynamic::Pair { .. }) => {}
             Err(err) => {
-                glib::g_message!(DOMAIN, "didn't add {}: {err}", path.display());
+                glib::g_debug!(DOMAIN, "can't add {}: {err}", path.display());
                 *ui.refused.borrow_mut() = Some(format!(
                     "{} wasn't added: {err}.",
                     path.file_name().unwrap_or_default().to_string_lossy()

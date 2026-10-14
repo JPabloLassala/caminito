@@ -20,11 +20,11 @@ use crate::grid::{is_picture, package_picture};
 
 /// The sun's elevation, in degrees, at and below which a pair shows its dark picture alone:
 /// civil twilight's, where Night Light's sun schedule is at its night temperature (138).
-pub const NIGHT: f64 = -6.0;
+const NIGHT: f64 = -6.0;
 
 /// The sun's elevation, in degrees, at and above which a pair shows its light picture alone.
 /// Between this and [`NIGHT`] it cross-fades, linearly in elevation, as Night Light warms.
-pub const DAY: f64 = 6.0;
+const DAY: f64 = 6.0;
 
 /// The fixed times that stand in for the sun without Caminito to ask (spec): night until
 /// 07:00 and from 19:00, as Night Light's with no location.
@@ -67,8 +67,11 @@ impl Sky {
 /// 0 to 1. A moment between transitions has the same picture for both, and a blend of 0.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Moment {
+    /// The picture under.
     pub from: PathBuf,
+    /// The picture over it.
     pub to: PathBuf,
+    /// How far `to` is over `from`, 0 to 1.
     pub blend: f64,
 }
 
@@ -155,6 +158,17 @@ impl Dynamic {
         }
     }
 
+    /// How many seconds after `sky` it next shows something else by the clock alone: the
+    /// end of a timed XML's picture, or a second during its transition, so that a
+    /// transition of a few seconds is drawn as its file gives it. `None` for a pair, which
+    /// changes as the sun moves.
+    pub fn next_change(&self, sky: &Sky) -> Option<u64> {
+        match self {
+            Dynamic::Pair { .. } => None,
+            Dynamic::Timed(timed) => Some(timed.next_change(sky.local)),
+        }
+    }
+
     /// The pictures it's shown by in the dialog: by day and by night. A pair's are its own;
     /// a timed XML's are what it shows at noon and at midnight of the day it starts.
     pub fn day_and_night(&self) -> (PathBuf, PathBuf) {
@@ -171,7 +185,7 @@ impl Dynamic {
 
 /// The pair of the Plasma package at `folder`, or `None` if it hasn't both kinds of picture.
 /// Each is the package's largest landscape picture of its kind, as the Picture grid's is.
-pub fn pair(folder: &Path) -> Option<Dynamic> {
+pub(crate) fn pair(folder: &Path) -> Option<Dynamic> {
     let contents = folder.join("contents");
     let picture = |images: &str| {
         let images = contents.join(images);
@@ -190,9 +204,9 @@ pub fn pair(folder: &Path) -> Option<Dynamic> {
     })
 }
 
-/// One part of a timed XML's cycle.
+/// One part of a timed XML's cycle: a `<static>` or a `<transition>`.
 #[derive(Debug, Clone, PartialEq)]
-enum Slide {
+enum Part {
     /// A picture, for `duration` seconds.
     Still { duration: f64, file: PathBuf },
     /// A cross-fade from one picture to another, over `duration` seconds.
@@ -203,21 +217,21 @@ enum Slide {
     },
 }
 
-impl Slide {
+impl Part {
     fn duration(&self) -> f64 {
         match self {
-            Slide::Still { duration, .. } | Slide::Transition { duration, .. } => *duration,
+            Part::Still { duration, .. } | Part::Transition { duration, .. } => *duration,
         }
     }
 }
 
-/// GNOME's timed XML: from its start time, its slides one after the other, over and over.
+/// GNOME's timed XML: from its start time, its parts one after the other, over and over.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Timed {
     /// The start time, in the local seconds of [`Sky::local`].
     start: i64,
-    slides: Vec<Slide>,
-    /// The slides' durations added up, more than 0.
+    parts: Vec<Part>,
+    /// The parts' durations added up, more than 0.
     cycle: f64,
 }
 
@@ -251,28 +265,28 @@ impl Timed {
             + field("second")?;
 
         let file = |element: Option<&Element>| -> Result<PathBuf, Error> {
-            let element = element.ok_or(Error::NotTimed("a slide has no file"))?;
+            let element = element.ok_or(Error::NotTimed("a part has no file"))?;
             let text = largest_size(element).unwrap_or(&element.text).trim();
             if text.is_empty() {
-                return Err(Error::NotTimed("a slide has no file"));
+                return Err(Error::NotTimed("a part has no file"));
             }
             Ok(folder.join(text))
         };
-        let mut slides = Vec::new();
+        let mut parts = Vec::new();
         for element in &root.children {
             let duration = || -> Result<f64, Error> {
                 let duration = element
                     .child("duration")
                     .and_then(|duration| duration.text.trim().parse::<f64>().ok())
                     .filter(|duration| duration.is_finite() && *duration >= 0.0);
-                duration.ok_or(Error::NotTimed("a slide's duration isn't a number"))
+                duration.ok_or(Error::NotTimed("a part's duration isn't a number"))
             };
             match element.name.as_str() {
-                "static" => slides.push(Slide::Still {
+                "static" => parts.push(Part::Still {
                     duration: duration()?,
                     file: file(element.child("file"))?,
                 }),
-                "transition" => slides.push(Slide::Transition {
+                "transition" => parts.push(Part::Transition {
                     duration: duration()?,
                     from: file(element.child("from"))?,
                     to: file(element.child("to"))?,
@@ -280,13 +294,13 @@ impl Timed {
                 _ => {}
             }
         }
-        let cycle: f64 = slides.iter().map(Slide::duration).sum();
+        let cycle: f64 = parts.iter().map(Part::duration).sum();
         if cycle <= 0.0 {
-            return Err(Error::NotTimed("it has no slides that last"));
+            return Err(Error::NotTimed("it has no parts that last"));
         }
         Ok(Timed {
             start,
-            slides,
+            parts,
             cycle,
         })
     }
@@ -294,14 +308,30 @@ impl Timed {
     /// What it shows at `local`, in the local seconds of [`Sky::local`]. Before its start
     /// time it's where it would be had it started a whole number of cycles sooner, as GNOME
     /// has it.
+    /// Seconds from `local` to the end of the picture it shows then, or 1 in a transition.
+    fn next_change(&self, local: i64) -> u64 {
+        let mut into = ((local - self.start) as f64).rem_euclid(self.cycle);
+        for part in &self.parts {
+            let duration = part.duration();
+            if into < duration {
+                return match part {
+                    Part::Still { .. } => ((duration - into).ceil() as u64).max(1),
+                    Part::Transition { .. } => 1,
+                };
+            }
+            into -= duration;
+        }
+        1
+    }
+
     fn at(&self, local: i64) -> Moment {
         let mut into = ((local - self.start) as f64).rem_euclid(self.cycle);
-        for slide in &self.slides {
-            let duration = slide.duration();
+        for part in &self.parts {
+            let duration = part.duration();
             if into < duration {
-                return match slide {
-                    Slide::Still { file, .. } => Moment::still(file),
-                    Slide::Transition { from, to, .. } => Moment {
+                return match part {
+                    Part::Still { file, .. } => Moment::still(file),
+                    Part::Transition { from, to, .. } => Moment {
                         from: from.clone(),
                         to: to.clone(),
                         blend: into / duration,
@@ -311,9 +341,9 @@ impl Timed {
             into -= duration;
         }
         // Only rounding gets here: the moment is the cycle's last.
-        match self.slides.last().expect("a timed wallpaper has a slide") {
-            Slide::Still { file, .. } => Moment::still(file),
-            Slide::Transition { to, .. } => Moment::still(to),
+        match self.parts.last().expect("a timed wallpaper has a part") {
+            Part::Still { file, .. } => Moment::still(file),
+            Part::Transition { to, .. } => Moment::still(to),
         }
     }
 }
@@ -334,7 +364,7 @@ fn largest_size(element: &Element) -> Option<&String> {
 }
 
 /// The days from 1970-01-01 to the date, in the proleptic Gregorian calendar (Howard
-/// Hinnant's `days_from_civil`).
+/// Hinnant's `days_from_civil`, from https://howardhinnant.github.io/date_algorithms.html).
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -384,15 +414,11 @@ impl Element {
                 }
                 Event::Text(text) => {
                     let text = text.decode().map_err(|err| xml(&err))?;
-                    if let Some(element) = open.last_mut() {
-                        element.text.push_str(&text);
-                    }
+                    push_text(&mut open, &text);
                 }
                 Event::CData(text) => {
                     let text = text.decode().map_err(|err| xml(&err))?;
-                    if let Some(element) = open.last_mut() {
-                        element.text.push_str(&text);
-                    }
+                    push_text(&mut open, &text);
                 }
                 Event::GeneralRef(reference) => {
                     let resolved = match reference.resolve_char_ref().map_err(|err| xml(&err))? {
@@ -404,9 +430,7 @@ impl Element {
                                 .to_owned()
                         }
                     };
-                    if let Some(element) = open.last_mut() {
-                        element.text.push_str(&resolved);
-                    }
+                    push_text(&mut open, &resolved);
                 }
                 Event::Eof => break,
                 _ => {}
@@ -445,6 +469,13 @@ impl Element {
             .iter()
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.as_str())
+    }
+}
+
+/// Adds `text` to the element open innermost. Text outside the root is ignored.
+fn push_text(open: &mut [Element], text: &str) {
+    if let Some(element) = open.last_mut() {
+        element.text.push_str(text);
     }
 }
 

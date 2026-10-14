@@ -142,6 +142,17 @@ impl Drawn {
         }
     }
 
+    /// The picture that shows most, if any: as `org.mate.background` has it (211, 216).
+    pub fn nearer(&self) -> Option<&str> {
+        match self {
+            Drawn::Picture { file, .. } => Some(file),
+            Drawn::Blend {
+                from, to, percent, ..
+            } => Some(if *percent < 50 { from } else { to }),
+            Drawn::Colour(_) => None,
+        }
+    }
+
     /// The picture files it shows.
     pub fn files(&self) -> Vec<&str> {
         match self {

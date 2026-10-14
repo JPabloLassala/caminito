@@ -58,7 +58,7 @@ pub struct Installed {
     plasma: Vec<PathBuf>,
     /// The timed XMLs in MATE's directory.
     mate_dynamic: Vec<Offered>,
-    /// Plasma's packages with light and dark pictures.
+    /// Plasma's packages with light and dark pictures, then any timed XML beside them.
     plasma_dynamic: Vec<Offered>,
 }
 
@@ -78,6 +78,8 @@ impl Installed {
                         dynamic,
                     })
                 })
+                // And a timed XML beside the packages, as a picture beside them is offered.
+                .chain(timed_in(&roots.plasma, 1))
                 .collect(),
         }
     }
@@ -88,13 +90,16 @@ impl Installed {
 pub struct Offered {
     /// Its Plasma package's folder, or its timed XML.
     pub path: PathBuf,
+    /// What it is, as read.
     pub dynamic: Dynamic,
 }
 
 /// One heading of the Dynamic grid and its wallpapers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DynamicGroup {
+    /// What the heading says: the source.
     pub heading: String,
+    /// The source's dynamic wallpapers, in the grid's order.
     pub wallpapers: Vec<Offered>,
 }
 
@@ -411,6 +416,7 @@ mod tests {
         touch(&roots.plasma.join("Next/contents/images/1920x1080.png"));
         touch(&roots.plasma.join("Next/contents/images_dark/1920x1080.png"));
         touch(&roots.plasma.join("Flow/contents/images/3840x2160.jpg"));
+        timed(&roots.plasma.join("loose.xml"), "/loose.jpg");
         let mine = root.join("mine.xml");
         timed(&mine, "/mine.jpg");
         let mine = mine.to_str().unwrap().to_owned();
@@ -436,7 +442,13 @@ mod tests {
                         roots.mate.join("gnome/adwaita-timed.xml").as_path(),
                     ]
                 ),
-                ("Plasma", vec![roots.plasma.join("Next").as_path()]),
+                (
+                    "Plasma",
+                    vec![
+                        roots.plasma.join("Next").as_path(),
+                        roots.plasma.join("loose.xml").as_path(),
+                    ]
+                ),
             ]
         );
         assert!(groups[2].wallpapers[0].dynamic.follows_sun());

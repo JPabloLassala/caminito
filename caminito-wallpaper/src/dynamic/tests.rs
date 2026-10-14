@@ -334,3 +334,20 @@ fn a_plasma_package_with_light_and_dark_pictures_is_a_pair() {
     );
     assert_eq!(Dynamic::read(&light_only), Err(Error::NotPair));
 }
+
+#[test]
+fn a_timed_wallpaper_is_drawn_again_when_its_picture_ends_and_each_second_of_a_transition() {
+    let cosmos = Dynamic::Timed(cosmos());
+    let sky = |local| Sky {
+        elevation: None,
+        local,
+    };
+    assert_eq!(cosmos.next_change(&sky(cosmos_cycle())), Some(1795));
+    assert_eq!(cosmos.next_change(&sky(cosmos_cycle() + 1700)), Some(95));
+    assert_eq!(cosmos.next_change(&sky(cosmos_cycle() + 1797)), Some(1));
+    let pair = Dynamic::Pair {
+        light: "/light.png".into(),
+        dark: "/dark.png".into(),
+    };
+    assert_eq!(pair.next_change(&sky(0)), None);
+}

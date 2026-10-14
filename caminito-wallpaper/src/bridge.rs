@@ -43,26 +43,16 @@ impl Bridge {
     /// picture and positioning, or for a colour an empty filename, and its colour either way.
     /// A new `picture-filename` is noted as the drawer's own, to be passed over when heard.
     pub fn out(&mut self, now: &MateBackground, primary: &Drawn) -> Writes {
-        let (picture, options, colour) = match primary {
-            Drawn::Picture {
-                file,
-                positioning,
-                colour,
-            } => (file.as_str(), Some(positioning.mate()), *colour),
-            // MATE has one picture: the one that shows most (216).
-            Drawn::Blend {
-                from,
-                to,
-                percent,
-                positioning,
-                colour,
-            } => {
-                let nearer = if *percent < 50 { from } else { to };
-                (nearer.as_str(), Some(positioning.mate()), *colour)
-            }
-            // MATE has no options for no picture, so they stay as they are.
-            Drawn::Colour(colour) => ("", None, *colour),
+        // MATE has one picture: for a dynamic wallpaper part way, the one that shows most
+        // (216). It has no options for no picture, so they stay as they are.
+        let (picture, options) = match primary {
+            Drawn::Picture { positioning, .. } | Drawn::Blend { positioning, .. } => (
+                primary.nearer().unwrap_or_default(),
+                Some(positioning.mate()),
+            ),
+            Drawn::Colour(_) => ("", None),
         };
+        let colour = primary.colour();
         let writes = Writes {
             picture: (now.picture != picture).then(|| picture.to_owned()),
             options: options.filter(|options| now.options != *options),

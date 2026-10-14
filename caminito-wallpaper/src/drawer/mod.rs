@@ -70,8 +70,7 @@ use paint::Pictures;
 const FADE: Duration = Duration::from_secs(1);
 
 /// How often a dynamic wallpaper is drawn for the moment again (216), besides each time the
-/// sun moves: its blend shows in whole percent, and a timed XML's next picture comes with a
-/// cross-fade of [`FADE`] whatever its own transition is.
+/// sun moves, and a timed XML's picture ending sooner: its blend shows in whole percent.
 const DYNAMIC_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
@@ -215,6 +214,10 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
+    /// For a wake before the next tick, when a timed XML's picture ends sooner.
+    refresh: Refresh,
+    /// Whether such a wake is set.
+    waking: Rc<Cell<bool>>,
 }
 
 /// Runs the drawer until the connection fails.
@@ -271,6 +274,8 @@ pub fn run() -> Result<(), Error> {
         bridge,
         pictures: Pictures::default(),
         dynamics: HashMap::new(),
+        refresh: refresh.clone(),
+        waking: Rc::default(),
         qh: qh.clone(),
     };
     // Version 2 has the make, model and serial.
@@ -569,6 +574,7 @@ impl App {
             }
             drawn.push((global, output_drawn));
         }
+        self.wake_for_timed(&sky);
         if let Some(primary) = primary_drawn {
             self.bridge_out(&primary);
         }
@@ -581,6 +587,28 @@ impl App {
         for (global, drawn) in drawn {
             self.update(global, drawn);
         }
+    }
+
+    /// Wakes the drawer when the soonest timed XML shown next changes, if before the next
+    /// tick: at its next picture, or each second of its transition.
+    fn wake_for_timed(&mut self, sky: &Sky) {
+        let soonest = self
+            .dynamics
+            .values()
+            .flatten()
+            .filter_map(|dynamic| dynamic.next_change(sky))
+            .min();
+        let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(DYNAMIC_TICK)) else {
+            return;
+        };
+        if self.waking.replace(true) {
+            return;
+        }
+        let (refresh, waking) = (self.refresh.clone(), self.waking.clone());
+        glib::timeout_add_local_once(Duration::from_secs(seconds), move || {
+            waking.set(false);
+            refresh.schedule();
+        });
     }
 
     /// What the Dynamic of `settings` shows at `sky`, or `None` for another kind or a
