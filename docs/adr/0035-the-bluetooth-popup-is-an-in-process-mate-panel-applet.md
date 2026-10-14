@@ -21,6 +21,7 @@ Caminito's own programs are Rust and GTK4 (ADR 0014). But on Wayland, mate-panel
 - C and GTK3 are a second language and toolkit in Caminito's own code. The applet stays small to keep that cost small.
 - Logic that both halves need, such as listing devices, connecting, and reading the battery, is written twice. It's thin over BlueZ, and keeping a private API in step across the two would cost more.
 - The applet works under X11 MATE too, since it doesn't depend on Caminito.
+- The Power applet (2026-10-14, epic `power-applet`) follows the same shape for the same reasons: a thin C and GTK3 in-process applet that reads UPower, power-profiles-daemon and mate-session directly. It has no Rust half, because mate-power-preferences is its settings window. The two applets share no code until a third one appears.
 - Rejected:
   - A StatusNotifierItem icon from the Rust process. It's cheap and all Rust, but its click gives a dbusmenu menu that the panel draws, with no switches, expanding rows or custom layout.
   - A layer-shell popup drawn by the Rust process. It works only under Caminito, needs a privileged client, and can't be placed against the icon, because the panel doesn't publish where the icon is.

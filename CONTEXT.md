@@ -264,6 +264,14 @@ _Avoid_: the capplet, blueman, bluedevil
 Caminito's mate-panel applet for Bluetooth: the icon in the panel and its popup of devices, in the manner of Plasma's.
 _Avoid_: widget, plasmoid, tray icon
 
+**Power applet**:
+Caminito's mate-panel applet for power: the battery icon in the panel and its popup of the power profile, the batteries, and what is keeping the computer awake, in the manner of Plasma's Power and Battery.
+_Avoid_: battery monitor, mate-power-manager's tray icon, power capplet (mate-power-preferences is the settings window)
+
+**Stay awake**:
+The user's own switch in the Power applet that keeps the computer from sleeping and the screen from locking until it's turned off. An application doing the same is just an application keeping the computer awake.
+_Avoid_: inhibit, caffeine, presentation mode, block sleep
+
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
 _Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift
