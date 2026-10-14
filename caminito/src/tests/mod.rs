@@ -58,6 +58,7 @@ mod not_responding;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;
+mod overview;
 mod palette_helper;
 mod panel;
 mod parity;

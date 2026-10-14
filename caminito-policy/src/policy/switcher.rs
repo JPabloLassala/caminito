@@ -450,7 +450,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Whether `id` is one of the windows `list` starts from, before the modal dialogs stand in
     /// for their parents. `group` is the root of the focused window, for `Group`.
-    fn is_switch_candidate(&self, id: WindowId, list: SwitchList, group: Option<WindowId>) -> bool {
+    pub(super) fn is_switch_candidate(
+        &self,
+        id: WindowId,
+        list: SwitchList,
+        group: Option<WindowId>,
+    ) -> bool {
         let managed = &self.windows[&id];
         let on_workspace = self.is_on_shown_workspace(id);
         let panel = matches!(managed.window_type, WindowType::Dock | WindowType::Desktop);

@@ -4,7 +4,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use caminito_policy::{MenuEntry, MenuItem, MenuMark, PolicyWindow, SwitchEntry, SwitchList, Tile};
+use caminito_policy::{
+    MenuEntry, MenuItem, MenuMark, PolicyWindow, SwitchEntry, SwitchList, Tile, WindowId,
+};
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -14,6 +16,7 @@ use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, L
 
 use crate::decoration::memory_buffer;
 use crate::output::{output_geometry, output_id};
+use crate::scene;
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::CellStyle;
 use crate::window::{Strut, with_x_facts};
@@ -102,6 +105,8 @@ struct StateDump {
     workspace_popup: Option<WorkspacePopupDump>,
     /// The window menu (161), while it's open.
     window_menu: Option<WindowMenuDump>,
+    /// The Overview (241), while it's open.
+    overview: Option<OverviewDump>,
     /// Whether the apps are told to give up their own menubars (110): `on` while a Global
     /// menu applet is on the bus, `leaving` for the grace period after it left (114), and
     /// `off`.
@@ -286,6 +291,29 @@ struct SwitcherPopupDump {
     /// The popup and each window's cell, from the output's top left corner.
     popup: RectDump,
     cells: Vec<RectDump>,
+}
+
+#[derive(Serialize)]
+struct OverviewDump {
+    /// The name of the output it's on.
+    output: String,
+    /// The windows listed, bottom to top.
+    windows: Vec<OverviewWindowDump>,
+    /// How much of black is over the wallpaper.
+    dim: f32,
+    /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
+    /// the order they were made: the panel's and caja's desktop's.
+    hidden_layer_surfaces: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct OverviewWindowDump {
+    window: u64,
+    /// Where the window is drawn in the layout, from the output's top left corner, once
+    /// the refresh pass has laid it out.
+    rect: Option<RectDump>,
+    /// Where its icon and its title are drawn.
+    label: Option<RectDump>,
 }
 
 #[derive(Serialize)]
@@ -556,9 +584,9 @@ impl Caminito {
     /// active one shows its desktop, outputs with their scales, work areas and layer
     /// surfaces, the X11 scale, focus, the lock state and the locker, idle, the keybindings
     /// with their keys, the accelerator grabs with their owners, the Window switcher, the
-    /// Workspace popup, the bells rung with the last one, Night Light, each window's tile
-    /// with the tile preview (158), and the Workspace slides that run (233), as
-    /// pretty-printed JSON.
+    /// Workspace popup, the Overview with each listed window's place (241), the bells rung
+    /// with the last one, Night Light, each window's tile with the tile preview (158), and
+    /// the Workspace slides that run (233), as pretty-printed JSON.
     pub fn state_dump(&self) -> String {
         let policy = &self.policy;
         let windows = policy
@@ -689,6 +717,38 @@ impl Caminito {
                 popup: popup.grid.popup.into(),
                 cells: popup.grid.cells.iter().map(|cell| (*cell).into()).collect(),
             }),
+        });
+        let overview = policy.overview().and_then(|open| {
+            let mut outputs = self.outputs.iter();
+            let output = outputs.find(|output| output_id(output) == open.output)?;
+            let laid_out = self.overview_on(output);
+            let slot = |id: &WindowId| {
+                let laid_out = laid_out?;
+                let place = laid_out.windows.iter().position(|listed| listed == id)?;
+                laid_out.layout.slots.get(place)
+            };
+            Some(OverviewDump {
+                output: output.name(),
+                windows: open
+                    .windows
+                    .iter()
+                    .map(|id| OverviewWindowDump {
+                        window: id.0,
+                        rect: slot(id).map(|slot| slot.window.into()),
+                        label: slot(id).map(|slot| slot.label.into()),
+                    })
+                    .collect(),
+                dim: crate::overview::DIM,
+                hidden_layer_surfaces: self
+                    .layer_surfaces(output)
+                    .iter()
+                    .filter(|(layer, _)| {
+                        let namespace = layer.namespace();
+                        scene::overview_hides(self, output, layer.layer(), namespace)
+                    })
+                    .map(|(layer, _)| layer.namespace().to_owned())
+                    .collect(),
+            })
         });
         let workspace_popup = self.workspace_popup.as_ref().map(|popup| {
             let cells = &popup.layout.cells;
@@ -823,6 +883,7 @@ impl Caminito {
             switcher,
             workspace_popup,
             window_menu,
+            overview,
             global_menu_switch: self.global_menu_switch.name(),
             menu_claims,
             bell: BellDump {

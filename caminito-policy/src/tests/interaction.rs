@@ -1,4 +1,4 @@
-//! A seat's Interaction (187): which of the four it's in the middle of, and that none opens
+//! A seat's Interaction (187): which of the five it's in the middle of, and that none opens
 //! while it has another, as Marco's `meta_display_begin_grab_op` begins no grab over the
 //! display's (display.c:3583-3590).
 
@@ -27,9 +27,10 @@ enum Opening {
     Cycle,
     WindowMenu,
     WorkspacePopup,
+    Overview,
 }
 
-const OPENINGS: [Opening; 8] = [
+const OPENINGS: [Opening; 9] = [
     Opening::PointerMove,
     Opening::PointerResize,
     Opening::KeyboardMove,
@@ -38,6 +39,7 @@ const OPENINGS: [Opening; 8] = [
     Opening::Cycle,
     Opening::WindowMenu,
     Opening::WorkspacePopup,
+    Opening::Overview,
 ];
 
 impl Opening {
@@ -50,6 +52,7 @@ impl Opening {
             Self::Switch | Self::Cycle => Interaction::WindowSwitcher,
             Self::WindowMenu => Interaction::WindowMenu,
             Self::WorkspacePopup => Interaction::WorkspacePopup,
+            Self::Overview => Interaction::Overview,
         }
     }
 
@@ -83,6 +86,12 @@ impl Opening {
             }
             Self::WindowMenu => policy.open_window_menu(seat, id(window)),
             Self::WorkspacePopup => policy.open_workspace_popup(false),
+            // The shortcut, which closes the open one: it opened if it wasn't open.
+            Self::Overview => {
+                let was_open = policy.overview().is_some();
+                policy.action(seat, Action::Overview, ms(10));
+                !was_open && policy.overview().is_some()
+            }
         }
     }
 }
@@ -151,15 +160,16 @@ fn with_each_interaction_open_no_other_opens() {
             assert_eq!(policy.window_menu().is_some(), first == Opening::WindowMenu);
             let popup = policy.workspace_popup().is_some();
             assert_eq!(popup, first == Opening::WorkspacePopup);
+            assert_eq!(policy.overview().is_some(), first == Opening::Overview);
         }
     }
 }
 
-// The Window switcher, the Window menu and the Workspace popup are one each, and every
-// seat's.
+// The Window switcher, the Window menu, the Workspace popup and the Overview are one each,
+// and every seat's.
 
 #[test]
-fn the_window_switcher_the_window_menu_and_the_workspace_popup_are_every_seats() {
+fn the_window_switcher_the_window_menu_the_workspace_popup_and_the_overview_are_every_seats() {
     for opening in OPENINGS
         .into_iter()
         .filter(|opening| !opening.is_move_or_resize())
@@ -202,6 +212,10 @@ fn none_opens_for_a_seat_over_another_seats() {
             }
             // The one menu opens in place of itself.
             if first == Opening::WindowMenu && second == Opening::WindowMenu {
+                continue;
+            }
+            // The Overview's shortcut closes the one Overview, whoever's it is.
+            if first == Opening::Overview && second == Opening::Overview {
                 continue;
             }
             let mut policy = three();

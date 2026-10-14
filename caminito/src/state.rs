@@ -109,6 +109,7 @@ use crate::not_responding::NotResponding;
 use crate::output::OutputRecord;
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
+use crate::overview::Overview;
 use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -287,6 +288,9 @@ pub struct Caminito {
     pub(crate) switcher: Option<OpenSwitcher>,
     /// The Workspace popup while it shows (152).
     pub(crate) workspace_popup: Option<WorkspacePopup>,
+    /// The compositor's side of the open Overview (241), once the refresh pass has laid it
+    /// out. Policy has whether it's open.
+    pub(crate) overview: Option<Overview>,
     /// The compositor's side of the window menu while it's open (161).
     pub(crate) window_menu: Option<OpenWindowMenu>,
     /// The cursor the client with pointer focus asked for.
@@ -654,6 +658,7 @@ impl State {
         self.caminito.refresh_panel_layers();
         self.caminito.refresh_switcher_popup();
         self.caminito.refresh_workspace_popup();
+        self.caminito.refresh_overview();
         self.caminito.refresh_window_menu();
         self.caminito.refresh_sounds();
         // With the windows the handlers and the bindings before this pass asked to close.
@@ -978,6 +983,7 @@ impl Caminito {
             suppressed_buttons: HashSet::new(),
             switcher: None,
             workspace_popup: None,
+            overview: None,
             window_menu: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,

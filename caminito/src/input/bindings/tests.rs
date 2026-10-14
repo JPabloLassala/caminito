@@ -636,7 +636,45 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.len(), 33, "{rows:?}");
+    assert_eq!(rows.last(), Some(&("overview", "<Super>w".into())));
+    assert_eq!(rows.len(), 34, "{rows:?}");
+}
+
+// The Overview's shortcut (241), which is `org.mate.Caminito`'s.
+
+#[test]
+fn super_w_is_the_overviews_shortcut_by_default() {
+    let t = table(&[]);
+    assert_eq!(bound(&t, SUPER, Keysym::w), policy(Action::Overview));
+    assert_eq!(bound(&t, NONE, Keysym::w), None);
+}
+
+#[test]
+fn the_overviews_shortcut_is_what_caminitos_key_says() {
+    let t = table(&[(CAMINITO, OVERVIEW_KEY, "<Super>Tab")]);
+    assert_eq!(bound(&t, SUPER, Keysym::Tab), policy(Action::Overview));
+    assert_eq!(bound(&t, SUPER, Keysym::w), None);
+
+    let button = table(&[(CAMINITO, OVERVIEW_KEY, "Button9")]);
+    assert_eq!(
+        button.binding_for_button(&state(NONE), 9),
+        policy(Action::Overview)
+    );
+}
+
+#[test]
+fn with_its_shortcut_removed_nothing_opens_the_overview() {
+    for removed in ["disabled", ""] {
+        let t = table(&[(CAMINITO, OVERVIEW_KEY, removed)]);
+        assert_eq!(bound(&t, SUPER, Keysym::w), None, "{removed:?}");
+        assert!(t.iter().all(|(key, _)| key != OVERVIEW_KEY), "{removed:?}");
+    }
+}
+
+#[test]
+fn a_combination_of_marcos_wins_over_the_overviews() {
+    let t = table(&[(WINDOW, "close", "<Super>w")]);
+    assert_eq!(bound(&t, SUPER, Keysym::w), policy(Action::Close));
 }
 
 // The `cycle-*` actions (163).

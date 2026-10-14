@@ -79,11 +79,13 @@ install_data(
 # own manifests from marco 1.29.0, with Caminito's name in wm_name, which the dialog matches
 # against MATE_WM_KEYBINDINGS. They point at the org.mate.Marco.* keys, and their names are
 # translated from marco's catalogue. No action Caminito never implements (05) was in Marco's,
-# so none is left out. The directory is mate-control-center's, where marco installs its own
-# too.
+# so none is left out. The Overview's (241) is Caminito's own, and points at its key in
+# org.mate.Caminito: marco's catalogue hasn't its name, which shows in English. The
+# directory is mate-control-center's, where marco installs its own too.
 install_data(
   'data/keybindings/50-caminito-desktop-key.xml',
   'data/keybindings/50-caminito-global-key.xml',
+  'data/keybindings/50-caminito-overview-key.xml',
   'data/keybindings/50-caminito-window-key.xml',
   install_dir: get_option('datadir') / 'mate-control-center' / 'keybindings',
 )

@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer, whose decisions are in [ADR 0033](../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md). Where this file and the ADR differ, the ADR is right and this file is to be fixed.
 
-Nothing here is built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
+Ticket 241 built the first slice: the Overview opens and closes on one output, with no transition and no bar. The rest isn't built. Its tickets are 241 to 247, under "Tickets". It builds on the [Workspace slide](../workspace-slide/spec.md), which comes first.
 
 ## Problem
 
@@ -31,7 +31,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 ### Opening and closing
 
-- **A System shortcut opens it**, Super+W by default, kept in `org.mate.Caminito` and listed in System Shortcuts. If Marco's or mate-settings-daemon's defaults have Super+W, it is Super+Tab. There is no hot corner, gesture or panel button.
+- **A System shortcut opens it**, Super+W by default, kept in `org.mate.Caminito`'s `overview` key and listed in System Shortcuts. Neither Marco's nor mate-settings-daemon's defaults have Super+W (ticket 241 checked), so Super+Tab isn't needed. There is no hot corner, gesture or panel button.
 - It is an **Interaction**. The shortcut does nothing while the seat has another, and none opens while the Overview is open. The session lock ends it.
 - Pressed during a Workspace slide, it opens at once and the slide is cut to its end.
 - It opens on a workspace with no windows, showing the bar alone, and on one with a focused fullscreen window, which is laid out like any other.
@@ -85,7 +85,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 - The arrow keys move the selection, Enter chooses it, and Esc closes.
 - The focused window is selected at opening, or none when no window is focused.
 - **The workspace bindings switch the Active output's workspace**, with the Workspace slide and without the Workspace popup, since the seat already has an Interaction.
-- Media keys work.
+- Media keys work. A media key is an accelerator grab of a key whose keysym is one of XFree86's, as `XF86AudioMute`: `GrabAccelerators` doesn't say what a grab is for.
 - Every other key and System shortcut is swallowed, Alt+Tab among them.
 
 ### The transition
@@ -111,7 +111,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - `overview-animation` in `org.mate.Caminito`, a boolean, default `true`. It turns off the transition, not the Overview.
 - The transition runs when that key is on and the minimise animation's three are as it needs them: `compositing-manager` on, `reduced-resources` off and `org.mate.interface enable-animations` on. Without it the Overview opens and closes in one frame.
-- The key for the shortcut, whose name is the ticket's.
+- `overview` in `org.mate.Caminito`, a string, default `'<Super>w'`: the shortcut, written as the keys of `org.mate.Marco.global-keybindings` are, with a mouse button where a key's name would be (ADR 0028). `disabled` or the empty string removes it.
 
 ## Testing
 
@@ -122,7 +122,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 ## Not decided
 
-- **Whether Super+W is free** in Marco's and mate-settings-daemon's defaults, which ticket 241 checks.
+Nothing of ticket 241's is left. It checked that **Super+W is free**: no default in the schemas of marco 1.29.0 (`org.mate.Marco.global-keybindings` and `window-keybindings`) or of mate-settings-daemon 1.29.1 (its media keys among them) has Super, so Super+W is the default.
 
 The developer gave two start values on 2026-10-13, which ticket 247 checks in a Session:
 

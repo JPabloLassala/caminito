@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<KeyListEntries name="Window Management" wm_name="Caminito" package="marco" schema="org.mate.Caminito">
+  <KeyListEntry name="overview" description="Show the windows of the workspace side by side"/>
+</KeyListEntries>

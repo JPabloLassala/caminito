@@ -4,9 +4,9 @@
 //! opens only when the seat has none, as `meta_display_begin_grab_op` begins no grab over
 //! another (display.c:3583-3590).
 //!
-//! A move or resize is its own seat's. The Window switcher, the Window menu and the
-//! Workspace popup are one each, as Marco's grab is the display's, and every seat's: none
-//! of the three opens while any seat has an Interaction.
+//! A move or resize is its own seat's. The Window switcher, the Window menu, the
+//! Workspace popup and the Overview (241) are one each, as Marco's grab is the display's,
+//! and every seat's: none of the four opens while any seat has an Interaction.
 //!
 //! Three things open in place of themselves: the pointer's move or resize of a seat begins
 //! in place of the seat's own, the Window menu opens in place of the one that's open, and
@@ -27,6 +27,8 @@ pub enum Interaction {
     WindowMenu,
     /// The Workspace popup (152).
     WorkspacePopup,
+    /// The Overview (241).
+    Overview,
 }
 
 /// The open Workspace popup (152). The compositor has the rest of it: the modifiers that
@@ -48,7 +50,7 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// The Interaction every seat has, if one of the three that aren't a seat's own is
+    /// The Interaction every seat has, if one of the four that aren't a seat's own is
     /// open.
     pub(super) fn shared_interaction(&self) -> Option<Interaction> {
         if self.switcher.is_some() {
@@ -57,6 +59,8 @@ impl<W: PolicyWindow> Policy<W> {
             Some(Interaction::WindowMenu)
         } else if self.workspace_popup.is_some() {
             Some(Interaction::WorkspacePopup)
+        } else if self.overview.is_some() {
+            Some(Interaction::Overview)
         } else {
             None
         }

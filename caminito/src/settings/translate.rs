@@ -12,8 +12,8 @@ use caminito_policy::{
 };
 use caminito_theme::ButtonLayout;
 
-use crate::input::bindings::Bindings;
 use crate::input::bindings::button_modifier::ButtonModifier;
+use crate::input::bindings::{Bindings, OVERVIEW_KEY};
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
@@ -1189,14 +1189,20 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         resize_with_right_button: r.bool(MARCO_GENERAL, "resize-with-right-button", true),
     };
 
-    // Every key of both schemas, so every value is parsed (148).
+    // Every key of both of Marco's schemas, so every value is parsed (148), and the one
+    // key of Caminito's own that's a binding, the Overview's (241).
+    let overview = reading
+        .strings_of(CAMINITO)
+        .filter(|(key, _)| *key == OVERVIEW_KEY)
+        .map(|(key, value)| (CAMINITO, key, value));
     let keys = [MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS]
         .into_iter()
         .flat_map(|schema| {
             reading
                 .strings_of(schema)
                 .map(move |(key, value)| (schema, key, value))
-        });
+        })
+        .chain(overview);
     let (bindings, problems) = Bindings::from_keys(keys);
     r.problems.extend(problems);
 

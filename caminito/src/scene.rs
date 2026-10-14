@@ -81,11 +81,11 @@ render_elements! {
     Window = WaylandSurfaceRenderElement<R>,
     /// A frame's strip, one of Caminito's cursors, or frame debug's label.
     Frame = MemoryRenderBufferRenderElement<R>,
-    /// A side of one of frame debug's outlines, the lock's background, the blank, or the
-    /// visual bell's flash.
+    /// A side of one of frame debug's outlines, the lock's background, the blank, the
+    /// visual bell's flash, or the Overview's dimming.
     Solid = SolidColorRenderElement,
     /// A part of a window in one of the Window switcher's thumbnails (108), or of one
-    /// shrinking into its button (172).
+    /// shrinking into its button (172), or of one at its place in the Overview (241).
     Thumbnail = ThumbnailPart<R>,
 }
 
@@ -126,6 +126,13 @@ pub(crate) enum SceneLayer {
     /// that has the focus, and its transients. They cover the top layer, as Marco puts
     /// them above docks (63).
     FullscreenWindows,
+    /// While the Overview is open on the output (241), all of it: each listed window at
+    /// its place in the layout, over its label, over the dimming, which covers the
+    /// wallpaper. In its place the output shows none of its windows as they are, nor one
+    /// shrinking into its button, nothing of
+    /// the top and bottom layers, where the panel is, and of the background layer the
+    /// wallpaper alone, without caja's desktop.
+    Overview,
     /// The top layer-shell layer (63).
     Top,
     /// The popups of the bottom and background layers' surfaces. They're above the windows,
@@ -152,7 +159,7 @@ pub(crate) enum SceneLayer {
 /// over (210).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-pub(crate) const LAYERS: [SceneLayer; 17] = [
+pub(crate) const LAYERS: [SceneLayer; 18] = [
     SceneLayer::Blank,
     SceneLayer::Cursor,
     SceneLayer::DragIcon,
@@ -165,6 +172,7 @@ pub(crate) const LAYERS: [SceneLayer; 17] = [
     SceneLayer::OverrideRedirect,
     SceneLayer::Minimizing,
     SceneLayer::FullscreenWindows,
+    SceneLayer::Overview,
     SceneLayer::Top,
     SceneLayer::LayerPopups,
     SceneLayer::Windows,
@@ -299,7 +307,11 @@ fn layer_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
+    if overview_replaces(caminito, output, layer) {
+        return;
+    }
     match layer {
+        SceneLayer::Overview => overview_elements(renderer, caminito, output, elements),
         SceneLayer::Blank => blank_elements(caminito, output, elements),
         SceneLayer::Cursor => cursor_elements(renderer, caminito, output, elements),
         SceneLayer::DragIcon => drag_icon_elements(renderer, caminito, output, elements),
@@ -433,6 +445,116 @@ where
         LOCK_BACKGROUND,
         Kind::Unspecified,
     ))
+}
+
+/// Whether the Overview is open on `output` (241), as policy has it.
+pub(crate) fn overview_is_on(caminito: &Caminito, output: &Output) -> bool {
+    let open = caminito.policy.overview();
+    open.is_some_and(|open| open.output == output_id(output))
+}
+
+/// Whether the Overview, open on `output`, is drawn in place of all of `layer`: the
+/// windows as they are, and one that was shrinking into its button as it opened, which
+/// is in the layout at its place.
+fn overview_replaces(caminito: &Caminito, output: &Output, layer: SceneLayer) -> bool {
+    let windows = matches!(
+        layer,
+        SceneLayer::Minimizing | SceneLayer::FullscreenWindows | SceneLayer::Windows
+    );
+    windows && overview_is_on(caminito, output)
+}
+
+/// Whether the Overview, open on `output`, keeps a layer surface of `layer` with this
+/// `namespace` from being drawn there, and its popups with it: the panel, which is one of
+/// the top or bottom layer's, and caja's desktop, which is one of the background layer's
+/// that isn't the wallpaper.
+pub(crate) fn overview_hides(
+    caminito: &Caminito,
+    output: &Output,
+    layer: Layer,
+    namespace: &str,
+) -> bool {
+    let hidden = match layer {
+        Layer::Top | Layer::Bottom => true,
+        Layer::Background => namespace != WALLPAPER_NAMESPACE,
+        Layer::Overlay => false,
+    };
+    hidden && overview_is_on(caminito, output)
+}
+
+/// The Overview (241), if it's open on `output`, front to back: each listed window's
+/// label, the windows at their places in the layout, and the dimming over all of the
+/// output. A window is drawn from its own surfaces at every frame, as a thumbnail of the
+/// Window switcher is, so it's live, and a minimised one shows as any other does.
+fn overview_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    if !overview_is_on(caminito, output) {
+        return;
+    }
+    // Policy's Overview is laid out in the refresh pass, before the output is drawn.
+    let Some(open) = caminito.overview_on(output) else {
+        return;
+    };
+    let policy = &caminito.policy;
+    let scale = output.current_scale().fractional_scale();
+    for (slot, label) in open.layout.slots.iter().zip(&open.labels) {
+        let Some(label) = label else {
+            continue;
+        };
+        let location = slot.label.loc.to_physical_precise_round::<_, i32>(scale);
+        let element = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location.to_f64(),
+            label,
+            None,
+            None,
+            Some(slot.label.size),
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(element) => elements.push(SceneElement::Frame(element)),
+            // Every frame while the Overview is open, so not above `debug!`.
+            Err(err) => tracing::debug!("can't draw the overview's label: {err:?}"),
+        }
+    }
+    for (id, slot) in open.windows.iter().zip(&open.layout.slots) {
+        let (Some(mapped), Some(geometry), Some(frame)) = (
+            policy.window(*id),
+            policy.geometry(*id),
+            policy.frame_rect(*id),
+        ) else {
+            continue;
+        };
+        if frame.size.w <= 0 || frame.size.h <= 0 {
+            continue;
+        }
+        let mut parts: Vec<WindowPart<R>> = Vec::new();
+        let shown = Rectangle::from_size(frame.size);
+        one_window_elements(
+            renderer,
+            mapped,
+            geometry.loc - frame.loc,
+            shown,
+            scale,
+            &mut parts,
+        );
+        scaled_elements(parts, frame.size, slot.window, scale, elements);
+    }
+    let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
+    elements.push(SceneElement::Solid(SolidColorRenderElement::new(
+        open.dim.clone(),
+        covered,
+        CommitCounter::default(),
+        Color32F::new(0.0, 0.0, 0.0, crate::overview::DIM),
+        Kind::Unspecified,
+    )));
 }
 
 /// The Window switcher's popup, if it's on `output`, front to back: the thumbnails'
@@ -815,6 +937,9 @@ fn layer_shell_elements<R>(
     let scale = output.current_scale().fractional_scale();
     let part = layer_surface_part(layer);
     for (surface, geometry) in layer_surfaces_in(caminito, output, layer) {
+        if overview_hides(caminito, output, surface.layer(), surface.namespace()) {
+            continue;
+        }
         let origin = geometry.loc - output_geometry.loc;
         let wl_surface = surface.wl_surface();
         let popups = PopupManager::popups_for_surface(wl_surface)

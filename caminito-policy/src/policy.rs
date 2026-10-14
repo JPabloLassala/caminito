@@ -24,6 +24,7 @@ mod focus_stealing;
 mod interaction;
 mod keyboard_grab;
 mod move_to;
+mod overview;
 mod pointer;
 mod pre_map;
 mod state_requests;
@@ -37,6 +38,7 @@ pub use focus_stealing::{
 };
 pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
+pub use overview::Overview;
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use pre_map::{PreMapConfigure, PreMapWindow};
 pub use state_requests::{MapStates, StateRequest};
@@ -628,6 +630,8 @@ struct SceneReads {
     grabs: Vec<GrabReads>,
     /// The entries of `switcher`, which the popup's thumbnails are of.
     switcher: Option<Vec<SwitchEntry>>,
+    /// `overview`.
+    overview: Option<Overview>,
 }
 
 /// What the Scene reads of one seat's grab.
@@ -705,6 +709,8 @@ pub struct Policy<W: PolicyWindow> {
     window_menu: Option<WindowMenu>,
     /// The Workspace popup (152), while it's open.
     workspace_popup: Option<WorkspacePopup>,
+    /// The Overview (241), while it's open.
+    overview: Option<Overview>,
     /// The Layer surfaces that accept the keyboard, most recently used first (163).
     layers: Vec<LayerSurfaceId>,
     /// The one that has the keyboard in place of the focused window.
@@ -747,6 +753,7 @@ impl<W: PolicyWindow> Policy<W> {
             switcher: None,
             window_menu: None,
             workspace_popup: None,
+            overview: None,
             layers: Vec::new(),
             keyboard_layer: None,
             chosen: None,
@@ -1307,6 +1314,7 @@ impl<W: PolicyWindow> Policy<W> {
                     self.open_window_menu(seat, id);
                 }
             }
+            Action::Overview => self.toggle_overview(seat),
             Action::BeginMove | Action::BeginResize => {
                 if let Some(id) = self.focus(seat) {
                     self.begin_keyboard_grab(seat, id, action == Action::BeginResize);
@@ -2249,6 +2257,7 @@ impl<W: PolicyWindow> Policy<W> {
                 })
                 .collect(),
             switcher: self.switcher().map(|switcher| switcher.entries.clone()),
+            overview: self.overview.clone(),
         }
     }
 
@@ -3259,6 +3268,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.update_dynamic_workspaces();
         self.end_stale_grabs();
         self.close_stale_window_menu();
+        self.refresh_overview();
         self.fix_focus();
         self.note_active_outputs();
         self.mru.retain(|id| self.windows.contains_key(id));

@@ -268,6 +268,24 @@ impl Grabs {
             .map(|(action, grab)| (action, grab.owner.as_str()))
     }
 
+    /// The grab of a media key's press with `mods` held, if there is one, as `pressed` has
+    /// it: a grab of a key whose keysym is one of XFree86's, as `XF86AudioMute`. The open
+    /// Overview lets these alone through (241): `GrabAccelerators` doesn't say what a grab
+    /// is for, and those keys are for nothing else.
+    pub(crate) fn pressed_media_key(
+        &self,
+        mods: &ModifiersState,
+        keysyms: &[Keysym],
+    ) -> Option<(u32, &str)> {
+        let is_media_key = |grab: &Grab| {
+            matches!(grab.combination.trigger, Trigger::Key(keysym)
+                if xkb::keysym_get_name(keysym).starts_with("XF86"))
+        };
+        self.iter()
+            .find(|(_, grab)| is_media_key(grab) && grab.combination.matches(mods, keysyms))
+            .map(|(action, grab)| (action, grab.owner.as_str()))
+    }
+
     /// The grab of a press of `button`, by X's number, with `mods` held, if there is one:
     /// its action id and its owner (185).
     pub(crate) fn pressed_button(&self, mods: &ModifiersState, button: u32) -> Option<(u32, &str)> {

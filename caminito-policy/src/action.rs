@@ -81,6 +81,9 @@ pub enum Action {
     BeginMove,
     /// `begin-resize`: a keyboard resize of the focused window (156).
     BeginResize,
+    /// `overview`, which is `org.mate.Caminito`'s: opens the Overview, or closes the open
+    /// one (241).
+    Overview,
 }
 
 /// Where in a work area `Action::MoveTo` puts a window's Frame (160): against a corner,
