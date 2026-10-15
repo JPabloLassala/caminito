@@ -434,7 +434,8 @@ impl Fixture {
     /// Spanning workspaces, before Caminito had Per-output workspaces (230). And so is
     /// `workspace-slide`: they read a frame straight after a switch, which was a cut (233).
     /// And so is `overview-animation`: they read the Overview's frame straight after it
-    /// opens or closes, which was at once (243).
+    /// opens or closes, which was at once (243). And so is `open-close-animation`: they
+    /// read a window's frame straight after it maps, which was at once (251).
     pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
         Self::on_schemas(test_schemas(), initial)
     }
@@ -446,8 +447,8 @@ impl Fixture {
     }
 
     /// Caminito with no outputs and no clients, on the schemas compiled into `schema_dir`,
-    /// with `center-new-windows`, `workspaces-per-output`, `workspace-slide` and
-    /// `overview-animation` off unless `initial` sets them.
+    /// with `center-new-windows`, `workspaces-per-output`, `workspace-slide`,
+    /// `overview-animation` and `open-close-animation` off unless `initial` sets them.
     fn on_schemas(
         schema_dir: &std::path::Path,
         mut initial: Vec<(&'static str, String, Value)>,
@@ -457,6 +458,7 @@ impl Fixture {
             (CAMINITO, "workspaces-per-output"),
             (CAMINITO, "workspace-slide"),
             (CAMINITO, "overview-animation"),
+            (CAMINITO, "open-close-animation"),
         ] {
             if !initial
                 .iter()
