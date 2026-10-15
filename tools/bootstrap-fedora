@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Builds and installs all of Caminito on a Fedora machine, from nothing. It is the Fedora
+# equivalent of tools/bootstrap (CMN-172). Run it on the developer's machine, Fedora Asahi
+# Remix 45, as your own user. It uses sudo where it needs to.
+#
+#   tools/bootstrap-fedora [rpmbuild option…]
+#
+# It builds the specs of packaging/fedora/ in dependency order, and installs the RPMs of each
+# one before it builds the next. It holds the packages it installed with dnf versionlock.
+# Its arguments go to rpmbuild, as tools/bootstrap's go to makepkg.
+#
+# It is safe to run again. dnf skips a package that is installed at the same version, and
+# each package keeps one versionlock entry.
+set -euo pipefail
+
+root=$(dirname "$(realpath "$0")")/..
+
+# In dependency order: the next one builds against the RPMs of the ones before it. marco and
+# mate-panel come before what builds against their -devel packages.
+components=(marco mate-panel mate-session-manager mate-settings-daemon mate-control-center
+  caja mate-utils mate-power-manager caminito)
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "bootstrap-fedora: run it as your own user, not root. It uses sudo where it needs to," \
+    "and rpmbuild builds in your home." >&2
+  exit 1
+fi
+
+# The build dependencies of each spec, Fedora's cargo and rust among them, come with the
+# spec, from dnf builddep.
+sudo dnf install -y rpm-build rpmdevtools dnf-plugins-core git-core meson cargo
+
+# Plasma Login Manager stays the display manager and Plasma stays the fallback session. The
+# group can install LightDM, and its package can enable it. Disable it again if it did.
+sudo dnf group install -y mate-desktop
+if [ "$(systemctl is-enabled lightdm 2>/dev/null || true)" = enabled ]; then
+  echo "bootstrap-fedora: the group enabled LightDM. It is disabled again." >&2
+  sudo systemctl disable lightdm
+  if ! systemctl is-enabled --quiet display-manager 2>/dev/null; then
+    echo "bootstrap-fedora: no display manager is enabled now. Enable the one you use," \
+      "Plasma Login Manager, before you reboot." >&2
+  fi
+fi
+
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
+held=()
+for component in "${components[@]}"; do
+  echo "==> $component"
+  sudo dnf builddep -y "$root/packaging/fedora/$component/$component.spec"
+  "$root/packaging/fedora/build" "$component" "$@" 2>&1 | tee "$log"
+
+  # Only the RPMs that this build wrote: ~/rpmbuild/RPMS can hold RPMs of earlier builds.
+  # The source and debug RPMs are not installed.
+  rpms=()
+  while read -r rpm; do
+    case $(basename "$rpm") in
+      *.src.rpm | *-debuginfo-*.rpm | *-debugsource-*.rpm) ;;
+      *) rpms+=("$rpm") ;;
+    esac
+  done < <(sed -n 's/^Wrote: \(.*\.rpm\)$/\1/p' "$log")
+  if [ ${#rpms[@]} -eq 0 ]; then
+    echo "bootstrap-fedora: rpmbuild wrote no RPM of $component" >&2
+    exit 1
+  fi
+  mapfile -t names < <(rpm -qp --qf '%{NAME}\n' "${rpms[@]}")
+
+  # The hold of an earlier run names the version that is installed, and dnf does not install
+  # another version of that package. So lift it first, and put it back if the install fails.
+  # The install is one transaction: it also downgrades, because Fedora's caja and
+  # mate-power-manager have the same Version as ours and a higher Release.
+  locks=$(dnf versionlock list)
+  relock=()
+  for name in "${names[@]}"; do
+    if grep -qx "Package name: $name" <<<"$locks"; then
+      relock+=("$name")
+    fi
+  done
+  sudo dnf versionlock delete "${names[@]}"
+  if ! sudo dnf install -y "${rpms[@]}"; then
+    if [ ${#relock[@]} -gt 0 ]; then
+      sudo dnf versionlock add "${relock[@]}"
+    fi
+    exit 1
+  fi
+  # Without the hold, dnf upgrade can replace our packages with Fedora's.
+  sudo dnf versionlock add "${names[@]}"
+  held+=("${names[@]}")
+done
+
+# `versionlock add` succeeds for a package that is not installed.
+locks=$(dnf versionlock list)
+for name in "${held[@]}"; do
+  if ! grep -qx "Package name: $name" <<<"$locks"; then
+    echo "bootstrap-fedora: $name is not held by dnf versionlock" >&2
+    exit 1
+  fi
+done
+echo "==> ${#held[@]} packages held by dnf versionlock (dnf versionlock list)"

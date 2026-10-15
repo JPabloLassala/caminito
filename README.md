@@ -94,6 +94,40 @@ cd packaging/arch/caminito-git
 makepkg -si
 ```
 
+### Fedora
+
+The Fedora packages are for the developer's machine: Fedora Asahi Remix 45 (aarch64, KDE Plasma
+edition). Plasma Login Manager stays the display manager there, and Plasma stays the fallback
+session. The specs are in [packaging/fedora/](packaging/fedora/).
+
+`tools/bootstrap-fedora` is the equivalent of `tools/bootstrap`. Run it on that machine, as your own
+user. It uses `sudo` where it needs to. It installs the build tools and Fedora's MATE
+(`dnf group install mate-desktop`), and it keeps LightDM disabled. Then it builds the patched and
+backported MATE packages and `caminito` in order, and installs the RPMs of each one before the next
+build. Its arguments go to `rpmbuild`:
+
+```sh
+tools/bootstrap-fedora       # or: tools/bootstrap-fedora --nocheck
+```
+
+It holds each package that it installs with `dnf versionlock`. Fedora's `caja` and
+`mate-power-manager` have the same version as ours and a higher release, so without the hold a
+`dnf upgrade` replaces them with Fedora's. To see the hold, run `dnf versionlock list`.
+
+You can run the script again. It builds every package again. It removes the hold of a package and
+adds it again, so a package never has two entries. `dnf` skips a package that is installed at the
+same version. If you change a patch, raise the `Release` of the spec.
+
+To go back to Fedora's MATE, remove the hold and `caminito`, then sync to Fedora's versions. Remove
+`caminito` first: it is not in Fedora, and it needs the patched packages.
+
+```sh
+names=$(rpm -qa --qf '%{NAME} %{RELEASE}\n' | sed -n 's/ 0\.caminito.*//p')
+sudo dnf versionlock delete caminito $names
+sudo dnf remove caminito
+sudo dnf distro-sync
+```
+
 ### Patched MATE packages
 
 Some MATE components need carried patches to work in the session
