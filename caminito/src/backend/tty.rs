@@ -20,7 +20,7 @@ mod libinput;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -168,6 +168,9 @@ struct LitMonitor {
     /// Whether Night Light's table is written again once the next frame is shown: the mode
     /// is set with a frame, and a modeset may take the table with it (137).
     gamma_due: bool,
+    /// The Overview's transition frame that's queued, for its timing: its number and when
+    /// it was queued.
+    overview_frame: Option<(u32, Instant)>,
 }
 
 /// A connected monitor that isn't lit: one output management turned off, or one on its way
@@ -540,6 +543,17 @@ impl Tty {
         }
     }
 
+    /// Whether `output` can take a new frame: its last one is shown, and the seat and the
+    /// monitors are on.
+    pub(crate) fn takes_frame(&self, output: &Output) -> bool {
+        let gpu = &self.gpu;
+        let crtc = output.user_data().get::<crtc::Handle>();
+        let monitor = crtc.and_then(|crtc| gpu.monitors.get(crtc));
+        self.seat.is_active()
+            && !gpu.powered_off
+            && monitor.is_some_and(|monitor| monitor.frame == Frame::Shown)
+    }
+
     /// Draws a frame of `output`, unless its last frame hasn't been shown yet: frames, and
     /// so clients' frame callbacks, are paced by the monitor's vblanks.
     pub fn render(
@@ -553,17 +567,25 @@ impl Tty {
         let gpu = &mut self.gpu;
         let crtc = *output.user_data().get::<crtc::Handle>()?;
         let monitor = gpu.monitors.get_mut(&crtc)?;
+        let now = caminito.now();
+        let timed = caminito.overview_transition_on(output, now);
         if monitor.frame != Frame::Shown {
+            if timed {
+                caminito.overview_timing.busy(&output.name());
+            }
             return None;
         }
 
+        let start = Instant::now();
         let elements = scene::output_elements(&mut gpu.renderer, caminito, output);
+        let built = Instant::now();
         let result = monitor.drm_output.render_frame(
             &mut gpu.renderer,
             &elements,
             CLEAR_COLOR,
             FrameFlags::empty(),
         );
+        let rendered = Instant::now();
         let (states, is_empty) = match result {
             Ok(result) => (result.states, result.is_empty),
             Err(err) => {
@@ -571,6 +593,18 @@ impl Tty {
                 return None;
             }
         };
+        monitor.overview_frame = None;
+        if timed && let Some(open) = caminito.overview_on(output) {
+            let number = caminito.overview_timing.frame(
+                &output.name(),
+                open.part(now),
+                elements.len(),
+                built - start,
+                rendered - built,
+                is_empty,
+            );
+            monitor.overview_frame = Some((number, rendered));
+        }
         if is_empty {
             // A client redrawing to no effect is still held to the monitor's rate.
             let refresh = output
@@ -806,6 +840,9 @@ impl Gpu {
         if let Err(err) = monitor.drm_output.frame_submitted() {
             tracing::debug!("can't finish a frame of {}: {err}", monitor.output.name());
         }
+        if let Some((number, queued)) = monitor.overview_frame.take() {
+            crate::overview::timing::vblank(&monitor.output.name(), number, queued);
+        }
         monitor.frame = Frame::Shown;
         if std::mem::take(&mut monitor.gamma_due) {
             // The refresh pass after this writes it.
@@ -903,6 +940,7 @@ impl Gpu {
                     drm_output,
                     frame: Frame::Shown,
                     gamma_due: true,
+                    overview_frame: None,
                 };
                 // One plugged in while the others are powered off joins them.
                 if self.powered_off {

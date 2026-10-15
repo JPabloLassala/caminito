@@ -9,10 +9,14 @@
 //! logical size through a viewport. A change of what's drawn cross-fades over [`FADE`]; a
 //! change of size draws at once.
 //!
+//! A picture of the day's source is fetched on GLib's loop as [`daily`] says, and the output
+//! shows the source's latest picture, or its colour before the first (214).
+//!
 //! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
 //! it after every refresh, and a picture another program writes to it comes in first.
 
 mod buffer;
+mod daily;
 mod paint;
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -57,15 +61,24 @@ use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::{
 
 use crate::DOMAIN;
 use crate::bridge::Bridge;
+use crate::daily::Source;
+use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
-use crate::settings::{Drawn, settings_for, take_mate_background};
+use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
+use crate::sun::sky_now;
 use buffer::Buffers;
+use daily::{Daily, fetch_if_due};
 use paint::Pictures;
 
 /// How long a change of wallpaper takes to cross-fade.
 const FADE: Duration = Duration::from_secs(1);
+
+/// How often a dynamic wallpaper is drawn for the moment again (216), besides each time the
+/// sun moves, and a timed XML's picture ending sooner: its blend shows in whole percent. It's
+/// also how soon after local midnight a picture of the day is fetched (214).
+const DYNAMIC_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
 /// caja's desktop among them (63). It's msd's background plugin's, whose place the drawer
@@ -205,6 +218,15 @@ pub(crate) struct App {
     /// Shared with `mate`'s signal, which hears the changes the bridge brings in.
     bridge: Rc<RefCell<Bridge>>,
     pictures: Pictures,
+    /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
+    /// can't be, logged once.
+    dynamics: HashMap<String, Option<Dynamic>>,
+    /// The pictures of the day (214).
+    daily: Rc<RefCell<Daily>>,
+    /// For a wake before the next tick, when a timed XML's picture ends sooner.
+    refresh: Refresh,
+    /// Whether such a wake is set.
+    waking: Rc<Cell<bool>>,
 }
 
 /// Runs the drawer until the connection fails.
@@ -260,6 +282,10 @@ pub fn run() -> Result<(), Error> {
         mate,
         bridge,
         pictures: Pictures::default(),
+        dynamics: HashMap::new(),
+        daily: Daily::open(&refresh),
+        refresh: refresh.clone(),
+        waking: Rc::default(),
         qh: qh.clone(),
     };
     // Version 2 has the make, model and serial.
@@ -308,6 +334,13 @@ pub fn run() -> Result<(), Error> {
                 }
             },
         );
+    }
+    {
+        let refresh = refresh.clone();
+        glib::timeout_add_seconds_local(DYNAMIC_TICK, move || {
+            refresh.schedule();
+            glib::ControlFlow::Continue
+        });
     }
     main_loop.run();
     match failure.take() {
@@ -524,31 +557,101 @@ impl App {
             glib::g_debug!(DOMAIN, "took org.mate.background's new picture");
         }
         let primary = self.primary();
-        let mut drawn = Vec::new();
-        let mut primary_drawn = None;
+        let mut shown = Vec::new();
         for output in &self.outputs {
             let (Some(name), Some(_)) = (&output.name, &output.surface) else {
                 continue;
             };
             let identity = self.identity(name);
             let settings = settings_for(&mut self.store, &identity, primary.as_ref());
-            if primary.as_ref() == Some(&identity) {
-                primary_drawn = Some(settings.drawn());
-            }
-            drawn.push((output.global, settings.drawn()));
+            shown.push((output.global, primary.as_ref() == Some(&identity), settings));
         }
+        let dynamics: Vec<&str> = shown
+            .iter()
+            .filter(|(_, _, settings)| settings.kind == Kind::Dynamic)
+            .map(|(_, _, settings)| settings.dynamic.as_str())
+            .collect();
+        self.dynamics
+            .retain(|path, _| dynamics.contains(&path.as_str()));
+        let sky = sky_now(self.caminito.as_ref());
+        let mut sources: Vec<Source> = Vec::new();
+        for (_, _, settings) in &shown {
+            if settings.kind == Kind::PictureOfTheDay && !sources.contains(&settings.source) {
+                sources.push(settings.source);
+            }
+        }
+        self.daily.borrow_mut().keep_only(&sources);
+        for &source in &sources {
+            fetch_if_due(&self.daily, source, sky.local, &self.refresh);
+        }
+        let mut drawn = Vec::new();
+        let mut primary_drawn = None;
+        for (global, is_primary, settings) in shown {
+            let moment = self.moment(&settings, &sky);
+            let daily = (settings.kind == Kind::PictureOfTheDay)
+                .then(|| self.daily.borrow_mut().latest(settings.source))
+                .flatten();
+            let output_drawn = settings.drawn(
+                moment.as_ref(),
+                daily.as_ref().map(|kept| kept.picture.as_path()),
+            );
+            if is_primary {
+                primary_drawn = Some(output_drawn.clone());
+            }
+            drawn.push((global, output_drawn));
+        }
+        self.wake_for_timed(&sky);
         if let Some(primary) = primary_drawn {
             self.bridge_out(&primary);
         }
-        let files = drawn.iter().filter_map(|(_, drawn)| match drawn {
-            Drawn::Picture { file, .. } => Some(file.as_str()),
-            Drawn::Colour(_) => None,
-        });
-        let files: Vec<String> = files.map(str::to_owned).collect();
+        let files: Vec<String> = drawn
+            .iter()
+            .flat_map(|(_, drawn)| drawn.files())
+            .map(str::to_owned)
+            .collect();
         self.pictures.keep_only(files.iter().map(String::as_str));
         for (global, drawn) in drawn {
             self.update(global, drawn);
         }
+    }
+
+    /// Wakes the drawer when the soonest timed XML shown next changes, if before the next
+    /// tick: at its next picture, or each second of its transition.
+    fn wake_for_timed(&mut self, sky: &Sky) {
+        let soonest = self
+            .dynamics
+            .values()
+            .flatten()
+            .filter_map(|dynamic| dynamic.next_change(sky))
+            .min();
+        let Some(seconds) = soonest.filter(|&seconds| seconds < u64::from(DYNAMIC_TICK)) else {
+            return;
+        };
+        if self.waking.replace(true) {
+            return;
+        }
+        let (refresh, waking) = (self.refresh.clone(), self.waking.clone());
+        glib::timeout_add_local_once(Duration::from_secs(seconds), move || {
+            waking.set(false);
+            refresh.schedule();
+        });
+    }
+
+    /// What the Dynamic of `settings` shows at `sky`, or `None` for another kind or a
+    /// dynamic wallpaper that can't be read.
+    fn moment(&mut self, settings: &OutputSettings, sky: &Sky) -> Option<Moment> {
+        if settings.kind != Kind::Dynamic || settings.dynamic.is_empty() {
+            return None;
+        }
+        let path = &settings.dynamic;
+        let dynamic = self.dynamics.entry(path.clone()).or_insert_with(|| {
+            Dynamic::read(std::path::Path::new(path))
+                .inspect_err(|err| {
+                    glib::g_warning!(DOMAIN, "can't show the dynamic wallpaper {path}: {err}");
+                })
+                .ok()
+        });
+        Some(dynamic.as_ref()?.at(sky))
     }
 
     /// Writes what the primary output shows to `org.mate.background`, where it differs.

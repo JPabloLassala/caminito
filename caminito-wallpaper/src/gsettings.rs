@@ -10,6 +10,7 @@ use gio::glib;
 use gio::prelude::*;
 
 use crate::bridge::Writes;
+use crate::daily::Source;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, MateBackground, OutputSettings, Set, Store};
 
@@ -146,6 +147,8 @@ impl Store for GioStore {
         OutputSettings {
             kind: Kind::from_nick(&settings.string("kind")),
             picture: settings.string("picture").into(),
+            dynamic: settings.string("dynamic").into(),
+            source: Source::from_nick(&settings.string("picture-of-the-day")),
             positioning: Positioning::from_nick(&settings.string("positioning")),
             colour: Colour::parse(&colour).unwrap_or_default(),
         }
@@ -157,6 +160,8 @@ impl Store for GioStore {
         let results = [
             settings.set_string("kind", written.kind.nick()),
             settings.set_string("picture", &written.picture),
+            settings.set_string("dynamic", &written.dynamic),
+            settings.set_string("picture-of-the-day", written.source.nick()),
             settings.set_string("positioning", written.positioning.nick()),
             settings.set_string("colour", &written.colour.text()),
         ];
@@ -190,6 +195,14 @@ impl Store for GioStore {
 
     fn set_folders(&mut self, folders: &[String]) {
         self.set_list("folders", folders);
+    }
+
+    fn dynamics(&self) -> Vec<String> {
+        self.list("dynamics")
+    }
+
+    fn set_dynamics(&mut self, dynamics: &[String]) {
+        self.set_list("dynamics", dynamics);
     }
 }
 
