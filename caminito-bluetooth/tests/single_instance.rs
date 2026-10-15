@@ -1,5 +1,6 @@
 //! `caminito-bluetooth` is one process through the session (255): a second start passes its
-//! command line to the first, which opens the window, and exits.
+//! command line to the first, which opens the window, and exits. `--scan` (258) opens it on
+//! Add New Device, which looks for devices, whether or not an instance is running.
 //!
 //! GTK needs a display to start, so the test is ignored unless asked for, and tools/check
 //! runs it under Xvfb. Each test's bus is its own, as both the session and the system bus.
@@ -8,6 +9,7 @@ mod mock;
 
 use std::process::{Child, Command};
 
+use caminito_bluetooth::bluez::Bluez;
 use gio::glib::variant::ToVariant;
 
 const APPLICATION: &str = "org.mate.Caminito.Bluetooth";
@@ -120,5 +122,61 @@ fn a_second_start_reaches_the_first_which_opens_the_window() {
             first.0.try_wait().unwrap().is_none(),
             "the first is still running"
         );
+    });
+}
+
+/// BlueZ as the test sees it, followed so that its changes wake the test.
+fn follow(mock: &mock::Mock) -> Bluez {
+    let bluez = Bluez::new(&mock.connection);
+    mock.wait_until("BlueZ's objects", || bluez.is_ready());
+    bluez
+}
+
+fn discovering(bluez: &Bluez) -> bool {
+    bluez.adapters().iter().any(|adapter| adapter.discovering)
+}
+
+#[test]
+#[ignore = "GTK needs a display: tools/check runs it under Xvfb"]
+fn scan_with_no_instance_running_starts_one_on_add_new_device() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let bluez = follow(mock);
+        let _program = Killed(
+            start(mock, &["--scan"])
+                .spawn()
+                .expect("caminito-bluetooth starts"),
+        );
+        mock.wait_until("the window to look for devices", || discovering(&bluez));
+        assert!(windows(mock).contains("<node name=\"1\""));
+    });
+}
+
+#[test]
+#[ignore = "GTK needs a display: tools/check runs it under Xvfb"]
+fn scan_reaches_the_running_instance_and_shows_add_new_device() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let bluez = follow(mock);
+        let mut first = Killed(
+            start(mock, &["--background"])
+                .spawn()
+                .expect("caminito-bluetooth starts"),
+        );
+        mock.wait_for_name(APPLICATION);
+        assert!(!discovering(&bluez));
+
+        // Once without a window, and then again, with the window open on This computer.
+        for arguments in [&["--scan"][..], &[], &["--scan"]] {
+            let status = start(mock, arguments)
+                .status()
+                .expect("caminito-bluetooth starts");
+            assert!(status.success());
+            if arguments == ["--scan"] {
+                mock.wait_until("the window to look for devices", || discovering(&bluez));
+            }
+            assert!(first.0.try_wait().unwrap().is_none(), "still the first");
+            assert_eq!(owner_pid(mock), first.0.id());
+        }
     });
 }

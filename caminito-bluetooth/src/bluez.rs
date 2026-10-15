@@ -24,6 +24,11 @@ const BLUEZ: &str = "org.bluez";
 const OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 
+/// How long a call waits for BlueZ, which can take as long as its own page timeout and more.
+const CALL_TIMEOUT_MS: i32 = 60_000;
+/// A pairing waits for the user too: BlueZ gives each of the agent's questions a minute.
+const PAIRING_TIMEOUT_MS: i32 = 180_000;
+
 /// A Bluetooth adapter, as `org.bluez.Adapter1` describes it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Adapter {
@@ -215,6 +220,13 @@ impl Bluez {
         self.inner.borrow_mut().listeners.push(Rc::new(listener));
     }
 
+    /// Pairs the device at `device`. BlueZ asks the agent as it needs to, so this waits for
+    /// the user to answer its dialogs, and is given longer than the others to.
+    pub async fn pair(&self, device: &str) -> Result<(), Error> {
+        self.call_for(device, DEVICE, "Pair", None, "pair", PAIRING_TIMEOUT_MS)
+            .await
+    }
+
     /// Connects the device at `device`, with every profile it allows.
     pub async fn connect(&self, device: &str) -> Result<(), Error> {
         self.call(device, DEVICE, "Connect", None, "connect").await
@@ -349,6 +361,19 @@ impl Bluez {
         parameters: Option<&Variant>,
         action: &str,
     ) -> Result<(), Error> {
+        self.call_for(path, interface, method, parameters, action, CALL_TIMEOUT_MS)
+            .await
+    }
+
+    async fn call_for(
+        &self,
+        path: &str,
+        interface: &str,
+        method: &str,
+        parameters: Option<&Variant>,
+        action: &str,
+        timeout_ms: i32,
+    ) -> Result<(), Error> {
         object_path(path)?;
         let connection = self.inner.borrow().connection.clone();
         connection
@@ -360,8 +385,7 @@ impl Bluez {
                 parameters,
                 None,
                 gio::DBusCallFlags::NONE,
-                // Connecting can take as long as BlueZ's own page timeout and more.
-                60_000,
+                timeout_ms,
             )
             .await
             .map(drop)

@@ -1,0 +1,14 @@
+light: before the program, Discovering is (<false>,)
+light: with Add New Device shown, Discovering is (<true>,)
+light: the phone is Paired (<true>,), Trusted (<true>,)
+light: with This computer shown, Discovering is (<false>,)
+light: with Add New Device shown again, Discovering is (<true>,)
+light: after Ctrl+W, Discovering is (<false>,)
+light: caminito-bluetooth still running
+dark: before the program, Discovering is (<false>,)
+dark: with Add New Device shown, Discovering is (<true>,)
+dark: the phone is Paired (<true>,), Trusted (<true>,)
+dark: with This computer shown, Discovering is (<false>,)
+dark: with Add New Device shown again, Discovering is (<true>,)
+dark: after Ctrl+W, Discovering is (<false>,)
+dark: caminito-bluetooth still running

@@ -163,6 +163,56 @@ impl Mock {
         .to_owned()
     }
 
+    /// Announces a device the way BlueZ does one it finds in a scan, as `InterfacesAdded`
+    /// with `Device1` only, and no object behind it in the mock: with no `Name` when `name`
+    /// is None, as BlueZ has none for a device that doesn't say, and the address for an
+    /// `Alias`. Returns its path.
+    pub fn announce_device(&self, adapter: &str, address: &str, name: Option<&str>) -> String {
+        let path = format!("{adapter}/dev_{}", address.replace(':', "_"));
+        let mut properties = HashMap::from([
+            ("Address".to_owned(), address.to_variant()),
+            ("Adapter".to_owned(), object_path(adapter).to_variant()),
+            ("Alias".to_owned(), name.unwrap_or(address).to_variant()),
+            ("Icon".to_owned(), "phone".to_variant()),
+            ("Paired".to_owned(), false.to_variant()),
+            ("Trusted".to_owned(), false.to_variant()),
+            ("Connected".to_owned(), false.to_variant()),
+        ]);
+        if let Some(name) = name {
+            properties.insert("Name".to_owned(), name.to_variant());
+        }
+        let interfaces = HashMap::from([("org.bluez.Device1".to_owned(), properties)]);
+        let arguments = vec![
+            Variant::from_variant(&object_path(&path).to_variant()),
+            Variant::from_variant(&interfaces.to_variant()),
+        ];
+        self.mock(
+            "/",
+            "org.freedesktop.DBus.Mock",
+            "EmitSignal",
+            &(
+                "org.freedesktop.DBus.ObjectManager",
+                "InterfacesAdded",
+                "oa{sa{sv}}",
+                arguments,
+            )
+                .to_variant(),
+        );
+        path
+    }
+
+    /// Makes the device at `device` refuse to pair, answering `Pair` with BlueZ's error
+    /// `name` and `message`, as a device that gives a wrong PIN or goes out of range does.
+    pub fn fail_pairing(&self, device: &str, name: &str, message: &str) {
+        let code = format!("raise dbus.exceptions.DBusException({message:?}, name={name:?})",);
+        self.mock(
+            device,
+            "org.freedesktop.DBus.Mock",
+            "AddMethod",
+            &("org.bluez.Device1", "Pair", "", "", code).to_variant(),
+        );
+    }
+
     /// Marks a device as paired.
     pub fn pair(&self, adapter: &str, address: &str) {
         self.mock(
