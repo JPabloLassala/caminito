@@ -9,6 +9,7 @@ use crate::daily::Source;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, OutputSettings, Set, Store, settings_for};
+use crate::slideshow::{self, Interval};
 
 #[cfg(test)]
 mod tests;
@@ -195,16 +196,16 @@ impl Page {
         store.set_same_on_all_outputs(same);
     }
 
-    /// Shows `kind`'s controls. A Picture or a Dynamic with something to show, a Colour and
-    /// a Picture of the day, whose source has a default, are the selected output's at once;
-    /// the Slideshow, which a later ticket builds, is only shown.
+    /// Shows `kind`'s controls. A Picture, a Slideshow or a Dynamic with something to show,
+    /// a Colour and a Picture of the day, whose source has a default, are the selected
+    /// output's at once.
     pub fn show_kind(&mut self, store: &mut (impl Store + ?Sized), kind: Kind) {
         self.kind = kind;
         let applies = match kind {
             Kind::Picture => !self.current(store).picture.is_empty(),
             Kind::Colour | Kind::PictureOfTheDay => true,
+            Kind::Slideshow => !self.current(store).slideshow.is_empty(),
             Kind::Dynamic => !self.current(store).dynamic.is_empty(),
-            Kind::Slideshow => false,
         };
         if applies {
             self.change(store, |settings| settings.kind = kind);
@@ -270,6 +271,41 @@ impl Page {
         self.choose_dynamic(store, file);
     }
 
+    /// Makes the pictures of `folder` the selected output's, as a Slideshow (213).
+    pub fn choose_slideshow(&mut self, store: &mut (impl Store + ?Sized), folder: &str) {
+        self.kind = Kind::Slideshow;
+        self.change(store, |settings| {
+            settings.kind = Kind::Slideshow;
+            settings.slideshow = folder.to_owned();
+        });
+    }
+
+    /// Sets how long each of the selected output's Slideshow pictures shows.
+    pub fn choose_interval(&mut self, store: &mut (impl Store + ?Sized), interval: Interval) {
+        self.change(store, |settings| settings.interval = interval);
+    }
+
+    /// Sets whether the selected output's Slideshow goes by name rather than at random.
+    pub fn choose_in_order(&mut self, store: &mut (impl Store + ?Sized), in_order: bool) {
+        self.change(store, |settings| settings.in_order = in_order);
+    }
+
+    /// Each output's rank among the outputs on the same Slideshow's folder, as the drawer
+    /// ranks them, so the sidebar shows each the picture the drawer does; `None` for one
+    /// that isn't a Slideshow.
+    pub fn slideshow_ranks(&self, store: &(impl Store + ?Sized)) -> Vec<Option<usize>> {
+        let shown: Vec<(String, OutputSettings)> = (0..self.outputs.len())
+            .map(|index| {
+                let element = self.outputs[index].identity.path_element();
+                (element, self.wallpaper(store, index))
+            })
+            .collect();
+        let shown: Vec<(&str, &OutputSettings)> = shown
+            .iter()
+            .map(|(element, settings)| (element.as_str(), settings))
+            .collect();
+        slideshow::ranks(&shown)
+    }
     /// Makes today's picture from `source` the selected output's (214).
     pub fn choose_source(&mut self, store: &mut (impl Store + ?Sized), source: Source) {
         self.kind = Kind::PictureOfTheDay;

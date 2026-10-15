@@ -9,6 +9,7 @@ use crate::daily::Source;
 use crate::dynamic::Moment;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
+use crate::slideshow::{Interval, Slideshow};
 
 /// Which of the five things an output's wallpaper is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -108,6 +109,12 @@ pub struct OutputSettings {
     pub picture: String,
     /// The Dynamic's: a Plasma package's folder or a timed XML (216).
     pub dynamic: String,
+    /// The Slideshow's folder (213).
+    pub slideshow: String,
+    /// How long each of the Slideshow's pictures shows.
+    pub interval: Interval,
+    /// Whether the Slideshow goes by name rather than at random.
+    pub in_order: bool,
     /// The Picture of the day's source (214).
     pub source: Source,
     pub positioning: Positioning,
@@ -169,11 +176,18 @@ impl Drawn {
 }
 
 impl OutputSettings {
-    /// What's drawn, with `moment` what the Dynamic shows now and `daily` the Picture of the
-    /// day's source's latest picture. A Picture with no file, a Dynamic with no moment and a
-    /// Picture of the day with no picture yet are their colour, and the Slideshow, which a
-    /// later ticket draws, is its colour until then. A Dynamic's blend is in whole percent,
-    /// so a frame is drawn again only when it shows.
+    /// The Slideshow's pictures as its folder has them now, or `None` with no folder
+    /// chosen (213).
+    pub fn read_slideshow(&self) -> Option<Slideshow> {
+        (!self.slideshow.is_empty())
+            .then(|| Slideshow::read(Path::new(&self.slideshow), self.interval, self.in_order))
+    }
+
+    /// What's drawn, with `moment` what the Dynamic or the Slideshow shows now, a Slideshow's
+    /// still, its picture alone (213), and `daily` the Picture of the day's source's latest
+    /// picture (214). A Picture with no file, a Dynamic or a Slideshow with no moment and a
+    /// Picture of the day with no picture yet are their colour. A Dynamic's blend is in whole
+    /// percent, so a frame is drawn again only when it shows.
     pub fn drawn(&self, moment: Option<&Moment>, daily: Option<&Path>) -> Drawn {
         let picture = |file: &str| Drawn::Picture {
             file: file.to_owned(),
@@ -185,7 +199,7 @@ impl OutputSettings {
             (Kind::PictureOfTheDay, _) if let Some(file) = daily => {
                 picture(&file.to_string_lossy())
             }
-            (Kind::Dynamic, Some(moment)) => {
+            (Kind::Dynamic | Kind::Slideshow, Some(moment)) => {
                 let percent = (moment.blend.clamp(0.0, 1.0) * 100.0).round() as u8;
                 let (from, to) = (moment.from.to_string_lossy(), moment.to.to_string_lossy());
                 match percent {
@@ -371,10 +385,9 @@ pub fn take_mate_background(store: &mut (impl Store + ?Sized), mate: &MateBackgr
     let settings = OutputSettings {
         kind,
         picture: mate.picture.clone(),
-        dynamic: String::new(),
-        source: Source::default(),
         positioning: Positioning::from_mate(&mate.options),
         colour,
+        ..OutputSettings::default()
     };
     store.write(&Set::All, &settings);
     store.set_took_mate_background();

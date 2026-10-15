@@ -13,6 +13,7 @@ use crate::bridge::Writes;
 use crate::daily::Source;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, MateBackground, OutputSettings, Set, Store};
+use crate::slideshow::Interval;
 
 /// The schema of the keys that aren't an output's.
 pub const SCHEMA: &str = "org.mate.Caminito.wallpaper";
@@ -148,6 +149,9 @@ impl Store for GioStore {
             kind: Kind::from_nick(&settings.string("kind")),
             picture: settings.string("picture").into(),
             dynamic: settings.string("dynamic").into(),
+            slideshow: settings.string("slideshow").into(),
+            interval: Interval::from_nick(&settings.string("slideshow-interval")),
+            in_order: settings.boolean("slideshow-in-order"),
             source: Source::from_nick(&settings.string("picture-of-the-day")),
             positioning: Positioning::from_nick(&settings.string("positioning")),
             colour: Colour::parse(&colour).unwrap_or_default(),
@@ -161,6 +165,9 @@ impl Store for GioStore {
             settings.set_string("kind", written.kind.nick()),
             settings.set_string("picture", &written.picture),
             settings.set_string("dynamic", &written.dynamic),
+            settings.set_string("slideshow", &written.slideshow),
+            settings.set_string("slideshow-interval", written.interval.nick()),
+            settings.set_boolean("slideshow-in-order", written.in_order),
             settings.set_string("picture-of-the-day", written.source.nick()),
             settings.set_string("positioning", written.positioning.nick()),
             settings.set_string("colour", &written.colour.text()),

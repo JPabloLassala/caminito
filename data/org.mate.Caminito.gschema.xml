@@ -36,6 +36,13 @@
     <value nick="tile" value="4"/>
   </enum>
 
+  <enum id="org.mate.Caminito.WallpaperInterval">
+    <value nick="5-minutes" value="0"/>
+    <value nick="15-minutes" value="1"/>
+    <value nick="hour" value="2"/>
+    <value nick="day" value="3"/>
+  </enum>
+
   <schema id="org.mate.Caminito" path="/org/mate/caminito/">
     <!--
       The workspace grid, as _NET_DESKTOP_LAYOUT has it on X11, where the pager sets it and
@@ -178,7 +185,7 @@
     <key name="kind" enum="org.mate.Caminito.WallpaperKind">
       <default>'colour'</default>
       <summary>The wallpaper's kind</summary>
-      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names, or "dynamic", the dynamic wallpaper "dynamic" names, or "picture-of-the-day", today's picture from the source "picture-of-the-day" names. "slideshow" is shown as its colour until caminito-wallpaperd draws it.</description>
+      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names, or "slideshow", the pictures of the folder "slideshow" names, or "dynamic", the dynamic wallpaper "dynamic" names, or "picture-of-the-day", today's picture from the source "picture-of-the-day" names.</description>
     </key>
     <key name="picture" type="s">
       <default>''</default>
@@ -189,6 +196,21 @@
       <default>''</default>
       <summary>The dynamic wallpaper</summary>
       <description>What a "dynamic" wallpaper shows: the folder of a Plasma package with light and dark pictures, which follow the sun, or a GNOME timed XML file, which follows the clock. With none, or one that can't be read, the output shows its colour.</description>
+    </key>
+    <key name="slideshow" type="s">
+      <default>''</default>
+      <summary>The slideshow's folder</summary>
+      <description>The folder whose pictures a "slideshow" wallpaper shows one after another, its own and not its folders'. Pictures added to it or taken from it are picked up. With none, or a folder that's empty or missing, the output shows its colour.</description>
+    </key>
+    <key name="slideshow-interval" enum="org.mate.Caminito.WallpaperInterval">
+      <default>'15-minutes'</default>
+      <summary>How long each of the slideshow's pictures shows</summary>
+      <description>The slideshow changes at each whole interval of the local clock: every 5 minutes, 15 minutes or hour from midnight, or at midnight for "day".</description>
+    </key>
+    <key name="slideshow-in-order" type="b">
+      <default>false</default>
+      <summary>Whether the slideshow goes by name</summary>
+      <description>Whether the slideshow shows its pictures in the order of their names rather than at random. At random, every picture shows once before any shows again. Either way, each output on the same folder shows a different picture while the folder has enough.</description>
     </key>
     <key name="picture-of-the-day" enum="org.mate.Caminito.PictureOfTheDaySource">
       <default>'bing'</default>

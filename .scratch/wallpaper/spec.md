@@ -2,7 +2,7 @@
 
 Written on 2026-10-12 from a grilling session with the developer. It holds the decisions, and links the ADR that holds the one hard to reverse. Where the two differ, the ADR is right and this file is to be fixed.
 
-Ticket 210's drawer, 211's bridges to `org.mate.background`, 212's dialog, with its Picture and Colour, 214's Picture of the day, and 216's Dynamic, for Plasma's pairs and GNOME's timed XML, are built; the rest isn't.
+Ticket 210's drawer, 211's bridges to `org.mate.background`, 212's dialog, with its Picture and Colour, 213's Slideshow, 214's Picture of the day, and 216's Dynamic, for Plasma's pairs and GNOME's timed XML, are built; the rest isn't.
 
 ## Problem
 

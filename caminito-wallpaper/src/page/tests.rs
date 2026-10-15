@@ -1,5 +1,6 @@
 use super::*;
 use crate::settings::Memory;
+use crate::slideshow::Interval;
 
 fn aoc() -> Output {
     Output::new(
@@ -179,14 +180,66 @@ fn a_colour_and_a_positioning_are_kept_with_the_picture() {
 }
 
 #[test]
-fn a_kind_not_built_yet_is_shown_and_not_written() {
+fn a_slideshow_chosen_is_the_selected_outputs_with_its_interval_and_order() {
+    let mut store = store(false);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+    page.choose_positioning(&mut store, Positioning::Fit);
+
+    page.choose_slideshow(&mut store, "/home/me/Walls");
+    page.choose_interval(&mut store, Interval::Day);
+    page.choose_in_order(&mut store, true);
+
+    assert_eq!(page.kind(), Kind::Slideshow);
+    assert_eq!(
+        page.current(&store),
+        OutputSettings {
+            kind: Kind::Slideshow,
+            slideshow: "/home/me/Walls".into(),
+            interval: Interval::Day,
+            in_order: true,
+            positioning: Positioning::Fit,
+            ..picture("/lg.png")
+        }
+    );
+    assert_eq!(page.wallpaper(&store, 1), picture("/aoc.png"));
+
+    // Back to Picture, and to Slideshow again: each shows what it had.
+    page.show_kind(&mut store, Kind::Picture);
+    assert_eq!(page.current(&store).kind, Kind::Picture);
+    page.show_kind(&mut store, Kind::Slideshow);
+    assert_eq!(page.current(&store).kind, Kind::Slideshow);
+    assert_eq!(page.current(&store).slideshow, "/home/me/Walls");
+}
+
+#[test]
+fn slideshow_with_no_folder_chosen_is_shown_and_not_written() {
     let mut store = store(false);
     let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
 
     page.show_kind(&mut store, Kind::Slideshow);
+    page.choose_interval(&mut store, Interval::Hour);
 
     assert_eq!(page.kind(), Kind::Slideshow);
-    assert_eq!(page.current(&store), picture("/lg.png"));
+    assert_eq!(page.current(&store).kind, Kind::Picture);
+    assert_eq!(page.current(&store).interval, Interval::Hour);
+}
+
+#[test]
+fn with_the_switch_on_a_slideshow_is_every_outputs_and_each_ranks_apart() {
+    let mut store = store(true);
+    let mut page = Page::new(&mut store, vec![laptop(), aoc(), lg()], None);
+
+    page.choose_slideshow(&mut store, "/home/me/Walls");
+
+    for index in 0..3 {
+        assert_eq!(page.wallpaper(&store, index).slideshow, "/home/me/Walls");
+    }
+    let mut ranks = page.slideshow_ranks(&store);
+    ranks.sort();
+    assert_eq!(ranks, [Some(0), Some(1), Some(2)]);
+
+    page.show_kind(&mut store, Kind::Colour);
+    assert_eq!(page.slideshow_ranks(&store), [None, None, None]);
 }
 
 #[test]

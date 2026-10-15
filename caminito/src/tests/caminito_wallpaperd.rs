@@ -3,7 +3,8 @@
 //! follows the outputs as they come and go without leaving any behind (88), draws a change
 //! of its settings without a restart, takes MATE's picture on its first run alone, and keeps
 //! `org.mate.background` bridged both ways (211). A dynamic wallpaper's pair is drawn by
-//! the local time (216). What each output shows is in the lock screen's file (218).
+//! the local time (216), and two outputs on one slideshow's folder show two of its pictures
+//! (213). What each output shows is in the lock screen's file (218).
 //!
 //! It needs the built drawer, named by `CAMINITO_WALLPAPERD`, so these are ignored by
 //! default and `tools/check` runs them after the workspace's build. As the locker's tests
@@ -545,6 +546,44 @@ fn a_plasma_pair_is_light_at_noon_and_dark_at_midnight() {
     drawer.tz = Some(tz_at(0));
     drawer.start(&mut f);
     wait_for_color(&mut f, &outputs, 0x202040);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_WALLPAPERD; tools/check runs it"]
+fn two_outputs_on_one_slideshow_show_different_pictures() {
+    let mut f = Fixture::new();
+    let outputs = [
+        f.add_output((1920, 1080), 1.0),
+        f.add_output((1280, 1024), 1.0),
+    ];
+    let folder = tempfile::tempdir().unwrap();
+    let colours = [0xa04040, 0x4040a0];
+    for (name, rgb) in ["a.png", "b.png"].into_iter().zip(colours) {
+        std::fs::write(folder.path().join(name), png(rgb)).unwrap();
+    }
+    // A day, so the test doesn't see a change unless it runs over midnight.
+    let settings = format!(
+        "{GREEN}kind='slideshow'\nslideshow='{}'\nslideshow-interval='day'\n",
+        folder.path().display()
+    )
+    .replace("kind='colour'\n", "");
+
+    let drawer = Drawer::start_with(&mut f, &settings);
+    let middle = |output: &Output| {
+        let size = output.current_mode().unwrap().size;
+        (size.w / 2, size.h / 2).into()
+    };
+    let mut shown = Vec::new();
+    f.dispatch_until_mut(|f| {
+        shown = outputs
+            .iter()
+            .map(|output| f.state.backend.headless_mut().pixel(output, middle(output)))
+            .collect();
+        shown
+            .iter()
+            .all(|pixel| colours.iter().any(|rgb| *pixel == Some(0xff00_0000 | rgb)))
+    });
+    assert_ne!(shown[0], shown[1], "{shown:08x?}\n{}", drawer.seen());
 }
 
 /// A PNG of 8 by 8 pixels of `rgb`, `0xrrggbb`, uncompressed.

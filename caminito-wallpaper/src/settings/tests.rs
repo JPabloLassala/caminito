@@ -177,7 +177,7 @@ fn mates_colour_alone_is_a_colour() {
 }
 
 #[test]
-fn a_kind_drawn_by_a_later_ticket_is_its_colour_until_then() {
+fn a_slideshow_with_no_moment_is_its_colour_whatever_the_picture_of_the_day() {
     let settings = OutputSettings {
         kind: Kind::Slideshow,
         ..colour("#123456")
@@ -272,4 +272,26 @@ pub(crate) fn colours_are_read_in_three_lengths() {
     assert_eq!(Colour::parse("608040"), None);
     assert_eq!(Colour::parse("#60804g"), None);
     assert_eq!(expected.text(), "#608040");
+}
+
+#[test]
+fn a_slideshow_is_its_moments_picture_or_else_its_colour() {
+    let settings = OutputSettings {
+        kind: Kind::Slideshow,
+        slideshow: "/home/me/Walls".into(),
+        positioning: Positioning::Centre,
+        ..colour("#123456")
+    };
+    let moment = Moment::still(std::path::Path::new("/home/me/Walls/sea.jpg"));
+
+    assert_eq!(
+        settings.drawn(Some(&moment), None),
+        Drawn::Picture {
+            file: "/home/me/Walls/sea.jpg".into(),
+            positioning: Positioning::Centre,
+            colour: settings.colour,
+        }
+    );
+    // An empty or missing folder has no moment.
+    assert_eq!(settings.drawn(None, None), Drawn::Colour(settings.colour));
 }
