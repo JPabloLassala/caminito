@@ -15,10 +15,9 @@ typedef struct
 {
   const char *name;
   const char *path;
-  /* The interface is named as the bus name. */
 } Daemon;
 
-/* In the order of preference. */
+/* In the order of preference. Each one's interface is named as its bus name. */
 static const Daemon daemons[] = {
   { "org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles" },
   { "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles" },
@@ -77,7 +76,13 @@ on_proxy (GObject *source G_GNUC_UNUSED, GAsyncResult *result, gpointer data)
     {
       /* Cancelled means the applet is gone, and the daemon with it. */
       if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-        g_warning ("can't follow power-profiles-daemon: %s", error->message);
+        {
+          PwPpd *failed = data;
+
+          g_warning ("can't follow power-profiles-daemon: %s", error->message);
+          /* The next change of owner tries again. */
+          failed->current = -1;
+        }
       return;
     }
 

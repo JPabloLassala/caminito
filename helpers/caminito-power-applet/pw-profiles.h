@@ -38,10 +38,10 @@ typedef struct
   GPtrArray *holds;
 } PwProfiles;
 
-/* From the daemon's properties Profiles (aa{sv}), ActiveProfile (s), PerformanceDegraded (s)
-   and ActiveProfileHolds (aa{sv}), each NULL or of another type where the daemon doesn't
-   have it. Free it with pw_profiles_free. */
-PwProfiles *pw_profiles_new  (GVariant *profiles,
+/* From the daemon's properties Profiles (listed, aa{sv}), ActiveProfile (s),
+   PerformanceDegraded (s) and ActiveProfileHolds (aa{sv}), each NULL or of another type
+   where the daemon doesn't have it. Free it with pw_profiles_free. */
+PwProfiles *pw_profiles_new  (GVariant *listed,
                               GVariant *active,
                               GVariant *degraded,
                               GVariant *holds);

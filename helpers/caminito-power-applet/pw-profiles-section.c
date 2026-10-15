@@ -132,7 +132,7 @@ on_tile_toggled (GtkToggleButton *tile, gpointer data)
   for (int i = 0; i < PW_PROFILE_COUNT; i++)
     if (GTK_WIDGET (tile) == section->tiles[i] && gtk_toggle_button_get_active (tile)
         && section->shown->active != (PwProfile) i)
-      pw_ppd_set_active (section->ppd, i);
+      pw_ppd_set_active (section->ppd, (PwProfile) i);
   show (section, section->shown);
 }
 
@@ -194,7 +194,7 @@ pw_profiles_section_new (void)
   gtk_box_set_homogeneous (GTK_BOX (tiles), TRUE);
   for (int i = 0; i < PW_PROFILE_COUNT; i++)
     {
-      section->tiles[i] = tile_new (i);
+      section->tiles[i] = tile_new ((PwProfile) i);
       g_signal_connect (section->tiles[i], "toggled", G_CALLBACK (on_tile_toggled), section);
       gtk_box_pack_start (GTK_BOX (tiles), section->tiles[i], TRUE, TRUE, 0);
     }

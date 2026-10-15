@@ -192,7 +192,7 @@ name_from_id (const char *id)
 
   if (id == NULL || id[0] == '\0')
     return g_strdup ("An application");
-  trimmed = g_str_has_suffix (id, ".desktop") ? g_strndup (id, strlen (id) - 8) : g_strdup (id);
+  trimmed = g_str_has_suffix (id, ".desktop") ? g_strndup (id, strlen (id) - strlen (".desktop")) : g_strdup (id);
   dot = strrchr (trimmed, '.');
   if (dot != NULL && dot[1] != '\0')
     return g_strdup (dot + 1);

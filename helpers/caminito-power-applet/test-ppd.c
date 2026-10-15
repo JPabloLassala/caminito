@@ -303,6 +303,8 @@ test_no_daemon (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   fixture->ppd = pw_ppd_new (on_changed, fixture);
   wait_until (fixture, active_is, "no daemon");
   pw_ppd_set_active (fixture->ppd, PW_PROFILE_PERFORMANCE);
+  /* A call that went out would be answered, or fail, within a few milliseconds on a private
+     bus: a fifth of a second of the loop lets a stray one show up as a crash or a mock. */
   for (int i = 0; i < 20; i++)
     {
       g_main_context_iteration (NULL, FALSE);
@@ -368,6 +370,8 @@ test_free_early (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   fixture->ppd = pw_ppd_new (on_changed, fixture);
   /* Freed before the proxy is up: nothing may call into it afterwards. */
   g_clear_pointer (&fixture->ppd, pw_ppd_free);
+  /* The proxy's reply, if it came, would come within a few milliseconds on a private bus:
+     half a second of the loop gives a stray callback ample time to crash the test. */
   for (int i = 0; i < 50; i++)
     {
       g_main_context_iteration (NULL, FALSE);
