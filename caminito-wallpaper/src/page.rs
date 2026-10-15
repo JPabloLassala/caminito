@@ -259,15 +259,21 @@ impl Page {
         });
     }
 
-    /// Adds the timed XML `file` to the dynamic wallpapers the user added, once, and makes
-    /// it the selected output's. The dialog reads it first, so as to add only one that is.
+    /// Adds the timed XML or HEIC `file` to the dynamic wallpapers the user added, once, and
+    /// makes it the selected output's. The dialog reads it first, so as to add only one that is.
     pub fn add_dynamic(&mut self, store: &mut (impl Store + ?Sized), file: &str) {
+        self.keep_dynamic(store, file);
+        self.choose_dynamic(store, file);
+    }
+
+    /// Adds `file` to the dynamic wallpapers the user added, once, without making it the
+    /// selected output's: a HEIC added without libheif to show it (217).
+    pub fn keep_dynamic(&mut self, store: &mut (impl Store + ?Sized), file: &str) {
         let mut dynamics = store.dynamics();
         if !dynamics.iter().any(|added| added == file) {
             dynamics.push(file.to_owned());
             store.set_dynamics(&dynamics);
         }
-        self.choose_dynamic(store, file);
     }
 
     /// Makes today's picture from `source` the selected output's (214).

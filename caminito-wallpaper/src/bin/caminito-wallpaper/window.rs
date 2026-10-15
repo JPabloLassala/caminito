@@ -4,12 +4,14 @@
 //! draws it.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
 use caminito_wallpaper::daily::{self, Cache, Kept, Source};
 use caminito_wallpaper::dynamic::Dynamic;
 use caminito_wallpaper::grid::{self, DynamicGroup, Group, Installed, Roots};
+use caminito_wallpaper::heic;
 use caminito_wallpaper::monitors::Monitors;
 use caminito_wallpaper::page::{Output, Page};
 use caminito_wallpaper::sun::sky_now;
@@ -80,6 +82,8 @@ struct Ui {
     dynamic_thumbnails: RefCell<Vec<(PathBuf, gtk::FlowBoxChild)>>,
     /// Why the last file given to the Dynamic pane's "Add…" wasn't added, until another is.
     refused: RefCell<Option<String>>,
+    /// The HEICs whose pictures are being decoded for their thumbnails (217).
+    decoding: RefCell<HashSet<PathBuf>>,
     /// Caminito's D-Bus interface, for the primary output.
     caminito: Option<gio::DBusProxy>,
     /// Where the drawer keeps each source's picture of the day (214).
@@ -561,6 +565,7 @@ fn build(
         shown_dynamic_groups: RefCell::new(Vec::new()),
         dynamic_thumbnails: RefCell::new(Vec::new()),
         refused: RefCell::new(None),
+        decoding: RefCell::default(),
         caminito,
         cache,
         _cache_monitor: cache_monitor,
@@ -833,12 +838,15 @@ impl Ui {
         self.render();
     }
 
-    /// Asks for a timed XML, and adds it and makes it the selected output's if it is one,
-    /// or says why not.
+    /// Asks for a timed XML or a HEIC, and adds it and makes it the selected output's if it
+    /// is one, or says why not. A HEIC added without libheif is added, greyed out, and not
+    /// made the output's.
     fn add_dynamic(&self) {
         let filter = gtk::FileFilter::new();
-        filter.set_name(Some("Timed wallpapers"));
-        filter.add_suffix("xml");
+        filter.set_name(Some("Dynamic wallpapers"));
+        for suffix in ["xml", "heic", "heif"] {
+            filter.add_suffix(suffix);
+        }
         let filters = gio::ListStore::new::<gtk::FileFilter>();
         filters.append(&filter);
         let dialog = gtk::FileDialog::builder()
@@ -849,6 +857,16 @@ impl Ui {
             .build();
         let on = self.handler(|ui, path: PathBuf| match Dynamic::read(&path) {
             Ok(Dynamic::Timed(_)) => {
+                *ui.refused.borrow_mut() = None;
+                let file = path.to_string_lossy();
+                ui.act(|page, store| page.add_dynamic(store, &file));
+            }
+            Ok(Dynamic::Heic(_)) if heic::decoder().is_none() => {
+                *ui.refused.borrow_mut() = None;
+                let file = path.to_string_lossy();
+                ui.act(|page, store| page.keep_dynamic(store, &file));
+            }
+            Ok(Dynamic::Heic(_)) => {
                 *ui.refused.borrow_mut() = None;
                 let file = path.to_string_lossy();
                 ui.act(|page, store| page.add_dynamic(store, &file));
@@ -1080,6 +1098,16 @@ impl Ui {
         if let Some(refused) = self.refused.borrow().clone() {
             return refused;
         }
+        let greyed = heic::decoder().is_none()
+            && self
+                .shown_dynamic_groups
+                .borrow()
+                .iter()
+                .flat_map(|group| group.wallpapers.iter())
+                .any(|offered| offered.dynamic.heic().is_some());
+        if greyed {
+            return format!("HEIC files are greyed out: {}.", heic::NO_DECODER);
+        }
         if current.dynamic.is_empty() {
             return "Choose a dynamic wallpaper.".into();
         }
@@ -1091,6 +1119,12 @@ impl Ui {
             .find(|offered| offered.path == Path::new(&current.dynamic))
             .map(|offered| Ok(offered.dynamic.clone()));
         match offered.unwrap_or_else(|| Dynamic::read(Path::new(&current.dynamic))) {
+            Ok(Dynamic::Heic(heic)) if !heic.decoded() && heic::decoder().is_none() => {
+                format!("It can't be shown: {}.", heic::NO_DECODER)
+            }
+            Ok(Dynamic::Heic(heic)) if heic.schedule().follows_sun() => {
+                "Follows the sun: each of its pictures shows where the sun is in it.".into()
+            }
             Ok(dynamic) if dynamic.follows_sun() => {
                 "Follows the sun: light by day and dark by night, as Night Light warms.".into()
             }
@@ -1167,6 +1201,9 @@ impl Ui {
             Kind::Dynamic if !settings.dynamic.is_empty() => {
                 Dynamic::read(Path::new(&settings.dynamic))
                     .ok()
+                    // A HEIC's pictures once decoded, not before, or the decoder would keep
+                    // that they can't be.
+                    .filter(Dynamic::ready)
                     .map(|dynamic| {
                         let sky = sky_now(self.caminito.as_ref());
                         dynamic.at(&sky).nearer().to_owned()
@@ -1285,7 +1322,7 @@ impl Ui {
         let mut thumbnails = Vec::new();
         if groups.is_empty() {
             self.dynamic_grid.append(&message(
-                "There are no dynamic wallpapers installed. Add a timed XML of yours.",
+                "There are no dynamic wallpapers installed. Add a timed XML or a HEIC of yours.",
             ));
         }
         for group in groups {
@@ -1301,7 +1338,12 @@ impl Ui {
                 .build();
             for offered in &group.wallpapers {
                 let (day, night) = offered.dynamic.day_and_night();
-                let thumbnail = self.day_and_night_thumbnail(&day, &night);
+                // A HEIC's pictures are decoded first, then the grid is drawn again.
+                let ready = offered.dynamic.ready();
+                if let Some(heic) = offered.dynamic.heic().filter(|_| !ready) {
+                    self.decode(heic);
+                }
+                let thumbnail = self.day_and_night_thumbnail(&day, &night, ready);
                 let name = dynamic_name(&offered.path);
                 let column = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 column.append(&thumbnail);
@@ -1317,6 +1359,14 @@ impl Ui {
                     .css_classes(["caminito-wallpaper-thumbnail"])
                     .tooltip_text(offered.path.to_string_lossy().as_ref())
                     .build();
+                if offered.dynamic.heic().is_some() && !ready && heic::decoder().is_none() {
+                    child.set_sensitive(false);
+                    child.set_tooltip_text(Some(&format!(
+                        "{}\n{}.",
+                        offered.path.display(),
+                        heic::NO_DECODER
+                    )));
+                }
                 flow.append(&child);
                 thumbnails.push((offered.path.clone(), child));
             }
@@ -1336,9 +1386,29 @@ impl Ui {
         glib::idle_add_local_once(move || adjustment.set_value(scroll));
     }
 
+    /// Decodes a HEIC's pictures, unless they're being decoded, and draws the Dynamic grid
+    /// and the sidebar again once they're in. Without libheif, nothing.
+    fn decode(&self, file: &heic::Heic) {
+        if heic::decoder().is_none() || !self.decoding.borrow_mut().insert(file.file().into()) {
+            return;
+        }
+        let path = file.file().to_owned();
+        let on = self.handler(move |ui, outcome: Result<(), String>| {
+            ui.decoding.borrow_mut().remove(&path);
+            if let Err(err) = outcome {
+                glib::g_warning!(DOMAIN, "can't decode {}: {err}", path.display());
+                return;
+            }
+            let groups = ui.shown_dynamic_groups.borrow().clone();
+            ui.render_dynamic_grid(&groups);
+            ui.render();
+        });
+        heic::decode(file, on);
+    }
+
     /// A thumbnail of a dynamic wallpaper: its day picture's left half and its night
-    /// picture's right half, each filled in once decoded.
-    fn day_and_night_thumbnail(&self, day: &Path, night: &Path) -> gtk::DrawingArea {
+    /// picture's right half, each filled in once decoded, if they're `ready` to be.
+    fn day_and_night_thumbnail(&self, day: &Path, night: &Path, ready: bool) -> gtk::DrawingArea {
         let area = gtk::DrawingArea::builder()
             .content_width(THUMBNAIL.0)
             .content_height(THUMBNAIL.1)
@@ -1376,7 +1446,7 @@ impl Ui {
                 }
             }
         });
-        for (index, path) in [day, night].into_iter().enumerate() {
+        for (index, path) in [day, night].into_iter().enumerate().filter(|_| ready) {
             let weak = area.downgrade();
             let halves = halves.clone();
             self.decoder

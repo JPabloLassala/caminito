@@ -3,7 +3,7 @@
 //! follows the outputs as they come and go without leaving any behind (88), draws a change
 //! of its settings without a restart, takes MATE's picture on its first run alone, and keeps
 //! `org.mate.background` bridged both ways (211). A dynamic wallpaper's pair is drawn by
-//! the local time (216).
+//! the local time (216), and a HEIC's pictures are decoded and drawn by it (217).
 //!
 //! It needs the built drawer, named by `CAMINITO_WALLPAPERD`, so these are ignored by
 //! default and `tools/check` runs them after the workspace's build. As the locker's tests
@@ -90,6 +90,7 @@ impl Drawer {
             .env("WAYLAND_DISPLAY", "wayland-test")
             .env("GSETTINGS_BACKEND", "keyfile")
             .env("XDG_CONFIG_HOME", self.path("config"))
+            .env("XDG_CACHE_HOME", self.path("cache"))
             .env("GSETTINGS_SCHEMA_DIR", test_schemas())
             .env("GIO_USE_VFS", "local")
             .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent")
@@ -469,6 +470,54 @@ fn a_plasma_pair_is_light_at_noon_and_dark_at_midnight() {
     drawer.tz = Some(tz_at(0));
     drawer.start(&mut f);
     wait_for_color(&mut f, &outputs, 0x202040);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_WALLPAPERD; tools/check runs it"]
+fn a_heic_is_decoded_then_light_at_noon_and_dark_at_midnight() {
+    let decoder = ["heif-dec", "heif-convert"].into_iter().any(|program| {
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            .any(|dir| dir.join(program).is_file())
+    });
+    if !decoder {
+        eprintln!("libheif's heif-dec isn't installed: the drawer can't show a HEIC");
+        return;
+    }
+    let mut f = Fixture::new();
+    let outputs = [f.add_output((1920, 1080), 1.0)];
+    // caminito-wallpaper's fixture, made by libheif: see its tests.
+    let dir = tempfile::tempdir().unwrap();
+    let heic = dir.path().join("solar.heic");
+    std::fs::write(
+        &heic,
+        include_bytes!("../../../caminito-wallpaper/src/heic/solar.heic"),
+    )
+    .unwrap();
+    let settings = format!("{GREEN}kind='dynamic'\ndynamic='{}'\n", heic.display())
+        .replace("kind='colour'\n", "");
+    let wait_for_near = |f: &mut Fixture, color: u32| {
+        let (w, h) = (1920, 1080);
+        for (x, y) in [(w / 2, h / 2), (w - 2, 1), (1, h - 2), (w - 2, h - 2)] {
+            // Through HEVC and JPEG, a channel can be a few off.
+            f.wait_for_pixel_near_on(&outputs[0], x, y, color, 4);
+        }
+    };
+
+    // Without Caminito on the bus, the fixed times stand in for the sun. Its colour shows
+    // until the pictures are decoded.
+    let mut drawer = Drawer::new(&settings);
+    drawer.tz = Some(tz_at(12));
+    drawer.start(&mut f);
+    wait_for_near(&mut f, 0xc0c0a0);
+
+    drawer.kill();
+    f.dispatch_until(|f| wallpapers(f).iter().all(|(_, count)| *count == 0));
+    drawer.tz = Some(tz_at(0));
+    drawer.start(&mut f);
+    wait_for_near(&mut f, 0x202040);
+    // Decoded once.
+    let log = std::fs::read_to_string(drawer.path("log")).unwrap();
+    assert_eq!(log.matches("decoded ").count(), 1, "{log}");
 }
 
 /// A PNG of 8 by 8 pixels of `rgb`, `0xrrggbb`, uncompressed.

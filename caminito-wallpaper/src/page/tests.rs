@@ -305,6 +305,19 @@ fn an_added_dynamic_is_listed_once_and_chosen() {
 }
 
 #[test]
+fn a_dynamic_wallpaper_kept_is_added_but_not_chosen() {
+    let mut store = store(true);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+    let before = page.current(&store);
+
+    page.keep_dynamic(&mut store, "/home/me/Mojave.heic");
+    page.keep_dynamic(&mut store, "/home/me/Mojave.heic");
+
+    assert_eq!(store.dynamics(), ["/home/me/Mojave.heic"]);
+    assert_eq!(page.current(&store), before);
+}
+
+#[test]
 fn an_output_is_titled_as_displays_titles_it() {
     assert_eq!(laptop().title, "Built-in display");
     assert_eq!(
