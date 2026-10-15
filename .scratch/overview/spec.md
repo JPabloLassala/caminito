@@ -42,7 +42,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - It opens on every output at once. Each shows its own active workspace's windows and its own bar.
 - Under Spanning workspaces every output's bar shows the same workspaces, and switching in one switches all.
-- The output the selection is on is the seat's Active output while the Overview is open. At opening it's the focused window's output, or the Active output with none focused.
+- The output the selection is on is the seat's Active output while the Overview is open. At opening it's the focused window's output, or the Active output with none focused, and opening makes it the Active output, over a press on another output's wallpaper since the focus last moved (248). A click on another output's cell moves both there ("The pointer").
 
 ### Which windows
 
@@ -73,7 +73,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - **A click on a window** activates it and closes the Overview. A minimised window is unminimised.
 - **A middle click on a window** closes that window. The Overview stays open.
-- **A click on a workspace of the bar** switches that output to it. The Overview stays open, and the Workspace slide moves the laid-out windows. On another output's bar it also makes that output the Active output, as a click on its wallpaper does, and the selection goes there with nothing selected. The focus is left alone.
+- **A click on a workspace of the bar** switches that output to it. The Overview stays open, and the Workspace slide moves the laid-out windows. On another output's bar it also makes that output the Active output, as a click on its wallpaper does, and the selection goes there with nothing selected. The focus is left alone. Under Spanning workspaces the switch of every output still gives the seat its default focus, as any switch of every output does.
 - **A button bound to a workspace switch** does what the binding's key would, wherever the pointer is: over a window, a cell or the empty area (see "The keys").
 - **A click on the empty area** closes the Overview.
 - **A drag of a window**, past `drag-threshold`:

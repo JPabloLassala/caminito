@@ -115,6 +115,10 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// The Overview's shortcut: closes the open one, or opens one on `seat`'s Active
     /// output. Nothing opens while a seat has another Interaction, nor with no output.
+    ///
+    /// The output the selection is on is the seat's Active output while it's open (248),
+    /// so that the workspace bindings switch that one: a press on another output's
+    /// wallpaper since the focus last moved gives way to the focused window's output.
     pub(super) fn toggle_overview(&mut self, seat: SeatId) {
         if self.overview.take().is_some() || self.a_seat_has_an_interaction() {
             return;
@@ -122,6 +126,7 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(output) = self.overview_output(seat) else {
             return;
         };
+        self.active_outputs.insert(seat, output);
         let workspace = self.active_workspace_on(output);
         let windows = self.overview_windows(output, workspace);
         let selected = self.focus(seat).filter(|focused| windows.contains(focused));
@@ -249,10 +254,40 @@ impl<W: PolicyWindow> Policy<W> {
     /// The Overview stays open and lists the new workspace's windows, with its focused one
     /// selected if the switch was of the selection's output. Does nothing with the
     /// Overview closed, or for a workspace past the count.
+    ///
+    /// On another output than the selection's, it also makes that output the seat's
+    /// Active output, as `press_on_output` does, and the selection goes there with nothing
+    /// selected (248). The focus is left alone: the output is made Active after the
+    /// switch, which gives the default focus to the seats whose Active output it is.
     pub fn overview_switch_on(&mut self, output: OutputId, workspace: usize) {
-        if self.overview.is_some() && workspace < self.workspace_count {
-            self.switch_output_workspace(output, workspace);
+        let Some(open) = &self.overview else {
+            return;
+        };
+        if workspace >= self.workspace_count {
+            return;
         }
+        let (seat, own) = (open.seat, open.output);
+        self.switch_output_workspace(output, workspace);
+        if output != own && self.outputs.iter().any(|o| o.id == output) {
+            self.overview_select_output(seat, output);
+        }
+    }
+
+    /// Makes `output` `seat`'s Active output and the open Overview's selection's (248),
+    /// with nothing selected.
+    fn overview_select_output(&mut self, seat: SeatId, output: OutputId) {
+        self.active_outputs.insert(seat, output);
+        let workspace = self.active_workspace_on(output);
+        let windows = self.overview_windows(output, workspace);
+        let others = self.overview_others(output);
+        if let Some(open) = &mut self.overview {
+            open.output = output;
+            open.workspace = workspace;
+            open.windows = windows;
+            open.others = others;
+            open.selected = None;
+        }
+        self.apply();
     }
 
     /// The left button went down at `at` on a listed window (245): a click on it, or a

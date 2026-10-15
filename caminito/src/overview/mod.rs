@@ -425,7 +425,9 @@ impl Caminito {
                     .zip(open.layouts())
                     .all(|(plan, laid)| plan.matches(laid))
         });
-        let first_frame = old.as_ref().map_or(FirstFrame::Undrawn, |old| old.first_frame);
+        let first_frame = old
+            .as_ref()
+            .map_or(FirstFrame::Undrawn, |old| old.first_frame);
         let (dim, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];
@@ -903,8 +905,10 @@ impl State {
     /// it to close and leaves the Overview open (242), one of the left button on a
     /// workspace of a bar switches that bar's output there (244, 246), and a press of any button on
     /// the empty area closes the Overview, as does that of a button with the Overview's
-    /// shortcut. Another button on a workspace of the bar does nothing. The release of such
-    /// a press is swallowed with the Window switcher's.
+    /// shortcut. A button bound to a workspace switch does what its key does wherever the
+    /// pointer is (248): it switches the Active output's workspace, and the Overview stays
+    /// open. Another button on a workspace of the bar does nothing. The release of such a
+    /// press is swallowed with the Window switcher's.
     ///
     /// A press of the left button on a window is held instead (245): its release chooses
     /// the window if the pointer stayed within `drag-threshold`, and drops it on the cell
@@ -915,6 +919,7 @@ impl State {
         button: u32,
         state: ButtonState,
         location: Point<f64, Logical>,
+        time: InputTime,
     ) -> bool {
         let caminito = &mut self.caminito;
         if state == ButtonState::Released {
@@ -941,9 +946,20 @@ impl State {
         let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
         let binding = caminito.bound_to_button(button, &mods);
         let is_shortcut = matches!(binding, Some((_, Binding::Policy(Action::Overview))));
+        let switch = binding.and_then(|(_, binding)| match binding {
+            Binding::Policy(action) if switches_workspace(action) => Some(action),
+            _ => None,
+        });
         let cell = caminito.overview_cell_at(location);
         match caminito.overview_window_at(location) {
             _ if is_shortcut => caminito.policy.close_overview(),
+            // As the binding's key does (244): the Workspace popup doesn't show under the
+            // Overview, and a drag whose window the switch takes away ends (245).
+            _ if switch.is_some() => {
+                if let Some(action) = switch {
+                    self.run_action(action, time);
+                }
+            }
             _ if cell.is_some() => {
                 if let Some((output, workspace)) = cell.filter(|_| button == BTN_LEFT) {
                     caminito.policy.overview_switch_on(output, workspace);
@@ -954,7 +970,7 @@ impl State {
             Some(_) => {}
             None => caminito.policy.close_overview(),
         }
-        caminito.refresh_overview();
+        self.caminito.refresh_overview();
         true
     }
 }

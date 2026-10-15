@@ -33,7 +33,16 @@ use crate::state::SEAT;
 /// `kind`: on the left output's first workspace a window at (100, 100) and one at
 /// (900, 500), and on the right one's a window at (2300, 200), which is focused.
 fn desk(kind: Kind, per_output: bool) -> (Fixture, ClientId, Output, Output, [ClientWindow; 3]) {
-    let (mut f, client, left, right) = two_outputs_with(kind, per_output, vec![]);
+    desk_with(kind, per_output, vec![])
+}
+
+/// `desk`, under a Caminito with `settings` set from the start.
+pub(super) fn desk_with(
+    kind: Kind,
+    per_output: bool,
+    settings: Vec<(&'static str, String, Value)>,
+) -> (Fixture, ClientId, Output, Output, [ClientWindow; 3]) {
+    let (mut f, client, left, right) = two_outputs_with(kind, per_output, settings);
     let first = window_at(&mut f, client, (100, 100), 0);
     let second = window_at(&mut f, client, (900, 500), 0);
     let third = window_at(&mut f, client, (2300, 200), 0);
@@ -48,7 +57,7 @@ fn desk(kind: Kind, per_output: bool) -> (Fixture, ClientId, Output, Output, [Cl
 
 /// What the open Overview's dump has on `output`.
 #[track_caller]
-fn on(f: &Fixture, output: &Output) -> serde_json::Value {
+pub(super) fn on(f: &Fixture, output: &Output) -> serde_json::Value {
     let outputs = overview(f)["outputs"].as_array().unwrap().clone();
     let on = outputs
         .into_iter()
@@ -57,7 +66,7 @@ fn on(f: &Fixture, output: &Output) -> serde_json::Value {
 }
 
 /// The windows the open Overview lists on `output`, by policy's ids.
-fn listed_on(f: &Fixture, output: &Output) -> Vec<u64> {
+pub(super) fn listed_on(f: &Fixture, output: &Output) -> Vec<u64> {
     let windows = on(f, output)["windows"].as_array().unwrap().clone();
     windows
         .iter()
@@ -65,12 +74,12 @@ fn listed_on(f: &Fixture, output: &Output) -> Vec<u64> {
         .collect()
 }
 
-fn ids(f: &Fixture, windows: &[ClientWindow]) -> Vec<u64> {
+pub(super) fn ids(f: &Fixture, windows: &[ClientWindow]) -> Vec<u64> {
     windows.iter().map(|window| f.pid(*window).0).collect()
 }
 
 /// `local`, from `output`'s top left corner, in global coordinates.
-fn global(output: &Output, local: Point<i32, Logical>) -> Point<i32, Logical> {
+pub(super) fn global(output: &Output, local: Point<i32, Logical>) -> Point<i32, Logical> {
     output_geometry(output).loc + local
 }
 
@@ -85,7 +94,7 @@ fn place_on(f: &Fixture, output: &Output, window: ClientWindow) -> Rectangle<i32
 
 /// The cell of `workspace` of `output`'s bar, from the output's top left corner.
 #[track_caller]
-fn cell_on(f: &Fixture, output: &Output, workspace: u64) -> Rectangle<i32, Logical> {
+pub(super) fn cell_on(f: &Fixture, output: &Output, workspace: u64) -> Rectangle<i32, Logical> {
     let bar = on(f, output)["bar"].as_array().unwrap().clone();
     let cell = bar.iter().find(|cell| cell["workspace"] == workspace);
     rect(&cell.expect("the workspace has a cell")["rect"])

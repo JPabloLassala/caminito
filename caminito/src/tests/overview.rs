@@ -68,7 +68,7 @@ pub(super) fn rect(dump: &serde_json::Value) -> Rectangle<i32, Logical> {
 }
 
 /// The windows the open Overview lists, by policy's ids.
-fn listed(f: &Fixture) -> Vec<u64> {
+pub(super) fn listed(f: &Fixture) -> Vec<u64> {
     let windows = overview(f)["windows"].as_array().unwrap().clone();
     windows
         .iter()
@@ -664,7 +664,7 @@ fn the_session_lock_ends_the_overview_and_lets_none_open() {
 // The Workspace slide.
 
 /// Whether a Workspace slide runs, from the debug dump's `workspace_slides`.
-fn slides(f: &Fixture) -> bool {
+pub(super) fn slides(f: &Fixture) -> bool {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     dump["workspace_slides"]
         .as_array()
@@ -713,7 +713,7 @@ on_both_kinds! {
 // The selection, the arrow keys and Enter (242).
 
 /// The open Overview's selected window, by policy's id.
-fn selected(f: &Fixture) -> Option<u64> {
+pub(super) fn selected(f: &Fixture) -> Option<u64> {
     overview(f)["selected"].as_u64()
 }
 
@@ -957,7 +957,7 @@ fn cells(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, bool)> {
 
 /// The cell of `workspace`.
 #[track_caller]
-fn cell(f: &Fixture, workspace: u64) -> Rectangle<i32, Logical> {
+pub(super) fn cell(f: &Fixture, workspace: u64) -> Rectangle<i32, Logical> {
     let cells = cells(f);
     let found = cells.iter().find(|(number, ..)| *number == workspace);
     found.expect("the workspace has a cell").1
@@ -987,12 +987,12 @@ fn move_to(f: &mut Fixture, window: ClientWindow, workspace: usize) {
 }
 
 /// The workspace the open Overview lists the windows of.
-fn listed_workspace(f: &Fixture) -> u64 {
+pub(super) fn listed_workspace(f: &Fixture) -> u64 {
     overview(f)["workspace"].as_u64().unwrap()
 }
 
 /// One window on the first workspace and one on the second, which is focused there.
-fn one_on_each_of_two(f: &mut Fixture, id: ClientId) -> [ClientWindow; 2] {
+pub(super) fn one_on_each_of_two(f: &mut Fixture, id: ClientId) -> [ClientWindow; 2] {
     let first = f.map(id, WindowSpec::plain((700, 500)));
     let second = f.map(id, WindowSpec::plain((600, 400)));
     move_to(f, second, 1);
@@ -1283,14 +1283,18 @@ fn a_change_of_num_workspaces_while_it_is_open_changes_the_bar() {
 // A drag onto the bar (245).
 
 /// The open Overview's drag, from the dump: `null` with none.
-fn drag(f: &Fixture) -> serde_json::Value {
+pub(super) fn drag(f: &Fixture) -> serde_json::Value {
     overview(f)["drag"].clone()
 }
 
 /// Presses the left button on `window`'s place in the layout, and moves the pointer past
 /// `drag-threshold` and on to `to`, in steps as a mouse does. Returns where the button
 /// went down.
-fn drag_to(f: &mut Fixture, window: ClientWindow, to: Point<i32, Logical>) -> Point<i32, Logical> {
+pub(super) fn drag_to(
+    f: &mut Fixture,
+    window: ClientWindow,
+    to: Point<i32, Logical>,
+) -> Point<i32, Logical> {
     let from = middle(place(f, window));
     f.pointer_move(f64::from(from.x), f64::from(from.y));
     f.pointer_button(BTN_LEFT, true);
@@ -1306,7 +1310,7 @@ fn drag_to(f: &mut Fixture, window: ClientWindow, to: Point<i32, Logical>) -> Po
 }
 
 /// A spot in the area beneath the bar that's on no window of the layout.
-fn empty_spot(f: &Fixture, windows: &[ClientWindow]) -> Point<i32, Logical> {
+pub(super) fn empty_spot(f: &Fixture, windows: &[ClientWindow]) -> Point<i32, Logical> {
     let area = rect(&overview(f)["area"]);
     let spot = area.loc + Point::from((2, area.size.h - 2));
     for window in windows {
