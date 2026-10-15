@@ -146,7 +146,7 @@ on_limit_done (const char *path, const char *error, gpointer data)
   Applet *applet = data;
 
   if (error != NULL)
-    g_message ("can't change the charge limit of %s: %s", path, error);
+    g_warning ("can't change the charge limit of %s: %s", path, error);
   pw_popup_limit_done (applet->content, path, error);
 }
 

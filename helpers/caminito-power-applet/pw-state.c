@@ -196,8 +196,8 @@ pw_row_equal (const PwRow *a, const PwRow *b)
          && a->limit_end == b->limit_end;
 }
 
-const char *
-pw_state_state_name (PwState state)
+static const char *
+state_name (PwState state)
 {
   switch (state)
     {
@@ -218,8 +218,8 @@ pw_state_state_name (PwState state)
     }
 }
 
-const char *
-pw_state_kind_name (guint type)
+static const char *
+kind_name (guint type)
 {
   switch (type)
     {
@@ -268,8 +268,8 @@ pw_state_kind_name (guint type)
     }
 }
 
-const char *const *
-pw_state_kind_icon_names (guint type)
+static const char *const *
+kind_icon_names (guint type)
 {
   /* Symbolic first, as the panel's glyphs are, then the colour icon of the same thing.
      A type with no icon of its own gets a battery. */
@@ -378,7 +378,7 @@ row_new (const PwDevice *device, const char *name, gboolean laptop)
                          ? device->threshold_end
                          : DEFAULT_LIMIT_END;
       if (row->limit_enabled)
-        row->state = g_strdup_printf ("%s · limit %u%%", pw_state_state_name (device->state),
+        row->state = g_strdup_printf ("%s · limit %u%%", state_name (device->state),
                                       row->limit_end);
       if (device->capacity > 0)
         row->health = g_strdup_printf ("Health %d%%", percent_of (device->capacity));
@@ -386,12 +386,12 @@ row_new (const PwDevice *device, const char *name, gboolean laptop)
         row->health = g_strdup ("Health unknown");
     }
   else
-    row->icon_names = g_strdupv ((char **) pw_state_kind_icon_names (device->type));
+    row->icon_names = g_strdupv ((char **) kind_icon_names (device->type));
   if (row->state == NULL)
     /* A mouse with no state is "Mouse", not "Unknown". */
     row->state = g_strdup (!laptop && device->state == PW_STATE_UNKNOWN
-                             ? pw_state_kind_name (device->type)
-                             : pw_state_state_name (device->state));
+                             ? kind_name (device->type)
+                             : state_name (device->state));
   return row;
 }
 
@@ -408,7 +408,7 @@ static const char *
 peripheral_name (const PwDevice *device)
 {
   return device->model != NULL && device->model[0] != '\0' ? device->model
-                                                           : pw_state_kind_name (device->type);
+                                                           : kind_name (device->type);
 }
 
 static int

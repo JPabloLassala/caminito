@@ -62,6 +62,8 @@ away() { xdotool mousemove 470 410; sleep 0.8; }
 # is over one; the ⋮'s own tooltip would otherwise cover the next row's.
 park() { [ -n "$px" ] && xdotool mousemove $((px + pw - 3)) $((py + 3)); }
 shot() { park; sleep "${2:-1.5}"; import -window root "$out/$1.png"; }
+# The popup's height says how many rows the table has: 44 pixels to a row.
+height() { find_popup | sed "s/^popup/$1: popup/"; }
 
 # The popup's window: its geometry in $px $py $pw $ph, from the one window that is as wide as
 # the popup and below the panel.
@@ -100,7 +102,7 @@ display 2 73.0 true
 sleep 1.5
 xdotool mousemove 14 14 click 1; sleep 1.2
 find_popup
-shot 1-one-battery
+shot 1-one-battery; height "one battery"
 
 click_menu 1
 shot 2-menu
@@ -126,7 +128,7 @@ alive "after the limit"
 click_menu 1
 battery BAT1 80 no
 display 2 76.0 true
-shot 6-two-batteries 2
+shot 6-two-batteries 2; height "two batteries"
 click_menu 2
 shot 6b-second-menu
 click_menu 2
@@ -136,17 +138,18 @@ remove BAT0; remove BAT1
 display 0 0.0 false
 peripheral mouse0 5 "MX Master 3S" 55
 peripheral heads0 19 "WH-1000XM4" 80
-shot 7-peripherals 2
+shot 7-peripherals 2; height "peripherals only"
 
 # A battery and a mouse that is nearly flat.
 battery BAT0 62 no
 display 2 62.0 true
 call $upower $mock.SetDeviceProperties "$devices/mouse0" "{'Percentage': <12.0>}" >/dev/null
-shot 8-low-peripheral 2
+shot 8-low-peripheral 2; height "a battery and two peripherals"
 
 # The mouse is turned off: UPower removes it.
 remove mouse0
-shot 9-mouse-off 2
+shot 9-mouse-off 2; height "the mouse turned off"
+echo "the shots with and without the mouse differ in $(compare -metric AE "$out/8-low-peripheral.png" "$out/9-mouse-off.png" null: 2>&1 | cut -d" " -f1 || true) pixels"
 alive "the table"
 kill "$panel" 2>/dev/null; wait "$panel" 2>/dev/null
 kill "$mockpid" 2>/dev/null

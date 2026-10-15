@@ -418,7 +418,7 @@ on_threshold (GObject *source, GAsyncResult *result, gpointer data)
   g_autoptr (GVariant) reply = g_dbus_proxy_call_finish (G_DBUS_PROXY (source), result, &error);
 
   /* The applet is gone, and call->done's data with it. */
-  if (reply == NULL && g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+  if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
     {
       threshold_call_free (call);
       return;

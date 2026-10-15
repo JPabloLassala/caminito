@@ -31,6 +31,14 @@ struct _PwPopup
   GHashTable          *errors;
 };
 
+/* What the user asked of a limit switch, as the table keeps it. */
+enum
+{
+  REQUESTED_NONE = 0,
+  REQUESTED_OFF,
+  REQUESTED_ON,
+};
+
 typedef struct
 {
   PwPopup *popup;
@@ -112,11 +120,11 @@ on_limit_state_set (GtkSwitch *toggle, gboolean on, gpointer data)
 {
   RowData *row = data;
   PwPopup *popup = row->popup;
-  /* A refusal rebuilds the table, which frees this row. */
+  /* The call's answer rebuilds the table, which frees this row. */
   g_autofree char *path = g_strdup (row->path);
 
   g_hash_table_add (popup->busy, g_strdup (path));
-  g_hash_table_insert (popup->requested, g_strdup (path), GINT_TO_POINTER (on ? 2 : 1));
+  g_hash_table_insert (popup->requested, g_strdup (path), GINT_TO_POINTER (on ? REQUESTED_ON : REQUESTED_OFF));
   g_hash_table_remove (popup->errors, path);
   /* Not pressed again until UPower, or polkit, has answered. */
   gtk_widget_set_sensitive (GTK_WIDGET (toggle), FALSE);
@@ -181,7 +189,8 @@ menu_new (PwPopup *popup, const PwRow *row)
 
       requested = GPOINTER_TO_INT (g_hash_table_lookup (popup->requested, row->path));
       gtk_switch_set_active (GTK_SWITCH (toggle),
-                             requested != 0 ? requested == 2 : row->limit_enabled);
+                             requested != REQUESTED_NONE ? requested == REQUESTED_ON
+                                                    : row->limit_enabled);
       gtk_widget_set_valign (toggle, GTK_ALIGN_CENTER);
       gtk_widget_set_sensitive (toggle, !g_hash_table_contains (popup->busy, row->path));
       g_signal_connect_data (toggle, "state-set", G_CALLBACK (on_limit_state_set),
@@ -361,7 +370,7 @@ pw_popup_update (PwPopup *popup, GPtrArray *devices)
     {
       const PwRow *row = row_for (popup, path);
 
-      if (row == NULL || row->limit_enabled == (GPOINTER_TO_INT (want) == 2))
+      if (row == NULL || row->limit_enabled == (GPOINTER_TO_INT (want) == REQUESTED_ON))
         g_hash_table_iter_remove (&iter);
     }
   forget_missing (popup->busy, popup);

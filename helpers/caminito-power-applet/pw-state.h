@@ -141,10 +141,3 @@ gboolean   pw_row_equal (const PwRow *a, const PwRow *b);
    power, devices that aren't present and ones with no percentage aren't in it. Free
    with g_ptr_array_unref(); the rows are PwRow. */
 GPtrArray *pw_state_rows (GPtrArray *devices);
-/* "Mouse", "Headphones"…: what a device with no model is called. */
-const char *pw_state_kind_name (guint type);
-/* The themed names for a peripheral's icon, from its type, NULL-terminated and in static
-   storage. */
-const char *const *pw_state_kind_icon_names (guint type);
-/* "Charging", "Discharging", "Not charging", "Fully charged"…, UPower's state in words. */
-const char *pw_state_state_name (PwState state);
