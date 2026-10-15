@@ -38,6 +38,7 @@ use smithay::xwayland::X11Surface;
 
 use crate::open_close_animation::{opening_alpha, opening_rect};
 use crate::output::{output_geometry, output_id};
+use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
 use crate::state::{Caminito, SEAT};
@@ -515,7 +516,9 @@ pub(crate) fn overview_hides(
 /// its way open or closed (243), each window is between its real place and its place in
 /// the layout, and the bar, the labels, the dimming and the minimised windows fade. A
 /// window that's dragged (245) is in front of all, under the pointer, and not at its
-/// place: on each output it's over, whichever its own is (246).
+/// place: on each output it's over, whichever its own is (246). One that's dropped (249) is
+/// in front of all too, on its way to its place, and neither its place nor its cell's
+/// picture draws it until it's there.
 fn overview_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -531,11 +534,15 @@ fn overview_elements<R>(
     };
     let scale = output.current_scale().fractional_scale();
     let now = caminito.now();
-    if let Some(dragged) = caminito.overview_dragged(open) {
+    let moving = [
+        caminito.overview_dragged(open),
+        caminito.overview_dropping(open),
+    ];
+    for moving in moving.into_iter().flatten() {
         let whole = Rectangle::from_size(output_geometry(output).size);
-        let place = |_| (dragged.rect, whole);
+        let place = |_| (moving.rect, whole);
         scaled_window_elements(
-            renderer, caminito, dragged.id, place, scale, 1.0, false, elements,
+            renderer, caminito, moving.id, place, scale, 1.0, false, elements,
         );
     }
     overview_bar_elements(renderer, caminito, output, open, now, elements);
@@ -569,15 +576,18 @@ fn overview_layout_elements<R>(
     R::TextureId: Send + Clone + 'static,
 {
     let scale = open.output.current_scale().fractional_scale();
-    // A dragged window's label stays behind with it (245).
+    // A dragged window's label stays behind with it (245), and a dropped one's comes back
+    // with it (249).
     let dragged = caminito.overview_dragged(open).map(|dragged| dragged.id);
+    let dropping = caminito.overview_dropping_at(now);
     let labels = laid
         .windows
         .iter()
         .zip(&laid.layout.slots)
         .zip(&laid.labels);
     for ((id, slot), label) in labels {
-        let Some(label) = label.as_ref().filter(|_| dragged != Some(*id)) else {
+        let moving = dragged == Some(*id) || dropping == Some(*id);
+        let Some(label) = label.as_ref().filter(|_| !moving) else {
             continue;
         };
         let location = (slot.label.loc + shift).to_physical_precise_round::<_, i32>(scale);
@@ -772,24 +782,21 @@ fn overview_bar_elements<R>(
             Kind::Unspecified,
         )));
     }
-    let cells = open.bar.cells.iter().zip(&open.cell_windows);
-    for ((cell, windows), back) in cells.zip(&open.cell_backs) {
+    for (workspace, (cell, back)) in open.bar.cells.iter().zip(&open.cell_backs).enumerate() {
         // Where something at `rect` on the output is in the cell, which has the output's
         // aspect.
-        let factor = f64::from(cell.size.w) / f64::from(output_geometry.size.w.max(1));
         let in_cell = |rect: Rectangle<i32, Logical>| {
-            let at = |n: i32| (f64::from(n) * factor).round() as i32;
-            let loc = rect.loc - output_geometry.loc;
-            Rectangle::new(
-                cell.loc + Point::from((at(loc.x), at(loc.y))),
-                Size::from((at(rect.size.w).max(1), at(rect.size.h).max(1))),
-            )
+            let local = Rectangle::new(rect.loc - output_geometry.loc, rect.size);
+            scaled_into(local, *cell, output_geometry.size)
         };
         let place = |frame| (in_cell(frame), *cell);
-        for id in windows.iter().rev() {
-            scaled_window_elements(
-                renderer, caminito, *id, place, scale, alpha, false, elements,
-            );
+        // A dropped window isn't in the picture until it's there (249).
+        for id in caminito
+            .overview_pictured(open, workspace)
+            .into_iter()
+            .rev()
+        {
+            scaled_window_elements(renderer, caminito, id, place, scale, alpha, false, elements);
         }
         for (wallpaper, geometry) in &wallpapers {
             if geometry.size.w <= 0 || geometry.size.h <= 0 {
@@ -823,7 +830,7 @@ fn overview_bar_elements<R>(
 /// stays at its place and fades instead, in as it opens and out as it closes; one that was
 /// chosen is shown again, and moves back with the others. They're in policy's stacking
 /// order, so a window chosen is at the top as they go. A dragged window (245) isn't among
-/// them: it's drawn under the pointer.
+/// them: it's drawn under the pointer, nor is a dropped one on its way to its place (249).
 pub(crate) fn overview_drawn_windows(
     caminito: &Caminito,
     open: &Overview,
@@ -835,11 +842,12 @@ pub(crate) fn overview_drawn_windows(
     let origin = output_geometry(&open.output).loc;
     let part = open.part(now);
     let dragged = caminito.overview_dragged(open).map(|dragged| dragged.id);
+    let dropping = caminito.overview_dropping_at(now);
     let mut drawn: Vec<DrawnWindow> = laid
         .windows
         .iter()
         .zip(&laid.layout.slots)
-        .filter(|(id, _)| dragged != Some(**id))
+        .filter(|(id, _)| dragged != Some(**id) && dropping != Some(**id))
         .filter_map(|(id, slot)| {
             let frame = policy.frame_rect(*id)?;
             let real = Rectangle::new(frame.loc - origin, frame.size);

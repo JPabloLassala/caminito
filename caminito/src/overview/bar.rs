@@ -67,6 +67,15 @@ impl Bar {
             .iter()
             .position(|cell| cell.to_f64().contains(point))
     }
+
+    /// Whether `point` is over the row of cells, from the first's left edge to the last's
+    /// right one: on a cell, or between two (249).
+    pub(crate) fn over_cells(&self, point: Point<f64, Logical>) -> bool {
+        let (Some(first), Some(last)) = (self.cells.first(), self.cells.last()) else {
+            return false;
+        };
+        first.merge(*last).to_f64().contains(point)
+    }
 }
 
 #[cfg(test)]
@@ -155,5 +164,22 @@ mod tests {
         assert_eq!(bar.cell_at(middle(bar.cells[2])), Some(2));
         assert_eq!(bar.cell_at((1.0, 1.0).into()), None);
         assert_eq!(bar.cell_at((960.0, 500.0).into()), None);
+    }
+
+    #[test]
+    fn a_point_between_two_cells_is_over_the_row_of_cells() {
+        let bar = bar(4);
+        let (first, second) = (bar.cells[0], bar.cells[1]);
+        let between = Point::<i32, Logical>::from((
+            first.loc.x + first.size.w + PADDING / 2,
+            first.loc.y + first.size.h / 2,
+        ))
+        .to_f64();
+
+        assert_eq!(bar.cell_at(between), None);
+        assert!(bar.over_cells(between));
+        assert!(bar.over_cells(second.loc.to_f64()));
+        assert!(!bar.over_cells((1.0, 1.0).into()));
+        assert!(!bar.over_cells((960.0, 500.0).into()));
     }
 }
