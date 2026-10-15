@@ -17,10 +17,13 @@
 //! free of `unsafe` and builds without libheif, and a file that crashes the decoder doesn't
 //! take the drawer with it.
 
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gio::glib;
 
@@ -34,6 +37,11 @@ const XMP_LIMIT: u64 = 4 << 20;
 const PLIST_DEPTH: usize = 8;
 
 const DAY_SECONDS: i64 = 24 * 3600;
+
+/// How far either side of north or south, in degrees of azimuth, a sun in the middle band
+/// of the sky cross-fades from one half's picture to the other's: an hour of the sun's
+/// path at the equinox.
+const MERIDIAN: f64 = 15.0;
 
 /// The programs of libheif's that decode a HEIC: `heif-dec`, called `heif-convert` before
 /// libheif 1.16. Both write each of a file's pictures as `<name>-<n>.<extension>`.
@@ -88,8 +96,11 @@ pub fn is_heic(path: &Path) -> bool {
 /// counted from 0 as the file has them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pick {
+    /// The picture under.
     pub from: usize,
+    /// The picture over it.
     pub to: usize,
+    /// How far `to` is over `from`, 0 to 1.
     pub blend: f64,
 }
 
@@ -109,13 +120,30 @@ impl Pick {
             blend: blend.clamp(0.0, 1.0),
         }
     }
+    /// The picture that shows most.
+    pub fn nearer(&self) -> usize {
+        if self.blend < 0.5 { self.from } else { self.to }
+    }
+
+    /// The pick `t` of the way, 0 to 1, from itself to `picture` alone, one of its two.
+    fn lean(self, picture: usize, t: f64) -> Self {
+        let blend = if picture == self.to && picture != self.from {
+            self.blend + (1.0 - self.blend) * t
+        } else {
+            self.blend * (1.0 - t)
+        };
+        Pick::between(self.from, self.to, blend)
+    }
 }
 
 /// A picture at a position of the sun, in degrees: `solar`'s `si`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Position {
+    /// The sun's elevation, −90° to 90°.
     pub elevation: f64,
+    /// The sun's azimuth, from north through east.
     pub azimuth: f64,
+    /// The picture, from 0.
     pub picture: usize,
 }
 
@@ -134,14 +162,18 @@ fn is_east(azimuth: f64) -> bool {
 /// A picture at a time of the day, in seconds from midnight: `h24`'s `ti`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time {
+    /// The seconds from local midnight, 0 to a day.
     pub seconds: f64,
+    /// The picture, from 0.
     pub picture: usize,
 }
 
 /// The light and the dark picture: `apr`, or the `ap` of the others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Appearance {
+    /// The picture by day.
     pub light: usize,
+    /// The picture by night.
     pub dark: usize,
 }
 
@@ -336,13 +368,6 @@ impl Schedule {
     }
 }
 
-impl Pick {
-    /// The picture that shows most.
-    pub fn nearer(&self) -> usize {
-        if self.blend < 0.5 { self.from } else { self.to }
-    }
-}
-
 /// What `positions` show with the sun at `elevation` and `azimuth`.
 ///
 /// A day goes round the positions in a cycle: up the eastern half of the sky, over the
@@ -357,7 +382,10 @@ impl Pick {
 ///
 /// So a file made at one latitude shows its morning in the morning and its dusk at dusk
 /// at another, in either hemisphere, where the nearest position by azimuth alone would
-/// show a northern noon at a southern midnight. With every position in one half of the
+/// show a northern noon at a southern midnight. A sun that crosses north or south in the
+/// middle band, as a winter noon's does below the top or a summer midnight's above the
+/// bottom, cross-fades from its half's picture to the other's as it crosses. With every
+/// position in one half of the
 /// sky, that half stands for both.
 fn solar_at(positions: &[Position], elevation: f64, azimuth: f64) -> Pick {
     let mut east: Vec<Position> = positions.iter().copied().filter(Position::east).collect();
@@ -400,17 +428,37 @@ fn solar_at(positions: &[Position], elevation: f64, azimuth: f64) -> Pick {
         };
         return along(&band, sun);
     }
-    let mut half: Vec<(f64, usize)> = if is_east(azimuth) { &east } else { &west }
-        .iter()
-        .map(|p| (p.elevation, p.picture))
-        .collect();
-    half.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if !is_east(azimuth) {
-        // Falling, so the cross-fade is from the higher to the lower.
-        let pick = along(&half, elevation);
-        return Pick::between(pick.to, pick.from, 1.0 - pick.blend);
+    let in_half = |half: &[Position], rising: bool| {
+        let mut stops: Vec<(f64, usize)> = half.iter().map(|p| (p.elevation, p.picture)).collect();
+        stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let pick = along(&stops, elevation);
+        if rising {
+            pick
+        } else {
+            // Falling, so the cross-fade is from the higher to the lower.
+            Pick::between(pick.to, pick.from, 1.0 - pick.blend)
+        }
+    };
+    let (rising, falling) = (in_half(&east, true), in_half(&west, false));
+    // A sun that crosses north or south in this band, as a winter noon's below the top,
+    // goes from one half's picture to the other's within [`MERIDIAN`] of the crossing: its
+    // half's pick leans to its picture on the crossing's side, the higher at noon and the
+    // lower at midnight, that cross-fades to the other half's, and that leans back into
+    // the other half's pick. Noon is above the middle of the band.
+    let across = (0.5 - eastness(azimuth) / (2.0 * MERIDIAN.to_radians().sin())).clamp(0.0, 1.0);
+    let noon = elevation > (top + bottom) / 2.0;
+    let (rising_side, falling_side) = if noon {
+        (rising.to, falling.from)
+    } else {
+        (rising.from, falling.to)
+    };
+    if across <= 1.0 / 3.0 {
+        rising.lean(rising_side, across * 3.0)
+    } else if across >= 2.0 / 3.0 {
+        falling.lean(falling_side, (1.0 - across) * 3.0)
+    } else {
+        Pick::between(rising_side, falling_side, across * 3.0 - 1.0)
     }
-    along(&half, elevation)
 }
 
 /// The pick among `stops`, each a value and a picture in rising order, for `value`: the
@@ -448,7 +496,7 @@ impl Heic {
         let mut reader = fs::File::open(file).map_err(|err| Error::Read(err.to_string()))?;
         let xmp = xmp(&mut reader)?;
         let schedule = Schedule::from_xmp(&xmp)?;
-        let folder = cache.join(key(file, &reader.metadata()?));
+        let folder = cache.join(cache_folder_name(file, &reader.metadata()?));
         Ok(Heic {
             file: file.to_owned(),
             folder,
@@ -456,10 +504,12 @@ impl Heic {
         })
     }
 
+    /// The HEIC file itself.
     pub fn file(&self) -> &Path {
         &self.file
     }
 
+    /// When its pictures show.
     pub fn schedule(&self) -> &Schedule {
         &self.schedule
     }
@@ -485,21 +535,21 @@ pub fn user_cache() -> PathBuf {
         .join("heic")
 }
 
-/// The folder of `file`'s pictures in the cache, named for its path, size and time, so
-/// that a file changed or replaced is decoded again.
-fn key(file: &Path, metadata: &fs::Metadata) -> String {
+/// The name of the folder of `file`'s pictures in the cache: its name and a hash of its
+/// path, size and time, so that a file changed or replaced is decoded again.
+fn cache_folder_name(file: &Path, metadata: &fs::Metadata) -> String {
     let modified = metadata
         .modified()
         .ok()
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .unwrap_or_default();
-    let what = format!(
+    let identity = format!(
         "{}\n{}\n{}",
         file.display(),
         metadata.len(),
         modified.as_nanos()
     );
-    let hash = glib::compute_checksum_for_string(glib::ChecksumType::Sha256, &what)
+    let hash = glib::compute_checksum_for_string(glib::ChecksumType::Sha256, &identity)
         .map(|hash| hash.to_string())
         .unwrap_or_default();
     let stem = file
@@ -514,24 +564,58 @@ pub fn decoder() -> Option<PathBuf> {
     DECODERS.iter().find_map(glib::find_program_in_path)
 }
 
-/// Why a HEIC can't be shown without libheif, as the dialog and the drawer say it.
-pub const NO_DECODER: &str =
-    "libheif's heif-dec isn't installed (on Debian, it's in libheif-examples)";
+/// Why a HEIC's pictures weren't decoded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodeError {
+    /// libheif's `heif-dec` isn't installed: the dialog greys HEICs out.
+    NoDecoder,
+    /// The folder to decode into can't be made.
+    Folder(String),
+    /// `heif-dec` can't be run.
+    Run(String),
+    /// `heif-dec` ran and failed, with what it said.
+    Failed(String),
+    /// The pictures can't be moved into place in the cache.
+    Move(String),
+    /// It wrote fewer pictures than the metadata names.
+    TooFew,
+}
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecodeError::NoDecoder => write!(
+                f,
+                "libheif's heif-dec isn't installed (on Debian, it's in libheif-examples)"
+            ),
+            DecodeError::Folder(err) => write!(f, "can't make the folder for its pictures: {err}"),
+            DecodeError::Run(err) => write!(f, "can't run heif-dec: {err}"),
+            DecodeError::Failed(said) => write!(f, "heif-dec can't decode it: {said}"),
+            DecodeError::Move(err) => write!(f, "can't move its pictures into the cache: {err}"),
+            DecodeError::TooFew => write!(f, "it has fewer pictures than its metadata names"),
+        }
+    }
+}
+
+impl std::error::Error for DecodeError {}
 
 /// Decodes `heic`'s pictures into the cache with libheif's `heif-dec`, off the main loop,
 /// and calls `done` with how it went once they're there. They're written to a folder of
 /// their own beside, and it's renamed into place, so the drawer and the dialog decoding
 /// the same file at once each see all of its pictures or none.
-pub fn decode(heic: &Heic, done: impl FnOnce(Result<(), String>) + 'static) {
+pub fn decode(heic: &Heic, done: impl FnOnce(Result<(), DecodeError>) + 'static) {
     let Some(decoder) = decoder() else {
-        done(Err(NO_DECODER.into()));
+        done(Err(DecodeError::NoDecoder));
         return;
     };
     let folder = heic.folder.clone();
-    let part = folder.with_extension(format!("part-{}", std::process::id()));
+    // Beside it, named for this process, whatever dots the file's name has.
+    let mut part = folder.clone().into_os_string();
+    part.push(format!(".part-{}", std::process::id()));
+    let part = PathBuf::from(part);
     let _ = fs::remove_dir_all(&part);
     if let Err(err) = fs::create_dir_all(&part) {
-        done(Err(format!("can't make {}: {err}", part.display())));
+        done(Err(DecodeError::Folder(err.to_string())));
         return;
     }
     let output = part.join("picture.jpg");
@@ -549,30 +633,34 @@ pub fn decode(heic: &Heic, done: impl FnOnce(Result<(), String>) + 'static) {
         Ok(process) => process,
         Err(err) => {
             let _ = fs::remove_dir_all(&part);
-            done(Err(format!("can't run {}: {err}", decoder.display())));
+            done(Err(DecodeError::Run(err.to_string())));
             return;
         }
     };
     let (heic, waited) = (heic.clone(), process.clone());
     process.communicate_utf8_async(None, None::<&gio::Cancellable>, move |result| {
         let outcome = (|| {
-            let (_, stderr) = result.map_err(|err| err.to_string())?;
+            let (_, stderr) = result.map_err(|err| DecodeError::Run(err.to_string()))?;
             if !waited.is_successful() {
                 let stderr = stderr.map(|s| s.trim().to_owned()).unwrap_or_default();
-                return Err(format!("heif-dec failed: {stderr}"));
+                return Err(DecodeError::Failed(stderr));
             }
             // One picture is written without a number.
             let single = part.join("picture.jpg");
             if single.is_file() {
-                fs::rename(&single, part.join("picture-1.jpg")).map_err(|e| e.to_string())?;
+                fs::rename(&single, part.join("picture-1.jpg"))
+                    .map_err(|err| DecodeError::Move(err.to_string()))?;
             }
-            if fs::rename(&part, &folder).is_err() && !folder.is_dir() {
-                return Err(format!("can't move its pictures to {}", folder.display()));
+            // Another process may have put them there first.
+            if let Err(err) = fs::rename(&part, &folder)
+                && !folder.is_dir()
+            {
+                return Err(DecodeError::Move(err.to_string()));
             }
             if heic.decoded() {
                 Ok(())
             } else {
-                Err("it has fewer pictures than its metadata names".into())
+                Err(DecodeError::TooFew)
             }
         })();
         let _ = fs::remove_dir_all(&part);
@@ -580,24 +668,92 @@ pub fn decode(heic: &Heic, done: impl FnOnce(Result<(), String>) + 'static) {
     });
 }
 
+/// The HEICs a program is decoding, and those that couldn't be decoded, which aren't tried
+/// again while it runs: the drawer's, and the dialog's for its thumbnails. A HEIC met
+/// without libheif isn't one of them, so that libheif installed later is used.
+#[derive(Clone)]
+pub struct Decodes {
+    /// The log domain of the program's GLib messages.
+    domain: &'static str,
+    state: Rc<RefCell<DecodesState>>,
+}
+
+#[derive(Default)]
+struct DecodesState {
+    running: HashSet<PathBuf>,
+    failed: HashSet<PathBuf>,
+    /// Whether it said that libheif isn't installed: once, not once per HEIC.
+    said_no_decoder: bool,
+}
+
+impl Decodes {
+    /// None yet, logged under `domain`.
+    pub fn new(domain: &'static str) -> Self {
+        Decodes {
+            domain,
+            state: Rc::default(),
+        }
+    }
+
+    /// Decodes `heic`'s pictures, unless they're being decoded or couldn't be, and calls
+    /// `decoded` once they're in. A failure is logged once.
+    pub fn start(&self, heic: &Heic, decoded: impl FnOnce() + 'static) {
+        let file = heic.file().to_owned();
+        {
+            let mut state = self.state.borrow_mut();
+            if state.failed.contains(&file) || state.running.contains(&file) {
+                return;
+            }
+            if decoder().is_none() {
+                if !std::mem::replace(&mut state.said_no_decoder, true) {
+                    glib::g_warning!(self.domain, "can't show a HEIC: {}", DecodeError::NoDecoder);
+                }
+                return;
+            }
+            state.running.insert(file.clone());
+        }
+        glib::g_debug!(self.domain, "decoding {}", file.display());
+        let decodes = self.clone();
+        decode(heic, move |outcome| {
+            let mut state = decodes.state.borrow_mut();
+            state.running.remove(&file);
+            match outcome {
+                Ok(()) => {
+                    glib::g_debug!(decodes.domain, "decoded {}", file.display());
+                    drop(state);
+                    decoded();
+                }
+                Err(err) => {
+                    glib::g_warning!(
+                        decodes.domain,
+                        "can't show the dynamic wallpaper {}: {err}",
+                        file.display()
+                    );
+                    state.failed.insert(file);
+                }
+            }
+        });
+    }
+}
+
 /// The XMP packet in a HEIF container `reader`: the `meta` box's item of the type `mime`
 /// and the content type `application/rdf+xml` whose text names `apple_desktop`, or its
 /// first such item if none does.
 pub fn xmp(reader: &mut (impl Read + Seek)) -> Result<String, Error> {
     let meta = top_level_meta(reader)?;
-    let mut infe = Vec::new();
+    let mut xmp_ids = Vec::new();
     let mut locations = Vec::new();
     let mut idat: &[u8] = &[];
     for (kind, body) in boxes(&meta[4..]).map_err(Error::NotHeif)? {
         match &kind {
-            b"iinf" => infe = items(body).map_err(Error::NotHeif)?,
+            b"iinf" => xmp_ids = xmp_items(body).map_err(Error::NotHeif)?,
             b"iloc" => locations = iloc(body).map_err(Error::NotHeif)?,
             b"idat" => idat = body,
             _ => {}
         }
     }
     let mut first = None;
-    for id in infe {
+    for id in xmp_ids {
         let Some(location) = locations.iter().find(|location| location.id == id) else {
             continue;
         };
@@ -645,7 +801,11 @@ fn top_level_meta(reader: &mut (impl Read + Seek)) -> Result<Vec<u8>, Error> {
             }
             Err(err) => return Err(err.into()),
         }
-        let size = u64::from(u32::from_be_bytes(header[..4].try_into().expect("4 bytes")));
+        let size = u64::from(u32::from_be_bytes(
+            header[..4]
+                .try_into()
+                .expect("a header's first four bytes are four"),
+        ));
         let kind = &header[4..];
         let (size, header_size) = match size {
             1 => {
@@ -691,7 +851,10 @@ fn boxes(mut bytes: &[u8]) -> Result<Boxes<'_>, &'static str> {
     while !bytes.is_empty() {
         let mut cursor = Cursor(bytes);
         let size = cursor.uint(4)?;
-        let kind: [u8; 4] = cursor.take(4)?.try_into().expect("4 bytes");
+        let kind: [u8; 4] = cursor
+            .take(4)?
+            .try_into()
+            .expect("four bytes taken are four");
         let (size, header) = match size {
             1 => (cursor.uint(8)?, 16),
             0 => (bytes.len() as u64, 8),
@@ -707,7 +870,7 @@ fn boxes(mut bytes: &[u8]) -> Result<Boxes<'_>, &'static str> {
 }
 
 /// The IDs of `iinf`'s items of the type `mime` and the content type of XMP.
-fn items(iinf: &[u8]) -> Result<Vec<u32>, &'static str> {
+fn xmp_items(iinf: &[u8]) -> Result<Vec<u32>, &'static str> {
     let mut cursor = Cursor(iinf);
     let version = cursor.uint(1)?;
     cursor.take(3)?;
@@ -924,7 +1087,13 @@ impl Plist {
         let trailer = &bytes[bytes.len() - 32..];
         let offset_size = trailer[6] as usize;
         let reference_size = trailer[7] as usize;
-        let field = |at: usize| u64::from_be_bytes(trailer[at..at + 8].try_into().expect("8"));
+        let field = |at: usize| {
+            u64::from_be_bytes(
+                trailer[at..at + 8]
+                    .try_into()
+                    .expect("the trailer's fields are eight bytes"),
+            )
+        };
         let (count, top, table) = (field(8), field(16), field(24));
         if !(1..=8).contains(&offset_size) || !(1..=8).contains(&reference_size) || top >= count {
             return Err(bad("its property list's trailer is wrong"));

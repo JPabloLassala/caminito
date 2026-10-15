@@ -386,31 +386,49 @@ fn in_the_southern_hemisphere_noon_is_still_noon_and_midnight_midnight() {
 }
 
 #[test]
-fn through_a_day_the_picture_never_jumps_more_than_the_fade_hides() {
-    // A sun going round at 15° an hour, peaking at 50° due south, at −30° due north.
+fn through_a_day_the_picture_never_cuts_from_one_to_another() {
+    // Suns going round at 15° an hour: a northern spring day, peaking at 50° due south and
+    // at −30° due north; a winter day whose noon, at 25°, is below the morning's highest
+    // picture; a summer day whose midnight, at −10°, is above the night's lowest; and the
+    // spring day in the south, peaking due north.
+    let days: [(&str, f64, f64, bool); 4] = [
+        ("spring", 10.0, 40.0, false),
+        ("winter", -5.0, 30.0, false),
+        ("summer", 15.0, 25.0, false),
+        ("southern spring", 10.0, 40.0, true),
+    ];
     let solar = solar();
-    let mut previous: Option<Pick> = None;
-    for minute in 0..(24 * 60) {
-        let hours = f64::from(minute) / 60.0;
-        let azimuth = (hours * 15.0).rem_euclid(360.0);
-        let elevation = 10.0 - 40.0 * (azimuth.to_radians()).cos();
-        let pick = solar.at(Some((elevation, azimuth)), 0, 0.0);
-        // What shows, as a weight for each picture.
-        let weights = |p: Pick| {
-            let mut w = [0.0; 7];
-            w[p.from] += 1.0 - p.blend;
-            w[p.to] += p.blend;
-            w
-        };
-        if let Some(previous) = previous {
-            let (a, b) = (weights(previous), weights(pick));
-            let change: f64 = a.iter().zip(b).map(|(a, b)| (a - b).abs()).sum();
-            assert!(
-                change < 0.35,
-                "at {hours:.2} h, from {previous:?} to {pick:?}"
-            );
+    for (day, middle, half_range, south) in days {
+        let mut previous: Option<Pick> = None;
+        for minute in 0..=(24 * 60) {
+            let hours = f64::from(minute) / 60.0;
+            // From the north at midnight in the north, the south in the south.
+            let (azimuth, from_noon) = if south {
+                let azimuth = (180.0 - hours * 15.0).rem_euclid(360.0);
+                (azimuth, azimuth.to_radians().cos())
+            } else {
+                let azimuth = (hours * 15.0).rem_euclid(360.0);
+                (azimuth, -azimuth.to_radians().cos())
+            };
+            let elevation = middle + half_range * from_noon;
+            let pick = solar.at(Some((elevation, azimuth)), 0, 0.0);
+            // What shows, as a weight for each picture.
+            let weights = |p: Pick| {
+                let mut w = [0.0; 7];
+                w[p.from] += 1.0 - p.blend;
+                w[p.to] += p.blend;
+                w
+            };
+            if let Some(previous) = previous {
+                let (a, b) = (weights(previous), weights(pick));
+                let change: f64 = a.iter().zip(b).map(|(a, b)| (a - b).abs()).sum();
+                assert!(
+                    change < 0.3,
+                    "{day}, at {hours:.2} h, from {previous:?} to {pick:?}"
+                );
+            }
+            previous = Some(pick);
         }
-        previous = Some(pick);
     }
 }
 
@@ -676,7 +694,7 @@ fn a_heic_made_by_libheif_is_read_and_decoded_or_greyed_out_without_it() {
             let outcome = std::rc::Rc::new(std::cell::RefCell::new(None));
             let kept = outcome.clone();
             decode(&heic, move |result| *kept.borrow_mut() = Some(result));
-            assert_eq!(*outcome.borrow(), Some(Err(NO_DECODER.to_owned())));
+            assert_eq!(*outcome.borrow(), Some(Err(DecodeError::NoDecoder)));
         }
         eprintln!("libheif's heif-enc or heif-dec isn't installed: no HEIC is made");
         return;

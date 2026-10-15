@@ -4,14 +4,13 @@
 //! draws it.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
 use caminito_wallpaper::daily::{self, Cache, Kept, Source};
 use caminito_wallpaper::dynamic::Dynamic;
 use caminito_wallpaper::grid::{self, DynamicGroup, Group, Installed, Roots};
-use caminito_wallpaper::heic;
+use caminito_wallpaper::heic::{self, DecodeError, Schedule};
 use caminito_wallpaper::monitors::Monitors;
 use caminito_wallpaper::page::{Output, Page};
 use caminito_wallpaper::sun::sky_now;
@@ -83,7 +82,7 @@ struct Ui {
     /// Why the last file given to the Dynamic pane's "Add…" wasn't added, until another is.
     refused: RefCell<Option<String>>,
     /// The HEICs whose pictures are being decoded for their thumbnails (217).
-    decoding: RefCell<HashSet<PathBuf>>,
+    decodes: heic::Decodes,
     /// Caminito's D-Bus interface, for the primary output.
     caminito: Option<gio::DBusProxy>,
     /// Where the drawer keeps each source's picture of the day (214).
@@ -565,7 +564,7 @@ fn build(
         shown_dynamic_groups: RefCell::new(Vec::new()),
         dynamic_thumbnails: RefCell::new(Vec::new()),
         refused: RefCell::new(None),
-        decoding: RefCell::default(),
+        decodes: heic::Decodes::new(DOMAIN),
         caminito,
         cache,
         _cache_monitor: cache_monitor,
@@ -650,6 +649,12 @@ fn heading(text: &str) -> gtk::Label {
             attributes
         })
         .build()
+}
+
+/// Whether `dynamic` is a HEIC that can't be shown, its pictures not decoded and libheif
+/// not installed to decode them: greyed out in the grid.
+fn unshowable(dynamic: &Dynamic) -> bool {
+    !dynamic.ready() && heic::decoder().is_none()
 }
 
 /// What a dynamic wallpaper is called in its grid: a Plasma package's folder, or a timed
@@ -856,20 +861,14 @@ impl Ui {
             .default_filter(&filter)
             .build();
         let on = self.handler(|ui, path: PathBuf| match Dynamic::read(&path) {
-            Ok(Dynamic::Timed(_)) => {
+            Ok(dynamic @ (Dynamic::Timed(_) | Dynamic::Heic(_))) => {
                 *ui.refused.borrow_mut() = None;
                 let file = path.to_string_lossy();
-                ui.act(|page, store| page.add_dynamic(store, &file));
-            }
-            Ok(Dynamic::Heic(_)) if heic::decoder().is_none() => {
-                *ui.refused.borrow_mut() = None;
-                let file = path.to_string_lossy();
-                ui.act(|page, store| page.keep_dynamic(store, &file));
-            }
-            Ok(Dynamic::Heic(_)) => {
-                *ui.refused.borrow_mut() = None;
-                let file = path.to_string_lossy();
-                ui.act(|page, store| page.add_dynamic(store, &file));
+                if unshowable(&dynamic) {
+                    ui.act(|page, store| page.keep_dynamic(store, &file));
+                } else {
+                    ui.act(|page, store| page.add_dynamic(store, &file));
+                }
             }
             Ok(Dynamic::Pair { .. }) => {}
             Err(err) => {
@@ -1098,18 +1097,25 @@ impl Ui {
         if let Some(refused) = self.refused.borrow().clone() {
             return refused;
         }
-        let greyed = heic::decoder().is_none()
-            && self
-                .shown_dynamic_groups
-                .borrow()
-                .iter()
-                .flat_map(|group| group.wallpapers.iter())
-                .any(|offered| offered.dynamic.heic().is_some());
-        if greyed {
-            return format!("HEIC files are greyed out: {}.", heic::NO_DECODER);
-        }
+        let greyed = self
+            .shown_dynamic_groups
+            .borrow()
+            .iter()
+            .flat_map(|group| group.wallpapers.iter())
+            .any(|offered| unshowable(&offered.dynamic));
+        // Said after the line about the selected one, whichever it is.
+        let and_greyed = |line: String| {
+            if greyed {
+                format!(
+                    "{line} HEIC files are greyed out: {}.",
+                    DecodeError::NoDecoder
+                )
+            } else {
+                line
+            }
+        };
         if current.dynamic.is_empty() {
-            return "Choose a dynamic wallpaper.".into();
+            return and_greyed("Choose a dynamic wallpaper.".into());
         }
         let offered = self
             .shown_dynamic_groups
@@ -1118,11 +1124,11 @@ impl Ui {
             .flat_map(|group| group.wallpapers.iter())
             .find(|offered| offered.path == Path::new(&current.dynamic))
             .map(|offered| Ok(offered.dynamic.clone()));
-        match offered.unwrap_or_else(|| Dynamic::read(Path::new(&current.dynamic))) {
-            Ok(Dynamic::Heic(heic)) if !heic.decoded() && heic::decoder().is_none() => {
-                format!("It can't be shown: {}.", heic::NO_DECODER)
+        let line = match offered.unwrap_or_else(|| Dynamic::read(Path::new(&current.dynamic))) {
+            Ok(dynamic) if unshowable(&dynamic) => {
+                return format!("It can't be shown: {}.", DecodeError::NoDecoder);
             }
-            Ok(Dynamic::Heic(heic)) if heic.schedule().follows_sun() => {
+            Ok(Dynamic::Heic(heic)) if matches!(heic.schedule(), Schedule::Solar { .. }) => {
                 "Follows the sun: each of its pictures shows where the sun is in it.".into()
             }
             Ok(dynamic) if dynamic.follows_sun() => {
@@ -1130,7 +1136,8 @@ impl Ui {
             }
             Ok(_) => "Follows the clock: its pictures change at the times its file gives.".into(),
             Err(err) => format!("It can't be shown: {err}."),
-        }
+        };
+        and_greyed(line)
     }
 
     /// The sidebar's pictures of the outputs, left to right.
@@ -1359,12 +1366,12 @@ impl Ui {
                     .css_classes(["caminito-wallpaper-thumbnail"])
                     .tooltip_text(offered.path.to_string_lossy().as_ref())
                     .build();
-                if offered.dynamic.heic().is_some() && !ready && heic::decoder().is_none() {
+                if unshowable(&offered.dynamic) {
                     child.set_sensitive(false);
                     child.set_tooltip_text(Some(&format!(
                         "{}\n{}.",
                         offered.path.display(),
-                        heic::NO_DECODER
+                        DecodeError::NoDecoder
                     )));
                 }
                 flow.append(&child);
@@ -1386,24 +1393,15 @@ impl Ui {
         glib::idle_add_local_once(move || adjustment.set_value(scroll));
     }
 
-    /// Decodes a HEIC's pictures, unless they're being decoded, and draws the Dynamic grid
-    /// and the sidebar again once they're in. Without libheif, nothing.
+    /// Decodes a HEIC's pictures, unless they're being decoded or couldn't be, and draws
+    /// the Dynamic grid and the sidebar again once they're in.
     fn decode(&self, file: &heic::Heic) {
-        if heic::decoder().is_none() || !self.decoding.borrow_mut().insert(file.file().into()) {
-            return;
-        }
-        let path = file.file().to_owned();
-        let on = self.handler(move |ui, outcome: Result<(), String>| {
-            ui.decoding.borrow_mut().remove(&path);
-            if let Err(err) = outcome {
-                glib::g_warning!(DOMAIN, "can't decode {}: {err}", path.display());
-                return;
-            }
+        let on = self.handler(|ui, ()| {
             let groups = ui.shown_dynamic_groups.borrow().clone();
             ui.render_dynamic_grid(&groups);
             ui.render();
         });
-        heic::decode(file, on);
+        self.decodes.start(file, move || on(()));
     }
 
     /// A thumbnail of a dynamic wallpaper: its day picture's left half and its night

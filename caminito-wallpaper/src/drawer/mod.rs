@@ -20,9 +20,8 @@ mod daily;
 mod paint;
 
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::os::fd::AsRawFd;
-use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
@@ -66,7 +65,7 @@ use crate::daily::Source;
 use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
-use crate::heic::{self, Heic};
+use crate::heic::Decodes;
 use crate::identity::Identity;
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
 use crate::sun::sky_now;
@@ -223,10 +222,8 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
-    /// The HEICs whose pictures are being decoded (217), and those that couldn't be, logged
-    /// once and not tried again in this session.
-    decoding: Rc<RefCell<HashSet<PathBuf>>>,
-    undecodable: Rc<RefCell<HashSet<PathBuf>>>,
+    /// The HEICs whose pictures are being decoded, and those that couldn't be (217).
+    decodes: Decodes,
     /// The pictures of the day (214).
     daily: Rc<RefCell<Daily>>,
     /// For a wake before the next tick, when a timed XML's picture ends sooner.
@@ -289,8 +286,7 @@ pub fn run() -> Result<(), Error> {
         bridge,
         pictures: Pictures::default(),
         dynamics: HashMap::new(),
-        decoding: Rc::default(),
-        undecodable: Rc::default(),
+        decodes: Decodes::new(DOMAIN),
         daily: Daily::open(&refresh),
         refresh: refresh.clone(),
         waking: Rc::default(),
@@ -661,40 +657,12 @@ impl App {
                 .ok()
         });
         let dynamic = dynamic.as_ref()?;
-        if let Some(heic) = dynamic.heic().filter(|heic| !heic.decoded()).cloned() {
-            self.decode(&heic);
+        if let Some(heic) = dynamic.heic().filter(|heic| !heic.decoded()) {
+            let refresh = self.refresh.clone();
+            self.decodes.start(heic, move || refresh.schedule());
             return None;
         }
         Some(dynamic.at(sky))
-    }
-
-    /// Decodes `heic`'s pictures, unless they're being decoded or couldn't be, and draws
-    /// again once they're in.
-    fn decode(&self, heic: &Heic) {
-        let file = heic.file().to_owned();
-        if self.undecodable.borrow().contains(&file)
-            || !self.decoding.borrow_mut().insert(file.clone())
-        {
-            return;
-        }
-        glib::g_debug!(DOMAIN, "decoding {}", file.display());
-        let (decoding, undecodable) = (self.decoding.clone(), self.undecodable.clone());
-        let refresh = self.refresh.clone();
-        heic::decode(heic, move |outcome| {
-            decoding.borrow_mut().remove(&file);
-            match outcome {
-                Ok(()) => glib::g_debug!(DOMAIN, "decoded {}", file.display()),
-                Err(err) => {
-                    glib::g_warning!(
-                        DOMAIN,
-                        "can't show the dynamic wallpaper {}: {err}",
-                        file.display()
-                    );
-                    undecodable.borrow_mut().insert(file);
-                }
-            }
-            refresh.schedule();
-        });
     }
 
     /// Writes what the primary output shows to `org.mate.background`, where it differs.

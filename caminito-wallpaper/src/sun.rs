@@ -1,6 +1,7 @@
-//! The moment a dynamic wallpaper is drawn for (216): the sun's elevation and azimuth (217), as Caminito
-//! publishes it on `org.mate.Caminito`'s `Sun` (215), and the local clock. The drawer and
-//! the dialog's sidebar read it alike, so the two show the same picture.
+//! The moment a dynamic wallpaper is drawn for (216): the sun's elevation and azimuth
+//! (217), as Caminito publishes them on `org.mate.Caminito`'s `Sun` (215), and the local
+//! clock. The drawer and the dialog's sidebar read it alike, so the two show the same
+//! picture.
 
 use gio::glib;
 use gio::prelude::*;
