@@ -78,7 +78,7 @@ find_popup() {
   echo "popup (x y w h): ${px:-none} ${py:-} ${pw:-} ${ph:-}"
 }
 # click_menu <row>: the ⋮ of a laptop battery's row
-click_menu() { park; sleep 1.2; xdotool mousemove $((px + pw - 22)) $((py + 8 + 22 + 40 * ($1 - 1))) click 1; sleep 0.8; }
+click_menu() { park; sleep 1.2; xdotool mousemove $((px + pw - 22)) $((py + 74 + 44 * ($1 - 1))) click 1; sleep 0.8; }
 
 start_mock
 
@@ -108,9 +108,9 @@ click_menu 1
 shot 2-menu
 echo "before any switch, EnableChargeThreshold was called with: [$(calls_of BAT0)]"
 
-# The switch, in the menu that is open: its middle is at the popup's left plus 226 and the
-# menu's second line.
-click_switch() { xdotool mousemove $((px + 226)) $((py + 65)) click 1; sleep 1.2; }
+# The switch, in the first battery's menu, which is open: 226 pixels from the popup's left,
+# and 88 below its top: the menu is kept inside the popup, which is 139 high with one battery.
+click_switch() { xdotool mousemove $((px + 226)) $((py + 88)) click 1; sleep 1.2; }
 click_switch
 shot 3-limit-on
 echo "the switch turned on: EnableChargeThreshold called with: $(calls_of BAT0)"

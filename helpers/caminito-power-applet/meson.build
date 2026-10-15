@@ -1,6 +1,6 @@
 # The Power applet (262, ADR 0035): an in-process mate-panel applet in C and GTK3, which
-# reads UPower over GDBus. Its own project, which the top-level meson.build includes as a
-# subproject and installs. It's called "Power" in Add to Panel.
+# reads UPower and mate-session over GDBus. Its own project, which the top-level meson.build
+# includes as a subproject and installs. It's called "Power" in Add to Panel.
 project(
   'caminito-power-applet',
   'c',
@@ -11,6 +11,8 @@ project(
 )
 
 gio = dependency('gio-2.0')
+# The popup names an application by its desktop entry, and Stay awake's lines (265) do.
+gio_unix = dependency('gio-unix-2.0')
 m = meson.get_compiler('c').find_library('m')
 applet_dep = dependency('libmatepanelapplet-4.0')
 # The popup and the icon, which the Bluetooth, Power and Thermal applets share (ADR 0035).
@@ -21,13 +23,26 @@ common = subproject('caminito-applet-common').get_variable('caminito_applet_comm
 # build any state.
 state = static_library('pw-state', 'pw-state.c', dependencies: [gio, m])
 upower = static_library('pw-upower', 'pw-upower.c', link_with: state, dependencies: gio)
-popup = static_library('pw-popup', 'pw-popup.c', link_with: state, dependencies: [gio, common], pic: true)
+# mate-session: Stay awake, and what keeps the computer awake (265).
+session = static_library('pw-session', 'pw-session.c', link_with: state, dependencies: gio)
+# power-profiles-daemon's profiles and what's said of them, and the daemon itself.
+profiles = static_library('pw-profiles', 'pw-profiles.c', dependencies: gio)
+ppd = static_library('pw-ppd', 'pw-ppd.c', link_with: profiles, dependencies: gio, pic: true)
+# The popup's content: the power profile (264), Stay awake and what keeps the computer awake
+# (265), and the rest.
+popup = static_library(
+  'pw-popup',
+  ['pw-popup.c', 'pw-profiles-section.c', 'pw-awake.c'],
+  link_with: [ppd, profiles, state],
+  dependencies: [gio, gio_unix, common],
+  pic: true,
+)
 
 applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-power-applet',
   'power-applet.c',
-  link_with: [state, upower, popup],
+  link_with: [state, upower, session, popup],
   dependencies: [gio, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,
@@ -63,6 +78,20 @@ test(
   env: {'NO_AT_BRIDGE': '1'},
 )
 
+# Stay awake's row and the list of what keeps the computer awake (265), which need a
+# display and are skipped without one.
+test(
+  'awake',
+  executable('test-awake', 'test-awake.c', link_with: [popup, state], dependencies: [gio, common]),
+  env: {'NO_AT_BRIDGE': '1'},
+)
+
+# The profiles' text and parsing, from variants built by hand.
+test(
+  'profiles',
+  executable('test-profiles', 'test-profiles.c', link_with: profiles, dependencies: gio),
+)
+
 # UPower against python-dbusmock's upower template, where python-dbusmock is installed.
 python = import('python').find_installation(
   'python3',
@@ -73,6 +102,20 @@ if python.found()
   test(
     'upower',
     executable('test-upower', 'test-upower.c', link_with: [upower, state], dependencies: [gio, m]),
+    args: [python.full_path()],
+    timeout: 120,
+  )
+  # mate-session against a mock of its inhibitor calls, on a private session bus (265).
+  test(
+    'session',
+    executable('test-session', 'test-session.c', link_with: [session, state], dependencies: gio),
+    args: [python.full_path(), meson.current_source_dir() / 'session-mock.py'],
+    timeout: 120,
+  )
+  # power-profiles-daemon against python-dbusmock's two templates, one for each bus name.
+  test(
+    'ppd',
+    executable('test-ppd', 'test-ppd.c', link_with: [ppd, profiles], dependencies: gio),
     args: [python.full_path()],
     timeout: 120,
   )

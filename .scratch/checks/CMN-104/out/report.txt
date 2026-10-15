@@ -1,7 +1,13 @@
-popup (x y w h): 0 28 320 101
-calls to EnableChargeThreshold so far: (none)
+popup (x y w h): 0 28 320 139
+one battery: popup (x y w h): 0 28 320 139
+before any switch, EnableChargeThreshold was called with: []
 the switch turned on: EnableChargeThreshold called with: true 
 and off: EnableChargeThreshold called with: true false 
 polkit refuses: EnableChargeThreshold called with: true false true ; ChargeThresholdEnabled is (<false>,)
 after the limit: panel running
+two batteries: popup (x y w h): 0 28 320 183
+peripherals only: popup (x y w h): 0 28 320 183
+a battery and two peripherals: popup (x y w h): 0 28 320 227
+the mouse turned off: popup (x y w h): 0 28 320 183
+the shots with and without the mouse differ in 14586.4 pixels
 the table: panel running

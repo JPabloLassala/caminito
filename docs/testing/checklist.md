@@ -2494,6 +2494,33 @@ the developer's to run (CMN-105).
   and the popup and settings window work as in the Session.
 - **Debug tool:** `dconf dump /org/mate/panel/objects/`, and `journalctl --user -b -t mate-panel`.
 
+## Power applet
+
+These need a Session, with its real idle and mate-session, which no mock stands in for. They are
+the developer's to run.
+
+### Stay awake keeps the screen from blanking past `idle-delay`, and shows what else does
+
+- **Milestone:** M9
+- **Steps:**
+  1. In a *MATE on Caminito* session, run `gsettings set org.mate.session idle-delay 1`. Open the
+     Power applet's popup and turn on *Stay awake*. Run `gdbus call --session --dest
+     org.gnome.SessionManager --object-path /org/gnome/SessionManager --method
+     org.gnome.SessionManager.GetInhibitors`.
+  2. Close the popup and leave the keyboard and the mouse alone for two minutes.
+  3. Move the mouse. Open the popup, and turn *Stay awake* off. Leave everything alone for two
+     minutes more.
+  4. Set `idle-delay` back. Play a video in a browser, and open the popup.
+  5. Turn *Stay awake* on again, and run `pkill -x mate-panel`. Open the popup of the new panel.
+- **Expected:** in step 1 the switch is on, the popup lists a line *You*, *Stay awake is on* under
+  a separator, and `GetInhibitors` names one inhibitor. In step 2 the screen stays on, and
+  doesn't lock or blank. In step 3 the screen blanks after one minute (Caminito's idle, 128),
+  and wakes at the mouse. In step 4 the popup lists the browser with its icon and the reason it
+  gave, and the line disappears when the video stops. In step 5 the switch is off again, and
+  `GetInhibitors` lists no inhibitor of the applet.
+- **Debug tool:** `gdbus call` as in step 1, and `journalctl --user -b -t caminito` for the idle
+  state.
+
 ## Marco parity
 
 ### Each placement mode places a native and an X11 window on two outputs

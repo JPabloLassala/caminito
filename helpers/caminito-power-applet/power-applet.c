@@ -3,9 +3,10 @@
  * UPower's display device, a battery glyph by its percentage, a charging variant, or a plug
  * with no battery, with the percentage and the time in its tooltip. It reads UPower
  * directly (pw-upower.c). "Show percentage" is its own preference and puts the percentage
- * beside the glyph. Left-click opens the popup (pw-popup.c), which lists the batteries
- * (263) and sets their charge limit through UPower; its right-click menu has
- * Preferences and "Configure Power Management…", which run mate-power-preferences.
+ * beside the glyph. Left-click opens the popup (pw-popup.c), with Stay awake and what
+ * keeps the computer awake, which it reads and sets through mate-session (pw-session.c),
+ * and the batteries (263), whose charge limit it sets through UPower; its right-click menu
+ * has Preferences and "Configure Power Management…", which run mate-power-preferences.
  */
 
 #include <mate-panel-applet.h>
@@ -14,6 +15,7 @@
 #include "caminito-applet-icon.h"
 #include "caminito-applet-popup.h"
 #include "pw-popup.h"
+#include "pw-session.h"
 #include "pw-state.h"
 #include "pw-upower.h"
 
@@ -29,6 +31,7 @@ typedef struct
   GtkWidget           *icon;
   GtkWidget           *label;
   PwUpower            *upower;
+  PwSession           *session;
   CaminitoAppletPopup *popup;
   PwPopup             *content;
   /* The applet's own preferences, NULL where the schema isn't installed: the preference
@@ -53,7 +56,7 @@ update (Applet *applet)
 
   pw_upower_display (applet->upower, &display);
   devices = pw_upower_devices (applet->upower);
-  pw_popup_update (applet->content, devices);
+  pw_popup_update_devices (applet->content, devices);
   tooltip = pw_state_tooltip (&display);
   percentage = pw_state_percentage (&display);
   caminito_applet_icon_set (applet->icon, pw_state_icon_names (&display));
@@ -66,6 +69,17 @@ static void
 on_changed (PwUpower *upower G_GNUC_UNUSED, gpointer data)
 {
   update (data);
+}
+
+/* Stay awake's switch and the list follow mate-session, which can turn Stay awake off by
+   itself: a refused call, or mate-session restarting. */
+static void
+on_session_changed (PwSession *session, gpointer data)
+{
+  Applet *applet = data;
+
+  pw_popup_set_stay_awake (applet->content, pw_session_stay_awake (session));
+  pw_popup_set_inhibitors (applet->content, pw_session_inhibitors (session));
 }
 
 static void on_show_percentage_toggled (GtkToggleButton *check, gpointer data);
@@ -141,6 +155,14 @@ on_popup_configure (gpointer data G_GNUC_UNUSED)
 }
 
 static void
+on_popup_stay_awake (gboolean on, gpointer data)
+{
+  Applet *applet = data;
+
+  pw_session_set_stay_awake (applet->session, on);
+}
+
+static void
 on_limit_done (const char *path, const char *error, gpointer data)
 {
   Applet *applet = data;
@@ -208,6 +230,7 @@ applet_free (gpointer data)
 
   /* The popup's own handlers can't run any more: its window goes with the applet. */
   pw_popup_free (applet->content);
+  pw_session_free (applet->session);
   pw_upower_free (applet->upower);
   if (applet->preferences != NULL)
     gtk_widget_destroy (applet->preferences);
@@ -240,7 +263,8 @@ settings_new (MatePanelApplet *panel_applet)
 static gboolean
 fill (MatePanelApplet *panel_applet)
 {
-  static const PwPopupActions popup_actions = { on_popup_configure, on_popup_set_limit };
+  static const PwPopupActions popup_actions = { on_popup_configure, on_popup_stay_awake,
+                                                 on_popup_set_limit };
   GtkActionGroup *actions;
   GtkAction *action;
   Applet *applet = g_new0 (Applet, 1);
@@ -283,6 +307,7 @@ fill (MatePanelApplet *panel_applet)
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
   applet->content = pw_popup_new (applet->popup, &popup_actions, applet);
   applet->upower = pw_upower_new (on_changed, applet);
+  applet->session = pw_session_new (on_session_changed, applet);
   gtk_widget_show_all (GTK_WIDGET (panel_applet));
   /* A plug until UPower answers, which is what a computer with no battery shows too. */
   update (applet);

@@ -24,6 +24,12 @@ on_configure (gpointer data)
 }
 
 static void
+on_set_stay_awake (gboolean on, gpointer data)
+{
+  g_string_append_printf (((Fixture *) data)->calls, "awake %d;", on);
+}
+
+static void
 on_set_limit (const char *path, gboolean enable, gpointer data)
 {
   g_string_append_printf (((Fixture *) data)->calls, "limit %s %d;", path, enable);
@@ -32,7 +38,7 @@ on_set_limit (const char *path, gboolean enable, gpointer data)
 static void
 setup (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
-  static const PwPopupActions actions = { on_configure, on_set_limit };
+  static const PwPopupActions actions = { on_configure, on_set_stay_awake, on_set_limit };
 
   fixture->anchor = g_object_ref_sink (gtk_button_new ());
   fixture->popup = caminito_applet_popup_new (fixture->anchor);
@@ -174,11 +180,29 @@ find_label (GtkWidget *widget, const char *text)
   return NULL;
 }
 
+/* The table of batteries: the grid with the bars in it, NULL where there is none. The popup
+   has the power profile and Stay awake above it, and those aren't the table's. */
+static GtkWidget *
+table_of (Fixture *fixture)
+{
+  GtkWidget *bar = find (content (fixture), GTK_TYPE_LEVEL_BAR);
+
+  return bar != NULL ? gtk_widget_get_ancestor (bar, GTK_TYPE_GRID) : NULL;
+}
+
 /* The ⋮ buttons, a laptop battery's each, in the order of the table. */
 static GPtrArray *
 menu_buttons (Fixture *fixture)
 {
   return find_all (content (fixture), GTK_TYPE_MENU_BUTTON);
+}
+
+static guint
+menu_buttons_count (Fixture *fixture)
+{
+  g_autoptr (GPtrArray) buttons = menu_buttons (fixture);
+
+  return buttons->len;
 }
 
 static GtkWidget *
@@ -198,14 +222,13 @@ test_lists_laptop_batteries_then_peripherals (Fixture *fixture, gconstpointer da
   g_autofree char *all = NULL;
   g_autoptr (GPtrArray) buttons = NULL;
 
-  pw_popup_update (fixture->content, devices);
-  all = texts (content (fixture));
-  /* Each row's name and state and percentage, a ⋮ on the laptop's, and the footer. */
+  pw_popup_update_devices (fixture->content, devices);
+  all = texts (table_of (fixture));
+  /* Each row's name and state and percentage, and a ⋮ on the laptop's. */
   g_assert_cmpstr (all, ==,
                    "Battery 1|Discharging|73%|⋮"
                    "|Battery 2|Discharging|80%|⋮"
-                   "|MX Master 3S|Discharging|55%"
-                   "|Configure Power Management…");
+                   "|MX Master 3S|Discharging|55%");
   buttons = menu_buttons (fixture);
   g_assert_cmpuint (buttons->len, ==, 2);
 }
@@ -217,16 +240,17 @@ test_no_batteries_is_no_table (Fixture *fixture, gconstpointer data G_GNUC_UNUSE
   g_autoptr (GPtrArray) batteries = devices_new (battery_new (BAT0, 73, FALSE), NULL);
   g_autofree char *all = NULL;
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   all = texts (content (fixture));
-  g_assert_cmpstr (all, ==, "Configure Power Management…");
-  g_assert_null (find (content (fixture), GTK_TYPE_LEVEL_BAR));
-  g_assert_null (find (content (fixture), GTK_TYPE_SEPARATOR));
+  /* Nothing of the table: no bars, no ⋮. */
+  g_assert_null (strstr (all, "73%"));
+  g_assert_null (table_of (fixture));
+  g_assert_cmpuint (menu_buttons_count (fixture), ==, 0);
 
   /* And back: the table is there when a battery is. */
-  pw_popup_update (fixture->content, batteries);
+  pw_popup_update_devices (fixture->content, batteries);
   g_assert_nonnull (find (content (fixture), GTK_TYPE_LEVEL_BAR));
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   g_assert_null (find (content (fixture), GTK_TYPE_LEVEL_BAR));
 }
 
@@ -238,9 +262,9 @@ test_only_peripherals (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_autofree char *all = NULL;
   g_autoptr (GPtrArray) buttons = NULL;
 
-  pw_popup_update (fixture->content, devices);
-  all = texts (content (fixture));
-  g_assert_cmpstr (all, ==, "MX Master 3S|Discharging|55%|Configure Power Management…");
+  pw_popup_update_devices (fixture->content, devices);
+  all = texts (table_of (fixture));
+  g_assert_cmpstr (all, ==, "MX Master 3S|Discharging|55%");
   buttons = menu_buttons (fixture);
   g_assert_cmpuint (buttons->len, ==, 0);
 }
@@ -250,7 +274,7 @@ test_bar_follows_the_percentage (Fixture *fixture, gconstpointer data G_GNUC_UNU
 {
   g_autoptr (GPtrArray) devices = devices_new (battery_new (BAT0, 73, FALSE), NULL);
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   g_assert_cmpfloat_with_epsilon (
     gtk_level_bar_get_value (GTK_LEVEL_BAR (find (content (fixture), GTK_TYPE_LEVEL_BAR))),
     0.73, 0.0001);
@@ -265,7 +289,7 @@ test_below_20_is_in_the_warning_colour (Fixture *fixture, gconstpointer data G_G
     NULL);
   GtkStyleContext *low, *fine;
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   low = gtk_widget_get_style_context (find_label (content (fixture), "12%"));
   fine = gtk_widget_get_style_context (find_label (content (fixture), "73%"));
   g_assert_true (gtk_style_context_has_class (low, "caminito-power-low"));
@@ -282,7 +306,7 @@ test_menu_has_health_and_the_switch_where_supported (Fixture *fixture,
   g_autofree char *with = NULL;
   g_autofree char *without = NULL;
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   buttons = menu_buttons (fixture);
   g_assert_cmpuint (buttons->len, ==, 2);
   with = texts (menu_of (g_ptr_array_index (buttons, 0)));
@@ -304,7 +328,7 @@ test_limit_is_in_the_state_and_the_switch (Fixture *fixture, gconstpointer data 
   battery->state = PW_STATE_PENDING_CHARGE;
   battery->threshold_enabled = TRUE;
   battery->threshold_end = 80;
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   g_assert_nonnull (find_label (content (fixture), "Not charging · limit 80%"));
   buttons = menu_buttons (fixture);
   g_assert_true (gtk_switch_get_active (
@@ -324,7 +348,7 @@ test_switch_calls_enable_charge_threshold (Fixture *fixture, gconstpointer data 
 {
   g_autoptr (GPtrArray) devices = devices_new (battery_new (BAT0, 73, TRUE), NULL);
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   gtk_switch_set_active (GTK_SWITCH (limit_switch (fixture)), TRUE);
   g_assert_cmpstr (fixture->calls->str, ==, "limit " BAT0 " 1;");
   /* Once UPower says so, it's on in the state's line too, and off is a call again. */
@@ -345,7 +369,7 @@ test_refusal_leaves_the_switch_as_it_was (Fixture *fixture, gconstpointer data G
   g_autoptr (GPtrArray) devices = devices_new (battery_new (BAT0, 73, TRUE), NULL);
   g_autoptr (GPtrArray) buttons = NULL;
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   gtk_switch_set_active (GTK_SWITCH (limit_switch (fixture)), TRUE);
   pw_popup_limit_done (fixture->content, BAT0, "Not authorized");
 
@@ -370,13 +394,13 @@ test_upower_catching_up_keeps_the_switch (Fixture *fixture, gconstpointer data G
   g_autoptr (GPtrArray) later = NULL;
   PwDevice *changed = battery_new (BAT0, 73, TRUE);
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   gtk_switch_set_active (GTK_SWITCH (limit_switch (fixture)), TRUE);
   pw_popup_limit_done (fixture->content, BAT0, NULL);
   changed->threshold_enabled = TRUE;
   changed->threshold_end = 80;
   later = devices_new (changed, NULL);
-  pw_popup_update (fixture->content, later);
+  pw_popup_update_devices (fixture->content, later);
   g_assert_true (gtk_switch_get_active (GTK_SWITCH (limit_switch (fixture))));
   g_assert_nonnull (find_label (content (fixture), "Discharging · limit 80%"));
 }
@@ -388,11 +412,11 @@ test_an_unchanged_table_is_not_drawn_again (Fixture *fixture, gconstpointer data
   g_autoptr (GPtrArray) again = devices_new (battery_new (BAT0, 73, TRUE), NULL);
   GtkWidget *before;
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   before = find (content (fixture), GTK_TYPE_LEVEL_BAR);
   /* What the table doesn't show, the time left, which UPower sends every minute, is not
      in PwDevice: the same devices again. */
-  pw_popup_update (fixture->content, again);
+  pw_popup_update_devices (fixture->content, again);
   g_assert_true (find (content (fixture), GTK_TYPE_LEVEL_BAR) == before);
 }
 
@@ -407,11 +431,11 @@ test_open_menu_survives_a_change (Fixture *fixture, gconstpointer data G_GNUC_UN
   g_autoptr (GPtrArray) buttons = NULL;
   g_autoptr (GPtrArray) after = NULL;
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   buttons = menu_buttons (fixture);
   gtk_toggle_button_set_active (g_ptr_array_index (buttons, 1), TRUE);
 
-  pw_popup_update (fixture->content, later);
+  pw_popup_update_devices (fixture->content, later);
   after = menu_buttons (fixture);
   g_assert_false (gtk_toggle_button_get_active (g_ptr_array_index (after, 0)));
   g_assert_true (gtk_toggle_button_get_active (g_ptr_array_index (after, 1)));
@@ -424,7 +448,7 @@ test_open_menu_survives_a_change (Fixture *fixture, gconstpointer data G_GNUC_UN
   gtk_toggle_button_set_active (g_ptr_array_index (after, 0), FALSE);
   g_clear_pointer (&later, g_ptr_array_unref);
   later = devices_new (battery_new (BAT0, 71, TRUE), battery_new (BAT1, 80, TRUE), NULL);
-  pw_popup_update (fixture->content, later);
+  pw_popup_update_devices (fixture->content, later);
   g_clear_pointer (&after, g_ptr_array_unref);
   after = menu_buttons (fixture);
   g_assert_false (gtk_toggle_button_get_active (g_ptr_array_index (after, 0)));
@@ -438,9 +462,9 @@ test_a_mouse_turned_off_leaves_the_table (Fixture *fixture, gconstpointer data G
   g_autoptr (GPtrArray) devices = devices_new (battery_new (BAT0, 73, FALSE), mouse, NULL);
   g_autoptr (GPtrArray) later = devices_new (battery_new (BAT0, 73, FALSE), NULL);
 
-  pw_popup_update (fixture->content, devices);
+  pw_popup_update_devices (fixture->content, devices);
   g_assert_nonnull (find_label (content (fixture), "MX"));
-  pw_popup_update (fixture->content, later);
+  pw_popup_update_devices (fixture->content, later);
   g_assert_null (find_label (content (fixture), "MX"));
 }
 

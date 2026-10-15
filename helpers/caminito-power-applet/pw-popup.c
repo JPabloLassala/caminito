@@ -8,6 +8,9 @@
 
 #include "pw-popup.h"
 
+#include "pw-awake.h"
+#include "pw-profiles-section.h"
+
 #define POPUP_WIDTH   320
 #define ROW_ICON_SIZE 24
 #define BAR_WIDTH     56
@@ -18,6 +21,7 @@ struct _PwPopup
   PwPopupActions       actions;
   gpointer             data;
   GtkWidget           *content;
+  PwAwake             *awake;
   /* The table, in the box above the footer, and the rows it was drawn from. */
   GtkWidget           *batteries;
   GPtrArray           *rows;
@@ -104,6 +108,14 @@ label_new (const char *text, gboolean dim)
   if (dim)
     gtk_style_context_add_class (gtk_widget_get_style_context (label), GTK_STYLE_CLASS_DIM_LABEL);
   return label;
+}
+
+static void
+on_set_stay_awake (gboolean on, gpointer data)
+{
+  PwPopup *popup = data;
+
+  popup->actions.set_stay_awake (on, popup->data);
 }
 
 static void
@@ -290,7 +302,7 @@ rebuild (PwPopup *popup)
   gtk_container_foreach (GTK_CONTAINER (popup->batteries), destroy_child, NULL);
   if (popup->rows->len == 0)
     {
-      /* No battery and no peripheral with one: no table, and no line under it. */
+      /* No battery and no peripheral with one: no table, and no line over it. */
       g_clear_pointer (&popup->open_path, g_free);
       return;
     }
@@ -299,9 +311,10 @@ rebuild (PwPopup *popup)
   gtk_grid_set_row_spacing (GTK_GRID (table), 6);
   for (guint i = 0; i < popup->rows->len; i++)
     attach_row (popup, table, i, g_ptr_array_index (popup->rows, i));
-  gtk_box_pack_start (GTK_BOX (popup->batteries), table, FALSE, FALSE, 0);
+  /* Under Stay awake, as in the prototype: a line, then the table. */
   gtk_box_pack_start (GTK_BOX (popup->batteries),
                       gtk_separator_new (GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 2);
+  gtk_box_pack_start (GTK_BOX (popup->batteries), table, FALSE, FALSE, 0);
   gtk_widget_show_all (popup->batteries);
   if (popup->open_button != NULL)
     gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (popup->open_button), TRUE);
@@ -348,7 +361,7 @@ forget_missing (GHashTable *table, PwPopup *popup)
 }
 
 void
-pw_popup_update (PwPopup *popup, GPtrArray *devices)
+pw_popup_update_devices (PwPopup *popup, GPtrArray *devices)
 {
   GPtrArray *rows = pw_state_rows (devices);
   GHashTableIter iter;
@@ -398,6 +411,7 @@ pw_popup_limit_done (PwPopup *popup, const char *path, const char *error)
 PwPopup *
 pw_popup_new (CaminitoAppletPopup *applet_popup, const PwPopupActions *actions, gpointer data)
 {
+  static const PwAwakeActions awake_actions = { on_set_stay_awake };
   PwPopup *popup = g_new0 (PwPopup, 1);
   GtkWidget *window = caminito_applet_popup_get_window (applet_popup);
   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 4);
@@ -417,15 +431,36 @@ pw_popup_new (CaminitoAppletPopup *applet_popup, const PwPopupActions *actions, 
   gtk_button_set_relief (GTK_BUTTON (configure), GTK_RELIEF_NONE);
   gtk_widget_set_halign (configure, GTK_ALIGN_START);
   g_signal_connect (configure, "clicked", G_CALLBACK (on_configure), popup);
-  /* The power profile (CMN-98) and Stay awake (CMN-101) go above the table. */
+  popup->awake = pw_awake_new (&awake_actions, popup);
+  /* The power profile (264) is the popup's first section, then Stay awake (265), the table
+     of batteries (263) and what keeps the computer awake. */
   popup->batteries = gtk_box_new (GTK_ORIENTATION_VERTICAL, 4);
+  gtk_box_pack_start (GTK_BOX (box), pw_profiles_section_new (), FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (box), pw_awake_row (popup->awake), FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (box), popup->batteries, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (box), pw_awake_inhibitors (popup->awake), FALSE, FALSE, 0);
   gtk_box_pack_end (GTK_BOX (box), configure, FALSE, FALSE, 0);
   gtk_widget_show_all (box);
   gtk_container_add (GTK_CONTAINER (window), box);
   popup->content = box;
   g_object_add_weak_pointer (G_OBJECT (box), (gpointer *) &popup->content);
   return popup;
+}
+
+void
+pw_popup_set_stay_awake (PwPopup *popup, gboolean on)
+{
+  pw_awake_set_stay_awake (popup->awake, on);
+}
+
+void
+pw_popup_set_inhibitors (PwPopup *popup, const GPtrArray *inhibitors)
+{
+  pw_awake_set_inhibitors (popup->awake, inhibitors);
+  /* A window doesn't shrink when its content does: asking for the least brings it back to
+     what the list needs, at the width it has. */
+  gtk_window_resize (GTK_WINDOW (caminito_applet_popup_get_window (popup->popup)), POPUP_WIDTH,
+                     1);
 }
 
 void
@@ -441,5 +476,6 @@ pw_popup_free (PwPopup *popup)
   g_hash_table_unref (popup->requested);
   g_hash_table_unref (popup->errors);
   g_free (popup->open_path);
+  pw_awake_free (popup->awake);
   g_free (popup);
 }

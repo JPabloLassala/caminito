@@ -57,6 +57,33 @@ char               *pw_state_duration   (gint64 seconds);
    "Plugged in" with no battery. */
 char               *pw_state_tooltip    (const PwDisplay *display);
 
+/* mate-session's inhibit flags that keep the computer awake: Inhibit's flags for suspend
+   and idle. The others (logout, switch user, automount) don't, and the applet doesn't list
+   them. */
+#define PW_INHIBIT_SUSPEND 4
+#define PW_INHIBIT_IDLE    8
+/* Stay awake's inhibitor (265): its app ID, so that the list can tell it from an
+   application's. */
+#define PW_STAY_AWAKE_APP_ID "caminito-power-applet"
+#define PW_STAY_AWAKE_REASON "Stay awake is on"
+
+/* One of mate-session's inhibitors: an application, or Stay awake, keeping the computer
+   awake. */
+typedef struct
+{
+  /* The application's ID, as it gave it: "firefox", "org.gnome.Totem", "" if it gave none. */
+  char  *app_id;
+  /* Why, in the application's words. May be empty. */
+  char  *reason;
+  guint  flags;
+} PwInhibitor;
+
+/* Whether flags keep the computer from sleeping or from going idle: the inhibitors the
+   popup lists. */
+gboolean     pw_state_inhibitor_listed (guint flags);
+PwInhibitor *pw_inhibitor_new          (const char *app_id, const char *reason, guint flags);
+void         pw_inhibitor_free         (PwInhibitor *inhibitor);
+
 /* UPower's Device.Type, the ones the table tells apart. */
 enum
 {

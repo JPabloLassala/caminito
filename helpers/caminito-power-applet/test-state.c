@@ -412,6 +412,22 @@ test_rows_equal (void)
   g_assert_false (pw_row_equal (row_at (a, 0), row_at (b, 0)));
 }
 
+/* Only an inhibitor that keeps the computer from sleeping or from going idle is listed. */
+static void
+test_inhibitors_listed (void)
+{
+  g_assert_false (pw_state_inhibitor_listed (0));
+  /* Logout (1), switch user (2) and automount (16). */
+  g_assert_false (pw_state_inhibitor_listed (1));
+  g_assert_false (pw_state_inhibitor_listed (2 | 16));
+  g_assert_true (pw_state_inhibitor_listed (PW_INHIBIT_SUSPEND));
+  g_assert_true (pw_state_inhibitor_listed (PW_INHIBIT_IDLE));
+  g_assert_true (pw_state_inhibitor_listed (1 | 4));
+  /* Stay awake's own. */
+  g_assert_true (pw_state_inhibitor_listed (PW_INHIBIT_SUSPEND | PW_INHIBIT_IDLE));
+  g_assert_cmpint (PW_INHIBIT_SUSPEND | PW_INHIBIT_IDLE, ==, 12);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -433,5 +449,7 @@ main (int argc, char **argv)
   g_test_add_func ("/rows/the-mains-and-what-is-off-are-left-out", test_rows_leave_out);
   g_test_add_func ("/rows/a-battery-that-powers-nothing-is-a-peripheral", test_rows_battery_that_is_no_laptops);
   g_test_add_func ("/rows/equal-rows-need-no-redraw", test_rows_equal);
+
+  g_test_add_func ("/state/only-suspend-and-idle-inhibitors-are-listed", test_inhibitors_listed);
   return g_test_run ();
 }
