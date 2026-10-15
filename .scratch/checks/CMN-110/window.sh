@@ -6,7 +6,8 @@
 # GTK4 program (180), and takes:
 #
 #   <theme>-1-computer   This computer; with two adapters in light, one in dark
-#   <theme>-2-device     MX Master 3 selected: its battery is 12%, low
+#   <theme>-2-device     MX Master 3 selected: its battery is 12%, low; in light, it's then
+#                        renamed "My mouse" in its field, and left for another row unapplied
 #   <theme>-3-connected  WH-1000XM4 selected: connected, 80%
 #   dark-4-forget        the Forget confirmation, which is then cancelled
 #
@@ -99,6 +100,15 @@ for theme in light dark; do
   # The rows: This computer, then MX Keys, MX Master 3 and WH-1000XM4, by name.
   click 120 155
   shot "$theme-2-device"
+  if [ "$theme" = light ]; then
+    # A name typed and not applied, then another row clicked: the name is still given.
+    xdotool mousemove 520 171 click 1 key ctrl+a type 'My mouse'
+    click 120 200
+    sleep 1
+    echo "light: MX Master 3 renamed and left for another row, its Alias is" \
+      "$(gdbus call --session --dest org.bluez --object-path /org/bluez/hci0/dev_D4_1B_70_88_05_13 \
+        --method org.freedesktop.DBus.Properties.Get org.bluez.Device1 Alias)" >>"$out/report.txt"
+  fi
   click 120 200
   shot "$theme-3-connected"
 

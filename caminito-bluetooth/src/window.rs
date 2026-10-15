@@ -27,14 +27,9 @@ pub(crate) struct Services {
     pub(crate) switch: Rc<Switch>,
 }
 
-/// Opens the window, or raises the one there is. `services` is None when BlueZ can't be
-/// reached at all. `scan` is for Add New Device (258).
-pub(crate) fn present(application: &gtk::Application, services: Option<&Services>, _scan: bool) {
-    // Any of its windows, not only the active one, which a hidden window isn't.
-    if let Some(window) = application.windows().first() {
-        window.present();
-        return;
-    }
+/// Sets up what every window shares, once, at the program's start: the window's CSS and
+/// Ctrl+W.
+pub(crate) fn set_up(application: &gtk::Application) {
     application.set_accels_for_action("window.close", &["<Control>w"]);
     if let Some(display) = gdk::Display::default() {
         let provider = gtk::CssProvider::new();
@@ -44,6 +39,16 @@ pub(crate) fn present(application: &gtk::Application, services: Option<&Services
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+    }
+}
+
+/// Opens the window, or raises the one there is. `services` is None when BlueZ can't be
+/// reached at all. `scan` is for Add New Device (258).
+pub(crate) fn present(application: &gtk::Application, services: Option<&Services>, _scan: bool) {
+    // Any of its windows, not only the active one, which a hidden window isn't.
+    if let Some(window) = application.windows().first() {
+        window.present();
+        return;
     }
     let window = gtk::ApplicationWindow::builder()
         .application(application)
@@ -70,8 +75,12 @@ struct View {
     /// Set while the view sets its widgets from the state, so that their signals aren't
     /// taken for the user's.
     syncing: Cell<bool>,
-    /// Bluetooth's switch, in the list's header and in This computer.
-    switches: [gtk::Switch; 2],
+    /// Bluetooth's switch in the list's header.
+    header_switch: gtk::Switch,
+    /// Bluetooth's switch in This computer.
+    computer_switch: gtk::Switch,
+    /// Whether rfkill's block couldn't be read, warned of once until it can again.
+    unreadable: Cell<bool>,
     list: gtk::ListBox,
     rows: RefCell<Vec<Row>>,
     pane: gtk::Stack,
@@ -79,6 +88,15 @@ struct View {
     device: DevicePane,
     /// The last action's failure, under the pane.
     message: gtk::Label,
+}
+
+/// What one of the list's rows shows.
+struct Entry<'a> {
+    selection: Selection,
+    icon: &'a str,
+    name: String,
+    /// The line under the name, which is hidden when empty.
+    status: String,
 }
 
 /// One of the list's rows.
@@ -137,8 +155,8 @@ impl View {
         let pane = gtk::Stack::new();
         let computer = ComputerPane::build();
         let device = DevicePane::build();
-        let switches = [switch(), switch()];
-        pane.add_named(&computer.page(&switches[1]), Some("computer"));
+        let computer_switch = switch();
+        pane.add_named(&computer.page(&computer_switch), Some("computer"));
         pane.add_named(&device.page(), Some("device"));
         let message = gtk::Label::builder()
             .xalign(0.0)
@@ -150,7 +168,9 @@ impl View {
             settings: settings.clone(),
             switch: services.switch.clone(),
             syncing: Cell::new(false),
-            switches,
+            header_switch: switch(),
+            computer_switch,
+            unreadable: Cell::new(false),
             list,
             rows: RefCell::default(),
             pane,
@@ -191,7 +211,7 @@ impl View {
             .css_classes(["heading"])
             .build();
         header.append(&title);
-        header.append(&self.switches[0]);
+        header.append(&self.header_switch);
         margins(&header, 8);
 
         // Add New Device is 258's.
@@ -234,7 +254,7 @@ impl View {
     }
 
     fn connect_signals(self: &Rc<Self>) {
-        for switch in &self.switches {
+        for switch in [&self.header_switch, &self.computer_switch] {
             let weak = Rc::downgrade(self);
             switch.connect_state_set(move |_, on| {
                 let Some(view) = weak.upgrade() else {
@@ -246,10 +266,8 @@ impl View {
                 view.message.set_label("");
                 glib::spawn_future_local(async move {
                     if let Err(err) = view.switch.set_on(on).await {
-                        glib::g_warning!(DOMAIN, "{err}");
                         let what = if on { "on" } else { "off" };
-                        view.message
-                            .set_label(&format!("Bluetooth can't be turned {what}: {err}."));
+                        view.fail(&err, &format!("Bluetooth can't be turned {what}."));
                     }
                     view.update();
                 });
@@ -274,6 +292,7 @@ impl View {
                 .map(|known| known.selection.clone());
             if let Some(selection) = selection {
                 view.message.set_label("");
+                view.rename_from(&view.device.name);
                 view.settings.select(selection);
             }
         });
@@ -295,6 +314,7 @@ impl View {
                     .get(chooser.selected() as usize)
                     .cloned();
                 if let Some(path) = path {
+                    view.rename_from(&view.computer.name);
                     view.settings.choose(&path);
                 }
             });
@@ -319,11 +339,19 @@ impl View {
     /// Draws the state again.
     fn update(&self) {
         self.syncing.set(true);
-        let on = self.switch.is_on().unwrap_or_else(|err| {
-            glib::g_warning!(DOMAIN, "{err}");
-            true
-        });
-        for switch in &self.switches {
+        let on = match self.switch.is_on() {
+            Ok(on) => {
+                self.unreadable.set(false);
+                on
+            }
+            Err(err) => {
+                if !self.unreadable.replace(true) {
+                    glib::g_warning!(DOMAIN, "{err}");
+                }
+                true
+            }
+        };
+        for switch in [&self.header_switch, &self.computer_switch] {
             switch.set_active(on);
             switch.set_state(on);
         }
@@ -347,21 +375,19 @@ impl View {
     }
 
     fn update_list(&self, adapter: Option<&Adapter>, devices: &[Device]) {
-        let mut wanted = vec![(
-            Selection::Computer,
-            "computer".to_owned(),
-            "This computer".to_owned(),
-            adapter
+        let mut wanted = vec![Entry {
+            selection: Selection::Computer,
+            icon: "computer",
+            name: "This computer".to_owned(),
+            status: adapter
                 .map(|adapter| adapter.alias.clone())
                 .unwrap_or_default(),
-        )];
-        wanted.extend(devices.iter().map(|device| {
-            (
-                Selection::Device(device.path.clone()),
-                icon_name(device).to_owned(),
-                device.alias.clone(),
-                if device.connected { "Connected" } else { "" }.to_owned(),
-            )
+        }];
+        wanted.extend(devices.iter().map(|device| Entry {
+            selection: Selection::Device(device.path.clone()),
+            icon: icon_name(device),
+            name: device.alias.clone(),
+            status: if device.connected { "Connected" } else { "" }.to_owned(),
         }));
 
         let mut rows = self.rows.borrow_mut();
@@ -369,23 +395,23 @@ impl View {
             && rows
                 .iter()
                 .zip(&wanted)
-                .all(|(row, (selection, ..))| &row.selection == selection);
+                .all(|(row, entry)| row.selection == entry.selection);
         if !same {
             self.list.remove_all();
             *rows = wanted
                 .iter()
-                .map(|(selection, ..)| {
-                    let row = Row::build(selection.clone());
+                .map(|entry| {
+                    let row = Row::build(entry.selection.clone());
                     self.list.append(&row.row);
                     row
                 })
                 .collect();
         }
-        for (row, (_, icon, name, status)) in rows.iter().zip(&wanted) {
-            row.icon.set_icon_name(Some(icon));
-            row.name.set_label(name);
-            row.status.set_label(status);
-            row.status.set_visible(!status.is_empty());
+        for (row, entry) in rows.iter().zip(&wanted) {
+            row.icon.set_icon_name(Some(entry.icon));
+            row.name.set_label(&entry.name);
+            row.status.set_label(&entry.status);
+            row.status.set_visible(!entry.status.is_empty());
         }
         let selection = self.settings.selection();
         let selected = rows.iter().find(|row| row.selection == selection);
@@ -408,9 +434,7 @@ impl View {
             };
             view.device.busy.set(false);
             if let Err(err) = answer {
-                glib::g_warning!(DOMAIN, "{err}");
-                view.message
-                    .set_label(&format!("Can't {what} {}.", device.alias));
+                view.fail(&err, &format!("Can't {what} {}.", device.alias));
             }
             view.update();
         });
@@ -435,11 +459,34 @@ impl View {
                 return;
             }
             if let Err(err) = view.settings.forget(&device.path).await {
-                glib::g_warning!(DOMAIN, "{err}");
-                view.message
-                    .set_label(&format!("Can't forget {}.", device.alias));
+                view.fail(&err, &format!("Can't forget {}.", device.alias));
             }
         });
+    }
+
+    /// Renames what `name` is the field of, if the user changed its text.
+    fn rename_from(self: &Rc<Self>, name: &NameEntry) {
+        let text = name.entry.text().to_string();
+        let path = name.path.borrow().clone();
+        if path.is_empty() || text == *name.alias.borrow() {
+            return;
+        }
+        // Taken as given, so that the field's leaving after a new selection doesn't ask
+        // again.
+        *name.alias.borrow_mut() = text.clone();
+        self.message.set_label("");
+        let view = self.clone();
+        glib::spawn_future_local(async move {
+            if let Err(err) = view.settings.rename(&path, &text).await {
+                view.fail(&err, &format!("Can't rename it “{text}”."));
+            }
+        });
+    }
+
+    /// Warns of `err`, and tells the user `text` under the pane.
+    fn fail(&self, err: &dyn std::error::Error, text: &str) {
+        glib::g_warning!(DOMAIN, "{err}");
+        self.message.set_label(text);
     }
 }
 
@@ -652,23 +699,9 @@ impl NameEntry {
     fn connect(view: &Rc<View>, of: fn(&View) -> &NameEntry) {
         let weak = Rc::downgrade(view);
         let rename = Rc::new(move || {
-            let Some(view) = weak.upgrade() else {
-                return;
-            };
-            let name = of(&view);
-            let text = name.entry.text().to_string();
-            let path = name.path.borrow().clone();
-            if path.is_empty() || text == *name.alias.borrow() {
-                return;
+            if let Some(view) = weak.upgrade() {
+                view.rename_from(of(&view));
             }
-            view.message.set_label("");
-            glib::spawn_future_local(async move {
-                if let Err(err) = view.settings.rename(&path, &text).await {
-                    glib::g_warning!(DOMAIN, "{err}");
-                    view.message
-                        .set_label(&format!("Can't rename it “{text}”."));
-                }
-            });
         });
         let entry = &of(view).entry;
         entry.connect_activate({

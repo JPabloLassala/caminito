@@ -58,7 +58,8 @@ fn main() -> glib::ExitCode {
 
     application.connect_startup({
         let services = services.clone();
-        move |_| {
+        move |application| {
+            window::set_up(application);
             let model = match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
                 Ok(system) => Bluez::new(&system),
                 Err(err) => {

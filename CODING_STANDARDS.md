@@ -78,7 +78,7 @@ Where each tier lives, per ticket 15's test seams:
 | Each picture of the day's source against a saved answer, and the cache against a fake of the network | `caminito-wallpaper/src/daily/tests.rs` |
 | The Wallpaper dialog's client of output management and its page against Caminito | `caminito/src/tests/caminito_wallpaper.rs`, through `Fixture` |
 | The real caminito-wallpaperd against Caminito | `caminito/src/tests/caminito_wallpaperd.rs`, through `Fixture`, ignored unless `CAMINITO_WALLPAPERD` names the drawer |
-| BlueZ's model, the rfkill block, the switch, the pairing agent and the settings window's state against python-dbusmock's `bluez5` template on a private bus, with the rfkill block and the agent's dialogs faked and the test calling the agent as BlueZ would | `caminito-bluetooth/tests/`, through `mock::run`; the rfkill block's sysfs and event beside the code |
+| BlueZ's model, the rfkill block, the switch, the pairing agent and the settings window's state against python-dbusmock's `bluez5` template on a private bus, with the rfkill block and the agent's dialogs faked and the test calling the agent as BlueZ would | `caminito-bluetooth/tests/`, through `mock::run`; the rfkill block's sysfs and event, and a device's kind, beside the code |
 | caminito-bluetooth's single instance, the real binary | `caminito-bluetooth/tests/single_instance.rs`, ignored unless run under a display, as tools/check runs it under Xvfb |
 | Pure logic in `caminito` (settings translation, AccessX, scale rules, the lock state machine) | a `tests` module beside the code |
 | Headless integration, X11 tier, D-Bus | `caminito/src/tests/`, through `Fixture` |
