@@ -72,8 +72,9 @@ makedepends=(cargo git meson)
 optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the panel's global menu"
   "caminito-vscode-git: the menus of VS Code, VSCodium, Code - OSS and Cursor in the panel's global menu")
 # caminito's tests link pixman for the headless backend, its test clients load
-# libwayland-client (21), and they run on a private session bus (14).
-checkdepends=(dbus pixman wayland)
+# libwayland-client (21), and they run on a private session bus (14). caminito-bluetooth's
+# run against python-dbusmock's BlueZ (255).
+checkdepends=(dbus pixman wayland python-dbusmock)
 provides=("$_pkgname")
 conflicts=("$_pkgname")
 # The local checkout's committed HEAD, so uncommitted work is never packaged. makepkg

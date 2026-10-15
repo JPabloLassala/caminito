@@ -63,6 +63,20 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# caminito-bluetooth's entries (255). Unlike the entries above, these are in the normal XDG
+# directories: it doesn't depend on Caminito, and works under X11 MATE too (ADR 0035). Its
+# categories put the window under Hardware in the control center. The autostart entry starts
+# it at login with --background, for the pairing agent (256).
+install_data(
+  'data/caminito-bluetooth.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
+install_data(
+  'data/caminito-bluetooth-autostart.desktop',
+  rename: 'caminito-bluetooth.desktop',
+  install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
+)
+
 # The launcher of the control center's Keyboard Shortcuts dialog (183), under the stock entry's
 # id and in the same directory, so that it shadows it in a Session alone. There the dialog is
 # System Shortcuts, and the patched dialog takes its title from this entry's name, so the

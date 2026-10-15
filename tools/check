@@ -21,11 +21,12 @@ if [ "${1-}" = --deps ]; then
   # tty backend links them. gtk4: caminito-displays (84). gtk-session-lock, mate-desktop, pam:
   # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
   # passwords against. nodejs, npm: the global menu extension (116). desktop-file-utils:
-  # desktop-file-validate, for the System Shortcuts entry (183).
+  # desktop-file-validate, for the System Shortcuts entry (183). python-dbusmock: the BlueZ
+  # caminito-bluetooth's tests run against (255).
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm desktop-file-utils
+    nodejs npm desktop-file-utils python-dbusmock
   rustup toolchain install
 fi
 
@@ -75,6 +76,23 @@ desktop-file-validate "$installed"
 # caminito-locker's PAM conversation (131), against pam_wrapper's stand-in service.
 step "the helpers' tests"
 meson test -C target/meson --print-errorlogs
+
+# caminito-bluetooth is one process (255): GTK needs a display to start it, so this test runs
+# on X under Xvfb. Its bus is its own.
+step "caminito-bluetooth's single instance"
+xvfb-run -a cargo test -p caminito-bluetooth --test single_instance -- --ignored
+
+# caminito-bluetooth's entries go in the normal XDG directories (255), not a Session's own.
+step "caminito-bluetooth's entries"
+for entry in share/applications/caminito-bluetooth.desktop \
+  xdg/autostart/caminito-bluetooth.desktop; do
+  installed=$(find target/meson-destdir -path "*/$entry")
+  if [ -z "$installed" ]; then
+    echo "$entry isn't installed" >&2
+    exit 1
+  fi
+  desktop-file-validate "$installed"
+done
 
 # The headless tier renders with pixman, so it needs no GPU or EGL, and the X11 tier runs
 # with it. caminito's tests get a private session bus (14), which reads the service files a
