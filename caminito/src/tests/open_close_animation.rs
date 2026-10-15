@@ -151,6 +151,9 @@ fn typed(types: Vec<&'static str>, decoration: Decoration) -> WindowSpec {
     }
 }
 
+// A window's type and the windows outside policy are X11's alone, as is an unmap that a
+// client can follow with a map of the same window.
+
 #[test]
 fn a_utility_window_with_a_frame_opens_and_a_menu_or_splash_screen_without_one_doesnt() {
     let (mut f, x) = desk(Kind::X11, Vec::new());
@@ -215,6 +218,25 @@ fn an_x11_window_unmapped_and_mapped_again_opens_again() {
     assert!(rect.size.w < f.visible_frame(window).size.w, "{rect:?}");
 }
 
+#[test]
+fn a_window_that_maps_on_a_workspace_no_output_shows_doesnt_open() {
+    let (mut f, x) = desk(Kind::X11, Vec::new());
+    let window = f.map(
+        x,
+        WindowSpec {
+            cardinals: vec![("_NET_WM_DESKTOP", vec![2])],
+            ..WindowSpec::default()
+        },
+    );
+    assert!(!opens(&f, window), "nothing shows it");
+
+    // Nor when a switch shows it after, which isn't its opening.
+    f.state.caminito.policy.switch_workspace(2);
+    f.dispatch();
+    assert!(f.state.caminito.policy.is_showing(f.pid(window)));
+    assert!(opening(&f).is_empty(), "{:?}", opening(&f));
+}
+
 // What a client is sent is read from a Wayland client, as `input.rs` reads it.
 #[test]
 fn keys_and_clicks_part_way_reach_the_new_window_at_its_real_place() {
@@ -248,6 +270,8 @@ fn keys_and_clicks_part_way_reach_the_new_window_at_its_real_place() {
         "{input}"
     );
 }
+
+// The settings are read the same for both kinds, which reach the one `map_pending`.
 
 /// Maps a window and checks that the frame after it is the window at its place, whole.
 fn assert_there_at_once(mut f: Fixture, id: ClientId) {

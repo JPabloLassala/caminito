@@ -43,7 +43,13 @@ pub(crate) const LENGTH: Duration = Duration::from_millis(250);
 /// How much of its way a slide has left `elapsed` after its start, from 1 to 0: a cubic
 /// ease-out, so the windows start at their fastest and slow down into their places.
 pub(crate) fn way_left(elapsed: Duration) -> f64 {
-    let time_left = 1.0 - (elapsed.as_secs_f64() / LENGTH.as_secs_f64()).min(1.0);
+    eased_way_left(elapsed, LENGTH)
+}
+
+/// How much of its way a movement of `length` on a cubic ease-out has left `elapsed` after
+/// its start, from 1 to 0, as Plasma's effects ease out (ADR 0033, ADR 0034).
+pub(crate) fn eased_way_left(elapsed: Duration, length: Duration) -> f64 {
+    let time_left = 1.0 - (elapsed.as_secs_f64() / length.as_secs_f64()).min(1.0);
     time_left.powi(3)
 }
 

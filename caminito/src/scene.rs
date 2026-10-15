@@ -36,7 +36,7 @@ use smithay::wayland::compositor::{TraversalAction, with_states, with_surface_tr
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::open_close_animation::opening_at;
+use crate::open_close_animation::{opening_alpha, opening_rect};
 use crate::output::{output_geometry, output_id};
 use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
@@ -534,7 +534,9 @@ fn overview_elements<R>(
     if let Some(dragged) = caminito.overview_dragged(open) {
         let whole = Rectangle::from_size(output_geometry(output).size);
         let place = |_| (dragged.rect, whole);
-        scaled_window_elements(renderer, caminito, dragged.id, place, scale, 1.0, elements);
+        scaled_window_elements(
+            renderer, caminito, dragged.id, place, scale, 1.0, false, elements,
+        );
     }
     overview_bar_elements(renderer, caminito, output, open, now, elements);
     for laid in open.layouts() {
@@ -610,6 +612,7 @@ fn overview_layout_elements<R>(
             place,
             scale,
             drawn.alpha,
+            false,
             elements,
         );
     }
@@ -617,7 +620,13 @@ fn overview_layout_elements<R>(
 
 /// Window `id` with its frame at `alpha`, as a thumbnail draws it, from its own surfaces:
 /// scaled to fill the target that `place` gives for its frame rect, and cut off at the
-/// edge of the other rectangle it gives, if they meet.
+/// edge of the other rectangle it gives, if they meet. A `whole` window has its shadow too,
+/// and it and its popups reach past the target, cut off only at that other rectangle's
+/// edge, as the Opening animation draws a window (251).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the window, where it goes, and how it's drawn there"
+)]
 fn scaled_window_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -625,6 +634,7 @@ fn scaled_window_elements<R>(
     place: impl Fn(Rectangle<i32, Logical>) -> (Rectangle<i32, Logical>, Rectangle<i32, Logical>),
     scale: f64,
     alpha: f32,
+    whole: bool,
     elements: &mut Vec<SceneElement<R>>,
 ) where
     R: Renderer + ImportAll + ImportMem,
@@ -642,21 +652,44 @@ fn scaled_window_elements<R>(
         return;
     }
     let (target, within) = place(frame);
-    let Some(crop) = target.intersection(within) else {
-        return;
+    let (crop, shown) = if whole {
+        (within, unscaled_into(within, frame.size, target))
+    } else {
+        let Some(crop) = target.intersection(within) else {
+            return;
+        };
+        (crop, Rectangle::from_size(frame.size))
     };
+    let origin = geometry.loc - frame.loc;
     let mut parts: Vec<WindowPart<R>> = Vec::new();
-    let shown = Rectangle::from_size(frame.size);
-    one_window_elements(
-        renderer,
-        mapped,
-        geometry.loc - frame.loc,
-        shown,
-        scale,
-        alpha,
-        &mut parts,
-    );
+    one_window_elements(renderer, mapped, origin, shown, scale, alpha, &mut parts);
+    if whole {
+        let shadow = mapped.frame().shadow();
+        parts.extend(buffer_elements(
+            renderer, shadow, origin, shown, scale, alpha, "shadow",
+        ));
+    }
     scaled_elements_in(parts, frame.size, target, crop, scale, elements);
+}
+
+/// Where `area` is in something of `size` from its corner, once that's scaled to fill
+/// `target`: what of it is drawn in `area`. It's a pixel larger each way than the exact
+/// area, which the rounding of the scale can show a part of.
+fn unscaled_into(
+    area: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
+    target: Rectangle<i32, Logical>,
+) -> Rectangle<i32, Logical> {
+    let factor = Scale::from((
+        f64::from(size.w) / f64::from(target.size.w),
+        f64::from(size.h) / f64::from(target.size.h),
+    ));
+    let corner = (area.loc - target.loc).to_f64().upscale(factor);
+    let size = area.size.to_f64().upscale(factor);
+    Rectangle::new(
+        corner.to_i32_floor(),
+        size.to_i32_ceil() + Size::from((1, 1)),
+    )
 }
 
 /// How wide the mark around the active workspace's cell of the Overview's bar is (244).
@@ -754,7 +787,9 @@ fn overview_bar_elements<R>(
         };
         let place = |frame| (in_cell(frame), *cell);
         for id in windows.iter().rev() {
-            scaled_window_elements(renderer, caminito, *id, place, scale, alpha, elements);
+            scaled_window_elements(
+                renderer, caminito, *id, place, scale, alpha, false, elements,
+            );
         }
         for (wallpaper, geometry) in &wallpapers {
             if geometry.size.w <= 0 || geometry.size.h <= 0 {
@@ -1454,21 +1489,18 @@ fn window_elements<R>(
             shifts.push(Point::default());
         }
         let opening = caminito.open_close_animations.opening(id, now);
-        let frame = policy.frame_rect(id);
-        if let (Some(done), Some(frame)) = (opening, frame) {
-            for shift in shifts {
-                let frame = Rectangle::new(frame.loc + shift, frame.size);
-                let drawn = OpeningWindow {
-                    mapped,
-                    geometry: Rectangle::new(geometry.loc + shift, geometry.size),
-                    frame,
-                    done,
-                };
-                opening_window_elements(renderer, drawn, output, elements);
-            }
-            continue;
-        }
         for shift in shifts {
+            if let Some(done) = opening {
+                // Scaled, where frame debug's outlines would be at the wrong size.
+                let whole_output = Rectangle::from_size(output_geometry.size);
+                let place = |frame: Rectangle<i32, Logical>| {
+                    let at = Rectangle::new(frame.loc + shift - output_geometry.loc, frame.size);
+                    (opening_rect(at, done), whole_output)
+                };
+                let alpha = opening_alpha(done);
+                scaled_window_elements(renderer, caminito, id, place, scale, alpha, true, elements);
+                continue;
+            }
             let drawn_at = geometry.loc + shift;
             if caminito.debug.frame_debug {
                 frame_debug_elements(renderer, caminito, mapped, drawn_at, output, elements);
@@ -1488,74 +1520,6 @@ fn window_elements<R>(
             tile_preview_elements(caminito, output, elements);
         }
     }
-}
-
-/// A window on its way open (251), with its geometry and its frame where policy has them,
-/// or where a Workspace slide moves them to, and how far it is on its way.
-struct OpeningWindow<'a> {
-    mapped: &'a Mapped,
-    geometry: Rectangle<i32, Logical>,
-    frame: Rectangle<i32, Logical>,
-    done: f64,
-}
-
-/// `opening` on `output` as far as it is on its way open (251), front to back: its surfaces
-/// with their popups, its frame's strips and its shadow, at its opacity then, scaled about
-/// its frame's centre to the size it has then.
-fn opening_window_elements<R>(
-    renderer: &mut R,
-    opening: OpeningWindow,
-    output: &Output,
-    elements: &mut Vec<SceneElement<R>>,
-) where
-    R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Send + Clone + 'static,
-{
-    let OpeningWindow {
-        mapped,
-        geometry,
-        frame,
-        done,
-    } = opening;
-    if frame.size.w <= 0 || frame.size.h <= 0 {
-        return;
-    }
-    let output_geometry = output_geometry(output);
-    let (drawn, alpha) = opening_at(frame, done);
-    if !drawn.overlaps(output_geometry) {
-        return;
-    }
-    let scale = output.current_scale().fractional_scale();
-    // What of the window, from its frame's corner, is drawn on the output once it's scaled
-    // about that corner as much as `drawn` is from `frame`.
-    let factor = (
-        f64::from(frame.size.w) / f64::from(drawn.size.w),
-        f64::from(frame.size.h) / f64::from(drawn.size.h),
-    );
-    let unscaled = |n: i32, factor: f64| (f64::from(n) * factor).ceil() as i32;
-    let corner = output_geometry.loc - drawn.loc;
-    let shown = Rectangle::new(
-        (
-            (f64::from(corner.x) * factor.0).floor() as i32,
-            (f64::from(corner.y) * factor.1).floor() as i32,
-        )
-            .into(),
-        (
-            unscaled(output_geometry.size.w, factor.0) + 1,
-            unscaled(output_geometry.size.h, factor.1) + 1,
-        )
-            .into(),
-    );
-    let origin = geometry.loc - frame.loc;
-    let mut parts: Vec<WindowPart<R>> = Vec::new();
-    one_window_elements(renderer, mapped, origin, shown, scale, alpha, &mut parts);
-    let shadow = mapped.frame().shadow();
-    parts.extend(buffer_elements(
-        renderer, shadow, origin, shown, scale, alpha, "shadow",
-    ));
-    let target = Rectangle::new(drawn.loc - output_geometry.loc, drawn.size);
-    let whole = Rectangle::from_size(output_geometry.size);
-    scaled_elements_in(parts, frame.size, target, whole, scale, elements);
 }
 
 /// While a move's pointer is in a tiling zone, the tile preview on `output`: where letting

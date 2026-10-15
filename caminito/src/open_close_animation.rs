@@ -8,8 +8,11 @@
 //! with no animation, at its real place, and only the drawing takes its time. A window
 //! maps into policy as a new one each time its client shows it (`window/lifecycle.rs`),
 //! which notes it here; the refresh pass then starts the animation of each one noted that
-//! shows and is one of Plasma's windows, and the scene draws it at the size and opacity it
-//! has reached, at every frame of its outputs, until it's over.
+//! shows and is a window the animation is for (`animates`), and the scene draws it at the
+//! size and opacity it has reached, at every frame of its outputs, until it's over.
+//!
+//! The numbers and the windows are those of Plasma's Scale effect, in KWin's
+//! `src/plugins/scale/package/contents/code/main.js` (ADR 0034).
 
 use std::time::Duration;
 
@@ -19,31 +22,33 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::output::output_geometry;
 use crate::state::Caminito;
-
-/// How long the animation lasts: Plasma's Scale effect's (ADR 0034).
+use crate::workspace_slide::eased_way_left;
+/// How long the animation lasts: the Scale effect's.
 pub(crate) const LENGTH: Duration = Duration::from_millis(200);
 
-/// How much of its own size a window opens from.
+/// How much of its own size a window opens from: the Scale effect's.
 const FROM_SCALE: f64 = 0.8;
 
-/// How far an animation `elapsed` after its start is on its way, from 0 to 1: a cubic
-/// ease-out, so the window grows fastest at first and settles into its place.
+/// How far an animation `elapsed` after its start is on its way, from 0 to 1: the Scale
+/// effect's cubic ease-out, so the window grows fastest at first and settles into its place.
 fn way_done(elapsed: Duration) -> f64 {
-    let time_left = 1.0 - (elapsed.as_secs_f64() / LENGTH.as_secs_f64()).min(1.0);
-    1.0 - time_left.powi(3)
+    1.0 - eased_way_left(elapsed, LENGTH)
 }
 
-/// Where a window whose frame is at `frame` is drawn `done` of the way through its opening,
-/// with its opacity: scaled about the frame's centre, never empty.
-pub(crate) fn opening_at(
-    frame: Rectangle<i32, Logical>,
-    done: f64,
-) -> (Rectangle<i32, Logical>, f32) {
+/// Where a window whose frame is at `frame` is drawn `done` of the way through its opening:
+/// scaled about the frame's centre, never empty.
+pub(crate) fn opening_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
     let scale = FROM_SCALE + (1.0 - FROM_SCALE) * done;
     let at = |n: i32| ((f64::from(n) * scale).round() as i32).max(1);
     let size = Size::from((at(frame.size.w), at(frame.size.h)));
     let loc = frame.loc + Point::from(((frame.size.w - size.w) / 2, (frame.size.h - size.h) / 2));
-    (Rectangle::new(loc, size), done as f32)
+    Rectangle::new(loc, size)
+}
+
+/// How opaque a window is drawn `done` of the way through its opening: it fades in as it
+/// grows.
+pub(crate) fn opening_alpha(done: f64) -> f32 {
+    done as f32
 }
 
 /// One window on its way open.
@@ -85,25 +90,22 @@ impl OpenCloseAnimations {
 
     /// How far `window`'s opening is on its way at `now`, from 0 to 1, while it runs.
     pub(crate) fn opening(&self, window: WindowId, now: Duration) -> Option<f64> {
-        let opening = self
-            .running
-            .iter()
-            .find(|opening| opening.window == window)?;
-        let elapsed = now.saturating_sub(opening.start);
-        (!opening.is_over(now)).then(|| way_done(elapsed))
+        let mut opening = self.opening_windows(now);
+        opening.find(|(id, _)| *id == window).map(|(_, done)| done)
     }
 
-    /// The windows on their way open at `now`, in the order they were shown.
-    pub(crate) fn opening_windows(&self, now: Duration) -> impl Iterator<Item = WindowId> {
+    /// The windows on their way open at `now`, in the order they were shown, each with how
+    /// far it is on its way, from 0 to 1.
+    pub(crate) fn opening_windows(&self, now: Duration) -> impl Iterator<Item = (WindowId, f64)> {
         self.running
             .iter()
             .filter(move |opening| !opening.is_over(now))
-            .map(|opening| opening.window)
+            .map(move |opening| (opening.window, way_done(now.saturating_sub(opening.start))))
     }
 }
 
 /// Whether a window opens with the animation: one with a Frame, whatever its type, and one
-/// of type Normal, Dialog or ModalDialog, as Plasma's `isScaleWindow` has it.
+/// of type Normal, Dialog or ModalDialog, as the Scale effect's `isScaleWindow` has it.
 fn animates(window: &impl PolicyWindow) -> bool {
     let typed = matches!(
         window.window_type(),
@@ -164,8 +166,8 @@ impl Caminito {
         let area = output_geometry(output);
         self.open_close_animations
             .opening_windows(now)
-            .filter_map(|id| self.policy.frame_rect(id))
-            .any(|frame| frame.overlaps(area))
+            .filter_map(|(id, done)| Some(opening_rect(self.policy.frame_rect(id)?, done)))
+            .any(|drawn| drawn.overlaps(area))
     }
 
     /// Each window on its way open at `now`, in the order they were shown, with where its
@@ -174,13 +176,11 @@ impl Caminito {
         &self,
         now: Duration,
     ) -> Vec<(WindowId, Rectangle<i32, Logical>, f32)> {
-        let animations = &self.open_close_animations;
-        animations
+        self.open_close_animations
             .opening_windows(now)
-            .filter_map(|id| {
+            .filter_map(|(id, done)| {
                 let frame = self.policy.frame_rect(id)?;
-                let (rect, alpha) = opening_at(frame, animations.opening(id, now)?);
-                Some((id, rect, alpha))
+                Some((id, opening_rect(frame, done), opening_alpha(done)))
             })
             .collect()
     }
@@ -198,9 +198,11 @@ mod tests {
     fn a_window_opens_from_four_fifths_of_its_size_about_its_centre_and_no_opacity() {
         let frame = rect(100, 50, 400, 300);
 
-        assert_eq!(opening_at(frame, 0.0), (rect(140, 80, 320, 240), 0.0));
-        assert_eq!(opening_at(frame, 0.5), (rect(120, 65, 360, 270), 0.5));
-        assert_eq!(opening_at(frame, 1.0), (frame, 1.0));
+        assert_eq!(opening_rect(frame, 0.0), rect(140, 80, 320, 240));
+        assert_eq!(opening_rect(frame, 0.5), rect(120, 65, 360, 270));
+        assert_eq!(opening_rect(frame, 1.0), frame);
+        assert_eq!(opening_alpha(0.0), 0.0);
+        assert_eq!(opening_alpha(1.0), 1.0);
     }
 
     #[test]
