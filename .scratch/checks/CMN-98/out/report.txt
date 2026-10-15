@@ -1,0 +1,18 @@
+popup (x y w h): 0 28 320 115
+click on Performance: the mock's ActiveProfile is performance
+click on the pressed tile: the mock's ActiveProfile is performance
+the pressed tile stays pressed (0 expected): 0 pixels differ
+Balanced to Performance (more than 0 expected): 1293.68 pixels differ
+outside change: the mock's ActiveProfile is power-saver
+the pressed tile moved (more than 0 expected): 1447.9 pixels differ
+the degraded line went (more than 0 expected): 13896.5 pixels differ
+the holder's line went (more than 0 expected): 7915.73 pixels differ
+two profiles, a click on Power Saver: the mock's ActiveProfile is power-saver
+two profiles: panel running
+the section went (more than 0 expected): 20228.2 pixels differ
+daemon stopped: panel running
+the tiles came back (more than 0 expected): 20061.9 pixels differ
+daemon started again: panel running
+the old name's tiles (0 expected: the same three): 0 pixels differ
+the old name, a click on Performance: the mock's ActiveProfile is performance
+old name: panel running

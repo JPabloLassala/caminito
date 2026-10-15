@@ -4,6 +4,8 @@
 
 #include "pw-popup.h"
 
+#include "pw-profiles-section.h"
+
 #define POPUP_WIDTH 320
 
 struct _PwPopup
@@ -40,8 +42,9 @@ pw_popup_new (CaminitoAppletPopup *applet_popup, const PwPopupActions *actions, 
   gtk_button_set_relief (GTK_BUTTON (configure), GTK_RELIEF_NONE);
   gtk_widget_set_halign (configure, GTK_ALIGN_START);
   g_signal_connect (configure, "clicked", G_CALLBACK (on_configure), popup);
-  /* The batteries (CMN-104), the power profile (CMN-98) and Stay awake (CMN-101) go above
-     this. */
+  /* The power profile (264) is the popup's first section. The batteries (CMN-104) and Stay
+     awake (CMN-101) go below it and above this. */
+  gtk_box_pack_start (GTK_BOX (box), pw_profiles_section_new (), FALSE, FALSE, 0);
   gtk_box_pack_end (GTK_BOX (box), configure, FALSE, FALSE, 0);
   gtk_widget_show_all (box);
   gtk_container_add (GTK_CONTAINER (window), box);

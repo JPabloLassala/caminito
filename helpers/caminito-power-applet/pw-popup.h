@@ -1,7 +1,7 @@
 /*
  * The Power applet's popup (262): its content, in the shared popup window. Empty but for
- * "Configure Power Management…" at its bottom, which CMN-104, CMN-98 and CMN-101 fill
- * from above.
+ * "Configure Power Management…" at its bottom, and the power profile (264) at its top;
+ * CMN-104 and CMN-101 fill the middle.
  */
 
 #pragma once
