@@ -23,6 +23,8 @@ use std::rc::Rc;
 use caminito_bluetooth::DOMAIN;
 use caminito_bluetooth::agent::Agent;
 use caminito_bluetooth::bluez::Bluez;
+use caminito_bluetooth::rfkill::SystemRfkill;
+use caminito_bluetooth::switch::Switch;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
@@ -48,15 +50,16 @@ fn main() -> glib::ExitCode {
         None,
     );
 
-    // The primary instance's: BlueZ's model, the pairing agent over it, and the hold it takes
-    // at its first command line.
-    let bluez: Rc<RefCell<Option<Bluez>>> = Rc::default();
+    // The primary instance's: BlueZ's model and Bluetooth's switch, which the window works
+    // on, the pairing agent over them, and the hold it takes at its first command line.
+    let services: Rc<RefCell<Option<window::Services>>> = Rc::default();
     let agent: Rc<RefCell<Option<Agent>>> = Rc::default();
     let hold: Rc<RefCell<Option<gio::ApplicationHoldGuard>>> = Rc::default();
 
     application.connect_startup({
-        let bluez = bluez.clone();
-        move |_| {
+        let services = services.clone();
+        move |application| {
+            window::set_up(application);
             let model = match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
                 Ok(system) => Bluez::new(&system),
                 Err(err) => {
@@ -68,7 +71,11 @@ fn main() -> glib::ExitCode {
                 Ok(started) => *agent.borrow_mut() = Some(started),
                 Err(err) => glib::g_warning!(DOMAIN, "{err}"),
             }
-            *bluez.borrow_mut() = Some(model);
+            let switch = Rc::new(Switch::new(&model, Rc::new(SystemRfkill::new())));
+            *services.borrow_mut() = Some(window::Services {
+                bluez: model,
+                switch,
+            });
         }
     });
 
@@ -76,7 +83,11 @@ fn main() -> glib::ExitCode {
         let options = command_line.options_dict();
         hold.borrow_mut().get_or_insert_with(|| application.hold());
         if !options.contains("background") {
-            window::present(application, options.contains("scan"));
+            window::present(
+                application,
+                services.borrow().as_ref(),
+                options.contains("scan"),
+            );
         }
         glib::ExitCode::SUCCESS
     });
