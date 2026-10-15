@@ -1,0 +1,12 @@
+diff -upr mate-settings-daemon-make-dist-orig/plugins/xrdb/msd-xrdb-manager.c mate-settings-daemon-make-dist/plugins/xrdb/msd-xrdb-manager.c
+--- mate-settings-daemon-make-dist-orig/plugins/xrdb/msd-xrdb-manager.c	2014-11-12 23:17:45.461271000 +0100
++++ mate-settings-daemon-make-dist/plugins/xrdb/msd-xrdb-manager.c	2014-11-12 23:18:28.705704971 +0100
+@@ -430,7 +430,7 @@ apply_settings (MsdXrdbManager *manager,
+ 
+         mate_settings_profile_start (NULL);
+ 
+-        command = "xrdb -merge -quiet";
++        command = "xrdb -cpp /bin/cpp -merge -quiet";
+ 
+         string = g_string_sized_new (256);
+         append_theme_colors (style, string);
