@@ -1,0 +1,7 @@
+popup (x y w h): 0 28 320 101
+calls to EnableChargeThreshold so far: (none)
+the switch turned on: EnableChargeThreshold called with: true 
+and off: EnableChargeThreshold called with: true false 
+polkit refuses: EnableChargeThreshold called with: true false true ; ChargeThresholdEnabled is (<false>,)
+after the limit: panel running
+the table: panel running
