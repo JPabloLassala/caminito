@@ -210,3 +210,18 @@ fn a_press_tiles_a_resized_tile_afresh() {
 
     assert_eq!(geometry(&policy), rect(960, 0, 960, 1080));
 }
+
+#[test]
+fn a_tiled_window_whose_frame_is_taller_than_its_tile_keeps_at_least_one_pixel() {
+    // The case proptest shrank (238): the work area ends 29 high, and the frame's top and
+    // bottom extents together are 30.
+    let mut policy = Policy::new(Config::default());
+    policy.set_outputs(vec![output(1, 0, 0, 20, 30)]);
+    policy.map_window(TestWindow::new(1, 1, 1).with_frame(5, 5, 25, 5), ms(1));
+    press(&mut policy, Tile::Left);
+
+    policy.set_outputs(vec![reserving(output(1, 0, 0, 20, 30), 0, 0, 0, 1)]);
+
+    assert_eq!(policy.tile(id(1)), Some(Tile::Left));
+    assert_eq!(geometry(&policy), rect(5, 25, 1, 1));
+}

@@ -2695,13 +2695,14 @@ impl<W: PolicyWindow> Policy<W> {
             // window (constraints.c:928-934).
             let e = managed.visible_extents();
             let frame = tile_area(Self::work_area(output), tiled.tile, tiled.size);
-            let size: Size<i32, Logical> = Size::new(
-                frame.size.w - e.left - e.right,
-                frame.size.h - e.top - e.bottom,
-            );
+            // The extents can be larger than the tile, so clamp before a Size (238).
             let size = Size::new(
-                size.w.max(managed.hints.min.w).max(1),
-                size.h.max(managed.hints.min.h).max(1),
+                (frame.size.w - e.left - e.right)
+                    .max(managed.hints.min.w)
+                    .max(1),
+                (frame.size.h - e.top - e.bottom)
+                    .max(managed.hints.min.h)
+                    .max(1),
             );
             Rectangle::new((frame.loc.x + e.left, frame.loc.y + e.top).into(), size)
         } else {
