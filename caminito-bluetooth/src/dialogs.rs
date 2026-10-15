@@ -7,7 +7,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use caminito_bluetooth::agent::{Answer, Code, Dialogs, Question, Reply};
+use caminito_bluetooth::agent::{
+    Answer, Code, Dialogs, PASSKEY_MAX, PIN_CODE_LENGTH, Question, Reply,
+};
 use caminito_bluetooth::bluez::Device;
 use gtk::glib;
 use gtk::prelude::*;
@@ -15,8 +17,16 @@ use gtk::prelude::*;
 /// The dialogs, drawn as GTK windows.
 #[derive(Default)]
 pub(crate) struct GtkDialogs {
-    /// The open dialog, and the code it shows when it shows one.
-    open: RefCell<Option<(gtk::Window, Option<gtk::Label>, String)>>,
+    open: RefCell<Option<Open>>,
+}
+
+/// The dialog open.
+struct Open {
+    window: gtk::Window,
+    /// The code it shows, when it shows one.
+    code: Option<gtk::Label>,
+    /// The device's path.
+    device: String,
 }
 
 impl Dialogs for GtkDialogs {
@@ -32,7 +42,7 @@ impl Dialogs for GtkDialogs {
                 format!(
                     "Type the PIN code for <b>{name}</b>. Some devices print theirs, often 0000."
                 ),
-                Some(entry(16, false)),
+                Some(entry(PIN_CODE_LENGTH, false)),
                 "Pair",
             ),
             Question::Passkey => (
@@ -88,8 +98,12 @@ impl Dialogs for GtkDialogs {
         if let Some(entry) = &entry {
             let sensitive = yes.clone();
             let valid = move |entry: &gtk::Entry| match &question {
-                Question::Passkey => entry.text().parse::<u32>().is_ok_and(|key| key <= 999_999),
-                _ => !entry.text().is_empty(),
+                Question::Passkey => entry
+                    .text()
+                    .parse::<u32>()
+                    .is_ok_and(|key| key <= PASSKEY_MAX),
+                // BlueZ counts a PIN's bytes, not its characters.
+                _ => (1..=PIN_CODE_LENGTH).contains(&entry.text().len()),
             };
             yes.set_sensitive(false);
             entry.connect_changed(move |entry| sensitive.set_sensitive(valid(entry)));
@@ -123,7 +137,11 @@ impl Dialogs for GtkDialogs {
         });
 
         window.present();
-        *self.open.borrow_mut() = Some((window, None, device.path.clone()));
+        *self.open.borrow_mut() = Some(Open {
+            window,
+            code: None,
+            device: device.path.clone(),
+        });
     }
 
     fn show(&self, device: &Device, code: Code) {
@@ -136,8 +154,14 @@ impl Dialogs for GtkDialogs {
             }
         };
         let code_text = format!("<span size=\"xx-large\">{text}</span>");
-        if let Some((_, Some(code), path)) = &*self.open.borrow()
+        // The user may have closed the device's code: it shows again then.
+        if let Some(Open {
+            window,
+            code: Some(code),
+            device: path,
+        }) = &*self.open.borrow()
             && *path == device.path
+            && window.is_visible()
         {
             code.set_markup(&code_text);
             return;
@@ -161,12 +185,16 @@ impl Dialogs for GtkDialogs {
         });
         content.append(&close);
         window.present();
-        *self.open.borrow_mut() = Some((window, Some(code), device.path.clone()));
+        *self.open.borrow_mut() = Some(Open {
+            window,
+            code: Some(code),
+            device: device.path.clone(),
+        });
     }
 
     fn close(&self) {
         let open = self.open.borrow_mut().take();
-        if let Some((window, _, _)) = open
+        if let Some(Open { window, .. }) = open
             && window.is_visible()
         {
             window.close();
@@ -209,7 +237,8 @@ fn label(markup: &str) -> gtk::Label {
     label
 }
 
-fn entry(length: i32, digits: bool) -> gtk::Entry {
+fn entry(length: usize, digits: bool) -> gtk::Entry {
+    let length = i32::try_from(length).expect("an entry's length is small");
     let entry = gtk::Entry::builder().max_length(length).build();
     if digits {
         entry.set_input_purpose(gtk::InputPurpose::Digits);

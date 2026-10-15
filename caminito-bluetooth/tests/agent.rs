@@ -468,3 +468,52 @@ fn a_service_is_allowed_silently_for_a_trusted_device_and_asked_otherwise() {
         assert!(!trusted(mock, &phone));
     });
 }
+
+#[test]
+fn a_code_shown_closes_when_its_device_disconnects_unpaired() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let keyboard = mock.add_device("hci0", KEYBOARD, "Keyboard");
+        mock.set_connected("hci0", KEYBOARD, true);
+        let running = start(mock);
+
+        answer(
+            mock,
+            &request(
+                mock,
+                &running,
+                "DisplayPinCode",
+                (path(&keyboard), "0000").to_variant(),
+            ),
+        )
+        .unwrap();
+        // BlueZ sends no Cancel after a code shown: a failed pairing only drops the link.
+        mock.set_connected("hci0", KEYBOARD, false);
+        mock.wait_until("the code to close", || running.dialogs.closed.get() == 1);
+    });
+}
+
+#[test]
+fn release_closes_the_dialog() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let phone = mock.add_device("hci0", PHONE, "Phone");
+        let running = start(mock);
+
+        let pending = request(
+            mock,
+            &running,
+            "RequestAuthorization",
+            (path(&phone),).to_variant(),
+        );
+        mock.wait_until("the authorization's dialog", || {
+            running.dialogs.last_question().is_some()
+        });
+        answer(mock, &request(mock, &running, "Release", ().to_variant())).unwrap();
+        assert_eq!(running.dialogs.closed.get(), 1);
+        assert_eq!(
+            rejection(answer(mock, &pending)),
+            "org.bluez.Error.Canceled"
+        );
+    });
+}

@@ -29,6 +29,11 @@ const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
 /// device allows.
 const CAPABILITY: &str = "KeyboardDisplay";
 const REJECTED: &str = "org.bluez.Error.Rejected";
+
+/// The longest PIN code BlueZ takes, in bytes.
+pub const PIN_CODE_LENGTH: usize = 16;
+/// The largest passkey: six digits.
+pub const PASSKEY_MAX: u32 = 999_999;
 const CANCELED: &str = "org.bluez.Error.Canceled";
 
 /// `org.bluez.Agent1`, as BlueZ's doc/org.bluez.Agent.rst gives it.
@@ -160,10 +165,12 @@ impl Reply {
             return;
         };
         let value = match (&question, answer) {
-            (Question::PinCode, Answer::PinCode(pin)) if (1..=16).contains(&pin.len()) => {
+            (Question::PinCode, Answer::PinCode(pin))
+                if (1..=PIN_CODE_LENGTH).contains(&pin.len()) =>
+            {
                 Some(Some((pin,).to_variant()))
             }
-            (Question::Passkey, Answer::Passkey(passkey)) if passkey <= 999_999 => {
+            (Question::Passkey, Answer::Passkey(passkey)) if passkey <= PASSKEY_MAX => {
                 Some(Some((passkey,).to_variant()))
             }
             (
@@ -223,8 +230,11 @@ struct State {
     requests: u64,
     open: Option<Open>,
     /// The devices a pairing went through the agent for, to trust once BlueZ has paired
-    /// them.
+    /// them. One is dropped when it disconnects unpaired, as a failed pairing leaves it,
+    /// since BlueZ cancels nothing after a code shown.
     pairing: BTreeSet<String>,
+    /// The devices paired through the agent whose `Trusted` BlueZ hasn't changed yet.
+    trusting: BTreeSet<String>,
 }
 
 /// The pairing agent, exported and registered with BlueZ for as long as it lives.
@@ -257,6 +267,7 @@ impl Agent {
             requests: 0,
             open: None,
             pairing: BTreeSet::new(),
+            trusting: BTreeSet::new(),
         }));
         let connection = bluez.connection();
 
@@ -301,7 +312,10 @@ impl Agent {
             },
             move |_, _| {
                 if let Some(state) = vanished.upgrade() {
-                    state.borrow_mut().pairing.clear();
+                    let mut cleared = state.borrow_mut();
+                    cleared.pairing.clear();
+                    cleared.trusting.clear();
+                    drop(cleared);
                     dismiss(&state, CANCELED);
                 }
             },
@@ -380,7 +394,11 @@ fn handle(
         "AuthorizeService" => {
             let path = device();
             let bluez = state.borrow().bluez.clone();
-            if find(&bluez, &path).is_some_and(|device| device.paired && device.trusted) {
+            // A device just paired through the agent is trusted already as far as the user
+            // is concerned: a phone's profiles ask before its Trusted has changed.
+            let trusted =
+                |device: &Device| device.trusted || state.borrow().trusting.contains(&device.path);
+            if find(&bluez, &path).is_some_and(|device| device.paired && trusted(&device)) {
                 invocation.return_value(None);
             } else {
                 let uuid = string_at(1);
@@ -427,15 +445,7 @@ fn ask(
     question: Question,
     invocation: gio::DBusMethodInvocation,
 ) {
-    let request = open(
-        state,
-        Open {
-            request: 0,
-            device: path.clone(),
-            question: Some(question.clone()),
-            invocation: Some(invocation),
-        },
-    );
+    let request = open(state, &path, Some(question.clone()), Some(invocation));
     let (bluez, dialogs) = parts(state);
     let reply = Reply {
         state: Rc::downgrade(state),
@@ -452,33 +462,35 @@ fn show(state: &Rc<RefCell<State>>, path: String, code: Code) {
         Some(open) if open.question.is_none() && open.device == path
     );
     if !shown {
-        open(
-            state,
-            Open {
-                request: 0,
-                device: path.clone(),
-                question: None,
-                invocation: None,
-            },
-        );
+        open(state, &path, None, None);
     }
     state.borrow_mut().pairing.insert(path.clone());
     let (bluez, dialogs) = parts(state);
     dialogs.show(&describe(&bluez, &path), code);
 }
 
-/// Makes `open` the open dialog, with a new request number, which it returns. One that was
-/// open is cancelled and closed.
-fn open(state: &Rc<RefCell<State>>, mut open: Open) -> u64 {
+/// Opens a dialog for the device at `path`, with a new request number, which it returns.
+/// One that was open is cancelled and closed.
+fn open(
+    state: &Rc<RefCell<State>>,
+    path: &str,
+    question: Option<Question>,
+    invocation: Option<gio::DBusMethodInvocation>,
+) -> u64 {
     let (request, previous) = {
         let mut state = state.borrow_mut();
         state.requests += 1;
-        open.request = state.requests;
+        let open = Open {
+            request: state.requests,
+            device: path.to_owned(),
+            question,
+            invocation,
+        };
         (state.requests, state.open.replace(open))
     };
     if let Some(previous) = previous {
         finish(previous, CANCELED);
-        parts(state).1.close();
+        dialogs(state).close();
     }
     request
 }
@@ -488,7 +500,7 @@ fn dismiss(state: &Rc<RefCell<State>>, error: &str) {
     let open = state.borrow_mut().open.take();
     if let Some(open) = open {
         finish(open, error);
-        parts(state).1.close();
+        dialogs(state).close();
     }
 }
 
@@ -509,11 +521,25 @@ fn trust_the_paired(state: &Rc<RefCell<State>>, bluez: &Bluez) {
             .filter(|device| device.paired && state.pairing.contains(&device.path))
             .cloned()
             .collect();
+        // One the model hasn't read yet, as for a pairing the device started, is kept.
         state.pairing.retain(|path| {
             devices
                 .iter()
-                .any(|device| &device.path == path && !device.paired)
+                .find(|device| &device.path == path)
+                .is_none_or(|device| !device.paired && device.connected)
         });
+        state.trusting.retain(|path| {
+            devices
+                .iter()
+                .any(|device| &device.path == path && !device.trusted)
+        });
+        let paired: Vec<Device> = paired
+            .into_iter()
+            .filter(|device| !device.trusted)
+            .collect();
+        state
+            .trusting
+            .extend(paired.iter().map(|device| device.path.clone()));
         let close = matches!(
             &state.open,
             Some(open) if open.question.is_none()
@@ -524,7 +550,7 @@ fn trust_the_paired(state: &Rc<RefCell<State>>, bluez: &Bluez) {
     if close {
         dismiss(state, CANCELED);
     }
-    for device in paired.into_iter().filter(|device| !device.trusted) {
+    for device in paired {
         let bluez = bluez.clone();
         glib::spawn_future_local(async move {
             if let Err(err) = bluez.set_trusted(&device.path, true).await {
@@ -539,6 +565,10 @@ fn trust_the_paired(state: &Rc<RefCell<State>>, bluez: &Bluez) {
 fn parts(state: &Rc<RefCell<State>>) -> (Bluez, Rc<dyn Dialogs>) {
     let state = state.borrow();
     (state.bluez.clone(), state.dialogs.clone())
+}
+
+fn dialogs(state: &Rc<RefCell<State>>) -> Rc<dyn Dialogs> {
+    state.borrow().dialogs.clone()
 }
 
 fn find(bluez: &Bluez, path: &str) -> Option<Device> {

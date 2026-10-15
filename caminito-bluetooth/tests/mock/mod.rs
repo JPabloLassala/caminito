@@ -173,6 +173,21 @@ impl Mock {
         );
     }
 
+    /// Marks a device as connected, as BlueZ does once its link is up, or disconnected.
+    pub fn set_connected(&self, adapter: &str, address: &str, connected: bool) {
+        let method = if connected {
+            "ConnectDevice"
+        } else {
+            "DisconnectDevice"
+        };
+        self.mock(
+            "/",
+            "org.bluez.Mock",
+            method,
+            &(adapter, address).to_variant(),
+        );
+    }
+
     /// Gives the device at `device` a battery, as BlueZ adds `Battery1` once it learns of
     /// one. The template has none, so the interface and its signal are the fixture's.
     pub fn add_battery(&self, device: &str, percentage: u8) {

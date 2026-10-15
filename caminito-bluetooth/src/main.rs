@@ -57,18 +57,18 @@ fn main() -> glib::ExitCode {
     application.connect_startup({
         let bluez = bluez.clone();
         move |_| {
-            let system = match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
+            let model = match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
                 Ok(system) => Bluez::new(&system),
                 Err(err) => {
                     glib::g_warning!(DOMAIN, "can't reach BlueZ on the system bus: {err}");
                     return;
                 }
             };
-            match Agent::new(&system, Rc::new(dialogs::GtkDialogs::default())) {
+            match Agent::new(&model, Rc::new(dialogs::GtkDialogs::default())) {
                 Ok(started) => *agent.borrow_mut() = Some(started),
                 Err(err) => glib::g_warning!(DOMAIN, "{err}"),
             }
-            *bluez.borrow_mut() = Some(system);
+            *bluez.borrow_mut() = Some(model);
         }
     });
 
