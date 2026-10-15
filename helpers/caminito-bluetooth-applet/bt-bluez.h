@@ -24,3 +24,14 @@ BtSnapshot *bt_bluez_snapshot    (BtBluez *bluez);
 /* Sets Adapter1.Powered on every adapter. Turning on retries a few times, for an
    adapter that bluetoothd hasn't seen unblocked yet. */
 void        bt_bluez_set_powered (BtBluez *bluez, gboolean powered);
+
+/* A Connect or Disconnect that has ended: error is BlueZ's message, or NULL if it worked. */
+typedef void (*BtBluezDone) (const char *path, const char *error, gpointer data);
+
+/* Calls Device1.Connect or Disconnect on the device at path, which can take many seconds
+   for a Connect. done runs from the main loop, and not at all if bluez is freed first. */
+void        bt_bluez_set_connected (BtBluez     *bluez,
+                                    const char  *path,
+                                    gboolean     connected,
+                                    BtBluezDone  done,
+                                    gpointer     data);

@@ -21,6 +21,8 @@ device_free (gpointer data)
   g_free (device->path);
   g_free (device->adapter);
   g_free (device->alias);
+  g_free (device->address);
+  g_free (device->icon);
   g_free (device);
 }
 
@@ -42,6 +44,28 @@ bt_snapshot_free (BtSnapshot *snapshot)
   g_free (snapshot);
 }
 
+BtSnapshot *
+bt_snapshot_copy (const BtSnapshot *snapshot)
+{
+  BtSnapshot *copy = bt_snapshot_new ();
+
+  for (guint i = 0; i < snapshot->adapters->len; i++)
+    {
+      const BtAdapter *adapter = g_ptr_array_index (snapshot->adapters, i);
+
+      bt_snapshot_add_adapter (copy, adapter->path, adapter->powered);
+    }
+  for (guint i = 0; i < snapshot->devices->len; i++)
+    {
+      const BtDevice *device = g_ptr_array_index (snapshot->devices, i);
+
+      bt_snapshot_add_device (copy, device->path, device->adapter, device->alias,
+                              device->address, device->icon, device->paired,
+                              device->connected, device->battery);
+    }
+  return copy;
+}
+
 void
 bt_snapshot_add_adapter (BtSnapshot *snapshot, const char *path, gboolean powered)
 {
@@ -57,6 +81,9 @@ bt_snapshot_add_device (BtSnapshot *snapshot,
                         const char *path,
                         const char *adapter,
                         const char *alias,
+                        const char *address,
+                        const char *icon,
+                        gboolean    paired,
                         gboolean    connected,
                         int         battery)
 {
@@ -65,6 +92,9 @@ bt_snapshot_add_device (BtSnapshot *snapshot,
   device->path = g_strdup (path);
   device->adapter = g_strdup (adapter);
   device->alias = g_strdup (alias);
+  device->address = g_strdup (address);
+  device->icon = g_strdup (icon);
+  device->paired = paired;
   device->connected = connected;
   device->battery = battery;
   g_ptr_array_add (snapshot->devices, device);
@@ -106,6 +136,89 @@ bt_state_connected (const BtSnapshot *snapshot)
     }
   g_ptr_array_sort (connected, compare_paths);
   return connected;
+}
+
+static int
+compare_aliases (gconstpointer a, gconstpointer b)
+{
+  const BtDevice *first = *(BtDevice *const *) a;
+  const BtDevice *second = *(BtDevice *const *) b;
+  g_autofree char *first_key = g_utf8_casefold (first->alias, -1);
+  g_autofree char *second_key = g_utf8_casefold (second->alias, -1);
+  int order = g_utf8_collate (first_key, second_key);
+
+  return order != 0 ? order : g_strcmp0 (first->path, second->path);
+}
+
+GPtrArray *
+bt_state_listed (const BtSnapshot *snapshot, gboolean connected)
+{
+  GPtrArray *listed = g_ptr_array_new ();
+
+  for (guint i = 0; i < snapshot->devices->len; i++)
+    {
+      BtDevice *device = g_ptr_array_index (snapshot->devices, i);
+
+      if (device->paired && device->connected == connected
+          && adapter_powered (snapshot, device->adapter))
+        g_ptr_array_add (listed, device);
+    }
+  g_ptr_array_sort (listed, compare_aliases);
+  return listed;
+}
+
+gboolean
+bt_state_battery_low (int battery)
+{
+  return battery >= 0 && battery < 20;
+}
+
+const char *
+bt_state_device_kind (const char *icon)
+{
+  /* The icon names BlueZ's class-to-icon table gives (bluez's src/device.c). */
+  static const struct
+  {
+    const char *icon;
+    const char *kind;
+  } kinds[] = {
+    { "audio-headphones", "Headphones" },
+    { "audio-headset", "Headset" },
+    { "audio-card", "Audio device" },
+    { "input-keyboard", "Keyboard" },
+    { "input-mouse", "Mouse" },
+    { "input-gaming", "Game controller" },
+    { "input-tablet", "Tablet" },
+    { "phone", "Phone" },
+    { "computer", "Computer" },
+    { "camera-photo", "Camera" },
+    { "camera-video", "Camera" },
+    { "printer", "Printer" },
+    { "scanner", "Scanner" },
+    { "video-display", "Display" },
+    { "modem", "Modem" },
+    { "network-wireless", "Network" },
+  };
+
+  for (gsize i = 0; icon != NULL && i < G_N_ELEMENTS (kinds); i++)
+    if (g_str_equal (icon, kinds[i].icon))
+      return kinds[i].kind;
+  return "Device";
+}
+
+char **
+bt_state_device_icon_names (const char *icon)
+{
+  GPtrArray *names = g_ptr_array_new ();
+
+  if (icon != NULL)
+    {
+      g_ptr_array_add (names, g_strdup (icon));
+      g_ptr_array_add (names, g_strconcat (icon, "-symbolic", NULL));
+    }
+  g_ptr_array_add (names, g_strdup ("bluetooth-active-symbolic"));
+  g_ptr_array_add (names, NULL);
+  return (char **) g_ptr_array_free (names, FALSE);
 }
 
 BtIconState

@@ -21,12 +21,20 @@ common = subproject('caminito-applet-common').get_variable('caminito_applet_comm
 state = static_library('bt-state', 'bt-state.c', dependencies: gio)
 bluez = static_library('bt-bluez', 'bt-bluez.c', link_with: state, dependencies: gio)
 rfkill = static_library('bt-rfkill', 'bt-rfkill.c', dependencies: gio)
+# The popup's content (260), which draws what bt-state lists in the shared popup window.
+popup = static_library(
+  'bt-popup',
+  'bt-popup.c',
+  link_with: state,
+  dependencies: [gio, common],
+  pic: true,
+)
 
 applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-bluetooth-applet',
   'bluetooth-applet.c',
-  link_with: [state, bluez, rfkill],
+  link_with: [state, bluez, rfkill, popup],
   dependencies: [gio, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,
@@ -47,6 +55,12 @@ configure_file(
 
 # The icon's state and the tooltip, from snapshots built by hand.
 test('state', executable('test-state', 'test-state.c', link_with: state, dependencies: gio))
+# The popup's content, which needs a display and is skipped without one.
+test(
+  'popup',
+  executable('test-popup', 'test-popup.c', link_with: [popup, state], dependencies: [gio, common]),
+  env: {'NO_AT_BRIDGE': '1'},
+)
 # The rfkill event, written to a file in /dev/rfkill's place.
 test('rfkill', executable('test-rfkill', 'test-rfkill.c', link_with: rfkill, dependencies: gio))
 
