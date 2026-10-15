@@ -59,6 +59,7 @@ mod output_lifecycle;
 mod output_management;
 mod override_redirect;
 mod overview;
+mod overview_buttons;
 mod overview_outputs;
 mod overview_transition;
 mod palette_helper;

@@ -938,7 +938,8 @@ fn a_click_on_a_cell_switches_that_output_alone_with_workspaces_per_output() {
     assert_eq!(policy.active_workspace_on(OutputId(2)), 0);
     assert_eq!(listed_on(&policy, 1), (2, vec![]));
     assert_eq!(listed_on(&policy, 2), (0, vec![id(3)]));
-    assert_eq!(selected(&policy), Some(id(3)));
+    // The selection goes to the output clicked, with nothing selected (248).
+    assert_eq!(selected(&policy), None);
 }
 
 #[test]
@@ -1124,4 +1125,95 @@ fn an_output_that_comes_joins_it() {
 
     assert_eq!(listed_on(&policy, 3), (0, vec![]));
     assert_eq!(policy.overview().unwrap().output, OutputId(2));
+}
+
+// The selection on the Active output (248).
+
+#[test]
+fn a_click_on_another_outputs_cell_makes_it_the_active_output_and_the_selections() {
+    for per_output in [true, false] {
+        let mut policy = on_two(per_output);
+        toggle(&mut policy);
+        assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+        policy.overview_switch_on(OutputId(1), 1);
+
+        let open = policy.overview().unwrap();
+        assert_eq!(open.output, OutputId(1));
+        assert_eq!(open.workspace, 1);
+        assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+        assert_eq!(selected(&policy), None);
+        assert_eq!(policy.active_workspace_on(OutputId(1)), 1);
+    }
+}
+
+#[test]
+fn a_click_on_another_outputs_cell_leaves_the_focus_alone() {
+    let mut policy = on_two(true);
+    policy.move_to_workspace(id(2), 1);
+    toggle(&mut policy);
+
+    policy.overview_switch_on(OutputId(1), 1);
+
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
+    assert_eq!(listed(&policy), [id(2)]);
+    assert_eq!(selected(&policy), None);
+}
+
+#[test]
+fn after_a_click_on_another_outputs_cell_an_arrow_key_selects_its_first_window() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+
+    policy.overview_switch_on(OutputId(1), 0);
+
+    assert_eq!(policy.overview().unwrap().output, OutputId(1));
+    assert_eq!(selected(&policy), None);
+    let places = [rect(0, 0, 100, 100), rect(200, 0, 100, 100)];
+    policy.overview_select(Direction::Right, &places);
+    assert_eq!(selected(&policy), Some(id(1)));
+}
+
+#[test]
+fn after_a_click_on_another_outputs_cell_a_workspace_binding_switches_that_output() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+    policy.overview_switch_on(OutputId(1), 1);
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(200));
+
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 2);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 0);
+    assert_eq!(listed_on(&policy, 1), (2, vec![]));
+    assert_eq!(policy.overview().unwrap().output, OutputId(1));
+}
+
+#[test]
+fn a_click_on_a_cell_of_the_selections_own_output_keeps_the_active_output() {
+    let mut policy = on_two(true);
+    toggle(&mut policy);
+
+    policy.move_to_workspace(id(3), 1);
+    policy.overview_switch_on(OutputId(2), 1);
+
+    assert_eq!(policy.overview().unwrap().output, OutputId(2));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+    // As a click on its cell always did (244): the new workspace's focused window.
+    assert_eq!(selected(&policy), Some(id(3)));
+}
+
+#[test]
+fn at_opening_the_selections_output_is_the_active_output() {
+    let mut policy = on_two(true);
+    // A press on the left output's wallpaper, with window 3 on the right one focused.
+    policy.press_on_output(SEAT, OutputId(1));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+
+    toggle(&mut policy);
+
+    assert_eq!(policy.overview().unwrap().output, OutputId(2));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(200));
+    assert_eq!(policy.active_workspace_on(OutputId(1)), 0);
+    assert_eq!(policy.active_workspace_on(OutputId(2)), 1);
 }
