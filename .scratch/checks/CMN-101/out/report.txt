@@ -2,6 +2,8 @@ start: panel running
 popup (x y w h): 0 28 320 88
 1 off: the mock's log: []
 2 on: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1]
+3 applications: mate-session lists [caminito-power-applet firefox org.example.NoDesktopFile pluma ] (pluma has the logout flag alone, so the popup doesn't)
+4 removed: mate-session lists [caminito-power-applet ]
 5 off again: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1;  Uninhibit 1]
 popup: panel running
 6 on again: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1;  Uninhibit 1;  Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 2]

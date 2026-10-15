@@ -33,6 +33,9 @@ struct _PwSession
   GPtrArray        *inhibitors;
   /* A read of the list is current until the next one starts. */
   guint             generation;
+  /* Counts the times mate-session has come or gone, so that a reply from one that has gone
+     is known for what it is. */
+  guint             epoch;
   guint             refresh;
   PwSessionChanged  changed;
   gpointer          data;
@@ -56,6 +59,18 @@ queue_changed (PwSession *session)
     session->idle = g_idle_add (emit_changed, session);
 }
 
+/* Whether error says that mate-session is gone, or was while the call was out: it took
+   its inhibitors with it, and the name watch tells the applet. */
+static gboolean
+session_is_gone (const GError *error)
+{
+  return g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN)
+         || g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER)
+         || g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY)
+         || g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED)
+         || g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CLOSED);
+}
+
 static void
 on_uninhibited (GObject *source, GAsyncResult *result, gpointer data G_GNUC_UNUSED)
 {
@@ -63,12 +78,7 @@ on_uninhibited (GObject *source, GAsyncResult *result, gpointer data G_GNUC_UNUS
   g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
                                                               &error);
 
-  /* mate-session gone with the call out took the inhibitor with it. */
-  if (reply == NULL && !g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN)
-      && !g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER)
-      && !g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY)
-      && !g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_DISCONNECTED)
-      && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CLOSED))
+  if (reply == NULL && !session_is_gone (error))
     g_warning ("can't turn Stay awake off: %s", error->message);
 }
 
@@ -88,6 +98,7 @@ typedef struct
 {
   PwSession    *session;
   GCancellable *cancellable;
+  guint         epoch;
 } Inhibiting;
 
 static void
@@ -99,6 +110,7 @@ on_inhibited (GObject *source, GAsyncResult *result, gpointer data)
   Inhibiting *inhibiting = data;
   PwSession *session = inhibiting->session;
   gboolean gone = g_cancellable_is_cancelled (inhibiting->cancellable);
+  guint epoch = inhibiting->epoch;
   guint32 cookie = 0;
 
   g_object_unref (inhibiting->cancellable);
@@ -112,10 +124,17 @@ on_inhibited (GObject *source, GAsyncResult *result, gpointer data)
         uninhibit (G_DBUS_CONNECTION (source), cookie);
       return;
     }
+  if (epoch != session->epoch)
+    {
+      /* From a mate-session that has gone: the inhibitor went with it, and the call of a new
+         one, if any, has its own reply. */
+      return;
+    }
   session->inhibiting = FALSE;
   if (reply == NULL)
     {
-      g_warning ("can't turn Stay awake on: %s", error->message);
+      if (!session_is_gone (error))
+        g_warning ("can't turn Stay awake on: %s", error->message);
       session->wanted = FALSE;
       queue_changed (session);
       return;
@@ -150,6 +169,7 @@ pw_session_set_stay_awake (PwSession *session, gboolean on)
 
           inhibiting->session = session;
           inhibiting->cancellable = g_object_ref (session->cancellable);
+          inhibiting->epoch = session->epoch;
           session->inhibiting = TRUE;
           g_dbus_connection_call (session->connection, SESSION_NAME, SESSION_PATH,
                                   SESSION_INTERFACE, "Inhibit",
@@ -194,7 +214,16 @@ typedef struct
   GPtrArray    *items;
   /* Calls still out. */
   guint         pending;
-} Read;
+} ListRead;
+
+/* What each inhibitor is asked, one call each. */
+typedef enum
+{
+  FIELD_APP_ID,
+  FIELD_REASON,
+  FIELD_FLAGS,
+  FIELD_COUNT,
+} Field;
 
 typedef struct
 {
@@ -202,7 +231,7 @@ typedef struct
   char     *app_id;
   char     *reason;
   guint32   flags;
-  /* Calls answered, of 3: an inhibitor that went in the meantime answers fewer. */
+  /* Calls answered, of FIELD_COUNT: an inhibitor that went in the meantime answers fewer. */
   guint     answered;
 } Item;
 
@@ -218,7 +247,7 @@ item_free (gpointer data)
 }
 
 static void
-read_free (Read *read)
+read_free (ListRead *read)
 {
   g_ptr_array_unref (read->items);
   g_object_unref (read->cancellable);
@@ -226,14 +255,14 @@ read_free (Read *read)
 }
 
 static gboolean
-read_is_current (Read *read)
+read_is_current (ListRead *read)
 {
   return !g_cancellable_is_cancelled (read->cancellable)
          && read->generation == read->session->generation;
 }
 
 static void
-read_finished (Read *read)
+read_finished (ListRead *read)
 {
   PwSession *session = read->session;
   GPtrArray *listed = g_ptr_array_new_with_free_func ((GDestroyNotify) pw_inhibitor_free);
@@ -242,7 +271,7 @@ read_finished (Read *read)
     {
       Item *item = g_ptr_array_index (read->items, i);
 
-      if (item->answered == 3 && pw_state_inhibitor_listed (item->flags))
+      if (item->answered == FIELD_COUNT && pw_state_inhibitor_listed (item->flags))
         g_ptr_array_add (listed, pw_inhibitor_new (item->app_id, item->reason, item->flags));
     }
   g_ptr_array_unref (session->inhibitors);
@@ -252,10 +281,9 @@ read_finished (Read *read)
 
 typedef struct
 {
-  Read *read;
-  Item *item;
-  /* 0 GetAppId, 1 GetReason, 2 GetFlags. */
-  int   which;
+  ListRead *read;
+  Item     *item;
+  Field     which;
 } Call;
 
 static void
@@ -265,20 +293,20 @@ on_field (GObject *source, GAsyncResult *result, gpointer data)
   g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
                                                               &error);
   Call *call = data;
-  Read *read = call->read;
+  ListRead *read = call->read;
   Item *item = call->item;
   gboolean cancelled = reply == NULL && g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
 
   if (reply != NULL && read_is_current (read))
     {
-      if (call->which == 2)
+      if (call->which == FIELD_FLAGS)
         g_variant_get (reply, "(u)", &item->flags);
       else
         {
           char *text = NULL;
 
           g_variant_get (reply, "(s)", &text);
-          if (call->which == 0)
+          if (call->which == FIELD_APP_ID)
             {
               g_free (item->app_id);
               item->app_id = text;
@@ -303,11 +331,15 @@ on_field (GObject *source, GAsyncResult *result, gpointer data)
 }
 
 static void
-read_item (Read *read, GDBusConnection *connection, Item *item)
+read_item (ListRead *read, GDBusConnection *connection, Item *item)
 {
-  static const char *const methods[] = { "GetAppId", "GetReason", "GetFlags" };
+  static const char *const methods[FIELD_COUNT] = {
+    [FIELD_APP_ID] = "GetAppId",
+    [FIELD_REASON] = "GetReason",
+    [FIELD_FLAGS] = "GetFlags",
+  };
 
-  for (int which = 0; which < 3; which++)
+  for (Field which = 0; which < FIELD_COUNT; which++)
     {
       Call *call = g_new0 (Call, 1);
 
@@ -317,7 +349,7 @@ read_item (Read *read, GDBusConnection *connection, Item *item)
       read->pending++;
       g_dbus_connection_call (connection, SESSION_NAME, item->path, INHIBITOR_INTERFACE,
                               methods[which], NULL,
-                              G_VARIANT_TYPE (which == 2 ? "(u)" : "(s)"),
+                              G_VARIANT_TYPE (which == FIELD_FLAGS ? "(u)" : "(s)"),
                               G_DBUS_CALL_FLAGS_NONE, -1, read->cancellable, on_field, call);
     }
 }
@@ -328,14 +360,14 @@ on_inhibitors (GObject *source, GAsyncResult *result, gpointer data)
   g_autoptr (GError) error = NULL;
   g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
                                                               &error);
-  Read *read = data;
+  ListRead *read = data;
   g_autoptr (GVariantIter) paths = NULL;
   const char *path;
 
   if (reply == NULL)
     {
       /* Cancelled, or mate-session went: its vanishing empties the list. */
-      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && !session_is_gone (error))
         g_warning ("can't list what keeps the computer awake: %s", error->message);
       read_free (read);
       return;
@@ -367,7 +399,7 @@ on_inhibitors (GObject *source, GAsyncResult *result, gpointer data)
 static void
 read_inhibitors (PwSession *session)
 {
-  Read *read = g_new0 (Read, 1);
+  ListRead *read = g_new0 (ListRead, 1);
 
   read->session = session;
   read->cancellable = g_object_ref (session->cancellable);
@@ -428,6 +460,7 @@ on_name_appeared (GDBusConnection *connection,
   PwSession *session = data;
 
   unsubscribe (session);
+  session->epoch++;
   session->connection = g_object_ref (connection);
   session->added = g_dbus_connection_signal_subscribe (
     connection, SESSION_NAME, SESSION_INTERFACE, "InhibitorAdded", SESSION_PATH, NULL,
@@ -446,6 +479,7 @@ on_name_vanished (GDBusConnection *connection G_GNUC_UNUSED,
   PwSession *session = data;
 
   unsubscribe (session);
+  session->epoch++;
   /* A read under way is dropped, and so is the inhibitor: mate-session's went with it. */
   session->generation++;
   g_clear_handle_id (&session->refresh, g_source_remove);

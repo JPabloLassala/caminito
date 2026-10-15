@@ -10,6 +10,14 @@ path=/org/gnome/SessionManager
 DBUS_SYSTEM_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address=1 --print-pid=3 3>"$work/system-bus.pid")
 export DBUS_SYSTEM_BUS_ADDRESS
 
+# The app IDs of mate-session's inhibitors, as the mock lists them.
+listed() {
+  for p in $(gdbus call --session --dest $session --object-path $path \
+      --method org.gnome.SessionManager.GetInhibitors | grep -o '/org/gnome/SessionManager/Inhibitor[0-9]*'); do
+    gdbus call --session --dest $session --object-path "$p" \
+      --method org.gnome.SessionManager.Inhibitor.GetAppId | sed "s/^('//; s/',)\$//"
+  done | tr '\n' ' '
+}
 mock() { gdbus call --session --dest $session --object-path $path --method "org.caminito.SessionMock.$1" "${@:2}"; }
 log() { mock GetLog | sed -E "s/^\((@as )?\[//; s/\],\)\$//; s/', '/;  /g; s/'//g"; }
 
@@ -68,6 +76,7 @@ mock AddInhibitor pluma "Unsaved changes" 1 >/dev/null
 sleep 1.5
 find_popup
 shot 3-application
+echo "3 applications: mate-session lists [$(listed)] (pluma has the logout flag alone, so the popup doesn't)"
 
 for p in $(gdbus call --session --dest $session --object-path $path \
     --method org.gnome.SessionManager.GetInhibitors | grep -o '/org/gnome/SessionManager/Inhibitor[0-9]*'); do
@@ -79,6 +88,7 @@ done
 sleep 1.5
 find_popup
 shot 4-removed
+echo "4 removed: mate-session lists [$(listed)]"
 
 press_switch
 shot 5-off-again

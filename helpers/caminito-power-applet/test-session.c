@@ -376,6 +376,8 @@ test_free_early (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   start_session (fixture);
   pw_session_set_stay_awake (fixture->session, TRUE);
   g_clear_pointer (&fixture->session, pw_session_free);
+  /* The replies come within a few milliseconds on a private bus: half a second of the loop
+     gives a stray callback ample time to crash the test. */
   for (int i = 0; i < 50; i++)
     {
       g_main_context_iteration (NULL, FALSE);

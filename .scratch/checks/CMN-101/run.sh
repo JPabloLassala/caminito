@@ -16,7 +16,8 @@
 #   6-restarted    Stay awake on, the panel killed and started again: the switch is off
 #
 # and writes report.txt: what the mock was called with (Inhibit with flags 12 and then
-# Uninhibit with the same cookie), the list at each step, and whether the panel lived.
+# Uninhibit with the same cookie), what mate-session lists at steps 3 and 4 (the popup's lines
+# are in the screenshots), and whether the panel lived.
 #
 #   run.sh [<meson build directory with the applet built>] [<output directory>]
 #

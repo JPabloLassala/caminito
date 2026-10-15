@@ -1,6 +1,6 @@
 # The Power applet (262, ADR 0035): an in-process mate-panel applet in C and GTK3, which
-# reads UPower and mate-session over GDBus. Its own project, which the top-level meson.build includes as a
-# subproject and installs. It's called "Power" in Add to Panel.
+# reads UPower and mate-session over GDBus. Its own project, which the top-level meson.build
+# includes as a subproject and installs. It's called "Power" in Add to Panel.
 project(
   'caminito-power-applet',
   'c',
