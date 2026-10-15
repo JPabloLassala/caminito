@@ -69,7 +69,10 @@ makedepends=(cargo git meson)
 # (111, 192). It's named by its real name, as the patched packages above are: the stock one
 # tells Caminito nothing of a menubar in a plain GtkWindow.
 # caminito-vscode-git is the global menu extension, linked into each editor (ADR 0022).
+# libheif's heif-dec decodes a HEIC's pictures, run as a program, so nothing links it: without
+# it the Wallpaper dialog greys HEICs out and says why (217).
 optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the panel's global menu"
+  "libheif: Apple's HEIC dynamic wallpapers, decoded by its heif-dec (217)"
   "caminito-vscode-git: the menus of VS Code, VSCodium, Code - OSS and Cursor in the panel's global menu")
 # caminito's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14).

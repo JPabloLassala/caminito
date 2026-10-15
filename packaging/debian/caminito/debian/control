@@ -69,6 +69,8 @@ Depends:
 Recommends:
  appmenu-gtk-module,
  caminito-vscode,
+Suggests:
+ libheif-examples,
 Description: Wayland compositor for the MATE desktop
  Caminito is a Wayland compositor for MATE, the counterpart of Marco: it
  reads Marco's settings, draws its themes and binds its keys, so that MATE

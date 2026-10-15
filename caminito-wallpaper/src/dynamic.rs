@@ -5,7 +5,9 @@
 //!   `/usr/share/wallpapers`: the light picture by day and the dark by night, cross-fading
 //!   through twilight by the sun's elevation, which Caminito publishes (215);
 //! - GNOME's timed XML, as `/usr/share/backgrounds/cosmos/background-1.xml`: its pictures at
-//!   its clock times, with its transitions.
+//!   its clock times, with its transitions;
+//! - Apple's HEIC files (217), their pictures at positions of the sun or times of the day,
+//!   read and decoded by [`heic`].
 //!
 //! Nothing here reads a clock or the bus: a moment is a [`Sky`], which the drawer and the
 //! dialog make, so the tests are deterministic. Nothing here names a toolkit.
@@ -17,6 +19,7 @@ use std::path::{Path, PathBuf};
 use quick_xml::events::Event;
 
 use crate::grid::{is_picture, package_picture};
+use crate::heic::{self, Heic};
 
 /// The sun's elevation, in degrees, at and below which a pair shows its dark picture alone:
 /// civil twilight's, where Night Light's sun schedule is at its night temperature (138).
@@ -39,6 +42,9 @@ const DAY_SECONDS: i64 = 24 * HOUR;
 pub struct Sky {
     /// The sun's elevation in degrees, as Caminito publishes it, or `None` without Caminito.
     pub elevation: Option<f64>,
+    /// The sun's azimuth in degrees from north through east, as Caminito publishes it, or
+    /// `None` without Caminito.
+    pub azimuth: Option<f64>,
     /// The local wall-clock time, in seconds since 1970-01-01 00:00 local: the Unix time
     /// plus the zone's offset, so that a day of a timed XML is a day of the clock across a
     /// change of daylight saving.
@@ -52,7 +58,7 @@ impl Sky {
         match self.elevation {
             Some(elevation) => ((DAY - elevation) / (DAY - NIGHT)).clamp(0.0, 1.0),
             None => {
-                let time = self.local.rem_euclid(DAY_SECONDS);
+                let time = self.seconds_into_day();
                 if (FIXED_RISE..FIXED_SET).contains(&time) {
                     0.0
                 } else {
@@ -60,6 +66,26 @@ impl Sky {
                 }
             }
         }
+    }
+
+    /// The seconds since local midnight.
+    fn seconds_into_day(&self) -> i64 {
+        self.local.rem_euclid(DAY_SECONDS)
+    }
+
+    /// The sun's elevation and azimuth, if Caminito gave its elevation. An azimuth missing
+    /// beside it is taken as east before noon and west after, the half of the sky that
+    /// matters to a HEIC.
+    fn sun(&self) -> Option<(f64, f64)> {
+        let elevation = self.elevation?;
+        let azimuth = self
+            .azimuth
+            .unwrap_or(if self.seconds_into_day() < 12 * HOUR {
+                90.0
+            } else {
+                270.0
+            });
+        Some((elevation, azimuth))
     }
 }
 
@@ -107,6 +133,8 @@ pub enum Error {
     NotTimed(&'static str),
     /// It's a folder without both `contents/images/` and `contents/images_dark/` pictures.
     NotPair,
+    /// It's a HEIC file that isn't a dynamic wallpaper.
+    Heic(heic::Error),
 }
 
 impl fmt::Display for Error {
@@ -116,6 +144,7 @@ impl fmt::Display for Error {
             Error::Xml(err) => write!(f, "it isn't well-formed XML: {err}"),
             Error::NotTimed(why) => write!(f, "it isn't a timed wallpaper: {why}"),
             Error::NotPair => write!(f, "it has no light and dark pictures"),
+            Error::Heic(err) => err.fmt(f),
         }
     }
 }
@@ -129,13 +158,20 @@ pub enum Dynamic {
     Pair { light: PathBuf, dark: PathBuf },
     /// GNOME's timed XML, which follows the clock.
     Timed(Timed),
+    /// Apple's HEIC, which follows the sun, or the clock in its older variant.
+    Heic(Heic),
 }
 
 impl Dynamic {
-    /// The dynamic wallpaper at `path`: a Plasma package's folder, or a timed XML.
+    /// The dynamic wallpaper at `path`: a Plasma package's folder, a timed XML or a HEIC.
+    /// A HEIC's metadata is read, and its pictures are where [`heic::decode`] puts them,
+    /// whether they're there yet or not: see [`Dynamic::ready`].
     pub fn read(path: &Path) -> Result<Self, Error> {
         if path.is_dir() {
             return pair(path).ok_or(Error::NotPair);
+        }
+        if heic::is_heic(path) {
+            return Heic::read(path).map(Dynamic::Heic).map_err(Error::Heic);
         }
         let text = fs::read_to_string(path).map_err(|err| Error::Read(err.to_string()))?;
         Timed::parse(&text, path.parent().unwrap_or(Path::new("/"))).map(Dynamic::Timed)
@@ -143,7 +179,24 @@ impl Dynamic {
 
     /// Whether it follows the sun, rather than fixed times.
     pub fn follows_sun(&self) -> bool {
-        matches!(self, Dynamic::Pair { .. })
+        match self {
+            Dynamic::Pair { .. } => true,
+            Dynamic::Timed(_) => false,
+            Dynamic::Heic(heic) => heic.schedule().follows_sun(),
+        }
+    }
+
+    /// The HEIC it is, if it is one.
+    pub fn heic(&self) -> Option<&Heic> {
+        match self {
+            Dynamic::Heic(heic) => Some(heic),
+            _ => None,
+        }
+    }
+
+    /// Whether its pictures are there to show: a HEIC's once decoded, every other's always.
+    pub fn ready(&self) -> bool {
+        self.heic().is_none_or(Heic::decoded)
     }
 
     /// What it shows at `sky`.
@@ -155,6 +208,16 @@ impl Dynamic {
                 blend: sky.darkness(),
             },
             Dynamic::Timed(timed) => timed.at(sky.local),
+            Dynamic::Heic(heic) => {
+                let pick = heic
+                    .schedule()
+                    .at(sky.sun(), sky.seconds_into_day(), sky.darkness());
+                Moment {
+                    from: heic.picture(pick.from),
+                    to: heic.picture(pick.to),
+                    blend: pick.blend,
+                }
+            }
         }
     }
 
@@ -164,13 +227,14 @@ impl Dynamic {
     /// changes as the sun moves.
     pub fn next_change(&self, sky: &Sky) -> Option<u64> {
         match self {
-            Dynamic::Pair { .. } => None,
+            Dynamic::Pair { .. } | Dynamic::Heic(_) => None,
             Dynamic::Timed(timed) => Some(timed.next_change(sky.local)),
         }
     }
 
     /// The pictures it's shown by in the dialog: by day and by night. A pair's are its own;
-    /// a timed XML's are what it shows at noon and at midnight of the day it starts.
+    /// a timed XML's are what it shows at noon and at midnight of the day it starts; a
+    /// HEIC's are its light and dark ones.
     pub fn day_and_night(&self) -> (PathBuf, PathBuf) {
         match self {
             Dynamic::Pair { light, dark } => (light.clone(), dark.clone()),
@@ -178,6 +242,13 @@ impl Dynamic {
                 let midnight = timed.start - timed.start.rem_euclid(DAY_SECONDS);
                 let at = |time: i64| timed.at(time).nearer().to_owned();
                 (at(midnight + 12 * HOUR), at(midnight))
+            }
+            Dynamic::Heic(heic) => {
+                let appearance = heic.schedule().appearance();
+                (
+                    heic.picture(appearance.light),
+                    heic.picture(appearance.dark),
+                )
             }
         }
     }

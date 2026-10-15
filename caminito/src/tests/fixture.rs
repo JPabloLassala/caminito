@@ -963,13 +963,34 @@ impl Fixture {
     /// As `wait_for_pixel`, on `output`, with `(x, y)` in its own logical space.
     #[track_caller]
     pub fn wait_for_pixel_on(&mut self, output: &Output, x: i32, y: i32, color: u32) {
+        self.wait_for_pixel_near_on(output, x, y, color, 0);
+    }
+
+    /// As `wait_for_pixel_on`, each channel within `tolerance` of `color`'s: for a picture
+    /// that went through a lossy codec on its way.
+    #[track_caller]
+    pub fn wait_for_pixel_near_on(
+        &mut self,
+        output: &Output,
+        x: i32,
+        y: i32,
+        color: u32,
+        tolerance: u8,
+    ) {
         let scale = output.current_scale().fractional_scale();
         let at = Point::<i32, Logical>::from((x, y)).to_physical_precise_round(scale);
         let expected = 0xff00_0000 | color;
+        let near = |pixel: u32| {
+            pixel
+                .to_be_bytes()
+                .into_iter()
+                .zip(expected.to_be_bytes())
+                .all(|(a, b)| a.abs_diff(b) <= tolerance)
+        };
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             let pixel = self.state.backend.headless_mut().pixel(output, at);
-            if pixel == Some(expected) {
+            if pixel.is_some_and(near) {
                 return;
             }
             assert!(
