@@ -2,7 +2,8 @@
 //! single-instance `GtkApplication`.
 //!
 //! - `--background`, from the autostart entry at login, opens no window and holds the
-//!   process until the session ends, for the pairing agent (256).
+//!   process until the session ends, for the pairing agent (256), which every start
+//!   registers.
 //! - With no flag, the running instance opens or raises the settings window, or a new one
 //!   starts and does. That's what the Control Center and the applet's "Configure…" run.
 //! - `--scan` does the same on Add New Device (258).
@@ -13,12 +14,14 @@
 
 #![forbid(unsafe_code)]
 
+mod dialogs;
 mod window;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use caminito_bluetooth::DOMAIN;
+use caminito_bluetooth::agent::Agent;
 use caminito_bluetooth::bluez::Bluez;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -45,15 +48,27 @@ fn main() -> glib::ExitCode {
         None,
     );
 
-    // The primary instance's: BlueZ's model, and the hold it takes at its first command line.
+    // The primary instance's: BlueZ's model, the pairing agent over it, and the hold it takes
+    // at its first command line.
     let bluez: Rc<RefCell<Option<Bluez>>> = Rc::default();
+    let agent: Rc<RefCell<Option<Agent>>> = Rc::default();
     let hold: Rc<RefCell<Option<gio::ApplicationHoldGuard>>> = Rc::default();
 
     application.connect_startup({
         let bluez = bluez.clone();
-        move |_| match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
-            Ok(system) => *bluez.borrow_mut() = Some(Bluez::new(&system)),
-            Err(err) => glib::g_warning!(DOMAIN, "can't reach BlueZ on the system bus: {err}"),
+        move |_| {
+            let model = match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
+                Ok(system) => Bluez::new(&system),
+                Err(err) => {
+                    glib::g_warning!(DOMAIN, "can't reach BlueZ on the system bus: {err}");
+                    return;
+                }
+            };
+            match Agent::new(&model, Rc::new(dialogs::GtkDialogs::default())) {
+                Ok(started) => *agent.borrow_mut() = Some(started),
+                Err(err) => glib::g_warning!(DOMAIN, "{err}"),
+            }
+            *bluez.borrow_mut() = Some(model);
         }
     });
 

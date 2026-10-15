@@ -50,14 +50,7 @@ impl Mock {
             .read_line(&mut address)
             .expect("dbus-daemon prints its address");
         let address = address.trim_end().to_owned();
-        let connection = gio::DBusConnection::for_address_sync(
-            &address,
-            gio::DBusConnectionFlags::AUTHENTICATION_CLIENT
-                | gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION,
-            None,
-            gio::Cancellable::NONE,
-        )
-        .expect("the private bus takes a connection");
+        let connection = connect(&address);
         let mut mock = Mock {
             address,
             connection,
@@ -99,6 +92,11 @@ impl Mock {
         );
         self.wait_until(&format!("{name} on the bus"), || appeared.get());
         gio::bus_unwatch_name(watcher);
+    }
+
+    /// A new connection to the bus, as another process would have.
+    pub fn connect(&self) -> gio::DBusConnection {
+        connect(&self.address)
     }
 
     /// Runs the main context until `condition` holds, and fails the test if it doesn't in
@@ -171,6 +169,21 @@ impl Mock {
             "/",
             "org.bluez.Mock",
             "PairDevice",
+            &(adapter, address).to_variant(),
+        );
+    }
+
+    /// Marks a device as connected, as BlueZ does once its link is up, or disconnected.
+    pub fn set_connected(&self, adapter: &str, address: &str, connected: bool) {
+        let method = if connected {
+            "ConnectDevice"
+        } else {
+            "DisconnectDevice"
+        };
+        self.mock(
+            "/",
+            "org.bluez.Mock",
+            method,
             &(adapter, address).to_variant(),
         );
     }
@@ -248,6 +261,21 @@ impl Mock {
         .expect("Get returns a variant")
     }
 
+    /// The arguments of each call the mock's object at `path` has had to `method`, oldest
+    /// first.
+    pub fn calls(&self, path: &str, method: &str) -> Vec<Variant> {
+        self.mock(
+            path,
+            "org.freedesktop.DBus.Mock",
+            "GetMethodCalls",
+            &(method,).to_variant(),
+        )
+        .child_value(0)
+        .iter()
+        .map(|call| call.child_value(1))
+        .collect()
+    }
+
     fn mock(&self, path: &str, interface: &str, method: &str, parameters: &Variant) -> Variant {
         self.connection
             .call_sync(
@@ -274,6 +302,17 @@ impl Drop for Mock {
         let _ = self.daemon.kill();
         let _ = self.daemon.wait();
     }
+}
+
+fn connect(address: &str) -> gio::DBusConnection {
+    gio::DBusConnection::for_address_sync(
+        address,
+        gio::DBusConnectionFlags::AUTHENTICATION_CLIENT
+            | gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION,
+        None,
+        gio::Cancellable::NONE,
+    )
+    .expect("the private bus takes a connection")
 }
 
 fn object_path(path: &str) -> ObjectPath {
