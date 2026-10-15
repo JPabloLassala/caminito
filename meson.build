@@ -79,7 +79,7 @@ install_data(
   install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
 )
 
-# The default panel (261): mate-panel's default layout with the Bluetooth applet beside the
+# The default panel (CMN-105): mate-panel's default layout with the Bluetooth applet beside the
 # notification area, and the override that makes it the default. Like caminito-bluetooth's
 # entries these are in the normal XDG directories, not share/caminito/xdg/: the layout is
 # right under X11 MATE too, and the panel finds it by name in its own layouts directory.

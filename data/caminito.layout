@@ -1,4 +1,4 @@
-# Caminito's default panel layout (261): mate-panel's own default.layout, from the commit the
+# Caminito's default panel layout (CMN-105): mate-panel's own default.layout, from the commit the
 # patched package is built from (58ac6c1), with the Bluetooth applet added to the top panel,
 # beside the notification area. 90_caminito.gschema.override makes it the default. Only a user
 # with no panel settings gets it: anyone else adds the applet with Add to Panel.

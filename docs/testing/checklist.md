@@ -2413,11 +2413,11 @@ session_env() {
 ## Bluetooth
 
 These need a Bluetooth adapter and the devices themselves, which no mock stands in for. They are
-the developer's to run (261).
+the developer's to run (CMN-105).
 
 ### A keyboard pairs with a PIN
 
-- **Milestone:** the `bluetooth` epic (261)
+- **Milestone:** M9
 - **Steps:**
   1. With `caminito-git` installed, log into *MATE on Caminito* with a Bluetooth adapter. Run
      `pgrep -a caminito-bluetooth`. Put a Bluetooth keyboard that asks for a PIN in pairing mode.
@@ -2436,7 +2436,7 @@ the developer's to run (261).
 
 ### A phone pairs with a confirmation, one that the phone starts too
 
-- **Milestone:** the `bluetooth` epic (261)
+- **Milestone:** M9
 - **Steps:**
   1. Open the settings window from *Bluetooth* in the control center, choose *Add New Device*,
      and click the phone, with its Bluetooth screen open.
@@ -2452,7 +2452,7 @@ the developer's to run (261).
 
 ### A headset connects and disconnects from the popup
 
-- **Milestone:** the `bluetooth` epic (261)
+- **Milestone:** M9
 - **Steps:**
   1. Pair a headset in the settings window. Turn it off, then on.
   2. Open the popup, click the headset's row, and choose *Connect*. Play a sound in *Sound*'s
@@ -2468,7 +2468,7 @@ the developer's to run (261).
 
 ### Off lasts across a reboot, and the icon hides with no adapter
 
-- **Milestone:** the `bluetooth` epic (261)
+- **Milestone:** M9
 - **Steps:**
   1. Open the popup and turn Bluetooth off with its switch. Run `rfkill list bluetooth`.
   2. Reboot, log in again, and run `rfkill list bluetooth`. Open the popup.
@@ -2482,7 +2482,7 @@ the developer's to run (261).
 
 ### A fresh user's top panel has the applet, under X11 MATE too
 
-- **Milestone:** the `bluetooth` epic (261)
+- **Milestone:** M9
 - **Steps:**
   1. Make a user with no panel settings: `sudo useradd -m btfresh`, and log in as them to
      *MATE on Caminito*.
