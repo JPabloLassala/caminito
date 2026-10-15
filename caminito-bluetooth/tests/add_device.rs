@@ -6,7 +6,8 @@
 mod mock;
 
 use caminito_bluetooth::bluez::Bluez;
-use caminito_bluetooth::settings::{Attempt, Selection, Settings};
+use caminito_bluetooth::settings::{Attempt, PairError, Selection, Settings};
+use gio::glib;
 
 use mock::Mock;
 
@@ -204,8 +205,9 @@ fn a_pairing_that_fails_is_told_on_the_device_and_tried_again() {
     mock::run(|mock| {
         mock.add_adapter("hci0", "laptop");
         let mouse = mock.add_device("hci0", MOUSE, "Mouse");
-        mock.fail_pairing(
+        mock.fail(
             &mouse,
+            "Pair",
             "org.bluez.Error.AuthenticationFailed",
             "Authentication Failed",
         );
@@ -242,7 +244,7 @@ fn a_device_that_goes_takes_its_failure_with_it() {
     mock::run(|mock| {
         let adapter = mock.add_adapter("hci0", "laptop");
         let mouse = mock.add_device("hci0", MOUSE, "Mouse");
-        mock.fail_pairing(&mouse, "org.bluez.Error.Failed", "Page Timeout");
+        mock.fail(&mouse, "Pair", "org.bluez.Error.Failed", "Page Timeout");
         let settings = settings(mock);
         settings.open();
         settings.select(Selection::AddDevice);
@@ -253,5 +255,117 @@ fn a_device_that_goes_takes_its_failure_with_it() {
         mock.wait_until("the mouse to go", || found(&settings).is_empty());
         assert_eq!(settings.attempt(&mouse), None);
         mock.block_on(settings.close()).unwrap();
+    });
+}
+
+#[test]
+fn a_device_that_pairs_but_wont_connect_is_a_paired_device_all_the_same() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let phone = mock.add_device("hci0", PHONE, "Pixel 7");
+        mock.fail(&phone, "Connect", "org.bluez.Error.Failed", "Page Timeout");
+        let settings = settings(mock);
+        settings.open();
+        settings.select(Selection::AddDevice);
+
+        let err = mock.block_on(settings.pair(&phone)).unwrap_err();
+        assert!(matches!(err, PairError::Connect(_)), "{err}");
+        mock.wait_until("the phone to be a paired device", || {
+            settings
+                .devices()
+                .iter()
+                .any(|device| device.path == phone && device.trusted && !device.connected)
+        });
+        assert_eq!(
+            settings.attempt(&phone),
+            None,
+            "the row is gone, not failed"
+        );
+        mock.block_on(settings.close()).unwrap();
+    });
+}
+
+#[test]
+fn one_device_is_paired_at_a_time() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let phone = mock.add_device("hci0", PHONE, "Pixel 7");
+        let mouse = mock.add_device("hci0", MOUSE, "Mouse");
+        let settings = settings(mock);
+        settings.open();
+        settings.select(Selection::AddDevice);
+        assert!(!settings.is_pairing());
+
+        let first = glib::spawn_future_local({
+            let settings = settings.clone();
+            async move { settings.pair(&phone).await }
+        });
+        // The first is waiting for BlueZ's answer when the second asks.
+        let second = mock.block_on({
+            let settings = settings.clone();
+            async move { settings.pair(&mouse).await }
+        });
+        assert!(matches!(second, Err(PairError::Busy)), "{second:?}");
+        mock.block_on(first).unwrap().unwrap();
+        assert!(!settings.is_pairing());
+        mock.block_on(settings.close()).unwrap();
+    });
+}
+
+#[test]
+fn a_failure_after_the_page_was_left_is_not_kept_for_the_next_visit() {
+    mock::run(|mock| {
+        mock.add_adapter("hci0", "laptop");
+        let mouse = mock.add_device("hci0", MOUSE, "Mouse");
+        mock.fail(
+            &mouse,
+            "Pair",
+            "org.bluez.Error.AuthenticationFailed",
+            "Authentication Failed",
+        );
+        let settings = settings(mock);
+        settings.open();
+        settings.select(Selection::AddDevice);
+
+        let pairing = glib::spawn_future_local({
+            let settings = settings.clone();
+            let mouse = mouse.clone();
+            async move { settings.pair(&mouse).await }
+        });
+        settings.select(Selection::Computer);
+        assert!(mock.block_on(pairing).unwrap().is_err());
+
+        settings.select(Selection::AddDevice);
+        assert_eq!(settings.attempt(&mouse), None);
+        mock.block_on(settings.close()).unwrap();
+    });
+}
+
+#[test]
+fn a_scan_started_as_the_window_closes_is_stopped_once_it_is_answered() {
+    mock::run(|mock| {
+        let adapter = mock.add_adapter("hci0", "laptop");
+        // A second view of BlueZ, to see that a scan did start.
+        let watcher = Bluez::new(&mock.connection);
+        mock.wait_until("BlueZ's objects", || watcher.is_ready());
+        let started = std::rc::Rc::new(std::cell::Cell::new(false));
+        watcher.connect_changed({
+            let started = started.clone();
+            move |bluez| {
+                if bluez.adapters().iter().any(|adapter| adapter.discovering) {
+                    started.set(true);
+                }
+            }
+        });
+
+        let settings = settings(mock);
+        settings.open();
+        settings.select(Selection::AddDevice);
+        // BlueZ hasn't answered the start yet: the window closes, and nothing holds it.
+        mock.block_on(settings.close()).unwrap();
+        drop(settings);
+
+        mock.wait_until("the scan to have started", || started.get());
+        mock.wait_until("the scan to be stopped", || !discovering(mock, &adapter));
     });
 }

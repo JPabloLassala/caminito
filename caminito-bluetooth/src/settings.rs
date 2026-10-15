@@ -186,6 +186,15 @@ impl Settings {
         devices
     }
 
+    /// Whether a device is being paired. BlueZ's agent answers one at a time, so one is.
+    pub fn is_pairing(&self) -> bool {
+        self.state
+            .borrow()
+            .attempts
+            .values()
+            .any(|attempt| *attempt == Attempt::Pairing)
+    }
+
     /// What became of the last try to pair the device at `device`, while Add New Device is
     /// shown: it's being paired, or it failed.
     pub fn attempt(&self, device: &str) -> Option<Attempt> {
@@ -256,11 +265,13 @@ impl Settings {
     /// [`Settings::attempt`] says so.
     pub async fn pair(&self, device: &str) -> Result<(), PairError> {
         {
-            let mut state = self.state.borrow_mut();
-            if state.attempts.values().any(|a| *a == Attempt::Pairing) {
+            if self.is_pairing() {
                 return Err(PairError::Busy);
             }
-            state.attempts.insert(device.to_owned(), Attempt::Pairing);
+            self.state
+                .borrow_mut()
+                .attempts
+                .insert(device.to_owned(), Attempt::Pairing);
         }
         self.tell();
         let outcome = self.pair_and_connect(device).await;
@@ -414,20 +425,19 @@ impl Settings {
         if state.scan_busy || state.scanning == wanted {
             return;
         }
-        let bluez = self.bluez.clone();
-        let weak = Rc::downgrade(&self.state);
+        // The calls hold the state, not a weak reference to it: the window's closing drops
+        // its own, and an answer to a start that comes after must still stop the scan.
+        let settings = self.clone();
         if let Some(held) = state.scanning.take() {
             state.scan_busy = true;
             drop(state);
             glib::spawn_future_local(async move {
-                let answer = bluez.stop_discovery(&held).await;
-                if let Some(settings) = upgrade(&bluez, &weak) {
-                    settings.state.borrow_mut().scan_busy = false;
-                    if let Err(err) = answer {
-                        glib::g_warning!(DOMAIN, "{err}");
-                    }
-                    settings.hold_scan();
+                let answer = settings.bluez.stop_discovery(&held).await;
+                settings.state.borrow_mut().scan_busy = false;
+                if let Err(err) = answer {
+                    glib::g_warning!(DOMAIN, "{err}");
                 }
+                settings.hold_scan();
             });
         } else if let Some(target) = wanted
             && state.scan_refused.as_ref() != Some(&target)
@@ -435,21 +445,19 @@ impl Settings {
             state.scan_busy = true;
             drop(state);
             glib::spawn_future_local(async move {
-                let answer = bluez.start_discovery(&target).await;
-                if let Some(settings) = upgrade(&bluez, &weak) {
-                    {
-                        let mut state = settings.state.borrow_mut();
-                        state.scan_busy = false;
-                        match &answer {
-                            Ok(()) => state.scanning = Some(target.clone()),
-                            Err(_) => state.scan_refused = Some(target.clone()),
-                        }
+                let answer = settings.bluez.start_discovery(&target).await;
+                {
+                    let mut state = settings.state.borrow_mut();
+                    state.scan_busy = false;
+                    match &answer {
+                        Ok(()) => state.scanning = Some(target.clone()),
+                        Err(_) => state.scan_refused = Some(target.clone()),
                     }
-                    if let Err(err) = answer {
-                        glib::g_warning!(DOMAIN, "{err}");
-                    }
-                    settings.hold_scan();
                 }
+                if let Err(err) = answer {
+                    glib::g_warning!(DOMAIN, "{err}");
+                }
+                settings.hold_scan();
             });
         }
     }

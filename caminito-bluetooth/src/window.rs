@@ -767,10 +767,7 @@ impl AddPane {
         self.hint.set_visible(ready && devices.is_empty());
         self.scroll.set_visible(!devices.is_empty());
         // One device is paired at a time: the agent asks one question at a time.
-        let pairing = devices
-            .iter()
-            .any(|device| settings.attempt(&device.path) == Some(Attempt::Pairing));
-        self.list.set_sensitive(!pairing);
+        self.list.set_sensitive(!settings.is_pairing());
 
         let mut rows = self.rows.borrow_mut();
         let same = rows.len() == devices.len()

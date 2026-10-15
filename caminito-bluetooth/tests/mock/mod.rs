@@ -201,15 +201,15 @@ impl Mock {
         path
     }
 
-    /// Makes the device at `device` refuse to pair, answering `Pair` with BlueZ's error
-    /// `name` and `message`, as a device that gives a wrong PIN or goes out of range does.
-    pub fn fail_pairing(&self, device: &str, name: &str, message: &str) {
-        let code = format!("raise dbus.exceptions.DBusException({message:?}, name={name:?})",);
+    /// Makes the device at `device` answer `method` of `Device1` with BlueZ's error `name`
+    /// and `message`, as `Pair` does for a wrong PIN or a device out of range.
+    pub fn fail(&self, device: &str, method: &str, name: &str, message: &str) {
+        let code = format!("raise dbus.exceptions.DBusException({message:?}, name={name:?})");
         self.mock(
             device,
             "org.freedesktop.DBus.Mock",
             "AddMethod",
-            &("org.bluez.Device1", "Pair", "", "", code).to_variant(),
+            &("org.bluez.Device1", method, "", "", code).to_variant(),
         );
     }
 
