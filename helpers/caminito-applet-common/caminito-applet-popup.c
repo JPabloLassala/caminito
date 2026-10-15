@@ -18,6 +18,12 @@ struct _CaminitoAppletPopup
   GtkWidget       *applet;
   GtkWidget       *window;
   gint64           hidden_at;
+  /* Set by caminito_applet_popup_set_orient(), else the applet's own is asked. */
+  gboolean         orient_fixed;
+  MatePanelAppletOrient orient;
+  /* The size it was last placed at, so that placing it again follows a change of it. */
+  int              placed_width;
+  int              placed_height;
 };
 
 void
@@ -71,7 +77,7 @@ place (CaminitoAppletPopup *popup)
 {
   GtkWidget *applet = popup->applet;
   GtkWidget *toplevel = gtk_widget_get_toplevel (applet);
-  MatePanelAppletOrient orient = MATE_PANEL_APPLET_ORIENT_DOWN;
+  MatePanelAppletOrient orient = popup->orient;
   GtkAllocation allocation;
   GdkRectangle rect;
   GdkGravity rect_anchor, window_anchor;
@@ -81,11 +87,34 @@ place (CaminitoAppletPopup *popup)
   gtk_widget_translate_coordinates (applet, toplevel, 0, 0, &rect.x, &rect.y);
   rect.width = allocation.width;
   rect.height = allocation.height;
-  if (MATE_PANEL_IS_APPLET (applet))
+  if (!popup->orient_fixed && MATE_PANEL_IS_APPLET (applet))
     orient = mate_panel_applet_get_orient (MATE_PANEL_APPLET (applet));
   caminito_applet_popup_anchors (orient, &rect_anchor, &window_anchor, &hints);
+  popup->placed_width = gtk_widget_get_allocated_width (popup->window);
+  popup->placed_height = gtk_widget_get_allocated_height (popup->window);
   gdk_window_move_to_rect (gtk_widget_get_window (popup->window), &rect, rect_anchor,
                            window_anchor, hints, 0, 0);
+}
+
+void
+caminito_applet_popup_set_orient (CaminitoAppletPopup *popup, MatePanelAppletOrient orient)
+{
+  popup->orient = orient;
+  popup->orient_fixed = TRUE;
+}
+
+/* GDK places the window by the size it had then: a popup that opens upwards would grow
+   over the panel when a row opens in it. */
+static void
+on_size_allocate (GtkWidget *window, GdkRectangle *allocation, gpointer data)
+{
+  CaminitoAppletPopup *popup = data;
+
+  if (!gtk_widget_get_mapped (window)
+      || (allocation->width == popup->placed_width
+          && allocation->height == popup->placed_height))
+    return;
+  place (popup);
 }
 
 static void
@@ -163,6 +192,23 @@ on_window_button_press (GtkWidget *window, GdkEventButton *event, gpointer data)
   GtkAllocation allocation;
   double x = event->x, y = event->y;
 
+  /* On X11 the grab reports a click anywhere in the client to the popup's window, with the
+     coordinates of the window it was in: one on the applet reads as a point in the popup.
+     The root coordinates are the popup's own to compare. Wayland needs no such thing,
+     since its compositor ends the popup itself when the click is elsewhere. */
+  if (g_str_equal (G_OBJECT_TYPE_NAME (gtk_widget_get_display (window)), "GdkX11Display"))
+    {
+      int origin_x, origin_y;
+
+      gdk_window_get_origin (toplevel, &origin_x, &origin_y);
+      if (event->x_root < origin_x || event->y_root < origin_y
+          || event->x_root >= origin_x + gdk_window_get_width (toplevel)
+          || event->y_root >= origin_y + gdk_window_get_height (toplevel))
+        {
+          caminito_applet_popup_hide (popup);
+          return TRUE;
+        }
+    }
   /* In the popup's own coordinates, not the root's, which Wayland doesn't have. */
   if (gdk_window_get_toplevel (event_window) == toplevel)
     {
@@ -236,12 +282,34 @@ popup_free (gpointer data)
   g_free (popup);
 }
 
+/* Themes draw a border on a menu's window, and none on a window of this kind, so the
+   popup would melt into what is behind it. The theme's own CSS wins over this. */
+static void
+add_border (void)
+{
+  static gboolean added;
+  g_autoptr (GtkCssProvider) provider = NULL;
+
+  if (added)
+    return;
+  added = TRUE;
+  provider = gtk_css_provider_new ();
+  gtk_css_provider_load_from_data (provider,
+                                   ".caminito-applet-popup { border: 1px solid alpha(currentColor, 0.3); }",
+                                   -1, NULL);
+  gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
+                                             GTK_STYLE_PROVIDER (provider),
+                                             GTK_STYLE_PROVIDER_PRIORITY_FALLBACK);
+}
+
 CaminitoAppletPopup *
 caminito_applet_popup_new (GtkWidget *applet)
 {
   CaminitoAppletPopup *popup = g_new0 (CaminitoAppletPopup, 1);
 
+  add_border ();
   popup->applet = applet;
+  popup->orient = MATE_PANEL_APPLET_ORIENT_DOWN;
   popup->window = g_object_ref_sink (gtk_window_new (GTK_WINDOW_POPUP));
   gtk_window_set_type_hint (GTK_WINDOW (popup->window), GDK_WINDOW_TYPE_HINT_POPUP_MENU);
   gtk_style_context_add_class (gtk_widget_get_style_context (popup->window),
@@ -249,6 +317,7 @@ caminito_applet_popup_new (GtkWidget *applet)
   gtk_widget_add_events (popup->window,
                          GDK_BUTTON_PRESS_MASK | GDK_KEY_PRESS_MASK | GDK_STRUCTURE_MASK);
   g_signal_connect (popup->window, "hide", G_CALLBACK (on_hide), popup);
+  g_signal_connect_after (popup->window, "size-allocate", G_CALLBACK (on_size_allocate), popup);
   g_signal_connect (popup->window, "button-press-event",
                     G_CALLBACK (on_window_button_press), popup);
   g_signal_connect (popup->window, "key-press-event", G_CALLBACK (on_window_key_press), popup);

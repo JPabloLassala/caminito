@@ -3,26 +3,31 @@
  * whether Bluetooth is off, on, or connected, with the connected devices and their
  * battery in its tooltip. It reads BlueZ directly (bt-bluez.c), hides itself while there's
  * no adapter, and its right-click menu turns Bluetooth off or on and opens
- * caminito-bluetooth. The popup is 260's.
+ * caminito-bluetooth. Left-click opens the popup (260, bt-popup.c), which lists the
+ * paired devices and connects them.
  */
 
 #include <mate-panel-applet.h>
 
 #include "bt-bluez.h"
+#include "bt-popup.h"
 #include "bt-rfkill.h"
 #include "bt-state.h"
 #include "caminito-applet-icon.h"
+#include "caminito-applet-popup.h"
 
 #define FACTORY_ID "CaminitoBluetoothAppletFactory"
 #define APPLET_ID  "CaminitoBluetoothApplet"
 
 typedef struct
 {
-  MatePanelApplet *applet;
-  GtkWidget       *icon;
-  GtkAction       *toggle;
-  BtBluez         *bluez;
-  BtIconState      state;
+  MatePanelApplet     *applet;
+  GtkWidget           *icon;
+  GtkAction           *toggle;
+  BtBluez             *bluez;
+  BtIconState          state;
+  CaminitoAppletPopup *popup;
+  BtPopup             *content;
 } Applet;
 
 static const char menu_xml[] =
@@ -36,9 +41,11 @@ update (Applet *applet)
   g_autofree char *tooltip = bt_state_tooltip (snapshot);
 
   applet->state = bt_state_icon (snapshot);
+  bt_popup_update (applet->content, snapshot);
   /* No adapter, no icon: the applet hides itself, and comes back when one appears. */
   if (applet->state == BT_ICON_NONE)
     {
+      caminito_applet_popup_hide (applet->popup);
       gtk_widget_hide (GTK_WIDGET (applet->applet));
       gtk_widget_set_tooltip_text (GTK_WIDGET (applet->applet), NULL);
       return;
@@ -59,10 +66,8 @@ on_changed (BtBluez *bluez G_GNUC_UNUSED, gpointer data)
 }
 
 static void
-on_toggle (GtkAction *action G_GNUC_UNUSED, gpointer data)
+set_bluetooth (Applet *applet, gboolean on)
 {
-  Applet *applet = data;
-  gboolean on = applet->state == BT_ICON_OFF;
   g_autoptr (GError) error = NULL;
 
   /* Off is the rfkill block, which lasts across reboots, and bluetoothd powers the
@@ -77,10 +82,18 @@ on_toggle (GtkAction *action G_GNUC_UNUSED, gpointer data)
 }
 
 static void
-on_configure (GtkAction *action G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+on_toggle (GtkAction *action G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+
+  set_bluetooth (applet, applet->state == BT_ICON_OFF);
+}
+
+static void
+open_bluetooth (const char *flag)
 {
   g_autoptr (GError) error = NULL;
-  const char *argv[] = { "caminito-bluetooth", NULL };
+  const char *argv[] = { "caminito-bluetooth", flag, NULL };
 
   if (!g_spawn_async (NULL, (char **) argv, NULL,
                       G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL, NULL, NULL, NULL,
@@ -89,10 +102,56 @@ on_configure (GtkAction *action G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 }
 
 static void
+on_configure (GtkAction *action G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+  open_bluetooth (NULL);
+}
+
+/* What the popup's controls do (260). */
+
+static void
+on_popup_set_powered (gboolean on, gpointer data)
+{
+  set_bluetooth (data, on);
+}
+
+static void
+on_connect_done (const char *path, const char *error, gpointer data)
+{
+  Applet *applet = data;
+
+  if (error != NULL)
+    g_warning ("can't change the connection of %s: %s", path, error);
+  bt_popup_connect_done (applet->content, path, error);
+}
+
+static void
+on_popup_set_connected (const char *path, gboolean connected, gpointer data)
+{
+  Applet *applet = data;
+
+  bt_bluez_set_connected (applet->bluez, path, connected, on_connect_done, applet);
+}
+
+static void
+on_popup_add_device (gpointer data G_GNUC_UNUSED)
+{
+  open_bluetooth ("--scan");
+}
+
+static void
+on_popup_configure (gpointer data G_GNUC_UNUSED)
+{
+  open_bluetooth (NULL);
+}
+
+static void
 applet_free (gpointer data)
 {
   Applet *applet = data;
 
+  /* The popup's own handlers can't run any more: its window goes with the applet. */
+  bt_popup_free (applet->content);
   bt_bluez_free (applet->bluez);
   /* The panel's menu may hold the action longer than the applet lives. */
   g_signal_handlers_disconnect_by_data (applet->toggle, applet);
@@ -105,6 +164,9 @@ fill (MatePanelApplet *panel_applet)
 {
   GtkActionGroup *actions;
   GtkAction *configure;
+  static const BtPopupActions popup_actions = {
+    on_popup_set_powered, on_popup_set_connected, on_popup_add_device, on_popup_configure,
+  };
   Applet *applet = g_new0 (Applet, 1);
 
   applet->applet = panel_applet;
@@ -130,6 +192,8 @@ fill (MatePanelApplet *panel_applet)
 
   g_object_set_data_full (G_OBJECT (panel_applet), "caminito-bluetooth-applet", applet,
                           applet_free);
+  applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
+  applet->content = bt_popup_new (applet->popup, &popup_actions, applet);
   applet->bluez = bt_bluez_new (on_changed, applet);
   /* Hidden until BlueZ says there's an adapter. */
   gtk_widget_show (applet->icon);

@@ -139,6 +139,20 @@ tooltip_is (Fixture *fixture, gconstpointer expected)
   return g_strcmp0 (tooltip, expected) == 0;
 }
 
+/* The device's entry in the snapshot's listing: connected or not, by alias. */
+static gboolean
+listed_as (Fixture *fixture, gconstpointer expected)
+{
+  g_autoptr (BtSnapshot) snapshot = bt_bluez_snapshot (fixture->bluez);
+  g_autoptr (GPtrArray) connected = bt_state_listed (snapshot, TRUE);
+  g_autoptr (GPtrArray) available = bt_state_listed (snapshot, FALSE);
+  g_autofree char *listing = g_strdup_printf (
+    "%s|%s", connected->len > 0 ? ((BtDevice *) g_ptr_array_index (connected, 0))->alias : "",
+    available->len > 0 ? ((BtDevice *) g_ptr_array_index (available, 0))->alias : "");
+
+  return g_strcmp0 (listing, expected) == 0;
+}
+
 static gboolean
 connection_gone (Fixture *fixture, gconstpointer expected G_GNUC_UNUSED)
 {
@@ -257,6 +271,116 @@ test_set_powered (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   wait_for_icon (fixture, BT_ICON_ON);
 }
 
+typedef struct
+{
+  Fixture *fixture;
+  guint    done;
+  char    *path;
+  char    *error;
+} Call;
+
+static void
+on_done (const char *path, const char *error, gpointer data)
+{
+  Call *call = data;
+
+  g_free (call->path);
+  g_free (call->error);
+  call->path = g_strdup (path);
+  call->error = g_strdup (error);
+  call->done++;
+}
+
+static gboolean
+call_done (Fixture *fixture G_GNUC_UNUSED, gconstpointer expected)
+{
+  return ((const Call *) expected)->done > 0;
+}
+
+/* The popup's Connect and Disconnect (260), and the details its rows show. */
+static void
+test_connect_and_disconnect (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autoptr (BtSnapshot) snapshot = NULL;
+  const BtDevice *device;
+  Call call = { fixture, 0, NULL, NULL };
+
+  start_mock (fixture);
+  fixture->bluez = bt_bluez_new (on_changed, fixture);
+  mock (fixture, "AddAdapter", g_variant_new ("(ss)", "hci0", "my-computer"));
+  mock (fixture, "AddDevice", g_variant_new ("(sss)", "hci0", HEADPHONES, "Headphones"));
+  wait_for_icon (fixture, BT_ICON_ON);
+
+  /* Nearby and not paired: not listed, but its address and icon are read. */
+  snapshot = bt_bluez_snapshot (fixture->bluez);
+  g_assert_cmpuint (snapshot->devices->len, ==, 1);
+  device = g_ptr_array_index (snapshot->devices, 0);
+  g_assert_cmpstr (device->address, ==, HEADPHONES);
+  g_assert_cmpstr (device->icon, ==, "phone");
+  g_assert_false (device->paired);
+  wait_until (fixture, listed_as, "|");
+
+  mock (fixture, "PairDevice", g_variant_new ("(ss)", "hci0", HEADPHONES));
+  wait_until (fixture, listed_as, "|Headphones");
+
+  bt_bluez_set_connected (fixture->bluez, HEADPHONES_PATH, TRUE, on_done, &call);
+  wait_until (fixture, call_done, &call);
+  g_assert_cmpstr (call.path, ==, HEADPHONES_PATH);
+  g_assert_null (call.error);
+  wait_until (fixture, listed_as, "Headphones|");
+
+  call.done = 0;
+  bt_bluez_set_connected (fixture->bluez, HEADPHONES_PATH, FALSE, on_done, &call);
+  wait_until (fixture, call_done, &call);
+  g_assert_null (call.error);
+  wait_until (fixture, listed_as, "|Headphones");
+  g_free (call.path);
+  g_free (call.error);
+}
+
+/* A device that's gone, or can't be reached: the call answers with BlueZ's message. */
+static void
+test_connect_error (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Call call = { fixture, 0, NULL, NULL };
+
+  start_mock (fixture);
+  fixture->bluez = bt_bluez_new (on_changed, fixture);
+  mock (fixture, "AddAdapter", g_variant_new ("(ss)", "hci0", "my-computer"));
+  wait_for_icon (fixture, BT_ICON_ON);
+
+  bt_bluez_set_connected (fixture->bluez, HCI0 "/dev_00_00_00_00_00_00", TRUE, on_done, &call);
+  wait_until (fixture, call_done, &call);
+  g_assert_nonnull (call.error);
+  g_free (call.path);
+  g_free (call.error);
+}
+
+/* The applet removed from the panel while a call is out: its callback isn't called. */
+static void
+test_connect_then_free (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Call call = { fixture, 0, NULL, NULL };
+
+  start_mock (fixture);
+  fixture->bluez = bt_bluez_new (on_changed, fixture);
+  mock (fixture, "AddAdapter", g_variant_new ("(ss)", "hci0", "my-computer"));
+  mock (fixture, "AddDevice", g_variant_new ("(sss)", "hci0", HEADPHONES, "Headphones"));
+  mock (fixture, "PairDevice", g_variant_new ("(ss)", "hci0", HEADPHONES));
+  wait_for_icon (fixture, BT_ICON_ON);
+
+  bt_bluez_set_connected (fixture->bluez, HEADPHONES_PATH, TRUE, on_done, &call);
+  g_clear_pointer (&fixture->bluez, bt_bluez_free);
+  /* That nothing is called: half a second is many times what the mock takes to answer a
+     Connect on a private bus, a few milliseconds. */
+  for (int i = 0; i < 50; i++)
+    {
+      g_main_context_iteration (NULL, FALSE);
+      g_usleep (10 * 1000);
+    }
+  g_assert_cmpuint (call.done, ==, 0);
+}
+
 /* The applet removed from the panel while bluez is still starting. */
 static void
 test_free_early (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
@@ -290,6 +414,9 @@ main (int argc, char **argv)
   g_test_add ("/bluez/bluetoothd-stopping-and-starting-again-is-followed", Fixture, NULL, setup, test_restart, teardown);
   g_test_add ("/bluez/bluetoothd-starting-after-the-applet-is-followed", Fixture, NULL, setup, test_late_start, teardown);
   g_test_add ("/bluez/powering-sets-every-adapter", Fixture, NULL, setup, test_set_powered, teardown);
+  g_test_add ("/bluez/connecting-and-disconnecting-follow-the-device", Fixture, NULL, setup, test_connect_and_disconnect, teardown);
+  g_test_add ("/bluez/a-failed-connect-answers-with-the-error", Fixture, NULL, setup, test_connect_error, teardown);
+  g_test_add ("/bluez/freeing-with-a-call-out-calls-nothing", Fixture, NULL, setup, test_connect_then_free, teardown);
   g_test_add ("/bluez/freeing-while-starting-calls-nothing", Fixture, NULL, setup, test_free_early, teardown);
   return g_test_run ();
 }

@@ -1,0 +1,36 @@
+== top
+dbus-daemon[25250]: [session uid=501 pid=25250 pidfd=5] Activating service name='ca.desrt.dconf' requested by ':1.0' (uid=501 pid=25266 comm="dconf write /org/mate/panel/general/toplevel-id-li")
+dbus-daemon[25250]: [session uid=501 pid=25250 pidfd=5] Successfully activated service 'ca.desrt.dconf'
+closed: panel running
+left-click on the applet: popup open (320x270 at 0,28)
+MX Master 3's row clicked: popup open (320x337 at 0,28)
+MX Master 3's Connect pressed: Connected is true
+WH-1000XM4's Disconnect pressed: Connected is false
+MX Master 3's row closed: the popup went from 404 to 337 high
+the switch pressed: adapter's Powered is false; popup open (320x169 at 0,28)
+the switch pressed again: adapter's Powered is true; popup open (320x337 at 0,28)
+Add New Device… pressed: popup closed; spawned: caminito-bluetooth --scan;
+the gear pressed: popup closed; spawned: caminito-bluetooth ;
+reopened: popup open (320x337 at 0,28)
+Escape: popup closed, 0 (0) pixels differ from the closed panel
+a click on the desktop: popup closed, 0 (0) pixels differ
+a second click on the applet: popup closed, 0 (0) pixels differ
+the end: panel running
+== bottom
+dbus-daemon[25883]: [session uid=501 pid=25883 pidfd=5] Activating service name='ca.desrt.dconf' requested by ':1.0' (uid=501 pid=25900 comm="dconf write /org/mate/panel/general/toplevel-id-li")
+dbus-daemon[25883]: [session uid=501 pid=25883 pidfd=5] Successfully activated service 'ca.desrt.dconf'
+closed: panel running
+left-click on the applet: popup open (320x270 at 0,222)
+MX Master 3's row clicked: popup open (320x337 at 0,155)
+MX Master 3's Connect pressed: Connected is true
+WH-1000XM4's Disconnect pressed: Connected is false
+MX Master 3's row closed: the popup went from 404 to 337 high
+the switch pressed: adapter's Powered is false; popup open (320x169 at 0,323)
+the switch pressed again: adapter's Powered is true; popup open (320x337 at 0,155)
+Add New Device… pressed: popup closed; spawned: caminito-bluetooth --scan;
+the gear pressed: popup closed; spawned: caminito-bluetooth ;
+reopened: popup open (320x337 at 0,155)
+Escape: popup closed, 0 (0) pixels differ from the closed panel
+a click on the desktop: popup closed, 0 (0) pixels differ
+a second click on the applet: popup closed, 0 (0) pixels differ
+the end: panel running

@@ -210,9 +210,14 @@ bt_bluez_snapshot (BtBluez *bluez)
           GDBusProxy *proxy = G_DBUS_PROXY (device);
           g_autofree char *adapter_path = get_string (proxy, "Adapter");
           g_autofree char *alias = get_string (proxy, "Alias");
+          g_autofree char *address = get_string (proxy, "Address");
+          g_autofree char *icon = get_string (proxy, "Icon");
 
           bt_snapshot_add_device (snapshot, path, adapter_path,
                                   alias != NULL ? alias : path,
+                                  address != NULL ? address : "",
+                                  icon,
+                                  get_boolean (proxy, "Paired"),
                                   get_boolean (proxy, "Connected"),
                                   get_battery (object));
         }
@@ -301,4 +306,57 @@ bt_bluez_set_powered (BtBluez *bluez, gboolean powered)
       set_powered (set);
     }
   g_list_free_full (objects, g_object_unref);
+}
+
+typedef struct
+{
+  char        *path;
+  BtBluezDone  done;
+  gpointer     data;
+} Connect;
+
+static void
+on_connected (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) reply = NULL;
+  Connect *connect = data;
+
+  reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, &error);
+  /* Cancelled means bluez, and the popup that wants the answer, are gone. */
+  if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+    {
+      if (error != NULL)
+        g_dbus_error_strip_remote_error (error);
+      connect->done (connect->path, error != NULL ? error->message : NULL, connect->data);
+    }
+  g_free (connect->path);
+  g_free (connect);
+}
+
+void
+bt_bluez_set_connected (BtBluez     *bluez,
+                        const char  *path,
+                        gboolean     connected,
+                        BtBluezDone  done,
+                        gpointer     data)
+{
+  Connect *connect;
+
+  if (bluez->manager == NULL)
+    {
+      done (path, "BlueZ isn't running", data);
+      return;
+    }
+  connect = g_new0 (Connect, 1);
+  connect->path = g_strdup (path);
+  connect->done = done;
+  connect->data = data;
+  /* A Connect waits for the device to answer: BlueZ ends it itself, after about 30 s. */
+  g_dbus_connection_call (g_dbus_object_manager_client_get_connection (
+                            G_DBUS_OBJECT_MANAGER_CLIENT (bluez->manager)),
+                          BLUEZ_NAME, path, DEVICE_INTERFACE,
+                          connected ? "Connect" : "Disconnect", NULL, NULL,
+                          G_DBUS_CALL_FLAGS_NO_AUTO_START, 60 * 1000, bluez->cancellable,
+                          on_connected, connect);
 }
