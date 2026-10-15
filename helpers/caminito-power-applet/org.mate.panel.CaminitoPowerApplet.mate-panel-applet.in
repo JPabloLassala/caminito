@@ -1,0 +1,13 @@
+[Applet Factory]
+Id=CaminitoPowerAppletFactory
+InProcess=true
+Location=@APPLET_LOCATION@
+Name=Power Applet Factory
+Description=Caminito's Power applet
+
+[CaminitoPowerApplet]
+Name=Power
+Description=See the battery's charge and how long it lasts
+Icon=battery
+MateComponentId=OAFIID:Caminito_PowerApplet;
+Platforms=X11;Wayland;
