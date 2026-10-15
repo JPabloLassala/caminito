@@ -1,7 +1,8 @@
 # Fedora f45's mate-settings-daemon spec with the smallest diff, so a change there shows what
 # to carry over. The differences: the 1.29.1 release, its tarball's address, Fedora's
-# backports, which 1.29.1 has, out, what its Wayland code depends on, --enable-wayland, the
-# carried patches, the caminito Release and the changelog (ADR 0011, CMN-170).
+# patches of upstream commits, which 1.29.1 has, out, what its Wayland code depends on,
+# --enable-wayland, the carried patches, the caminito Release and the changelog (ADR 0011,
+# CMN-170).
 #
 # The first tag with the Wayland background and clipboard. Its wlrandr plugin is off under
 # Caminito, which keeps the saved layouts itself (0005, ADR 0014).

@@ -63,11 +63,10 @@ readlink -f /usr/lib64/libmate-panel-applet-4.so 2>/dev/null
 
 echo "== 4. Patches applied"
 for c in "${!baseline[@]}"; do
+  # The build's log, as packaging/fedora/build <component> > ~/cmn-170-work/<component>.log
   log=$HOME/cmn-170-work/$c.log
-  [ "$c" = mate-settings-daemon ] && log=$HOME/cmn-170-work/msd.log
-  listed=$(grep -cE '^Patch[0-9]+:' "$root/packaging/fedora/$c/$c.spec")
-  # msd's Patch0 is RHEL's only.
-  [ "$c" = mate-settings-daemon ] && listed=$((listed - 1))
+  # The patches of the spec as it is parsed on Fedora, without msd's RHEL patch.
+  listed=$(rpmspec -P "$root/packaging/fedora/$c/$c.spec" | grep -cE '^Patch[0-9]+:')
   applied=$(grep -c '^+ /usr/bin/patch ' "$log")
   [ "$listed" = "$applied" ] && echo "ok   $c: $applied applied" || bad "$c: $listed listed, $applied applied"
 done

@@ -1,7 +1,7 @@
 # Fedora f45's mate-control-center spec with the smallest diff, so a change there shows what
 # to carry over. The differences: the 1.29.1 release, its tarball's address, Fedora's
-# backport, which 1.29.1 has, out, the carried patches, the caminito Release and the changelog
-# (ADR 0011, CMN-170).
+# patch of an upstream commit, which 1.29.1 has, out, the carried patches, the caminito
+# Release and the changelog (ADR 0011, CMN-170).
 %global branch 1.29
 
 Name:          mate-control-center
@@ -13,8 +13,8 @@ License:       LicenseRef-Callaway-LGPLv2+ AND GPL-2.0-or-later
 URL:           https://mate-desktop.org
 Source0:       https://github.com/mate-desktop/mate-control-center/releases/download/v%{version}/%{name}-%{version}.tar.xz
 
-# Fedora's backport of https://github.com/mate-desktop/mate-control-center/commit/b5f6b8c is
-# in 1.29.1.
+# Fedora's patch of https://github.com/mate-desktop/mate-control-center/commit/b5f6b8c is in
+# 1.29.1.
 
 # Caminito's carried patches, from packaging/patches/mate-control-center/ (ADR 0030), which
 # packaging/fedora/build copies beside this. Their gates and what each does are in

@@ -1,7 +1,7 @@
 # Fedora f45's mate-session-manager spec with the smallest diff, so a change there shows what
 # to carry over. The differences: master's pinned commit, its snapshot's version and sources,
-# autogen, Fedora's backports, which master has, out, the carried patches, the caminito
-# Release and the changelog (ADR 0011, CMN-170).
+# autogen, Fedora's patches of upstream commits, which master has, out, the carried patches,
+# the caminito Release and the changelog (ADR 0011, CMN-170).
 #
 # mate-session-manager has no 1.29 tag, so the baseline is a master commit (16), after 1.28.0,
 # as on Debian (ADR 0029).
@@ -21,7 +21,7 @@ Release:       0.caminito1%{?dist}
 Source0:       https://github.com/mate-desktop/%{name}/archive/%{commit}/%{name}-%{commit}.tar.gz
 Source1:       https://github.com/mate-desktop/mate-submodules/archive/%{submodules_commit}/mate-submodules-%{submodules_commit}.tar.gz
 
-# Fedora's backports of 5424817 and of pull request 323 are in master.
+# Fedora's patches of 5424817 and of pull request 323 are in master.
 
 # Caminito's carried patches, from packaging/patches/mate-session-manager/ (ADR 0030), which
 # packaging/fedora/build copies beside this. Their gates and what each does are in
