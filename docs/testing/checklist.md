@@ -1309,10 +1309,10 @@ session_env() {
   locked when it's back. With sddm, mate-screensaver's LightDM path reaches it: sddm sets
   `XDG_SEAT_PATH` and has `SwitchToGreeter` on its seat. In step 5 there's no *Switch User*.
   In step 6 *Log Out* appears a minute after the lock, and the session logs out.
-- **Debug tool:** the journal's `caminito-locker` lines: `Creating background w:… h:…` for each
-  monitor, after where its wallpaper came from (218), `Status message: …`, `Switch User: enabled` or `disabled` (and `Warning: Unknown DM
-  for switch button` where no display manager's path applies), and `Log Out: after its delay`
-  then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
+- **Debug tool:** the journal's `caminito-locker` lines: where each monitor's wallpaper came
+  from (218, below), then `Creating background w:… h:…` for it, `Status message: …`, `Switch
+  User: enabled` or `disabled` (and `Warning: Unknown DM for switch button` where no display
+  manager's path applies), and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
   "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the greeter can
   be reached that way.
 

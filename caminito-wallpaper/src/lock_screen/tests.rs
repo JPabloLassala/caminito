@@ -12,10 +12,12 @@ fn colour(text: &str) -> Colour {
 fn shown(connector: &str, x: i32, drawn: Drawn) -> Shown {
     Shown {
         connector: connector.into(),
-        make: "Dell Inc.".into(),
-        model: "DELL U2720Q".into(),
-        x,
-        y: 0,
+        monitor: Monitor {
+            make: "Dell Inc.".into(),
+            model: "DELL U2720Q".into(),
+            x,
+            y: 0,
+        },
         drawn,
     }
 }
@@ -95,7 +97,7 @@ fn names_with_any_character_come_back_as_they_were() {
             colour: colour("#123456"),
         },
     );
-    output.make = " Make[1]=".into();
+    output.monitor.make = " Make[1]=".into();
 
     let file = read(&text(&[output]));
 

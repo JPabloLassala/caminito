@@ -69,7 +69,7 @@ use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
-use crate::lock_screen::{self, Shown};
+use crate::lock_screen::{self, Monitor, Shown};
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
 use crate::sun::sky_now;
 use buffer::Buffers;
@@ -147,9 +147,7 @@ struct Output {
     /// Its connector, from `wl_output.name`.
     name: Option<String>,
     /// Its make, model and place, from `wl_output.geometry`, as the locker knows it (218).
-    make: String,
-    model: String,
-    position: (i32, i32),
+    monitor: Monitor,
     /// Its scale from `wl_output`, for a compositor without fractional scale.
     integer_scale: i32,
     surface: Option<Surface>,
@@ -452,9 +450,7 @@ impl App {
             global,
             wl_output,
             name: None,
-            make: String::new(),
-            model: String::new(),
-            position: (0, 0),
+            monitor: Monitor::default(),
             integer_scale: 1,
             surface: None,
         });
@@ -693,10 +689,7 @@ impl App {
                 let output = self.outputs.iter().find(|o| o.global == *global)?;
                 Some(Shown {
                     connector: output.name.clone()?,
-                    make: output.make.clone(),
-                    model: output.model.clone(),
-                    x: output.position.0,
-                    y: output.position.1,
+                    monitor: output.monitor.clone(),
                     drawn: drawn.clone(),
                 })
             })
@@ -876,7 +869,11 @@ impl Dispatch<WlRegistry, GlobalListContents> for App {
             } if interface == WlOutput::interface().name => {
                 app.add_output(registry, name, version);
             }
-            wl_registry::Event::GlobalRemove { name } => app.remove_output(name),
+            // Refreshed, so the lock screen's file no longer has it.
+            wl_registry::Event::GlobalRemove { name } => {
+                app.remove_output(name);
+                app.refresh();
+            }
             _ => {}
         }
     }
@@ -899,9 +896,7 @@ impl Dispatch<WlOutput, u32> for App {
             wl_output::Event::Geometry {
                 x, y, make, model, ..
             } => {
-                output.make = make;
-                output.model = model;
-                output.position = (x, y);
+                output.monitor = Monitor { make, model, x, y };
             }
             wl_output::Event::Scale { factor } => output.integer_scale = factor.max(1),
             wl_output::Event::Done => {

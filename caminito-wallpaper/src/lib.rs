@@ -20,7 +20,7 @@ pub mod grid;
 mod gsettings;
 mod http;
 mod identity;
-pub mod lock_screen;
+mod lock_screen;
 pub mod monitors;
 pub mod page;
 mod positioning;

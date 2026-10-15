@@ -454,11 +454,13 @@ static MateBGPlacement placement_of(const char* options)
 
 /* Whether the wallpaper file's group `group` is `monitor`'s: GTK 3 has no connector, so
  * a monitor is told by its make, model and place, which come from the same wl_output as
- * the drawer's. */
+ * the drawer's. The file's format is caminito-wallpaper's src/lock_screen.rs. */
 static gboolean is_monitors_group(GKeyFile* file, const char* group, GdkMonitor* monitor)
 {
 	GdkRectangle  geometry;
 	GError       *error = NULL;
+	const char   *monitor_make;
+	const char   *monitor_model;
 	char         *make;
 	char         *model;
 	int           x;
@@ -474,11 +476,13 @@ static gboolean is_monitors_group(GKeyFile* file, const char* group, GdkMonitor*
 	}
 
 	gdk_monitor_get_geometry(monitor, &geometry);
+	monitor_make = gdk_monitor_get_manufacturer(monitor);
+	monitor_model = gdk_monitor_get_model(monitor);
 	matches = error == NULL
 		&& make != NULL
 		&& model != NULL
-		&& g_strcmp0(make, gdk_monitor_get_manufacturer(monitor) ? gdk_monitor_get_manufacturer(monitor) : "") == 0
-		&& g_strcmp0(model, gdk_monitor_get_model(monitor) ? gdk_monitor_get_model(monitor) : "") == 0
+		&& g_strcmp0(make, monitor_make != NULL ? monitor_make : "") == 0
+		&& g_strcmp0(model, monitor_model != NULL ? monitor_model : "") == 0
 		&& x == geometry.x
 		&& y == geometry.y;
 
@@ -495,17 +499,17 @@ static gboolean is_monitors_group(GKeyFile* file, const char* group, GdkMonitor*
  * its picture gone, `bg` is left as it was. */
 static gboolean load_from_wallpaper_file(MateBG* bg, GdkMonitor* monitor)
 {
-	GKeyFile  *file;
-	GError    *error = NULL;
-	char      *path;
-	char     **groups;
-	char      *group = NULL;
-	char      *picture = NULL;
-	char      *options = NULL;
-	char      *color = NULL;
-	GdkRectangle geometry;
-	GdkRGBA    rgba;
-	gboolean   loaded = FALSE;
+	GKeyFile      *file;
+	GError        *error = NULL;
+	char          *path;
+	char         **groups;
+	char          *group = NULL;
+	char          *picture = NULL;
+	char          *options = NULL;
+	char          *color = NULL;
+	GdkRectangle   geometry;
+	GdkRGBA        rgba;
+	gboolean       loaded = FALSE;
 
 	path = g_build_filename(g_get_user_runtime_dir(), "caminito-wallpaper", "lock-screen", NULL);
 	file = g_key_file_new();

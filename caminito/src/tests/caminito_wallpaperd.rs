@@ -422,14 +422,14 @@ fn the_lock_screens_file_has_what_each_output_shows() {
     std::fs::write(&file, png(0x804060)).unwrap();
     let drawer = Drawer::start_with(&mut f, EACH_ITS_OWN);
     let seen = || drawer.seen();
-    let colour_of = |connector: &str| {
+    let key_of = |connector: &str, key: &str| {
         let file = drawer.lock_screen()?;
-        lock_screen_key(&file, connector, "primary-color")
+        lock_screen_key(&file, connector, key)
     };
     f.dispatch_until_explained(
         |_| {
-            colour_of("headless-1").as_deref() == Some("#608040")
-                && colour_of("headless-2").as_deref() == Some("#406080")
+            key_of("headless-1", "primary-color").as_deref() == Some("#608040")
+                && key_of("headless-2", "primary-color").as_deref() == Some("#406080")
         },
         seen,
     );
@@ -457,20 +457,16 @@ fn the_lock_screens_file_has_what_each_output_shows() {
         &format!("'{}'", file.display()),
     );
     drawer.set_settings(&with_key(&settings, second, "positioning", "'centre'"));
-    let picture_of = |connector: &str, key: &str| {
-        let file = drawer.lock_screen()?;
-        lock_screen_key(&file, connector, key)
-    };
     f.dispatch_until_explained(
-        |_| picture_of("headless-2", "picture-filename") == Some(file.display().to_string()),
+        |_| key_of("headless-2", "picture-filename") == Some(file.display().to_string()),
         seen,
     );
     assert_eq!(
-        picture_of("headless-2", "picture-options").as_deref(),
+        key_of("headless-2", "picture-options").as_deref(),
         Some("centered")
     );
     assert_eq!(
-        picture_of("headless-1", "picture-filename").as_deref(),
+        key_of("headless-1", "picture-filename").as_deref(),
         Some("")
     );
 }

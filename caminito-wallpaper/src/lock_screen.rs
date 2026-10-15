@@ -21,40 +21,68 @@
 //! one of its two (216), and empty for a colour. The file is written whole to a temporary
 //! file and renamed over the last, so a reader has the old one or the new one.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use gio::glib;
 
 use crate::settings::Drawn;
 
-/// An output as the locker tells it, and what it shows.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Shown {
-    pub connector: String,
+/// Why the file can't be written.
+#[derive(Debug)]
+pub(crate) enum Error {
+    /// Its directory can't be made.
+    Dir(std::io::Error),
+    /// It can't be written.
+    Write(glib::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Dir(err) => write!(f, "can't make its directory: {err}"),
+            Error::Write(err) => write!(f, "can't write it: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+/// An output as the locker's GTK knows it: by its make and model, from `wl_output.geometry`,
+/// and its place in the layout, in logical pixels.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Monitor {
     pub make: String,
     pub model: String,
-    /// Its place in the layout, in logical pixels.
     pub x: i32,
     pub y: i32,
+}
+
+/// An output, by its connector, and what it shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Shown {
+    pub connector: String,
+    pub monitor: Monitor,
     pub drawn: Drawn,
 }
 
 /// Where the file is: in the session's runtime directory, gone with the session.
-pub fn path() -> PathBuf {
+pub(crate) fn path() -> PathBuf {
     glib::user_runtime_dir()
         .join("caminito-wallpaper")
         .join("lock-screen")
 }
 
 /// The file's text for `outputs`.
-pub fn text(outputs: &[Shown]) -> String {
+pub(crate) fn text(outputs: &[Shown]) -> String {
     let file = glib::KeyFile::new();
     for output in outputs {
         let group = output.connector.as_str();
-        file.set_string(group, "make", &output.make);
-        file.set_string(group, "model", &output.model);
-        file.set_integer(group, "x", output.x);
-        file.set_integer(group, "y", output.y);
+        let monitor = &output.monitor;
+        file.set_string(group, "make", &monitor.make);
+        file.set_string(group, "model", &monitor.model);
+        file.set_integer(group, "x", monitor.x);
+        file.set_integer(group, "y", monitor.y);
         let (picture, options) = match &output.drawn {
             Drawn::Picture { positioning, .. } | Drawn::Blend { positioning, .. } => (
                 output.drawn.nearer().unwrap_or_default(),
@@ -71,17 +99,12 @@ pub fn text(outputs: &[Shown]) -> String {
 }
 
 /// Writes `text` to `path` whole, or not at all, making its directory if need be.
-pub fn write(path: &Path, text: &str) -> Result<(), glib::Error> {
+pub(crate) fn write(path: &Path, text: &str) -> Result<(), Error> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|err| {
-            glib::Error::new(
-                glib::FileError::Failed,
-                &format!("can't make {}: {err}", dir.display()),
-            )
-        })?;
+        std::fs::create_dir_all(dir).map_err(Error::Dir)?;
     }
     // GLib's writes a temporary file beside it, then renames it over the last.
-    glib::file_set_contents(path, text.as_bytes())
+    glib::file_set_contents(path, text.as_bytes()).map_err(Error::Write)
 }
 
 #[cfg(test)]
