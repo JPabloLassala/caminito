@@ -13,13 +13,19 @@
 //! from the modules directory `PAM_WRAPPER_MODULES` names, as in the conversation's own test
 //! (helpers/caminito-locker/test-auth-pam.c). What the dialog shows is the checklist's: here
 //! the locker's debug lines say what it did.
+//!
+//! Its runtime directory is the test's too, where a test writes the file of each output's
+//! wallpaper that caminito-wallpaperd would (218). No drawer runs, as if it had crashed.
 
 use std::io::ErrorKind;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use smithay::output::Output;
+
 use super::fixture::{Fixture, KEY_A, KEY_ENTER, test_schemas};
+use crate::output::output_geometry;
 use crate::settings::Value;
 use crate::settings::translate::CAMINITO;
 
@@ -106,6 +112,14 @@ impl Locker {
         std::fs::write(dir.join("keyfile"), keyfile).unwrap();
     }
 
+    /// Writes caminito-wallpaperd's file of each output's wallpaper (218), whole.
+    fn set_wallpapers(&self, text: &str) {
+        let dir = self.path("caminito-wallpaper");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lock-screen.partial"), text).unwrap();
+        std::fs::rename(dir.join("lock-screen.partial"), dir.join("lock-screen")).unwrap();
+    }
+
     /// The process caminito-locker runs in, once it's started.
     fn process(&self) -> Option<u32> {
         let text = std::fs::read_to_string(self.path("pid")).ok()?;
@@ -165,14 +179,28 @@ fn locked_by_caminito_locker(outputs: &[(i32, i32)]) -> (Fixture, Locker) {
 
 /// As `locked_by_caminito_locker`, with the locker's GSettings set to `keyfile`.
 fn locked_by_caminito_locker_with(outputs: &[(i32, i32)], keyfile: &str) -> (Fixture, Locker) {
+    locked_with_wallpapers(outputs, keyfile, |_| None)
+}
+
+/// As `locked_by_caminito_locker_with`, with the wallpaper file `wallpapers` gives for the
+/// outputs, if any, written before the lock.
+fn locked_with_wallpapers(
+    outputs: &[(i32, i32)],
+    keyfile: &str,
+    wallpapers: impl FnOnce(&[Output]) -> Option<String>,
+) -> (Fixture, Locker) {
     let locker = Locker::new();
     locker.set_settings(keyfile);
     let command = Value::StrList(locker.command());
     let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
-    for &size in outputs {
-        f.add_output(size, 1.0);
-    }
+    let added: Vec<Output> = outputs
+        .iter()
+        .map(|&size| f.add_output(size, 1.0))
+        .collect();
     f.dispatch();
+    if let Some(text) = wallpapers(&added) {
+        locker.set_wallpapers(&text);
+    }
     assert!(f.state.request_lock());
     locker.connect(&mut f);
     (f, locker)
@@ -298,6 +326,91 @@ fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
     let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
     f.wait_for_pixel(100, 100, 0x406080);
+}
+
+/// The wallpaper file's group for `output` at `connector`, as caminito-wallpaperd writes
+/// it: told by its make, model and place, showing `picture`, or no picture, over `colour`.
+fn wallpaper(connector: &str, output: &Output, picture: Option<&Path>, colour: &str) -> String {
+    let properties = output.physical_properties();
+    let place = output_geometry(output).loc;
+    let picture = picture.map(|path| path.display().to_string());
+    format!(
+        "[{connector}]\n\
+         make={}\n\
+         model={}\n\
+         x={}\n\
+         y={}\n\
+         picture-filename={}\n\
+         picture-options=zoom\n\
+         primary-color={colour}\n\n",
+        properties.make,
+        properties.model,
+        place.x,
+        place.y,
+        picture.unwrap_or_default(),
+    )
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn each_output_shows_its_own_wallpaper_from_the_drawers_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let picture = dir.path().join("picture.png");
+    std::fs::write(&picture, PICTURE).unwrap();
+    let (mut f, locker) =
+        locked_with_wallpapers(&[(1920, 1080), (2560, 1440)], SOLID_BACKGROUND, |outputs| {
+            Some(
+                wallpaper("headless-1", &outputs[0], Some(&picture), "#000000")
+                    + &wallpaper("headless-2", &outputs[1], None, "#804060"),
+            )
+        });
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    let outputs = f.state.caminito.outputs.clone();
+    f.wait_for_pixel_on(&outputs[0], 100, 100, 0x406080);
+    f.wait_for_pixel_on(&outputs[1], 100, 100, 0x804060);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn with_no_file_or_an_output_it_lacks_the_desktop_background_shows() {
+    let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], SOLID_BACKGROUND);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.wait_for_pixel(100, 100, 0x608040);
+    assert!(
+        locker.seen().contains("No wallpaper file"),
+        "{}",
+        locker.seen()
+    );
+    drop((f, locker));
+
+    // The file has the first output alone.
+    let (mut f, locker) =
+        locked_with_wallpapers(&[(1920, 1080), (2560, 1440)], SOLID_BACKGROUND, |outputs| {
+            Some(wallpaper("headless-1", &outputs[0], None, "#804060"))
+        });
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    let outputs = f.state.caminito.outputs.clone();
+    f.wait_for_pixel_on(&outputs[0], 100, 100, 0x804060);
+    f.wait_for_pixel_on(&outputs[1], 100, 100, 0x608040);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_picture_that_is_gone_leaves_the_desktop_background() {
+    let dir = tempfile::tempdir().unwrap();
+    let gone = dir.path().join("gone.png");
+    let (mut f, locker) = locked_with_wallpapers(&[(1920, 1080)], SOLID_BACKGROUND, |outputs| {
+        Some(wallpaper("headless-1", &outputs[0], Some(&gone), "#804060"))
+    });
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    f.wait_for_pixel(100, 100, 0x608040);
+    assert!(
+        locker.seen().contains("names a picture that is gone"),
+        "{}",
+        locker.seen()
+    );
 }
 
 #[test]

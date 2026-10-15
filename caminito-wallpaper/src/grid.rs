@@ -3,11 +3,16 @@
 //! user added, then MATE's (`/usr/share/backgrounds`) and Plasma's (`/usr/share/wallpapers`,
 //! one picture per package). `~/Pictures` isn't scanned.
 //!
-//! The scan reads directories and no picture, so it's quick enough for the main loop; the
-//! thumbnails are decoded elsewhere.
+//! The Dynamic grid's groups (216) are the dynamic wallpapers: the user's timed XMLs, then
+//! those under MATE's directory and Plasma's packages with light and dark pictures.
+//!
+//! The scan reads directories and the few timed XMLs, and no picture, so it's quick enough
+//! for the main loop; the thumbnails are decoded elsewhere.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::dynamic::{self, Dynamic};
 
 /// The file extensions of the pictures offered, lower case. HEIC is a dynamic wallpaper's
 /// (217), and XML a timed one's (216).
@@ -51,6 +56,10 @@ pub struct Group {
 pub struct Installed {
     mate: Vec<PathBuf>,
     plasma: Vec<PathBuf>,
+    /// The timed XMLs in MATE's directory.
+    mate_dynamic: Vec<Offered>,
+    /// Plasma's packages with light and dark pictures, then any timed XML beside them.
+    plasma_dynamic: Vec<Offered>,
 }
 
 impl Installed {
@@ -59,8 +68,89 @@ impl Installed {
         Installed {
             mate: pictures_in(&roots.mate, DEPTH),
             plasma: plasma(&roots.plasma),
+            mate_dynamic: timed_in(&roots.mate, DEPTH),
+            plasma_dynamic: entries(&roots.plasma)
+                .into_iter()
+                .filter_map(|package| {
+                    let dynamic = dynamic::pair(&package)?;
+                    Some(Offered {
+                        path: package,
+                        dynamic,
+                    })
+                })
+                // And a timed XML beside the packages, as a picture beside them is offered.
+                .chain(timed_in(&roots.plasma, 1))
+                .collect(),
         }
     }
+}
+
+/// A dynamic wallpaper the dialog offers, and where it is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Offered {
+    /// Its Plasma package's folder, or its timed XML.
+    pub path: PathBuf,
+    /// What it is, as read.
+    pub dynamic: Dynamic,
+}
+
+/// One heading of the Dynamic grid and its wallpapers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DynamicGroup {
+    /// What the heading says: the source.
+    pub heading: String,
+    /// The source's dynamic wallpapers, in the grid's order.
+    pub wallpapers: Vec<Offered>,
+}
+
+/// The Dynamic grid's groups, in order, with none empty: the timed XMLs the user added,
+/// read each time, then MATE's and Plasma's. One the user added that can't be read any
+/// more isn't offered.
+pub fn dynamic_groups(added: &[String], installed: &Installed) -> Vec<DynamicGroup> {
+    let added = added
+        .iter()
+        .filter_map(|path| {
+            let path = PathBuf::from(path);
+            let dynamic = Dynamic::read(&path).ok()?;
+            Some(Offered { path, dynamic })
+        })
+        .collect();
+    [
+        ("Your dynamic wallpapers", added),
+        ("MATE", installed.mate_dynamic.clone()),
+        ("Plasma", installed.plasma_dynamic.clone()),
+    ]
+    .into_iter()
+    .filter(|(_, wallpapers)| !wallpapers.is_empty())
+    .map(|(heading, wallpapers)| DynamicGroup {
+        heading: heading.into(),
+        wallpapers,
+    })
+    .collect()
+}
+
+/// The timed XMLs in `folder` and its folders `depth` deep, in the order of their paths.
+/// Any other XML, as a list of pictures for MATE's Appearance, isn't one.
+fn timed_in(folder: &Path, depth: usize) -> Vec<Offered> {
+    let mut timed = Vec::new();
+    if depth == 0 {
+        return timed;
+    }
+    for entry in entries(folder) {
+        if entry.is_dir() {
+            timed.extend(timed_in(&entry, depth - 1));
+        } else if entry
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("xml"))
+            && let Ok(dynamic) = Dynamic::read(&entry)
+        {
+            timed.push(Offered {
+                path: entry,
+                dynamic,
+            });
+        }
+    }
+    timed
 }
 
 /// The grid's groups, in order, with none empty. `current` is the selected output's picture,
@@ -104,7 +194,7 @@ pub fn groups(
 }
 
 /// Whether `path` names a picture the grid offers, by its extension.
-fn is_picture(path: &Path) -> bool {
+pub(crate) fn is_picture(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()))
@@ -122,7 +212,7 @@ fn entries(directory: &Path) -> Vec<PathBuf> {
 
 /// The pictures in `folder` and its folders `depth` deep, 1 being the folder's own, in the
 /// order of their paths.
-fn pictures_in(folder: &Path, depth: usize) -> Vec<PathBuf> {
+pub(crate) fn pictures_in(folder: &Path, depth: usize) -> Vec<PathBuf> {
     let mut pictures = Vec::new();
     if depth == 0 {
         return pictures;
@@ -161,7 +251,7 @@ fn plasma(root: &Path) -> Vec<PathBuf> {
 /// The picture a Plasma package is shown by, of its `contents/images/`'s file names, which
 /// are its pictures' sizes, as `1920x1080.png`: the largest landscape one, or the largest of
 /// any shape if none is landscape, or the first by name if none is named by its size.
-fn package_picture(names: &[String]) -> Option<&str> {
+pub(crate) fn package_picture(names: &[String]) -> Option<&str> {
     let size = |name: &str| {
         let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
         let (width, height) = stem.split_once('x')?;
@@ -290,6 +380,81 @@ mod tests {
         );
     }
 
+    /// A timed XML of one picture, `file`.
+    fn timed(path: &Path, file: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let xml = format!(
+            "<background><starttime><year>2009</year><month>8</month><day>4</day></starttime>\
+             <static><duration>60</duration><file>{file}</file></static></background>"
+        );
+        fs::write(path, xml).unwrap();
+    }
+
+    #[test]
+    fn the_dynamic_groups_are_added_mate_and_plasma_in_that_order() {
+        let disk = tempfile::tempdir().unwrap();
+        let root = disk.path();
+        let roots = Roots {
+            mate: root.join("backgrounds"),
+            plasma: root.join("wallpapers"),
+        };
+        timed(
+            &roots.mate.join("cosmos/background-1.xml"),
+            "/cosmos/cloud.jpg",
+        );
+        timed(
+            &roots.mate.join("gnome/adwaita-timed.xml"),
+            "/gnome/day.jpg",
+        );
+        touch(&roots.mate.join("gnome/adwaita-day.jpg"));
+        fs::write(
+            roots.mate.join("mate.xml"),
+            "<wallpapers><wallpaper><filename>/a.jpg</filename></wallpaper></wallpapers>",
+        )
+        .unwrap();
+        fs::write(roots.mate.join("broken.xml"), "<background>").unwrap();
+        touch(&roots.plasma.join("Next/contents/images/1920x1080.png"));
+        touch(&roots.plasma.join("Next/contents/images_dark/1920x1080.png"));
+        touch(&roots.plasma.join("Flow/contents/images/3840x2160.jpg"));
+        timed(&roots.plasma.join("loose.xml"), "/loose.jpg");
+        let mine = root.join("mine.xml");
+        timed(&mine, "/mine.jpg");
+        let mine = mine.to_str().unwrap().to_owned();
+        let gone = root.join("gone.xml").to_str().unwrap().to_owned();
+
+        let groups = dynamic_groups(&[mine.clone(), gone], &Installed::scan(&roots));
+
+        let listed: Vec<(&str, Vec<&Path>)> = groups
+            .iter()
+            .map(|group| {
+                let paths = group.wallpapers.iter().map(|w| w.path.as_path()).collect();
+                (group.heading.as_str(), paths)
+            })
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("Your dynamic wallpapers", vec![Path::new(&mine)]),
+                (
+                    "MATE",
+                    vec![
+                        roots.mate.join("cosmos/background-1.xml").as_path(),
+                        roots.mate.join("gnome/adwaita-timed.xml").as_path(),
+                    ]
+                ),
+                (
+                    "Plasma",
+                    vec![
+                        roots.plasma.join("Next").as_path(),
+                        roots.plasma.join("loose.xml").as_path(),
+                    ]
+                ),
+            ]
+        );
+        assert!(groups[2].wallpapers[0].dynamic.follows_sun());
+        assert!(!groups[1].wallpapers[0].dynamic.follows_sun());
+    }
+
     #[test]
     fn with_nothing_chosen_added_or_installed_the_grid_is_empty() {
         let roots = Roots {
@@ -299,5 +464,6 @@ mod tests {
         let installed = Installed::scan(&roots);
         assert_eq!(groups(Some(""), &[], &[], &installed), []);
         assert_eq!(groups(None, &[], &[], &installed), []);
+        assert_eq!(dynamic_groups(&[], &installed), []);
     }
 }

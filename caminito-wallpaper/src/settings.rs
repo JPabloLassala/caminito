@@ -3,8 +3,13 @@
 //! monitor never seen before starts with the primary output's, and the first run starts
 //! every output with the picture `org.mate.background` names.
 
+use std::path::Path;
+
+use crate::daily::Source;
+use crate::dynamic::Moment;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
+use crate::slideshow::{Interval, Slideshow};
 
 /// Which of the five things an output's wallpaper is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -102,6 +107,16 @@ pub struct OutputSettings {
     pub kind: Kind,
     /// The Picture's file.
     pub picture: String,
+    /// The Dynamic's: a Plasma package's folder or a timed XML (216).
+    pub dynamic: String,
+    /// The Slideshow's folder (213).
+    pub slideshow: String,
+    /// How long each of the Slideshow's pictures shows.
+    pub interval: Interval,
+    /// Whether the Slideshow goes by name rather than at random.
+    pub in_order: bool,
+    /// The Picture of the day's source (214).
+    pub source: Source,
     pub positioning: Positioning,
     /// The Colour's, and what shows where a picture doesn't.
     pub colour: Colour,
@@ -116,20 +131,90 @@ pub enum Drawn {
         positioning: Positioning,
         colour: Colour,
     },
+    /// Two pictures, each placed by the positioning over the colour, the second over the
+    /// first `percent` of the way: a dynamic wallpaper between two of its pictures (216).
+    Blend {
+        from: String,
+        to: String,
+        percent: u8,
+        positioning: Positioning,
+        colour: Colour,
+    },
     /// The colour alone.
     Colour(Colour),
 }
 
+impl Drawn {
+    /// The colour shown where no picture is.
+    pub fn colour(&self) -> Colour {
+        match self {
+            Drawn::Picture { colour, .. } | Drawn::Blend { colour, .. } | Drawn::Colour(colour) => {
+                *colour
+            }
+        }
+    }
+
+    /// The picture that shows most, if any: as `org.mate.background` has it (211, 216).
+    pub fn nearer(&self) -> Option<&str> {
+        match self {
+            Drawn::Picture { file, .. } => Some(file),
+            Drawn::Blend {
+                from, to, percent, ..
+            } => Some(if *percent < 50 { from } else { to }),
+            Drawn::Colour(_) => None,
+        }
+    }
+
+    /// The picture files it shows.
+    pub fn files(&self) -> Vec<&str> {
+        match self {
+            Drawn::Picture { file, .. } => vec![file],
+            Drawn::Blend { from, to, .. } => vec![from, to],
+            Drawn::Colour(_) => Vec::new(),
+        }
+    }
+}
+
 impl OutputSettings {
-    /// What's drawn. A Picture with no file is its colour, and the three kinds that later
-    /// tickets draw are their colour until then.
-    pub fn drawn(&self) -> Drawn {
-        match self.kind {
-            Kind::Picture if !self.picture.is_empty() => Drawn::Picture {
-                file: self.picture.clone(),
-                positioning: self.positioning,
-                colour: self.colour,
-            },
+    /// The Slideshow's pictures as its folder has them now, or `None` with no folder
+    /// chosen (213).
+    pub fn read_slideshow(&self) -> Option<Slideshow> {
+        (!self.slideshow.is_empty())
+            .then(|| Slideshow::read(Path::new(&self.slideshow), self.interval, self.in_order))
+    }
+
+    /// What's drawn, with `moment` what the Dynamic or the Slideshow shows now, a Slideshow's
+    /// still, its picture alone (213), and `daily` the Picture of the day's source's latest
+    /// picture (214). A Picture with no file, a Dynamic or a Slideshow with no moment and a
+    /// Picture of the day with no picture yet are their colour. A Dynamic's blend is in whole
+    /// percent, so a frame is drawn again only when it shows.
+    pub fn drawn(&self, moment: Option<&Moment>, daily: Option<&Path>) -> Drawn {
+        let picture = |file: &str| Drawn::Picture {
+            file: file.to_owned(),
+            positioning: self.positioning,
+            colour: self.colour,
+        };
+        match (self.kind, moment) {
+            (Kind::Picture, _) if !self.picture.is_empty() => picture(&self.picture),
+            (Kind::PictureOfTheDay, _) if let Some(file) = daily => {
+                picture(&file.to_string_lossy())
+            }
+            (Kind::Dynamic | Kind::Slideshow, Some(moment)) => {
+                let percent = (moment.blend.clamp(0.0, 1.0) * 100.0).round() as u8;
+                let (from, to) = (moment.from.to_string_lossy(), moment.to.to_string_lossy());
+                match percent {
+                    _ if from == to => picture(&from),
+                    0 => picture(&from),
+                    100 => picture(&to),
+                    _ => Drawn::Blend {
+                        from: from.into_owned(),
+                        to: to.into_owned(),
+                        percent,
+                        positioning: self.positioning,
+                        colour: self.colour,
+                    },
+                }
+            }
             _ => Drawn::Colour(self.colour),
         }
     }
@@ -168,6 +253,9 @@ pub trait Store {
     /// The folders the user added.
     fn folders(&self) -> Vec<String>;
     fn set_folders(&mut self, folders: &[String]);
+    /// The dynamic wallpapers the user added, each a timed XML (216).
+    fn dynamics(&self) -> Vec<String>;
+    fn set_dynamics(&mut self, dynamics: &[String]);
 }
 
 /// The store in memory, as GSettings has it with nothing written: "same on all outputs" on,
@@ -180,6 +268,7 @@ pub struct Memory {
     took: bool,
     pictures: Vec<String>,
     folders: Vec<String>,
+    dynamics: Vec<String>,
 }
 
 impl Memory {
@@ -228,6 +317,12 @@ impl Store for Memory {
     }
     fn set_folders(&mut self, folders: &[String]) {
         self.folders = folders.to_vec();
+    }
+    fn dynamics(&self) -> Vec<String> {
+        self.dynamics.clone()
+    }
+    fn set_dynamics(&mut self, dynamics: &[String]) {
+        self.dynamics = dynamics.to_vec();
     }
 }
 
@@ -292,6 +387,7 @@ pub fn take_mate_background(store: &mut (impl Store + ?Sized), mate: &MateBackgr
         picture: mate.picture.clone(),
         positioning: Positioning::from_mate(&mate.options),
         colour,
+        ..OutputSettings::default()
     };
     store.write(&Set::All, &settings);
     store.set_took_mate_background();

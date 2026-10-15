@@ -37,9 +37,16 @@ pub(crate) struct Transition {
     /// How open the drawing was at `start`, from 0, closed, to 1, open: where the
     /// transition it reversed had it, or the whole way.
     from: f64,
-    /// When it started, on Caminito's clock.
+    /// When it started, on Caminito's clock, or when it was held.
     start: Duration,
+    /// Whether it's held at `from` until its first frame is on screen, with its clock
+    /// not started yet.
+    held: bool,
 }
+
+/// How long an opening is held at most, for an output whose first frame never shows: its
+/// clock starts then anyway.
+const HOLD_LIMIT: Duration = Duration::from_millis(100);
 
 impl Transition {
     /// One on its way `heading`, from `from` at `now`.
@@ -48,20 +55,54 @@ impl Transition {
             heading,
             from,
             start: now,
+            held: false,
         }
     }
 
-    /// When it's over.
+    /// One on its way `heading` from `from`, held there from `now` until it's
+    /// [`started`](Self::started): its first frame is drawn at `from`, and what that frame
+    /// takes the GPU, a window's first texture among it, isn't taken from its next ones.
+    pub(crate) fn held(heading: Heading, from: f64, now: Duration) -> Self {
+        Self {
+            held: true,
+            ..Self::new(heading, from, now)
+        }
+    }
+
+    /// The same, started at `now` instead.
+    pub(crate) fn starting_at(self, now: Duration) -> Self {
+        Self { start: now, ..self }
+    }
+
+    /// The same, its clock started at `now` if it's held.
+    pub(crate) fn started(self, now: Duration) -> Self {
+        match self.held {
+            true => Self::new(self.heading, self.from, now),
+            false => self,
+        }
+    }
+
+    pub(crate) fn is_held(&self) -> bool {
+        self.held
+    }
+
+    /// When it's over, or when it's started anyway if it's held.
     pub(crate) fn end(&self) -> Duration {
-        self.start + LENGTH
+        match self.held {
+            true => self.start + HOLD_LIMIT,
+            false => self.start + LENGTH,
+        }
     }
 
     pub(crate) fn is_over(&self, now: Duration) -> bool {
-        now >= self.end()
+        !self.held && now >= self.end()
     }
 
     /// How open the drawing is at `now`, from 0, closed, to 1, open.
     pub(crate) fn part(&self, now: Duration) -> f64 {
+        if self.held {
+            return self.from;
+        }
         let to = match self.heading {
             Heading::Opening => 1.0,
             Heading::Closing => 0.0,
@@ -123,6 +164,22 @@ mod tests {
         assert_eq!(closing.part(now), opening.part(now));
         assert_eq!(closing.part(now + LENGTH), 0.0);
         assert_eq!(closing.end(), now + LENGTH);
+    }
+
+    #[test]
+    fn a_held_opening_stays_where_it_starts_until_it_is_started() {
+        let held = Transition::held(Heading::Opening, 0.0, after(0));
+
+        assert_eq!(held.part(after(200)), 0.0);
+        assert!(!held.is_over(after(900)));
+        // It's started anyway once it's held for the limit.
+        assert_eq!(held.end(), after(0) + HOLD_LIMIT);
+
+        let started = held.started(after(40));
+        assert!(!started.is_held());
+        assert_eq!(started.part(after(40)), 0.0);
+        assert_eq!(started.part(after(165)), 0.875);
+        assert_eq!(started.end(), after(40) + LENGTH);
     }
 
     #[test]

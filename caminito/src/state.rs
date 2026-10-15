@@ -294,6 +294,8 @@ pub struct Caminito {
     /// The compositor's side of the open Overview (241), on each output it's laid out on
     /// (246), once the refresh pass has laid it out. Policy has whether it's open.
     pub(crate) overview: Vec<Overview>,
+    /// The Overview's timing, logged for comparing its openings.
+    pub(crate) overview_timing: crate::overview::timing::Timing,
     /// The compositor's side of the window menu while it's open (161).
     pub(crate) window_menu: Option<OpenWindowMenu>,
     /// The cursor the client with pointer focus asked for.
@@ -693,9 +695,15 @@ impl State {
         let mut rendered = Vec::new();
         let now = self.caminito.now();
         for output in self.caminito.take_queued_redraws() {
+            if self.backend.takes_frame(&output) {
+                // Before its elements are made, which a held opening that starts here has
+                // drawn from its start.
+                self.caminito.overview_output_ready(&output, now);
+            }
             match self.backend.render(&mut self.caminito, &output) {
                 Some(states) => {
                     self.caminito.lock.frame_drawn(&output);
+                    self.caminito.overview_frame_drawn(&output);
                     // A Workspace slide is drawn at every frame of its output (233), and so
                     // are the Overview's transition (243) and a window's opening (251): the
                     // backend takes the next one when the output can show it.
@@ -1002,6 +1010,7 @@ impl Caminito {
             switcher: None,
             workspace_popup: None,
             overview: Vec::new(),
+            overview_timing: Default::default(),
             window_menu: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,

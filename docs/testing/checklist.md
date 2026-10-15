@@ -1309,10 +1309,10 @@ session_env() {
   locked when it's back. With sddm, mate-screensaver's LightDM path reaches it: sddm sets
   `XDG_SEAT_PATH` and has `SwitchToGreeter` on its seat. In step 5 there's no *Switch User*.
   In step 6 *Log Out* appears a minute after the lock, and the session logs out.
-- **Debug tool:** the journal's `caminito-locker` lines: `Creating background w:… h:…` for each
-  monitor, `Status message: …`, `Switch User: enabled` or `disabled` (and `Warning: Unknown DM
-  for switch button` where no display manager's path applies), and `Log Out: after its delay`
-  then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
+- **Debug tool:** the journal's `caminito-locker` lines: where each monitor's wallpaper came
+  from (218, below), then `Creating background w:… h:…` for it, `Status message: …`, `Switch
+  User: enabled` or `disabled` (and `Warning: Unknown DM for switch button` where no display
+  manager's path applies), and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
   "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the greeter can
   be reached that way.
 
@@ -1997,7 +1997,7 @@ session_env() {
      *Another colour*.
   5. Choose *Picture*, press *Add folder…* and choose a folder of your pictures, then press
      *Add picture…* and choose a picture outside it. Click a picture of the folder's.
-  6. Choose *Slideshow*, *Picture of the day* and *Dynamic* in turn.
+  6. Choose *Slideshow*.
   7. With the window open, open *Wallpaper* again from the control center, or run
      `caminito-wallpaper`. Then press Escape.
   8. Unplug the second monitor and open the dialog; plug it back in.
@@ -2014,7 +2014,7 @@ session_env() {
   step 4 the first monitor keeps its picture and the second turns to the colour at each click.
   In step 5 the folder is a heading of its own, named after it, with its pictures; the
   picture is under *Your pictures* and is on the second monitor at once, as the folder's is
-  after it. In step 6 each says it isn't there yet, and nothing on the desktop changes. In
+  after it. In step 6 it says it isn't there yet, and nothing on the desktop changes. In
   step 7 the open window is raised and there is still one, and Escape closes it. In step 8
   the dialog shows one monitor's picture as a plain preview, with no *Same on all outputs*,
   and the monitor plugged back in comes back with its own wallpaper. In step 9 `ls` prints
@@ -2023,6 +2023,143 @@ session_env() {
 - **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/`, `dconf watch
   /org/mate/caminito/wallpaper/` while clicking, and `caminito-wallpaper` run from a
   terminal for GTK's warnings.
+
+### A Plasma pair turns dark as Night Light warms, and a timed XML is on its picture for the hour
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, `mate-screensaver` installed (it has
+     `/usr/share/backgrounds/cosmos/`), and a Plasma package with `contents/images_dark/`
+     under `/usr/share/wallpapers` (`plasma-workspace-wallpapers` has several), log into
+     *MATE on Caminito*. Turn Night Light on with the sun schedule: `gsettings set
+     org.mate.Caminito night-light-enabled true` and `gsettings set org.mate.Caminito
+     night-light-schedule sun`.
+  2. Open *Wallpaper* and choose *Dynamic*. Read the grid, then click a Plasma pair.
+  3. Put the sun where the pair is light, then at the horizon, then below civil twilight, by
+     giving Caminito a place on the equator whose solar time is 17:00, 18:00 and 18:30 in
+     turn, as minutes of the day. A minute after each, read the `Sun` property and look at the
+     desktop.
+
+     ```sh
+     at() { echo $(( ($1 - $(date -u +%-H) * 60 - $(date -u +%-M)) / 4 + 540 )); }
+     place() { gsettings set org.mate.Caminito night-light-last-location "(0.0, $(( $(at $1) % 360 - 180 )).0)"; }
+     sun() { busctl --user get-property org.mate.Caminito /org/mate/Caminito org.mate.Caminito Sun; }
+     place 1020; sleep 70; sun
+     place 1080; sleep 70; sun
+     place 1110; sleep 70; sun
+     ```
+
+  4. In the dialog, click *cosmos*. Work out which of its pictures the hour is on: numbering
+     its `<static>` pictures from 0, the one shown now is
+
+     ```sh
+     python3 -c 'import datetime as d; print(int((d.datetime.now() - d.datetime(2009, 8, 4)).total_seconds() % 16200 // 1800))'
+     ```
+
+     Leave it until that number changes, half an hour at most.
+  5. Run `gsettings reset org.mate.Caminito night-light-last-location`, and turn Night Light
+     off if it was.
+- **Expected:** in step 2 the grid has a heading *MATE* with *cosmos* and a heading *Plasma*
+  with each pair, each thumbnail its day picture on the left and its night picture on the
+  right; under the grid are *Add…*, a line, and *Positioning*. The click cross-fades the
+  desktop to the pair, and the line says it follows the sun. In step 3 the `Sun` elevation is
+  about 15°, then about 0°, then about −7°. At 15° the desktop is the light picture and Night
+  Light is near its noon temperature; at 0° it is halfway between the light and dark pictures
+  as Night Light warms; at −7° it is the dark picture, and Night Light is at its night
+  temperature. Each change fades over about a second rather than jumping. In step 4 the line
+  says it follows the clock, and the desktop and the sidebar show the picture numbered;
+  within a minute of the number changing, the desktop cross-fades to the next.
+  `gsettings get org.mate.background picture-filename` names the picture shown, and for a
+  pair part way, the one that shows most.
+- **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/` for `kind='dynamic'` and its
+  `dynamic`, `journalctl --user -t caminito-wallpaperd` for a dynamic wallpaper that can't be
+  read, and the `Sun` property's `location-source`, which is `stored` in step 3.
+
+### A slideshow changes every 5 minutes with a cross-fade, and differs on two monitors
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with two monitors.
+     Make a folder of eight pictures of clearly different scenes, say `~/Pictures/Slides`.
+  2. Open *Wallpaper*, leave *Same on all outputs* on, and choose *Slideshow*. Press the folder's
+     button and choose `~/Pictures/Slides`. Set *Change every* to *5 minutes*.
+  3. Look at both monitors, then watch them across the next whole 5 minutes of the clock (as
+     10:05), and the one after.
+  4. Copy one more picture into the folder, and take one out, then wait for the next change and
+     read the dialog's count again.
+  5. Tick *In order, not at random*, and watch two more changes.
+  6. Move every picture out of the folder, and wait for the next minute; then rename the folder.
+- **Expected:** in step 2 the pane shows the folder's name on its button and how many pictures
+  it has, the desktop cross-fades to a picture of the folder on each monitor at once, and the
+  sidebar shows each monitor's. In step 3 the two monitors show different pictures of the folder,
+  and both change together on the whole 5 minutes, each with a cross-fade of about a second, and
+  never to the picture the other has. Over those changes a monitor seldom comes back to a
+  picture: each round of eight shows every picture once, and only where one round ends and the
+  next begins can a picture come twice in a row. In step 4 the count follows within a minute,
+  the new picture can come up, and the one taken out doesn't. In step 5 each monitor goes
+  through the pictures in the order of their names, one monitor a picture ahead of the other
+  (which one goes by the monitors' identities, not by where they stand). In step 6 both
+  monitors fade to the wallpaper's colour within a minute, and the pane says the folder has no
+  pictures, then that it isn't there; nothing crashes, and `pgrep caminito-wallpaperd` still
+  shows one drawer.
+- **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/` for `kind='slideshow'`,
+  `slideshow`, `slideshow-interval` and `slideshow-in-order`, and
+  `G_MESSAGES_DEBUG=caminito-wallpaperd` in the drawer's environment for `the slideshow … has no
+  pictures`.
+
+### Each picture of the day shows with its credit, can be kept, and stays offline
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with the network
+     on. Open *Wallpaper* and choose *Picture of the day*.
+  2. Read the pane, then click each source in turn: *NASA Astronomy Picture of the Day*,
+     *Bing* and *Wikimedia Commons*. Give each up to a minute to come in.
+  3. With *Wikimedia Commons* chosen, press *Keep this picture*, then choose *Picture*.
+  4. Choose *Picture of the day* again, and set *Positioning* to *Fit*.
+  5. Turn the network off (`nmcli networking off`, or unplug it). Log out and back in, then
+     suspend and wake the machine, and click *Bing* and *NASA* again. Turn the network back on.
+  6. Run `ls ~/.cache/caminito-wallpaper/picture-of-the-day/`.
+- **Expected:** in step 2 the pane lists the three sources, each with a line on it, the
+  chosen one highlighted, and under them today's title and credit, with the credit's day.
+  Each click cross-fades the desktop and the sidebar to that source's picture of today, as
+  its web page shows it: <https://apod.nasa.gov/apod/>, <https://www.bing.com> and
+  <https://commons.wikimedia.org/wiki/Main_Page>. On a NASA day that is a video, NASA's
+  stays the last picture it had, or the colour on a first run. In step 3 the line beside the
+  button names the copy, `~/Pictures/Wallpapers` has it, and the Picture grid has it under
+  *Your pictures*. In step 4 the picture is fitted, with bars of the colour. In step 5 every
+  output keeps the picture it had through the log-in and the wake, and each source clicked
+  shows its last picture, title and credit; within a minute of the network coming back, any
+  that was out of date is fetched. In step 6 there is one picture and one `.about` per
+  source fetched.
+- **Debug tool:** `journalctl --user -t caminito-wallpaperd`, which says why a fetch failed
+  or why the day's isn't a picture, `G_MESSAGES_DEBUG=caminito-wallpaperd` for each picture
+  kept, and `cat ~/.cache/caminito-wallpaper/picture-of-the-day/*.about`.
+
+### Each monitor's lock screen shows its own wallpaper, and the lock comes up without the drawer
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with both monitors
+     connected, and on the session bus run `gsettings set org.mate.Caminito locker-command
+     "['caminito-locker', '--verbose']"`.
+  2. Open *Wallpaper*, turn *Same on all outputs* off, and give the first monitor a picture
+     and the second a colour. Lock with *System* ▸ *Lock Screen*, and unlock.
+  3. Give the second monitor a Plasma pair under *Dynamic*, lock, and unlock.
+  4. Run `pkill -KILL caminito-wallpaperd`, and lock at once. Unlock.
+  5. Run `pkill -STOP caminito-wallpaperd`, lock, and unlock. Run `pkill -CONT
+     caminito-wallpaperd`. Reset `locker-command`.
+- **Expected:** in step 2 each monitor's lock screen shows that monitor's wallpaper, the
+  picture as its *Positioning* places it on the desktop and the colour plain, under the
+  unlock dialog on the monitor under the pointer. In step 3 the second monitor's lock screen
+  shows the picture of the pair that the desktop shows more of then. In step 4 the lock
+  comes up as quickly as before, each monitor with the wallpaper it had when the drawer was
+  killed. In step 5 the lock comes up with the drawer stopped, the same way.
+- **Debug tool:** `cat $XDG_RUNTIME_DIR/caminito-wallpaper/lock-screen`, the drawer's file,
+  with each monitor's make, model and place, which the locker matches against GTK's. The
+  journal's `caminito-locker` lines say where each monitor's came from: `Wallpaper of <connector>
+  from the wallpaper file: …`, or `No wallpaper file`, `The wallpaper file has no …` or `… names
+  a picture that is gone` before `Background from org.mate.background`.
 
 ## The control center
 
@@ -2132,6 +2269,34 @@ session_env() {
 - **Debug tool:** `echo "$MATE_WM_NAME $GDK_BACKEND"` in the terminal, and
   [windowing-row.sh](../../.scratch/issues/181-checks/windowing-row.sh), which prints the row
   of a `mate-system-info` built from the series.
+
+### Appearance has no Background tab under Caminito, and the desktop's menu opens Wallpaper
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `mate-control-center-caminito` 1.29.1-7 or later and `caminito-git` with the
+     Wallpaper dialog installed (`ls
+     /usr/share/caminito/xdg/applications/caminito-wallpaper.desktop`), log into *MATE on
+     Caminito*. Open *Appearance* from the control center and read its tabs. Scroll the mouse
+     wheel over the tabs, both ways.
+  2. Close it. Right-click the desktop and choose *Change Desktop Background*.
+  3. Close the dialog. Run `mate-appearance-properties --show-page=background`, then
+     `mate-appearance-properties` with a picture's path, closing each window it opens.
+  4. Run `XDG_DATA_DIRS=/usr/local/share:/usr/share mate-appearance-properties
+     --show-page=background`, then the same with a picture's path in place of
+     `--show-page=background`, then `env -u MATE_WM_NAME mate-appearance-properties`.
+  5. Log out, log into *MATE*, the X11 session. Open *Appearance*, choose its *Background* tab
+     and click another picture. Then right-click the desktop and choose *Change Desktop
+     Background*.
+- **Expected:** in step 1 the tabs are *Theme*, *Fonts* and *Interface*, with no
+  *Background*, and the wheel never lands on a blank page. In step 2 the *Wallpaper* dialog
+  opens, and no Appearance window does. In step 3 each command opens *Wallpaper*, and nothing
+  on the desktop changes. In step 4 the first two commands, which can't find Caminito's
+  launcher, open Appearance at *Theme*, without *Background*, and the desktop keeps its
+  wallpaper; the third opens it with *Background*, as stock. In step 5 *Background* is there, the desktop takes the picture, and
+  the menu opens Appearance at *Background*: the gate is `MATE_WM_NAME` alone (219, ADR 0011).
+- **Debug tool:** `mate-appearance-properties` run from a terminal, for its `Could not open
+  the Wallpaper dialog` warning, and `echo "$MATE_WM_NAME $XDG_DATA_DIRS"` there.
 
 ### The Window switcher shows live thumbnails
 

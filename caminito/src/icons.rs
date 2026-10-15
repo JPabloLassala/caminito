@@ -33,6 +33,9 @@ pub struct IconLookup {
     /// The themes an icon is looked for in, in order, for the theme in use.
     chain: Option<Vec<String>>,
     desktop_icons: HashMap<String, Option<String>>,
+    /// Each icon file loaded, by its path and its size in device pixels, and `None` for
+    /// one that couldn't be: an icon's decoded once, not at each label or frame drawn.
+    loaded: HashMap<(PathBuf, i32), Option<ImageSurface>>,
 }
 
 impl IconLookup {
@@ -51,6 +54,7 @@ impl IconLookup {
             themes: HashMap::new(),
             chain: None,
             desktop_icons: HashMap::new(),
+            loaded: HashMap::new(),
         }
     }
 
@@ -71,6 +75,15 @@ impl IconLookup {
         self.theme = theme.to_owned();
         self.themes.clear();
         self.chain = None;
+        self.loaded.clear();
+    }
+
+    /// The icon file `path` at `size` by `size` device pixels, as [`load_icon`] loads it,
+    /// from what an earlier load decoded if it's loaded already.
+    pub fn load(&mut self, path: &Path, size: i32) -> Option<ImageSurface> {
+        let key = (path.to_owned(), size);
+        let loaded = self.loaded.entry(key).or_insert_with(|| load_icon(path, size));
+        loaded.clone()
     }
 
     /// The file for icon `name` at `size` logical px times `scale`, by the spec's

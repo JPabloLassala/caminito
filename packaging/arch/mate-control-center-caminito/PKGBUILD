@@ -12,7 +12,7 @@
 pkgname=mate-control-center-caminito
 _pkgname=mate-control-center
 pkgver=1.29.1
-pkgrel=6
+pkgrel=7
 pkgdesc="The Control Center for MATE, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-control-center'
@@ -73,7 +73,10 @@ conflicts=("$_pkgname")
 # 0007 is gated on MATE_WM_NAME alone too: Keyboard Shortcuts takes its title from its
 # launcher, which caminito-git shadows with one named System Shortcuts (183). 0008 is gated
 # on MATE_WM_NAME alone too: Keyboard Shortcuts captures a mouse button and shows one in a
-# row, as "<Super>Button8" and "Super+Back Button" (ADR 0028, 186).
+# row, as "<Super>Button8" and "Super+Back Button" (ADR 0028, 186). 0009 is gated on
+# MATE_WM_NAME alone too: Appearance leaves out its Background tab, since msd's background
+# plugin, which draws what it sets, doesn't start in a Session, and --show-page=background, as
+# caja's "Change Desktop Background" asks, opens the Wallpaper dialog (ADR 0031, 219).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-control-center")"
@@ -87,6 +90,7 @@ source=(
   "$_patches/0006-system-info-Name-Caminito-in-the-Windowing-System-row.patch"
   "$_patches/0007-keybindings-Title-the-dialog-as-its-launcher-under-C.patch"
   "$_patches/0008-keybindings-Capture-a-mouse-button-under-Caminito.patch"
+  "$_patches/0009-appearance-Leave-out-the-Background-tab-under-Camini.patch"
 )
 b2sums=(
   5125854bee37563c54b9e22b23dc2b6670cc7453e2669b547c577394ea2250959fa76c0c7fe5df656a4b237a201835762ed7be4d49643ae99febe74ca9d7065a
@@ -98,6 +102,7 @@ b2sums=(
   c01988497e63fede7196d98f2fe842b3208461ece48842c81de86ff9f46ace14ad562a57adfef27127c3bf2804ac359255e8b36600a5eb61cd50cdd338ee9414
   9b2926a010bf8cef027f22d42d747f6fdec9f69d26200d160e64ff77282fdafd7c0002bf9e421d94c6dcc540c13aba501d14ce0a83a133ccde9e00496b847696
   e03db264ef1ea3bf19d120e622f2a474c7a8965502c384e82f113860ff0790a7b9954a4861ba0641fbc1846cd1fa612859e722a5329abfc8f6d742746a3f6ad0
+  5ffdbcf97abeb359b9d0df34f27e866099ba84a3417e0c494203d9375c83805e4a565efcf3f385cb0549abf315a886bd8e3371923ea69dba2ba9ddda46aeffc6
 )
 
 prepare() {

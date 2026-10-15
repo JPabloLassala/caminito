@@ -24,14 +24,15 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
-use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::utils::{CommitCounter, RendererSurfaceStateUserData};
 use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
-use smithay::desktop::{LayerSurface, PopupManager, WindowSurfaceType};
+use smithay::desktop::{LayerSurface, PopupManager, Window, WindowSurface, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{TraversalAction, with_states, with_surface_tree_downward};
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
@@ -1237,13 +1238,12 @@ fn layer_shell_elements<R>(
             .then(|| (wl_surface.clone(), Point::default()));
         for (tree, offset) in popups.chain(main) {
             elements.extend(
-                render_elements_from_surface_tree(
+                surface_tree_elements(
                     renderer,
                     &tree,
-                    (origin + offset).to_physical_precise_round(scale),
+                    (origin + offset).to_f64().to_physical(scale),
                     scale,
                     alpha,
-                    Kind::Unspecified,
                 )
                 .into_iter()
                 .map(SceneElement::Window),
@@ -1394,14 +1394,16 @@ fn override_redirect_elements<R>(
         if !bbox.overlaps(output_geometry) {
             continue;
         }
-        let location = (bbox.loc - output_geometry.loc).to_physical_precise_round(scale);
-        elements.extend(AsRenderElements::<R>::render_elements::<SceneElement<R>>(
-            window,
-            renderer,
-            location,
-            Scale::from(scale),
-            1.0,
-        ));
+        let Some(surface) = window.wl_surface() else {
+            continue;
+        };
+        let location = (bbox.loc - output_geometry.loc).to_f64().to_physical(scale);
+        let alpha = x11_alpha(window, 1.0);
+        elements.extend(
+            surface_tree_elements(renderer, &surface, location, scale, alpha)
+                .into_iter()
+                .map(SceneElement::Window),
+        );
     }
 }
 
@@ -1650,8 +1652,12 @@ fn one_window_elements<R, E>(
     let mut bbox = window.bbox_with_popups();
     bbox.loc += surface_origin;
     if !mapped.is_shaded() && bbox.overlaps(shown) {
-        let location = surface_origin.to_physical_precise_round(scale);
-        elements.extend(window.render_elements(renderer, location, Scale::from(scale), alpha));
+        let location = surface_origin.to_f64().to_physical(scale);
+        elements.extend(
+            window_surface_elements(renderer, window, location, scale, alpha)
+                .into_iter()
+                .map(E::from),
+        );
     }
 
     // The strips lie around the window geometry, behind the window and its popups.
@@ -1659,6 +1665,111 @@ fn one_window_elements<R, E>(
     elements.extend(buffer_elements(
         renderer, strips, origin, shown, scale, alpha, "strip",
     ));
+}
+
+/// A window's surfaces with their popups, front to back, with its surface's origin at
+/// `location` on the output, unrounded (`surface_tree_elements`). An X11 window is drawn
+/// at its `_NET_WM_WINDOW_OPACITY` of `alpha`, as smithay draws it.
+fn window_surface_elements<R>(
+    renderer: &mut R,
+    window: &Window,
+    location: Point<f64, Physical>,
+    scale: f64,
+    alpha: f32,
+) -> Vec<WaylandSurfaceRenderElement<R>>
+where
+    R: Renderer + ImportAll,
+    R::TextureId: Clone + 'static,
+{
+    match window.underlying_surface() {
+        WindowSurface::Wayland(toplevel) => {
+            let surface = toplevel.wl_surface();
+            let mut elements = Vec::new();
+            for (popup, offset) in PopupManager::popups_for_surface(surface) {
+                let offset = window.geometry().loc + offset - popup.geometry().loc;
+                let location = location + offset.to_f64().to_physical(scale);
+                elements.extend(surface_tree_elements(
+                    renderer,
+                    popup.wl_surface(),
+                    location,
+                    scale,
+                    alpha,
+                ));
+            }
+            elements.extend(surface_tree_elements(
+                renderer, surface, location, scale, alpha,
+            ));
+            elements
+        }
+        WindowSurface::X11(x11) => {
+            let Some(surface) = x11.wl_surface() else {
+                return Vec::new();
+            };
+            let alpha = x11_alpha(x11, alpha);
+            surface_tree_elements(renderer, &surface, location, scale, alpha)
+        }
+    }
+}
+
+/// `alpha` times an X11 window's `_NET_WM_WINDOW_OPACITY`.
+fn x11_alpha(window: &X11Surface, alpha: f32) -> f32 {
+    window
+        .opacity()
+        .map_or(alpha, |opacity| alpha * opacity as f32 / u32::MAX as f32)
+}
+
+/// The elements of the surface tree under `surface`, front to back, with its origin at
+/// `location` on the output, unrounded, as smithay's `render_elements_from_surface_tree`
+/// has them otherwise. That rounds the origin to a pixel and adds the surface's size, scaled,
+/// to it, so at a fractional scale a surface can end a row short of where the next thing
+/// starts, its frame's strip or a panel, and leave a row of what's behind between them.
+/// From an unrounded origin each edge is rounded where it is, and what meets in the
+/// logical space meets on the output.
+fn surface_tree_elements<R>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    location: Point<f64, Physical>,
+    scale: f64,
+    alpha: f32,
+) -> Vec<WaylandSurfaceRenderElement<R>>
+where
+    R: Renderer + ImportAll,
+    R::TextureId: Clone + 'static,
+{
+    let offset = |states: &smithay::wayland::compositor::SurfaceData| {
+        let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
+        let offset = data.lock().unwrap().view()?.offset;
+        Some(offset.to_f64().to_physical(scale))
+    };
+    let mut elements = Vec::new();
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location| match offset(states) {
+            Some(offset) => TraversalAction::DoChildren(*location + offset),
+            None => TraversalAction::SkipChildren,
+        },
+        |surface, states, location| {
+            let Some(offset) = offset(states) else {
+                return;
+            };
+            let element = WaylandSurfaceRenderElement::from_surface(
+                renderer,
+                surface,
+                states,
+                *location + offset,
+                alpha,
+                Kind::Unspecified,
+            );
+            match element {
+                Ok(Some(element)) => elements.push(element),
+                Ok(None) => {}
+                Err(err) => tracing::warn!("can't import a surface: {err:?}"),
+            }
+        },
+        |_, _, _| true,
+    );
+    elements
 }
 
 /// The elements of the `buffers` of a frame, its strips or its shadow's bands, that are in
@@ -1684,7 +1795,8 @@ where
         if !rect.overlaps(shown) {
             continue;
         }
-        let location = rect.loc.to_physical_precise_round::<_, i32>(scale).to_f64();
+        // Unrounded, as a surface's is, so a strip meets its window (`surface_tree_elements`).
+        let location = rect.loc.to_f64().to_physical(scale);
         let element = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             location,
