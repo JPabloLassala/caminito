@@ -74,6 +74,7 @@ mod primary_output;
 mod root_properties;
 mod saved_layouts;
 mod screensaver;
+mod seams;
 mod security_context;
 mod selection;
 mod session;

@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Thu, 15 Oct 2026 01:42:37 +0000
+Subject: [PATCH] appearance: Leave out the Background tab under Caminito
+
+Under Caminito caminito-wallpaper draws each output's wallpaper, and
+mate-settings-daemon's background plugin, which draws what this tab
+sets, doesn't start. So there the tab has no effect, and Appearance
+leaves it out.
+
+What asks for the tab, as caja's "Change Desktop Background" does with
+--show-page=background, or a picture given on the command line, opens
+the Wallpaper dialog in its place, from the launcher Caminito installs
+on its session's data path. Without that launcher Appearance opens at
+its first tab. A picture on the command line is dropped either way: the
+dialog takes none, and the hidden tab would set it out of sight.
+
+Where MATE_WM_NAME doesn't say Caminito, the tab is there as it was.
+---
+ capplets/appearance/appearance-main.c | 60 +++++++++++++++++++++++++++
+ 1 file changed, 60 insertions(+)
+
+diff --git a/capplets/appearance/appearance-main.c b/capplets/appearance/appearance-main.c
+index 8e19c02b..6493681c 100644
+--- a/capplets/appearance/appearance-main.c
++++ b/capplets/appearance/appearance-main.c
+@@ -31,6 +31,8 @@
+ #include "theme-thumbnail.h"
+ #include "activate-settings-daemon.h"
+ #include "capplet-util.h"
++#include "wm-common.h"
++#include <gio/gdesktopappinfo.h>
+ #include <gdk/gdkx.h>
+ 
+ static AppearanceData *
+@@ -140,6 +142,38 @@ main_window_response (GtkWidget *widget,
+   }
+ }
+ 
++/* Under Caminito caminito-wallpaper draws the wallpaper, in place of
++ * mate-settings-daemon's background plugin, so the Background tab has no
++ * effect there. What asks for that tab opens the Wallpaper dialog, from
++ * the launcher Caminito installs on its session's data path. Returns
++ * whether the dialog was started: without that launcher, Appearance opens
++ * at its first tab. */
++static gboolean
++open_caminito_wallpaper (void)
++{
++  GDesktopAppInfo *launcher;
++  GdkAppLaunchContext *context;
++  GError *error = NULL;
++  gboolean launched;
++
++  launcher = g_desktop_app_info_new ("caminito-wallpaper.desktop");
++  if (launcher == NULL)
++    return FALSE;
++
++  context = gdk_display_get_app_launch_context (gdk_display_get_default ());
++  launched = g_app_info_launch (G_APP_INFO (launcher), NULL,
++                                G_APP_LAUNCH_CONTEXT (context), &error);
++  if (!launched)
++  {
++    g_warning ("Could not open the Wallpaper dialog: %s", error->message);
++    g_error_free (error);
++  }
++
++  g_object_unref (context);
++  g_object_unref (launcher);
++  return launched;
++}
++
+ int
+ main (int argc, char **argv)
+ {
+@@ -148,6 +182,7 @@ main (int argc, char **argv)
+   GtkWidget *nb;
+   GtkWidget *nb_custom_theme;
+   GtkStyleContext *context;
++  gboolean caminito;
+ 
+   gchar *install_filename = NULL;
+   gchar *start_page = NULL;
+@@ -187,6 +222,26 @@ main (int argc, char **argv)
+   if (!data)
+     return 1;
+ 
++  /* Under Caminito a picture on the command line asks for the Background
++   * tab too, and it never reaches the hidden tab, which would set it out
++   * of sight. */
++  caminito = wm_common_is_caminito ();
++  if (caminito)
++  {
++    if (!install_filename &&
++        (g_strcmp0 (start_page, "background") == 0 ||
++         (wallpaper_files && !start_page)) &&
++        open_caminito_wallpaper ())
++    {
++      gdk_display_flush (gdk_display_get_default ());
++      return 0;
++    }
++
++    if (g_strcmp0 (start_page, "background") == 0)
++      g_clear_pointer (&start_page, g_free);
++    g_clear_pointer (&wallpaper_files, g_strfreev);
++  }
++
+   /* init tabs */
+   themes_init (data);
+   style_init (data);
+@@ -206,6 +261,11 @@ main (int argc, char **argv)
+   capplet_set_icon (w, "preferences-desktop-theme");
+   gtk_widget_show_all (w);
+ 
++  /* A notebook leaves out the tab of a hidden page, and its pages keep
++   * their numbers, so Help still finds each one's section. */
++  if (caminito)
++    gtk_widget_hide (appearance_capplet_get_widget (data, "background_vbox"));
++
+ #if !GTK_CHECK_VERSION(3, 24, 12)
+   gtk_widget_hide (GTK_WIDGET (gtk_builder_get_object (data->ui, "filechooser_type_column_toggle")));
+ #endif /* !GTK_CHECK_VERSION(3, 24, 12) */

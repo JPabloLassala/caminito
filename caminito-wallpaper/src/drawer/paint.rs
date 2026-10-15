@@ -104,17 +104,38 @@ pub fn render(
 ) -> Result<cairo::ImageSurface, cairo::Error> {
     let surface = cairo::ImageSurface::create(cairo::Format::Rgb24, size.0, size.1)?;
     let cr = cairo::Context::new(&surface)?;
-    let colour = match drawn {
-        Drawn::Picture { colour, .. } | Drawn::Colour(colour) => *colour,
-    };
-    set_colour(&cr, colour);
+    set_colour(&cr, drawn.colour());
     cr.paint()?;
-    if let Drawn::Picture {
-        file, positioning, ..
-    } = drawn
-        && let Some(picture) = pictures.get(file)
-    {
-        draw_picture(&cr, picture, size, *positioning)?;
+    match drawn {
+        Drawn::Picture {
+            file, positioning, ..
+        } => {
+            if let Some(picture) = pictures.get(file) {
+                draw_picture(&cr, picture, size, *positioning)?;
+            }
+        }
+        // Each picture over the colour, as each would be drawn alone, and the second over
+        // the first: a dynamic wallpaper part way through a transition (216).
+        Drawn::Blend {
+            from,
+            to,
+            percent,
+            positioning,
+            ..
+        } => {
+            if let Some(picture) = pictures.get(from) {
+                draw_picture(&cr, picture, size, *positioning)?;
+            }
+            if let Some(picture) = pictures.get(to) {
+                cr.push_group();
+                set_colour(&cr, drawn.colour());
+                cr.paint()?;
+                draw_picture(&cr, picture, size, *positioning)?;
+                cr.pop_group_to_source()?;
+                cr.paint_with_alpha(f64::from(*percent) / 100.0)?;
+            }
+        }
+        Drawn::Colour(_) => {}
     }
     drop(cr);
     Ok(surface)
@@ -227,6 +248,28 @@ mod tests {
         let mut frame = render(&drawn, (40, 20), &mut pictures).unwrap();
 
         assert_eq!(pixel(&mut frame, 20, 10), 0x608040);
+    }
+
+    #[test]
+    fn a_dynamic_part_way_is_its_second_picture_over_its_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let black = png(dir.path(), (100, 100), 0x000000);
+        let white = png(dir.path(), (100, 100), 0xffffff);
+        let mut pictures = Pictures::default();
+
+        let drawn = Drawn::Blend {
+            from: black,
+            to: white,
+            percent: 25,
+            positioning: Positioning::Fit,
+            colour: Colour::parse("#608040").unwrap(),
+        };
+        let mut frame = render(&drawn, (400, 200), &mut pictures).unwrap();
+
+        let grey = pixel(&mut frame, 200, 100) & 0xff;
+        assert!((0x3e..=0x42).contains(&grey), "{grey:x}");
+        // The bars are the colour, under both pictures.
+        assert_eq!(pixel(&mut frame, 10, 100), 0x608040);
     }
 
     #[test]

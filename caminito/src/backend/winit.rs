@@ -64,6 +64,11 @@ impl Winit {
         self.backend.renderer()
     }
 
+    /// Whether the host has asked for the next frame.
+    pub(crate) fn takes_frame(&self) -> bool {
+        !self.frame_pending
+    }
+
     /// Draws a frame, unless the host hasn't asked for the next one yet: frames, and so
     /// clients' frame callbacks, are paced by the host's redraw requests.
     pub fn render(

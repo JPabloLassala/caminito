@@ -109,7 +109,7 @@ The output a surface is mostly on, which decides the scale the surface is asked 
 _Avoid_: primary output (that's the user's choice; Smithay's name for this is "primary scanout output")
 
 **Active output**:
-The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused or the user clicks on anything on another output: a window, a panel, caja's desktop or the wallpaper. Moving the pointer there doesn't change it.
+The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused or the user clicks on anything on another output: a window, a panel, caja's desktop, the wallpaper or a workspace of the Overview's bar. Moving the pointer there doesn't change it. While the Overview is open, the output its selection is on is the Active output.
 _Avoid_: current output, focused output (an output has no focus), primary output (that's the user's choice)
 
 **Layout**:
@@ -200,6 +200,10 @@ _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), act
 The movement that shows a change of an output's active workspace: the old workspace's windows leave and the new one's arrive, along the line between the two in the Workspace grid. Whatever is the same on both stays still: sticky windows, a window that is carried or being moved to the new workspace, the panel, caja's desktop and the wallpaper. It's Plasma's Slide effect.
 _Avoid_: desktop slide (the glossary's word is workspace), transition (the Overview has one too), workspace animation
 
+**Opening animation**, **Closing animation**:
+The zoom and fade that show a window coming on screen or leaving it: the window grows into its place as it appears, or shrinks and fades away from it. A window opens when it is shown for the first time or again after its client hid it, and closes when its client destroys or hides it while it's on screen. Minimising, unminimising and a move to another workspace aren't either. It's Plasma's Scale effect.
+_Avoid_: window animation (the minimise animation is one too), map or unmap animation (X11's and Wayland's words, and an unmapped window isn't always closed), scale effect (KWin's name), fade alone
+
 **Interaction**:
 What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup or the Overview. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
 _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)
@@ -251,6 +255,30 @@ _Avoid_: slideshow (its pictures are unrelated and follow a timer), live wallpap
 **caminito-wallpaper**:
 Caminito's wallpaper program, which draws each output's wallpaper in place of mate-settings-daemon's background plugin, and whose dialog replaces the Background tab of MATE's Appearance capplet in a Session.
 _Avoid_: the background plugin, wallpaper daemon, swaybg
+
+**caminito-bluetooth**:
+Caminito's Bluetooth program, which runs through the whole session as the pairing agent and opens the Bluetooth settings window. Its popup in the panel is the Bluetooth applet.
+_Avoid_: the capplet, blueman, bluedevil
+
+**Bluetooth applet**:
+Caminito's mate-panel applet for Bluetooth: the icon in the panel and its popup of devices, in the manner of Plasma's.
+_Avoid_: widget, plasmoid, tray icon
+
+**Power applet**:
+Caminito's mate-panel applet for power: the battery icon in the panel and its popup of the power profile, the batteries, and what is keeping the computer awake, in the manner of Plasma's Power and Battery.
+_Avoid_: battery monitor, mate-power-manager's tray icon, power capplet (mate-power-preferences is the settings window)
+
+**Stay awake**:
+The user's own switch in the Power applet that keeps the computer from sleeping and the screen from locking until it's turned off. An application doing the same is just an application keeping the computer awake.
+_Avoid_: inhibit, caffeine, presentation mode, block sleep
+
+**Thermal applet**:
+Caminito's mate-panel applet for temperatures and fans: a thermometer in the panel with the panel sensors' temperatures over the fans' speed, and its popup of the computer's temperatures and fan speeds, in the manner of TG Pro. It only watches; it never sets a fan's speed.
+_Avoid_: sensors applet (MATE's own mate-sensors-applet), temperature applet, thermal capplet, TG Pro
+
+**Panel sensor**:
+One of the temperatures, two at most, that the Thermal applet shows in the panel, chosen by pinning it in the popup. By default they're the CPU's and, when there's a GPU, the GPU's.
+_Avoid_: main sensor, primary temperature, pinned sensor
 
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.

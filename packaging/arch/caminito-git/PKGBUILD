@@ -55,9 +55,11 @@ license=(GPL-2.0-or-later)
 #
 # caminito-wallpaper (212), the Wallpaper dialog that sets it, links gtk4. Its entry is in
 # /usr/share/caminito/xdg too.
+#
+# glib-networking is GIO's TLS, which the drawer fetches a picture of the day with (214).
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
-  gtk-session-lock mate-desktop pam mate-screensaver
+  gtk-session-lock mate-desktop pam mate-screensaver glib-networking
   mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
   mate-notification-daemon mate-polkit hicolor-icon-theme)

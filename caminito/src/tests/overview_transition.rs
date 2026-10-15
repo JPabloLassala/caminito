@@ -479,6 +479,27 @@ fn the_key_turned_off_leaves_the_overview_on() {
     assert_at_once(f, id);
 }
 
+// Its first frame.
+
+#[test]
+fn an_opening_waits_for_its_first_frame_on_screen_for_at_most_a_limit() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    map_three(&mut f, id);
+    // No output takes a frame while the monitors are off, so none is shown.
+    f.state.backend.headless_mut().set_powered(false);
+
+    press_shortcut(&mut f);
+    f.advance_clock(Duration::from_millis(60));
+
+    assert_eq!(direction(&f), "opening");
+    assert_eq!(part(&f), 0.0, "it's held where it starts");
+
+    // Held for 100 ms, its clock starts anyway.
+    f.advance_clock(Duration::from_millis(40));
+    f.advance_clock(MIDDLE);
+    assert_eq!(part(&f), MIDDLE_PART);
+}
+
 // The lock.
 
 #[test]

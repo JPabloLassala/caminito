@@ -31,7 +31,7 @@ fn write(bridge: &mut Bridge, mate: &mut MateBackground, writes: Writes) {
 /// The drawer's round: what was heard brought in, then the primary output's written out.
 fn round(bridge: &mut Bridge, store: &mut Memory, mate: &mut MateBackground, primary: &Identity) {
     bridge.bring_in(store);
-    let drawn = settings_for(store, primary, Some(primary)).drawn();
+    let drawn = settings_for(store, primary, Some(primary)).drawn(None, None);
     let writes = bridge.out(mate, &drawn);
     write(bridge, mate, writes);
 }
@@ -87,7 +87,7 @@ fn nothing_goes_out_when_mate_says_so_already() {
         colour: "#000000000000".into(),
     };
 
-    let writes = bridge.out(&mate, &picture("/aoc.png").drawn());
+    let writes = bridge.out(&mate, &picture("/aoc.png").drawn(None, None));
 
     assert!(writes.is_empty(), "{writes:?}");
 }
@@ -148,11 +148,11 @@ fn anothers_write_makes_the_file_every_outputs_picture_keeping_each_positioning(
     lg_now.picture = "/caja.png".into();
     assert_eq!(both(&mut store), [picture("/caja.png"), lg_now]);
     // Every output's too, for "same on all outputs" and a monitor never seen.
-    assert_eq!(store.read(&Set::All).drawn(), {
+    assert_eq!(store.read(&Set::All).drawn(None, None), {
         let mut all = colour("#608040");
         all.kind = Kind::Picture;
         all.picture = "/caja.png".into();
-        all.drawn()
+        all.drawn(None, None)
     });
     // And MATE's isn't written again: it says so already.
     assert_eq!(mate.picture, "/caja.png");
@@ -175,11 +175,29 @@ fn a_write_that_failed_isnt_taken_for_the_next_anothers() {
     let mut store = store_with_both(false);
     let mut bridge = Bridge::default();
 
-    let writes = bridge.out(&mate_defaults(), &picture("/aoc.png").drawn());
+    let writes = bridge.out(&mate_defaults(), &picture("/aoc.png").drawn(None, None));
     assert_eq!(writes.picture.as_deref(), Some("/aoc.png"));
     bridge.not_written();
     bridge.heard("/aoc.png");
 
     assert!(bridge.bring_in(&mut store));
     assert_eq!(both(&mut store), [picture("/aoc.png"), picture("/aoc.png")]);
+}
+
+#[test]
+fn a_dynamic_part_way_goes_out_as_the_picture_that_shows_most() {
+    let blend = |percent| Drawn::Blend {
+        from: "/light.png".into(),
+        to: "/dark.png".into(),
+        percent,
+        positioning: Positioning::Fit,
+        colour: Colour::parse("#5891bc").unwrap(),
+    };
+    let mut bridge = Bridge::default();
+
+    let writes = bridge.out(&mate_defaults(), &blend(30));
+    assert_eq!(writes.picture.as_deref(), Some("/light.png"));
+    assert_eq!(writes.options, Some("scaled"));
+    let writes = bridge.out(&mate_defaults(), &blend(70));
+    assert_eq!(writes.picture.as_deref(), Some("/dark.png"));
 }
