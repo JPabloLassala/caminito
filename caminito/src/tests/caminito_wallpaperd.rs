@@ -4,7 +4,7 @@
 //! of its settings without a restart, takes MATE's picture on its first run alone, and keeps
 //! `org.mate.background` bridged both ways (211). A dynamic wallpaper's pair is drawn by
 //! the local time (216), and two outputs on one slideshow's folder show two of its pictures
-//! (213).
+//! (213). What each output shows is in the lock screen's file (218).
 //!
 //! It needs the built drawer, named by `CAMINITO_WALLPAPERD`, so these are ignored by
 //! default and `tools/check` runs them after the workspace's build. As the locker's tests
@@ -21,6 +21,7 @@ use std::process::{Child, Command, Stdio};
 use smithay::output::Output;
 
 use super::fixture::{Fixture, test_schemas};
+use crate::output::output_geometry;
 
 /// The namespace of the drawer's surfaces, and msd's before it.
 const NAMESPACE: &str = "mate-background";
@@ -136,6 +137,14 @@ impl Drawer {
     /// The drawer's GSettings as it last wrote them.
     fn settings(&self) -> String {
         std::fs::read_to_string(self.keyfile()).unwrap_or_default()
+    }
+
+    /// The lock screen's file, in the drawer's runtime directory (218).
+    fn lock_screen(&self) -> Option<gio::glib::KeyFile> {
+        let path = self.path("caminito-wallpaper/lock-screen");
+        let file = gio::glib::KeyFile::new();
+        let flags = gio::glib::KeyFileFlags::NONE;
+        file.load_from_file(path, flags).ok().map(|()| file)
     }
 
     /// What the drawer wrote so far.
@@ -394,6 +403,73 @@ fn mates_picture_follows_the_primary_output() {
     // end, and a fade is under way within a frame.
     f.dispatch_for(std::time::Duration::from_millis(300));
     wait_for_color(&mut f, &outputs[1..], 0x406080);
+}
+
+/// The lock screen's file's `key` for `connector`, if it has one.
+fn lock_screen_key(file: &gio::glib::KeyFile, connector: &str, key: &str) -> Option<String> {
+    file.value(connector, key).ok().map(Into::into)
+}
+
+#[test]
+#[ignore = "needs CAMINITO_WALLPAPERD; tools/check runs it"]
+fn the_lock_screens_file_has_what_each_output_shows() {
+    let mut f = Fixture::new();
+    let outputs = [
+        f.add_output((1920, 1080), 1.0),
+        f.add_output((1280, 1024), 1.0),
+    ];
+    let pictures = tempfile::tempdir().unwrap();
+    let file = pictures.path().join("second.png");
+    std::fs::write(&file, png(0x804060)).unwrap();
+    let drawer = Drawer::start_with(&mut f, EACH_ITS_OWN);
+    let seen = || drawer.seen();
+    let key_of = |connector: &str, key: &str| {
+        let file = drawer.lock_screen()?;
+        lock_screen_key(&file, connector, key)
+    };
+    f.dispatch_until_explained(
+        |_| {
+            key_of("headless-1", "primary-color").as_deref() == Some("#608040")
+                && key_of("headless-2", "primary-color").as_deref() == Some("#406080")
+        },
+        seen,
+    );
+
+    // Each output is told by its make, model and place, as the locker's GTK knows it.
+    let lock_screen = drawer.lock_screen().unwrap();
+    for (connector, output) in ["headless-1", "headless-2"].iter().zip(&outputs) {
+        let key = |key| lock_screen_key(&lock_screen, connector, key).unwrap();
+        let properties = output.physical_properties();
+        let place = output_geometry(output).loc;
+        assert_eq!(key("make"), properties.make);
+        assert_eq!(key("model"), properties.model);
+        assert_eq!(key("x"), place.x.to_string());
+        assert_eq!(key("y"), place.y.to_string());
+        assert_eq!(key("picture-filename"), "");
+    }
+
+    // A change of an output's wallpaper is written there too.
+    let second = "org/mate/caminito/wallpaper/outputs/connector-headless_2D2";
+    let settings = with_key(&drawer.settings(), second, "kind", "'picture'");
+    let settings = with_key(
+        &settings,
+        second,
+        "picture",
+        &format!("'{}'", file.display()),
+    );
+    drawer.set_settings(&with_key(&settings, second, "positioning", "'centre'"));
+    f.dispatch_until_explained(
+        |_| key_of("headless-2", "picture-filename") == Some(file.display().to_string()),
+        seen,
+    );
+    assert_eq!(
+        key_of("headless-2", "picture-options").as_deref(),
+        Some("centered")
+    );
+    assert_eq!(
+        key_of("headless-1", "picture-filename").as_deref(),
+        Some("")
+    );
 }
 
 #[test]

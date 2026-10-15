@@ -5,6 +5,7 @@
 //! While "same on all outputs" is on, a change is every output's, at `all/`; while it's
 //! off, it's the selected output's own.
 
+use crate::daily::Source;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, OutputSettings, Set, Store, settings_for};
@@ -196,16 +197,15 @@ impl Page {
     }
 
     /// Shows `kind`'s controls. A Picture, a Slideshow or a Dynamic with something to show,
-    /// and a Colour, are the selected output's at once; the Picture of the day, which 214
-    /// builds, is only shown.
+    /// a Colour and a Picture of the day, whose source has a default, are the selected
+    /// output's at once.
     pub fn show_kind(&mut self, store: &mut (impl Store + ?Sized), kind: Kind) {
         self.kind = kind;
         let applies = match kind {
             Kind::Picture => !self.current(store).picture.is_empty(),
-            Kind::Colour => true,
+            Kind::Colour | Kind::PictureOfTheDay => true,
             Kind::Slideshow => !self.current(store).slideshow.is_empty(),
             Kind::Dynamic => !self.current(store).dynamic.is_empty(),
-            Kind::PictureOfTheDay => false,
         };
         if applies {
             self.change(store, |settings| settings.kind = kind);
@@ -305,6 +305,24 @@ impl Page {
             .map(|(element, settings)| (element.as_str(), settings))
             .collect();
         slideshow::ranks(&shown)
+    }
+    /// Makes today's picture from `source` the selected output's (214).
+    pub fn choose_source(&mut self, store: &mut (impl Store + ?Sized), source: Source) {
+        self.kind = Kind::PictureOfTheDay;
+        self.change(store, |settings| {
+            settings.kind = Kind::PictureOfTheDay;
+            settings.source = source;
+        });
+    }
+
+    /// Adds `file`, a picture of the day the user kept, to the pictures they added, once.
+    /// What the output shows doesn't change: it's the same picture.
+    pub fn keep_picture(&mut self, store: &mut (impl Store + ?Sized), file: &str) {
+        let mut pictures = store.pictures();
+        if !pictures.iter().any(|picture| picture == file) {
+            pictures.push(file.to_owned());
+            store.set_pictures(&pictures);
+        }
     }
 
     /// Adds `folder` to the folders the user added, once.

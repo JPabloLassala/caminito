@@ -47,7 +47,8 @@ Architecture: amd64
 # which it dlopens for GBM, zenity for Marco's two dialogs, mate-screensaver's PAM service and
 # lock dialogs for caminito-locker, the notification daemon and polkit agent mate-session
 # autostarts, hicolor's directory for the logo, and mate-desktop's org.mate.background, which
-# caminito-wallpaperd reads on its first run.
+# caminito-wallpaperd reads on its first run, and glib-networking, GIO's TLS, which it fetches
+# a picture of the day with.
 # The patched packages and marco join these in ticket 205, at versions no stock one has.
 Depends:
  ${shlibs:Depends},
@@ -58,6 +59,7 @@ Depends:
  libegl1,
  libegl-mesa0,
  libgl1-mesa-dri,
+ glib-networking,
  zenity,
  mate-screensaver,
  mate-notification-daemon,

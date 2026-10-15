@@ -14,10 +14,17 @@
 //! slideshow's folder is read again each time, so a picture added to it or taken from it is
 //! picked up by the next change.
 //!
+//! A picture of the day's source is fetched on GLib's loop as [`daily`] says, and the output
+//! shows the source's latest picture, or its colour before the first (214).
+//!
 //! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
 //! it after every refresh, and a picture another program writes to it comes in first.
+//!
+//! After every refresh, too, what each output shows goes to [the lock screen's
+//! file](crate::lock_screen) where it changed, for caminito-locker (218).
 
 mod buffer;
+mod daily;
 mod paint;
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -62,14 +69,17 @@ use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::{
 
 use crate::DOMAIN;
 use crate::bridge::Bridge;
+use crate::daily::Source;
 use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
+use crate::lock_screen::{self, Monitor, Shown};
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
 use crate::slideshow;
 use crate::sun::sky_now;
 use buffer::Buffers;
+use daily::{Daily, fetch_if_due};
 use paint::Pictures;
 
 /// How long a change of wallpaper takes to cross-fade.
@@ -77,7 +87,8 @@ const FADE: Duration = Duration::from_secs(1);
 
 /// How often a dynamic wallpaper (216) and a slideshow (213) are drawn for the moment again,
 /// besides each time the sun moves, and a timed XML's or a slideshow's picture ending
-/// sooner: a pair's blend shows in whole percent.
+/// sooner: a pair's blend shows in whole percent. It's also how soon after local midnight a
+/// picture of the day is fetched (214).
 const CLOCK_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
@@ -142,6 +153,8 @@ struct Output {
     wl_output: WlOutput,
     /// Its connector, from `wl_output.name`.
     name: Option<String>,
+    /// Its make, model and place, from `wl_output.geometry`, as the locker knows it (218).
+    monitor: Monitor,
     /// Its scale from `wl_output`, for a compositor without fractional scale.
     integer_scale: i32,
     surface: Option<Surface>,
@@ -221,11 +234,15 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
+    /// The pictures of the day (214).
+    daily: Rc<RefCell<Daily>>,
     /// For a wake before the next tick, when a timed XML's or a slideshow's picture ends
     /// sooner.
     refresh: Refresh,
     /// Whether such a wake is set.
     waking: Rc<Cell<bool>>,
+    /// The lock screen's file as last written, or `None` before the first write.
+    lock_screen: Option<String>,
 }
 
 /// Runs the drawer until the connection fails.
@@ -282,8 +299,10 @@ pub fn run() -> Result<(), Error> {
         bridge,
         pictures: Pictures::default(),
         dynamics: HashMap::new(),
+        daily: Daily::open(&refresh),
         refresh: refresh.clone(),
         waking: Rc::default(),
+        lock_screen: None,
         qh: qh.clone(),
     };
     // Version 2 has the make, model and serial.
@@ -439,6 +458,7 @@ impl App {
             global,
             wl_output,
             name: None,
+            monitor: Monitor::default(),
             integer_scale: 1,
             surface: None,
         });
@@ -562,7 +582,7 @@ impl App {
             };
             let identity = self.identity(name);
             let settings = settings_for(&mut self.store, &identity, primary.as_ref());
-            shown.push(Shown {
+            shown.push(OutputRead {
                 global: output.global,
                 is_primary: primary.as_ref() == Some(&identity),
                 element: identity.path_element(),
@@ -584,19 +604,36 @@ impl App {
                 .collect::<Vec<_>>(),
         );
         let sky = sky_now(self.caminito.as_ref());
+        let mut sources: Vec<Source> = Vec::new();
+        for OutputRead { settings, .. } in &shown {
+            if settings.kind == Kind::PictureOfTheDay && !sources.contains(&settings.source) {
+                sources.push(settings.source);
+            }
+        }
+        self.daily.borrow_mut().keep_only(&sources);
+        for &source in &sources {
+            fetch_if_due(&self.daily, source, sky.local, &self.refresh);
+        }
         let mut drawn = Vec::new();
         let mut primary_drawn = None;
         let mut next_slide = None;
         for (shown, rank) in shown.into_iter().zip(ranks) {
+            let settings = &shown.settings;
             let moment = match rank {
                 Some(rank) => {
-                    let (moment, next) = slideshow_moment(&shown.settings, rank, &sky);
+                    let (moment, next) = slideshow_moment(settings, rank, &sky);
                     next_slide = next_slide.into_iter().chain(next).min();
                     moment
                 }
-                None => self.moment(&shown.settings, &sky),
+                None => self.moment(settings, &sky),
             };
-            let output_drawn = shown.settings.drawn(moment.as_ref());
+            let daily = (settings.kind == Kind::PictureOfTheDay)
+                .then(|| self.daily.borrow_mut().latest(settings.source))
+                .flatten();
+            let output_drawn = settings.drawn(
+                moment.as_ref(),
+                daily.as_ref().map(|kept| kept.picture.as_path()),
+            );
             if shown.is_primary {
                 primary_drawn = Some(output_drawn.clone());
             }
@@ -606,6 +643,7 @@ impl App {
         if let Some(primary) = primary_drawn {
             self.bridge_out(&primary);
         }
+        self.write_lock_screen(&drawn);
         let files: Vec<String> = drawn
             .iter()
             .flat_map(|(_, drawn)| drawn.files())
@@ -671,6 +709,30 @@ impl App {
         if let Err(err) = mate.write(&writes) {
             glib::g_warning!(DOMAIN, "{err}");
             self.bridge.borrow_mut().not_written();
+        }
+    }
+
+    /// Writes what each output shows to the lock screen's file, where it changed.
+    fn write_lock_screen(&mut self, drawn: &[(u32, Drawn)]) {
+        let shown: Vec<Shown> = drawn
+            .iter()
+            .filter_map(|(global, drawn)| {
+                let output = self.outputs.iter().find(|o| o.global == *global)?;
+                Some(Shown {
+                    connector: output.name.clone()?,
+                    monitor: output.monitor.clone(),
+                    drawn: drawn.clone(),
+                })
+            })
+            .collect();
+        let text = lock_screen::text(&shown);
+        if self.lock_screen.as_ref() == Some(&text) {
+            return;
+        }
+        let path = lock_screen::path();
+        match lock_screen::write(&path, &text) {
+            Ok(()) => self.lock_screen = Some(text),
+            Err(err) => glib::g_warning!(DOMAIN, "can't write {}: {err}", path.display()),
         }
     }
 
@@ -809,7 +871,7 @@ impl App {
 }
 
 /// An output's settings as a refresh reads them, before what it draws is worked out.
-struct Shown {
+struct OutputRead {
     global: u32,
     is_primary: bool,
     /// Its monitor's identity, as a path element, by which it's ranked on a slideshow.
@@ -869,7 +931,11 @@ impl Dispatch<WlRegistry, GlobalListContents> for App {
             } if interface == WlOutput::interface().name => {
                 app.add_output(registry, name, version);
             }
-            wl_registry::Event::GlobalRemove { name } => app.remove_output(name),
+            // Refreshed, so the lock screen's file no longer has it.
+            wl_registry::Event::GlobalRemove { name } => {
+                app.remove_output(name);
+                app.refresh();
+            }
             _ => {}
         }
     }
@@ -889,6 +955,11 @@ impl Dispatch<WlOutput, u32> for App {
         };
         match event {
             wl_output::Event::Name { name } => output.name = Some(name),
+            wl_output::Event::Geometry {
+                x, y, make, model, ..
+            } => {
+                output.monitor = Monitor { make, model, x, y };
+            }
             wl_output::Event::Scale { factor } => output.integer_scale = factor.max(1),
             wl_output::Event::Done => {
                 app.make_surfaces();

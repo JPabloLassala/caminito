@@ -118,7 +118,7 @@ fn turning_the_switch_on_copies_the_selected_outputs_wallpaper_to_all() {
 
     assert!(store.same_on_all_outputs());
     assert_eq!(store.read(&Set::All), picture("/aoc.png"));
-    assert_eq!(page.wallpaper(&store, 0), picture("/aoc.png"));
+    assert_eq!(page.wallpaper(&store, 1), picture("/aoc.png"));
     assert_eq!(page.wallpaper(&store, 1), picture("/aoc.png"));
 }
 
@@ -177,17 +177,6 @@ fn a_colour_and_a_positioning_are_kept_with_the_picture() {
 
     page.show_kind(&mut store, Kind::Picture);
     assert_eq!(page.current(&store).kind, Kind::Picture);
-}
-
-#[test]
-fn a_kind_not_built_yet_is_shown_and_not_written() {
-    let mut store = store(false);
-    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
-
-    page.show_kind(&mut store, Kind::PictureOfTheDay);
-
-    assert_eq!(page.kind(), Kind::PictureOfTheDay);
-    assert_eq!(page.current(&store), picture("/lg.png"));
 }
 
 #[test]
@@ -251,6 +240,43 @@ fn with_the_switch_on_a_slideshow_is_every_outputs_and_each_ranks_apart() {
 
     page.show_kind(&mut store, Kind::Colour);
     assert_eq!(page.slideshow_ranks(&store), [None, None, None]);
+}
+
+#[test]
+fn picture_of_the_day_is_written_at_once_with_its_source() {
+    let mut store = store(false);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+
+    page.show_kind(&mut store, Kind::PictureOfTheDay);
+    assert_eq!(page.kind(), Kind::PictureOfTheDay);
+    assert_eq!(
+        page.current(&store),
+        OutputSettings {
+            kind: Kind::PictureOfTheDay,
+            source: Source::Bing,
+            ..picture("/lg.png")
+        }
+    );
+
+    page.choose_source(&mut store, Source::Apod);
+    assert_eq!(page.current(&store).source, Source::Apod);
+    // The other output keeps its own.
+    assert_eq!(page.wallpaper(&store, 1), picture("/aoc.png"));
+}
+
+#[test]
+fn a_kept_picture_of_the_day_is_added_once_and_still_shown_as_the_day_s() {
+    let mut store = store(true);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+    page.choose_source(&mut store, Source::Commons);
+
+    let kept = "/home/me/Pictures/Wallpapers/2026-10-15 A heron.jpg";
+    page.keep_picture(&mut store, kept);
+    page.keep_picture(&mut store, kept);
+
+    assert_eq!(store.pictures(), vec![kept.to_owned()]);
+    assert_eq!(page.kind(), Kind::PictureOfTheDay);
+    assert_eq!(page.current(&store).kind, Kind::PictureOfTheDay);
 }
 
 #[test]

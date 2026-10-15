@@ -3,6 +3,9 @@
 //! monitor never seen before starts with the primary output's, and the first run starts
 //! every output with the picture `org.mate.background` names.
 
+use std::path::Path;
+
+use crate::daily::Source;
 use crate::dynamic::Moment;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
@@ -112,6 +115,8 @@ pub struct OutputSettings {
     pub interval: Interval,
     /// Whether the Slideshow goes by name rather than at random.
     pub in_order: bool,
+    /// The Picture of the day's source (214).
+    pub source: Source,
     pub positioning: Positioning,
     /// The Colour's, and what shows where a picture doesn't.
     pub colour: Colour,
@@ -174,21 +179,16 @@ impl OutputSettings {
     /// The Slideshow's pictures as its folder has them now, or `None` with no folder
     /// chosen (213).
     pub fn read_slideshow(&self) -> Option<Slideshow> {
-        (!self.slideshow.is_empty()).then(|| {
-            Slideshow::read(
-                std::path::Path::new(&self.slideshow),
-                self.interval,
-                self.in_order,
-            )
-        })
+        (!self.slideshow.is_empty())
+            .then(|| Slideshow::read(Path::new(&self.slideshow), self.interval, self.in_order))
     }
 
-    /// What's drawn, with `moment` what the Dynamic or the Slideshow shows now: a Slideshow's
-    /// is still, its picture alone (213). A Picture with no file, and a Dynamic or a Slideshow
-    /// with no moment, are their colour, and the Picture of the day is its colour until 214
-    /// draws it. A Dynamic's blend is in whole percent, so a frame is drawn again only when
-    /// it shows.
-    pub fn drawn(&self, moment: Option<&Moment>) -> Drawn {
+    /// What's drawn, with `moment` what the Dynamic or the Slideshow shows now, a Slideshow's
+    /// still, its picture alone (213), and `daily` the Picture of the day's source's latest
+    /// picture (214). A Picture with no file, a Dynamic or a Slideshow with no moment and a
+    /// Picture of the day with no picture yet are their colour. A Dynamic's blend is in whole
+    /// percent, so a frame is drawn again only when it shows.
+    pub fn drawn(&self, moment: Option<&Moment>, daily: Option<&Path>) -> Drawn {
         let picture = |file: &str| Drawn::Picture {
             file: file.to_owned(),
             positioning: self.positioning,
@@ -196,6 +196,9 @@ impl OutputSettings {
         };
         match (self.kind, moment) {
             (Kind::Picture, _) if !self.picture.is_empty() => picture(&self.picture),
+            (Kind::PictureOfTheDay, _) if let Some(file) = daily => {
+                picture(&file.to_string_lossy())
+            }
             (Kind::Dynamic | Kind::Slideshow, Some(moment)) => {
                 let percent = (moment.blend.clamp(0.0, 1.0) * 100.0).round() as u8;
                 let (from, to) = (moment.from.to_string_lossy(), moment.to.to_string_lossy());

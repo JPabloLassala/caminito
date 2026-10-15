@@ -171,22 +171,43 @@ fn mates_colour_alone_is_a_colour() {
     take_mate_background(&mut store, &mate);
 
     assert_eq!(
-        store.read(&Set::All).drawn(None),
+        store.read(&Set::All).drawn(None, None),
         Drawn::Colour(Colour::default())
     );
 }
 
 #[test]
-fn a_kind_drawn_by_a_later_ticket_is_its_colour_until_then() {
+fn a_slideshow_with_no_moment_is_its_colour_whatever_the_picture_of_the_day() {
     let settings = OutputSettings {
-        kind: Kind::PictureOfTheDay,
+        kind: Kind::Slideshow,
         ..colour("#123456")
     };
     assert_eq!(
-        settings.drawn(None),
+        settings.drawn(None, Some(Path::new("/today.jpg"))),
         Drawn::Colour(Colour::parse("#123456").unwrap())
     );
-    assert_eq!(picture("").drawn(None), Drawn::Colour(Colour::default()));
+    assert_eq!(
+        picture("").drawn(None, None),
+        Drawn::Colour(Colour::default())
+    );
+}
+
+#[test]
+fn a_picture_of_the_day_is_its_sources_latest_or_its_colour_before_the_first() {
+    let settings = OutputSettings {
+        kind: Kind::PictureOfTheDay,
+        positioning: Positioning::Fit,
+        ..colour("#123456")
+    };
+    assert_eq!(
+        settings.drawn(None, Some(Path::new("/cache/bing-2026-10-15.jpg"))),
+        Drawn::Picture {
+            file: "/cache/bing-2026-10-15.jpg".into(),
+            positioning: Positioning::Fit,
+            colour: settings.colour,
+        }
+    );
+    assert_eq!(settings.drawn(None, None), Drawn::Colour(settings.colour));
 }
 
 #[test]
@@ -208,10 +229,16 @@ fn a_dynamic_is_its_moments_pictures_blended_in_whole_percent() {
         colour: settings.colour,
     };
 
-    assert_eq!(settings.drawn(Some(&moment(0.0))), still("/light.png"));
-    assert_eq!(settings.drawn(Some(&moment(0.004))), still("/light.png"));
     assert_eq!(
-        settings.drawn(Some(&moment(0.375))),
+        settings.drawn(Some(&moment(0.0)), None),
+        still("/light.png")
+    );
+    assert_eq!(
+        settings.drawn(Some(&moment(0.004)), None),
+        still("/light.png")
+    );
+    assert_eq!(
+        settings.drawn(Some(&moment(0.375)), None),
         Drawn::Blend {
             from: "/light.png".into(),
             to: "/dark.png".into(),
@@ -220,10 +247,13 @@ fn a_dynamic_is_its_moments_pictures_blended_in_whole_percent() {
             colour: settings.colour,
         }
     );
-    assert_eq!(settings.drawn(Some(&moment(0.999))), still("/dark.png"));
-    assert_eq!(settings.drawn(Some(&moment(1.0))), still("/dark.png"));
+    assert_eq!(
+        settings.drawn(Some(&moment(0.999)), None),
+        still("/dark.png")
+    );
+    assert_eq!(settings.drawn(Some(&moment(1.0)), None), still("/dark.png"));
     // Without its moment, one that can't be read, it's the colour.
-    assert_eq!(settings.drawn(None), Drawn::Colour(settings.colour));
+    assert_eq!(settings.drawn(None, None), Drawn::Colour(settings.colour));
 }
 
 #[test]
@@ -255,7 +285,7 @@ fn a_slideshow_is_its_moments_picture_or_else_its_colour() {
     let moment = Moment::still(std::path::Path::new("/home/me/Walls/sea.jpg"));
 
     assert_eq!(
-        settings.drawn(Some(&moment)),
+        settings.drawn(Some(&moment), None),
         Drawn::Picture {
             file: "/home/me/Walls/sea.jpg".into(),
             positioning: Positioning::Centre,
@@ -263,5 +293,5 @@ fn a_slideshow_is_its_moments_picture_or_else_its_colour() {
         }
     );
     // An empty or missing folder has no moment.
-    assert_eq!(settings.drawn(None), Drawn::Colour(settings.colour));
+    assert_eq!(settings.drawn(None, None), Drawn::Colour(settings.colour));
 }
