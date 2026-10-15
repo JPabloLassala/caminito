@@ -1,0 +1,13 @@
+[Applet Factory]
+Id=CaminitoBluetoothAppletFactory
+InProcess=true
+Location=@APPLET_LOCATION@
+Name=Bluetooth Applet Factory
+Description=Caminito's Bluetooth applet
+
+[CaminitoBluetoothApplet]
+Name=Bluetooth
+Description=Turn Bluetooth on or off, and see what's connected
+Icon=bluetooth-active
+MateComponentId=OAFIID:Caminito_BluetoothApplet;
+Platforms=X11;Wayland;
