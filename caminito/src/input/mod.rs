@@ -612,7 +612,7 @@ impl State {
         let location = pointer.current_location();
         // The Overview's first: the release of a press held on one of its windows is its
         // own (245), and the Window switcher swallows the others'.
-        if self.overview_button(button, state, location)
+        if self.overview_button(button, state, location, time)
             || self.window_menu_button(button, state, location)
             || self.switcher_button(button, state, location)
             || self.workspace_popup_button(button, state, time)
