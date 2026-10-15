@@ -1,7 +1,7 @@
 /*
- * The Power applet's popup (262): its content, in the shared popup window. From the top:
- * Stay awake (265) and what keeps the computer awake, and "Configure Power Management…"
- * at the bottom. CMN-104 and CMN-98 fill in the batteries and the power profile.
+ * The Power applet's popup (262): its content, in the shared popup window. From the top: the
+ * power profile (264), Stay awake (265) and what keeps the computer awake, and "Configure
+ * Power Management…" at the bottom. CMN-104 fills in the batteries.
  */
 
 #pragma once

@@ -11,7 +11,7 @@ project(
 )
 
 gio = dependency('gio-2.0')
-# The desktop files that name an application and give its icon (265).
+# The popup names an application by its desktop entry, and Stay awake's lines (265) do.
 gio_unix = dependency('gio-unix-2.0')
 m = meson.get_compiler('c').find_library('m')
 applet_dep = dependency('libmatepanelapplet-4.0')
@@ -25,12 +25,15 @@ state = static_library('pw-state', 'pw-state.c', dependencies: [gio, m])
 upower = static_library('pw-upower', 'pw-upower.c', link_with: state, dependencies: gio)
 # mate-session: Stay awake, and what keeps the computer awake (265).
 session = static_library('pw-session', 'pw-session.c', link_with: state, dependencies: gio)
-# The popup's content: Stay awake and what keeps the computer awake (265), and the rest.
+# power-profiles-daemon's profiles and what's said of them, and the daemon itself.
+profiles = static_library('pw-profiles', 'pw-profiles.c', dependencies: gio)
+ppd = static_library('pw-ppd', 'pw-ppd.c', link_with: profiles, dependencies: gio, pic: true)
+# The popup's content: the power profile (264), Stay awake and what keeps the computer awake
+# (265), and the rest.
 popup = static_library(
   'pw-popup',
-  'pw-popup.c',
-  'pw-awake.c',
-  link_with: state,
+  ['pw-popup.c', 'pw-profiles-section.c', 'pw-awake.c'],
+  link_with: [ppd, profiles, state],
   dependencies: [gio, gio_unix, common],
   pic: true,
 )
@@ -76,6 +79,12 @@ test(
   env: {'NO_AT_BRIDGE': '1'},
 )
 
+# The profiles' text and parsing, from variants built by hand.
+test(
+  'profiles',
+  executable('test-profiles', 'test-profiles.c', link_with: profiles, dependencies: gio),
+)
+
 # UPower against python-dbusmock's upower template, where python-dbusmock is installed.
 python = import('python').find_installation(
   'python3',
@@ -94,6 +103,13 @@ if python.found()
     'session',
     executable('test-session', 'test-session.c', link_with: [session, state], dependencies: gio),
     args: [python.full_path(), meson.current_source_dir() / 'session-mock.py'],
+    timeout: 120,
+  )
+  # power-profiles-daemon against python-dbusmock's two templates, one for each bus name.
+  test(
+    'ppd',
+    executable('test-ppd', 'test-ppd.c', link_with: [ppd, profiles], dependencies: gio),
+    args: [python.full_path()],
     timeout: 120,
   )
 endif
