@@ -1,0 +1,13 @@
+no battery: panel running
+'Show percentage' on and off: 73.2235 pixels differ
+popup (x y w h): 0 28 320 50
+the popup's Configure Power Management… pressed: spawned: mate-power-preferences ;
+popup: panel running
+the menu's Configure Power Management… pressed: spawned: mate-power-preferences ;
+Preferences: dialog open
+the check button pressed: show-percentage is true
+pressed again: show-percentage is false
+Close pressed: dialog closed
+menu and preferences: panel running
+upowerd stopped: panel running
+upowerd started again: panel running

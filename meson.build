@@ -16,6 +16,8 @@ subproject('caminito-gtk-palette')
 subproject('caminito-locker')
 # The Bluetooth applet (259), which pulls in caminito-applet-common (ADR 0035).
 subproject('caminito-bluetooth-applet')
+# The Power applet (262), which shares caminito-applet-common with it (ADR 0035).
+subproject('caminito-power-applet')
 
 # The display manager's entry for the session (08). Its name isn't the Wayfire session's
 # MATE.desktop, and it needs no wrapper script and no systemd unit.

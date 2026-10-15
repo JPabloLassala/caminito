@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Power applet's own preferences (262). The panel gives each applet a path of its
+     own to a schema without one, as MATE's own applets have. -->
+<schemalist>
+  <schema id="org.mate.panel.applet.caminito-power">
+    <key name="show-percentage" type="b">
+      <default>false</default>
+      <summary>Show percentage</summary>
+      <description>Show the battery's percentage beside its icon in the panel.</description>
+    </key>
+  </schema>
+</schemalist>
