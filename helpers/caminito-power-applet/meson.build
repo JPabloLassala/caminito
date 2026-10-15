@@ -71,6 +71,13 @@ install_data(
 # The icon's names and the tooltip, from displays built by hand.
 test('state', executable('test-state', 'test-state.c', link_with: state, dependencies: [gio, m]))
 
+# The popup's table of batteries, which needs a display and is skipped without one.
+test(
+  'popup',
+  executable('test-popup', 'test-popup.c', link_with: [popup, state], dependencies: [gio, common, m]),
+  env: {'NO_AT_BRIDGE': '1'},
+)
+
 # Stay awake's row and the list of what keeps the computer awake (265), which need a
 # display and are skipped without one.
 test(

@@ -4,9 +4,9 @@
  * with no battery, with the percentage and the time in its tooltip. It reads UPower
  * directly (pw-upower.c). "Show percentage" is its own preference and puts the percentage
  * beside the glyph. Left-click opens the popup (pw-popup.c), with Stay awake and what
- * keeps the computer awake, which it reads and sets through mate-session (pw-session.c);
- * its right-click menu has Preferences and "Configure Power Management…", which run
- * mate-power-preferences.
+ * keeps the computer awake, which it reads and sets through mate-session (pw-session.c),
+ * and the batteries (263), whose charge limit it sets through UPower; its right-click menu
+ * has Preferences and "Configure Power Management…", which run mate-power-preferences.
  */
 
 #include <mate-panel-applet.h>
@@ -52,8 +52,11 @@ update (Applet *applet)
   PwDisplay display;
   g_autofree char *tooltip = NULL;
   g_autofree char *percentage = NULL;
+  g_autoptr (GPtrArray) devices = NULL;
 
   pw_upower_display (applet->upower, &display);
+  devices = pw_upower_devices (applet->upower);
+  pw_popup_update_devices (applet->content, devices);
   tooltip = pw_state_tooltip (&display);
   percentage = pw_state_percentage (&display);
   caminito_applet_icon_set (applet->icon, pw_state_icon_names (&display));
@@ -160,6 +163,24 @@ on_popup_stay_awake (gboolean on, gpointer data)
 }
 
 static void
+on_limit_done (const char *path, const char *error, gpointer data)
+{
+  Applet *applet = data;
+
+  if (error != NULL)
+    g_warning ("can't change the charge limit of %s: %s", path, error);
+  pw_popup_limit_done (applet->content, path, error);
+}
+
+static void
+on_popup_set_limit (const char *path, gboolean enable, gpointer data)
+{
+  Applet *applet = data;
+
+  pw_upower_enable_charge_threshold (applet->upower, path, enable, on_limit_done, applet);
+}
+
+static void
 on_show_percentage_toggled (GtkToggleButton *check, gpointer data)
 {
   set_show_percentage (data, gtk_toggle_button_get_active (check));
@@ -242,7 +263,8 @@ settings_new (MatePanelApplet *panel_applet)
 static gboolean
 fill (MatePanelApplet *panel_applet)
 {
-  static const PwPopupActions popup_actions = { on_popup_configure, on_popup_stay_awake };
+  static const PwPopupActions popup_actions = { on_popup_configure, on_popup_stay_awake,
+                                                 on_popup_set_limit };
   GtkActionGroup *actions;
   GtkAction *action;
   Applet *applet = g_new0 (Applet, 1);
