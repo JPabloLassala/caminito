@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "caminito",
     "caminito-about",
+    "caminito-bluetooth",
     "caminito-displays",
     "caminito-layout",
     "caminito-policy",

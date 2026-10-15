@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Bluetooth
+Comment=Turn Bluetooth on or off, and pair and connect devices
+TryExec=caminito-bluetooth
+Exec=caminito-bluetooth
+Icon=bluetooth
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;HardwareSettings;
+Keywords=mate-control-center;MATE;bluetooth;pair;headset;keyboard;mouse;wireless;
+OnlyShowIn=MATE;

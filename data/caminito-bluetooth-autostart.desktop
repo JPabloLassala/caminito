@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Bluetooth
+Comment=Answer Bluetooth pairing requests
+TryExec=caminito-bluetooth
+Exec=caminito-bluetooth --background
+Icon=bluetooth
+Terminal=false
+NoDisplay=true
+OnlyShowIn=MATE;

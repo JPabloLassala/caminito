@@ -6,7 +6,8 @@ Rules-Requires-Root: no
 # rustup provides cargo and rustc: rules builds with RUSTUP_TOOLCHAIN=stable, whose toolchain
 # tools/debian-build installs. The rest are what the binaries and helpers link, and, after
 # dbus, what the tests need: a private session bus, pixman for the headless backend,
-# libwayland-client for the fixture's clients and the Xwayland the X11 tier spawns.
+# libwayland-client for the fixture's clients and the Xwayland the X11 tier spawns, and
+# python-dbusmock, the BlueZ caminito-bluetooth's tests run against (255).
 # libaudit-dev: Ubuntu's pam.pc requires audit's, and libpam0g-dev doesn't bring it.
 Build-Depends:
  debhelper-compat (= 13),
@@ -34,6 +35,7 @@ Build-Depends:
  libpixman-1-dev,
  libwayland-dev,
  xwayland,
+ python3-dbusmock,
 Standards-Version: 4.7.2
 Homepage: https://github.com/JPabloLassala/caminito
 Vcs-Git: https://github.com/JPabloLassala/caminito.git

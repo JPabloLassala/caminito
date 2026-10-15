@@ -7,7 +7,7 @@ How Caminito's code is written. Reviews check a diff against this file, [CONTEXT
 - `cargo fmt --all --check`, with rustfmt's defaults. There is no `rustfmt.toml`.
 - `cargo clippy --workspace --all-targets -- -D warnings`, so every clippy warning fails the build. Fix the code rather than silencing the lint. If an allow is truly needed, use `#[expect(clippy::…, reason = "…")]` on the smallest item.
 - `[workspace.lints]` in [Cargo.toml](Cargo.toml) adds `clippy::undocumented_unsafe_blocks`. Every crate opts in with `lints.workspace = true`.
-- `caminito-policy`, `caminito-layout`, `caminito-version`, caminito-about, caminito-displays's library, and caminito-wallpaper's library and dialog are `#![forbid(unsafe_code)]`.
+- `caminito-policy`, `caminito-layout`, `caminito-version`, caminito-about, caminito-displays's library, caminito-wallpaper's library and dialog, and caminito-bluetooth are `#![forbid(unsafe_code)]`.
 - `cargo deny check` against [deny.toml](deny.toml) for licences and advisories.
 
 ## Crates and modules
@@ -22,6 +22,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - `caminito-version` is the version string and the build script that finds the build's revision (182). `caminito` and `caminito-about` both depend on it, so `caminito --version` and the dialog can't disagree. It has no dependencies.
 - `caminito-about` is a program of its own (182), since the compositor doesn't link GTK and caminito-displays is the display settings program. It depends on `caminito-version` alone of Caminito's crates.
 - `caminito-wallpaper` is the wallpaper's programs (ADR 0031): its drawer, `caminito-wallpaperd`, which a Session starts, and its dialog, `caminito-wallpaper` (212), in GTK4 without libadwaita. It depends on none of Caminito's crates. The drawer links no GTK: GLib's loop and GSettings through gio, gdk-pixbuf and cairo. The crate depends on GTK for the dialog alone, and a binary links only the crates it uses, so the library names no GTK and `ldd caminito-wallpaperd` shows none. Its library's pure parts (a monitor's identity, the positioning, the settings an output gets, a dynamic wallpaper's picture for a moment, a slideshow's picture for a time and an output, a picture of the day's sources and cache, the dialog's page and the grids' groups) name no toolkit and are unit-tested beside the code.
+- `caminito-bluetooth` is the Bluetooth program (255, ADR 0035): the pairing agent and the settings window, in GTK4 without libadwaita, in one single-instance process through the session. It depends on none of Caminito's crates, and works under X11 MATE too. Its library, BlueZ's model over gio's D-Bus (no zbus), the rfkill block and the switch, names no toolkit; GTK is the binary's.
 - Protocols Caminito implements itself go in `caminito/src/protocols/`, each as a `FooState` plus a `FooHandler` trait. `output_management` is the first. D-Bus interfaces go in `caminito/src/dbus/`.
 - `scene` is the only code that knows the layer order.
 - Handlers change policy state. The refresh pass after each dispatch queues the redraw for a Policy change (`Policy::take_scene_changed`) and updates the outward views (foreign-toplevel, ext-workspace, EWMH properties, D-Bus properties, the debug dump); a handler never updates one inline. A handler queues a redraw only for what Policy doesn't hold: the lock, idle's blank, the bell, a Layer surface, the cursor, a selection, a client's commit, an output's change, a Frame's look, a popup's own buffer.
@@ -76,6 +77,8 @@ Where each tier lives, per ticket 15's test seams:
 | Each picture of the day's source against a saved answer, and the cache against a fake of the network | `caminito-wallpaper/src/daily/tests.rs` |
 | The Wallpaper dialog's client of output management and its page against Caminito | `caminito/src/tests/caminito_wallpaper.rs`, through `Fixture` |
 | The real caminito-wallpaperd against Caminito | `caminito/src/tests/caminito_wallpaperd.rs`, through `Fixture`, ignored unless `CAMINITO_WALLPAPERD` names the drawer |
+| BlueZ's model, the rfkill block and the switch against python-dbusmock's `bluez5` template on a private bus, with the rfkill block faked | `caminito-bluetooth/tests/`, through `mock::run`; the rfkill block's sysfs and event beside the code |
+| caminito-bluetooth's single instance, the real binary | `caminito-bluetooth/tests/single_instance.rs`, ignored unless run under a display, as tools/check runs it under Xvfb |
 | Pure logic in `caminito` (settings translation, AccessX, scale rules, the lock state machine) | a `tests` module beside the code |
 | Headless integration, X11 tier, D-Bus | `caminito/src/tests/`, through `Fixture` |
 | The version string, and where a build's revision comes from | `caminito-version/src/string.rs`, which the build script compiles too |
