@@ -91,6 +91,7 @@ fn a_pair_is_light_by_day_dark_by_night_and_fades_through_twilight() {
     for (elevation, darkness) in day {
         let sky = Sky {
             elevation: Some(elevation),
+            azimuth: None,
             local: 0,
         };
         let moment = pair.at(&sky);
@@ -110,6 +111,7 @@ fn a_pair_without_the_sun_is_dark_until_seven_and_from_nineteen() {
     let darkness = |hour, minute| {
         Sky {
             elevation: None,
+            azimuth: None,
             local: local(2026, 10, 14, hour, minute, 0),
         }
         .darkness()
@@ -340,6 +342,7 @@ fn a_timed_wallpaper_is_drawn_again_when_its_picture_ends_and_each_second_of_a_t
     let cosmos = Dynamic::Timed(cosmos());
     let sky = |local| Sky {
         elevation: None,
+        azimuth: None,
         local,
     };
     assert_eq!(cosmos.next_change(&sky(cosmos_cycle())), Some(1795));

@@ -2107,6 +2107,42 @@ session_env() {
   `G_MESSAGES_DEBUG=caminito-wallpaperd` in the drawer's environment for `the slideshow … has no
   pictures`.
 
+### A HEIC dynamic wallpaper of your own is on its noon picture at noon and its night one at night
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, and `libheif` installed with its `heif-dec`
+     (Arch's `libheif` has it; Debian's is in `libheif-examples`), log into *MATE on
+     Caminito*. Have a dynamic HEIC of your own, as macOS's *Mojave* or one from
+     <https://dynamicwallpaper.club>, at `~/Pictures/dynamic.heic`.
+  2. Open *Wallpaper*, choose *Dynamic*, press *Add…* and choose the file.
+  3. Put the sun at noon, then at midnight, by giving Caminito a place on the equator whose
+     solar time is 12:00, then 00:00, as in the item above. A minute after each, read the
+     `Sun` property and look at the desktop and the sidebar.
+
+     ```sh
+     at() { echo $(( ($1 - $(date -u +%-H) * 60 - $(date -u +%-M)) / 4 + 540 )); }
+     place() { gsettings set org.mate.Caminito night-light-last-location "(0.0, $(( $(at $1) % 360 - 180 )).0)"; }
+     sun() { busctl --user get-property org.mate.Caminito /org/mate/Caminito org.mate.Caminito Sun; }
+     place 720; sleep 70; sun
+     place 0; sleep 70; sun
+     ```
+
+  4. Run `gsettings reset org.mate.Caminito night-light-last-location`, and `ls
+     ~/.cache/caminito-wallpaper/heic/`.
+- **Expected:** in step 2 the file is under *Your dynamic wallpapers*, grey for a few
+  seconds while its pictures are decoded, then its day picture on the left and its night
+  picture on the right. The desktop shows its colour for those seconds, then cross-fades to
+  the file's picture for the sun now, and the line says it follows the sun (or the clock,
+  for an older file keyed to times of the day). In step 3 the `Sun` elevation is above 60°,
+  then below −60°: at noon the desktop is the
+  file's midday picture, as macOS shows it at noon, and at midnight its night picture, in
+  the sidebar as on the desktop. In step 4 there is one folder, named for the file, with a
+  JPEG per picture.
+- **Debug tool:** `G_MESSAGES_DEBUG=caminito-wallpaperd` for *decoding* and *decoded*,
+  `journalctl --user -t caminito-wallpaperd` for a HEIC that can't be read or decoded, and
+  `heif-info ~/Pictures/dynamic.heic` for its pictures.
+
 ### Each picture of the day shows with its credit, can be kept, and stays offline
 
 - **Milestone:** M9

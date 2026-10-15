@@ -73,6 +73,7 @@ use crate::daily::Source;
 use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
+use crate::heic::Decodes;
 use crate::identity::Identity;
 use crate::lock_screen::{self, Monitor, Shown};
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
@@ -234,6 +235,8 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
+    /// The HEICs whose pictures are being decoded, and those that couldn't be (217).
+    decodes: Decodes,
     /// The pictures of the day (214).
     daily: Rc<RefCell<Daily>>,
     /// For a wake before the next tick, when a timed XML's or a slideshow's picture ends
@@ -299,6 +302,7 @@ pub fn run() -> Result<(), Error> {
         bridge,
         pictures: Pictures::default(),
         dynamics: HashMap::new(),
+        decodes: Decodes::new(DOMAIN),
         daily: Daily::open(&refresh),
         refresh: refresh.clone(),
         waking: Rc::default(),
@@ -679,8 +683,9 @@ impl App {
         });
     }
 
-    /// What the Dynamic of `settings` shows at `sky`, or `None` for another kind or a
-    /// dynamic wallpaper that can't be read.
+    /// What the Dynamic of `settings` shows at `sky`, or `None` for another kind, a
+    /// dynamic wallpaper that can't be read, or a HEIC whose pictures aren't decoded yet,
+    /// which starts their decoding.
     fn moment(&mut self, settings: &OutputSettings, sky: &Sky) -> Option<Moment> {
         if settings.kind != Kind::Dynamic || settings.dynamic.is_empty() {
             return None;
@@ -693,7 +698,13 @@ impl App {
                 })
                 .ok()
         });
-        Some(dynamic.as_ref()?.at(sky))
+        let dynamic = dynamic.as_ref()?;
+        if let Some(heic) = dynamic.heic().filter(|heic| !heic.decoded()) {
+            let refresh = self.refresh.clone();
+            self.decodes.start(heic, move || refresh.schedule());
+            return None;
+        }
+        Some(dynamic.at(sky))
     }
 
     /// Writes what the primary output shows to `org.mate.background`, where it differs.

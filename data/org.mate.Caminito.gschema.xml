@@ -177,7 +177,7 @@
     <key name="dynamics" type="as">
       <default>[]</default>
       <summary>The dynamic wallpapers the user added</summary>
-      <description>The timed XML files added in the Wallpaper dialog, which it lists beside the ones under /usr/share/backgrounds and /usr/share/wallpapers.</description>
+      <description>The timed XML and HEIC files added in the Wallpaper dialog, which it lists beside the ones under /usr/share/backgrounds and /usr/share/wallpapers.</description>
     </key>
     <key name="took-mate-background" type="b">
       <default>false</default>
@@ -200,7 +200,7 @@
     <key name="dynamic" type="s">
       <default>''</default>
       <summary>The dynamic wallpaper</summary>
-      <description>What a "dynamic" wallpaper shows: the folder of a Plasma package with light and dark pictures, which follow the sun, or a GNOME timed XML file, which follows the clock. With none, or one that can't be read, the output shows its colour.</description>
+      <description>What a "dynamic" wallpaper shows: the folder of a Plasma package with light and dark pictures, which follow the sun, a GNOME timed XML file, which follows the clock, or an Apple HEIC file, which follows the sun or the clock as its metadata says and is shown with libheif's heif-dec. With none, or one that can't be read, the output shows its colour.</description>
     </key>
     <key name="slideshow" type="s">
       <default>''</default>
