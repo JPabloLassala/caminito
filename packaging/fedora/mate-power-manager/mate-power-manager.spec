@@ -1,8 +1,11 @@
+# Fedora f45's mate-power-manager spec with the smallest diff, so a change there shows what to
+# carry over. The differences: the carried patch, after Fedora's own, the caminito Release and
+# the changelog (ADR 0011, CMN-170). The version is Fedora's: the patch needs nothing newer.
 %global branch 1.28
 
 Name:          mate-power-manager
 Version:       %{branch}.1
-Release:       %autorelease
+Release:       0.caminito1%{?dist}
 Summary:       MATE power management service
 # Automatically converted from old format: GPLv2+ - review is highly recommended.
 License:       GPL-2.0-or-later
@@ -11,6 +14,11 @@ Source0:       http://pub.mate-desktop.org/releases/%{branch}/%{name}-%{version}
 
 # https://github.com/mate-desktop/mate-power-manager/commit/a0aeec5
 Patch1:        mate-power-manager_0001-Keyboard-backlight-handling-improvements-404.patch
+
+# Caminito's carried patches, from packaging/patches/mate-power-manager/ (ADR 0030), which
+# packaging/fedora/build copies beside this. Their gates and what each does are in
+# packaging/arch/mate-power-manager-caminito/PKGBUILD.
+Patch101:      0001-button-Grab-the-keys-through-Caminito.patch
 
 BuildRequires: cairo-devel
 BuildRequires: dbus-glib-devel
@@ -80,4 +88,5 @@ desktop-file-validate %{buildroot}%{_sysconfdir}/xdg/autostart/mate-power-manage
 
 
 %changelog
-%autochangelog
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.1-0.caminito1
+- mate-power-manager 1.28.1, with Caminito's carried patches, from Fedora f45's spec (CMN-170)

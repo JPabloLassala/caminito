@@ -1,19 +1,35 @@
-%global branch 1.28
+# Fedora f45's mate-session-manager spec with the smallest diff, so a change there shows what
+# to carry over. The differences: master's pinned commit, its snapshot's version and sources,
+# autogen, Fedora's backports, which master has, out, the carried patches, the caminito
+# Release and the changelog (ADR 0011, CMN-170).
+#
+# mate-session-manager has no 1.29 tag, so the baseline is a master commit (16), after 1.28.0,
+# as on Debian (ADR 0029).
+%global commit 57a9178e766cd02176dc1c2d70cc48f963ee9fff
+%global shortcommit %(c=%{commit}; echo ${c:0:7})
+%global commitdate 20260721
+# The mate-submodules commit that master's submodule points to. A GitHub archive leaves the
+# submodule out.
+%global submodules_commit 799639b54e6e5c2b04a3cd13610ebe54d21b71af
 
 Name:          mate-session-manager
 Summary:       MATE Desktop session manager
 # Automatically converted from old format: GPLv2+ - review is highly recommended.
 License:       GPL-2.0-or-later
-Version:       %{branch}.0
-Release:       %autorelease
-Source0:       http://pub.mate-desktop.org/releases/%{branch}/%{name}-%{version}.tar.xz
+Version:       1.28.0^%{commitdate}git%{shortcommit}
+Release:       0.caminito1%{?dist}
+Source0:       https://github.com/mate-desktop/%{name}/archive/%{commit}/%{name}-%{commit}.tar.gz
+Source1:       https://github.com/mate-desktop/mate-submodules/archive/%{submodules_commit}/mate-submodules-%{submodules_commit}.tar.gz
 
-# https://github.com/mate-desktop/mate-session-manager/commit/5424817
-Patch1:        mate-session-manager_0001-Use-g_info-for-screensaver-left-the-bus-message.patch
-# https://github.com/mate-desktop/mate-session-manager/pull/323
-Patch2:        mate-session-manager_0004-util-Only-accept-common-space-characters.patch
-Patch3:        mate-session-manager_0005-util-Disable-capturing-of-subpatterns.patch
-Patch4:        mate-session-manager_0006-manager-Loosen-environment-variable-restrictions.patch
+# Fedora's backports of 5424817 and of pull request 323 are in master.
+
+# Caminito's carried patches, from packaging/patches/mate-session-manager/ (ADR 0030), which
+# packaging/fedora/build copies beside this. Their gates and what each does are in
+# packaging/arch/mate-session-manager-caminito/PKGBUILD.
+Patch101:      0001-main-Unset-GDK_BACKEND-under-Caminito.patch
+Patch102:      0002-main-Skip-the-windowmanager-required-component-under.patch
+Patch103:      0003-autostart-Skip-X11-only-entries-under-Caminito.patch
+Patch104:      0004-autostart-Start-mate-power-manager-and-tilda-on-X11-.patch
 
 BuildRequires: dbus-glib-devel
 BuildRequires: desktop-file-utils
@@ -45,9 +61,11 @@ manager such as MDM. It will load all necessary applications for a
 full-featured user session.
 
 %prep
-%autosetup -p1
+%autosetup -n %{name}-%{commit} -p1 -a 1
+rm -rf mate-submodules
+mv mate-submodules-%{submodules_commit} mate-submodules
 
-#NOCONFIGURE=1 ./autogen.sh
+NOCONFIGURE=1 ./autogen.sh
 
 %build
 %configure                    \
@@ -92,4 +110,5 @@ desktop-file-install                               \
 
 
 %changelog
-%autochangelog
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.0^20260721git57a9178-0.caminito1
+- mate-session-manager's master at 57a9178, with Caminito's carried patches, from Fedora f45's spec (CMN-170)

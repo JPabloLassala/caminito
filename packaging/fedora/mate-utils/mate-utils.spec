@@ -1,13 +1,24 @@
-%global branch 1.28
+# Fedora f45's mate-utils spec with the smallest diff, so a change there shows what to carry
+# over. The differences: the 1.29.1 release, its tarball's address, what its Wayland code
+# depends on, the carried patch, the caminito Release and the changelog (ADR 0011, CMN-170).
+#
+# The first tag whose mate-screenshot captures on Wayland, through ext-image-copy-capture,
+# and picks an area there (05).
+%global branch 1.29
 
 Name:          mate-utils
-Version:       %{branch}.3
-Release:       %autorelease
+Version:       %{branch}.1
+Release:       0.caminito1%{?dist}
 Summary:       MATE utility programs
 # Automatically converted from old format: GPLv2+ and LGPLv2+ - review is highly recommended.
 License:       GPL-2.0-or-later AND LicenseRef-Callaway-LGPLv2+
 URL:           http://mate-desktop.org
-Source0:       http://pub.mate-desktop.org/releases/%{branch}/%{name}-%{version}.tar.xz
+Source0:       https://github.com/mate-desktop/%{name}/releases/download/v%{version}/%{name}-%{version}.tar.xz
+
+# Caminito's carried patches, from packaging/patches/mate-utils/ (ADR 0030), which
+# packaging/fedora/build copies beside this. Their gates and what each does are in
+# packaging/arch/mate-utils-caminito/PKGBUILD.
+Patch101:      0001-screenshot-Capture-the-active-window-on-Wayland-with.patch
 
 BuildRequires: desktop-file-utils
 BuildRequires: e2fsprogs-devel
@@ -25,6 +36,8 @@ BuildRequires: mate-panel-devel
 BuildRequires: mesa-libGL-devel
 BuildRequires: popt-devel
 BuildRequires: usermode
+BuildRequires: wayland-devel
+BuildRequires: wayland-protocols-devel
 BuildRequires: yelp-tools
 BuildRequires: gcc-c++
 
@@ -232,4 +245,5 @@ desktop-file-install                          \
 
 
 %changelog
-%autochangelog
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.1-0.caminito1
+- mate-utils 1.29.1, with Caminito's carried patches, from Fedora f45's spec (CMN-170)

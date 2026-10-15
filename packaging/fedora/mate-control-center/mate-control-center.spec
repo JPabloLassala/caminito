@@ -1,16 +1,33 @@
-%global branch 1.28
+# Fedora f45's mate-control-center spec with the smallest diff, so a change there shows what
+# to carry over. The differences: the 1.29.1 release, its tarball's address, Fedora's
+# backport, which 1.29.1 has, out, the carried patches, the caminito Release and the changelog
+# (ADR 0011, CMN-170).
+%global branch 1.29
 
 Name:          mate-control-center
-Version:       %{branch}.2
-Release:       %autorelease
+Version:       %{branch}.1
+Release:       0.caminito1%{?dist}
 Summary:       MATE Desktop control-center
 # Automatically converted from old format: LGPLv2+ and GPLv2+ - review is highly recommended.
 License:       LicenseRef-Callaway-LGPLv2+ AND GPL-2.0-or-later
 URL:           https://mate-desktop.org
-Source0:       https://github.com/mate-desktop/mate-control-center/releases/download/v%{branch}.1/%{name}-%{version}.tar.xz
+Source0:       https://github.com/mate-desktop/mate-control-center/releases/download/v%{version}/%{name}-%{version}.tar.xz
 
-# https://github.com/mate-desktop/mate-control-center/commit/b5f6b8c
-Patch1:        mate-control-center_0001-Fix-libsystemd-auto-detection.patch 
+# Fedora's backport of https://github.com/mate-desktop/mate-control-center/commit/b5f6b8c is
+# in 1.29.1.
+
+# Caminito's carried patches, from packaging/patches/mate-control-center/ (ADR 0030), which
+# packaging/fedora/build copies beside this. Their gates and what each does are in
+# packaging/arch/mate-control-center-caminito/PKGBUILD.
+Patch101:      0001-wm-common-Know-Caminito-from-the-environment-off-X11.patch
+Patch102:      0002-windows-Open-under-Caminito.patch
+Patch103:      0003-keybindings-Do-not-crash-on-a-display-that-isn-t-X11.patch
+Patch104:      0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch
+Patch105:      0005-mouse-Show-the-touchpad-page-under-Caminito.patch
+Patch106:      0006-system-info-Name-Caminito-in-the-Windowing-System-row.patch
+Patch107:      0007-keybindings-Title-the-dialog-as-its-launcher-under-C.patch
+Patch108:      0008-keybindings-Capture-a-mouse-button-under-Caminito.patch
+Patch109:      0009-appearance-Leave-out-the-Background-tab-under-Camini.patch
 
 BuildRequires: accountsservice-devel
 BuildRequires: dconf-devel
@@ -67,7 +84,6 @@ Development files for mate-control-center
 %prep
 %autosetup -p1
 
-#Patch 1
 NOCONFIGURE=1 ./autogen.sh
 
 %build
@@ -128,4 +144,5 @@ rm %{buildroot}%{_datadir}/applications/mimeinfo.cache
 
 
 %changelog
-%autochangelog
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.1-0.caminito1
+- mate-control-center 1.29.1, with Caminito's carried patches, from Fedora f45's spec (CMN-170)

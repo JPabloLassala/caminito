@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Builds one of the patched or backported MATE packages for Fedora, from its spec in
+# packaging/fedora/<component>/ (CMN-170). It runs on the Fedora machine.
+#
+#   packaging/fedora/build <component> [rpmbuild option…]
+#
+# rpmbuild takes a spec's sources from one directory, so this makes one for the component,
+# under rpmbuild's topdir: the files beside the spec, which are Fedora's own (a panel layout,
+# Fedora's backports) and the `sources` file; the carried patches of
+# packaging/patches/<component>/ and the build patches of its fedora/, which are copied when
+# the package is built and aren't committed beside the spec (ADR 0030); and the upstream
+# tarballs, which spectool fetches and which are checked against `sources`, as Fedora's
+# dist-git checks them. Then it runs rpmbuild -ba with the other arguments. Install the spec's
+# build dependencies first: sudo dnf builddep packaging/fedora/<component>/<component>.spec
+set -euo pipefail
+
+component=${1:?usage: packaging/fedora/build <component> [rpmbuild option…]}
+shift
+root=$(cd "$(dirname "$0")/../.." && pwd)
+dir=$root/packaging/fedora/$component
+spec=$dir/$component.spec
+if [ ! -f "$spec" ]; then
+  echo "build: there's no $spec" >&2
+  exit 1
+fi
+
+sources=$(rpm --eval '%{_topdir}')/SOURCES/$component
+mkdir -p "$sources"
+find "$dir" -maxdepth 1 -type f ! -name '*.spec' -exec cp -t "$sources" {} +
+patches=$root/packaging/patches/$component
+if [ -d "$patches" ]; then
+  cp -t "$sources" "$patches"/*.patch
+  if [ -d "$patches/fedora" ]; then
+    cp -t "$sources" "$patches"/fedora/*.patch
+  fi
+fi
+
+# A tarball that is already there isn't fetched again, and is checked again.
+spectool --get-files --sourcedir --define "_sourcedir $sources" "$spec"
+(cd "$sources" && sha512sum --check --strict sources)
+
+rpmbuild -ba --define "_sourcedir $sources" "$@" "$spec"

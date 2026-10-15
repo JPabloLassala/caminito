@@ -1,13 +1,17 @@
-%global branch 1.28
+# Fedora f45's marco spec with the smallest diff, so a change there shows what to carry over.
+# The differences: the 1.29.1 release, its tarball's address, the caminito Release and the
+# changelog. marco is backported, with no patch, as on Debian (CMN-170): it keeps the stock
+# names, and its Version is the baseline, which is newer than Fedora's (ADR 0029).
+%global branch 1.29
 
 Name:          marco
-Version:       %{branch}.2
-Release:       %autorelease
+Version:       %{branch}.1
+Release:       0.caminito1%{?dist}
 Summary:       MATE Desktop window manager
 # Automatically converted from old format: LGPLv2+ and GPLv2+ - review is highly recommended.
 License:       LicenseRef-Callaway-LGPLv2+ AND GPL-2.0-or-later
 URL:           http://mate-desktop.org
-Source0:       http://pub.mate-desktop.org/releases/%{branch}/%{name}-%{version}.tar.xz
+Source0:       https://github.com/mate-desktop/%{name}/releases/download/v%{version}/%{name}-%{version}.tar.xz
 
 BuildRequires: desktop-file-utils
 BuildRequires: gtk3-devel
@@ -125,4 +129,5 @@ desktop-file-install                                \
 
 
 %changelog
-%autochangelog
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.1-0.caminito1
+- marco 1.29.1, backported for Caminito, from Fedora f45's spec (CMN-170)

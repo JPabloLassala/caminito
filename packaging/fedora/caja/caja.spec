@@ -1,9 +1,13 @@
+# Fedora f45's caja spec with the smallest diff, so a change there shows what to carry over.
+# The differences: the carried patches, after Fedora's own, the caminito Release and the
+# changelog (ADR 0011, CMN-170). The version is Fedora's: caja's desktop is already a layer
+# surface in 1.28.0, so nothing here needs a 1.29 tag.
 %global branch 1.28
 
 Name:        caja
 Summary:     File manager for MATE
 Version:     %{branch}.0
-Release:     %autorelease
+Release:     0.caminito1%{?dist}
 # Automatically converted from old format: GPLv2+ and LGPLv2+ - review is highly recommended.
 License:     GPL-2.0-or-later AND LicenseRef-Callaway-LGPLv2+
 URL:         http://mate-desktop.org
@@ -15,6 +19,12 @@ Patch3:      caja_0004-build-remove-configure-dependency-on-perl-1789.patch
 Patch4:      caja_0005-wayland-ensure-windows-can-be-moved-if-compositor-is.patch
 Patch5:      caja_0009-caja-file-operations-fix-estimate-for-queued-copy-17.patch
 Patch6:      caja_0010-caja-file-operations-restart-timer-also-for-moves.patch
+
+# Caminito's carried patches, from packaging/patches/caja/ (ADR 0030), which
+# packaging/fedora/build copies beside this. Their gates and what each does are in
+# packaging/arch/caja-caminito/PKGBUILD.
+Patch101:    0001-desktop-window-Put-the-desktop-on-Caminito-s-primary.patch
+Patch102:    0002-desktop-window-Pop-up-the-desktop-s-menu-on-Caminito.patch
 
 BuildRequires: dbus-glib-devel
 BuildRequires: desktop-file-utils
@@ -165,4 +175,5 @@ EOF
 
 
 %changelog
-%autochangelog
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.0-0.caminito1
+- caja 1.28.0, with Caminito's carried patches, from Fedora f45's spec (CMN-170)
