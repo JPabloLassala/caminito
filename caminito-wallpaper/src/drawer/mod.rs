@@ -14,6 +14,9 @@
 //!
 //! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
 //! it after every refresh, and a picture another program writes to it comes in first.
+//!
+//! After every refresh, too, what each output shows goes to [the lock screen's
+//! file](crate::lock_screen) where it changed, for caminito-locker (218).
 
 mod buffer;
 mod daily;
@@ -66,6 +69,7 @@ use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
 use crate::identity::Identity;
+use crate::lock_screen::{self, Monitor, Shown};
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
 use crate::sun::sky_now;
 use buffer::Buffers;
@@ -142,6 +146,8 @@ struct Output {
     wl_output: WlOutput,
     /// Its connector, from `wl_output.name`.
     name: Option<String>,
+    /// Its make, model and place, from `wl_output.geometry`, as the locker knows it (218).
+    monitor: Monitor,
     /// Its scale from `wl_output`, for a compositor without fractional scale.
     integer_scale: i32,
     surface: Option<Surface>,
@@ -227,6 +233,8 @@ pub(crate) struct App {
     refresh: Refresh,
     /// Whether such a wake is set.
     waking: Rc<Cell<bool>>,
+    /// The lock screen's file as last written, or `None` before the first write.
+    lock_screen: Option<String>,
 }
 
 /// Runs the drawer until the connection fails.
@@ -286,6 +294,7 @@ pub fn run() -> Result<(), Error> {
         daily: Daily::open(&refresh),
         refresh: refresh.clone(),
         waking: Rc::default(),
+        lock_screen: None,
         qh: qh.clone(),
     };
     // Version 2 has the make, model and serial.
@@ -441,6 +450,7 @@ impl App {
             global,
             wl_output,
             name: None,
+            monitor: Monitor::default(),
             integer_scale: 1,
             surface: None,
         });
@@ -604,6 +614,7 @@ impl App {
         if let Some(primary) = primary_drawn {
             self.bridge_out(&primary);
         }
+        self.write_lock_screen(&drawn);
         let files: Vec<String> = drawn
             .iter()
             .flat_map(|(_, drawn)| drawn.files())
@@ -667,6 +678,30 @@ impl App {
         if let Err(err) = mate.write(&writes) {
             glib::g_warning!(DOMAIN, "{err}");
             self.bridge.borrow_mut().not_written();
+        }
+    }
+
+    /// Writes what each output shows to the lock screen's file, where it changed.
+    fn write_lock_screen(&mut self, drawn: &[(u32, Drawn)]) {
+        let shown: Vec<Shown> = drawn
+            .iter()
+            .filter_map(|(global, drawn)| {
+                let output = self.outputs.iter().find(|o| o.global == *global)?;
+                Some(Shown {
+                    connector: output.name.clone()?,
+                    monitor: output.monitor.clone(),
+                    drawn: drawn.clone(),
+                })
+            })
+            .collect();
+        let text = lock_screen::text(&shown);
+        if self.lock_screen.as_ref() == Some(&text) {
+            return;
+        }
+        let path = lock_screen::path();
+        match lock_screen::write(&path, &text) {
+            Ok(()) => self.lock_screen = Some(text),
+            Err(err) => glib::g_warning!(DOMAIN, "can't write {}: {err}", path.display()),
         }
     }
 
@@ -834,7 +869,11 @@ impl Dispatch<WlRegistry, GlobalListContents> for App {
             } if interface == WlOutput::interface().name => {
                 app.add_output(registry, name, version);
             }
-            wl_registry::Event::GlobalRemove { name } => app.remove_output(name),
+            // Refreshed, so the lock screen's file no longer has it.
+            wl_registry::Event::GlobalRemove { name } => {
+                app.remove_output(name);
+                app.refresh();
+            }
             _ => {}
         }
     }
@@ -854,6 +893,11 @@ impl Dispatch<WlOutput, u32> for App {
         };
         match event {
             wl_output::Event::Name { name } => output.name = Some(name),
+            wl_output::Event::Geometry {
+                x, y, make, model, ..
+            } => {
+                output.monitor = Monitor { make, model, x, y };
+            }
             wl_output::Event::Scale { factor } => output.integer_scale = factor.max(1),
             wl_output::Event::Done => {
                 app.make_surfaces();

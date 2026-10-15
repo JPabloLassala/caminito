@@ -1309,10 +1309,10 @@ session_env() {
   locked when it's back. With sddm, mate-screensaver's LightDM path reaches it: sddm sets
   `XDG_SEAT_PATH` and has `SwitchToGreeter` on its seat. In step 5 there's no *Switch User*.
   In step 6 *Log Out* appears a minute after the lock, and the session logs out.
-- **Debug tool:** the journal's `caminito-locker` lines: `Creating background w:… h:…` for each
-  monitor, `Status message: …`, `Switch User: enabled` or `disabled` (and `Warning: Unknown DM
-  for switch button` where no display manager's path applies), and `Log Out: after its delay`
-  then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
+- **Debug tool:** the journal's `caminito-locker` lines: where each monitor's wallpaper came
+  from (218, below), then `Creating background w:… h:…` for it, `Status message: …`, `Switch
+  User: enabled` or `disabled` (and `Warning: Unknown DM for switch button` where no display
+  manager's path applies), and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
   "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the greeter can
   be reached that way.
 
@@ -2103,6 +2103,31 @@ session_env() {
 - **Debug tool:** `journalctl --user -t caminito-wallpaperd`, which says why a fetch failed
   or why the day's isn't a picture, `G_MESSAGES_DEBUG=caminito-wallpaperd` for each picture
   kept, and `cat ~/.cache/caminito-wallpaper/picture-of-the-day/*.about`.
+
+### Each monitor's lock screen shows its own wallpaper, and the lock comes up without the drawer
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with both monitors
+     connected, and on the session bus run `gsettings set org.mate.Caminito locker-command
+     "['caminito-locker', '--verbose']"`.
+  2. Open *Wallpaper*, turn *Same on all outputs* off, and give the first monitor a picture
+     and the second a colour. Lock with *System* ▸ *Lock Screen*, and unlock.
+  3. Give the second monitor a Plasma pair under *Dynamic*, lock, and unlock.
+  4. Run `pkill -KILL caminito-wallpaperd`, and lock at once. Unlock.
+  5. Run `pkill -STOP caminito-wallpaperd`, lock, and unlock. Run `pkill -CONT
+     caminito-wallpaperd`. Reset `locker-command`.
+- **Expected:** in step 2 each monitor's lock screen shows that monitor's wallpaper, the
+  picture as its *Positioning* places it on the desktop and the colour plain, under the
+  unlock dialog on the monitor under the pointer. In step 3 the second monitor's lock screen
+  shows the picture of the pair that the desktop shows more of then. In step 4 the lock
+  comes up as quickly as before, each monitor with the wallpaper it had when the drawer was
+  killed. In step 5 the lock comes up with the drawer stopped, the same way.
+- **Debug tool:** `cat $XDG_RUNTIME_DIR/caminito-wallpaper/lock-screen`, the drawer's file,
+  with each monitor's make, model and place, which the locker matches against GTK's. The
+  journal's `caminito-locker` lines say where each monitor's came from: `Wallpaper of <connector>
+  from the wallpaper file: …`, or `No wallpaper file`, `The wallpaper file has no …` or `… names
+  a picture that is gone` before `Background from org.mate.background`.
 
 ## The control center
 
