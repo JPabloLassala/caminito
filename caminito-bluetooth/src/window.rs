@@ -1,7 +1,8 @@
 //! The Bluetooth settings window (257): a list beside a detail pane, the prototype's
 //! "Window C". The list has a header with Bluetooth's switch, This computer pinned at the
-//! top, then the paired devices, and a **+** button for Add New Device, a placeholder until
-//! 258. The pane shows the selection.
+//! top, then the paired devices, and a **+** button for Add New Device (258). The pane shows
+//! the selection: This computer, a device, or Add New Device, which looks for devices and
+//! pairs the one that is clicked.
 //!
 //! The window draws [`Settings`] and calls it, and Bluetooth's [`Switch`]. It keeps nothing
 //! of BlueZ's itself: each change is drawn again from the state, in place, so that a name
@@ -12,13 +13,14 @@ use std::rc::Rc;
 
 use caminito_bluetooth::DOMAIN;
 use caminito_bluetooth::bluez::{Adapter, Bluez, Device};
-use caminito_bluetooth::settings::{self, LOW_BATTERY, Selection, Settings};
+use caminito_bluetooth::settings::{self, Attempt, LOW_BATTERY, PairError, Selection, Settings};
 use caminito_bluetooth::switch::Switch;
 use gtk::prelude::*;
-use gtk::{gdk, glib};
+use gtk::{gdk, gio, glib};
 
 const CSS: &str = "
 levelbar.caminito-bluetooth-low > trough > block.filled { background-color: @error_color; }
+label.caminito-bluetooth-failed { color: mix(@error_color, @theme_fg_color, 0.45); }
 ";
 
 /// What the window works on, which the program made at its start.
@@ -43,10 +45,13 @@ pub(crate) fn set_up(application: &gtk::Application) {
 }
 
 /// Opens the window, or raises the one there is. `services` is None when BlueZ can't be
-/// reached at all. `scan` is for Add New Device (258).
-pub(crate) fn present(application: &gtk::Application, services: Option<&Services>, _scan: bool) {
+/// reached at all. `scan` shows Add New Device, in the window there is or in a new one.
+pub(crate) fn present(application: &gtk::Application, services: Option<&Services>, scan: bool) {
     // Any of its windows, not only the active one, which a hidden window isn't.
     if let Some(window) = application.windows().first() {
+        if scan {
+            show_add_device(window);
+        }
         window.present();
         return;
     }
@@ -57,7 +62,12 @@ pub(crate) fn present(application: &gtk::Application, services: Option<&Services
         .default_height(480)
         .build();
     match services {
-        Some(services) => View::build(&window, services),
+        Some(services) => {
+            View::build(&window, services);
+            if scan {
+                show_add_device(&window);
+            }
+        }
         None => {
             let unreachable = dim("Bluetooth can't be reached: BlueZ isn't on the system bus.");
             unreachable.set_halign(gtk::Align::Center);
@@ -66,6 +76,18 @@ pub(crate) fn present(application: &gtk::Application, services: Option<&Services
     }
     window.present();
 }
+
+/// Shows Add New Device in `window`, through its action, since the window's state is its own.
+/// A window with no state, as when BlueZ can't be reached, has no such action and shows
+/// nothing.
+fn show_add_device(window: &impl IsA<gtk::Window>) {
+    if let Some(window) = window.dynamic_cast_ref::<gtk::ApplicationWindow>() {
+        gio::prelude::ActionGroupExt::activate_action(window, ADD_DEVICE, None);
+    }
+}
+
+/// The window's action that shows Add New Device.
+const ADD_DEVICE: &str = "add-device";
 
 /// The window's widgets over the state.
 struct View {
@@ -83,9 +105,12 @@ struct View {
     unreadable: Cell<bool>,
     list: gtk::ListBox,
     rows: RefCell<Vec<Row>>,
+    /// The **+** button, which is down while Add New Device is shown.
+    add_button: gtk::ToggleButton,
     pane: gtk::Stack,
     computer: ComputerPane,
     device: DevicePane,
+    add: AddPane,
     /// The last action's failure, under the pane.
     message: gtk::Label,
 }
@@ -117,6 +142,27 @@ struct ComputerPane {
     /// The chooser's adapters, in its order.
     chosen_from: RefCell<Vec<String>>,
     address: gtk::Label,
+}
+
+/// Add New Device's pane.
+struct AddPane {
+    spinner: gtk::Spinner,
+    note: gtk::Label,
+    /// What to do when nothing has been found, which is hidden when something has.
+    hint: gtk::Label,
+    scroll: gtk::ScrolledWindow,
+    list: gtk::ListBox,
+    rows: RefCell<Vec<NewRow>>,
+}
+
+/// One of Add New Device's rows: a device found.
+struct NewRow {
+    path: String,
+    row: gtk::ListBoxRow,
+    icon: gtk::Image,
+    name: gtk::Label,
+    /// Its type, or that it's being paired, or why it wasn't.
+    status: gtk::Label,
 }
 
 /// A device's pane.
@@ -155,9 +201,11 @@ impl View {
         let pane = gtk::Stack::new();
         let computer = ComputerPane::build();
         let device = DevicePane::build();
+        let add = AddPane::build();
         let computer_switch = switch();
         pane.add_named(&computer.page(&computer_switch), Some("computer"));
         pane.add_named(&device.page(), Some("device"));
+        pane.add_named(&add.page(), Some("add"));
         let message = gtk::Label::builder()
             .xalign(0.0)
             .wrap(true)
@@ -173,9 +221,16 @@ impl View {
             unreadable: Cell::new(false),
             list,
             rows: RefCell::default(),
+            add_button: gtk::ToggleButton::builder()
+                .icon_name("list-add-symbolic")
+                .tooltip_text("Add New Device")
+                .halign(gtk::Align::Start)
+                .css_classes(["flat"])
+                .build(),
             pane,
             computer,
             device,
+            add,
             message,
         });
         window.set_child(Some(&view.layout()));
@@ -214,15 +269,8 @@ impl View {
         header.append(&self.header_switch);
         margins(&header, 8);
 
-        // Add New Device is 258's.
-        let add = gtk::Button::builder()
-            .icon_name("list-add-symbolic")
-            .tooltip_text("Add New Device")
-            .halign(gtk::Align::Start)
-            .sensitive(false)
-            .build();
-        add.add_css_class("flat");
-        margins(&add, 4);
+        let add = &self.add_button;
+        margins(add, 4);
 
         let left = gtk::Box::new(gtk::Orientation::Vertical, 0);
         left.set_size_request(240, -1);
@@ -238,7 +286,7 @@ impl View {
                 .build(),
         );
         left.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        left.append(&add);
+        left.append(add);
 
         let right = gtk::Box::new(gtk::Orientation::Vertical, 12);
         right.set_hexpand(true);
@@ -322,6 +370,40 @@ impl View {
         NameEntry::connect(self, |view| &view.computer.name);
         NameEntry::connect(self, |view| &view.device.name);
 
+        // The + button and --scan.
+        let action = gio::SimpleAction::new(ADD_DEVICE, None);
+        let weak = Rc::downgrade(self);
+        action.connect_activate(move |_, _| {
+            if let Some(view) = weak.upgrade() {
+                view.show_add_device();
+            }
+        });
+        self.window.add_action(&action);
+        let weak = Rc::downgrade(self);
+        self.add_button.connect_toggled(move |_| {
+            if let Some(view) = weak.upgrade()
+                && !view.syncing.get()
+            {
+                view.show_add_device();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.add.list.connect_row_activated(move |_, row| {
+            let path = weak.upgrade().and_then(|view| {
+                let path = view
+                    .add
+                    .rows
+                    .borrow()
+                    .iter()
+                    .find(|known| &known.row == row)
+                    .map(|known| known.path.clone());
+                path.map(|path| (view, path))
+            });
+            if let Some((view, path)) = path {
+                view.pair(&path);
+            }
+        });
+
         let weak = Rc::downgrade(self);
         self.device.connect.connect_clicked(move |_| {
             if let Some(view) = weak.upgrade() {
@@ -360,16 +442,23 @@ impl View {
         self.update_list(adapter.as_ref(), &devices);
         self.computer.update(&self.settings, adapter.as_ref(), on);
 
-        let shown = match self.settings.selection() {
-            Selection::Computer => None,
-            Selection::Device(path) => devices.into_iter().find(|device| device.path == path),
+        let selection = self.settings.selection();
+        self.add_button
+            .set_active(selection == Selection::AddDevice);
+        let shown = match &selection {
+            Selection::Device(path) => devices.into_iter().find(|device| &device.path == path),
+            Selection::Computer | Selection::AddDevice => None,
         };
-        match shown {
-            Some(device) => {
+        match (selection, shown) {
+            (Selection::AddDevice, _) => {
+                self.add.update(&self.settings, adapter.as_ref(), on);
+                self.pane.set_visible_child_name("add");
+            }
+            (_, Some(device)) => {
                 self.device.update(&device, on);
                 self.pane.set_visible_child_name("device");
             }
-            None => self.pane.set_visible_child_name("computer"),
+            (_, None) => self.pane.set_visible_child_name("computer"),
         }
         self.syncing.set(false);
     }
@@ -416,6 +505,44 @@ impl View {
         let selection = self.settings.selection();
         let selected = rows.iter().find(|row| row.selection == selection);
         self.list.select_row(selected.map(|row| &row.row));
+    }
+
+    /// Shows Add New Device, which looks for devices while it's shown.
+    fn show_add_device(self: &Rc<Self>) {
+        self.message.set_label("");
+        self.rename_from(&self.device.name);
+        self.rename_from(&self.computer.name);
+        // Told to the window even when it's shown already, so the button is down again.
+        self.settings.select(Selection::AddDevice);
+    }
+
+    /// Pairs the device at `path`, which Add New Device lists. The agent's dialogs come up
+    /// as BlueZ asks, and the row says that it's pairing, or why it didn't.
+    fn pair(self: &Rc<Self>, path: &str) {
+        let Some(device) = self
+            .settings
+            .new_devices()
+            .into_iter()
+            .find(|device| device.path == path)
+        else {
+            return;
+        };
+        self.message.set_label("");
+        let view = self.clone();
+        glib::spawn_future_local(async move {
+            match view.settings.pair(&device.path).await {
+                Ok(()) => {}
+                // Another is being paired, which the list doesn't allow.
+                Err(PairError::Busy) => {}
+                // The row says why.
+                Err(err @ PairError::Pair(_)) => glib::g_warning!(DOMAIN, "{err}"),
+                // It's one of the devices now, where it can be connected again.
+                Err(err @ PairError::Connect(_)) => view.fail(
+                    &err,
+                    &format!("{} is paired, but can't connect.", device.alias),
+                ),
+            }
+        });
     }
 
     fn connect_or_disconnect(self: &Rc<Self>) {
@@ -582,6 +709,121 @@ impl ComputerPane {
                 .position(|path| path == &adapter.path)
         }) {
             self.chooser.set_selected(index as u32);
+        }
+    }
+}
+
+impl AddPane {
+    fn build() -> AddPane {
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .activate_on_single_click(true)
+            .css_classes(["boxed-list"])
+            .build();
+        AddPane {
+            spinner: gtk::Spinner::builder().valign(gtk::Align::Center).build(),
+            note: dim(""),
+            hint: dim("Nothing found yet. Put the device in pairing mode, close to this computer."),
+            scroll: gtk::ScrolledWindow::builder()
+                .child(&list)
+                .hscrollbar_policy(gtk::PolicyType::Never)
+                .vexpand(true)
+                .build(),
+            list,
+            rows: RefCell::default(),
+        }
+    }
+
+    fn page(&self) -> gtk::Box {
+        let top = header("bluetooth", "Add New Device", &self.note);
+        self.note.set_hexpand(true);
+        top.append(&self.spinner);
+        let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        page.append(&top);
+        page.append(&self.hint);
+        page.append(&self.scroll);
+        page
+    }
+
+    /// Draws what is found, in place, so that a device's row survives the others' coming
+    /// and going.
+    fn update(&self, settings: &Settings, adapter: Option<&Adapter>, on: bool) {
+        let ready = on && adapter.is_some_and(|adapter| adapter.powered);
+        let note = match adapter {
+            None => "No Bluetooth adapter.",
+            Some(_) if !ready => "Bluetooth is off.",
+            Some(adapter) if adapter.discovering => "Looking for devices…",
+            Some(_) => "Not looking for devices.",
+        };
+        self.note.set_label(note);
+        self.spinner
+            .set_spinning(ready && adapter.is_some_and(|adapter| adapter.discovering));
+
+        let devices = if ready {
+            settings.new_devices()
+        } else {
+            Vec::new()
+        };
+        self.hint.set_visible(ready && devices.is_empty());
+        self.scroll.set_visible(!devices.is_empty());
+        // One device is paired at a time: the agent asks one question at a time.
+        self.list.set_sensitive(!settings.is_pairing());
+
+        let mut rows = self.rows.borrow_mut();
+        let same = rows.len() == devices.len()
+            && rows
+                .iter()
+                .zip(&devices)
+                .all(|(row, device)| row.path == device.path);
+        if !same {
+            self.list.remove_all();
+            *rows = devices
+                .iter()
+                .map(|device| {
+                    let row = NewRow::build(&device.path);
+                    self.list.append(&row.row);
+                    row
+                })
+                .collect();
+        }
+        for (row, device) in rows.iter().zip(&devices) {
+            row.icon.set_icon_name(Some(icon_name(device)));
+            row.name.set_label(&device.alias);
+            let (status, failed) = match settings.attempt(&device.path) {
+                Some(Attempt::Pairing) => ("Pairing…".to_owned(), false),
+                Some(Attempt::Failed(reason)) => (format!("Couldn't pair: {reason}"), true),
+                None => (settings::kind(device).to_owned(), false),
+            };
+            row.status.set_label(&status);
+            set_class(&row.status, "caminito-bluetooth-failed", failed);
+            set_class(&row.status, "dim-label", !failed);
+        }
+    }
+}
+
+impl NewRow {
+    fn build(path: &str) -> NewRow {
+        let icon = gtk::Image::builder().pixel_size(24).build();
+        let name = gtk::Label::builder()
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build();
+        let status = dim("");
+        let text = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        text.set_valign(gtk::Align::Center);
+        text.append(&name);
+        text.append(&status);
+        let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        content.append(&icon);
+        content.append(&text);
+        margins(&content, 6);
+        let row = gtk::ListBoxRow::builder().child(&content).build();
+        NewRow {
+            path: path.to_owned(),
+            row,
+            icon,
+            name,
+            status,
         }
     }
 }
