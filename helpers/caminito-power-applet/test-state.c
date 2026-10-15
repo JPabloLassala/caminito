@@ -163,6 +163,22 @@ test_empty (void)
   g_assert_cmpstr (tooltip, ==, "0%\nEmpty");
 }
 
+/* Only an inhibitor that keeps the computer from sleeping or from going idle is listed. */
+static void
+test_inhibitors_listed (void)
+{
+  g_assert_false (pw_state_inhibitor_listed (0));
+  /* Logout (1), switch user (2) and automount (16). */
+  g_assert_false (pw_state_inhibitor_listed (1));
+  g_assert_false (pw_state_inhibitor_listed (2 | 16));
+  g_assert_true (pw_state_inhibitor_listed (PW_INHIBIT_SUSPEND));
+  g_assert_true (pw_state_inhibitor_listed (PW_INHIBIT_IDLE));
+  g_assert_true (pw_state_inhibitor_listed (1 | 4));
+  /* Stay awake's own. */
+  g_assert_true (pw_state_inhibitor_listed (PW_INHIBIT_SUSPEND | PW_INHIBIT_IDLE));
+  g_assert_cmpint (PW_INHIBIT_SUSPEND | PW_INHIBIT_IDLE, ==, 12);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -175,5 +191,6 @@ main (int argc, char **argv)
   g_test_add_func ("/state/full-and-held-at-a-limit-say-plugged-in", test_full);
   g_test_add_func ("/state/no-battery-is-a-plug", test_no_battery);
   g_test_add_func ("/state/empty-says-so", test_empty);
+  g_test_add_func ("/state/only-suspend-and-idle-inhibitors-are-listed", test_inhibitors_listed);
   return g_test_run ();
 }

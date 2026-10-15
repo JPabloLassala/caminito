@@ -1,0 +1,9 @@
+start: panel running
+popup (x y w h): 0 28 320 88
+1 off: the mock's log: []
+2 on: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1]
+5 off again: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1;  Uninhibit 1]
+popup: panel running
+6 on again: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1;  Uninhibit 1;  Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 2]
+6 the panel gone: the mock's log: [Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 1;  Uninhibit 1;  Inhibit "caminito-power-applet" 0 "Stay awake is on" 12 -> 2;  Vanished 2]
+restarted: panel running

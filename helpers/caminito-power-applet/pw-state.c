@@ -147,3 +147,28 @@ pw_state_tooltip (const PwDisplay *display)
       return g_strdup (percentage);
     }
 }
+
+gboolean
+pw_state_inhibitor_listed (guint flags)
+{
+  return (flags & (PW_INHIBIT_SUSPEND | PW_INHIBIT_IDLE)) != 0;
+}
+
+PwInhibitor *
+pw_inhibitor_new (const char *app_id, const char *reason, guint flags)
+{
+  PwInhibitor *inhibitor = g_new0 (PwInhibitor, 1);
+
+  inhibitor->app_id = g_strdup (app_id != NULL ? app_id : "");
+  inhibitor->reason = g_strdup (reason != NULL ? reason : "");
+  inhibitor->flags = flags;
+  return inhibitor;
+}
+
+void
+pw_inhibitor_free (PwInhibitor *inhibitor)
+{
+  g_free (inhibitor->app_id);
+  g_free (inhibitor->reason);
+  g_free (inhibitor);
+}

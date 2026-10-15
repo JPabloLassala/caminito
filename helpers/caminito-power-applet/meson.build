@@ -1,5 +1,5 @@
 # The Power applet (262, ADR 0035): an in-process mate-panel applet in C and GTK3, which
-# reads UPower over GDBus. Its own project, which the top-level meson.build includes as a
+# reads UPower and mate-session over GDBus. Its own project, which the top-level meson.build includes as a
 # subproject and installs. It's called "Power" in Add to Panel.
 project(
   'caminito-power-applet',
@@ -11,6 +11,8 @@ project(
 )
 
 gio = dependency('gio-2.0')
+# The desktop files that name an application and give its icon (265).
+gio_unix = dependency('gio-unix-2.0')
 m = meson.get_compiler('c').find_library('m')
 applet_dep = dependency('libmatepanelapplet-4.0')
 # The popup and the icon, which the Bluetooth, Power and Thermal applets share (ADR 0035).
@@ -21,13 +23,23 @@ common = subproject('caminito-applet-common').get_variable('caminito_applet_comm
 # build any state.
 state = static_library('pw-state', 'pw-state.c', dependencies: [gio, m])
 upower = static_library('pw-upower', 'pw-upower.c', link_with: state, dependencies: gio)
-popup = static_library('pw-popup', 'pw-popup.c', dependencies: [gio, common], pic: true)
+# mate-session: Stay awake, and what keeps the computer awake (265).
+session = static_library('pw-session', 'pw-session.c', link_with: state, dependencies: gio)
+# The popup's content: Stay awake and what keeps the computer awake (265), and the rest.
+popup = static_library(
+  'pw-popup',
+  'pw-popup.c',
+  'pw-awake.c',
+  link_with: state,
+  dependencies: [gio, gio_unix, common],
+  pic: true,
+)
 
 applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-power-applet',
   'power-applet.c',
-  link_with: [state, upower, popup],
+  link_with: [state, upower, session, popup],
   dependencies: [gio, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,
@@ -56,6 +68,14 @@ install_data(
 # The icon's names and the tooltip, from displays built by hand.
 test('state', executable('test-state', 'test-state.c', link_with: state, dependencies: [gio, m]))
 
+# Stay awake's row and the list of what keeps the computer awake (265), which need a
+# display and are skipped without one.
+test(
+  'awake',
+  executable('test-awake', 'test-awake.c', link_with: [popup, state], dependencies: [gio, common]),
+  env: {'NO_AT_BRIDGE': '1'},
+)
+
 # UPower against python-dbusmock's upower template, where python-dbusmock is installed.
 python = import('python').find_installation(
   'python3',
@@ -67,6 +87,13 @@ if python.found()
     'upower',
     executable('test-upower', 'test-upower.c', link_with: [upower, state], dependencies: [gio, m]),
     args: [python.full_path()],
+    timeout: 120,
+  )
+  # mate-session against a mock of its inhibitor calls, on a private session bus (265).
+  test(
+    'session',
+    executable('test-session', 'test-session.c', link_with: [session, state], dependencies: gio),
+    args: [python.full_path(), meson.current_source_dir() / 'session-mock.py'],
     timeout: 120,
   )
 endif
