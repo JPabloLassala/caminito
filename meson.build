@@ -79,6 +79,21 @@ install_data(
   install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
 )
 
+# The default panel (261): mate-panel's default layout with the Bluetooth applet beside the
+# notification area, and the override that makes it the default. Like caminito-bluetooth's
+# entries these are in the normal XDG directories, not share/caminito/xdg/: the layout is
+# right under X11 MATE too, and the panel finds it by name in its own layouts directory.
+# Only a user with no panel settings gets it (the applet is in Add to Panel for the rest).
+# The package's hook compiles the override with the schemas.
+install_data(
+  'data/caminito.layout',
+  install_dir: get_option('datadir') / 'mate-panel' / 'layouts',
+)
+install_data(
+  'data/90_caminito.gschema.override',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
+)
+
 # The launcher of the control center's Keyboard Shortcuts dialog (183), under the stock entry's
 # id and in the same directory, so that it shadows it in a Session alone. There the dialog is
 # System Shortcuts, and the patched dialog takes its title from this entry's name, so the

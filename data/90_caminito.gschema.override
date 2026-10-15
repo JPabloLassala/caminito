@@ -1,0 +1,5 @@
+# Makes data/caminito.layout the default layout of mate-panel's new users (261). The number
+# puts it after the distributions' own overrides, which are 10_ to 30_, so Caminito's layout
+# wins where both are installed.
+[org.mate.panel]
+default-layout='caminito'

@@ -1,0 +1,70 @@
+# Caminito's default panel layout (261): mate-panel's own default.layout, from the commit the
+# patched package is built from (58ac6c1), with the Bluetooth applet added to the top panel,
+# beside the notification area. 90_caminito.gschema.override makes it the default. Only a user
+# with no panel settings gets it: anyone else adds the applet with Add to Panel.
+#
+# The applet is in the same package as this file, so the layout never names one that isn't
+# installed. It works under X11 MATE too, and hides itself where there is no Bluetooth adapter.
+# Move the keys of a later default.layout over by hand when the baseline moves.
+
+[Toplevel top]
+expand=true
+orientation=top
+size=24
+
+[Toplevel bottom]
+expand=true
+orientation=bottom
+size=24
+
+[Object menu-bar]
+object-type=menu-bar
+toplevel-id=top
+pack-index=0
+locked=true
+
+[Object notification-area]
+object-type=applet
+applet-iid=NotificationAreaAppletFactory::NotificationArea
+toplevel-id=top
+pack-type=end
+pack-index=1
+locked=true
+
+[Object bluetooth]
+object-type=applet
+applet-iid=CaminitoBluetoothAppletFactory::CaminitoBluetoothApplet
+toplevel-id=top
+pack-type=end
+pack-index=2
+locked=true
+
+[Object clock]
+object-type=applet
+applet-iid=ClockAppletFactory::ClockApplet
+toplevel-id=top
+pack-type=end
+pack-index=0
+locked=true
+
+[Object show-desktop]
+object-type=applet
+applet-iid=WnckletFactory::ShowDesktopApplet
+toplevel-id=bottom
+pack-index=0
+locked=true
+
+[Object window-list]
+object-type=applet
+applet-iid=WnckletFactory::WindowListApplet
+toplevel-id=bottom
+pack-index=1
+locked=true
+
+[Object workspace-switcher]
+object-type=applet
+applet-iid=WnckletFactory::WorkspaceSwitcherApplet
+toplevel-id=bottom
+pack-type=end
+pack-index=0
+locked=true

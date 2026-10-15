@@ -57,12 +57,18 @@ license=(GPL-2.0-or-later)
 # /usr/share/caminito/xdg too.
 #
 # glib-networking is GIO's TLS, which the drawer fetches a picture of the day with (214).
+#
+# caminito-bluetooth (255) links gtk4 and speaks to BlueZ over D-Bus, so the package depends on
+# bluez, the daemon, and on nothing else for it. The Bluetooth applet (259, ADR 0035) is built
+# against mate-panel's applet library, whose headers mate-panel-caminito has: the build
+# depends on it through depends. The applet and caminito-bluetooth need nothing of Caminito,
+# and work under X11 MATE too.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking
   mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
-  mate-notification-daemon mate-polkit hicolor-icon-theme)
+  mate-notification-daemon mate-polkit hicolor-icon-theme bluez)
 makedepends=(cargo git meson)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module
@@ -136,5 +142,5 @@ package() {
   meson install -C build --destdir "$pkgdir"
   install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-about target/release/caminito-wallpaperd \
-    target/release/caminito-wallpaper -t "$pkgdir/usr/bin"
+    target/release/caminito-wallpaper target/release/caminito-bluetooth -t "$pkgdir/usr/bin"
 }

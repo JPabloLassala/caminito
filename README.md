@@ -410,6 +410,27 @@ panel, and the focused window's menubar is drawn there instead of in the window.
 
 An app that starts with no applet on a panel keeps its own menubar.
 
+### Bluetooth
+
+MATE has no Bluetooth front end of its own, so Caminito has two pieces (ADR 0035):
+
+- **The Bluetooth applet** is an icon in mate-panel. Its popup has a switch for Bluetooth, the paired
+  devices with their battery levels, a Connect or Disconnect button for each, and _Add New
+  Device…_. It hides itself on a machine with no Bluetooth adapter.
+- **`caminito-bluetooth`** runs through the whole session, started at login from
+  `/etc/xdg/autostart/caminito-bluetooth.desktop`. It is the pairing agent: it answers a PIN, a
+  passkey or a confirmation, whether you started the pairing or the device did. It also opens the
+  Bluetooth settings window, which is in the control center under Hardware, and from the applet's
+  _Configure Bluetooth…_.
+
+Turning Bluetooth off is an rfkill soft block, so it lasts across reboots and agrees with the
+airplane-mode key. Both pieces talk to BlueZ alone, so they depend on `bluez` and on nothing of
+Caminito, and work under X11 MATE too.
+
+[Blueman](https://github.com/blueman-project/blueman) can be installed beside them. BlueZ gives the
+default agent to whichever registers last, so the one that started last answers the pairing requests.
+Stop the other's agent, or don't start it, to choose.
+
 ## Known limitations
 
 - **An Xwayland crash logs you out of a MATE on Caminito session.** Caminito survives it, drops the

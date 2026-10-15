@@ -2410,6 +2410,90 @@ session_env() {
   `canberra-gtk-play -i bell-window-system` or `-i desktop-switch-right`, which plays the
   same sound without Caminito.
 
+## Bluetooth
+
+These need a Bluetooth adapter and the devices themselves, which no mock stands in for. They are
+the developer's to run (261).
+
+### A keyboard pairs with a PIN
+
+- **Milestone:** the `bluetooth` epic (261)
+- **Steps:**
+  1. With `caminito-git` installed, log into *MATE on Caminito* with a Bluetooth adapter. Run
+     `pgrep -a caminito-bluetooth`. Put a Bluetooth keyboard that asks for a PIN in pairing mode.
+  2. Click the Bluetooth icon in the top panel, beside the notification area, and choose
+     *Add New Device…*.
+  3. Click the keyboard in the list. When the dialog shows a code, type it on the keyboard and
+     press Enter.
+  4. Type in a terminal on the keyboard. Click the icon again.
+- **Expected:** in step 1 `caminito-bluetooth --background` is running. In step 2 the settings
+  window opens on Add New Device and lists the keyboard by its name. In step 3 the dialog shows
+  the code to type, and closes after Enter. The keyboard moves to the paired devices and connects.
+  In step 4 the keys arrive, and the popup lists the keyboard under the connected devices, with
+  its battery level if it reports one.
+- **Debug tool:** `busctl --system tree org.bluez`, `bluetoothctl devices Paired`, and
+  `journalctl --user -b -t caminito-bluetooth`.
+
+### A phone pairs with a confirmation, one that the phone starts too
+
+- **Milestone:** the `bluetooth` epic (261)
+- **Steps:**
+  1. Open the settings window from *Bluetooth* in the control center, choose *Add New Device*,
+     and click the phone, with its Bluetooth screen open.
+  2. Compare the number the dialog shows with the phone's. Choose *Yes* in the dialog and accept on
+     the phone.
+  3. Choose *Forget* on the phone's page. Then, from the phone, search for the computer and pair
+     with it. This time the window is closed.
+- **Expected:** in step 2 both show the same number, and the phone moves to the paired devices.
+  In step 3 a dialog asks whether to allow the pairing, though no window of caminito-bluetooth was
+  open, and *Yes* pairs the phone, trusted.
+- **Debug tool:** `bluetoothctl devices Paired` and `bluetoothctl info <address>`, whose `Trusted`
+  line is `yes` after each pairing.
+
+### A headset connects and disconnects from the popup
+
+- **Milestone:** the `bluetooth` epic (261)
+- **Steps:**
+  1. Pair a headset in the settings window. Turn it off, then on.
+  2. Open the popup, click the headset's row, and choose *Connect*. Play a sound in *Sound*'s
+     test, on the headset.
+  3. Choose *Disconnect*.
+  4. Hover over the icon in each of the three states: Bluetooth off, on with nothing connected,
+     and connected.
+- **Expected:** in step 2 the row moves to the connected devices, with its battery level where the
+  headset reports it, and the sound plays on the headset (PipeWire's profile is not Caminito's
+  to choose). In step 3 the row goes back to the paired ones. In step 4 the icon differs in each
+  state, and the tooltip names the connected devices and their batteries.
+- **Debug tool:** `bluetoothctl info <address>`, `wpctl status`.
+
+### Off lasts across a reboot, and the icon hides with no adapter
+
+- **Milestone:** the `bluetooth` epic (261)
+- **Steps:**
+  1. Open the popup and turn Bluetooth off with its switch. Run `rfkill list bluetooth`.
+  2. Reboot, log in again, and run `rfkill list bluetooth`. Open the popup.
+  3. Turn it on with the switch, or press the airplane-mode key twice.
+  4. Unplug a USB adapter, or run `sudo rmmod btusb`, and then plug it in again.
+- **Expected:** in step 1 the adapter is `Soft blocked: yes`, and the popup says Bluetooth is off.
+  In step 2 it's still blocked, and the popup says so. In step 3 it's on again, and the devices
+  that were connected reconnect. In step 4 the icon is gone while there is no adapter, and
+  comes back with it.
+- **Debug tool:** `rfkill list`, `systemctl status systemd-rfkill`, and `bluetoothctl show`.
+
+### A fresh user's top panel has the applet, under X11 MATE too
+
+- **Milestone:** the `bluetooth` epic (261)
+- **Steps:**
+  1. Make a user with no panel settings: `sudo useradd -m btfresh`, and log in as them to
+     *MATE on Caminito*.
+  2. Look at the top panel. Open *Control Center*.
+  3. Log out. Log in as the same user to *MATE*, the X11 session, with its settings reset
+     (`mate-panel --reset`, or a second new user).
+- **Expected:** in step 2 the Bluetooth icon is in the top panel, beside the notification area,
+  and *Bluetooth* is under Hardware in the control center. In step 3 the same panel and applet,
+  and the popup and settings window work as in the Session.
+- **Debug tool:** `dconf dump /org/mate/panel/objects/`, and `journalctl --user -b -t mate-panel`.
+
 ## Marco parity
 
 ### Each placement mode places a native and an X11 window on two outputs
