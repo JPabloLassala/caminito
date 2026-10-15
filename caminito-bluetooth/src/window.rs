@@ -6,7 +6,8 @@ use gtk::prelude::*;
 /// Opens the window, or raises the one there is. `scan` is for Add New Device (258), which
 /// the placeholder hasn't yet.
 pub(crate) fn present(application: &gtk::Application, _scan: bool) {
-    if let Some(window) = application.active_window() {
+    // Any of its windows, not only the active one, which a hidden window isn't.
+    if let Some(window) = application.windows().first() {
         window.present();
         return;
     }

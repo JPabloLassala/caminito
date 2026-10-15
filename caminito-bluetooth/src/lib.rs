@@ -9,6 +9,9 @@
 
 #![forbid(unsafe_code)]
 
+/// The log domain of GLib's warnings, the program's and the library's.
+pub const DOMAIN: &str = "caminito-bluetooth";
+
 pub mod bluez;
 pub mod rfkill;
 pub mod switch;

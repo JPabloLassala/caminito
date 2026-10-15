@@ -8,6 +8,8 @@
 //! - `--scan` does the same on Add New Device (258).
 //!
 //! A second start passes its command line to the first, over the session bus, and exits.
+//! The first holds itself whichever way it started, so closing the window doesn't end it:
+//! the agent lives in it.
 
 #![forbid(unsafe_code)]
 
@@ -16,6 +18,7 @@ mod window;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use caminito_bluetooth::DOMAIN;
 use caminito_bluetooth::bluez::Bluez;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -42,7 +45,7 @@ fn main() -> glib::ExitCode {
         None,
     );
 
-    // The primary instance's: BlueZ's model, and the hold that --background takes once.
+    // The primary instance's: BlueZ's model, and the hold it takes at its first command line.
     let bluez: Rc<RefCell<Option<Bluez>>> = Rc::default();
     let hold: Rc<RefCell<Option<gio::ApplicationHoldGuard>>> = Rc::default();
 
@@ -50,18 +53,14 @@ fn main() -> glib::ExitCode {
         let bluez = bluez.clone();
         move |_| match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
             Ok(system) => *bluez.borrow_mut() = Some(Bluez::new(&system)),
-            Err(err) => glib::g_warning!(
-                "caminito-bluetooth",
-                "can't reach the system bus, so BlueZ: {err}"
-            ),
+            Err(err) => glib::g_warning!(DOMAIN, "can't reach BlueZ on the system bus: {err}"),
         }
     });
 
     application.connect_command_line(move |application, command_line| {
         let options = command_line.options_dict();
-        if options.contains("background") {
-            hold.borrow_mut().get_or_insert_with(|| application.hold());
-        } else {
+        hold.borrow_mut().get_or_insert_with(|| application.hold());
+        if !options.contains("background") {
             window::present(application, options.contains("scan"));
         }
         glib::ExitCode::SUCCESS

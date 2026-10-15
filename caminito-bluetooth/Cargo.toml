@@ -7,8 +7,8 @@ repository.workspace = true
 # Shipped through the PKGBUILD, never crates.io.
 publish = false
 
-# The library is BlueZ's model over gio's D-Bus, with no zbus (ADR 0035), and names no
-# toolkit. Only the binary uses GTK.
+# The library is BlueZ's model over gio's D-Bus (ADR 0035), with no zbus (the spec's "The
+# two pieces"), and names no toolkit. Only the binary uses GTK.
 [dependencies]
 gio = "0.22.10"
 # The application and its window, without libadwaita (ADR 0014).

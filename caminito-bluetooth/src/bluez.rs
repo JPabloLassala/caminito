@@ -1,7 +1,8 @@
 //! The model of BlueZ (255): the adapters, devices and battery levels that `org.bluez`'s
 //! object manager publishes, followed as they appear, change and go, and the calls that act
-//! on them. It speaks gio's D-Bus, not zbus (ADR 0035), on the connection it's given: the
-//! system bus in a session, a private bus in the tests.
+//! on them. It speaks gio's D-Bus (ADR 0035) on the connection it's given: the
+//! system bus in a session, a private bus in the tests. There's no zbus in the workspace
+//! (the spec's "The two pieces").
 //!
 //! The settings window (257, 258) and the pairing agent (256) build on it. The Bluetooth
 //! applet reads the same objects itself, in C (ADR 0035).
@@ -15,6 +16,7 @@ use std::rc::{Rc, Weak};
 use gio::glib::variant::{ObjectPath, ToVariant};
 use gio::glib::{self, Variant};
 
+use crate::DOMAIN;
 use objects::{ADAPTER, DEVICE, Objects};
 
 /// BlueZ's well-known name.
@@ -27,11 +29,15 @@ const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 pub struct Adapter {
     /// Its object path, such as `/org/bluez/hci0`.
     pub path: String,
+    /// Its Bluetooth address, as `00:11:22:33:44:55`.
     pub address: String,
     /// The name other devices see, which the user can change.
     pub alias: String,
+    /// Whether it's powered on.
     pub powered: bool,
+    /// Whether other devices can find it.
     pub discoverable: bool,
+    /// Whether it's looking for devices.
     pub discovering: bool,
 }
 
@@ -43,6 +49,7 @@ pub struct Device {
     pub path: String,
     /// Its adapter's object path.
     pub adapter: String,
+    /// Its Bluetooth address, as `11:22:33:44:55:66`.
     pub address: String,
     /// The name the device gives itself, which it may not.
     pub name: Option<String>,
@@ -50,8 +57,11 @@ pub struct Device {
     pub alias: String,
     /// A freedesktop icon name, such as `audio-headset`.
     pub icon: Option<String>,
+    /// Whether it's paired with its adapter.
     pub paired: bool,
+    /// Whether it may connect without asking.
     pub trusted: bool,
+    /// Whether it's connected now.
     pub connected: bool,
     /// Its battery's percentage, when it reports one.
     pub battery: Option<u8>,
@@ -66,6 +76,7 @@ pub enum Error {
     Call {
         /// What was asked, as in "connect /org/bluez/hci0/dev_…".
         action: String,
+        /// The error it answered with.
         source: glib::Error,
     },
 }
@@ -95,6 +106,9 @@ struct Inner {
     objects: Objects,
     /// Whether BlueZ is on the bus and its objects have been read.
     ready: bool,
+    /// Counts BlueZ's arrivals and departures, so that the answer to a read sent before
+    /// BlueZ restarted doesn't replace what its new instance said since.
+    generation: u64,
     listeners: Vec<Listener>,
     /// Held for as long as the model lives: dropping them unsubscribes.
     subscriptions: Vec<gio::SignalSubscription>,
@@ -127,6 +141,7 @@ impl Bluez {
                 connection: connection.clone(),
                 objects: Objects::default(),
                 ready: false,
+                generation: 0,
                 listeners: Vec::new(),
                 subscriptions: Vec::new(),
                 unwatch: None,
@@ -157,11 +172,13 @@ impl Bluez {
             gio::BusNameWatcherFlags::NONE,
             move |_, _, _| {
                 if let Some(bluez) = upgrade(&appeared) {
-                    glib::spawn_future_local(async move { bluez.read_objects().await });
+                    let generation = bluez.next_generation();
+                    glib::spawn_future_local(async move { bluez.read_objects(generation).await });
                 }
             },
             move |_, _| {
                 if let Some(bluez) = upgrade(&vanished) {
+                    bluez.next_generation();
                     bluez.update(|inner| {
                         inner.objects.clear();
                         inner.ready = false;
@@ -269,7 +286,14 @@ impl Bluez {
             .await
     }
 
-    async fn read_objects(&self) {
+    /// Starts a new generation, which a read sent in an earlier one no longer belongs to.
+    fn next_generation(&self) -> u64 {
+        let mut inner = self.inner.borrow_mut();
+        inner.generation += 1;
+        inner.generation
+    }
+
+    async fn read_objects(&self, generation: u64) {
         let connection = self.inner.borrow().connection.clone();
         let answer = connection
             .call_future(
@@ -284,11 +308,12 @@ impl Bluez {
             )
             .await;
         match answer {
+            Ok(_) if self.inner.borrow().generation != generation => {}
             Ok(managed) => self.update(|inner| {
                 inner.objects.replace_all(&managed);
                 inner.ready = true;
             }),
-            Err(err) => glib::g_warning!("caminito-bluetooth", "can't read BlueZ's objects: {err}"),
+            Err(err) => glib::g_warning!(DOMAIN, "can't read BlueZ's objects: {err}"),
         }
     }
 

@@ -44,7 +44,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 
 ## Logging
 
-- Use `tracing`, not `log` or `println!`. `caminito --version` prints its answer, which isn't a log line, with `println!` (182). caminito-displays, which GLib's main loop runs, tells the user in its window and warns through `glib::g_warning!`. caminito-wallpaperd and the Wallpaper dialog, which GLib's main loop runs too, log through GLib's macros under their own domains, with the same levels.
+- Use `tracing`, not `log` or `println!`. `caminito --version` prints its answer, which isn't a log line, with `println!` (182). caminito-displays, which GLib's main loop runs, tells the user in its window and warns through `glib::g_warning!`. caminito-wallpaperd, the Wallpaper dialog and caminito-bluetooth, which GLib's main loop runs too, log through GLib's macros under their own domains, with the same levels.
 - Messages are lowercase phrases. Failures begin `can't …` and end with the error: `tracing::warn!("can't load the icon {}: {err}", name)`.
 - Use `warn!` for a degraded feature, `error!` for what stops Caminito, `info!` for a few start-up facts (the socket, `DISPLAY`), and `debug!` or `trace!` for the rest. Nothing in a per-frame path logs above `debug!`.
 

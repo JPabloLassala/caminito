@@ -23,6 +23,7 @@ const PATIENCE: Duration = Duration::from_secs(20);
 pub struct Mock {
     /// The bus's address, for a process started on it.
     pub address: String,
+    /// The test's connection to the bus.
     pub connection: gio::DBusConnection,
     context: glib::MainContext,
     daemon: Child,
@@ -221,6 +222,16 @@ impl Mock {
             "org.bluez.Adapter1",
             "RemoveDevice",
             &(object_path(device),).to_variant(),
+        );
+    }
+
+    /// Sets a property behind the program's back, as BlueZ changes one of its own accord.
+    pub fn set_property(&self, path: &str, interface: &str, name: &str, value: impl ToVariant) {
+        self.mock(
+            path,
+            "org.freedesktop.DBus.Properties",
+            "Set",
+            &(interface, name, value.to_variant()).to_variant(),
         );
     }
 
