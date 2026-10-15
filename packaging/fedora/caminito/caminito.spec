@@ -92,6 +92,8 @@ Requires:       mate-screensaver
 Requires:       mate-notification-daemon
 Requires:       mate-polkit
 Requires:       hicolor-icon-theme
+# The daemon caminito-bluetooth and the Bluetooth applet talk to (255, 259).
+Requires:       bluez
 # The session that `caminito --session` starts (08, 17). The patched and backported packages
 # are required at their baselines, so that a stock package never satisfies them (16, ADR
 # 0011, ADR 0029): marco, the panel, the session manager, the settings daemon, the control
@@ -116,8 +118,8 @@ settings, draws its themes and binds its keys, so that MATE runs on Wayland as i
 X11.
 
 This package has the compositor, caminito-displays, caminito-about, the wallpaper's drawer
-and Wallpaper dialog, the palette and locker helpers, and the "MATE on Caminito" session
-that display managers list.
+and Wallpaper dialog, caminito-bluetooth and the Bluetooth panel applet, the palette and
+locker helpers, and the "MATE on Caminito" session that display managers list.
 
 %prep
 %autosetup
@@ -138,7 +140,7 @@ cargo build --frozen --release
 %meson_install
 install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-about target/release/caminito-wallpaperd \
-    target/release/caminito-wallpaper -t %{buildroot}%{_bindir}
+    target/release/caminito-wallpaper target/release/caminito-bluetooth -t %{buildroot}%{_bindir}
 
 %check
 # The meson_test macro expands to more than one line, so it cannot follow dbus-run-session.
@@ -154,6 +156,7 @@ dbus-run-session -- cargo test --frozen --release
 %license COPYING
 %{_bindir}/caminito
 %{_bindir}/caminito-about
+%{_bindir}/caminito-bluetooth
 %{_bindir}/caminito-displays
 %{_bindir}/caminito-wallpaper
 %{_bindir}/caminito-wallpaperd
@@ -163,12 +166,14 @@ dbus-run-session -- cargo test --frozen --release
 %{_libdir}/mate-panel/libcaminito-power-applet.so
 %{_datadir}/caminito/
 %{_datadir}/applications/caminito-bluetooth.desktop
+%{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
 %{_datadir}/icons/hicolor/scalable/apps/caminito.svg
 %{_datadir}/mate-control-center/keybindings/50-caminito-*.xml
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoBluetoothApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoPowerApplet.mate-panel-applet
+%{_datadir}/mate-panel/layouts/caminito.layout
 %{_datadir}/wayland-sessions/mate-caminito.desktop
 %config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-bluetooth.desktop
 

@@ -9,6 +9,9 @@ Rules-Requires-Root: no
 # libwayland-client for the fixture's clients and the Xwayland the X11 tier spawns, and
 # python-dbusmock, the BlueZ caminito-bluetooth's tests run against (255).
 # libaudit-dev: Ubuntu's pam.pc requires audit's, and libpam0g-dev doesn't bring it.
+# libmate-panel-applet-dev has the applet library the Bluetooth applet is built against (259,
+# ADR 0035). It's the patched mate-panel's, at its baseline, which no stock version reaches
+# (ADR 0029): Ubuntu's .so.1 library is not the one the patched panel loads applets with.
 Build-Depends:
  debhelper-compat (= 13),
  rustup,
@@ -29,6 +32,7 @@ Build-Depends:
  libcanberra-dev,
  libgtk-session-lock-dev,
  libmate-desktop-dev,
+ libmate-panel-applet-dev (>= 1.29.0~git20260925.58ac6c1),
  libpam0g-dev,
  libaudit-dev,
  dbus-daemon,
@@ -50,7 +54,8 @@ Architecture: amd64
 # lock dialogs for caminito-locker, the notification daemon and polkit agent mate-session
 # autostarts, hicolor's directory for the logo, and mate-desktop's org.mate.background, which
 # caminito-wallpaperd reads on its first run, and glib-networking, GIO's TLS, which it fetches
-# a picture of the day with.
+# a picture of the day with, and bluez, the daemon caminito-bluetooth and the Bluetooth applet
+# talk to (255, 259).
 # The patched packages and marco join these in ticket 205, at versions no stock one has.
 Depends:
  ${shlibs:Depends},
@@ -68,6 +73,7 @@ Depends:
  mate-polkit,
  hicolor-icon-theme,
  mate-desktop-common,
+ bluez,
 Recommends:
  appmenu-gtk-module,
  caminito-vscode,
@@ -79,5 +85,6 @@ Description: Wayland compositor for the MATE desktop
  runs on Wayland as it does on X11.
  .
  This package has the compositor, caminito-displays, caminito-about, the
- wallpaper's drawer and Wallpaper dialog, the palette and locker helpers, and
- the "MATE on Caminito" session that display managers list.
+ wallpaper's drawer and Wallpaper dialog, the palette and locker helpers,
+ caminito-bluetooth and the Bluetooth panel applet, and the "MATE on Caminito"
+ session that display managers list.

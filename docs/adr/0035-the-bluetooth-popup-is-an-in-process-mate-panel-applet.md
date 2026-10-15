@@ -24,6 +24,13 @@ Caminito's own programs are Rust and GTK4 (ADR 0014). But on Wayland, mate-panel
 - The Power applet (2026-10-14, epic `power-applet`) follows the same shape for the same reasons: a thin C and GTK3 in-process applet that reads UPower, power-profiles-daemon and mate-session directly. It has no Rust half, because mate-power-preferences is its settings window. The two applets share no code until a third one appears.
 - The Thermal applet (2026-10-14, epic `thermal-applet`) follows the same shape: a thin C and GTK3 in-process applet that reads libsensors directly. It has no Rust half and no settings window, because it only watches. Setting fans' speeds would need a privileged helper, which is why that's left out.
 - With the Thermal applet as the third, the three applets share `helpers/caminito-applet-common/`. It's a static library with only the plumbing they all need: the popup window placed against the applet's button, left-click toggling it and losing focus closing it, and themed icons with fallbacks. Whichever applet is built first extracts it, and the others use it. Each applet's sources, and its logic over D-Bus or libsensors, stay its own.
+- **The applet is in a new session's top panel through a layout of Caminito's own** (CMN-105), not a carried mate-panel patch.
+  - `data/caminito.layout` is mate-panel's `default.layout` with the applet beside the notification area. `90_caminito.gschema.override` makes it the value of `org.mate.panel`'s `default-layout`.
+  - Both files are in the `caminito` package, with the applet that the layout names. So the layout never names an applet that is not installed, and no patch needs a rebase when the baseline moves.
+  - The cost: the layout is a copy of `default.layout`, kept in step by hand.
+  - A new user of X11 MATE on the same machine gets the layout too. The applet works there, and it hides itself when there is no adapter.
+  - Only a user with no panel settings gets the layout.
+  - The Power and Thermal applets, which follow, can add their lines to this file.
 - Rejected:
   - A StatusNotifierItem icon from the Rust process. It's cheap and all Rust, but its click gives a dbusmenu menu that the panel draws, with no switches, expanding rows or custom layout.
   - A layer-shell popup drawn by the Rust process. It works only under Caminito, needs a privileged client, and can't be placed against the icon, because the panel doesn't publish where the icon is.

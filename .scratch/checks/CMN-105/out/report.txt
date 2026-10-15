@@ -1,0 +1,48 @@
+	libmate-panel-applet-4.so.2 => not found
+== with-override
+dbus-daemon[74912]: [session uid=0 pid=74912 pidfd=5] Cannot set up inotify for '/root/.local/share/dbus-1/services': Permission denied
+default-layout: 'caminito'
+object-id-list before: @as []
+panel running
+toplevel-id-list: ['top', 'bottom']
+object-id-list: menu-bar notification-area bluetooth clock show-desktop window-list workspace-switcher
+  menu-bar: 'menu-bar' 'top' ''
+  notification-area: 'applet' 'top' 'NotificationAreaAppletFactory::NotificationArea'
+  bluetooth: 'applet' 'top' 'CaminitoBluetoothAppletFactory::CaminitoBluetoothApplet'
+  clock: 'applet' 'top' 'ClockAppletFactory::ClockApplet'
+  show-desktop: 'applet' 'bottom' 'WnckletFactory::ShowDesktopApplet'
+  window-list: 'applet' 'bottom' 'WnckletFactory::WindowListApplet'
+  workspace-switcher: 'applet' 'bottom' 'WnckletFactory::WorkspaceSwitcherApplet'
+** (mate-panel:74937): WARNING **: 16:39:31.589: Call can set time zone dbus method: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.mate.SettingsDaemon.DateTimeMechanism was not provided by any .service files
+** (mate-panel:74937): WARNING **: 16:39:31.609: Could not ask session manager if shut down is available: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files
+== without-override
+dbus-daemon[75167]: [session uid=0 pid=75167 pidfd=5] Cannot set up inotify for '/root/.local/share/dbus-1/services': Permission denied
+default-layout: 'default'
+object-id-list before: @as []
+panel running
+toplevel-id-list: ['top', 'bottom']
+object-id-list: menu-bar notification-area clock show-desktop window-list workspace-switcher
+  menu-bar: 'menu-bar' 'top' ''
+  notification-area: 'applet' 'top' 'NotificationAreaAppletFactory::NotificationArea'
+  clock: 'applet' 'top' 'ClockAppletFactory::ClockApplet'
+  show-desktop: 'applet' 'bottom' 'WnckletFactory::ShowDesktopApplet'
+  window-list: 'applet' 'bottom' 'WnckletFactory::WindowListApplet'
+  workspace-switcher: 'applet' 'bottom' 'WnckletFactory::WorkspaceSwitcherApplet'
+** (mate-panel:75192): WARNING **: 16:39:38.725: Call can set time zone dbus method: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.mate.SettingsDaemon.DateTimeMechanism was not provided by any .service files
+** (mate-panel:75192): WARNING **: 16:39:38.926: Could not ask session manager if shut down is available: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files
+== no-adapter
+dbus-daemon[75374]: [session uid=0 pid=75374 pidfd=5] Cannot set up inotify for '/root/.local/share/dbus-1/services': Permission denied
+default-layout: 'caminito'
+object-id-list before: @as []
+panel running
+toplevel-id-list: ['top', 'bottom']
+object-id-list: menu-bar notification-area bluetooth clock show-desktop window-list workspace-switcher
+  menu-bar: 'menu-bar' 'top' ''
+  notification-area: 'applet' 'top' 'NotificationAreaAppletFactory::NotificationArea'
+  bluetooth: 'applet' 'top' 'CaminitoBluetoothAppletFactory::CaminitoBluetoothApplet'
+  clock: 'applet' 'top' 'ClockAppletFactory::ClockApplet'
+  show-desktop: 'applet' 'bottom' 'WnckletFactory::ShowDesktopApplet'
+  window-list: 'applet' 'bottom' 'WnckletFactory::WindowListApplet'
+  workspace-switcher: 'applet' 'bottom' 'WnckletFactory::WorkspaceSwitcherApplet'
+** (mate-panel:75395): WARNING **: 16:39:45.975: Call can set time zone dbus method: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.mate.SettingsDaemon.DateTimeMechanism was not provided by any .service files
+** (mate-panel:75395): WARNING **: 16:39:46.150: Could not ask session manager if shut down is available: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files

@@ -94,6 +94,19 @@ for entry in share/applications/caminito-bluetooth.desktop \
   desktop-file-validate "$installed"
 done
 
+# The Bluetooth applet's files, and the default panel's (CMN-105): the layout and the
+# override that makes it the default, which are in the normal XDG directories too.
+step "the Bluetooth applet's files and the default panel's"
+for entry in lib/mate-panel/libcaminito-bluetooth-applet.so \
+  share/mate-panel/applets/org.mate.panel.CaminitoBluetoothApplet.mate-panel-applet \
+  share/mate-panel/layouts/caminito.layout \
+  share/glib-2.0/schemas/90_caminito.gschema.override; do
+  if [ -z "$(find target/meson-destdir -path "*/$entry")" ]; then
+    echo "$entry isn't installed" >&2
+    exit 1
+  fi
+done
+
 # The headless tier renders with pixman, so it needs no GPU or EGL, and the X11 tier runs
 # with it. caminito's tests get a private session bus (14), which reads the service files a
 # test writes below HOME.
