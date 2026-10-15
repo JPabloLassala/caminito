@@ -296,6 +296,11 @@ pub struct Caminito {
     pub(crate) overview: Vec<Overview>,
     /// The Overview's timing, logged for comparing its openings.
     pub(crate) overview_timing: crate::overview::timing::Timing,
+    /// The size a window the Overview's drag takes is drawn at, on its way to a cell's
+    /// scale or back (249).
+    pub(crate) overview_shrink: Option<crate::overview::drag::Shrink>,
+    /// A window dropped in the Overview, on its way to where it's drawn next (249).
+    pub(crate) overview_drop: Option<crate::overview::drag::Dropping>,
     /// The compositor's side of the window menu while it's open (161).
     pub(crate) window_menu: Option<OpenWindowMenu>,
     /// The cursor the client with pointer focus asked for.
@@ -1011,6 +1016,8 @@ impl Caminito {
             workspace_popup: None,
             overview: Vec::new(),
             overview_timing: Default::default(),
+            overview_shrink: None,
+            overview_drop: None,
             window_menu: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,

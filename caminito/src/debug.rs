@@ -319,6 +319,8 @@ struct OverviewDump {
     selected: Option<u64>,
     /// The left button held on a window, and the drag it became (245).
     drag: Option<OverviewDragDump>,
+    /// A dropped window on its way to where it's drawn next (249).
+    drop: Option<OverviewDropDump>,
     /// What it has on each output (246), the selection's first, then in the order of the
     /// outputs.
     outputs: Vec<OverviewOutputDump>,
@@ -360,8 +362,20 @@ struct OverviewDragDump {
     /// The name of the output the pointer is on, while it's a drag (246).
     onto: Option<String>,
     /// Where the window is drawn under the pointer, from the top left corner of the output
-    /// the selection is on, while it's a drag.
+    /// the selection is on, while it's a drag: at its layout size, or on its way to a
+    /// cell's scale or back (249).
     rect: Option<RectDump>,
+}
+
+#[derive(Serialize)]
+struct OverviewDropDump {
+    window: u64,
+    /// Where it's drawn now, from the top left corner of the output the selection is on.
+    rect: RectDump,
+    /// Whether it goes to a cell's picture, `cell`, or to its slot in a layout, `slot`.
+    to: &'static str,
+    /// Where it goes, from the same corner.
+    target: RectDump,
 }
 
 #[derive(Serialize)]
@@ -371,6 +385,9 @@ struct OverviewCellDump {
     rect: RectDump,
     /// Whether it's the active workspace's, which is marked.
     active: bool,
+    /// The windows its picture draws now, bottom to top: not a dropped one on its way
+    /// there (249).
+    windows: Vec<u64>,
 }
 
 #[derive(Serialize)]
@@ -863,6 +880,19 @@ impl Caminito {
                         .and_then(|laid_out| self.overview_dragged(laid_out))
                         .map(|dragged| dragged.rect.into()),
                 }),
+                drop: laid_out.and_then(|laid_out| {
+                    let (dropping, target) = self.overview_dropping_with_target(laid_out)?;
+                    let drop = self.overview_drop?;
+                    Some(OverviewDropDump {
+                        window: dropping.id.0,
+                        rect: dropping.rect.into(),
+                        to: match drop.cell {
+                            Some(_) => "cell",
+                            None => "slot",
+                        },
+                        target: target.into(),
+                    })
+                }),
                 outputs,
                 on,
             })
@@ -1174,6 +1204,11 @@ impl Caminito {
                     workspace,
                     rect: (*cell).into(),
                     active: workspace == laid_out.active,
+                    windows: self
+                        .overview_pictured(laid_out, workspace)
+                        .iter()
+                        .map(|id| id.0)
+                        .collect(),
                 })
                 .collect()
         });

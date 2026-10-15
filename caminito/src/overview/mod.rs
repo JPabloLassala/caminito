@@ -34,9 +34,16 @@
 //! layout onto another output: policy hears which output the pointer is on, and the
 //! dragged window is drawn on each output it's over.
 //!
+//! Over a bar, the dragged window shrinks to the scale of its cells, and grows back off it
+//! (249). Dropped, it eases from under the pointer to where it's drawn next: its place in
+//! a cell's picture, or its slot in a layout. Policy moves it at the release, and only the
+//! drawing takes time: the Overview closing, a switch to the workspace it went to or a
+//! press on it cuts the drop to its end.
+//!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
 pub(crate) mod bar;
+pub(crate) mod drag;
 pub(crate) mod draw;
 pub(crate) mod layout;
 pub(crate) mod timing;
@@ -51,9 +58,10 @@ use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use self::bar::Bar;
+use self::drag::{Aim, Dropping, Shrink};
 use self::draw::Label;
 use self::layout::Layout;
 use self::transition::{Heading, Transition};
@@ -264,6 +272,7 @@ impl Caminito {
                 .overview_cell_at(location)
                 .map(|(_, workspace)| workspace);
             self.policy.overview_pointer_on(location, onto, cell);
+            self.aim_overview_drag(location);
         }
     }
 
@@ -274,26 +283,209 @@ impl Caminito {
             .is_some_and(|open| open.drag.is_some())
     }
 
-    /// The window that a drag takes (245), drawn under the pointer: at its place in the
-    /// layout of its own output, as far from it as the pointer is from where the button
-    /// went down. Its rectangle is from the top left corner of `open`'s output, which it
-    /// may be over or not (246). None while there's no drag, and for one past the
-    /// threshold not yet.
+    /// The window that a drag takes (245), drawn under the pointer, with the point it was
+    /// grabbed by under the pointer: at its size in the layout of its own output, or on its
+    /// way to a cell's scale or back from it (249). Its rectangle is from the top left
+    /// corner of `open`'s output, which it may be over or not (246). None while there's no
+    /// drag, and for one past the threshold not yet.
     pub(crate) fn overview_dragged(&self, open: &Overview) -> Option<DrawnWindow> {
-        let drag = self.policy.overview()?.drag.filter(|drag| drag.dragging)?;
-        let own = self
-            .overview
-            .iter()
-            .find(|own| own.laid.windows.contains(&drag.window))?;
-        let place = own.laid.windows.iter().position(|id| *id == drag.window)?;
-        let slot = own.laid.layout.slots.get(place)?;
-        let moved = (drag.pointer - drag.from).to_i32_round();
-        let shift = output_geometry(&own.output).loc - output_geometry(&open.output).loc;
+        let (id, rect) = self.overview_dragged_global(self.now())?;
         Some(DrawnWindow {
-            id: drag.window,
-            rect: Rectangle::new(slot.window.loc + moved + shift, slot.window.size),
+            id,
+            rect: local(rect, &open.output),
             alpha: 1.0,
         })
+    }
+
+    /// The window that a drag takes and where it's drawn at `now`, in global logical
+    /// coordinates, as `overview_dragged` has it.
+    fn overview_dragged_global(
+        &self,
+        now: Duration,
+    ) -> Option<(WindowId, Rectangle<i32, Logical>)> {
+        let drag = self.policy.overview()?.drag.filter(|drag| drag.dragging)?;
+        let slot = self.overview_slot(drag.window)?;
+        let (grab, size) = match self.overview_shrink_of(drag.window) {
+            Some(shrink) => {
+                let to = self.overview_aim_size(shrink.aim, drag.window, slot.size);
+                (shrink.grab, shrink.size(to, now))
+            }
+            None => (drag::grab_point(slot, drag.from), slot.size.to_f64()),
+        };
+        Some((drag.window, drag::about_grab(drag.pointer, grab, size)))
+    }
+
+    /// The size of window `id` as a drag takes it (249).
+    fn overview_shrink_of(&self, id: WindowId) -> Option<Shrink> {
+        self.overview_shrink.filter(|shrink| shrink.window == id)
+    }
+
+    /// Window `id`'s place in the layout of the output that lists it, in global logical
+    /// coordinates.
+    fn overview_slot(&self, id: WindowId) -> Option<Rectangle<i32, Logical>> {
+        self.overview.iter().find_map(|open| {
+            let place = open.laid.windows.iter().position(|listed| *listed == id)?;
+            let slot = open.laid.layout.slots.get(place)?.window;
+            Some(Rectangle::new(
+                slot.loc + output_geometry(&open.output).loc,
+                slot.size,
+            ))
+        })
+    }
+
+    /// The size window `id` is drawn at for `aim` (249), with `layout` its size in the
+    /// layout: that one, or its real size times a cell's scale.
+    fn overview_aim_size(
+        &self,
+        aim: Aim,
+        id: WindowId,
+        layout: Size<i32, Logical>,
+    ) -> Size<f64, Logical> {
+        match aim {
+            Aim::Layout => layout.to_f64(),
+            Aim::Scale(scale) => {
+                let real = self.policy.frame_rect(id).unwrap_or_default().size.to_f64();
+                Size::from((real.w * scale, real.h * scale))
+            }
+        }
+    }
+
+    /// Aims the dragged window's size at the pointer's `location` (249): a cell's scale over
+    /// the row of cells of an output's bar, and its layout size anywhere else. Its size
+    /// eases there from where it's drawn, with `overview-animation` on. The point it's
+    /// grabbed by is kept from the drag's start, whatever the layout does after.
+    fn aim_overview_drag(&mut self, location: Point<f64, Logical>) {
+        let now = self.now();
+        let drag = self.policy.overview().and_then(|open| open.drag);
+        let Some(drag) = drag.filter(|drag| drag.dragging) else {
+            self.overview_shrink = None;
+            return;
+        };
+        let Some(slot) = self.overview_slot(drag.window) else {
+            return;
+        };
+        let aim = match self.overview_at(location) {
+            Some((open, at)) if open.bar.over_cells(at) => {
+                let output = output_geometry(&open.output).size;
+                Aim::Scale(drag::cell_scale(open.bar.cells[0], output))
+            }
+            _ => Aim::Layout,
+        };
+        let shrink = self.overview_shrink_of(drag.window).unwrap_or_else(|| {
+            let grab = drag::grab_point(slot, drag.from);
+            Shrink::new(drag.window, grab, slot.size.to_f64(), now)
+        });
+        let sizes = |aim| self.overview_aim_size(aim, drag.window, slot.size);
+        let aimed = shrink.aimed(aim, sizes, now, self.settings.overview_animation);
+        if aimed != shrink {
+            self.queue_redraw_all();
+        }
+        self.overview_shrink = Some(aimed);
+    }
+
+    /// The drag ended with the window drawn at `dropped`, in global logical coordinates, if
+    /// it was a drag: policy has done what the drop does, and the layouts are as it left
+    /// them. With `overview-animation` on the window eases from there to where it's drawn
+    /// next (249): its slot in the layout that lists it, or, listed in none, its place in
+    /// the picture of its workspace's cell on its output.
+    fn overview_dropped(&mut self, dropped: Option<(WindowId, Rectangle<i32, Logical>)>) {
+        self.overview_shrink = None;
+        let Some((id, from)) = dropped.filter(|_| self.settings.overview_animation) else {
+            return;
+        };
+        let listed = self
+            .overview
+            .iter()
+            .any(|open| open.laid.windows.contains(&id));
+        let cell = match listed {
+            true => None,
+            false => {
+                let output = self.policy.output_showing(id);
+                let workspace = self.policy.workspace_of(id);
+                let Some(cell) = output.zip(workspace) else {
+                    return;
+                };
+                Some(cell)
+            }
+        };
+        self.overview_drop = Some(Dropping::new(id, from, cell, self.now()));
+        self.queue_redraw_all();
+    }
+
+    /// Where a dropped window goes (249), in global logical coordinates: its slot in the
+    /// layout, or its real rectangle scaled into its workspace's cell, as the cell's
+    /// picture draws it. None once it's in neither.
+    fn overview_drop_to(&self, drop: &Dropping) -> Option<Rectangle<i32, Logical>> {
+        let Some((output, workspace)) = drop.cell else {
+            return self.overview_slot(drop.window);
+        };
+        let open = self
+            .overview
+            .iter()
+            .find(|open| output_id(&open.output) == output)?;
+        let cell = *open.bar.cells.get(workspace)?;
+        let geometry = output_geometry(&open.output);
+        let frame = self.policy.frame_rect(drop.window)?;
+        let rect = drag::scaled_into(local(frame, &open.output), cell, geometry.size);
+        Some(Rectangle::new(rect.loc + geometry.loc, rect.size))
+    }
+
+    /// The drop on its way at `now` (249).
+    fn overview_drop_at(&self, now: Duration) -> Option<Dropping> {
+        self.overview_drop.filter(|drop| !drop.is_over(now))
+    }
+
+    /// The window a drop is on its way with at `now` (249), which the layouts and the
+    /// cells' pictures leave out until it's there.
+    pub(crate) fn overview_dropping_at(&self, now: Duration) -> Option<WindowId> {
+        self.overview_drop_at(now).map(|drop| drop.window)
+    }
+
+    /// The windows the picture of `open`'s cell of `workspace` draws now, bottom to top:
+    /// not a dropped one on its way there (249).
+    pub(crate) fn overview_pictured(&self, open: &Overview, workspace: usize) -> Vec<WindowId> {
+        let dropping = self.overview_dropping_at(self.now());
+        let windows = open.cell_windows.get(workspace).into_iter().flatten();
+        windows
+            .copied()
+            .filter(|id| dropping != Some(*id))
+            .collect()
+    }
+
+    /// The dropped window on its way (249), from the top left corner of `open`'s output.
+    pub(crate) fn overview_dropping(&self, open: &Overview) -> Option<DrawnWindow> {
+        self.overview_dropping_with_target(open)
+            .map(|(dropping, _)| dropping)
+    }
+
+    /// The dropped window on its way (249), and where it goes, from the top left corner of
+    /// `open`'s output.
+    pub(crate) fn overview_dropping_with_target(
+        &self,
+        open: &Overview,
+    ) -> Option<(DrawnWindow, Rectangle<i32, Logical>)> {
+        let now = self.now();
+        let drop = self.overview_drop_at(now)?;
+        let to = self.overview_drop_to(&drop)?;
+        let dropping = DrawnWindow {
+            id: drop.window,
+            rect: local(drop.rect(to, now), &open.output),
+            alpha: 1.0,
+        };
+        Some((dropping, local(to, &open.output)))
+    }
+
+    /// Whether the dragged window's size or a drop is on its way at `now` (249).
+    fn overview_drag_runs(&self, now: Duration) -> bool {
+        let shrinks = self.overview_shrink.is_some_and(|shrink| shrink.runs(now));
+        shrinks || self.overview_dropping_at(now).is_some()
+    }
+
+    /// Cuts a drop to its end (249).
+    fn end_overview_drop(&mut self) {
+        if self.overview_drop.take().is_some() {
+            self.queue_redraw_all();
+        }
     }
 
     /// The workspace whose cell of `output`'s bar a drag of the Overview's is on (245),
@@ -355,6 +547,22 @@ impl Caminito {
                 self.lay_out_overview(output, on, selected, transition, old, &mut labels);
             changed |= !fresh;
             self.overview.push(laid_out);
+        }
+        // A switch to the workspace a window was dropped on cuts its drop to its end (249).
+        // So does the window's going, or a switch away from its slot's workspace: it's in no
+        // layout and no picture then, and has nowhere to go.
+        let cut = self.overview_drop.is_some_and(|drop| {
+            let switched = drop.cell.is_some_and(|(output, workspace)| {
+                self.policy.active_workspace_on(output) == workspace
+            });
+            switched || self.overview_drop_to(&drop).is_none()
+        });
+        if cut {
+            self.end_overview_drop();
+        }
+        // A drag that ended, with its window's going or a switch, takes its size with it.
+        if !open.drag.is_some_and(|drag| drag.dragging) {
+            self.overview_shrink = None;
         }
         if starts {
             let (drawn, kept) = labels;
@@ -498,6 +706,9 @@ impl Caminito {
     /// on each output that's still there, with the transition on, or goes at once. One
     /// that's closing already goes on, and the lock ends it.
     fn overview_closed(&mut self, now: Duration) {
+        // Its closing cuts a drop to its end (249).
+        self.overview_shrink = None;
+        self.overview_drop = None;
         let outputs = &self.outputs;
         let before = self.overview.len();
         self.overview
@@ -528,16 +739,36 @@ impl Caminito {
 
     /// When the running transition is over: `deadlines` then draws the Overview at rest
     /// (174).
+    ///
+    /// So is a dragged window's size or a drop's (249).
     pub(crate) fn overview_transition_deadline(&self) -> Option<Duration> {
+        let now = self.now();
         let open = self.overview.first()?;
-        open.transition.map(|transition| transition.end())
+        let transition = open.transition.map(|transition| transition.end());
+        let shrink = self.overview_shrink.filter(|shrink| shrink.runs(now));
+        let drop = self.overview_drop.map(|drop| drop.end());
+        [transition, shrink.map(|shrink| shrink.end()), drop]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// Ends the transition if it's over at `now`, and draws the outputs at rest: the
     /// Overview open, or gone once it's closed. While it runs, its outputs are drawn again
     /// at each of their frames (`State::redraw_queued_outputs`). An opening held for its
     /// limit starts its clock instead.
+    ///
+    /// A dragged window that's at its size, or a drop that's over (249), is drawn at rest.
     pub(crate) fn overview_transition_elapse(&mut self, now: Duration) {
+        if let Some((shrink, arrived)) = self.overview_shrink.map(|shrink| shrink.settled(now)) {
+            self.overview_shrink = Some(shrink);
+            if arrived {
+                self.queue_redraw_all();
+            }
+        }
+        if self.overview_drop.is_some_and(|drop| drop.is_over(now)) {
+            self.end_overview_drop();
+        }
         let Some(open) = self.overview.first() else {
             return;
         };
@@ -597,11 +828,13 @@ impl Caminito {
         self.overview_timing.started();
     }
 
-    /// Whether the Overview's transition runs on `output` at `now`.
+    /// Whether the Overview's transition runs on `output` at `now`, or a dragged window's
+    /// size or a drop does there (249).
     pub(crate) fn overview_transition_on(&self, output: &Output, now: Duration) -> bool {
         let open = self.overview_on(output);
-        open.and_then(|open| open.transition)
-            .is_some_and(|transition| !transition.is_over(now))
+        let transition = open.and_then(|open| open.transition);
+        let runs = transition.is_some_and(|transition| !transition.is_over(now));
+        runs || (open.is_some() && self.overview_drag_runs(now))
     }
 
     /// `windows` of `workspace` on `output` laid out in `area`, with `selected` selected,
@@ -728,9 +961,12 @@ impl Caminito {
         let keysyms = press_keysyms(keysym);
         let binding = self.settings.bindings.binding_for(mods, &keysyms);
         let sym = keysym.raw_latin_sym_or_raw_current_sym();
-        // Esc during a drag ends the drag, and the Overview stays open (245).
+        // Esc during a drag ends the drag, and the Overview stays open (245). The window
+        // eases back to its slot (249).
+        let dragged = self.overview_dragged_global(self.now());
         if sym == Some(Keysym::Escape) && self.policy.overview_end_drag() {
             self.refresh_overview();
+            self.overview_dropped(dragged);
             return Some(FilterResult::Intercept(None));
         }
         let closes =
@@ -797,6 +1033,11 @@ impl Caminito {
         self.policy.overview_select(direction, &places);
         self.refresh_overview();
     }
+}
+
+/// `rect`, in global logical coordinates, from `output`'s top left corner.
+fn local(rect: Rectangle<i32, Logical>, output: &Output) -> Rectangle<i32, Logical> {
+    Rectangle::new(rect.loc - output_geometry(output).loc, rect.size)
 }
 
 /// Whether `action` is one of the workspace bindings that switch the Active output's
@@ -928,8 +1169,10 @@ impl State {
             }
             caminito.overview_motion(location);
             let now = caminito.now();
+            let dragged = caminito.overview_dragged_global(now);
             caminito.policy.overview_release(now);
             caminito.refresh_overview();
+            caminito.overview_dropped(dragged);
             caminito.suppressed_buttons.remove(&button);
             return true;
         }
@@ -951,7 +1194,21 @@ impl State {
             _ => None,
         });
         let cell = caminito.overview_cell_at(location);
-        match caminito.overview_window_at(location) {
+        let window = caminito.overview_window_at(location);
+        // A press on a dropped window, at its slot or where it's drawn on its way, cuts the
+        // drop to its end (249).
+        let now = caminito.now();
+        let dropping = caminito.overview_dropping_at(now).filter(|id| {
+            let drawn = caminito.overview_at(location).and_then(|(open, at)| {
+                let drawn = caminito.overview_dropping(open)?;
+                Some(drawn.rect.to_f64().contains(at))
+            });
+            window == Some(*id) || drawn == Some(true)
+        });
+        if dropping.is_some() {
+            caminito.end_overview_drop();
+        }
+        match window {
             _ if is_shortcut => caminito.policy.close_overview(),
             // As the binding's key does (244): the Workspace popup doesn't show under the
             // Overview, and a drag whose window the switch takes away ends (245).

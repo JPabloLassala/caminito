@@ -85,7 +85,11 @@ pub(super) fn global(output: &Output, local: Point<i32, Logical>) -> Point<i32, 
 
 /// Where the layout on `output` draws `window`, from the output's top left corner.
 #[track_caller]
-fn place_on(f: &Fixture, output: &Output, window: ClientWindow) -> Rectangle<i32, Logical> {
+pub(super) fn place_on(
+    f: &Fixture,
+    output: &Output,
+    window: ClientWindow,
+) -> Rectangle<i32, Logical> {
     let id = f.pid(window).0;
     let windows = on(f, output)["windows"].as_array().unwrap().clone();
     let listed = windows.iter().find(|listed| listed["window"] == id);

@@ -874,7 +874,7 @@ fn no_client_sees_the_middle_click() {
 // Windows that come and go (242).
 
 /// Has a window's client destroy it, and waits until Caminito no longer manages it.
-fn destroy(f: &mut Fixture, window: ClientWindow) {
+pub(super) fn destroy(f: &mut Fixture, window: ClientWindow) {
     match window {
         ClientWindow::Xdg(id, xdg) => {
             f.client(id).destroy_window(xdg);
