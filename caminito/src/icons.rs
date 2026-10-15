@@ -82,7 +82,10 @@ impl IconLookup {
     /// from what an earlier load decoded if it's loaded already.
     pub fn load(&mut self, path: &Path, size: i32) -> Option<ImageSurface> {
         let key = (path.to_owned(), size);
-        let loaded = self.loaded.entry(key).or_insert_with(|| load_icon(path, size));
+        let loaded = self
+            .loaded
+            .entry(key)
+            .or_insert_with(|| load_icon(path, size));
         loaded.clone()
     }
 

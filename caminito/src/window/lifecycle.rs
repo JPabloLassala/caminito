@@ -187,6 +187,8 @@ impl Caminito {
         let pointer = self.seat.get_pointer().unwrap().current_location();
         self.policy.set_pointer(pointer);
         self.policy.map_window_with(mapped, states, now);
+        // Shown, for the first time or again after its client hid it (251).
+        self.open_close_animations.window_mapped(id);
         id
     }
 
