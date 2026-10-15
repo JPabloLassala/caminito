@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds one of the patched or backported MATE packages for Fedora, from its spec in
-# packaging/fedora/<component>/ (CMN-170). It runs on the Fedora machine.
+# Builds one of the Fedora packages of Caminito, from its spec in packaging/fedora/<component>/:
+# the patched or backported MATE packages (CMN-170), and caminito itself (CMN-171). It runs on
+# the Fedora machine.
 #
 #   packaging/fedora/build <component> [rpmbuild option…]
 #
@@ -10,9 +11,10 @@
 # packaging/patches/<component>/ and the build patches of its fedora/, which are copied when
 # the package is built and aren't committed beside the spec (ADR 0030); and the upstream
 # tarballs, which spectool fetches and which are checked against `sources`, as Fedora's
-# dist-git checks them; and, for a component with no `sources` file, which is Caminito's own,
-# the checkout's committed HEAD. Then it runs rpmbuild -ba with the other arguments. Install the spec's
-# build dependencies first: sudo dnf builddep packaging/fedora/<component>/<component>.spec
+# dist-git checks them. A component with no `sources` file is Caminito's own: its source is
+# the checkout's committed HEAD, through `git archive`. Then it runs rpmbuild -ba with the
+# other arguments. Install the spec's build dependencies first:
+# sudo dnf builddep packaging/fedora/<component>/<component>.spec
 set -euo pipefail
 
 component=${1:?usage: packaging/fedora/build <component> [rpmbuild option…]}

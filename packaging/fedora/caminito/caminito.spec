@@ -4,17 +4,14 @@
 # packaging/fedora/build makes the tarball with `git archive` and defines `caminito_count`
 # and `caminito_commit`, which are the version's. Build the patched packages first (CMN-170):
 # this one needs their -devel packages, and requires them.
-%global count %{?caminito_count}%{!?caminito_count:0}
-%global commit %{?caminito_commit}%{!?caminito_commit:0000000000000000000000000000000000000000}
-%global shortcommit %(c=%{commit}; echo ${c:0:7})
+%global rev_count %{?caminito_count}%{!?caminito_count:0}
+%global rev_commit %{?caminito_commit}%{!?caminito_commit:0000000000000000000000000000000000000000}
+%global shortcommit %(c=%{rev_commit}; echo ${c:0:7})
 
 # The workspace's tests, on a private session bus, as the PKGBUILD's check() runs them. They
 # are off by default: caminito-theme's goldens and four keymap tests fail on aarch64, as on
 # master. `rpmbuild --with tests` runs them.
 %bcond tests 0
-
-# The release build has no debug symbols to split out.
-%global debug_package %{nil}
 
 # The patched and backported packages' baselines, from their specs (ADR 0011). A stock
 # package never satisfies them: Fedora's are 1.28.
@@ -32,7 +29,7 @@
 %global power_manager_version 1.28.1
 
 Name:           caminito
-Version:        0.0~r%{count}.g%{shortcommit}
+Version:        0.0~r%{rev_count}.g%{shortcommit}
 Release:        1%{?dist}
 Summary:        Wayland compositor for the MATE desktop
 License:        GPL-2.0-or-later
@@ -173,6 +170,5 @@ dbus-run-session -- cargo test --frozen --release
 %config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-bluetooth.desktop
 
 %changelog
-* Thu Oct 15 2026 jpablo <jpablolassala@gmail.com> - 0.0~r0.g0000000-1
-- Built from the checkout's committed HEAD. packaging/fedora/build sets this entry's version
-  to the commit's.
+* Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - %{version}-1
+- Built from the checkout's committed HEAD (CMN-171)
