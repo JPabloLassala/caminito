@@ -144,7 +144,7 @@ install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-wallpaper -t %{buildroot}%{_bindir}
 
 %check
-# %meson_test expands to more than one line, so it can't follow `dbus-run-session --`.
+# The meson_test macro expands to more than one line, so it cannot follow dbus-run-session.
 dbus-run-session -- meson test -C %{_vpath_builddir} --no-rebuild --print-errorlogs
 %if %{with tests}
 export CARGO_TARGET_DIR=target
