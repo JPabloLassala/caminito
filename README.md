@@ -171,6 +171,24 @@ while that copy is there. So remove the copies whenever a patch changes, or make
 rm /path/to/caminito/packaging/arch/<pkgname>-caminito/*.patch
 ```
 
+For one machine with Fedora Asahi Remix 45, the same components, and marco 1.29.1, have
+Fedora specs in [packaging/fedora/](packaging/fedora/). Fedora isn't a supported distribution.
+Each spec is Fedora's own, with the smallest diff: a package keeps Fedora's names and
+subpackages, its `Version` is the baseline, and its `Release` is `0.caminito<n>`. The specs
+take the same shared patches from packaging/patches/, and a build patch that only Fedora needs
+is in the component's `fedora/`, as msd's revert is. `packaging/fedora/build <component>`, run
+on the Fedora machine after `sudo dnf builddep` on the spec, copies the patches beside the
+spec's other sources, fetches and checks the tarballs, and runs `rpmbuild -ba`:
+
+```sh
+sudo dnf builddep packaging/fedora/mate-panel/mate-panel.spec
+packaging/fedora/build mate-panel
+```
+
+Build marco, mate-panel and mate-settings-daemon first, and install their RPMs: the others
+build against them. Fedora's mate-panel is 1.28, so the panel's `mate-panel-libs` has the
+1.28.4 applet library too, as on Arch.
+
 Each series applies to a baseline: an upstream tag, or a pinned commit where the component has
 no tag. To move a component to a new baseline, rebase its series:
 
