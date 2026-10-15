@@ -20,4 +20,4 @@ On Ubuntu 26.04, the first Debian target (`debian-packaging`), Debian splits eac
 - The pins do on apt what ADR 0011's missing `replaces` does on pacman: nothing switches between stock and patched by itself.
 - When Ubuntu's version passes a baseline, the pin still holds the patched package, and moving the baseline is a manual rebase, as on Arch.
 - Rejected: `-caminito` names with `Provides`, `Conflicts` and `Replaces`, as on Arch. That needs a renamed twin of every split binary package, and a versioned `Provides` for each to satisfy versioned dependencies on the stock names.
-- The pin was first written `version *caminito*`, which apt 3.2 on Ubuntu 26.04 matched to no version, though it matches `1.29*`. Ticket 195 found it and made it the regex.
+- The pin was first written `version *caminito*`, which apt 3.2 on Ubuntu 26.04 matched to no version, though it matches `1.29*`. Ticket 195 found it and made it the regex, and 200 found it too, independently.

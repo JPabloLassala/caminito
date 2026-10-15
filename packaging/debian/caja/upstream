@@ -1,0 +1,7 @@
+# Where tools/debian-build takes this package's source: upstream's git, at the commit of tag
+# v1.28.0, with its submodules, and the carried patches of packaging/patches/<patches>/
+# (ADR 0030). rules unpacks resolute's mate-submodules-source over the submodule, as Ubuntu's
+# does.
+git=https://github.com/mate-desktop/caja.git
+commit=27fdb849de02f551eab46eb78f48065da9d1d1ec
+patches=caja
