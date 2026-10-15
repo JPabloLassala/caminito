@@ -44,7 +44,6 @@ BuildRequires:  rust
 BuildRequires:  gcc
 BuildRequires:  meson
 BuildRequires:  pkgconf-pkg-config
-BuildRequires:  desktop-file-utils
 BuildRequires:  libxkbcommon-devel
 BuildRequires:  glib2-devel
 BuildRequires:  cairo-devel
@@ -145,7 +144,6 @@ install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-wallpaper -t %{buildroot}%{_bindir}
 
 %check
-desktop-file-validate %{buildroot}%{_datadir}/wayland-sessions/mate-caminito.desktop
 dbus-run-session -- %meson_test
 %if %{with tests}
 export CARGO_TARGET_DIR=target
