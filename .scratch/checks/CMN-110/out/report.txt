@@ -1,0 +1,10 @@
+light: before the window, Discoverable is (<false>,)
+light: with the window open, Discoverable is (<true>,)
+light: MX Master 3 renamed and left for another row, its Alias is (<'My mouse'>,)
+light: after Ctrl+W, Discoverable is (<false>,)
+light: caminito-bluetooth still running
+dark: before the window, Discoverable is (<false>,)
+dark: with the window open, Discoverable is (<true>,)
+dark: after Forget was cancelled, MX Master 3 is still paired: (<true>,)
+dark: after Ctrl+W, Discoverable is (<false>,)
+dark: caminito-bluetooth still running

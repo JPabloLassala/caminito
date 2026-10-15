@@ -11,8 +11,9 @@ publish = false
 # two pieces"), and names no toolkit. Only the binary uses GTK.
 [dependencies]
 gio = "0.22.10"
-# The application and its window, without libadwaita (ADR 0014).
-gtk.workspace = true
+# The application and its window, without libadwaita (ADR 0014). v4_12: the Forget
+# confirmation's AlertDialog, CSS from a string, and emptying the device list.
+gtk = { workspace = true, features = ["v4_12"] }
 
 [dev-dependencies]
 # The fake sysfs and rfkill device of SystemRfkill's tests.

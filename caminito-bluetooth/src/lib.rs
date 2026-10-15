@@ -3,8 +3,9 @@
 //!
 //! The library holds what names no toolkit: [`bluez`], the model of BlueZ's adapters and
 //! devices over gio's D-Bus, [`agent`], the pairing agent that answers BlueZ's requests
-//! through dialogs the binary draws, [`rfkill`], the soft block that off means, and [`switch`],
-//! which turns all of Bluetooth on and off with them. The integration tests drive them
+//! through dialogs the binary draws, [`rfkill`], the soft block that off means, [`switch`],
+//! which turns all of Bluetooth on and off with them, and [`settings`], the settings window's
+//! state (257). The integration tests drive them
 //! against python-dbusmock's `bluez5` template on a private bus. The application and its
 //! window are the binary's, the one part that uses GTK.
 
@@ -16,4 +17,5 @@ pub const DOMAIN: &str = "caminito-bluetooth";
 pub mod agent;
 pub mod bluez;
 pub mod rfkill;
+pub mod settings;
 pub mod switch;
