@@ -13,13 +13,13 @@ use gtk::gio::prelude::*;
 use gtk::{gio, glib};
 
 /// Caminito's name on the session bus, its object and its interface (ADR 0002).
-const NAME: &str = "org.mate.Caminito";
-const PATH: &str = "/org/mate/Caminito";
+pub(crate) const NAME: &str = "org.mate.Caminito";
+pub(crate) const PATH: &str = "/org/mate/Caminito";
 const PRIMARY_OUTPUT: &str = "PrimaryOutput";
 
 /// How long a blocking call to Caminito may take, in milliseconds. Caminito answers from its
 /// event loop, within a frame.
-const NOW_TIMEOUT: i32 = 1000;
+pub(crate) const NOW_TIMEOUT: i32 = 1000;
 
 /// Why Caminito didn't do what the window asked.
 #[derive(Debug)]
@@ -164,6 +164,12 @@ impl Compositor {
         Compositor {
             inner: Rc::new(inner),
         }
+    }
+
+    /// `org.mate.Caminito`, with its properties cached, while there's a session bus. The
+    /// demo has none.
+    pub(crate) fn caminito(&self) -> Option<gio::DBusProxy> {
+        self.inner.caminito.clone()
     }
 
     /// Has `listener` hear of every event from now on, on the main loop.
@@ -429,7 +435,7 @@ impl Compositor {
 }
 
 /// A D-Bus error as its sender worded it, without GDBus's prefix for a remote one.
-fn refused(err: &glib::Error) -> Error {
+pub(crate) fn refused(err: &glib::Error) -> Error {
     let mut err = err.clone();
     gio::DBusError::strip_remote_error(&mut err);
     Error::Refused(err.message().to_owned())

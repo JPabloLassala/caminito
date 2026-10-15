@@ -431,6 +431,22 @@ Caminito, and work under X11 MATE too.
 default agent to whichever registers last, so the one that started last answers the pairing requests.
 Stop the other's agent, or don't start it, to choose.
 
+### Night Light
+
+*Night Light* in the menu's Preferences opens caminito-displays on its Night Light tab
+(`caminito-displays --night-light`). There it's turned on and off, follows the sun or holds one
+temperature, and pauses until sunrise.
+
+No shortcut toggles it by default. To bind one, open *System Shortcuts* in the control center,
+choose *Add*, give it a name, such as *Night Light*, and the command:
+
+```sh
+caminito-displays --toggle-night-light
+```
+
+then click the new shortcut's row and press the keys. The command turns Night Light on if it's
+off and off if it's on, and opens no window.
+
 ## Known limitations
 
 - **An Xwayland crash logs you out of a MATE on Caminito session.** Caminito survives it, drops the

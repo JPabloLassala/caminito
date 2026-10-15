@@ -18,7 +18,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - `caminito-policy` names no protocol object. It may use Smithay's geometry types and nothing else from Smithay. It reaches windows only through `PolicyWindow`.
 - `caminito-theme` knows nothing of Wayland.
 - `caminito-layout` has no dependencies, and gets none (ADR 0015). caminito-displays depends on it too.
-- `caminito-displays` is a program of its own (ADR 0014), and depends on `caminito-layout` alone of Caminito's crates. Its library, the page's state and its client of output management, names no toolkit, so that Caminito's headless tests can drive it. GTK is the binary's.
+- `caminito-displays` is a program of its own (ADR 0014), and depends on `caminito-layout` alone of Caminito's crates. Its library, the page's state, its client of output management and the Night Light tab's state (142), names no toolkit, so that Caminito's headless tests can drive it. GTK is the binary's.
 - `caminito-version` is the version string and the build script that finds the build's revision (182). `caminito` and `caminito-about` both depend on it, so `caminito --version` and the dialog can't disagree. It has no dependencies.
 - `caminito-about` is a program of its own (182), since the compositor doesn't link GTK and caminito-displays is the display settings program. It depends on `caminito-version` alone of Caminito's crates.
 - `caminito-wallpaper` is the wallpaper's programs (ADR 0031): its drawer, `caminito-wallpaperd`, which a Session starts, and its dialog, `caminito-wallpaper` (212), in GTK4 without libadwaita. It depends on none of Caminito's crates. The drawer links no GTK: GLib's loop and GSettings through gio, gdk-pixbuf and cairo. The crate depends on GTK for the dialog alone, and a binary links only the crates it uses, so the library names no GTK and `ldd caminito-wallpaperd` shows none. Its library's pure parts (a monitor's identity, the positioning, the settings an output gets, a dynamic wallpaper's picture for a moment, a HEIC's metadata, a slideshow's picture for a time and an output, a picture of the day's sources and cache, the dialog's page and the grids' groups) name no toolkit and are unit-tested beside the code.
@@ -70,6 +70,7 @@ Where each tier lives, per ticket 15's test seams:
 | Policy, including proptest | `caminito-policy/src/tests/`, against `TestWindow` |
 | Docking and healing a layout, including proptest | `caminito-layout/src/tests.rs` |
 | caminito-displays's page, including proptest | `caminito-displays/src/page/tests.rs` |
+| caminito-displays's Night Light tab: the sliders a schedule shows, the pause and the note | `caminito-displays/src/night_light/tests.rs` |
 | caminito-displays's page and client against Caminito | `caminito/src/tests/caminito_displays.rs`, through `Fixture` |
 | The Wallpaper dialog's page, and the Picture and Dynamic grids' groups | `caminito-wallpaper/src/page/tests.rs` and `caminito-wallpaper/src/grid.rs` |
 | A dynamic wallpaper's picture and blend for a moment, against the installed `cosmos` XML | `caminito-wallpaper/src/dynamic/tests.rs` |

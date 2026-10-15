@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Night Light
+Comment=Warm the screen's colours at night, or all the time
+Exec=caminito-displays --night-light
+Icon=weather-clear-night
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;HardwareSettings;
+Keywords=mate-control-center;MATE;night;light;colour;color;temperature;warm;blue;redshift;
+OnlyShowIn=MATE;

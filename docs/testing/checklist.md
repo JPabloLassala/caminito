@@ -1963,6 +1963,31 @@ session_env() {
 - **Debug tool:** `gtk-launch mate-display-properties`, and `ls
   /usr/share/caminito/xdg/applications`.
 
+### The Night Light tab fades the screen, opens from Preferences, and toggles from a shortcut
+
+- **Milestone:** M9
+- **Steps:**
+  1. On the tty, log into *MATE on Caminito*. Open the panel's *System ▸ Preferences ▸
+     Hardware* menu, and choose *Night Light*.
+  2. Turn the switch on. Choose *Constant*, and drag its slider to the warm end and back.
+     Choose *Follow the sun*, and move both sliders.
+  3. Press *Pause until sunrise*, then *Resume*.
+  4. Close the window. Open *Displays* from the control center, then choose *Night Light* in
+     the menu again.
+  5. In *System Shortcuts*, add a shortcut named *Night Light* with the command
+     `caminito-displays --toggle-night-light`, and give it keys. Press them twice, with the
+     window closed and then with it open.
+- **Expected:** in step 1 the menu's entry has a night-sky icon and opens caminito-displays on
+  its *Night Light* tab. In step 2 each change fades the screen over about two seconds, with no
+  Apply, and with *Follow the sun* the screen is at the temperature that `DumpState`'s
+  `target_temperature` gives. In step 3 the button reads *Resume* beside *Paused until* and the
+  next sunrise's time, the screen fades to neutral, and then back. In step 4 the open window
+  switches to the *Night Light* tab, and no second window opens. In step 5 each press fades
+  Night Light off or on, opens no window, and the open window's switch follows (142).
+- **Debug tool:** the `night_light` of `DumpState`, `gsettings list-recursively
+  org.mate.Caminito | grep night-light`, and `caminito-displays --toggle-night-light` run from a
+  terminal for its warning.
+
 ## caminito-about
 
 ### About Caminito is in the control center, under Caminito only, and shows the installed build

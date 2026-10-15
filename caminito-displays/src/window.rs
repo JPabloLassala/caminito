@@ -1,7 +1,8 @@
-//! The window: Plasma's page, as the prototype settled it (84). The arrangement of the
-//! displays on top, a row with one entry per display, the selected display's settings
-//! below, and Identify, Reset and Apply at the bottom. Nothing outside the window changes
-//! until Apply, and what Apply changes is kept or reverted within the countdown.
+//! The window: Plasma's page, as the prototype settled it (84), in the Displays tab. The
+//! arrangement of the displays on top, a row with one entry per display, the selected
+//! display's settings below, and Identify, Reset and Apply at the bottom. Nothing outside the
+//! window changes until Apply, and what Apply changes is kept or reverted within the
+//! countdown. The Night Light tab beside it (142) is `night_light_tab`'s.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -9,11 +10,12 @@ use std::rc::Rc;
 use caminito_displays::outputs::Outcome;
 use caminito_displays::page::{Layout, Page, Scale, rate_label};
 use gtk::prelude::*;
-use gtk::{gdk, glib};
+use gtk::{gdk, gio, glib};
 
 use crate::arrangement::{self, View};
 use crate::compositor::{Compositor, Event};
 use crate::identify;
+use crate::night_light_tab::NightLightTab;
 
 /// How long a new configuration is shown before it's reverted unless kept, in seconds
 /// (the prototype's verdict).
@@ -43,6 +45,43 @@ const CSS: &str = "
   padding: 20px;
 }
 ";
+
+/// The window's tabs, in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Tab {
+    Displays,
+    NightLight,
+}
+
+impl Tab {
+    /// Its name, as the window's `show-tab` action takes it.
+    fn name(self) -> &'static str {
+        match self {
+            Tab::Displays => "displays",
+            Tab::NightLight => "night-light",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Tab> {
+        [Tab::Displays, Tab::NightLight]
+            .into_iter()
+            .find(|tab| tab.name() == name)
+    }
+
+    /// Its page in the notebook.
+    fn page(self) -> u32 {
+        match self {
+            Tab::Displays => 0,
+            Tab::NightLight => 1,
+        }
+    }
+}
+
+/// Switches the open window to `tab`. A window that only says why it can't show the
+/// displays stays as it is.
+pub(crate) fn show(window: &gtk::Window, tab: Tab) {
+    let _ = window.activate_action("win.show-tab", Some(&tab.name().to_variant()));
+}
 
 /// What there is to go back to if a configuration isn't kept.
 struct Before {
@@ -102,6 +141,9 @@ struct Ui {
     identifying: RefCell<Option<glib::SourceId>>,
 
     window: gtk::ApplicationWindow,
+    notebook: gtk::Notebook,
+    /// Held for as long as the window is.
+    _night_light: Rc<NightLightTab>,
     content: gtk::Box,
     canvas: gtk::DrawingArea,
     tabs: gtk::Box,
@@ -132,8 +174,9 @@ struct Ui {
     keep: gtk::Button,
 }
 
-/// Opens the window, on Caminito or, for `demo`, on made-up monitors.
-pub(crate) fn open(application: &gtk::Application, demo: bool) {
+/// Opens the window on `tab`, on Caminito or, for `demo`, on made-up monitors and a
+/// made-up Night Light.
+pub(crate) fn open(application: &gtk::Application, demo: bool, tab: Tab) {
     let connected = if demo {
         Ok(Compositor::demo())
     } else {
@@ -152,9 +195,11 @@ pub(crate) fn open(application: &gtk::Application, demo: bool) {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     }
-    let ui = Rc::new(Ui::build(application, compositor));
+    let night_light = NightLightTab::new(demo, compositor.caminito());
+    let ui = Rc::new(Ui::build(application, compositor, night_light));
     ui.connect();
     ui.render();
+    ui.notebook.set_current_page(Some(tab.page()));
     ui.window.present();
 }
 
@@ -220,7 +265,11 @@ fn fill(dropdown: &gtk::DropDown, labels: &[String]) {
 }
 
 impl Ui {
-    fn build(application: &gtk::Application, compositor: Compositor) -> Ui {
+    fn build(
+        application: &gtk::Application,
+        compositor: Compositor,
+        night_light: Rc<NightLightTab>,
+    ) -> Ui {
         let page = Page::new(&compositor.monitors(), compositor.primary().as_deref());
 
         let canvas = gtk::DrawingArea::builder()
@@ -381,8 +430,15 @@ impl Ui {
         dialog.set_hexpand(true);
         scrim.append(&dialog);
 
+        let notebook = gtk::Notebook::new();
+        notebook.append_page(&content, Some(&gtk::Label::new(Some("Displays"))));
+        notebook.append_page(
+            night_light.widget(),
+            Some(&gtk::Label::new(Some("Night Light"))),
+        );
+
         let overlay = gtk::Overlay::new();
-        overlay.set_child(Some(&content));
+        overlay.set_child(Some(&notebook));
         overlay.add_overlay(&scrim);
         let window = window(application);
         window.set_child(Some(&overlay));
@@ -404,6 +460,8 @@ impl Ui {
             press: Cell::new(None),
             identifying: RefCell::new(None),
             window,
+            notebook,
+            _night_light: night_light,
             content,
             canvas,
             tabs,
@@ -435,6 +493,16 @@ impl Ui {
 
     /// Joins the widgets and the compositor to what they do.
     fn connect(self: &Rc<Self>) {
+        let show_tab = gio::SimpleAction::new("show-tab", Some(glib::VariantTy::STRING));
+        let notebook = self.notebook.clone();
+        show_tab.connect_activate(move |_, name| {
+            let tab = name.and_then(|name| name.str()).and_then(Tab::from_name);
+            if let Some(tab) = tab {
+                notebook.set_current_page(Some(tab.page()));
+            }
+        });
+        self.window.add_action(&show_tab);
+
         let ui = self.clone();
         self.compositor.listen(move |event| ui.heard(event));
 

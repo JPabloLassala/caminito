@@ -51,6 +51,15 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# Night Light's entry (142), in the same directory, so that only a Session lists it: Night
+# Light is Caminito's. It opens caminito-displays on its Night Light tab, and its categories
+# are the Displays entry's, which put it under Hardware in the control center and in the
+# menu's Preferences.
+install_data(
+  'data/caminito-night-light.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+
 # caminito-about's entry (182), in the same directory, so that only a Session lists it:
 # under X11 MATE it would describe a compositor that isn't running. Its categories put it
 # under Hardware in the control center, beside System Info and Displays.
