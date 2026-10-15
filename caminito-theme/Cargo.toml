@@ -13,7 +13,7 @@ pangocairo.workspace = true
 [dev-dependencies]
 # The goldens are PNGs.
 cairo-rs = { version = "0.22.9", features = ["png"] }
-serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 tempfile = "3.27.0"
 
 # Its own main sets FONTCONFIG_FILE before any thread starts.

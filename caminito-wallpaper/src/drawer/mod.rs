@@ -9,10 +9,14 @@
 //! logical size through a viewport. A change of what's drawn cross-fades over [`FADE`]; a
 //! change of size draws at once.
 //!
+//! A picture of the day's source is fetched on GLib's loop as [`daily`] says, and the output
+//! shows the source's latest picture, or its colour before the first (214).
+//!
 //! It keeps `org.mate.background` bridged (211): the primary output's wallpaper goes out to
 //! it after every refresh, and a picture another program writes to it comes in first.
 
 mod buffer;
+mod daily;
 mod paint;
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -57,6 +61,7 @@ use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::{
 
 use crate::DOMAIN;
 use crate::bridge::Bridge;
+use crate::daily::Source;
 use crate::dynamic::{Dynamic, Moment, Sky};
 pub use crate::gsettings::Error as StoreError;
 use crate::gsettings::{GioStore, Mate};
@@ -64,13 +69,15 @@ use crate::identity::Identity;
 use crate::settings::{Drawn, Kind, OutputSettings, settings_for, take_mate_background};
 use crate::sun::sky_now;
 use buffer::Buffers;
+use daily::{Daily, fetch_if_due};
 use paint::Pictures;
 
 /// How long a change of wallpaper takes to cross-fade.
 const FADE: Duration = Duration::from_secs(1);
 
 /// How often a dynamic wallpaper is drawn for the moment again (216), besides each time the
-/// sun moves, and a timed XML's picture ending sooner: its blend shows in whole percent.
+/// sun moves, and a timed XML's picture ending sooner: its blend shows in whole percent. It's
+/// also how soon after local midnight a picture of the day is fetched (214).
 const DYNAMIC_TICK: u32 = 60;
 
 /// The namespace Caminito's scene puts behind every other surface of the background layer,
@@ -214,6 +221,8 @@ pub(crate) struct App {
     /// The dynamic wallpapers shown, by their path, read once each, or `None` for one that
     /// can't be, logged once.
     dynamics: HashMap<String, Option<Dynamic>>,
+    /// The pictures of the day (214).
+    daily: Rc<RefCell<Daily>>,
     /// For a wake before the next tick, when a timed XML's picture ends sooner.
     refresh: Refresh,
     /// Whether such a wake is set.
@@ -274,6 +283,7 @@ pub fn run() -> Result<(), Error> {
         bridge,
         pictures: Pictures::default(),
         dynamics: HashMap::new(),
+        daily: Daily::open(&refresh),
         refresh: refresh.clone(),
         waking: Rc::default(),
         qh: qh.clone(),
@@ -564,11 +574,27 @@ impl App {
         self.dynamics
             .retain(|path, _| dynamics.contains(&path.as_str()));
         let sky = sky_now(self.caminito.as_ref());
+        let mut sources: Vec<Source> = Vec::new();
+        for (_, _, settings) in &shown {
+            if settings.kind == Kind::PictureOfTheDay && !sources.contains(&settings.source) {
+                sources.push(settings.source);
+            }
+        }
+        self.daily.borrow_mut().keep_only(&sources);
+        for &source in &sources {
+            fetch_if_due(&self.daily, source, sky.local, &self.refresh);
+        }
         let mut drawn = Vec::new();
         let mut primary_drawn = None;
         for (global, is_primary, settings) in shown {
             let moment = self.moment(&settings, &sky);
-            let output_drawn = settings.drawn(moment.as_ref());
+            let daily = (settings.kind == Kind::PictureOfTheDay)
+                .then(|| self.daily.borrow_mut().latest(settings.source))
+                .flatten();
+            let output_drawn = settings.drawn(
+                moment.as_ref(),
+                daily.as_ref().map(|kept| kept.picture.as_path()),
+            );
             if is_primary {
                 primary_drawn = Some(output_drawn.clone());
             }

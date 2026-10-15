@@ -7,6 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
+use caminito_wallpaper::daily::{self, Cache, Kept, Source};
 use caminito_wallpaper::dynamic::Dynamic;
 use caminito_wallpaper::grid::{self, DynamicGroup, Group, Installed, Roots};
 use caminito_wallpaper::monitors::Monitors;
@@ -81,6 +82,14 @@ struct Ui {
     refused: RefCell<Option<String>>,
     /// Caminito's D-Bus interface, for the primary output.
     caminito: Option<gio::DBusProxy>,
+    /// Where the drawer keeps each source's picture of the day (214).
+    cache: Cache,
+    /// Tells of the drawer's new pictures of the day, while the window is open.
+    _cache_monitor: Option<gio::FileMonitor>,
+    /// What "Keep this picture" did last, until the picture or the source changes.
+    kept: RefCell<Option<(PathBuf, String)>>,
+    /// Whether the window is the demo, which keeps no picture outside it.
+    demo: bool,
 
     window: gtk::ApplicationWindow,
     previews: gtk::Box,
@@ -98,6 +107,12 @@ struct Ui {
     /// Whether the selected dynamic wallpaper follows the sun or fixed times.
     dynamic_line: gtk::Label,
     dynamic_positioning: gtk::DropDown,
+    sources: gtk::ListBox,
+    daily_title: gtk::Label,
+    daily_credit: gtk::Label,
+    keep: gtk::Button,
+    keep_line: gtk::Label,
+    daily_positioning: gtk::DropDown,
 }
 
 /// Opens the window, on the store and the compositor's outputs or, for `demo`, on made-up
@@ -150,7 +165,7 @@ pub(crate) fn open(application: &gtk::Application, demo: bool) {
         (Box::new(store), monitors, caminito_proxy())
     };
 
-    let ui = build(window, store, caminito);
+    let ui = build(window, store, caminito, demo, &changed);
     *changed.borrow_mut() = Rc::downgrade(&ui);
     let outputs = match &monitors {
         Some(monitors) => monitors.outputs(),
@@ -293,6 +308,8 @@ fn build(
     window: gtk::ApplicationWindow,
     store: Box<dyn Store>,
     caminito: Option<gio::DBusProxy>,
+    demo: bool,
+    changed: &Rc<RefCell<Weak<Ui>>>,
 ) -> Rc<Ui> {
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     window.set_child(Some(&body));
@@ -445,9 +462,92 @@ fn build(
     dynamic_pane.append(&dynamic_bar);
     panes.add_named(&dynamic_pane, Some("dynamic"));
 
+    let daily_pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let daily_body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(SPACING)
+        .margin_top(SPACING)
+        .margin_bottom(SPACING)
+        .margin_start(SPACING)
+        .margin_end(SPACING)
+        .vexpand(true)
+        .build();
+    daily_body.append(&heading("Source"));
+    let sources = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::Single)
+        .css_classes(["boxed-list"])
+        .build();
+    for source in Source::ALL {
+        let row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(2)
+            .margin_top(SPACING / 2)
+            .margin_bottom(SPACING / 2)
+            .margin_start(SPACING / 2)
+            .margin_end(SPACING / 2)
+            .build();
+        row.append(
+            &gtk::Label::builder()
+                .label(source.name())
+                .xalign(0.0)
+                .build(),
+        );
+        row.append(
+            &gtk::Label::builder()
+                .label(source.line())
+                .xalign(0.0)
+                .wrap(true)
+                .css_classes(["dim-label"])
+                .build(),
+        );
+        sources.append(&row);
+    }
+    daily_body.append(&sources);
+    daily_body.append(&heading("Today"));
+    let daily_title = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .build();
+    daily_body.append(&daily_title);
+    let daily_credit = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .css_classes(["dim-label"])
+        .build();
+    daily_body.append(&daily_credit);
+    daily_pane.append(&daily_body);
+    daily_pane.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    let daily_bar = gtk::Box::builder()
+        .spacing(SPACING / 2)
+        .margin_top(SPACING)
+        .margin_bottom(SPACING)
+        .margin_start(SPACING)
+        .margin_end(SPACING)
+        .build();
+    let keep = gtk::Button::with_label("Keep this picture");
+    daily_bar.append(&keep);
+    let keep_line = gtk::Label::builder()
+        .hexpand(true)
+        .xalign(0.0)
+        .wrap(true)
+        .margin_start(SPACING / 2)
+        .css_classes(["dim-label"])
+        .build();
+    daily_bar.append(&keep_line);
+    daily_bar.append(&gtk::Label::new(Some("Positioning")));
+    let daily_positioning = gtk::DropDown::from_strings(&POSITIONINGS);
+    daily_bar.append(&daily_positioning);
+    daily_pane.append(&daily_bar);
+    panes.add_named(&daily_pane, Some("picture-of-the-day"));
+
     let later = message("");
     later.add_css_class("dim-label");
     panes.add_named(&later, Some("later"));
+
+    let cache = Cache::user();
+    let cache_monitor = watch_cache(&cache, changed);
 
     let ui = Rc::new_cyclic(|me| Ui {
         me: me.clone(),
@@ -462,6 +562,10 @@ fn build(
         dynamic_thumbnails: RefCell::new(Vec::new()),
         refused: RefCell::new(None),
         caminito,
+        cache,
+        _cache_monitor: cache_monitor,
+        kept: RefCell::new(None),
+        demo,
         window,
         previews,
         same,
@@ -477,9 +581,56 @@ fn build(
         dynamic_scrolled,
         dynamic_line,
         dynamic_positioning,
+        sources,
+        daily_title,
+        daily_credit,
+        keep,
+        keep_line,
+        daily_positioning,
     });
     ui.connect(&add_picture, &add_folder, &add_dynamic, &swatches);
     ui
+}
+
+/// Renders the window again when the drawer keeps a new picture of the day, once per turn
+/// of the loop. The cache's folder is made if it isn't there, so there's a folder to watch.
+fn watch_cache(cache: &Cache, ui: &Rc<RefCell<Weak<Ui>>>) -> Option<gio::FileMonitor> {
+    if let Err(err) = std::fs::create_dir_all(cache.root()) {
+        glib::g_debug!(DOMAIN, "can't make {}: {err}", cache.root().display());
+    }
+    let monitor = gio::File::for_path(cache.root())
+        .monitor_directory(
+            gio::FileMonitorFlags::WATCH_MOVES,
+            None::<&gio::Cancellable>,
+        )
+        .inspect_err(|err| {
+            glib::g_debug!(DOMAIN, "can't watch the pictures of the day: {err}");
+        })
+        .ok()?;
+    let pending = Rc::new(Cell::new(false));
+    let ui = ui.clone();
+    monitor.connect_changed(move |_, _, _, _| {
+        if pending.replace(true) {
+            return;
+        }
+        let pending = pending.clone();
+        let ui = ui.clone();
+        glib::idle_add_local_once(move || {
+            pending.set(false);
+            if let Some(ui) = ui.borrow().upgrade() {
+                ui.render();
+            }
+        });
+    });
+    Some(monitor)
+}
+
+/// Where "Keep this picture" copies a picture of the day: `~/Pictures/Wallpapers`, the
+/// pictures folder being the user's own if they named one.
+fn wallpapers_folder() -> PathBuf {
+    glib::user_special_dir(glib::UserDirectory::Pictures)
+        .unwrap_or_else(|| glib::home_dir().join("Pictures"))
+        .join("Wallpapers")
 }
 
 /// A heading of the grid or a pane.
@@ -595,6 +746,26 @@ impl Ui {
         });
         self.dynamic_positioning
             .connect_selected_notify(move |dropdown| on(dropdown.selected()));
+        let on = self.handler(|ui, index: u32| {
+            if let Some(&positioning) = Positioning::ALL.get(index as usize) {
+                ui.act(|page, store| page.choose_positioning(store, positioning));
+            }
+        });
+        self.daily_positioning
+            .connect_selected_notify(move |dropdown| on(dropdown.selected()));
+
+        let on = self.handler(|ui, index: usize| {
+            if let Some(&source) = Source::ALL.get(index) {
+                ui.act(|page, store| page.choose_source(store, source));
+            }
+        });
+        self.sources.connect_row_selected(move |_, row| {
+            if let Some(row) = row {
+                on(row.index() as usize);
+            }
+        });
+        let on = self.handler(|ui, ()| ui.keep_picture());
+        self.keep.connect_clicked(move |_| on(()));
 
         let on = self.handler(|ui, colour: Colour| {
             ui.act(|page, store| page.choose_colour(store, colour));
@@ -628,6 +799,38 @@ impl Ui {
         add_folder.connect_clicked(move |_| on(()));
         let on = self.handler(|ui, ()| ui.add_dynamic());
         add_dynamic.connect_clicked(move |_| on(()));
+    }
+
+    /// Copies the selected output's picture of the day to `~/Pictures/Wallpapers`, and adds
+    /// it to the Picture grid, or says why not.
+    fn keep_picture(&self) {
+        let current = self.page.borrow().current(self.store.borrow().as_ref());
+        let Some(kept) = self.cache.latest(current.source) else {
+            return;
+        };
+        let line = if self.demo {
+            "The demo keeps no picture.".to_owned()
+        } else {
+            match daily::keep_copy(&kept, &wallpapers_folder()) {
+                Ok(copy) => {
+                    let file = copy.to_string_lossy();
+                    {
+                        let mut store = self.store.borrow_mut();
+                        self.page.borrow_mut().keep_picture(store.as_mut(), &file);
+                    }
+                    format!(
+                        "Kept as {}, under Your pictures.",
+                        copy.file_name().unwrap_or_default().to_string_lossy()
+                    )
+                }
+                Err(err) => {
+                    glib::g_warning!(DOMAIN, "can't keep {}: {err}", kept.picture.display());
+                    format!("It can't be kept: {err}.")
+                }
+            }
+        };
+        *self.kept.borrow_mut() = Some((kept.picture, line));
+        self.render();
     }
 
     /// Asks for a timed XML, and adds it and makes it the selected output's if it is one,
@@ -777,6 +980,7 @@ impl Ui {
             Kind::Picture => self.panes.set_visible_child_name("picture"),
             Kind::Colour => self.panes.set_visible_child_name("colour"),
             Kind::Dynamic => self.panes.set_visible_child_name("dynamic"),
+            Kind::PictureOfTheDay => self.panes.set_visible_child_name("picture-of-the-day"),
             kind => {
                 self.later.set_label(&format!(
                     "{} isn't in this version of Caminito yet.",
@@ -791,6 +995,7 @@ impl Ui {
             .unwrap_or(0);
         self.positioning.set_selected(positioning as u32);
         self.dynamic_positioning.set_selected(positioning as u32);
+        self.daily_positioning.set_selected(positioning as u32);
         self.colour.set_rgba(&rgba(current.colour));
 
         let groups = grid::groups(
@@ -812,6 +1017,7 @@ impl Ui {
         }
         self.dynamic_line
             .set_label(&self.dynamic_line_text(&current));
+        self.render_daily(&current);
         self.mark_current(&current);
         self.rendering.set(false);
     }
@@ -837,6 +1043,35 @@ impl Ui {
                 current.kind == Kind::Dynamic && path == Path::new(&current.dynamic),
             );
         }
+    }
+
+    /// The Picture of the day pane: the source selected, and its picture's title and credit.
+    fn render_daily(&self, current: &OutputSettings) {
+        let index = Source::ALL
+            .iter()
+            .position(|&source| source == current.source)
+            .unwrap_or(0);
+        if let Some(row) = self.sources.row_at_index(index as i32) {
+            self.sources.select_row(Some(&row));
+        }
+        let latest = self.cache.latest(current.source);
+        let (title, credit) = match &latest {
+            Some(Kept {
+                title, credit, day, ..
+            }) => (title.clone(), format!("{credit} · {day}")),
+            None => (
+                "There's no picture from this source yet.".to_owned(),
+                "It's fetched as soon as the network is there, and stays when it isn't.".to_owned(),
+            ),
+        };
+        self.daily_title.set_label(&title);
+        self.daily_credit.set_label(&credit);
+        self.keep.set_sensitive(latest.is_some());
+        let line = match (&*self.kept.borrow(), &latest) {
+            (Some((picture, line)), Some(latest)) if *picture == latest.picture => line.clone(),
+            _ => String::new(),
+        };
+        self.keep_line.set_label(&line);
     }
 
     /// The Dynamic pane's line: why a file wasn't added, or whether the selected output's
@@ -937,6 +1172,7 @@ impl Ui {
                         dynamic.at(&sky).nearer().to_owned()
                     })
             }
+            Kind::PictureOfTheDay => self.cache.latest(settings.source).map(|kept| kept.picture),
             _ => None,
         };
         // Decoded to fit a square twice the preview's longer side, so that a picture of any

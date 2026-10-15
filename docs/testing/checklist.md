@@ -1997,7 +1997,7 @@ session_env() {
      *Another colour*.
   5. Choose *Picture*, press *Add folder…* and choose a folder of your pictures, then press
      *Add picture…* and choose a picture outside it. Click a picture of the folder's.
-  6. Choose *Slideshow* and *Picture of the day* in turn.
+  6. Choose *Slideshow*.
   7. With the window open, open *Wallpaper* again from the control center, or run
      `caminito-wallpaper`. Then press Escape.
   8. Unplug the second monitor and open the dialog; plug it back in.
@@ -2014,7 +2014,7 @@ session_env() {
   step 4 the first monitor keeps its picture and the second turns to the colour at each click.
   In step 5 the folder is a heading of its own, named after it, with its pictures; the
   picture is under *Your pictures* and is on the second monitor at once, as the folder's is
-  after it. In step 6 each says it isn't there yet, and nothing on the desktop changes. In
+  after it. In step 6 it says it isn't there yet, and nothing on the desktop changes. In
   step 7 the open window is raised and there is still one, and Escape closes it. In step 8
   the dialog shows one monitor's picture as a plain preview, with no *Same on all outputs*,
   and the monitor plugged back in comes back with its own wallpaper. In step 9 `ls` prints
@@ -2074,6 +2074,35 @@ session_env() {
 - **Debug tool:** `dconf dump /org/mate/caminito/wallpaper/` for `kind='dynamic'` and its
   `dynamic`, `journalctl --user -t caminito-wallpaperd` for a dynamic wallpaper that can't be
   read, and the `Sun` property's `location-source`, which is `stored` in step 3.
+
+### Each picture of the day shows with its credit, can be kept, and stays offline
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with the network
+     on. Open *Wallpaper* and choose *Picture of the day*.
+  2. Read the pane, then click each source in turn: *NASA Astronomy Picture of the Day*,
+     *Bing* and *Wikimedia Commons*. Give each up to a minute to come in.
+  3. With *Wikimedia Commons* chosen, press *Keep this picture*, then choose *Picture*.
+  4. Choose *Picture of the day* again, and set *Positioning* to *Fit*.
+  5. Turn the network off (`nmcli networking off`, or unplug it). Log out and back in, then
+     suspend and wake the machine, and click *Bing* and *NASA* again. Turn the network back on.
+  6. Run `ls ~/.cache/caminito-wallpaper/picture-of-the-day/`.
+- **Expected:** in step 2 the pane lists the three sources, each with a line on it, the
+  chosen one highlighted, and under them today's title and credit, with the credit's day.
+  Each click cross-fades the desktop and the sidebar to that source's picture of today, as
+  its web page shows it: <https://apod.nasa.gov/apod/>, <https://www.bing.com> and
+  <https://commons.wikimedia.org/wiki/Main_Page>. On a NASA day that is a video, NASA's
+  stays the last picture it had, or the colour on a first run. In step 3 the line beside the
+  button names the copy, `~/Pictures/Wallpapers` has it, and the Picture grid has it under
+  *Your pictures*. In step 4 the picture is fitted, with bars of the colour. In step 5 every
+  output keeps the picture it had through the log-in and the wake, and each source clicked
+  shows its last picture, title and credit; within a minute of the network coming back, any
+  that was out of date is fetched. In step 6 there is one picture and one `.about` per
+  source fetched.
+- **Debug tool:** `journalctl --user -t caminito-wallpaperd`, which says why a fetch failed
+  or why the day's isn't a picture, `G_MESSAGES_DEBUG=caminito-wallpaperd` for each picture
+  kept, and `cat ~/.cache/caminito-wallpaper/picture-of-the-day/*.about`.
 
 ## The control center
 

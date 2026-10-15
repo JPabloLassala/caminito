@@ -20,6 +20,8 @@ gtk = { workspace = true, features = ["v4_12"] }
 # GNOME's timed XML, a dynamic wallpaper (216). Already in the tree through
 # wayland-scanner, and with no features, no more crates.
 quick-xml = "0.41.0"
+# The feeds of Bing's and Wikimedia Commons' pictures of the day (214).
+serde_json.workspace = true
 # The Wayland connection's fd in GLib's loop.
 glib-unix = "0.22.8"
 rustix = { workspace = true, features = ["fs"] }
