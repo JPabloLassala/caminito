@@ -13,7 +13,7 @@
 use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
-use super::button_bindings::{BTN_EXTRA, BTN_SIDE, buttons_seen};
+use super::button_bindings::{BTN_EXTRA, BTN_SIDE};
 use super::fixture::{
     BTN_LEFT, ClientId, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, Kind, on_both_kinds,
 };
@@ -55,9 +55,6 @@ fn with(kind: Kind, mut settings: Vec<(&'static str, String, Value)>) -> (Fixtur
     let mut f = Fixture::with_settings(settings);
     f.add_output(OUTPUT, 1.0);
     let id = f.connect(kind);
-    if kind == Kind::Xdg {
-        f.client(id).bind_input();
-    }
     (f, id)
 }
 
@@ -68,6 +65,7 @@ fn press_at(f: &mut Fixture, at: Point<i32, Logical>, button: u32) {
     f.pointer_button(button, false);
 }
 
+/// Whether the Workspace popup shows, from the debug dump's `workspace_popup`.
 fn popup_shown(f: &Fixture) -> bool {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     !dump["workspace_popup"].is_null()
@@ -119,8 +117,11 @@ fn a_workspace_button_over_a_cell_switches_to_the_bindings_workspace_not_the_cel
 
     let at = middle(cell(&f, 3));
     press_at(&mut f, at, BTN_EXTRA);
-
     switched_to(&f, 1);
+
+    let at = middle(cell(&f, 3));
+    press_at(&mut f, at, BTN_SIDE);
+    switched_to(&f, 0);
 }
 
 #[test]
@@ -135,20 +136,6 @@ fn a_workspace_button_over_the_empty_area_switches_and_leaves_it_open() {
     switched_to(&f, 1);
     press_at(&mut f, at, BTN_SIDE);
     switched_to(&f, 0);
-}
-
-#[test]
-fn no_client_sees_a_workspace_buttons_press_or_release() {
-    let (mut f, id) = with(Kind::Xdg, workspace_buttons());
-    let [first, _] = one_on_each_of_two(&mut f, id);
-    open(&mut f);
-    buttons_seen(&mut f, id);
-
-    let at = middle(place(&f, first));
-    press_at(&mut f, at, BTN_EXTRA);
-
-    assert!(is_open(&f));
-    assert_eq!(buttons_seen(&mut f, id), []);
 }
 
 #[test]

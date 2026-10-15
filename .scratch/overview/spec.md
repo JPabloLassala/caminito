@@ -73,7 +73,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - **A click on a window** activates it and closes the Overview. A minimised window is unminimised.
 - **A middle click on a window** closes that window. The Overview stays open.
-- **A click on a workspace of the bar** switches that output to it. The Overview stays open, and the Workspace slide moves the laid-out windows. On another output's bar it also makes that output the Active output, as a click on its wallpaper does, and the selection goes there with nothing selected. The focus is left alone.
+- **A click on a workspace of the bar** switches that output to it. The Overview stays open, and the Workspace slide moves the laid-out windows. On another output's bar it also makes that output the Active output, as a click on its wallpaper does, and the selection goes there with nothing selected. The focus is left alone. Under Spanning workspaces the switch of every output still gives the seat its default focus, as any switch of every output does.
 - **A button bound to a workspace switch** does what the binding's key would, wherever the pointer is: over a window, a cell or the empty area (see "The keys").
 - **A click on the empty area** closes the Overview.
 - **A drag of a window**, past `drag-threshold`:

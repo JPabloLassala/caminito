@@ -1193,10 +1193,13 @@ fn a_click_on_a_cell_of_the_selections_own_output_keeps_the_active_output() {
     let mut policy = on_two(true);
     toggle(&mut policy);
 
+    policy.move_to_workspace(id(3), 1);
     policy.overview_switch_on(OutputId(2), 1);
 
     assert_eq!(policy.overview().unwrap().output, OutputId(2));
     assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+    // As a click on its cell always did (244): the new workspace's focused window.
+    assert_eq!(selected(&policy), Some(id(3)));
 }
 
 #[test]

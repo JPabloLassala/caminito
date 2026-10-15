@@ -425,7 +425,9 @@ impl Caminito {
                     .zip(open.layouts())
                     .all(|(plan, laid)| plan.matches(laid))
         });
-        let first_frame = old.as_ref().map_or(FirstFrame::Undrawn, |old| old.first_frame);
+        let first_frame = old
+            .as_ref()
+            .map_or(FirstFrame::Undrawn, |old| old.first_frame);
         let (dim, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];

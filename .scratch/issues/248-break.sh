@@ -1,7 +1,8 @@
 #!/bin/bash
 # Breaks each part of 248 in turn on purpose, runs the tests that should catch it, and puts
 # the file back. Run from the worktree's root: 248-break.sh
-# Each break should show FAILED tests. CARGO_TARGET_DIR is left as the caller has it.
+# Each break should show FAILED tests. 6 and 7 break what was there before 248, which
+# the new tests keep. CARGO_TARGET_DIR is left as the caller has it.
 set -u
 ulimit -n "$(ulimit -Hn)"
 unset DISPLAY
@@ -52,3 +53,21 @@ brk $policy "        self.active_outputs.insert(seat, output);
         let windows = self.overview_windows(output, workspace);
         let selected" \
     -p caminito-policy --lib -- tests::overview
+
+echo "5. A click on the selection's own output's cell is taken for another output's:"
+brk $policy "if output != own && self.outputs" "if self.outputs" \
+    -p caminito-policy --lib -- tests::overview
+
+echo "6. A button bound to the Overview no longer closes it:"
+brk $compositor "            _ if is_shortcut => caminito.policy.close_overview(),
+" "" \
+    -p caminito --lib -- tests::overview_buttons
+
+echo "7. A press on the empty area no longer closes it:"
+brk $compositor "            None => caminito.policy.close_overview(),
+        }
+        self.caminito.refresh_overview();" "            None => {}
+        }
+        self.caminito.refresh_overview();" \
+    -p caminito --lib -- tests::overview_buttons
+
