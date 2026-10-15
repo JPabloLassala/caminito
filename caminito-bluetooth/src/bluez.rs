@@ -237,6 +237,12 @@ impl Bluez {
         self.set(path, interface, "Alias", alias.to_variant()).await
     }
 
+    /// Lets the device at `device` connect without asking, or makes it ask again.
+    pub async fn set_trusted(&self, device: &str, trusted: bool) -> Result<(), Error> {
+        self.set(device, DEVICE, "Trusted", trusted.to_variant())
+            .await
+    }
+
     /// Forgets the device at `device`: BlueZ unpairs it and removes it from its adapter.
     pub async fn remove(&self, device: &str) -> Result<(), Error> {
         let adapter = self
@@ -286,6 +292,11 @@ impl Bluez {
             .await
     }
 
+    /// The connection BlueZ is followed on, which the pairing agent is exported on too.
+    pub(crate) fn connection(&self) -> gio::DBusConnection {
+        self.inner.borrow().connection.clone()
+    }
+
     /// Starts a new generation, which a read sent in an earlier one no longer belongs to.
     fn next_generation(&self) -> u64 {
         let mut inner = self.inner.borrow_mut();
@@ -330,7 +341,7 @@ impl Bluez {
             .await
     }
 
-    async fn call(
+    pub(crate) async fn call(
         &self,
         path: &str,
         interface: &str,

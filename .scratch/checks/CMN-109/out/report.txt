@@ -1,0 +1,10 @@
+1-pin-code: ('1234',)
+2-passkey: Error: GDBus.Error:org.bluez.Error.Canceled: the request was closed
+3-confirmation: ()
+4-authorization: Error: GDBus.Error:org.bluez.Error.Canceled: the request was closed
+5-service: Error: GDBus.Error:org.bluez.Error.Canceled: the request was closed
+6-pin-shown: ()
+7-passkey-shown: ()
+dialogs open after pairing: 0
+Trusted: (<true>,)
+caminito-bluetooth still running
