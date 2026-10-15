@@ -3,6 +3,9 @@
 //! monitor never seen before starts with the primary output's, and the first run starts
 //! every output with the picture `org.mate.background` names.
 
+use std::path::Path;
+
+use crate::daily::Source;
 use crate::dynamic::Moment;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
@@ -105,6 +108,8 @@ pub struct OutputSettings {
     pub picture: String,
     /// The Dynamic's: a Plasma package's folder or a timed XML (216).
     pub dynamic: String,
+    /// The Picture of the day's source (214).
+    pub source: Source,
     pub positioning: Positioning,
     /// The Colour's, and what shows where a picture doesn't.
     pub colour: Colour,
@@ -164,11 +169,12 @@ impl Drawn {
 }
 
 impl OutputSettings {
-    /// What's drawn, with `moment` what the Dynamic shows now. A Picture with no file, and
-    /// a Dynamic with no moment, are their colour, and the two kinds that later tickets draw
-    /// are their colour until then. A Dynamic's blend is in whole percent, so a frame is
-    /// drawn again only when it shows.
-    pub fn drawn(&self, moment: Option<&Moment>) -> Drawn {
+    /// What's drawn, with `moment` what the Dynamic shows now and `daily` the Picture of the
+    /// day's source's latest picture. A Picture with no file, a Dynamic with no moment and a
+    /// Picture of the day with no picture yet are their colour, and the Slideshow, which a
+    /// later ticket draws, is its colour until then. A Dynamic's blend is in whole percent,
+    /// so a frame is drawn again only when it shows.
+    pub fn drawn(&self, moment: Option<&Moment>, daily: Option<&Path>) -> Drawn {
         let picture = |file: &str| Drawn::Picture {
             file: file.to_owned(),
             positioning: self.positioning,
@@ -176,6 +182,9 @@ impl OutputSettings {
         };
         match (self.kind, moment) {
             (Kind::Picture, _) if !self.picture.is_empty() => picture(&self.picture),
+            (Kind::PictureOfTheDay, _) if let Some(file) = daily => {
+                picture(&file.to_string_lossy())
+            }
             (Kind::Dynamic, Some(moment)) => {
                 let percent = (moment.blend.clamp(0.0, 1.0) * 100.0).round() as u8;
                 let (from, to) = (moment.from.to_string_lossy(), moment.to.to_string_lossy());
@@ -363,6 +372,7 @@ pub fn take_mate_background(store: &mut (impl Store + ?Sized), mate: &MateBackgr
         kind,
         picture: mate.picture.clone(),
         dynamic: String::new(),
+        source: Source::default(),
         positioning: Positioning::from_mate(&mate.options),
         colour,
     };

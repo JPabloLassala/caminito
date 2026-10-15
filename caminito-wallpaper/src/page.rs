@@ -5,6 +5,7 @@
 //! While "same on all outputs" is on, a change is every output's, at `all/`; while it's
 //! off, it's the selected output's own.
 
+use crate::daily::Source;
 use crate::identity::Identity;
 use crate::positioning::Positioning;
 use crate::settings::{Colour, Kind, OutputSettings, Set, Store, settings_for};
@@ -194,15 +195,16 @@ impl Page {
         store.set_same_on_all_outputs(same);
     }
 
-    /// Shows `kind`'s controls. A Picture or a Dynamic with something to show, and a Colour,
-    /// are the selected output's at once; the kinds that later tickets build are only shown.
+    /// Shows `kind`'s controls. A Picture or a Dynamic with something to show, a Colour and
+    /// a Picture of the day, whose source has a default, are the selected output's at once;
+    /// the Slideshow, which a later ticket builds, is only shown.
     pub fn show_kind(&mut self, store: &mut (impl Store + ?Sized), kind: Kind) {
         self.kind = kind;
         let applies = match kind {
             Kind::Picture => !self.current(store).picture.is_empty(),
-            Kind::Colour => true,
+            Kind::Colour | Kind::PictureOfTheDay => true,
             Kind::Dynamic => !self.current(store).dynamic.is_empty(),
-            Kind::Slideshow | Kind::PictureOfTheDay => false,
+            Kind::Slideshow => false,
         };
         if applies {
             self.change(store, |settings| settings.kind = kind);
@@ -266,6 +268,25 @@ impl Page {
             store.set_dynamics(&dynamics);
         }
         self.choose_dynamic(store, file);
+    }
+
+    /// Makes today's picture from `source` the selected output's (214).
+    pub fn choose_source(&mut self, store: &mut (impl Store + ?Sized), source: Source) {
+        self.kind = Kind::PictureOfTheDay;
+        self.change(store, |settings| {
+            settings.kind = Kind::PictureOfTheDay;
+            settings.source = source;
+        });
+    }
+
+    /// Adds `file`, a picture of the day the user kept, to the pictures they added, once.
+    /// What the output shows doesn't change: it's the same picture.
+    pub fn keep_picture(&mut self, store: &mut (impl Store + ?Sized), file: &str) {
+        let mut pictures = store.pictures();
+        if !pictures.iter().any(|picture| picture == file) {
+            pictures.push(file.to_owned());
+            store.set_pictures(&pictures);
+        }
     }
 
     /// Adds `folder` to the folders the user added, once.

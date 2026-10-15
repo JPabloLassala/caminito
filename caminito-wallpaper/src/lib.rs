@@ -4,7 +4,8 @@
 //!
 //! The library holds what names no toolkit: a monitor's identity, where a picture goes for
 //! each positioning, which settings an output gets from the store, what a dynamic wallpaper
-//! shows at a moment (216), the dialog's page and its grids' groups, which the unit tests
+//! shows at a moment (216), where each source's picture of the day is and how its answer
+//! reads (214), the dialog's page and its grids' groups, which the unit tests
 //! drive. [`drawer`] is the Wayland client, on
 //! GLib's loop and GSettings, and links no GTK; [`monitors`] is the dialog's client of output
 //! management. The dialog's window is its binary's, the one part that uses GTK.
@@ -12,10 +13,12 @@
 #![forbid(unsafe_code)]
 
 mod bridge;
+pub mod daily;
 pub mod drawer;
 pub mod dynamic;
 pub mod grid;
 mod gsettings;
+mod http;
 mod identity;
 pub mod monitors;
 pub mod page;

@@ -22,6 +22,12 @@
     <value nick="dynamic" value="4"/>
   </enum>
 
+  <enum id="org.mate.Caminito.PictureOfTheDaySource">
+    <value nick="apod" value="0"/>
+    <value nick="bing" value="1"/>
+    <value nick="commons" value="2"/>
+  </enum>
+
   <enum id="org.mate.Caminito.WallpaperPositioning">
     <value nick="fill" value="0"/>
     <value nick="fit" value="1"/>
@@ -172,7 +178,7 @@
     <key name="kind" enum="org.mate.Caminito.WallpaperKind">
       <default>'colour'</default>
       <summary>The wallpaper's kind</summary>
-      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names, or "dynamic", the dynamic wallpaper "dynamic" names. "slideshow" and "picture-of-the-day" are shown as their colour until caminito-wallpaperd draws them.</description>
+      <description>What the output shows: "picture", the file "picture" names, or "colour", the colour "colour" names, or "dynamic", the dynamic wallpaper "dynamic" names, or "picture-of-the-day", today's picture from the source "picture-of-the-day" names. "slideshow" is shown as its colour until caminito-wallpaperd draws it.</description>
     </key>
     <key name="picture" type="s">
       <default>''</default>
@@ -183,6 +189,11 @@
       <default>''</default>
       <summary>The dynamic wallpaper</summary>
       <description>What a "dynamic" wallpaper shows: the folder of a Plasma package with light and dark pictures, which follow the sun, or a GNOME timed XML file, which follows the clock. With none, or one that can't be read, the output shows its colour.</description>
+    </key>
+    <key name="picture-of-the-day" enum="org.mate.Caminito.PictureOfTheDaySource">
+      <default>'bing'</default>
+      <summary>The source of the picture of the day</summary>
+      <description>Where a "picture-of-the-day" wallpaper's picture comes from: "apod", NASA's Astronomy Picture of the Day, "bing", Bing's, or "commons", Wikimedia Commons'. caminito-wallpaperd fetches it at the session's start, on a wake from suspend and after midnight, and keeps the latest of each source under ~/.cache/caminito-wallpaper. Until the first is fetched the output shows its colour.</description>
     </key>
     <key name="positioning" enum="org.mate.Caminito.WallpaperPositioning">
       <default>'fill'</default>

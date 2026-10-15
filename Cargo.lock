@@ -434,6 +434,7 @@ dependencies = [
  "gtk4",
  "quick-xml",
  "rustix 1.1.5",
+ "serde_json",
  "tempfile",
  "wayland-client",
  "wayland-protocols",
