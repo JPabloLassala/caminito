@@ -437,7 +437,8 @@ Stop the other's agent, or don't start it, to choose.
 (`caminito-displays --night-light`). There it's turned on and off, follows the sun or holds one
 temperature, and pauses until sunrise.
 
-No shortcut toggles it by default. To bind one, open *System Shortcuts* in the control center,
+No shortcut toggles it by default. To bind one, open *System Shortcuts* in the control center
+(*Keyboard Shortcuts* outside a Session),
 choose *Add*, give it a name, such as *Night Light*, and the command:
 
 ```sh

@@ -7,11 +7,11 @@
 //! own writes and `--toggle-night-light` among them, comes back through the keys.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use caminito_displays::night_light::{
-    self, MAX_TEMPERATURE, MIN_TEMPERATURE, Pause, STEP, Schedule, Settings, Tab, Temperature,
-    Write,
+    self, ENABLED, MAX_TEMPERATURE, MIN_TEMPERATURE, PAUSED_UNTIL, Pause, SCHEDULE, STEP, Schedule,
+    Settings, Tab, Temperature, Write,
 };
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -79,6 +79,11 @@ pub(crate) struct NightLightTab {
     /// Set while the widgets are given the tab's values, so that their handlers don't take
     /// them for the user's.
     rendering: Cell<bool>,
+    /// Shows the tab again when the pause on screen ends, in case Caminito's write of 0
+    /// is late or doesn't come.
+    pause_ends: RefCell<Option<glib::SourceId>>,
+    /// The tab itself, for the timer of `pause_ends`.
+    this: Weak<NightLightTab>,
 
     content: gtk::Box,
     form: gtk::Grid,
@@ -95,14 +100,14 @@ pub(crate) struct NightLightTab {
 
 /// Reads the keys.
 fn read(settings: &gio::Settings) -> Settings {
-    let schedule = Schedule::from_nick(&settings.string("night-light-schedule"));
+    let schedule = Schedule::from_nick(&settings.string(SCHEDULE));
     Settings {
-        enabled: settings.boolean("night-light-enabled"),
+        enabled: settings.boolean(ENABLED),
         schedule: schedule.unwrap_or(Schedule::Sun),
         noon: settings.uint(Temperature::Noon.key()),
         night: settings.uint(Temperature::Night.key()),
         constant: settings.uint(Temperature::Constant.key()),
-        paused_until: settings.int64("night-light-paused-until"),
+        paused_until: settings.int64(PAUSED_UNTIL),
     }
 }
 
@@ -172,7 +177,10 @@ impl NightLightTab {
         } else {
             (Store::NoSchema, Tab::new(Settings::default(), None))
         };
-        let ui = Rc::new(Self::build(store, tab));
+        let ui = Rc::new_cyclic(|this| NightLightTab {
+            this: this.clone(),
+            ..Self::build(store, tab)
+        });
         ui.connect();
         ui.render();
         ui
@@ -275,6 +283,8 @@ impl NightLightTab {
             tab: RefCell::new(tab),
             store,
             rendering: Cell::new(false),
+            pause_ends: RefCell::new(None),
+            this: Weak::new(),
             content,
             form,
             enabled,
@@ -434,6 +444,20 @@ impl NightLightTab {
         }
 
         let pause = tab.pause(now());
+        if let Some(running) = self.pause_ends.take() {
+            running.remove();
+        }
+        if let Pause::Resume { until } = pause {
+            let this = self.this.clone();
+            let left = u64::try_from(until - now()).unwrap_or_default() + 1;
+            let over = glib::timeout_add_seconds_local_once(left as u32, move || {
+                if let Some(ui) = this.upgrade() {
+                    ui.pause_ends.take();
+                    ui.render();
+                }
+            });
+            self.pause_ends.replace(Some(over));
+        }
         self.pause.set_label(pause.label());
         let paused = pause.text(local);
         self.paused.set_label(paused.as_deref().unwrap_or_default());

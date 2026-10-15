@@ -16,6 +16,13 @@ pub const MAX_TEMPERATURE: u32 = 6500;
 /// The step of the sliders, in kelvin.
 pub const STEP: u32 = 100;
 
+/// `night-light-enabled`.
+pub const ENABLED: &str = "night-light-enabled";
+/// `night-light-schedule`.
+pub const SCHEDULE: &str = "night-light-schedule";
+/// `night-light-paused-until`.
+pub const PAUSED_UNTIL: &str = "night-light-paused-until";
+
 /// `night-light-schedule`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Schedule {
@@ -148,8 +155,8 @@ impl Write {
     /// The key it writes.
     pub fn key(self) -> &'static str {
         match self {
-            Write::Enabled(_) => "night-light-enabled",
-            Write::Schedule(_) => "night-light-schedule",
+            Write::Enabled(_) => ENABLED,
+            Write::Schedule(_) => SCHEDULE,
             Write::Temperature(which, _) => which.key(),
         }
     }
