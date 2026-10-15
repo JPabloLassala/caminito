@@ -10,7 +10,8 @@
 # packaging/patches/<component>/ and the build patches of its fedora/, which are copied when
 # the package is built and aren't committed beside the spec (ADR 0030); and the upstream
 # tarballs, which spectool fetches and which are checked against `sources`, as Fedora's
-# dist-git checks them. Then it runs rpmbuild -ba with the other arguments. Install the spec's
+# dist-git checks them; and, for a component with no `sources` file, which is Caminito's own,
+# the checkout's committed HEAD. Then it runs rpmbuild -ba with the other arguments. Install the spec's
 # build dependencies first: sudo dnf builddep packaging/fedora/<component>/<component>.spec
 set -euo pipefail
 
@@ -35,8 +36,21 @@ if [ -d "$patches" ]; then
   fi
 fi
 
-# A tarball that is already there isn't fetched again, and is checked again.
-spectool --get-files --sourcedir --define "_sourcedir $sources" "$spec"
-(cd "$sources" && sha512sum --check --strict sources)
+defines=()
+if [ -f "$dir/sources" ]; then
+  # A tarball that is already there isn't fetched again, and is checked again.
+  spectool --get-files --sourcedir --define "_sourcedir $sources" "$spec"
+  (cd "$sources" && sha512sum --check --strict sources)
+else
+  # Caminito's own packages have no `sources`: they are the checkout's committed HEAD,
+  # through `git archive`, so uncommitted work is never packaged, as in tools/debian-build.
+  # Their version is 0.0~r<count>.g<hash> until v0.1.0 is tagged (CMN-171).
+  count=$(git -c safe.directory='*' -C "$root" rev-list --count HEAD)
+  commit=$(git -c safe.directory='*' -C "$root" rev-parse HEAD)
+  version=0.0~r$count.g${commit:0:7}
+  git -c safe.directory='*' -C "$root" archive --prefix="$component-$version/" \
+    -o "$sources/$component-$version.tar.gz" HEAD
+  defines=(--define "caminito_count $count" --define "caminito_commit $commit")
+fi
 
-rpmbuild -ba --define "_sourcedir $sources" "$@" "$spec"
+rpmbuild -ba --define "_sourcedir $sources" "${defines[@]}" "$@" "$spec"
