@@ -42,7 +42,7 @@ The **Overview** (CONTEXT.md): a view of each output's active workspace with its
 
 - It opens on every output at once. Each shows its own active workspace's windows and its own bar.
 - Under Spanning workspaces every output's bar shows the same workspaces, and switching in one switches all.
-- The output the selection is on is the seat's Active output while the Overview is open. At opening it's the focused window's output, or the Active output with none focused.
+- The output the selection is on is the seat's Active output while the Overview is open. At opening it's the focused window's output, or the Active output with none focused, and opening makes it the Active output, over a press on another output's wallpaper since the focus last moved (248). A click on another output's cell moves both there ("The pointer").
 
 ### Which windows
 
