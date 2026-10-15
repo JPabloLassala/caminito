@@ -35,7 +35,9 @@
  * What the daemon gave the dialog, the locker finds itself (132), where the daemon did:
  *  - the background, as gs-manager.c's apply_background_to_window: the desktop's through
  *    MateBG, replaced by picture-filename when that file exists, drawn under each lock
- *    window's content as gs-window-x11.c's gs_window_real_draw does;
+ *    window's content as gs-window-x11.c's gs_window_real_draw does. Under Caminito the
+ *    desktop's is each monitor's own wallpaper, from the file caminito-wallpaperd writes
+ *    (218), and org.mate.background's where the file doesn't have it;
  *  - the buttons and the status message, from gs-prefs.c's keys as gs-monitor.c's
  *    _gs_monitor_update_from_prefs gives them to the windows, and the status message from
  *    gs-watcher.c, as gs-monitor.c's on_watcher_status_message_changed;
@@ -423,16 +425,166 @@ static void background_free(Background* background)
 	g_free(background);
 }
 
+/* org.mate.background's picture-options, as MateBG's placement. */
+static MateBGPlacement placement_of(const char* options)
+{
+	static const struct
+	{
+		const char      *options;
+		MateBGPlacement  placement;
+	} placements[] = {
+		{"wallpaper", MATE_BG_PLACEMENT_TILED},
+		{"zoom", MATE_BG_PLACEMENT_ZOOMED},
+		{"centered", MATE_BG_PLACEMENT_CENTERED},
+		{"scaled", MATE_BG_PLACEMENT_SCALED},
+		{"stretched", MATE_BG_PLACEMENT_FILL_SCREEN},
+		{"spanned", MATE_BG_PLACEMENT_SPANNED},
+	};
+
+	for (gsize i = 0; i < G_N_ELEMENTS(placements); i++)
+	{
+		if (g_strcmp0(options, placements[i].options) == 0)
+		{
+			return placements[i].placement;
+		}
+	}
+
+	return MATE_BG_PLACEMENT_ZOOMED;
+}
+
+/* Whether the wallpaper file's group `group` is `monitor`'s: GTK 3 has no connector, so
+ * a monitor is told by its make, model and place, which come from the same wl_output as
+ * the drawer's. */
+static gboolean is_monitors_group(GKeyFile* file, const char* group, GdkMonitor* monitor)
+{
+	GdkRectangle  geometry;
+	GError       *error = NULL;
+	char         *make;
+	char         *model;
+	int           x;
+	int           y;
+	gboolean      matches;
+
+	make = g_key_file_get_string(file, group, "make", NULL);
+	model = g_key_file_get_string(file, group, "model", NULL);
+	x = g_key_file_get_integer(file, group, "x", &error);
+	if (error == NULL)
+	{
+		y = g_key_file_get_integer(file, group, "y", &error);
+	}
+
+	gdk_monitor_get_geometry(monitor, &geometry);
+	matches = error == NULL
+		&& make != NULL
+		&& model != NULL
+		&& g_strcmp0(make, gdk_monitor_get_manufacturer(monitor) ? gdk_monitor_get_manufacturer(monitor) : "") == 0
+		&& g_strcmp0(model, gdk_monitor_get_model(monitor) ? gdk_monitor_get_model(monitor) : "") == 0
+		&& x == geometry.x
+		&& y == geometry.y;
+
+	g_clear_error(&error);
+	g_free(make);
+	g_free(model);
+
+	return matches;
+}
+
+/* Sets `bg` to the wallpaper caminito-wallpaperd says `monitor` shows (218), and returns
+ * whether it could. The file is read, never the drawer asked, so the lock comes up when
+ * the drawer has crashed or hung. Without the file, without the monitor in it, or with
+ * its picture gone, `bg` is left as it was. */
+static gboolean load_from_wallpaper_file(MateBG* bg, GdkMonitor* monitor)
+{
+	GKeyFile  *file;
+	GError    *error = NULL;
+	char      *path;
+	char     **groups;
+	char      *group = NULL;
+	char      *picture = NULL;
+	char      *options = NULL;
+	char      *color = NULL;
+	GdkRectangle geometry;
+	GdkRGBA    rgba;
+	gboolean   loaded = FALSE;
+
+	path = g_build_filename(g_get_user_runtime_dir(), "caminito-wallpaper", "lock-screen", NULL);
+	file = g_key_file_new();
+	if (!g_key_file_load_from_file(file, path, G_KEY_FILE_NONE, &error))
+	{
+		gs_debug("No wallpaper file: %s", error->message);
+		g_error_free(error);
+		goto out;
+	}
+
+	groups = g_key_file_get_groups(file, NULL);
+	for (char** each = groups; *each != NULL && group == NULL; each++)
+	{
+		if (is_monitors_group(file, *each, monitor))
+		{
+			group = g_strdup(*each);
+		}
+	}
+	g_strfreev(groups);
+	if (group == NULL)
+	{
+		gdk_monitor_get_geometry(monitor, &geometry);
+		gs_debug("The wallpaper file has no %s %s at %d,%d",
+		         gdk_monitor_get_manufacturer(monitor),
+		         gdk_monitor_get_model(monitor),
+		         geometry.x,
+		         geometry.y);
+		goto out;
+	}
+
+	picture = g_key_file_get_string(file, group, "picture-filename", NULL);
+	options = g_key_file_get_string(file, group, "picture-options", NULL);
+	color = g_key_file_get_string(file, group, "primary-color", NULL);
+	if (picture == NULL || color == NULL || !gdk_rgba_parse(&rgba, color))
+	{
+		gs_debug("The wallpaper file's %s is incomplete", group);
+		goto out;
+	}
+	if (picture[0] != '\0' && !g_file_test(picture, G_FILE_TEST_EXISTS))
+	{
+		gs_debug("The wallpaper file's %s names a picture that is gone: %s", group, picture);
+		goto out;
+	}
+
+	gs_debug("Wallpaper of %s from the wallpaper file: %s", group, picture[0] != '\0' ? picture : color);
+	mate_bg_set_color(bg, MATE_BG_COLOR_SOLID, &rgba, NULL);
+	mate_bg_set_placement(bg, placement_of(options));
+	mate_bg_set_filename(bg, picture[0] != '\0' ? picture : NULL);
+	mate_bg_set_draw_background(bg, TRUE);
+	loaded = TRUE;
+
+out:
+	g_free(color);
+	g_free(options);
+	g_free(picture);
+	g_free(group);
+	g_key_file_free(file);
+	g_free(path);
+
+	return loaded;
+}
+
 /* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
  * background, read again for each, with picture-filename in its place when that file
- * exists. */
+ * exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. */
 static Background* apply_background_to_window(GtkWidget* window, int width, int height)
 {
 	GSettings       *settings;
 	char            *filename;
 	Background      *background;
+	GdkMonitor      *monitor;
 
 	mate_bg_load_from_preferences(bg);
+
+	monitor = g_object_get_data(G_OBJECT(window), "monitor");
+	if (monitor == NULL || !load_from_wallpaper_file(bg, monitor))
+	{
+		gs_debug("Background from org.mate.background");
+	}
 
 	settings = g_settings_new ("org.mate.screensaver");
 	filename = g_settings_get_string (settings, "picture-filename");
@@ -522,6 +674,8 @@ static void add_lock_window(GdkMonitor* monitor)
 	g_signal_connect(window, "motion-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "focus-in-event", G_CALLBACK(move_dialog), NULL);
 
+	/* For its wallpaper. The window goes before its monitor does. */
+	g_object_set_data(G_OBJECT(window), "monitor", monitor);
 	gtk_session_lock_lock_new_surface(lock, GTK_WINDOW(window), monitor);
 	g_hash_table_insert(lock_windows, monitor, window);
 
