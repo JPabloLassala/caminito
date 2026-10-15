@@ -2249,6 +2249,34 @@ session_env() {
   [windowing-row.sh](../../.scratch/issues/181-checks/windowing-row.sh), which prints the row
   of a `mate-system-info` built from the series.
 
+### Appearance has no Background tab under Caminito, and the desktop's menu opens Wallpaper
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `mate-control-center-caminito` 1.29.1-7 or later and `caminito-git` with the
+     Wallpaper dialog installed (`ls
+     /usr/share/caminito/xdg/applications/caminito-wallpaper.desktop`), log into *MATE on
+     Caminito*. Open *Appearance* from the control center and read its tabs. Scroll the mouse
+     wheel over the tabs, both ways.
+  2. Close it. Right-click the desktop and choose *Change Desktop Background*.
+  3. Close the dialog. Run `mate-appearance-properties --show-page=background`, then
+     `mate-appearance-properties` with a picture's path, closing each window it opens.
+  4. Run `XDG_DATA_DIRS=/usr/local/share:/usr/share mate-appearance-properties
+     --show-page=background`, then the same with a picture's path in place of
+     `--show-page=background`, then `env -u MATE_WM_NAME mate-appearance-properties`.
+  5. Log out, log into *MATE*, the X11 session. Open *Appearance*, choose its *Background* tab
+     and click another picture. Then right-click the desktop and choose *Change Desktop
+     Background*.
+- **Expected:** in step 1 the tabs are *Theme*, *Fonts* and *Interface*, with no
+  *Background*, and the wheel never lands on a blank page. In step 2 the *Wallpaper* dialog
+  opens, and no Appearance window does. In step 3 each command opens *Wallpaper*, and nothing
+  on the desktop changes. In step 4 the first two commands, which can't find Caminito's
+  launcher, open Appearance at *Theme*, without *Background*, and the desktop keeps its
+  wallpaper; the third opens it with *Background*, as stock. In step 5 *Background* is there, the desktop takes the picture, and
+  the menu opens Appearance at *Background*: the gate is `MATE_WM_NAME` alone (219, ADR 0011).
+- **Debug tool:** `mate-appearance-properties` run from a terminal, for its `Could not open
+  the Wallpaper dialog` warning, and `echo "$MATE_WM_NAME $XDG_DATA_DIRS"` there.
+
 ### The Window switcher shows live thumbnails
 
 - **Milestone:** M8
