@@ -131,6 +131,18 @@ struct StateDump {
     /// The Workspace slides that run (233), in the outputs' order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     workspace_slides: Vec<WorkspaceSlideDump>,
+    /// The windows on their way open (251), in the order they were shown.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    opening_windows: Vec<OpeningWindowDump>,
+}
+
+#[derive(Serialize)]
+struct OpeningWindowDump {
+    id: u64,
+    /// Where its frame is drawn, globally.
+    rect: RectDump,
+    /// How opaque it's drawn, from 0 to 1.
+    alpha: f32,
 }
 
 #[derive(Serialize)]
@@ -1032,6 +1044,15 @@ impl Caminito {
             sun: self.sun_dump(),
             tile_preview: policy.tile_preview(SEAT).map(RectDump::from),
             workspace_slides,
+            opening_windows: self
+                .drawn_opening_windows(now)
+                .into_iter()
+                .map(|(id, rect, alpha)| OpeningWindowDump {
+                    id: id.0,
+                    rect: rect.into(),
+                    alpha,
+                })
+                .collect(),
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")
     }

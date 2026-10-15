@@ -35,6 +35,7 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
+use crate::open_close_animation::opening_at;
 use crate::output::{output_geometry, output_id};
 use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
@@ -1414,7 +1415,8 @@ pub(crate) fn override_redirect_bbox(window: &X11Surface) -> Rectangle<i32, Logi
 /// away from their places, and so are those that left, which don't show: each in its
 /// place in the one stack, with its frame, its shadow and its popups. A window of a
 /// workspace the slide has at more than one place is drawn at each (239). Another output
-/// draws them as policy has them, so nothing of a slide shows on it.
+/// draws them as policy has them, so nothing of a slide shows on it. A window on its way
+/// open (251) is drawn at the size and opacity it has reached, about its centre.
 fn window_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -1449,6 +1451,21 @@ fn window_elements<R>(
             // The slide moves it nowhere.
             shifts.push(Point::default());
         }
+        let opening = caminito.open_close_animations.opening(id, now);
+        let frame = policy.frame_rect(id);
+        if let (Some(done), Some(frame)) = (opening, frame) {
+            for shift in shifts {
+                let frame = Rectangle::new(frame.loc + shift, frame.size);
+                let drawn = OpeningWindow {
+                    mapped,
+                    geometry: Rectangle::new(geometry.loc + shift, geometry.size),
+                    frame,
+                    done,
+                };
+                opening_window_elements(renderer, drawn, output, elements);
+            }
+            continue;
+        }
         for shift in shifts {
             let drawn_at = geometry.loc + shift;
             if caminito.debug.frame_debug {
@@ -1469,6 +1486,74 @@ fn window_elements<R>(
             tile_preview_elements(caminito, output, elements);
         }
     }
+}
+
+/// A window on its way open (251), with its geometry and its frame where policy has them,
+/// or where a Workspace slide moves them to, and how far it is on its way.
+struct OpeningWindow<'a> {
+    mapped: &'a Mapped,
+    geometry: Rectangle<i32, Logical>,
+    frame: Rectangle<i32, Logical>,
+    done: f64,
+}
+
+/// `opening` on `output` as far as it is on its way open (251), front to back: its surfaces
+/// with their popups, its frame's strips and its shadow, at its opacity then, scaled about
+/// its frame's centre to the size it has then.
+fn opening_window_elements<R>(
+    renderer: &mut R,
+    opening: OpeningWindow,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let OpeningWindow {
+        mapped,
+        geometry,
+        frame,
+        done,
+    } = opening;
+    if frame.size.w <= 0 || frame.size.h <= 0 {
+        return;
+    }
+    let output_geometry = output_geometry(output);
+    let (drawn, alpha) = opening_at(frame, done);
+    if !drawn.overlaps(output_geometry) {
+        return;
+    }
+    let scale = output.current_scale().fractional_scale();
+    // What of the window, from its frame's corner, is drawn on the output once it's scaled
+    // about that corner as much as `drawn` is from `frame`.
+    let factor = (
+        f64::from(frame.size.w) / f64::from(drawn.size.w),
+        f64::from(frame.size.h) / f64::from(drawn.size.h),
+    );
+    let unscaled = |n: i32, factor: f64| (f64::from(n) * factor).ceil() as i32;
+    let corner = output_geometry.loc - drawn.loc;
+    let shown = Rectangle::new(
+        (
+            (f64::from(corner.x) * factor.0).floor() as i32,
+            (f64::from(corner.y) * factor.1).floor() as i32,
+        )
+            .into(),
+        (
+            unscaled(output_geometry.size.w, factor.0) + 1,
+            unscaled(output_geometry.size.h, factor.1) + 1,
+        )
+            .into(),
+    );
+    let origin = geometry.loc - frame.loc;
+    let mut parts: Vec<WindowPart<R>> = Vec::new();
+    one_window_elements(renderer, mapped, origin, shown, scale, alpha, &mut parts);
+    let shadow = mapped.frame().shadow();
+    parts.extend(buffer_elements(
+        renderer, shadow, origin, shown, scale, alpha, "shadow",
+    ));
+    let target = Rectangle::new(drawn.loc - output_geometry.loc, drawn.size);
+    let whole = Rectangle::from_size(output_geometry.size);
+    scaled_elements_in(parts, frame.size, target, whole, scale, elements);
 }
 
 /// While a move's pointer is in a tiling zone, the tile preview on `output`: where letting

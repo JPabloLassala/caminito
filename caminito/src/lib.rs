@@ -21,6 +21,7 @@ pub mod logging;
 mod minimize_animation;
 mod night_light;
 mod not_responding;
+mod open_close_animation;
 pub mod output;
 mod overview;
 pub mod protocols;

@@ -106,6 +106,7 @@ use crate::lock::{Lock, Locker};
 use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::NightLight;
 use crate::not_responding::NotResponding;
+use crate::open_close_animation::OpenCloseAnimations;
 use crate::output::OutputRecord;
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
@@ -275,6 +276,8 @@ pub struct Caminito {
     pub(crate) minimize_animations: MinimizeAnimations,
     /// The outputs whose windows slide between two workspaces (233).
     pub(crate) workspace_slides: WorkspaceSlides,
+    /// The windows that grow and fade in as they open (251).
+    pub(crate) open_close_animations: OpenCloseAnimations,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -667,6 +670,9 @@ impl State {
         // After the last step that changes policy, so that no frame shows a switch of
         // workspace before its slide starts (233).
         self.caminito.refresh_workspace_slides();
+        // After the last step that changes policy, so that a window that maps is drawn
+        // opening from its first frame (251).
+        self.caminito.refresh_open_close_animations();
         // After the last step that changes policy, and before the outputs are drawn: what
         // a handler or a step above changed in policy is drawn in this pass (179).
         self.caminito.queue_redraw_for_policy();
@@ -691,12 +697,15 @@ impl State {
                 Some(states) => {
                     self.caminito.lock.frame_drawn(&output);
                     // A Workspace slide is drawn at every frame of its output (233), and so
-                    // is the Overview's transition (243): the backend takes the next one
-                    // when the output can show it.
+                    // are the Overview's transition (243) and a window's opening (251): the
+                    // backend takes the next one when the output can show it.
                     let caminito = &self.caminito;
                     let slides = &caminito.workspace_slides;
                     let sliding = slides.on(crate::output::output_id(&output), now).is_some();
-                    if sliding || caminito.overview_transition_on(&output, now) {
+                    if sliding
+                        || caminito.overview_transition_on(&output, now)
+                        || caminito.opening_on(&output, now)
+                    {
                         self.caminito.queue_redraw(&output);
                     }
                     rendered.push((output, states));
@@ -985,6 +994,7 @@ impl Caminito {
             player,
             minimize_animations: MinimizeAnimations::default(),
             workspace_slides: WorkspaceSlides::default(),
+            open_close_animations: OpenCloseAnimations::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,

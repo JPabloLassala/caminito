@@ -402,6 +402,10 @@ pub struct Settings {
     /// `overview-animation` on, and the minimise animation's three keys as it needs them
     /// (ADR 0033).
     pub overview_animation: bool,
+    /// Whether a window grows and fades in as it opens (251): `org.mate.Caminito`'s
+    /// `open-close-animation` on, and the minimise animation's three keys as it needs them
+    /// (ADR 0034).
+    pub open_close_animation: bool,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -1146,6 +1150,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         && r.bool(INTERFACE, "enable-animations", true);
     let workspace_slide = minimize_animation && r.bool(CAMINITO, "workspace-slide", true);
     let overview_animation = minimize_animation && r.bool(CAMINITO, "overview-animation", true);
+    let open_close_animation = minimize_animation && r.bool(CAMINITO, "open-close-animation", true);
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
@@ -1243,6 +1248,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         minimize_animation,
         workspace_slide,
         overview_animation,
+        open_close_animation,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,
