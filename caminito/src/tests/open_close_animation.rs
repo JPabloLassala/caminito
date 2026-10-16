@@ -31,9 +31,9 @@ const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
 const OUTPUT: (i32, i32) = (800, 600);
 
 /// How far into the animation the tests read it.
-const PART_WAY: Duration = Duration::from_millis(50);
+pub(super) const PART_WAY: Duration = Duration::from_millis(50);
 
-type Settings = Vec<(&'static str, String, Setting)>;
+pub(super) type Settings = Vec<(&'static str, String, Setting)>;
 
 /// One output with `open-close-animation` on, unless `settings` has it, and a client of
 /// `kind`. The fixture has the key off, for the tests written when a window was there at
@@ -54,7 +54,7 @@ fn desk(kind: Kind, mut settings: Settings) -> (Fixture, ClientId) {
 
 /// Each window on its way open, by policy's id, with where its frame is drawn and its
 /// opacity, from the debug dump's `opening_windows`, which isn't there while none is.
-fn opening(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, f64)> {
+pub(super) fn opening(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, f64)> {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
     let Some(windows) = dump["opening_windows"].as_array() else {
@@ -317,19 +317,19 @@ fn the_key_turned_off_leaves_the_next_window_there_at_once() {
 
 /// A closing window's picture, as the debug dump's `closing_windows` has it.
 #[derive(Debug)]
-struct DrawnPicture {
+pub(super) struct DrawnPicture {
     /// The id its window had in policy.
-    id: u64,
+    pub(super) id: u64,
     /// Where its frame is drawn.
-    rect: Rectangle<i32, Logical>,
-    alpha: f64,
+    pub(super) rect: Rectangle<i32, Logical>,
+    pub(super) alpha: f64,
     /// The window it's drawn just over, by policy's id.
-    over: Option<u64>,
+    pub(super) over: Option<u64>,
 }
 
 /// Each closing window's picture, from the debug dump's `closing_windows`, which isn't
 /// there while none is.
-fn closing(f: &Fixture) -> Vec<DrawnPicture> {
+pub(super) fn closing(f: &Fixture) -> Vec<DrawnPicture> {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
     let Some(windows) = dump["closing_windows"].as_array() else {
@@ -362,7 +362,7 @@ fn drawn_closing(f: &Fixture, id: u64) -> DrawnPicture {
 }
 
 /// Maps a window and lets its opening finish.
-fn map_opened(f: &mut Fixture, id: ClientId, spec: WindowSpec) -> ClientWindow {
+pub(super) fn map_opened(f: &mut Fixture, id: ClientId, spec: WindowSpec) -> ClientWindow {
     let window = f.map(id, spec);
     f.advance_clock(LENGTH);
     window
@@ -370,7 +370,7 @@ fn map_opened(f: &mut Fixture, id: ClientId, spec: WindowSpec) -> ClientWindow {
 
 /// How a client closes a window.
 #[derive(Debug, Clone, Copy)]
-enum Close {
+pub(super) enum Close {
     /// It destroys it: the xdg toplevel and its surface, or the X window.
     Destroy,
     /// X11 only: it unmaps it, and may map it again.
@@ -379,7 +379,7 @@ enum Close {
 
 /// Has `window`'s client close it as `close` says, and waits until Caminito no longer
 /// manages it.
-fn close(f: &mut Fixture, window: ClientWindow, close: Close) {
+pub(super) fn close(f: &mut Fixture, window: ClientWindow, close: Close) {
     match (window, close) {
         (ClientWindow::Xdg(id, xdg), Close::Destroy) => {
             f.client(id).destroy_window(xdg);

@@ -57,6 +57,7 @@ mod move_to;
 mod night_light;
 mod not_responding;
 mod open_close_animation;
+mod open_close_animation_effects;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;

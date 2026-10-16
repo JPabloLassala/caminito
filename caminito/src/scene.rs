@@ -1677,8 +1677,10 @@ pub(crate) fn override_redirect_bbox(window: &X11Surface) -> Rectangle<i32, Logi
 /// place in the one stack, with its frame, its shadow and its popups. A window of a
 /// workspace the slide has at more than one place is drawn at each (239). Another output
 /// draws them as policy has them, so nothing of a slide shows on it. A window on its way
-/// open (251) is drawn at the size and opacity it has reached, about its centre, and one
-/// on its way out of its button (172) isn't drawn here, but in its box.
+/// open (251) is drawn at the size and opacity it has reached, about its centre, one on its
+/// way out of its button (172) isn't drawn here, but in its box, and a closing window's
+/// picture (252) is drawn where its workspace is drawn: both move with the slide as they
+/// zoom and fade (254).
 fn window_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -1710,7 +1712,7 @@ fn window_elements<R>(
         closing.retain(|closing| {
             let over = closing.is_over(id);
             if over {
-                closing_elements(closing, output, now, elements);
+                closing_elements(caminito, closing, output, now, elements);
             }
             !over
         });
@@ -1788,7 +1790,7 @@ fn window_elements<R>(
         }
     }
     for closing in closing {
-        closing_elements(closing, output, now, elements);
+        closing_elements(caminito, closing, output, now, elements);
     }
 }
 
@@ -1851,8 +1853,9 @@ fn closing_popups_on<R>(
 }
 
 /// A closing window's picture where it's drawn at `now` on `output`, shrunk about its
-/// frame's centre and faded (252).
+/// frame's centre and faded (252), at each place a slide draws its workspace at (254).
 fn closing_elements<R>(
+    caminito: &Caminito,
     closing: &Closing,
     output: &Output,
     now: Duration,
@@ -1863,14 +1866,17 @@ fn closing_elements<R>(
 {
     let drawn = closing.rect(now);
     let alpha = closing.alpha(now);
-    picture_elements_at(
-        &closing.picture,
-        closing.frame,
-        drawn,
-        alpha,
-        output,
-        elements,
-    );
+    for shift in caminito.picture_shifts(closing, Some(output_id(output)), now) {
+        let shifted = Rectangle::new(drawn.loc + shift, drawn.size);
+        picture_elements_at(
+            &closing.picture,
+            closing.frame,
+            shifted,
+            alpha,
+            output,
+            elements,
+        );
+    }
 }
 
 /// A window's `picture`, taken of it with its frame at `frame`, drawn on `output` with that

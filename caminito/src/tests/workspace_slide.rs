@@ -24,14 +24,14 @@ use crate::state::SEAT;
 use crate::workspace_slide::LENGTH;
 
 /// The window's colour, as `0xRRGGBB`.
-const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
+pub(super) const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
 
 /// The panel's bar, in a colour that's neither the window's nor the clear colour's.
 const BAR_COLOR: u32 = 0xff00_00ff;
 const BAR_HEIGHT: i32 = 30;
 
 /// The output, which a window of `BIG` nearly fills.
-const OUTPUT: (i32, i32) = (800, 600);
+pub(super) const OUTPUT: (i32, i32) = (800, 600);
 
 /// A window so wide and so high beside the output that some of it is on the output for
 /// the first 110 ms of its way out, whichever way it goes, so a slow run between the
@@ -77,13 +77,13 @@ fn map_on(f: &mut Fixture, id: ClientId, workspace: usize, size: (i32, i32)) -> 
 
 /// A running slide, as the debug dump has it.
 #[derive(Debug)]
-struct Sliding {
-    output: String,
+pub(super) struct Sliding {
+    pub(super) output: String,
     from: u64,
     to: u64,
-    offset: Point<i32, Logical>,
+    pub(super) offset: Point<i32, Logical>,
     /// Each window it moves, by policy's id, with where its frame is drawn.
-    windows: Vec<(u64, Rectangle<i32, Logical>)>,
+    pub(super) windows: Vec<(u64, Rectangle<i32, Logical>)>,
     /// The windows it leaves in their places, by policy's id.
     still: Vec<u64>,
 }
@@ -119,7 +119,7 @@ impl Sliding {
 
 /// The slides that run, from the debug dump's `workspace_slides`, which isn't there while
 /// none does.
-fn slides(f: &Fixture) -> Vec<Sliding> {
+pub(super) fn slides(f: &Fixture) -> Vec<Sliding> {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
     let Some(slides) = dump["workspace_slides"].as_array() else {
@@ -198,7 +198,7 @@ fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
 }
 
 /// `output`'s pixel at the global point `at`, as `0xRRGGBB`.
-fn pixel_on(f: &mut Fixture, output: &Output, at: Point<i32, Logical>) -> u32 {
+pub(super) fn pixel_on(f: &mut Fixture, output: &Output, at: Point<i32, Logical>) -> u32 {
     let local = at - output_geometry(output).loc;
     let pixel = f
         .state
@@ -209,7 +209,7 @@ fn pixel_on(f: &mut Fixture, output: &Output, at: Point<i32, Logical>) -> u32 {
 }
 
 /// Where nothing is drawn, as `0xRRGGBB`.
-fn clear() -> u32 {
+pub(super) fn clear() -> u32 {
     argb8888(CLEAR_COLOR) & 0xff_ffff
 }
 
@@ -1094,7 +1094,7 @@ fn a_fullscreen_window_slides_and_the_panel_shows() {
 // Two outputs (236): the left one of `OUTPUT`, and one of another size on its right.
 
 /// The output on the right, wider and higher than the first.
-const WIDE: (i32, i32) = (1024, 768);
+pub(super) const WIDE: (i32, i32) = (1024, 768);
 
 /// A window that slides in a band along the top of an output, clear of what's put below
 /// it, and so wide that some of it is on the other output part-way in from there.
@@ -1110,7 +1110,7 @@ const ACROSS: (i32, i32) = (OUTPUT.0 - 100, 380);
 
 /// Where a `SMALL` window is on the right output alone, below the band and clear of
 /// `ACROSS`.
-const LOW_RIGHT: (i32, i32) = (OUTPUT.0 + 600, 500);
+pub(super) const LOW_RIGHT: (i32, i32) = (OUTPUT.0 + 600, 500);
 
 /// Two outputs side by side, the left one the primary, with `workspaces-per-output` as
 /// `per_output` says, `workspace-slide` on and a Wayland client.
@@ -1127,7 +1127,7 @@ fn two_outputs(per_output: bool, mut settings: Settings) -> (Fixture, ClientId, 
 
 /// Maps a window of `size`, drags it so that its geometry is at the global point `at`,
 /// and puts it on `workspace`. A drag can leave it across two outputs.
-fn put_at(
+pub(super) fn put_at(
     f: &mut Fixture,
     id: ClientId,
     at: (i32, i32),

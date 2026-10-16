@@ -253,6 +253,23 @@ impl WorkspaceSlides {
         self.running(now).find(|slide| slide.output == output)
     }
 
+    /// Has the slide that runs on `output` at `now` bring `window` with it, if `workspace`
+    /// is the one it brings: a window that opens there part-way, which the slide didn't
+    /// have at its start, moves with its workspace as it grows (254).
+    pub(crate) fn arrive(
+        &mut self,
+        window: WindowId,
+        output: OutputId,
+        workspace: usize,
+        now: Duration,
+    ) {
+        let mut running = self.running.iter_mut();
+        let slide = running.find(|slide| slide.output == output && !slide.is_over(now));
+        if let Some(slide) = slide.filter(|slide| slide.to == workspace) {
+            slide.arriving.insert(window);
+        }
+    }
+
     /// The slides that run at `now`.
     fn running(&self, now: Duration) -> impl Iterator<Item = &Slide> {
         self.running.iter().filter(move |slide| !slide.is_over(now))

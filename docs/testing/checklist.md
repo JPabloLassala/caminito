@@ -2962,6 +2962,41 @@ the developer's to run.
   `zwlr_foreign_toplevel_handle_v1.set_rectangle` it sends, and
   `gsettings monitor org.mate.Marco.general`.
 
+### The opening and closing animations beside the slide, the Overview and the lock
+
+- **Milestone:** `open-close-animation`, the developer's to run (254).
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with two monitors side by side and four
+     workspaces in one row. Run `gsettings get org.mate.Caminito open-close-animation`,
+     `gsettings get org.mate.Caminito workspace-slide` and
+     `gsettings get org.mate.Caminito workspaces-per-output`, which print `true`. Open a
+     terminal on the first workspace of the first monitor.
+  2. Open pluma (a native window) and `xterm` (X11), and close each with its Frame's close
+     button.
+  3. In the terminal, run `sleep 0.1; pluma &` and press Ctrl+Alt+Right at once, so pluma
+     opens on the second workspace as it slides in.
+  4. In pluma, press Ctrl+Q and Ctrl+Alt+Left at once. Then on the second workspace run
+     `pluma & sleep 2; pkill pluma` and press Ctrl+Alt+Left about two seconds later, so it
+     closes as the slide runs.
+  5. Open the Overview with Super+W, and from a terminal in it run `pluma &`, and close
+     another window from its Frame. Close the Overview, and open and close a window as it
+     closes.
+  6. Run `pluma & sleep 0.05; mate-screensaver-command --lock`, and unlock.
+  7. Close a window on the second monitor and unplug that monitor at once.
+  8. Run `gsettings set org.mate.Caminito workspaces-per-output false` and repeat steps 3
+     and 4. Set it back to `true`.
+- **Expected:** in step 2 each window grows into its place and fades in as it opens, and
+  shrinks and fades out as it closes, in a fifth of a second. In step 3 pluma comes in with
+  its workspace as it grows and fades in, with no jump at the slide's end. In step 4 each
+  closing window's picture leaves with its workspace as it shrinks and fades, and is drawn
+  nowhere else. In step 5 nothing grows or shrinks in the Overview or during its
+  transition: a window joins or leaves its layout as it does with the animation off. In
+  step 6 the locker shows nothing that grows, and after the unlock pluma is at its place
+  at rest. In step 7 nothing of the picture is left on the first monitor. In step 8 both
+  monitors slide, each window with its own monitor's workspace (ADR 0032). In every step
+  the animations are smooth at each monitor's refresh rate.
+- **Debug tool:** `DumpState`'s `opening_windows`, `closing_windows` and `workspace_slides`.
+
 ### The window menu
 
 - **Milestone:** M8, run in M8's closing run (173).

@@ -31,6 +31,13 @@
 //! frame, read each frame; one minimised on its way open stops opening, and the minimise
 //! animation takes it from its real place.
 //!
+//! Beside the other effects (254): during a Workspace slide, a window that opens on the
+//! workspace arriving moves with it as it grows, and a closing window's picture belongs to
+//! its workspace, and slides away with it as it shrinks (`picture_shifts`). Neither runs
+//! while the Overview is open or during its transition, nor under the session lock: each
+//! ends the ones that run at once and starts none (`animations_run`). An output that goes
+//! drops the pictures that showed by it. All are as the slide has them (235).
+//!
 //! The numbers and the windows are those of Plasma's Scale effect, in KWin's
 //! `src/plugins/scale/package/contents/code/main.js` (ADR 0034).
 
@@ -48,7 +55,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
-use crate::output::output_geometry;
+use crate::output::{output_geometry, output_id};
 use crate::scene::{self, SceneElement, SceneLayer};
 use crate::state::{Caminito, State};
 use crate::window::WindowKey;
@@ -345,8 +352,8 @@ pub(crate) struct Closing {
     /// while that output shows the workspace.
     workspace: Option<usize>,
     output: Option<OutputId>,
-    /// Whether it's drawn, as the refresh pass last found from the two above, so the scene
-    /// reads no more of policy for it.
+    /// Whether it's drawn, as the refresh pass last found from the two above and the slide
+    /// of that output (254), so the scene reads no more of policy for it.
     pub shows: bool,
 }
 
@@ -497,13 +504,29 @@ impl State {
 }
 
 impl Caminito {
-    /// Whether window `id` would be seen to close now: the animation is on, the window is
-    /// one it's for, and it's on screen.
+    /// Whether window `id` would be seen to close now: the animation is on and runs, the
+    /// window is one it's for, and it's on screen, where it shows or a slide draws it on its
+    /// way out with its workspace (254).
     fn closes_seen(&self, id: WindowId) -> bool {
         let policy = &self.policy;
+        let slid = || {
+            let output = policy.output_showing(id);
+            let slide = output.and_then(|output| self.workspace_slides.on(output, self.now()));
+            // Drawn as one that doesn't show, on its way out.
+            let showing = false;
+            slide.is_some_and(|slide| !slide.shifts(id, showing, self.now()).is_empty())
+        };
         self.settings.open_close_animation
+            && self.animations_run()
             && policy.window(id).is_some_and(animates)
-            && policy.is_showing(id)
+            && (policy.is_showing(id) || slid())
+    }
+
+    /// Whether the animations run now: not while the Overview is open or during its
+    /// transition, nor under the session lock (254).
+    fn animations_run(&self) -> bool {
+        let overview = self.policy.overview().is_some() || !self.overview.is_empty();
+        !overview && !self.lock.is_locked()
     }
 
     /// Starts window `id`'s closing from the picture kept of it, just before it leaves
@@ -563,34 +586,70 @@ impl Caminito {
         self.queue_redraw_all();
     }
 
-    /// Whether `closing`'s picture is drawn: while the output its window showed by shows
-    /// its workspace.
-    fn closing_shows(&self, closing: &Closing) -> bool {
+    /// How far from its own place `closing`'s picture is drawn on `output` at `now`, for
+    /// each place it's drawn at, and none where it isn't. It belongs to its workspace (254):
+    /// on the output its window showed by, the slide that runs there draws it where it
+    /// draws that workspace, as it would have drawn the window. Otherwise it's drawn at its
+    /// place while that output shows its workspace, and a sticky window's always.
+    pub(crate) fn picture_shifts(
+        &self,
+        closing: &Closing,
+        output: Option<OutputId>,
+        now: Duration,
+    ) -> Vec<Point<i32, Logical>> {
         let Some(workspace) = closing.workspace else {
-            return true;
+            return vec![Point::default()];
         };
+        let slide = closing
+            .output
+            .filter(|its_own| output == Some(*its_own))
+            .and_then(|its_own| self.workspace_slides.on(its_own, now));
+        if let Some(slide) = slide {
+            return slide.workspace_shifts(workspace, now);
+        }
         let active = match closing.output {
             Some(output) => self.policy.active_workspace_on(output),
             None => self.policy.primary_active_workspace(),
         };
-        active == workspace
+        if active == workspace {
+            vec![Point::default()]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Starts the animation of each window that mapped since the last refresh pass, shows
     /// and animates, and ends that of each window that no longer shows. With
     /// `open-close-animation` off, or one of the minimise animation's three keys against
-    /// it, none starts; a change of those keys lets one that runs finish. A closing
-    /// window's picture is drawn while its workspace shows, and a picture kept of a window
-    /// that's no longer managed, which left policy some other way, goes.
+    /// it, none starts; a change of those keys lets one that runs finish. The Overview, its
+    /// transition and the session lock end every one that runs at once and start none, and
+    /// a picture goes with the output its window showed by (254). A closing window's
+    /// picture is drawn while its workspace shows, or a slide draws it, and a picture kept
+    /// of a window that's no longer managed, which left policy some other way, goes.
     pub(crate) fn refresh_open_close_animations(&mut self) {
         let now = self.now();
+        let mut changed = false;
+        let runs = self.animations_run();
+        let outputs = &self.outputs;
+        let animations = &mut self.open_close_animations;
+        let before = animations.running.len() + animations.closing.len();
+        if !runs {
+            animations.mapped.clear();
+            animations.running.clear();
+        }
+        animations.closing.retain(|closing| {
+            let output_left = closing
+                .output
+                .is_some_and(|its_own| !outputs.iter().any(|output| output_id(output) == its_own));
+            runs && !output_left
+        });
+        changed |= animations.running.len() + animations.closing.len() != before;
         let shows: Vec<bool> = self
             .open_close_animations
             .closing
             .iter()
-            .map(|closing| self.closing_shows(closing))
+            .map(|closing| !self.picture_shifts(closing, closing.output, now).is_empty())
             .collect();
-        let mut changed = false;
         for (closing, shows) in self.open_close_animations.closing.iter_mut().zip(shows) {
             changed |= closing.shows != shows;
             closing.shows = shows;
@@ -652,6 +711,10 @@ impl Caminito {
                 frame: policy.frame_rect(id),
                 from,
             });
+            let on = policy.main_output_of(id).zip(policy.workspace_of(id));
+            if let Some((output, workspace)) = on {
+                self.workspace_slides.arrive(id, output, workspace, now);
+            }
             changed = true;
         }
         if changed {
@@ -690,36 +753,58 @@ impl Caminito {
         opening.chain(closing).any(|drawn| drawn.overlaps(area))
     }
 
-    /// Each closing window's picture at `now`, oldest first, as it's drawn, for the debug
-    /// dump.
+    /// Each closing window's picture at `now`, oldest first, as it's drawn on the output its
+    /// window showed by, for the debug dump: one time for each place a slide draws it at.
     pub(crate) fn drawn_closing_windows(&self, now: Duration) -> Vec<DrawnClosing> {
         let stack = self.policy.stacking_all();
         self.open_close_animations
             .closing(now)
             .filter(|closing| closing.shows)
-            .map(|closing| {
+            .flat_map(|closing| {
                 let over = stack.iter().rev().find(|id| closing.is_over(**id)).copied();
-                DrawnClosing {
+                let rect = closing.rect(now);
+                let alpha = closing.alpha(now);
+                let shifts = self.picture_shifts(closing, closing.output, now);
+                shifts.into_iter().map(move |shift| DrawnClosing {
                     window: closing.window,
-                    rect: closing.rect(now),
-                    alpha: closing.alpha(now),
+                    rect: Rectangle::new(rect.loc + shift, rect.size),
+                    alpha,
                     over,
-                }
+                })
             })
             .collect()
     }
 
     /// Each window on its way open at `now`, in the order they were shown, with where its
-    /// frame is drawn, globally, and its opacity, for the debug dump.
+    /// frame is drawn, globally, and its opacity, for the debug dump: one time for each
+    /// place the slide of its Main output draws it at (254).
     pub(crate) fn drawn_opening_windows(
         &self,
         now: Duration,
     ) -> Vec<(WindowId, Rectangle<i32, Logical>, f32)> {
+        let policy = &self.policy;
         self.open_close_animations
             .opening_windows(now)
             .filter_map(|opening| {
-                let frame = self.policy.frame_rect(opening.window)?;
-                Some((opening.window, opening.rect(frame, now), opening.alpha(now)))
+                let frame = policy.frame_rect(opening.window)?;
+                Some((opening, frame))
+            })
+            .flat_map(|(opening, frame)| {
+                let id = opening.window;
+                let output = policy.main_output_of(id);
+                let slide = output.and_then(|output| self.workspace_slides.on(output, now));
+                let showing = policy.is_showing(id);
+                let mut shifts =
+                    slide.map_or_else(Vec::new, |slide| slide.shifts(id, showing, now));
+                if shifts.is_empty() {
+                    shifts.push(Point::default());
+                }
+                let rect = opening.rect(frame, now);
+                let alpha = opening.alpha(now);
+                shifts.into_iter().map(move |shift| {
+                    let drawn = Rectangle::new(rect.loc + shift, rect.size);
+                    (id, drawn, alpha)
+                })
             })
             .collect()
     }
