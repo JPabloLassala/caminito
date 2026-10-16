@@ -1,3 +1,10 @@
+caja (1.28.0-0caminito2) resolute; urgency=medium
+
+  * Carry 0003: the desktop lets Caminito's wallpaper show through, and is
+    what the panels leave of the output (CMN-182).
+
+ -- jpablo <jpablolassala@gmail.com>  Fri, 16 Oct 2026 00:00:00 +0000
+
 caja (1.28.0-0caminito1) resolute; urgency=medium
 
   * Caminito's patched caja, from Ubuntu 26.04's 1.26.4-2 (200).

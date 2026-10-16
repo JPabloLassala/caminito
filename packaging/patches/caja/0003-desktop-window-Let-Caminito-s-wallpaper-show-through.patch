@@ -1,0 +1,180 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Fri, 16 Oct 2026 12:00:00 -0300
+Subject: [PATCH] desktop-window: Let Caminito's wallpaper show through the
+ desktop
+
+On Wayland the desktop draws the picture of org.mate.background itself,
+zoomed to its own surface, which covers the wallpaper. Under Caminito that
+surface is as big as the output, from the size it asks for, but it starts
+below the top panel, so its picture is that much lower than the wallpaper
+Caminito draws under it, and its last rows are past the bottom of the
+output. When Caminito's Overview hides the desktop, the wallpaper jumps up.
+Caminito's wallpaper is also each output's own, and can change through the
+day, where org.mate.background has one picture for every output.
+
+While org.mate.Caminito has an owner, the desktop draws none of the
+picture: its window has an RGBA visual and draws no background of its own,
+and EelBackground neither draws nor fades a desktop window marked so. The
+desktop asks for no size either, so its anchors make it what the panels
+leave of the output, and its icons stay clear of them.
+
+Without an owner of org.mate.Caminito, which is any other Wayland
+compositor, nothing changes. X11 is as it was.
+---
+ eel/eel-background.c      | 22 +++++++++++++++
+ src/caja-desktop-window.c | 56 ++++++++++++++++++++++++++++++++-------
+ 2 files changed, 68 insertions(+), 10 deletions(-)
+
+diff --git a/eel/eel-background.c b/eel/eel-background.c
+index ceaa972f..fe8f1bc8 100644
+--- a/eel/eel-background.c
++++ b/eel/eel-background.c
+@@ -382,6 +382,19 @@ eel_background_ensure_realized (EelBackground *self)
+     return TRUE;
+ }
+ 
++/* Whether this is the background of a desktop window that's marked to draw
++ * none, as caja's desktop is under Caminito, which draws the wallpaper under
++ * it. Such a background draws nothing and never fades.
++ */
++static gboolean
++eel_background_is_transparent (EelBackground *self)
++{
++    return self->details->is_desktop &&
++           self->details->widget != NULL &&
++           g_object_get_data (G_OBJECT (self->details->widget),
++                              "caja-desktop-transparent") != NULL;
++}
++
+ void
+ eel_background_draw (GtkWidget *widget,
+                      cairo_t   *cr)
+@@ -390,6 +403,11 @@ eel_background_draw (GtkWidget *widget,
+     GdkRGBA color;
+     int width, height;
+ 
++    if (eel_background_is_transparent (self))
++    {
++        return;
++    }
++
+     if (self->details->fade != NULL &&
+         mate_bg_crossfade_is_started (self->details->fade))
+     {
+@@ -450,6 +468,10 @@ init_fade (EelBackground *self)
+         return;
+     }
+ 
++    if (eel_background_is_transparent (self)) {
++        return;
++    }
++
+     mate_background_preferences = g_settings_new ("org.mate.background");
+     do_fade = g_settings_get_boolean (mate_background_preferences,
+                                       MATE_BG_KEY_BACKGROUND_FADE);
+diff --git a/src/caja-desktop-window.c b/src/caja-desktop-window.c
+index d70e8abf..0485ad04 100644
+--- a/src/caja-desktop-window.c
++++ b/src/caja-desktop-window.c
+@@ -263,15 +263,17 @@ caja_desktop_window_sync_caminito_menus (CajaDesktopWindow *window,
+     }
+ }
+ 
+-/* Puts the desktop on Caminito's primary output, at its size, and its menu on
+- * the others. A change of output maps the layer surface again. Elsewhere the
+- * compositor places the desktop, as before.
++/* Puts the desktop on Caminito's primary output, and its menu on the others.
++ * The desktop asks for no size: its anchors make it what the panels leave of
++ * the output, so its icons stay clear of them. As big as the output, it would
++ * start below the top panel and go past the bottom of the output. A change of
++ * output maps the layer surface again. Elsewhere the compositor places the
++ * desktop, as before.
+  */
+ static void
+ caja_desktop_window_follow_caminito (CajaDesktopWindow *window)
+ {
+     GdkMonitor *monitor;
+-    GdkRectangle geometry = {0};
+ 
+     monitor = caja_desktop_window_get_caminito_monitor (window);
+     caja_desktop_window_sync_caminito_menus (window, monitor);
+@@ -281,13 +283,33 @@ caja_desktop_window_follow_caminito (CajaDesktopWindow *window)
+     if (gtk_layer_get_monitor (GTK_WINDOW (window)) != monitor)
+         gtk_layer_set_monitor (GTK_WINDOW (window), monitor);
+ 
+-    gdk_monitor_get_geometry (monitor, &geometry);
+     g_object_set (window,
+-                  "width_request", geometry.width,
+-                  "height_request", geometry.height,
++                  "width_request", -1,
++                  "height_request", -1,
+                   NULL);
+ }
+ 
++/* Caminito draws the wallpaper on every output, under the desktop, so the
++ * desktop draws none of its own and lets it show. Its own would be the one
++ * picture of org.mate.background, fitted to the desktop and not to the
++ * output, and not each output's own wallpaper. EelBackground draws nothing
++ * for a desktop window marked so. It's decided before the window is realized,
++ * which is when its visual counts.
++ */
++static void
++caja_desktop_window_show_caminito_wallpaper (CajaDesktopWindow *window)
++{
++    GdkVisual *visual;
++
++    gtk_widget_set_app_paintable (GTK_WIDGET (window), TRUE);
++    visual = gdk_screen_get_rgba_visual (gtk_widget_get_screen (GTK_WIDGET (window)));
++    if (visual != NULL)
++        gtk_widget_set_visual (GTK_WIDGET (window), visual);
++
++    g_object_set_data (G_OBJECT (window), "caja-desktop-transparent",
++                       GINT_TO_POINTER (1));
++}
++
+ /* Looks for Caminito, and follows its primary output from then on: as the
+  * property changes, as Caminito comes or goes, and as the monitors do, since
+  * the primary output can be named before GDK has its monitor. GDK adds a
+@@ -298,6 +320,7 @@ static void
+ caja_desktop_window_watch_caminito (CajaDesktopWindow *window)
+ {
+     GDBusProxy *caminito;
++    char *owner;
+ 
+     caminito = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SESSION,
+                                             G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+@@ -309,6 +332,11 @@ caja_desktop_window_watch_caminito (CajaDesktopWindow *window)
+     if (caminito == NULL)
+         return;
+ 
++    owner = g_dbus_proxy_get_name_owner (caminito);
++    if (owner != NULL)
++        caja_desktop_window_show_caminito_wallpaper (window);
++    g_free (owner);
++
+     g_object_set_data_full (G_OBJECT (window), "caminito", caminito, g_object_unref);
+     g_object_set_data_full (G_OBJECT (window), "caminito-menus",
+                             g_hash_table_new_full (NULL, NULL, g_object_unref,
+@@ -415,10 +443,18 @@ caja_desktop_window_screen_size_changed (GdkScreen             *screen,
+         monitor = caja_desktop_window_get_caminito_monitor (window);
+ #endif
+         if (monitor == NULL)
++        {
+             monitor = gdk_display_get_monitor (display, 0);
+-        gdk_monitor_get_geometry (monitor, &geometry);
+-        width_request = geometry.width;
+-        height_request = geometry.height;
++            gdk_monitor_get_geometry (monitor, &geometry);
++            width_request = geometry.width;
++            height_request = geometry.height;
++        }
++        else
++        {
++            /* Caminito's primary output: its anchors size it. */
++            width_request = -1;
++            height_request = -1;
++        }
+     }
+ 
+     g_object_set (window,

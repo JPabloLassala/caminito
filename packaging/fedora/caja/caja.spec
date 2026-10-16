@@ -7,7 +7,7 @@
 Name:        caja
 Summary:     File manager for MATE
 Version:     %{branch}.0
-Release:     0.caminito1%{?dist}
+Release:     0.caminito2%{?dist}
 # Automatically converted from old format: GPLv2+ and LGPLv2+ - review is highly recommended.
 License:     GPL-2.0-or-later AND LicenseRef-Callaway-LGPLv2+
 URL:         http://mate-desktop.org
@@ -25,6 +25,7 @@ Patch6:      caja_0010-caja-file-operations-restart-timer-also-for-moves.patch
 # packaging/arch/caja-caminito/PKGBUILD.
 Patch101:    0001-desktop-window-Put-the-desktop-on-Caminito-s-primary.patch
 Patch102:    0002-desktop-window-Pop-up-the-desktop-s-menu-on-Caminito.patch
+Patch103:    0003-desktop-window-Let-Caminito-s-wallpaper-show-through.patch
 
 BuildRequires: dbus-glib-devel
 BuildRequires: desktop-file-utils
@@ -175,5 +176,8 @@ EOF
 
 
 %changelog
+* Fri Oct 16 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.0-0.caminito2
+- Carry 0003: the desktop lets Caminito's wallpaper show through (CMN-182)
+
 * Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.0-0.caminito1
 - caja 1.28.0, with Caminito's carried patches, from Fedora f45's spec (CMN-170)
