@@ -392,9 +392,12 @@ impl XConnection {
             .into_iter()
             .map(|cookie| Ok(cookie.reply()?.atom))
             .collect::<Result<Vec<_>, Error>>()?;
-        // Root messages are sent with both masks, so `SubstructureNotify` gets them without
-        // taking redirection from Smithay (11).
-        let events = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE;
+        // Root messages are sent with `SubstructureRedirect` beside `SubstructureNotify` or,
+        // as Qt sends them, `StructureNotify`, so selecting both gets them without taking
+        // redirection from Smithay (11).
+        let events = EventMask::SUBSTRUCTURE_NOTIFY
+            | EventMask::STRUCTURE_NOTIFY
+            | EventMask::PROPERTY_CHANGE;
         conn.change_window_attributes(root, &ChangeWindowAttributesAux::new().event_mask(events))?
             .check()?;
         let xkb = conn.xkb_use_extension(1, 0)?.reply()?;

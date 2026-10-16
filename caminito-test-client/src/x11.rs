@@ -512,13 +512,31 @@ impl X11Client {
         type_: &str,
         data: [u32; 5],
     ) -> Result<(), ReplyError> {
+        let masks = EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY;
+        self.send_client_message_with(masks, window, type_, data)
+    }
+
+    /// Sends a client message about `window` to the root as Qt's xcb platform does, with
+    /// `StructureNotify` rather than `SubstructureNotify` beside the redirection.
+    pub fn send_client_message_as_qt(
+        &self,
+        window: Window,
+        type_: &str,
+        data: [u32; 5],
+    ) -> Result<(), ReplyError> {
+        let masks = EventMask::SUBSTRUCTURE_REDIRECT | EventMask::STRUCTURE_NOTIFY;
+        self.send_client_message_with(masks, window, type_, data)
+    }
+
+    fn send_client_message_with(
+        &self,
+        masks: EventMask,
+        window: Window,
+        type_: &str,
+        data: [u32; 5],
+    ) -> Result<(), ReplyError> {
         let event = ClientMessageEvent::new(32, window, self.atom(type_)?, data);
-        self.conn.send_event(
-            false,
-            self.root,
-            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
-            event,
-        )?;
+        self.conn.send_event(false, self.root, masks, event)?;
         self.conn.sync()
     }
 

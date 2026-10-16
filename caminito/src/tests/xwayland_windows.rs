@@ -467,3 +467,36 @@ fn a_utility_window_that_asks_to_be_active_while_pending_maps_focused() {
 
     f.dispatch_until_mut(|f| x_focus(f, x) == launcher);
 }
+
+/// Albert, shown by a key binding's command while another client has the focus: Qt asks as
+/// soon as X has mapped the window, with the time it was shown at, and sends the message
+/// with `StructureNotify`, which Caminito's connection must select to read its source.
+#[test]
+fn a_launchers_utility_window_that_asks_to_be_active_while_pending_maps_focused() {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let editor = f.map(
+        x,
+        WindowSpec {
+            cardinals: of_process(100),
+            ..spec(400, 300)
+        },
+    );
+
+    let active = editor.x11();
+    let now = f.state.caminito.now().as_millis() as u32;
+    let launcher = f
+        .x11_call(x, move |x| {
+            let window = x.create_window(&XWindowSpec {
+                size: (600, 100),
+                types: vec!["_NET_WM_WINDOW_TYPE_UTILITY"],
+                cardinals: of_process(200),
+                ..XWindowSpec::default()
+            })?;
+            x.map(window)?;
+            x.send_client_message_as_qt(window, "_NET_ACTIVE_WINDOW", [1, now, active, 0, 0])?;
+            Ok::<_, x11rb::errors::ReplyOrIdError>(window)
+        })
+        .unwrap();
+
+    f.dispatch_until_mut(|f| x_focus(f, x) == launcher);
+}
