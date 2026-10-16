@@ -817,11 +817,44 @@ session_env() {
   the menu doesn't slide on its own: it leaves inside pluma's closing picture.
 
   Each slide takes a fifth of a second, starts fast and slows into its place, or starts slow
-  and speeds into its edge as it closes, with no frame that stutters. An X11 app's menus and
-  the Window menu don't slide yet (CMN-180, CMN-181).
+  and speeds into its edge as it closes, with no frame that stutters. An X11 app's menus have
+  an item of their own, and the Window menu doesn't slide yet (CMN-181).
 - **Debug tool:** `DumpState`'s `popup_slides`, there while a popup slides out, and
   `closing_popups`, there while a closed popup's picture slides back: each has its `rect` at
   its place, its `edge`, and the `offset` and `alpha` it's drawn at.
+
+### An X11 app's menu slides away from the pointer
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with the panel at the top. Run
+     `gsettings get org.mate.Caminito popup-slide`, which prints `true`. Start pluma on
+     Xwayland with `GDK_BACKEND=x11 pluma`.
+  2. Open its *File* menu from its menubar, then a submenu of its *View* menu. Right-click
+     its text for its context menu.
+  3. Move pluma down until its menubar is near the bottom of the screen, so the *File* menu
+     opens above it, and open it. Move pluma back.
+  4. Open the *File* menu and press Down and Return at once, before it has finished sliding.
+     Open it again and click *New* at once.
+  5. Hold the pointer over a toolbar button until its tooltip shows.
+  6. Open the *File* menu and close it with Escape. Open it again and press Escape at once,
+     before it has finished sliding out.
+  7. Drag a file from caja onto pluma's text, if caja runs on Xwayland too.
+  8. `gsettings set org.mate.Caminito popup-slide false`, and open and close the menus of step
+     2 again. Set it back to `true`.
+- **Expected:** in step 2 the *File* menu comes down out of the menubar, the submenu out of
+  its menu's side, away from where the pointer is, and the context menu comes down from the
+  pointer. Nothing of a menu is drawn outside its own place while it slides. In step 3 the
+  menu comes up from the menubar beneath it. In step 4 the keys reach the menu and a new
+  document opens, and the click reaches the row at its real place. In step 5 the tooltip
+  slides out too. In step 6 the menu slides back into the edge it came out of; the one closed
+  at once turns round from where it is, with no jump. In step 7 the drag icon follows the
+  pointer and doesn't slide. In step 8 each menu is there at once and gone at once.
+
+  Each slide takes a fifth of a second, as a Wayland menu's does, with no frame that
+  stutters.
+- **Debug tool:** `DumpState`'s `popup_slides` and `closing_popups`, as for a Wayland menu: an
+  X11 menu's `rect` is its X window's place on the screen.
 
 ### The workspace bindings switch the Active output
 

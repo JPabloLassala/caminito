@@ -36,7 +36,9 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
-use smithay::wayland::compositor::{TraversalAction, with_states, with_surface_tree_downward};
+use smithay::wayland::compositor::{
+    SurfaceData, TraversalAction, with_states, with_surface_tree_downward,
+};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
@@ -46,7 +48,7 @@ use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
-use crate::popup_slide::{ClosingPopup, PopupSlides, Slid};
+use crate::popup_slide::{ClosingPopup, Popup, PopupSlides, Slid};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -1594,7 +1596,9 @@ fn drag_icon_elements<R>(
 }
 
 /// The override-redirect windows on `output`. They render as other XWayland surfaces do,
-/// with the X11 client scale their buffers have.
+/// with the X11 client scale their buffers have. One that slides out of its edge (ADR 0037)
+/// is drawn off its place and cut off at it, and the pictures of those that slide back are
+/// drawn beneath them.
 fn override_redirect_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -1606,6 +1610,8 @@ fn override_redirect_elements<R>(
 {
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
+    let now = caminito.now();
+    let slides = &caminito.popup_slides;
     for window in caminito.override_redirect_windows() {
         let bbox = override_redirect_bbox(window);
         if !bbox.overlaps(output_geometry) {
@@ -1616,11 +1622,14 @@ fn override_redirect_elements<R>(
         };
         let location = (bbox.loc - output_geometry.loc).to_f64().to_physical(scale);
         let alpha = x11_alpha(window, 1.0);
-        elements.extend(
-            surface_tree_elements(renderer, &surface, location, scale, alpha)
-                .into_iter()
-                .map(SceneElement::Window),
-        );
+        let slid = slides.slid(&Popup::OverrideRedirect(window.window_id()), now);
+        elements.extend(slid_elements(
+            renderer, &surface, location, scale, alpha, slid,
+        ));
+    }
+    let origin = Point::default() - output_geometry.loc;
+    for closing in slides.closing_override_redirect(now) {
+        closing_popup_elements(closing, closing.slid(now), origin, scale, elements);
     }
 }
 
@@ -2066,17 +2075,37 @@ where
     R::TextureId: Clone + 'static,
     E: From<WaylandSurfaceRenderElement<R>> + From<PopupSlidePart<R>>,
 {
-    let Some(slid) = slides.and_then(|(slides, now)| slides.slid(popup, now)) else {
-        let elements = surface_tree_elements(renderer, popup, location, scale, alpha);
+    let slid = slides.and_then(|(slides, now)| slides.slid(&Popup::Xdg(popup.clone()), now));
+    slid_elements(renderer, popup, location, scale, alpha, slid)
+}
+
+/// A popup's `surface` and its subsurfaces, front to back, with its origin at `location` on
+/// the output, unrounded, where it is at rest, or as `slid` has it while it slides out of its edge, cut
+/// off at that place.
+fn slid_elements<R, E>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    location: Point<f64, Physical>,
+    scale: f64,
+    alpha: f32,
+    slid: Option<Slid>,
+) -> Vec<E>
+where
+    R: Renderer + ImportAll,
+    R::TextureId: Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>> + From<PopupSlidePart<R>>,
+{
+    let Some(slid) = slid else {
+        let elements = surface_tree_elements(renderer, surface, location, scale, alpha);
         return elements.into_iter().map(E::from).collect();
     };
     // Its subsurfaces and its shadow, if its client draws one, with it.
-    let place = bbox_from_surface_tree(popup, (0, 0))
+    let place = bbox_from_surface_tree(surface, (0, 0))
         .to_f64()
         .to_physical(scale);
     let crop = Rectangle::new(location + place.loc, place.size).to_i32_round();
     let moved = location + slid.offset.to_f64().to_physical(scale);
-    surface_tree_elements(renderer, popup, moved, scale, alpha * slid.alpha)
+    surface_tree_elements(renderer, surface, moved, scale, alpha * slid.alpha)
         .into_iter()
         .filter_map(|element| CropRenderElement::from_element(element, scale, crop))
         .map(E::from)
@@ -2097,6 +2126,11 @@ fn x11_alpha(window: &X11Surface, alpha: f32) -> f32 {
 /// starts, its frame's strip or a panel, and leave a row of what's behind between them.
 /// From an unrounded origin each edge is rounded where it is, and what meets in the
 /// logical space meets on the output.
+///
+/// A surface in its destruction hooks has left its own tree, which Smithay empties first,
+/// so it's drawn alone: that's when Xwayland's surface of an X window goes before the unmap
+/// reaches Caminito, and the window's or the menu's picture is taken from it (252, ADR
+/// 0037).
 fn surface_tree_elements<R>(
     renderer: &mut R,
     surface: &WlSurface,
@@ -2108,20 +2142,14 @@ where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
 {
-    let offset = |states: &smithay::wayland::compositor::SurfaceData| {
+    let offset = |states: &SurfaceData| {
         let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
         let offset = data.lock().unwrap().view()?.offset;
         Some(offset.to_f64().to_physical(scale))
     };
     let mut elements = Vec::new();
-    with_surface_tree_downward(
-        surface,
-        location,
-        |_, states, location| match offset(states) {
-            Some(offset) => TraversalAction::DoChildren(*location + offset),
-            None => TraversalAction::SkipChildren,
-        },
-        |surface, states, location| {
+    let mut element =
+        |surface: &WlSurface, states: &SurfaceData, location: Point<f64, Physical>| {
             let Some(offset) = offset(states) else {
                 return;
             };
@@ -2129,7 +2157,7 @@ where
                 renderer,
                 surface,
                 states,
-                *location + offset,
+                location + offset,
                 alpha,
                 Kind::Unspecified,
             );
@@ -2138,9 +2166,24 @@ where
                 Ok(None) => {}
                 Err(err) => tracing::warn!("can't import a surface: {err:?}"),
             }
+        };
+    let mut visited = false;
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location| match offset(states) {
+            Some(offset) => TraversalAction::DoChildren(*location + offset),
+            None => TraversalAction::SkipChildren,
+        },
+        |surface, states, location| {
+            visited = true;
+            element(surface, states, *location);
         },
         |_, _, _| true,
     );
+    if !visited {
+        with_states(surface, |states| element(surface, states, location));
+    }
     elements
 }
 
