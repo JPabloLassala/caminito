@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use caminito_policy::{PolicyWindow, WindowId};
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::open_close_animation::{Picture, animates};
 use crate::output::output_geometry;
@@ -51,6 +51,24 @@ fn between(
             at(from.size.h, to.size.h).max(1),
         )
             .into(),
+    )
+}
+
+/// Where `area`, from the corner of something of `size`, is once that's scaled to fill
+/// `target`, as the scene draws a window and its picture into their box.
+fn scaled_into(
+    area: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
+    target: Rectangle<i32, Logical>,
+) -> Rectangle<f64, Logical> {
+    let factor = Scale::from((
+        f64::from(target.size.w) / f64::from(size.w.max(1)),
+        f64::from(target.size.h) / f64::from(size.h.max(1)),
+    ));
+    let area = area.to_f64();
+    Rectangle::new(
+        target.loc.to_f64() + area.loc.upscale(factor),
+        area.size.upscale(factor),
     )
 }
 
@@ -263,12 +281,50 @@ impl Caminito {
     }
 
     /// Whether a window on its way at `now` is drawn on `output`, which is then drawn again
-    /// at its next frame.
+    /// at its next frame. What's drawn reaches past its box, scaled with it: its surfaces past
+    /// its window geometry, as a CSD window's shadow, its Frame's shadow, and its picture's.
     pub(crate) fn maximize_animation_on(&self, output: &Output, now: Duration) -> bool {
-        let area = output_geometry(output);
-        self.drawn_maximizing_windows(now)
-            .into_iter()
-            .any(|(_, rect, _)| rect.overlaps(area))
+        let area = output_geometry(output).to_f64();
+        self.maximize_animations
+            .running
+            .iter()
+            .filter(|m| !m.is_over(now))
+            .filter_map(|m| {
+                let to = self.policy.asked_frame_rect(m.window)?;
+                let frame = self.policy.frame_rect(m.window)?;
+                let drawn = m.rect(to, now);
+                let mut covered = drawn.to_f64();
+                if let Some(reach) = self.reach(m.window) {
+                    covered = covered.merge(scaled_into(reach, frame.size, drawn));
+                }
+                if let Some(picture) = &m.picture {
+                    let size = m.picture_frame.size;
+                    covered = covered.merge(scaled_into(picture.area, size, drawn));
+                }
+                Some(covered)
+            })
+            .any(|covered| covered.overlaps(area))
+    }
+
+    /// What window `id` draws, with its popups and its Frame's shadow, from its frame's
+    /// corner.
+    fn reach(&self, id: WindowId) -> Option<Rectangle<i32, Logical>> {
+        let policy = &self.policy;
+        let (mapped, geometry, frame) = (
+            policy.window(id)?,
+            policy.geometry(id)?,
+            policy.frame_rect(id)?,
+        );
+        let window = mapped.window();
+        let mut reach = Rectangle::from_size(frame.size);
+        let mut surfaces = window.bbox_with_popups();
+        surfaces.loc += geometry.loc - window.geometry().loc - frame.loc;
+        reach = reach.merge(surfaces);
+        for (band, _) in mapped.frame().shadow() {
+            let loc = geometry.loc - frame.loc + band.loc;
+            reach = reach.merge(Rectangle::new(loc, band.size));
+        }
+        Some(reach)
     }
 }
 

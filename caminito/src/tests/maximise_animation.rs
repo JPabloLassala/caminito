@@ -8,7 +8,10 @@ use std::time::Duration;
 use caminito_test_client::format_input;
 use smithay::utils::{Logical, Point, Rectangle};
 
-use super::fixture::{BTN_LEFT, ClientId, ClientWindow, Fixture, Kind, WindowSpec, on_both_kinds};
+use super::fixture::{
+    BTN_LEFT, ClientId, ClientWindow, Decoration, Fixture, Kind, WINDOW_COLOR, WindowSpec,
+    on_both_kinds,
+};
 use crate::maximize_animation::LENGTH;
 use crate::settings::Value as Setting;
 use crate::settings::translate::{CAMINITO, INTERFACE, MARCO_GENERAL};
@@ -282,4 +285,71 @@ fn maximising_one_way_and_fullscreen_dont_animate() {
         "fullscreen: {:?}",
         maximizing(&f)
     );
+}
+
+/// How far a CSD window's surface reaches past its window geometry each way: its shadow.
+const SHADOW: i32 = 40;
+
+/// Acks the client's last configure and draws a CSD window at the size it asks for, with a
+/// shadow of `shadow` around it outside its window geometry, as GTK and Firefox draw one.
+fn draw_with_shadow(f: &mut Fixture, window: ClientWindow, shadow: i32) {
+    let ClientWindow::Xdg(id, xdg) = window else {
+        unreachable!("an xdg window")
+    };
+    f.roundtrip(id);
+    let client = f.client(id);
+    let (w, h) = client.window(xdg).configures.last().unwrap().size;
+    client.ack_last_configure(xdg);
+    client.set_window_geometry(xdg, (shadow, shadow, w, h));
+    client.attach_buffer(xdg, (w + 2 * shadow, h + 2 * shadow), WINDOW_COLOR);
+    client.commit(xdg);
+    f.roundtrip(id);
+}
+
+// A CSD window's shadow is drawn scaled with it, past its box: an output it reaches is drawn
+// at each frame too, as the box's is, or it shows the shadow only at the frames something
+// else has it drawn, and flickers.
+#[test]
+fn an_output_the_shadow_reaches_part_way_is_drawn_at_every_frame() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let left = f.state.caminito.outputs[0].clone();
+    let right = f.add_output(OUTPUT, 1.0);
+    f.set_output_position(&left, (0, 0));
+    f.set_output_position(&right, (OUTPUT.0, 0));
+    let spec = WindowSpec {
+        decoration: Decoration::Client,
+        ..WindowSpec::default()
+    };
+    let window = f.map(id, spec);
+    let pid = f.pid(window);
+    f.state
+        .caminito
+        .policy
+        .request_geometry(pid, Some(Point::from((150, 120))), None);
+    f.dispatch();
+    draw_with_shadow(&mut f, window, SHADOW);
+    // Maximised it has no shadow, as GTK and Firefox draw it.
+    f.state.caminito.policy.set_maximized(pid, true);
+    f.dispatch();
+    draw_with_shadow(&mut f, window, 0);
+    f.advance_clock(LENGTH);
+    assert_eq!(f.visible_frame(window), Rectangle::from_size(OUTPUT.into()));
+
+    f.state.caminito.policy.set_maximized(pid, false);
+    f.dispatch();
+    draw_with_shadow(&mut f, window, SHADOW);
+    f.draw(&right);
+
+    // Just inside the right output, which the box never reaches.
+    let spot = Point::from((5, OUTPUT.1 / 2));
+    let mut reached = false;
+    for _ in 0..25 {
+        f.advance_clock(Duration::from_millis(10));
+        let shown = f.state.backend.headless_mut().pixel(&right, spot);
+        f.draw(&right);
+        let drawn = f.state.backend.headless_mut().pixel(&right, spot);
+        assert_eq!(shown, drawn, "the right output was drawn at that frame");
+        reached |= drawn == Some(WINDOW_COLOR);
+    }
+    assert!(reached, "the shadow reaches the right output part-way");
 }
