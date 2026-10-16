@@ -103,6 +103,8 @@ impl Caminito {
     pub(crate) fn window_committed(&mut self, key: &WindowKey) {
         if let Some(id) = self.mapped_for_key(key) {
             self.policy.window(id).unwrap().window().on_commit();
+            // A picture kept for its closing is of a frame it has drawn over (252).
+            self.open_close_animations.forget_kept(id);
             self.window_changed(id);
         } else if let Some(pending) = self.pending.remove(key) {
             pending.window.on_commit();

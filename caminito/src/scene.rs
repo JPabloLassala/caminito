@@ -292,7 +292,7 @@ where
 }
 
 /// What a closing window's picture is drawn from, and what it covers (`picture_elements`).
-type Picture<R> = (Vec<SceneElement<R>>, Rectangle<i32, Logical>);
+type PictureParts<R> = (Vec<SceneElement<R>>, Rectangle<i32, Logical>);
 
 /// Window `id` as its closing picture keeps it (252): its surfaces with their popups, its
 /// Frame and its shadow, front to back, drawn at `scale` from the corner of what they cover,
@@ -303,7 +303,7 @@ pub(crate) fn picture_elements<R>(
     caminito: &Caminito,
     id: WindowId,
     scale: f64,
-) -> Option<Picture<R>>
+) -> Option<PictureParts<R>>
 where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
@@ -1544,12 +1544,12 @@ fn window_elements<R>(
     let mut closing: Vec<&Closing> = caminito
         .open_close_animations
         .closing(now)
-        .filter(|closing| closing.layer == layer && caminito.closing_shows(closing))
+        .filter(|closing| closing.layer == layer && closing.shows)
         .collect();
 
     for &id in stacking.iter().rev() {
         closing.retain(|closing| {
-            let over = closing.beneath.contains(&id);
+            let over = closing.is_over(id);
             if over {
                 picture_elements_at(closing, output, now, elements);
             }

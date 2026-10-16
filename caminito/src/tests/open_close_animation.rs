@@ -313,12 +313,21 @@ fn the_key_turned_off_leaves_the_next_window_there_at_once() {
     assert_there_at_once(f, id);
 }
 
-/// Each closing window's picture, by the id its window had in policy, with where its frame
-/// is drawn, its opacity, and the window it's drawn just over, from the debug dump's
-/// `closing_windows`, which isn't there while none is.
-type Closing = (u64, Rectangle<i32, Logical>, f64, Option<u64>);
+/// A closing window's picture, as the debug dump's `closing_windows` has it.
+#[derive(Debug)]
+struct DrawnPicture {
+    /// The id its window had in policy.
+    id: u64,
+    /// Where its frame is drawn.
+    rect: Rectangle<i32, Logical>,
+    alpha: f64,
+    /// The window it's drawn just over, by policy's id.
+    over: Option<u64>,
+}
 
-fn closing(f: &Fixture) -> Vec<Closing> {
+/// Each closing window's picture, from the debug dump's `closing_windows`, which isn't
+/// there while none is.
+fn closing(f: &Fixture) -> Vec<DrawnPicture> {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
     let Some(windows) = dump["closing_windows"].as_array() else {
@@ -330,20 +339,22 @@ fn closing(f: &Fixture) -> Vec<Closing> {
             (int(&rect["x"]), int(&rect["y"])).into(),
             (int(&rect["width"]), int(&rect["height"])).into(),
         );
-        let alpha = window["alpha"].as_f64().unwrap();
-        let over = window["over"].as_u64();
-        (window["id"].as_u64().unwrap(), rect, alpha, over)
+        DrawnPicture {
+            id: window["id"].as_u64().unwrap(),
+            rect,
+            alpha: window["alpha"].as_f64().unwrap(),
+            over: window["over"].as_u64(),
+        }
     });
     windows.collect()
 }
 
-/// Where the one closing window's picture is drawn, its opacity and what it's drawn over,
-/// checking it's `id`'s.
+/// The one closing window's picture, checking it's `id`'s.
 #[track_caller]
-fn drawn_closing(f: &Fixture, id: u64) -> (Rectangle<i32, Logical>, f64, Option<u64>) {
-    let closing = closing(f);
+fn drawn_closing(f: &Fixture, id: u64) -> DrawnPicture {
+    let mut closing = closing(f);
     match closing[..] {
-        [(closed, rect, alpha, over)] if closed == id => (rect, alpha, over),
+        [DrawnPicture { id: closed, .. }] if closed == id => closing.remove(0),
         _ => panic!("window {id} alone closes: {closing:?}"),
     }
 }
@@ -372,12 +383,12 @@ fn close(f: &mut Fixture, window: ClientWindow, close: Close) {
             f.client(id).destroy_window(xdg);
             f.roundtrip(id);
         }
-        (ClientWindow::X11(id, x11), Close::Destroy) => {
-            f.x11_call(id, move |x| x.destroy(x11)).unwrap();
-            f.dispatch_until(|f| f.policy_id(window).is_none());
-        }
-        (ClientWindow::X11(id, x11), Close::Unmap) => {
-            f.x11_call(id, move |x| x.unmap(x11)).unwrap();
+        (ClientWindow::X11(id, x11), close) => {
+            f.x11_call(id, move |x| match close {
+                Close::Destroy => x.destroy(x11),
+                Close::Unmap => x.unmap(x11),
+            })
+            .unwrap();
             f.dispatch_until(|f| f.policy_id(window).is_none());
         }
         (ClientWindow::Xdg(..), Close::Unmap) => panic!("an X11 unmap"),
@@ -388,13 +399,19 @@ fn close(f: &mut Fixture, window: ClientWindow, close: Close) {
 /// fades out from the picture of it, and is gone at 200 ms, with nothing of it left where
 /// it was.
 fn assert_shrinks_and_fades_out(f: &mut Fixture, id: u64, frame: Rectangle<i32, Logical>) {
-    let (start, alpha, _) = drawn_closing(f, id);
+    let DrawnPicture {
+        rect: start, alpha, ..
+    } = drawn_closing(f, id);
     assert_eq!(start, frame, "it starts at its own place");
     assert_eq!(alpha, 1.0, "with full opacity");
     assert_eq!(pixel(f, middle(frame)), WINDOW, "its last frame is drawn");
 
     f.advance_clock(PART_WAY);
-    let (part_way, alpha, _) = drawn_closing(f, id);
+    let DrawnPicture {
+        rect: part_way,
+        alpha,
+        ..
+    } = drawn_closing(f, id);
     assert!(alpha > 0.0 && alpha < 1.0, "fainter part-way: {alpha}");
     assert!(
         part_way.size.w < frame.size.w && part_way.size.h < frame.size.h,
@@ -414,7 +431,9 @@ fn assert_shrinks_and_fades_out(f: &mut Fixture, id: u64, frame: Rectangle<i32, 
     );
 
     f.advance_clock(LENGTH - PART_WAY - Duration::from_millis(1));
-    let (end, alpha, _) = drawn_closing(f, id);
+    let DrawnPicture {
+        rect: end, alpha, ..
+    } = drawn_closing(f, id);
     assert!(alpha < 0.05, "all but gone at the end: {alpha}");
     assert!(
         (end.size.w - four_fifths(frame.size.w)).abs() <= 1,
@@ -443,6 +462,7 @@ on_both_kinds! {
     }
 }
 
+// A null buffer hides an xdg toplevel; an X window is hidden by an unmap, which follows.
 #[test]
 fn an_xdg_window_its_client_hides_with_a_null_buffer_shrinks_and_fades_out() {
     let (mut f, id) = desk(Kind::Xdg, Vec::new());
@@ -540,7 +560,9 @@ fn part_way_a_window_above_stays_above_the_picture_and_a_click_on_it_reaches_the
     close(&mut f, window, Close::Destroy);
     f.advance_clock(PART_WAY);
 
-    let (drawn, _, over) = drawn_closing(&f, pid);
+    let DrawnPicture {
+        rect: drawn, over, ..
+    } = drawn_closing(&f, pid);
     assert_eq!(
         over,
         Some(f.pid(beneath).0),
@@ -579,7 +601,9 @@ fn part_way_a_window_above_stays_above_the_picture_and_a_click_on_it_reaches_the
 }
 
 // A window's picture is kept by the close handlers and the surface's hooks, which run while
-// its buffer is there. Caminito's own close, with none kept, is a close whose buffer went.
+// its buffer is there, so no client of either kind can take its buffer away first. The close
+// is Caminito's own, with no picture kept, as one whose buffer went would be: the same for
+// both kinds past the handlers.
 #[test]
 fn a_window_with_no_picture_kept_closes_at_once() {
     let (mut f, id) = desk(Kind::Xdg, Vec::new());
@@ -600,6 +624,7 @@ fn a_window_with_no_picture_kept_closes_at_once() {
     );
 }
 
+// The settings are read the same for both kinds, which reach the one `start_closing`.
 #[test]
 fn with_its_key_or_one_of_the_three_others_against_it_a_window_is_gone_in_one_frame() {
     for (schema, key, value) in [

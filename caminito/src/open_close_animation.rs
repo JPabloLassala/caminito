@@ -156,7 +156,9 @@ where
             .map_err(|err| tracing::debug!("can't draw a closing window's picture: {err:?}"))
             .ok()?;
         // The texture is drawn from at once, so the renderer finishes it first.
-        let _ = drawn.sync.wait();
+        if let Err(err) = drawn.sync.wait() {
+            tracing::debug!("can't wait for a closing window's picture: {err:?}");
+        }
     }
     let texture = R::TextureId::from(target);
     let context = renderer.context_id();
@@ -199,16 +201,31 @@ pub(crate) struct Closing {
     /// while that output shows the workspace.
     workspace: Option<usize>,
     output: Option<OutputId>,
+    /// Whether it's drawn, as the refresh pass last found from the two above, so the scene
+    /// reads no more of policy for it.
+    pub shows: bool,
 }
 
 impl Closing {
-    fn is_over(&self, now: Duration) -> bool {
+    fn is_finished(&self, now: Duration) -> bool {
         now.saturating_sub(self.start) >= LENGTH
     }
 
     /// How far it is on its way at `now`, from 0 to 1.
     pub(crate) fn done(&self, now: Duration) -> f64 {
         way_closed(now.saturating_sub(self.start))
+    }
+
+    /// Whether it's drawn just over `window`, going down the stack from the top: the first
+    /// window met that was beneath it.
+    pub(crate) fn is_over(&self, window: WindowId) -> bool {
+        self.beneath.contains(&window)
+    }
+
+    /// What its picture covers at its start, globally, which it never leaves as it shrinks.
+    fn covered(&self) -> Rectangle<i32, Logical> {
+        let area = self.picture.area;
+        Rectangle::new(self.frame.loc + area.loc, area.size)
     }
 }
 
@@ -247,6 +264,11 @@ impl OpenCloseAnimations {
         self.kept.push((window, picture));
     }
 
+    /// Forgets the picture kept of `window`, which has drawn a new frame since.
+    pub(crate) fn forget_kept(&mut self, window: WindowId) {
+        self.kept.retain(|(id, _)| *id != window);
+    }
+
     /// Takes the picture kept of `window`.
     fn take_kept(&mut self, window: WindowId) -> Option<Picture> {
         let index = self.kept.iter().position(|(id, _)| *id == window)?;
@@ -265,7 +287,7 @@ impl OpenCloseAnimations {
     pub(crate) fn closing(&self, now: Duration) -> impl Iterator<Item = &Closing> {
         self.closing
             .iter()
-            .filter(move |closing| !closing.is_over(now))
+            .filter(move |closing| !closing.is_finished(now))
     }
 
     /// How far `window`'s opening is on its way at `now`, from 0 to 1, while it runs.
@@ -361,6 +383,7 @@ impl Caminito {
             layer,
             workspace,
             output: policy.output_showing(id),
+            shows: true,
         };
         self.open_close_animations.closing.push(closing);
         self.queue_redraw_all();
@@ -368,7 +391,7 @@ impl Caminito {
 
     /// Whether `closing`'s picture is drawn: while the output its window showed by shows
     /// its workspace.
-    pub(crate) fn closing_shows(&self, closing: &Closing) -> bool {
+    fn closing_shows(&self, closing: &Closing) -> bool {
         let Some(workspace) = closing.workspace else {
             return true;
         };
@@ -382,10 +405,22 @@ impl Caminito {
     /// Starts the animation of each window that mapped since the last refresh pass, shows
     /// and animates, and ends that of each window that no longer shows. With
     /// `open-close-animation` off, or one of the minimise animation's three keys against
-    /// it, none starts; a change of those keys lets one that runs finish. A picture kept of
-    /// a window that's no longer managed, which left policy some other way, goes.
+    /// it, none starts; a change of those keys lets one that runs finish. A closing
+    /// window's picture is drawn while its workspace shows, and a picture kept of a window
+    /// that's no longer managed, which left policy some other way, goes.
     pub(crate) fn refresh_open_close_animations(&mut self) {
         let now = self.now();
+        let shows: Vec<bool> = self
+            .open_close_animations
+            .closing
+            .iter()
+            .map(|closing| self.closing_shows(closing))
+            .collect();
+        let mut changed = false;
+        for (closing, shows) in self.open_close_animations.closing.iter_mut().zip(shows) {
+            changed |= closing.shows != shows;
+            closing.shows = shows;
+        }
         let policy = &self.policy;
         let animations = &mut self.open_close_animations;
         animations
@@ -396,7 +431,7 @@ impl Caminito {
         animations
             .running
             .retain(|opening| policy.is_showing(opening.window));
-        let mut changed = animations.running.len() != before;
+        changed |= animations.running.len() != before;
         if self.settings.open_close_animation {
             for id in mapped {
                 // One on a workspace no output shows, or that maps minimised, isn't seen
@@ -423,7 +458,9 @@ impl Caminito {
         let animations = &mut self.open_close_animations;
         let before = animations.running.len() + animations.closing.len();
         animations.running.retain(|opening| !opening.is_over(now));
-        animations.closing.retain(|closing| !closing.is_over(now));
+        animations
+            .closing
+            .retain(|closing| !closing.is_finished(now));
         if animations.running.len() + animations.closing.len() != before {
             self.queue_redraw_all();
         }
@@ -439,8 +476,8 @@ impl Caminito {
             .filter_map(|(id, done)| Some(opening_rect(self.policy.frame_rect(id)?, done)));
         let closing = animations
             .closing(now)
-            .filter(|closing| self.closing_shows(closing))
-            .map(|closing| closing.frame);
+            .filter(|closing| closing.shows)
+            .map(Closing::covered);
         opening.chain(closing).any(|drawn| drawn.overlaps(area))
     }
 
@@ -450,14 +487,10 @@ impl Caminito {
         let stack = self.policy.stacking_all();
         self.open_close_animations
             .closing(now)
-            .filter(|closing| self.closing_shows(closing))
+            .filter(|closing| closing.shows)
             .map(|closing| {
                 let done = closing.done(now);
-                let over = stack
-                    .iter()
-                    .rev()
-                    .find(|id| closing.beneath.contains(id))
-                    .copied();
+                let over = stack.iter().rev().find(|id| closing.is_over(**id)).copied();
                 DrawnClosing {
                     window: closing.window,
                     rect: closing_rect(closing.frame, done),
