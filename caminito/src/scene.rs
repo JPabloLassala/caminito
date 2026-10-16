@@ -50,6 +50,7 @@ use crate::popup_slide::{ClosingPopup, PopupSlides, Slid};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
+use crate::window_menu::slide::Part;
 
 /// What shows where nothing is drawn.
 pub const CLEAR_COLOR: Color32F = Color32F::new(0.2, 0.2, 0.2, 1.0);
@@ -116,7 +117,14 @@ render_elements! {
     PopupSlide = PopupSlidePart<R>,
     /// A closed popup's picture as it slides back into its edge (ADR 0037).
     PopupPicture = PopupPicturePart<R>,
+    /// The Window menu or its submenu as it slides out of its edge or back into it (ADR
+    /// 0037).
+    MenuSlide = MenuSlidePart<R>,
 }
+
+/// The Window menu or its submenu as it slides (ADR 0037): its buffer moved off its place
+/// and cut off at it.
+type MenuSlidePart<R> = CropRenderElement<MemoryRenderBufferRenderElement<R>>;
 
 /// A closed popup's picture as it slides back into its edge (ADR 0037): moved off its place
 /// and cut off at it.
@@ -1122,7 +1130,9 @@ fn workspace_popup_elements<R>(
 }
 
 /// The window menu (161), if it's on `output`, front to back: its submenu, then the menu,
-/// each one buffer drawn in the refresh pass.
+/// each one buffer drawn in the refresh pass. As each slides out of its edge or back into it
+/// (ADR 0037), it's drawn moved off its place, faded, and cut off at the place, with the
+/// pictures of the closed ones behind those on screen.
 fn window_menu_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -1132,30 +1142,56 @@ fn window_menu_elements<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
+    let now = caminito.now();
+    let slides = &caminito.popup_slides.window_menu;
     let shown = caminito.shown_window_menu();
-    let Some(shown) = shown.filter(|shown| shown.output == *output) else {
-        return;
-    };
+    let shown = shown.filter(|shown| shown.output == *output);
+    let closing: Vec<_> = slides
+        .closing(now)
+        .filter(|closing| closing.output == *output)
+        .collect();
+    let mut panes = Vec::new();
+    for part in [Part::Sub, Part::Main] {
+        let pane = shown.and_then(|shown| match part {
+            Part::Main => Some(&shown.main),
+            Part::Sub => shown.submenu.as_ref(),
+        });
+        panes.extend(pane.map(|pane| (pane, slides.slid(part, now))));
+        let pictures = closing.iter().filter(|closing| closing.part == part);
+        panes.extend(pictures.map(|closing| (&closing.pane, Some(closing.slid(now)))));
+    }
     let scale = output.current_scale().fractional_scale();
-    for pane in shown.submenu.iter().chain([&shown.main]) {
+    for (pane, slid) in panes {
         let Some(chrome) = &pane.chrome else {
             continue;
         };
         let rect = pane.layout.rect;
-        let location = rect.loc.to_physical_precise_round::<_, i32>(scale);
+        let offset = slid.map_or(Point::default(), |slid| slid.offset);
+        let location = (rect.loc + offset).to_physical_precise_round::<_, i32>(scale);
         let element = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             location.to_f64(),
             chrome,
-            None,
+            slid.map(|slid| slid.alpha),
             None,
             Some(rect.size),
             Kind::Unspecified,
         );
-        match element {
-            Ok(element) => elements.push(SceneElement::Frame(element)),
+        let element = match element {
+            Ok(element) => element,
             // Every frame while the menu shows, so not above `debug!`.
-            Err(err) => tracing::debug!("can't draw the window menu: {err:?}"),
+            Err(err) => {
+                tracing::debug!("can't draw the window menu: {err:?}");
+                continue;
+            }
+        };
+        if slid.is_none() {
+            elements.push(SceneElement::Frame(element));
+            continue;
+        }
+        let crop = rect.to_physical_precise_round(scale);
+        if let Some(element) = CropRenderElement::from_element(element, scale, crop) {
+            elements.push(SceneElement::MenuSlide(element));
         }
     }
 }

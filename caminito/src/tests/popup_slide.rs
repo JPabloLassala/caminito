@@ -25,17 +25,17 @@ const POPUP: u32 = POPUP_COLOR & 0xff_ffff;
 const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
 
 /// How far into the slide the tests read it.
-const PART_WAY: Duration = Duration::from_millis(50);
+pub(super) const PART_WAY: Duration = Duration::from_millis(50);
 
 /// The rectangle in the window the popups are anchored to, from its window geometry's corner.
 const ANCHOR: (i32, i32, i32, i32) = (150, 100, 100, 20);
 
-type Settings = Vec<(&'static str, String, Setting)>;
+pub(super) type Settings = Vec<(&'static str, String, Setting)>;
 
 /// One output with `popup-slide` on, unless `settings` has it, and a Wayland client. The
 /// fixture has the key off, for the tests written when a popup was there at once. The clock
 /// is stopped, so the slide is read where `advance_clock` has it.
-fn desk(mut settings: Settings) -> (Fixture, ClientId) {
+pub(super) fn desk(mut settings: Settings) -> (Fixture, ClientId) {
     if !settings.iter().any(|(_, key, _)| key == "popup-slide") {
         settings.push((CAMINITO, "popup-slide".into(), Setting::Bool(true)));
     }
@@ -48,26 +48,26 @@ fn desk(mut settings: Settings) -> (Fixture, ClientId) {
 
 /// A Popup slide as the debug dump's `popup_slides` has it.
 #[derive(Debug, Clone, PartialEq)]
-struct Sliding {
-    rect: Rectangle<i32, Logical>,
-    edge: String,
-    offset: Point<i32, Logical>,
-    alpha: f64,
+pub(super) struct Sliding {
+    pub rect: Rectangle<i32, Logical>,
+    pub edge: String,
+    pub offset: Point<i32, Logical>,
+    pub alpha: f64,
 }
 
 /// Each Popup slide that runs, from the debug dump, which has none while none does.
-fn sliding(f: &Fixture) -> Vec<Sliding> {
+pub(super) fn sliding(f: &Fixture) -> Vec<Sliding> {
     dumped(f, "popup_slides")
 }
 
 /// Each closed popup's picture that slides back, from the debug dump.
-fn closing(f: &Fixture) -> Vec<Sliding> {
+pub(super) fn closing(f: &Fixture) -> Vec<Sliding> {
     dumped(f, "closing_popups")
 }
 
 /// The one closed popup's picture that slides back.
 #[track_caller]
-fn the_closing(f: &Fixture) -> Sliding {
+pub(super) fn the_closing(f: &Fixture) -> Sliding {
     match &closing(f)[..] {
         [closing] => closing.clone(),
         other => panic!("one popup slides back: {other:?}"),
@@ -98,7 +98,7 @@ fn dumped(f: &Fixture, key: &str) -> Vec<Sliding> {
 
 /// The one popup that slides.
 #[track_caller]
-fn the_slide(f: &Fixture) -> Sliding {
+pub(super) fn the_slide(f: &Fixture) -> Sliding {
     match &sliding(f)[..] {
         [slide] => slide.clone(),
         other => panic!("one popup slides: {other:?}"),
@@ -133,7 +133,7 @@ fn window_with_popup(
 }
 
 /// The output's pixel at the global point `at`, as `0xRRGGBB`.
-fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
+pub(super) fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
     let output = f.state.caminito.outputs[0].clone();
     let pixel = f
         .state
@@ -144,7 +144,7 @@ fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
 }
 
 /// The bottom right pixel of `rect`.
-fn last_pixel(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
+pub(super) fn last_pixel(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
     rect.loc + rect.size.to_point() - Point::from((1, 1))
 }
 

@@ -24,6 +24,8 @@
 //! Plasma's does: the curve played backwards is at the same point after what's left of it.
 //! An xdg_popup can't be shown again once it's closed, as Smithay forgets an unmapped one's
 //! role, so only the way back turns round here.
+//!
+//! The Window menu and its submenu slide too, on the same motion (`window_menu::slide`).
 
 use std::cell::Cell;
 use std::time::Duration;
@@ -42,6 +44,7 @@ use caminito_theme::{Title, pango};
 use crate::open_close_animation::Picture;
 use crate::output::{output_geometry, output_id};
 use crate::state::{Caminito, State};
+use crate::window_menu::slide::MenuSlides;
 use crate::workspace_slide::eased_way_left;
 
 /// How long the slide lasts: the Sliding popups effect's.
@@ -71,7 +74,7 @@ impl Edge {
         }
     }
 
-    fn is_vertical(self) -> bool {
+    pub(crate) fn is_vertical(self) -> bool {
         matches!(self, Edge::Top | Edge::Bottom)
     }
 }
@@ -134,7 +137,7 @@ struct Slide {
 
 /// How a popup slides out of its edge, or back into it.
 #[derive(Debug, Clone, Copy)]
-struct Motion {
+pub(crate) struct Motion {
     edge: Edge,
     /// How far it slides, from its place.
     distance: i32,
@@ -154,8 +157,17 @@ impl Motion {
         now.saturating_sub(self.start) + self.skipped
     }
 
-    fn is_over(&self, now: Duration) -> bool {
+    pub(crate) fn is_over(&self, now: Duration) -> bool {
         self.elapsed(now) >= LENGTH
+    }
+
+    /// When it's over, on Caminito's clock.
+    pub(crate) fn end(&self) -> Duration {
+        self.start + LENGTH.saturating_sub(self.skipped)
+    }
+
+    pub(crate) fn edge(&self) -> Edge {
+        self.edge
     }
 
     /// How far it is from its edge at `now`, from 0 to 1, where 1 is its place: the cubic
@@ -174,7 +186,7 @@ impl Motion {
     /// The motion that turns this one round at `now`, from where it is and at the same
     /// speed: the curve played the other way is at the same point after what's left of
     /// this one.
-    fn turned(&self, now: Duration) -> Motion {
+    pub(crate) fn turned(&self, now: Duration) -> Motion {
         Motion {
             closing: !self.closing,
             start: now,
@@ -196,7 +208,7 @@ impl Motion {
     }
 
     /// How it's drawn at `now`.
-    fn slid(&self, now: Duration) -> Slid {
+    pub(crate) fn slid(&self, now: Duration) -> Slid {
         Slid {
             offset: self.offset(now),
             alpha: self.alpha(now),
@@ -275,22 +287,23 @@ impl ClosingPopup {
 }
 
 /// The popups on their way out of their edges, the pictures of those on their way back, and
-/// those on screen.
+/// those on screen, and the Window menu's.
 #[derive(Debug, Default)]
 pub(crate) struct PopupSlides {
     running: Vec<Slide>,
     closing: Vec<ClosingPopup>,
     shown: Vec<Shown>,
+    pub(crate) window_menu: MenuSlides,
 }
 
 impl PopupSlides {
     /// When the first of the slides is over: `deadlines` then draws its popup at rest, or
     /// takes its picture away (174).
     pub(crate) fn deadline(&self) -> Option<Duration> {
-        let end = |motion: &Motion| motion.start + LENGTH.saturating_sub(motion.skipped);
-        let opening = self.running.iter().map(|slide| end(&slide.motion));
-        let closing = self.closing.iter().map(|closing| end(&closing.motion));
-        opening.chain(closing).min()
+        let opening = self.running.iter().map(|slide| slide.motion.end());
+        let closing = self.closing.iter().map(|closing| closing.motion.end());
+        let menu = self.window_menu.deadline();
+        opening.chain(closing).chain(menu).min()
     }
 
     /// The pictures of the popups of `root`'s chains on their way back at `now`, those
@@ -398,7 +411,7 @@ impl Caminito {
 
     /// A popup's motion from now with its edge and its `size`, out of its edge or, when
     /// `closing`, back into it.
-    fn motion(&self, edge: Edge, size: Size<i32, Logical>, closing: bool) -> Motion {
+    pub(crate) fn motion(&self, edge: Edge, size: Size<i32, Logical>, closing: bool) -> Motion {
         let size = if edge.is_vertical() { size.h } else { size.w };
         let (distance, fades) = distance(size, self.interface_line_height());
         Motion {
@@ -420,7 +433,12 @@ impl Caminito {
             || self.mapped_for_surface(root).is_some_and(|id| {
                 self.policy.is_showing(id) && self.open_close_animations.opening(id, now).is_none()
             });
-        self.settings.popup_slide && !self.popup_slides_stop() && shows
+        self.popup_slides_run() && shows
+    }
+
+    /// Whether a popup that opens or closes now slides: the slide is on and no slide stops.
+    pub(crate) fn popup_slides_run(&self) -> bool {
+        self.settings.popup_slide && !self.popup_slides_stop()
     }
 
     /// Whether no popup slides now: the session is locked, or the Overview is open or on its
@@ -462,6 +480,7 @@ impl Caminito {
             .collect();
         let outputs: Vec<OutputId> = self.outputs.iter().map(output_id).collect();
         let slides = &mut self.popup_slides;
+        let menu_changed = slides.window_menu.refresh(stops, &self.outputs);
         let before = slides.running.len() + slides.closing.len();
         slides.running.retain(|slide| {
             let shown = with_states(&slide.surface, |states| {
@@ -478,7 +497,7 @@ impl Caminito {
             let output = closing.output.is_none_or(|id| outputs.contains(&id));
             !stops && root && output
         });
-        if slides.running.len() + slides.closing.len() != before {
+        if slides.running.len() + slides.closing.len() != before || menu_changed {
             self.queue_redraw_all();
         }
     }
@@ -494,7 +513,8 @@ impl Caminito {
         slides
             .closing
             .retain(|closing| !closing.motion.is_over(now));
-        if slides.running.len() + slides.closing.len() != before {
+        let menu_changed = slides.window_menu.elapse(now);
+        if slides.running.len() + slides.closing.len() != before || menu_changed {
             self.queue_redraw_all();
         }
     }
@@ -503,35 +523,33 @@ impl Caminito {
     /// drawn again at its next frame.
     pub(crate) fn popup_slide_on(&self, output: &Output, now: Duration) -> bool {
         let area = output_geometry(output);
-        let opening = self
-            .popup_slides
-            .sliding(now)
-            .filter_map(|slide| self.popup_rect(&slide.surface));
-        let closing = self
-            .drawn_closing_popups(now)
-            .into_iter()
-            .map(|drawn| drawn.rect);
-        opening.chain(closing).any(|rect| rect.overlaps(area))
+        let opening = self.drawn_popup_slides(now).into_iter();
+        let closing = self.drawn_closing_popups(now).into_iter();
+        opening
+            .chain(closing)
+            .any(|drawn| drawn.rect.overlaps(area))
     }
 
     /// Each popup that slides at `now`, in the order they were shown, as it's drawn, for the
-    /// debug dump.
+    /// debug dump: the Window menu's after the others.
     pub(crate) fn drawn_popup_slides(&self, now: Duration) -> Vec<DrawnSlide> {
-        self.popup_slides
-            .sliding(now)
-            .filter_map(|slide| {
-                Some(DrawnSlide {
-                    rect: self.popup_rect(&slide.surface)?,
-                    edge: slide.motion.edge,
-                    slid: slide.motion.slid(now),
-                })
+        let popups = self.popup_slides.sliding(now).filter_map(|slide| {
+            Some(DrawnSlide {
+                rect: self.popup_rect(&slide.surface)?,
+                edge: slide.motion.edge,
+                slid: slide.motion.slid(now),
             })
-            .collect()
+        });
+        let menu = self.drawn_window_menu_slides(now).into_iter();
+        let menu = menu.filter(|(closing, _)| !closing).map(|(_, drawn)| drawn);
+        popups.chain(menu).collect()
     }
 
     /// Each closed popup's picture that slides back at `now`, in the order they closed, as
-    /// it's drawn, for the debug dump.
+    /// it's drawn, for the debug dump: the Window menu's after the others.
     pub(crate) fn drawn_closing_popups(&self, now: Duration) -> Vec<DrawnSlide> {
+        let menu = self.drawn_window_menu_slides(now).into_iter();
+        let menu = menu.filter(|(closing, _)| *closing).map(|(_, drawn)| drawn);
         self.popup_slides
             .closing
             .iter()
@@ -545,6 +563,7 @@ impl Caminito {
                     slid: closing.motion.slid(now),
                 })
             })
+            .chain(menu)
             .collect()
     }
 

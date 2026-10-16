@@ -19,16 +19,16 @@ use crate::settings::translate::{CAMINITO, MARCO_GENERAL, MARCO_WINDOW_KEYBINDIN
 use crate::state::SEAT;
 
 /// The debug dump's `window_menu` member: `null` while the window menu is closed.
-fn menu(f: &Fixture) -> serde_json::Value {
+pub(super) fn menu(f: &Fixture) -> serde_json::Value {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     dump["window_menu"].clone()
 }
 
-fn is_open(f: &Fixture) -> bool {
+pub(super) fn is_open(f: &Fixture) -> bool {
     !menu(f).is_null()
 }
 
-fn rect(dump: &serde_json::Value) -> Rectangle<i32, Logical> {
+pub(super) fn rect(dump: &serde_json::Value) -> Rectangle<i32, Logical> {
     let field = |name: &str| dump[name].as_i64().unwrap() as i32;
     Rectangle::new(
         (field("x"), field("y")).into(),
@@ -36,7 +36,7 @@ fn rect(dump: &serde_json::Value) -> Rectangle<i32, Logical> {
     )
 }
 
-fn middle(rect: Rectangle<i32, Logical>) -> Point<f64, Logical> {
+pub(super) fn middle(rect: Rectangle<i32, Logical>) -> Point<f64, Logical> {
     (rect.loc + Point::from((rect.size.w / 2, rect.size.h / 2))).to_f64()
 }
 
@@ -76,24 +76,24 @@ fn row_in(items: &serde_json::Value, label: &str) -> Rectangle<i32, Logical> {
 }
 
 /// The row of the open menu's item labelled `label`.
-fn row(f: &Fixture, label: &str) -> Rectangle<i32, Logical> {
+pub(super) fn row(f: &Fixture, label: &str) -> Rectangle<i32, Logical> {
     row_in(&menu(f)["items"], label)
 }
 
 /// Presses and releases `key`.
-fn tap(f: &mut Fixture, key: u32) {
+pub(super) fn tap(f: &mut Fixture, key: u32) {
     f.key(key, true);
     f.key(key, false);
 }
 
 /// Alt+Space, Marco's default for `activate-window-menu`.
-fn alt_space(f: &mut Fixture) {
+pub(super) fn alt_space(f: &mut Fixture) {
     f.key(KEY_LEFTALT, true);
     tap(f, KEY_SPACE);
     f.key(KEY_LEFTALT, false);
 }
 
-fn has_menu_layer(f: &mut Fixture) -> bool {
+pub(super) fn has_menu_layer(f: &mut Fixture) -> bool {
     let output = f.state.caminito.outputs[0].clone();
     f.state
         .scene_layers(&output)
