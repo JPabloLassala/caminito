@@ -96,6 +96,8 @@ impl XwmHandler for State {
     /// A managed window is withdrawn, and Smithay puts it back on the root; an
     /// override-redirect one leaves the scene.
     fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
+        // While it has its buffer, if Xwayland hasn't destroyed its surface yet (252).
+        self.keep_closing_picture(&key(&window));
         let caminito = &mut self.caminito;
         caminito.with_root_stack(|stack| stack.unframed(window.window_id()));
         caminito.override_redirect_unmapped(&window);
@@ -103,6 +105,7 @@ impl XwmHandler for State {
     }
 
     fn destroyed_window(&mut self, _xwm: XwmId, window: X11Surface) {
+        self.keep_closing_picture(&key(&window));
         let caminito = &mut self.caminito;
         caminito.with_root_stack(|stack| stack.destroyed(window.window_id()));
         caminito.override_redirect_unmapped(&window);

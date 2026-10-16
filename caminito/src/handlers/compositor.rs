@@ -17,7 +17,8 @@ use smithay::wayland::commit_timing::{
 };
 use smithay::wayland::compositor::{
     Blocker, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
-    SurfaceAttributes, add_blocker, add_pre_commit_hook, get_parent, with_states,
+    SurfaceAttributes, add_blocker, add_destruction_hook, add_pre_commit_hook, get_parent,
+    with_states,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
@@ -45,6 +46,15 @@ impl CompositorHandler for State {
         add_pre_commit_hook::<Self, _>(surface, |state, _, surface| {
             state.block_on_dmabuf(surface);
             state.release_at_commit_time(surface);
+            state.keep_picture_before_null_buffer(surface);
+        });
+        // Before Smithay's own, which `on_commit_buffer_handler` adds at the first commit and
+        // which drops the surface's buffer: a window's surface can go before the window, as
+        // Xwayland's goes before the unmap reaches the window manager, or with its client.
+        add_destruction_hook::<Self, _>(surface, |state, surface| {
+            if let Some(key) = state.caminito.window_key_for_surface(surface) {
+                state.keep_closing_picture(&key);
+            }
         });
     }
 
@@ -82,6 +92,18 @@ impl CompositorHandler for State {
 }
 
 impl State {
+    /// Keeps a picture of a managed window whose surface commits a null buffer, which
+    /// unmaps it, for its closing, while the buffer it drew last is still there (252).
+    fn keep_picture_before_null_buffer(&mut self, surface: &WlSurface) {
+        let removed = with_states(surface, |states| {
+            let mut attributes = states.cached_state.get::<SurfaceAttributes>();
+            matches!(attributes.pending().buffer, Some(BufferAssignment::Removed))
+        });
+        if removed && let Some(key) = self.caminito.window_key_for_surface(surface) {
+            self.keep_closing_picture(&key);
+        }
+    }
+
     /// Holds back a commit of a dmabuf until the client's GPU is done writing it, so the
     /// scene never draws, or waits on, an unfinished buffer. With explicit sync, done is
     /// the commit's acquire point; without it, the dmabuf's implicit fence. Adapted from

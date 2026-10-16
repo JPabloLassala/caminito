@@ -20,23 +20,27 @@ use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
+use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
 use smithay::backend::renderer::utils::{CommitCounter, RendererSurfaceStateUserData};
-use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer};
+use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer, RendererSuper};
 use smithay::desktop::{LayerSurface, PopupManager, Window, WindowSurface, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::{TraversalAction, with_states, with_surface_tree_downward};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::open_close_animation::{opening_alpha, opening_rect};
+use crate::open_close_animation::{
+    Closing, closing_alpha, closing_rect, opening_alpha, opening_rect,
+};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
@@ -94,6 +98,8 @@ render_elements! {
     /// A part of a window in one of the Window switcher's thumbnails (108), or of one
     /// shrinking into its button (172), or of one at its place in the Overview (241).
     Thumbnail = ThumbnailPart<R>,
+    /// A closing window's picture (252).
+    Picture = TextureRenderElement<<R as RendererSuper>::TextureId>,
 }
 
 /// The scene's layers, top to bottom.
@@ -283,6 +289,58 @@ where
     let origin = geometry.loc - frame.loc;
     one_window_elements(renderer, mapped, origin, shown, scale, 1.0, &mut elements);
     elements
+}
+
+/// What a closing window's picture is drawn from, and what it covers (`picture_elements`).
+type PictureParts<R> = (Vec<SceneElement<R>>, Rectangle<i32, Logical>);
+
+/// Window `id` as its closing picture keeps it (252): its surfaces with their popups, its
+/// Frame and its shadow, front to back, drawn at `scale` from the corner of what they cover,
+/// which is returned too, from the frame's corner: a shaded window's is its titlebar. `None`
+/// when its surface has no buffer left to draw, as when its client has destroyed it.
+pub(crate) fn picture_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    id: WindowId,
+    scale: f64,
+) -> Option<PictureParts<R>>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let policy = &caminito.policy;
+    let (mapped, geometry, frame) = (
+        policy.window(id)?,
+        policy.geometry(id)?,
+        policy.frame_rect(id)?,
+    );
+    let window = mapped.window();
+    let has_buffer = window.wl_surface().is_some_and(|surface| {
+        with_states(&surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.is_some_and(|data| data.lock().unwrap().buffer().is_some())
+        })
+    });
+    if !has_buffer || frame.size.w <= 0 || frame.size.h <= 0 {
+        return None;
+    }
+    let mut area = frame;
+    let mut popups = window.bbox_with_popups();
+    popups.loc += geometry.loc - window.geometry().loc;
+    area = area.merge(popups);
+    for (band, _) in mapped.frame().shadow() {
+        area = area.merge(Rectangle::new(geometry.loc + band.loc, band.size));
+    }
+    let origin = geometry.loc - area.loc;
+    let shown = Rectangle::from_size(area.size);
+    let mut elements = Vec::new();
+    one_window_elements(renderer, mapped, origin, shown, scale, 1.0, &mut elements);
+    let shadow = mapped.frame().shadow();
+    elements.extend(buffer_elements(
+        renderer, shadow, origin, shown, scale, 1.0, "shadow",
+    ));
+    let area = Rectangle::new(area.loc - frame.loc, area.size);
+    Some((elements, area))
 }
 
 /// The layer of each of `output`'s render elements, front to back.
@@ -1481,8 +1539,22 @@ fn window_elements<R>(
         Some(_) => policy.stacking_all().to_vec(),
         None => policy.active_stacking(),
     };
+    // The closing windows' pictures in this layer, each drawn over the first window down
+    // the stack that was beneath it, or under every window if none is left (252).
+    let mut closing: Vec<&Closing> = caminito
+        .open_close_animations
+        .closing(now)
+        .filter(|closing| closing.layer == layer && closing.shows)
+        .collect();
 
     for &id in stacking.iter().rev() {
+        closing.retain(|closing| {
+            let over = closing.is_over(id);
+            if over {
+                picture_elements_at(closing, output, now, elements);
+            }
+            !over
+        });
         let (Some(mapped), Some(geometry)) = (policy.window(id), policy.geometry(id)) else {
             continue;
         };
@@ -1528,6 +1600,57 @@ fn window_elements<R>(
             tile_preview_elements(caminito, output, elements);
         }
     }
+    for closing in closing {
+        picture_elements_at(closing, output, now, elements);
+    }
+}
+
+/// A closing window's picture where it's drawn at `now` on `output`, shrunk about its
+/// frame's centre and faded (252). Nothing for a picture another renderer drew.
+fn picture_elements_at<R>(
+    closing: &Closing,
+    output: &Output,
+    now: Duration,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let picture = &closing.picture;
+    let Some((context, texture)) = picture.texture::<R::TextureId>() else {
+        return;
+    };
+    let output_geometry = output_geometry(output);
+    let done = closing.done(now);
+    let drawn = closing_rect(closing.frame, done);
+    let factor = f64::from(drawn.size.w) / f64::from(closing.frame.size.w);
+    let area = picture.area.to_f64();
+    let corner = drawn.loc.to_f64() + area.loc.upscale(factor) - output_geometry.loc.to_f64();
+    let size = area.size.upscale(factor);
+    let drawn_area = Rectangle::new(corner, size);
+    if !drawn_area.overlaps(Rectangle::from_size(output_geometry.size).to_f64()) {
+        return;
+    }
+    let scale = output.current_scale().fractional_scale();
+    let size = Size::from((
+        (size.w.round() as i32).max(1),
+        (size.h.round() as i32).max(1),
+    ));
+    elements.push(SceneElement::Picture(
+        TextureRenderElement::from_static_texture(
+            picture.id.clone(),
+            context.clone(),
+            corner.to_physical(scale),
+            texture.clone(),
+            1,
+            Transform::Normal,
+            Some(closing_alpha(done)),
+            None,
+            Some(size),
+            None,
+            Kind::Unspecified,
+        ),
+    ));
 }
 
 /// While a move's pointer is in a tiling zone, the tile preview on `output`: where letting

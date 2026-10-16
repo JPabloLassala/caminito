@@ -3,6 +3,16 @@
 //! in, for 200 ms of Caminito's clock, with its Frame, its shadow and its popups. It's
 //! Plasma's Scale effect.
 //!
+//! The Closing animation (252) is its reverse, drawn from a picture: a window that its client
+//! destroys or hides while it's on screen leaves its last frame, with its Frame, shadow and
+//! popups, drawn at its place in the stack, which shrinks to 0.8 of its size about its centre
+//! and fades out. The picture is drawn into a texture of the backend's renderer while the
+//! window still has its buffers (`State::keep_closing_picture`): just before a close
+//! handler has the window leave policy, when its client commits a null buffer, and when its
+//! surface is destroyed, which can come before Xwayland's unmap or with a client that goes.
+//! Policy lets the window go at once: the focus moves on, a click goes to what's beneath,
+//! and no query of policy sees the picture. A window with no buffer left closes at once.
+//!
 //! Policy has the window mapped from the start, as it has a window minimised from the start
 //! of the minimise animation (172): the focus, input and what its client is told are as
 //! with no animation, at its real place, and only the drawing takes its time. A window
@@ -14,14 +24,23 @@
 //! The numbers and the windows are those of Plasma's Scale effect, in KWin's
 //! `src/plugins/scale/package/contents/code/main.js` (ADR 0034).
 
+use std::any::Any;
 use std::time::Duration;
 
-use caminito_policy::{PolicyWindow, WindowId, WindowType};
+use caminito_policy::{OutputId, PolicyWindow, WindowId, WindowType};
+use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::element::Id;
+use smithay::backend::renderer::{
+    Bind, Color32F, ContextId, ImportAll, ImportMem, Offscreen, Renderer, Texture,
+};
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 use crate::output::output_geometry;
-use crate::state::Caminito;
+use crate::scene::{self, SceneLayer};
+use crate::state::{Caminito, State};
+use crate::window::WindowKey;
 use crate::workspace_slide::eased_way_left;
 /// How long the animation lasts: the Scale effect's.
 pub(crate) const LENGTH: Duration = Duration::from_millis(200);
@@ -35,20 +54,119 @@ fn way_done(elapsed: Duration) -> f64 {
     1.0 - eased_way_left(elapsed, LENGTH)
 }
 
-/// Where a window whose frame is at `frame` is drawn `done` of the way through its opening:
-/// scaled about the frame's centre, never empty.
-pub(crate) fn opening_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
-    let scale = FROM_SCALE + (1.0 - FROM_SCALE) * done;
+/// How far a closing `elapsed` after its start is on its way, from 0 to 1: the Scale
+/// effect's cubic ease-in, so the picture leaves its place slowly and goes fastest at the end.
+fn way_closed(elapsed: Duration) -> f64 {
+    (elapsed.as_secs_f64() / LENGTH.as_secs_f64())
+        .min(1.0)
+        .powi(3)
+}
+
+/// `frame` at `scale` of its size about its centre, never empty.
+fn zoomed(frame: Rectangle<i32, Logical>, scale: f64) -> Rectangle<i32, Logical> {
     let at = |n: i32| ((f64::from(n) * scale).round() as i32).max(1);
     let size = Size::from((at(frame.size.w), at(frame.size.h)));
     let loc = frame.loc + Point::from(((frame.size.w - size.w) / 2, (frame.size.h - size.h) / 2));
     Rectangle::new(loc, size)
 }
 
+/// Where a window whose frame is at `frame` is drawn `done` of the way through its opening:
+/// scaled about the frame's centre, never empty.
+pub(crate) fn opening_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
+    zoomed(frame, FROM_SCALE + (1.0 - FROM_SCALE) * done)
+}
+
 /// How opaque a window is drawn `done` of the way through its opening: it fades in as it
 /// grows.
 pub(crate) fn opening_alpha(done: f64) -> f32 {
     done as f32
+}
+
+/// Where the frame of a window that closed at `frame` is drawn `done` of the way through its
+/// closing: from its own size to 0.8 of it about its centre.
+pub(crate) fn closing_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
+    zoomed(frame, 1.0 - (1.0 - FROM_SCALE) * done)
+}
+
+/// How opaque a closing window's picture is drawn `done` of the way through: it fades out as
+/// it shrinks.
+pub(crate) fn closing_alpha(done: f64) -> f32 {
+    (1.0 - done) as f32
+}
+
+/// A window's last frame, with its Frame, its shadow and its popups, in a texture of the
+/// renderer that drew it.
+pub(crate) struct Picture {
+    /// The texture and its renderer's context, as `(ContextId<T>, T)` for the renderer's
+    /// texture type `T`, which the scene, generic over the renderer, takes back.
+    texture: Box<dyn Any>,
+    /// What the texture covers, from the window's frame's corner.
+    pub area: Rectangle<i32, Logical>,
+    /// The element the scene draws it as, which keeps its id from frame to frame.
+    pub id: Id,
+}
+
+impl std::fmt::Debug for Picture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Picture")
+            .field("area", &self.area)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Picture {
+    /// The texture, for a renderer whose textures are `T`, or `None` for another one's.
+    pub(crate) fn texture<T: Texture + 'static>(&self) -> Option<&(ContextId<T>, T)> {
+        self.texture.downcast_ref()
+    }
+}
+
+/// Draws window `id`'s picture with `renderer`, into a texture of its own at the scale of the
+/// window's main output, or returns `None` if it has no buffer left to draw from or the
+/// renderer fails. `T` is what the renderer draws into offscreen, which is its texture or
+/// becomes one.
+pub(crate) fn take_picture<R, T>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    id: WindowId,
+) -> Option<Picture>
+where
+    R: Renderer + ImportAll + ImportMem + Offscreen<T> + Bind<T>,
+    R::TextureId: Send + Clone + From<T> + 'static,
+{
+    let main = caminito.policy.window(id)?.main_output();
+    let scale = main.map_or(1.0, |main| main.current_scale().fractional_scale());
+    let (elements, area) = scene::picture_elements(renderer, caminito, id, scale)?;
+    let size = area.size.to_physical_precise_round(scale);
+    let mut target = renderer
+        .create_buffer(Fourcc::Argb8888, (size.w, size.h).into())
+        .map_err(|err| tracing::debug!("can't keep a closing window's picture: {err:?}"))
+        .ok()?;
+    {
+        let mut framebuffer = renderer.bind(&mut target).ok()?;
+        let mut tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+        let drawn = tracker
+            .render_output(
+                renderer,
+                &mut framebuffer,
+                0,
+                &elements,
+                Color32F::TRANSPARENT,
+            )
+            .map_err(|err| tracing::debug!("can't draw a closing window's picture: {err:?}"))
+            .ok()?;
+        // The texture is drawn from at once, so the renderer finishes it first.
+        if let Err(err) = drawn.sync.wait() {
+            tracing::debug!("can't wait for a closing window's picture: {err:?}");
+        }
+    }
+    let texture = R::TextureId::from(target);
+    let context = renderer.context_id();
+    Some(Picture {
+        texture: Box::new((context, texture)),
+        area,
+        id: Id::new(),
+    })
 }
 
 /// One window on its way open.
@@ -65,12 +183,73 @@ impl Opening {
     }
 }
 
-/// The windows on their way open, and those shown since the last refresh pass.
+/// A window's picture on its way out, with where it was.
+#[derive(Debug)]
+pub(crate) struct Closing {
+    /// The window it was, by the id it had in policy.
+    pub window: WindowId,
+    pub picture: Picture,
+    /// When the window closed, on Caminito's clock.
+    start: Duration,
+    /// Where its frame was, globally.
+    pub frame: Rectangle<i32, Logical>,
+    /// The windows that were beneath it in the stack, which it's drawn over.
+    pub beneath: Vec<WindowId>,
+    /// The scene layer it was drawn in: the windows', or the fullscreen windows'.
+    pub layer: SceneLayer,
+    /// Its workspace, or `None` for a sticky window, and the output it showed by: it's drawn
+    /// while that output shows the workspace.
+    workspace: Option<usize>,
+    output: Option<OutputId>,
+    /// Whether it's drawn, as the refresh pass last found from the two above, so the scene
+    /// reads no more of policy for it.
+    pub shows: bool,
+}
+
+impl Closing {
+    fn is_finished(&self, now: Duration) -> bool {
+        now.saturating_sub(self.start) >= LENGTH
+    }
+
+    /// How far it is on its way at `now`, from 0 to 1.
+    pub(crate) fn done(&self, now: Duration) -> f64 {
+        way_closed(now.saturating_sub(self.start))
+    }
+
+    /// Whether it's drawn just over `window`, going down the stack from the top: the first
+    /// window met that was beneath it.
+    pub(crate) fn is_over(&self, window: WindowId) -> bool {
+        self.beneath.contains(&window)
+    }
+
+    /// What its picture covers at its start, globally, which it never leaves as it shrinks.
+    fn covered(&self) -> Rectangle<i32, Logical> {
+        let area = self.picture.area;
+        Rectangle::new(self.frame.loc + area.loc, area.size)
+    }
+}
+
+/// A closing window's picture as it's drawn, for the debug dump.
+pub(crate) struct DrawnClosing {
+    /// The id its window had in policy.
+    pub window: WindowId,
+    /// Where its frame is drawn, globally.
+    pub rect: Rectangle<i32, Logical>,
+    pub alpha: f32,
+    /// The window it's drawn just over, if any is left of those that were beneath it.
+    pub over: Option<WindowId>,
+}
+
+/// The windows on their way open, the pictures of those on their way out, and the windows
+/// shown since the last refresh pass.
 #[derive(Debug, Default)]
 pub(crate) struct OpenCloseAnimations {
     /// The windows that mapped into policy since the last refresh pass.
     mapped: Vec<WindowId>,
     running: Vec<Opening>,
+    /// The pictures kept of managed windows about to close, each the latest of its window.
+    kept: Vec<(WindowId, Picture)>,
+    closing: Vec<Closing>,
 }
 
 impl OpenCloseAnimations {
@@ -79,13 +258,36 @@ impl OpenCloseAnimations {
         self.mapped.push(window);
     }
 
+    /// Keeps `picture` of `window`, for its closing, in place of one kept before.
+    fn keep(&mut self, window: WindowId, picture: Picture) {
+        self.kept.retain(|(id, _)| *id != window);
+        self.kept.push((window, picture));
+    }
+
+    /// Forgets the picture kept of `window`, which has drawn a new frame since.
+    pub(crate) fn forget_kept(&mut self, window: WindowId) {
+        self.kept.retain(|(id, _)| *id != window);
+    }
+
+    /// Takes the picture kept of `window`.
+    fn take_kept(&mut self, window: WindowId) -> Option<Picture> {
+        let index = self.kept.iter().position(|(id, _)| *id == window)?;
+        Some(self.kept.remove(index).1)
+    }
+
     /// When the first of the running animations is over: `deadlines` then draws its window
-    /// at rest (174).
+    /// at rest, or takes its picture away (174).
     pub(crate) fn deadline(&self) -> Option<Duration> {
-        self.running
+        let opening = self.running.iter().map(|opening| opening.start + LENGTH);
+        let closing = self.closing.iter().map(|closing| closing.start + LENGTH);
+        opening.chain(closing).min()
+    }
+
+    /// The pictures on their way out at `now`, oldest first.
+    pub(crate) fn closing(&self, now: Duration) -> impl Iterator<Item = &Closing> {
+        self.closing
             .iter()
-            .map(|opening| opening.start + LENGTH)
-            .min()
+            .filter(move |closing| !closing.is_finished(now))
     }
 
     /// How far `window`'s opening is on its way at `now`, from 0 to 1, while it runs.
@@ -114,21 +316,122 @@ fn animates(window: &impl PolicyWindow) -> bool {
     typed || window.is_ssd()
 }
 
+impl State {
+    /// Keeps a picture of the managed window `key` names for its closing, if it would be
+    /// seen to close now and has a buffer to draw it from. Called just before the window
+    /// leaves policy, and wherever its buffers are about to go before that: a null buffer's
+    /// commit and the surface's destruction.
+    pub(crate) fn keep_closing_picture(&mut self, key: &WindowKey) {
+        let caminito = &self.caminito;
+        let Some(id) = caminito.mapped_for_key(key) else {
+            return;
+        };
+        if !caminito.closes_seen(id) {
+            return;
+        }
+        if let Some(picture) = self.backend.take_picture(caminito, id) {
+            self.caminito.open_close_animations.keep(id, picture);
+        }
+    }
+}
+
 impl Caminito {
+    /// Whether window `id` would be seen to close now: the animation is on, the window is
+    /// one it's for, and it's on screen.
+    fn closes_seen(&self, id: WindowId) -> bool {
+        let policy = &self.policy;
+        self.settings.open_close_animation
+            && policy.window(id).is_some_and(animates)
+            && policy.is_showing(id)
+    }
+
+    /// Starts window `id`'s closing from the picture kept of it, just before it leaves
+    /// policy, at its place in the stack. With no picture kept, it closes at once.
+    pub(crate) fn start_closing(&mut self, id: WindowId) {
+        let Some(picture) = self.open_close_animations.take_kept(id) else {
+            if self.closes_seen(id) {
+                tracing::debug!(?id, "no picture of a closing window: it closes at once");
+            }
+            return;
+        };
+        if !self.closes_seen(id) {
+            return;
+        }
+        let policy = &self.policy;
+        let Some(frame) = policy.frame_rect(id) else {
+            return;
+        };
+        let stack = policy.stacking_all();
+        let beneath = match stack.iter().position(|other| *other == id) {
+            Some(index) => stack[..index].to_vec(),
+            None => Vec::new(),
+        };
+        let layer = if scene::window_is_in(self, id, SceneLayer::FullscreenWindows) {
+            SceneLayer::FullscreenWindows
+        } else {
+            SceneLayer::Windows
+        };
+        let workspace = (!policy.is_sticky(id))
+            .then(|| policy.workspace_of(id))
+            .flatten();
+        let closing = Closing {
+            window: id,
+            picture,
+            start: self.now(),
+            frame,
+            beneath,
+            layer,
+            workspace,
+            output: policy.output_showing(id),
+            shows: true,
+        };
+        self.open_close_animations.closing.push(closing);
+        self.queue_redraw_all();
+    }
+
+    /// Whether `closing`'s picture is drawn: while the output its window showed by shows
+    /// its workspace.
+    fn closing_shows(&self, closing: &Closing) -> bool {
+        let Some(workspace) = closing.workspace else {
+            return true;
+        };
+        let active = match closing.output {
+            Some(output) => self.policy.active_workspace_on(output),
+            None => self.policy.primary_active_workspace(),
+        };
+        active == workspace
+    }
+
     /// Starts the animation of each window that mapped since the last refresh pass, shows
     /// and animates, and ends that of each window that no longer shows. With
     /// `open-close-animation` off, or one of the minimise animation's three keys against
-    /// it, none starts; a change of those keys lets one that runs finish.
+    /// it, none starts; a change of those keys lets one that runs finish. A closing
+    /// window's picture is drawn while its workspace shows, and a picture kept of a window
+    /// that's no longer managed, which left policy some other way, goes.
     pub(crate) fn refresh_open_close_animations(&mut self) {
         let now = self.now();
+        let shows: Vec<bool> = self
+            .open_close_animations
+            .closing
+            .iter()
+            .map(|closing| self.closing_shows(closing))
+            .collect();
+        let mut changed = false;
+        for (closing, shows) in self.open_close_animations.closing.iter_mut().zip(shows) {
+            changed |= closing.shows != shows;
+            closing.shows = shows;
+        }
         let policy = &self.policy;
         let animations = &mut self.open_close_animations;
+        animations
+            .kept
+            .retain(|(id, _)| policy.window(*id).is_some());
         let mapped = std::mem::take(&mut animations.mapped);
         let before = animations.running.len();
         animations
             .running
             .retain(|opening| policy.is_showing(opening.window));
-        let mut changed = animations.running.len() != before;
+        changed |= animations.running.len() != before;
         if self.settings.open_close_animation {
             for id in mapped {
                 // One on a workspace no output shows, or that maps minimised, isn't seen
@@ -152,22 +455,50 @@ impl Caminito {
     /// `deadlines`. While one runs, the outputs it's on are drawn again at each of their
     /// frames (`State::redraw_queued_outputs`), so there's no step to wait for.
     pub(crate) fn open_close_animation_elapse(&mut self, now: Duration) {
-        let running = &mut self.open_close_animations.running;
-        let before = running.len();
-        running.retain(|opening| !opening.is_over(now));
-        if running.len() != before {
+        let animations = &mut self.open_close_animations;
+        let before = animations.running.len() + animations.closing.len();
+        animations.running.retain(|opening| !opening.is_over(now));
+        animations
+            .closing
+            .retain(|closing| !closing.is_finished(now));
+        if animations.running.len() + animations.closing.len() != before {
             self.queue_redraw_all();
         }
     }
 
-    /// Whether a window on its way open at `now` is drawn on `output`, which is then drawn
-    /// again at its next frame.
-    pub(crate) fn opening_on(&self, output: &Output, now: Duration) -> bool {
+    /// Whether a window on its way open or a closing window's picture at `now` is drawn on
+    /// `output`, which is then drawn again at its next frame.
+    pub(crate) fn open_close_animation_on(&self, output: &Output, now: Duration) -> bool {
         let area = output_geometry(output);
-        self.open_close_animations
+        let animations = &self.open_close_animations;
+        let opening = animations
             .opening_windows(now)
-            .filter_map(|(id, done)| Some(opening_rect(self.policy.frame_rect(id)?, done)))
-            .any(|drawn| drawn.overlaps(area))
+            .filter_map(|(id, done)| Some(opening_rect(self.policy.frame_rect(id)?, done)));
+        let closing = animations
+            .closing(now)
+            .filter(|closing| closing.shows)
+            .map(Closing::covered);
+        opening.chain(closing).any(|drawn| drawn.overlaps(area))
+    }
+
+    /// Each closing window's picture at `now`, oldest first, as it's drawn, for the debug
+    /// dump.
+    pub(crate) fn drawn_closing_windows(&self, now: Duration) -> Vec<DrawnClosing> {
+        let stack = self.policy.stacking_all();
+        self.open_close_animations
+            .closing(now)
+            .filter(|closing| closing.shows)
+            .map(|closing| {
+                let done = closing.done(now);
+                let over = stack.iter().rev().find(|id| closing.is_over(**id)).copied();
+                DrawnClosing {
+                    window: closing.window,
+                    rect: closing_rect(closing.frame, done),
+                    alpha: closing_alpha(done),
+                    over,
+                }
+            })
+            .collect()
     }
 
     /// Each window on its way open at `now`, in the order they were shown, with where its
@@ -212,6 +543,26 @@ mod tests {
         assert_eq!(way_done(LENGTH / 2), 0.875);
         assert_eq!(way_done(LENGTH), 1.0);
         assert_eq!(way_done(2 * LENGTH), 1.0);
+    }
+
+    #[test]
+    fn a_window_closes_to_four_fifths_of_its_size_about_its_centre_and_no_opacity() {
+        let frame = rect(100, 50, 400, 300);
+
+        assert_eq!(closing_rect(frame, 0.0), frame);
+        assert_eq!(closing_rect(frame, 0.5), rect(120, 65, 360, 270));
+        assert_eq!(closing_rect(frame, 1.0), rect(140, 80, 320, 240));
+        assert_eq!(closing_alpha(0.0), 1.0);
+        assert_eq!(closing_alpha(1.0), 0.0);
+    }
+
+    #[test]
+    fn the_closing_eases_in() {
+        assert_eq!(way_closed(Duration::ZERO), 0.0);
+        // A cubic ease-in is an eighth of the way at half time.
+        assert_eq!(way_closed(LENGTH / 2), 0.125);
+        assert_eq!(way_closed(LENGTH), 1.0);
+        assert_eq!(way_closed(2 * LENGTH), 1.0);
     }
 
     #[test]

@@ -1,11 +1,16 @@
 //! The Opening animation (251): a window that's shown grows from 0.8 of its size to its own
 //! about its centre and fades in, for 200 ms of Caminito's clock, read from the debug dump
 //! and from the output's pixels. Policy has it mapped from the start.
+//!
+//! The Closing animation (252): a window that its client destroys or hides leaves a picture
+//! that shrinks to 0.8 of its size about its centre and fades out, at the window's place in
+//! the stack. Policy lets the window go at once.
 
 use std::time::Duration;
 
 use caminito_test_client::format_input;
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
+use caminito_test_client::x11::XWindowSpec;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
@@ -17,6 +22,8 @@ use crate::open_close_animation::LENGTH;
 use crate::scene::CLEAR_COLOR;
 use crate::settings::Value as Setting;
 use crate::settings::translate::{CAMINITO, INTERFACE, MARCO_GENERAL};
+use crate::state::SEAT;
+use crate::window::WindowKey;
 
 /// The window's colour, as `0xRRGGBB`.
 const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
@@ -304,4 +311,340 @@ fn the_key_turned_off_leaves_the_next_window_there_at_once() {
     f.dispatch_until(|f| !f.state.caminito.settings.open_close_animation);
 
     assert_there_at_once(f, id);
+}
+
+/// A closing window's picture, as the debug dump's `closing_windows` has it.
+#[derive(Debug)]
+struct DrawnPicture {
+    /// The id its window had in policy.
+    id: u64,
+    /// Where its frame is drawn.
+    rect: Rectangle<i32, Logical>,
+    alpha: f64,
+    /// The window it's drawn just over, by policy's id.
+    over: Option<u64>,
+}
+
+/// Each closing window's picture, from the debug dump's `closing_windows`, which isn't
+/// there while none is.
+fn closing(f: &Fixture) -> Vec<DrawnPicture> {
+    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
+    let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+    let Some(windows) = dump["closing_windows"].as_array() else {
+        return Vec::new();
+    };
+    let windows = windows.iter().map(|window| {
+        let rect = &window["rect"];
+        let rect = Rectangle::new(
+            (int(&rect["x"]), int(&rect["y"])).into(),
+            (int(&rect["width"]), int(&rect["height"])).into(),
+        );
+        DrawnPicture {
+            id: window["id"].as_u64().unwrap(),
+            rect,
+            alpha: window["alpha"].as_f64().unwrap(),
+            over: window["over"].as_u64(),
+        }
+    });
+    windows.collect()
+}
+
+/// The one closing window's picture, checking it's `id`'s.
+#[track_caller]
+fn drawn_closing(f: &Fixture, id: u64) -> DrawnPicture {
+    let mut closing = closing(f);
+    match closing[..] {
+        [DrawnPicture { id: closed, .. }] if closed == id => closing.remove(0),
+        _ => panic!("window {id} alone closes: {closing:?}"),
+    }
+}
+
+/// Maps a window and lets its opening finish.
+fn map_opened(f: &mut Fixture, id: ClientId, spec: WindowSpec) -> ClientWindow {
+    let window = f.map(id, spec);
+    f.advance_clock(LENGTH);
+    window
+}
+
+/// How a client closes a window.
+#[derive(Debug, Clone, Copy)]
+enum Close {
+    /// It destroys it: the xdg toplevel and its surface, or the X window.
+    Destroy,
+    /// X11 only: it unmaps it, and may map it again.
+    Unmap,
+}
+
+/// Has `window`'s client close it as `close` says, and waits until Caminito no longer
+/// manages it.
+fn close(f: &mut Fixture, window: ClientWindow, close: Close) {
+    match (window, close) {
+        (ClientWindow::Xdg(id, xdg), Close::Destroy) => {
+            f.client(id).destroy_window(xdg);
+            f.roundtrip(id);
+        }
+        (ClientWindow::X11(id, x11), close) => {
+            f.x11_call(id, move |x| match close {
+                Close::Destroy => x.destroy(x11),
+                Close::Unmap => x.unmap(x11),
+            })
+            .unwrap();
+            f.dispatch_until(|f| f.policy_id(window).is_none());
+        }
+        (ClientWindow::Xdg(..), Close::Unmap) => panic!("an X11 unmap"),
+    }
+}
+
+/// Checks that `window`, which was at `frame` with id `id`, shrinks about its centre and
+/// fades out from the picture of it, and is gone at 200 ms, with nothing of it left where
+/// it was.
+fn assert_shrinks_and_fades_out(f: &mut Fixture, id: u64, frame: Rectangle<i32, Logical>) {
+    let DrawnPicture {
+        rect: start, alpha, ..
+    } = drawn_closing(f, id);
+    assert_eq!(start, frame, "it starts at its own place");
+    assert_eq!(alpha, 1.0, "with full opacity");
+    assert_eq!(pixel(f, middle(frame)), WINDOW, "its last frame is drawn");
+
+    f.advance_clock(PART_WAY);
+    let DrawnPicture {
+        rect: part_way,
+        alpha,
+        ..
+    } = drawn_closing(f, id);
+    assert!(alpha > 0.0 && alpha < 1.0, "fainter part-way: {alpha}");
+    assert!(
+        part_way.size.w < frame.size.w && part_way.size.h < frame.size.h,
+        "smaller part-way: {part_way:?} in {frame:?}"
+    );
+    let four_fifths = |n: i32| (f64::from(n) * 0.8).round() as i32;
+    assert!(part_way.size.w > four_fifths(frame.size.w), "{part_way:?}");
+    let (centre, its_own) = (twice_middle(part_way), twice_middle(frame));
+    assert!(
+        (centre.x - its_own.x).abs() <= 1 && (centre.y - its_own.y).abs() <= 1,
+        "about its centre: {part_way:?} in {frame:?}"
+    );
+    let faint = pixel(f, middle(part_way));
+    assert!(
+        faint != WINDOW && faint != clear(),
+        "it's drawn faint: {faint:#08x}"
+    );
+
+    f.advance_clock(LENGTH - PART_WAY - Duration::from_millis(1));
+    let DrawnPicture {
+        rect: end, alpha, ..
+    } = drawn_closing(f, id);
+    assert!(alpha < 0.05, "all but gone at the end: {alpha}");
+    assert!(
+        (end.size.w - four_fifths(frame.size.w)).abs() <= 1,
+        "0.8 of its size: {end:?}"
+    );
+
+    f.advance_clock(Duration::from_millis(1));
+    assert!(
+        closing(f).is_empty(),
+        "it's over at 200 ms: {:?}",
+        closing(f)
+    );
+    assert_eq!(pixel(f, middle(frame)), clear(), "nothing is left of it");
+}
+
+on_both_kinds! {
+    fn a_destroyed_window_shrinks_and_fades_out_about_its_centre(kind: Kind) {
+        let (mut f, id) = desk(kind, Vec::new());
+        let window = map_opened(&mut f, id, WindowSpec::default());
+        let frame = f.visible_frame(window);
+        let pid = f.pid(window).0;
+
+        close(&mut f, window, Close::Destroy);
+
+        assert_shrinks_and_fades_out(&mut f, pid, frame);
+    }
+}
+
+// A null buffer hides an xdg toplevel; an X window is hidden by an unmap, which follows.
+#[test]
+fn an_xdg_window_its_client_hides_with_a_null_buffer_shrinks_and_fades_out() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let window = map_opened(&mut f, id, WindowSpec::default());
+    let frame = f.visible_frame(window);
+    let pid = f.pid(window).0;
+
+    f.client(id).commit_null_buffer(window.xdg());
+    f.roundtrip(id);
+    assert!(f.policy_id(window).is_none(), "it's unmapped");
+
+    assert_shrinks_and_fades_out(&mut f, pid, frame);
+}
+
+#[test]
+fn an_unmapped_x11_window_shrinks_and_fades_out_about_its_centre() {
+    let (mut f, x) = desk(Kind::X11, Vec::new());
+    let window = map_opened(&mut f, x, WindowSpec::default());
+    let frame = f.visible_frame(window);
+    let pid = f.pid(window).0;
+
+    close(&mut f, window, Close::Unmap);
+
+    assert_shrinks_and_fades_out(&mut f, pid, frame);
+}
+
+on_both_kinds! {
+    fn the_focus_moves_on_in_the_first_frame_after_the_close(kind: Kind) {
+        let (mut f, id) = desk(kind, Vec::new());
+        let beneath = map_opened(&mut f, id, WindowSpec::default());
+        let window = map_opened(&mut f, id, WindowSpec::default());
+        assert!(f.has_keyboard(window));
+        let pid = f.pid(window).0;
+
+        close(&mut f, window, Close::Destroy);
+
+        drawn_closing(&f, pid);
+        let focus = f.state.caminito.policy.focus(SEAT);
+        assert_eq!(focus, Some(f.pid(beneath)), "policy let it go at once");
+        assert!(f.has_keyboard(beneath), "the window beneath has the keyboard");
+    }
+}
+
+/// An X window of `client` at `position`, of `size`, filled with `color` (`0xRRGGBB`),
+/// mapped and with its opening over.
+fn map_colored(
+    f: &mut Fixture,
+    client: ClientId,
+    position: (i16, i16),
+    size: (u16, u16),
+    color: u32,
+) -> ClientWindow {
+    let spec = XWindowSpec {
+        size,
+        position: Some(position),
+        background: Some(0xff00_0000 | color),
+        delete_window: true,
+        ..XWindowSpec::default()
+    };
+    let window = f
+        .x11_call(client, move |x| {
+            let window = x.create_window(&spec)?;
+            x.map(window)?;
+            Ok::<_, x11rb::errors::ReplyOrIdError>(window)
+        })
+        .expect("the X window maps");
+    let window = ClientWindow::X11(client, window);
+    f.dispatch_until(|f| f.policy_id(window).is_some());
+    f.sync(window);
+    f.advance_clock(LENGTH);
+    window
+}
+
+const BENEATH: u32 = 0xff_0000;
+const ABOVE: u32 = 0x00_00ff;
+
+// Placed with `USPosition` and filled with a colour of their own, which only an X window
+// can be.
+#[test]
+fn part_way_a_window_above_stays_above_the_picture_and_a_click_on_it_reaches_the_window_beneath() {
+    let (mut f, x) = desk(Kind::X11, Vec::new());
+    let beneath = map_colored(&mut f, x, (50, 50), (500, 400), BENEATH);
+    let window = map_opened(
+        &mut f,
+        x,
+        WindowSpec {
+            position: Some((150, 100)),
+            ..WindowSpec::default()
+        },
+    );
+    let above = map_colored(&mut f, x, (420, 300), (300, 200), ABOVE);
+    let (frame, above_geometry) = (f.visible_frame(window), f.geometry(above));
+    let pid = f.pid(window).0;
+
+    close(&mut f, window, Close::Destroy);
+    f.advance_clock(PART_WAY);
+
+    let DrawnPicture {
+        rect: drawn, over, ..
+    } = drawn_closing(&f, pid);
+    assert_eq!(
+        over,
+        Some(f.pid(beneath).0),
+        "it's drawn just over the window beneath"
+    );
+    let covered = drawn.intersection(above_geometry).unwrap();
+    assert!(
+        covered.size.w > 20 && covered.size.h > 20,
+        "{drawn:?} {above_geometry:?}"
+    );
+    assert_eq!(
+        pixel(&mut f, middle(covered)),
+        ABOVE,
+        "the window above is drawn over it"
+    );
+    // Where it's over the window beneath alone, that window shows through it, and a click
+    // reaches it.
+    let spot = Point::from((drawn.loc.x + 40, drawn.loc.y + drawn.size.h / 2));
+    assert!(!above_geometry.contains(spot) && f.geometry(beneath).contains(spot));
+    assert!(frame.contains(spot));
+    let blend = pixel(&mut f, spot);
+    assert!(
+        blend != BENEATH && blend != WINDOW,
+        "both show there: {blend:#08x}"
+    );
+    f.pointer_move(f64::from(spot.x), f64::from(spot.y));
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_button(BTN_LEFT, false);
+    f.dispatch();
+    let focus = f.state.caminito.policy.focus(SEAT);
+    assert_eq!(
+        focus,
+        Some(f.pid(beneath)),
+        "the click reached the window beneath"
+    );
+}
+
+// A window's picture is kept by the close handlers and the surface's hooks, which run while
+// its buffer is there, so no client of either kind can take its buffer away first. The close
+// is Caminito's own, with no picture kept, as one whose buffer went would be: the same for
+// both kinds past the handlers.
+#[test]
+fn a_window_with_no_picture_kept_closes_at_once() {
+    let (mut f, id) = desk(Kind::Xdg, Vec::new());
+    let window = map_opened(&mut f, id, WindowSpec::default());
+    let frame = f.visible_frame(window);
+    let surface = f.state.caminito.policy.window(f.pid(window)).unwrap();
+    let key = WindowKey::of(surface.window());
+
+    f.state.caminito.window_destroyed(&key);
+    f.dispatch();
+
+    assert!(f.policy_id(window).is_none());
+    assert!(closing(&f).is_empty(), "nothing closes: {:?}", closing(&f));
+    assert_eq!(
+        pixel(&mut f, middle(frame)),
+        clear(),
+        "it's gone in one frame"
+    );
+}
+
+// The settings are read the same for both kinds, which reach the one `start_closing`.
+#[test]
+fn with_its_key_or_one_of_the_three_others_against_it_a_window_is_gone_in_one_frame() {
+    for (schema, key, value) in [
+        (CAMINITO, "open-close-animation", false),
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let settings = vec![(schema, key.into(), Setting::Bool(value))];
+        let (mut f, id) = desk(Kind::Xdg, settings);
+        let window = map_opened(&mut f, id, WindowSpec::default());
+        let frame = f.visible_frame(window);
+
+        close(&mut f, window, Close::Destroy);
+
+        assert!(closing(&f).is_empty(), "{key}: {:?}", closing(&f));
+        assert_eq!(
+            pixel(&mut f, middle(frame)),
+            clear(),
+            "{key}: gone in one frame"
+        );
+    }
 }
