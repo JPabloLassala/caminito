@@ -128,7 +128,12 @@ fn pixel_on(f: &mut Fixture, output: &Output, local: Point<i32, Logical>) -> u32
 
 /// Presses the left button on `window`'s place in `from`'s layout, and moves the pointer
 /// past `drag-threshold` and on to the global point `to`, in steps as a mouse does.
-fn drag_to(f: &mut Fixture, from: &Output, window: ClientWindow, to: Point<i32, Logical>) {
+pub(super) fn drag_to(
+    f: &mut Fixture,
+    from: &Output,
+    window: ClientWindow,
+    to: Point<i32, Logical>,
+) {
     let start = global(from, middle(place_on(f, from, window)));
     f.pointer_move(f64::from(start.x), f64::from(start.y));
     f.pointer_button(BTN_LEFT, true);
@@ -143,7 +148,7 @@ fn drag_to(f: &mut Fixture, from: &Output, window: ClientWindow, to: Point<i32, 
 }
 
 /// The middle of `output`'s layout area, in global coordinates.
-fn layout_spot(f: &Fixture, output: &Output) -> Point<i32, Logical> {
+pub(super) fn layout_spot(f: &Fixture, output: &Output) -> Point<i32, Logical> {
     let area = rect(&on(f, output)["area"]);
     global(output, middle(area))
 }

@@ -10,7 +10,7 @@
 //! The arrow keys move policy's selection in the layout and Enter chooses it, and a middle
 //! click on a window asks it to close (242). A window that opens or closes while it's open
 //! joins the layout or leaves it at the next refresh pass, and the others take their new
-//! places in that frame.
+//! places in that frame, or ease to them from where they are if one closes (250).
 //!
 //! The bar of workspaces (244) is one row along the top, of a live picture of each
 //! workspace on the output, and the layout is beneath it. A click on a workspace, or a
@@ -40,12 +40,19 @@
 //! drawing takes time: the Overview closing, a switch to the workspace it went to or a
 //! press on it cuts the drop to its end.
 //!
+//! When a window leaves an output's layout, dropped on another workspace or onto another
+//! output, or joins it from another output's, each window that stays there eases from
+//! where it's drawn to its new slot (250). Another change of the layout on the way eases
+//! each from where it's drawn then. The Overview closing or a switch of the output's
+//! workspace cuts that to its end.
+//!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
 pub(crate) mod bar;
 pub(crate) mod drag;
 pub(crate) mod draw;
 pub(crate) mod layout;
+pub(crate) mod reflow;
 pub(crate) mod timing;
 pub(crate) mod transition;
 
@@ -64,6 +71,7 @@ use self::bar::Bar;
 use self::drag::{Aim, Dropping, Shrink};
 use self::draw::Label;
 use self::layout::Layout;
+use self::reflow::Reflow;
 use self::transition::{Heading, Transition};
 use crate::decoration::IconSource;
 use crate::input::bindings::Binding;
@@ -109,6 +117,9 @@ pub(crate) struct Overview {
     /// The transition, while it's on its way open or closed (243): every output's is the
     /// same (246).
     pub(crate) transition: Option<Transition>,
+    /// The active workspace's windows on their way to their new slots, after one left the
+    /// layout or joined it from another output's (250).
+    pub(crate) reflow: Option<Reflow>,
     /// Where this output's first frame of a held opening is.
     first_frame: FirstFrame,
 }
@@ -120,6 +131,34 @@ enum FirstFrame {
     Undrawn,
     Drawn,
     Shown,
+}
+
+/// What the refresh pass needs of an output's layout as it was, to ease its windows to
+/// their new slots (250).
+struct WasLaid {
+    workspace: usize,
+    /// Whether the Overview was on its way closed.
+    closing: bool,
+    /// Each window listed, with its slot, bottom to top.
+    slots: Vec<(WindowId, Rectangle<i32, Logical>)>,
+    /// Each window listed, with where it was drawn on its way to its slot.
+    places: Vec<(WindowId, Rectangle<i32, Logical>)>,
+    /// The windows' way to their slots, while it ran.
+    reflow: Option<Reflow>,
+}
+
+impl WasLaid {
+    /// `open`'s layout of the active workspace at `now`.
+    fn of(open: &Overview, now: Duration) -> Self {
+        let slots = open.laid.windows.iter().zip(&open.laid.layout.slots);
+        Self {
+            workspace: open.laid.workspace,
+            closing: open.is_closing(),
+            slots: slots.map(|(id, slot)| (*id, slot.window)).collect(),
+            places: open.places(now),
+            reflow: open.reflowing(now).cloned(),
+        }
+    }
 }
 
 /// One window as the Overview draws it at one time.
@@ -195,6 +234,36 @@ impl Overview {
         std::iter::once(&self.laid).chain(&self.leaving)
     }
 
+    /// Where window `id` of the active workspace's layout is drawn at `now` before the
+    /// transition moves it, from the output's top left corner: on its way to `slot`, its
+    /// place in the layout, after the layout changed (250), or there.
+    pub(crate) fn place(
+        &self,
+        id: WindowId,
+        slot: Rectangle<i32, Logical>,
+        now: Duration,
+    ) -> Rectangle<i32, Logical> {
+        match self.reflowing(now) {
+            Some(reflow) => reflow.rect(id, slot, now),
+            None => slot,
+        }
+    }
+
+    /// The active workspace's windows on their way to their new slots at `now` (250), if
+    /// they're not there yet.
+    pub(crate) fn reflowing(&self, now: Duration) -> Option<&Reflow> {
+        self.reflow.as_ref().filter(|reflow| !reflow.is_over(now))
+    }
+
+    /// Where each window of the active workspace's layout is drawn at `now` before the
+    /// transition moves it, as `place` has it.
+    pub(crate) fn places(&self, now: Duration) -> Vec<(WindowId, Rectangle<i32, Logical>)> {
+        let slots = self.laid.windows.iter().zip(&self.laid.layout.slots);
+        slots
+            .map(|(id, slot)| (*id, self.place(*id, slot.window, now)))
+            .collect()
+    }
+
     /// How open it's drawn at `now`, from 0, closed, to 1, open.
     pub(crate) fn part(&self, now: Duration) -> f64 {
         self.transition
@@ -247,8 +316,17 @@ impl Caminito {
 
     /// The window of the Overview's layout at `location`, in global logical coordinates:
     /// the one whose place or whose label it's on, on any output (246).
+    /// While the layout's windows are on their way to their new slots (250), it's the
+    /// topmost one drawn at `location`.
     fn overview_window_at(&self, location: Point<f64, Logical>) -> Option<WindowId> {
         let (open, at) = self.overview_at(location)?;
+        if open.reflowing(self.now()).is_some() {
+            let places = open.places(self.now()).into_iter().rev();
+            return places
+                .filter(|(_, place)| place.to_f64().contains(at))
+                .map(|(id, _)| id)
+                .next();
+        }
         let slot = open.laid.layout.slot_at(at)?;
         open.laid.windows.get(slot).copied()
     }
@@ -537,14 +615,23 @@ impl Caminito {
         let mut labels = (0, 0);
         let mut before = std::mem::take(&mut self.overview);
         let mut changed = before.len() != listed.len();
+        // Every output's layout as it was, so that a window that joins one from another's is
+        // told from one that opens.
+        let was_laid: Vec<WindowId> = before
+            .iter()
+            .flat_map(|old| old.laid.windows.iter().copied())
+            .collect();
         for (output, on) in listed {
             let old = before
                 .iter()
                 .position(|old| old.output == output)
                 .map(|index| before.swap_remove(index));
+            let was = old.as_ref().map(|old| WasLaid::of(old, now));
             let selected = open.selected.filter(|id| on.windows.contains(id));
-            let (laid_out, fresh) =
+            let (mut laid_out, fresh) =
                 self.lay_out_overview(output, on, selected, transition, old, &mut labels);
+            laid_out.reflow =
+                was.and_then(|was| self.overview_reflow(was, &laid_out, &was_laid, now));
             changed |= !fresh;
             self.overview.push(laid_out);
         }
@@ -697,9 +784,49 @@ impl Caminito {
             target_mark,
             next_bar_frames,
             transition,
+            reflow: None,
             first_frame,
         };
         (laid_out, fresh)
+    }
+
+    /// The windows of `new`'s layout of the active workspace on their way to their new
+    /// slots there (250), as `was` had the layout before: from where they were drawn, when
+    /// a window left the layout, or joined it from another output's, which `was_laid` lists
+    /// with this one's, with `overview-animation` on. A window that opens joins its slot at
+    /// once and the others take theirs, as before (242). While they're on their way,
+    /// another change of the layout eases each from where it's drawn to its newest slot, and
+    /// with no change they go on. A switch of the output's workspace cuts it to its end, as
+    /// does a closing that the layout was on its way with.
+    fn overview_reflow(
+        &self,
+        was: WasLaid,
+        new: &Overview,
+        was_laid: &[WindowId],
+        now: Duration,
+    ) -> Option<Reflow> {
+        if was.workspace != new.laid.workspace || was.closing {
+            return None;
+        }
+        let windows = &new.laid.windows;
+        let left = was.slots.iter().any(|(id, _)| !windows.contains(id));
+        let joined = windows
+            .iter()
+            .filter(|id| !was.slots.iter().any(|(was, _)| was == *id));
+        let moved_in = joined.clone().any(|id| was_laid.contains(id));
+        let slots = new.laid.windows.iter().zip(&new.laid.layout.slots);
+        let slots: Vec<_> = slots.map(|(id, slot)| (*id, slot.window)).collect();
+        let reflow = match was.reflow {
+            Some(reflow) if slots == was.slots => return Some(reflow),
+            Some(_) => true,
+            None => left || moved_in,
+        };
+        if !reflow || !self.settings.overview_animation {
+            return None;
+        }
+        let stay = was.places.into_iter();
+        let stay = stay.filter(|(id, _)| windows.contains(id)).collect();
+        Some(Reflow::new(stay, now))
     }
 
     /// Policy has no Overview open: the one drawn goes on its way closed from where it is
@@ -730,6 +857,8 @@ impl Caminito {
             let closing = Transition::new(Heading::Closing, first.part(now), now);
             for shown in &mut self.overview {
                 shown.transition = Some(closing);
+                // The windows go back from their new slots (250).
+                shown.reflow = None;
             }
         } else {
             self.overview.clear();
@@ -740,16 +869,20 @@ impl Caminito {
     /// When the running transition is over: `deadlines` then draws the Overview at rest
     /// (174).
     ///
-    /// So is a dragged window's size or a drop's (249).
+    /// So is a dragged window's size or a drop's (249), and the layout's windows' way to
+    /// their new slots (250).
     pub(crate) fn overview_transition_deadline(&self) -> Option<Duration> {
         let now = self.now();
         let open = self.overview.first()?;
         let transition = open.transition.map(|transition| transition.end());
         let shrink = self.overview_shrink.filter(|shrink| shrink.runs(now));
         let drop = self.overview_drop.map(|drop| drop.end());
+        let reflows = self.overview.iter();
+        let reflows = reflows.filter_map(|open| open.reflow.as_ref().map(Reflow::end));
         [transition, shrink.map(|shrink| shrink.end()), drop]
             .into_iter()
             .flatten()
+            .chain(reflows)
             .min()
     }
 
@@ -758,8 +891,23 @@ impl Caminito {
     /// at each of their frames (`State::redraw_queued_outputs`). An opening held for its
     /// limit starts its clock instead.
     ///
-    /// A dragged window that's at its size, or a drop that's over (249), is drawn at rest.
+    /// A dragged window that's at its size, or a drop that's over (249), is drawn at rest,
+    /// and so are a layout's windows at their new slots (250).
     pub(crate) fn overview_transition_elapse(&mut self, now: Duration) {
+        let mut settled = false;
+        for open in &mut self.overview {
+            if open
+                .reflow
+                .as_ref()
+                .is_some_and(|reflow| reflow.is_over(now))
+            {
+                open.reflow = None;
+                settled = true;
+            }
+        }
+        if settled {
+            self.queue_redraw_all();
+        }
         if let Some((shrink, arrived)) = self.overview_shrink.map(|shrink| shrink.settled(now)) {
             self.overview_shrink = Some(shrink);
             if arrived {
@@ -829,12 +977,14 @@ impl Caminito {
     }
 
     /// Whether the Overview's transition runs on `output` at `now`, or a dragged window's
-    /// size or a drop does there (249).
+    /// size or a drop does there (249), or its layout's windows are on their way to their
+    /// new slots (250).
     pub(crate) fn overview_transition_on(&self, output: &Output, now: Duration) -> bool {
         let open = self.overview_on(output);
         let transition = open.and_then(|open| open.transition);
         let runs = transition.is_some_and(|transition| !transition.is_over(now));
-        runs || (open.is_some() && self.overview_drag_runs(now))
+        let reflows = open.is_some_and(|open| open.reflowing(now).is_some());
+        runs || reflows || (open.is_some() && self.overview_drag_runs(now))
     }
 
     /// `windows` of `workspace` on `output` laid out in `area`, with `selected` selected,

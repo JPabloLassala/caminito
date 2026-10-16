@@ -343,6 +343,10 @@ struct OverviewOutputDump {
     /// draws away from its place, with where it's drawn, in the order of the windows' ids:
     /// one time for each place, as `workspace_slides` has it.
     sliding: Vec<OverviewSlidingDump>,
+    /// While the layout's windows are on their way to their new slots, after a window left
+    /// it or joined it (250), each window listed with where it's drawn, before the
+    /// transition moves it, from the output's top left corner: empty once they're there.
+    reflow: Vec<OverviewReflowDump>,
     /// How much of black is over the wallpaper.
     dim: f32,
     /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
@@ -419,6 +423,12 @@ struct OverviewTransitionDump {
     /// Each window drawn, bottom to top, with where, from the output's top left corner, and
     /// how opaque.
     windows: Vec<OverviewDrawnDump>,
+}
+
+#[derive(Serialize)]
+struct OverviewReflowDump {
+    window: u64,
+    rect: RectDump,
 }
 
 #[derive(Serialize)]
@@ -1236,6 +1246,19 @@ impl Caminito {
             })
             .unwrap_or_default();
         sliding.sort_by_key(|dump| (dump.window, dump.rect.x, dump.rect.y));
+        let now = self.now();
+        let reflow = laid_out
+            .filter(|laid_out| laid_out.reflowing(now).is_some())
+            .map(|laid_out| {
+                let places = laid_out.places(now).into_iter();
+                places
+                    .map(|(id, rect)| OverviewReflowDump {
+                        window: id.0,
+                        rect: rect.into(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Some(OverviewOutputDump {
             output: output.name(),
             windows: on
@@ -1251,6 +1274,7 @@ impl Caminito {
             bar,
             area: laid_out.map(|laid_out| laid_out.bar.area_beneath(size).into()),
             sliding,
+            reflow,
             dim: crate::overview::DIM,
             hidden_layer_surfaces: self
                 .layer_surfaces(output)

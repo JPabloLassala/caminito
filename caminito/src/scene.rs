@@ -590,7 +590,13 @@ fn overview_layout_elements<R>(
         let Some(label) = label.as_ref().filter(|_| !moving) else {
             continue;
         };
-        let location = (slot.label.loc + shift).to_physical_precise_round::<_, i32>(scale);
+        // A label goes with its window to its new slot (250), centred beneath it.
+        let place = overview_place(open, laid, *id, slot.window, now);
+        let along = Point::from((
+            place.loc.x + place.size.w / 2 - (slot.window.loc.x + slot.window.size.w / 2),
+            place.loc.y + place.size.h - (slot.window.loc.y + slot.window.size.h),
+        ));
+        let location = (slot.label.loc + along + shift).to_physical_precise_round::<_, i32>(scale);
         let element = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             location.to_f64(),
@@ -824,13 +830,32 @@ fn overview_bar_elements<R>(
     }
 }
 
+/// Where window `id` of `laid`, one of `open`'s layouts, is drawn at `now` before the
+/// transition moves it: on its way to `slot`, its new place in the active workspace's
+/// layout, after the layout changed (250), or there. A layout a Workspace slide leaves
+/// stays as it was laid out.
+fn overview_place(
+    open: &Overview,
+    laid: &Laid,
+    id: WindowId,
+    slot: Rectangle<i32, Logical>,
+    now: Duration,
+) -> Rectangle<i32, Logical> {
+    if laid.workspace == open.laid.workspace {
+        open.place(id, slot, now)
+    } else {
+        slot
+    }
+}
+
 /// Each window of `laid`, one of `open`'s layouts, drawn at `now` with its places `shift`
 /// away, as a Workspace slide has them (244), bottom to top: between its real place and
-/// its place in the layout, as far as the transition has it (243). A minimised window
-/// stays at its place and fades instead, in as it opens and out as it closes; one that was
-/// chosen is shown again, and moves back with the others. They're in policy's stacking
-/// order, so a window chosen is at the top as they go. A dragged window (245) isn't among
-/// them: it's drawn under the pointer, nor is a dropped one on its way to its place (249).
+/// its place in the layout, as far as the transition has it (243), with that place on its
+/// way to a new slot after the layout changed (250). A minimised window stays at its place
+/// and fades instead, in as it opens and out as it closes; one that was chosen is shown
+/// again, and moves back with the others. They're in policy's stacking order, so a window
+/// chosen is at the top as they go. A dragged window (245) isn't among them: it's drawn
+/// under the pointer, nor is a dropped one on its way to its place (249).
 pub(crate) fn overview_drawn_windows(
     caminito: &Caminito,
     open: &Overview,
@@ -851,7 +876,8 @@ pub(crate) fn overview_drawn_windows(
         .filter_map(|(id, slot)| {
             let frame = policy.frame_rect(*id)?;
             let real = Rectangle::new(frame.loc - origin, frame.size);
-            let place = Rectangle::new(slot.window.loc + shift, slot.window.size);
+            let place = overview_place(open, laid, *id, slot.window, now);
+            let place = Rectangle::new(place.loc + shift, place.size);
             let (rect, alpha) = if policy.is_minimized(*id) {
                 (place, part as f32)
             } else {
