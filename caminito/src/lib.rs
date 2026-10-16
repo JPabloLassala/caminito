@@ -25,6 +25,7 @@ mod not_responding;
 mod open_close_animation;
 pub mod output;
 mod overview;
+mod popup_slide;
 pub mod protocols;
 pub mod scene;
 pub mod session;

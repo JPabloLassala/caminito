@@ -1,0 +1,449 @@
+//! The Popup slide (ADR 0037): an xdg_popup that's shown slides out of the edge it's
+//! attached to over 200 ms of Caminito's clock, cut off at its own final rectangle, read from
+//! the debug dump and from the output's pixels. Policy has it at its real place from the
+//! start.
+//!
+//! Only Wayland clients have xdg_popups: an X11 menu is an override-redirect window, whose
+//! slide is CMN-180's.
+
+use std::time::Duration;
+
+use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
+use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner, format_input};
+use smithay::utils::{Logical, Point, Rectangle};
+
+use super::fixture::{BTN_LEFT, ClientId, Fixture, Kind, WINDOW_COLOR, WindowSpec};
+use super::overview;
+use crate::popup_slide::LENGTH;
+use crate::settings::Value as Setting;
+use crate::settings::translate::{CAMINITO, INTERFACE, MARCO_GENERAL};
+
+const POPUP_COLOR: u32 = 0xffff_0000;
+
+/// The colours as `0xRRGGBB`.
+const POPUP: u32 = POPUP_COLOR & 0xff_ffff;
+const WINDOW: u32 = WINDOW_COLOR & 0xff_ffff;
+
+/// How far into the slide the tests read it.
+const PART_WAY: Duration = Duration::from_millis(50);
+
+/// The rectangle in the window the popups are anchored to, from its window geometry's corner.
+const ANCHOR: (i32, i32, i32, i32) = (150, 100, 100, 20);
+
+type Settings = Vec<(&'static str, String, Setting)>;
+
+/// One output with `popup-slide` on, unless `settings` has it, and a Wayland client. The
+/// fixture has the key off, for the tests written when a popup was there at once. The clock
+/// is stopped, so the slide is read where `advance_clock` has it.
+fn desk(mut settings: Settings) -> (Fixture, ClientId) {
+    if !settings.iter().any(|(_, key, _)| key == "popup-slide") {
+        settings.push((CAMINITO, "popup-slide".into(), Setting::Bool(true)));
+    }
+    let mut f = Fixture::with_settings(settings);
+    f.add_output((1280, 800), 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.stop_clock();
+    (f, id)
+}
+
+/// A Popup slide as the debug dump's `popup_slides` has it.
+#[derive(Debug, Clone, PartialEq)]
+struct Sliding {
+    rect: Rectangle<i32, Logical>,
+    edge: String,
+    offset: Point<i32, Logical>,
+    alpha: f64,
+}
+
+/// Each Popup slide that runs, from the debug dump, which has none while none does.
+fn sliding(f: &Fixture) -> Vec<Sliding> {
+    let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
+    let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+    let Some(popups) = dump["popup_slides"].as_array() else {
+        return Vec::new();
+    };
+    let popups = popups.iter().map(|popup| {
+        let rect = &popup["rect"];
+        Sliding {
+            rect: Rectangle::new(
+                (int(&rect["x"]), int(&rect["y"])).into(),
+                (int(&rect["width"]), int(&rect["height"])).into(),
+            ),
+            edge: popup["edge"].as_str().unwrap().to_owned(),
+            offset: (int(&popup["offset"]["x"]), int(&popup["offset"]["y"])).into(),
+            alpha: popup["alpha"].as_f64().unwrap(),
+        }
+    });
+    popups.collect()
+}
+
+/// The one popup that slides.
+#[track_caller]
+fn the_slide(f: &Fixture) -> Sliding {
+    match &sliding(f)[..] {
+        [slide] => slide.clone(),
+        other => panic!("one popup slides: {other:?}"),
+    }
+}
+
+/// A `size` popup placed at `anchor` and `gravity` on `ANCHOR`, as it is wherever it falls.
+fn place(size: (i32, i32), anchor: Anchor, gravity: Gravity) -> Positioner {
+    Positioner {
+        size,
+        anchor_rect: ANCHOR,
+        anchor,
+        gravity,
+        constraint_adjustment: ConstraintAdjustment::None,
+    }
+}
+
+/// A 400 × 300 window with a popup placed by `positioner`, which is shown, and the window's
+/// corner.
+fn window_with_popup(
+    f: &mut Fixture,
+    id: ClientId,
+    positioner: Positioner,
+) -> (caminito_test_client::PopupId, Point<i32, Logical>) {
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let corner = f.geometry(window).loc;
+    let popup = f.client(id).create_popup(window.xdg(), positioner);
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+    (popup, corner)
+}
+
+/// The output's pixel at the global point `at`, as `0xRRGGBB`.
+fn pixel(f: &mut Fixture, at: Point<i32, Logical>) -> u32 {
+    let output = f.state.caminito.outputs[0].clone();
+    let pixel = f
+        .state
+        .backend
+        .headless_mut()
+        .pixel(&output, at.to_physical(1));
+    pixel.expect("the output is drawn") & 0xff_ffff
+}
+
+/// The bottom right pixel of `rect`.
+fn last_pixel(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
+    rect.loc + rect.size.to_point() - Point::from((1, 1))
+}
+
+#[test]
+fn a_popup_slides_out_of_the_side_of_its_anchor_it_lies_on() {
+    for (anchor, edge, start) in [
+        (Anchor::Bottom, "top", (0, -60)),
+        (Anchor::Top, "bottom", (0, 60)),
+        (Anchor::Right, "left", (-80, 0)),
+        (Anchor::Left, "right", (80, 0)),
+    ] {
+        let (mut f, id) = desk(Vec::new());
+        // Gravity the anchor's way puts the popup on that side of the anchor.
+        let gravity = match anchor {
+            Anchor::Bottom => Gravity::Bottom,
+            Anchor::Top => Gravity::Top,
+            Anchor::Right => Gravity::Right,
+            _ => Gravity::Left,
+        };
+        window_with_popup(&mut f, id, place((80, 60), anchor, gravity));
+
+        let slide = the_slide(&f);
+        assert_eq!(slide.edge, edge, "{anchor:?}");
+        assert_eq!(
+            slide.offset,
+            start.into(),
+            "its whole size away: {anchor:?}"
+        );
+        assert_eq!(slide.alpha, 1.0, "a short popup doesn't fade: {anchor:?}");
+
+        f.advance_clock(PART_WAY);
+        let part_way = the_slide(&f);
+        let (from, now): (Point<i32, Logical>, _) = (start.into(), part_way.offset);
+        assert!(
+            now.x.signum() == from.x.signum()
+                && now.y.signum() == from.y.signum()
+                && now.x.abs() < from.x.abs().max(1)
+                && now.y.abs() < from.y.abs().max(1),
+            "on its way: {now:?} from {from:?}, {anchor:?}"
+        );
+        assert_eq!(part_way.rect, slide.rect, "its place doesn't move");
+
+        f.advance_clock(LENGTH - PART_WAY);
+        assert!(sliding(&f).is_empty(), "over at 200 ms: {anchor:?}");
+        assert_eq!(pixel(&mut f, slide.rect.loc), POPUP, "{anchor:?}");
+        assert_eq!(pixel(&mut f, last_pixel(slide.rect)), POPUP, "{anchor:?}");
+    }
+}
+
+#[test]
+fn a_combo_box_list_over_its_anchor_slides_down() {
+    let (mut f, id) = desk(Vec::new());
+    // Over its button, as GTK places a combo box's list.
+    let list = Positioner {
+        anchor_rect: ANCHOR,
+        ..place((100, 80), Anchor::TopLeft, Gravity::BottomRight)
+    };
+    window_with_popup(&mut f, id, list);
+
+    assert_eq!(the_slide(&f).edge, "top");
+}
+
+#[test]
+fn a_submenu_slides_out_of_its_menus_side() {
+    let (mut f, id) = desk(Vec::new());
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let corner = f.geometry(window).loc;
+    f.click(f64::from(corner.x + 10), f64::from(corner.y + 10));
+    f.roundtrip(id);
+    let press = f.client(id).state.last_press_serial.unwrap();
+    let menu = place((100, 120), Anchor::BottomLeft, Gravity::BottomRight);
+    let menu = f.client(id).create_popup(window.xdg(), menu);
+    f.client(id).grab_popup(menu, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, POPUP_COLOR);
+    f.roundtrip(id);
+    f.advance_clock(LENGTH);
+
+    // Beside its second row, as a menu's submenu is.
+    let row = Positioner {
+        size: (100, 80),
+        anchor_rect: (0, 20, 100, 20),
+        anchor: Anchor::TopRight,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::None,
+    };
+    let submenu = f.client(id).create_nested_popup(menu, row, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(submenu, POPUP_COLOR);
+    f.roundtrip(id);
+
+    assert!(!f.client(id).popup(submenu).done);
+    let slide = the_slide(&f);
+    assert_eq!(slide.edge, "left", "it slides right, out of the menu");
+    assert_eq!(slide.offset, (-100, 0).into());
+}
+
+#[test]
+fn a_bottom_panels_popup_slides_up() {
+    let (mut f, id) = desk(Vec::new());
+    let bottom_bar = LayerSpec {
+        layer: Layer::Top,
+        namespace: "panel",
+        output: None,
+        anchor: LayerAnchor::Bottom | LayerAnchor::Left | LayerAnchor::Right,
+        size: (0, 28),
+        exclusive_zone: 28,
+        keyboard: KeyboardInteractivity::None,
+    };
+    let bar = f.map_layer(id, bottom_bar, 0xff00_00ff);
+    // Above the bar, as mate-panel's menus are on a bottom panel.
+    let menu = Positioner {
+        size: (100, 120),
+        anchor_rect: (90, 0, 20, 28),
+        anchor: Anchor::TopLeft,
+        gravity: Gravity::TopRight,
+        constraint_adjustment: ConstraintAdjustment::None,
+    };
+    let popup = f.client(id).create_layer_popup(bar, menu, None);
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+
+    let slide = the_slide(&f);
+    assert_eq!(slide.edge, "bottom");
+    assert_eq!(
+        slide.rect,
+        Rectangle::new((90, 800 - 28 - 120).into(), (100, 120).into())
+    );
+    assert_eq!(slide.offset, (0, 120).into());
+}
+
+#[test]
+fn a_tall_popup_slides_eight_lines_and_fades_and_a_short_one_doesnt_fade() {
+    let (mut f, id) = desk(Vec::new());
+    window_with_popup(
+        &mut f,
+        id,
+        place((100, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    let short = the_slide(&f);
+    assert_eq!((short.offset, short.alpha), ((0, -60).into(), 1.0));
+
+    let (mut f, id) = desk(Vec::new());
+    window_with_popup(
+        &mut f,
+        id,
+        place((100, 500), Anchor::Bottom, Gravity::Bottom),
+    );
+    let tall = the_slide(&f);
+    assert_eq!(tall.alpha, 0.0, "it fades in from nothing");
+    let lines = -tall.offset.y;
+    assert!(
+        lines > 0 && lines < 500 && lines % 8 == 0,
+        "eight lines of the interface font: {lines}"
+    );
+    f.advance_clock(PART_WAY);
+    let alpha = the_slide(&f).alpha;
+    assert!(alpha > 0.0 && alpha < 1.0, "fainter part-way: {alpha}");
+}
+
+#[test]
+fn part_way_nothing_of_a_popup_is_drawn_outside_its_place() {
+    let (mut f, id) = desk(Vec::new());
+    window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    f.advance_clock(PART_WAY);
+    let slide = the_slide(&f);
+    let place = slide.rect;
+    assert!(slide.offset.y < 0, "it comes down: {slide:?}");
+
+    // Its top rows are drawn at the top of its place, and none above it, on its anchor.
+    let above = place.loc - Point::from((0, 1));
+    assert_eq!(pixel(&mut f, place.loc), POPUP);
+    assert_eq!(pixel(&mut f, above), WINDOW, "nothing over its parent");
+    let left = place.loc + Point::from((-1, 5));
+    let right = place.loc + Point::from((place.size.w, 5));
+    assert_eq!(pixel(&mut f, left), WINDOW);
+    assert_eq!(pixel(&mut f, right), WINDOW);
+    // Its bottom rows aren't out yet.
+    assert_eq!(pixel(&mut f, last_pixel(place)), WINDOW);
+}
+
+#[test]
+fn a_reposition_part_way_keeps_the_edge_and_the_way_done() {
+    let (mut f, id) = desk(Vec::new());
+    let (popup, corner) =
+        window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    f.advance_clock(PART_WAY);
+    let before = the_slide(&f);
+
+    let moved = Positioner {
+        anchor_rect: (20, 150, 100, 20),
+        ..place((80, 60), Anchor::Bottom, Gravity::Bottom)
+    };
+    f.client(id).reposition_popup(popup, moved, 1);
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+
+    let after = the_slide(&f);
+    assert_eq!(after.edge, before.edge);
+    assert_eq!(after.offset, before.offset);
+    assert_eq!(after.rect.loc, corner + Point::from((30, 170)));
+}
+
+// What a client is sent is read from a Wayland client, as `input.rs` reads it.
+#[test]
+fn a_click_part_way_on_a_row_at_its_real_place_reaches_it() {
+    let (mut f, id) = desk(Vec::new());
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let corner = f.geometry(window).loc;
+    f.click(f64::from(corner.x + 10), f64::from(corner.y + 10));
+    f.roundtrip(id);
+    let press = f.client(id).state.last_press_serial.unwrap();
+    let menu = f.client(id).create_popup(
+        window.xdg(),
+        place((80, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    f.client(id).grab_popup(menu, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, POPUP_COLOR);
+    f.roundtrip(id);
+    f.advance_clock(PART_WAY);
+
+    // Its last row, which isn't drawn there yet.
+    let row = last_pixel(the_slide(&f).rect) - Point::from((40, 0));
+    assert_ne!(pixel(&mut f, row), POPUP);
+    f.client(id).state.input.clear();
+    f.pointer_move(f64::from(row.x), f64::from(row.y));
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_button(BTN_LEFT, false);
+    f.roundtrip(id);
+
+    let input = format_input(&f.client(id).state.input);
+    assert!(
+        input.contains("pointer enters popup 0 at 39, 59"),
+        "{input}"
+    );
+    assert!(
+        input.contains(&format!("button {BTN_LEFT:#x} pressed")),
+        "{input}"
+    );
+}
+
+#[test]
+fn with_its_key_or_one_of_the_minimise_animations_three_against_it_a_popup_is_there_at_once() {
+    for (schema, key, value) in [
+        (CAMINITO, "popup-slide", false),
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let (mut f, id) = desk(vec![(schema, key.into(), Setting::Bool(value))]);
+        let (_, corner) =
+            window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+
+        assert!(sliding(&f).is_empty(), "{key}: {:?}", sliding(&f));
+        // Centred below the anchor: its bottom right pixel.
+        let last = corner + Point::from((200 + 40 - 1, 120 + 60 - 1));
+        assert_eq!(pixel(&mut f, last), POPUP, "{key}");
+    }
+}
+
+#[test]
+fn no_popup_slides_in_the_overview() {
+    let (mut f, id) = desk(Vec::new());
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    overview::open(&mut f);
+
+    let popup = f.client(id).create_popup(
+        window.xdg(),
+        place((80, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+
+    assert!(sliding(&f).is_empty(), "{:?}", sliding(&f));
+}
+
+#[test]
+fn no_popup_slides_under_the_lock_and_the_lock_ends_a_slide() {
+    let (mut f, id) = desk(Vec::new());
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let menu = place((80, 60), Anchor::Bottom, Gravity::Bottom);
+    let popup = f.client(id).create_popup(window.xdg(), menu);
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+    assert_eq!(sliding(&f).len(), 1);
+
+    let locker = f.connect(Kind::Xdg);
+    f.client(locker).lock_session();
+    f.roundtrip(locker);
+    assert!(f.state.caminito.lock.is_locked());
+    assert!(
+        sliding(&f).is_empty(),
+        "the lock ends it: {:?}",
+        sliding(&f)
+    );
+
+    let popup = f.client(id).create_popup(
+        window.xdg(),
+        place((80, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+    assert!(sliding(&f).is_empty(), "{:?}", sliding(&f));
+}
+
+#[test]
+fn a_popup_of_a_window_on_its_way_open_is_inside_its_zoom_and_doesnt_slide() {
+    let open_close = (CAMINITO, "open-close-animation".into(), Setting::Bool(true));
+    let (mut f, id) = desk(vec![open_close]);
+    window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+
+    assert!(sliding(&f).is_empty(), "{:?}", sliding(&f));
+}

@@ -23,14 +23,15 @@ use crate::state::{Caminito, State};
 /// 6. The Global menu's grace period (114), which nothing else here looks at.
 /// 7. The Window switcher's popup (108), the bell's flash (169), the minimise animations
 ///    (172), the Workspace slides (233), the Overview's transition (243), the Opening
-///    animations (251) and the Maximise animations (CMN-174), which only draw.
+///    animations (251), the Maximise animations (CMN-174) and the Popup slides
+///    (ADR 0037), which only draw.
 /// 8. The Overview's bar (244), which only sends frame callbacks to the windows it alone
 ///    shows.
 /// 9. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 15] = [
+const HOLDERS: [Holder; 16] = [
     Holder::Policy,
     Holder::ClosePings,
     Holder::Idle,
@@ -44,6 +45,7 @@ const HOLDERS: [Holder; 15] = [
     Holder::OverviewTransition,
     Holder::OpenCloseAnimations,
     Holder::MaximizeAnimations,
+    Holder::PopupSlides,
     Holder::OverviewBar,
     Holder::NightLight,
 ];
@@ -63,6 +65,7 @@ enum Holder {
     OverviewTransition,
     OpenCloseAnimations,
     MaximizeAnimations,
+    PopupSlides,
     OverviewBar,
     NightLight,
 }
@@ -84,6 +87,7 @@ impl Holder {
             Holder::OverviewTransition => caminito.overview_transition_deadline(),
             Holder::OpenCloseAnimations => caminito.open_close_animations.deadline(),
             Holder::MaximizeAnimations => caminito.maximize_animations.deadline(),
+            Holder::PopupSlides => caminito.popup_slides.deadline(),
             Holder::OverviewBar => caminito.overview_deadline(),
             Holder::NightLight => caminito.night_light.deadline(caminito.now()),
         }
@@ -107,6 +111,7 @@ impl Holder {
             Holder::OverviewTransition => state.caminito.overview_transition_elapse(now),
             Holder::OpenCloseAnimations => state.caminito.open_close_animation_elapse(now),
             Holder::MaximizeAnimations => state.caminito.maximize_animation_elapse(now),
+            Holder::PopupSlides => state.caminito.popup_slide_elapse(now),
             Holder::OverviewBar => state.caminito.overview_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),
         }

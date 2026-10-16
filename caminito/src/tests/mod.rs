@@ -72,6 +72,7 @@ mod parity;
 mod per_output_workspaces;
 mod per_output_x11;
 mod placement;
+mod popup_slide;
 mod popups;
 mod preferred_scale;
 mod primary_output;

@@ -27,6 +27,7 @@ use smithay::backend::renderer::element::utils::{
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
 use smithay::backend::renderer::utils::{CommitCounter, RendererSurfaceStateUserData};
 use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer, RendererSuper};
+use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::desktop::{LayerSurface, PopupManager, Window, WindowSurface, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
@@ -43,6 +44,7 @@ use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
+use crate::popup_slide::PopupSlides;
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -77,7 +79,17 @@ render_elements! {
     Surface = WaylandSurfaceRenderElement<R>,
     /// One of its frame's strips.
     Strip = MemoryRenderBufferRenderElement<R>,
+    /// One of its popups' surfaces as it slides out of its edge (ADR 0037).
+    PopupSlide = PopupSlidePart<R>,
 }
+
+/// A surface of a popup that slides out of its edge (ADR 0037): moved off its place and cut
+/// off at it.
+type PopupSlidePart<R> = CropRenderElement<WaylandSurfaceRenderElement<R>>;
+
+/// The popups that slide, and the time they're drawn at, for what draws a window's or a
+/// Layer surface's popups where they are; `None` where they're drawn at rest.
+type Slides<'a> = Option<(&'a PopupSlides, Duration)>;
 
 /// A part of a window in a thumbnail of the Window switcher, or in the minimise
 /// animation's box: scaled down, moved into its place and cut off at its edge.
@@ -98,6 +110,8 @@ render_elements! {
     Thumbnail = ThumbnailPart<R>,
     /// A closing window's picture (252).
     Picture = TextureRenderElement<<R as RendererSuper>::TextureId>,
+    /// A surface of a popup that slides out of its edge (ADR 0037).
+    PopupSlide = PopupSlidePart<R>,
 }
 
 /// The scene's layers, top to bottom.
@@ -285,7 +299,16 @@ where
         cursor_elements_at(renderer, caminito, pointer, scale, &mut elements);
     }
     let origin = geometry.loc - frame.loc;
-    one_window_elements(renderer, mapped, origin, shown, scale, 1.0, &mut elements);
+    one_window_elements(
+        renderer,
+        mapped,
+        origin,
+        shown,
+        scale,
+        1.0,
+        None,
+        &mut elements,
+    );
     elements
 }
 
@@ -332,7 +355,16 @@ where
     let origin = geometry.loc - area.loc;
     let shown = Rectangle::from_size(area.size);
     let mut elements = Vec::new();
-    one_window_elements(renderer, mapped, origin, shown, scale, 1.0, &mut elements);
+    one_window_elements(
+        renderer,
+        mapped,
+        origin,
+        shown,
+        scale,
+        1.0,
+        None,
+        &mut elements,
+    );
     let shadow = mapped.frame().shadow();
     elements.extend(buffer_elements(
         renderer, shadow, origin, shown, scale, 1.0, "shadow",
@@ -734,7 +766,9 @@ fn scaled_window_elements<R>(
     };
     let origin = geometry.loc - frame.loc;
     let mut parts: Vec<WindowPart<R>> = Vec::new();
-    one_window_elements(renderer, mapped, origin, shown, scale, alpha, &mut parts);
+    one_window_elements(
+        renderer, mapped, origin, shown, scale, alpha, None, &mut parts,
+    );
     if whole {
         let shadow = mapped.frame().shadow();
         parts.extend(buffer_elements(
@@ -1114,6 +1148,7 @@ fn thumbnail_elements<R>(
                     shown,
                     scale,
                     1.0,
+                    None,
                     &mut parts,
                 );
                 frame.size
@@ -1176,6 +1211,7 @@ fn minimizing_elements<R>(
             shown,
             scale,
             1.0,
+            None,
             &mut parts,
         );
         let target = Rectangle::new(target.loc - output_geometry.loc, target.size);
@@ -1359,20 +1395,19 @@ fn layer_shell_elements<R>(
         let popups = PopupManager::popups_for_surface(wl_surface)
             .map(|(popup, offset)| (popup.wl_surface().clone(), offset - popup.geometry().loc))
             .filter(|_| part.contains(WindowSurfaceType::POPUP));
-        let main = part
-            .contains(WindowSurfaceType::TOPLEVEL)
-            .then(|| (wl_surface.clone(), Point::default()));
-        for (tree, offset) in popups.chain(main) {
+        let slides = Some((&caminito.popup_slides, caminito.now()));
+        for (popup, offset) in popups {
+            let location = (origin + offset).to_f64().to_physical(scale);
+            elements.extend(popup_elements(
+                renderer, &popup, location, scale, alpha, slides,
+            ));
+        }
+        if part.contains(WindowSurfaceType::TOPLEVEL) {
+            let location = origin.to_f64().to_physical(scale);
             elements.extend(
-                surface_tree_elements(
-                    renderer,
-                    &tree,
-                    (origin + offset).to_f64().to_physical(scale),
-                    scale,
-                    alpha,
-                )
-                .into_iter()
-                .map(SceneElement::Window),
+                surface_tree_elements(renderer, wl_surface, location, scale, alpha)
+                    .into_iter()
+                    .map(SceneElement::Window),
             );
         }
     }
@@ -1635,7 +1670,10 @@ fn window_elements<R>(
 
             let origin = drawn_at - output_geometry.loc;
             let shown = Rectangle::from_size(output_geometry.size);
-            one_window_elements(renderer, mapped, origin, shown, scale, 1.0, elements);
+            let slides = Some((&caminito.popup_slides, now));
+            one_window_elements(
+                renderer, mapped, origin, shown, scale, 1.0, slides, elements,
+            );
             // The shadow is the output's alone: a capture of the window and its thumbnail
             // are the window with its frame (103, 171).
             let shadow = mapped.frame().shadow();
@@ -1799,8 +1837,13 @@ fn selection_color(caminito: &Caminito) -> Color32F {
 }
 
 /// One window's elements, front to back, at `scale` and `alpha`: its surfaces with their
-/// popups, over its frame's strips. `origin` is where its geometry is from the origin of
-/// what's drawn, and `shown` is the part of that space that's drawn.
+/// popups, which slide as `slides` has them, over its frame's strips. `origin` is where its
+/// geometry is from the origin of what's drawn, and `shown` is the part of that space
+/// that's drawn.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one window's every way of being drawn"
+)]
 fn one_window_elements<R, E>(
     renderer: &mut R,
     mapped: &Mapped,
@@ -1808,11 +1851,14 @@ fn one_window_elements<R, E>(
     shown: Rectangle<i32, Logical>,
     scale: f64,
     alpha: f32,
+    slides: Slides<'_>,
     elements: &mut Vec<E>,
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
-    E: From<WaylandSurfaceRenderElement<R>> + From<MemoryRenderBufferRenderElement<R>>,
+    E: From<WaylandSurfaceRenderElement<R>>
+        + From<MemoryRenderBufferRenderElement<R>>
+        + From<PopupSlidePart<R>>,
 {
     let window = mapped.window();
     // The surface's origin sits the window geometry's offset away from where policy
@@ -1822,11 +1868,9 @@ fn one_window_elements<R, E>(
     bbox.loc += surface_origin;
     if !mapped.is_shaded() && bbox.overlaps(shown) {
         let location = surface_origin.to_f64().to_physical(scale);
-        elements.extend(
-            window_surface_elements(renderer, window, location, scale, alpha)
-                .into_iter()
-                .map(E::from),
-        );
+        elements.extend(window_surface_elements(
+            renderer, window, location, scale, alpha, slides,
+        ));
     }
 
     // The strips lie around the window geometry, behind the window and its popups.
@@ -1836,19 +1880,22 @@ fn one_window_elements<R, E>(
     ));
 }
 
-/// A window's surfaces with their popups, front to back, with its surface's origin at
-/// `location` on the output, unrounded (`surface_tree_elements`). An X11 window is drawn
-/// at its `_NET_WM_WINDOW_OPACITY` of `alpha`, as smithay draws it.
-fn window_surface_elements<R>(
+/// A window's surfaces with their popups, which slide as `slides` has them, front to back,
+/// with its surface's origin at `location` on the output, unrounded
+/// (`surface_tree_elements`). An X11 window is drawn at its `_NET_WM_WINDOW_OPACITY` of
+/// `alpha`, as smithay draws it.
+fn window_surface_elements<R, E>(
     renderer: &mut R,
     window: &Window,
     location: Point<f64, Physical>,
     scale: f64,
     alpha: f32,
-) -> Vec<WaylandSurfaceRenderElement<R>>
+    slides: Slides<'_>,
+) -> Vec<E>
 where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>> + From<PopupSlidePart<R>>,
 {
     match window.underlying_surface() {
         WindowSurface::Wayland(toplevel) => {
@@ -1857,17 +1904,17 @@ where
             for (popup, offset) in PopupManager::popups_for_surface(surface) {
                 let offset = window.geometry().loc + offset - popup.geometry().loc;
                 let location = location + offset.to_f64().to_physical(scale);
-                elements.extend(surface_tree_elements(
+                elements.extend(popup_elements(
                     renderer,
                     popup.wl_surface(),
                     location,
                     scale,
                     alpha,
+                    slides,
                 ));
             }
-            elements.extend(surface_tree_elements(
-                renderer, surface, location, scale, alpha,
-            ));
+            let toplevel = surface_tree_elements(renderer, surface, location, scale, alpha);
+            elements.extend(toplevel.into_iter().map(E::from));
             elements
         }
         WindowSurface::X11(x11) => {
@@ -1875,9 +1922,44 @@ where
                 return Vec::new();
             };
             let alpha = x11_alpha(x11, alpha);
-            surface_tree_elements(renderer, &surface, location, scale, alpha)
+            let elements = surface_tree_elements(renderer, &surface, location, scale, alpha);
+            elements.into_iter().map(E::from).collect()
         }
     }
+}
+
+/// A popup's surfaces, front to back, with its surface's origin at `location` on the output,
+/// unrounded, where it is at rest. While it slides out of its edge (ADR 0037), as `slides`
+/// has it, it's drawn as far off that place as it has yet to go and as faded as it has yet
+/// to fade, and cut off at the place, so nothing of it is drawn over what it's attached to.
+fn popup_elements<R, E>(
+    renderer: &mut R,
+    popup: &WlSurface,
+    location: Point<f64, Physical>,
+    scale: f64,
+    alpha: f32,
+    slides: Slides<'_>,
+) -> Vec<E>
+where
+    R: Renderer + ImportAll,
+    R::TextureId: Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>> + From<PopupSlidePart<R>>,
+{
+    let Some(slid) = slides.and_then(|(slides, now)| slides.slid(popup, now)) else {
+        let elements = surface_tree_elements(renderer, popup, location, scale, alpha);
+        return elements.into_iter().map(E::from).collect();
+    };
+    // Its subsurfaces and its shadow, if its client draws one, with it.
+    let place = bbox_from_surface_tree(popup, (0, 0))
+        .to_f64()
+        .to_physical(scale);
+    let crop = Rectangle::new(location + place.loc, place.size).to_i32_round();
+    let moved = location + slid.offset.to_f64().to_physical(scale);
+    surface_tree_elements(renderer, popup, moved, scale, alpha * slid.alpha)
+        .into_iter()
+        .filter_map(|element| CropRenderElement::from_element(element, scale, crop))
+        .map(E::from)
+        .collect()
 }
 
 /// `alpha` times an X11 window's `_NET_WM_WINDOW_OPACITY`.

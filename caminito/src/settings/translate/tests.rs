@@ -1337,6 +1337,39 @@ fn the_maximise_animations_key_leaves_the_other_animations_on() {
     assert!(settings.workspace_slide);
     assert!(settings.overview_animation);
     assert!(settings.open_close_animation);
+    assert!(settings.popup_slide);
+}
+
+// The Popup slide (ADR 0037).
+
+#[test]
+fn the_defaults_slide_a_popup_that_opens() {
+    assert!(settings(&defaults()).popup_slide);
+    assert!(settings(&Reading::default()).popup_slide);
+}
+
+#[test]
+fn its_own_key_and_the_minimise_animations_three_turn_the_popup_slide_off() {
+    for (schema, key, value) in [
+        (CAMINITO, "popup-slide", false),
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let reading = with(schema, key, Value::Bool(value));
+        assert!(!settings(&reading).popup_slide, "{key}");
+    }
+}
+
+#[test]
+fn the_popup_slides_key_leaves_the_other_animations_on() {
+    let reading = with(CAMINITO, "popup-slide", Value::Bool(false));
+    let settings = settings(&reading);
+    assert!(settings.minimize_animation);
+    assert!(settings.workspace_slide);
+    assert!(settings.overview_animation);
+    assert!(settings.open_close_animation);
+    assert!(settings.maximize_animation);
 }
 
 #[test]

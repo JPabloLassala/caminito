@@ -437,7 +437,8 @@ impl Fixture {
     /// opens or closes, which was at once (243). And so is `open-close-animation`: they
     /// read a window's frame straight after it maps, which was at once (251). And so is
     /// `maximize-animation`: they read a window's frame straight after it's maximised, which
-    /// was at once (CMN-174).
+    /// was at once (CMN-174). And so is `popup-slide`: they read a popup's pixels straight
+    /// after it maps (ADR 0037).
     pub fn with_settings(initial: Vec<(&'static str, String, Value)>) -> Self {
         Self::on_schemas(test_schemas(), initial)
     }
@@ -450,8 +451,8 @@ impl Fixture {
 
     /// Caminito with no outputs and no clients, on the schemas compiled into `schema_dir`,
     /// with `center-new-windows`, `workspaces-per-output`, `workspace-slide`,
-    /// `overview-animation`, `open-close-animation` and `maximize-animation` off unless
-    /// `initial` sets them.
+    /// `overview-animation`, `open-close-animation`, `maximize-animation` and
+    /// `popup-slide` off unless `initial` sets them.
     fn on_schemas(
         schema_dir: &std::path::Path,
         mut initial: Vec<(&'static str, String, Value)>,
@@ -463,6 +464,7 @@ impl Fixture {
             (CAMINITO, "overview-animation"),
             (CAMINITO, "open-close-animation"),
             (CAMINITO, "maximize-animation"),
+            (CAMINITO, "popup-slide"),
         ] {
             if !initial
                 .iter()
