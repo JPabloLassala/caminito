@@ -1769,6 +1769,8 @@ fn closing_popup_elements<R>(
     let covered = closing.covered();
     let place = Rectangle::new(origin + covered.loc, covered.size);
     let corner = (place.loc + slid.offset).to_f64().to_physical(scale);
+    // The whole texture, drawn at its output's scale, as `picture_elements_at` reads it.
+    let src = Rectangle::from_size(texture.size().to_logical(1, Transform::Normal).to_f64());
     let element = TextureRenderElement::from_static_texture(
         closing.picture.id.clone(),
         context.clone(),
@@ -1777,7 +1779,7 @@ fn closing_popup_elements<R>(
         1,
         Transform::Normal,
         Some(slid.alpha),
-        None,
+        Some(src),
         Some(covered.size),
         None,
         Kind::Unspecified,

@@ -747,3 +747,40 @@ fn with_the_slide_off_a_popup_that_closes_is_gone_in_one_frame() {
     assert_eq!(pixel(&mut f, place.loc), WINDOW);
     assert_eq!(pixel(&mut f, last_pixel(place)), WINDOW);
 }
+
+// The picture is drawn at the output's scale, so it starts as the popup was, pixel for pixel,
+// and not a corner of it blown up: its subsurface in its far corner stays there.
+#[test]
+fn at_an_output_scale_of_2_a_closing_popups_picture_is_the_whole_popup() {
+    let settings = vec![(CAMINITO, "popup-slide".into(), Setting::Bool(true))];
+    let mut f = Fixture::with_settings(settings);
+    let output = f.add_output((1280, 800), 2.0);
+    let id = f.connect(Kind::Xdg);
+    f.stop_clock();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let popup = f.client(id).create_popup(
+        window.xdg(),
+        place((80, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    f.roundtrip(id);
+    f.client(id)
+        .add_popup_subsurface(popup, (60, 40), (20, 20), 0xff00_ff00);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+    f.advance_clock(LENGTH);
+    let place = rest_place(&f);
+    let corner = last_pixel(place).to_physical(2);
+    let green = |f: &mut Fixture| {
+        let pixel = f.state.backend.headless_mut().pixel(&output, corner);
+        pixel.expect("the output is drawn") & 0xff_ffff
+    };
+    f.draw(&output);
+    assert_eq!(green(&mut f), 0x00_ff00, "its subsurface at rest");
+
+    f.client(id).destroy_popup(popup);
+    f.roundtrip(id);
+    f.draw(&output);
+
+    assert_eq!(the_closing(&f).offset, (0, 0).into());
+    assert_eq!(green(&mut f), 0x00_ff00, "its subsurface in its picture");
+}

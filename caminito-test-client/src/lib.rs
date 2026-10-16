@@ -326,6 +326,7 @@ pub struct Popup {
     /// Whether the compositor dismissed the popup.
     pub done: bool,
     buffers: Vec<Buffer>,
+    subsurfaces: Vec<WlSubsurface>,
 }
 
 /// One popup configure sequence: its place relative to the parent's window geometry, and the
@@ -482,6 +483,7 @@ impl Client {
             pending: PopupConfigure::default(),
             done: false,
             buffers: Vec::new(),
+            subsurfaces: Vec::new(),
         });
         id
     }
@@ -516,6 +518,7 @@ impl Client {
             pending: PopupConfigure::default(),
             done: false,
             buffers: Vec::new(),
+            subsurfaces: Vec::new(),
         });
         id
     }
@@ -677,6 +680,30 @@ impl Client {
         self.commit_subsurface_buffer(id, &surface, size, argb);
         self.window_mut(id).subsurfaces.push(subsurface);
         surface
+    }
+
+    /// Gives the popup a desynchronised subsurface at `offset` with a committed `size`
+    /// buffer of `argb`. The popup must commit for it to show.
+    pub fn add_popup_subsurface(
+        &mut self,
+        id: PopupId,
+        offset: (i32, i32),
+        size: (i32, i32),
+        argb: u32,
+    ) {
+        let subcompositor = self.global(|state| &mut state.subcompositor, 1);
+        let surface = self.compositor().create_surface(&self.qh, ());
+        let subsurface =
+            subcompositor.get_subsurface(&surface, &self.popup(id).surface, &self.qh, ());
+        subsurface.set_position(offset.0, offset.1);
+        subsurface.set_desync();
+        let (pool, buffer) = self.shm_buffer(size, argb);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, size.0, size.1);
+        surface.commit();
+        let popup = &mut self.state.popups[id.0];
+        popup.buffers.push(Buffer { buffer, pool });
+        popup.subsurfaces.push(subsurface);
     }
 
     /// Attaches and commits a new `size` buffer of `argb` to one of the window's subsurfaces.
