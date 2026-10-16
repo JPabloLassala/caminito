@@ -464,6 +464,30 @@ on_both_kinds! {
     }
 }
 
+// The picture is drawn at the output's scale, so the frame it starts at is the window's last
+// one, pixel for pixel, and not a corner of it blown up. A scale of 2 keeps every pixel whole.
+on_both_kinds! {
+    fn at_an_output_scale_of_2_the_closing_starts_from_the_window_as_it_was_drawn(kind: Kind) {
+        let settings = vec![(CAMINITO, "open-close-animation".into(), Setting::Bool(true))];
+        let mut f = Fixture::with_settings(settings);
+        let output = f.add_output(OUTPUT, 2.0);
+        let id = f.connect(kind);
+        f.stop_clock();
+        let window = map_opened(&mut f, id, WindowSpec::default());
+        f.draw(&output);
+        let before = f.state.backend.headless_mut().pixels(&output).unwrap();
+        let pid = f.pid(window).0;
+
+        close(&mut f, window, Close::Destroy);
+        f.draw(&output);
+
+        drawn_closing(&f, pid);
+        let after = f.state.backend.headless_mut().pixels(&output).unwrap();
+        let differ = before.iter().zip(&after).filter(|(a, b)| a != b).count();
+        assert_eq!(differ, 0, "{differ} of {} pixels changed", before.len());
+    }
+}
+
 // A null buffer hides an xdg toplevel; an X window is hidden by an unmap, which follows.
 #[test]
 fn an_xdg_window_its_client_hides_with_a_null_buffer_shrinks_and_fades_out() {

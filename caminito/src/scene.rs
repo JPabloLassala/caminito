@@ -26,7 +26,9 @@ use smithay::backend::renderer::element::utils::{
 };
 use smithay::backend::renderer::element::{AsRenderElements, Kind, render_elements};
 use smithay::backend::renderer::utils::{CommitCounter, RendererSurfaceStateUserData};
-use smithay::backend::renderer::{Color32F, ImportAll, ImportMem, Renderer, RendererSuper};
+use smithay::backend::renderer::{
+    Color32F, ImportAll, ImportMem, Renderer, RendererSuper, Texture,
+};
 use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::desktop::{LayerSurface, PopupManager, Window, WindowSurface, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
@@ -1748,6 +1750,9 @@ fn picture_elements_at<R>(
         (size.w.round() as i32).max(1),
         (size.h.round() as i32).max(1),
     ));
+    // The whole texture, which was drawn at its main output's scale: with no `src`, the
+    // element would read `size` of its pixels, a corner of it at any other scale than 1.
+    let src = Rectangle::from_size(texture.size().to_logical(1, Transform::Normal).to_f64());
     elements.push(SceneElement::Picture(
         TextureRenderElement::from_static_texture(
             picture.id.clone(),
@@ -1757,7 +1762,7 @@ fn picture_elements_at<R>(
             1,
             Transform::Normal,
             Some(alpha),
-            None,
+            Some(src),
             Some(size),
             None,
             Kind::Unspecified,
