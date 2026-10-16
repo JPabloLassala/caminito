@@ -182,6 +182,7 @@ impl Client {
             pending: PopupConfigure::default(),
             done: false,
             buffers: Vec::new(),
+            subsurfaces: Vec::new(),
         });
         id
     }

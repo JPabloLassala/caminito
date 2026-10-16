@@ -11,23 +11,37 @@
 //! faded as far as it has got, at every frame of its outputs, until it's over. It reads the
 //! popup's place each frame, so a reposition part-way keeps the edge and the way done.
 //!
-//! Closing, and a slide that's interrupted, are the next slice's (CMN-179).
+//! A popup that closes while it's on screen, destroyed or unmapped by its client or
+//! dismissed by Caminito (`popup_done`, a click outside), slides back into its edge over as
+//! long, on the same curve played backwards, drawn from a picture of its last frame taken
+//! while it still has its buffer, as the Closing animation keeps a window's (252). Policy
+//! lets it go at once: its grab has ended and a click goes through its picture. A chain
+//! dismissed together slides out together, each into its own edge. A popup with no buffer
+//! left goes at once, and one whose window or Layer surface closes leaves with it: inside
+//! the window's Closing picture, or at once.
+//!
+//! A popup that closes on its way out turns round from where it is, at the same speed, as
+//! Plasma's does: the curve played backwards is at the same point after what's left of it.
+//! An xdg_popup can't be shown again once it's closed, as Smithay forgets an unmapped one's
+//! role, so only the way back turns round here.
 
 use std::cell::Cell;
 use std::time::Duration;
 
+use caminito_policy::OutputId;
 use smithay::desktop::{PopupKind, PopupManager, find_popup_root_surface};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::PopupSurface;
 
 use caminito_theme::{Title, pango};
 
-use crate::output::output_geometry;
-use crate::state::Caminito;
+use crate::open_close_animation::Picture;
+use crate::output::{output_geometry, output_id};
+use crate::state::{Caminito, State};
 use crate::workspace_slide::eased_way_left;
 
 /// How long the slide lasts: the Sliding popups effect's.
@@ -118,27 +132,55 @@ struct Slide {
     motion: Motion,
 }
 
-/// How a popup slides out of its edge.
-#[derive(Debug)]
+/// How a popup slides out of its edge, or back into it.
+#[derive(Debug, Clone, Copy)]
 struct Motion {
     edge: Edge,
     /// How far it slides, from its place.
     distance: i32,
     /// Whether it fades in as it slides.
     fades: bool,
-    /// When it was shown, on Caminito's clock.
+    /// Whether it slides back into its edge, as it closes.
+    closing: bool,
+    /// When it was shown, or closed, on Caminito's clock.
     start: Duration,
+    /// How much of the curve it had run by then: one that turned round starts where the
+    /// other had got to.
+    skipped: Duration,
 }
 
 impl Motion {
-    fn is_over(&self, now: Duration) -> bool {
-        now.saturating_sub(self.start) >= LENGTH
+    fn elapsed(&self, now: Duration) -> Duration {
+        now.saturating_sub(self.start) + self.skipped
     }
 
-    /// How far it is on its way at `now`, from 0 to 1: the cubic ease-out, so it moves
-    /// fastest at first and settles into its place.
+    fn is_over(&self, now: Duration) -> bool {
+        self.elapsed(now) >= LENGTH
+    }
+
+    /// How far it is from its edge at `now`, from 0 to 1, where 1 is its place: the cubic
+    /// ease-out on its way out, so it moves fastest at first and settles into its place,
+    /// and the same curve played backwards on its way back.
     fn done(&self, now: Duration) -> f64 {
-        1.0 - eased_way_left(now.saturating_sub(self.start), LENGTH)
+        let elapsed = self.elapsed(now).min(LENGTH);
+        let along = if self.closing {
+            LENGTH - elapsed
+        } else {
+            elapsed
+        };
+        1.0 - eased_way_left(along, LENGTH)
+    }
+
+    /// The motion that turns this one round at `now`, from where it is and at the same
+    /// speed: the curve played the other way is at the same point after what's left of
+    /// this one.
+    fn turned(&self, now: Duration) -> Motion {
+        Motion {
+            closing: !self.closing,
+            start: now,
+            skipped: LENGTH.saturating_sub(self.elapsed(now)),
+            ..*self
+        }
     }
 
     /// Where it's drawn at `now`, from its place.
@@ -188,19 +230,80 @@ pub(crate) struct DrawnSlide {
     pub slid: Slid,
 }
 
-/// The popups on their way out of their edges.
+/// A popup on screen, as it was last seen: what's needed to slide it back into its edge once
+/// it's gone from the popups' trees.
+#[derive(Debug)]
+struct Shown {
+    surface: WlSurface,
+    /// The window's or the Layer surface's surface its chain is attached to.
+    root: WlSurface,
+    /// Its window geometry, from its root's origin: a window's geometry's corner or a Layer
+    /// surface's.
+    place: Rectangle<i32, Logical>,
+    /// Where its window geometry is in its surface.
+    geometry: Point<i32, Logical>,
+    edge: Edge,
+}
+
+/// A closed popup's picture on its way back into its edge.
+#[derive(Debug)]
+pub(crate) struct ClosingPopup {
+    /// The surface of its chain's window or Layer surface, which it's drawn on.
+    pub root: WlSurface,
+    /// Its window geometry, from its root's origin.
+    place: Rectangle<i32, Logical>,
+    /// Where its window geometry was in its surface.
+    geometry: Point<i32, Logical>,
+    /// Its last frame, from its surface's origin.
+    pub picture: Picture,
+    motion: Motion,
+    /// The output it was taken on, which takes it away when it goes.
+    output: Option<OutputId>,
+}
+
+impl ClosingPopup {
+    /// What its picture covers at its place, from its root's origin: it's cut off there.
+    pub(crate) fn covered(&self) -> Rectangle<i32, Logical> {
+        let area = self.picture.area;
+        Rectangle::new(self.place.loc - self.geometry + area.loc, area.size)
+    }
+
+    /// How it's drawn at `now`.
+    pub(crate) fn slid(&self, now: Duration) -> Slid {
+        self.motion.slid(now)
+    }
+}
+
+/// The popups on their way out of their edges, the pictures of those on their way back, and
+/// those on screen.
 #[derive(Debug, Default)]
 pub(crate) struct PopupSlides {
     running: Vec<Slide>,
+    closing: Vec<ClosingPopup>,
+    shown: Vec<Shown>,
 }
 
 impl PopupSlides {
-    /// When the first of the slides is over: `deadlines` then draws its popup at rest (174).
+    /// When the first of the slides is over: `deadlines` then draws its popup at rest, or
+    /// takes its picture away (174).
     pub(crate) fn deadline(&self) -> Option<Duration> {
-        self.running
+        let end = |motion: &Motion| motion.start + LENGTH.saturating_sub(motion.skipped);
+        let opening = self.running.iter().map(|slide| end(&slide.motion));
+        let closing = self.closing.iter().map(|closing| end(&closing.motion));
+        opening.chain(closing).min()
+    }
+
+    /// The pictures of the popups of `root`'s chains on their way back at `now`, those
+    /// shown last first, which are drawn over the others.
+    pub(crate) fn closing_on<'a>(
+        &'a self,
+        root: &'a WlSurface,
+        now: Duration,
+    ) -> impl Iterator<Item = &'a ClosingPopup> {
+        self.closing
             .iter()
-            .map(|slide| slide.motion.start + LENGTH)
-            .min()
+            .rev()
+            .filter(move |closing| closing.root == *root && !closing.motion.is_over(now))
     }
 
     /// How `surface`, a popup's, is drawn at `now`, while it slides.
@@ -221,7 +324,8 @@ impl PopupSlides {
 struct HasBuffer(Cell<bool>);
 
 impl Caminito {
-    /// Starts `popup`'s slide if this commit shows it, which is its first with a buffer.
+    /// Notes where `popup` is after a commit, and starts its slide if this commit shows it,
+    /// which is its first with a buffer.
     pub(crate) fn popup_committed(&mut self, popup: &PopupSurface, has_buffer: bool) {
         let surface = popup.wl_surface();
         let had_buffer = with_states(surface, |states| {
@@ -229,8 +333,41 @@ impl Caminito {
             let data = states.data_map.get::<HasBuffer>().unwrap();
             data.0.replace(has_buffer)
         });
-        if has_buffer && !had_buffer {
+        if !has_buffer {
+            return;
+        }
+        self.note_shown(popup);
+        if !had_buffer {
             self.start_popup_slide(popup);
+        }
+    }
+
+    /// Notes `popup` as on screen, with its place and its edge as its last commit left
+    /// them.
+    fn note_shown(&mut self, popup: &PopupSurface) {
+        let surface = popup.wl_surface();
+        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
+            return;
+        };
+        let placed = popup.with_committed_state(|state| {
+            state.map(|state| (state.geometry, state.positioner.anchor_rect))
+        });
+        let Some((place, anchor)) = placed else {
+            return;
+        };
+        let geometry = PopupKind::Xdg(popup.clone()).geometry().loc;
+        let at = popup_offset(&root, surface).unwrap_or(place.loc);
+        let shown = Shown {
+            surface: surface.clone(),
+            root,
+            place: Rectangle::new(at, place.size),
+            geometry,
+            edge: edge(place, anchor),
+        };
+        let slides = &mut self.popup_slides;
+        match slides.shown.iter_mut().find(|s| s.surface == *surface) {
+            Some(was) => *was = shown,
+            None => slides.shown.push(shown),
         }
     }
 
@@ -239,40 +376,51 @@ impl Caminito {
     /// shows. A window on its way open has its popups inside its own zoom (251), which
     /// doesn't slide them as well.
     fn start_popup_slide(&mut self, popup: &PopupSurface) {
-        let now = self.now();
-        if !self.settings.popup_slide || self.popup_slides_stop() {
+        let surface = popup.wl_surface();
+        let Some(shown) = self
+            .popup_slides
+            .shown
+            .iter()
+            .find(|s| s.surface == *surface)
+        else {
+            return;
+        };
+        if !self.popup_slides_seen(&shown.root) {
             return;
         }
-        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
-            return;
-        };
-        let shows = self.layer_for_surface(&root).is_some()
-            || self.mapped_for_surface(&root).is_some_and(|id| {
-                self.policy.is_showing(id) && self.open_close_animations.opening(id, now).is_none()
-            });
-        let placed = popup.with_committed_state(|state| {
-            state.map(|state| (state.geometry, state.positioner.anchor_rect))
-        });
-        let Some((place, anchor)) = placed.filter(|_| shows) else {
-            return;
-        };
-        let edge = edge(place, anchor);
-        let size = if edge.is_vertical() {
-            place.size.h
-        } else {
-            place.size.w
-        };
-        let (distance, fades) = distance(size, self.interface_line_height());
+        let motion = self.motion(shown.edge, shown.place.size, false);
         self.popup_slides.running.push(Slide {
-            surface: popup.wl_surface().clone(),
-            motion: Motion {
-                edge,
-                distance,
-                fades,
-                start: now,
-            },
+            surface: surface.clone(),
+            motion,
         });
         self.queue_redraw_all();
+    }
+
+    /// A popup's motion from now with its edge and its `size`, out of its edge or, when
+    /// `closing`, back into it.
+    fn motion(&self, edge: Edge, size: Size<i32, Logical>, closing: bool) -> Motion {
+        let size = if edge.is_vertical() { size.h } else { size.w };
+        let (distance, fades) = distance(size, self.interface_line_height());
+        Motion {
+            edge,
+            distance,
+            fades,
+            closing,
+            start: self.now(),
+            skipped: Duration::ZERO,
+        }
+    }
+
+    /// Whether a popup of the chain attached to `root` is seen to open or close now: the
+    /// slide is on, no slide stops, and `root` shows, which a window on its way open
+    /// doesn't for this (251).
+    fn popup_slides_seen(&self, root: &WlSurface) -> bool {
+        let now = self.now();
+        let shows = self.layer_for_surface(root).is_some()
+            || self.mapped_for_surface(root).is_some_and(|id| {
+                self.policy.is_showing(id) && self.open_close_animations.opening(id, now).is_none()
+            });
+        self.settings.popup_slide && !self.popup_slides_stop() && shows
     }
 
     /// Whether no popup slides now: the session is locked, or the Overview is open or on its
@@ -290,12 +438,31 @@ impl Caminito {
         Title::new(context, &font, 1.0, "").text_height
     }
 
-    /// Ends the slides of popups that are gone or have no buffer, and every slide while the
-    /// session is locked or the Overview is open or on its way.
-    pub(crate) fn refresh_popup_slides(&mut self) {
+    /// The origin of `root`, globally, which its popups' places are from: a window's
+    /// geometry's corner or a Layer surface's.
+    fn popup_root_origin(&self, root: &WlSurface) -> Option<Point<i32, Logical>> {
+        if let Some((output, layer)) = self.layer_for_surface(root) {
+            let map = smithay::desktop::layer_map_for_output(&output);
+            return Some(map.layer_geometry(&layer)?.loc + output_geometry(&output).loc);
+        }
+        let id = self.mapped_for_surface(root)?;
+        self.policy.geometry(id).map(|geometry| geometry.loc)
+    }
+
+    /// Ends the slides of popups that are gone or have no buffer, and every slide, out or
+    /// back, while the session is locked or the Overview is open or on its way. A picture
+    /// whose window or Layer surface is gone goes with it, as does one whose output went.
+    fn refresh_running_popup_slides(&mut self) {
         let stops = self.popup_slides_stop();
+        let roots: Vec<bool> = self
+            .popup_slides
+            .closing
+            .iter()
+            .map(|closing| self.popup_root_origin(&closing.root).is_some())
+            .collect();
+        let outputs: Vec<OutputId> = self.outputs.iter().map(output_id).collect();
         let slides = &mut self.popup_slides;
-        let before = slides.running.len();
+        let before = slides.running.len() + slides.closing.len();
         slides.running.retain(|slide| {
             let shown = with_states(&slide.surface, |states| {
                 states
@@ -305,31 +472,46 @@ impl Caminito {
             });
             !stops && slide.surface.is_alive() && shown
         });
-        if slides.running.len() != before {
+        let mut roots = roots.into_iter();
+        slides.closing.retain(|closing| {
+            let root = roots.next().unwrap_or(false);
+            let output = closing.output.is_none_or(|id| outputs.contains(&id));
+            !stops && root && output
+        });
+        if slides.running.len() + slides.closing.len() != before {
             self.queue_redraw_all();
         }
     }
 
-    /// Ends the slides that are over at `now`, and draws their popups at rest, for
-    /// `deadlines`. While one runs, the outputs it's on are drawn again at each of their
-    /// frames (`State::redraw_queued_outputs`), so there's no step to wait for.
+    /// Ends the slides that are over at `now`, and draws their popups at rest or takes their
+    /// pictures away, for `deadlines`. While one runs, the outputs it's on are drawn again
+    /// at each of their frames (`State::redraw_queued_outputs`), so there's no step to wait
+    /// for.
     pub(crate) fn popup_slide_elapse(&mut self, now: Duration) {
         let slides = &mut self.popup_slides;
-        let before = slides.running.len();
+        let before = slides.running.len() + slides.closing.len();
         slides.running.retain(|slide| !slide.motion.is_over(now));
-        if slides.running.len() != before {
+        slides
+            .closing
+            .retain(|closing| !closing.motion.is_over(now));
+        if slides.running.len() + slides.closing.len() != before {
             self.queue_redraw_all();
         }
     }
 
-    /// Whether a popup that slides at `now` is on `output`, which is then drawn again at its
-    /// next frame.
+    /// Whether a popup that slides, out or back, at `now` is on `output`, which is then
+    /// drawn again at its next frame.
     pub(crate) fn popup_slide_on(&self, output: &Output, now: Duration) -> bool {
         let area = output_geometry(output);
-        self.popup_slides
+        let opening = self
+            .popup_slides
             .sliding(now)
-            .filter_map(|slide| self.popup_rect(&slide.surface))
-            .any(|rect| rect.overlaps(area))
+            .filter_map(|slide| self.popup_rect(&slide.surface));
+        let closing = self
+            .drawn_closing_popups(now)
+            .into_iter()
+            .map(|drawn| drawn.rect);
+        opening.chain(closing).any(|rect| rect.overlaps(area))
     }
 
     /// Each popup that slides at `now`, in the order they were shown, as it's drawn, for the
@@ -347,6 +529,25 @@ impl Caminito {
             .collect()
     }
 
+    /// Each closed popup's picture that slides back at `now`, in the order they closed, as
+    /// it's drawn, for the debug dump.
+    pub(crate) fn drawn_closing_popups(&self, now: Duration) -> Vec<DrawnSlide> {
+        self.popup_slides
+            .closing
+            .iter()
+            .filter(|closing| !closing.motion.is_over(now))
+            .filter_map(|closing| {
+                let origin = self.popup_root_origin(&closing.root)?;
+                let place = closing.place;
+                Some(DrawnSlide {
+                    rect: Rectangle::new(origin + place.loc, place.size),
+                    edge: closing.motion.edge,
+                    slid: closing.motion.slid(now),
+                })
+            })
+            .collect()
+    }
+
     /// The window geometry of the popup whose surface is `surface`, at its place, globally:
     /// from its root's, a window's window geometry or a Layer surface's corner.
     fn popup_rect(&self, surface: &WlSurface) -> Option<Rectangle<i32, Logical>> {
@@ -355,16 +556,97 @@ impl Caminito {
         };
         let size = popup.with_committed_state(|state| state.map(|state| state.geometry.size))?;
         let root = find_popup_root_surface(&PopupKind::Xdg(popup)).ok()?;
-        let origin = if let Some((output, layer)) = self.layer_for_surface(&root) {
-            let map = smithay::desktop::layer_map_for_output(&output);
-            map.layer_geometry(&layer)?.loc + output_geometry(&output).loc
-        } else {
-            let id = self.mapped_for_surface(&root)?;
-            self.policy.geometry(id)?.loc
+        let origin = self.popup_root_origin(&root)?;
+        Some(Rectangle::new(origin + popup_offset(&root, surface)?, size))
+    }
+}
+
+/// Where the window geometry of the popup whose surface is `surface` is from its chain's
+/// root's origin, while it's in the chain.
+fn popup_offset(root: &WlSurface, surface: &WlSurface) -> Option<Point<i32, Logical>> {
+    let (_, offset) =
+        PopupManager::popups_for_surface(root).find(|(kind, _)| kind.wl_surface() == surface)?;
+    Some(offset)
+}
+
+impl State {
+    /// Starts the slide back of the popup whose surface is `surface`, if it was on screen,
+    /// from a picture of it taken now, while it still has its buffer: its client destroys
+    /// or unmaps it, or Caminito dismissed it. One closed on its way out turns round. With
+    /// no buffer left, it goes at once.
+    pub(crate) fn popup_closes(&mut self, surface: &WlSurface) {
+        let caminito = &mut self.caminito;
+        let now = caminito.now();
+        let slides = &mut caminito.popup_slides;
+        let Some(index) = slides.shown.iter().position(|s| s.surface == *surface) else {
+            return;
         };
-        let (_, offset) = PopupManager::popups_for_surface(&root)
-            .find(|(kind, _)| kind.wl_surface() == surface)?;
-        Some(Rectangle::new(origin + offset, size))
+        let shown = slides.shown.remove(index);
+        let opening = slides
+            .running
+            .iter()
+            .position(|slide| slide.surface == *surface)
+            .map(|index| slides.running.remove(index))
+            .filter(|slide| !slide.motion.is_over(now));
+        if !caminito.popup_slides_seen(&shown.root) {
+            return;
+        }
+        let Some(origin) = caminito.popup_root_origin(&shown.root) else {
+            return;
+        };
+        let rect = Rectangle::new(origin + shown.place.loc, shown.place.size);
+        let output = caminito
+            .outputs
+            .iter()
+            .find(|output| output_geometry(output).overlaps(rect))
+            .cloned();
+        let scale = output
+            .as_ref()
+            .map_or(1.0, |output| output.current_scale().fractional_scale());
+        let Some(picture) = self.backend.take_popup_picture(surface, scale) else {
+            tracing::debug!("no picture of a closing popup: it goes at once");
+            return;
+        };
+        let caminito = &mut self.caminito;
+        let motion = match opening {
+            Some(opening) => opening.motion.turned(now),
+            None => caminito.motion(shown.edge, shown.place.size, true),
+        };
+        caminito.popup_slides.closing.push(ClosingPopup {
+            root: shown.root,
+            place: shown.place,
+            geometry: shown.geometry,
+            picture,
+            motion,
+            output: output.as_ref().map(output_id),
+        });
+        caminito.queue_redraw_all();
+    }
+
+    /// Notes where each popup on screen now is, and starts the slide back of each one that's
+    /// left its chain while it still has its buffer, which Caminito dismissed. One whose
+    /// window or Layer surface is gone leaves with it. Then ends the slides that stop.
+    pub(crate) fn refresh_popup_slides(&mut self) {
+        let mut dismissed = Vec::new();
+        self.caminito.popup_slides.shown.retain_mut(|shown| {
+            if !shown.surface.is_alive() || !shown.root.is_alive() {
+                return false;
+            }
+            match popup_offset(&shown.root, &shown.surface) {
+                Some(offset) => {
+                    shown.place.loc = offset;
+                    true
+                }
+                None => {
+                    dismissed.push(shown.surface.clone());
+                    true
+                }
+            }
+        });
+        for surface in dismissed {
+            self.popup_closes(&surface);
+        }
+        self.caminito.refresh_running_popup_slides();
     }
 }
 
@@ -417,13 +699,71 @@ mod tests {
     }
 
     #[test]
+    fn a_slide_turned_round_goes_back_from_where_it_is_at_the_same_speed() {
+        let start = Duration::from_secs(10);
+        let out = Motion {
+            edge: Edge::Top,
+            distance: 80,
+            fades: true,
+            closing: false,
+            start,
+            skipped: Duration::ZERO,
+        };
+        let part_way = start + Duration::from_millis(50);
+
+        let back = out.turned(part_way);
+        assert_eq!(back.offset(part_way), out.offset(part_way), "no jump");
+        assert_eq!(back.alpha(part_way), out.alpha(part_way));
+        // As long back to its edge as it took to get there.
+        assert!(!back.is_over(part_way + Duration::from_millis(49)));
+        assert!(back.is_over(part_way + Duration::from_millis(50)));
+        assert_eq!(
+            back.offset(part_way + Duration::from_millis(50)),
+            (0, -80).into()
+        );
+
+        // And round again.
+        let later = part_way + Duration::from_millis(20);
+        let again = back.turned(later);
+        assert_eq!(again.offset(later), back.offset(later));
+        assert!(!again.closing);
+    }
+
+    #[test]
+    fn a_slide_back_is_the_slide_out_played_backwards() {
+        let start = Duration::from_secs(10);
+        let motion = |closing| Motion {
+            edge: Edge::Left,
+            distance: 80,
+            fades: false,
+            closing,
+            start,
+            skipped: Duration::ZERO,
+        };
+        let (out, back) = (motion(false), motion(true));
+
+        assert_eq!(back.offset(start), (0, 0).into(), "from its place");
+        for ms in [10, 50, 100, 150] {
+            let at = Duration::from_millis(ms);
+            assert_eq!(back.offset(start + at), out.offset(start + LENGTH - at));
+        }
+        assert_eq!(
+            back.offset(start + LENGTH),
+            (-80, 0).into(),
+            "into its edge"
+        );
+    }
+
+    #[test]
     fn a_slide_eases_out_of_its_edge_into_its_place() {
         let start = Duration::from_secs(10);
         let slide = |edge, fades| Motion {
             edge,
             distance: 80,
             fades,
+            closing: false,
             start,
+            skipped: Duration::ZERO,
         };
 
         let down = slide(Edge::Top, false);

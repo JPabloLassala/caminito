@@ -46,7 +46,7 @@ use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
-use crate::popup_slide::PopupSlides;
+use crate::popup_slide::{ClosingPopup, PopupSlides, Slid};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
@@ -114,7 +114,13 @@ render_elements! {
     Picture = TextureRenderElement<<R as RendererSuper>::TextureId>,
     /// A surface of a popup that slides out of its edge (ADR 0037).
     PopupSlide = PopupSlidePart<R>,
+    /// A closed popup's picture as it slides back into its edge (ADR 0037).
+    PopupPicture = PopupPicturePart<R>,
 }
+
+/// A closed popup's picture as it slides back into its edge (ADR 0037): moved off its place
+/// and cut off at it.
+type PopupPicturePart<R> = CropRenderElement<TextureRenderElement<<R as RendererSuper>::TextureId>>;
 
 /// The scene's layers, top to bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,9 +360,27 @@ where
     for (band, _) in mapped.frame().shadow() {
         area = area.merge(Rectangle::new(geometry.loc + band.loc, band.size));
     }
+    // The pictures of its popups that closed just before it, which leave with it (ADR 0037).
+    let root = window.wl_surface();
+    let now = caminito.now();
+    let closing: Vec<_> = root
+        .as_deref()
+        .map(|root| caminito.popup_slides.closing_on(root, now).collect())
+        .unwrap_or_default();
+    for closing in &closing {
+        let covered = closing.covered();
+        area = area.merge(Rectangle::new(geometry.loc + covered.loc, covered.size));
+    }
     let origin = geometry.loc - area.loc;
     let shown = Rectangle::from_size(area.size);
     let mut elements = Vec::new();
+    let at_rest = Slid {
+        offset: Point::default(),
+        alpha: 1.0,
+    };
+    for closing in closing {
+        closing_popup_elements(closing, at_rest, origin, scale, &mut elements);
+    }
     one_window_elements(
         renderer,
         mapped,
@@ -372,6 +396,32 @@ where
         renderer, shadow, origin, shown, scale, 1.0, "shadow",
     ));
     let area = Rectangle::new(area.loc - frame.loc, area.size);
+    Some((elements, area))
+}
+
+/// The popup whose surface is `surface` as its closing picture keeps it (ADR 0037): its
+/// surfaces, front to back, drawn at `scale` from the corner of what they cover, which is
+/// returned too, from its surface's origin. `None` when it has no buffer left to draw.
+pub(crate) fn popup_picture_elements<R>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    scale: f64,
+) -> Option<PictureParts<R>>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let has_buffer = with_states(surface, |states| {
+        let data = states.data_map.get::<RendererSurfaceStateUserData>();
+        data.is_some_and(|data| data.lock().unwrap().buffer().is_some())
+    });
+    let area = bbox_from_surface_tree(surface, (0, 0));
+    if !has_buffer || area.size.w <= 0 || area.size.h <= 0 {
+        return None;
+    }
+    let location = (Point::default() - area.loc).to_f64().to_physical(scale);
+    let elements = surface_tree_elements(renderer, surface, location, scale, 1.0);
+    let elements = elements.into_iter().map(SceneElement::Window).collect();
     Some((elements, area))
 }
 
@@ -1397,7 +1447,11 @@ fn layer_shell_elements<R>(
         let popups = PopupManager::popups_for_surface(wl_surface)
             .map(|(popup, offset)| (popup.wl_surface().clone(), offset - popup.geometry().loc))
             .filter(|_| part.contains(WindowSurfaceType::POPUP));
-        let slides = Some((&caminito.popup_slides, caminito.now()));
+        let now = caminito.now();
+        if part.contains(WindowSurfaceType::POPUP) {
+            closing_popups_on(caminito, wl_surface, origin, scale, now, elements);
+        }
+        let slides = Some((&caminito.popup_slides, now));
         for (popup, offset) in popups {
             let location = (origin + offset).to_f64().to_physical(scale);
             elements.extend(popup_elements(
@@ -1672,6 +1726,10 @@ fn window_elements<R>(
 
             let origin = drawn_at - output_geometry.loc;
             let shown = Rectangle::from_size(output_geometry.size);
+            // Over the window and its popups, as they were over it (ADR 0037).
+            if let Some(root) = mapped.window().wl_surface() {
+                closing_popups_on(caminito, &root, origin, scale, now, elements);
+            }
             let slides = Some((&caminito.popup_slides, now));
             one_window_elements(
                 renderer, mapped, origin, shown, scale, 1.0, slides, elements,
@@ -1689,6 +1747,64 @@ fn window_elements<R>(
     }
     for closing in closing {
         closing_elements(closing, output, now, elements);
+    }
+}
+
+/// A closed popup's picture as it slides back into its edge (ADR 0037), drawn as `slid`
+/// has it with its root's origin at `origin`, from the corner of what's drawn, and cut off
+/// at its place. Nothing for a picture another renderer drew.
+fn closing_popup_elements<R>(
+    closing: &ClosingPopup,
+    slid: Slid,
+    origin: Point<i32, Logical>,
+    scale: f64,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let Some((context, texture)) = closing.picture.texture::<R::TextureId>() else {
+        return;
+    };
+    let covered = closing.covered();
+    let place = Rectangle::new(origin + covered.loc, covered.size);
+    let corner = (place.loc + slid.offset).to_f64().to_physical(scale);
+    // The whole texture, drawn at its output's scale, as `picture_elements_at` reads it.
+    let src = Rectangle::from_size(texture.size().to_logical(1, Transform::Normal).to_f64());
+    let element = TextureRenderElement::from_static_texture(
+        closing.picture.id.clone(),
+        context.clone(),
+        corner,
+        texture.clone(),
+        1,
+        Transform::Normal,
+        Some(slid.alpha),
+        Some(src),
+        Some(covered.size),
+        None,
+        Kind::Unspecified,
+    );
+    let crop = place.to_physical_precise_round(scale);
+    if let Some(element) = CropRenderElement::from_element(element, scale, crop) {
+        elements.push(SceneElement::PopupPicture(element));
+    }
+}
+
+/// The pictures of `root`'s popups that slide back into their edges at `now`, with `root`'s
+/// origin at `origin` on what's drawn.
+fn closing_popups_on<R>(
+    caminito: &Caminito,
+    root: &WlSurface,
+    origin: Point<i32, Logical>,
+    scale: f64,
+    now: Duration,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    for closing in caminito.popup_slides.closing_on(root, now) {
+        closing_popup_elements(closing, closing.slid(now), origin, scale, elements);
     }
 }
 

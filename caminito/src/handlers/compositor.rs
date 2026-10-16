@@ -55,6 +55,7 @@ impl CompositorHandler for State {
             if let Some(key) = state.caminito.window_key_for_surface(surface) {
                 state.keep_closing_picture(&key);
             }
+            state.popup_closes(surface);
         });
     }
 
@@ -93,15 +94,20 @@ impl CompositorHandler for State {
 
 impl State {
     /// Keeps a picture of a managed window whose surface commits a null buffer, which
-    /// unmaps it, for its closing, while the buffer it drew last is still there (252).
+    /// unmaps it, for its closing, while the buffer it drew last is still there (252), and
+    /// starts a popup's slide back into its edge from one (ADR 0037).
     fn keep_picture_before_null_buffer(&mut self, surface: &WlSurface) {
         let removed = with_states(surface, |states| {
             let mut attributes = states.cached_state.get::<SurfaceAttributes>();
             matches!(attributes.pending().buffer, Some(BufferAssignment::Removed))
         });
-        if removed && let Some(key) = self.caminito.window_key_for_surface(surface) {
+        if !removed {
+            return;
+        }
+        if let Some(key) = self.caminito.window_key_for_surface(surface) {
             self.keep_closing_picture(&key);
         }
+        self.popup_closes(surface);
     }
 
     /// Holds back a commit of a dmabuf until the client's GPU is done writing it, so the

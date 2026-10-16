@@ -690,7 +690,7 @@ impl State {
         // opening from its first frame (251).
         self.caminito.refresh_open_close_animations();
         // After the lock and the Overview, which end every slide.
-        self.caminito.refresh_popup_slides();
+        self.refresh_popup_slides();
         // After the last step that changes policy, and before the outputs are drawn: what
         // a handler or a step above changed in policy is drawn in this pass (179).
         self.caminito.queue_redraw_for_policy();

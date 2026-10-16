@@ -11,12 +11,13 @@ use smithay::output::{Mode, Output};
 #[cfg(test)]
 use smithay::reexports::pixman::Image;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer, Rectangle};
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 use crate::capture::{self, Shot};
-use crate::open_close_animation::{Picture, take_picture};
+use crate::open_close_animation::{Picture, take_picture, take_popup_picture};
 use crate::output::OutputChange;
 use crate::state::Caminito;
 
@@ -120,6 +121,30 @@ impl Backend {
             Backend::Headless(headless) => {
                 take_picture::<_, Image<'static, 'static>>(headless.renderer(), caminito, id)
             }
+        }
+    }
+
+    /// Draws the picture of the popup whose surface is `surface` for its slide back, at
+    /// `scale`, with the backend's renderer, or returns `None` if it has no buffer left to
+    /// draw from (ADR 0037).
+    pub(crate) fn take_popup_picture(
+        &mut self,
+        surface: &WlSurface,
+        scale: f64,
+    ) -> Option<Picture> {
+        match self {
+            Backend::Tty(tty) => {
+                take_popup_picture::<_, GlesTexture>(tty.renderer(), surface, scale)
+            }
+            Backend::Winit(winit) => {
+                take_popup_picture::<_, GlesTexture>(winit.renderer(), surface, scale)
+            }
+            #[cfg(test)]
+            Backend::Headless(headless) => take_popup_picture::<_, Image<'static, 'static>>(
+                headless.renderer(),
+                surface,
+                scale,
+            ),
         }
     }
 
