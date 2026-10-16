@@ -915,8 +915,18 @@ impl Fixture {
             size,
             position: Some(position),
             background: Some(color),
-            override_redirect: true,
             ..XWindowSpec::default()
+        };
+        self.map_override_redirect_as(id, spec)
+    }
+
+    /// Creates and maps an override-redirect window of the X client `id` as `spec` says, but
+    /// override-redirect whatever it says, as `map_override_redirect` does.
+    #[track_caller]
+    pub fn map_override_redirect_as(&mut self, id: ClientId, spec: XWindowSpec) -> u32 {
+        let spec = XWindowSpec {
+            override_redirect: true,
+            ..spec
         };
         let window = self
             .x11_call(id, move |x| {
@@ -925,13 +935,30 @@ impl Fixture {
                 Ok::<_, x11rb::errors::ReplyOrIdError>(window)
             })
             .expect("the override-redirect window maps");
+        self.wait_for_override_redirect(window);
+        window
+    }
+
+    /// Dispatches until Caminito shows override-redirect window `window`, with content.
+    #[track_caller]
+    pub fn wait_for_override_redirect(&mut self, window: u32) {
         self.dispatch_until(|f| {
             f.state
                 .caminito
                 .override_redirect_windows()
                 .any(|surface| surface.window_id() == window && has_buffer(surface))
         });
-        window
+    }
+
+    /// Dispatches until Caminito no longer shows override-redirect window `window`.
+    #[track_caller]
+    pub fn wait_until_override_redirect_gone(&mut self, window: u32) {
+        self.dispatch_until(|f| {
+            !f.state
+                .caminito
+                .override_redirect_windows()
+                .any(|surface| surface.window_id() == window)
+        });
     }
 
     /// The override-redirect window whose surface has pointer focus, by X id.
