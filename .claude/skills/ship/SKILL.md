@@ -20,11 +20,11 @@ Every later step but the Linear calls runs inside `../camino-<id>` until step 3.
 
 ## 2. Build
 
-Follow [`implement`](../implement/SKILL.md) in the worktree, with the ticket as the spec. Check scripts go in `.scratch/checks/<ID>/`. Done when every acceptance criterion is met or named as unmet with its reason, the full test suite is green, and the work is committed on `<id>`.
+Follow [`implement`](../implement/SKILL.md) in the worktree, with the ticket as the spec. Check scripts go in `.scratch/checks/<ID>/`. Done when every acceptance criterion is met or named as unmet with its reason, the relevant tests are green, and the work is committed on `<id>`.
 
 ## 3. Merge
 
-1. In the worktree, merge `master` into `<id>`. On conflict, use /resolving-merge-conflicts. If anything came in, rerun typechecking and the full suite; done when green.
+1. In the worktree, merge `master` into `<id>`. On conflict, use /resolving-merge-conflicts. If anything came in, rerun typechecking and the tests relevant to the ticket's change and to what came in; done when green.
 2. In the main checkout, on `master` with a clean tree (otherwise stop and ask the human):
 
    ```sh
