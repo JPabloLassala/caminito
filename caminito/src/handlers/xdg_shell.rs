@@ -57,6 +57,8 @@ impl XdgShellHandler for State {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        // While it has its buffer, if its surface isn't destroyed yet (252).
+        self.keep_closing_picture(&key(&surface));
         self.caminito.window_destroyed(&key(&surface));
     }
 

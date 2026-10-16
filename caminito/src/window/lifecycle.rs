@@ -192,8 +192,9 @@ impl Caminito {
         id
     }
 
-    /// Stops managing a window.
+    /// Stops managing a window, which closes from the picture kept of it, if any (252).
     fn unmap_window(&mut self, id: WindowId) {
+        self.start_closing(id);
         self.menu_claims.toplevel_gone(id);
         // Its "not responding" dialog goes with it (168).
         self.forget_close_ping(id);
