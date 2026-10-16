@@ -710,14 +710,15 @@ impl State {
                     self.caminito.lock.frame_drawn(&output);
                     self.caminito.overview_frame_drawn(&output);
                     // A Workspace slide is drawn at every frame of its output (233), and so
-                    // are the Overview's transition (243) and a window's opening (251): the
+                    // are the Overview's transition (243), a window's opening (251) and a
+                    // closing window's picture (252): the
                     // backend takes the next one when the output can show it.
                     let caminito = &self.caminito;
                     let slides = &caminito.workspace_slides;
                     let sliding = slides.on(crate::output::output_id(&output), now).is_some();
                     if sliding
                         || caminito.overview_transition_on(&output, now)
-                        || caminito.opening_on(&output, now)
+                        || caminito.open_close_animation_on(&output, now)
                     {
                         self.caminito.queue_redraw(&output);
                     }

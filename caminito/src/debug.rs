@@ -134,6 +134,9 @@ struct StateDump {
     /// The windows on their way open (251), in the order they were shown.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     opening_windows: Vec<OpeningWindowDump>,
+    /// The pictures of the windows on their way out (252), oldest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    closing_windows: Vec<ClosingWindowDump>,
 }
 
 #[derive(Serialize)]
@@ -143,6 +146,18 @@ struct OpeningWindowDump {
     rect: RectDump,
     /// How opaque it's drawn, from 0 to 1.
     alpha: f32,
+}
+
+#[derive(Serialize)]
+struct ClosingWindowDump {
+    /// The id the window had in policy.
+    id: u64,
+    /// Where its frame is drawn, globally.
+    rect: RectDump,
+    /// How opaque it's drawn, from 0 to 1.
+    alpha: f32,
+    /// Its place in the stack: the window it's drawn just over, or `None` under every one.
+    over: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -1091,6 +1106,16 @@ impl Caminito {
                     id: id.0,
                     rect: rect.into(),
                     alpha,
+                })
+                .collect(),
+            closing_windows: self
+                .drawn_closing_windows(now)
+                .into_iter()
+                .map(|drawn| ClosingWindowDump {
+                    id: drawn.window.0,
+                    rect: drawn.rect.into(),
+                    alpha: drawn.alpha,
+                    over: drawn.over.map(|over| over.0),
                 })
                 .collect(),
         };

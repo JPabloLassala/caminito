@@ -2,6 +2,7 @@
 
 use std::ffi::OsStr;
 
+use caminito_policy::WindowId;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::GlesTexture;
@@ -15,6 +16,7 @@ use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 use crate::capture::{self, Shot};
+use crate::open_close_animation::{Picture, take_picture};
 use crate::output::OutputChange;
 use crate::state::Caminito;
 
@@ -105,6 +107,19 @@ impl Backend {
                 shot,
                 buffer,
             ),
+        }
+    }
+
+    /// Draws window `id`'s picture for its closing with the backend's renderer, or returns
+    /// `None` if it has no buffer left to draw from (252).
+    pub(crate) fn take_picture(&mut self, caminito: &Caminito, id: WindowId) -> Option<Picture> {
+        match self {
+            Backend::Tty(tty) => take_picture::<_, GlesTexture>(tty.renderer(), caminito, id),
+            Backend::Winit(winit) => take_picture::<_, GlesTexture>(winit.renderer(), caminito, id),
+            #[cfg(test)]
+            Backend::Headless(headless) => {
+                take_picture::<_, Image<'static, 'static>>(headless.renderer(), caminito, id)
+            }
         }
     }
 
