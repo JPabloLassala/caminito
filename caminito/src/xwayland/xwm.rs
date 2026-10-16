@@ -96,8 +96,10 @@ impl XwmHandler for State {
     /// A managed window is withdrawn, and Smithay puts it back on the root; an
     /// override-redirect one leaves the scene.
     fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
-        // While it has its buffer, if Xwayland hasn't destroyed its surface yet (252).
+        // While it has its buffer, if Xwayland hasn't destroyed its surface yet (252, ADR
+        // 0037).
         self.keep_closing_picture(&key(&window));
+        self.override_redirect_closes(&window);
         let caminito = &mut self.caminito;
         caminito.with_root_stack(|stack| stack.unframed(window.window_id()));
         caminito.override_redirect_unmapped(&window);
@@ -106,6 +108,7 @@ impl XwmHandler for State {
 
     fn destroyed_window(&mut self, _xwm: XwmId, window: X11Surface) {
         self.keep_closing_picture(&key(&window));
+        self.override_redirect_closes(&window);
         let caminito = &mut self.caminito;
         caminito.with_root_stack(|stack| stack.destroyed(window.window_id()));
         caminito.override_redirect_unmapped(&window);
@@ -377,7 +380,8 @@ impl State {
     }
 
     /// Handles a commit to one of Xwayland's surfaces: content on a window's surface maps it
-    /// if it's pending, or tells policy what changed.
+    /// if it's pending, or tells policy what changed, and on an override-redirect window's
+    /// draws it again, which may start its slide.
     pub(crate) fn xwayland_commit(&mut self, surface: &WlSurface) {
         let has_buffer =
             with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
@@ -386,11 +390,10 @@ impl State {
         }
         if let Some(key) = self.caminito.window_key_for_surface(surface) {
             self.caminito.window_committed(&key);
-        } else if self
-            .caminito
-            .override_redirect_for_surface(surface)
-            .is_some()
-        {
+        } else if let Some(window) = self.caminito.override_redirect_for_surface(surface) {
+            // Its first frame with a buffer starts its slide (ADR 0037).
+            let window = window.clone();
+            self.caminito.override_redirect_committed(&window);
             self.caminito.queue_redraw_all();
         }
     }
@@ -424,7 +427,8 @@ impl Caminito {
         }
     }
 
-    /// Puts an override-redirect window in the scene, once.
+    /// Puts an override-redirect window in the scene, once, sliding out of its edge (ADR
+    /// 0037).
     fn override_redirect_mapped(&mut self, window: X11Surface) {
         let Some(xwayland) = self.xwayland.as_mut() else {
             return;
@@ -436,6 +440,7 @@ impl Caminito {
             .any(|w| w.window_id() == id)
         {
             xwayland.override_redirect.push(window.clone());
+            self.override_redirect_shown(&window);
         }
         // Xwayland before 24.1 doesn't give the input shape to the surface, so it's
         // read here as a managed window's is.

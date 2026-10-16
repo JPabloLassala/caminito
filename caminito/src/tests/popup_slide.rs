@@ -4,7 +4,7 @@
 //! Policy has it at its real place from the start, and lets it go at once as it closes.
 //!
 //! Only Wayland clients have xdg_popups: an X11 menu is an override-redirect window, whose
-//! slide is CMN-180's.
+//! slide is `override_redirect_slide`'s.
 
 use std::time::Duration;
 

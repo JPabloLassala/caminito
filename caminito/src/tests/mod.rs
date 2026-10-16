@@ -60,6 +60,7 @@ mod open_close_animation;
 mod output_lifecycle;
 mod output_management;
 mod override_redirect;
+mod override_redirect_slide;
 mod overview;
 mod overview_buttons;
 mod overview_drag;

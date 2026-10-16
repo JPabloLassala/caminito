@@ -23,7 +23,14 @@
 //! A popup that closes on its way out turns round from where it is, at the same speed, as
 //! Plasma's does: the curve played backwards is at the same point after what's left of it.
 //! An xdg_popup can't be shown again once it's closed, as Smithay forgets an unmapped one's
-//! role, so only the way back turns round here.
+//! role, so only the way back turns round for one.
+//!
+//! An override-redirect window, an X11 menu or tooltip, slides as well, but for one of type
+//! Utility, as Plasma leaves out, or DND, a drag icon that follows the pointer. It has no
+//! anchor, so it slides away from where the pointer was when it mapped. It opens at its map,
+//! from its first frame with a buffer, and closes at its unmap or its destruction, from a picture taken while its surface still
+//! has its buffer, which Xwayland may destroy before the unmap reaches Caminito. Its place
+//! is global, on no window, and one mapped again while its picture slides back turns round.
 //!
 //! The Window menu and its submenu slide too, on the same motion (`window_menu::slide`).
 
@@ -31,6 +38,7 @@ use std::cell::Cell;
 use std::time::Duration;
 
 use caminito_policy::OutputId;
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{PopupKind, PopupManager, find_popup_root_surface};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
@@ -38,11 +46,14 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::PopupSurface;
+use smithay::xwayland::X11Surface;
+use smithay::xwayland::xwm::{WmWindowType, X11Window};
 
 use caminito_theme::{Title, pango};
 
 use crate::open_close_animation::Picture;
 use crate::output::{output_geometry, output_id};
+use crate::scene::override_redirect_bbox;
 use crate::state::{Caminito, State};
 use crate::window_menu::slide::MenuSlides;
 use crate::workspace_slide::eased_way_left;
@@ -116,6 +127,31 @@ fn edge(popup: Rectangle<i32, Logical>, anchor: Rectangle<i32, Logical>) -> Edge
     }
 }
 
+/// The edge an override-redirect window at `window` comes out of, with the pointer at
+/// `pointer` when it mapped, both global: away from the pointer, down when it's above the
+/// window's middle row and up when it's below it, and sideways when it's beside the window
+/// and neither above nor below it.
+fn pointer_edge(window: Rectangle<i32, Logical>, pointer: Point<f64, Logical>) -> Edge {
+    let window = window.to_f64();
+    let end = window.loc + window.size.to_point();
+    let between_rows = window.loc.y <= pointer.y && pointer.y < end.y;
+    if between_rows && pointer.x < window.loc.x {
+        Edge::Left
+    } else if between_rows && pointer.x >= end.x {
+        Edge::Right
+    } else if pointer.y <= window.loc.y + window.size.h / 2.0 {
+        Edge::Top
+    } else {
+        Edge::Bottom
+    }
+}
+
+/// Whether an override-redirect window of `kind` slides: all but a Utility one, as Plasma
+/// leaves out (`isPopupWindow`), and a DND one, a drag icon that follows the pointer.
+fn slides(kind: Option<WmWindowType>) -> bool {
+    !matches!(kind, Some(WmWindowType::Utility | WmWindowType::Dnd))
+}
+
 /// How far a popup of `size` along its slide slides: its size, or `LINES` lines of
 /// `line_height`, whichever is less, and whether it fades as well, which it does only when
 /// it slides less than its size.
@@ -131,8 +167,27 @@ fn distance(size: i32, line_height: i32) -> (i32, bool) {
 /// One popup on its way out of its edge.
 #[derive(Debug)]
 struct Slide {
-    surface: WlSurface,
+    popup: Popup,
     motion: Motion,
+}
+
+/// A popup that slides out of its edge.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Popup {
+    /// An xdg_popup, by its surface.
+    Xdg(WlSurface),
+    /// An override-redirect window, by its X id: it may have no surface yet as it maps.
+    OverrideRedirect(X11Window),
+}
+
+/// What a closed popup's picture is drawn on, which its place is from.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Root {
+    /// The surface of an xdg_popup's chain's window or Layer surface.
+    Surface(WlSurface),
+    /// Nothing, for an override-redirect window, by its X id: its place is global. A
+    /// window mapped again while its picture slides back takes the picture's place.
+    Global(X11Window),
 }
 
 /// How a popup slides out of its edge, or back into it.
@@ -260,9 +315,10 @@ struct Shown {
 /// A closed popup's picture on its way back into its edge.
 #[derive(Debug)]
 pub(crate) struct ClosingPopup {
-    /// The surface of its chain's window or Layer surface, which it's drawn on.
-    pub root: WlSurface,
-    /// Its window geometry, from its root's origin.
+    /// What it's drawn on.
+    pub root: Root,
+    /// Its window geometry, from its root's origin: an override-redirect window's surface,
+    /// globally.
     place: Rectangle<i32, Logical>,
     /// Where its window geometry was in its surface.
     geometry: Point<i32, Logical>,
@@ -286,6 +342,26 @@ impl ClosingPopup {
     }
 }
 
+/// An override-redirect window on screen that slides, with the edge it comes out of.
+#[derive(Debug)]
+struct ShownOverrideRedirect {
+    window: X11Window,
+    edge: Edge,
+    /// Whether its slide waits for its first frame with a buffer, which shows it.
+    waiting: bool,
+}
+
+/// What a popup that closes slides back from: its root, its place from its root's origin,
+/// where its window geometry is in its surface, its edge, and its slide out if it was
+/// still on its way.
+struct SlideBack {
+    root: Root,
+    place: Rectangle<i32, Logical>,
+    geometry: Point<i32, Logical>,
+    edge: Edge,
+    opening: Option<Slide>,
+}
+
 /// The popups on their way out of their edges, the pictures of those on their way back, and
 /// those on screen, and the Window menu's.
 #[derive(Debug, Default)]
@@ -294,6 +370,7 @@ pub(crate) struct PopupSlides {
     closing: Vec<ClosingPopup>,
     shown: Vec<Shown>,
     pub(crate) window_menu: MenuSlides,
+    override_redirect: Vec<ShownOverrideRedirect>,
 }
 
 impl PopupSlides {
@@ -313,16 +390,37 @@ impl PopupSlides {
         root: &'a WlSurface,
         now: Duration,
     ) -> impl Iterator<Item = &'a ClosingPopup> {
-        self.closing
-            .iter()
-            .rev()
-            .filter(move |closing| closing.root == *root && !closing.motion.is_over(now))
+        self.closing.iter().rev().filter(move |closing| {
+            matches!(&closing.root, Root::Surface(surface) if surface == root)
+                && !closing.motion.is_over(now)
+        })
     }
 
-    /// How `surface`, a popup's, is drawn at `now`, while it slides.
-    pub(crate) fn slid(&self, surface: &WlSurface, now: Duration) -> Option<Slid> {
-        let slide = self.sliding(now).find(|slide| slide.surface == *surface)?;
+    /// The pictures of the override-redirect windows on their way back at `now`, those
+    /// closed last first, which are drawn over the others.
+    pub(crate) fn closing_override_redirect(
+        &self,
+        now: Duration,
+    ) -> impl Iterator<Item = &ClosingPopup> {
+        self.closing.iter().rev().filter(move |closing| {
+            matches!(closing.root, Root::Global(_)) && !closing.motion.is_over(now)
+        })
+    }
+
+    /// How `popup` is drawn at `now`, while it slides.
+    pub(crate) fn slid(&self, popup: &Popup, now: Duration) -> Option<Slid> {
+        let slide = self.sliding(now).find(|slide| slide.popup == *popup)?;
         Some(slide.motion.slid(now))
+    }
+
+    /// Takes `popup`'s slide out, which ends, and returns it if it's still on its way at
+    /// `now`.
+    fn take_opening(&mut self, popup: &Popup, now: Duration) -> Option<Slide> {
+        let index = self
+            .running
+            .iter()
+            .position(|slide| slide.popup == *popup)?;
+        Some(self.running.remove(index)).filter(|slide| !slide.motion.is_over(now))
     }
 
     fn sliding(&self, now: Duration) -> impl Iterator<Item = &Slide> {
@@ -403,7 +501,7 @@ impl Caminito {
         }
         let motion = self.motion(shown.edge, shown.place.size, false);
         self.popup_slides.running.push(Slide {
-            surface: surface.clone(),
+            popup: Popup::Xdg(surface.clone()),
             motion,
         });
         self.queue_redraw_all();
@@ -436,9 +534,84 @@ impl Caminito {
         self.popup_slides_run() && shows
     }
 
-    /// Whether a popup that opens or closes now slides: the slide is on and no slide stops.
+    /// Whether popups slide now: the slide is on and no slide stops. That's all an
+    /// override-redirect window needs to be seen to open or close, as it's on no workspace.
     pub(crate) fn popup_slides_run(&self) -> bool {
         self.settings.popup_slide && !self.popup_slides_stop()
+    }
+
+    /// Notes override-redirect `window`, which X has just mapped, with the edge away from
+    /// where the pointer is now, unless it's of a type that doesn't slide. Its slide out
+    /// starts with its first frame with a buffer, now if it has one. One whose picture
+    /// slides back, unmapped part-way, turns round from where it is at once: its picture
+    /// was on screen.
+    pub(crate) fn override_redirect_shown(&mut self, window: &X11Surface) {
+        if !slides(window.window_type()) {
+            return;
+        }
+        let id = window.window_id();
+        let pointer = self.seat.get_pointer().unwrap().current_location();
+        let now = self.now();
+        let slides = &mut self.popup_slides;
+        let picture = slides
+            .closing
+            .iter()
+            .position(|closing| closing.root == Root::Global(id))
+            .map(|index| slides.closing.remove(index))
+            .filter(|closing| !closing.motion.is_over(now));
+        slides
+            .running
+            .retain(|slide| slide.popup != Popup::OverrideRedirect(id));
+        slides.override_redirect.retain(|shown| shown.window != id);
+        let Some(picture) = picture else {
+            slides.override_redirect.push(ShownOverrideRedirect {
+                window: id,
+                edge: pointer_edge(window.last_configure(), pointer),
+                waiting: true,
+            });
+            if has_buffer(window) {
+                self.override_redirect_committed(window);
+            }
+            return;
+        };
+        let motion = picture.motion.turned(now);
+        slides.override_redirect.push(ShownOverrideRedirect {
+            window: id,
+            edge: motion.edge,
+            waiting: false,
+        });
+        if self.popup_slides_run() {
+            self.popup_slides.running.push(Slide {
+                popup: Popup::OverrideRedirect(id),
+                motion,
+            });
+        }
+        self.queue_redraw_all();
+    }
+
+    /// Starts override-redirect `window`'s slide out of its edge if this commit, which has
+    /// a buffer, is its first since it mapped: it's shown from now.
+    pub(crate) fn override_redirect_committed(&mut self, window: &X11Surface) {
+        let id = window.window_id();
+        let shown = self
+            .popup_slides
+            .override_redirect
+            .iter_mut()
+            .find(|shown| shown.window == id && shown.waiting);
+        let Some(shown) = shown else {
+            return;
+        };
+        shown.waiting = false;
+        let edge = shown.edge;
+        if !self.popup_slides_run() {
+            return;
+        }
+        let motion = self.motion(edge, override_redirect_bbox(window).size, false);
+        self.popup_slides.running.push(Slide {
+            popup: Popup::OverrideRedirect(id),
+            motion,
+        });
+        self.queue_redraw_all();
     }
 
     /// Whether no popup slides now: the session is locked, or the Overview is open or on its
@@ -476,20 +649,30 @@ impl Caminito {
             .popup_slides
             .closing
             .iter()
-            .map(|closing| self.popup_root_origin(&closing.root).is_some())
+            .map(|closing| self.closing_origin(&closing.root).is_some())
             .collect();
         let outputs: Vec<OutputId> = self.outputs.iter().map(output_id).collect();
+        let override_redirect: Vec<X11Window> = self
+            .override_redirect_windows()
+            .map(X11Surface::window_id)
+            .collect();
         let slides = &mut self.popup_slides;
         let menu_changed = slides.window_menu.refresh(stops, &self.outputs);
         let before = slides.running.len() + slides.closing.len();
         slides.running.retain(|slide| {
-            let shown = with_states(&slide.surface, |states| {
-                states
-                    .data_map
-                    .get::<HasBuffer>()
-                    .is_some_and(|data| data.0.get())
-            });
-            !stops && slide.surface.is_alive() && shown
+            let shown = match &slide.popup {
+                Popup::Xdg(surface) => {
+                    let has_buffer = with_states(surface, |states| {
+                        states
+                            .data_map
+                            .get::<HasBuffer>()
+                            .is_some_and(|data| data.0.get())
+                    });
+                    surface.is_alive() && has_buffer
+                }
+                Popup::OverrideRedirect(window) => override_redirect.contains(window),
+            };
+            !stops && shown
         });
         let mut roots = roots.into_iter();
         slides.closing.retain(|closing| {
@@ -519,6 +702,15 @@ impl Caminito {
         }
     }
 
+    /// Where a closed popup's picture on `root` has its place from, globally: its window's
+    /// or Layer surface's origin, or the global origin for an override-redirect window.
+    fn closing_origin(&self, root: &Root) -> Option<Point<i32, Logical>> {
+        match root {
+            Root::Surface(root) => self.popup_root_origin(root),
+            Root::Global(_) => Some(Point::default()),
+        }
+    }
+
     /// Whether a popup that slides, out or back, at `now` is on `output`, which is then
     /// drawn again at its next frame.
     pub(crate) fn popup_slide_on(&self, output: &Output, now: Duration) -> bool {
@@ -535,7 +727,7 @@ impl Caminito {
     pub(crate) fn drawn_popup_slides(&self, now: Duration) -> Vec<DrawnSlide> {
         let popups = self.popup_slides.sliding(now).filter_map(|slide| {
             Some(DrawnSlide {
-                rect: self.popup_rect(&slide.surface)?,
+                rect: self.sliding_rect(&slide.popup)?,
                 edge: slide.motion.edge,
                 slid: slide.motion.slid(now),
             })
@@ -552,7 +744,7 @@ impl Caminito {
             .iter()
             .filter(|closing| !closing.motion.is_over(now))
             .filter_map(|closing| {
-                let origin = self.popup_root_origin(&closing.root)?;
+                let origin = self.closing_origin(&closing.root)?;
                 let place = closing.place;
                 Some(DrawnSlide {
                     rect: Rectangle::new(origin + place.loc, place.size),
@@ -562,6 +754,18 @@ impl Caminito {
             })
             .chain(menu)
             .collect()
+    }
+
+    /// Where `popup` is at its place, globally: an xdg_popup's window geometry or an
+    /// override-redirect window's surface.
+    fn sliding_rect(&self, popup: &Popup) -> Option<Rectangle<i32, Logical>> {
+        match popup {
+            Popup::Xdg(surface) => self.popup_rect(surface),
+            Popup::OverrideRedirect(id) => self
+                .override_redirect_windows()
+                .find(|window| window.window_id() == *id)
+                .map(override_redirect_bbox),
+        }
     }
 
     /// The window geometry of the popup whose surface is `surface`, at its place, globally:
@@ -575,6 +779,13 @@ impl Caminito {
         let origin = self.popup_root_origin(&root)?;
         Some(Rectangle::new(origin + popup_offset(&root, surface)?, size))
     }
+}
+
+/// Whether override-redirect `window`'s surface has a buffer.
+fn has_buffer(window: &X11Surface) -> bool {
+    window.wl_surface().is_some_and(|surface| {
+        with_renderer_surface_state(&surface, |state| state.buffer().is_some()).unwrap_or(false)
+    })
 }
 
 /// Where the window geometry of the popup whose surface is `surface` is from its chain's
@@ -591,6 +802,11 @@ impl State {
     /// or unmaps it, or Caminito dismissed it. One closed on its way out turns round. With
     /// no buffer left, it goes at once.
     pub(crate) fn popup_closes(&mut self, surface: &WlSurface) {
+        if let Some(window) = self.caminito.override_redirect_for_surface(surface) {
+            let window = window.clone();
+            self.override_redirect_closes(&window);
+            return;
+        }
         let caminito = &mut self.caminito;
         let now = caminito.now();
         let slides = &mut caminito.popup_slides;
@@ -598,19 +814,60 @@ impl State {
             return;
         };
         let shown = slides.shown.remove(index);
-        let opening = slides
-            .running
-            .iter()
-            .position(|slide| slide.surface == *surface)
-            .map(|index| slides.running.remove(index))
-            .filter(|slide| !slide.motion.is_over(now));
+        let opening = slides.take_opening(&Popup::Xdg(surface.clone()), now);
         if !caminito.popup_slides_seen(&shown.root) {
             return;
         }
-        let Some(origin) = caminito.popup_root_origin(&shown.root) else {
+        let back = SlideBack {
+            root: Root::Surface(shown.root),
+            place: shown.place,
+            geometry: shown.geometry,
+            edge: shown.edge,
+            opening,
+        };
+        self.slide_back(surface, back);
+    }
+
+    /// Starts the slide back of override-redirect `window`, if it slides and is on screen,
+    /// from a picture of it taken now, while its surface still has its buffer: X unmapped
+    /// or destroyed it, or Xwayland destroyed its surface first. One closed on its way out
+    /// turns round. With no surface or buffer left, it goes at once.
+    pub(crate) fn override_redirect_closes(&mut self, window: &X11Surface) {
+        let caminito = &mut self.caminito;
+        let id = window.window_id();
+        let now = caminito.now();
+        let slides = &mut caminito.popup_slides;
+        let Some(index) = slides.override_redirect.iter().position(|s| s.window == id) else {
             return;
         };
-        let rect = Rectangle::new(origin + shown.place.loc, shown.place.size);
+        let shown = slides.override_redirect.remove(index);
+        let opening = slides.take_opening(&Popup::OverrideRedirect(id), now);
+        if !caminito.popup_slides_run() {
+            return;
+        }
+        let Some(surface) = window.wl_surface() else {
+            tracing::debug!("no surface of a closing override-redirect window: it goes at once");
+            return;
+        };
+        let back = SlideBack {
+            root: Root::Global(id),
+            place: override_redirect_bbox(window),
+            geometry: Point::default(),
+            edge: shown.edge,
+            opening,
+        };
+        self.slide_back(&surface, back);
+    }
+
+    /// Starts a popup's slide back into its edge as `back` has it, from a picture of
+    /// `surface` taken now at the scale of the output it's on: from where it is if it was
+    /// on its way out, from its place otherwise. With no buffer left, it goes at once.
+    fn slide_back(&mut self, surface: &WlSurface, back: SlideBack) {
+        let caminito = &self.caminito;
+        let Some(origin) = caminito.closing_origin(&back.root) else {
+            return;
+        };
+        let rect = Rectangle::new(origin + back.place.loc, back.place.size);
         let output = caminito
             .outputs
             .iter()
@@ -624,14 +881,14 @@ impl State {
             return;
         };
         let caminito = &mut self.caminito;
-        let motion = match opening {
-            Some(opening) => opening.motion.turned(now),
-            None => caminito.motion(shown.edge, shown.place.size, true),
+        let motion = match back.opening {
+            Some(opening) => opening.motion.turned(caminito.now()),
+            None => caminito.motion(back.edge, back.place.size, true),
         };
         caminito.popup_slides.closing.push(ClosingPopup {
-            root: shown.root,
-            place: shown.place,
-            geometry: shown.geometry,
+            root: back.root,
+            place: back.place,
+            geometry: back.geometry,
             picture,
             motion,
             output: output.as_ref().map(output_id),
@@ -705,6 +962,39 @@ mod tests {
         assert_eq!(edge(rect(120, 120, 400, 100), anchor), Edge::Left);
         // Above and to the left.
         assert_eq!(edge(rect(-300, 0, 400, 100), anchor), Edge::Right);
+    }
+
+    #[test]
+    fn an_override_redirect_window_comes_out_of_the_edge_away_from_the_pointer() {
+        let menu = rect(300, 200, 150, 200);
+        let at = |x, y| pointer_edge(menu, Point::from((x, y)));
+
+        assert_eq!(
+            at(300.0, 200.0),
+            Edge::Top,
+            "under the pointer, at its corner"
+        );
+        assert_eq!(at(320.0, 120.0), Edge::Top, "above it");
+        assert_eq!(at(320.0, 300.0), Edge::Top, "on its middle row");
+        assert_eq!(at(320.0, 301.0), Edge::Bottom, "below its middle row");
+        assert_eq!(
+            at(320.0, 790.0),
+            Edge::Bottom,
+            "below it, as a bottom panel's"
+        );
+        assert_eq!(at(100.0, 300.0), Edge::Left, "beside it, to its left");
+        assert_eq!(at(450.0, 300.0), Edge::Right, "beside it, to its right");
+        assert_eq!(at(100.0, 100.0), Edge::Top, "above it and to its left");
+        assert_eq!(at(600.0, 450.0), Edge::Bottom, "below it and to its right");
+    }
+
+    #[test]
+    fn every_override_redirect_window_slides_but_a_utility_or_a_dnd_one() {
+        assert!(slides(None));
+        assert!(slides(Some(WmWindowType::PopupMenu)));
+        assert!(slides(Some(WmWindowType::Tooltip)));
+        assert!(!slides(Some(WmWindowType::Utility)));
+        assert!(!slides(Some(WmWindowType::Dnd)));
     }
 
     #[test]
