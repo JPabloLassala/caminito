@@ -39,13 +39,13 @@ brk "a window that opens mid-slide doesn't arrive with its workspace" $src/works
     's/\Qslide.arriving.insert(window);\E/let _ = (slide, window);/' \
     $tests::during_a_slide
 brk "with the animation off a window that maps mid-slide arrives all the same" $src/open_close_animation.rs \
-    's/\Q        if self.settings.open_close_animation {\E/        if true {/' \
+    's/\Qif !self.settings.open_close_animation || !shows {\E/if !shows {/' \
     $tests::with_the_animation_off
 brk "a picture doesn't slide with its workspace" $src/open_close_animation.rs \
     's/\Qreturn slide.workspace_shifts(workspace, now);\E/return vec![Point::default()];/' \
     $tests::during_a_slide $tests::a_closing_windows_picture
 brk "the scene draws a picture where its window was" $src/scene.rs \
-    's/\Qlet at = drawn.loc + shift - output_geometry.loc;\E/let at = drawn.loc - output_geometry.loc;/' \
+    's/\Qlet corner = at.to_f64() + area.loc.upscale(factor);\E/let corner = (drawn.loc - output_geometry.loc).to_f64() + area.loc.upscale(factor);/' \
     $tests::a_closing_windows_picture
 brk "a window that a slide takes away closes at once" $src/open_close_animation.rs \
     's/\Q&& (policy.is_showing(id) || slid())\E/&& policy.is_showing(id)/' \
