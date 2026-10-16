@@ -3,13 +3,15 @@
 //! client's own request open. Policy has its items, which of them are greyed, the
 //! selection, and what choosing one does. Here are the keys and the clicks that drive it
 //! while it's open, and where it shows. `labels` has its words, `layout` its rectangles,
-//! `draw` draws it, and `scene` puts it on the output.
+//! `draw` draws it, `slide` slides it in and out (ADR 0037), and `scene` puts it on the
+//! output.
 //!
 //! [ADR 0026]: ../../../docs/adr/0026-the-window-menu-is-drawn-in-the-scene.md
 
 pub(crate) mod draw;
 pub(crate) mod labels;
 pub(crate) mod layout;
+pub(crate) mod slide;
 
 use caminito_policy::{MenuEntry, MenuItem, MenuKey, MenuSelection, WindowId, WindowMenu};
 use caminito_theme::{PaletteColors, Variant, pango};
@@ -45,7 +47,18 @@ pub(crate) struct Shown {
     drawn: Drawn,
 }
 
+impl Shown {
+    /// The pane of `part`, which for the submenu is there while it's open.
+    pub(crate) fn pane(&self, part: slide::Part) -> Option<&Pane> {
+        match part {
+            slide::Part::Menu => Some(&self.main),
+            slide::Part::Submenu => self.submenu.as_ref(),
+        }
+    }
+}
+
 /// One menu: the window menu itself, or its submenu.
+#[derive(Debug)]
 pub(crate) struct Pane {
     /// Its rectangles, from the output's corner.
     pub(crate) layout: Layout,
@@ -108,15 +121,19 @@ impl Caminito {
             self.policy.close_window_menu();
         }
         let Some(menu) = self.policy.window_menu().cloned() else {
-            if self.window_menu.take().is_some() {
+            if let Some(open) = self.window_menu.take() {
+                self.window_menu_closes(open.shown);
                 self.queue_redraw_all();
             }
             return;
         };
-        let open = self
-            .window_menu
-            .take()
-            .filter(|open| open.window == menu.window);
+        let open = match self.window_menu.take() {
+            Some(open) if open.window == menu.window => Some(open),
+            other => {
+                self.window_menu_closes(other.and_then(|open| open.shown));
+                None
+            }
+        };
         let anchor = match &open {
             Some(open) => open.anchor,
             None => match self.policy.geometry(menu.window) {
@@ -157,8 +174,10 @@ impl Caminito {
         let window = drawn.menu.window;
         let shown = match shown {
             Some(shown) if shown.output == output && shown.drawn == drawn => shown,
-            _ => {
+            before => {
                 let (main, submenu) = self.draw_window_menu(&drawn);
+                let asked = drawn.anchor - drawn.output.loc;
+                self.window_menu_slides_follow(before, &output, asked, &main, submenu.as_ref());
                 self.queue_redraw_all();
                 Shown {
                     output,
@@ -409,6 +428,9 @@ impl State {
         self.dismiss_menus(time);
         let caminito = &mut self.caminito;
         if caminito.policy.open_window_menu(SEAT, window) {
+            if let Some(open) = caminito.window_menu.take() {
+                caminito.window_menu_closes(open.shown);
+            }
             caminito.window_menu = Some(OpenWindowMenu {
                 window,
                 anchor: at,

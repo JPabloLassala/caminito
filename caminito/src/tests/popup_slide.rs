@@ -30,12 +30,12 @@ pub(super) const PART_WAY: Duration = Duration::from_millis(50);
 /// The rectangle in the window the popups are anchored to, from its window geometry's corner.
 const ANCHOR: (i32, i32, i32, i32) = (150, 100, 100, 20);
 
-type Settings = Vec<(&'static str, String, Setting)>;
+pub(super) type Settings = Vec<(&'static str, String, Setting)>;
 
 /// One output with `popup-slide` on, unless `settings` has it, and a Wayland client. The
 /// fixture has the key off, for the tests written when a popup was there at once. The clock
 /// is stopped, so the slide is read where `advance_clock` has it.
-fn desk(mut settings: Settings) -> (Fixture, ClientId) {
+pub(super) fn desk(mut settings: Settings) -> (Fixture, ClientId) {
     if !settings.iter().any(|(_, key, _)| key == "popup-slide") {
         settings.push((CAMINITO, "popup-slide".into(), Setting::Bool(true)));
     }
@@ -49,10 +49,10 @@ fn desk(mut settings: Settings) -> (Fixture, ClientId) {
 /// A Popup slide as the debug dump's `popup_slides` has it.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Sliding {
-    pub rect: Rectangle<i32, Logical>,
-    pub edge: String,
-    pub offset: Point<i32, Logical>,
-    pub alpha: f64,
+    pub(super) rect: Rectangle<i32, Logical>,
+    pub(super) edge: String,
+    pub(super) offset: Point<i32, Logical>,
+    pub(super) alpha: f64,
 }
 
 /// Each Popup slide that runs, from the debug dump, which has none while none does.

@@ -804,6 +804,10 @@ session_env() {
      desktop. Open pluma's *File* menu and close it with Escape. Open it again and click
      outside it at once, before it has finished sliding out.
   9. Open pluma's *File* menu and close pluma with Ctrl+Q from the keyboard while it's open.
+  10. Press Alt+Space over pluma, then *Move to Another Workspace* with the arrows, then Left,
+      then Escape. Move pluma to the bottom of the screen, right-click its titlebar, and press
+      Alt+Space and choose *Maximize* at once, before the menu has finished sliding. Press
+      Alt+Tab, and Ctrl+Alt+Right then Ctrl+Alt+Left.
 - **Expected:** in step 2 the panel's menu comes down out of the panel, and its submenu out of
   the menu's side; pluma's menus come down out of the menubar, its submenu out of its menu's
   side, and the combo box's list comes down over its button. Nothing of a menu is drawn over
@@ -814,14 +818,19 @@ session_env() {
   Overview. In step 8 the menu and its submenu slide back together, each into the edge it came
   out of, and the click on the desktop reaches it; pluma's menu slides back up into the
   menubar; the one clicked away part-way turns round from where it is, with no jump. In step 9
-  the menu doesn't slide on its own: it leaves inside pluma's closing picture.
+  the menu doesn't slide on its own: it leaves inside pluma's closing picture. In step 10 the
+  Window menu comes down from pluma's corner, its submenu out of its right side and back into
+  it on Left, and the menu slides back up on Escape; the one opened near the bottom, turned up
+  to fit, comes up instead; *Maximize* chosen part-way maximises pluma at once and the menu
+  turns round; the Window switcher and the Workspace popup are there at once.
 
   Each slide takes a fifth of a second, starts fast and slows into its place, or starts slow
   and speeds into its edge as it closes, with no frame that stutters. An X11 app's menus have
-  an item of their own, and the Window menu doesn't slide yet (CMN-181).
+  an item of their own.
 - **Debug tool:** `DumpState`'s `popup_slides`, there while a popup slides out, and
   `closing_popups`, there while a closed popup's picture slides back: each has its `rect` at
-  its place, its `edge`, and the `offset` and `alpha` it's drawn at.
+  its place, its `edge`, and the `offset` and `alpha` it's drawn at. The Window menu's and its
+  submenu's come after the other popups'.
 
 ### An X11 app's menu slides away from the pointer
 

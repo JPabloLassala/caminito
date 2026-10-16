@@ -141,11 +141,12 @@ struct StateDump {
     /// The windows on their way to their new frames as they're maximised (CMN-174).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     maximizing_windows: Vec<MaximizingWindowDump>,
-    /// The Popup slides that run (ADR 0037), in the order their popups were shown.
+    /// The Popup slides that run (ADR 0037), in the order their popups were shown, and the
+    /// Window menu's and its submenu's after them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     popup_slides: Vec<PopupSlideDump>,
     /// The pictures of the popups that slide back into their edges as they close (ADR
-    /// 0037), in the order they closed.
+    /// 0037), in the order they closed, and the Window menu's after them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     closing_popups: Vec<PopupSlideDump>,
 }

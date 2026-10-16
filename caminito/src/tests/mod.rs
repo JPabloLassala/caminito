@@ -94,6 +94,7 @@ mod system_shortcuts_entry;
 mod tiling;
 mod window_actions;
 mod window_menu;
+mod window_menu_slide;
 mod window_properties;
 mod work_area;
 mod workspace_moves;
