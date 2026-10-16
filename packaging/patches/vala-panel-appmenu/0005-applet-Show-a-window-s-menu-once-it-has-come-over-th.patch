@@ -1,0 +1,187 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Fri, 16 Oct 2026 12:00:00 -0300
+Subject: [PATCH] applet: Show a window's menu once it has come over the bus
+
+Under Caminito the applet showed the focused window's application name
+as soon as the focus changed, and its menus a moment later: the menubar
+is a model that comes over the bus, from org.gtk.Menus or a dbusmenu,
+and it has no items until the app answers. So every switch of window
+showed the name alone, and then the menus after it.
+
+The applet now puts the next window's menu together out of sight, with
+its name and its action groups, and shows it all in one go once its
+menubar has items, or the window has no menubar, or 300 ms have passed.
+The menu on screen stays, with its own actions, until then. A menubar
+that hasn't come by then is set when it does, as before, so that the
+leaving window's menus never show under another's name.
+
+The libwnck backend doesn't stage, and nothing changes without Caminito.
+---
+ lib/appmenu-caminito.vala |   2 +
+ lib/menu-widget.vala      | 112 ++++++++++++++++++++++++++++++++++++++
+ subprojects/.wraplock     |   0
+ 3 files changed, 114 insertions(+)
+ create mode 100644 subprojects/.wraplock
+
+diff --git a/lib/appmenu-caminito.vala b/lib/appmenu-caminito.vala
+index 5e2191b..b71ab77 100644
+--- a/lib/appmenu-caminito.vala
++++ b/lib/appmenu-caminito.vala
+@@ -192,6 +192,8 @@ namespace Appmenu
+         }
+         public override void set_active_window_menu(MenuWidget widget)
+         {
++            /* The menu on screen stays until the next one has come over the bus */
++            widget.stage();
+             helper = null;
+             if (type == ModelType.MENUMODEL)
+                 /* appmenu-gtk-module has its actions where its menubar is, as the
+diff --git a/lib/menu-widget.vala b/lib/menu-widget.vala
+index 3098ccd..e05ad8f 100644
+--- a/lib/menu-widget.vala
++++ b/lib/menu-widget.vala
+@@ -48,6 +48,17 @@ namespace Appmenu
+         private Gtk.MenuBar mwidget = new Gtk.MenuBar();
+         private ulong backend_connector = 0;
+         private ulong compact_connector = 0;
++        /* How long a window's menu is waited for before what has come of it is shown */
++        private const uint STAGING_TIMEOUT = 300;
++        /* Whether the next window's menu is being put together out of sight. Only an
++         * applet under Caminito stages one */
++        private bool staging = false;
++        private GLib.MenuModel? next_appmenu = null;
++        private GLib.MenuModel? next_menubar = null;
++        private HashTable<string,GLib.ActionGroup?> next_groups =
++            new HashTable<string,GLib.ActionGroup?>(str_hash,str_equal);
++        private ulong next_menubar_connector = 0;
++        private uint staging_timeout = 0;
+         private static Backend create_backend()
+         {
+             if (CaminitoBackend.available())
+@@ -104,6 +115,7 @@ namespace Appmenu
+                 backend.disconnect(backend_connector);
+                 backend_connector = 0;
+             }
++            stop_staging();
+             base.destroy();
+         }
+         public MenuWidget()
+@@ -158,14 +170,114 @@ namespace Appmenu
+         }
+         public void set_appmenu(GLib.MenuModel? appmenu_model)
+         {
++            if (staging)
++            {
++                next_appmenu = appmenu_model;
++                return;
++            }
+             this.appmenu = appmenu_model;
+             this.restock();
+         }
+         public void set_menubar(GLib.MenuModel? menubar_model)
+         {
++            if (staging)
++            {
++                stage_menubar(menubar_model);
++                return;
++            }
+             this.menubar = menubar_model;
+             this.restock();
+         }
++        /* The helpers give the widget their action groups, which are kept with the menu
++         * being staged: the one on screen keeps its own until it's replaced */
++        public new void insert_action_group(string name, GLib.ActionGroup? group)
++        {
++            if (staging)
++                next_groups.insert(name, group);
++            else
++                base.insert_action_group(name, group);
++        }
++        /* The next window's menu is put together out of sight, and shown in one go once
++         * its menubar has items, or it has none, or STAGING_TIMEOUT has passed. A menu
++         * that comes over the bus has no items until the app answers, so that otherwise
++         * the application's name shows alone, and then the menus after it */
++        public void stage()
++        {
++            stop_staging();
++            staging = true;
++            next_appmenu = this.appmenu;
++            next_menubar = null;
++            /* A window that had the focus only while its menu was staged leaves nothing */
++            next_groups.remove_all();
++            staging_timeout = Timeout.add(STAGING_TIMEOUT, () => {
++                staging_timeout = 0;
++                show_staged();
++                return Source.REMOVE;
++            });
++        }
++        private void stage_menubar(GLib.MenuModel? menubar_model)
++        {
++            if (next_menubar_connector > 0)
++            {
++                next_menubar.disconnect(next_menubar_connector);
++                next_menubar_connector = 0;
++            }
++            next_menubar = menubar_model;
++            if (menubar_model == null || has_items(menubar_model))
++            {
++                show_staged();
++                return;
++            }
++            /* A model that comes over the bus says its sections have changed at the root
++             * when it gets their items */
++            next_menubar_connector = menubar_model.items_changed.connect(() => {
++                if (has_items(next_menubar))
++                    show_staged();
++            });
++        }
++        /* Whether a menu has an item that isn't a section. The translator's dbusmenu has
++         * an empty section before the app answers. Asking for the items is what makes a
++         * GDBusMenuModel load them */
++        private static bool has_items(GLib.MenuModel model)
++        {
++            for (int i = 0; i < model.get_n_items(); i++)
++            {
++                GLib.MenuModel? section = model.get_item_link(i, GLib.Menu.LINK_SECTION);
++                if (section == null || has_items(section))
++                    return true;
++            }
++            return false;
++        }
++        private void stop_staging()
++        {
++            if (staging_timeout > 0)
++            {
++                Source.remove(staging_timeout);
++                staging_timeout = 0;
++            }
++            if (next_menubar_connector > 0)
++            {
++                next_menubar.disconnect(next_menubar_connector);
++                next_menubar_connector = 0;
++            }
++            staging = false;
++        }
++        private void show_staged()
++        {
++            if (!staging)
++                return;
++            stop_staging();
++            foreach (unowned string name in next_groups.get_keys())
++                base.insert_action_group(name, next_groups[name]);
++            next_groups.remove_all();
++            this.appmenu = next_appmenu;
++            /* The menubar that's yet to come is set when it does, as without staging:
++             * the window's that's leaving isn't kept under another's name */
++            this.menubar = next_menubar;
++            next_appmenu = null;
++            next_menubar = null;
++            this.restock();
++        }
+         protected bool on_scroll_event(Gtk.Widget w, Gdk.EventScroll event)
+         {
+             var val = scroll_adj.get_value();
+diff --git a/subprojects/.wraplock b/subprojects/.wraplock
+new file mode 100644
+index 0000000..e69de29

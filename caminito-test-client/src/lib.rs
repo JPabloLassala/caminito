@@ -657,6 +657,14 @@ impl Client {
         self.window(id).surface.commit();
     }
 
+    /// Sets the window geometry to `(x, y, width, height)` of its surface, as a CSD toolkit
+    /// does to leave its shadow out. Commit separately.
+    pub fn set_window_geometry(&self, id: WindowId, (x, y, width, height): (i32, i32, i32, i32)) {
+        self.window(id)
+            .xdg_surface
+            .set_window_geometry(x, y, width, height);
+    }
+
     /// The window's `wl_surface` object id, which the compositor sees too.
     pub fn surface_protocol_id(&self, id: WindowId) -> u32 {
         self.window(id).surface.id().protocol_id()
