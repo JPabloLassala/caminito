@@ -1,6 +1,7 @@
 //! The minimise animation (172): a window that's minimised shrinks into the rectangle a
 //! window list set for it (65), drawn from its last content for 250 ms of Caminito's clock,
-//! read from the output's pixels. Policy has it minimised from the start.
+//! under the panel, read from the output's pixels; and one that's unminimised grows out of
+//! it. Policy has it minimised, or unminimised, from the start.
 
 use std::time::Duration;
 
@@ -301,20 +302,88 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
-    fn a_window_restored_during_the_animation_is_back_in_its_place_alone(kind: Kind) {
+    fn a_window_restored_during_the_animation_goes_back_from_where_it_is(kind: Kind) {
         let mut desk = desk_with_button(kind, Vec::new());
+        desk.f.stop_clock();
         let inside = middle(desk.f.geometry(desk.window));
         let between = spot_between(&desk, button());
         minimise(&mut desk, Way::Binding);
         desk.f.advance_clock(PART_WAY);
         assert_eq!(pixel(&mut desk.f, between), WINDOW);
 
-        desk.f.client(desk.panel).set_toplevel_minimized(desk.index, false);
-        desk.f.roundtrip(desk.panel);
-        desk.f.wait_for_pixel(inside.x, inside.y, WINDOW);
-
+        unminimise(&mut desk);
         assert!(!is_minimized(&desk.f, desk.window));
+        assert_eq!(pixel(&mut desk.f, between), WINDOW, "it turns round where it is");
+        assert_eq!(pixel(&mut desk.f, inside), clear(), "it isn't back yet");
+
+        // As long as it had been on its way, and no longer.
+        desk.f.advance_clock(PART_WAY);
+        assert_eq!(pixel(&mut desk.f, inside), WINDOW, "it's back in its place");
         assert_eq!(pixel(&mut desk.f, between), clear(), "the animation is over");
+    }
+}
+
+/// Unminimises the desk's window through the panel's window list, and returns once policy
+/// has it unminimised.
+fn unminimise(desk: &mut Desk) {
+    desk.f
+        .client(desk.panel)
+        .set_toplevel_minimized(desk.index, false);
+    desk.f.roundtrip(desk.panel);
+    let window = desk.window;
+    desk.f.dispatch_until(|f| !is_minimized(f, window));
+}
+
+on_both_kinds! {
+    fn the_shrinking_window_is_drawn_under_the_panel(kind: Kind) {
+        let mut desk = desk_with_button(kind, Vec::new());
+        desk.f.stop_clock();
+
+        minimise(&mut desk, Way::Binding);
+        // Nearly in its button, which is on the panel.
+        desk.f.advance_clock(LENGTH - Duration::from_millis(20));
+
+        assert_eq!(pixel(&mut desk.f, middle(button())), BAR_COLOR & 0xff_ffff);
+    }
+}
+
+on_both_kinds! {
+    fn an_unminimised_window_grows_out_of_its_buttons_rectangle(kind: Kind) {
+        let mut desk = desk_with_button(kind, Vec::new());
+        let inside = middle(desk.f.geometry(desk.window));
+        let between = spot_between(&desk, button());
+        minimise(&mut desk, Way::Binding);
+        desk.f.advance_clock(LENGTH);
+        desk.f.stop_clock();
+
+        unminimise(&mut desk);
+        assert_eq!(pixel(&mut desk.f, inside), clear(), "it isn't in its place yet");
+        assert_eq!(
+            pixel(&mut desk.f, middle(button())),
+            BAR_COLOR & 0xff_ffff,
+            "it starts under the panel"
+        );
+
+        desk.f.advance_clock(PART_WAY);
+        assert_eq!(pixel(&mut desk.f, between), WINDOW, "it's on its way");
+
+        desk.f.advance_clock(LENGTH - PART_WAY);
+        assert_eq!(pixel(&mut desk.f, between), clear(), "it's arrived");
+        assert_eq!(pixel(&mut desk.f, inside), WINDOW);
+    }
+}
+
+on_both_kinds! {
+    fn a_window_unminimised_with_the_animation_off_is_back_at_once(kind: Kind) {
+        let mut desk = desk_with_key(kind, MARCO_GENERAL, "reduced-resources", true);
+        let inside = middle(desk.f.geometry(desk.window));
+        minimise(&mut desk, Way::Binding);
+        desk.f.dispatch();
+        desk.f.stop_clock();
+
+        unminimise(&mut desk);
+
+        assert_eq!(pixel(&mut desk.f, inside), WINDOW);
     }
 }
 

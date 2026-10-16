@@ -129,10 +129,6 @@ pub(crate) enum SceneLayer {
     /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
     /// no workspace (36).
     OverrideRedirect,
-    /// The windows shrinking into their buttons as they're minimised (172), over the
-    /// panel their buttons are on and every window, as Marco's box is its newest
-    /// override-redirect window, and under X's menus, which are a client's.
-    Minimizing,
     /// The current workspace's windows in Marco's fullscreen layer: a fullscreen window
     /// that has the focus, and its transients. They cover the top layer, as Marco puts
     /// them above docks (63).
@@ -152,6 +148,10 @@ pub(crate) enum SceneLayer {
     /// below the top layer, so a panel covers them. A fullscreen window that has the focus
     /// covers them as it covers the panel (80).
     LayerPopups,
+    /// The windows shrinking into their buttons as they're minimised (172), or growing out
+    /// of them as they're unminimised, over every window and under the panel their buttons
+    /// are on, where Marco's box is its newest override-redirect window, over the panel too.
+    Minimizing,
     /// The current workspace's other windows in policy's stacking order, each with its
     /// frame, and the tile preview just beneath the window being moved, as Marco lowers its
     /// preview beneath the focused window (tile-preview.c:182-184) (158). While the output
@@ -182,11 +182,11 @@ pub(crate) const LAYERS: [SceneLayer; 18] = [
     SceneLayer::WindowMenu,
     SceneLayer::Overlay,
     SceneLayer::OverrideRedirect,
-    SceneLayer::Minimizing,
     SceneLayer::FullscreenWindows,
     SceneLayer::Overview,
     SceneLayer::Top,
     SceneLayer::LayerPopups,
+    SceneLayer::Minimizing,
     SceneLayer::Windows,
     SceneLayer::Bottom,
     SceneLayer::Background,
@@ -1140,9 +1140,10 @@ fn thumbnail_elements<R>(
     }
 }
 
-/// Each window that's shrinking into its button (172), where it overlaps `output`, drawn as
-/// a thumbnail is: from the window's own surfaces, which keep their buffers while it's
-/// minimised, with its frame, in the box the animation has it in now.
+/// Each window that's shrinking into its button (172), or growing out of it, where it
+/// overlaps `output`, drawn as a thumbnail is: from the window's own surfaces, which keep
+/// their buffers while it's minimised, with its frame, in the box the animation has it in
+/// now.
 fn minimizing_elements<R>(
     renderer: &mut R,
     caminito: &Caminito,
@@ -1543,7 +1544,8 @@ pub(crate) fn override_redirect_bbox(window: &X11Surface) -> Rectangle<i32, Logi
 /// place in the one stack, with its frame, its shadow and its popups. A window of a
 /// workspace the slide has at more than one place is drawn at each (239). Another output
 /// draws them as policy has them, so nothing of a slide shows on it. A window on its way
-/// open (251) is drawn at the size and opacity it has reached, about its centre.
+/// open (251) is drawn at the size and opacity it has reached, about its centre, and one
+/// on its way out of its button (172) isn't drawn here, but in its box.
 fn window_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -1585,7 +1587,8 @@ fn window_elements<R>(
         let showing = policy.is_showing(id);
         let mut shifts = slide.map_or_else(Vec::new, |slide| slide.shifts(id, showing, now));
         let drawn = showing || !shifts.is_empty();
-        if !drawn || !window_is_in(caminito, id, layer) {
+        let unminimizing = caminito.minimize_animations.unminimizing(id, now);
+        if !drawn || unminimizing || !window_is_in(caminito, id, layer) {
             continue;
         }
         if shifts.is_empty() {
