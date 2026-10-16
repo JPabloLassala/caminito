@@ -38,9 +38,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::open_close_animation::{
-    Closing, closing_alpha, closing_rect, opening_alpha, opening_rect,
-};
+use crate::open_close_animation::Closing;
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
@@ -1596,14 +1594,15 @@ fn window_elements<R>(
         }
         let opening = caminito.open_close_animations.opening(id, now);
         for shift in shifts {
-            if let Some(done) = opening {
+            if let Some(opening) = opening {
                 // Scaled, where frame debug's outlines would be at the wrong size.
                 let whole_output = Rectangle::from_size(output_geometry.size);
                 let place = |frame: Rectangle<i32, Logical>| {
-                    let at = Rectangle::new(frame.loc + shift - output_geometry.loc, frame.size);
-                    (opening_rect(at, done), whole_output)
+                    let drawn = opening.rect(frame, now);
+                    let at = drawn.loc + shift - output_geometry.loc;
+                    (Rectangle::new(at, drawn.size), whole_output)
                 };
-                let alpha = opening_alpha(done);
+                let alpha = opening.alpha(now);
                 scaled_window_elements(renderer, caminito, id, place, scale, alpha, true, elements);
                 continue;
             }
@@ -1647,9 +1646,13 @@ fn picture_elements_at<R>(
         return;
     };
     let output_geometry = output_geometry(output);
-    let done = closing.done(now);
-    let drawn = closing_rect(closing.frame, done);
-    let factor = f64::from(drawn.size.w) / f64::from(closing.frame.size.w);
+    let drawn = closing.rect(now);
+    // Each way, as one that took over from an opening that grew into a new place isn't
+    // the frame's shape (253).
+    let factor = Scale::from((
+        f64::from(drawn.size.w) / f64::from(closing.frame.size.w),
+        f64::from(drawn.size.h) / f64::from(closing.frame.size.h),
+    ));
     let area = picture.area.to_f64();
     let corner = drawn.loc.to_f64() + area.loc.upscale(factor) - output_geometry.loc.to_f64();
     let size = area.size.upscale(factor);
@@ -1670,7 +1673,7 @@ fn picture_elements_at<R>(
             texture.clone(),
             1,
             Transform::Normal,
-            Some(closing_alpha(done)),
+            Some(closing.alpha(now)),
             None,
             Some(size),
             None,
