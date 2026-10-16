@@ -135,6 +135,13 @@ impl XdgShellHandler for State {
         self.open_window_menu(id, geometry.loc + location, time);
     }
 
+    fn popup_destroyed(&mut self, surface: PopupSurface) {
+        // While its surface has its buffer, which goes with it (ADR 0037).
+        self.popup_closes(surface.wl_surface());
+        // It's gone from the next frame, whatever else is drawn.
+        self.caminito.queue_redraw_all();
+    }
+
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
         // The initial configure goes out on the initial commit.
         self.caminito.unconstrain_popup(&surface);

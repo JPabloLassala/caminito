@@ -1,7 +1,7 @@
 //! The Popup slide (ADR 0037): an xdg_popup that's shown slides out of the edge it's
-//! attached to over 200 ms of Caminito's clock, cut off at its own final rectangle, read from
-//! the debug dump and from the output's pixels. Policy has it at its real place from the
-//! start.
+//! attached to over 200 ms of Caminito's clock, cut off at its own final rectangle, and its
+//! picture slides back as it closes, read from the debug dump and from the output's pixels.
+//! Policy has it at its real place from the start, and lets it go at once as it closes.
 //!
 //! Only Wayland clients have xdg_popups: an X11 menu is an override-redirect window, whose
 //! slide is CMN-180's.
@@ -12,7 +12,7 @@ use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAncho
 use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner, format_input};
 use smithay::utils::{Logical, Point, Rectangle};
 
-use super::fixture::{BTN_LEFT, ClientId, Fixture, Kind, WINDOW_COLOR, WindowSpec};
+use super::fixture::{BTN_LEFT, ClientId, ClientWindow, Fixture, Kind, WINDOW_COLOR, WindowSpec};
 use super::overview;
 use crate::popup_slide::LENGTH;
 use crate::settings::Value as Setting;
@@ -57,9 +57,28 @@ struct Sliding {
 
 /// Each Popup slide that runs, from the debug dump, which has none while none does.
 fn sliding(f: &Fixture) -> Vec<Sliding> {
+    dumped(f, "popup_slides")
+}
+
+/// Each closed popup's picture that slides back, from the debug dump.
+fn closing(f: &Fixture) -> Vec<Sliding> {
+    dumped(f, "closing_popups")
+}
+
+/// The one closed popup's picture that slides back.
+#[track_caller]
+fn the_closing(f: &Fixture) -> Sliding {
+    match &closing(f)[..] {
+        [closing] => closing.clone(),
+        other => panic!("one popup slides back: {other:?}"),
+    }
+}
+
+/// The slides the debug dump has under `key`.
+fn dumped(f: &Fixture, key: &str) -> Vec<Sliding> {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
-    let Some(popups) = dump["popup_slides"].as_array() else {
+    let Some(popups) = dump[key].as_array() else {
         return Vec::new();
     };
     let popups = popups.iter().map(|popup| {
@@ -446,4 +465,285 @@ fn a_popup_of_a_window_on_its_way_open_is_inside_its_zoom_and_doesnt_slide() {
     window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
 
     assert!(sliding(&f).is_empty(), "{:?}", sliding(&f));
+}
+
+/// A window with a menu below `ANCHOR` that the window's client grabbed with a click on it,
+/// shown and slid out, with the click's serial.
+fn window_with_menu(
+    f: &mut Fixture,
+    id: ClientId,
+) -> (ClientWindow, caminito_test_client::PopupId, u32) {
+    f.client(id).bind_input();
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    let corner = f.geometry(window).loc;
+    f.click(f64::from(corner.x + 10), f64::from(corner.y + 10));
+    f.roundtrip(id);
+    let press = f.client(id).state.last_press_serial.unwrap();
+    let menu = f.client(id).create_popup(
+        window.xdg(),
+        place((80, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    f.client(id).grab_popup(menu, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, POPUP_COLOR);
+    f.roundtrip(id);
+    f.advance_clock(LENGTH);
+    (window, menu, press)
+}
+
+/// Checks that `slide` is on its way back into its `top` edge from `place`, up.
+#[track_caller]
+fn going_back_up(slide: &Sliding, place: Rectangle<i32, Logical>) {
+    assert_eq!(slide.rect, place);
+    assert_eq!(slide.edge, "top");
+    assert!(
+        slide.offset.x == 0 && slide.offset.y < 0 && slide.offset.y > -60,
+        "part-way back: {slide:?}"
+    );
+}
+
+#[test]
+fn a_popup_its_client_destroys_slides_back_into_its_edge() {
+    let (mut f, id) = desk(Vec::new());
+    let (popup, _) =
+        window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    f.advance_clock(LENGTH);
+    let place = rest_place(&f);
+
+    f.client(id).destroy_popup(popup);
+    f.roundtrip(id);
+    let start = the_closing(&f);
+    assert_eq!((start.rect, start.offset), (place, (0, 0).into()));
+    assert_eq!(start.alpha, 1.0, "a short popup doesn't fade");
+    assert_eq!(
+        pixel(&mut f, last_pixel(place)),
+        POPUP,
+        "its picture is there"
+    );
+
+    f.advance_clock(PART_WAY);
+    let part_way = the_closing(&f);
+    going_back_up(&part_way, place);
+    // Its bottom rows have gone back up, and its top rows are drawn at the top of its place.
+    assert_eq!(pixel(&mut f, last_pixel(place)), WINDOW);
+    assert_eq!(pixel(&mut f, place.loc), POPUP);
+    assert_eq!(
+        pixel(&mut f, place.loc - Point::from((0, 1))),
+        WINDOW,
+        "cut off"
+    );
+
+    f.advance_clock(LENGTH - PART_WAY);
+    assert!(closing(&f).is_empty(), "gone at 200 ms: {:?}", closing(&f));
+    assert_eq!(pixel(&mut f, place.loc), WINDOW);
+}
+
+/// Where the one window's popup centred below `ANCHOR` is, at rest, globally.
+#[track_caller]
+fn rest_place(f: &Fixture) -> Rectangle<i32, Logical> {
+    assert!(sliding(f).is_empty(), "at rest: {:?}", sliding(f));
+    let policy = &f.state.caminito.policy;
+    let corner = policy.geometry(policy.stacking_all()[0]).unwrap().loc;
+    Rectangle::new(corner + Point::from((160, 120)), (80, 60).into())
+}
+
+#[test]
+fn a_popup_dismissed_by_a_click_outside_slides_back_and_its_grab_has_ended() {
+    let (mut f, id) = desk(Vec::new());
+    let (_, menu, _) = window_with_menu(&mut f, id);
+    let place = rest_place(&f);
+
+    f.click(1270.0, 790.0);
+    f.roundtrip(id);
+    assert!(f.client(id).popup(menu).done, "popup_done");
+    assert_eq!(the_closing(&f).offset, (0, 0).into());
+
+    f.advance_clock(PART_WAY);
+    going_back_up(&the_closing(&f), place);
+    f.advance_clock(LENGTH - PART_WAY);
+    assert!(closing(&f).is_empty());
+}
+
+// What a client is sent is read from a Wayland client, as `input.rs` reads it.
+#[test]
+fn a_click_part_way_on_a_closing_picture_reaches_the_window_beneath() {
+    let (mut f, id) = desk(Vec::new());
+    let (_, menu, _) = window_with_menu(&mut f, id);
+    let place = rest_place(&f);
+    f.client(id).destroy_popup(menu);
+    f.roundtrip(id);
+    f.advance_clock(PART_WAY);
+    assert_eq!(
+        pixel(&mut f, place.loc),
+        POPUP,
+        "the picture is drawn there"
+    );
+
+    f.client(id).state.input.clear();
+    f.pointer_move(f64::from(place.loc.x), f64::from(place.loc.y));
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_button(BTN_LEFT, false);
+    f.roundtrip(id);
+
+    // The pointer was on the window, under the popup's grab, so it's there still.
+    let input = format_input(&f.client(id).state.input);
+    assert!(!input.contains("popup"), "{input}");
+    assert!(
+        input.contains(&format!("button {BTN_LEFT:#x} pressed")),
+        "{input}"
+    );
+}
+
+#[test]
+fn a_menu_and_its_open_submenu_dismissed_together_slide_back_together() {
+    let (mut f, id) = desk(Vec::new());
+    let (_, menu, press) = window_with_menu(&mut f, id);
+    let row = Positioner {
+        size: (100, 80),
+        anchor_rect: (0, 20, 80, 20),
+        anchor: Anchor::TopRight,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::None,
+    };
+    let submenu = f.client(id).create_nested_popup(menu, row, press);
+    f.roundtrip(id);
+    f.client(id).map_popup(submenu, POPUP_COLOR);
+    f.roundtrip(id);
+    f.advance_clock(LENGTH);
+
+    f.click(1270.0, 790.0);
+    f.roundtrip(id);
+    assert!(f.client(id).popup(menu).done && f.client(id).popup(submenu).done);
+    let edges: Vec<String> = closing(&f).into_iter().map(|c| c.edge).collect();
+    assert_eq!(edges.len(), 2, "{edges:?}");
+    assert!(edges.contains(&"top".to_owned()) && edges.contains(&"left".to_owned()));
+
+    f.advance_clock(PART_WAY);
+    let part_way = closing(&f);
+    assert_eq!(part_way.len(), 2);
+    for slide in &part_way {
+        let back = match slide.edge.as_str() {
+            "top" => slide.offset.y < 0 && slide.offset.x == 0,
+            _ => slide.offset.x < 0 && slide.offset.y == 0,
+        };
+        assert!(back, "each into its own edge: {slide:?}");
+    }
+    f.advance_clock(LENGTH - PART_WAY);
+    assert!(closing(&f).is_empty());
+}
+
+#[test]
+fn a_popup_closed_on_its_way_out_turns_round_from_where_it_is() {
+    let (mut f, id) = desk(Vec::new());
+    let (popup, _) =
+        window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    f.advance_clock(PART_WAY);
+    let out = the_slide(&f);
+
+    f.client(id).destroy_popup(popup);
+    f.roundtrip(id);
+    let back = the_closing(&f);
+    assert!(sliding(&f).is_empty());
+    assert_eq!(back.offset, out.offset, "no jump");
+    assert_eq!(back.rect, out.rect);
+
+    // At the same speed: back at its edge after as long as it took to get there.
+    f.advance_clock(PART_WAY / 2);
+    let further = the_closing(&f).offset.y;
+    assert!(further < out.offset.y && further > -60, "{further}");
+    f.advance_clock(PART_WAY / 2);
+    assert!(closing(&f).is_empty(), "{:?}", closing(&f));
+}
+
+#[test]
+fn a_popup_of_a_closing_window_leaves_inside_its_closing_picture() {
+    let open_close = (CAMINITO, "open-close-animation".into(), Setting::Bool(true));
+    let (mut f, id) = desk(vec![open_close]);
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    f.advance_clock(LENGTH);
+    let popup = f.client(id).create_popup(
+        window.xdg(),
+        place((80, 60), Anchor::Bottom, Gravity::Bottom),
+    );
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, POPUP_COLOR);
+    f.roundtrip(id);
+    f.advance_clock(LENGTH);
+    let place = rest_place(&f);
+
+    f.client(id).destroy_popup(popup);
+    f.client(id).destroy_window(window.xdg());
+    f.roundtrip(id);
+
+    assert!(
+        closing(&f).is_empty(),
+        "no slide of its own: {:?}",
+        closing(&f)
+    );
+    assert!(
+        f.state.caminito.state_dump().contains("closing_windows"),
+        "the window closes"
+    );
+    assert_eq!(pixel(&mut f, last_pixel(place)), POPUP, "in its picture");
+}
+
+/// A desk with a popup that its client destroyed after it slid out, whose picture slides
+/// back.
+fn closing_popup(f: &mut Fixture, id: ClientId) {
+    let (popup, _) = window_with_popup(f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    f.advance_clock(LENGTH);
+    f.client(id).destroy_popup(popup);
+    f.roundtrip(id);
+    assert_eq!(closing(f).len(), 1);
+}
+
+#[test]
+fn the_lock_ends_a_slide_back() {
+    let (mut f, id) = desk(Vec::new());
+    closing_popup(&mut f, id);
+
+    let locker = f.connect(Kind::Xdg);
+    f.client(locker).lock_session();
+    f.roundtrip(locker);
+
+    assert!(closing(&f).is_empty(), "{:?}", closing(&f));
+}
+
+#[test]
+fn the_overview_opening_drops_a_closing_picture() {
+    let (mut f, id) = desk(Vec::new());
+    closing_popup(&mut f, id);
+
+    overview::open(&mut f);
+
+    assert!(closing(&f).is_empty(), "{:?}", closing(&f));
+}
+
+#[test]
+fn an_output_that_goes_drops_the_closing_pictures_on_it() {
+    let (mut f, id) = desk(Vec::new());
+    // Another output, which the window goes to.
+    f.add_output((1280, 800), 1.0);
+    closing_popup(&mut f, id);
+
+    let first = f.state.caminito.outputs[0].clone();
+    f.unplug(&first);
+
+    assert!(closing(&f).is_empty(), "{:?}", closing(&f));
+}
+
+#[test]
+fn with_the_slide_off_a_popup_that_closes_is_gone_in_one_frame() {
+    let off = (CAMINITO, "popup-slide".into(), Setting::Bool(false));
+    let (mut f, id) = desk(vec![off]);
+    let (popup, _) =
+        window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    let place = rest_place(&f);
+
+    f.client(id).destroy_popup(popup);
+    f.roundtrip(id);
+
+    assert!(closing(&f).is_empty(), "{:?}", closing(&f));
+    assert_eq!(pixel(&mut f, place.loc), WINDOW);
+    assert_eq!(pixel(&mut f, last_pixel(place)), WINDOW);
 }

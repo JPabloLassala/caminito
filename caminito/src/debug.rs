@@ -17,6 +17,7 @@ use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, L
 
 use crate::decoration::memory_buffer;
 use crate::output::{output_geometry, output_id};
+use crate::popup_slide::DrawnSlide;
 use crate::scene;
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::CellStyle;
@@ -143,6 +144,10 @@ struct StateDump {
     /// The Popup slides that run (ADR 0037), in the order their popups were shown.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     popup_slides: Vec<PopupSlideDump>,
+    /// The pictures of the popups that slide back into their edges as they close (ADR
+    /// 0037), in the order they closed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    closing_popups: Vec<PopupSlideDump>,
 }
 
 #[derive(Serialize)]
@@ -186,6 +191,20 @@ struct PopupSlideDump {
     offset: OffsetDump,
     /// How opaque it's drawn, from 0 to 1.
     alpha: f32,
+}
+
+impl From<DrawnSlide> for PopupSlideDump {
+    fn from(drawn: DrawnSlide) -> Self {
+        PopupSlideDump {
+            rect: drawn.rect.into(),
+            edge: drawn.edge.name(),
+            offset: OffsetDump {
+                x: drawn.slid.offset.x,
+                y: drawn.slid.offset.y,
+            },
+            alpha: drawn.slid.alpha,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -1158,15 +1177,12 @@ impl Caminito {
             popup_slides: self
                 .drawn_popup_slides(now)
                 .into_iter()
-                .map(|drawn| PopupSlideDump {
-                    rect: drawn.rect.into(),
-                    edge: drawn.edge.name(),
-                    offset: OffsetDump {
-                        x: drawn.slid.offset.x,
-                        y: drawn.slid.offset.y,
-                    },
-                    alpha: drawn.slid.alpha,
-                })
+                .map(PopupSlideDump::from)
+                .collect(),
+            closing_popups: self
+                .drawn_closing_popups(now)
+                .into_iter()
+                .map(PopupSlideDump::from)
                 .collect(),
         };
         serde_json::to_string_pretty(&dump).expect("the dump serialises")

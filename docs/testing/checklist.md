@@ -800,6 +800,10 @@ session_env() {
      reduced-resources true` and `org.mate.interface enable-animations false`.
   7. Open the Overview with Super+W, right-click caja's desktop through it if it shows, and
      close the Overview.
+  8. Open the panel's main menu and a submenu of it, and close them with a click on the
+     desktop. Open pluma's *File* menu and close it with Escape. Open it again and click
+     outside it at once, before it has finished sliding out.
+  9. Open pluma's *File* menu and close pluma with Ctrl+Q from the keyboard while it's open.
 - **Expected:** in step 2 the panel's menu comes down out of the panel, and its submenu out of
   the menu's side; pluma's menus come down out of the menubar, its submenu out of its menu's
   side, and the combo box's list comes down over its button. Nothing of a menu is drawn over
@@ -807,13 +811,17 @@ session_env() {
   one fades in as well. In step 3 the menu comes up out of the bottom panel. In step 4 the
   new document opens: the click reaches the row at its real place. In step 5 the tooltip
   slides out too. In step 6 each menu is there at once. In step 7 nothing slides in the
-  Overview.
+  Overview. In step 8 the menu and its submenu slide back together, each into the edge it came
+  out of, and the click on the desktop reaches it; pluma's menu slides back up into the
+  menubar; the one clicked away part-way turns round from where it is, with no jump. In step 9
+  the menu doesn't slide on its own: it leaves inside pluma's closing picture.
 
-  Each slide takes a fifth of a second, starts fast and slows into its place, with no frame
-  that stutters. Closing a menu is still at once (CMN-179). An X11 app's menus and the Window
-  menu don't slide yet (CMN-180, CMN-181).
-- **Debug tool:** `DumpState`'s `popup_slides`, there while a popup slides: each has its
-  `rect` at its place, its `edge`, and the `offset` and `alpha` it's drawn at.
+  Each slide takes a fifth of a second, starts fast and slows into its place, or starts slow
+  and speeds into its edge as it closes, with no frame that stutters. An X11 app's menus and
+  the Window menu don't slide yet (CMN-180, CMN-181).
+- **Debug tool:** `DumpState`'s `popup_slides`, there while a popup slides out, and
+  `closing_popups`, there while a closed popup's picture slides back: each has its `rect` at
+  its place, its `edge`, and the `offset` and `alpha` it's drawn at.
 
 ### The workspace bindings switch the Active output
 

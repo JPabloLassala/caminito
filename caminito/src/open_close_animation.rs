@@ -45,10 +45,11 @@ use smithay::backend::renderer::{
     Bind, Color32F, ContextId, ImportAll, ImportMem, Offscreen, Renderer, Texture,
 };
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 use crate::output::output_geometry;
-use crate::scene::{self, SceneLayer};
+use crate::scene::{self, SceneElement, SceneLayer};
 use crate::state::{Caminito, State};
 use crate::window::WindowKey;
 use crate::workspace_slide::eased_way_left;
@@ -163,13 +164,14 @@ fn closing_alpha(done: f64) -> f32 {
     (1.0 - done) as f32
 }
 
-/// A window's last frame, with its Frame, its shadow and its popups, in a texture of the
-/// renderer that drew it.
+/// A window's last frame, with its Frame, its shadow and its popups, or a popup's (ADR 0037),
+/// in a texture of the renderer that drew it.
 pub(crate) struct Picture {
     /// The texture and its renderer's context, as `(ContextId<T>, T)` for the renderer's
     /// texture type `T`, which the scene, generic over the renderer, takes back.
     texture: Box<dyn Any>,
-    /// What the texture covers, from the window's frame's corner.
+    /// What the texture covers, from the window's frame's corner, or the popup's surface's
+    /// origin.
     pub area: Rectangle<i32, Logical>,
     /// The element the scene draws it as, which keeps its id from frame to frame.
     pub id: Id,
@@ -206,10 +208,41 @@ where
     let main = caminito.policy.window(id)?.main_output();
     let scale = main.map_or(1.0, |main| main.current_scale().fractional_scale());
     let (elements, area) = scene::picture_elements(renderer, caminito, id, scale)?;
+    draw_picture(renderer, &elements, area, scale)
+}
+
+/// Draws the picture of the popup whose surface is `surface`, with its subsurfaces, into a
+/// texture of its own at `scale`, for its slide back into its edge (ADR 0037), or returns
+/// `None` if it has no buffer left to draw from or the renderer fails. Its area is from the
+/// surface's origin.
+pub(crate) fn take_popup_picture<R, T>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    scale: f64,
+) -> Option<Picture>
+where
+    R: Renderer + ImportAll + ImportMem + Offscreen<T> + Bind<T>,
+    R::TextureId: Send + Clone + From<T> + 'static,
+{
+    let (elements, area) = scene::popup_picture_elements(renderer, surface, scale)?;
+    draw_picture(renderer, &elements, area, scale)
+}
+
+/// Draws `elements`, which cover `area`, into a texture of their own at `scale`.
+fn draw_picture<R, T>(
+    renderer: &mut R,
+    elements: &[SceneElement<R>],
+    area: Rectangle<i32, Logical>,
+    scale: f64,
+) -> Option<Picture>
+where
+    R: Renderer + ImportAll + ImportMem + Offscreen<T> + Bind<T>,
+    R::TextureId: Send + Clone + From<T> + 'static,
+{
     let size = area.size.to_physical_precise_round(scale);
     let mut target = renderer
         .create_buffer(Fourcc::Argb8888, (size.w, size.h).into())
-        .map_err(|err| tracing::debug!("can't keep a closing window's picture: {err:?}"))
+        .map_err(|err| tracing::debug!("can't keep a closing picture: {err:?}"))
         .ok()?;
     {
         let mut framebuffer = renderer.bind(&mut target).ok()?;
@@ -219,14 +252,14 @@ where
                 renderer,
                 &mut framebuffer,
                 0,
-                &elements,
+                elements,
                 Color32F::TRANSPARENT,
             )
-            .map_err(|err| tracing::debug!("can't draw a closing window's picture: {err:?}"))
+            .map_err(|err| tracing::debug!("can't draw a closing picture: {err:?}"))
             .ok()?;
         // The texture is drawn from at once, so the renderer finishes it first.
         if let Err(err) = drawn.sync.wait() {
-            tracing::debug!("can't wait for a closing window's picture: {err:?}");
+            tracing::debug!("can't wait for a closing picture: {err:?}");
         }
     }
     let texture = R::TextureId::from(target);

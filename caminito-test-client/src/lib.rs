@@ -544,6 +544,21 @@ impl Client {
         popup.buffers.push(Buffer { buffer, pool });
     }
 
+    /// Commits a null buffer to the popup, which unmaps it.
+    pub fn unmap_popup(&self, id: PopupId) {
+        let popup = self.popup(id);
+        popup.surface.attach(None, 0, 0);
+        popup.surface.commit();
+    }
+
+    /// Destroys the popup and its surfaces, as a client does with a menu that closes.
+    pub fn destroy_popup(&self, id: PopupId) {
+        let popup = self.popup(id);
+        popup.popup.destroy();
+        popup.xdg_surface.destroy();
+        popup.surface.destroy();
+    }
+
     /// Asks for the popup to be placed again by `positioner`.
     pub fn reposition_popup(&mut self, id: PopupId, positioner: Positioner, token: u32) {
         let xdg_positioner = self.positioner(positioner);
