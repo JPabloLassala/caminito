@@ -2498,6 +2498,19 @@ impl<W: PolicyWindow> Policy<W> {
         Some(self.windows.get(&id)?.frame())
     }
 
+    /// Where a window's geometry is, at the size its client is asked for, which `geometry`
+    /// reaches once the client commits it.
+    pub fn asked_geometry(&self, id: WindowId) -> Option<Rectangle<i32, Logical>> {
+        Some(self.windows.get(&id)?.geometry)
+    }
+
+    /// The outer rectangle a window is asked to have: `frame_rect` at the size its client is
+    /// asked for, which the Maximise animation goes to before the client commits it.
+    pub fn asked_frame_rect(&self, id: WindowId) -> Option<Rectangle<i32, Logical>> {
+        let managed = self.windows.get(&id)?;
+        Some(managed.frame_of(managed.geometry))
+    }
+
     /// A window's transient parent, as policy resolved it.
     pub fn parent(&self, id: WindowId) -> Option<WindowId> {
         self.windows.get(&id)?.parent

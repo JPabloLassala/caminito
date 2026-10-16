@@ -103,6 +103,7 @@ use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
+use crate::maximize_animation::MaximizeAnimations;
 use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::NightLight;
 use crate::not_responding::NotResponding;
@@ -278,6 +279,8 @@ pub struct Caminito {
     pub(crate) workspace_slides: WorkspaceSlides,
     /// The windows that grow and fade in as they open (251).
     pub(crate) open_close_animations: OpenCloseAnimations,
+    /// The windows on their way to their new frames as they're maximised (CMN-174).
+    pub(crate) maximize_animations: MaximizeAnimations,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -662,6 +665,9 @@ impl State {
         self.refresh_night_light();
         self.update_pointer_focus();
         self.caminito.update_button_states();
+        // Before the Frames are drawn in a new state, from which a maximised window's
+        // picture is taken as it was (CMN-174).
+        self.refresh_maximize_animations();
         self.caminito.refresh_frames();
         // Before the outputs are drawn, with what policy minimised since the last pass.
         self.caminito.refresh_minimize_animations();
@@ -719,6 +725,7 @@ impl State {
                     if sliding
                         || caminito.overview_transition_on(&output, now)
                         || caminito.open_close_animation_on(&output, now)
+                        || caminito.maximize_animation_on(&output, now)
                     {
                         self.caminito.queue_redraw(&output);
                     }
@@ -1009,6 +1016,7 @@ impl Caminito {
             minimize_animations: MinimizeAnimations::default(),
             workspace_slides: WorkspaceSlides::default(),
             open_close_animations: OpenCloseAnimations::default(),
+            maximize_animations: MaximizeAnimations::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,

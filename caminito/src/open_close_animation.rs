@@ -436,7 +436,7 @@ impl OpenCloseAnimations {
 
 /// Whether a window opens with the animation: one with a Frame, whatever its type, and one
 /// of type Normal, Dialog or ModalDialog, as the Scale effect's `isScaleWindow` has it.
-fn animates(window: &impl PolicyWindow) -> bool {
+pub(crate) fn animates(window: &impl PolicyWindow) -> bool {
     let typed = matches!(
         window.window_type(),
         WindowType::Normal | WindowType::Dialog | WindowType::ModalDialog

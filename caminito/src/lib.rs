@@ -18,6 +18,7 @@ pub mod input;
 mod layer;
 mod lock;
 pub mod logging;
+mod maximize_animation;
 mod minimize_animation;
 mod night_light;
 mod not_responding;

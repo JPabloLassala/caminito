@@ -73,6 +73,11 @@
       <summary>Animate windows as they open</summary>
       <description>When true, a window that opens grows into its place and fades in. When false, it is there at once, as in Marco. The animation also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface.</description>
     </key>
+    <key name="maximize-animation" type="b">
+      <default>true</default>
+      <summary>Animate windows as they are maximised</summary>
+      <description>When true, a window that is maximised or unmaximised moves and grows into its new place while a picture of it as it was fades out. When false, it is there at once, as in Marco. The animation also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface.</description>
+    </key>
     <!--
       The Overview's shortcut (241). It's here since Marco has no such action, in the
       syntax of Marco's keybinding keys, and System Shortcuts lists it.

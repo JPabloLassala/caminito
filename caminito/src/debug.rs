@@ -137,6 +137,18 @@ struct StateDump {
     /// The pictures of the windows on their way out (252), oldest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     closing_windows: Vec<ClosingWindowDump>,
+    /// The windows on their way to their new frames as they're maximised (CMN-174).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    maximizing_windows: Vec<MaximizingWindowDump>,
+}
+
+#[derive(Serialize)]
+struct MaximizingWindowDump {
+    id: u64,
+    /// Where its box is, globally.
+    rect: RectDump,
+    /// How opaque its picture as it was is drawn over it, from 0 to 1.
+    alpha: f32,
 }
 
 #[derive(Serialize)]
@@ -1116,6 +1128,15 @@ impl Caminito {
                     rect: drawn.rect.into(),
                     alpha: drawn.alpha,
                     over: drawn.over.map(|over| over.0),
+                })
+                .collect(),
+            maximizing_windows: self
+                .drawn_maximizing_windows(now)
+                .into_iter()
+                .map(|(id, rect, alpha)| MaximizingWindowDump {
+                    id: id.0,
+                    rect: rect.into(),
+                    alpha,
                 })
                 .collect(),
         };

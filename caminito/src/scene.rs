@@ -38,7 +38,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::open_close_animation::Closing;
+use crate::open_close_animation::{Closing, Picture};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
 use crate::overview::transition::between;
@@ -1577,7 +1577,7 @@ fn window_elements<R>(
         closing.retain(|closing| {
             let over = closing.is_over(id);
             if over {
-                picture_elements_at(closing, output, now, elements);
+                closing_elements(closing, output, now, elements);
             }
             !over
         });
@@ -1596,6 +1596,7 @@ fn window_elements<R>(
             shifts.push(Point::default());
         }
         let opening = caminito.open_close_animations.opening(id, now);
+        let maximizing = caminito.maximize_animations.maximizing(id, now);
         for shift in shifts {
             if let Some(opening) = opening {
                 // Scaled, where frame debug's outlines would be at the wrong size.
@@ -1607,6 +1608,24 @@ fn window_elements<R>(
                 };
                 let alpha = opening.alpha(now);
                 scaled_window_elements(renderer, caminito, id, place, scale, alpha, true, elements);
+                continue;
+            }
+            if let Some(maximizing) = maximizing
+                && let Some(to) = policy.asked_frame_rect(id)
+            {
+                // The live window scaled into its box, under its picture as it was, which
+                // fades (CMN-174).
+                let drawn = maximizing.rect(to, now);
+                let shifted = Rectangle::new(drawn.loc + shift, drawn.size);
+                if let Some(picture) = &maximizing.picture {
+                    let alpha = maximizing.alpha(now);
+                    let frame = maximizing.picture_frame;
+                    picture_elements_at(picture, frame, shifted, alpha, output, elements);
+                }
+                let whole_output = Rectangle::from_size(output_geometry.size);
+                let at = shifted.loc - output_geometry.loc;
+                let place = |_| (Rectangle::new(at, drawn.size), whole_output);
+                scaled_window_elements(renderer, caminito, id, place, scale, 1.0, true, elements);
                 continue;
             }
             let drawn_at = geometry.loc + shift;
@@ -1629,13 +1648,13 @@ fn window_elements<R>(
         }
     }
     for closing in closing {
-        picture_elements_at(closing, output, now, elements);
+        closing_elements(closing, output, now, elements);
     }
 }
 
 /// A closing window's picture where it's drawn at `now` on `output`, shrunk about its
-/// frame's centre and faded (252). Nothing for a picture another renderer drew.
-fn picture_elements_at<R>(
+/// frame's centre and faded (252).
+fn closing_elements<R>(
     closing: &Closing,
     output: &Output,
     now: Duration,
@@ -1644,17 +1663,40 @@ fn picture_elements_at<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let picture = &closing.picture;
+    let drawn = closing.rect(now);
+    let alpha = closing.alpha(now);
+    picture_elements_at(
+        &closing.picture,
+        closing.frame,
+        drawn,
+        alpha,
+        output,
+        elements,
+    );
+}
+
+/// A window's `picture`, taken of it with its frame at `frame`, drawn on `output` with that
+/// frame at `drawn`, globally, and at `alpha`. Nothing for a picture another renderer drew.
+fn picture_elements_at<R>(
+    picture: &Picture,
+    frame: Rectangle<i32, Logical>,
+    drawn: Rectangle<i32, Logical>,
+    alpha: f32,
+    output: &Output,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
     let Some((context, texture)) = picture.texture::<R::TextureId>() else {
         return;
     };
     let output_geometry = output_geometry(output);
-    let drawn = closing.rect(now);
     // Each way, as one that took over from an opening that grew into a new place isn't
-    // the frame's shape (253).
+    // the frame's shape (253), nor is a maximised window's box (CMN-174).
     let factor = Scale::from((
-        f64::from(drawn.size.w) / f64::from(closing.frame.size.w),
-        f64::from(drawn.size.h) / f64::from(closing.frame.size.h),
+        f64::from(drawn.size.w) / f64::from(frame.size.w),
+        f64::from(drawn.size.h) / f64::from(frame.size.h),
     ));
     let area = picture.area.to_f64();
     let corner = drawn.loc.to_f64() + area.loc.upscale(factor) - output_geometry.loc.to_f64();
@@ -1676,7 +1718,7 @@ fn picture_elements_at<R>(
             texture.clone(),
             1,
             Transform::Normal,
-            Some(closing.alpha(now)),
+            Some(alpha),
             None,
             Some(size),
             None,
