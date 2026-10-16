@@ -110,6 +110,18 @@ struct Handover {
 }
 
 impl Handover {
+    /// How an animation starts that takes over from another drawn at `rect` and `done` of
+    /// its own way: as far into its own curve as the other has left to go, which `curve_for`
+    /// turns into time, and from `rect`.
+    fn taking_over(
+        rect: Rectangle<i32, Logical>,
+        done: f64,
+        curve_for: fn(f64) -> Duration,
+    ) -> (Duration, Option<Self>) {
+        let left = 1.0 - done;
+        (curve_for(left), Some(Self { rect, done: left }))
+    }
+
     /// Where the animation is drawn `done` of the way, which it ends at `to`.
     fn towards(&self, to: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
         if self.done >= 1.0 {
@@ -129,25 +141,25 @@ fn zoomed(frame: Rectangle<i32, Logical>, scale: f64) -> Rectangle<i32, Logical>
 
 /// Where a window whose frame is at `frame` is drawn `done` of the way through its opening:
 /// scaled about the frame's centre, never empty.
-pub(crate) fn opening_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
+fn opening_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
     zoomed(frame, FROM_SCALE + (1.0 - FROM_SCALE) * done)
 }
 
 /// How opaque a window is drawn `done` of the way through its opening: it fades in as it
 /// grows.
-pub(crate) fn opening_alpha(done: f64) -> f32 {
+fn opening_alpha(done: f64) -> f32 {
     done as f32
 }
 
 /// Where the frame of a window that closed at `frame` is drawn `done` of the way through its
 /// closing: from its own size to 0.8 of it about its centre.
-pub(crate) fn closing_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
+fn closing_rect(frame: Rectangle<i32, Logical>, done: f64) -> Rectangle<i32, Logical> {
     zoomed(frame, 1.0 - (1.0 - FROM_SCALE) * done)
 }
 
 /// How opaque a closing window's picture is drawn `done` of the way through: it fades out as
 /// it shrinks.
-pub(crate) fn closing_alpha(done: f64) -> f32 {
+fn closing_alpha(done: f64) -> f32 {
     (1.0 - done) as f32
 }
 
@@ -229,7 +241,7 @@ where
 /// One window on its way open.
 #[derive(Debug)]
 pub(crate) struct Opening {
-    pub window: WindowId,
+    window: WindowId,
     /// When it was shown, on Caminito's clock.
     start: Duration,
     /// How much of the curve it had run by then: one that takes over from its window's
@@ -483,9 +495,7 @@ impl Caminito {
         // left of the closing's curve from there (253).
         let (skipped, from) = match self.open_close_animations.opening(id, now) {
             Some(opening) => {
-                let done = 1.0 - opening.done(now);
-                let rect = opening.rect(frame, now);
-                (closed_for(done), Some(Handover { rect, done }))
+                Handover::taking_over(opening.rect(frame, now), opening.done(now), closed_for)
             }
             None => (Duration::ZERO, None),
         };
@@ -595,11 +605,10 @@ impl Caminito {
             if !self.settings.open_close_animation || !shows {
                 continue;
             }
-            let (skipped, from) = match picture {
+            // One whose workspace was hidden wasn't drawn, so the window opens as a new one.
+            let (skipped, from) = match picture.filter(|closing| closing.shows) {
                 Some(closing) => {
-                    let done = 1.0 - closing.done(now);
-                    let rect = closing.rect(now);
-                    (opened_for(done), Some(Handover { rect, done }))
+                    Handover::taking_over(closing.rect(now), closing.done(now), opened_for)
                 }
                 None => (Duration::ZERO, None),
             };

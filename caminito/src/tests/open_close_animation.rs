@@ -656,7 +656,12 @@ fn with_its_key_or_one_of_the_three_others_against_it_a_window_is_gone_in_one_fr
 /// Whether `a` and `b`, drawn one just before an interruption and the other just after it,
 /// are the same but for a pixel of rounding.
 fn near(a: Rectangle<i32, Logical>, b: Rectangle<i32, Logical>) -> bool {
-    let close = |a: i32, b: i32| (a - b).abs() <= 1;
+    within(a, b, 1)
+}
+
+/// Whether `a` and `b` are the same but for `pixels` each way.
+fn within(a: Rectangle<i32, Logical>, b: Rectangle<i32, Logical>, pixels: i32) -> bool {
+    let close = |a: i32, b: i32| (a - b).abs() <= pixels;
     close(a.loc.x, b.loc.x)
         && close(a.loc.y, b.loc.y)
         && close(a.size.w, b.size.w)
@@ -696,45 +701,72 @@ on_both_kinds! {
     }
 }
 
-// A window that its client shows again after hiding it is X11's: an unmap and a map of the
-// same window.
-#[test]
-fn a_window_shown_again_while_its_picture_fades_opens_from_the_picture() {
-    let (mut f, x) = desk(Kind::X11, Vec::new());
-    let window = map_opened(&mut f, x, WindowSpec::default());
-    let pid = f.pid(window).0;
-    close(&mut f, window, Close::Unmap);
-    f.advance_clock(PART_WAY);
-    let before = drawn_closing(&f, pid);
+/// Has `window`'s client hide it, as a client can show it again: a null buffer for an xdg
+/// toplevel, an unmap for an X window. Waits until Caminito no longer manages it.
+fn hide(f: &mut Fixture, window: ClientWindow) {
+    match window {
+        ClientWindow::Xdg(id, xdg) => {
+            f.client(id).commit_null_buffer(xdg);
+            f.roundtrip(id);
+        }
+        ClientWindow::X11(..) => close(f, window, Close::Unmap),
+    }
+}
 
-    let x11 = window.x11();
-    f.x11_call(x, move |x| x.map(x11)).unwrap();
-    f.dispatch_until(|f| f.policy_id(window).is_some());
+/// Has the client of `window`, which `hide` hid at `size`, show it again, and waits until
+/// Caminito manages it. An xdg toplevel starts over with an initial commit.
+fn show_again(f: &mut Fixture, window: ClientWindow, size: (i32, i32)) {
+    match window {
+        ClientWindow::Xdg(id, xdg) => {
+            f.client(id).commit(xdg);
+            f.roundtrip(id);
+            f.client(id).ack_and_commit_buffer(xdg, size, WINDOW_COLOR);
+            f.roundtrip(id);
+        }
+        ClientWindow::X11(id, x11) => {
+            f.x11_call(id, move |x| x.map(x11)).unwrap();
+            f.dispatch_until(|f| f.policy_id(window).is_some());
+        }
+    }
+}
 
-    assert!(
-        closing(&f).is_empty(),
-        "the picture is dropped: {:?}",
-        closing(&f)
-    );
-    let (after, alpha) = drawn(&f, window);
-    assert!(near(before.rect, after), "{:?} then {after:?}", before.rect);
-    assert!(
-        near_alpha(before.alpha, alpha),
-        "{} then {alpha}",
-        before.alpha
-    );
-    // What's left of the opening from the picture's opacity is as long as the closing ran.
-    f.advance_clock(PART_WAY - Duration::from_millis(1));
-    assert!(opens(&f, window));
-    f.advance_clock(Duration::from_millis(1));
-    assert!(opening(&f).is_empty(), "over: {:?}", opening(&f));
-    // Placement may put it somewhere new, which it grows into from the picture.
-    let frame = f.state.caminito.policy.frame_rect(f.pid(window)).unwrap();
-    assert_eq!(
-        pixel(&mut f, middle(frame)),
-        WINDOW,
-        "at its place, with full opacity"
-    );
+on_both_kinds! {
+    fn a_window_shown_again_while_its_picture_fades_opens_from_the_picture(kind: Kind) {
+        let (mut f, id) = desk(kind, Vec::new());
+        let window = map_opened(&mut f, id, WindowSpec::default());
+        let size = f.geometry(window).size;
+        let pid = f.pid(window).0;
+        hide(&mut f, window);
+        f.advance_clock(PART_WAY);
+        let before = drawn_closing(&f, pid);
+
+        show_again(&mut f, window, (size.w, size.h));
+
+        assert!(
+            closing(&f).is_empty(),
+            "the picture is dropped: {:?}",
+            closing(&f)
+        );
+        let (after, alpha) = drawn(&f, window);
+        assert!(near(before.rect, after), "{:?} then {after:?}", before.rect);
+        assert!(
+            near_alpha(before.alpha, alpha),
+            "{} then {alpha}",
+            before.alpha
+        );
+        // What's left of the opening from the picture's opacity is as long as the closing ran.
+        f.advance_clock(PART_WAY - Duration::from_millis(1));
+        assert!(opens(&f, window));
+        f.advance_clock(Duration::from_millis(1));
+        assert!(opening(&f).is_empty(), "over: {:?}", opening(&f));
+        // Placement may put it somewhere new, which it grows into from the picture.
+        let frame = f.visible_frame(window);
+        assert_eq!(
+            pixel(&mut f, middle(frame)),
+            WINDOW,
+            "at its place, with full opacity"
+        );
+    }
 }
 
 on_both_kinds! {
@@ -762,7 +794,7 @@ on_both_kinds! {
         let button: Rectangle<i32, Logical> =
             Rectangle::new((300, OUTPUT.1 - 30).into(), (100, 30).into());
         let pid = f.pid(window);
-        let frame = f.state.caminito.policy.frame_rect(pid).unwrap();
+        let frame = f.visible_frame(window);
         f.advance_clock(PART_WAY);
         drawn(&f, window);
 
@@ -780,14 +812,7 @@ on_both_kinds! {
             panic!("{:?}", boxes(&f));
         };
         // Marco's box is whole pixels, cut short of its button a millisecond early.
-        let close = |a: i32, b: i32| (a - b).abs() <= 3;
-        assert!(
-            close(last.loc.x, button.loc.x)
-                && close(last.loc.y, button.loc.y)
-                && close(last.size.w, button.size.w)
-                && close(last.size.h, button.size.h),
-            "into its button: {last:?}"
-        );
+        assert!(within(last, button, 3), "into its button: {last:?}");
         f.advance_clock(Duration::from_millis(1));
         assert!(boxes(&f).is_empty());
     }
@@ -803,7 +828,7 @@ fn assert_grows_into_its_new_place(
     let (after, alpha) = drawn(f, window);
     assert!(near(before.0, after), "{:?} then {after:?}", before.0);
     assert!(near_alpha(before.1, alpha), "{} then {alpha}", before.1);
-    let frame = f.state.caminito.policy.frame_rect(f.pid(window)).unwrap();
+    let frame = f.visible_frame(window);
     assert_ne!(frame.loc, before.0.loc, "it went somewhere");
 
     f.advance_clock(PART_WAY);
@@ -819,10 +844,7 @@ fn assert_grows_into_its_new_place(
 
     f.advance_clock(LENGTH);
     assert!(opening(f).is_empty(), "over: {:?}", opening(f));
-    assert_eq!(
-        f.state.caminito.policy.frame_rect(f.pid(window)),
-        Some(frame)
-    );
+    assert_eq!(f.visible_frame(window), frame);
     assert_eq!(
         pixel(f, middle(frame)),
         WINDOW,
@@ -837,6 +859,7 @@ on_both_kinds! {
         f.advance_clock(PART_WAY);
         let before = drawn(&f, window);
 
+        // Policy's own maximise, which a client's request, a binding or a button ends in.
         f.state.caminito.policy.set_maximized(f.pid(window), true);
         f.dispatch();
         f.sync(window);
