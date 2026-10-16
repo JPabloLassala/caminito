@@ -783,6 +783,38 @@ session_env() {
 - **Debug tool:** `DumpState`'s `workspace_slides`, with one slide for each monitor that
   switches. `wlr-randr` for the refresh rates.
 
+### A Wayland menu slides out of what it's attached to
+
+- **Milestone:** M9
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with the panel at the top. Run
+     `gsettings get org.mate.Caminito popup-slide`, which prints `true`.
+  2. Open the panel's main menu, then a submenu of it. Open pluma's *File* menu from its
+     menubar, a submenu of its *View* menu, and a combo box's list in its *Preferences*.
+  3. Move the panel to the bottom of the screen and open its main menu again. Move it back.
+  4. Open pluma's *File* menu and click *New* at once, before the menu has finished sliding.
+  5. Hold the pointer over a toolbar button of pluma until its tooltip shows.
+  6. `gsettings set org.mate.Caminito popup-slide false`, and open the menus of step 2 again.
+     Set it back to `true`. Turn each of these against the slide in turn, open a menu, and set
+     it back: `org.mate.Marco.general compositing-manager false`, `org.mate.Marco.general
+     reduced-resources true` and `org.mate.interface enable-animations false`.
+  7. Open the Overview with Super+W, right-click caja's desktop through it if it shows, and
+     close the Overview.
+- **Expected:** in step 2 the panel's menu comes down out of the panel, and its submenu out of
+  the menu's side; pluma's menus come down out of the menubar, its submenu out of its menu's
+  side, and the combo box's list comes down over its button. Nothing of a menu is drawn over
+  the panel, the menubar or the parent menu while it slides. A short menu only slides; a long
+  one fades in as well. In step 3 the menu comes up out of the bottom panel. In step 4 the
+  new document opens: the click reaches the row at its real place. In step 5 the tooltip
+  slides out too. In step 6 each menu is there at once. In step 7 nothing slides in the
+  Overview.
+
+  Each slide takes a fifth of a second, starts fast and slows into its place, with no frame
+  that stutters. Closing a menu is still at once (CMN-179). An X11 app's menus and the Window
+  menu don't slide yet (CMN-180, CMN-181).
+- **Debug tool:** `DumpState`'s `popup_slides`, there while a popup slides: each has its
+  `rect` at its place, its `edge`, and the `offset` and `alpha` it's drawn at.
+
 ### The workspace bindings switch the Active output
 
 - **Milestone:** M9

@@ -137,6 +137,9 @@ struct StateDump {
     /// The pictures of the windows on their way out (252), oldest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     closing_windows: Vec<ClosingWindowDump>,
+    /// The Popup slides that run (ADR 0037), in the order their popups were shown.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    popup_slides: Vec<PopupSlideDump>,
 }
 
 #[derive(Serialize)]
@@ -158,6 +161,19 @@ struct ClosingWindowDump {
     alpha: f32,
     /// Its place in the stack: the window it's drawn just over, or `None` under every one.
     over: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct PopupSlideDump {
+    /// The popup's window geometry at its place, globally.
+    rect: RectDump,
+    /// The edge of that rectangle it comes out of: `top` as it slides down, `bottom` as it
+    /// slides up, `left` as it slides right and `right` as it slides left.
+    edge: &'static str,
+    /// Where it's drawn now, from its place.
+    offset: OffsetDump,
+    /// How opaque it's drawn, from 0 to 1.
+    alpha: f32,
 }
 
 #[derive(Serialize)]
@@ -1116,6 +1132,19 @@ impl Caminito {
                     rect: drawn.rect.into(),
                     alpha: drawn.alpha,
                     over: drawn.over.map(|over| over.0),
+                })
+                .collect(),
+            popup_slides: self
+                .drawn_popup_slides(now)
+                .into_iter()
+                .map(|drawn| PopupSlideDump {
+                    rect: drawn.rect.into(),
+                    edge: drawn.edge.name(),
+                    offset: OffsetDump {
+                        x: drawn.slid.offset.x,
+                        y: drawn.slid.offset.y,
+                    },
+                    alpha: drawn.slid.alpha,
                 })
                 .collect(),
         };

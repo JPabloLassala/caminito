@@ -288,17 +288,18 @@ impl State {
     pub(super) fn xdg_shell_commit(&mut self, surface: &WlSurface) {
         let caminito = &mut self.caminito;
         caminito.popups.commit(surface);
+        let has_buffer =
+            with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
         if let Some(PopupKind::Xdg(popup)) = caminito.popups.find_popup(surface) {
             if !popup.is_initial_configure_sent() {
                 // The initial configure is sent once, so it can't fail.
                 popup.send_configure().expect("the initial popup configure");
             }
+            caminito.popup_committed(&popup, has_buffer);
             caminito.queue_redraw_all();
             return;
         }
 
-        let has_buffer =
-            with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
         let key = WindowKey::Wayland(surface.clone());
         if let Some(id) = caminito.mapped_for_key(&key) {
             if has_buffer {

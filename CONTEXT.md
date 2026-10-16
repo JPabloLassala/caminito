@@ -204,6 +204,10 @@ _Avoid_: desktop slide (the glossary's word is workspace), transition (the Overv
 The zoom and fade that show a window coming on screen or leaving it: the window grows into its place as it appears, or shrinks and fades away from it. A window opens when it is shown for the first time or again after its client hid it, and closes when its client destroys or hides it while it's on screen. Minimising, unminimising and a move to another workspace aren't either. It's Plasma's Scale effect.
 _Avoid_: window animation (the minimise animation is one too), map or unmap animation (X11's and Wayland's words, and an unmapped window isn't always closed), scale effect (KWin's name), fade alone
 
+**Popup slide**:
+The movement that shows a menu, a tooltip or another popup coming on screen or leaving it: it slides out of the edge it is attached to as it opens, and back into it as it closes. Popups are xdg_popups, override-redirect windows and the Window menu. It's Plasma's Sliding popups effect, with the edge chosen by Caminito (ADR 0037).
+_Avoid_: menu animation (tooltips and combo box lists slide too), fading popups (Plasma's other effect), sliding popups (KWin's name)
+
 **Interaction**:
 What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup or the Overview. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
 _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)

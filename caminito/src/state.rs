@@ -111,6 +111,7 @@ use crate::output::OutputRecord;
 use crate::output::primary::PrimaryChoice;
 use crate::output::saved::{self, SavedLayouts};
 use crate::overview::Overview;
+use crate::popup_slide::PopupSlides;
 use crate::protocols::appmenu::AppmenuState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
@@ -278,6 +279,8 @@ pub struct Caminito {
     pub(crate) workspace_slides: WorkspaceSlides,
     /// The windows that grow and fade in as they open (251).
     pub(crate) open_close_animations: OpenCloseAnimations,
+    /// The popups that slide out of what they're attached to as they open (ADR 0037).
+    pub(crate) popup_slides: PopupSlides,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -680,6 +683,8 @@ impl State {
         // After the last step that changes policy, so that a window that maps is drawn
         // opening from its first frame (251).
         self.caminito.refresh_open_close_animations();
+        // After the lock and the Overview, which end every slide.
+        self.caminito.refresh_popup_slides();
         // After the last step that changes policy, and before the outputs are drawn: what
         // a handler or a step above changed in policy is drawn in this pass (179).
         self.caminito.queue_redraw_for_policy();
@@ -710,8 +715,8 @@ impl State {
                     self.caminito.lock.frame_drawn(&output);
                     self.caminito.overview_frame_drawn(&output);
                     // A Workspace slide is drawn at every frame of its output (233), and so
-                    // are the Overview's transition (243), a window's opening (251) and a
-                    // closing window's picture (252): the
+                    // are the Overview's transition (243), a window's opening (251), a
+                    // closing window's picture (252) and a popup's slide (ADR 0037): the
                     // backend takes the next one when the output can show it.
                     let caminito = &self.caminito;
                     let slides = &caminito.workspace_slides;
@@ -719,6 +724,7 @@ impl State {
                     if sliding
                         || caminito.overview_transition_on(&output, now)
                         || caminito.open_close_animation_on(&output, now)
+                        || caminito.popup_slide_on(&output, now)
                     {
                         self.caminito.queue_redraw(&output);
                     }
@@ -1009,6 +1015,7 @@ impl Caminito {
             minimize_animations: MinimizeAnimations::default(),
             workspace_slides: WorkspaceSlides::default(),
             open_close_animations: OpenCloseAnimations::default(),
+            popup_slides: PopupSlides::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,

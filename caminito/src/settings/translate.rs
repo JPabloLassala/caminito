@@ -406,6 +406,10 @@ pub struct Settings {
     /// `open-close-animation` on, and the minimise animation's three keys as it needs them
     /// (ADR 0034).
     pub open_close_animation: bool,
+    /// Whether a popup slides out of what it's attached to as it opens (ADR 0037):
+    /// `org.mate.Caminito`'s `popup-slide` on, and the minimise animation's three keys as it
+    /// needs them.
+    pub popup_slide: bool,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -1151,6 +1155,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let workspace_slide = minimize_animation && r.bool(CAMINITO, "workspace-slide", true);
     let overview_animation = minimize_animation && r.bool(CAMINITO, "overview-animation", true);
     let open_close_animation = minimize_animation && r.bool(CAMINITO, "open-close-animation", true);
+    let popup_slide = minimize_animation && r.bool(CAMINITO, "popup-slide", true);
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
@@ -1249,6 +1254,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_slide,
         overview_animation,
         open_close_animation,
+        popup_slide,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,

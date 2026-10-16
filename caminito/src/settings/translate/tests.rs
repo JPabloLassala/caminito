@@ -1308,6 +1308,37 @@ fn the_opening_animations_key_leaves_the_other_animations_on() {
     assert!(settings.overview_animation);
 }
 
+// The Popup slide (ADR 0037).
+
+#[test]
+fn the_defaults_slide_a_popup_that_opens() {
+    assert!(settings(&defaults()).popup_slide);
+    assert!(settings(&Reading::default()).popup_slide);
+}
+
+#[test]
+fn its_own_key_and_the_minimise_animations_three_turn_the_popup_slide_off() {
+    for (schema, key, value) in [
+        (CAMINITO, "popup-slide", false),
+        (MARCO_GENERAL, "compositing-manager", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+        (INTERFACE, "enable-animations", false),
+    ] {
+        let reading = with(schema, key, Value::Bool(value));
+        assert!(!settings(&reading).popup_slide, "{key}");
+    }
+}
+
+#[test]
+fn the_popup_slides_key_leaves_the_other_animations_on() {
+    let reading = with(CAMINITO, "popup-slide", Value::Bool(false));
+    let settings = settings(&reading);
+    assert!(settings.minimize_animation);
+    assert!(settings.workspace_slide);
+    assert!(settings.overview_animation);
+    assert!(settings.open_close_animation);
+}
+
 #[test]
 fn frames_have_no_shadows_without_the_compositing_manager() {
     let reading = with(MARCO_GENERAL, "compositing-manager", Value::Bool(false));
