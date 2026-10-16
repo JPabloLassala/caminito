@@ -3,6 +3,10 @@
 //! parent's side, and each slides back as it closes, read from the debug dump's
 //! `popup_slides` and `closing_popups` and from the output's pixels. Policy has the menu at
 //! its real place from the start.
+//!
+//! The tests map a Wayland window only: the menu is Caminito's own drawing whichever kind
+//! of window it's for, which `window_menu`'s tests run on both, and asking for it at a
+//! point is xdg_toplevel's `show_window_menu`.
 
 use smithay::utils::{Logical, Point};
 

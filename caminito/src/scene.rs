@@ -1151,11 +1151,8 @@ fn window_menu_elements<R>(
         .filter(|closing| closing.output == *output)
         .collect();
     let mut panes = Vec::new();
-    for part in [Part::Sub, Part::Main] {
-        let pane = shown.and_then(|shown| match part {
-            Part::Main => Some(&shown.main),
-            Part::Sub => shown.submenu.as_ref(),
-        });
+    for part in [Part::Submenu, Part::Menu] {
+        let pane = shown.and_then(|shown| shown.pane(part));
         panes.extend(pane.map(|pane| (pane, slides.slid(part, now))));
         let pictures = closing.iter().filter(|closing| closing.part == part);
         panes.extend(pictures.map(|closing| (&closing.pane, Some(closing.slid(now)))));

@@ -540,16 +540,13 @@ impl Caminito {
                 slid: slide.motion.slid(now),
             })
         });
-        let menu = self.drawn_window_menu_slides(now).into_iter();
-        let menu = menu.filter(|(closing, _)| !closing).map(|(_, drawn)| drawn);
-        popups.chain(menu).collect()
+        popups.chain(self.drawn_window_menu_slides(now)).collect()
     }
 
     /// Each closed popup's picture that slides back at `now`, in the order they closed, as
     /// it's drawn, for the debug dump: the Window menu's after the others.
     pub(crate) fn drawn_closing_popups(&self, now: Duration) -> Vec<DrawnSlide> {
-        let menu = self.drawn_window_menu_slides(now).into_iter();
-        let menu = menu.filter(|(closing, _)| *closing).map(|(_, drawn)| drawn);
+        let menu = self.drawn_window_menu_pictures(now);
         self.popup_slides
             .closing
             .iter()

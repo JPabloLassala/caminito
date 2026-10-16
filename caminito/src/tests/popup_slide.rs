@@ -49,10 +49,10 @@ pub(super) fn desk(mut settings: Settings) -> (Fixture, ClientId) {
 /// A Popup slide as the debug dump's `popup_slides` has it.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Sliding {
-    pub rect: Rectangle<i32, Logical>,
-    pub edge: String,
-    pub offset: Point<i32, Logical>,
-    pub alpha: f64,
+    pub(super) rect: Rectangle<i32, Logical>,
+    pub(super) edge: String,
+    pub(super) offset: Point<i32, Logical>,
+    pub(super) alpha: f64,
 }
 
 /// Each Popup slide that runs, from the debug dump, which has none while none does.

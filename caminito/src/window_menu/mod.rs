@@ -47,6 +47,16 @@ pub(crate) struct Shown {
     drawn: Drawn,
 }
 
+impl Shown {
+    /// The pane of `part`, which for the submenu is there while it's open.
+    pub(crate) fn pane(&self, part: slide::Part) -> Option<&Pane> {
+        match part {
+            slide::Part::Menu => Some(&self.main),
+            slide::Part::Submenu => self.submenu.as_ref(),
+        }
+    }
+}
+
 /// One menu: the window menu itself, or its submenu.
 #[derive(Debug)]
 pub(crate) struct Pane {
