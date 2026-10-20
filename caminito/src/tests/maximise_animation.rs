@@ -22,20 +22,20 @@ use crate::maximize_animation::LENGTH;
 use crate::settings::Value as Setting;
 use crate::settings::translate::{CAMINITO, INTERFACE, MARCO_GENERAL};
 
-const OUTPUT: (i32, i32) = (800, 600);
+pub(super) const OUTPUT: (i32, i32) = (800, 600);
 
 /// How far into the animation the tests read it.
-const PART_WAY: Duration = Duration::from_millis(100);
+pub(super) const PART_WAY: Duration = Duration::from_millis(100);
 
 /// How far the box has gone at `PART_WAY`: a cubic ease-out, `1 - (1 - 100/250)³`.
 pub(super) const DONE_PART_WAY: f64 = 0.784;
 
-type Settings = Vec<(&'static str, String, Setting)>;
+pub(super) type Settings = Vec<(&'static str, String, Setting)>;
 
 /// One output with `maximize-animation` on, unless `settings` has it, and a client of
 /// `kind`. The fixture has the key off, for the tests written when a window was maximised
 /// at once. The clock is stopped, so the animation is read where `advance_clock` has it.
-fn desk(kind: Kind, mut settings: Settings) -> (Fixture, ClientId) {
+pub(super) fn desk(kind: Kind, mut settings: Settings) -> (Fixture, ClientId) {
     if !settings
         .iter()
         .any(|(_, key, _)| key == "maximize-animation")
@@ -50,7 +50,7 @@ fn desk(kind: Kind, mut settings: Settings) -> (Fixture, ClientId) {
 }
 
 /// A window of 400×300 away from the output's corner, drawn at rest.
-fn floating(f: &mut Fixture, id: ClientId) -> ClientWindow {
+pub(super) fn floating(f: &mut Fixture, id: ClientId) -> ClientWindow {
     let window = f.map(id, WindowSpec::default());
     let pid = f.pid(window);
     let loc = Point::from((150, 120));
@@ -85,7 +85,7 @@ pub(super) fn maximizing(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, f64)
 
 /// `window`'s box and its picture's opacity, while it's the one window on its way.
 #[track_caller]
-fn drawn(f: &Fixture, window: ClientWindow) -> (Rectangle<i32, Logical>, f64) {
+pub(super) fn drawn(f: &Fixture, window: ClientWindow) -> (Rectangle<i32, Logical>, f64) {
     let maximizing = maximizing(f);
     match maximizing[..] {
         [(id, rect, alpha)] if id == f.pid(window).0 => (rect, alpha),
@@ -116,7 +116,7 @@ pub(super) fn near(a: Rectangle<i32, Logical>, b: Rectangle<i32, Logical>) -> bo
 }
 
 /// The size policy last asked `window`'s client for.
-fn asked_size(f: &Fixture, window: ClientWindow) -> (i32, i32) {
+pub(super) fn asked_size(f: &Fixture, window: ClientWindow) -> (i32, i32) {
     let asked = f
         .state
         .caminito
@@ -130,7 +130,11 @@ fn asked_size(f: &Fixture, window: ClientWindow) -> (i32, i32) {
 /// goes there over 250 ms, eased out, with its picture fading, and doesn't jump when its
 /// client draws at its new size part-way.
 #[track_caller]
-fn assert_goes_from(f: &mut Fixture, window: ClientWindow, from: Rectangle<i32, Logical>) {
+pub(super) fn assert_goes_from(
+    f: &mut Fixture,
+    window: ClientWindow,
+    from: Rectangle<i32, Logical>,
+) {
     let (start, alpha) = drawn(f, window);
     assert_eq!(start, from, "from its frame as it was drawn");
     assert_eq!(alpha, 1.0, "its picture over it, whole");

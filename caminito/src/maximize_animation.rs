@@ -1,7 +1,10 @@
 //! The Maximise animation (CMN-174, ADR 0036): a window that's maximised or unmaximised both
-//! ways goes from its frame as it was to its new one over 250 ms of Caminito's clock, on a
-//! cubic ease-out, with a picture of it as it was fading out over it on the same curve. It's
-//! Plasma's Maximize effect, in KWin's `src/plugins/maximize/package/contents/code/main.js`.
+//! ways, tiled, untiled or given another tile or another tile's width (CMN-175) goes from its
+//! frame as it was to its new one over 250 ms of Caminito's clock, on a cubic ease-out, with
+//! a picture of it as it was fading out over it on the same curve. It's Plasma's Maximize
+//! effect, in KWin's `src/plugins/maximize/package/contents/code/main.js`, with tiles too.
+//! A drop that tiles or maximises a window goes from where it was let go; a drag that pulls
+//! one off its place doesn't animate, and the window follows the pointer at once.
 //!
 //! Policy has the window at its new place from the start, as with the other animations
 //! (ADR 0033), but its client draws at the new size a frame or more later: until then
@@ -13,7 +16,7 @@
 //!
 //! The refresh pass notes each window on screen with its frame at every pass, before its
 //! Frame is drawn again (`State::refresh_maximize_animations`), and so sees a window whose
-//! maximised state changed since the last pass while its Frame and buffers are still as
+//! maximised state or tile changed since the last pass while its Frame and buffers are still as
 //! they were: the picture is drawn from those, and the box starts at the frame it noted.
 //!
 //! One that's interrupted hands over from what is on screen (CMN-176), where Plasma starts
@@ -35,7 +38,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use caminito_policy::{OutputId, PolicyWindow, WindowId};
+use caminito_policy::{OutputId, PolicyWindow, TileShare, WindowId};
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
@@ -92,10 +95,25 @@ pub(crate) fn scaled_into(
 #[derive(Debug, Clone, Copy)]
 struct Seen {
     maximized: bool,
+    /// Its tile (CMN-175).
+    tile: Option<TileShare>,
     /// Its frame, globally.
     frame: Rectangle<i32, Logical>,
     /// Its geometry's corner, globally.
     origin: Point<i32, Logical>,
+}
+
+impl Seen {
+    /// Whether a window seen as `self` and then as `now` was maximised, unmaximised,
+    /// tiled, untiled or given another tile, which it goes to with the animation. One moved
+    /// with its tile to another output isn't, as a maximised one isn't.
+    fn changed_place_to(&self, now: &Seen) -> bool {
+        let tile_changed = match (self.tile, now.tile) {
+            (Some(was), Some(is)) if was.output != is.output => false,
+            (was, is) => was != is,
+        };
+        self.maximized != now.maximized || tile_changed
+    }
 }
 
 /// One window on its way to its new frame.
@@ -193,7 +211,7 @@ impl MaximizeAnimations {
 
 impl State {
     /// Notes each window on screen with its frame, and starts the animation of each whose
-    /// maximised state changed since the last pass, from the frame noted then, with a
+    /// maximised state or tile changed since the last pass, from the frame noted then, with a
     /// picture of it as it still is. Called before the Frames are drawn again in their new
     /// state. Ends the animation of each window that the pointer drags, and hands each over
     /// to its window's new frame from where it's drawn. One whose window no longer shows
@@ -214,11 +232,12 @@ impl State {
             }
             let now_seen = Seen {
                 maximized: policy.is_maximized(id),
+                tile: policy.tile_share(id),
                 frame,
                 origin: geometry.loc,
             };
             if let Some(was) = animations.seen.get(&id)
-                && was.maximized != now_seen.maximized
+                && was.changed_place_to(&now_seen)
             {
                 changed.push((id, *was));
             }
@@ -296,10 +315,11 @@ impl State {
 }
 
 impl Caminito {
-    /// Whether window `id`, whose maximised state changed, is seen to change at `now`: the
-    /// animation is on and runs (CMN-177), the window is one it's for, it's not fullscreen,
-    /// it isn't on its way open, which grows it into its new place itself (CMN-112), and no grab pulled it
-    /// off its maximised place, which it then follows the pointer from (CMN-176).
+    /// Whether window `id`, whose maximised state or tile changed, is seen to change at `now`:
+    /// the animation is on and runs (CMN-177), the window is one it's for, it's not
+    /// fullscreen, it isn't on its way open, which grows it into its new place itself
+    /// (CMN-112), and no grab pulled it off its maximised or tiled place, which it then
+    /// follows the pointer from (CMN-176, CMN-175).
     fn maximize_seen(&self, id: WindowId, now: Duration) -> bool {
         let policy = &self.policy;
         self.settings.maximize_animation

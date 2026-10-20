@@ -51,6 +51,7 @@ mod logind;
 mod logo;
 mod maximise_animation;
 mod maximise_animation_effects;
+mod maximise_animation_tiles;
 mod menu_claim;
 mod minimise_animation;
 mod modifier_click;

@@ -3188,6 +3188,35 @@ in for. They are the developer's to run.
   animation is smooth at each monitor's refresh rate.
 - **Debug tool:** `DumpState`'s `maximizing_windows` and `workspace_slides`.
 
+### The Maximise animation for tiles, and a drag that pulls a window off
+
+- **Milestone:** `maximize-animation`, the developer's to run (CMN-175).
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend. Run
+     `gsettings get org.mate.Caminito maximize-animation`, which prints `true`. In
+     mate-control-center's *System Shortcuts*, under *Window Management*, set *Tile window to
+     east side* to Super+W. Open pluma (a native window) and `xterm` (X11), each smaller than
+     the monitor and away from its corner.
+  2. Drag pluma by its titlebar to the monitor's left edge and let go. Drag it to the top edge
+     and let go.
+  3. Drag pluma by its titlebar off its maximised place, down into the middle of the monitor,
+     and let go there.
+  4. Press Super+W four times, waiting for each to settle, then three more times.
+  5. Run `gsettings set org.mate.Marco.general allow-tile-cycling false`, press Super+W twice,
+     and reset it with `gsettings reset`.
+  6. Tile pluma with Super+W and press Alt+F10. Then drag it by its titlebar off its tile.
+  7. Repeat steps 2 to 6 with `xterm`.
+- **Expected:** in step 2 pluma goes from where it was let go into the left half of the work
+  area, and then into the whole work area, each time over a quarter of a second, with a
+  picture of it as it was fading out and no old content at its new place. In step 3 pluma is
+  under the pointer from the first frame the drag pulls it off, at its size from before, with
+  nothing growing or shrinking, and it stays where it's let go. In step 4 each press moves it
+  smoothly into its tile, a half, a third, a quarter and the whole width, then three quarters,
+  two thirds, and back to its place from before. In step 5 it goes into the right half and back.
+  In step 6 it grows from its tile into the work area, and the drag pulls it off at once, as in
+  step 3. In step 7 `xterm` does the same.
+- **Debug tool:** `DumpState`'s `maximizing_windows`, and each window's `tile`.
+
 ### The window menu
 
 - **Milestone:** M8, run in M8's closing run (173).

@@ -31,7 +31,7 @@ pub use policy::{
     MenuKey, MenuMark, MenuOp, MenuSelection, MinimizedPlacement, OutputSwitch, Overview,
     OverviewDrag, OverviewOutput, PointerTarget, Policy, PreMapConfigure, PreMapWindow,
     ResizeEdges, SeatId, StateRequest, SwitchEntry, SwitchList, Switcher, TOKEN_LIFETIME,
-    UrgentPlacement, WindowMenu, WorkspacePopup, default_workspace_name,
+    TileShare, UrgentPlacement, WindowMenu, WorkspacePopup, default_workspace_name,
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;

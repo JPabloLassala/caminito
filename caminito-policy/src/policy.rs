@@ -535,6 +535,17 @@ impl Tiled {
     }
 }
 
+/// A window's tile as `Policy::tile_share` gives it: which half or quarter of which output's
+/// work area (158), and the share of its width the tile fills (159), none for a tile resized
+/// by its inner sides, which keeps the width it was resized to. A drop's tile and the tiling
+/// keys' first width fill the same half.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TileShare {
+    pub tile: Tile,
+    pub output: OutputId,
+    pub width: Option<f64>,
+}
+
 /// A tile's width, as a share of its work area's: Marco's `MetaTileCycle`
 /// (window-private.h:87-96), which the tiling keybindings step through with
 /// `allow-tile-cycling` (159). A drag tiles a window `Uncycled`, Marco's
@@ -2410,6 +2421,17 @@ impl<W: PolicyWindow> Policy<W> {
     /// The half or quarter of a work area the window is tiled to (158).
     pub fn tile(&self, id: WindowId) -> Option<Tile> {
         self.windows.get(&id).and_then(Managed::tiled)
+    }
+
+    /// The window's tile, with the share of the work area it fills: what the Maximise
+    /// animation sees change (CMN-175).
+    pub fn tile_share(&self, id: WindowId) -> Option<TileShare> {
+        let tiled = self.windows.get(&id)?.tile?;
+        Some(TileShare {
+            tile: tiled.tile,
+            output: tiled.output,
+            width: (!tiled.resized).then(|| tiled.size.ratio()),
+        })
     }
 
     /// Where letting go of the seat's move would put the window's frame, while the pointer

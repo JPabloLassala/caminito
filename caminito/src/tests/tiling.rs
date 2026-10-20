@@ -54,7 +54,7 @@ fn as_rect(r: Rectangle<i32, Logical>) -> Value {
 }
 
 /// A point on the window's titlebar, half way across.
-fn title_point(f: &Fixture, window: ClientWindow) -> Point<f64, Logical> {
+pub(super) fn title_point(f: &Fixture, window: ClientWindow) -> Point<f64, Logical> {
     let frame = f.visible_frame(window);
     let top = f.frame_extents(window).top;
     Point::from((
