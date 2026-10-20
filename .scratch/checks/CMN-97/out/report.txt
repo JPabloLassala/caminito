@@ -1,0 +1,18 @@
+fusermount3: failed to access mountpoint /run/user/501/gvfs: Permission denied
+thinkpad, t1-collapsed: the popup is 364x214
+thinkpad, collapsed: the panel lives
+thinkpad, t2-expanded: the popup is 364x545
+thinkpad, expanded: the panel lives
+thinkpad, t3-fan-bar: the popup is 364x545
+thinkpad, after 10 reads: the panel lives
+thinkpad, t4-reopened: the popup is 364x545
+thinkpad, reopened: the panel lives
+A connection to the bus can't be made
+fusermount3: failed to access mountpoint /run/user/501/gvfs: Permission denied
+desktop, d1-collapsed: the popup is 364x235
+desktop, collapsed: the panel lives
+desktop, d2-expanded: the popup is 364x650
+desktop, expanded: the panel lives
+desktop, d3-warm-hot: the popup is 364x650
+desktop, warm and hot: the panel lives
+A connection to the bus can't be made

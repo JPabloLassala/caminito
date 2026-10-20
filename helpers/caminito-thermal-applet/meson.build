@@ -24,13 +24,16 @@ common = subproject('caminito-applet-common').get_variable('caminito_applet_comm
 # What the applet shows, from what the source read, apart from libsensors so that the tests
 # can build any computer.
 model = static_library('th-model', 'th-model.c', dependencies: [glib, m], pic: true)
+# The popup's tiles and Show all sensors (268), from the model.
+popup = static_library('th-popup', 'th-popup.c', link_with: model, dependencies: [glib, m, common],
+                       pic: true)
 
 applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-thermal-applet',
   'thermal-applet.c',
   'th-source.c',
-  link_with: model,
+  link_with: [model, popup],
   dependencies: [glib, m, sensors, applet_dep, common],
   c_args: ['-DVERSION="@0@"'.format(meson.project_version())],
   gnu_symbol_visibility: 'hidden',
@@ -59,7 +62,20 @@ install_data(
 
 # The groups, names and bands, what's left out, the panel sensors and the panel's text,
 # from computers built by hand.
-test('model', executable('test-model', 'test-model.c', link_with: model, dependencies: [glib, m]))
+test(
+  'model',
+  executable('test-model', 'test-model.c', 'test-computers.c', link_with: model,
+             dependencies: [glib, m]),
+)
+
+# The popup's tiles, rows, bars and bands (268), which need a display and are skipped
+# without one.
+test(
+  'popup',
+  executable('test-popup', 'test-popup.c', 'test-computers.c', link_with: [popup, model],
+             dependencies: [glib, m, common]),
+  env: {'NO_AT_BRIDGE': '1'},
+)
 
 # The source against fake hwmon trees that umockdev makes, where umockdev is installed: drives'
 # models, a reading that can't be read, and chips that come and go.

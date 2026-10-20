@@ -8,6 +8,13 @@
 
 #include "th-model.h"
 
+/* How many reads a fan with no max is watched for before its fastest is its bar's scale. */
+#define FAN_WATCHED 10
+
+/* The temperature bar's empty and full ends, in °C. */
+#define BAR_EMPTY 20.0
+#define BAR_FULL  100.0
+
 /* The panel's colours for warm and hot, which read on a dark panel and a light one. */
 #define WARM_COLOUR "#ffa630"
 #define HOT_COLOUR  "#ff5c5c"
@@ -19,10 +26,18 @@ struct _ThModel
   GPtrArray  *panel_sensors;
   /* The ids of the readings that weren't 0 at least once. */
   GHashTable *moved;
+  /* A FanWatch for each fan's id, since the applet started. */
+  GHashTable *fan_watches;
   /* The panel sensors chosen, kept while they're shown. */
   char       *cpu_id;
   char       *gpu_id;
 };
+
+typedef struct
+{
+  guint  reads;
+  double fastest;
+} FanWatch;
 
 ThRaw *
 th_raw_new (const char *chip, const char *chip_id, const char *feature, const char *label,
@@ -268,6 +283,7 @@ th_model_new (void)
   model->fans = g_ptr_array_new_with_free_func ((GDestroyNotify) reading_free);
   model->panel_sensors = g_ptr_array_new ();
   model->moved = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  model->fan_watches = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   return model;
 }
 
@@ -278,6 +294,7 @@ th_model_free (ThModel *model)
   g_ptr_array_unref (model->temperatures);
   g_ptr_array_unref (model->fans);
   g_hash_table_unref (model->moved);
+  g_hash_table_unref (model->fan_watches);
   g_free (model->cpu_id);
   g_free (model->gpu_id);
   g_free (model);
@@ -349,6 +366,20 @@ kind_key (const ThRaw *raw)
   return g_strdup_printf ("%s/%c", raw->chip_id, raw->is_fan ? 'f' : 't');
 }
 
+static void
+watch_fan (ThModel *model, const ThReading *fan)
+{
+  FanWatch *watch = g_hash_table_lookup (model->fan_watches, fan->id);
+
+  if (watch == NULL)
+    {
+      watch = g_new0 (FanWatch, 1);
+      g_hash_table_insert (model->fan_watches, g_strdup (fan->id), watch);
+    }
+  watch->reads++;
+  watch->fastest = MAX (watch->fastest, fan->value);
+}
+
 void
 th_model_update (ThModel *model, GPtrArray *raws)
 {
@@ -402,6 +433,8 @@ th_model_update (ThModel *model, GPtrArray *raws)
       reading->value = raw->value;
       reading->limit = raw->limit;
       g_ptr_array_add (raw->is_fan ? model->fans : model->temperatures, reading);
+      if (raw->is_fan)
+        watch_fan (model, reading);
       if (!raw->is_fan && package_id == NULL && is_package (raw))
         package_id = g_strdup (id);
     }
@@ -435,8 +468,8 @@ whole (double value)
   return (long) floor (value + 0.5);
 }
 
-static ThBand
-band_of (const ThReading *reading)
+ThBand
+th_reading_band (const ThReading *reading)
 {
   return th_band (reading->value, reading->limit, TH_WARM_DEFAULT, TH_HOT_DEFAULT);
 }
@@ -460,7 +493,7 @@ band_colour (ThBand band)
 static void
 append_coloured (GString *text, const ThReading *reading, const char *unit)
 {
-  const char *colour = band_colour (band_of (reading));
+  const char *colour = band_colour (th_reading_band (reading));
 
   if (colour != NULL)
     g_string_append_printf (text, "<span foreground=\"%s\">%ld%s</span>", colour,
@@ -527,14 +560,89 @@ th_model_tooltip (ThModel *model)
     {
       ThReading *reading = model->fans->pdata[i];
 
-      if (whole (reading->value) == 0)
-        g_ptr_array_add (parts, g_strdup_printf ("%s Stopped", reading->name));
-      else
-        g_ptr_array_add (parts, g_strdup_printf ("%s %ld RPM", reading->name,
-                                                 whole (reading->value)));
+      g_autofree char *speed = th_fan_text (reading->value);
+
+      g_ptr_array_add (parts, g_strdup_printf ("%s %s", reading->name, speed));
     }
   if (parts->len == 0)
     return g_strdup ("No temperatures");
   g_ptr_array_add (parts, NULL);
   return g_strjoinv (" · ", (char **) parts->pdata);
+}
+
+gboolean
+th_model_is_panel_sensor (ThModel *model, const ThReading *reading)
+{
+  for (guint i = 0; i < model->panel_sensors->len; i++)
+    if (strcmp (((ThReading *) model->panel_sensors->pdata[i])->id, reading->id) == 0)
+      return TRUE;
+  return FALSE;
+}
+
+ThReading *
+th_model_hottest (ThModel *model, ThGroup group, guint *count)
+{
+  ThReading *best = NULL;
+
+  *count = 0;
+  for (guint i = 0; i < model->temperatures->len; i++)
+    {
+      ThReading *reading = model->temperatures->pdata[i];
+
+      if (reading->group != group)
+        continue;
+      (*count)++;
+      if (best == NULL || reading->value > best->value)
+        best = reading;
+    }
+  return best;
+}
+
+ThReading *
+th_model_fastest_fan (ThModel *model)
+{
+  ThReading *best = NULL;
+
+  for (guint i = 0; i < model->fans->len; i++)
+    {
+      ThReading *fan = model->fans->pdata[i];
+
+      if (best == NULL || fan->value > best->value)
+        best = fan;
+    }
+  return best;
+}
+
+double
+th_model_fan_scale (ThModel *model, const ThReading *fan)
+{
+  FanWatch *watch;
+
+  if (!isnan (fan->limit) && fan->limit > 0)
+    return fan->limit;
+  watch = g_hash_table_lookup (model->fan_watches, fan->id);
+  /* A fan that has never spun has nothing to be against. */
+  if (watch == NULL || watch->reads <= FAN_WATCHED || watch->fastest <= 0)
+    return NAN;
+  return watch->fastest;
+}
+
+double
+th_temperature_fraction (double celsius)
+{
+  return CLAMP ((celsius - BAR_EMPTY) / (BAR_FULL - BAR_EMPTY), 0.0, 1.0);
+}
+
+char *
+th_temperature_text (double celsius)
+{
+  return g_strdup_printf ("%ld °C", whole (celsius));
+}
+
+char *
+th_fan_text (double rpm)
+{
+  if (whole (rpm) == 0)
+    return g_strdup ("Stopped");
+  return g_strdup_printf ("%ld RPM", whole (rpm));
 }

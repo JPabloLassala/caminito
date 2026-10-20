@@ -4,7 +4,8 @@
  * bar item. It reads libsensors (th-source.c) every 2 s, or every 1 s while its popup is
  * open, and th-model.c makes of that what it shows. Below a 32 px panel it's one line, and
  * on a vertical panel the first panel sensor as a bare number. Left-click toggles the
- * popup, which 268 fills; right-click has Preferences, which 269 fills, and About.
+ * popup, its tiles and Show all sensors (268, th-popup.c); right-click has Preferences,
+ * which 269 fills, and About.
  */
 
 #include <mate-panel-applet.h>
@@ -12,6 +13,7 @@
 #include "caminito-applet-icon.h"
 #include "caminito-applet-popup.h"
 #include "th-model.h"
+#include "th-popup.h"
 #include "th-source.h"
 
 #define FACTORY_ID "CaminitoThermalAppletFactory"
@@ -38,6 +40,7 @@ typedef struct
   GtkWidget           *top;
   GtkWidget           *bottom;
   CaminitoAppletPopup *popup;
+  ThPopup             *content;
   ThModel             *model;
   guint                timeout;
   guint                ticks;
@@ -104,6 +107,8 @@ read_now (Applet *applet)
 
   th_model_update (applet->model, raws);
   show (applet);
+  /* Closed too, so that it's right as it opens. */
+  th_popup_update (applet->content, applet->model);
 }
 
 /* Every second; a read every other one, or every one while the popup is open. */
@@ -191,21 +196,10 @@ applet_free (gpointer data)
   g_source_remove (applet->timeout);
   if (applet->preferences != NULL)
     gtk_widget_destroy (applet->preferences);
+  th_popup_free (applet->content);
   th_model_free (applet->model);
   th_source_release ();
   g_free (applet);
-}
-
-/* The popup's window, empty until 268 gives it its tiles and Show all sensors. */
-static void
-fill_popup (Applet *applet)
-{
-  GtkWidget *content = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
-
-  gtk_widget_set_size_request (content, 340, -1);
-  g_object_set (content, "margin", 12, NULL);
-  gtk_container_add (GTK_CONTAINER (caminito_applet_popup_get_window (applet->popup)), content);
-  gtk_widget_show (content);
 }
 
 static gboolean
@@ -252,7 +246,7 @@ fill (MatePanelApplet *panel_applet)
   g_object_set_data_full (G_OBJECT (panel_applet), "caminito-thermal-applet", applet,
                           applet_free);
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
-  fill_popup (applet);
+  applet->content = th_popup_new (applet->popup);
   g_signal_connect (panel_applet, "change-orient", G_CALLBACK (on_change_orient), applet);
   g_signal_connect (panel_applet, "change-size", G_CALLBACK (on_change_size), applet);
   gtk_widget_show_all (GTK_WIDGET (panel_applet));

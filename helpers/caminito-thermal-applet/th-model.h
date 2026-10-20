@@ -1,7 +1,8 @@
 /*
  * What the Thermal applet shows (267), from what its source read, apart from libsensors so
  * that the tests can build any computer: each reading's group and name, which readings are
- * left out, the bands, the panel sensors, and the panel's and the tooltip's text.
+ * left out, the bands, the panel sensors, the panel's and the tooltip's text, and the
+ * popup's tiles and bars (268).
  */
 
 #pragma once
@@ -105,3 +106,22 @@ char *th_model_panel_fans         (ThModel *model);
 char *th_model_panel_bare         (ThModel *model);
 /* "CPU Package 55 °C · Fan 2865 RPM": every panel sensor and every fan. */
 char *th_model_tooltip            (ThModel *model);
+
+/* The popup's (268). */
+
+/* The reading's band at the thresholds. */
+ThBand     th_reading_band          (const ThReading *reading);
+gboolean   th_model_is_panel_sensor (ThModel *model, const ThReading *reading);
+/* The group's hottest temperature, NULL with none; count gets how many the group has. */
+ThReading *th_model_hottest         (ThModel *model, ThGroup group, guint *count);
+/* The fastest fan, stopped or not; NULL with no fan. */
+ThReading *th_model_fastest_fan     (ThModel *model);
+/* What a fan's bar is against: its max, or with none the fastest it has spun once it has
+   been read more than 10 times; NAN for no bar yet. */
+double     th_model_fan_scale       (ThModel *model, const ThReading *fan);
+/* A temperature's bar, on the one scale of every reading: empty at 20 °C, full at 100 °C. */
+double     th_temperature_fraction  (double celsius);
+/* "55 °C". */
+char      *th_temperature_text      (double celsius);
+/* "2865 RPM", or "Stopped". */
+char      *th_fan_text              (double rpm);

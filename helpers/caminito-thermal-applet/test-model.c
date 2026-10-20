@@ -5,85 +5,7 @@
 
 #include <math.h>
 
-#include "th-model.h"
-
-static void
-temp (GPtrArray *raws, const char *chip, const char *chip_id, const char *feature,
-      const char *label, double value, double crit)
-{
-  g_ptr_array_add (raws, th_raw_new (chip, chip_id, feature, label, NULL, FALSE, TRUE, value,
-                                     crit));
-}
-
-static void
-fan (GPtrArray *raws, const char *chip, const char *chip_id, const char *feature,
-     const char *label, double rpm, double max)
-{
-  g_ptr_array_add (raws, th_raw_new (chip, chip_id, feature, label, NULL, TRUE, TRUE, rpm,
-                                     max));
-}
-
-static GPtrArray *
-raws_new (void)
-{
-  return g_ptr_array_new_with_free_func ((GDestroyNotify) th_raw_free);
-}
-
-/* The developer's ThinkPad: coretemp, the embedded controller with one fan with no max and
-   readings that are always 0, ACPI, Wi-Fi, an NVMe drive, and the battery chips. */
-static GPtrArray *
-thinkpad (double package, double fan_rpm)
-{
-  GPtrArray *raws = raws_new ();
-
-  temp (raws, "coretemp", "coretemp-isa-0000", "temp1", "Package id 0", package, 100);
-  temp (raws, "coretemp", "coretemp-isa-0000", "temp2", "Core 0", package - 2, 100);
-  temp (raws, "coretemp", "coretemp-isa-0000", "temp3", "Core 1", package - 3, 100);
-  temp (raws, "thinkpad", "thinkpad-isa-0000", "temp1", "CPU", 52, NAN);
-  /* N/A in sensors: it can't be read. */
-  g_ptr_array_add (raws, th_raw_new ("thinkpad", "thinkpad-isa-0000", "temp2", "GPU", NULL,
-                                     FALSE, FALSE, 0, NAN));
-  for (int i = 3; i <= 8; i++)
-    {
-      g_autofree char *feature = g_strdup_printf ("temp%d", i);
-
-      temp (raws, "thinkpad", "thinkpad-isa-0000", feature, NULL, 0, NAN);
-    }
-  fan (raws, "thinkpad", "thinkpad-isa-0000", "fan1", NULL, fan_rpm, NAN);
-  temp (raws, "acpitz", "acpitz-acpi-0", "temp1", NULL, 50, 128);
-  temp (raws, "iwlwifi_1", "iwlwifi_1-virtual-0", "temp1", NULL, 41, NAN);
-  g_ptr_array_add (raws, th_raw_new ("nvme", "nvme-pci-0400", "temp1", "Composite",
-                                     "SAMSUNG MZVL2512HCJQ", FALSE, TRUE, 38, 84.85));
-  temp (raws, "BAT0", "BAT0-acpi-0", "temp1", NULL, 30, NAN);
-  temp (raws, "ucsi_source_psy_USBC000:001", "ucsi_source_psy_USBC000:001-isa-0000", "temp1",
-        NULL, 30, NAN);
-  return raws;
-}
-
-/* A desktop: an AMD CPU, a Radeon with a stopped fan, two NVMe drives, three fans. */
-static GPtrArray *
-desktop (double tctl, double junction, double cpu_fan, double chassis_fan, double gpu_fan)
-{
-  GPtrArray *raws = raws_new ();
-
-  temp (raws, "k10temp", "k10temp-pci-00c3", "temp1", "Tctl", tctl, NAN);
-  temp (raws, "k10temp", "k10temp-pci-00c3", "temp3", "Tccd1", tctl - 3, NAN);
-  temp (raws, "amdgpu", "amdgpu-pci-0300", "temp1", "edge", junction - 12, 100);
-  temp (raws, "amdgpu", "amdgpu-pci-0300", "temp2", "junction", junction, 110);
-  temp (raws, "amdgpu", "amdgpu-pci-0300", "temp3", "mem", junction - 4, 105);
-  fan (raws, "amdgpu", "amdgpu-pci-0300", "fan1", NULL, gpu_fan, 3300);
-  g_ptr_array_add (raws, th_raw_new ("nvme", "nvme-pci-0100", "temp1", "Composite",
-                                     "Samsung SSD 990 PRO 2TB", FALSE, TRUE, 41, 84.85));
-  g_ptr_array_add (raws, th_raw_new ("nvme", "nvme-pci-0100", "temp2", "Sensor 1",
-                                     "Samsung SSD 990 PRO 2TB", FALSE, TRUE, 45, 84.85));
-  g_ptr_array_add (raws, th_raw_new ("nvme", "nvme-pci-0200", "temp1", "Composite",
-                                     "WD_BLACK SN850X 1000GB", FALSE, TRUE, 46, 84.85));
-  temp (raws, "nct6798", "nct6798-isa-0290", "temp1", "SYSTIN", 34, NAN);
-  temp (raws, "nct6798", "nct6798-isa-0290", "temp7", "AUXTIN3", 0, NAN);
-  fan (raws, "nct6798", "nct6798-isa-0290", "fan1", NULL, chassis_fan, NAN);
-  fan (raws, "nct6798", "nct6798-isa-0290", "fan2", NULL, cpu_fan, NAN);
-  return raws;
-}
+#include "test-computers.h"
 
 static const char *
 name_of (GPtrArray *readings, const char *id)
@@ -456,6 +378,147 @@ test_same_names_are_numbered (void)
   th_model_free (model);
 }
 
+static ThReading *
+reading_of (GPtrArray *readings, const char *id)
+{
+  for (guint i = 0; i < readings->len; i++)
+    if (g_strcmp0 (((ThReading *) readings->pdata[i])->id, id) == 0)
+      return readings->pdata[i];
+  return NULL;
+}
+
+static void
+test_tiles (void)
+{
+  g_autoptr (GPtrArray) raws = desktop (58, 61, 1180, 820, 0);
+  ThModel *model = th_model_new ();
+  ThReading *hottest;
+  guint count = 0;
+
+  th_model_update (model, raws);
+  hottest = th_model_hottest (model, TH_GROUP_CPU, &count);
+  g_assert_cmpstr (hottest->name, ==, "CPU");
+  g_assert_cmpuint (count, ==, 2);
+  hottest = th_model_hottest (model, TH_GROUP_GPU, &count);
+  g_assert_cmpstr (hottest->name, ==, "GPU junction");
+  g_assert_cmpuint (count, ==, 3);
+  hottest = th_model_hottest (model, TH_GROUP_STORAGE, &count);
+  g_assert_cmpstr (hottest->name, ==, "WD_BLACK SN850X 1000GB");
+  g_assert_cmpuint (count, ==, 3);
+  g_assert_null (th_model_hottest (model, TH_GROUP_WIRELESS, &count));
+  g_assert_cmpuint (count, ==, 0);
+  g_assert_cmpstr (th_model_fastest_fan (model)->name, ==, "Fan 2");
+  th_model_free (model);
+}
+
+static void
+test_tiles_of_the_thinkpad (void)
+{
+  g_autoptr (GPtrArray) raws = thinkpad (55, 0);
+  ThModel *model = th_model_new ();
+  guint count = 0;
+
+  th_model_update (model, raws);
+  g_assert_null (th_model_hottest (model, TH_GROUP_GPU, &count));
+  g_assert_cmpstr (th_model_hottest (model, TH_GROUP_STORAGE, &count)->name, ==,
+                   "SAMSUNG MZVL2512HCJQ");
+  g_assert_cmpuint (count, ==, 1);
+  /* A stopped fan is still the fastest of one. */
+  g_assert_cmpstr (th_model_fastest_fan (model)->name, ==, "Fan");
+  th_model_free (model);
+}
+
+static void
+test_popup_texts (void)
+{
+  g_autofree char *temperature = th_temperature_text (54.5);
+  g_autofree char *rpm = th_fan_text (2864.6);
+  g_autofree char *stopped = th_fan_text (0);
+
+  g_assert_cmpstr (temperature, ==, "55 °C");
+  g_assert_cmpstr (rpm, ==, "2865 RPM");
+  g_assert_cmpstr (stopped, ==, "Stopped");
+}
+
+static void
+test_temperature_bar (void)
+{
+  g_assert_cmpfloat (th_temperature_fraction (10), ==, 0);
+  g_assert_cmpfloat (th_temperature_fraction (20), ==, 0);
+  g_assert_cmpfloat (th_temperature_fraction (60), ==, 0.5);
+  g_assert_cmpfloat (th_temperature_fraction (100), ==, 1);
+  g_assert_cmpfloat (th_temperature_fraction (120), ==, 1);
+}
+
+static void
+test_band_of_a_reading (void)
+{
+  g_autoptr (GPtrArray) raws = desktop (78, 93, 1900, 1100, 2200);
+  ThModel *model = th_model_new ();
+  GPtrArray *temps;
+
+  th_model_update (model, raws);
+  temps = th_model_temperatures (model);
+  g_assert_cmpint (th_reading_band (reading_of (temps, "k10temp-pci-00c3/temp1")), ==,
+                   TH_BAND_WARM);
+  g_assert_cmpint (th_reading_band (reading_of (temps, "amdgpu-pci-0300/temp2")), ==,
+                   TH_BAND_HOT);
+  g_assert_cmpint (th_reading_band (reading_of (temps, "nct6798-isa-0290/temp1")), ==,
+                   TH_BAND_NORMAL);
+  g_assert_true (th_model_is_panel_sensor (model, reading_of (temps, "amdgpu-pci-0300/temp2")));
+  g_assert_false (th_model_is_panel_sensor (model, reading_of (temps, "amdgpu-pci-0300/temp1")));
+  th_model_free (model);
+}
+
+static void
+test_fan_with_a_max (void)
+{
+  g_autoptr (GPtrArray) raws = desktop (58, 61, 1180, 820, 1650);
+  ThModel *model = th_model_new ();
+
+  th_model_update (model, raws);
+  g_assert_cmpfloat (th_model_fan_scale (model, reading_of (th_model_fans (model),
+                                                            "amdgpu-pci-0300/fan1")),
+                     ==, 3300);
+  th_model_free (model);
+}
+
+static void
+test_fan_without_a_max (void)
+{
+  ThModel *model = th_model_new ();
+
+  for (int i = 1; i <= 11; i++)
+    {
+      /* Fastest on the 3rd read. */
+      g_autoptr (GPtrArray) raws = thinkpad (55, i == 3 ? 4000 : 2000);
+      ThReading *spun;
+
+      th_model_update (model, raws);
+      spun = th_model_fans (model)->pdata[0];
+      if (i <= 10)
+        g_assert_true (isnan (th_model_fan_scale (model, spun)));
+      else
+        g_assert_cmpfloat (th_model_fan_scale (model, spun), ==, 4000);
+    }
+  th_model_free (model);
+}
+
+static void
+test_fan_never_spun (void)
+{
+  ThModel *model = th_model_new ();
+
+  for (int i = 1; i <= 12; i++)
+    {
+      g_autoptr (GPtrArray) raws = thinkpad (55, 0);
+
+      th_model_update (model, raws);
+    }
+  g_assert_true (isnan (th_model_fan_scale (model, th_model_fans (model)->pdata[0])));
+  th_model_free (model);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -476,5 +539,13 @@ main (int argc, char **argv)
   g_test_add_func ("/model/the-gpu-panel-sensor-is-kept", test_gpu_sensor_is_kept);
   g_test_add_func ("/model/temperatures-round-half-up", test_one_line_rounds);
   g_test_add_func ("/model/the-same-names-are-numbered", test_same_names_are_numbered);
+  g_test_add_func ("/model/a-tile-is-its-groups-hottest", test_tiles);
+  g_test_add_func ("/model/the-thinkpad-has-no-gpu-tile", test_tiles_of_the_thinkpad);
+  g_test_add_func ("/model/the-popup-says-c-rpm-and-stopped", test_popup_texts);
+  g_test_add_func ("/model/the-bar-runs-from-20-to-100", test_temperature_bar);
+  g_test_add_func ("/model/each-reading-has-its-band", test_band_of_a_reading);
+  g_test_add_func ("/model/a-fan-with-a-max-is-against-it", test_fan_with_a_max);
+  g_test_add_func ("/model/a-fan-without-a-max-has-a-bar-after-10-reads", test_fan_without_a_max);
+  g_test_add_func ("/model/a-fan-that-never-spun-has-no-bar", test_fan_never_spun);
   return g_test_run ();
 }

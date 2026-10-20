@@ -2708,6 +2708,23 @@ in for. They are the developer's to run.
 - **Debug tool:** `dconf dump /org/mate/panel/toplevels/top/`, and `journalctl --user -b -t
   mate-panel`.
 
+### The popup's tiles and Show all sensors match `sensors`
+
+- **Milestone:** M9
+- **Steps:**
+  1. With the applet in the panel, left-click it.
+  2. Click *Show all sensors*. Run `watch -n 1 sensors` in a terminal beside the popup.
+  3. Run `stress-ng --cpu 0 --timeout 60s` with the popup open, and put the pointer on a row.
+- **Expected:** in step 1 there is a tile for each of CPU, GPU, Storage and Fans that the
+  computer has, two to a row. Each temperature tile has the hottest reading of its group, and
+  that reading's name under it when the group has more than one; the Fans tile has the fastest
+  fan, or *Stopped*. In step 2 every reading of `sensors`, apart from those that read 0 or
+  can't be read and the battery's, is in its group, with a bar from 20 °C to 100 °C. The fans
+  are last, and a fan with no maximum gets its bar about 10 s after the popup opened. In step 3
+  the numbers and bars change every second, the CPU's turn orange and then red with the panel's,
+  and the row under the pointer and *Show all sensors* stay as they are.
+- **Debug tool:** `sensors -u`, and CMN-97's check script for the same popup on fake trees.
+
 ## Marco parity
 
 ### Each placement mode places a native and an X11 window on two outputs

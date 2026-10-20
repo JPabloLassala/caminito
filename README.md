@@ -441,6 +441,12 @@ value when that is lower. On a panel smaller than 32 px it's one line, and on a 
 it's the CPU's temperature alone. Its tooltip names the temperatures in the panel, and every fan
 with its speed.
 
+A click opens its popup: a tile for each of the CPU, the GPU, the storage and the fans, with the
+hottest reading of each group and the fastest fan. Under _Show all sensors_ is every reading,
+grouped, with a bar from 20 °C to 100 °C in its colour, and every fan with its speed. A fan's bar
+is against its maximum, or, when the fan gives none, against the fastest it has spun since the
+applet started, after ten readings.
+
 It isn't in a new session's panel: add _Temperatures and Fans_ with _Add to Panel_. It reads every
 chip through lm_sensors' libsensors, so the labels and the `ignore` lines in `/etc/sensors3.conf`
 and `/etc/sensors.d/` apply to it. It depends on `lm_sensors` and on nothing of Caminito, and works
