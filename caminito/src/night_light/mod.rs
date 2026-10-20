@@ -5,8 +5,12 @@
 //! tables; the nested run and headless keep the state and tint nothing.
 //!
 //! The sun schedule (138) is worked out about once a minute from the sun's elevation at the
-//! location, by `sun`, `curve` and `zone`, and at once on a key change, a resume, or a jump
-//! of the clock. The pause is 140's, and geoclue 139's.
+//! location, by `sun`, `curve` and `zone`, and at once on a key change, a wake from sleep, or a jump
+//! of the clock. geoclue is 139's.
+//!
+//! A pause (140) holds the target neutral until `night-light-paused-until`, which is checked
+//! at each working-out and at the end itself. When it ends, or Night Light is turned on or
+//! off, Caminito writes 0 to the key.
 //!
 //! The sun's position is worked out with it, whether or not Night Light is on, and published
 //! for a dynamic wallpaper (215): the real sun at the location, or the fixed times' with
@@ -49,6 +53,9 @@ const MINUTE: Duration = Duration::from_secs(60);
 /// the time. A jump fades.
 const JUMP: f64 = 60.0;
 
+/// How long a pause lasts at most (140), in seconds: a day.
+const LONGEST_PAUSE: f64 = 86_400.0;
+
 /// Night Light's temperatures, and the sun.
 pub(crate) struct NightLight {
     state: NightLightState<OutputId>,
@@ -64,6 +71,12 @@ pub(crate) struct NightLight {
     worked_out: Option<(Duration, f64)>,
     /// The location source last logged, so that each fallback is logged once.
     logged: Option<Source>,
+    /// The end of the pause Caminito last wrote 0 over, which no longer holds while the key
+    /// still has it. 0 once the key has come back as 0, or a new pause is written.
+    written_over: i64,
+    /// The end of a pause Caminito wrote that the settings thread hasn't given back yet.
+    /// Meanwhile no 0 is written, so that an old pause's end doesn't erase the new one.
+    pause_written: Option<i64>,
 }
 
 /// Where the sun schedule's location comes from (138), as `NightLight` and the dump name it.
@@ -133,6 +146,17 @@ impl Default for ZoneFiles {
     }
 }
 
+/// A working-out of the sun, and of the pause with it.
+struct WorkedOut {
+    /// The sun schedule's temperature, in kelvin.
+    temperature: u32,
+    /// Whether a pause holds.
+    paused: bool,
+    /// Whether the key holds a pause whose time has passed, which is to be cleared.
+    ended: bool,
+    now: Duration,
+}
+
 /// `org.mate.Caminito`'s `NightLight`, as its callers last heard it or are to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Published {
@@ -172,6 +196,8 @@ impl NightLight {
             },
             worked_out: None,
             logged: None,
+            written_over: 0,
+            pause_written: None,
         }
     }
 
@@ -185,7 +211,40 @@ impl NightLight {
     /// nothing to run: the refresh pass after it hands the outputs' temperatures on.
     pub(crate) fn deadline(&self, now: Duration) -> Option<Duration> {
         let step = self.state.is_fading(now).then(|| now + STEP);
-        self.next_working_out().into_iter().chain(step).min()
+        self.next_due().into_iter().chain(step).min()
+    }
+
+    /// When the sun is next to be worked out: at its minute, or sooner when a pause ends.
+    fn next_due(&self) -> Option<Duration> {
+        self.next_working_out()
+            .into_iter()
+            .chain(self.pause_deadline())
+            .min()
+    }
+
+    /// When the pause that holds ends, by Caminito's clock, as the wall clock read at the
+    /// last working-out. A jump of the wall clock moves it, and the next working-out sees
+    /// that.
+    fn pause_deadline(&self) -> Option<Duration> {
+        if !self.state.is_paused() {
+            return None;
+        }
+        let (then, unix_then) = self.worked_out?;
+        // A millisecond past, so that the working-out then finds it over.
+        let left = self.settings().paused_until as f64 - unix_then + 0.001;
+        Some(then + Duration::from_secs_f64(left.max(0.0)))
+    }
+
+    /// Whether a pause holds at `unix` under `settings` (140): Night Light is on, and the
+    /// end is ahead and isn't one Caminito has written 0 over.
+    fn is_paused_at(&self, settings: &NightLightSettings, unix: f64) -> bool {
+        let until = settings.paused_until;
+        settings.enabled && until != 0 && until != self.written_over && until as f64 > unix
+    }
+
+    /// Whether a pause holds (140).
+    pub(crate) fn is_paused(&self) -> bool {
+        self.state.is_paused()
     }
 
     /// When the sun is next worked out: a minute after the last time, whatever asked for
@@ -256,6 +315,21 @@ impl NightLight {
             },
             next_sunrise: sun::next_rise(location, unix).map_or(0, |rise| rise.round() as i64),
             temperature: curve::sun_temperature(temperatures, elevation, highest),
+        }
+    }
+
+    /// When a pause made at `unix` ends (140): the next sunrise, the sun past −6° or the
+    /// fixed times' 07:00, under either schedule. It's at most a day away, in a polar night
+    /// or under the midnight sun too.
+    fn pause_end(&mut self, unix: f64) -> i64 {
+        let settings = *self.settings();
+        let cap = unix + LONGEST_PAUSE;
+        let sun = self.work_out(&settings, unix);
+        let rise = sun.next_sunrise as f64;
+        if sun.next_sunrise > 0 && rise < cap {
+            sun.next_sunrise
+        } else {
+            cap.round() as i64
         }
     }
 
@@ -346,13 +420,34 @@ impl Caminito {
         self.night_light.state.step_in(output_id(output), now);
     }
 
-    /// New Night Light settings: the outputs fade to the new target.
+    /// New Night Light settings: the outputs fade to the new target. Turning Night Light on
+    /// or off ends a pause, whoever turned it (140).
     pub(crate) fn night_light_settings_changed(&mut self, settings: NightLightSettings) {
-        if settings == *self.night_light.settings() {
+        let old = *self.night_light.settings();
+        if settings == old {
             return;
         }
-        let (sun, now) = self.work_out_sun_under(&settings);
-        self.night_light.state.settings_changed(settings, sun, now);
+        let night_light = &mut self.night_light;
+        if settings.paused_until == 0 {
+            night_light.written_over = 0;
+        }
+        if night_light.pause_written == Some(settings.paused_until) {
+            night_light.pause_written = None;
+        }
+        // Before the working-out, so that the pause no longer holds in it.
+        if settings.enabled != old.enabled {
+            self.clear_pause(settings.paused_until);
+        }
+        let worked = self.work_out_sun_under(&settings);
+        self.night_light.state.settings_changed(
+            settings,
+            worked.temperature,
+            worked.paused,
+            worked.now,
+        );
+        if worked.ended {
+            self.clear_pause(settings.paused_until);
+        }
     }
 
     /// Works the sun out at once, with no fade. `deadlines` works it out again about once a
@@ -361,14 +456,10 @@ impl Caminito {
         self.work_out_sun(false);
     }
 
-    /// Works the sun out if its minute is due at `now`, for `deadlines`. A minute that's
-    /// late isn't made up for: the next is a minute after this one.
+    /// Works the sun out if its minute or the pause's end is due at `now`, for `deadlines`.
+    /// A minute that's late isn't made up for: the next is a minute after this one.
     pub(crate) fn night_light_elapse(&mut self, now: Duration) {
-        if self
-            .night_light
-            .next_working_out()
-            .is_some_and(|due| due <= now)
-        {
+        if self.night_light.next_due().is_some_and(|due| due <= now) {
             self.night_light_tick();
         }
     }
@@ -391,16 +482,23 @@ impl Caminito {
         self.work_out_sun(true);
     }
 
-    /// Works the sun out again, now, and moves the target with it.
+    /// Works the sun out again, now, and moves the target with it. A pause that ends, or
+    /// that a jump of the clock ended, fades, and its key is cleared; so is one read at the
+    /// start whose time has passed.
     fn work_out_sun(&mut self, fade: bool) {
         let settings = *self.night_light.settings();
-        let (sun, now) = self.work_out_sun_under(&settings);
-        self.night_light.state.sun_moved(sun, fade, now);
+        let started = self.night_light.worked_out.is_some();
+        let worked = self.work_out_sun_under(&settings);
+        let state = &mut self.night_light.state;
+        let fade = fade || (started && worked.paused != state.is_paused());
+        state.sun_moved(worked.temperature, worked.paused, fade, worked.now);
+        if worked.ended {
+            self.clear_pause(settings.paused_until);
+        }
     }
 
-    /// Works the sun out now under `settings`, and keeps it. Returns the sun schedule's
-    /// temperature, and `now`.
-    fn work_out_sun_under(&mut self, settings: &NightLightSettings) -> (u32, Duration) {
+    /// Works the sun out now under `settings`, and keeps it.
+    fn work_out_sun_under(&mut self, settings: &NightLightSettings) -> WorkedOut {
         let now = self.now();
         let unix = self.unix_now();
         let night_light = &mut self.night_light;
@@ -408,7 +506,47 @@ impl Caminito {
         night_light.log_source(&sun);
         night_light.sun = sun;
         night_light.worked_out = Some((now, unix));
-        (sun.temperature, now)
+        let until = settings.paused_until;
+        WorkedOut {
+            temperature: sun.temperature,
+            paused: night_light.is_paused_at(settings, unix),
+            ended: until != 0 && until as f64 <= unix,
+            now,
+        }
+    }
+
+    /// Writes 0 over a pause that ends at `until`, once, and holds it no longer meanwhile.
+    /// A pause written since, which the key will have, is left alone.
+    fn clear_pause(&mut self, until: i64) {
+        let night_light = &mut self.night_light;
+        if until == 0 || until == night_light.written_over || night_light.pause_written.is_some() {
+            return;
+        }
+        night_light.written_over = until;
+        self.write_paused_until(0);
+    }
+
+    fn write_paused_until(&self, until: i64) {
+        self.settings_thread
+            .set(CAMINITO, "night-light-paused-until", Value::Int64(until));
+    }
+
+    /// Pauses Night Light until the next sunrise, for `PauseNightLight()`, by writing
+    /// `night-light-paused-until`. It does nothing while Night Light is off. The change
+    /// comes back from the settings thread as any other.
+    pub(crate) fn pause_night_light(&mut self) {
+        if !self.night_light.settings().enabled {
+            return;
+        }
+        let until = self.night_light.pause_end(self.unix_now());
+        self.night_light.written_over = 0;
+        self.night_light.pause_written = Some(until);
+        self.write_paused_until(until);
+    }
+
+    /// Ends a pause, for `ResumeNightLight()`, by writing 0 to `night-light-paused-until`.
+    pub(crate) fn resume_night_light(&self) {
+        self.write_paused_until(0);
     }
 
     /// Flips `night-light-enabled`, for `ToggleNightLight()`. The change comes back from the
@@ -435,5 +573,77 @@ impl State {
                 .temperature(output_id(output), now);
             self.backend.set_temperature(output, kelvin);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::translate::Schedule;
+
+    const HOUR: f64 = 3600.0;
+
+    /// 2026-12-21 at 00:00 UTC, 21:00 the evening before in Montevideo.
+    const DECEMBER: f64 = 1_797_811_200.0;
+
+    const MONTEVIDEO: Location = Location {
+        latitude: -34.9011,
+        longitude: -56.1645,
+    };
+    const LONGYEARBYEN: Location = Location {
+        latitude: 78.2232,
+        longitude: 15.6267,
+    };
+
+    /// Night Light on, at `location`, or with none.
+    fn at(location: Option<Location>) -> NightLight {
+        NightLight::new(NightLightSettings {
+            enabled: true,
+            schedule: Schedule::Sun,
+            noon_temperature: 5500,
+            night_temperature: 3400,
+            constant_temperature: 4000,
+            paused_until: 0,
+            last_location: location.map(|it| (it.latitude, it.longitude)),
+        })
+    }
+
+    #[test]
+    fn a_pause_at_ten_at_night_ends_at_tomorrows_civil_twilight() {
+        // 22:00 in Montevideo, three hours behind, is 01:00 UTC on the 22nd. Its sun climbs
+        // past −6° at about 07:58 UTC.
+        let unix = DECEMBER + 25.0 * HOUR;
+        let end = at(Some(MONTEVIDEO)).pause_end(unix);
+        let after = end as f64 - unix;
+        assert!((6.5 * HOUR..7.5 * HOUR).contains(&after), "{after}");
+    }
+
+    #[test]
+    fn a_pause_at_ten_in_the_morning_ends_at_tomorrows_too() {
+        // 10:00 in Montevideo, 13:00 UTC on the 21st: today's twilight is past.
+        let unix = DECEMBER + 13.0 * HOUR;
+        let end = at(Some(MONTEVIDEO)).pause_end(unix);
+        let after = end as f64 - unix;
+        assert!((18.5 * HOUR..19.5 * HOUR).contains(&after), "{after}");
+    }
+
+    #[test]
+    fn a_pause_in_a_polar_night_ends_a_day_later() {
+        // Longyearbyen, 2026-12-15 at 00:00 UTC: the sun stays below −6° for weeks.
+        let unix = 1_797_292_800.0;
+        assert_eq!(
+            at(Some(LONGYEARBYEN)).pause_end(unix),
+            (unix + LONGEST_PAUSE) as i64
+        );
+    }
+
+    #[test]
+    fn a_pause_with_no_location_ends_at_seven() {
+        // The tests' `localtime` is missing: UTC, so 07:00 UTC.
+        let unix = DECEMBER + 22.0 * HOUR;
+        assert_eq!(
+            at(None).pause_end(unix),
+            (DECEMBER + LONGEST_PAUSE + 7.0 * HOUR) as i64
+        );
     }
 }

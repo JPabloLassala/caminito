@@ -16,6 +16,8 @@ pub(crate) struct NightLightState<K> {
     settings: NightLightSettings,
     /// The sun schedule's temperature, as last worked out (138).
     sun: u32,
+    /// Whether a pause holds (140), which makes the target neutral.
+    paused: bool,
     outputs: BTreeMap<K, Light>,
     /// The outputs a gamma client's table is on, which Night Light steps back from (141).
     stepped_back: BTreeSet<K>,
@@ -76,6 +78,7 @@ impl<K: Ord + Copy> NightLightState<K> {
         NightLightState {
             settings,
             sun: NEUTRAL,
+            paused: false,
             outputs: BTreeMap::new(),
             stepped_back: BTreeSet::new(),
         }
@@ -85,11 +88,17 @@ impl<K: Ord + Copy> NightLightState<K> {
         &self.settings
     }
 
+    /// Whether a pause holds (140).
+    pub(crate) fn is_paused(&self) -> bool {
+        self.paused
+    }
+
     /// The temperature the outputs are to have, in kelvin: neutral while Night Light is
-    /// off, and the sun's as last worked out on the sun schedule.
+    /// off or paused, and the sun's as last worked out on the sun schedule.
     pub(crate) fn target(&self) -> u32 {
         match self.settings {
             NightLightSettings { enabled: false, .. } => NEUTRAL,
+            _ if self.paused => NEUTRAL,
             NightLightSettings {
                 schedule: Schedule::Constant,
                 constant_temperature,
@@ -102,16 +111,18 @@ impl<K: Ord + Copy> NightLightState<K> {
         }
     }
 
-    /// New settings, and the sun schedule's temperature with them. Every output fades to a
-    /// new target from where it is.
+    /// New settings, and the sun schedule's temperature and whether a pause holds with
+    /// them. Every output fades to a new target from where it is.
     pub(crate) fn settings_changed(
         &mut self,
         settings: NightLightSettings,
         sun: u32,
+        paused: bool,
         now: Duration,
     ) {
         self.settings = settings;
         self.sun = sun;
+        self.paused = paused;
         let target = self.target();
         for light in self.outputs.values_mut() {
             light.fade_to(target, now);
@@ -120,9 +131,10 @@ impl<K: Ord + Copy> NightLightState<K> {
 
     /// The sun schedule's temperature, worked out again. A step of the once-a-minute work is
     /// too small to see, so it's taken at once unless `fade`, as after a sleep or a jump of
-    /// the clock. An output already fading fades to it instead.
-    pub(crate) fn sun_moved(&mut self, sun: u32, fade: bool, now: Duration) {
+    /// the clock, or when a pause ends. An output already fading fades to it instead.
+    pub(crate) fn sun_moved(&mut self, sun: u32, paused: bool, fade: bool, now: Duration) {
         self.sun = sun;
+        self.paused = paused;
         let target = self.target();
         for light in self.outputs.values_mut() {
             if fade || light.is_fading(now) {
@@ -234,16 +246,33 @@ mod tests {
     #[test]
     fn the_sun_schedule_is_the_suns_temperature() {
         let mut state = one_output(sun());
-        state.sun_moved(5000, false, secs(10.0));
+        state.sun_moved(5000, false, false, secs(10.0));
         assert_eq!(state.target(), 5000);
-        state.settings_changed(off(), 4500, secs(20.0));
+        state.settings_changed(off(), 4500, false, secs(20.0));
         assert_eq!(state.target(), 6500);
+    }
+
+    #[test]
+    fn a_pause_is_neutral_on_either_schedule_and_fades() {
+        let mut state = one_output(constant(4000));
+        state.settings_changed(constant(4000), 5000, true, secs(10.0));
+        assert_eq!(state.target(), 6500);
+        assert_eq!(state.temperature(1, secs(12.0)), 6500);
+
+        state.settings_changed(sun(), 5000, true, secs(20.0));
+        assert_eq!(state.target(), 6500);
+
+        // It ends: the sun schedule's again, faded to.
+        state.sun_moved(5000, false, true, secs(30.0));
+        assert_eq!(state.target(), 5000);
+        assert!(state.is_fading(secs(31.0)));
+        assert_eq!(state.temperature(1, secs(32.0)), 5000);
     }
 
     #[test]
     fn the_suns_small_steps_are_taken_at_once() {
         let mut state = one_output(sun());
-        state.sun_moved(5000, false, secs(10.0));
+        state.sun_moved(5000, false, false, secs(10.0));
         assert_eq!(state.temperature(1, secs(10.0)), 5000);
         assert!(!state.is_fading(secs(10.0)));
     }
@@ -251,7 +280,7 @@ mod tests {
     #[test]
     fn the_suns_jump_after_a_sleep_fades() {
         let mut state = one_output(sun());
-        state.sun_moved(3400, true, secs(10.0));
+        state.sun_moved(3400, false, true, secs(10.0));
         assert!(state.is_fading(secs(10.0)));
         assert_eq!(state.temperature(1, secs(10.0)), 6500);
         assert_eq!(state.temperature(1, secs(12.0)), 3400);
@@ -260,8 +289,8 @@ mod tests {
     #[test]
     fn a_step_of_the_sun_during_a_fade_keeps_fading() {
         let mut state = one_output(off());
-        state.settings_changed(sun(), 4000, secs(10.0));
-        state.sun_moved(3990, false, secs(11.0));
+        state.settings_changed(sun(), 4000, false, secs(10.0));
+        state.sun_moved(3990, false, false, secs(11.0));
         assert!(state.is_fading(secs(11.5)));
         assert_eq!(state.temperature(1, secs(13.0)), 3990);
     }
@@ -284,7 +313,7 @@ mod tests {
     #[test]
     fn turning_it_on_fades_to_the_target_in_two_seconds() {
         let mut state = one_output(off());
-        state.settings_changed(constant(4000), 6500, secs(10.0));
+        state.settings_changed(constant(4000), 6500, false, secs(10.0));
 
         assert!(state.is_fading(secs(10.0)));
         assert_eq!(state.temperature(1, secs(10.0)), 6500);
@@ -301,7 +330,7 @@ mod tests {
     #[test]
     fn turning_it_off_fades_back_to_neutral() {
         let mut state = one_output(constant(4000));
-        state.settings_changed(off(), 6500, secs(10.0));
+        state.settings_changed(off(), 6500, false, secs(10.0));
 
         assert_eq!(state.temperature(1, secs(11.0)), 4952);
         assert_eq!(state.temperature(1, secs(12.0)), 6500);
@@ -311,10 +340,10 @@ mod tests {
     #[test]
     fn a_change_mid_fade_starts_from_where_the_fade_is() {
         let mut state = one_output(off());
-        state.settings_changed(constant(4000), 6500, secs(10.0));
+        state.settings_changed(constant(4000), 6500, false, secs(10.0));
         let there = state.temperature(1, secs(11.0));
 
-        state.settings_changed(off(), 6500, secs(11.0));
+        state.settings_changed(off(), 6500, false, secs(11.0));
 
         assert_eq!(state.temperature(1, secs(11.0)), there);
         let back = state.temperature(1, secs(12.0));
@@ -327,11 +356,11 @@ mod tests {
     #[test]
     fn a_change_that_keeps_the_target_doesnt_restart_the_fade() {
         let mut state = one_output(off());
-        state.settings_changed(constant(4000), 6500, secs(10.0));
+        state.settings_changed(constant(4000), 6500, false, secs(10.0));
         let mut noon = constant(4000);
         noon.noon_temperature = 6000;
 
-        state.settings_changed(noon, 6500, secs(11.0));
+        state.settings_changed(noon, 6500, false, secs(11.0));
 
         assert_eq!(state.temperature(1, secs(12.0)), 4000);
     }
@@ -340,7 +369,7 @@ mod tests {
     fn every_output_fades_together() {
         let mut state = one_output(off());
         state.add_output(2);
-        state.settings_changed(constant(3000), 6500, secs(10.0));
+        state.settings_changed(constant(3000), 6500, false, secs(10.0));
         assert_eq!(
             state.temperature(1, secs(11.0)),
             state.temperature(2, secs(11.0))
@@ -350,7 +379,7 @@ mod tests {
     #[test]
     fn an_output_unplugged_is_forgotten() {
         let mut state = one_output(off());
-        state.settings_changed(constant(3000), 6500, secs(10.0));
+        state.settings_changed(constant(3000), 6500, false, secs(10.0));
         state.remove_output(1);
         assert!(!state.is_fading(secs(10.5)));
     }
@@ -360,7 +389,7 @@ mod tests {
         let mut state = one_output(off());
         state.add_output(2);
         state.step_back(1);
-        state.settings_changed(constant(4000), 6500, secs(10.0));
+        state.settings_changed(constant(4000), 6500, false, secs(10.0));
 
         assert!(state.has_stepped_back(1));
         assert!(!state.has_stepped_back(2));

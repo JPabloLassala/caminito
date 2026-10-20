@@ -82,6 +82,12 @@ pub trait Caminito {
     /// Flips `night-light-enabled` (137).
     fn toggle_night_light(&self) -> zbus::Result<()>;
 
+    /// Pauses Night Light until the next sunrise (140).
+    fn pause_night_light(&self) -> zbus::Result<()>;
+
+    /// Ends Night Light's pause (140).
+    fn resume_night_light(&self) -> zbus::Result<()>;
+
     /// Makes a menu claim (115): the dbusmenu the caller serves at `path` is the menubar
     /// of its process's focused window.
     fn claim_global_menu(&self, path: &zbus::zvariant::ObjectPath<'_>) -> zbus::Result<()>;

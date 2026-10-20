@@ -1,5 +1,6 @@
-//! Night Light (137, 138): `org.mate.Caminito`'s keys, the state dump, and the `NightLight`
-//! property and `ToggleNightLight()`, and the sun schedule through a day on a fake clock.
+//! Night Light (137, 138, 140): `org.mate.Caminito`'s keys, the state dump, the `NightLight`
+//! property and `ToggleNightLight()`, the sun schedule through a day on a fake clock, and the
+//! pause through `PauseNightLight()` and `ResumeNightLight()`.
 //! Headless has no gamma tables (ADR 0023), so these read Night Light's state; the ramps,
 //! the fades' arithmetic, the sun, the curve and the time zone are `night_light`'s unit
 //! tests, and the tables on the tty are checked by hand.
@@ -17,6 +18,7 @@ use crate::dbus::caminito::PATH;
 use crate::night_light::ZoneFiles;
 use crate::settings::Value;
 use crate::settings::translate::CAMINITO;
+use crate::state::TEST_WALL_CLOCK;
 
 fn dump(f: &Fixture) -> serde_json::Value {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
@@ -388,4 +390,170 @@ fn the_location_falls_back_as_its_sources_are_taken_away() {
     assert_eq!(next_sunrise, MONTEVIDEO_MIDNIGHT as i64 + 4 * 3600);
     f.advance_clock(10 * HOUR);
     assert_eq!(target(&f), 5500);
+}
+
+fn pause(f: &mut Fixture, bus: &str) {
+    let bus = bus.to_owned();
+    f.dbus_call(move || caminito_proxy(&bus).unwrap().pause_night_light().unwrap());
+}
+
+fn resume(f: &mut Fixture, bus: &str) {
+    let bus = bus.to_owned();
+    f.dbus_call(move || caminito_proxy(&bus).unwrap().resume_night_light().unwrap());
+}
+
+fn paused_until(f: &Fixture) -> i64 {
+    dump(f)["paused_until"].as_i64().unwrap()
+}
+
+/// 07:00 UTC on the day of `MONTEVIDEO_MIDNIGHT`: the fixed times' sunrise, as the tests'
+/// `localtime` is missing.
+const SEVEN: i64 = MONTEVIDEO_MIDNIGHT as i64 + 4 * 3600;
+
+#[test]
+fn a_pause_holds_night_light_off_until_sunrise_and_then_ends() {
+    let mut f = Fixture::with_settings(vec![enabled(), constant_schedule()]);
+    f.add_output((800, 600), 1.0);
+    let bus = f.start_dbus();
+    f.set_wall_clock(MONTEVIDEO_MIDNIGHT);
+    f.advance_clock(Duration::from_secs(2));
+    assert_eq!(applied(&f), 4000);
+
+    pause(&mut f, &bus);
+    f.dispatch_until(|f| paused_until(f) == SEVEN);
+    assert_eq!(dump(&f)["paused"], true);
+    assert_eq!(target(&f), 6500);
+    assert_eq!(property_temperature(&mut f, &bus), 6500);
+    f.advance_clock(Duration::from_secs(2));
+    assert_eq!(applied(&f), 6500);
+
+    // To a second before the end, and then past it.
+    f.advance_clock(Duration::from_secs(4 * 3600 - 5));
+    assert_eq!(target(&f), 6500);
+    f.advance_clock(Duration::from_secs(2));
+    assert_eq!(target(&f), 4000);
+    assert_eq!(dump(&f)["paused"], false);
+    f.dispatch_until(|f| paused_until(f) == 0);
+    // It fades back.
+    assert!(applied(&f) > 4000, "{}", applied(&f));
+    f.advance_clock(Duration::from_secs(2));
+    assert_eq!(applied(&f), 4000);
+}
+
+#[test]
+fn turning_night_light_off_or_on_clears_a_pause() {
+    let mut f = Fixture::with_settings(vec![enabled(), constant_schedule()]);
+    let bus = f.start_dbus();
+    f.set_wall_clock(MONTEVIDEO_MIDNIGHT);
+
+    pause(&mut f, &bus);
+    f.dispatch_until(|f| paused_until(f) == SEVEN);
+    toggle(&mut f, &bus);
+    f.dispatch_until(|f| dump(f)["enabled"] == false && paused_until(f) == 0);
+
+    pause(&mut f, &bus);
+    f.dispatch();
+    assert_eq!(paused_until(&f), 0, "a pause while off does nothing");
+
+    // Through the key, as the tab writes it, and with the pause there again.
+    f.set_setting(CAMINITO, "night-light-enabled", Value::Bool(true));
+    f.dispatch_until(|f| dump(f)["enabled"] == true);
+    pause(&mut f, &bus);
+    f.dispatch_until(|f| paused_until(f) == SEVEN);
+    f.set_setting(CAMINITO, "night-light-enabled", Value::Bool(false));
+    f.dispatch_until(|f| dump(f)["enabled"] == false);
+    // The pause no longer holds even before the 0 comes back.
+    assert_eq!(dump(&f)["paused"], false);
+    f.dispatch_until(|f| paused_until(f) == 0);
+    f.set_setting(CAMINITO, "night-light-enabled", Value::Bool(true));
+    f.dispatch_until(|f| target(f) == 4000);
+    assert_eq!(dump(&f)["paused"], false);
+}
+
+#[test]
+fn resume_night_light_ends_the_pause_and_fades_back() {
+    let mut f = Fixture::with_settings(vec![enabled(), constant_schedule()]);
+    f.add_output((800, 600), 1.0);
+    let bus = f.start_dbus();
+    f.set_wall_clock(MONTEVIDEO_MIDNIGHT);
+    pause(&mut f, &bus);
+    f.dispatch_until(|f| target(f) == 6500);
+    f.advance_clock(Duration::from_secs(2));
+
+    resume(&mut f, &bus);
+    f.dispatch_until(|f| paused_until(f) == 0);
+    assert_eq!(target(&f), 4000);
+    assert!(applied(&f) > 6000, "{}", applied(&f));
+    f.advance_clock(Duration::from_secs(2));
+    assert_eq!(applied(&f), 4000);
+}
+
+#[test]
+fn a_jump_of_the_clock_past_the_end_ends_the_pause_at_once() {
+    let mut f = Fixture::with_settings(vec![enabled(), constant_schedule()]);
+    let bus = f.start_dbus();
+    f.set_wall_clock(MONTEVIDEO_MIDNIGHT);
+    pause(&mut f, &bus);
+    f.dispatch_until(|f| paused_until(f) == SEVEN);
+
+    f.set_wall_clock(SEVEN as f64 + 60.0);
+    assert_eq!(target(&f), 4000);
+    f.dispatch_until(|f| paused_until(f) == 0);
+}
+
+#[test]
+fn a_pause_on_the_sun_schedule_ends_at_the_suns_rise() {
+    let mut f = Fixture::with_settings(vec![enabled(), stored_location()]);
+    let bus = f.start_dbus();
+    f.set_wall_clock(MONTEVIDEO_MIDNIGHT);
+    let rise = dump(&f)["next_sunrise"].as_i64().unwrap();
+
+    pause(&mut f, &bus);
+    f.dispatch_until(|f| paused_until(f) == rise);
+    assert_eq!(target(&f), 6500);
+}
+
+#[test]
+fn a_pause_whose_time_passed_before_the_start_is_cleared() {
+    // A minute before the tests' wall clock starts.
+    let passed = TEST_WALL_CLOCK as i64 - 60;
+    let mut f = Fixture::with_settings(vec![
+        enabled(),
+        constant_schedule(),
+        (
+            CAMINITO,
+            "night-light-paused-until".into(),
+            Value::Int64(passed),
+        ),
+    ]);
+    f.add_output((800, 600), 1.0);
+    f.dispatch_until(|f| paused_until(f) == 0);
+    assert_eq!(applied(&f), 4000);
+}
+
+#[test]
+fn a_pause_survives_a_restart() {
+    let mut before = Fixture::with_settings(vec![enabled(), constant_schedule()]);
+    let bus = before.start_dbus();
+    pause(&mut before, &bus);
+    before.dispatch_until(|f| paused_until(f) != 0);
+    let until = paused_until(&before);
+    drop(before);
+
+    // The key is kept as GSettings keeps it, and the next start reads it.
+    let mut after = Fixture::with_settings(vec![
+        enabled(),
+        constant_schedule(),
+        (
+            CAMINITO,
+            "night-light-paused-until".into(),
+            Value::Int64(until),
+        ),
+    ]);
+    after.add_output((800, 600), 1.0);
+    after.dispatch();
+    assert_eq!(dump(&after)["paused"], true);
+    assert_eq!(paused_until(&after), until);
+    // At once, as every start.
+    assert_eq!(applied(&after), 6500);
 }

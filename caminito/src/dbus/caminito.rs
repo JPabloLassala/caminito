@@ -2,7 +2,7 @@
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
 //! grabs (98), the window a window screenshot is of (104), the global menu (110), the
-//! menu claim (115), Night Light (137), and the sun's position (215).
+//! menu claim (115), Night Light (137) and its pause (140), and the sun's position (215).
 
 use std::collections::HashMap;
 
@@ -65,6 +65,10 @@ pub(crate) enum Request {
     NightLight(oneshot::Sender<night_light::Published>),
     /// Calls `ToggleNightLight`.
     ToggleNightLight(oneshot::Sender<()>),
+    /// Calls `PauseNightLight`.
+    PauseNightLight(oneshot::Sender<()>),
+    /// Calls `ResumeNightLight`.
+    ResumeNightLight(oneshot::Sender<()>),
     /// Reads `Sun`.
     Sun(oneshot::Sender<night_light::PublishedSun>),
 }
@@ -402,6 +406,20 @@ impl CaminitoInterface {
         super::ask(&self.requests, Request::ToggleNightLight).await
     }
 
+    /// Pauses Night Light until the next sunrise (140), by writing
+    /// `night-light-paused-until`: the next time the sun climbs past −6°, or 07:00 local with
+    /// no location, under either schedule, and a day from now at most. The outputs fade to
+    /// neutral meanwhile, and back to the schedule when it ends. It does nothing while Night
+    /// Light is off, and turning Night Light on or off ends it.
+    async fn pause_night_light(&self) -> zbus::fdo::Result<()> {
+        super::ask(&self.requests, Request::PauseNightLight).await
+    }
+
+    /// Ends Night Light's pause (140), by writing 0 to `night-light-paused-until`.
+    async fn resume_night_light(&self) -> zbus::fdo::Result<()> {
+        super::ask(&self.requests, Request::ResumeNightLight).await
+    }
+
     /// A grabbed accelerator was pressed: its action id, and the key event's time in
     /// milliseconds, as the Wayland clients get it. It's sent to the grabber alone, so no
     /// other caller learns the keys pressed. The release isn't signalled, and a repeat is
@@ -507,6 +525,14 @@ impl Caminito {
             }
             Request::ToggleNightLight(reply) => {
                 self.toggle_night_light();
+                let _ = reply.send(());
+            }
+            Request::PauseNightLight(reply) => {
+                self.pause_night_light();
+                let _ = reply.send(());
+            }
+            Request::ResumeNightLight(reply) => {
+                self.resume_night_light();
                 let _ = reply.send(());
             }
             Request::Sun(reply) => {

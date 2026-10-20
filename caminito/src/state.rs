@@ -138,7 +138,7 @@ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_secs(1));
 
 /// The tests' wall clock at Caminito's start: 2026-10-10 at 12:00 UTC (138).
 #[cfg(test)]
-const TEST_WALL_CLOCK: f64 = 1_791_633_600.0;
+pub(crate) const TEST_WALL_CLOCK: f64 = 1_791_633_600.0;
 
 /// Policy's id for Caminito's one seat.
 pub const SEAT: SeatId = SeatId(0);

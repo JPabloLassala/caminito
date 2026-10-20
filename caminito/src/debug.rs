@@ -250,6 +250,8 @@ struct NightLightDump {
     schedule: &'static str,
     /// `night-light-paused-until`: the Unix time a pause ends, or 0.
     paused_until: i64,
+    /// Whether a pause holds now (140): the key's end is ahead, and Night Light is on.
+    paused: bool,
     /// The sun schedule's latitude and longitude, while it has one.
     location: Option<(f64, f64)>,
     /// Where the location comes from: `stored`, `time-zone`, or `none` for the fixed times.
@@ -1203,6 +1205,7 @@ impl Caminito {
             enabled: settings.enabled,
             schedule: settings.schedule.name(),
             paused_until: settings.paused_until,
+            paused: night_light.is_paused(),
             location: sun
                 .location
                 .map(|location| (location.latitude, location.longitude)),

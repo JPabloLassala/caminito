@@ -306,6 +306,7 @@ expression: without_what_varies(&dump)
     "enabled": false,
     "schedule": "sun",
     "paused_until": 0,
+    "paused": false,
     "location": null,
     "location_source": "none",
     "sun_elevation": null,
