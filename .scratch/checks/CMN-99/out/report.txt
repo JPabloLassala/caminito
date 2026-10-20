@@ -1,0 +1,72 @@
+== thinkpad: sensors reads
+BAT0-virtual-0
+Adapter: Virtual device
+temp1:        +30.0°C  
+
+nvme-pci-0300
+Adapter: PCI adapter
+Composite:    +38.0°C  (crit = +84.8°C)
+
+iwlwifi_1-virtual-0
+Adapter: Virtual device
+temp1:        +41.0°C  
+
+acpitz-virtual-0
+Adapter: Virtual device
+temp1:        +50.0°C  (crit = +128.0°C)
+
+thinkpad-virtual-0
+Adapter: Virtual device
+fan1:        2865 RPM
+CPU:          +52.0°C  
+GPU:              N/A  
+temp3:         +0.0°C  
+temp4:         +0.0°C  
+temp5:         +0.0°C  
+temp6:         +0.0°C  
+temp7:         +0.0°C  
+temp8:         +0.0°C  
+
+coretemp-virtual-0
+Adapter: Virtual device
+Package id 0:  +55.0°C  (crit = +100.0°C)
+Core 0:        +53.0°C  (crit = +100.0°C)
+Core 1:        +52.0°C  (crit = +100.0°C)
+
+thinkpad, at 32 px: the panel lives
+thinkpad, at 24 px: the panel lives
+thinkpad, on a vertical panel: the panel lives
+== desktop: sensors reads
+nct6798-virtual-0
+Adapter: Virtual device
+fan1:         820 RPM
+fan2:        1180 RPM
+SYSTIN:       +34.0°C  
+AUXTIN3:       +0.0°C  
+
+nvme-pci-0200
+Adapter: PCI adapter
+Composite:    +46.0°C  (crit = +84.8°C)
+
+nvme-pci-0100
+Adapter: PCI adapter
+Composite:    +41.0°C  (crit = +84.8°C)
+Sensor 1:     +45.0°C  (crit = +84.8°C)
+
+amdgpu-virtual-0
+Adapter: Virtual device
+fan1:           0 RPM  (max = 3300 RPM)
+edge:         +49.0°C  (crit = +100.0°C)
+junction:     +61.0°C  (crit = +110.0°C)
+mem:          +57.0°C  (crit = +105.0°C)
+
+k10temp-virtual-0
+Adapter: Virtual device
+Tctl:         +58.0°C  
+Tccd1:        +55.0°C  
+
+desktop, at 32 px: the panel lives
+desktop, at 24 px: the panel lives
+desktop, warm and hot: the panel lives
+desktop, every fan at 0: the panel lives
+desktop, amdgpu's chip removed: the panel lives

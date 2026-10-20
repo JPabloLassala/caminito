@@ -62,13 +62,14 @@ license=(GPL-2.0-or-later)
 # bluez, the daemon, and on nothing else for it. The Bluetooth applet (259, ADR 0035) is built
 # against mate-panel's applet library, whose headers mate-panel-caminito has: the build
 # depends on it through depends. The applet and caminito-bluetooth need nothing of Caminito,
-# and work under X11 MATE too.
+# and work under X11 MATE too. The Thermal applet (267) reads its temperatures and fans
+# through lm_sensors' libsensors.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking
   mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
-  mate-notification-daemon mate-polkit hicolor-icon-theme bluez)
+  mate-notification-daemon mate-polkit hicolor-icon-theme bluez lm_sensors)
 makedepends=(cargo git meson)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module

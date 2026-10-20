@@ -1,0 +1,13 @@
+[Applet Factory]
+Id=CaminitoThermalAppletFactory
+InProcess=true
+Location=@APPLET_LOCATION@
+Name=Temperatures and Fans Applet Factory
+Description=Caminito's Thermal applet
+
+[CaminitoThermalApplet]
+Name=Temperatures and Fans
+Description=See how hot the computer is and how fast its fans spin
+Icon=caminito-thermometer-symbolic
+MateComponentId=OAFIID:Caminito_ThermalApplet;
+Platforms=X11;Wayland;

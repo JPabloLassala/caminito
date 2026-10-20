@@ -12,6 +12,8 @@ Rules-Requires-Root: no
 # libmate-panel-applet-dev has the applet library the Bluetooth applet is built against (259,
 # ADR 0035). It's the patched mate-panel's, at its baseline, which no stock version reaches
 # (ADR 0029): Ubuntu's .so.1 library is not the one the patched panel loads applets with.
+# libsensors-dev is lm_sensors' library, which the Thermal applet reads its temperatures and
+# fans through (267).
 Build-Depends:
  debhelper-compat (= 13),
  rustup,
@@ -33,6 +35,7 @@ Build-Depends:
  libgtk-session-lock-dev,
  libmate-desktop-dev,
  libmate-panel-applet-dev (>= 1.29.0~git20260925.58ac6c1),
+ libsensors-dev,
  libpam0g-dev,
  libaudit-dev,
  dbus-daemon,

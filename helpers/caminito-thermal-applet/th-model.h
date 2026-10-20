@@ -1,0 +1,107 @@
+/*
+ * What the Thermal applet shows (267), from what its source read, apart from libsensors so
+ * that the tests can build any computer: each reading's group and name, which readings are
+ * left out, the bands, the panel sensors, and the panel's and the tooltip's text.
+ */
+
+#pragma once
+
+#include <glib.h>
+
+typedef enum
+{
+  TH_GROUP_CPU,
+  TH_GROUP_GPU,
+  TH_GROUP_STORAGE,
+  TH_GROUP_WIRELESS,
+  TH_GROUP_BOARD,
+  TH_GROUP_OTHER,
+} ThGroup;
+
+typedef enum
+{
+  TH_BAND_NORMAL,
+  TH_BAND_WARM,
+  TH_BAND_HOT,
+} ThBand;
+
+/* The bands' fixed thresholds in °C, until 269 makes them preferences. */
+#define TH_WARM_DEFAULT 75.0
+#define TH_HOT_DEFAULT  90.0
+
+/* One temperature or fan as the source read it this time. */
+typedef struct
+{
+  /* The chip's name, as "coretemp" or "nvme", and one that's its own among the chips, as
+     libsensors' "coretemp-isa-0000". */
+  char    *chip;
+  char    *chip_id;
+  /* The feature, as "temp1" or "fan2". */
+  char    *feature;
+  /* The chip's label for it, NULL with none. */
+  char    *label;
+  /* The device's own name where it has one, an NVMe drive's model; NULL otherwise. */
+  char    *device;
+  gboolean is_fan;
+  /* FALSE when it couldn't be read. */
+  gboolean ok;
+  /* °C, or RPM for a fan. */
+  double   value;
+  /* A temperature's crit, or a fan's max; NAN with none. */
+  double   limit;
+} ThRaw;
+
+ThRaw *th_raw_new  (const char *chip,
+                    const char *chip_id,
+                    const char *feature,
+                    const char *label,
+                    const char *device,
+                    gboolean    is_fan,
+                    gboolean    ok,
+                    double      value,
+                    double      limit);
+void   th_raw_free (ThRaw *raw);
+
+/* A reading the applet shows. */
+typedef struct
+{
+  /* chip_id/feature: the same across reads, and across rescans of the chips. */
+  char    *id;
+  char    *name;
+  ThGroup  group;
+  gboolean is_fan;
+  double   value;
+  double   limit;
+} ThReading;
+
+typedef struct _ThModel ThModel;
+
+ThModel *th_model_new    (void);
+void     th_model_free   (ThModel *model);
+/* What the source read this time, a GPtrArray of ThRaw. A reading missing from it, as a
+   chip's whose module was unloaded, is no longer shown. */
+void     th_model_update (ThModel *model, GPtrArray *raws);
+
+/* The temperatures shown: read this time, and not 0 every time since the first. In the
+   order the source gave them. The model keeps them. */
+GPtrArray *th_model_temperatures (ThModel *model);
+/* The fans read this time, stopped ones too. */
+GPtrArray *th_model_fans         (ThModel *model);
+/* The panel sensors, one or two, or none while there's no temperature: the CPU's reading,
+   and the hottest GPU reading when there's a GPU. */
+GPtrArray *th_model_panel_sensors (ThModel *model);
+
+/* Whether a chip of that name is left out: batteries, AC and USB-C. */
+gboolean th_chip_is_left_out (const char *chip);
+ThGroup  th_chip_group       (const char *chip);
+ThBand   th_band             (double value, double crit, double warm, double hot);
+
+/* "55°C", "55°C / 81°C" with each in its band's colour as Pango markup, "–" with none. */
+char *th_model_panel_temperatures (ThModel *model);
+/* The fastest fan's "2865 RPM", "Fans Off" when every fan reads 0, NULL with no fan. */
+char *th_model_panel_fans         (ThModel *model);
+/* The first panel sensor as a bare number in its band's colour, "55°", for a vertical
+   panel; "–" with none. */
+char *th_model_panel_bare         (ThModel *model);
+/* "CPU Package 55 °C · Fan 2865 RPM": every panel sensor and every fan. */
+char *th_model_tooltip            (ThModel *model);

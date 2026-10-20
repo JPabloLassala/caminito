@@ -58,6 +58,7 @@ BuildRequires:  gtk-session-lock-devel
 BuildRequires:  mate-desktop-devel
 BuildRequires:  mate-panel-devel >= %{panel_baseline}
 BuildRequires:  pam-devel
+BuildRequires:  lm_sensors-devel
 # The tests: a private session bus, pixman for the headless backend, libwayland-client for the
 # fixture's clients and the Xwayland the X11 tier spawns, and python-dbusmock, the BlueZ
 # caminito-bluetooth's tests run against (255).
@@ -164,15 +165,18 @@ dbus-run-session -- cargo test --frozen --release
 %{_bindir}/caminito-locker
 %{_libdir}/mate-panel/libcaminito-bluetooth-applet.so
 %{_libdir}/mate-panel/libcaminito-power-applet.so
+%{_libdir}/mate-panel/libcaminito-thermal-applet.so
 %{_datadir}/caminito/
 %{_datadir}/applications/caminito-bluetooth.desktop
 %{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
 %{_datadir}/icons/hicolor/scalable/apps/caminito.svg
+%{_datadir}/icons/hicolor/scalable/status/caminito-thermometer-symbolic.svg
 %{_datadir}/mate-control-center/keybindings/50-caminito-*.xml
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoBluetoothApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoPowerApplet.mate-panel-applet
+%{_datadir}/mate-panel/applets/org.mate.panel.CaminitoThermalApplet.mate-panel-applet
 %{_datadir}/mate-panel/layouts/caminito.layout
 %{_datadir}/wayland-sessions/mate-caminito.desktop
 %config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-bluetooth.desktop
