@@ -2065,6 +2065,34 @@ session_env() {
   org.mate.Caminito.Debug DumpState`, `journalctl --user -t caminito-wallpaperd`, and `dconf
   dump /org/mate/caminito/wallpaper/`.
 
+### The wallpaper shows through caja's desktop, and stays still as the Overview opens
+
+- **Milestone:** M9
+- **Steps:**
+  1. With two monitors connected and `caja-caminito` at `pkgrel` 5 or later, log into *MATE
+     on Caminito*. Put a file on the desktop, and drag it to each corner of the primary output.
+     Then read the primary output's `layer_surfaces`:
+     `busctl --user call org.mate.Caminito.Debug /org/mate/Caminito/Debug org.mate.Caminito.Debug DumpState`.
+  2. On the primary output, open the Overview with Super+W and close it, three times. Do the
+     same on the other output.
+  3. Give each monitor a picture of its own, as in "caminito-wallpaperd draws each output's
+     wallpaper, and follows the monitors". Then open the Wallpaper dialog on the primary output
+     and click *cosmos*, a dynamic wallpaper.
+  4. Log out, log into *MATE* on X11, and change the desktop's picture in *Appearance*. Then
+     log into *MATE on Wayfire* and look at the desktop.
+- **Expected:** in step 1 the icons are over the wallpaper, and an icon in each corner is all
+  on screen, clear of both panels. In the dump, `desktop` starts below the top panel and is
+  the output's height less the panels' exclusive zones: for example `y=32, 2560×1384` on a
+  1440-row output with a 32 px top panel and a 24 px bottom one. In step 2 the wallpaper
+  doesn't move on either output as the Overview opens or closes. Only the icons go. In step 3
+  the primary output shows its own picture under the icons, then the dynamic one. Only
+  Caminito's cross-fade shows, and no second fade of another picture. In step 4 caja draws the
+  desktop's picture on X11 and on Wayfire as before, and fades to the new one on X11
+  (CMN-182).
+- **Debug tool:** `DumpState` as in step 1, and `journalctl --user -t caminito-wallpaperd`.
+  The patch decides at caja's start: a caja started before Caminito owns `org.mate.Caminito`
+  draws its own picture.
+
 ### caja's "Set as wallpaper" sets every output, and `org.mate.background` follows the primary
 
 - **Milestone:** M9
