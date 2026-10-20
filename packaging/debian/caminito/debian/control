@@ -59,7 +59,9 @@ Architecture: amd64
 # autostarts, hicolor's directory for the logo, and mate-desktop's org.mate.background, which
 # caminito-wallpaperd reads on its first run, and glib-networking, GIO's TLS, which it fetches
 # a picture of the day with, and bluez, the daemon caminito-bluetooth and the Bluetooth applet
-# talk to (255, 259).
+# talk to (255, 259), and upower, which the Power applet reads the batteries from (262).
+# power-profiles-daemon has the power profiles of the applet's popup (264), which has none
+# without it.
 # The patched packages and marco join these in ticket 205, at versions no stock one has.
 Depends:
  ${shlibs:Depends},
@@ -78,9 +80,11 @@ Depends:
  hicolor-icon-theme,
  mate-desktop-common,
  bluez,
+ upower,
 Recommends:
  appmenu-gtk-module,
  caminito-vscode,
+ power-profiles-daemon,
 Suggests:
  libheif-examples,
 Description: Wayland compositor for the MATE desktop

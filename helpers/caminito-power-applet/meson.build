@@ -68,6 +68,13 @@ install_data(
   install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
 )
 
+# mate-power-manager's own icon off by default (CMN-100), so X11 MATE has one battery icon. The
+# same hook compiles it.
+install_data(
+  '90_caminito-power-applet.gschema.override',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
+)
+
 # The icon's names and the tooltip, from displays built by hand.
 test('state', executable('test-state', 'test-state.c', link_with: state, dependencies: [gio, m]))
 

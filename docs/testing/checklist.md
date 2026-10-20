@@ -2631,8 +2631,69 @@ the developer's to run (CMN-105).
 
 ## Power applet
 
-These need a Session, with its real idle and mate-session, which no mock stands in for. They are
-the developer's to run.
+These need real hardware and a Session, with its real idle and mate-session, which no mock
+stands in for. They are the developer's to run.
+
+### A fresh user's top panel has the applet, and X11 MATE shows one battery icon
+
+- **Milestone:** M9
+- **Steps:**
+  1. On a laptop, make a user with no panel settings: `sudo useradd -m pwfresh`, and log in as
+     them to *MATE on Caminito*.
+  2. Look at the top panel, and hover over the battery icon.
+  3. Log out. Log in as the same user to *MATE*, the X11 session. Run
+     `gsettings get org.mate.power-manager icon-policy`.
+- **Expected:** in step 2 the battery icon is in the top panel beside the Bluetooth icon, and its
+  tooltip has the charge and the time left. In step 3 the same panel, with one battery icon only:
+  mate-power-manager's isn't in the notification area, and the command prints `'never'`.
+- **Debug tool:** `dconf dump /org/mate/panel/objects/`, and `upower -d`.
+
+### Unplugging and plugging in again
+
+- **Milestone:** M9
+- **Steps:**
+  1. With the charger in, hover over the icon, and open the popup.
+  2. Unplug the charger. Wait ten seconds, then hover and open the popup again.
+  3. Plug it in again.
+- **Expected:** in step 1 the icon is the charging glyph, the tooltip says *Full in …* (*Charging*
+  while UPower has no estimate, or *Plugged in* when full), and the laptop's battery row says *Charging* or *Fully charged*. In
+  step 2 the glyph loses its charging mark, the tooltip says *… left*, and the row says
+  *Discharging*. In step 3 they change back within a few seconds.
+- **Debug tool:** `upower --monitor-detail`.
+
+### A profile change is seen in `powerprofilesctl`
+
+- **Milestone:** M9
+- **Steps:**
+  1. With power-profiles-daemon (or tuned-ppd) running, open the popup, and run
+     `powerprofilesctl`.
+  2. Click *Power Saver*, then run `powerprofilesctl get`.
+  3. Run `powerprofilesctl set performance` (or `balanced`, with no Performance tile), with the
+     popup open.
+  4. Run `systemctl stop power-profiles-daemon` (or `tuned`), and open the popup.
+- **Expected:** in step 1 the popup has a tile for each profile `powerprofilesctl` lists, and the
+  active one is pressed. In step 2 it prints `power-saver`, and that tile is pressed. In step 3
+  the popup's pressed tile follows. In step 4 the tiles are gone. Start the daemon again after.
+- **Debug tool:** `powerprofilesctl`, and `busctl --system introspect
+  org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles`.
+
+### The charge limit
+
+- **Milestone:** M9
+- **Steps:**
+  1. On a laptop whose battery supports a charge limit (`upower -i
+     /org/freedesktop/UPower/devices/battery_BAT0` has `charge-threshold-supported: yes`), open
+     the popup and click the ⋮ button of the laptop's battery.
+  2. Turn on *Limit charging to 80%* (or to the firmware's own end threshold, where
+     `charge-end-threshold` is below 100), and answer polkit if it asks. Leave the charger in until
+     the battery is above 80%, or start above it.
+  3. Turn it off.
+- **Expected:** in step 1 the popover has the battery's health and the switch. In step 2 `upower
+  -i` says `charge-threshold-enabled: yes`, the row says *· limit 80%* (or the firmware's
+  threshold), and the battery doesn't charge past it (*Not charging*). In step 3 it charges again to full. On a battery that doesn't
+  support it, the popover has the health only.
+- **Debug tool:** `upower -i`, and
+  `cat /sys/class/power_supply/BAT0/charge_control_end_threshold`.
 
 ### Stay awake keeps the screen from blanking past `idle-delay`, and shows what else does
 

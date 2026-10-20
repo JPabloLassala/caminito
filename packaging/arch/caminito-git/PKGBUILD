@@ -64,12 +64,15 @@ license=(GPL-2.0-or-later)
 # depends on it through depends. The applet and caminito-bluetooth need nothing of Caminito,
 # and work under X11 MATE too. The Thermal applet (267) reads its temperatures and fans
 # through lm_sensors' libsensors. It's in Add to Panel only, not in the default panel (270).
+# The Power applet (262), which is in the default panel (CMN-100), reads the batteries from
+# upower, and the power profiles from power-profiles-daemon (or tuned-ppd, which has the same
+# names) where one runs: without one, the popup has no profiles.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking
   mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
-  mate-notification-daemon mate-polkit hicolor-icon-theme bluez lm_sensors)
+  mate-notification-daemon mate-polkit hicolor-icon-theme bluez lm_sensors upower)
 makedepends=(cargo git meson)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module
@@ -80,6 +83,7 @@ makedepends=(cargo git meson)
 # it the Wallpaper dialog greys HEICs out and says why (217).
 optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the panel's global menu"
   "libheif: Apple's HEIC dynamic wallpapers, decoded by its heif-dec (217)"
+  "power-profiles-daemon: the power profiles in the Power applet's popup (264)"
   "caminito-vscode-git: the menus of VS Code, VSCodium, Code - OSS and Cursor in the panel's global menu")
 # caminito's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14). caminito-bluetooth's

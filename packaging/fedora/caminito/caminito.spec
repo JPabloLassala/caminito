@@ -95,6 +95,10 @@ Requires:       mate-polkit
 Requires:       hicolor-icon-theme
 # The daemon caminito-bluetooth and the Bluetooth applet talk to (255, 259).
 Requires:       bluez
+# The daemon the Power applet reads the batteries from (262), and the power profiles of its
+# popup (264), which Fedora has from tuned-ppd, with power-profiles-daemon's names.
+Requires:       upower
+Recommends:     (tuned-ppd or power-profiles-daemon)
 # The session that `caminito --session` starts (08, 17). The patched and backported packages
 # are required at their baselines, so that a stock package never satisfies them (16, ADR
 # 0011, ADR 0029): marco, the panel, the session manager, the settings daemon, the control
@@ -169,6 +173,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/caminito/
 %{_datadir}/applications/caminito-bluetooth.desktop
 %{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
+%{_datadir}/glib-2.0/schemas/90_caminito-power-applet.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-thermal.gschema.xml

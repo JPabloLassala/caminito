@@ -1,0 +1,23 @@
+icon-policy: 'never'
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Cannot set up inotify for '/root/.local/share/dbus-1/services': Permission denied
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Activating service name='org.gtk.vfs.Daemon' requested by ':1.0' (uid=0 pid=96280 comm="gsettings get org.mate.panel default-layout")
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Successfully activated service 'org.gtk.vfs.Daemon'
+default-layout: 'caminito'
+object-id-list before: @as []
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Activating service name='org.gtk.vfs.Metadata' requested by ':1.4' (uid=0 pid=96300 comm="mate-panel")
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Successfully activated service 'org.gtk.vfs.Metadata'
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Activating service name='org.gtk.vfs.UDisks2VolumeMonitor' requested by ':1.4' (uid=0 pid=96300 comm="mate-panel")
+dbus-daemon[96251]: [session uid=0 pid=96251 pidfd=5] Successfully activated service 'org.gtk.vfs.UDisks2VolumeMonitor'
+panel running
+object-id-list: menu-bar notification-area bluetooth power clock show-desktop window-list workspace-switcher
+  menu-bar: 'top' 'start' 0 ''
+  notification-area: 'top' 'end' 1 'NotificationAreaAppletFactory::NotificationArea'
+  bluetooth: 'top' 'end' 2 'CaminitoBluetoothAppletFactory::CaminitoBluetoothApplet'
+  power: 'top' 'end' 3 'CaminitoPowerAppletFactory::CaminitoPowerApplet'
+  clock: 'top' 'end' 0 'ClockAppletFactory::ClockApplet'
+  show-desktop: 'bottom' 'start' 0 'WnckletFactory::ShowDesktopApplet'
+  window-list: 'bottom' 'start' 1 'WnckletFactory::WindowListApplet'
+  workspace-switcher: 'bottom' 'end' 0 'WnckletFactory::WorkspaceSwitcherApplet'
+** (mate-panel:96300): WARNING **: 15:01:34.985: Call can set time zone dbus method: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.mate.SettingsDaemon.DateTimeMechanism was not provided by any .service files
+** (mate-panel:96300): WARNING **: 15:01:34.990: Could not ask session manager if shut down is available: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files
+A connection to the bus can't be made

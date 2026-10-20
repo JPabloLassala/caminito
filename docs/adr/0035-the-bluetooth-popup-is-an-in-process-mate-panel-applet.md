@@ -30,7 +30,7 @@ Caminito's own programs are Rust and GTK4 (ADR 0014). But on Wayland, mate-panel
   - The cost: the layout is a copy of `default.layout`, kept in step by hand.
   - A new user of X11 MATE on the same machine gets the layout too. The applet works there, and it hides itself when there is no adapter.
   - Only a user with no panel settings gets the layout.
-  - The Power and Thermal applets, which follow, can add their lines to this file.
+  - The Power and Thermal applets, which follow, can add their lines to this file. The Power applet is there, beside the Bluetooth applet (CMN-100). The Thermal applet is not: it's in Add to Panel only (270).
 - Rejected:
   - A StatusNotifierItem icon from the Rust process. It's cheap and all Rust, but its click gives a dbusmenu menu that the panel draws, with no switches, expanding rows or custom layout.
   - A layer-shell popup drawn by the Rust process. It works only under Caminito, needs a privileged client, and can't be placed against the icon, because the panel doesn't publish where the icon is.

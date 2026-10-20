@@ -1,0 +1,6 @@
+# Turns mate-power-manager's own battery icon off by default (CMN-100), so that X11 MATE shows only
+# the applet's. The user can turn it on again in mate-power-preferences. Where mpm isn't
+# installed, glib-compile-schemas skips this key, as the distributions' hooks run it without
+# --strict.
+[org.mate.power-manager]
+icon-policy='never'

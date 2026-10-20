@@ -431,6 +431,29 @@ Caminito, and work under X11 MATE too.
 default agent to whichever registers last, so the one that started last answers the pairing requests.
 Stop the other's agent, or don't start it, to choose.
 
+### Power
+
+The **Power applet** is a battery icon in mate-panel, in a new session's top panel beside the
+Bluetooth applet. Its tooltip has the charge and the time left or until full, and where there is
+no battery it's a plug. Its popup has:
+
+- The power profiles, Power Saver, Balanced and Performance, as tiles, with why Performance is
+  degraded and which application holds a profile. They are there only when power-profiles-daemon,
+  or tuned-ppd, runs.
+- _Stay awake_, which keeps the computer from sleeping and the screen from locking until it's
+  turned off, and the applications that keep the computer awake.
+- Every battery: the laptop's, with its health and, where the battery supports it, _Limit
+  charging to 80%_ under its ⋮ button (the firmware's own end threshold where it has one), and
+  the mouse's, the keyboard's and the headset's.
+- _Configure Power Management…_, which opens mate-power-preferences.
+
+It reads UPower, power-profiles-daemon and mate-session directly, so it depends on `upower`, and
+optionally on `power-profiles-daemon`, and on nothing of Caminito, and works under X11 MATE too.
+There, so that only one battery icon shows, the package turns mate-power-manager's own icon off
+by default. In mate-power-preferences, _Only display an icon when a battery is present_, its
+setting before the package, turns it on again. A user who had panel settings before keeps their
+panel, and adds _Power_ with _Add to Panel_.
+
 ### Temperatures and fans
 
 The **Thermal applet** is a thermometer in mate-panel with the CPU's temperature, and the hottest
