@@ -431,6 +431,34 @@ Caminito, and work under X11 MATE too.
 default agent to whichever registers last, so the one that started last answers the pairing requests.
 Stop the other's agent, or don't start it, to choose.
 
+### Temperatures and fans
+
+The **Thermal applet** is a thermometer in mate-panel with the CPU's temperature, and the hottest
+GPU reading beside it when there is a GPU, over the fastest fan's speed, or _Fans Off_ when every
+fan is stopped. A
+temperature turns orange from 75 °C, and red from 90 °C, or from 5 °C below the sensor's critical
+value when that is lower. On a panel smaller than 32 px it's one line, and on a vertical panel
+it's the CPU's temperature alone. Its tooltip names the temperatures in the panel, and every fan
+with its speed.
+
+It isn't in a new session's panel: add _Temperatures and Fans_ with _Add to Panel_. It reads every
+chip through lm_sensors' libsensors, so the labels and the `ignore` lines in `/etc/sensors3.conf`
+and `/etc/sensors.d/` apply to it. It depends on `lm_sensors` and on nothing of Caminito, and works
+under X11 MATE too.
+
+It only watches: it never sets a fan's speed.
+
+A SATA drive's temperature shows only when the kernel's `drivetemp` module is loaded, and nothing
+loads it automatically. To load it now and at each boot:
+
+```sh
+sudo modprobe drivetemp
+echo drivetemp | sudo tee /etc/modules-load.d/drivetemp.conf
+```
+
+NVIDIA's proprietary driver gives its GPU's temperature only through NVML, not through hwmon, so
+the applet doesn't show it.
+
 ### Night Light
 
 *Night Light* in the menu's Preferences opens caminito-displays on its Night Light tab

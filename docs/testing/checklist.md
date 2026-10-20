@@ -2656,6 +2656,58 @@ the developer's to run.
 - **Debug tool:** `gdbus call` as in step 1, and `journalctl --user -b -t caminito` for the idle
   state.
 
+## Thermal applet
+
+These need real sensors and fans, which the fake hwmon trees of CMN-99's check script only stand
+in for. They are the developer's to run.
+
+### The readings match `sensors`
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` installed, log into *MATE on Caminito* as a user with no panel
+     settings, as in the Bluetooth applet's item above. Look at the top panel.
+  2. Right-click the top panel, choose *Add to Panel…*, and add *Temperatures and Fans*.
+  3. Run `watch -n 2 sensors` in a terminal beside the panel. Hover over the applet.
+- **Expected:** in step 1 the panel has no thermometer. In step 2 the list has *Temperatures and
+  Fans* with a thermometer icon, and the applet shows the CPU's temperature (coretemp's
+  *Package id 0* or k10temp's *Tctl*, or else the hottest reading), and the hottest GPU reading
+  after it when there is a GPU, over the fastest fan's RPM, or *Fans Off* when every fan reads
+  0. A computer with no fans has no second line. In step 3 each number agrees with `sensors` to
+  within one reading, 2 s, and the tooltip names the same temperatures, and every fan with its
+  speed or *Stopped*.
+- **Debug tool:** `sensors -u`, `cat /sys/class/hwmon/hwmon*/name`, and `journalctl --user -b -t
+  mate-panel`.
+
+### A load turns the panel orange and spins the fan up
+
+- **Milestone:** M9
+- **Steps:**
+  1. With the applet in the panel, run `stress-ng --cpu 0 --timeout 120s`. Watch the panel and
+     `watch -n 2 sensors`.
+  2. Let `stress-ng` stop, and watch for two minutes more.
+- **Expected:** in step 1 the CPU's temperature turns orange when it gets to 75 °C, and red at
+  90 °C, or at 5 °C below its critical value when `sensors` gives a lower one. The fan's RPM goes
+  up, as in `sensors`. In step 2 the temperature goes back to the theme's text colour below
+  75 °C, and the fan slows down again, or shows *Fans Off* when it stops.
+- **Debug tool:** `sensors -u`, for each reading's `_crit`, and `cat
+  /sys/class/hwmon/hwmon*/fan*_input`.
+
+### A 24 px panel shows one line
+
+- **Milestone:** M9
+- **Steps:**
+  1. With the applet in the top panel, open the panel's *Properties* and set its size to 24
+     pixels.
+  2. Set it to 32 pixels.
+  3. Set the panel's orientation to *Left*.
+- **Expected:** in step 1 the applet is one line, as `77°C / 85°C  1897 RPM`, and no part of it is
+  cut off. In step 2 it's two lines: the temperatures over the fan's speed (one line on a
+  computer with no fans). In step 3 it's the thermometer with the CPU's temperature as a bare
+  number, as `77°`, under it.
+- **Debug tool:** `dconf dump /org/mate/panel/toplevels/top/`, and `journalctl --user -b -t
+  mate-panel`.
+
 ## Marco parity
 
 ### Each placement mode places a native and an X11 window on two outputs

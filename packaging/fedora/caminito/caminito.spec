@@ -119,8 +119,8 @@ settings, draws its themes and binds its keys, so that MATE runs on Wayland as i
 X11.
 
 This package has the compositor, caminito-displays, caminito-about, the wallpaper's drawer
-and Wallpaper dialog, caminito-bluetooth and the Bluetooth panel applet, the palette and
-locker helpers, and the "MATE on Caminito" session that display managers list.
+and Wallpaper dialog, caminito-bluetooth, the Bluetooth, Power and Thermal panel applets, the
+palette and locker helpers, and the "MATE on Caminito" session that display managers list.
 
 %prep
 %autosetup

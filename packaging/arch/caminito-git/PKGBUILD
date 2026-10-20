@@ -63,7 +63,7 @@ license=(GPL-2.0-or-later)
 # against mate-panel's applet library, whose headers mate-panel-caminito has: the build
 # depends on it through depends. The applet and caminito-bluetooth need nothing of Caminito,
 # and work under X11 MATE too. The Thermal applet (267) reads its temperatures and fans
-# through lm_sensors' libsensors.
+# through lm_sensors' libsensors. It's in Add to Panel only, not in the default panel (270).
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking

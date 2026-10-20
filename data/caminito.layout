@@ -1,9 +1,10 @@
 # Caminito's default panel layout (CMN-105): mate-panel's own default.layout, from the commit the
 # patched package is built from (58ac6c1), with the Bluetooth applet added to the top panel,
 # beside the notification area. 90_caminito.gschema.override makes it the default. Only a user
-# with no panel settings gets it: anyone else adds the applet with Add to Panel.
+# with no panel settings gets it: anyone else adds the applet with Add to Panel. The Power and
+# Thermal applets aren't in it: they're in Add to Panel only (270).
 #
-# The applet is in the same package as this file, so the layout never names one that isn't
+# The Bluetooth applet is in the same package as this file, so the layout never names one that isn't
 # installed. It works under X11 MATE too, and hides itself where there is no Bluetooth adapter.
 # Move the keys of a later default.layout over by hand when the baseline moves.
 

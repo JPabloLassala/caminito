@@ -13,7 +13,8 @@ Rules-Requires-Root: no
 # ADR 0035). It's the patched mate-panel's, at its baseline, which no stock version reaches
 # (ADR 0029): Ubuntu's .so.1 library is not the one the patched panel loads applets with.
 # libsensors-dev is lm_sensors' library, which the Thermal applet reads its temperatures and
-# fans through (267).
+# fans through (267). The applet links libsensors5, which ${shlibs:Depends} brings at run time
+# (270).
 Build-Depends:
  debhelper-compat (= 13),
  rustup,
@@ -89,5 +90,5 @@ Description: Wayland compositor for the MATE desktop
  .
  This package has the compositor, caminito-displays, caminito-about, the
  wallpaper's drawer and Wallpaper dialog, the palette and locker helpers,
- caminito-bluetooth and the Bluetooth panel applet, and the "MATE on Caminito"
- session that display managers list.
+ caminito-bluetooth, the Bluetooth, Power and Thermal panel applets, and the
+ "MATE on Caminito" session that display managers list.
