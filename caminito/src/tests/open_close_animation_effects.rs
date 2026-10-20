@@ -296,7 +296,7 @@ fn neither_runs_during_the_overviews_transition_either_way() {
 }
 
 /// Whether the Overview's transition runs, from the debug dump.
-fn overview_transition_runs(f: &Fixture) -> bool {
+pub(super) fn overview_transition_runs(f: &Fixture) -> bool {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     !dump["overview_transition"].is_null()
 }

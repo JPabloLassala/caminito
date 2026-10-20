@@ -689,6 +689,9 @@ impl State {
         // After the last step that changes policy, so that a window that maps is drawn
         // opening from its first frame (251).
         self.caminito.refresh_open_close_animations();
+        // After the slides, which draw a window whose workspace leaves on its way to its new
+        // frame, and the Overview and the lock, which end it (CMN-177).
+        self.caminito.end_maximize_animations();
         // After the lock and the Overview, which end every slide.
         self.refresh_popup_slides();
         // After the last step that changes policy, and before the outputs are drawn: what

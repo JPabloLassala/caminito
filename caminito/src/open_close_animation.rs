@@ -558,8 +558,8 @@ impl Caminito {
     }
 
     /// Whether the animations run now: not while the Overview is open or during its
-    /// transition, nor under the session lock (254).
-    fn animations_run(&self) -> bool {
+    /// transition, nor under the session lock (254), the Maximise animation's too (CMN-177).
+    pub(crate) fn animations_run(&self) -> bool {
         let overview = self.policy.overview().is_some() || !self.overview.is_empty();
         !overview && !self.lock.is_locked()
     }
@@ -844,17 +844,9 @@ impl Caminito {
             })
             .flat_map(|(opening, frame)| {
                 let id = opening.window;
-                let output = policy.main_output_of(id);
-                let slide = output.and_then(|output| self.workspace_slides.on(output, now));
-                let showing = policy.is_showing(id);
-                let mut shifts =
-                    slide.map_or_else(Vec::new, |slide| slide.shifts(id, showing, now));
-                if shifts.is_empty() {
-                    shifts.push(Point::default());
-                }
                 let rect = opening.rect(frame, now);
                 let alpha = opening.alpha(now);
-                shifts.into_iter().map(move |shift| {
+                self.drawn_shifts(id, now).into_iter().map(move |shift| {
                     let drawn = Rectangle::new(rect.loc + shift, rect.size);
                     (id, drawn, alpha)
                 })

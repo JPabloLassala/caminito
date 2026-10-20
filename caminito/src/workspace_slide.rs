@@ -296,6 +296,21 @@ fn whole_switches(switches: Vec<OutputSwitch>) -> Vec<OutputSwitch> {
 }
 
 impl Caminito {
+    /// How far from its own place window `id` is drawn at `now`, for each place it's drawn
+    /// at: where the slide of its Main output draws it, or its own place if none does, for
+    /// the debug dump of the animations a slide moves (254, CMN-177).
+    pub(crate) fn drawn_shifts(&self, id: WindowId, now: Duration) -> Vec<Point<i32, Logical>> {
+        let policy = &self.policy;
+        let output = policy.main_output_of(id);
+        let slide = output.and_then(|output| self.workspace_slides.on(output, now));
+        let showing = policy.is_showing(id);
+        let mut shifts = slide.map_or_else(Vec::new, |slide| slide.shifts(id, showing, now));
+        if shifts.is_empty() {
+            shifts.push(Point::default());
+        }
+        shifts
+    }
+
     /// Starts the slide of each output that switched its workspace since the last refresh
     /// pass. One that still runs on the output is retargeted: the new one goes on from
     /// where the windows are (235). With `workspace-slide` off, or one of the minimise

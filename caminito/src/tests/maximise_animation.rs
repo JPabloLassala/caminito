@@ -28,7 +28,7 @@ const OUTPUT: (i32, i32) = (800, 600);
 const PART_WAY: Duration = Duration::from_millis(100);
 
 /// How far the box has gone at `PART_WAY`: a cubic ease-out, `1 - (1 - 100/250)³`.
-const DONE_PART_WAY: f64 = 0.784;
+pub(super) const DONE_PART_WAY: f64 = 0.784;
 
 type Settings = Vec<(&'static str, String, Setting)>;
 
@@ -65,7 +65,7 @@ fn floating(f: &mut Fixture, id: ClientId) -> ClientWindow {
 
 /// Each window on its way, by policy's id, with its box and its picture's opacity, from the
 /// debug dump's `maximizing_windows`, which isn't there while none is.
-fn maximizing(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, f64)> {
+pub(super) fn maximizing(f: &Fixture) -> Vec<(u64, Rectangle<i32, Logical>, f64)> {
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
     let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
     let Some(windows) = dump["maximizing_windows"].as_array() else {
@@ -94,7 +94,7 @@ fn drawn(f: &Fixture, window: ClientWindow) -> (Rectangle<i32, Logical>, f64) {
 }
 
 /// The rectangle `done` of the way from `from` to `to`.
-fn between(
+pub(super) fn between(
     from: Rectangle<i32, Logical>,
     to: Rectangle<i32, Logical>,
     done: f64,
@@ -107,7 +107,7 @@ fn between(
 }
 
 /// Whether two rectangles are the same to within two pixels each way.
-fn near(a: Rectangle<i32, Logical>, b: Rectangle<i32, Logical>) -> bool {
+pub(super) fn near(a: Rectangle<i32, Logical>, b: Rectangle<i32, Logical>) -> bool {
     let close = |a: i32, b: i32| (a - b).abs() <= 2;
     close(a.loc.x, b.loc.x)
         && close(a.loc.y, b.loc.y)

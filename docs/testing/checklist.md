@@ -3155,6 +3155,39 @@ in for. They are the developer's to run.
   the animations are smooth at each monitor's refresh rate.
 - **Debug tool:** `DumpState`'s `opening_windows`, `closing_windows` and `workspace_slides`.
 
+### The Maximise animation beside the slide, the Overview and the lock
+
+- **Milestone:** `maximize-animation`, the developer's to run (CMN-177).
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with two monitors side by side and four
+     workspaces in one row. Run `gsettings get org.mate.Caminito maximize-animation`,
+     `gsettings get org.mate.Caminito workspace-slide` and
+     `gsettings get org.mate.Caminito workspaces-per-output`, which print `true`. Open pluma
+     (a native window) on the first workspace of the first monitor, and `xterm` (X11) on its
+     second workspace, each smaller than the monitor and away from its corner.
+  2. Focus pluma, press Alt+F10 and Ctrl+Alt+Right at once, so pluma grows as its workspace
+     slides out.
+  3. Focus `xterm` and press Ctrl+Alt+Left and Alt+F10 at once. Then press Alt+F10 again.
+  4. Maximise pluma with Alt+F10 and press Super+W at once. In the Overview, double-click
+     `xterm`'s titlebar if it shows one, or else maximise it with `wmctrl -r xterm -b
+     add,maximized_vert,maximized_horz` from a terminal. Close the Overview.
+  5. Press Alt+F10 on pluma and run `mate-screensaver-command --lock` at once, from a
+     terminal with `sleep 0.05;` before it. Unlock.
+  6. Put pluma on the second monitor, press Alt+F10 on it and unplug that monitor at once.
+  7. Run `gsettings set org.mate.Caminito workspaces-per-output false` and repeat steps 2
+     to 6. Set it back to `true`.
+- **Expected:** in step 2 pluma grows into the work area as it leaves with its workspace,
+  drawn nowhere else, with no jump at the slide's end. In step 3 `xterm` grows into the work
+  area as it comes in with its workspace, and the second Alt+F10 shrinks it back. In step 4
+  pluma is maximised at once as the Overview opens, with no box left on its way, and
+  nothing grows during the transition or in the Overview; `xterm` comes out of the Overview
+  maximised, at rest. In step 5 the locker shows nothing that grows, and after the unlock
+  pluma is at its place at rest. In step 6 pluma is on the first monitor at rest, and
+  nothing of it is left on its way. In step 7 both monitors slide, each window with its own
+  monitor's workspace (ADR 0032), and steps 4 to 6 are as before. In every step the
+  animation is smooth at each monitor's refresh rate.
+- **Debug tool:** `DumpState`'s `maximizing_windows` and `workspace_slides`.
+
 ### The window menu
 
 - **Milestone:** M8, run in M8's closing run (173).

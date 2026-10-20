@@ -23,16 +23,24 @@
 //! to the new frame for what's left. Closed, the Closing animation takes its picture from the
 //! box (`Caminito::start_closing`). Minimised, and dragged by the pointer, it ends; maximised
 //! on its way open, none starts, as the Opening animation grows it into its new place.
+//!
+//! Beside the other effects (CMN-177): during a Workspace slide, a window on its way on the
+//! workspace leaving or the one arriving moves with its workspace as well, as the slide
+//! draws it. None runs while the Overview is open or during its transition, nor under the
+//! session lock: each ends the ones that run at once and starts none, as with the Opening
+//! and Closing animations (254). An output that goes ends those of the windows it was the
+//! Main output of. These end in a step of their own (`Caminito::end_maximize_animations`),
+//! after the slides and the Overview of the same pass.
 
 use std::collections::HashMap;
 use std::time::Duration;
 
-use caminito_policy::{PolicyWindow, WindowId};
+use caminito_policy::{OutputId, PolicyWindow, WindowId};
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::open_close_animation::{Picture, animates};
-use crate::output::output_geometry;
+use crate::output::{output_geometry, output_id};
 use crate::state::{Caminito, SEAT, State};
 use crate::workspace_slide::eased_way_left;
 
@@ -94,6 +102,9 @@ struct Seen {
 #[derive(Debug)]
 pub(crate) struct Maximizing {
     pub window: WindowId,
+    /// Its window's Main output at the last refresh pass: it ends if that output goes
+    /// (CMN-177).
+    output: Option<OutputId>,
     /// Where the box starts, globally: the window's frame as it was, or where its box was
     /// drawn when it was interrupted.
     from: Rectangle<i32, Logical>,
@@ -184,8 +195,9 @@ impl State {
     /// Notes each window on screen with its frame, and starts the animation of each whose
     /// maximised state changed since the last pass, from the frame noted then, with a
     /// picture of it as it still is. Called before the Frames are drawn again in their new
-    /// state. Ends the animation of each window no longer on screen or that the pointer
-    /// drags, and hands each over to its window's new frame from where it's drawn.
+    /// state. Ends the animation of each window that the pointer drags, and hands each over
+    /// to its window's new frame from where it's drawn. One whose window no longer shows
+    /// goes on until `Caminito::end_maximize_animations`, as a slide may draw it.
     pub(crate) fn refresh_maximize_animations(&mut self) {
         let now = self.caminito.now();
         let policy = &self.caminito.policy;
@@ -214,13 +226,10 @@ impl State {
         }
         animations.seen = seen;
         let before = animations.running.len();
-        // A minimised window goes to its button from its real place, and a dragged one
-        // follows the pointer at once (CMN-176).
+        // A dragged window follows the pointer at once (CMN-176).
         let dragged = policy.dragging(SEAT);
-        let showing = |m: &Maximizing| {
-            policy.is_showing(m.window) && dragged != Some(m.window) && !m.is_over(now)
-        };
-        animations.running.retain(showing);
+        let goes_on = |m: &Maximizing| dragged != Some(m.window) && !m.is_over(now);
+        animations.running.retain(goes_on);
         let mut redraw = animations.running.len() != before;
         for m in &mut animations.running {
             if let Some(to) = policy.asked_frame_rect(m.window)
@@ -266,6 +275,7 @@ impl State {
                     });
                     Maximizing {
                         window: id,
+                        output: policy.main_output_of(id),
                         from: was.frame,
                         from_done: 0.0,
                         to,
@@ -287,16 +297,51 @@ impl State {
 
 impl Caminito {
     /// Whether window `id`, whose maximised state changed, is seen to change at `now`: the
-    /// animation is on, the window is one it's for, it's not fullscreen, it isn't on its
-    /// way open, which grows it into its new place itself (CMN-112), and no grab pulled it
+    /// animation is on and runs (CMN-177), the window is one it's for, it's not fullscreen,
+    /// it isn't on its way open, which grows it into its new place itself (CMN-112), and no grab pulled it
     /// off its maximised place, which it then follows the pointer from (CMN-176).
     fn maximize_seen(&self, id: WindowId, now: Duration) -> bool {
         let policy = &self.policy;
         self.settings.maximize_animation
+            && self.animations_run()
             && policy.window(id).is_some_and(animates)
             && !policy.is_fullscreen(id)
             && self.open_close_animations.opening(id, now).is_none()
             && policy.grab(SEAT) != Some(id)
+    }
+
+    /// Ends every animation while the Overview is open or during its transition and under
+    /// the session lock, each whose window neither shows nor is drawn by a slide, and each
+    /// whose window's Main output at the last pass went (CMN-177), and notes the others'
+    /// Main outputs. After the slides and the Overview of this pass, so a window whose
+    /// workspace leaves goes on with it.
+    pub(crate) fn end_maximize_animations(&mut self) {
+        let now = self.now();
+        let runs = self.animations_run();
+        let (policy, slides, outputs) = (&self.policy, &self.workspace_slides, &self.outputs);
+        let output_left =
+            |its_own: OutputId| !outputs.iter().any(|output| output_id(output) == its_own);
+        let slid = |id: WindowId| {
+            let slide = policy
+                .main_output_of(id)
+                .and_then(|output| slides.on(output, now));
+            // Drawn as one that doesn't show, on its way out. One minimised since goes to its
+            // button from its real place (CMN-176).
+            let leaving = slide.is_some_and(|slide| !slide.shifts(id, false, now).is_empty());
+            leaving && !policy.is_minimized(id)
+        };
+        let animations = &mut self.maximize_animations;
+        let before = animations.running.len();
+        animations.running.retain(|m| {
+            let drawn = policy.is_showing(m.window) || slid(m.window);
+            runs && drawn && !m.output.is_some_and(output_left)
+        });
+        for m in &mut animations.running {
+            m.output = policy.main_output_of(m.window);
+        }
+        if animations.running.len() != before {
+            self.queue_redraw_all();
+        }
     }
 
     /// Ends the animations that are over at `now`, and draws their windows at rest, for
@@ -311,7 +356,9 @@ impl Caminito {
         }
     }
 
-    /// Each window on its way at `now`, with its box, globally, and its picture's opacity.
+    /// Each window on its way at `now`, with its box, globally, and its picture's opacity,
+    /// for the debug dump: one time for each place the slide of its Main output draws it at
+    /// (CMN-177).
     pub(crate) fn drawn_maximizing_windows(
         &self,
         now: Duration,
@@ -320,7 +367,14 @@ impl Caminito {
             .running
             .iter()
             .filter(|m| !m.is_over(now))
-            .map(|m| (m.window, m.rect(now), m.alpha(now)))
+            .flat_map(|m| {
+                let id = m.window;
+                let (rect, alpha) = (m.rect(now), m.alpha(now));
+                self.drawn_shifts(id, now).into_iter().map(move |shift| {
+                    let drawn = Rectangle::new(rect.loc + shift, rect.size);
+                    (id, drawn, alpha)
+                })
+            })
             .collect()
     }
 
@@ -398,6 +452,7 @@ mod tests {
     fn maximizing() -> Maximizing {
         Maximizing {
             window: WindowId(1),
+            output: None,
             from: rect(100, 100, 400, 300),
             from_done: 0.0,
             to: rect(0, 0, 800, 600),
