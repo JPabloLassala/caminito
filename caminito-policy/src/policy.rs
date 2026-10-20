@@ -2398,6 +2398,15 @@ impl<W: PolicyWindow> Policy<W> {
         self.grabs.get(&seat).map(|g| g.window)
     }
 
+    /// The window the seat's pointer is dragging: a move or resize by the pointer, not the
+    /// keys, gone past Marco's 8 pixels from where it began.
+    pub fn dragging(&self, seat: SeatId) -> Option<WindowId> {
+        self.grabs
+            .get(&seat)
+            .filter(|g| g.moved && !g.keyboard)
+            .map(|g| g.window)
+    }
+
     /// The half or quarter of a work area the window is tiled to (158).
     pub fn tile(&self, id: WindowId) -> Option<Tile> {
         self.windows.get(&id).and_then(Managed::tiled)

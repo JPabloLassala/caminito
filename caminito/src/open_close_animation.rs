@@ -55,6 +55,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
+use crate::maximize_animation::scaled_into;
 use crate::output::{output_geometry, output_id};
 use crate::scene::{self, SceneElement, SceneLayer};
 use crate::state::{Caminito, State};
@@ -342,8 +343,12 @@ pub(crate) struct Closing {
     skipped: Duration,
     /// Where its frame was, globally.
     pub frame: Rectangle<i32, Logical>,
-    /// Where it was drawn as it took over from its window's opening, if it did (253).
+    /// Where it was drawn as it took over from its window's opening or Maximise animation,
+    /// if it did (253, CMN-176).
     from: Option<Handover>,
+    /// The Maximise animation's picture that was fading over its window as it closed, drawn
+    /// over its own picture in the same box, and fading on from there (CMN-176).
+    pub faded: Option<Faded>,
     /// The windows that were beneath it in the stack, which it's drawn over.
     pub beneath: Vec<WindowId>,
     /// The scene layer it was drawn in: the windows', or the fullscreen windows'.
@@ -385,17 +390,45 @@ impl Closing {
         closing_alpha(self.done(now))
     }
 
+    /// How opaque the Maximise animation's picture is drawn over it at `now`, if it has one.
+    pub(crate) fn faded_alpha(&self, now: Duration) -> Option<f32> {
+        self.faded
+            .as_ref()
+            .map(|faded| faded.alpha * self.alpha(now))
+    }
+
     /// Whether it's drawn just over `window`, going down the stack from the top: the first
     /// window met that was beneath it.
     pub(crate) fn is_over(&self, window: WindowId) -> bool {
         self.beneath.contains(&window)
     }
 
-    /// What its picture covers at its start, globally, which it never leaves as it shrinks.
+    /// What its picture covers at its start, globally, which it never leaves as it shrinks:
+    /// at its window's frame, and scaled into where it took over from, which a Maximise
+    /// animation's box can have bigger than the frame (CMN-176).
     fn covered(&self) -> Rectangle<i32, Logical> {
         let area = self.picture.area;
-        Rectangle::new(self.frame.loc + area.loc, area.size)
+        let covered = Rectangle::new(self.frame.loc + area.loc, area.size);
+        let Some(from) = self.from else {
+            return covered;
+        };
+        let mut scaled = scaled_into(area, self.frame.size, from.rect);
+        if let Some(faded) = &self.faded {
+            let area = faded.picture.area;
+            scaled = scaled.merge(scaled_into(area, faded.frame.size, from.rect));
+        }
+        covered.merge(scaled.to_i32_up())
     }
+}
+
+/// The Maximise animation's picture of a window that closed on its way (CMN-176).
+#[derive(Debug)]
+pub(crate) struct Faded {
+    pub picture: Picture,
+    /// The frame it was taken of, globally, which it's drawn scaled from.
+    pub frame: Rectangle<i32, Logical>,
+    /// How opaque it was drawn as the window closed.
+    alpha: f32,
 }
 
 /// A closing window's picture as it's drawn, for the debug dump.
@@ -405,6 +438,8 @@ pub(crate) struct DrawnClosing {
     /// Where its frame is drawn, globally.
     pub rect: Rectangle<i32, Logical>,
     pub alpha: f32,
+    /// How opaque the Maximise animation's picture is drawn over it, if it has one.
+    pub faded_alpha: Option<f32>,
     /// The window it's drawn just over, if any is left of those that were beneath it.
     pub over: Option<WindowId>,
 }
@@ -548,12 +583,27 @@ impl Caminito {
         let key = WindowKey::of(window.window());
         let now = self.now();
         // One closed on its way open shrinks and fades from where it had got to, for what's
-        // left of the closing's curve from there (253).
-        let (skipped, from) = match self.open_close_animations.opening(id, now) {
-            Some(opening) => {
+        // left of the closing's curve from there (253). One closed on its way to a new frame
+        // shrinks and fades from its box, which its whole live window was drawn in, with the
+        // Maximise animation's picture over it fading on from where it had got to (CMN-176).
+        let maximizing = self.maximize_animations.take(id, now);
+        let mut faded = None;
+        let (skipped, from) = match (self.open_close_animations.opening(id, now), maximizing) {
+            (Some(opening), _) => {
                 Handover::taking_over(opening.rect(frame, now), opening.done(now), closed_for)
             }
-            None => (Duration::ZERO, None),
+            (None, Some(maximizing)) => {
+                let rect = maximizing.rect(now);
+                let alpha = maximizing.alpha(now);
+                let frame = maximizing.picture_frame;
+                faded = (maximizing.picture).map(|picture| Faded {
+                    picture,
+                    frame,
+                    alpha,
+                });
+                (Duration::ZERO, Some(Handover { rect, done: 0.0 }))
+            }
+            (None, None) => (Duration::ZERO, None),
         };
         let stack = policy.stacking_all();
         let beneath = match stack.iter().position(|other| *other == id) {
@@ -576,6 +626,7 @@ impl Caminito {
             skipped,
             frame,
             from,
+            faded,
             beneath,
             layer,
             workspace,
@@ -764,11 +815,13 @@ impl Caminito {
                 let over = stack.iter().rev().find(|id| closing.is_over(**id)).copied();
                 let rect = closing.rect(now);
                 let alpha = closing.alpha(now);
+                let faded_alpha = closing.faded_alpha(now);
                 let shifts = self.picture_shifts(closing, closing.output, now);
                 shifts.into_iter().map(move |shift| DrawnClosing {
                     window: closing.window,
                     rect: Rectangle::new(rect.loc + shift, rect.size),
                     alpha,
+                    faded_alpha,
                     over,
                 })
             })

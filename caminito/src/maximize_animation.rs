@@ -15,6 +15,14 @@
 //! Frame is drawn again (`State::refresh_maximize_animations`), and so sees a window whose
 //! maximised state changed since the last pass while its Frame and buffers are still as
 //! they were: the picture is drawn from those, and the box starts at the frame it noted.
+//!
+//! One that's interrupted hands over from what is on screen (CMN-176), where Plasma starts
+//! again from the window's geometry (ADR 0036). Maximised or unmaximised again, the box goes
+//! from where it's drawn to the newest frame for a fresh 250 ms, and the first picture goes
+//! on fading from the opacity it had. Moved or resized, the box goes from where it's drawn
+//! to the new frame for what's left. Closed, the Closing animation takes its picture from the
+//! box (`Caminito::start_closing`). Minimised, and dragged by the pointer, it ends; maximised
+//! on its way open, none starts, as the Opening animation grows it into its new place.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -25,7 +33,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::open_close_animation::{Picture, animates};
 use crate::output::output_geometry;
-use crate::state::{Caminito, State};
+use crate::state::{Caminito, SEAT, State};
 use crate::workspace_slide::eased_way_left;
 
 /// How long the animation lasts: the Maximize effect's.
@@ -56,7 +64,7 @@ fn between(
 
 /// Where `area`, from the corner of something of `size`, is once that's scaled to fill
 /// `target`, as the scene draws a window and its picture into their box.
-fn scaled_into(
+pub(crate) fn scaled_into(
     area: Rectangle<i32, Logical>,
     size: Size<i32, Logical>,
     target: Rectangle<i32, Logical>,
@@ -87,12 +95,19 @@ struct Seen {
 pub(crate) struct Maximizing {
     pub window: WindowId,
     /// Where the box starts, globally: the window's frame as it was, or where its box was
-    /// drawn when it changed again.
+    /// drawn when it was interrupted.
     from: Rectangle<i32, Logical>,
-    /// Where the box was going when the refresh pass last looked, globally.
+    /// How far on its way it was when the box left `from`: none but after a move or a
+    /// resize, from which it goes on for what's left (CMN-176).
+    from_done: f64,
+    /// Where the box goes, globally: the frame policy asked for when the refresh pass last
+    /// looked.
     to: Rectangle<i32, Logical>,
     /// When it started, on Caminito's clock.
     start: Duration,
+    /// How opaque its picture was at `start`: less than whole for one maximised again on its
+    /// way, whose first picture goes on fading (CMN-176).
+    picture_alpha: f32,
     /// The window as it was, with its area from the corner of `picture_frame`, if it had a
     /// buffer to draw it from.
     pub picture: Option<Picture>,
@@ -109,18 +124,26 @@ impl Maximizing {
         way_done(now.saturating_sub(self.start))
     }
 
-    /// Where the box is at `now`, globally, going to `to`.
-    pub(crate) fn rect(
-        &self,
-        to: Rectangle<i32, Logical>,
-        now: Duration,
-    ) -> Rectangle<i32, Logical> {
-        between(self.from, to, self.done(now))
+    /// Where the box is at `now`, globally.
+    pub(crate) fn rect(&self, now: Duration) -> Rectangle<i32, Logical> {
+        if self.from_done >= 1.0 {
+            return self.to;
+        }
+        let fraction = (self.done(now) - self.from_done) / (1.0 - self.from_done);
+        between(self.from, self.to, fraction)
     }
 
     /// How opaque the picture is drawn at `now`.
     pub(crate) fn alpha(&self, now: Duration) -> f32 {
-        (1.0 - self.done(now)) as f32
+        self.picture_alpha * (1.0 - self.done(now)) as f32
+    }
+
+    /// Sends the box from where it's drawn at `now` to `to`, for what's left of the
+    /// animation: its window was moved or resized (CMN-176).
+    fn hand_over(&mut self, to: Rectangle<i32, Logical>, now: Duration) {
+        self.from = self.rect(now);
+        self.from_done = self.done(now);
+        self.to = to;
     }
 }
 
@@ -145,13 +168,24 @@ impl MaximizeAnimations {
             .iter()
             .find(|m| m.window == window && !m.is_over(now))
     }
+
+    /// Ends `window`'s animation, while it runs at `now`, and gives it to the closing that
+    /// takes over from it, with its picture (CMN-176).
+    pub(crate) fn take(&mut self, window: WindowId, now: Duration) -> Option<Maximizing> {
+        let index = self
+            .running
+            .iter()
+            .position(|m| m.window == window && !m.is_over(now))?;
+        Some(self.running.remove(index))
+    }
 }
 
 impl State {
     /// Notes each window on screen with its frame, and starts the animation of each whose
     /// maximised state changed since the last pass, from the frame noted then, with a
     /// picture of it as it still is. Called before the Frames are drawn again in their new
-    /// state. Ends the animation of each window no longer on screen.
+    /// state. Ends the animation of each window no longer on screen or that the pointer
+    /// drags, and hands each over to its window's new frame from where it's drawn.
     pub(crate) fn refresh_maximize_animations(&mut self) {
         let now = self.caminito.now();
         let policy = &self.caminito.policy;
@@ -180,12 +214,19 @@ impl State {
         }
         animations.seen = seen;
         let before = animations.running.len();
-        let showing = |m: &Maximizing| policy.is_showing(m.window) && !m.is_over(now);
+        // A minimised window goes to its button from its real place, and a dragged one
+        // follows the pointer at once (CMN-176).
+        let dragged = policy.dragging(SEAT);
+        let showing = |m: &Maximizing| {
+            policy.is_showing(m.window) && dragged != Some(m.window) && !m.is_over(now)
+        };
         animations.running.retain(showing);
         let mut redraw = animations.running.len() != before;
         for m in &mut animations.running {
-            if let Some(to) = policy.asked_frame_rect(m.window) {
-                m.to = to;
+            if let Some(to) = policy.asked_frame_rect(m.window)
+                && to != m.to
+            {
+                m.hand_over(to, now);
             }
         }
 
@@ -204,12 +245,14 @@ impl State {
             let animations = &mut self.caminito.maximize_animations;
             let running = animations.running.iter().position(|m| m.window == id);
             let maximizing = match running.map(|index| animations.running.remove(index)) {
-                // Changed again on its way: it goes on from where its box is drawn, with the
-                // first picture.
+                // Changed again on its way: it goes on from where its box is drawn for a fresh
+                // 250 ms, with the first picture fading on from where it had got to.
                 Some(m) => Maximizing {
-                    from: m.rect(m.to, now),
+                    from: m.rect(now),
+                    from_done: 0.0,
                     to,
                     start: now,
+                    picture_alpha: m.alpha(now),
                     ..m
                 },
                 None => {
@@ -224,8 +267,10 @@ impl State {
                     Maximizing {
                         window: id,
                         from: was.frame,
+                        from_done: 0.0,
                         to,
                         start: now,
+                        picture_alpha: 1.0,
                         picture,
                         picture_frame: was.frame,
                     }
@@ -242,14 +287,16 @@ impl State {
 
 impl Caminito {
     /// Whether window `id`, whose maximised state changed, is seen to change at `now`: the
-    /// animation is on, the window is one it's for, it's not fullscreen, and it isn't on
-    /// its way open, which grows it into its new place itself (CMN-112).
+    /// animation is on, the window is one it's for, it's not fullscreen, it isn't on its
+    /// way open, which grows it into its new place itself (CMN-112), and no grab pulled it
+    /// off its maximised place, which it then follows the pointer from (CMN-176).
     fn maximize_seen(&self, id: WindowId, now: Duration) -> bool {
         let policy = &self.policy;
         self.settings.maximize_animation
             && policy.window(id).is_some_and(animates)
             && !policy.is_fullscreen(id)
             && self.open_close_animations.opening(id, now).is_none()
+            && policy.grab(SEAT) != Some(id)
     }
 
     /// Ends the animations that are over at `now`, and draws their windows at rest, for
@@ -273,10 +320,7 @@ impl Caminito {
             .running
             .iter()
             .filter(|m| !m.is_over(now))
-            .filter_map(|m| {
-                let to = self.policy.asked_frame_rect(m.window)?;
-                Some((m.window, m.rect(to, now), m.alpha(now)))
-            })
+            .map(|m| (m.window, m.rect(now), m.alpha(now)))
             .collect()
     }
 
@@ -290,9 +334,8 @@ impl Caminito {
             .iter()
             .filter(|m| !m.is_over(now))
             .filter_map(|m| {
-                let to = self.policy.asked_frame_rect(m.window)?;
                 let frame = self.policy.frame_rect(m.window)?;
-                let drawn = m.rect(to, now);
+                let drawn = m.rect(now);
                 let mut covered = drawn.to_f64();
                 if let Some(reach) = self.reach(m.window) {
                     covered = covered.merge(scaled_into(reach, frame.size, drawn));
@@ -338,25 +381,48 @@ mod tests {
 
     #[test]
     fn the_box_eases_out_from_the_old_frame_to_the_new() {
-        let m = Maximizing {
-            window: WindowId(1),
-            from: rect(100, 100, 400, 300),
-            to: rect(0, 0, 800, 600),
-            start: Duration::from_secs(10),
-            picture: None,
-            picture_frame: rect(100, 100, 400, 300),
-        };
-        let to = rect(0, 0, 800, 600);
+        let m = maximizing();
 
-        assert_eq!(m.rect(to, Duration::from_secs(10)), m.from);
+        assert_eq!(m.rect(Duration::from_secs(10)), m.from);
         assert_eq!(m.alpha(Duration::from_secs(10)), 1.0);
         // Half the time, seven eighths of the way.
         assert_eq!(
-            m.rect(to, Duration::from_millis(10_125)),
+            m.rect(Duration::from_millis(10_125)),
             rect(12, 12, 750, 563)
         );
-        assert_eq!(m.rect(to, Duration::from_millis(10_250)), to);
+        assert_eq!(m.rect(Duration::from_millis(10_250)), m.to);
         assert!(m.is_over(Duration::from_millis(10_250)));
         assert!(!m.is_over(Duration::from_millis(10_249)));
+    }
+
+    fn maximizing() -> Maximizing {
+        Maximizing {
+            window: WindowId(1),
+            from: rect(100, 100, 400, 300),
+            from_done: 0.0,
+            to: rect(0, 0, 800, 600),
+            start: Duration::from_secs(10),
+            picture_alpha: 1.0,
+            picture: None,
+            picture_frame: rect(100, 100, 400, 300),
+        }
+    }
+
+    #[test]
+    fn a_handover_goes_from_where_the_box_is_drawn_to_the_new_frame_for_whats_left() {
+        let mut m = maximizing();
+        let at = Duration::from_millis(10_125);
+        let drawn = m.rect(at);
+        let alpha = m.alpha(at);
+
+        m.hand_over(rect(50, 50, 300, 200), at);
+
+        assert_eq!(m.rect(at), drawn);
+        assert_eq!(m.alpha(at), alpha, "the picture fades on as it did");
+        assert_eq!(
+            m.rect(Duration::from_millis(10_250)),
+            rect(50, 50, 300, 200)
+        );
+        assert!(m.is_over(Duration::from_millis(10_250)));
     }
 }

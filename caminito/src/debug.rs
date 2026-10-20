@@ -177,6 +177,10 @@ struct ClosingWindowDump {
     rect: RectDump,
     /// How opaque it's drawn, from 0 to 1.
     alpha: f32,
+    /// How opaque the Maximise animation's picture is drawn over it, if the window closed
+    /// on its way to a new frame (CMN-176).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    faded_alpha: Option<f32>,
     /// Its place in the stack: the window it's drawn just over, or `None` under every one.
     over: Option<u64>,
 }
@@ -1163,6 +1167,7 @@ impl Caminito {
                     id: drawn.window.0,
                     rect: drawn.rect.into(),
                     alpha: drawn.alpha,
+                    faded_alpha: drawn.faded_alpha,
                     over: drawn.over.map(|over| over.0),
                 })
                 .collect(),

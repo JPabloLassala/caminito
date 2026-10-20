@@ -1745,12 +1745,10 @@ fn window_elements<R>(
                 scaled_window_elements(renderer, caminito, id, place, scale, alpha, true, elements);
                 continue;
             }
-            if let Some(maximizing) = maximizing
-                && let Some(to) = policy.asked_frame_rect(id)
-            {
+            if let Some(maximizing) = maximizing {
                 // The live window scaled into its box, under its picture as it was, which
                 // fades (CMN-174).
-                let drawn = maximizing.rect(to, now);
+                let drawn = maximizing.rect(now);
                 let shifted = Rectangle::new(drawn.loc + shift, drawn.size);
                 if let Some(picture) = &maximizing.picture {
                     let alpha = maximizing.alpha(now);
@@ -1868,6 +1866,17 @@ fn closing_elements<R>(
     let alpha = closing.alpha(now);
     for shift in caminito.picture_shifts(closing, Some(output_id(output)), now) {
         let shifted = Rectangle::new(drawn.loc + shift, drawn.size);
+        // The Maximise animation's picture, over the window's (CMN-176).
+        if let (Some(faded), Some(faded_alpha)) = (&closing.faded, closing.faded_alpha(now)) {
+            picture_elements_at(
+                &faded.picture,
+                faded.frame,
+                shifted,
+                faded_alpha,
+                output,
+                elements,
+            );
+        }
         picture_elements_at(
             &closing.picture,
             closing.frame,
