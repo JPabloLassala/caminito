@@ -24,7 +24,7 @@ common = subproject('caminito-applet-common').get_variable('caminito_applet_comm
 # What the applet shows, from what the source read, apart from libsensors so that the tests
 # can build any computer.
 model = static_library('th-model', 'th-model.c', dependencies: [glib, m], pic: true)
-# The popup's tiles and Show all sensors (268), from the model.
+# The popup's tiles and Show all sensors (268), and its pins (269), from the model.
 popup = static_library('th-popup', 'th-popup.c', link_with: model, dependencies: [glib, m, common],
                        pic: true)
 
@@ -53,6 +53,13 @@ configure_file(
   install_dir: get_option('datadir') / 'mate-panel' / 'applets',
 )
 
+# Its preferences (269): the panel sensors, the units, the thresholds and whether Show all
+# is open. The package's hook compiles the schemas, so nothing is compiled here.
+install_data(
+  'org.mate.panel.applet.caminito-thermal.gschema.xml',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
+)
+
 # The thermometer's last fallback, in hicolor, which every icon theme falls back to: neither
 # MATE's themes nor Adwaita have a temperature icon.
 install_data(
@@ -68,8 +75,8 @@ test(
              dependencies: [glib, m]),
 )
 
-# The popup's tiles, rows, bars and bands (268), which need a display and are skipped
-# without one.
+# The popup's tiles, rows, bars and bands (268), its pins and Show all's state (269),
+# which need a display and are skipped without one.
 test(
   'popup',
   executable('test-popup', 'test-popup.c', 'test-computers.c', link_with: [popup, model],

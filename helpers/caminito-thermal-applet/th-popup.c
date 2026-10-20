@@ -59,6 +59,9 @@ typedef struct
 /* A row's of Show all sensors. A fan's has no pin. */
 typedef struct
 {
+  ThPopup   *popup;
+  /* The reading's id, for the pin. */
+  char      *id;
   GtkWidget *name;
   GtkWidget *bar;
   GtkWidget *value;
@@ -68,6 +71,8 @@ typedef struct
 struct _ThPopup
 {
   CaminitoAppletPopup *applet_popup;
+  const ThPopupActions *actions;
+  gpointer             data;
   GtkWidget           *grid;
   GtkWidget           *expander;
   GPtrArray           *tiles;
@@ -263,13 +268,30 @@ list_new (void)
   return list;
 }
 
+static void
+row_free (Row *row)
+{
+  g_free (row->id);
+  g_free (row);
+}
+
+static void
+on_pin_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  Row *row = data;
+
+  if (row->popup->actions != NULL && row->popup->actions->pin != NULL)
+    row->popup->actions->pin (row->id, row->popup->data);
+}
+
 static Row *
-row_add (GtkWidget *list, gboolean fan)
+row_add (ThPopup *popup, GtkWidget *list, gboolean fan)
 {
   Row *row = g_new0 (Row, 1);
   GtkWidget *line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
   GtkWidget *list_row = gtk_list_box_row_new ();
 
+  row->popup = popup;
   if (fan)
     gtk_box_pack_start (GTK_BOX (line), icon_new (fan_icon), FALSE, FALSE, 0);
   row->name = label_new (NULL, NULL);
@@ -289,8 +311,8 @@ row_add (GtkWidget *list, gboolean fan)
     }
   else
     {
-      /* It does nothing until 269. */
       row->pin = gtk_button_new ();
+      g_signal_connect (row->pin, "clicked", G_CALLBACK (on_pin_clicked), row);
       gtk_button_set_relief (GTK_BUTTON (row->pin), GTK_RELIEF_NONE);
       gtk_container_add (GTK_CONTAINER (row->pin), icon_new (pin_icon));
       add_class (row->pin, "caminito-thermal-pin");
@@ -362,13 +384,13 @@ build (ThPopup *popup, ThModel *model, GPtrArray *temperatures, GPtrArray *fans)
           list = section_add (all, groups[g].icons, groups[g].name);
         }
       group = reading->group;
-      g_ptr_array_add (popup->temperature_rows, row_add (list, FALSE));
+      g_ptr_array_add (popup->temperature_rows, row_add (popup, list, FALSE));
     }
   if (fans->len > 0)
     {
       list = section_add (all, fan_icon, "Fans");
       for (guint i = 0; i < fans->len; i++)
-        g_ptr_array_add (popup->fan_rows, row_add (list, TRUE));
+        g_ptr_array_add (popup->fan_rows, row_add (popup, list, TRUE));
     }
   gtk_container_add (GTK_CONTAINER (popup->expander), all);
   gtk_widget_show_all (popup->grid);
@@ -391,8 +413,8 @@ update_tile (Tile *tile, ThModel *model)
   else
     {
       reading = th_model_hottest (model, tile->group, &count);
-      text = th_temperature_text (reading->value);
-      set_band (tile->value, th_reading_band (reading));
+      text = th_model_temperature_text (model, reading->value);
+      set_band (tile->value, th_model_band (model, reading));
     }
   gtk_label_set_text (GTK_LABEL (tile->value), text);
   gtk_label_set_text (GTK_LABEL (tile->sub), count > 1 ? reading->name : "");
@@ -402,10 +424,12 @@ update_tile (Tile *tile, ThModel *model)
 static void
 update_temperature_row (Row *row, ThModel *model, const ThReading *reading)
 {
-  g_autofree char *text = th_temperature_text (reading->value);
-  ThBand band = th_reading_band (reading);
+  g_autofree char *text = th_model_temperature_text (model, reading->value);
+  ThBand band = th_model_band (model, reading);
   GtkStyleContext *pin = gtk_widget_get_style_context (row->pin);
 
+  g_free (row->id);
+  row->id = g_strdup (reading->id);
   gtk_label_set_text (GTK_LABEL (row->name), reading->name);
   /* A drive's model is often longer than the room. */
   gtk_widget_set_tooltip_text (row->name, reading->name);
@@ -414,9 +438,15 @@ update_temperature_row (Row *row, ThModel *model, const ThReading *reading)
   set_band (row->bar, band);
   set_band (row->value, band);
   if (th_model_is_panel_sensor (model, reading))
-    gtk_style_context_add_class (pin, "caminito-thermal-pinned");
+    {
+      gtk_style_context_add_class (pin, "caminito-thermal-pinned");
+      gtk_widget_set_tooltip_text (row->pin, "Take out of the panel");
+    }
   else
-    gtk_style_context_remove_class (pin, "caminito-thermal-pinned");
+    {
+      gtk_style_context_remove_class (pin, "caminito-thermal-pinned");
+      gtk_widget_set_tooltip_text (row->pin, "Show in the panel");
+    }
 }
 
 static void
@@ -444,22 +474,29 @@ fit_window (ThPopup *popup)
 }
 
 static void
-on_expanded (GObject *expander G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer data)
+on_expanded (GObject *expander, GParamSpec *pspec G_GNUC_UNUSED, gpointer data)
 {
-  fit_window (data);
+  ThPopup *popup = data;
+
+  fit_window (popup);
+  if (popup->actions != NULL && popup->actions->show_all != NULL)
+    popup->actions->show_all (gtk_expander_get_expanded (GTK_EXPANDER (expander)),
+                              popup->data);
 }
 
 ThPopup *
-th_popup_new (CaminitoAppletPopup *applet_popup)
+th_popup_new (CaminitoAppletPopup *applet_popup, const ThPopupActions *actions, gpointer data)
 {
   ThPopup *popup = g_new0 (ThPopup, 1);
   GtkWidget *content = gtk_box_new (GTK_ORIENTATION_VERTICAL, 10);
 
   add_styles ();
   popup->applet_popup = applet_popup;
+  popup->actions = actions;
+  popup->data = data;
   popup->tiles = g_ptr_array_new_with_free_func (g_free);
-  popup->temperature_rows = g_ptr_array_new_with_free_func (g_free);
-  popup->fan_rows = g_ptr_array_new_with_free_func (g_free);
+  popup->temperature_rows = g_ptr_array_new_with_free_func ((GDestroyNotify) row_free);
+  popup->fan_rows = g_ptr_array_new_with_free_func ((GDestroyNotify) row_free);
   popup->grid = gtk_grid_new ();
   gtk_grid_set_column_spacing (GTK_GRID (popup->grid), 8);
   gtk_grid_set_row_spacing (GTK_GRID (popup->grid), 8);
@@ -507,4 +544,15 @@ th_popup_update (ThPopup *popup, ThModel *model)
     update_temperature_row (popup->temperature_rows->pdata[i], model, temperatures->pdata[i]);
   for (guint i = 0; i < fans->len; i++)
     update_fan_row (popup->fan_rows->pdata[i], model, fans->pdata[i]);
+}
+
+void
+th_popup_set_show_all (ThPopup *popup, gboolean open)
+{
+  if (gtk_expander_get_expanded (GTK_EXPANDER (popup->expander)) == open)
+    return;
+  g_signal_handlers_block_by_func (popup->expander, on_expanded, popup);
+  gtk_expander_set_expanded (GTK_EXPANDER (popup->expander), open);
+  g_signal_handlers_unblock_by_func (popup->expander, on_expanded, popup);
+  fit_window (popup);
 }

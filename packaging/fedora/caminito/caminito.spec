@@ -171,6 +171,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
+%{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-thermal.gschema.xml
 %{_datadir}/icons/hicolor/scalable/apps/caminito.svg
 %{_datadir}/icons/hicolor/scalable/status/caminito-thermometer-symbolic.svg
 %{_datadir}/mate-control-center/keybindings/50-caminito-*.xml

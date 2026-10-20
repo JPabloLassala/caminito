@@ -431,13 +431,15 @@ test_tiles_of_the_thinkpad (void)
 static void
 test_popup_texts (void)
 {
-  g_autofree char *temperature = th_temperature_text (54.5);
+  ThModel *model = th_model_new ();
+  g_autofree char *temperature = th_model_temperature_text (model, 54.5);
   g_autofree char *rpm = th_fan_text (2864.6);
   g_autofree char *stopped = th_fan_text (0);
 
   g_assert_cmpstr (temperature, ==, "55 °C");
   g_assert_cmpstr (rpm, ==, "2865 RPM");
   g_assert_cmpstr (stopped, ==, "Stopped");
+  th_model_free (model);
 }
 
 static void
@@ -459,11 +461,11 @@ test_band_of_a_reading (void)
 
   th_model_update (model, raws);
   temps = th_model_temperatures (model);
-  g_assert_cmpint (th_reading_band (reading_of (temps, "k10temp-pci-00c3/temp1")), ==,
+  g_assert_cmpint (th_model_band (model, reading_of (temps, "k10temp-pci-00c3/temp1")), ==,
                    TH_BAND_WARM);
-  g_assert_cmpint (th_reading_band (reading_of (temps, "amdgpu-pci-0300/temp2")), ==,
+  g_assert_cmpint (th_model_band (model, reading_of (temps, "amdgpu-pci-0300/temp2")), ==,
                    TH_BAND_HOT);
-  g_assert_cmpint (th_reading_band (reading_of (temps, "nct6798-isa-0290/temp1")), ==,
+  g_assert_cmpint (th_model_band (model, reading_of (temps, "nct6798-isa-0290/temp1")), ==,
                    TH_BAND_NORMAL);
   g_assert_true (th_model_is_panel_sensor (model, reading_of (temps, "amdgpu-pci-0300/temp2")));
   g_assert_false (th_model_is_panel_sensor (model, reading_of (temps, "amdgpu-pci-0300/temp1")));
@@ -519,6 +521,159 @@ test_fan_never_spun (void)
   th_model_free (model);
 }
 
+static const char *
+id_at (GPtrArray *readings, guint i)
+{
+  return ((ThReading *) readings->pdata[i])->id;
+}
+
+/* Pinning a third reading drops the older of the two, and the panel and the tooltip follow
+   at once, with no read between. */
+static void
+test_pinning_a_third_drops_the_older (void)
+{
+  g_autoptr (GPtrArray) raws = desktop (58, 61, 1180, 820, 0);
+  ThModel *model = th_model_new ();
+  GPtrArray *sensors;
+  const char *const *pinned;
+  g_autofree char *panel = NULL;
+  g_autofree char *tooltip = NULL;
+
+  th_model_update (model, raws);
+  g_assert_true (th_model_toggle_pin (model, "nvme-pci-0200/temp1"));
+  sensors = th_model_panel_sensors (model);
+  g_assert_cmpuint (sensors->len, ==, 2);
+  g_assert_cmpstr (id_at (sensors, 0), ==, "amdgpu-pci-0300/temp2");
+  g_assert_cmpstr (id_at (sensors, 1), ==, "nvme-pci-0200/temp1");
+  panel = th_model_panel_temperatures (model);
+  g_assert_cmpstr (panel, ==, "61°C / 46°C");
+  tooltip = th_model_tooltip (model);
+  g_assert_true (g_str_has_prefix (tooltip,
+                                   "GPU junction 61 °C · WD_BLACK SN850X 1000GB 46 °C · "));
+  pinned = th_model_pinned (model);
+  g_assert_cmpstr (pinned[0], ==, "amdgpu-pci-0300/temp2");
+  g_assert_cmpstr (pinned[1], ==, "nvme-pci-0200/temp1");
+  g_assert_null (pinned[2]);
+
+  /* The pins stay across reads. */
+  th_model_update (model, raws);
+  g_assert_cmpstr (id_at (th_model_panel_sensors (model), 1), ==, "nvme-pci-0200/temp1");
+  th_model_free (model);
+}
+
+/* Clicking a pinned reading's pin removes it, unless it's the only one. */
+static void
+test_unpinning (void)
+{
+  g_autoptr (GPtrArray) raws = desktop (58, 61, 1180, 820, 0);
+  ThModel *model = th_model_new ();
+  GPtrArray *sensors;
+
+  th_model_update (model, raws);
+  g_assert_true (th_model_toggle_pin (model, "amdgpu-pci-0300/temp2"));
+  sensors = th_model_panel_sensors (model);
+  g_assert_cmpuint (sensors->len, ==, 1);
+  g_assert_cmpstr (id_at (sensors, 0), ==, "k10temp-pci-00c3/temp1");
+  g_assert_false (th_model_toggle_pin (model, "k10temp-pci-00c3/temp1"));
+  g_assert_cmpuint (th_model_panel_sensors (model)->len, ==, 1);
+  /* Not a temperature shown. */
+  g_assert_false (th_model_toggle_pin (model, "nct6798-isa-0290/fan1"));
+  th_model_free (model);
+}
+
+/* A pin whose chip is gone gives the defaults, the other pin's reading too, and the pins
+   come back with the chip. */
+static void
+test_a_pinned_chip_that_goes_gives_the_defaults (void)
+{
+  const char *const pins[] = { "nct6798-isa-0290/temp1", "nvme-pci-0200/temp1", NULL };
+  g_autoptr (GPtrArray) all = desktop (58, 61, 1180, 820, 0);
+  g_autoptr (GPtrArray) without_drive = raws_new ();
+  GPtrArray *sensors;
+  ThModel *model = th_model_new ();
+
+  for (guint i = 0; i < all->len; i++)
+    {
+      ThRaw *raw = all->pdata[i];
+
+      if (g_strcmp0 (raw->chip_id, "nvme-pci-0200") != 0)
+        g_ptr_array_add (without_drive,
+                         th_raw_new (raw->chip, raw->chip_id, raw->feature, raw->label,
+                                     raw->device, raw->is_fan, raw->ok, raw->value,
+                                     raw->limit));
+    }
+  th_model_set_pinned (model, pins);
+  th_model_update (model, all);
+  sensors = th_model_panel_sensors (model);
+  g_assert_cmpuint (sensors->len, ==, 2);
+  g_assert_cmpstr (id_at (sensors, 0), ==, "nct6798-isa-0290/temp1");
+  g_assert_cmpstr (id_at (sensors, 1), ==, "nvme-pci-0200/temp1");
+
+  th_model_update (model, without_drive);
+  sensors = th_model_panel_sensors (model);
+  g_assert_cmpuint (sensors->len, ==, 2);
+  g_assert_cmpstr (id_at (sensors, 0), ==, "k10temp-pci-00c3/temp1");
+  g_assert_cmpstr (id_at (sensors, 1), ==, "amdgpu-pci-0300/temp2");
+  /* The pins are kept for when the chip comes back. */
+  g_assert_cmpstr (th_model_pinned (model)[1], ==, "nvme-pci-0200/temp1");
+
+  th_model_update (model, all);
+  sensors = th_model_panel_sensors (model);
+  g_assert_cmpuint (sensors->len, ==, 2);
+  g_assert_cmpstr (id_at (sensors, 1), ==, "nvme-pci-0200/temp1");
+  th_model_free (model);
+}
+
+/* °F in the panel, on a vertical panel, in the tooltip and in the popup. */
+static void
+test_fahrenheit (void)
+{
+  g_autoptr (GPtrArray) raws = thinkpad (55, 2865);
+  ThModel *model = th_model_new ();
+  g_autofree char *panel = NULL;
+  g_autofree char *bare = NULL;
+  g_autofree char *tooltip = NULL;
+  g_autofree char *popup = NULL;
+
+  th_model_update (model, raws);
+  th_model_set_fahrenheit (model, TRUE);
+  panel = th_model_panel_temperatures (model);
+  bare = th_model_panel_bare (model);
+  tooltip = th_model_tooltip (model);
+  popup = th_model_temperature_text (model, 54.5);
+  g_assert_cmpstr (panel, ==, "131°F");
+  g_assert_cmpstr (bare, ==, "131°");
+  g_assert_cmpstr (tooltip, ==, "CPU Package 131 °F · Fan 2865 RPM");
+  /* 130.1 °F. */
+  g_assert_cmpstr (popup, ==, "130 °F");
+  th_model_free (model);
+}
+
+/* The thresholds are the bands' for every reading at once: changing one recolours the
+   panel. */
+static void
+test_thresholds_recolour (void)
+{
+  g_autoptr (GPtrArray) raws = thinkpad (70, 2865);
+  ThModel *model = th_model_new ();
+  g_autofree char *normal = NULL;
+  g_autofree char *warm = NULL;
+  g_autofree char *hot = NULL;
+
+  th_model_update (model, raws);
+  normal = th_model_panel_temperatures (model);
+  g_assert_cmpstr (normal, ==, "70°C");
+  th_model_set_thresholds (model, 65, 90);
+  warm = th_model_panel_temperatures (model);
+  g_assert_cmpstr (warm, ==, "<span foreground=\"#ffa630\">70°C</span>");
+  g_assert_cmpint (th_model_band (model, th_model_panel_sensors (model)->pdata[0]), ==,
+                   TH_BAND_WARM);
+  th_model_set_thresholds (model, 60, 68);
+  hot = th_model_panel_temperatures (model);
+  g_assert_cmpstr (hot, ==, "<span foreground=\"#ff5c5c\">70°C</span>");
+  th_model_free (model);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -547,5 +702,11 @@ main (int argc, char **argv)
   g_test_add_func ("/model/a-fan-with-a-max-is-against-it", test_fan_with_a_max);
   g_test_add_func ("/model/a-fan-without-a-max-has-a-bar-after-10-reads", test_fan_without_a_max);
   g_test_add_func ("/model/a-fan-that-never-spun-has-no-bar", test_fan_never_spun);
+  g_test_add_func ("/model/pinning-a-third-drops-the-older", test_pinning_a_third_drops_the_older);
+  g_test_add_func ("/model/a-pinned-reading-is-unpinned-unless-it-is-the-only-one", test_unpinning);
+  g_test_add_func ("/model/a-pinned-chip-that-goes-gives-the-defaults",
+                   test_a_pinned_chip_that_goes_gives_the_defaults);
+  g_test_add_func ("/model/fahrenheit-is-everywhere", test_fahrenheit);
+  g_test_add_func ("/model/changing-a-threshold-recolours", test_thresholds_recolour);
   return g_test_run ();
 }

@@ -1,0 +1,12 @@
+fusermount3: failed to access mountpoint /run/user/501/gvfs: Permission denied
+defaults: the panel lives
+drive pinned: the panel lives
+SYSTIN pinned: the panel lives
+after the pins: panel-sensors ['nvme-pci-0200/temp1', 'nct6798-virtual-0/temp1'], units , show-all true
+fahrenheit: the panel lives
+warm from 40: the panel lives
+restarted: the panel lives
+after the restart: panel-sensors ['nvme-pci-0200/temp1', 'nct6798-virtual-0/temp1'], units 'fahrenheit', show-all true
+nct6798 removed: the panel lives
+after the chips went: panel-sensors ['nvme-pci-0200/temp1', 'nct6798-virtual-0/temp1'], units 'fahrenheit', show-all true
+A connection to the bus can't be made

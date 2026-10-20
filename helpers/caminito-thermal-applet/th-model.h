@@ -26,7 +26,7 @@ typedef enum
   TH_BAND_HOT,
 } ThBand;
 
-/* The bands' fixed thresholds in °C, until 269 makes them preferences. */
+/* The bands' thresholds in °C until the preferences say otherwise (269). */
 #define TH_WARM_DEFAULT 75.0
 #define TH_HOT_DEFAULT  90.0
 
@@ -88,16 +88,33 @@ void     th_model_update (ThModel *model, GPtrArray *raws);
 GPtrArray *th_model_temperatures (ThModel *model);
 /* The fans read this time, stopped ones too. */
 GPtrArray *th_model_fans         (ThModel *model);
-/* The panel sensors, one or two, or none while there's no temperature: the CPU's reading,
-   and the hottest GPU reading when there's a GPU. */
+/* The panel sensors, one or two, or none while there's no temperature: the pins' readings,
+   or the defaults while there's no pin or a pin's chip is gone, the CPU's reading and the
+   hottest GPU reading when there's a GPU. */
 GPtrArray *th_model_panel_sensors (ThModel *model);
+
+/* The panel sensors' pins (269), by reading id, oldest first, as the applet's preferences
+   keep them; NULL or empty for the defaults. Kept while their chips are gone, until a pin is
+   clicked, which starts from the panel sensors shown. */
+void               th_model_set_pinned (ThModel *model, const char *const *ids);
+/* NULL-terminated; empty for the defaults. */
+const char *const *th_model_pinned     (ThModel *model);
+/* A click on a temperature's pin: an unpinned one joins the panel sensors, dropping the
+   older when there are two; a pinned one leaves them, unless it's the only one. FALSE when
+   nothing changed. */
+gboolean           th_model_toggle_pin (ThModel *model, const char *id);
+/* °F in the panel, the tooltip and the popup; °C by default. */
+void               th_model_set_fahrenheit (ThModel *model, gboolean fahrenheit);
+/* Where warm and hot start, in °C, for every reading at once. */
+void               th_model_set_thresholds (ThModel *model, double warm, double hot);
 
 /* Whether a chip of that name is left out: batteries, AC and USB-C. */
 gboolean th_chip_is_left_out (const char *chip);
 ThGroup  th_chip_group       (const char *chip);
 ThBand   th_band             (double value, double crit, double warm, double hot);
 
-/* "55°C", "55°C / 81°C" with each in its band's colour as Pango markup, "–" with none. */
+/* In °C or °F. "55°C", "55°C / 81°C" with each in its band's colour as Pango markup, "–"
+   with none. */
 char *th_model_panel_temperatures (ThModel *model);
 /* The fastest fan's "2865 RPM", "Fans Off" when every fan reads 0, NULL with no fan. */
 char *th_model_panel_fans         (ThModel *model);
@@ -109,8 +126,8 @@ char *th_model_tooltip            (ThModel *model);
 
 /* The popup's (268). */
 
-/* The reading's band at the thresholds. */
-ThBand     th_reading_band          (const ThReading *reading);
+/* The reading's band at the model's thresholds. */
+ThBand     th_model_band            (ThModel *model, const ThReading *reading);
 gboolean   th_model_is_panel_sensor (ThModel *model, const ThReading *reading);
 /* The group's hottest temperature, NULL with none; count gets how many the group has. */
 ThReading *th_model_hottest         (ThModel *model, ThGroup group, guint *count);
@@ -121,7 +138,7 @@ ThReading *th_model_fastest_fan     (ThModel *model);
 double     th_model_fan_scale       (ThModel *model, const ThReading *fan);
 /* A temperature's bar, on the one scale of every reading: empty at 20 °C, full at 100 °C. */
 double     th_temperature_fraction  (double celsius);
-/* "55 °C". */
-char      *th_temperature_text      (double celsius);
+/* "55 °C", or "131 °F". */
+char      *th_model_temperature_text (ThModel *model, double celsius);
 /* "2865 RPM", or "Stopped". */
 char      *th_fan_text              (double rpm);

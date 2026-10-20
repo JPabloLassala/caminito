@@ -437,8 +437,8 @@ The **Thermal applet** is a thermometer in mate-panel with the CPU's temperature
 GPU reading beside it when there is a GPU, over the fastest fan's speed, or _Fans Off_ when every
 fan is stopped. A
 temperature turns orange from 75 °C, and red from 90 °C, or from 5 °C below the sensor's critical
-value when that is lower. On a panel smaller than 32 px it's one line, and on a vertical panel
-it's the CPU's temperature alone. Its tooltip names the temperatures in the panel, and every fan
+value when that is lower. The two thresholds can be changed in Preferences. On a panel smaller
+than 32 px it's one line, and on a vertical panel it's the CPU's temperature alone. Its tooltip names the temperatures in the panel, and every fan
 with its speed.
 
 A click opens its popup: a tile for each of the CPU, the GPU, the storage and the fans, with the
@@ -446,6 +446,16 @@ hottest reading of each group and the fastest fan. Under _Show all sensors_ is e
 grouped, with a bar from 20 °C to 100 °C in its colour, and every fan with its speed. A fan's bar
 is against its maximum, or, when the fan gives none, against the fastest it has spun since the
 applet started, after ten readings.
+
+The pin at the end of a temperature's row shows on hover, and puts that temperature in the panel.
+The panel has two at most: pinning a third takes out the one pinned before the other. The pin of a
+temperature in the panel stays shown, and a click on it takes the temperature out, unless it's
+the only one. While the chip of one of the temperatures chosen is gone, as when its module is
+unloaded, the panel shows the CPU's and the GPU's again, until the chip comes back.
+
+_Preferences_, in the applet's right-click menu, has the units, °C or °F, for the panel, the
+tooltip and the popup, and where warm and hot start. The applet keeps these, the temperatures in
+the panel, and whether _Show all sensors_ is open, when mate-panel restarts.
 
 It isn't in a new session's panel: add _Temperatures and Fans_ with _Add to Panel_. It reads every
 chip through lm_sensors' libsensors, so the labels and the `ignore` lines in `/etc/sensors3.conf`

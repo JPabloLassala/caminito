@@ -28,9 +28,17 @@ struct _ThModel
   GHashTable *moved;
   /* A FanWatch for each fan's id, since the applet started. */
   GHashTable *fan_watches;
-  /* The panel sensors chosen, kept while they're shown. */
+  /* The panel sensors chosen by default, kept while they're shown. */
   char       *cpu_id;
   char       *gpu_id;
+  /* The CPU's Package or Tctl in the last read, NULL with neither. */
+  char       *package_id;
+  /* The pins' reading ids, oldest first; empty for the defaults. */
+  char      **pinned;
+  gboolean    fahrenheit;
+  /* Where warm and hot start, in °C. */
+  double      warm;
+  double      hot;
 };
 
 typedef struct
@@ -284,6 +292,9 @@ th_model_new (void)
   model->panel_sensors = g_ptr_array_new ();
   model->moved = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   model->fan_watches = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+  model->pinned = g_new0 (char *, 1);
+  model->warm = TH_WARM_DEFAULT;
+  model->hot = TH_HOT_DEFAULT;
   return model;
 }
 
@@ -297,6 +308,8 @@ th_model_free (ThModel *model)
   g_hash_table_unref (model->fan_watches);
   g_free (model->cpu_id);
   g_free (model->gpu_id);
+  g_free (model->package_id);
+  g_strfreev (model->pinned);
   g_free (model);
 }
 
@@ -333,9 +346,9 @@ hottest (GPtrArray *readings, gboolean gpu_only)
 }
 
 static void
-choose_panel_sensors (ThModel *model, const char *package_id)
+choose_panel_sensors (ThModel *model)
 {
-  ThReading *cpu = find (model->temperatures, package_id);
+  ThReading *cpu = find (model->temperatures, model->package_id);
   ThReading *gpu;
 
   /* The Package or Tctl whenever it's there; else the hottest reading, kept while it's
@@ -357,6 +370,17 @@ choose_panel_sensors (ThModel *model, const char *package_id)
     g_ptr_array_add (model->panel_sensors, cpu);
   if (gpu != NULL && gpu != cpu)
     g_ptr_array_add (model->panel_sensors, gpu);
+
+  /* The pins in the defaults' place, unless a pin's chip is gone: the defaults then, until
+     it comes back. */
+  if (model->pinned[0] == NULL)
+    return;
+  for (guint i = 0; model->pinned[i] != NULL; i++)
+    if (find (model->temperatures, model->pinned[i]) == NULL)
+      return;
+  g_ptr_array_set_size (model->panel_sensors, 0);
+  for (guint i = 0; model->pinned[i] != NULL; i++)
+    g_ptr_array_add (model->panel_sensors, find (model->temperatures, model->pinned[i]));
 }
 
 /* The key of a raw's chip and kind, temperatures or fans, to count their unlabelled ones. */
@@ -385,9 +409,8 @@ th_model_update (ThModel *model, GPtrArray *raws)
 {
   g_autoptr (GHashTable) unlabelled = g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
                                                              NULL);
-  g_autofree char *package_id = NULL;
-
   g_ptr_array_set_size (model->panel_sensors, 0);
+  g_clear_pointer (&model->package_id, g_free);
   g_ptr_array_set_size (model->temperatures, 0);
   g_ptr_array_set_size (model->fans, 0);
 
@@ -435,12 +458,12 @@ th_model_update (ThModel *model, GPtrArray *raws)
       g_ptr_array_add (raw->is_fan ? model->fans : model->temperatures, reading);
       if (raw->is_fan)
         watch_fan (model, reading);
-      if (!raw->is_fan && package_id == NULL && is_package (raw))
-        package_id = g_strdup (id);
+      if (!raw->is_fan && model->package_id == NULL && is_package (raw))
+        model->package_id = g_strdup (id);
     }
   number_same_names (model->temperatures);
   number_same_names (model->fans);
-  choose_panel_sensors (model, package_id);
+  choose_panel_sensors (model);
 }
 
 GPtrArray *
@@ -461,6 +484,71 @@ th_model_panel_sensors (ThModel *model)
   return model->panel_sensors;
 }
 
+void
+th_model_set_pinned (ThModel *model, const char *const *ids)
+{
+  g_strfreev (model->pinned);
+  model->pinned = ids != NULL ? g_strdupv ((char **) ids) : g_new0 (char *, 1);
+  choose_panel_sensors (model);
+}
+
+const char *const *
+th_model_pinned (ThModel *model)
+{
+  return (const char *const *) model->pinned;
+}
+
+gboolean
+th_model_toggle_pin (ThModel *model, const char *id)
+{
+  GPtrArray *pins;
+  gboolean was_pinned = FALSE;
+
+  if (find (model->temperatures, id) == NULL)
+    return FALSE;
+  /* From the panel sensors shown, the defaults or the pins whose chips are there. */
+  pins = g_ptr_array_new_with_free_func (g_free);
+  for (guint i = 0; i < model->panel_sensors->len; i++)
+    {
+      const char *shown = ((ThReading *) model->panel_sensors->pdata[i])->id;
+
+      if (strcmp (shown, id) == 0)
+        was_pinned = TRUE;
+      else
+        g_ptr_array_add (pins, g_strdup (shown));
+    }
+  if (was_pinned && pins->len == 0)
+    {
+      g_ptr_array_unref (pins);
+      return FALSE;
+    }
+  if (!was_pinned)
+    {
+      g_ptr_array_add (pins, g_strdup (id));
+      if (pins->len > 2)
+        g_ptr_array_remove_index (pins, 0);
+    }
+  g_ptr_array_add (pins, NULL);
+  g_strfreev (model->pinned);
+  /* The array's own, not freed with it. */
+  model->pinned = (char **) g_ptr_array_free (pins, FALSE);
+  choose_panel_sensors (model);
+  return TRUE;
+}
+
+void
+th_model_set_fahrenheit (ThModel *model, gboolean fahrenheit)
+{
+  model->fahrenheit = fahrenheit;
+}
+
+void
+th_model_set_thresholds (ThModel *model, double warm, double hot)
+{
+  model->warm = warm;
+  model->hot = hot;
+}
+
 /* Rounded half up, as people read a thermometer, and not half to even as printf does. */
 static long
 whole (double value)
@@ -469,9 +557,22 @@ whole (double value)
 }
 
 ThBand
-th_reading_band (const ThReading *reading)
+th_model_band (ThModel *model, const ThReading *reading)
 {
-  return th_band (reading->value, reading->limit, TH_WARM_DEFAULT, TH_HOT_DEFAULT);
+  return th_band (reading->value, reading->limit, model->warm, model->hot);
+}
+
+/* A temperature in the model's units, rounded. */
+static long
+in_units (ThModel *model, double celsius)
+{
+  return whole (model->fahrenheit ? celsius * 9 / 5 + 32 : celsius);
+}
+
+static const char *
+unit (ThModel *model)
+{
+  return model->fahrenheit ? "°F" : "°C";
 }
 
 /* The band's colour in the panel; NULL for normal, which is the theme's text colour. */
@@ -491,15 +592,15 @@ band_colour (ThBand band)
 }
 
 static void
-append_coloured (GString *text, const ThReading *reading, const char *unit)
+append_coloured (GString *text, ThModel *model, const ThReading *reading, const char *unit)
 {
-  const char *colour = band_colour (th_reading_band (reading));
+  const char *colour = band_colour (th_model_band (model, reading));
 
   if (colour != NULL)
     g_string_append_printf (text, "<span foreground=\"%s\">%ld%s</span>", colour,
-                            whole (reading->value), unit);
+                            in_units (model, reading->value), unit);
   else
-    g_string_append_printf (text, "%ld%s", whole (reading->value), unit);
+    g_string_append_printf (text, "%ld%s", in_units (model, reading->value), unit);
 }
 
 char *
@@ -511,7 +612,7 @@ th_model_panel_temperatures (ThModel *model)
     {
       if (i > 0)
         g_string_append (text, " / ");
-      append_coloured (text, model->panel_sensors->pdata[i], "°C");
+      append_coloured (text, model, model->panel_sensors->pdata[i], unit (model));
     }
   if (text->len == 0)
     g_string_append (text, "–");
@@ -526,7 +627,7 @@ th_model_panel_bare (ThModel *model)
   if (model->panel_sensors->len == 0)
     g_string_append (text, "–");
   else
-    append_coloured (text, model->panel_sensors->pdata[0], "°");
+    append_coloured (text, model, model->panel_sensors->pdata[0], "°");
   return g_string_free (text, FALSE);
 }
 
@@ -553,8 +654,9 @@ th_model_tooltip (ThModel *model)
     {
       ThReading *reading = model->panel_sensors->pdata[i];
 
-      g_ptr_array_add (parts, g_strdup_printf ("%s %ld °C", reading->name,
-                                               whole (reading->value)));
+      g_ptr_array_add (parts, g_strdup_printf ("%s %ld %s", reading->name,
+                                               in_units (model, reading->value),
+                                               unit (model)));
     }
   for (guint i = 0; i < model->fans->len; i++)
     {
@@ -634,9 +736,9 @@ th_temperature_fraction (double celsius)
 }
 
 char *
-th_temperature_text (double celsius)
+th_model_temperature_text (ThModel *model, double celsius)
 {
-  return g_strdup_printf ("%ld °C", whole (celsius));
+  return g_strdup_printf ("%ld %s", in_units (model, celsius), unit (model));
 }
 
 char *

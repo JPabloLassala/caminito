@@ -1,7 +1,8 @@
 /*
  * The Thermal popup's tiles and Show all sensors (268), from computers built by hand: what
- * they show, their bands, the fans' bars, and that a read changes them in place. Without a
- * display, GTK can't start, and it's skipped.
+ * they show, their bands, the fans' bars, and that a read changes them in place; and the
+ * pins, Show all's state, °F and the thresholds (269). Without a display, GTK can't start,
+ * and it's skipped.
  */
 
 #include <string.h>
@@ -15,15 +16,42 @@ typedef struct
   CaminitoAppletPopup *popup;
   ThPopup             *content;
   ThModel             *model;
+  /* The pins clicked, by reading id, and Show all's openings and closings, as "open" and
+     "closed". */
+  GPtrArray           *pins;
+  GPtrArray           *show_alls;
 } Fixture;
+
+/* As the applet does: the panel sensors change, and the popup shows it. */
+static void
+on_pin (const char *id, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_ptr_array_add (fixture->pins, g_strdup (id));
+  th_model_toggle_pin (fixture->model, id);
+  th_popup_update (fixture->content, fixture->model);
+}
+
+static void
+on_show_all (gboolean open, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_ptr_array_add (fixture->show_alls, g_strdup (open ? "open" : "closed"));
+}
+
+static const ThPopupActions actions = { on_pin, on_show_all };
 
 static void
 setup (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
   fixture->anchor = g_object_ref_sink (gtk_button_new ());
   fixture->popup = caminito_applet_popup_new (fixture->anchor);
-  fixture->content = th_popup_new (fixture->popup);
+  fixture->content = th_popup_new (fixture->popup, &actions, fixture);
   fixture->model = th_model_new ();
+  fixture->pins = g_ptr_array_new_with_free_func (g_free);
+  fixture->show_alls = g_ptr_array_new_with_free_func (g_free);
 }
 
 static void
@@ -31,6 +59,8 @@ teardown (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
   th_popup_free (fixture->content);
   th_model_free (fixture->model);
+  g_ptr_array_unref (fixture->pins);
+  g_ptr_array_unref (fixture->show_alls);
   /* The popup goes with its anchor. */
   g_object_unref (fixture->anchor);
 }
@@ -365,6 +395,70 @@ test_a_chip_that_goes_takes_its_tile (Fixture *fixture, gconstpointer data G_GNU
   g_assert_true (gtk_expander_get_expanded (GTK_EXPANDER (show_all (fixture))));
 }
 
+static gboolean
+is_pinned (Fixture *fixture, const char *name)
+{
+  return has_class (child_of_type (row_of (fixture, name), GTK_TYPE_BUTTON),
+                    "caminito-thermal-pinned");
+}
+
+/* A pin's click says which reading it is; pinning a third drops the older one's pin. */
+static void
+test_clicking_a_pin (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  read_in (fixture, desktop (58, 61, 1180, 820, 0));
+  gtk_button_clicked (GTK_BUTTON (child_of_type (row_of (fixture, "GPU edge"),
+                                                 GTK_TYPE_BUTTON)));
+  g_assert_cmpuint (fixture->pins->len, ==, 1);
+  g_assert_cmpstr (fixture->pins->pdata[0], ==, "amdgpu-pci-0300/temp1");
+  g_assert_false (is_pinned (fixture, "CPU"));
+  g_assert_true (is_pinned (fixture, "GPU junction"));
+  g_assert_true (is_pinned (fixture, "GPU edge"));
+
+  /* After a read too, which makes nothing again. */
+  read_in (fixture, desktop (59, 62, 1180, 820, 0));
+  gtk_button_clicked (GTK_BUTTON (child_of_type (row_of (fixture, "SYSTIN"), GTK_TYPE_BUTTON)));
+  g_assert_cmpstr (fixture->pins->pdata[1], ==, "nct6798-isa-0290/temp1");
+  g_assert_false (is_pinned (fixture, "GPU junction"));
+  g_assert_true (is_pinned (fixture, "SYSTIN"));
+}
+
+/* Show all's state is the user's to change, and the applet's to set from its preferences
+   without hearing it back. */
+static void
+test_show_all_state (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  read_in (fixture, thinkpad (55, 2865));
+  th_popup_set_show_all (fixture->content, TRUE);
+  g_assert_true (gtk_expander_get_expanded (GTK_EXPANDER (show_all (fixture))));
+  g_assert_cmpuint (fixture->show_alls->len, ==, 0);
+
+  gtk_expander_set_expanded (GTK_EXPANDER (show_all (fixture)), FALSE);
+  gtk_expander_set_expanded (GTK_EXPANDER (show_all (fixture)), TRUE);
+  g_assert_cmpuint (fixture->show_alls->len, ==, 2);
+  g_assert_cmpstr (fixture->show_alls->pdata[0], ==, "closed");
+  g_assert_cmpstr (fixture->show_alls->pdata[1], ==, "open");
+}
+
+/* °F in the tiles and the rows, and a threshold's change recolours them. */
+static void
+test_fahrenheit_and_thresholds (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  th_model_set_fahrenheit (fixture->model, TRUE);
+  th_model_set_thresholds (fixture->model, 50, 90);
+  read_in (fixture, thinkpad (55, 2865));
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (tile_value (fixture, 0))), ==, "131 °F");
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (value_of (row_of (fixture, "CPU Package")))),
+                   ==, "131 °F");
+  g_assert_true (has_class (tile_value (fixture, 0), "caminito-thermal-warm"));
+  g_assert_true (has_class (value_of (row_of (fixture, "Wi-Fi")), "caminito-thermal-normal"));
+
+  th_model_set_thresholds (fixture->model, 40, 50);
+  th_popup_update (fixture->content, fixture->model);
+  g_assert_true (has_class (tile_value (fixture, 0), "caminito-thermal-hot"));
+  g_assert_true (has_class (value_of (row_of (fixture, "Wi-Fi")), "caminito-thermal-warm"));
+}
+
 int
 main (int argc, char **argv)
 {
@@ -383,5 +477,8 @@ main (int argc, char **argv)
   g_test_add ("/popup/the-pins-show-the-panel-sensors", Fixture, NULL, setup, test_pins_show_the_panel_sensors, teardown);
   g_test_add ("/popup/a-read-changes-the-widgets-in-place", Fixture, NULL, setup, test_a_read_changes_the_widgets_in_place, teardown);
   g_test_add ("/popup/a-chip-that-goes-takes-its-tile", Fixture, NULL, setup, test_a_chip_that_goes_takes_its_tile, teardown);
+  g_test_add ("/popup/clicking-a-pin-changes-the-panel-sensors", Fixture, NULL, setup, test_clicking_a_pin, teardown);
+  g_test_add ("/popup/show-all-is-kept", Fixture, NULL, setup, test_show_all_state, teardown);
+  g_test_add ("/popup/fahrenheit-and-the-thresholds", Fixture, NULL, setup, test_fahrenheit_and_thresholds, teardown);
   return g_test_run ();
 }

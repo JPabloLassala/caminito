@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Thermal applet's own preferences (269). The panel gives each applet a path of its
+     own to a schema without one, as MATE's own applets have. -->
+<schemalist>
+  <enum id="org.mate.panel.applet.caminito-thermal.Units">
+    <value nick="celsius" value="0"/>
+    <value nick="fahrenheit" value="1"/>
+  </enum>
+  <schema id="org.mate.panel.applet.caminito-thermal">
+    <key name="panel-sensors" type="as">
+      <default>[]</default>
+      <summary>Panel sensors</summary>
+      <description>The temperatures in the panel, one or two, by reading ID (the chip and the feature, as "coretemp-isa-0000/temp1"), as the popup's pins set them. Empty for the defaults: the CPU's, and the hottest GPU reading when there's a GPU. While a pin's chip is gone, the defaults are shown until it comes back.</description>
+    </key>
+    <key name="units" enum="org.mate.panel.applet.caminito-thermal.Units">
+      <default>'celsius'</default>
+      <summary>Units</summary>
+      <description>The temperatures in °C or °F, in the panel, the tooltip and the popup.</description>
+    </key>
+    <key name="warm-threshold" type="d">
+      <range min="30" max="130"/>
+      <default>75</default>
+      <summary>Warm from</summary>
+      <description>The temperature in °C from which a reading is warm, and orange.</description>
+    </key>
+    <key name="hot-threshold" type="d">
+      <range min="30" max="130"/>
+      <default>90</default>
+      <summary>Hot from</summary>
+      <description>The temperature in °C from which a reading is hot, and red; from its crit minus 5 when that's lower.</description>
+    </key>
+    <key name="show-all" type="b">
+      <default>false</default>
+      <summary>Show all sensors</summary>
+      <description>Whether the popup's "Show all sensors" is open.</description>
+    </key>
+  </schema>
+</schemalist>
