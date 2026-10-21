@@ -6,7 +6,8 @@
 #    the three and removes nothing.
 # 2. apt-cache policy gives 1001 to the caminito version and 99 to Ubuntu's, and an upgrade
 #    has nothing to do.
-# 3. The files of ours that Ubuntu's doesn't have, and the other way round, but translations.
+# 3. The files of ours that Ubuntu's doesn't have, and the other way round, except the
+#    translations.
 set -euo pipefail
 
 if [ "${1-}" = --in-container ]; then
@@ -32,7 +33,7 @@ if [ "${1-}" = --in-container ]; then
   apt-cache policy "${packages[@]}"
   apt-get -s upgrade | grep -E '^[0-9]+ upgraded'
   if apt-get -s upgrade | grep -q '^Inst mate-settings-daemon'; then echo "FAIL: an upgrade replaces ours"; exit 1; fi
-  echo "== 3. Files but translations: < only Ubuntu's, > only ours"
+  echo "== 3. Files except the translations: < only Ubuntu's, > only ours"
   for p in "${packages[@]}"; do dpkg -L "$p"; done | grep -v ^/usr/share/locale/ | sort -u >/tmp/ours.files
   diff /tmp/ubuntu.files /tmp/ours.files || true
   echo "ok"

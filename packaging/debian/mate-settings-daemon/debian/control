@@ -5,7 +5,8 @@ Maintainer: jpablo <jpablolassala@gmail.com>
 XSBC-Original-Maintainer: Debian+Ubuntu MATE Packaging Team <debian-mate@lists.debian.org>
 # Ubuntu 26.04's mate-settings-daemon 1.26.1-1.2build1, at 1.29.1 with Caminito's carried
 # patches (ADR 0029). The differences from Ubuntu's: debhelper-compat 13, as the other patched
-# packages; libmate-desktop-dev at 1.27.1, what configure.ac asks for once 0004 is in;
+# packages; libmate-desktop-dev at 1.27.1, what configure.ac asks for once 0004 is in (0004
+# goes when Ubuntu's mate-desktop is 1.29);
 # libayatana-appindicator3-dev, libgtk-layer-shell-dev, libwayland-dev and wayland-protocols,
 # for the Wayland background, clipboard and wlrandr plugin (rules passes --enable-wayland); and
 # no libdbus-glib-1-dev, here or in mate-settings-daemon-dev's Depends: since b99fca7, upstream
