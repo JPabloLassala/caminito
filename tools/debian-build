@@ -21,8 +21,8 @@ set -euo pipefail
 # In dependency order. marco and mate-settings-daemon come first, for mate-control-center
 # (195, CMN-128), mate-panel before mate-power-manager and mate-utils, whose applets link its
 # library, libmate-panel-applet-4.so.2 (CMN-126, CMN-127), and so before vala-panel-appmenu,
-# whose applet links it too. appmenu-gtk-module comes before vala-panel-appmenu, which
-# recommends its module (CMN-125). The patched packages come before caminito (205).
+# whose applet links it too. appmenu-gtk-module comes before vala-panel-appmenu: the applet
+# recommends the module, and its install then keeps ours, not Ubuntu's (CMN-125). The patched packages come before caminito (205).
 all=(marco mate-settings-daemon mate-control-center mate-panel mate-power-manager mate-utils
   mate-session-manager caja appmenu-gtk-module vala-panel-appmenu caminito)
 

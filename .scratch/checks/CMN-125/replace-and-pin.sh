@@ -6,7 +6,8 @@
 # 1. Ubuntu's binary packages are installed, then ours over them with apt, with mate-panel's
 #    libmate-panel-applet-4-2 from the same build, which upgrades them and removes nothing.
 # 2. apt-cache policy gives 1001 to the caminito versions and 99 to Ubuntu's, and an upgrade
-#    has nothing to do. Ubuntu's versions don't satisfy caminito's Recommends.
+#    has nothing to do. Ubuntu's versions sort below 1:25.04-0caminito1, the version in
+#    caminito's Recommends.
 # 3. The files of ours that Ubuntu's doesn't have, and the other way round, except the
 #    translations.
 # 4. The applet's .mate-panel-applet file names a library that exists, which links

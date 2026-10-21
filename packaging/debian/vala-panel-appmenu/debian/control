@@ -5,11 +5,16 @@ Maintainer: jpablo <jpablolassala@gmail.com>
 XSBC-Original-Maintainer: Ayatana Packagers <pkg-ayatana-devel@lists.alioth.debian.org>
 # Ubuntu 26.04's vala-panel-appmenu 25.04+dfsg-3ubuntu1, at upstream's 25.04 tag with
 # Caminito's carried patches (ADR 0029), cut down as Arch's vala-panel-appmenu-mate-caminito
-# is: the MATE applet alone, on libwnck, with the menu translator linked into it. The
-# differences from Ubuntu's: no Xfce, Vala Panel or Budgie plugin, and so no libvalapanel-dev,
-# libxfce4panel-2.0-dev, libxfce4ui-2-dev or libxfconf-0-dev; and libmate-panel-applet-dev at
-# mate-panel's caminito version, so that the applet, which the panel loads into its own
-# process, links libmate-panel-applet-4.so.2 (196) and not Ubuntu's .so.1.
+# is: the MATE applet alone, on libwnck, with the menu translator linked into it. These are
+# the differences from Ubuntu's:
+# - No Xfce, Vala Panel or Budgie plugin. So there is no libvalapanel-dev,
+#   libxfce4panel-2.0-dev, libxfce4ui-2-dev or libxfconf-0-dev.
+# - libmate-panel-applet-dev is at mate-panel's caminito version. The panel loads the applet
+#   into its own process, so the applet must link libmate-panel-applet-4.so.2 (196), not
+#   Ubuntu's .so.1.
+# Ubuntu's /etc/profile.d/vala-panel-appmenu.sh stays in vala-panel-appmenu-common. It adds
+# appmenu-gtk-module to GTK_MODULES in every session, as the stock package does. Arch's
+# package doesn't have it.
 Build-Depends: debhelper-compat (= 13),
                gobject-introspection,
                meson (>= 0.51.0),

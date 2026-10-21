@@ -11,10 +11,10 @@ include /usr/share/dpkg/buildflags.mk
 %:
 	dh $@
 
-# Every feature off but the MATE applet: the tree has the subprojects Ubuntu's +dfsg tarball
-# leaves out (appmenu-gtk-module, which is a source package of its own, the registrar and
-# jayatana), and the other panels' plugins. The translator is built static into the applet by
-# 2001.
+# Meson builds only the MATE applet. The tree has the subprojects that Ubuntu's +dfsg tarball
+# leaves out: appmenu-gtk-module, which is a source package of its own, the registrar and
+# jayatana. It also has the plugins of the other panels. 2001 builds the translator static,
+# into the applet.
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-Dauto_features=disabled \
@@ -35,5 +35,7 @@ execute_after_dh_install:
 	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
 		"$$packages" "$$packages" > debian/vala-panel-appmenu-common/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
 
+# The applet is a module that the panel loads, not a shared library. Ubuntu also excluded the
+# other panels' plugins, which this source doesn't build.
 override_dh_makeshlibs:
 	dh_makeshlibs -Xmate
