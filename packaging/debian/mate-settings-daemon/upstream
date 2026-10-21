@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's release tarball, checked
+# against its sha256, and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+url=https://github.com/mate-desktop/mate-settings-daemon/releases/download/v1.29.1/mate-settings-daemon-1.29.1.tar.xz
+sha256=a4c75a035ce1874f766e74a7fb2234a7d860c6579b40d17594be1b93ca7a058c
+patches=mate-settings-daemon

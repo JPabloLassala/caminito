@@ -18,9 +18,9 @@
 # too.
 set -euo pipefail
 
-# In dependency order. marco comes first, for mate-control-center (195), and the patched
-# packages come before caminito (205).
-all=(marco mate-control-center mate-panel mate-session-manager caja caminito)
+# In dependency order. marco and mate-settings-daemon come first, for mate-control-center
+# (195, CMN-128), and the patched packages come before caminito (205).
+all=(marco mate-settings-daemon mate-control-center mate-panel mate-session-manager caja caminito)
 
 image=ubuntu:26.04
 
