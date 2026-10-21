@@ -6,10 +6,10 @@ mate-utils (1.29.1-0caminito1) resolute; urgency=medium
   * Carry packaging/patches/mate-utils/: mate-screenshot captures the
     window Caminito names. tools/debian-build copies it into
     debian/patches/.
-  * Build with --enable-wayland, against gtk-layer-shell and wayland.
-    mate-screenshot captures on Wayland, and the dictionary applet is
-    built into the panel's process, against libmate-panel-applet-4.so.2,
-    with no D-Bus service.
+  * Build with --enable-wayland and --enable-in-process, against
+    gtk-layer-shell and wayland. mate-screenshot captures on Wayland, and
+    the dictionary applet is built into the panel's process, against
+    libmate-panel-applet-4.so.2, with no D-Bus service.
   * Take libegg from the tarball, not from mate-submodules-source, and
     leave out the tarball's libgdict API reference.
   * Pin the binaries at their caminito version in

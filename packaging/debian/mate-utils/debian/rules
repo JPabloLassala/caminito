@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
-# Ubuntu 26.04's mate-utils rules, at 1.29.1 (CMN-127). The differences: --enable-wayland,
-# libegg from the tarball, no API reference, and the apt pin.
+# Ubuntu 26.04's mate-utils rules, at 1.29.1 (CMN-127). The differences: --enable-wayland and
+# --enable-in-process, libegg from the tarball, no API reference, and the apt pin.
 
 include /usr/share/dpkg/pkg-info.mk
 
@@ -35,16 +35,19 @@ execute_after_dh_install:
 
 # The 1.29.1 tarball has libegg in gsearchtool/mate-submodules/, so mate-submodules-source's
 # isn't unpacked over it. --enable-wayland makes a missing Wayland library an error. Without
-# it, configure turns mate-screenshot's Wayland capture off and says nothing. It also builds
-# the dictionary applet into the panel's process (--enable-in-process), which is how a Wayland
-# panel loads it, as a module in /usr/lib/<triplet>/mate-utils/.
+# it, configure turns mate-screenshot's Wayland capture off and says nothing.
+# --enable-in-process builds the dictionary applet into the panel's process, which is how a
+# Wayland panel loads it, as a module in /usr/lib/<triplet>/mate-utils/ that links
+# libmate-panel-applet-4.so.2. --enable-wayland turns it on too, but without the flag a build
+# without Wayland would go back to the out-of-process applet and say nothing.
 override_dh_auto_configure:
 	NOCONFIGURE=1 ./autogen.sh
 	dh_auto_configure $(DHFLAGS) -- \
 		--libexecdir=/usr/lib/mate-utils \
 		--disable-silent-rules \
 		--disable-static \
-		--enable-wayland
+		--enable-wayland \
+		--enable-in-process
 
 get-orig-source:
 	uscan --noconf --force-download --rename --download-current-version --destdir=..
