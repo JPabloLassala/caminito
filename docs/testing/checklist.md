@@ -783,6 +783,132 @@ session_env() {
 - **Debug tool:** `DumpState`'s `workspace_slides`, with one slide for each monitor that
   switches. `wlr-randr` for the refresh rates.
 
+### The Overview on one monitor
+
+- **Milestone:** `overview`, the developer's to run (247).
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with one monitor, four workspaces in one
+     row and the panel's window list showing. Run `gsettings get org.mate.Caminito overview`,
+     which prints `'<Super>w'`, and `gsettings get org.mate.Caminito overview-animation`,
+     which prints `true`. On the first workspace open a terminal, pluma, `xterm` (X11) and a
+     video playing in Firefox or `mpv`, each at a different place and size, and minimise
+     `xterm`. On the second workspace open `glxgears` or a second video.
+  2. Run `gsettings list-recursively | grep -i -E '<(super|mod4)>w'` from the terminal. Open
+     *System Shortcuts* in the control center and look for Super+W. Focus pluma and press
+     Super+W, then press it again. Do the same with caja's desktop focused, with nothing
+     focused, and with pluma fullscreen (F11).
+  3. Open the Overview and close it with Esc. Open it and close it with a click on the empty
+     area between the windows.
+  4. Open it and click pluma. Open it and choose `xterm`, the minimised one, with a click.
+     Minimise `xterm` again.
+  5. Open it, move the selection with each arrow key, and press Enter. Open it with no window
+     focused (click the desktop first) and press Right, then Enter.
+  6. Open it, and middle-click `xterm`. Then run `sleep 2; pluma /etc/hostname &` in the
+     terminal, open the Overview at once, and wait for pluma to open in it.
+  7. Open it and look at the video in the layout and at the bar's cells for half a minute.
+  8. Open it and click the second workspace's cell, then the first's. Press Ctrl+Alt+Right
+     and Ctrl+Alt+Left. If a mouse button is bound to `switch-to-workspace-left` or `-right`,
+     press it over a window, over a cell and over the empty area.
+  9. Open it and drag the terminal onto the third workspace's cell, holding it over the second
+     cell and then the third for a moment before the release. Drag pluma onto the first
+     cell, the active one. Drag pluma a little way and release it on the empty area. Start a
+     drag of pluma and press Esc during it. Close the Overview, and go to the third
+     workspace to see the terminal. Bring it back to the first.
+  10. Press Super+W and, before the opening ends, press it again. Then open it fully and
+      press Esc and Super+W one after the other, quickly.
+  11. Press Ctrl+Alt+Right and, before the slide ends, Super+W.
+  12. `gsettings set org.mate.Caminito overview-animation false`, and open and close it, and
+      drag a window onto a cell. Set it back to `true`. With it on, turn each of these
+      against the transition in turn, open and close, and set it back:
+      `org.mate.Marco.general compositing-manager false`, `org.mate.Marco.general
+      reduced-resources true` and `org.mate.interface enable-animations false`.
+  13. Lock the screen with the Overview open: run `sleep 3; mate-screensaver-command --lock`
+      and press Super+W at once. Unlock. Do it again, with a drag in progress as the lock
+      comes.
+  14. `gsettings set org.mate.Caminito overview ''`, and press Super+W. Reset the key.
+- **Expected:** in step 2 the grep prints the `overview` key alone, *System Shortcuts* lists
+  *Show the windows of the workspace side by side*, under *Window Management*, on Super+W and
+  no other shortcut on it, and each press opens or closes
+  the Overview and reaches no window: pluma types no `w`, and caja's desktop does nothing. The
+  fullscreen pluma is laid out like any other window. In every step the Overview opens on the
+  first workspace with each window moving and shrinking from its place into rows, none over
+  another, in the order of their places, each with its icon and title beneath it. The
+  minimised `xterm` fades in at its place. The bar fades in along the top, one cell for each
+  workspace, with the first marked. The wallpaper dims, with no blur, and the panel and the
+  desktop icons fade out. Closing, each window goes back to its place at once.
+
+  In step 3 nothing changes after the closing. In step 4 the chosen window is raised as the
+  windows go back, and has the focus; `xterm` comes back unminimised. In step 5 the focused
+  window is marked at opening, each arrow selects the nearest window that way, and Enter
+  chooses it as a click does. With no window focused, nothing is marked until Right, which
+  marks the top row's left window. In step 6 `xterm` closes and the Overview stays open, the
+  others easing to their new places. The new pluma joins the layout, the others easing to make
+  room. In step 7 the video keeps playing in the layout, as smooth as on the desktop. The
+  second workspace's cell shows its window moving, at about 10 frames a second: the developer
+  judges if the bar's size and that rate look right. If not, the developer changes them and
+  records it in the [spec](https://linear.app/jplassala/document/spec-overview-spec-eec483ad739c)'s
+  "The bar" and "Live content". In step 8 each switch slides the laid-out windows, the old
+  layout out and the new in, the Overview staying open, and no Workspace popup shows. A button
+  does what its key does, wherever the pointer is, and chooses or closes no window. In step 9
+  the dragged window follows the pointer over the layout and the bar, shrinks to the cell's
+  scale over a cell, about the point it was held by, and the cell under it is marked. Dropped
+  on the third cell it eases into that cell's picture, at its place there, and leaves the
+  layout; the others ease to their new places. On the active cell, on the empty area and after
+  Esc, it eases back to its slot. The Overview stays open after each. On the third workspace
+  the terminal has the geometry it had. In step 10 each second press reverses the transition
+  from where it is, with no jump. In step 11 the slide is cut to its end and the Overview
+  opens. In step 12 each opening and closing, and the drop, is at once, with no movement, and
+  the Overview works as before. In step 13 the lock ends the Overview and the drag, the locker
+  shows nothing of it, and after the unlock the windows are in their places, on their
+  workspaces. In step 14 Super+W does nothing, and goes to the focused window.
+
+  In every step the transition is smooth at the monitor's refresh rate, with no frame that
+  stutters or tears. It takes a quarter of a second, starts fast and slows into place.
+- **Debug tool:** `DumpState`'s `overview`, there while it's open: its `output`, `workspace`,
+  `windows` with their `rect` and `label`, `selected`, the `bar`'s cells, `drag`, `drop`,
+  `sliding` and `reflow`. `overview_transition`, there while it runs: its `direction`,
+  `part`, `dim`, `layer_surfaces` and the drawn `windows`. `wlr-randr` for the refresh rate.
+
+### The Overview on two monitors
+
+- **Milestone:** `overview`, the developer's to run (247).
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with two monitors side by side and four
+     workspaces in one row. Run `gsettings get org.mate.Caminito workspaces-per-output`,
+     which prints `true`. Open a terminal and pluma on the first workspace of the first
+     monitor, a terminal on the first workspace of the second, and `xterm` (X11) on the
+     second workspace of the second. Maximise pluma. Open a `mate-calc` on the first monitor
+     and move it to straddle the two, with its larger part on the first.
+  2. Focus the first monitor's terminal and press Super+W. Press Esc. Focus the second
+     monitor's terminal and press Super+W. Press Esc.
+  3. Open the Overview from the first monitor's terminal, and click the second workspace's
+     cell in the second monitor's bar. Press Right, then Ctrl+Alt+Left. Close it.
+  4. Open it and drag the first monitor's terminal onto the second monitor's layout. Drag it
+     back onto the first monitor's third cell. Drag the maximised pluma onto the second
+     monitor's layout. Close the Overview, and look at where each window is. Put them back.
+  5. Open it and unplug the second monitor. Plug it in again, with the Overview still open,
+     and close it.
+  6. `gsettings set org.mate.Caminito workspaces-per-output false`, open the Overview, click
+     the second cell of one monitor's bar, then the first's, and press Ctrl+Alt+Right and
+     Ctrl+Alt+Left. Drag a terminal onto the other monitor's layout. Close it, and set the key
+     back to `true`.
+- **Expected:** in step 2 the Overview opens on both monitors at once, each with its own
+  active workspace's windows and its own bar, both dimmed, with each panel and the desktop
+  icons fading. The transitions run together, smooth at each monitor's refresh rate.
+  `mate-calc` is in the first monitor's layout alone. The selection starts on the focused
+  terminal's monitor. In step 3 the click switches the second monitor alone, which then has
+  the selection with nothing selected, so Right marks its top-left window. Ctrl+Alt+Left
+  switches the second monitor back. In step 4 the terminal leaves the first monitor's layout
+  and joins the second's, at the same place relative to its work area, shrunk if it must be,
+  and then goes to the first monitor's third workspace. pluma is maximised on the second
+  monitor. The Overview stays open after each. In step 5 the Overview stays open on the first
+  monitor, with the second's windows in its layout if they are on its workspace, and opens on
+  the second monitor again when it comes back. In step 6 both bars show the same workspaces, a
+  click on one switches both, and each binding switches both. The terminal dropped on the
+  other monitor is on the same workspace.
+- **Debug tool:** `DumpState`'s `overview`, whose `outputs` has each monitor's part, and its
+  `drag`'s `onto`. `overview_transition`'s `outputs`.
+
 ### A Wayland menu slides out of what it's attached to
 
 - **Milestone:** M9
