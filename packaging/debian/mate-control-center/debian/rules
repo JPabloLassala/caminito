@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
-# Ubuntu 26.04's mate-control-center rules, moved to upstream's 1.29.1 (199). The difference:
-# the apt pin (ADR 0029).
+# Ubuntu 26.04's mate-control-center rules, moved to upstream's 1.29.1 (199). The differences:
+# the apt pin (ADR 0029), and pkg-info.mk for its $(DEB_SOURCE).
 
 include /usr/share/dpkg/pkg-info.mk
 

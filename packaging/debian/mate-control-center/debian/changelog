@@ -10,6 +10,8 @@ mate-control-center (1.29.1-0caminito1) resolute; urgency=medium
     + Drop libmate-slab0t64, libmate-slab-dev, libmate-window-settings1t64
       and libmate-window-settings-dev, and mate-control-center's dependencies
       on them: upstream removed both libraries in 1.28.0.
+    + Depend on marco-common (>= 1.29.0), whose schema has the
+      action-scroll-*-titlebar keys that the Windows capplet reads.
   * Delete the libraries' .install, .symbols and .lintian-overrides files.
   * debian/patches: keep 2001_appearance_support.patch and
     2002-remove_obsolete_lock_button.patch, which 1.29.1 doesn't have.
