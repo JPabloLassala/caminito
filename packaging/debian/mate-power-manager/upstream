@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's release tarball, checked
+# against its sha256, and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+url=https://github.com/mate-desktop/mate-power-manager/releases/download/v1.28.1/mate-power-manager-1.28.1.tar.xz
+sha256=8ebdcb74b607e868336ba9a8146cdef8f97bce535c2b0cb3bf650c58f71eee21
+patches=mate-power-manager
