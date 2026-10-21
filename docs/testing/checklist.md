@@ -798,20 +798,21 @@ session_env() {
      Super+W, then press it again. Do the same with caja's desktop focused, with nothing
      focused, and with pluma fullscreen (F11).
   3. Open the Overview and close it with Esc. Open it and close it with a click on the empty
-     area between the windows.
+     area between the windows. Open it, press Alt+Tab and a volume key, and close it. Go to
+     the empty fourth workspace, open it and close it, and go back to the first.
   4. Open it and click pluma. Open it and choose `xterm`, the minimised one, with a click.
      Minimise `xterm` again.
   5. Open it, move the selection with each arrow key, and press Enter. Open it with no window
      focused (click the desktop first) and press Right, then Enter.
-  6. Open it, and middle-click `xterm`. Then run `sleep 2; pluma /etc/hostname &` in the
-     terminal, open the Overview at once, and wait for pluma to open in it.
+  6. Open it, and middle-click `xterm`. Then run `sleep 2; mate-calc &` in the terminal, open
+     the Overview at once, wait for `mate-calc` to open in it, and press Esc.
   7. Open it and look at the video in the layout and at the bar's cells for half a minute.
   8. Open it and click the second workspace's cell, then the first's. Press Ctrl+Alt+Right
      and Ctrl+Alt+Left. If a mouse button is bound to `switch-to-workspace-left` or `-right`,
      press it over a window, over a cell and over the empty area.
   9. Open it and drag the terminal onto the third workspace's cell, holding it over the second
      cell and then the third for a moment before the release. Drag pluma onto the first
-     cell, the active one. Drag pluma a little way and release it on the empty area. Start a
+     cell, the active one. Drag pluma well past the drag threshold and release it on the empty area. Start a
      drag of pluma and press Esc during it. Close the Overview, and go to the third
      workspace to see the terminal. Bring it back to the first.
   10. Press Super+W and, before the opening ends, press it again. Then open it fully and
@@ -833,17 +834,21 @@ session_env() {
   fullscreen pluma is laid out like any other window. In every step the Overview opens on the
   first workspace with each window moving and shrinking from its place into rows, none over
   another, in the order of their places, each with its icon and title beneath it. The
-  minimised `xterm` fades in at its place. The bar fades in along the top, one cell for each
+  minimised `xterm` fades in at its place in the layout. The bar fades in along the top, one cell for each
   workspace, with the first marked. The wallpaper dims, with no blur, and the panel and the
-  desktop icons fade out. Closing, each window goes back to its place at once.
+  desktop icons fade out. Closing, the windows all go back to their places together, and a
+  minimised window that wasn't chosen fades out.
 
-  In step 3 nothing changes after the closing. In step 4 the chosen window is raised as the
+  In step 3 nothing changes after the closing. Alt+Tab opens no Window switcher, and the
+  volume key changes the volume and shows its OSD. On the empty workspace the Overview shows
+  the bar alone. In step 4 the chosen window is raised as the
   windows go back, and has the focus; `xterm` comes back unminimised. In step 5 the focused
   window is marked at opening, each arrow selects the nearest window that way, and Enter
   chooses it as a click does. With no window focused, nothing is marked until Right, which
   marks the top row's left window. In step 6 `xterm` closes and the Overview stays open, the
-  others easing to their new places. The new pluma joins the layout, the others easing to make
-  room. In step 7 the video keeps playing in the layout, as smooth as on the desktop. The
+  others easing to their new places. `mate-calc` joins the layout, the others easing to make
+  room. The developer notes which window has the focus after Esc: `mate-calc` can take it
+  (242), and the spec doesn't say if it should. In step 7 the video keeps playing in the layout, as smooth as on the desktop. The
   second workspace's cell shows its window moving, at about 10 frames a second: the developer
   judges if the bar's size and that rate look right. If not, the developer changes them and
   records it in the [spec](https://linear.app/jplassala/document/spec-overview-spec-eec483ad739c)'s
@@ -860,7 +865,7 @@ session_env() {
   opens. In step 12 each opening and closing, and the drop, is at once, with no movement, and
   the Overview works as before. In step 13 the lock ends the Overview and the drag, the locker
   shows nothing of it, and after the unlock the windows are in their places, on their
-  workspaces. In step 14 Super+W does nothing, and goes to the focused window.
+  workspaces. In step 14 Super+W opens no Overview, and the key goes to the focused window.
 
   In every step the transition is smooth at the monitor's refresh rate, with no frame that
   stutters or tears. It takes a quarter of a second, starts fast and slows into place.
@@ -897,11 +902,14 @@ session_env() {
   icons fading. The transitions run together, smooth at each monitor's refresh rate.
   `mate-calc` is in the first monitor's layout alone. The selection starts on the focused
   terminal's monitor. In step 3 the click switches the second monitor alone, which then has
-  the selection with nothing selected, so Right marks its top-left window. Ctrl+Alt+Left
-  switches the second monitor back. In step 4 the terminal leaves the first monitor's layout
+  the selection with nothing selected, so Right marks its top-left window. The focus stays
+  on the first monitor's terminal. Ctrl+Alt+Left switches the second monitor back. In step 4 the terminal leaves the first monitor's layout
   and joins the second's, at the same place relative to its work area, shrunk if it must be,
-  and then goes to the first monitor's third workspace. pluma is maximised on the second
-  monitor. The Overview stays open after each. In step 5 the Overview stays open on the first
+  the second's windows easing to make room. Over the first monitor's bar it takes that bar's
+  scale, and then goes to the first monitor's third workspace. pluma is maximised on the
+  second monitor. The Overview stays open after each. When the focused terminal is dropped
+  on the second monitor, the selection stays on the first (248): the developer notes if that
+  matters. In step 5 the Overview stays open on the first
   monitor, with the second's windows in its layout if they are on its workspace, and opens on
   the second monitor again when it comes back. In step 6 both bars show the same workspaces, a
   click on one switches both, and each binding switches both. The terminal dropped on the
