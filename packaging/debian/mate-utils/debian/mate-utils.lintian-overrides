@@ -1,0 +1,2 @@
+# The pin is ADR 0029's: it holds this source's binary packages at their caminito version.
+mate-utils: package-installs-apt-preferences [etc/apt/preferences.d/caminito-mate-utils]

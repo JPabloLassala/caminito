@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's release tarball, checked
+# against its sha256, and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+url=https://github.com/mate-desktop/mate-utils/releases/download/v1.29.1/mate-utils-1.29.1.tar.xz
+sha256=8b9e882daab76314f8e6518ff8cd6ddd19f727eb1f2e9a985f7fc68bd025bf07
+patches=mate-utils
