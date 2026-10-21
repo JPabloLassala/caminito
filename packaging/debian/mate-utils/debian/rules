@@ -1,0 +1,50 @@
+#!/usr/bin/make -f
+# Ubuntu 26.04's mate-utils rules, at 1.29.1 (CMN-127). The differences: --enable-wayland,
+# libegg from the tarball, no API reference, and the apt pin.
+
+include /usr/share/dpkg/pkg-info.mk
+
+DHFLAGS=--no-parallel
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@ $(DHFLAGS) --without autoreconf
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+# The 1.29.1 tarball has libgdict's API reference built, which make install installs. Ubuntu's
+# packages have none, and neither do these.
+override_dh_install:
+	rm -rf debian/tmp/usr/share/gtk-doc
+	rm -rfv debian/tmp/usr/lib/*/*.a
+	rm -rfv debian/tmp/usr/lib/*/*.la
+	rm -rfv debian/tmp/usr/lib/*/mate-utils/*.la
+	dh_install
+
+# The pin of ADR 0029: every binary package of this source, at a caminito version, before any
+# other, and Ubuntu's versions of them at 99. Copied from caja's, with this package's name.
+execute_after_dh_install:
+	mkdir -p debian/mate-utils/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/mate-utils/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+# The 1.29.1 tarball has libegg in gsearchtool/mate-submodules/, so mate-submodules-source's
+# isn't unpacked over it. --enable-wayland makes a missing Wayland library an error. Without
+# it, configure turns mate-screenshot's Wayland capture off and says nothing. It also builds
+# the dictionary applet into the panel's process (--enable-in-process), which is how a Wayland
+# panel loads it, as a module in /usr/lib/<triplet>/mate-utils/.
+override_dh_auto_configure:
+	NOCONFIGURE=1 ./autogen.sh
+	dh_auto_configure $(DHFLAGS) -- \
+		--libexecdir=/usr/lib/mate-utils \
+		--disable-silent-rules \
+		--disable-static \
+		--enable-wayland
+
+get-orig-source:
+	uscan --noconf --force-download --rename --download-current-version --destdir=..
