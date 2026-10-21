@@ -1,0 +1,3 @@
+# The apt pin is the point of a Caminito package on Ubuntu (ADR 0029): it holds the package's
+# binaries at their caminito version, which no stock package then replaces.
+mate-control-center: package-installs-apt-preferences [etc/apt/preferences.d/caminito-mate-control-center]

@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's release tarball, checked
+# against its sha256 (195), and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+url=https://github.com/mate-desktop/mate-control-center/releases/download/v1.29.1/mate-control-center-1.29.1.tar.xz
+sha256=cb1d81397dc44503d5c4cf66c7911ede875aff3194da19e12e41bee8eb207f59
+patches=mate-control-center

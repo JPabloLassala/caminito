@@ -1,0 +1,46 @@
+#!/usr/bin/make -f
+# Ubuntu 26.04's mate-control-center rules, moved to upstream's 1.29.1 (199). The difference:
+# the apt pin (ADR 0029).
+
+include /usr/share/dpkg/pkg-info.mk
+
+DHFLAGS=--parallel
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@ $(DHFLAGS) --without autoreconf
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+override_dh_install:
+	rm -rfv debian/tmp/usr/share/applications/mimeinfo.cache
+	rm -rfv debian/tmp/usr/lib/*/*.la
+	rm -rfv debian/tmp/usr/lib/*/*/*.la
+	dh_install
+
+# The pin of ADR 0029, as marco's (195): every binary package of this source, at a caminito
+# version, at 1001, and Ubuntu's versions of them at 99.
+execute_after_dh_install:
+	mkdir -p debian/mate-control-center/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/mate-control-center/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+override_dh_auto_configure:
+	# upstream tarball is without configure. autogen.sh will create it
+	NOCONFIGURE=1 ./autogen.sh
+	dh_auto_configure $(DHFLAGS) -- \
+		--disable-silent-rules \
+		--localstatedir=/var \
+		--disable-static \
+		--disable-update-mimedb
+
+override_dh_installchangelogs:
+	dh_installchangelogs NEWS
+
+get-orig-source:
+	uscan --noconf --force-download --rename --download-current-version --destdir=..
