@@ -1,0 +1,39 @@
+#!/usr/bin/make -f
+# Ubuntu 26.04's vala-panel-appmenu rules, at the 25.04 tag (CMN-125). The differences: only
+# the MATE applet, on libwnck, as Arch's PKGBUILD builds it; no repacking of the source; and
+# the apt pin.
+
+include /usr/share/dpkg/pkg-info.mk
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@
+
+# Every feature off but the MATE applet: the tree has the subprojects Ubuntu's +dfsg tarball
+# leaves out (appmenu-gtk-module, which is a source package of its own, the registrar and
+# jayatana), and the other panels' plugins. The translator is built static into the applet by
+# 2001.
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-Dauto_features=disabled \
+		-Dmate=enabled \
+		-Dwm_backend=wnck
+
+# README.md was in Ubuntu's vala-panel-appmenu binary, which this source doesn't build.
+execute_after_dh_auto_install:
+	rm $(CURDIR)/debian/tmp/usr/share/licenses/vala-panel-appmenu/LICENSE
+	rm $(CURDIR)/debian/tmp/usr/share/doc/vala-panel-appmenu/README.md
+
+# The pin of ADR 0029: every binary package of this source, at a caminito version, before any
+# other, and Ubuntu's versions of them at 99. In the common package, which the applet depends
+# on. Copied from caja's, with this package's name.
+execute_after_dh_install:
+	mkdir -p debian/vala-panel-appmenu-common/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/vala-panel-appmenu-common/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
+
+override_dh_makeshlibs:
+	dh_makeshlibs -Xmate

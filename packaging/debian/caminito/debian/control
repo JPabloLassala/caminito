@@ -81,8 +81,11 @@ Depends:
  mate-desktop-common,
  bluez,
  upower,
+# The GTK module's caminito version, which installs the file the session adds the module by
+# (192, CMN-125), as caminito-git's optdepends names appmenu-gtk-module-caminito. Ubuntu's
+# binary is appmenu-gtk3-module, and its epoch puts it above every stock version.
 Recommends:
- appmenu-gtk-module,
+ appmenu-gtk3-module (>= 1:25.04-0caminito1),
  caminito-vscode,
  power-profiles-daemon,
 Suggests:

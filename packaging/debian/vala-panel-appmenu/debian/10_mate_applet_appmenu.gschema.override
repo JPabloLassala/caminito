@@ -1,0 +1,8 @@
+[org.appmenu.gtk-module:MATE]
+blacklist=['appmenu-mate','mate-hud','mate-indicator-applet','mate-indicator-applet-appmenu','mate-indicator-applet-complete','mate-menu','mate-panel']
+
+[org.valapanel.toplevel.appmenu:MATE]
+bold-application-name=true
+
+[org.valapanel.appmenu:MATE]
+bold-application-name=true

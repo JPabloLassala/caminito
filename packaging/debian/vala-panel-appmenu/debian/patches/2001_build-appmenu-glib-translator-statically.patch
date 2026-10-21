@@ -1,0 +1,47 @@
+Description: Build and link appmenu-glib-translator library statically.
+Author: Mike Gabriel <mike.gabriel@das-netzwerkteam.de>
+
+--- a/subprojects/appmenu-glib-translator/meson.build
++++ b/subprojects/appmenu-glib-translator/meson.build
+@@ -47,23 +47,13 @@
+ 
+ importer_name = 'appmenu-glib-translator'
+ 
+-importer_lib = library(importer_name, imp_sources, importer_enums_gen, imp_dbus,
++importer_lib = static_library(importer_name, imp_sources, importer_enums_gen, imp_dbus,
+     dependencies: [giounix, gdkpixbuf],
+-    version: meson.project_version(),
+-    install: true,
+-    soversion: 0,
++    install: false,
+     pic : true
+ )
+ importer_inc = include_directories('.')
+ imp_public = ['importer.h']
+-install_headers(imp_public, subdir : importer_name)
+-
+-pkgconfig.generate(importer_lib,
+-             name: importer_name,
+-             description: 'A translator from DBusMenu to GMenuModel',
+-             requires: [giounix, gdkpixbuf],
+-             extra_cflags: ['-I${includedir}/'+importer_name]
+-            )
+ 
+ importer_gir = gnome.generate_gir(importer_lib,
+                     sources: imp_public,
+@@ -73,13 +63,13 @@
+                     identifier_prefix: 'DBusMenu',
+                     symbol_prefix: 'dbus_menu',
+                     nsversion: meson.project_version(),
+-                    install: true
++                    install: false
+ )
+ 
+ importer_vapi = gnome.generate_vapi(importer_name,
+     sources: importer_gir[0],
+     packages: 'gio-2.0',
+-    install: true,
++    install: false,
+ )
+ 
+ importer_dep = declare_dependency(

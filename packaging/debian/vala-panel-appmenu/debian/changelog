@@ -1,0 +1,405 @@
+vala-panel-appmenu (1:25.04-0caminito1) resolute; urgency=medium
+
+  * Caminito's patched vala-panel-appmenu, from Ubuntu 26.04's
+    25.04+dfsg-3ubuntu1 (CMN-125).
+  * Add epoch 1: 25.04-0caminito1 sorts below Ubuntu's 25.04+dfsg-3ubuntu1,
+    and no stock version may satisfy Caminito's dependencies (ADR 0029).
+  * Build from upstream's 25.04 tag, not repacked.
+  * Build the MATE applet alone, on libwnck, as Arch's
+    vala-panel-appmenu-mate-caminito does: drop xfce4-appmenu-plugin and
+    vala-panel-appmenu, and their build dependencies.
+  * Carry packaging/patches/vala-panel-appmenu/, the Caminito backend, the
+    menu translator's fixes and the chord's shortcut. tools/debian-build
+    copies it into debian/patches/.
+  * Build-depend on libmate-panel-applet-dev (>= 1.29.0~), so that the
+    applet links libmate-panel-applet-4.so.2.
+  * Pin the binaries at their caminito version in
+    /etc/apt/preferences.d/caminito-vala-panel-appmenu (ADR 0029).
+
+ -- jpablo <jpablolassala@gmail.com>  Wed, 21 Oct 2026 00:00:00 +0000
+
+vala-panel-appmenu (25.04+dfsg-3ubuntu1) resolute; urgency=medium
+
+  * Disable Budgie plugin to fix build failure
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 08 Feb 2026 23:35:39 -0500
+
+vala-panel-appmenu (25.04+dfsg-3) experimental; urgency=medium
+
+  * Team upload
+  * Revert removing Budgie plugin
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 14 Nov 2025 06:48:54 -0500
+
+vala-panel-appmenu (25.04+dfsg-2) unstable; urgency=medium
+
+  * Team upload
+  * Add Build-Depends: gobject-introspection
+  * Remove unsatisfiable Recommends: appmenu-qt5, libdbusmenu-gtk4
+    (Closes: #1112018, #1115680, #1116078, #1116137)
+  * Temporarily disable Budgie plugin
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 14 Nov 2025 06:46:58 -0500
+
+vala-panel-appmenu (25.04+dfsg-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 04 May 2025 18:36:43 +0200
+
+vala-panel-appmenu (24.05+dfsg-2) unstable; urgency=medium
+
+  * debian/control:
+    + Update versioned B-D: libvalapanel-dev (>= 24.03).
+
+ -- Mike Gabriel <sunweaver@debian.org>  Wed, 09 Apr 2025 21:11:12 +0200
+
+vala-panel-appmenu (24.05+dfsg-1) unstable; urgency=medium
+
+  * New upstream release.
+    - xfce4-appmenu-plugin: Make appmenu expand work with updated Xfce 4.20.
+      (Closes:  #1094010).
+  * debian/patches:
+    + Drop 0001_Update-LINGUAS.patch. Not required anymore.
+    + Add 2001_build-appmenu-glib-translator-statically.patch. Build and link
+      appmenu-glib-translator statically.
+  * debian/watch:
+    + Adjust to new syntax as required GitLab.
+  * debian/control:
+    + Drop reference to appmenu-gtk2-module. (Closes: #1095102).
+    + Add B-D: libxfce4ui-2-dev. (Although this should be better handled by
+      libxfce4panel-2.0-dev). (Closes: #1091049).
+    + Bump Standards-Version: to 4.7.2. No changes needed.
+    + Add to B-D: libwnck-3-dev.
+    + Make package binNMU'able (fix relation between arch:any and arch:all
+      bin:pkgs).
+  * debian/{control,rules}:
+    + Drop bamf(daemon) as B-D / D.
+  * debian/copyright:
+    + Update auto-generated copyright.in file.
+    + Update copyright attributions.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Wed, 09 Apr 2025 18:36:51 +0200
+
+vala-panel-appmenu (0.7.6+dfsg1-7) unstable; urgency=medium
+
+  * Team upload
+  * Release to unstable
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 04 Oct 2024 20:54:06 -0400
+
+vala-panel-appmenu (0.7.6+dfsg1-6) experimental; urgency=medium
+
+  * Team upload
+  * Revert dropping Budgie plugin
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 10 Jul 2024 17:01:11 -0400
+
+vala-panel-appmenu (0.7.6+dfsg1-5) unstable; urgency=medium
+
+  * Team upload
+
+  [ Debian Janitor ]
+  * Remove constraints unnecessary since buster (oldstable)
+
+  [ Jeremy Bícha ]
+  * Temporarily disable Budgie plugin
+  * Bump Standards Version to 4.6.2
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 10 Jul 2024 16:59:43 -0400
+
+vala-panel-appmenu (0.7.6+dfsg1-4) unstable; urgency=medium
+
+  * debian/patches:
+    + Add 0001_Update-LINGUAS.patch. Drop duplicate translations. Fixes FTBFS.
+      (Relates to: #998558).
+  * debian/rules:
+    + Enforce bamf backend, don't build with wnck enabled (probably wrong
+      syntax, now spotted by recent meson version). (Closes: #998558).
+  * debian/control:
+    + Drop from B-D: libwnck-3-dev.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 29 Nov 2021 15:46:44 +0100
+
+vala-panel-appmenu (0.7.6+dfsg1-3) unstable; urgency=medium
+
+  * debian/watch:
+    + Fix broken watch file; possibly due to changes in gitlab.com.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 04 Feb 2021 00:58:00 +0100
+
+vala-panel-appmenu (0.7.6+dfsg1-2) unstable; urgency=medium
+
+  * debian/control:
+    + Drop B-D xfce4-panel-dev. Pkg not available anymore since XFCE4 4.16.
+      (Closes: #978227).
+    + Bump Standards-Version: to 4.5.1. No changes needed.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sat, 09 Jan 2021 23:52:54 +0100
+
+vala-panel-appmenu (0.7.6+dfsg1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/copyright:
+    + Update auto-generated copyright.in file.
+    + Update copyright attributions.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sat, 31 Oct 2020 10:09:47 +0100
+
+vala-panel-appmenu (0.7.5+dfsg1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/control:
+    + Update versioned B-D on meson (>= 0.51.0).
+    + Add versioned B-D on libglib2.0-dev (>= 2.52.0).
+  * debian/copyright:
+    + Update auto-generated copyright.in file.
+    + Update copyright attributions.
+  * debian/{mate-applet-appmenu,xfce4-appmenu-plugin}*:
+    + Add scripts for tweaking gsettings required to enable/disable appmenu
+      support in MATE and XFCE4. (Closes: #930572).
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 19 Oct 2020 15:00:47 +0200
+
+vala-panel-appmenu (0.7.3.2+dfsg1-1) unstable; urgency=medium
+
+  * New upstream release. (Closes: #951968).
+  * debian/upstream/metadata:
+    + Add file. Comply with DEP-12.
+  * debian/control:
+    + Bump DH compat level to version 13.
+    + Bump Standards-Version: to 4.5.0. No changes needed.
+    + Update versioned B-D: libvalapanel-dev (>= 0.4.92).
+    + Add Rules-Requires-Root: field and set it to 'no'.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 23 Aug 2020 20:29:15 +0200
+
+vala-panel-appmenu (0.7.3+dfsg1-2) unstable; urgency=medium
+
+  [ Mike Gabriel ]
+  * debian/control:
+    + Drop from B-D: libpeas-dev.
+
+  [ Martin Wimpress ]
+  * debian/control:
+    + Drop Recommends: appmenu-qt. It has been removed from the Debian & UBuntu
+      archives. https://wiki.debian.org/Qt4Removal
+      (Closes: #935978).
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 25 Nov 2019 21:11:13 +0100
+
+vala-panel-appmenu (0.7.3+dfsg1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/{control,compat}:
+    + Switch to debhelper-compat notation, bump to DH compat level version 12.
+  * debian/control:
+    + Update B-Ds for this upstream release. Switch from cmake to meson.
+    + Bump Standards-Version: to 4.4.0. No changes needed.
+  * debian/rules:
+    + Switch to 'meson' as build-system.
+  * debian/patches:
+    + Drop all patches, they were cmake related.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Wed, 07 Aug 2019 01:21:45 +0200
+
+vala-panel-appmenu (0.7.1+dfsg1-1) unstable; urgency=medium
+
+  * New upstream release. (Closes: #907708).
+  * debian/control (et al.):
+    + Drop bin:pkg vala-panel-appmenu-registrar and use bin:pkg
+      appmenu-registrar instead.
+  * debian/control:
+    + Update B-Ds; add cmake-vala, bump versioned B-D libvalapanel-dev
+      to (>= 0.4).
+    + Bump Standards-Version: to 4.2.1. No changes needed.
+  * debian/patches:
+    + Drop 2001_subprojects-not-shipped-with-the-source-tree.patch.
+    + Add 2001_no-subprojects.patch: in Debian, we ship the subprojects as
+      separate src:pkgs.
+    + Add 2002_no-FallbackVersion-update.patch: don't generate
+      FallbackVersion.cmake at build time.
+  * debian/rules:
+    + Add dh_auto_clean override to get rid of some build cruft.
+  * debian/vala-panel-appmenu.install:
+    + Plugins have been moved to DATADIR, add usr/share/vala-panel/*.
+  * debian/mate-applet-appmenu.install:
+    + The org.mate.panel.applet.AppmenuAppletFactory.service file has been
+      dropped by upstream.
+  * debian/copyright:
+    + Update copyright attributions.
+    + Update auto-generated copyright.in file.
+  * debian/watch:
+    + Adapt to new upstream release scheme.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 03 Sep 2018 16:46:28 +0200
+
+vala-panel-appmenu (0.6.94+repack1-2) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * debian/patches:
+    + 10_budgie_appmenu_applet.gschema.override. Do not blacklist glade or
+      anjuta, both now work.
+    + 10_mate_applet_appmenu.gschema.override. Do not blacklist glade or anjuta,
+      both now work.
+
+  [ Mike Gabriel ]
+  * debian/control:
+    + Update Vcs-*: fields. Packaging Git has been migrated to salsa.debian.org.
+    + Fix MATE team's mail address in Uploaders: field.
+  * debian/{control,copyright,watch}: New upstream home (GitLab.com).
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 22 Jul 2018 22:11:53 +0200
+
+vala-panel-appmenu (0.6.94+repack1-1) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * New upstream release (0.6.93).
+  * debian/patches:
+    + Drop 0001_fix_menu_bar_height.patch. Applied upstream.
+    + Drop 0002_make_separator_transparent.patch. Applied upstream.
+    + Drop 0010_send_opened_before_actual_load.patch. Applied upstream.
+    + Drop 0011_check_and_ignore_firefox_stubs.patch. Applied upstream.
+    + Drop 0012_use_opened_before_abouttoshow.patch. Applied upstream.
+    + Drop 0020_handle_non_standard_border.patch. Applied upstream.
+    + Rebased 2001_subprojects-not-shipped-with-the-source-tree.patch.
+    + Add 0001_nullify_GVariants.patch. nullify GVariants to prevent Qt5
+      applications from crashing the XFCE panel.
+  * debian/rules:
+    + Add -DENABLE_REGISTRAR=ON to ensure appmenu-registrar is built.
+
+  [ Mike Gabriel ]
+  * New upstream release (0.6.94).
+  * debian/patches:
+    + Drop 0001_nullify_GVariants.patch. Applied upstream in 0.6.94.
+  * debian/copyright:
+    + Update copyright attributions.
+    + Update auto-generated copyright.in file.
+    + Add Comment: field that explains why the orig tarball has been repacked.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 29 Mar 2018 22:00:01 +0200
+
+vala-panel-appmenu (0.6.92+repack1-3) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * debian/10_budgie_appmenu_applet.gschema.override:
+    + Update namespace to reflect upstream changes.
+  * debian/10_mate_applet_appmenu.gschema.override:
+    + Update namespace to reflect upstream changes. Make application names bold
+      via gschema override.
+  * debian/patches:
+    + Drop 2002_bold_application_name.patch. Bold application names are now set
+      via a gschema override.
+    + Add 0002_make_separator_transparent.patch: Make the separator between the
+      application name and menus transparent for wider theme compatibility.
+    + Add 0010_send_opened_before_actual_load.patch. Send opened before actual
+      load to support Firefox and Thunderbird.
+    + Add 0011_check_and_ignore_firefox_stubs.patch. Check and ignore Firefox
+      stubs.
+    + Add 0012_use_opened_before_abouttoshow.patch. Use Opened before
+      AboutToShow to properly support Firefox and Thunderbird.
+    + Add 0020_handle_non_standard_border.patch. Handle non-standard borders
+      to prevent VLC crashing the applet.
+
+  [ Mike Gabriel ]
+  * debian/control:
+    + Drop alternative Recommends: of unity-gtk<X>-module. Debian and Ubuntu
+      both (and other derivatives) should now use appmenu-gtk-module.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Wed, 07 Mar 2018 10:57:57 +0100
+
+vala-panel-appmenu (0.6.92+repack1-2) unstable; urgency=medium
+
+  [ Mike Gabriel ]
+  * debian/control:
+    + Fix Vcs-*: fields. Don't point to upstream but to Alioth.
+
+  [ Martin Wimpress ]
+  * debian/vala-panel-appmenu.sh:
+    + Fix GTK_MODULES to load appmenu-gtk-module.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sat, 03 Mar 2018 15:56:20 +0100
+
+vala-panel-appmenu (0.6.92+repack1-1) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * New upstream release.
+  * debian/rules:
+    + Drop obsolete -DMAKE_BOLD_APPNAME=ON. Bold application names is now an in
+      applet preference.
+  * debian/copyright:
+    + Update copyright attributions.
+  * debian/patches:
+    + Add README.
+    + Add 0001_fix_menu_bar_height.patch. Use EXPAND_MINOR to correct the height
+      of global menus.
+    + Add 2002_bold_application_name.patch. Make application names bold by
+      default.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 01 Mar 2018 20:25:26 +0100
+
+vala-panel-appmenu (0.6.80+repack1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/control:
+    + Alternatively recommend appmenu-gtk*-module _or_ unity-gtk*-module.
+    + Versioned B-D on libbamf3-dev (>= 0.5.0). Add bamfdaemon to B-Ds, too.
+  * debian/copyright:
+    + Update copyright attributions.
+    + Use secure URI in copyright format.
+    + Add copyright.in (auto-generated reference for copyright file).
+  * debian/rules:
+    + Fix orig tarball repacking for 0.6.80.
+    + Switch from dh_install --list-missing to dh_missing --fail-missing.
+  * debian/patches:
+    + Adapt 2001_subprojects-not-shipped-with-the-source-tree.patch to
+      reorganization in upstream source tree.
+    + Drop 0000_fix_mate_expand.patch. Applied upstream.
+  * debian/vala-panel-appmenu-common.install:
+    + Add org.valapanel.appmenu.gschema.xml.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 15 Feb 2018 23:53:51 +0100
+
+vala-panel-appmenu (0.6.1+repack1-1) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * Initial upload to Debian. (Closes: #887906).
+  * Add bin:pkg vala-panel-appmenu-registrar.
+
+  [ Mike Gabriel ]
+  * debian/copyright:
+    + Update copyright attributions.
+  * debian/control:
+    + Bump Standards-Version: to 4.1.3. No changes needed.
+  * debian/{control,compat}:
+    + Bump DH version level to 11.
+  * debian/rules:
+    + Include buildflags.mk to fix missing hardening.
+    + Repack tarball and remove jayatana and appmenu-gtk-module.
+  * debian/watch:
+    + Add dversionmangle magic.
+  * debian/patches:
+    + Add 2001_subprojects-not-shipped-with-the-source-tree.patch.
+      Disable building code removed in repacked orig tarball. Also
+      drop some RPM building logic not required for Debian.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 22 Jan 2018 00:25:35 +0100
+
+vala-panel-appmenu (0.5.3-0ubuntu2) artful; urgency=medium
+
+  * Add gschema overrides to add the appropriate unity-gtk-module
+    blacklist for Budgie and MATE. (LP: #1705653)
+
+ -- Martin Wimpress <martin.wimpress@ubuntu.com>  Wed, 30 Aug 2017 11:08:34 +0100
+
+vala-panel-appmenu (0.5.3-0ubuntu1) artful; urgency=medium
+
+  * New upstream release.
+
+ -- Martin Wimpress <code@flexion.org>  Mon, 14 Aug 2017 23:03:02 +0100
+
+vala-panel-appmenu (0.5.2-0ubuntu1) artful; urgency=medium
+
+  * Initial upload. (LP: #1699334)
+
+ -- Martin Wimpress <martin.wimpress@ubuntu.com>  Sat, 15 Jul 2017 23:32:12 +0100

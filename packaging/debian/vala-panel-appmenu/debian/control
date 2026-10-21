@@ -1,0 +1,51 @@
+Source: vala-panel-appmenu
+Section: x11
+Priority: optional
+Maintainer: jpablo <jpablolassala@gmail.com>
+XSBC-Original-Maintainer: Ayatana Packagers <pkg-ayatana-devel@lists.alioth.debian.org>
+# Ubuntu 26.04's vala-panel-appmenu 25.04+dfsg-3ubuntu1, at upstream's 25.04 tag with
+# Caminito's carried patches (ADR 0029), cut down as Arch's vala-panel-appmenu-mate-caminito
+# is: the MATE applet alone, on libwnck, with the menu translator linked into it. The
+# differences from Ubuntu's: no Xfce, Vala Panel or Budgie plugin, and so no libvalapanel-dev,
+# libxfce4panel-2.0-dev, libxfce4ui-2-dev or libxfconf-0-dev; and libmate-panel-applet-dev at
+# mate-panel's caminito version, so that the applet, which the panel loads into its own
+# process, links libmate-panel-applet-4.so.2 (196) and not Ubuntu's .so.1.
+Build-Depends: debhelper-compat (= 13),
+               gobject-introspection,
+               meson (>= 0.51.0),
+               libglib2.0-dev,
+               libgtk-3-dev,
+               libmate-panel-applet-dev (>= 1.29.0~),
+               libwnck-3-dev,
+               valac,
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://gitlab.com/vala-panel-project/vala-panel-appmenu
+Vcs-Git: https://salsa.debian.org/debian-ayatana-team/vala-panel-appmenu.git
+Vcs-Browser: https://salsa.debian.org/debian-ayatana-team/vala-panel-appmenu
+
+Package: mate-applet-appmenu
+Architecture: any
+Depends: vala-panel-appmenu-common (>= ${source:Version}),
+         appmenu-registrar,
+         ${misc:Depends},
+         ${shlibs:Depends},
+Recommends: libdbusmenu-glib4,
+            libdbusmenu-gtk3-4,
+            appmenu-gtk3-module,
+Description: Application Menu plugin for mate-panel
+ This is an Application Menu (Global Menu) plugin. It is built using
+ the Unity protocol and libraries and provides all features found in
+ the Unity implementation.
+ .
+ This package provides the plugin for MATE.
+
+Package: vala-panel-appmenu-common
+Architecture: all
+Depends: ${misc:Depends},
+Description: Common files for Application Menu plugins
+ This is an Application Menu (Global Menu) plugin. It is built using
+ the Unity protocol and libraries and provides all features found in
+ the Unity implementation.
+ .
+ This package provides common files.

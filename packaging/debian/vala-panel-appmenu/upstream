@@ -1,0 +1,5 @@
+# Where tools/debian-build takes this package's source: upstream's git, at the 25.04 tag's
+# commit, and the carried patches of packaging/patches/<patches>/ (ADR 0030).
+git=https://gitlab.com/vala-panel-project/vala-panel-appmenu.git
+commit=8c8e788bf04c8c2911b72a24e3b79842d5b2b286
+patches=vala-panel-appmenu

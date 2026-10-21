@@ -1,0 +1,213 @@
+appmenu-gtk-module (1:25.04-0caminito1) resolute; urgency=medium
+
+  * Caminito's patched appmenu-gtk-module, from Ubuntu 26.04's 25.04-1build1
+    (CMN-125).
+  * Add epoch 1: 25.04-0caminito1 sorts below Ubuntu's 25.04-1build1, and no
+    stock version may satisfy Caminito's dependencies (ADR 0029).
+  * Build from vala-panel-appmenu's 25.04 tag, the tree the fixes are
+    against, in its subprojects/appmenu-gtk-module. Move
+    1001_fix-soversion.patch to that path.
+  * Carry packaging/patches/appmenu-gtk-module/, two fixes for Wayland.
+    tools/debian-build copies them into debian/patches/.
+  * Install /usr/share/caminito/appmenu-gtk-module in appmenu-gtk3-module,
+    by which Caminito's session finds the patched module.
+  * Pin the binaries at their caminito version in
+    /etc/apt/preferences.d/caminito-appmenu-gtk-module (ADR 0029).
+
+ -- jpablo <jpablolassala@gmail.com>  Wed, 21 Oct 2026 00:00:00 +0000
+
+appmenu-gtk-module (25.04-1build1) resolute; urgency=medium
+
+  * No-change mass rebuild for Ubuntu 26.04 (LP: #2132257)
+
+ -- Sebastien Bacher <seb128@debian.org>  Tue, 03 Feb 2026 21:38:35 +0100
+
+appmenu-gtk-module (25.04-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/watch:
+    + Adjust downloadurlmangle option to new GitLab download path.
+  * debian/control:
+    + Bump Standards-Version: to 4.7.2. No changes needed.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 04 May 2025 18:27:03 +0200
+
+appmenu-gtk-module (24.05-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Drop gtk2 packages. (Closes: #1089797)
+
+ -- Bastian Germann <bage@debian.org>  Mon, 13 Jan 2025 17:05:05 +0100
+
+appmenu-gtk-module (24.05-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/control:
+    + Add to B-D: systemd-dev. (Closes: #1072593).
+    +Bump Standards-Version to 4.7.0. No changes needed.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 09 Jun 2024 22:31:12 +0200
+
+appmenu-gtk-module (24.02-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/watch:
+    + Rewrite watch URL regexp-hack. Big thanks to Fay Stegerman!!!
+  * debian/rules:
+    + Move doc files into bin:pkg appmenu-gtk3-module.
+  * debian/patches:
+    + Add 1001_fix-soversion.patch.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 04 Apr 2024 23:35:45 +0200
+
+appmenu-gtk-module (0.7.6-3) unstable; urgency=medium
+
+  [ Logan Rosen ]
+  * debian/control:
+    + Fix Vcs-Browser URL
+
+  [ Mike Gabriel ]
+  * debian/control:
+    + Drop exlicit/versioned D on libgtk-3-0 from bin:pkg libappmenu-gtk3-
+      parser0. (Closes: #1068222).
+  * debian/copyright:
+    + Fix duplicate entries.
+    + Update copyright attribution for debian/.
+  * debian/control:
+    + Bump Standards-Version: to 4.6.2. No changes needed.
+  * debian/watch:
+    + Switch to format version 4.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Tue, 02 Apr 2024 17:23:46 +0200
+
+appmenu-gtk-module (0.7.6-2) unstable; urgency=medium
+
+  * debian/watch:
+    + Fix broken watch file; possibly due to changes in gitlab.com.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 04 Feb 2021 00:53:31 +0100
+
+appmenu-gtk-module (0.7.6-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sat, 31 Oct 2020 09:52:29 +0100
+
+appmenu-gtk-module (0.7.5-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/copyright:
+    + Update copyright attributions.
+    + Update auto-generated copyright.in file.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 19 Oct 2020 15:43:14 +0200
+
+appmenu-gtk-module (0.7.3.2-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/control:
+    + Bump DH compat level to version 13.
+  * debian/rules:
+    + Drop unwanted doc files before wrapping up packages.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 23 Aug 2020 21:16:26 +0200
+
+appmenu-gtk-module (0.7.3-2) unstable; urgency=medium
+
+  * debian/control:
+    + Add B-D: gtk-doc-tools. (Closes: #952268).
+    + Bump Standards-Version: to 4.5.0. No changes needed.
+    + Add Rules-Requires-Root: field and set it to 'no'.
+  * debian/upstream/metadata:
+    + Add file. Comply with DEP-12.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 24 Feb 2020 08:37:36 +0100
+
+appmenu-gtk-module (0.7.3-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/{control,rules}:
+    + Switch to 'meson' build-system.
+  * debian/control:
+    + Bump Standards-Version: to 4.4.0. No changes needed.
+  * debian/{control,compat}:
+    + Switch to debhelper-compat notation. Bump to DH compat level version 12.
+  * debian/copyright:
+    + Update copyright attributions.
+  * debian/*.symbols:
+    + Add Build-Depends-Package: meta information field.
+  * debian/rules:
+    + Fix file-references-package-build-path for all build-resulting .so files.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 04 Aug 2019 22:04:46 +0200
+
+appmenu-gtk-module (0.7.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/control:
+    + Update Vcs-*: fields. Packaging Git has been migrated to salsa.debian.org.
+    + Bump Standards-Version: to 4.2.1. No changes needed.
+  * debian/watch:
+    + Adapt to new upstream release scheme.
+  * debian/copyright:
+    + Update auto-generated copyright.in file.
+    + Update copyright attributions.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Mon, 03 Sep 2018 10:18:15 +0200
+
+appmenu-gtk-module (0.6.94-1) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * New upstream release.
+  * debian/copyright:
+    + Use secure URI for copyright format.
+
+  [ Mike Gabriel ]
+  * debian/control:
+    + Bump versioned B-Ds accordings to upstream's README.md file.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 29 Mar 2018 21:52:31 +0200
+
+appmenu-gtk-module (0.6.92-1) unstable; urgency=medium
+
+  [ Martin Wimpress ]
+  * New upstream release.
+  * debian/patches:
+    + Drop 2001_unknown-gtk-libdirs.patch. Applied upstream.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 01 Mar 2018 20:21:16 +0100
+
+appmenu-gtk-module (0.6.80-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/watch:
+    + Orig tarball renamed from .tar.gz to .tar.xz.
+  * debian/copyright:
+    + Update copyright attributions.
+    + Update autogenerated copyright.in reference template.
+  * debian/patches:
+    + Add 2001_unknown-gtk-libdirs.patch. Nasty work-around for non-known
+      GTK<X>_LIBDIR variable values.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Thu, 15 Feb 2018 21:20:41 +0100
+
+appmenu-gtk-module (0.6.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * debian/control:
+    + Bump Standards-Version: to 4.1.3. No changes needed.
+  * debian/copyright:
+    + Refresh auto-generated copyright.in file.
+    + Update copyright attributions.
+  * debian/{control,copyright}:
+    + Update upstream source URLs.
+  * debian/{control,compat}:
+    + Bump DH version level to 11.
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sun, 21 Jan 2018 15:16:00 +0100
+
+appmenu-gtk-module (0.5.6-1) unstable; urgency=medium
+
+  * Initial release to Debian. (Closes: #883465).
+
+ -- Mike Gabriel <sunweaver@debian.org>  Sat, 09 Dec 2017 19:18:28 +0100

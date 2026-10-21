@@ -1,0 +1,5 @@
+#!/bin/bash
+
+gsettings set org.mate.interface gtk-shell-shows-app-menu false
+gsettings set org.mate.interface gtk-shell-shows-menubar false
+

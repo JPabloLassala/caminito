@@ -1,0 +1,47 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+# Ubuntu 26.04's appmenu-gtk-module rules, at the 25.04 tag (CMN-125). The differences: the
+# source directory, the file Caminito finds the patched module by, and the apt pin.
+
+include /usr/share/dpkg/pkg-info.mk
+
+NULL =
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export DPKG_GENSYMBOLS_CHECK_LEVEL = 4
+
+# The source is vala-panel-appmenu's tree, as on Arch: the module is one of its subprojects.
+DHFLAGS=--buildsystem=meson --sourcedirectory=subprojects/appmenu-gtk-module
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@ $(DHFLAGS)
+
+override_dh_auto_configure:
+	dh_auto_configure -- -Dgtk=3
+
+override_dh_shlibdeps:
+	dh_shlibdeps -- -xlibgtk2.0-0
+
+override_dh_install:
+	mv debian/tmp/usr/share/doc/appmenu-gtk-module debian/tmp/usr/share/doc/appmenu-gtk3-module
+	rm debian/tmp/usr/share/licenses/ -Rfv
+	dh_install
+
+# Caminito adds the module to its session's GTK_MODULES while this file is there (192): the
+# stock package has the same module, without the fixes. Arch's appmenu-gtk-module-caminito
+# installs it too.
+# The pin of ADR 0029: every binary package of this source, at a caminito version, before any
+# other, and Ubuntu's versions of them at 99. In the common package, which the module depends
+# on. Copied from caja's, with this package's name.
+execute_after_dh_install:
+	install -Dm644 /dev/null debian/appmenu-gtk3-module/usr/share/caminito/appmenu-gtk-module
+	mkdir -p debian/appmenu-gtk-module-common/etc/apt/preferences.d
+	packages="$$(sed -n 's/^Package: //p' debian/control | xargs)"; \
+	printf 'Package: %s\nPin: version /caminito/\nPin-Priority: 1001\n\nPackage: %s\nPin: release o=Ubuntu\nPin-Priority: 99\n' \
+		"$$packages" "$$packages" > debian/appmenu-gtk-module-common/etc/apt/preferences.d/caminito-$(DEB_SOURCE)
