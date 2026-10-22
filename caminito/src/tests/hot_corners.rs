@@ -1,7 +1,7 @@
 //! Hot corners (CMN-183): a corner whose key is set fires its action once the pointer has
-//! rested in it the Activation delay, 150 ms by default (CMN-191), fires again only once the pointer has left and 350 ms have passed,
-//! is a corner only where the Output layout stops the pointer both ways, and is off with a
-//! button held, during another Interaction, while locked, over a focused fullscreen window
+//! rested in it the Activation delay, 150 ms by default (CMN-191), fires again only once
+//! the pointer has left and 350 ms have passed, is a corner only where the Output layout
+//! stops the pointer both ways, and is off with a button held, during another Interaction, while locked, over a focused fullscreen window
 //! on its output and with the pointer locked or confined. Each test stops Caminito's clock,
 //! so only `advance_clock` moves it, and a corner that mustn't fire is given 500 ms of it,
 //! past both the rest and the 350 ms.
@@ -151,7 +151,7 @@ fn an_activation_delay_shorter_than_the_rest_so_far_fires_the_corner_at_once() {
 }
 
 #[test]
-fn the_350_ms_hold_with_no_activation_delay() {
+fn with_no_activation_delay_a_corner_still_fires_again_only_after_350_ms() {
     let settings = vec![corner("top-right", "show-desktop"), activation_delay(0)];
     let mut f = one_output(settings);
     f.pointer_move(1919., 0.);
