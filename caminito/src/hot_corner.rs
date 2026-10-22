@@ -218,15 +218,14 @@ impl State {
             // `hot_corner_at` gives none.
             HotCornerAction::None => {}
             // As the Overview's binding, on the corner's output.
-            HotCornerAction::Overview => {
+            // As the Overview's binding or the Application overview's (CMN-185), on the
+            // corner's output.
+            HotCornerAction::Overview | HotCornerAction::ApplicationOverview => {
                 let time = InputTime::from_micros(now.as_micros() as u64);
-                let scope = OverviewScope::Workspace;
-                self.toggle_overview_on(Some(output_id(&at.output)), scope, time);
-            }
-            // As the Application overview's binding, on the corner's output (CMN-185).
-            HotCornerAction::ApplicationOverview => {
-                let time = InputTime::from_micros(now.as_micros() as u64);
-                let scope = OverviewScope::Application;
+                let scope = match at.action {
+                    HotCornerAction::ApplicationOverview => OverviewScope::Application,
+                    _ => OverviewScope::Workspace,
+                };
                 self.toggle_overview_on(Some(output_id(&at.output)), scope, time);
             }
             HotCornerAction::ShowDesktop => {

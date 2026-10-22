@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use smithay::utils::{Logical, Point, Rectangle};
 
-use crate::{Direction, OutputId, PolicyWindow, SeatId, WindowId};
+use crate::{Action, Direction, OutputId, PolicyWindow, SeatId, WindowId};
 
 use super::Policy;
 use super::switcher::{Application, SwitchList};
@@ -33,6 +33,17 @@ pub enum OverviewScope {
     Workspace,
     /// Those of one Application: the Application overview's (CMN-185).
     Application,
+}
+
+impl OverviewScope {
+    /// The scope whose shortcut `action` is: `overview`'s or `application-overview`'s.
+    pub fn of(action: Action) -> Option<Self> {
+        match action {
+            Action::Overview => Some(Self::Workspace),
+            Action::ApplicationOverview => Some(Self::Application),
+            _ => None,
+        }
+    }
 }
 
 /// The open Overview.
@@ -151,13 +162,18 @@ impl<W: PolicyWindow> Policy<W> {
         self.toggle_overview_on(seat, None, scope);
     }
 
-    /// A hot corner of `output` whose action is the Overview or the Application overview,
-    /// as `scope` says (CMN-183): closes or changes the open Overview as the shortcut
-    /// does, or opens one whose selection is on `output`, which becomes `seat`'s Active
-    /// output, whichever output the focused window is on.
-    pub fn overview_on(&mut self, seat: SeatId, output: OutputId, scope: OverviewScope) {
+    /// The shortcut of `scope`, or a hot corner of `selection_on` whose action is the
+    /// Overview or the Application overview (CMN-183): closes or changes the open Overview
+    /// as the shortcut does, or opens one whose selection is on `selection_on`, which
+    /// becomes `seat`'s Active output, whichever output the focused window is on.
+    pub fn overview_on(
+        &mut self,
+        seat: SeatId,
+        selection_on: Option<OutputId>,
+        scope: OverviewScope,
+    ) {
         self.set_last_seat(seat);
-        self.toggle_overview_on(seat, Some(output), scope);
+        self.toggle_overview_on(seat, selection_on, scope);
         self.apply();
     }
 
@@ -173,24 +189,23 @@ impl<W: PolicyWindow> Policy<W> {
         scope: OverviewScope,
     ) {
         let application = match scope {
-            OverviewScope::Workspace => Ok(None),
-            OverviewScope::Application => match self.focus(seat) {
-                Some(focused) => Ok(Some(self.application_of(focused))),
-                None => Err(()),
-            },
+            OverviewScope::Workspace => None,
+            OverviewScope::Application => self.focus(seat).map(|id| self.application_of(id)),
         };
+        // The Application overview with no window focused, which neither opens nor takes
+        // the open Overview's place.
+        let unfocused = scope == OverviewScope::Application && application.is_none();
         if let Some(open) = self.overview.take() {
-            match application {
-                _ if open.scope() == scope => {}
-                Ok(application) => self.rescope_overview(open, application),
-                Err(()) => self.overview = Some(open),
+            if open.scope() == scope {
+                return;
+            }
+            match unfocused {
+                true => self.overview = Some(open),
+                false => self.rescope_overview(open, application),
             }
             return;
         }
-        let Ok(application) = application else {
-            return;
-        };
-        if self.a_seat_has_an_interaction() {
+        if unfocused || self.a_seat_has_an_interaction() {
             return;
         }
         let ours = selection_on.filter(|on| self.outputs.iter().any(|output| output.id == *on));
@@ -566,10 +581,12 @@ impl<W: PolicyWindow> Policy<W> {
             self.is_switch_candidate(*id, SwitchList::WindowsAll, None)
                 && self.is_on_workspace(*id, workspace)
         };
-        for base in candidates.filter(listable) {
+        // A window's own application, not its dialog's, which may be another process's.
+        let belongs = |app: &Application, id: &WindowId| app.has(*id, &self.windows[id].window);
+        let ours = |id: &WindowId| application.is_none_or(|app| belongs(app, id));
+        for base in candidates.filter(listable).filter(ours) {
             let window = self.modal_transient(base);
-            let belongs = |app: &Application| app.has(window, &self.windows[&window].window);
-            if application.is_none_or(belongs) && !listed.contains(&window) {
+            if !listed.contains(&window) {
                 listed.push(window);
             }
         }

@@ -1329,8 +1329,11 @@ impl<W: PolicyWindow> Policy<W> {
                     self.open_window_menu(seat, id);
                 }
             }
-            Action::Overview => self.toggle_overview(seat, OverviewScope::Workspace),
-            Action::ApplicationOverview => self.toggle_overview(seat, OverviewScope::Application),
+            Action::Overview | Action::ApplicationOverview => {
+                if let Some(scope) = OverviewScope::of(action) {
+                    self.toggle_overview(seat, scope);
+                }
+            }
             Action::BeginMove | Action::BeginResize => {
                 if let Some(id) = self.focus(seat) {
                     self.begin_keyboard_grab(seat, id, action == Action::BeginResize);

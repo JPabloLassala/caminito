@@ -140,7 +140,7 @@ fn with_no_window_focused_nothing_opens() {
     toggle(&mut policy);
     assert!(policy.overview().is_none());
 
-    policy.overview_on(SEAT, OutputId(2), OverviewScope::Application);
+    policy.overview_on(SEAT, Some(OutputId(2)), OverviewScope::Application);
     assert!(policy.overview().is_none());
 }
 
@@ -148,7 +148,7 @@ fn with_no_window_focused_nothing_opens() {
 fn a_hot_corner_opens_it_on_its_output() {
     let mut policy = two_processes();
 
-    policy.overview_on(SEAT, OutputId(1), OverviewScope::Application);
+    policy.overview_on(SEAT, Some(OutputId(1)), OverviewScope::Application);
 
     let open = policy.overview().unwrap();
     assert_eq!(open.scope(), OverviewScope::Application);
@@ -165,7 +165,7 @@ fn its_own_shortcut_and_hot_corner_close_it() {
     assert!(policy.overview().is_none());
 
     toggle(&mut policy);
-    policy.overview_on(SEAT, OutputId(2), OverviewScope::Application);
+    policy.overview_on(SEAT, Some(OutputId(2)), OverviewScope::Application);
     assert!(policy.overview().is_none());
 }
 
@@ -311,10 +311,10 @@ fn a_hot_corner_of_the_other_scope_changes_it_in_place() {
     let mut policy = two_processes();
     toggle_overview(&mut policy);
 
-    policy.overview_on(SEAT, OutputId(1), OverviewScope::Application);
+    policy.overview_on(SEAT, Some(OutputId(1)), OverviewScope::Application);
     assert_eq!(scope(&policy), Some(OverviewScope::Application));
 
-    policy.overview_on(SEAT, OutputId(1), OverviewScope::Workspace);
+    policy.overview_on(SEAT, Some(OutputId(1)), OverviewScope::Workspace);
     assert_eq!(scope(&policy), Some(OverviewScope::Workspace));
 }
 
@@ -344,4 +344,19 @@ fn with_no_window_focused_the_overview_stays_the_overview() {
 
     assert_eq!(scope(&policy), Some(OverviewScope::Workspace));
     assert_eq!(listed_on(&policy, 1), (0, vec![id(1), id(2), id(3)]));
+}
+
+#[test]
+fn a_modal_dialog_of_another_process_stands_in_for_the_applications_window() {
+    let mut policy = two_processes();
+    let dialog = TestWindow::new(6, 200, 100)
+        .with_pid(30)
+        .with_parent(1)
+        .with_type(WindowType::ModalDialog);
+    policy.map_window(dialog, ms(7));
+    policy.activate(SEAT, id(3), ms(8));
+
+    toggle(&mut policy);
+
+    assert_eq!(listed_on(&policy, 1), (0, vec![id(6), id(3)]));
 }

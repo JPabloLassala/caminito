@@ -1152,7 +1152,7 @@ impl Caminito {
         // Its own scope's shortcut closes it, and the other's changes it in place
         // (CMN-185).
         if let Some(Binding::Policy(action)) = binding
-            && is_overview_shortcut(action)
+            && OverviewScope::of(action).is_some()
         {
             let now = self.now();
             self.policy.action(SEAT, action, now);
@@ -1221,12 +1221,6 @@ impl Caminito {
 /// `rect`, in global logical coordinates, from `output`'s top left corner.
 fn local(rect: Rectangle<i32, Logical>, output: &Output) -> Rectangle<i32, Logical> {
     Rectangle::new(rect.loc - output_geometry(output).loc, rect.size)
-}
-
-/// Whether `action` is the shortcut of the Overview or of the Application overview, which
-/// closes the open one of its scope, or changes the other to it (CMN-185).
-fn is_overview_shortcut(action: Action) -> bool {
-    matches!(action, Action::Overview | Action::ApplicationOverview)
 }
 
 /// Whether `action` is one of the workspace bindings that switch the Active output's
@@ -1335,17 +1329,9 @@ impl State {
             return;
         }
         self.dismiss_menus(time);
-        let now = self.caminito.now();
         let opens = self.caminito.policy.overview().is_none();
         self.caminito.overview_timing.pressed(opens);
-        let action = match scope {
-            OverviewScope::Workspace => Action::Overview,
-            OverviewScope::Application => Action::ApplicationOverview,
-        };
-        match selection_on {
-            Some(output) => self.caminito.policy.overview_on(SEAT, output, scope),
-            None => self.caminito.policy.action(SEAT, action, now),
-        }
+        self.caminito.policy.overview_on(SEAT, selection_on, scope);
     }
 
     /// A pointer button with the pointer at `location`. Returns whether its press was the
@@ -1397,7 +1383,7 @@ impl State {
         let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
         let binding = caminito.bound_to_button(button, &mods);
         let shortcut = binding.and_then(|(_, binding)| match binding {
-            Binding::Policy(action) if is_overview_shortcut(action) => Some(action),
+            Binding::Policy(action) => OverviewScope::of(action),
             _ => None,
         });
         let switch = binding.and_then(|(_, binding)| match binding {
@@ -1421,11 +1407,7 @@ impl State {
         }
         match window {
             // Its own scope's closes it, and the other's changes it in place (CMN-185).
-            _ if shortcut.is_some() => {
-                if let Some(action) = shortcut {
-                    caminito.policy.action(SEAT, action, now);
-                }
-            }
+            _ if let Some(scope) = shortcut => caminito.policy.overview_on(SEAT, None, scope),
             // As the binding's key does (244): the Workspace popup doesn't show under the
             // Overview, and a drag whose window the switch takes away ends (245).
             _ if switch.is_some() => {

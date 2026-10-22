@@ -50,12 +50,12 @@ pub enum Action {
     None,
     /// Opens the Overview on the corner's output, or closes it.
     Overview,
+    /// Opens the Application overview on the corner's output, or closes it (CMN-185).
+    ApplicationOverview,
     /// Shows the desktop, or stops.
     ShowDesktop,
     /// Locks the session.
     Lock,
-    /// Opens the Application overview on the corner's output, or closes it (CMN-185).
-    ApplicationOverview,
 }
 
 impl Action {
@@ -84,9 +84,9 @@ impl Action {
         match self {
             Action::None => "none",
             Action::Overview => "overview",
+            Action::ApplicationOverview => "application-overview",
             Action::ShowDesktop => "show-desktop",
             Action::Lock => "lock",
-            Action::ApplicationOverview => "application-overview",
         }
     }
 

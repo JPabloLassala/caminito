@@ -374,11 +374,8 @@ impl State {
                 let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
                 self.switch_action(action, trigger, &mods, time);
             }
-            Binding::Policy(Action::Overview) => {
-                self.toggle_overview(OverviewScope::Workspace, time);
-            }
-            Binding::Policy(Action::ApplicationOverview) => {
-                self.toggle_overview(OverviewScope::Application, time);
+            Binding::Policy(action) if let Some(scope) = OverviewScope::of(action) => {
+                self.toggle_overview(scope, time);
             }
             Binding::Policy(action) => self.run_action(action, time),
             // The time a client would have for the event.
