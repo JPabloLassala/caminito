@@ -2210,6 +2210,27 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Caminito`, `ls /usr/share/caminito/xdg/applications`,
   and `caminito-behaviour` run from a terminal for GTK's warnings.
 
+### The Hot corners' Activation delay is set on the page and counts at once
+
+- **Milestone:** none (CMN-191)
+- **Steps:**
+  1. In *MATE on Caminito*, open *Workspace Behaviour* with every corner set to *None*.
+  2. Set the top-left drop-down to *Show desktop*, and rest the pointer in the top-left corner,
+     then take it away and back, several times.
+  3. Set *Activation delay* to 1000, and rest the pointer in the top-left corner, counting.
+  4. Run `gsettings set org.mate.Caminito hot-corner-activation-delay 400` from a terminal,
+     and rest the pointer in the top-left corner.
+  5. Set *Activation delay* to 0, and slide the pointer into the top-left corner and out.
+  6. Set the top-left drop-down back to *None*.
+- **Expected:** in step 1 *Activation delay* reads 150 ms and is greyed out. In step 2 it can
+  be changed, and the corner shows the desktop, or stops, at about the same short rest each
+  time. In step 3 the key is `1000` with no Apply pressed, and the corner waits about a second.
+  In step 4 the spin button reads 400 by itself, and the corner waits less than in step 3,
+  with Caminito not restarted. In step 5 the corner fires as soon as the pointer gets there. In step 6 *Activation
+  delay* is greyed out again.
+- **Debug tool:** `gsettings monitor org.mate.Caminito`, and Caminito's log for the key's
+  problems.
+
 ## The wallpaper
 
 ### caminito-wallpaperd draws each output's wallpaper, and follows the monitors

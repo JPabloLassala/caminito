@@ -1,5 +1,5 @@
 //! Hot corners (CMN-183): a corner whose key is set fires its action once the pointer has
-//! rested in it 150 ms, fires again only once the pointer has left and 350 ms have passed,
+//! rested in it the Activation delay, 150 ms by default (CMN-191), fires again only once the pointer has left and 350 ms have passed,
 //! is a corner only where the Output layout stops the pointer both ways, and is off with a
 //! button held, during another Interaction, while locked, over a focused fullscreen window
 //! on its output and with the pointer locked or confined. Each test stops Caminito's clock,
@@ -69,6 +69,100 @@ fn a_corner_fires_once_the_pointer_has_rested_in_it_150_ms() {
 
     f.advance_clock(ms(1));
     assert!(showing_desktop(&f));
+}
+
+/// `hot-corner-activation-delay` set to `ms`.
+fn activation_delay(ms: u32) -> (&'static str, String, Value) {
+    let key = "hot-corner-activation-delay".into();
+    (CAMINITO, key, Value::Uint(ms))
+}
+
+/// Sets `hot-corner-activation-delay` to `ms`, as `gsettings set` would, and waits until
+/// Caminito has it.
+fn set_activation_delay(f: &mut Fixture, ms: u32) {
+    let key = "hot-corner-activation-delay";
+    f.set_setting(CAMINITO, key, Value::Uint(ms));
+    let delay = Duration::from_millis(ms.into());
+    f.dispatch_until(|f| f.state.caminito.settings.hot_corners.activation_delay == delay);
+}
+
+#[test]
+fn a_corner_fires_once_the_pointer_has_rested_in_it_the_activation_delay() {
+    let settings = vec![corner("top-left", "show-desktop"), activation_delay(400)];
+    let mut f = one_output(settings);
+    f.pointer_move(0., 0.);
+
+    f.advance_clock(ms(399));
+    assert!(!showing_desktop(&f), "it hasn't rested long enough");
+
+    f.advance_clock(ms(1));
+    assert!(showing_desktop(&f));
+}
+
+#[test]
+fn with_no_activation_delay_a_corner_fires_as_the_pointer_reaches_it() {
+    let settings = vec![corner("top-left", "show-desktop"), activation_delay(0)];
+    let mut f = one_output(settings);
+
+    f.pointer_move(0., 0.);
+    f.dispatch_until(showing_desktop);
+}
+
+#[test]
+fn a_longer_activation_delay_counts_for_the_rest_under_way() {
+    let mut f = one_output(vec![corner("top-left", "show-desktop")]);
+    f.pointer_move(0., 0.);
+    f.advance_clock(ms(100));
+
+    set_activation_delay(&mut f, 500);
+    f.advance_clock(ms(399));
+    assert!(!showing_desktop(&f), "it has rested 499 ms of the 500");
+
+    f.advance_clock(ms(1));
+    assert!(showing_desktop(&f));
+}
+
+#[test]
+fn a_shorter_activation_delay_counts_for_the_rest_under_way() {
+    let settings = vec![corner("top-left", "show-desktop"), activation_delay(500)];
+    let mut f = one_output(settings);
+    f.pointer_move(0., 0.);
+    f.advance_clock(ms(100));
+
+    set_activation_delay(&mut f, 300);
+    f.advance_clock(ms(199));
+    assert!(!showing_desktop(&f), "it has rested 299 ms of the 300");
+
+    f.advance_clock(ms(1));
+    assert!(showing_desktop(&f));
+}
+
+#[test]
+fn an_activation_delay_shorter_than_the_rest_so_far_fires_the_corner_at_once() {
+    let settings = vec![corner("top-left", "show-desktop"), activation_delay(500)];
+    let mut f = one_output(settings);
+    f.pointer_move(0., 0.);
+    f.advance_clock(ms(200));
+    assert!(!showing_desktop(&f));
+
+    // With the clock stopped: the loop's timer is what fires it.
+    set_activation_delay(&mut f, 50);
+    f.dispatch_until(showing_desktop);
+}
+
+#[test]
+fn the_350_ms_hold_with_no_activation_delay() {
+    let settings = vec![corner("top-right", "show-desktop"), activation_delay(0)];
+    let mut f = one_output(settings);
+    f.pointer_move(1919., 0.);
+    f.dispatch_until(showing_desktop);
+
+    f.pointer_move(1800., 100.);
+    f.pointer_move(1919., 0.);
+    f.advance_clock(ms(349));
+    assert!(showing_desktop(&f), "350 ms haven't passed");
+    f.advance_clock(ms(1));
+    assert!(!showing_desktop(&f));
 }
 
 #[test]

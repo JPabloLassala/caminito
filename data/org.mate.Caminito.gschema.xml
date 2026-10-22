@@ -134,6 +134,16 @@
       <description>What happens when the pointer rests in the bottom right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "application-overview" opens the Overview of the focused window's application on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
     <!--
+      The Hot corners' Activation delay (CMN-191): Plasma's activation delay, KWin's
+      ElectricBorderDelay.
+    -->
+    <key name="hot-corner-activation-delay" type="u">
+      <default>150</default>
+      <range min="0" max="1000"/>
+      <summary>How long the pointer rests in a corner before it acts</summary>
+      <description>The time, in milliseconds, that the pointer rests in a corner of a monitor before the corner does what its hot-corner key sets, the same for all four corners. With 0 a corner acts as soon as the pointer reaches it. Once a corner has acted, it acts again only after the pointer has left it and 350 milliseconds have passed.</description>
+    </key>
+    <!--
       The Key remaps (CMN-186, ADR 0038): combinations swapped for others before the
       focused window's client gets them. The first group is All applications, with no name
       and no app ids. None by default.

@@ -459,7 +459,7 @@ pub struct Settings {
 
 /// What each Hot corner does (CMN-183), from `org.mate.Caminito`'s `hot-corner-*` keys. A
 /// key acts on that corner of every output.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HotCorners {
     /// `hot-corner-top-left`.
     pub top_left: HotCornerAction,
@@ -469,6 +469,26 @@ pub struct HotCorners {
     pub bottom_left: HotCornerAction,
     /// `hot-corner-bottom-right`.
     pub bottom_right: HotCornerAction,
+    /// The Activation delay (CMN-191), `hot-corner-activation-delay`: how long the pointer
+    /// rests in a corner before it fires, for all four.
+    pub activation_delay: Duration,
+}
+
+/// `hot-corner-activation-delay`'s default and greatest, in milliseconds: Plasma's
+/// activation delay, KWin's `ElectricBorderDelay`, and a second.
+const ACTIVATION_DELAY: (u32, u32) = (150, 1000);
+
+/// Every corner off, with the default Activation delay.
+impl Default for HotCorners {
+    fn default() -> Self {
+        HotCorners {
+            top_left: HotCornerAction::None,
+            top_right: HotCornerAction::None,
+            bottom_left: HotCornerAction::None,
+            bottom_right: HotCornerAction::None,
+            activation_delay: Duration::from_millis(ACTIVATION_DELAY.0.into()),
+        }
+    }
 }
 
 /// A Hot corner's action (`org.mate.Caminito.HotCornerAction`).
@@ -1468,11 +1488,20 @@ fn night_light(r: &mut Reader<'_>) -> NightLightSettings {
 
 fn hot_corners(r: &mut Reader<'_>) -> HotCorners {
     let mut corner = |key| r.nick(CAMINITO, key, HotCornerAction::None);
+    let (top_left, top_right) = (
+        corner("hot-corner-top-left"),
+        corner("hot-corner-top-right"),
+    );
+    let bottom_left = corner("hot-corner-bottom-left");
+    let bottom_right = corner("hot-corner-bottom-right");
+    let (builtin, max) = ACTIVATION_DELAY;
+    let delay = r.uint_clamped(CAMINITO, "hot-corner-activation-delay", builtin, 0, max);
     HotCorners {
-        top_left: corner("hot-corner-top-left"),
-        top_right: corner("hot-corner-top-right"),
-        bottom_left: corner("hot-corner-bottom-left"),
-        bottom_right: corner("hot-corner-bottom-right"),
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+        activation_delay: Duration::from_millis(delay.into()),
     }
 }
 

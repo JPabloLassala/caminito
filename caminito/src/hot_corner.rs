@@ -1,5 +1,6 @@
 //! Hot corners (CMN-183): which pixels are corners, when one the pointer rests in fires,
-//! and what it does then. It's Plasma's screen edges, without the edges.
+//! and what it does then. It's Plasma's screen edges, without the edges. How long the
+//! pointer rests is the Activation delay, the user's (CMN-191).
 //!
 //! A corner fires whatever is under the pointer, the panel included, and shows nothing. It
 //! is off while a button is held, while the seat has an Interaction other than the
@@ -17,10 +18,6 @@ use smithay::utils::{Logical, Point, Rectangle};
 use crate::output::{output_geometry, output_id};
 use crate::settings::translate::HotCornerAction;
 use crate::state::{Caminito, SEAT, State};
-
-/// How long the pointer rests in a corner before it fires: Plasma's activation delay,
-/// KWin's `ElectricBorderDelay`.
-const REST: Duration = Duration::from_millis(150);
 
 /// How long after a corner fires before it fires again: Plasma's reactivation delay,
 /// KWin's `ElectricBorderCooldown`.
@@ -106,11 +103,12 @@ impl HotCornerState {
     }
 
     /// When the corner the pointer rests in fires, if it will: once it has rested there
-    /// `REST`, and, if it's the corner that fired last, once the pointer has left it and
-    /// `REARM` has passed since it fired.
-    pub(crate) fn deadline(&self) -> Option<Duration> {
+    /// the Activation delay `delay`, and, if it's the corner that fired last, once the
+    /// pointer has left it and `REARM` has passed since it fired. The delay is taken now,
+    /// so a new one counts for the rest under way.
+    pub(crate) fn deadline(&self, delay: Duration) -> Option<Duration> {
         let (spot, since) = self.resting?;
-        let rested = since + REST;
+        let rested = since + delay;
         match self.fired {
             Some(fired) if fired.spot == spot && !fired.left => None,
             Some(fired) if fired.spot == spot => Some(rested.max(fired.at + REARM)),
@@ -118,11 +116,12 @@ impl HotCornerState {
         }
     }
 
-    /// Whether the corner the pointer rests in fires at `now`.
-    fn elapse(&mut self, now: Duration) -> bool {
+    /// Whether the corner the pointer rests in fires at `now`, with the Activation delay
+    /// `delay`.
+    fn elapse(&mut self, now: Duration, delay: Duration) -> bool {
         let Some((spot, _)) = self
             .resting
-            .filter(|_| self.deadline().is_some_and(|due| due <= now))
+            .filter(|_| self.deadline(delay).is_some_and(|due| due <= now))
         else {
             return false;
         };
@@ -199,10 +198,11 @@ impl State {
     /// with an action, as the outputs and the keys may have changed since it came, and if
     /// it isn't off.
     pub(crate) fn hot_corner_elapse(&mut self, now: Duration) {
+        let delay = self.caminito.settings.hot_corners.activation_delay;
         if self
             .caminito
             .hot_corners
-            .deadline()
+            .deadline(delay)
             .is_none_or(|due| due > now)
         {
             return;
@@ -211,7 +211,7 @@ impl State {
         let Some(at) = self.hot_corner_pointer_at(location, now) else {
             return;
         };
-        if !self.caminito.hot_corners.elapse(now) {
+        if !self.caminito.hot_corners.elapse(now, delay) {
             return;
         }
         match at.action {
@@ -276,6 +276,9 @@ mod tests {
             corner,
         })
     }
+
+    /// The default Activation delay.
+    const REST: Duration = Duration::from_millis(150);
 
     fn ms(ms: u64) -> Duration {
         Duration::from_millis(ms)
@@ -351,10 +354,10 @@ mod tests {
     fn another_corner_doesnt_wait_the_350_ms() {
         let mut state = HotCornerState::default();
         state.pointer_at(spot(0, 0, Corner::TopLeft), ms(1000));
-        state.elapse(ms(1150));
+        state.elapse(ms(1150), REST);
         state.pointer_at(spot(1919, 0, Corner::TopRight), ms(1160));
 
-        assert_eq!(state.deadline(), Some(ms(1310)));
+        assert_eq!(state.deadline(REST), Some(ms(1310)));
     }
 
     #[test]
@@ -363,10 +366,10 @@ mod tests {
         let corner = spot(0, 0, Corner::TopLeft);
         state.pointer_at(corner, ms(1000));
 
-        assert_eq!(state.deadline(), Some(ms(1150)));
-        assert!(!state.elapse(ms(1149)));
-        assert!(state.elapse(ms(1150)));
-        assert_eq!(state.deadline(), None);
+        assert_eq!(state.deadline(REST), Some(ms(1150)));
+        assert!(!state.elapse(ms(1149), REST));
+        assert!(state.elapse(ms(1150), REST));
+        assert_eq!(state.deadline(REST), None);
     }
 
     #[test]
@@ -375,8 +378,8 @@ mod tests {
         state.pointer_at(spot(0, 0, Corner::TopLeft), ms(1000));
         state.pointer_at(None, ms(1100));
 
-        assert_eq!(state.deadline(), None);
-        assert!(!state.elapse(ms(1150)));
+        assert_eq!(state.deadline(REST), None);
+        assert!(!state.elapse(ms(1150), REST));
     }
 
     #[test]
@@ -386,7 +389,7 @@ mod tests {
         state.pointer_at(corner, ms(1000));
         state.pointer_at(corner, ms(1100));
 
-        assert!(state.elapse(ms(1150)));
+        assert!(state.elapse(ms(1150), REST));
     }
 
     #[test]
@@ -394,11 +397,11 @@ mod tests {
         let mut state = HotCornerState::default();
         let corner = spot(0, 0, Corner::TopLeft);
         state.pointer_at(corner, ms(1000));
-        state.elapse(ms(1150));
+        state.elapse(ms(1150), REST);
         state.pointer_at(corner, ms(2000));
 
-        assert_eq!(state.deadline(), None);
-        assert!(!state.elapse(ms(5000)));
+        assert_eq!(state.deadline(REST), None);
+        assert!(!state.elapse(ms(5000), REST));
     }
 
     #[test]
@@ -406,13 +409,13 @@ mod tests {
         let mut state = HotCornerState::default();
         let corner = spot(0, 0, Corner::TopLeft);
         state.pointer_at(corner, ms(1000));
-        state.elapse(ms(1150));
+        state.elapse(ms(1150), REST);
         state.pointer_at(None, ms(1160));
         state.pointer_at(corner, ms(1170));
 
-        assert_eq!(state.deadline(), Some(ms(1500)));
-        assert!(!state.elapse(ms(1499)));
-        assert!(state.elapse(ms(1500)));
+        assert_eq!(state.deadline(REST), Some(ms(1500)));
+        assert!(!state.elapse(ms(1499), REST));
+        assert!(state.elapse(ms(1500), REST));
     }
 
     #[test]
@@ -420,11 +423,11 @@ mod tests {
         let mut state = HotCornerState::default();
         let corner = spot(0, 0, Corner::TopLeft);
         state.pointer_at(corner, ms(1000));
-        state.elapse(ms(1150));
+        state.elapse(ms(1150), REST);
         state.pointer_at(None, ms(1200));
         state.pointer_at(corner, ms(2000));
 
-        assert_eq!(state.deadline(), Some(ms(2150)));
+        assert_eq!(state.deadline(REST), Some(ms(2150)));
     }
 
     #[test]
@@ -433,9 +436,9 @@ mod tests {
         let corner = spot(0, 0, Corner::TopLeft);
         state.pointer_at(corner, ms(1000));
         state.cancel();
-        assert_eq!(state.deadline(), None);
+        assert_eq!(state.deadline(REST), None);
 
         state.pointer_at(corner, ms(1100));
-        assert_eq!(state.deadline(), Some(ms(1250)));
+        assert_eq!(state.deadline(REST), Some(ms(1250)));
     }
 }
