@@ -559,7 +559,8 @@ impl State {
     /// The Key remaps (CMN-186, ADR 0038), after the bindings and the grabs, so a System
     /// shortcut is never remapped: a press a rule takes is sent as the rule's target, and the
     /// bindings stage swallows its release. None apply while the session is locked or during
-    /// an Interaction.
+    /// an Interaction. A shortcuts inhibitor doesn't stop them, as the spec names no such
+    /// exception: a remote desktop's or a VM's Remap group with no remaps does.
     fn remaps_stage(
         &mut self,
         keycode: Keycode,
@@ -583,7 +584,8 @@ impl State {
         let Some(steps) = remaps.steps_for(app_id.as_deref(), &combination) else {
             return FilterResult::Forward;
         };
-        // A target of more steps is sent as its first alone, until 187 sends the others.
+        // A target of more steps is sent as its first alone, until (CMN-187) sends the
+        // others.
         let target = steps.first().copied();
         self.caminito.suppressed_keys.insert(keycode);
         FilterResult::Intercept(Some(Bound::Remap(target)))
@@ -602,8 +604,9 @@ impl State {
 
     /// Sends a Key remap's `target`, for a press at `time`, to the client with the keyboard:
     /// its key with the target's modifiers alone, then the modifiers held again. A target
-    /// that's one of Caminito's bindings runs it instead, as Alt+F4 closes the window, and
-    /// is never remapped again. No target swallows the press.
+    /// that's a System shortcut, one of Caminito's bindings or an accelerator grab, runs it
+    /// instead, as Alt+F4 closes the window, and is never remapped again. No target
+    /// swallows the press.
     fn send_remap(&mut self, target: Option<Combination>, time: InputTime) {
         let Some(target) = target else {
             return;
@@ -614,6 +617,16 @@ impl State {
         let bindings = &self.caminito.settings.bindings;
         if let Some(binding) = bindings.binding_for(&mods, &[target.key]) {
             self.run_binding(binding, Trigger::Key(target.key), time);
+            return;
+        }
+        let grab = self
+            .caminito
+            .accelerator_grabs
+            .pressed(&mods, &[target.key]);
+        if let Some((action, owner)) = grab {
+            let owner = owner.to_owned();
+            self.caminito
+                .signal_accelerator(&owner, action, time.millis(), false);
             return;
         }
         let Some(keycode) = keyboard.keycode_for_keysym(target.key) else {

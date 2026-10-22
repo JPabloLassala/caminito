@@ -12,7 +12,7 @@ use crate::settings::translate::RemapGroupValue;
 /// A combination a Key remap names: modifiers among Ctrl, Alt, Shift and Super, and a key by
 /// the keysym it gives without modifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Combination {
+pub(crate) struct Combination {
     pub(crate) held: Held,
     pub(crate) key: Keysym,
 }
@@ -113,12 +113,22 @@ struct Remap {
     steps: Vec<Combination>,
 }
 
-/// A Remap group: its app ids, and its rules, or none at all.
+impl Remap {
+    /// Parses a rule of `key-remaps`: its combination, and its target's steps.
+    fn parse(trigger: &str, steps: &[String]) -> Result<Self, ParseError> {
+        let steps = steps.iter().map(|step| Combination::parse(step));
+        Ok(Self {
+            trigger: Combination::parse(trigger)?,
+            steps: steps.collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+/// A Remap group: its app ids, and its rules, or `None` for a group with no remaps at all.
 #[derive(Debug, Clone, PartialEq)]
 struct Group {
     app_ids: Vec<String>,
-    no_remaps: bool,
-    remaps: Vec<Remap>,
+    remaps: Option<Vec<Remap>>,
 }
 
 /// The Key remaps in use: All applications', and each Remap group's.
@@ -141,37 +151,30 @@ impl KeyRemaps {
     /// A rule whose combination or a step of whose target can't be parsed is left out.
     pub(crate) fn from_groups(groups: &[RemapGroupValue]) -> (Self, Vec<Unremappable>) {
         let mut unremappable = Vec::new();
-        let mut groups = groups.iter().map(|(_, app_ids, no_remaps, rules)| {
-            let remaps = rules
-                .iter()
-                .filter_map(|(trigger, steps)| {
-                    let parsed = Combination::parse(trigger).and_then(|trigger| {
-                        let steps = steps.iter().map(|step| Combination::parse(step));
-                        Ok(Remap {
-                            trigger,
-                            steps: steps.collect::<Result<_, _>>()?,
-                        })
-                    });
-                    parsed
-                        .map_err(|reason| {
-                            let target = if steps.is_empty() {
-                                "nothing".to_owned()
-                            } else {
-                                steps.join(", ")
-                            };
-                            let rule = format!("{trigger} = {target}");
-                            unremappable.push(Unremappable { rule, reason });
-                        })
-                        .ok()
-                })
-                .collect();
-            Group {
-                app_ids: app_ids.clone(),
-                no_remaps: *no_remaps,
-                remaps: if *no_remaps { Vec::new() } else { remaps },
+        let mut read = Vec::new();
+        for (_, app_ids, no_remaps, rules) in groups {
+            let mut remaps = Vec::new();
+            for (trigger, steps) in rules {
+                match Remap::parse(trigger, steps) {
+                    Ok(remap) => remaps.push(remap),
+                    Err(reason) => {
+                        let target = if steps.is_empty() {
+                            "nothing".to_owned()
+                        } else {
+                            steps.join(", ")
+                        };
+                        let rule = format!("{trigger} = {target}");
+                        unremappable.push(Unremappable { rule, reason });
+                    }
+                }
             }
-        });
-        let all = groups.next().map(|all| all.remaps).unwrap_or_default();
+            read.push(Group {
+                app_ids: app_ids.clone(),
+                remaps: (!no_remaps).then_some(remaps),
+            });
+        }
+        let mut groups = read.into_iter();
+        let all = groups.next().and_then(|all| all.remaps).unwrap_or_default();
         let remaps = Self {
             all,
             groups: groups.collect(),
@@ -181,7 +184,11 @@ impl KeyRemaps {
 
     /// Whether there's no rule at all, so no key need be looked up.
     pub(crate) fn is_empty(&self) -> bool {
-        self.all.is_empty() && self.groups.iter().all(|group| group.remaps.is_empty())
+        self.all.is_empty()
+            && self
+                .groups
+                .iter()
+                .all(|group| group.remaps.as_ref().is_none_or(Vec::is_empty))
     }
 
     /// The steps `pressed` is sent as to a client of `app_id`, if a rule takes it: its Remap
@@ -202,9 +209,9 @@ impl KeyRemaps {
                 .iter()
                 .find(|group| group.app_ids.iter().any(|id| id == app_id))
         });
-        match group {
-            Some(group) if group.no_remaps => None,
-            Some(group) => find(&group.remaps, pressed).or_else(|| find(&self.all, pressed)),
+        match group.map(|group| group.remaps.as_deref()) {
+            Some(None) => None,
+            Some(Some(remaps)) => find(remaps, pressed).or_else(|| find(&self.all, pressed)),
             None => find(&self.all, pressed),
         }
     }

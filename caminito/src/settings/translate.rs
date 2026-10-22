@@ -317,6 +317,14 @@ pub enum Problem {
         value: String,
         reason: String,
     },
+    /// A Key remap's rule that isn't one Caminito can make, which is left out (CMN-186), and
+    /// why.
+    Unremappable {
+        schema: String,
+        key: String,
+        rule: String,
+        reason: String,
+    },
     /// An optional schema that isn't installed, so its keys are defaults.
     MissingSchema(String),
 }
@@ -352,6 +360,16 @@ impl fmt::Display for Problem {
                 f,
                 "{schema} {key} is {value}, which isn't a key combination Caminito can bind: \
                  {reason}; binding nothing"
+            ),
+            Problem::Unremappable {
+                schema,
+                key,
+                rule,
+                reason,
+            } => write!(
+                f,
+                "{schema} {key} has {rule}, which isn't a Key remap Caminito can make: \
+                 {reason}; leaving it out"
             ),
             Problem::MissingSchema(schema) => {
                 write!(f, "the {schema} schema isn't installed; using its defaults")
@@ -1470,10 +1488,10 @@ fn key_remaps(r: &mut Reader<'_>) -> KeyRemaps {
     });
     let (remaps, unremappable) = KeyRemaps::from_groups(&groups);
     for Unremappable { rule, reason } in unremappable {
-        r.problems.push(Problem::Unbindable {
+        r.problems.push(Problem::Unremappable {
             schema: CAMINITO.into(),
             key: key.into(),
-            value: rule,
+            rule,
             reason: reason.to_string(),
         });
     }

@@ -7,15 +7,17 @@
 //! The Wayland tests read the keys a client got with the modifiers it had for each, in
 //! xkb's masks for the test keymap: Shift is 1, Ctrl 4, Alt 8 and AltGr 128. The modifiers a
 //! key changes are sent before it, so Alt's press is seen with Alt and its release without.
-//! One test
-//! runs on an XWayland window, which gets its keys from Caminito as a Wayland client does.
+//! The stage acts on the focus's app id and the keys, the same for both kinds of window, so
+//! only one test maps an XWayland window, to show that its client, which gets its keys from
+//! Caminito as a Wayland client does, gets the remaps too.
 
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::KeyButMask;
 
+use super::accelerators::Caller;
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_C, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL, KEY_Q, KEY_RIGHTALT,
-    KEY_T, KEY_TAB, Kind, WindowSpec,
+    ClientId, ClientWindow, Fixture, KEY_C, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL, KEY_M, KEY_Q,
+    KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
 };
 use super::lock::lock_with_a_surface;
 use crate::settings::Value;
@@ -208,6 +210,23 @@ fn a_target_that_is_a_system_shortcut_runs_it() {
 
     assert!(f.client(client).window(window.xdg()).close_requested);
     assert!(!keys(&mut f, client).iter().any(|(key, ..)| *key == KEY_Q));
+}
+
+#[test]
+fn a_target_that_is_an_accelerator_grab_signals_its_grabber() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+M", &["Ctrl+Alt+A"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    let bus = f.start_dbus();
+    let mut caller = Caller::new(&mut f, &bus);
+    let [ctrl_alt_a] = caller.grab(&mut f, &["<Control><Alt>a"])[..] else {
+        panic!("one action id");
+    };
+
+    f.chord(&[KEY_LEFTALT, KEY_M]);
+
+    assert_eq!(caller.next_activation(&mut f).0, ctrl_alt_a);
+    assert!(!keys(&mut f, client).iter().any(|(key, ..)| *key == KEY_M));
 }
 
 #[test]

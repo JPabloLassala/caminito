@@ -2759,7 +2759,7 @@ fn a_key_remap_that_cant_be_parsed_is_left_out_and_logged() {
     assert!(!settings.key_remaps.is_empty());
     assert_eq!(
         problem.to_string(),
-        "org.mate.Caminito key-remaps is Alt+Nope = nothing, which isn't a key combination \
-         Caminito can bind: Nope isn't a keysym; binding nothing"
+        "org.mate.Caminito key-remaps has Alt+Nope = nothing, which isn't a Key remap \
+         Caminito can make: Nope isn't a keysym; leaving it out"
     );
 }
