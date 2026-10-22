@@ -42,7 +42,7 @@ use smithay::xwayland::X11Surface;
 use self::bindings::Binding;
 use self::bindings::accelerators::{Trigger, x_button};
 use self::grab::FrameHold;
-use self::remaps::{Combination, HeldStep};
+use self::remaps::Combination;
 use crate::dbus::a11y;
 use crate::decoration::control::FrameControl;
 use crate::output::{output_geometry, output_id};
@@ -320,14 +320,10 @@ impl State {
     fn key_past_accessx(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         // No grab has the keys instead of the lock, whenever AccessX sends them on.
         self.release_keyboard_grab_if_locked();
-        // A Key remap's last step held is let go with its trigger, or before another key's
-        // press (CMN-187), so the client repeats nothing else and gets that key with the
-        // modifiers held.
-        let pressed = key_state == KeyState::Pressed;
-        let held = self.caminito.held_remap_step;
-        if held.is_some_and(|held| pressed || held.trigger == keycode) {
-            self.release_held_step(time);
-        }
+        // A Key remap's last step held is let go at the next key event (CMN-187): the
+        // trigger's release, or another key's press or release, so the client repeats the
+        // step with its own modifiers alone and gets the next key with those held.
+        self.release_held_step(time);
         // 3. The Keyboard monitor (135), while locked too (13). It sees the key before
         // xkbcommon does, so a key it takes changes no state, CapsLock's among them.
         if !self.keyboard_monitor_stage(keycode, key_state, time) {
@@ -339,6 +335,7 @@ impl State {
         // keyboard sends whatever the filter forwards to the focused client.
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
+        let pressed = key_state == KeyState::Pressed;
         // A held accelerator repeats until its key's release or another key's press (99).
         if pressed {
             self.caminito.stop_accelerator_repeat();
@@ -365,7 +362,7 @@ impl State {
             }
             Some(Some(Bound::Action(action))) => self.run_action(action, time),
             Some(Some(Bound::GrabKey(key))) => self.keyboard_grab_key(key, time),
-            Some(Some(Bound::Remap { keycode, steps })) => self.send_remap(keycode, &steps, time),
+            Some(Some(Bound::Remap(steps))) => self.send_remap(&steps, time),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 let time = time.millis();
                 self.caminito
@@ -593,7 +590,7 @@ impl State {
         };
         let steps = steps.to_vec();
         self.caminito.suppressed_keys.insert(keycode);
-        FilterResult::Intercept(Some(Bound::Remap { keycode, steps }))
+        FilterResult::Intercept(Some(Bound::Remap(steps)))
     }
 
     /// The app id of the window whose client has the keyboard. A Layer surface, such as the
@@ -607,14 +604,14 @@ impl State {
         policy.window(policy.focus(SEAT)?)?.app_id()
     }
 
-    /// Sends a Key remap's `steps`, for the press of its trigger's `keycode` at `time`, to the
-    /// client with the keyboard: each step's key pressed and released in turn, with the
-    /// step's modifiers alone, but the last, which stays pressed while the trigger is
-    /// (CMN-187), so the client repeats it. The modifiers held are sent again after the last
-    /// step's release. A step that's a System shortcut, one of Caminito's bindings or an
+    /// Sends a Key remap's `steps`, for its trigger's press at `time`, to the client with the
+    /// keyboard: each step's key pressed and released in turn, with the step's modifiers
+    /// alone, except that the last stays pressed while the trigger is (CMN-187), so the
+    /// client repeats it, until the next key event. The modifiers held are sent again after
+    /// the last step's release. A step that's a System shortcut, one of Caminito's bindings or an
     /// accelerator grab, runs it instead, in its place, as Alt+F4 closes the window, and is
     /// never remapped again. No steps swallow the press.
-    fn send_remap(&mut self, keycode: Keycode, steps: &[Combination], time: InputTime) {
+    fn send_remap(&mut self, steps: &[Combination], time: InputTime) {
         let Some((last, others)) = steps.split_last() else {
             return;
         };
@@ -626,13 +623,7 @@ impl State {
             }
         }
         match self.press_step(last, time) {
-            Some(step) => {
-                let held = HeldStep {
-                    trigger: keycode,
-                    step,
-                };
-                self.caminito.held_remap_step = Some(held);
-            }
+            Some(step) => self.caminito.held_remap_step = Some(step),
             None if sent => self.send_held_modifiers(),
             None => {}
         }
@@ -678,21 +669,19 @@ impl State {
     fn forward_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
-        if key_state == KeyState::Pressed {
-            let focus = keyboard.current_focus();
-            let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
-            self.caminito.input_serials.sent(serial, surface.as_deref());
-        }
+        let focus = keyboard.current_focus();
+        let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
+        self.caminito.input_serials.sent(serial, surface.as_deref());
         keyboard.input_forward(self, keycode, key_state, serial, time, false);
     }
 
-    /// Releases the last step of a Key remap's sequence, which was held while its trigger
-    /// was, and sends the client the modifiers held again.
+    /// Releases the last step of a Key remap's sequence held, if one is, and sends the
+    /// client the modifiers held again.
     fn release_held_step(&mut self, time: InputTime) {
-        let Some(held) = self.caminito.held_remap_step.take() else {
+        let Some(step) = self.caminito.held_remap_step.take() else {
             return;
         };
-        self.forward_key(held.step, KeyState::Released, time);
+        self.forward_key(step, KeyState::Released, time);
         self.send_held_modifiers();
     }
 
@@ -1103,12 +1092,8 @@ pub(crate) enum Bound {
     /// A key for the keyboard move or resize in progress (156), or the manual placement
     /// (154).
     GrabKey(GrabKey),
-    /// A Key remap's target (CMN-186): the trigger's key, and the steps it's sent as, none
-    /// for nothing.
-    Remap {
-        keycode: Keycode,
-        steps: Vec<Combination>,
-    },
+    /// A Key remap's target (CMN-186): the steps it's sent as, none for nothing.
+    Remap(Vec<Combination>),
 }
 
 /// The VT an `XF86Switch_VT_n` keysym switches to.

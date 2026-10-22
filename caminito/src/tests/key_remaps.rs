@@ -186,14 +186,21 @@ fn a_rule_to_nothing_swallows_the_combination() {
     );
 }
 
-#[test]
-fn a_sequence_sends_each_step_with_its_own_modifiers_and_holds_the_last_while_the_trigger_is() {
+/// Caminito with Alt+BackSpace sent as Shift+Home then BackSpace, and a client of no app id
+/// with the keyboard.
+fn delete_to_line_start() -> (Fixture, ClientId) {
     let mut f = caminito(vec![key_remaps(vec![all(&[(
         "Alt+BackSpace",
         &["Shift+Home", "BackSpace"],
     )])])]);
     let client = listening(&mut f);
     focused(&mut f, client, None);
+    (f, client)
+}
+
+#[test]
+fn a_sequence_sends_each_step_with_its_own_modifiers_and_holds_the_last_while_the_trigger_is() {
+    let (mut f, client) = delete_to_line_start();
 
     f.key(KEY_LEFTALT, true);
     f.key(KEY_BACKSPACE, true);
@@ -224,18 +231,6 @@ fn a_sequence_sends_each_step_with_its_own_modifiers_and_holds_the_last_while_th
     );
 }
 
-/// Caminito with Alt+BackSpace sent as Shift+Home then BackSpace, and a client of no app id
-/// with the keyboard.
-fn delete_to_line_start() -> (Fixture, ClientId) {
-    let mut f = caminito(vec![key_remaps(vec![all(&[(
-        "Alt+BackSpace",
-        &["Shift+Home", "BackSpace"],
-    )])])]);
-    let client = listening(&mut f);
-    focused(&mut f, client, None);
-    (f, client)
-}
-
 #[test]
 fn a_held_trigger_leaves_the_last_step_for_the_client_to_repeat_and_sends_nothing_else() {
     let (mut f, client) = delete_to_line_start();
@@ -244,6 +239,8 @@ fn a_held_trigger_leaves_the_last_step_for_the_client_to_repeat_and_sends_nothin
     keys(&mut f, client);
 
     // The client repeats the one key it holds, at its own rate: Caminito sends no more.
+    // Two seconds are past the keyboard's repeat delay, 500 ms, and dozens of repeats at
+    // its rate, 30 a second, so a repeat Caminito sent would have come.
     f.advance_clock(Duration::from_secs(2));
     f.dispatch();
     assert_eq!(keys(&mut f, client), []);
@@ -286,6 +283,26 @@ fn another_key_pressed_while_the_trigger_is_held_lets_go_of_the_last_step_first(
 
     // The trigger's release has nothing left to let go of.
     f.key(KEY_BACKSPACE, false);
+    assert_eq!(keys(&mut f, client), []);
+}
+
+#[test]
+fn alt_released_before_the_trigger_lets_go_of_the_last_step_with_its_own_modifiers() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_T, true);
+    keys(&mut f, client);
+
+    // The client would otherwise repeat T with no Ctrl.
+    f.key(KEY_LEFTALT, false);
+    assert_eq!(
+        keys(&mut f, client),
+        [(KEY_T, false, CTRL), (KEY_LEFTALT, false, 0)]
+    );
+
+    f.key(KEY_T, false);
     assert_eq!(keys(&mut f, client), []);
 }
 
