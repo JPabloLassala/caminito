@@ -7,12 +7,34 @@ root=$(dirname "$(realpath "$0")")/..
 sudo pacman -S --needed base-devel git rustup
 rustup toolchain install stable --profile minimal
 
+# The version the PKGBUILD in the current directory builds, as [epoch:]pkgver-pkgrel. A
+# pkgver() function computes it from the sources, so they're fetched and extracted first:
+# makepkg then writes the new pkgver into the PKGBUILD.
+available_version() {
+  if grep -q '^pkgver()' PKGBUILD; then
+    makepkg -odC --noprepare >&2
+  fi
+  makepkg --printsrcinfo | awk '
+    $1 == "epoch" && !e { e = $3 ":" }
+    $1 == "pkgver" && !v { v = $3 }
+    $1 == "pkgrel" && !r { r = $3 }
+    END { print e v "-" r }'
+}
+
 # In dependency order: each package is installed as it's built, so the next one builds
-# against it.
+# against it. The global menu's three packages, which nothing depends on, come after
+# caminito-git: vala-panel-appmenu-mate-caminito links to mate-panel-caminito's applet library.
 for package in mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito \
   mate-control-center-caminito caja-caminito mate-utils-caminito mate-power-manager-caminito \
-  caminito-git caminito-desktop; do
+  caminito-git vala-panel-appmenu-mate-caminito appmenu-gtk-module-caminito caminito-vscode-git \
+  caminito-desktop; do
   cd "$root/packaging/arch/$package"
+  available=$(available_version)
+  if installed=$(pacman -Q "$package" 2>/dev/null) &&
+    (($(vercmp "$available" "${installed#* }") <= 0)); then
+    echo "Skipping $package: $available is not newer than the installed ${installed#* }"
+    continue
+  fi
   # -C: makepkg resets a git source left in src/ by an earlier build but keeps its untracked
   # files, so a patch that adds a file then fails on the one it added last time.
   makepkg -siC "$@"

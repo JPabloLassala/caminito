@@ -78,9 +78,9 @@ cargo build --workspace
 ```
 
 To build and install everything from nothing, run `tools/bootstrap`. It installs the build
-tools, builds the patched MATE packages and `caminito-git` in order, and ends with
-`caminito-desktop`, a meta package that depends on `caminito-git` and on the rest of Arch's `mate`
-and `mate-extra` groups. Its arguments go to `makepkg`:
+tools, builds the patched MATE packages, `caminito-git` and the global menu's packages in order,
+and ends with `caminito-desktop`, a meta package that depends on `caminito-git` and on the rest
+of Arch's `mate` and `mate-extra` groups. Its arguments go to `makepkg`:
 
 ```sh
 tools/bootstrap              # or: tools/bootstrap --noconfirm --nocheck
