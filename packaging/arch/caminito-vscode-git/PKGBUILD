@@ -5,7 +5,7 @@
 # in ADR 0011's sense: it replaces nothing and carries no patch. No .vsix ships.
 pkgname=caminito-vscode-git
 _pkgname=caminito
-pkgver=r1108.e6a178e
+pkgver=r1109.03d6373
 pkgrel=1
 pkgdesc="Caminito's global menu for VS Code, VSCodium, Code - OSS and Cursor"
 arch=(any)

@@ -3,6 +3,18 @@ set -euo pipefail
 
 root=$(dirname "$(realpath "$0")")/..
 
+# --noskip builds every package, even one whose installed version is as new; the other
+# arguments go to makepkg.
+noskip=0
+makepkg_args=()
+for arg; do
+  if [[ $arg == --noskip ]]; then
+    noskip=1
+  else
+    makepkg_args+=("$arg")
+  fi
+done
+
 # rustup provides cargo, and caminito-git's PKGBUILD builds with RUSTUP_TOOLCHAIN=stable.
 sudo pacman -S --needed base-devel git rustup
 rustup toolchain install stable --profile minimal
@@ -29,13 +41,13 @@ for package in mate-session-manager-caminito mate-panel-caminito mate-settings-d
   caminito-git vala-panel-appmenu-mate-caminito appmenu-gtk-module-caminito caminito-vscode-git \
   caminito-desktop; do
   cd "$root/packaging/arch/$package"
-  available=$(available_version)
-  if installed=$(pacman -Q "$package" 2>/dev/null) &&
+  if ((!noskip)) && available=$(available_version) &&
+    installed=$(pacman -Q "$package" 2>/dev/null) &&
     (($(vercmp "$available" "${installed#* }") <= 0)); then
     echo "Skipping $package: $available is not newer than the installed ${installed#* }"
     continue
   fi
   # -C: makepkg resets a git source left in src/ by an earlier build but keeps its untracked
   # files, so a patch that adds a file then fails on the one it added last time.
-  makepkg -siC "$@"
+  makepkg -siC "${makepkg_args[@]}"
 done
