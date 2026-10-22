@@ -2,7 +2,7 @@
 
 pkgname=caminito-git
 _pkgname=caminito
-pkgver=r1072.5a6ed8c
+pkgver=r1108.e6a178e
 pkgrel=1
 pkgdesc='Wayland compositor for the MATE desktop, the counterpart of Marco'
 arch=(x86_64)
