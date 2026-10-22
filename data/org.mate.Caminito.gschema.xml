@@ -133,6 +133,21 @@
       <summary>What the bottom right corner of a monitor does</summary>
       <description>What happens when the pointer rests in the bottom right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "application-overview" opens the Overview of the focused window's application on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
+    <!--
+      The Key remaps (CMN-186, ADR 0038): combinations swapped for others before the
+      focused window's client gets them. The first group is All applications, with no name
+      and no app ids. None by default.
+    -->
+    <key name="key-remaps" type="a(sasba(sas))">
+      <default>[('', @as [], false, @a(sas) [])]</default>
+      <summary>Key remaps</summary>
+      <description>Combinations Caminito swaps for others, or for nothing, before the focused window's application gets them. Each entry is a Remap group: its name, its application ids, whether it has no remaps at all, and its remaps, each a combination such as "Alt+T" and the steps it is sent as, such as ["Ctrl+T"], or none for nothing. The first group is All applications, with the name "" and no application ids; a group's remap replaces All applications' for the same combination. A combination is modifiers among Ctrl, Alt, Shift and Super, and a key by its keysym's name, joined by "+". A System shortcut is never remapped.</description>
+    </key>
+    <key name="key-remap-template" type="s">
+      <default>''</default>
+      <summary>The Remap template in use</summary>
+      <description>The name of the Remap template the Key remaps were last loaded from or saved as, or "" if none.</description>
+    </key>
     <key name="workspace-layout-rows" type="i">
       <default>1</default>
       <range min="0" max="36"/>

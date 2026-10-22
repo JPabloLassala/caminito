@@ -547,6 +547,19 @@ impl X11Client {
         self.conn.sync()
     }
 
+    /// Selects key presses and releases on `window`, as well as what it's created with, so
+    /// [`events`](Self::events) reports the keys it gets.
+    pub fn watch_keys(&self, window: Window) -> Result<(), ReplyError> {
+        let masks = EventMask::STRUCTURE_NOTIFY
+            | EventMask::PROPERTY_CHANGE
+            | EventMask::FOCUS_CHANGE
+            | EventMask::KEY_PRESS
+            | EventMask::KEY_RELEASE;
+        let aux = ChangeWindowAttributesAux::new().event_mask(masks);
+        self.conn.change_window_attributes(window, &aux)?;
+        self.conn.sync()
+    }
+
     /// The events that have arrived since the last call, after a roundtrip.
     pub fn events(&self) -> Result<Vec<Event>, ReplyError> {
         self.conn.sync()?;

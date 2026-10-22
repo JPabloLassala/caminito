@@ -1,5 +1,6 @@
 use super::*;
 use crate::input::bindings::Bindings;
+use crate::input::remaps::Combination;
 
 /// A reading of every key at the schema defaults of Marco 1.29.0 and MATE 1.28.
 fn defaults() -> Reading {
@@ -2710,5 +2711,55 @@ fn an_unknown_hot_corner_action_is_none() {
     assert_eq!(
         problem,
         invalid(CAMINITO, "hot-corner-top-right", "'cube'", "'none'")
+    );
+}
+
+// Key remaps (CMN-186).
+
+/// `key-remaps` with All applications' rules alone, as `("Alt+T", &["Ctrl+T"])`.
+fn all_applications(rules: &[(&str, &[&str])]) -> Value {
+    let rules = rules
+        .iter()
+        .map(|(trigger, steps)| {
+            let steps = steps.iter().map(|step| (*step).to_owned()).collect();
+            ((*trigger).to_owned(), steps)
+        })
+        .collect();
+    Value::RemapGroups(vec![(String::new(), Vec::new(), false, rules)])
+}
+
+#[test]
+fn there_are_no_key_remaps_by_default() {
+    assert!(settings(&defaults()).key_remaps.is_empty());
+    let reading = with(CAMINITO, "key-remaps", all_applications(&[]));
+    assert!(settings(&reading).key_remaps.is_empty());
+}
+
+#[test]
+fn the_key_remaps_key_is_read() {
+    let reading = with(
+        CAMINITO,
+        "key-remaps",
+        all_applications(&[("Alt+T", &["Ctrl+T"])]),
+    );
+    let remaps = settings(&reading).key_remaps;
+    let pressed = Combination::parse("Alt+T").unwrap();
+    let target = [Combination::parse("Ctrl+T").unwrap()];
+    assert_eq!(remaps.steps_for(None, &pressed), Some(&target[..]));
+}
+
+#[test]
+fn a_key_remap_that_cant_be_parsed_is_left_out_and_logged() {
+    let reading = with(
+        CAMINITO,
+        "key-remaps",
+        all_applications(&[("Alt+T", &["Ctrl+T"]), ("Alt+Nope", &[])]),
+    );
+    let (settings, problem) = problem(&reading);
+    assert!(!settings.key_remaps.is_empty());
+    assert_eq!(
+        problem.to_string(),
+        "org.mate.Caminito key-remaps has Alt+Nope = nothing, which isn't a Key remap \
+         Caminito can make: Nope isn't a keysym; leaving it out"
     );
 }

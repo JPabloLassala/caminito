@@ -368,6 +368,8 @@ fn from_variant(variant: &glib::Variant) -> Value {
         Value::StrList(list)
     } else if let Some(pair) = variant.get::<Option<(f64, f64)>>() {
         Value::MaybePair(pair)
+    } else if let Some(groups) = variant.get::<Vec<translate::RemapGroupValue>>() {
+        Value::RemapGroups(groups)
     } else {
         Value::Other(variant.print(true).into())
     }
@@ -383,6 +385,7 @@ fn to_variant(value: &Value) -> Result<glib::Variant, glib::BoolError> {
         Value::Str(s) => s.to_variant(),
         Value::StrList(list) => list.to_variant(),
         Value::MaybePair(pair) => pair.to_variant(),
+        Value::RemapGroups(groups) => groups.to_variant(),
         Value::Other(text) => glib::Variant::parse(None, text)
             .map_err(|err| glib::bool_error!("not GVariant text: {err}"))?,
     })

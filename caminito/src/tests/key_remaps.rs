@@ -1,0 +1,330 @@
+//! Key remaps (CMN-186, ADR 0038): a combination a rule takes reaches the focused client as
+//! the rule's target, with the target's modifiers alone, or doesn't reach it at all. A
+//! Remap group's rule replaces All applications' for its app ids, a System shortcut is never
+//! remapped and runs as a target, AltGr is never Alt, and no remap applies on the lock
+//! screen or during an Interaction.
+//!
+//! The Wayland tests read the keys a client got with the modifiers it had for each, in
+//! xkb's masks for the test keymap: Shift is 1, Ctrl 4, Alt 8 and AltGr 128. The modifiers a
+//! key changes are sent before it, so Alt's press is seen with Alt and its release without.
+//! The stage acts on the focus's app id and the keys, the same for both kinds of window, so
+//! only one test maps an XWayland window, to show that its client, which gets its keys from
+//! Caminito as a Wayland client does, gets the remaps too.
+
+use x11rb::protocol::Event;
+use x11rb::protocol::xproto::KeyButMask;
+
+use super::accelerators::Caller;
+use super::fixture::{
+    ClientId, ClientWindow, Fixture, KEY_C, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL, KEY_M, KEY_Q,
+    KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
+};
+use super::lock::lock_with_a_surface;
+use crate::settings::Value;
+use crate::settings::translate::{CAMINITO, KEYBOARD_XKB, RemapGroupValue};
+use crate::state::SEAT;
+use caminito_policy::Interaction;
+
+const SHIFT: u32 = 1;
+const CTRL: u32 = 4;
+const ALT: u32 = 8;
+const ALTGR: u32 = 128;
+
+/// A Remap group of app ids, its rules as `("Alt+T", &["Ctrl+T"])`, or none at all.
+fn group(app_ids: &[&str], no_remaps: bool, rules: &[(&str, &[&str])]) -> RemapGroupValue {
+    let rules = rules
+        .iter()
+        .map(|(trigger, steps)| {
+            let steps = steps.iter().map(|step| (*step).to_owned()).collect();
+            ((*trigger).to_owned(), steps)
+        })
+        .collect();
+    let app_ids = app_ids.iter().map(|id| (*id).to_owned()).collect();
+    (String::new(), app_ids, no_remaps, rules)
+}
+
+/// All applications' group with `rules`.
+fn all(rules: &[(&str, &[&str])]) -> RemapGroupValue {
+    group(&[], false, rules)
+}
+
+/// `key-remaps` set to `groups`, All applications' first.
+fn key_remaps(groups: Vec<RemapGroupValue>) -> (&'static str, String, Value) {
+    (CAMINITO, "key-remaps".into(), Value::RemapGroups(groups))
+}
+
+/// Caminito with `settings` and one output.
+fn caminito(settings: Vec<(&'static str, String, Value)>) -> Fixture {
+    let mut f = Fixture::with_settings(settings);
+    f.add_output((1920, 1080), 1.0);
+    f.dispatch();
+    f
+}
+
+/// A Wayland client that listens to the keyboard.
+fn listening(f: &mut Fixture) -> ClientId {
+    let id = f.connect(Kind::Xdg);
+    f.client(id).bind_input();
+    f.roundtrip(id);
+    id
+}
+
+/// Maps a window of `client` with `app_id`, which gets the keyboard, and forgets the keys
+/// the client got so far.
+fn focused(f: &mut Fixture, client: ClientId, app_id: Option<&'static str>) -> ClientWindow {
+    let window = f.map(
+        client,
+        WindowSpec {
+            app_id,
+            ..WindowSpec::plain((400, 300))
+        },
+    );
+    f.roundtrip(client);
+    assert!(f.has_keyboard(window));
+    f.client(client).state.keys.clear();
+    window
+}
+
+/// The keys `client` got since the last call, as `(key, pressed, modifiers)`.
+fn keys(f: &mut Fixture, client: ClientId) -> Vec<(u32, bool, u32)> {
+    f.roundtrip(client);
+    std::mem::take(&mut f.client(client).state.keys)
+}
+
+/// What a client gets for `KEY_T` with `modifier` held, when it isn't remapped.
+fn unchanged(modifier: u32, mask: u32) -> Vec<(u32, bool, u32)> {
+    vec![
+        (modifier, true, mask),
+        (KEY_T, true, mask),
+        (KEY_T, false, mask),
+        (modifier, false, 0),
+    ]
+}
+
+#[test]
+fn alt_t_reaches_a_client_as_ctrl_t_with_no_alt_and_its_own_ctrl_t_is_unchanged() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, Some("org.mate.Pluma"));
+
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_LEFTALT, true, ALT),
+            (KEY_T, true, CTRL),
+            (KEY_T, false, CTRL),
+            (KEY_LEFTALT, false, 0),
+        ]
+    );
+
+    f.chord(&[KEY_LEFTCTRL, KEY_T]);
+    assert_eq!(keys(&mut f, client), unchanged(KEY_LEFTCTRL, CTRL));
+}
+
+#[test]
+fn a_remap_groups_rule_replaces_all_applications_for_its_app_ids_alone() {
+    let mut f = caminito(vec![key_remaps(vec![
+        all(&[("Alt+C", &["Ctrl+C"])]),
+        group(&["kitty"], false, &[("Alt+C", &["Ctrl+Shift+C"])]),
+    ])]);
+    let client = listening(&mut f);
+
+    focused(&mut f, client, Some("kitty"));
+    f.chord(&[KEY_LEFTALT, KEY_C]);
+    let got = keys(&mut f, client);
+    assert_eq!(
+        got[1..3],
+        [(KEY_C, true, CTRL | SHIFT), (KEY_C, false, CTRL | SHIFT)]
+    );
+
+    focused(&mut f, client, Some("firefox"));
+    f.chord(&[KEY_LEFTALT, KEY_C]);
+    let got = keys(&mut f, client);
+    assert_eq!(got[1..3], [(KEY_C, true, CTRL), (KEY_C, false, CTRL)]);
+}
+
+#[test]
+fn a_group_with_no_remaps_gets_every_combination_unchanged() {
+    let mut f = caminito(vec![key_remaps(vec![
+        all(&[("Alt+T", &["Ctrl+T"])]),
+        group(&["org.remmina.Remmina"], true, &[]),
+    ])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, Some("org.remmina.Remmina"));
+
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    assert_eq!(keys(&mut f, client), unchanged(KEY_LEFTALT, ALT));
+}
+
+#[test]
+fn a_focus_with_no_app_id_gets_all_applications_remaps() {
+    let mut f = caminito(vec![key_remaps(vec![
+        all(&[("Alt+T", &["Ctrl+T"])]),
+        group(&["kitty"], true, &[]),
+    ])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    assert_eq!(keys(&mut f, client)[1], (KEY_T, true, CTRL));
+}
+
+#[test]
+fn a_rule_to_nothing_swallows_the_combination() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+H", &[])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.chord(&[KEY_LEFTALT, KEY_H]);
+    assert_eq!(
+        keys(&mut f, client),
+        [(KEY_LEFTALT, true, ALT), (KEY_LEFTALT, false, 0)]
+    );
+}
+
+#[test]
+fn a_system_shortcut_is_never_remapped() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+Tab", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_TAB, true);
+    assert_eq!(
+        f.state.caminito.policy.interaction(SEAT),
+        Some(Interaction::WindowSwitcher)
+    );
+    assert!(!keys(&mut f, client).iter().any(|(key, ..)| *key == KEY_T));
+}
+
+#[test]
+fn a_target_that_is_a_system_shortcut_runs_it() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+Q", &["Alt+F4"])])])]);
+    let client = listening(&mut f);
+    let window = focused(&mut f, client, None);
+
+    f.chord(&[KEY_LEFTALT, KEY_Q]);
+    f.roundtrip(client);
+
+    assert!(f.client(client).window(window.xdg()).close_requested);
+    assert!(!keys(&mut f, client).iter().any(|(key, ..)| *key == KEY_Q));
+}
+
+#[test]
+fn a_target_that_is_an_accelerator_grab_signals_its_grabber() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+M", &["Ctrl+Alt+A"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    let bus = f.start_dbus();
+    let mut caller = Caller::new(&mut f, &bus);
+    let [ctrl_alt_a] = caller.grab(&mut f, &["<Control><Alt>a"])[..] else {
+        panic!("one action id");
+    };
+
+    f.chord(&[KEY_LEFTALT, KEY_M]);
+
+    assert_eq!(caller.next_activation(&mut f).0, ctrl_alt_a);
+    assert!(!keys(&mut f, client).iter().any(|(key, ..)| *key == KEY_M));
+}
+
+#[test]
+fn altgr_q_never_matches_an_alt_q_rule() {
+    // RightAlt is AltGr in the German layout.
+    let layouts = Value::StrList(vec!["de".into()]);
+    let mut f = caminito(vec![
+        (KEYBOARD_XKB, "layouts".into(), layouts),
+        key_remaps(vec![all(&[("Alt+Q", &["Ctrl+Q"])])]),
+    ]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.chord(&[KEY_RIGHTALT, KEY_Q]);
+    let got = keys(&mut f, client);
+    assert_eq!(got[1..3], [(KEY_Q, true, ALTGR), (KEY_Q, false, ALTGR)]);
+
+    // Left Alt is Alt there still.
+    f.chord(&[KEY_LEFTALT, KEY_Q]);
+    assert_eq!(keys(&mut f, client)[1], (KEY_Q, true, CTRL));
+}
+
+#[test]
+fn no_remap_applies_on_the_lock_screen() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let locker = listening(&mut f);
+    lock_with_a_surface(&mut f, locker);
+    f.dispatch_until(|f| f.state.caminito.lock.is_locked());
+    f.client(locker).state.keys.clear();
+
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    assert_eq!(keys(&mut f, locker), unchanged(KEY_LEFTALT, ALT));
+}
+
+#[test]
+fn no_remap_applies_while_the_window_switcher_is_open() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_TAB, true);
+    f.key(KEY_TAB, false);
+    assert_eq!(
+        f.state.caminito.policy.interaction(SEAT),
+        Some(Interaction::WindowSwitcher)
+    );
+    f.key(KEY_T, true);
+    f.key(KEY_T, false);
+
+    // The Window switcher has the key, and no client gets it, Ctrl+T or other.
+    assert!(!keys(&mut f, client).iter().any(|(key, ..)| *key == KEY_T));
+}
+
+#[test]
+fn setting_key_remaps_applies_to_the_next_key_pressed() {
+    let mut f = caminito(Vec::new());
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    assert_eq!(keys(&mut f, client), unchanged(KEY_LEFTALT, ALT));
+
+    let (schema, key, value) = key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])]);
+    f.set_setting(schema, &key, value);
+    f.dispatch_until(|f| !f.state.caminito.settings.key_remaps.is_empty());
+
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    assert_eq!(keys(&mut f, client)[1], (KEY_T, true, CTRL));
+}
+
+#[test]
+fn an_xwayland_client_gets_the_remaps_too() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let x = f.connect(Kind::X11);
+    let window = f.map(x, WindowSpec::default());
+    let id = window.x11();
+    f.x11_call(x, move |x| x.watch_keys(id)).unwrap();
+    f.dispatch_until(|f| f.has_keyboard(window));
+    f.x11_call(x, |x| x.events()).unwrap();
+
+    f.chord(&[KEY_LEFTALT, KEY_T]);
+    f.sync(window);
+
+    let events = f.x11_call(x, |x| x.events()).unwrap();
+    // X's keycodes are evdev's plus 8.
+    let presses: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::KeyPress(key) if key.event == id => Some((key.detail, key.state)),
+            _ => None,
+        })
+        .collect();
+    let t = (KEY_T + 8) as u8;
+    let alt = (KEY_LEFTALT + 8) as u8;
+    assert_eq!(
+        presses,
+        [(alt, KeyButMask::MOD1), (t, KeyButMask::CONTROL)],
+        "{events:?}"
+    );
+}
