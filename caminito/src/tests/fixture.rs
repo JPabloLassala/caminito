@@ -104,6 +104,7 @@ pub(crate) use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub const KEY_ESC: u32 = 1;
 pub const KEY_1: u32 = 2;
 pub const KEY_3: u32 = 4;
+pub const KEY_BACKSPACE: u32 = 14;
 pub const KEY_TAB: u32 = 15;
 pub const KEY_Q: u32 = 16;
 pub const KEY_W: u32 = 17;

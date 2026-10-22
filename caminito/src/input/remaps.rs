@@ -1,10 +1,10 @@
 //! Key remaps (CMN-186, ADR 0038), read from `org.mate.Caminito`'s `key-remaps`: the
-//! combinations swapped for others, or for nothing, before the focused window's client gets
+//! combinations swapped for others, for a sequence of others (CMN-187), or for nothing, before the focused window's client gets
 //! them, for all applications and for each Remap group of app ids.
 
 use std::fmt;
 
-use smithay::input::keyboard::{Keysym, KeysymHandle, ModifiersState, xkb};
+use smithay::input::keyboard::{Keycode, Keysym, KeysymHandle, ModifiersState, xkb};
 
 use super::bindings::Held;
 use crate::settings::translate::RemapGroupValue;
@@ -104,6 +104,16 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+/// The last step of a Key remap's sequence, which stays pressed while its trigger is
+/// (CMN-187), so the client repeats it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeldStep {
+    /// The trigger's key, whose release lets go of the step.
+    pub(crate) trigger: Keycode,
+    /// The step's key, as the client was sent it.
+    pub(crate) step: Keycode,
+}
 
 /// One rule: a combination, and the steps it's sent as. No step is nothing: the combination
 /// is swallowed.

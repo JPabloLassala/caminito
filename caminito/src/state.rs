@@ -101,6 +101,7 @@ use crate::input::accessx;
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
+use crate::input::remaps::HeldStep;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::lock::{Lock, Locker};
@@ -269,6 +270,8 @@ pub struct Caminito {
     /// Keys whose press ran a binding or a grabbed accelerator, so their release is
     /// swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
+    /// The last step of a Key remap's sequence, held while its trigger is (CMN-187).
+    pub(crate) held_remap_step: Option<HeldStep>,
     /// The accelerators callers of `org.mate.Caminito` have grabbed (98).
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
@@ -1022,6 +1025,7 @@ impl Caminito {
             keyboard_layer: None,
             next_layer_id: 0,
             suppressed_keys: HashSet::new(),
+            held_remap_step: None,
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
             player,

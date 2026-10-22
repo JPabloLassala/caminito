@@ -1,8 +1,9 @@
 //! Key remaps (CMN-186, ADR 0038): a combination a rule takes reaches the focused client as
 //! the rule's target, with the target's modifiers alone, or doesn't reach it at all. A
-//! Remap group's rule replaces All applications' for its app ids, a System shortcut is never
-//! remapped and runs as a target, AltGr is never Alt, and no remap applies on the lock
-//! screen or during an Interaction.
+//! target of several steps is sent as each in turn, the last held while the trigger is
+//! (CMN-187). A Remap group's rule replaces All applications' for its app ids, a System
+//! shortcut is never remapped and runs as a target, AltGr is never Alt, and no remap
+//! applies on the lock screen or during an Interaction.
 //!
 //! The Wayland tests read the keys a client got with the modifiers it had for each, in
 //! xkb's masks for the test keymap: Shift is 1, Ctrl 4, Alt 8 and AltGr 128. The modifiers a
@@ -11,13 +12,15 @@
 //! only one test maps an XWayland window, to show that its client, which gets its keys from
 //! Caminito as a Wayland client does, gets the remaps too.
 
+use std::time::Duration;
+
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::KeyButMask;
 
 use super::accelerators::Caller;
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_C, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL, KEY_M, KEY_Q,
-    KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
+    ClientId, ClientWindow, Fixture, KEY_BACKSPACE, KEY_C, KEY_H, KEY_HOME, KEY_LEFTALT,
+    KEY_LEFTCTRL, KEY_M, KEY_Q, KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
 };
 use super::lock::lock_with_a_surface;
 use crate::settings::Value;
@@ -180,6 +183,133 @@ fn a_rule_to_nothing_swallows_the_combination() {
     assert_eq!(
         keys(&mut f, client),
         [(KEY_LEFTALT, true, ALT), (KEY_LEFTALT, false, 0)]
+    );
+}
+
+#[test]
+fn a_sequence_sends_each_step_with_its_own_modifiers_and_holds_the_last_while_the_trigger_is() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[(
+        "Alt+BackSpace",
+        &["Shift+Home", "BackSpace"],
+    )])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_BACKSPACE, true);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_LEFTALT, true, ALT),
+            (KEY_HOME, true, SHIFT),
+            (KEY_HOME, false, SHIFT),
+            (KEY_BACKSPACE, true, 0),
+        ]
+    );
+
+    f.key(KEY_BACKSPACE, false);
+    assert_eq!(keys(&mut f, client), [(KEY_BACKSPACE, false, 0)]);
+
+    // Alt is still held, and a key no rule takes gets it.
+    f.key(KEY_T, true);
+    f.key(KEY_T, false);
+    f.key(KEY_LEFTALT, false);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_T, true, ALT),
+            (KEY_T, false, ALT),
+            (KEY_LEFTALT, false, 0)
+        ]
+    );
+}
+
+/// Caminito with Alt+BackSpace sent as Shift+Home then BackSpace, and a client of no app id
+/// with the keyboard.
+fn delete_to_line_start() -> (Fixture, ClientId) {
+    let mut f = caminito(vec![key_remaps(vec![all(&[(
+        "Alt+BackSpace",
+        &["Shift+Home", "BackSpace"],
+    )])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    (f, client)
+}
+
+#[test]
+fn a_held_trigger_leaves_the_last_step_for_the_client_to_repeat_and_sends_nothing_else() {
+    let (mut f, client) = delete_to_line_start();
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_BACKSPACE, true);
+    keys(&mut f, client);
+
+    // The client repeats the one key it holds, at its own rate: Caminito sends no more.
+    f.advance_clock(Duration::from_secs(2));
+    f.dispatch();
+    assert_eq!(keys(&mut f, client), []);
+
+    f.key(KEY_BACKSPACE, false);
+    assert_eq!(keys(&mut f, client), [(KEY_BACKSPACE, false, 0)]);
+}
+
+#[test]
+fn the_trigger_pressed_twice_with_alt_held_sends_the_sequence_twice() {
+    let (mut f, client) = delete_to_line_start();
+    let sequence = [
+        (KEY_HOME, true, SHIFT),
+        (KEY_HOME, false, SHIFT),
+        (KEY_BACKSPACE, true, 0),
+        (KEY_BACKSPACE, false, 0),
+    ];
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_BACKSPACE, true);
+    f.key(KEY_BACKSPACE, false);
+    assert_eq!(keys(&mut f, client)[1..], sequence);
+    f.key(KEY_BACKSPACE, true);
+    f.key(KEY_BACKSPACE, false);
+    assert_eq!(keys(&mut f, client), sequence);
+}
+
+#[test]
+fn another_key_pressed_while_the_trigger_is_held_lets_go_of_the_last_step_first() {
+    let (mut f, client) = delete_to_line_start();
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_BACKSPACE, true);
+    keys(&mut f, client);
+
+    f.key(KEY_T, true);
+    assert_eq!(
+        keys(&mut f, client),
+        [(KEY_BACKSPACE, false, 0), (KEY_T, true, ALT)]
+    );
+
+    // The trigger's release has nothing left to let go of.
+    f.key(KEY_BACKSPACE, false);
+    assert_eq!(keys(&mut f, client), []);
+}
+
+#[test]
+fn a_step_that_is_a_system_shortcut_runs_it_in_its_place() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[(
+        "Alt+Q",
+        &["Ctrl+T", "Alt+F4", "Ctrl+H"],
+    )])])]);
+    let client = listening(&mut f);
+    let window = focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_Q, true);
+    f.roundtrip(client);
+    assert!(f.client(client).window(window.xdg()).close_requested);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_LEFTALT, true, ALT),
+            (KEY_T, true, CTRL),
+            (KEY_T, false, CTRL),
+            (KEY_H, true, CTRL),
+        ]
     );
 }
 
