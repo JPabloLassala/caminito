@@ -7,6 +7,7 @@ mod focus;
 pub mod frame;
 mod grab;
 pub(crate) mod keyboard;
+pub mod remaps;
 pub(crate) mod repeat;
 mod serials;
 
@@ -15,7 +16,8 @@ pub use grab::GrabKind;
 pub(crate) use serials::InputSerials;
 
 use caminito_policy::{
-    Action, Crossing, GrabKey, Interaction, OverviewScope, PointerTarget, ResizeEdges, WindowId,
+    Action, Crossing, GrabKey, Interaction, OverviewScope, PointerTarget, PolicyWindow,
+    ResizeEdges, WindowId,
 };
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device, Event,
@@ -23,7 +25,9 @@ use smithay::backend::input::{
     PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::desktop::{LayerSurface, WindowSurfaceType};
-use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
+use smithay::input::keyboard::{
+    FilterResult, KeyboardTarget, Keysym, KeysymHandle, ModifiersState,
+};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
@@ -38,6 +42,7 @@ use smithay::xwayland::X11Surface;
 use self::bindings::Binding;
 use self::bindings::accelerators::{Trigger, x_button};
 use self::grab::FrameHold;
+use self::remaps::Combination;
 use crate::dbus::a11y;
 use crate::decoration::control::FrameControl;
 use crate::output::{output_geometry, output_id};
@@ -321,9 +326,9 @@ impl State {
             return;
         }
 
-        // 4. VT switching, Caminito's bindings, then the accelerator grabs (98), inside
-        // Smithay's filter so they see xkb's keysyms; then 5. the keyboard sends whatever
-        // the filter forwards to the focused client.
+        // 4. VT switching, Caminito's bindings, the accelerator grabs (98), then the Key
+        // remaps (CMN-186), inside Smithay's filter so they see xkb's keysyms; then 5. the
+        // keyboard sends whatever the filter forwards to the focused client.
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
@@ -340,7 +345,10 @@ impl State {
             serial,
             time,
             |state, mods, keysym| match state.bindings_stage(keycode, pressed, mods, &keysym) {
-                FilterResult::Forward => state.grabs_stage(keycode, pressed, mods, &keysym),
+                FilterResult::Forward => match state.grabs_stage(keycode, pressed, mods, &keysym) {
+                    FilterResult::Forward => state.remaps_stage(keycode, pressed, mods, &keysym),
+                    intercepted => intercepted,
+                },
                 intercepted => intercepted,
             },
         );
@@ -350,6 +358,7 @@ impl State {
             }
             Some(Some(Bound::Action(action))) => self.run_action(action, time),
             Some(Some(Bound::GrabKey(key))) => self.keyboard_grab_key(key, time),
+            Some(Some(Bound::Remap(target))) => self.send_remap(target, time),
             Some(Some(Bound::Accelerator { owner, action })) => {
                 let time = time.millis();
                 self.caminito
@@ -545,6 +554,92 @@ impl State {
             }
             None => FilterResult::Forward,
         }
+    }
+
+    /// The Key remaps (CMN-186, ADR 0038), after the bindings and the grabs, so a System
+    /// shortcut is never remapped: a press a rule takes is sent as the rule's target, and the
+    /// bindings stage swallows its release. None apply while the session is locked or during
+    /// an Interaction.
+    fn remaps_stage(
+        &mut self,
+        keycode: Keycode,
+        pressed: bool,
+        mods: &ModifiersState,
+        keysym: &KeysymHandle<'_>,
+    ) -> FilterResult<Option<Bound>> {
+        let caminito = &self.caminito;
+        if !pressed
+            || caminito.settings.key_remaps.is_empty()
+            || caminito.lock.is_locked()
+            || caminito.policy.interaction(SEAT).is_some()
+        {
+            return FilterResult::Forward;
+        }
+        let Some(combination) = Combination::pressed(mods, keysym) else {
+            return FilterResult::Forward;
+        };
+        let app_id = self.keyboard_app_id();
+        let remaps = &self.caminito.settings.key_remaps;
+        let Some(steps) = remaps.steps_for(app_id.as_deref(), &combination) else {
+            return FilterResult::Forward;
+        };
+        // A target of more steps is sent as its first alone, until 187 sends the others.
+        let target = steps.first().copied();
+        self.caminito.suppressed_keys.insert(keycode);
+        FilterResult::Intercept(Some(Bound::Remap(target)))
+    }
+
+    /// The app id of the window whose client has the keyboard. A Layer surface, such as the
+    /// panel, has none.
+    fn keyboard_app_id(&self) -> Option<String> {
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        if let KeyboardFocus::Layer(_) = keyboard.current_focus()? {
+            return None;
+        }
+        let policy = &self.caminito.policy;
+        policy.window(policy.focus(SEAT)?)?.app_id()
+    }
+
+    /// Sends a Key remap's `target`, for a press at `time`, to the client with the keyboard:
+    /// its key with the target's modifiers alone, then the modifiers held again. A target
+    /// that's one of Caminito's bindings runs it instead, as Alt+F4 closes the window, and
+    /// is never remapped again. No target swallows the press.
+    fn send_remap(&mut self, target: Option<Combination>, time: InputTime) {
+        let Some(target) = target else {
+            return;
+        };
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        let held = keyboard.modifier_state();
+        let mut mods = target.modifiers(&held);
+        let bindings = &self.caminito.settings.bindings;
+        if let Some(binding) = bindings.binding_for(&mods, &[target.key]) {
+            self.run_binding(binding, Trigger::Key(target.key), time);
+            return;
+        }
+        let Some(keycode) = keyboard.keycode_for_keysym(target.key) else {
+            tracing::debug!("can't send a key remap: no key gives {:?}", target.key);
+            return;
+        };
+        let Some(focus) = keyboard.current_focus() else {
+            return;
+        };
+        // The keyboard's own state isn't touched, so the keys held stay as they are, and
+        // the client is told the modifiers it would have for the target's combination.
+        mods.serialized = keyboard.with_xkb_state(self, |context| {
+            let xkb = context.xkb().lock().unwrap();
+            // Safety: the state is only read, and no reference to it outlives the lock.
+            let state = unsafe { xkb.state() };
+            mods.serialize_back(state)
+        });
+        let seat = self.caminito.seat.clone();
+        focus.modifiers(&seat, self, mods, SERIAL_COUNTER.next_serial());
+        let serial = SERIAL_COUNTER.next_serial();
+        let surface = focus.wl_surface();
+        self.caminito.input_serials.sent(serial, surface.as_deref());
+        keyboard.input_forward(self, keycode, KeyState::Pressed, serial, time, false);
+        let serial = SERIAL_COUNTER.next_serial();
+        keyboard.input_forward(self, keycode, KeyState::Released, serial, time, false);
+        focus.modifiers(&seat, self, held, SERIAL_COUNTER.next_serial());
     }
 
     /// Whether the surface with the keyboard holds an active shortcuts inhibitor.
@@ -942,6 +1037,8 @@ pub(crate) enum Bound {
     /// A key for the keyboard move or resize in progress (156), or the manual placement
     /// (154).
     GrabKey(GrabKey),
+    /// A Key remap's target (CMN-186), or nothing.
+    Remap(Option<Combination>),
 }
 
 /// The VT an `XF86Switch_VT_n` keysym switches to.

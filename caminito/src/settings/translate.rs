@@ -14,6 +14,7 @@ use caminito_theme::ButtonLayout;
 
 use crate::input::bindings::button_modifier::ButtonModifier;
 use crate::input::bindings::{APPLICATION_OVERVIEW_KEY, Bindings, OVERVIEW_KEY};
+use crate::input::remaps::{KeyRemaps, Unremappable};
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
@@ -203,6 +204,8 @@ pub enum Value {
     StrList(Vec<String>),
     /// A maybe pair of doubles, `m(dd)`.
     MaybePair(Option<(f64, f64)>),
+    /// `key-remaps`' Remap groups, `a(sasba(sas))` (CMN-186).
+    RemapGroups(Vec<RemapGroupValue>),
     /// Any other type, printed as GVariant text.
     Other(String),
 }
@@ -219,10 +222,15 @@ impl fmt::Display for Value {
             Value::StrList(list) => write!(f, "{list:?}"),
             Value::MaybePair(None) => f.write_str("nothing"),
             Value::MaybePair(Some((a, b))) => write!(f, "({a}, {b})"),
+            Value::RemapGroups(groups) => write!(f, "{groups:?}"),
             Value::Other(text) => f.write_str(text),
         }
     }
 }
+
+/// One Remap group of `key-remaps`, `(sasba(sas))`: its name, its app ids, whether it has
+/// no remaps, and its rules, each a combination and the steps of its target.
+pub type RemapGroupValue = (String, Vec<String>, bool, Vec<(String, Vec<String>)>);
 
 /// One key: its value, and its schema default.
 #[derive(Debug, Clone, PartialEq)]
@@ -427,6 +435,8 @@ pub struct Settings {
     pub idle: IdleSettings,
     pub night_light: NightLightSettings,
     pub hot_corners: HotCorners,
+    /// The Key remaps in use (CMN-186), from `org.mate.Caminito`'s `key-remaps`.
+    pub key_remaps: KeyRemaps,
 }
 
 /// What each Hot corner does (CMN-183), from `org.mate.Caminito`'s `hot-corner-*` keys. A
@@ -1395,6 +1405,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         },
         night_light: night_light(&mut r),
         hot_corners: hot_corners(&mut r),
+        key_remaps: key_remaps(&mut r),
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -1445,6 +1456,28 @@ fn hot_corners(r: &mut Reader<'_>) -> HotCorners {
         bottom_left: corner("hot-corner-bottom-left"),
         bottom_right: corner("hot-corner-bottom-right"),
     }
+}
+
+/// `key-remaps`' rules. One that can't be parsed is left out, and is a problem.
+fn key_remaps(r: &mut Reader<'_>) -> KeyRemaps {
+    let key = "key-remaps";
+    let accept = |v: &Value| match v {
+        Value::RemapGroups(groups) => Some(groups.clone()),
+        _ => None,
+    };
+    let groups = r.read(CAMINITO, key, Vec::new(), accept, |groups| {
+        Value::RemapGroups(groups.clone())
+    });
+    let (remaps, unremappable) = KeyRemaps::from_groups(&groups);
+    for Unremappable { rule, reason } in unremappable {
+        r.problems.push(Problem::Unbindable {
+            schema: CAMINITO.into(),
+            key: key.into(),
+            value: rule,
+            reason: reason.to_string(),
+        });
+    }
+    remaps
 }
 
 /// A key's `minutes`, which `int_at_least` has kept from being negative.

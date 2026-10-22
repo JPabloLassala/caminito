@@ -180,6 +180,9 @@ pub struct State {
     pub repeat_info: Option<(i32, i32)>,
     /// The keyboard's last depressed modifiers, as xkb's mask.
     pub depressed_modifiers: u32,
+    /// Every key event, as its key, whether it's a press, and the depressed modifiers the
+    /// client had for it, oldest first.
+    pub keys: Vec<(u32, bool, u32)>,
     /// The keyboard's last locked modifiers, as xkb's mask.
     pub locked_modifiers: u32,
     /// The keyboard's last keymap, as xkb's text.
@@ -1303,10 +1306,9 @@ impl Dispatch<WlKeyboard, ()> for State {
                 ..
             } => {
                 state.last_input_serial = Some(serial);
-                InputEvent::Key {
-                    key,
-                    pressed: key_state == WEnum::Value(wl_keyboard::KeyState::Pressed),
-                }
+                let pressed = key_state == WEnum::Value(wl_keyboard::KeyState::Pressed);
+                state.keys.push((key, pressed, state.depressed_modifiers));
+                InputEvent::Key { key, pressed }
             }
             wl_keyboard::Event::RepeatInfo { rate, delay } => {
                 state.repeat_info = Some((rate, delay));

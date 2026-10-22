@@ -21,18 +21,18 @@ use crate::settings::translate::{
 };
 use crate::window_menu::labels;
 
-/// The modifiers a binding names. Locks don't count.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Held {
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-    logo: bool,
+/// The modifiers a binding or a Key remap names. Locks don't count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Held {
+    pub(crate) ctrl: bool,
+    pub(crate) alt: bool,
+    pub(crate) shift: bool,
+    pub(crate) logo: bool,
 }
 
 impl Held {
     /// No modifier.
-    const NOTHING: Self = Self {
+    pub(crate) const NOTHING: Self = Self {
         ctrl: false,
         alt: false,
         shift: false,

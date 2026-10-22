@@ -36,7 +36,7 @@ fn lock(f: &mut Fixture, locker: ClientId) -> LockId {
 
 /// Locks the session as `locker`, a client that listens to the keyboard and the pointer,
 /// and shows a lock surface on the first output.
-fn lock_with_a_surface(f: &mut Fixture, locker: ClientId) -> (LockId, LockSurfaceId) {
+pub(super) fn lock_with_a_surface(f: &mut Fixture, locker: ClientId) -> (LockId, LockSurfaceId) {
     f.client(locker).bind_input();
     f.client(locker).bind_outputs();
     let lock = lock(f, locker);
