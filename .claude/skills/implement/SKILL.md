@@ -34,7 +34,7 @@ Before each step, list everything the step needs to read: files, greps, test out
 
 Call the Skill tool with "tdd" where possible, at pre-agreed seams. Run typechecking regularly.
 
-Test runs follow the root `CLAUDE.md`: pass only the test files of the slice to Vitest.
+Do not run the full test suite, run only the relevant tests.
 
 A green that fails: read the whole failure output before the next edit. After two failed greens on the same test, stop the edits. Re-read the test and the code path it exercises, name the cause, then edit.
 
