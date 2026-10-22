@@ -180,6 +180,10 @@ _Avoid_: shared workspaces, global workspaces
 The rows and columns the workspaces are in, which the workspace switcher shows and the bindings for the workspace to the left or right move through. It comes from `org.mate.Caminito`'s three `workspace-layout-*` keys and the number of workspaces, and each workspace's cell is its ext-workspace coordinates.
 _Avoid_: layout (that's the outputs'), pager layout, desktop layout (`_NET_DESKTOP_LAYOUT` is X11's, which Caminito doesn't publish)
 
+**Application**:
+The windows that belong together as one program's: those of one process, or, for a window whose process isn't known, those with its app id. Two processes of one program are two applications. It's what Marco's `switch-group` cycles through.
+_Avoid_: app id alone (two processes can share one), program, task, group (that's Marco's action, not the thing)
+
 **Window switcher**:
 The popup that Alt+Tab and Marco's other `switch-*` actions open while the modifier is held: a grid of the windows' thumbnails, most recently used first, from which releasing the modifier activates the selected one. It stands in for Marco's Alt+Tab popup (ADR 0016).
 _Avoid_: task switcher (KDE's term; Caminito's unit is the window), Alt+Tab popup or tab popup (Marco's own, which Caminito doesn't have), switcher alone (the workspace switcher is the panel's pager)
@@ -196,8 +200,12 @@ _Avoid_: workspace switcher (the panel's pager), workspace OSD, tab popup (Marco
 A view of each output's active workspace with its windows shrunk and set side by side, none over another, and a bar of the workspaces beside them. A window is clicked to activate it, or dragged onto a workspace of the bar to move it there. It's Plasma's Overview, without its search field.
 _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), activities overview (GNOME's, which has a launcher), workspace switcher (the panel's pager)
 
+**Application overview**:
+The Overview opened for the focused window's Application: each output's active workspace shows only that application's windows. It's the Overview in every other way, and opens only when a window is focused. It's Plasma's Window View for the current application.
+_Avoid_: app exposé (macOS's), present windows for the current application (KWin's older name), application switcher (that's `switch-group`'s Window switcher)
+
 **Hot corner**:
-A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, Show desktop or the lock, when the pointer rests in it. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than its own Overview is open, a fullscreen window is focused on its output, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
+A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, the Application overview, Show desktop or the lock, when the pointer rests in it. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than the Overview or the Application overview is open, a fullscreen window is focused on its output, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
 _Avoid_: screen edge (Plasma's term, which covers the edges too), active corner, hot spot
 
 **caminito-behaviour**:
@@ -227,6 +235,10 @@ _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab,
 **System shortcut**:
 A combination of modifiers with a key or a mouse button that Caminito acts on before any client sees it, whoever owns the action: Caminito's own window and workspace actions, a command the user gave a shortcut to, or a media key. System Shortcuts is the control centre's dialog that lists and changes them. A binding is one of Caminito's own, and an accelerator is one another program has asked Caminito for.
 _Avoid_: keyboard shortcut (a mouse button can be one), keybinding, hotkey, global shortcut, shortcut alone for an application's own (those are the client's)
+
+**Key remap**:
+A combination the user presses that Caminito swaps for another before the focused window's client receives it, such as Alt+T arriving as Ctrl+T, or Alt+Right as End. Remaps are listed for all applications and for each app id, and one app id's can replace or turn off those for all. A System shortcut is matched first, so a combination that is one is never remapped.
+_Avoid_: override, translation, rebinding, modifier swap (Caminito swaps combinations, not modifiers), system shortcut (Caminito acts on that one itself)
 
 **Global menu**:
 The focused window's menubar, shown in the panel instead of inside the window. There is one, whatever the number of panels or outputs, and a window without a menubar has none.
