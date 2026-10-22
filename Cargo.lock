@@ -365,6 +365,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "caminito-behaviour"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "gtk4",
+ "tempfile",
+]
+
+[[package]]
 name = "caminito-bluetooth"
 version = "0.1.0"
 dependencies = [

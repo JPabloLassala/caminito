@@ -1,0 +1,22 @@
+[package]
+name = "caminito-behaviour"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shipped through the PKGBUILD (16), never crates.io.
+publish = false
+
+# The library reads and writes the keys through gio, and names no toolkit. GTK is the
+# window's, the binary's.
+[dependencies]
+gio = "0.22.10"
+# The window, without libadwaita (ADR 0014). v4_12: CSS from a string.
+gtk = { workspace = true, features = ["v4_12"] }
+
+[dev-dependencies]
+# The schema compiled from data/ into a directory of the test's own.
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

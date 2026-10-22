@@ -123,8 +123,9 @@ settings, draws its themes and binds its keys, so that MATE runs on Wayland as i
 X11.
 
 This package has the compositor, caminito-displays, caminito-about, the wallpaper's drawer
-and Wallpaper dialog, caminito-bluetooth, the Bluetooth, Power and Thermal panel applets, the
-palette and locker helpers, and the "MATE on Caminito" session that display managers list.
+and Wallpaper dialog, Workspace Behaviour (caminito-behaviour), caminito-bluetooth, the
+Bluetooth, Power and Thermal panel applets, the palette and locker helpers, and the "MATE on
+Caminito" session that display managers list.
 
 %prep
 %autosetup
@@ -145,7 +146,8 @@ cargo build --frozen --release
 %meson_install
 install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-about target/release/caminito-wallpaperd \
-    target/release/caminito-wallpaper target/release/caminito-bluetooth -t %{buildroot}%{_bindir}
+    target/release/caminito-wallpaper target/release/caminito-bluetooth \
+    target/release/caminito-behaviour -t %{buildroot}%{_bindir}
 
 %check
 # The meson_test macro expands to more than one line, so it cannot follow dbus-run-session.
@@ -161,6 +163,7 @@ dbus-run-session -- cargo test --frozen --release
 %license COPYING
 %{_bindir}/caminito
 %{_bindir}/caminito-about
+%{_bindir}/caminito-behaviour
 %{_bindir}/caminito-bluetooth
 %{_bindir}/caminito-displays
 %{_bindir}/caminito-wallpaper

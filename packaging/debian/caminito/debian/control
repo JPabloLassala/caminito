@@ -96,6 +96,7 @@ Description: Wayland compositor for the MATE desktop
  runs on Wayland as it does on X11.
  .
  This package has the compositor, caminito-displays, caminito-about, the
- wallpaper's drawer and Wallpaper dialog, the palette and locker helpers,
+ wallpaper's drawer and Wallpaper dialog, Workspace Behaviour
+ (caminito-behaviour), the palette and locker helpers,
  caminito-bluetooth, the Bluetooth, Power and Thermal panel applets, and the
  "MATE on Caminito" session that display managers list.

@@ -56,6 +56,9 @@ license=(GPL-2.0-or-later)
 # caminito-wallpaper (212), the Wallpaper dialog that sets it, links gtk4. Its entry is in
 # /usr/share/caminito/xdg too.
 #
+# caminito-behaviour (CMN-184), Workspace Behaviour, links gtk4, and writes the Hot corners'
+# keys in Caminito's own schema. Its entry is in /usr/share/caminito/xdg too.
+#
 # glib-networking is GIO's TLS, which the drawer fetches a picture of the day with (214).
 #
 # caminito-bluetooth (255) links gtk4 and speaks to BlueZ over D-Bus, so the package depends on
@@ -147,5 +150,6 @@ package() {
   meson install -C build --destdir "$pkgdir"
   install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-about target/release/caminito-wallpaperd \
-    target/release/caminito-wallpaper target/release/caminito-bluetooth -t "$pkgdir/usr/bin"
+    target/release/caminito-wallpaper target/release/caminito-bluetooth \
+    target/release/caminito-behaviour -t "$pkgdir/usr/bin"
 }

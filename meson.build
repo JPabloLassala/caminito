@@ -78,6 +78,14 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# Workspace Behaviour's entry (CMN-184), in the same directory, so that only a Session lists it:
+# its keys are Caminito's, which nothing reads under X11 MATE. Its categories are the Wallpaper
+# dialog's, which put it under Look and Feel in the control center.
+install_data(
+  'data/caminito-behaviour.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+
 # caminito-bluetooth's entries (255). Unlike the entries above, these are in the normal XDG
 # directories: it doesn't depend on Caminito, and works under X11 MATE too (ADR 0035). Its
 # categories put the window under Hardware in the control center. The autostart entry starts

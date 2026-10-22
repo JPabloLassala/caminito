@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Workspace Behaviour
+Comment=Choose what each corner of the screen does
+Exec=caminito-behaviour
+Icon=preferences-system-windows
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;DesktopSettings;
+Keywords=mate-control-center;MATE;caminito;hot corners;corner;overview;workspace;behaviour;behavior;
+OnlyShowIn=MATE;
