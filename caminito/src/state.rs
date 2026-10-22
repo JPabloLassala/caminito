@@ -269,6 +269,9 @@ pub struct Caminito {
     /// Keys whose press ran a binding or a grabbed accelerator, so their release is
     /// swallowed too.
     pub suppressed_keys: HashSet<Keycode>,
+    /// The modifiers' keys held back from the client because they start a Key remap
+    /// (CMN-188).
+    pub(crate) held_back: Option<crate::input::remaps::HeldBack>,
     /// The accelerators callers of `org.mate.Caminito` have grabbed (98).
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
@@ -1022,6 +1025,7 @@ impl Caminito {
             keyboard_layer: None,
             next_layer_id: 0,
             suppressed_keys: HashSet::new(),
+            held_back: None,
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
             player,

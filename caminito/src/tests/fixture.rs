@@ -118,6 +118,7 @@ pub const KEY_LEFTCTRL: u32 = 29;
 pub const KEY_A: u32 = 30;
 pub const KEY_S: u32 = 31;
 pub const KEY_D: u32 = 32;
+pub const KEY_F: u32 = 33;
 pub const KEY_H: u32 = 35;
 pub const KEY_L: u32 = 38;
 pub const KEY_GRAVE: u32 = 41;

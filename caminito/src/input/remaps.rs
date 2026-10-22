@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use smithay::input::keyboard::{Keysym, KeysymHandle, ModifiersState, xkb};
+use smithay::input::keyboard::{Keycode, Keysym, KeysymHandle, ModifiersState, xkb};
 
 use super::bindings::Held;
 use crate::settings::translate::RemapGroupValue;
@@ -192,29 +192,78 @@ impl KeyRemaps {
     }
 
     /// The steps `pressed` is sent as to a client of `app_id`, if a rule takes it: its Remap
-    /// group's, then All applications'. A group with no remaps takes none, and a focus with
-    /// no app id has All applications'. An app id is in one group at most, and the first
-    /// that lists it is its own.
+    /// group's, then All applications'.
     pub(crate) fn steps_for(
         &self,
         app_id: Option<&str>,
         pressed: &Combination,
     ) -> Option<&[Combination]> {
-        fn find<'a>(remaps: &'a [Remap], pressed: &Combination) -> Option<&'a [Combination]> {
-            let remap = remaps.iter().find(|remap| remap.trigger == *pressed)?;
-            Some(remap.steps.as_slice())
-        }
+        let remap = self
+            .rules_for(app_id)
+            .find(|remap| remap.trigger == *pressed)?;
+        Some(remap.steps.as_slice())
+    }
+
+    /// Whether some rule for a client of `app_id` has a combination of `held` and more, so a
+    /// modifier pressed to make `held` starts it (CMN-188).
+    pub(crate) fn starts_a_rule(&self, app_id: Option<&str>, held: Held) -> bool {
+        let within = |rule: Held| {
+            (!held.ctrl || rule.ctrl)
+                && (!held.alt || rule.alt)
+                && (!held.shift || rule.shift)
+                && (!held.logo || rule.logo)
+        };
+        self.rules_for(app_id)
+            .any(|remap| within(remap.trigger.held))
+    }
+
+    /// The rules for a client of `app_id`, its Remap group's before All applications', so
+    /// the first that takes a combination is the one that applies. A group with no remaps
+    /// has none, and a focus with no app id has All applications'. An app id is in one group
+    /// at most, and the first that lists it is its own.
+    fn rules_for(&self, app_id: Option<&str>) -> impl Iterator<Item = &Remap> {
         let group = app_id.and_then(|app_id| {
             self.groups
                 .iter()
                 .find(|group| group.app_ids.iter().any(|id| id == app_id))
         });
-        match group.map(|group| group.remaps.as_deref()) {
-            Some(None) => None,
-            Some(Some(remaps)) => find(remaps, pressed).or_else(|| find(&self.all, pressed)),
-            None => find(&self.all, pressed),
-        }
+        let (own, all): (&[Remap], &[Remap]) = match group.map(|group| group.remaps.as_deref()) {
+            Some(None) => (&[], &[]),
+            Some(Some(remaps)) => (remaps, &self.all),
+            None => (&[], &self.all),
+        };
+        own.iter().chain(all)
     }
+}
+
+/// Whether `keysym` is a modifier's key that may start a rule, and be held back: Ctrl, Alt,
+/// Shift or Super, either side's. AltGr is none of them.
+pub(crate) fn is_modifier(keysym: Keysym) -> bool {
+    matches!(
+        keysym,
+        Keysym::Control_L
+            | Keysym::Control_R
+            | Keysym::Alt_L
+            | Keysym::Alt_R
+            | Keysym::Meta_L
+            | Keysym::Meta_R
+            | Keysym::Shift_L
+            | Keysym::Shift_R
+            | Keysym::Super_L
+            | Keysym::Super_R
+    )
+}
+
+/// The modifiers' keys held back from the client (CMN-188, ADR 0038) because their press
+/// starts a rule, so a remap never shows it a stray Alt.
+#[derive(Debug, Clone)]
+pub(crate) struct HeldBack {
+    /// Each key held back, with the modifiers its press gave, in the order pressed.
+    pub(crate) keys: Vec<(Keycode, ModifiersState)>,
+    /// The modifiers the client was last told of, before the first.
+    pub(crate) client: ModifiersState,
+    /// Whether a rule has taken a key since, so the keys' releases are swallowed.
+    pub(crate) used: bool,
 }
 
 #[cfg(test)]

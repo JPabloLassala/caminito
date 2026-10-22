@@ -10,14 +10,19 @@
 //! The stage acts on the focus's app id and the keys, the same for both kinds of window, so
 //! only one test maps an XWayland window, to show that its client, which gets its keys from
 //! Caminito as a Wayland client does, gets the remaps too.
+//!
+//! A modifier that starts a rule for the focus is held back from the client (CMN-188), so a
+//! client gets no Alt for a remapped Alt+T, and gets it before a key no rule takes.
 
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::KeyButMask;
 
 use super::accelerators::Caller;
+use smithay::utils::Point;
+
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_C, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL, KEY_M, KEY_Q,
-    KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_C, KEY_F, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL,
+    KEY_M, KEY_Q, KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
 };
 use super::lock::lock_with_a_surface;
 use crate::settings::Value;
@@ -107,15 +112,11 @@ fn alt_t_reaches_a_client_as_ctrl_t_with_no_alt_and_its_own_ctrl_t_is_unchanged(
     let client = listening(&mut f);
     focused(&mut f, client, Some("org.mate.Pluma"));
 
+    // Alt, which starts the rule, is held back from the client (CMN-188).
     f.chord(&[KEY_LEFTALT, KEY_T]);
     assert_eq!(
         keys(&mut f, client),
-        [
-            (KEY_LEFTALT, true, ALT),
-            (KEY_T, true, CTRL),
-            (KEY_T, false, CTRL),
-            (KEY_LEFTALT, false, 0),
-        ]
+        [(KEY_T, true, CTRL), (KEY_T, false, CTRL)]
     );
 
     f.chord(&[KEY_LEFTCTRL, KEY_T]);
@@ -132,16 +133,17 @@ fn a_remap_groups_rule_replaces_all_applications_for_its_app_ids_alone() {
 
     focused(&mut f, client, Some("kitty"));
     f.chord(&[KEY_LEFTALT, KEY_C]);
-    let got = keys(&mut f, client);
     assert_eq!(
-        got[1..3],
+        keys(&mut f, client),
         [(KEY_C, true, CTRL | SHIFT), (KEY_C, false, CTRL | SHIFT)]
     );
 
     focused(&mut f, client, Some("firefox"));
     f.chord(&[KEY_LEFTALT, KEY_C]);
-    let got = keys(&mut f, client);
-    assert_eq!(got[1..3], [(KEY_C, true, CTRL), (KEY_C, false, CTRL)]);
+    assert_eq!(
+        keys(&mut f, client),
+        [(KEY_C, true, CTRL), (KEY_C, false, CTRL)]
+    );
 }
 
 #[test]
@@ -167,7 +169,7 @@ fn a_focus_with_no_app_id_gets_all_applications_remaps() {
     focused(&mut f, client, None);
 
     f.chord(&[KEY_LEFTALT, KEY_T]);
-    assert_eq!(keys(&mut f, client)[1], (KEY_T, true, CTRL));
+    assert_eq!(keys(&mut f, client)[0], (KEY_T, true, CTRL));
 }
 
 #[test]
@@ -177,10 +179,7 @@ fn a_rule_to_nothing_swallows_the_combination() {
     focused(&mut f, client, None);
 
     f.chord(&[KEY_LEFTALT, KEY_H]);
-    assert_eq!(
-        keys(&mut f, client),
-        [(KEY_LEFTALT, true, ALT), (KEY_LEFTALT, false, 0)]
-    );
+    assert_eq!(keys(&mut f, client), []);
 }
 
 #[test]
@@ -230,6 +229,133 @@ fn a_target_that_is_an_accelerator_grab_signals_its_grabber() {
 }
 
 #[test]
+fn a_key_no_rule_takes_gets_the_held_back_alt_first() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    assert_eq!(keys(&mut f, client), []);
+
+    f.key(KEY_F, true);
+    f.key(KEY_F, false);
+    f.key(KEY_LEFTALT, false);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_LEFTALT, true, ALT),
+            (KEY_F, true, ALT),
+            (KEY_F, false, ALT),
+            (KEY_LEFTALT, false, 0),
+        ]
+    );
+}
+
+#[test]
+fn a_held_back_alt_released_alone_reaches_the_client_as_a_tap() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.chord(&[KEY_LEFTALT]);
+    assert_eq!(
+        keys(&mut f, client),
+        [(KEY_LEFTALT, true, ALT), (KEY_LEFTALT, false, 0)]
+    );
+}
+
+#[test]
+fn alt_reaches_the_client_as_it_is_pressed_when_no_rule_for_the_focus_starts_with_it() {
+    let mut f = caminito(vec![key_remaps(vec![
+        all(&[("Alt+T", &["Ctrl+T"])]),
+        group(&["org.remmina.Remmina"], true, &[]),
+        group(&["kitty"], false, &[("Ctrl+Q", &[])]),
+    ])]);
+    let client = listening(&mut f);
+
+    focused(&mut f, client, Some("org.remmina.Remmina"));
+    f.key(KEY_LEFTALT, true);
+    assert_eq!(keys(&mut f, client), [(KEY_LEFTALT, true, ALT)]);
+    f.key(KEY_LEFTALT, false);
+
+    // Ctrl starts no rule of All applications', nor Alt one of the group's.
+    focused(&mut f, client, None);
+    f.key(KEY_LEFTCTRL, true);
+    assert_eq!(keys(&mut f, client), [(KEY_LEFTCTRL, true, CTRL)]);
+    f.key(KEY_LEFTCTRL, false);
+}
+
+#[test]
+fn a_rule_taken_while_alt_is_held_keeps_it_held_back_for_the_next() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[
+        ("Alt+T", &["Ctrl+T"]),
+        ("Alt+C", &["Ctrl+C"]),
+    ])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    f.chord(&[KEY_T]);
+    f.chord(&[KEY_C]);
+    f.chord(&[KEY_F]);
+    f.key(KEY_LEFTALT, false);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_T, true, CTRL),
+            (KEY_T, false, CTRL),
+            (KEY_C, true, CTRL),
+            (KEY_C, false, CTRL),
+            (KEY_LEFTALT, true, ALT),
+            (KEY_F, true, ALT),
+            (KEY_F, false, ALT),
+            (KEY_LEFTALT, false, 0),
+        ]
+    );
+}
+
+#[test]
+fn alt_drag_moves_a_window_while_alt_is_held_back() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    let window = focused(&mut f, client, None);
+    let start = f.geometry(window);
+    let point = (start.loc + Point::from((50, 10))).to_f64();
+    f.pointer_move(point.x, point.y);
+
+    f.key(KEY_LEFTALT, true);
+    assert_eq!(keys(&mut f, client), []);
+    f.pointer_button(BTN_LEFT, true);
+    // The click has the Alt sent first, as a client's own Alt+click needs.
+    assert_eq!(keys(&mut f, client), [(KEY_LEFTALT, true, ALT)]);
+    f.pointer_move(point.x + 100., point.y + 50.);
+    f.pointer_button(BTN_LEFT, false);
+    f.key(KEY_LEFTALT, false);
+    f.sync(window);
+
+    assert_eq!(f.geometry(window).loc, start.loc + Point::from((100, 50)));
+    assert_eq!(keys(&mut f, client), [(KEY_LEFTALT, false, 0)]);
+}
+
+#[test]
+fn alt_tab_opens_the_window_switcher_while_alt_is_held_back() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTALT, true);
+    f.key(KEY_TAB, true);
+
+    assert_eq!(
+        f.state.caminito.policy.interaction(SEAT),
+        Some(Interaction::WindowSwitcher)
+    );
+    // The binding has the Alt sent first, as it was before.
+    assert_eq!(keys(&mut f, client)[0], (KEY_LEFTALT, true, ALT));
+}
+
+#[test]
 fn altgr_q_never_matches_an_alt_q_rule() {
     // RightAlt is AltGr in the German layout.
     let layouts = Value::StrList(vec!["de".into()]);
@@ -246,7 +372,7 @@ fn altgr_q_never_matches_an_alt_q_rule() {
 
     // Left Alt is Alt there still.
     f.chord(&[KEY_LEFTALT, KEY_Q]);
-    assert_eq!(keys(&mut f, client)[1], (KEY_Q, true, CTRL));
+    assert_eq!(keys(&mut f, client)[0], (KEY_Q, true, CTRL));
 }
 
 #[test]
@@ -295,7 +421,7 @@ fn setting_key_remaps_applies_to_the_next_key_pressed() {
     f.dispatch_until(|f| !f.state.caminito.settings.key_remaps.is_empty());
 
     f.chord(&[KEY_LEFTALT, KEY_T]);
-    assert_eq!(keys(&mut f, client)[1], (KEY_T, true, CTRL));
+    assert_eq!(keys(&mut f, client)[0], (KEY_T, true, CTRL));
 }
 
 #[test]
@@ -321,10 +447,9 @@ fn an_xwayland_client_gets_the_remaps_too() {
         })
         .collect();
     let t = (KEY_T + 8) as u8;
-    let alt = (KEY_LEFTALT + 8) as u8;
     assert_eq!(
         presses,
-        [(alt, KeyButMask::MOD1), (t, KeyButMask::CONTROL)],
+        [(t, KeyButMask::CONTROL)],
         "{events:?}"
     );
 }
