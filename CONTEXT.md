@@ -196,6 +196,14 @@ _Avoid_: workspace switcher (the panel's pager), workspace OSD, tab popup (Marco
 A view of each output's active workspace with its windows shrunk and set side by side, none over another, and a bar of the workspaces beside them. A window is clicked to activate it, or dragged onto a workspace of the bar to move it there. It's Plasma's Overview, without its search field.
 _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), activities overview (GNOME's, which has a launcher), workspace switcher (the panel's pager)
 
+**Hot corner**:
+A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, Show desktop or the lock, when the pointer rests in it. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than its own Overview is open, a fullscreen window is focused on its output, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
+_Avoid_: screen edge (Plasma's term, which covers the edges too), active corner, hot spot
+
+**caminito-behaviour**:
+Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners now, and later the animations and Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
+_Avoid_: Caminito settings, desktop effects (hot corners aren't an effect), the Windows dialog (that's MATE's, for Marco's keys)
+
 **Workspace slide**:
 The movement that shows a change of an output's active workspace: the old workspace's windows leave and the new one's arrive, along the line between the two in the Workspace grid. Whatever is the same on both stays still: sticky windows, a window that is carried or being moved to the new workspace, the panel, caja's desktop and the wallpaper. It's Plasma's Slide effect.
 _Avoid_: desktop slide (the glossary's word is workspace), transition (the Overview has one too), workspace animation
