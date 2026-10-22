@@ -28,9 +28,11 @@ caminito_applet_common_dep = declare_dependency(
   dependencies: applet_dep,
 )
 
-# Its clicks need a display, which the test skips without; the placement doesn't.
+# Its clicks need a display, which the test skips without; the placement doesn't. An X one:
+# it reads where the popup went, which a Wayland client can't, so from a Wayland session it
+# runs on Xwayland.
 test(
   'popup',
   executable('test-popup', 'test-popup.c', dependencies: caminito_applet_common_dep),
-  env: {'NO_AT_BRIDGE': '1'},
+  env: {'NO_AT_BRIDGE': '1', 'GDK_BACKEND': 'x11'},
 )
