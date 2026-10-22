@@ -11,15 +11,40 @@
 //!
 //! It's the seat's Interaction (187), and every seat's, as the Window switcher is: the
 //! shortcut opens it only while no seat has one, and nothing else opens while it's open.
+//!
+//! The Application overview (CMN-185) is the Overview opened for the focused window's
+//! Application, which lists only that application's windows. It's the Overview in every
+//! other way, and the two scopes change in place: the shortcut of the other scope changes
+//! the open one's list without closing it.
 
 use std::time::Duration;
 
 use smithay::utils::{Logical, Point, Rectangle};
 
-use crate::{Direction, OutputId, PolicyWindow, SeatId, WindowId};
+use crate::{Action, Direction, OutputId, PolicyWindow, SeatId, WindowId};
 
 use super::Policy;
-use super::switcher::SwitchList;
+use super::switcher::{Application, SwitchList};
+
+/// Which windows the Overview lists on each output's active workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverviewScope {
+    /// Every one: the Overview's (241).
+    Workspace,
+    /// Those of one Application: the Application overview's (CMN-185).
+    Application,
+}
+
+impl OverviewScope {
+    /// The scope whose shortcut `action` is: `overview`'s or `application-overview`'s.
+    pub fn of(action: Action) -> Option<Self> {
+        match action {
+            Action::Overview => Some(Self::Workspace),
+            Action::ApplicationOverview => Some(Self::Application),
+            _ => None,
+        }
+    }
+}
 
 /// The open Overview.
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +70,10 @@ pub struct Overview {
     /// The left button held down on a listed window, and the drag it became once the
     /// pointer went past `drag-threshold` (245). It ends with the window's going.
     pub drag: Option<OverviewDrag>,
+    /// The Application whose windows alone it lists, the Application overview's
+    /// (CMN-185): the focused window's when it opened, or when the scope changed to it.
+    /// None for the Overview, which lists every window.
+    pub application: Option<Application>,
 }
 
 /// What the Overview lists on one output (246).
@@ -59,6 +88,14 @@ pub struct OverviewOutput {
 }
 
 impl Overview {
+    /// Which windows it lists.
+    pub fn scope(&self) -> OverviewScope {
+        match self.application {
+            Some(_) => OverviewScope::Application,
+            None => OverviewScope::Workspace,
+        }
+    }
+
     /// Each output's part, the selection's first.
     pub fn outputs(&self) -> impl Iterator<Item = OverviewOutput> + '_ {
         let own = OverviewOutput {
@@ -113,29 +150,62 @@ impl<W: PolicyWindow> Policy<W> {
         self.overview.as_ref()
     }
 
-    /// The Overview's shortcut: closes the open one, or opens one on `seat`'s Active
-    /// output. Nothing opens while a seat has another Interaction, nor with no output.
+    /// The shortcut of `scope`, the Overview's or the Application overview's: closes the
+    /// open one of that scope, changes the open one of the other to it, or opens one on
+    /// `seat`'s Active output. Nothing opens while a seat has another Interaction, nor with
+    /// no output.
     ///
     /// The output the selection is on is the seat's Active output while it's open (248),
     /// so that the workspace bindings switch that one: a press on another output's
     /// wallpaper since the focus last moved gives way to the focused window's output.
-    pub(super) fn toggle_overview(&mut self, seat: SeatId) {
-        self.toggle_overview_on(seat, None);
+    pub(super) fn toggle_overview(&mut self, seat: SeatId, scope: OverviewScope) {
+        self.toggle_overview_on(seat, None, scope);
     }
 
-    /// A hot corner of `output` whose action is the Overview (CMN-183): closes the open
-    /// Overview as the shortcut does, or opens one whose selection is on `output`, which
+    /// The shortcut of `scope`, or a hot corner of `selection_on` whose action is the
+    /// Overview or the Application overview (CMN-183): closes or changes the open Overview
+    /// as the shortcut does, or opens one whose selection is on `selection_on`, which
     /// becomes `seat`'s Active output, whichever output the focused window is on.
-    pub fn overview_on(&mut self, seat: SeatId, output: OutputId) {
+    pub fn overview_on(
+        &mut self,
+        seat: SeatId,
+        selection_on: Option<OutputId>,
+        scope: OverviewScope,
+    ) {
         self.set_last_seat(seat);
-        self.toggle_overview_on(seat, Some(output));
+        self.toggle_overview_on(seat, selection_on, scope);
         self.apply();
     }
 
-    /// `toggle_overview`, with the selection on `selection_on` if it's one of policy's
-    /// outputs.
-    fn toggle_overview_on(&mut self, seat: SeatId, selection_on: Option<OutputId>) {
-        if self.overview.take().is_some() || self.a_seat_has_an_interaction() {
+    /// `toggle_overview`, with the selection on `selection_on` if it opens one and that's
+    /// one of policy's outputs.
+    ///
+    /// The Application overview lists `seat`'s focused window's Application: with no
+    /// window focused it doesn't open, and the Overview doesn't change to it.
+    fn toggle_overview_on(
+        &mut self,
+        seat: SeatId,
+        selection_on: Option<OutputId>,
+        scope: OverviewScope,
+    ) {
+        let application = match scope {
+            OverviewScope::Workspace => None,
+            OverviewScope::Application => self.focus(seat).map(|id| self.application_of(id)),
+        };
+        // The Application overview with no window focused, which neither opens nor takes
+        // the open Overview's place.
+        let unfocused = scope == OverviewScope::Application && application.is_none();
+        if let Some(open) = self.overview.take() {
+            if open.scope() == scope {
+                return;
+            }
+            match unfocused {
+                true => self.overview = Some(open),
+                false => self.rescope_overview(open, application),
+            }
+            return;
+        }
+        if unfocused || self.a_seat_has_an_interaction() {
             return;
         }
         let ours = selection_on.filter(|on| self.outputs.iter().any(|output| output.id == *on));
@@ -144,17 +214,37 @@ impl<W: PolicyWindow> Policy<W> {
         };
         self.active_outputs.insert(seat, output);
         let workspace = self.active_workspace_on(output);
-        let windows = self.overview_windows(output, workspace);
+        let windows = self.overview_windows(output, workspace, application.as_ref());
         let selected = self.focus(seat).filter(|focused| windows.contains(focused));
         self.overview = Some(Overview {
             seat,
             output,
             workspace,
             windows,
-            others: self.overview_others(output),
+            others: self.overview_others(output, application.as_ref()),
             selected,
             drag: None,
+            application,
         });
+    }
+
+    /// `open` changed in place to list `application`'s windows, or every window with
+    /// none (CMN-185): on the same outputs and workspaces, with the selection kept while
+    /// its window is listed, and a press or drag kept while its window is.
+    fn rescope_overview(&mut self, open: Overview, application: Option<Application>) {
+        let windows = self.overview_windows(open.output, open.workspace, application.as_ref());
+        let others = self.overview_others(open.output, application.as_ref());
+        let mut open = Overview {
+            windows,
+            others,
+            application,
+            ..open
+        };
+        open.selected = open.selected.filter(|id| open.windows.contains(id));
+        open.drag = open
+            .drag
+            .filter(|drag| open.output_listing(drag.window).is_some());
+        self.overview = Some(open);
     }
 
     /// The output the Overview's selection is on, as it opens for `seat` (246): the focused
@@ -165,8 +255,12 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// What the Overview lists on each output but `output`, in the order of policy's
-    /// outputs.
-    fn overview_others(&self, output: OutputId) -> Vec<OverviewOutput> {
+    /// outputs, of `application` alone if it has one.
+    fn overview_others(
+        &self,
+        output: OutputId,
+        application: Option<&Application>,
+    ) -> Vec<OverviewOutput> {
         let others = self.outputs.iter().filter(|other| other.id != output);
         others
             .map(|other| {
@@ -174,7 +268,7 @@ impl<W: PolicyWindow> Policy<W> {
                 OverviewOutput {
                     output: other.id,
                     workspace,
-                    windows: self.overview_windows(other.id, workspace),
+                    windows: self.overview_windows(other.id, workspace, application),
                 }
             })
             .collect()
@@ -294,8 +388,9 @@ impl<W: PolicyWindow> Policy<W> {
     fn overview_select_output(&mut self, seat: SeatId, output: OutputId) {
         self.active_outputs.insert(seat, output);
         let workspace = self.active_workspace_on(output);
-        let windows = self.overview_windows(output, workspace);
-        let others = self.overview_others(output);
+        let application = self.overview_application();
+        let windows = self.overview_windows(output, workspace, application.as_ref());
+        let others = self.overview_others(output, application.as_ref());
         if let Some(open) = &mut self.overview {
             open.output = output;
             open.workspace = workspace;
@@ -405,7 +500,7 @@ impl<W: PolicyWindow> Policy<W> {
     pub fn overview_windows_on(&self, workspace: usize) -> Vec<WindowId> {
         self.overview
             .as_ref()
-            .map(|open| self.overview_windows(open.output, workspace))
+            .map(|open| self.overview_windows(open.output, workspace, open.application.as_ref()))
             .unwrap_or_default()
     }
 
@@ -413,8 +508,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// as it lists those of the active one: the compositor lays out those of a workspace a
     /// Workspace slide leaves (244). None with the Overview closed.
     pub fn overview_windows_of(&self, output: OutputId, workspace: usize) -> Vec<WindowId> {
-        match self.overview {
-            Some(_) => self.overview_windows(output, workspace),
+        match &self.overview {
+            Some(open) => self.overview_windows(output, workspace, open.application.as_ref()),
             None => Vec::new(),
         }
     }
@@ -443,8 +538,9 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         let workspace = self.active_workspace_on(output);
-        let windows = self.overview_windows(output, workspace);
-        let others = self.overview_others(output);
+        let application = self.overview_application();
+        let windows = self.overview_windows(output, workspace, application.as_ref());
+        let others = self.overview_others(output, application.as_ref());
         let focus = self.focus(seat);
         if let Some(open) = &mut self.overview {
             if open.output != output || open.workspace != workspace {
@@ -461,11 +557,22 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// The open Overview's Application, the Application overview's (CMN-185).
+    fn overview_application(&self) -> Option<Application> {
+        self.overview.as_ref()?.application.clone()
+    }
+
     /// The windows the Overview lists for `workspace` on `output`, bottom to top: those the
     /// Window switcher lists for it, so the minimised ones are among them, one that skips
     /// the taskbar isn't, and a modal dialog stands in for its parent. A sticky window is
-    /// on every workspace of its output.
-    fn overview_windows(&self, output: OutputId, workspace: usize) -> Vec<WindowId> {
+    /// on every workspace of its output. With an `application`, the Application
+    /// overview's, only those of its windows are (CMN-185).
+    fn overview_windows(
+        &self,
+        output: OutputId,
+        workspace: usize,
+        application: Option<&Application>,
+    ) -> Vec<WindowId> {
         let mut listed = Vec::new();
         let on_output = |id: &WindowId| self.output_showing(*id) == Some(output);
         let candidates = self.stack.iter().copied().filter(on_output);
@@ -474,7 +581,10 @@ impl<W: PolicyWindow> Policy<W> {
             self.is_switch_candidate(*id, SwitchList::WindowsAll, None)
                 && self.is_on_workspace(*id, workspace)
         };
-        for base in candidates.filter(listable) {
+        // A window's own application, not its dialog's, which may be another process's.
+        let belongs = |app: &Application, id: &WindowId| app.has(*id, &self.windows[id].window);
+        let ours = |id: &WindowId| application.is_none_or(|app| belongs(app, id));
+        for base in candidates.filter(listable).filter(ours) {
             let window = self.modal_transient(base);
             if !listed.contains(&window) {
                 listed.push(window);

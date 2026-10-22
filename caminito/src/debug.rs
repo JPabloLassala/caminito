@@ -5,8 +5,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use caminito_policy::{
-    MenuEntry, MenuItem, MenuMark, OutputId, OverviewOutput, PolicyWindow, SwitchEntry, SwitchList,
-    Tile, WindowId,
+    MenuEntry, MenuItem, MenuMark, OutputId, OverviewOutput, OverviewScope, PolicyWindow,
+    SwitchEntry, SwitchList, Tile, WindowId,
 };
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use serde::Serialize;
@@ -386,6 +386,9 @@ struct OverviewDump {
     on: OverviewOutputDump,
     /// The selected window (242), if one is.
     selected: Option<u64>,
+    /// Which windows it lists: `overview`, every one, or `application`, those of the
+    /// focused window's Application when it opened (CMN-185).
+    scope: &'static str,
     /// The left button held on a window, and the drag it became (245).
     drag: Option<OverviewDragDump>,
     /// A dropped window on its way to where it's drawn next (249).
@@ -416,6 +419,10 @@ struct OverviewOutputDump {
     /// it or joined it (250), each window listed with where it's drawn, before the
     /// transition moves it, from the output's top left corner: empty once they're there.
     reflow: Vec<OverviewReflowDump>,
+    /// After a change of scope (CMN-185), while they fade, each window of the layout that
+    /// joined, in the order listed, then each that left, with where it's drawn, before the
+    /// transition moves it, and how opaque: empty once they've faded.
+    fading: Vec<OverviewDrawnDump>,
     /// How much of black is over the wallpaper.
     dim: f32,
     /// The namespaces of the output's layer surfaces that aren't drawn while it's open, in
@@ -948,6 +955,10 @@ impl Caminito {
                 output.map(|output| output.name())
             };
             Some(OverviewDump {
+                scope: match open.scope() {
+                    OverviewScope::Workspace => "overview",
+                    OverviewScope::Application => "application",
+                },
                 selected: open.selected.map(|id| id.0),
                 drag: open.drag.map(|drag| OverviewDragDump {
                     window: drag.window.0,
@@ -1359,6 +1370,22 @@ impl Caminito {
                     .collect()
             })
             .unwrap_or_default();
+        let fading = laid_out
+            .and_then(|laid_out| Some((laid_out, laid_out.reflowing(now)?)))
+            .map(|(laid_out, reflow)| {
+                let joined = laid_out.places(now).into_iter();
+                let joined = joined.map(|(id, rect)| (id, rect, reflow.alpha(id, now)));
+                let joined = joined.filter(|(_, _, alpha)| *alpha < 1.0);
+                joined
+                    .chain(reflow.leaving(now))
+                    .map(|(id, rect, alpha)| OverviewDrawnDump {
+                        window: id.0,
+                        rect: rect.into(),
+                        alpha,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Some(OverviewOutputDump {
             output: output.name(),
             windows: on
@@ -1375,6 +1402,7 @@ impl Caminito {
             area: laid_out.map(|laid_out| laid_out.bar.area_beneath(size).into()),
             sliding,
             reflow,
+            fading,
             dim: crate::overview::DIM,
             hidden_layer_surfaces: self
                 .layer_surfaces(output)

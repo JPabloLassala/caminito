@@ -747,11 +747,16 @@ fn overview_layout_elements<R>(
             place.loc.y + place.size.h - (slot.window.loc.y + slot.window.size.h),
         ));
         let location = (slot.label.loc + along + shift).to_physical_precise_round::<_, i32>(scale);
+        // A window that joined with a change of scope fades in with its label (CMN-185).
+        let fade = open
+            .reflowing(now)
+            .filter(|_| laid.workspace == open.laid.workspace)
+            .map_or(1.0, |reflow| reflow.alpha(*id, now));
         let element = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             location.to_f64(),
             label,
-            Some(open.labels_alpha(now)),
+            Some(open.labels_alpha(now) * fade),
             None,
             Some(slot.label.size),
             Kind::Unspecified,
@@ -1008,6 +1013,10 @@ fn overview_place(
 /// again, and moves back with the others. They're in policy's stacking order, so a window
 /// chosen is at the top as they go. A dragged window (245) isn't among them: it's drawn
 /// under the pointer, nor is a dropped one on its way to its place (249).
+///
+/// After a change of scope (CMN-185), a window that joined the active workspace's layout
+/// fades in at its place, and one that left fades out where it was drawn, on its way back
+/// to its real place as the others are if the transition runs.
 pub(crate) fn overview_drawn_windows(
     caminito: &Caminito,
     open: &Overview,
@@ -1020,28 +1029,37 @@ pub(crate) fn overview_drawn_windows(
     let part = open.part(now);
     let dragged = caminito.overview_dragged(open).map(|dragged| dragged.id);
     let dropping = caminito.overview_dropping_at(now);
-    let mut drawn: Vec<DrawnWindow> = laid
+    let reflow = open
+        .reflowing(now)
+        .filter(|_| laid.workspace == open.laid.workspace);
+    // Where a window is drawn, from its place before the transition moves it, and how
+    // opaque, as `fade` has it.
+    let drawn_at = |id: WindowId, place: Rectangle<i32, Logical>, fade: f32| {
+        let frame = policy.frame_rect(id)?;
+        let real = Rectangle::new(frame.loc - origin, frame.size);
+        let place = Rectangle::new(place.loc + shift, place.size);
+        let (rect, alpha) = if policy.is_minimized(id) {
+            (place, part as f32 * fade)
+        } else {
+            (between(real, place, part), fade)
+        };
+        Some(DrawnWindow { id, rect, alpha })
+    };
+    let listed = laid
         .windows
         .iter()
         .zip(&laid.layout.slots)
         .filter(|(id, _)| dragged != Some(**id) && dropping != Some(**id))
         .filter_map(|(id, slot)| {
-            let frame = policy.frame_rect(*id)?;
-            let real = Rectangle::new(frame.loc - origin, frame.size);
             let place = overview_place(open, laid, *id, slot.window, now);
-            let place = Rectangle::new(place.loc + shift, place.size);
-            let (rect, alpha) = if policy.is_minimized(*id) {
-                (place, part as f32)
-            } else {
-                (between(real, place, part), 1.0)
-            };
-            Some(DrawnWindow {
-                id: *id,
-                rect,
-                alpha,
-            })
-        })
-        .collect();
+            let fade = reflow.map_or(1.0, |reflow| reflow.alpha(*id, now));
+            drawn_at(*id, place, fade)
+        });
+    let leaving = reflow
+        .into_iter()
+        .flat_map(|reflow| reflow.leaving(now))
+        .filter_map(|(id, place, fade)| drawn_at(id, place, fade));
+    let mut drawn: Vec<DrawnWindow> = listed.chain(leaving).collect();
     let stacking = policy.stacking_all();
     drawn.sort_by_key(|window| stacking.iter().position(|id| *id == window.id));
     drawn

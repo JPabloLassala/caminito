@@ -84,6 +84,9 @@ pub enum Action {
     /// `overview`, which is `org.mate.Caminito`'s: opens the Overview, or closes the open
     /// one (241).
     Overview,
+    /// `application-overview`, which is `org.mate.Caminito`'s: opens the Application
+    /// overview, or closes it, or changes the open Overview to it in place (CMN-185).
+    ApplicationOverview,
 }
 
 /// Where in a work area `Action::MoveTo` puts a window's Frame (160): against a corner,

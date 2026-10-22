@@ -38,11 +38,13 @@ pub use focus_stealing::{
 };
 pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
-pub use overview::{Overview, OverviewDrag, OverviewOutput};
+pub use overview::{Overview, OverviewDrag, OverviewOutput, OverviewScope};
 pub use pointer::{Crossing, FocusMode, PointerTarget};
 pub use pre_map::{PreMapConfigure, PreMapWindow};
 pub use state_requests::{MapStates, StateRequest};
-pub use switcher::{LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher};
+pub use switcher::{
+    Application, LayerSurfaceId, MinimizedPlacement, SwitchEntry, SwitchList, Switcher,
+};
 pub use window_menu::{MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection, WindowMenu};
 
 /// A seat, as the compositor numbers them.
@@ -1327,7 +1329,11 @@ impl<W: PolicyWindow> Policy<W> {
                     self.open_window_menu(seat, id);
                 }
             }
-            Action::Overview => self.toggle_overview(seat),
+            Action::Overview | Action::ApplicationOverview => {
+                if let Some(scope) = OverviewScope::of(action) {
+                    self.toggle_overview(seat, scope);
+                }
+            }
             Action::BeginMove | Action::BeginResize => {
                 if let Some(id) = self.focus(seat) {
                     self.begin_keyboard_grab(seat, id, action == Action::BeginResize);

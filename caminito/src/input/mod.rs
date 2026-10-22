@@ -15,7 +15,7 @@ pub use grab::GrabKind;
 pub(crate) use serials::InputSerials;
 
 use caminito_policy::{
-    Action, Crossing, GrabKey, Interaction, PointerTarget, ResizeEdges, WindowId,
+    Action, Crossing, GrabKey, Interaction, OverviewScope, PointerTarget, ResizeEdges, WindowId,
 };
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device, Event,
@@ -374,7 +374,9 @@ impl State {
                 let mods = self.caminito.seat.get_keyboard().unwrap().modifier_state();
                 self.switch_action(action, trigger, &mods, time);
             }
-            Binding::Policy(Action::Overview) => self.toggle_overview(time),
+            Binding::Policy(action) if let Some(scope) = OverviewScope::of(action) => {
+                self.toggle_overview(scope, time);
+            }
             Binding::Policy(action) => self.run_action(action, time),
             // The time a client would have for the event.
             Binding::Panel(action) => self.caminito.ask_panel(action, time.millis()),

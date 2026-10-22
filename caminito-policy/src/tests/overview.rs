@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::test_window::Call;
-use crate::{Direction, Interaction};
+use crate::{Direction, Interaction, OverviewScope};
 
 fn four_workspaces() -> Config {
     Config {
@@ -89,7 +89,7 @@ fn a_hot_corner_opens_it_on_its_output_whatever_the_focused_windows_is() {
     policy.add_output(output(2, 1920, 0, 1920, 1080));
     assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
 
-    policy.overview_on(SEAT, OutputId(2));
+    policy.overview_on(SEAT, Some(OutputId(2)), OverviewScope::Workspace);
 
     let overview = policy.overview().unwrap();
     assert_eq!(overview.output, OutputId(2));
@@ -104,7 +104,7 @@ fn a_hot_corner_closes_the_open_one_wherever_it_is() {
     policy.add_output(output(2, 1920, 0, 1920, 1080));
     toggle(&mut policy);
 
-    policy.overview_on(SEAT, OutputId(2));
+    policy.overview_on(SEAT, Some(OutputId(2)), OverviewScope::Workspace);
 
     assert!(policy.overview().is_none());
     assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));

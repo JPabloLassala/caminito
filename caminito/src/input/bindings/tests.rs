@@ -671,6 +671,24 @@ fn with_its_shortcut_removed_nothing_opens_the_overview() {
     }
 }
 
+// The Application overview's shortcut (CMN-185), which is `org.mate.Caminito`'s too.
+
+#[test]
+fn the_application_overview_has_no_shortcut_by_default() {
+    let t = table(&[]);
+    assert!(t.iter().all(|(key, _)| key != APPLICATION_OVERVIEW_KEY));
+}
+
+#[test]
+fn the_application_overviews_shortcut_is_what_caminitos_key_says() {
+    let t = table(&[(CAMINITO, APPLICATION_OVERVIEW_KEY, "<Super>a")]);
+    assert_eq!(
+        bound(&t, SUPER, Keysym::a),
+        policy(Action::ApplicationOverview)
+    );
+    assert_eq!(bound(&t, SUPER, Keysym::w), policy(Action::Overview));
+}
+
 #[test]
 fn a_combination_of_marcos_wins_over_the_overviews() {
     let t = table(&[(WINDOW, "close", "<Super>w")]);

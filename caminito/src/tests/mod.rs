@@ -4,6 +4,7 @@ mod accelerators;
 mod accessx;
 mod active_toplevel;
 mod app_menu_registrar;
+mod application_overview;
 mod bell;
 mod bindings;
 mod button_bindings;

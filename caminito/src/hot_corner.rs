@@ -3,12 +3,13 @@
 //!
 //! A corner fires whatever is under the pointer, the panel included, and shows nothing. It
 //! is off while a button is held, while the seat has an Interaction other than the
-//! corner's own Overview, while the session is locked, while a fullscreen window is focused
+//! Overview or the Application overview for a corner of either, while the session is
+//! locked, while a fullscreen window is focused
 //! on its output and while a client has locked or confined the pointer.
 
 use std::time::Duration;
 
-use caminito_policy::{Action, Interaction};
+use caminito_policy::{Action, Interaction, OverviewScope};
 use smithay::backend::input::InputTime;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
@@ -217,9 +218,15 @@ impl State {
             // `hot_corner_at` gives none.
             HotCornerAction::None => {}
             // As the Overview's binding, on the corner's output.
-            HotCornerAction::Overview => {
+            // As the Overview's binding or the Application overview's (CMN-185), on the
+            // corner's output.
+            HotCornerAction::Overview | HotCornerAction::ApplicationOverview => {
                 let time = InputTime::from_micros(now.as_micros() as u64);
-                self.toggle_overview_on(Some(output_id(&at.output)), time);
+                let scope = match at.action {
+                    HotCornerAction::ApplicationOverview => OverviewScope::Application,
+                    _ => OverviewScope::Workspace,
+                };
+                self.toggle_overview_on(Some(output_id(&at.output)), scope, time);
             }
             HotCornerAction::ShowDesktop => {
                 self.caminito.policy.action(SEAT, Action::ShowDesktop, now);
@@ -234,7 +241,10 @@ impl State {
     fn hot_corner_is_off(&self, at: &AtCorner) -> bool {
         let caminito = &self.caminito;
         let policy = &caminito.policy;
-        let own_overview = at.action == HotCornerAction::Overview;
+        let own_overview = matches!(
+            at.action,
+            HotCornerAction::Overview | HotCornerAction::ApplicationOverview
+        );
         let interaction = match policy.interaction(SEAT) {
             Some(Interaction::Overview) => !own_overview,
             interaction => interaction.is_some(),

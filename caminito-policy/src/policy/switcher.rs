@@ -475,17 +475,46 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Whether `a` and `b` belong to one application (ruling 10 of 108): the same pid when both
-    /// have one, else the same app id when both have one, else only when they are one window.
+    /// Whether `a` and `b` belong to one application (ruling 10 of 108), as
+    /// `Application::has` has it.
     fn same_app(&self, a: WindowId, b: WindowId) -> bool {
-        let (a_window, b_window) = (&self.windows[&a].window, &self.windows[&b].window);
-        match (
-            (a_window.pid(), b_window.pid()),
-            (a_window.app_id(), b_window.app_id()),
-        ) {
+        self.application_of(a).has(b, &self.windows[&b].window)
+    }
+
+    /// The Application window `id` belongs to.
+    pub(super) fn application_of(&self, id: WindowId) -> Application {
+        let window = &self.windows[&id].window;
+        Application {
+            window: id,
+            pid: window.pid(),
+            app_id: window.app_id(),
+        }
+    }
+}
+
+/// An Application: the windows of one process, or, for a window whose process isn't known,
+/// those with its app id. It's what `switch-group` cycles through, and what the
+/// Application overview lists (CMN-185). It's taken from one window, and stays as it was
+/// taken once that window goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Application {
+    /// The window it was taken from.
+    pub window: WindowId,
+    /// That window's process, if it's known.
+    pub pid: Option<u32>,
+    /// That window's app id, if it has one.
+    pub app_id: Option<String>,
+}
+
+impl Application {
+    /// Whether `window`, of id `id`, belongs to it (ruling 10 of 108): the same pid when
+    /// both have one, else the same app id when both have one, else only when it's the
+    /// window it was taken from.
+    pub fn has(&self, id: WindowId, window: &impl PolicyWindow) -> bool {
+        match ((self.pid, window.pid()), (&self.app_id, window.app_id())) {
             ((Some(a), Some(b)), _) => a == b,
-            (_, (Some(a), Some(b))) => a == b,
-            _ => a == b,
+            (_, (Some(a), Some(b))) => *a == b,
+            _ => self.window == id,
         }
     }
 }

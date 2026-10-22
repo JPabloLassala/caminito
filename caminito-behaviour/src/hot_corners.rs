@@ -50,6 +50,8 @@ pub enum Action {
     None,
     /// Opens the Overview on the corner's output, or closes it.
     Overview,
+    /// Opens the Application overview on the corner's output, or closes it (CMN-185).
+    ApplicationOverview,
     /// Shows the desktop, or stops.
     ShowDesktop,
     /// Locks the session.
@@ -57,10 +59,11 @@ pub enum Action {
 }
 
 impl Action {
-    /// The four, in the drop-downs' order.
-    pub const ALL: [Action; 4] = [
+    /// The five, in the drop-downs' order.
+    pub const ALL: [Action; 5] = [
         Action::None,
         Action::Overview,
+        Action::ApplicationOverview,
         Action::ShowDesktop,
         Action::Lock,
     ];
@@ -70,6 +73,7 @@ impl Action {
         match self {
             Action::None => "None",
             Action::Overview => "Overview",
+            Action::ApplicationOverview => "Application overview",
             Action::ShowDesktop => "Show desktop",
             Action::Lock => "Lock",
         }
@@ -80,6 +84,7 @@ impl Action {
         match self {
             Action::None => "none",
             Action::Overview => "overview",
+            Action::ApplicationOverview => "application-overview",
             Action::ShowDesktop => "show-desktop",
             Action::Lock => "lock",
         }

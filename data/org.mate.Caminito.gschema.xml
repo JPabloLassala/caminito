@@ -48,6 +48,7 @@
     <value nick="overview" value="1"/>
     <value nick="show-desktop" value="2"/>
     <value nick="lock" value="3"/>
+    <value nick="application-overview" value="4"/>
   </enum>
 
   <schema id="org.mate.Caminito" path="/org/mate/caminito/">
@@ -100,28 +101,37 @@
       <description>The shortcut that opens the Overview, which shows the windows of the workspace side by side, and closes it again. It is a key or a mouse button with its modifiers, written as the keys of org.mate.Marco.global-keybindings are: "&lt;Super&gt;w", or "&lt;Super&gt;Button9". With "disabled" or the empty string, nothing opens the Overview.</description>
     </key>
     <!--
+      The Application overview's shortcut (CMN-185): the Overview of the focused window's
+      application alone. Off by default.
+    -->
+    <key name="application-overview" type="s">
+      <default>'disabled'</default>
+      <summary>Show the Application overview</summary>
+      <description>The shortcut that opens the Application overview, which shows the windows of the focused window's application side by side, and closes it again. While the Overview is open it shows the application's windows alone, and the Overview's shortcut shows every window again. It is written as the overview key is. With "disabled" or the empty string, nothing opens the Application overview.</description>
+    </key>
+    <!--
       The Hot corners (CMN-183). They act on every output's corner of their kind, and are
       all off since MATE's top panel has its menu in the top-left corner.
     -->
     <key name="hot-corner-top-left" enum="org.mate.Caminito.HotCornerAction">
       <default>'none'</default>
       <summary>What the top left corner of a monitor does</summary>
-      <description>What happens when the pointer rests in the top left corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+      <description>What happens when the pointer rests in the top left corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "application-overview" opens the Overview of the focused window's application on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
     <key name="hot-corner-top-right" enum="org.mate.Caminito.HotCornerAction">
       <default>'none'</default>
       <summary>What the top right corner of a monitor does</summary>
-      <description>What happens when the pointer rests in the top right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+      <description>What happens when the pointer rests in the top right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "application-overview" opens the Overview of the focused window's application on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
     <key name="hot-corner-bottom-left" enum="org.mate.Caminito.HotCornerAction">
       <default>'none'</default>
       <summary>What the bottom left corner of a monitor does</summary>
-      <description>What happens when the pointer rests in the bottom left corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+      <description>What happens when the pointer rests in the bottom left corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "application-overview" opens the Overview of the focused window's application on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
     <key name="hot-corner-bottom-right" enum="org.mate.Caminito.HotCornerAction">
       <default>'none'</default>
       <summary>What the bottom right corner of a monitor does</summary>
-      <description>What happens when the pointer rests in the bottom right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+      <description>What happens when the pointer rests in the bottom right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "application-overview" opens the Overview of the focused window's application on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
     <key name="workspace-layout-rows" type="i">
       <default>1</default>

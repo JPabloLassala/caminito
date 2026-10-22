@@ -46,6 +46,12 @@
 //! each from where it's drawn then. The Overview closing or a switch of the output's
 //! workspace cuts that to its end.
 //!
+//! The Application overview (CMN-185) is the Overview with policy's list of one
+//! Application's windows, and is laid out and drawn as the Overview is. A change of scope
+//! between them while it's open eases the windows that stay to their new slots, as above,
+//! and fades in those that join and fades out those that leave, as the transition fades a
+//! minimised window.
+//!
 //! [ADR 0033]: ../../../docs/adr/0033-the-workspace-slide-and-the-overview-are-taken-from-plasma.md
 
 pub(crate) mod bar;
@@ -58,7 +64,9 @@ pub(crate) mod transition;
 
 use std::time::{Duration, Instant};
 
-use caminito_policy::{Action, Direction, OutputId, OverviewOutput, PolicyWindow, WindowId};
+use caminito_policy::{
+    Action, Direction, OutputId, OverviewOutput, OverviewScope, PolicyWindow, WindowId,
+};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::backend::renderer::element::Id;
@@ -118,8 +126,11 @@ pub(crate) struct Overview {
     /// same (246).
     pub(crate) transition: Option<Transition>,
     /// The active workspace's windows on their way to their new slots, after one left the
-    /// layout or joined it from another output's (250).
+    /// layout or joined it from another output's (250), or after a change of scope
+    /// (CMN-185).
     pub(crate) reflow: Option<Reflow>,
+    /// Which windows policy lists: every one, or one Application's (CMN-185).
+    pub(crate) scope: OverviewScope,
     /// Where this output's first frame of a held opening is.
     first_frame: FirstFrame,
 }
@@ -137,6 +148,8 @@ enum FirstFrame {
 /// their new slots (250).
 struct WasLaid {
     workspace: usize,
+    /// Which windows it listed (CMN-185).
+    scope: OverviewScope,
     /// Whether the Overview was on its way closed.
     closing: bool,
     /// Each window listed, with its slot, bottom to top.
@@ -153,6 +166,7 @@ impl WasLaid {
         let slots = open.laid.windows.iter().zip(&open.laid.layout.slots);
         Self {
             workspace: open.laid.workspace,
+            scope: open.scope,
             closing: open.is_closing(),
             slots: slots.map(|(id, slot)| (*id, slot.window)).collect(),
             places: open.places(now),
@@ -630,6 +644,7 @@ impl Caminito {
             let selected = open.selected.filter(|id| on.windows.contains(id));
             let (mut laid_out, fresh) =
                 self.lay_out_overview(output, on, selected, transition, old, &mut labels);
+            laid_out.scope = open.scope();
             laid_out.reflow =
                 was.and_then(|was| self.overview_reflow(was, &laid_out, &was_laid, now));
             changed |= !fresh;
@@ -785,6 +800,7 @@ impl Caminito {
             next_bar_frames,
             transition,
             reflow: None,
+            scope: OverviewScope::Workspace,
             first_frame,
         };
         (laid_out, fresh)
@@ -798,6 +814,9 @@ impl Caminito {
     /// another change of the layout eases each from where it's drawn to its newest slot, and
     /// with no change they go on. A switch of the output's workspace cuts it to its end, as
     /// does a closing that the layout was on its way with.
+    ///
+    /// A change of scope (CMN-185) eases the windows that stay too, and those that join
+    /// fade in at their slots and those that leave fade out where they were drawn.
     fn overview_reflow(
         &self,
         was: WasLaid,
@@ -814,19 +833,26 @@ impl Caminito {
             .iter()
             .filter(|id| !was.slots.iter().any(|(was, _)| was == *id));
         let moved_in = joined.clone().any(|id| was_laid.contains(id));
+        let rescoped = was.scope != new.scope;
         let slots = new.laid.windows.iter().zip(&new.laid.layout.slots);
         let slots: Vec<_> = slots.map(|(id, slot)| (*id, slot.window)).collect();
         let reflow = match was.reflow {
-            Some(reflow) if slots == was.slots => return Some(reflow),
+            Some(reflow) if slots == was.slots && !rescoped => return Some(reflow),
             Some(_) => true,
-            None => left || moved_in,
+            None => left || moved_in || rescoped,
         };
         if !reflow || !self.settings.overview_animation {
             return None;
         }
-        let stay = was.places.into_iter();
-        let stay = stay.filter(|(id, _)| windows.contains(id)).collect();
-        Some(Reflow::new(stay, now))
+        let (stay, gone) = was
+            .places
+            .into_iter()
+            .partition(|(id, _)| windows.contains(id));
+        if !rescoped {
+            return Some(Reflow::new(stay, now));
+        }
+        let joined = joined.copied().collect();
+        Some(Reflow::rescoped(stay, joined, gone, now))
     }
 
     /// Policy has no Overview open: the one drawn goes on its way closed from where it is
@@ -1119,10 +1145,17 @@ impl Caminito {
             self.overview_dropped(dragged);
             return Some(FilterResult::Intercept(None));
         }
-        let closes =
-            binding == Some(Binding::Policy(Action::Overview)) || sym == Some(Keysym::Escape);
-        if closes {
+        if sym == Some(Keysym::Escape) {
             self.policy.close_overview();
+            return Some(FilterResult::Intercept(None));
+        }
+        // Its own scope's shortcut closes it, and the other's changes it in place
+        // (CMN-185).
+        if let Some(Binding::Policy(action)) = binding
+            && OverviewScope::of(action).is_some()
+        {
+            let now = self.now();
+            self.policy.action(SEAT, action, now);
             return Some(FilterResult::Intercept(None));
         }
         if let Some(Binding::Policy(action)) = binding
@@ -1274,29 +1307,31 @@ impl Caminito {
 }
 
 impl State {
-    /// The Overview's shortcut fired: it closes the open Overview, or opens one on the
-    /// Active output. Nothing opens during a move or resize, and a client's open menu is
-    /// dismissed first, as for the Window switcher.
-    pub(crate) fn toggle_overview(&mut self, time: InputTime) {
-        self.toggle_overview_on(None, time);
+    /// The shortcut of the Overview or of the Application overview, as `scope` says,
+    /// fired: it closes the open one of that scope, changes the other to it in place
+    /// (CMN-185), or opens one on the Active output. Nothing opens during a move or
+    /// resize, and a client's open menu is dismissed first, as for the Window switcher.
+    pub(crate) fn toggle_overview(&mut self, scope: OverviewScope, time: InputTime) {
+        self.toggle_overview_on(None, scope, time);
     }
 
     /// `toggle_overview`, with the selection on `selection_on` if it opens one, as a Hot
     /// corner of that output asks (CMN-183).
-    pub(crate) fn toggle_overview_on(&mut self, selection_on: Option<OutputId>, time: InputTime) {
+    pub(crate) fn toggle_overview_on(
+        &mut self,
+        selection_on: Option<OutputId>,
+        scope: OverviewScope,
+        time: InputTime,
+    ) {
         // The pointer is held for a move or resize, which outlasts one that Policy ended
         // itself. Policy refuses for the seat's Interaction (187).
         if self.caminito.window_grab.is_some() {
             return;
         }
         self.dismiss_menus(time);
-        let now = self.caminito.now();
         let opens = self.caminito.policy.overview().is_none();
         self.caminito.overview_timing.pressed(opens);
-        match selection_on {
-            Some(output) => self.caminito.policy.overview_on(SEAT, output),
-            None => self.caminito.policy.action(SEAT, Action::Overview, now),
-        }
+        self.caminito.policy.overview_on(SEAT, selection_on, scope);
     }
 
     /// A pointer button with the pointer at `location`. Returns whether its press was the
@@ -1347,7 +1382,10 @@ impl State {
         caminito.suppressed_buttons.insert(button);
         let mods = caminito.seat.get_keyboard().unwrap().modifier_state();
         let binding = caminito.bound_to_button(button, &mods);
-        let is_shortcut = matches!(binding, Some((_, Binding::Policy(Action::Overview))));
+        let shortcut = binding.and_then(|(_, binding)| match binding {
+            Binding::Policy(action) => OverviewScope::of(action),
+            _ => None,
+        });
         let switch = binding.and_then(|(_, binding)| match binding {
             Binding::Policy(action) if switches_workspace(action) => Some(action),
             _ => None,
@@ -1368,7 +1406,8 @@ impl State {
             caminito.end_overview_drop();
         }
         match window {
-            _ if is_shortcut => caminito.policy.close_overview(),
+            // Its own scope's closes it, and the other's changes it in place (CMN-185).
+            _ if let Some(scope) = shortcut => caminito.policy.overview_on(SEAT, None, scope),
             // As the binding's key does (244): the Workspace popup doesn't show under the
             // Overview, and a drag whose window the switch takes away ends (245).
             _ if switch.is_some() => {
