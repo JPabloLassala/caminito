@@ -271,6 +271,9 @@ pub struct Caminito {
     pub suppressed_keys: HashSet<Keycode>,
     /// The key of a Key remap's last step, held while its trigger is (CMN-187).
     pub(crate) held_remap_step: Option<Keycode>,
+    /// The modifiers' keys held back from the client because they start a Key remap
+    /// (CMN-188).
+    pub(crate) held_back: Option<crate::input::remaps::HeldBack>,
     /// The accelerators callers of `org.mate.Caminito` have grabbed (98).
     pub(crate) accelerator_grabs: Grabs,
     /// The bells rung (105).
@@ -1025,6 +1028,7 @@ impl Caminito {
             next_layer_id: 0,
             suppressed_keys: HashSet::new(),
             held_remap_step: None,
+            held_back: None,
             accelerator_grabs: Grabs::default(),
             bells: Bells::default(),
             player,
