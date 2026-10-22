@@ -1,6 +1,6 @@
 ---
 name: implement
-description: "Implement a spec or tickets in a git worktree, merge it to main, then delete the worktree."
+description: "Implement a spec or tickets in a git worktree, merge it to master, then delete the worktree."
 disable-model-invocation: true
 ---
 
@@ -12,11 +12,11 @@ Then claim each ticket in Linear, before you create the worktree: assign it to `
 
 ## Set up the worktree
 
-The checkout you start in is the **main checkout**. The work branches from `main` and merges back into `main`.
+The checkout you start in is the **main checkout**. The work branches from `master` and merges back into `master`.
 
 Create a branch named after the work, in a worktree that is a sibling of the repository:
 
-    git worktree add -b <branch> ../<repo>-<branch> main
+    git worktree add -b <branch> ../<repo>-<branch> master
 
 A new worktree lacks every ignored file. In the worktree, symlink each ignored `.env` file and `node_modules` directory to its counterpart in the main checkout, at the same path. `git ls-files --others --ignored --exclude-standard --directory | grep -E 'node_modules|\.env'` lists them.
 
@@ -44,8 +44,8 @@ Commit your work to the worktree branch.
 
 Call the Skill tool with "review-standards-spec". Give it:
 
-- the fixed point: `main`
-- the diff command: `git diff main...HEAD`, run in the worktree
+- the fixed point: `master`
+- the diff command: `git diff master...HEAD`, run in the worktree
 - the spec: the ticket text you fetched at the start, or the spec the user gave
 - the standards sources: the root `CLAUDE.md` and the `CLAUDE.md` of each app the work changed, the root `CONTEXT.md`, `docs/adr/`, and `.sandcastle/CODING_STANDARDS.md`
 - the output of the last test run and of the last typecheck, for both sub-agent prompts
@@ -54,7 +54,7 @@ Fix the findings you accept, and commit the fixes as a second commit.
 
 ## Merge and clean up
 
-In the main checkout, check out `main` and `git merge <branch>`. Use /resolving-merge-conflicts on conflicts. The main checkout can hold uncommitted changes from before the run; leave them as they are. If git refuses the checkout or the merge because of them, stop and tell the user.
+In the main checkout, check out `master` and `git merge <branch>`. Use /resolving-merge-conflicts on conflicts. The main checkout can hold uncommitted changes from before the run; leave them as they are. If git refuses the checkout or the merge because of them, stop and tell the user.
 
 Once the merge is committed, delete the worktree and its branch:
 
@@ -65,11 +65,11 @@ Clean-up is done when `git worktree list` no longer shows the worktree and `git 
 
 ## Close the tickets
 
-When the work came from a ticket, set the ticket's state in Linear after the merge to `main` (see `docs/agents/issue-tracker.md`):
+When the work came from a ticket, set the ticket's state in Linear after the merge to `master` (see `docs/agents/issue-tracker.md`):
 
-- **Done**: every acceptance criterion is met. Add a comment that names the commits on `main`.
+- **Done**: every acceptance criterion is met. Add a comment that names the commits on `master`.
 - **In Review**: the code is in, but part of the work stays open. Add a comment that starts `Left:` and names what is left.
 
-If the merge to `main` does not complete, leave the ticket's state as it is.
+If the merge to `master` does not complete, leave the ticket's state as it is.
 
 Report in five lines: what changed, which tests cover it, what stays open.
