@@ -205,8 +205,12 @@ The Overview opened for the focused window's Application: each output's active w
 _Avoid_: app exposé (macOS's), present windows for the current application (KWin's older name), application switcher (that's `switch-group`'s Window switcher)
 
 **Hot corner**:
-A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, the Application overview, Show desktop or the lock, when the pointer rests in it. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than the Overview or the Application overview is open, a fullscreen window is focused on its output, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
+A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, the Application overview, Show desktop or the lock, when the pointer rests in it for the Activation delay. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than the Overview or the Application overview is open, a fullscreen window is focused on its output, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
 _Avoid_: screen edge (Plasma's term, which covers the edges too), active corner, hot spot
+
+**Activation delay**:
+How long the pointer rests in a Hot corner before the corner fires, the same for all four corners and set by the user. A change counts for a rest already under way, from when it began. Once a corner has fired, it fires again only after the pointer has left it and a fixed time has passed, however short the Activation delay. It's Plasma's activation delay.
+_Avoid_: threshold (it could be a distance or a pressure), rest (that's what the pointer does, not how long), reactivation delay (that's the fixed time before a corner fires again)
 
 **caminito-behaviour**:
 Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners now, and later the animations and Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
@@ -237,8 +241,16 @@ A combination of modifiers with a key or a mouse button that Caminito acts on be
 _Avoid_: keyboard shortcut (a mouse button can be one), keybinding, hotkey, global shortcut, shortcut alone for an application's own (those are the client's)
 
 **Key remap**:
-A combination the user presses that Caminito swaps for another before the focused window's client receives it, such as Alt+T arriving as Ctrl+T, or Alt+Right as End. Remaps are listed for all applications and for each app id, and one app id's can replace or turn off those for all. A System shortcut is matched first, so a combination that is one is never remapped.
+A combination the user presses that Caminito swaps for another, for a sequence of others, or for nothing, before the focused window's client receives it, such as Alt+T arriving as Ctrl+T, Alt+Right as End, or Alt+BackSpace as Shift+Home then BackSpace. Remaps are listed for all applications and for each Remap group, and a group's can replace or turn off those for all. A System shortcut is matched first, so a combination that is one is never remapped, and a target that is one runs it instead of reaching the client, as Alt+Q sent as Alt+F4 closes the window. A target is never remapped again.
 _Avoid_: override, translation, rebinding, modifier swap (Caminito swaps combinations, not modifiers), system shortcut (Caminito acts on that one itself)
+
+**Remap group**:
+A named list of app ids that share their Key remaps, such as Terminals or Browsers. An app id is in one group at most.
+_Avoid_: app group, class list (Toshy's), group alone (that's Marco's `switch-group`)
+
+**Remap template**:
+A named, saved set of Key remaps, those for all applications and each Remap group's. Caminito comes with some, such as the macOS one, and the user saves their own; loading one replaces the Key remaps in use.
+_Avoid_: preset, profile (suggests switching sets as you work), keymap (that's XKB's)
 
 **Global menu**:
 The focused window's menubar, shown in the panel instead of inside the window. There is one, whatever the number of panels or outputs, and a window without a menubar has none.
