@@ -107,6 +107,9 @@ const fn window(key: &'static str, default: &'static str, does: Does) -> Bindabl
 /// `org.mate.Caminito`'s key for the Overview's shortcut (241).
 pub(crate) const OVERVIEW_KEY: &str = "overview";
 
+/// `org.mate.Caminito`'s key for the Application overview's shortcut (CMN-185).
+pub(crate) const APPLICATION_OVERVIEW_KEY: &str = "application-overview";
+
 /// An action Marco hasn't, whose key is `org.mate.Caminito`'s.
 const fn caminito(key: &'static str, default: &'static str, does: Does) -> Bindable {
     Bindable {
@@ -490,6 +493,11 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 policy(Action::SwitchToWorkspacePrev),
             ),
             caminito(OVERVIEW_KEY, "<Super>w", policy(Action::Overview)),
+            caminito(
+                APPLICATION_OVERVIEW_KEY,
+                "disabled",
+                policy(Action::ApplicationOverview),
+            ),
         ])
 }
 

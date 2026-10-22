@@ -13,7 +13,7 @@ use caminito_policy::{
 use caminito_theme::ButtonLayout;
 
 use crate::input::bindings::button_modifier::ButtonModifier;
-use crate::input::bindings::{Bindings, OVERVIEW_KEY};
+use crate::input::bindings::{APPLICATION_OVERVIEW_KEY, Bindings, OVERVIEW_KEY};
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
 pub const MARCO_WORKSPACE_NAMES: &str = "org.mate.Marco.workspace-names";
@@ -452,6 +452,9 @@ pub enum HotCornerAction {
     None,
     /// Opens the Overview on the corner's output, or closes the open one.
     Overview,
+    /// Opens the Application overview on the corner's output, or closes it (CMN-185).
+    /// The open Overview changes to it in place.
+    ApplicationOverview,
     /// Show desktop's toggle, for every output.
     ShowDesktop,
     /// Locks the session.
@@ -655,6 +658,7 @@ impl Nick for HotCornerAction {
         ("overview", Self::Overview),
         ("show-desktop", Self::ShowDesktop),
         ("lock", Self::Lock),
+        ("application-overview", Self::ApplicationOverview),
     ];
 }
 
@@ -1249,11 +1253,12 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         resize_with_right_button: r.bool(MARCO_GENERAL, "resize-with-right-button", true),
     };
 
-    // Every key of both of Marco's schemas, so every value is parsed (148), and the one
-    // key of Caminito's own that's a binding, the Overview's (241).
+    // Every key of both of Marco's schemas, so every value is parsed (148), and the two
+    // keys of Caminito's own that are bindings, the Overview's (241) and the Application
+    // overview's (CMN-185).
     let overview = reading
         .strings_of(CAMINITO)
-        .filter(|(key, _)| *key == OVERVIEW_KEY)
+        .filter(|(key, _)| [OVERVIEW_KEY, APPLICATION_OVERVIEW_KEY].contains(key))
         .map(|(key, value)| (CAMINITO, key, value));
     let keys = [MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS]
         .into_iter()

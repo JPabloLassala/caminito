@@ -2690,14 +2690,14 @@ fn the_hot_corners_keys_are_read() {
     set("hot-corner-top-left", "overview");
     set("hot-corner-top-right", "show-desktop");
     set("hot-corner-bottom-left", "lock");
-    set("hot-corner-bottom-right", "none");
+    set("hot-corner-bottom-right", "application-overview");
     assert_eq!(
         settings(&reading).hot_corners,
         HotCorners {
             top_left: HotCornerAction::Overview,
             top_right: HotCornerAction::ShowDesktop,
             bottom_left: HotCornerAction::Lock,
-            bottom_right: HotCornerAction::None,
+            bottom_right: HotCornerAction::ApplicationOverview,
         }
     );
 }

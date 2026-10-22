@@ -2,6 +2,7 @@
 
 mod above_below_and_sticky;
 mod actions;
+mod application_overview;
 mod commit;
 mod dynamic_workspaces;
 mod edge_resistance;

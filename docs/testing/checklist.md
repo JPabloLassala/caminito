@@ -917,6 +917,36 @@ session_env() {
 - **Debug tool:** `DumpState`'s `overview`, whose `outputs` has each monitor's part, and its
   `drag`'s `onto`. `overview_transition`'s `outputs`.
 
+### The Application overview
+
+- **Milestone:** `overview`, the developer's to run (CMN-185).
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend, with two monitors and four workspaces.
+     Run `gsettings get org.mate.Caminito application-overview`, which prints
+     `'disabled'`, and look for *Show the windows of the current application side by side*
+     in *System Shortcuts*. Set it to Super+A there. On the first workspace of the first
+     monitor open two caja windows and a terminal, and on the second monitor a third caja
+     window and pluma. On the second workspace of the first monitor open a fourth caja
+     window.
+  2. Focus a caja window and press Super+A. Click the second workspace's cell in the first
+     monitor's bar, then the first workspace's. Close it, focus pluma, and press Super+A.
+  3. Focus a caja window and press Super+A, then Super+W, then Super+A, then Super+A again.
+  4. Minimise every window, and press Super+A.
+  5. Set the top-right corner to *Application overview* in *Workspace Behaviour*, focus a
+     caja window, and rest the pointer in the second monitor's top-right corner; rest it
+     there again once it has opened.
+- **Expected:** in step 2 each monitor shows only caja's windows of its active workspace,
+  the first monitor's two and the second's one, and each bar's cells draw every window:
+  the terminal and pluma are in the cells. The switch shows the fourth caja window, and the
+  first workspace's two again. With pluma focused, only pluma shows, on the second monitor,
+  and the first monitor shows an empty layout under its bar. In step 3 Super+W changes the
+  view to the Overview without closing it: caja's windows ease to their new places and the
+  terminal and pluma fade in. Super+A takes it back to caja alone, the others fading out,
+  and the second Super+A closes it. In step 4 nothing opens. In step 5 it opens with the
+  selection on the second monitor, and the second rest closes it.
+- **Debug tool:** `DumpState`'s `overview`, whose `scope` is `application`, and each
+  monitor's `fading`.
+
 ### A Wayland menu slides out of what it's attached to
 
 - **Milestone:** M9
