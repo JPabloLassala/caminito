@@ -1,16 +1,32 @@
 ---
 name: implement
-description: "Implement a spec or tickets with batched reads, slice-only test runs and read-only reviewers."
+description: "Implement a spec or tickets in a git worktree, merge it to main, then delete the worktree."
 disable-model-invocation: true
 ---
 
-Implement the work described by the user in the spec or tickets.
+Implement the work described by the user in the spec or tickets, in a git worktree.
 
 If the user passes a ticket reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask.
 
+Then claim each ticket in Linear, before you create the worktree: assign it to `me` and set its state to **In Progress** (see `docs/agents/issue-tracker.md`).
+
+## Set up the worktree
+
+The checkout you start in is the **main checkout**. The work branches from `main` and merges back into `main`.
+
+Create a branch named after the work, in a worktree that is a sibling of the repository:
+
+    git worktree add -b <branch> ../<repo>-<branch> main
+
+A new worktree lacks every ignored file. In the worktree, symlink each ignored `.env` file and `node_modules` directory to its counterpart in the main checkout, at the same path. `git ls-files --others --ignored --exclude-standard --directory | grep -E 'node_modules|\.env'` lists them.
+
+The symlinks share one `node_modules` with the main checkout. If the work changes an app's dependencies, replace that app's `node_modules` symlink with a real install first.
+
+Setup is done when `yarn typecheck` passes in the worktree. Do all of the work below there, with absolute paths into the worktree.
+
 ## Batch the lookups
 
-Start from the ticket and the files, seams and ADRs it names. Read all of them in one turn, as parallel tool calls, and explore past them only where they leave a gap.
+Start from the ticket. It names the files, the seams and the ADRs of the work. Read all of them in one turn, as parallel tool calls, and explore past them only where they leave a gap.
 
 Before each step, list everything the step needs to read: files, greps, test output. Ask for all of it in one turn. A read waits for an earlier result only when it depends on that result (open the file the grep found).
 
@@ -18,21 +34,42 @@ Before each step, list everything the step needs to read: files, greps, test out
 
 Call the Skill tool with "tdd" where possible, at pre-agreed seams. Run typechecking regularly.
 
-During the red → green loop, pass only the test files of the slice to the test runner. At the end, run the tests relevant to the change: the tests you wrote or touched, and those covering the code you changed. Do not run the full test suite; the human runs it.
+Test runs follow the root `CLAUDE.md`: pass only the test files of the slice to Vitest.
 
 A green that fails: read the whole failure output before the next edit. After two failed greens on the same test, stop the edits. Re-read the test and the code path it exercises, name the cause, then edit.
 
-## Review and commit
+## Commit and review
 
-Call the Skill tool with "code-review". Put the output of the last test run and of the last typecheck in both sub-agent prompts, with this line: "Review by reading. The test results in this prompt come from the main agent's run on this exact diff. The working tree belongs to the main agent: read it, and leave it as it is."
+Commit your work to the worktree branch.
 
-Commit your work to the current branch.
+Call the Skill tool with "review-standards-spec". Give it:
 
-When the work came from a ticket, set the ticket's state in the issue tracker after the commit:
+- the fixed point: `main`
+- the diff command: `git diff main...HEAD`, run in the worktree
+- the spec: the ticket text you fetched at the start, or the spec the user gave
+- the standards sources: the root `CLAUDE.md` and the `CLAUDE.md` of each app the work changed, the root `CONTEXT.md`, `docs/adr/`, and `.sandcastle/CODING_STANDARDS.md`
+- the output of the last test run and of the last typecheck, for both sub-agent prompts
 
-- **Done**: every acceptance criterion is met. Add a comment that names the commit.
-- **In Review** (or the tracker's nearest state): the code is in, but part of the work stays open. Add a comment that names what is left.
+Fix the findings you accept, and commit the fixes as a second commit.
 
-When the project documents its issue tracker, use its state names and operations.
+## Merge and clean up
+
+In the main checkout, check out `main` and `git merge <branch>`. Use /resolving-merge-conflicts on conflicts. The main checkout can hold uncommitted changes from before the run; leave them as they are. If git refuses the checkout or the merge because of them, stop and tell the user.
+
+Once the merge is committed, delete the worktree and its branch:
+
+    git worktree remove ../<repo>-<branch>
+    git branch -d <branch>
+
+Clean-up is done when `git worktree list` no longer shows the worktree and `git branch` no longer shows the branch. If the merge does not complete, keep the worktree and tell the user its path.
+
+## Close the tickets
+
+When the work came from a ticket, set the ticket's state in Linear after the merge to `main` (see `docs/agents/issue-tracker.md`):
+
+- **Done**: every acceptance criterion is met. Add a comment that names the commits on `main`.
+- **In Review**: the code is in, but part of the work stays open. Add a comment that starts `Left:` and names what is left.
+
+If the merge to `main` does not complete, leave the ticket's state as it is.
 
 Report in five lines: what changed, which tests cover it, what stays open.
