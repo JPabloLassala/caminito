@@ -83,7 +83,9 @@ impl Holder {
             Holder::Idle => caminito.idle.deadline(),
             Holder::AccessX => caminito.accessx.deadline(),
             Holder::AcceleratorRepeat => caminito.accelerator_repeat.as_ref().map(Repeat::deadline),
-            Holder::HotCorners => caminito.hot_corners.deadline(),
+            Holder::HotCorners => caminito
+                .hot_corners
+                .deadline(caminito.settings.hot_corners.activation_delay),
             Holder::GlobalMenu => caminito.global_menu_switch.deadline(),
             Holder::SwitcherPopup => caminito.switcher_popup_deadline(),
             Holder::Bell => caminito.bells.deadline(),

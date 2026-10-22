@@ -1,6 +1,6 @@
 //! The Hot corners page's keys (CMN-184): `org.mate.Caminito`'s four `hot-corner-*` keys
-//! (CMN-183), which Caminito follows as they change, so a corner set here fires with no
-//! restart.
+//! (CMN-183) and the Activation delay's (CMN-191), which Caminito follows as they change,
+//! so a corner set here fires with no restart.
 
 use gio::prelude::*;
 
@@ -9,6 +9,12 @@ mod tests;
 
 /// The schema the keys are in.
 pub const SCHEMA: &str = "org.mate.Caminito";
+
+/// The Activation delay's key, in milliseconds.
+const ACTIVATION_DELAY: &str = "hot-corner-activation-delay";
+
+/// The longest Activation delay, in milliseconds: the top of its key's range.
+pub const MAX_ACTIVATION_DELAY: u32 = 1000;
 
 /// A corner of every output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +109,8 @@ pub enum Error {
     NoSchema,
     /// Its key is locked down, or the backend failed.
     Key(&'static str, gio::glib::BoolError),
+    /// An Activation delay past [`MAX_ACTIVATION_DELAY`], in milliseconds.
+    TooLong(u32),
 }
 
 impl std::fmt::Display for Error {
@@ -110,13 +118,17 @@ impl std::fmt::Display for Error {
         match self {
             Error::NoSchema => write!(f, "the schema {SCHEMA} isn't installed"),
             Error::Key(key, err) => write!(f, "can't write {key}: {err}"),
+            Error::TooLong(delay) => write!(
+                f,
+                "an activation delay of {delay} ms is past {MAX_ACTIVATION_DELAY} ms"
+            ),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
-/// The four corners' keys.
+/// The four corners' keys, and the Activation delay's.
 pub struct HotCorners {
     settings: gio::Settings,
 }
@@ -158,6 +170,38 @@ impl HotCorners {
         self.settings
             .set_string(corner.key(), action.nick())
             .map_err(|err| Error::Key(corner.key(), err))
+    }
+
+    /// Whether a corner has an action: the Activation delay is a corner's only then.
+    pub fn any_on(&self) -> bool {
+        Corner::ALL
+            .into_iter()
+            .any(|corner| self.action(corner) != Action::None)
+    }
+
+    /// The Activation delay, in milliseconds: how long the pointer rests in a corner before
+    /// it fires, for all four.
+    pub fn activation_delay(&self) -> u32 {
+        self.settings.uint(ACTIVATION_DELAY)
+    }
+
+    /// Calls `f` with the Activation delay each time its key changes.
+    pub fn connect_activation_delay_changed(&self, f: impl Fn(u32) + 'static) {
+        self.settings
+            .connect_changed(Some(ACTIVATION_DELAY), move |settings, _| {
+                f(settings.uint(ACTIVATION_DELAY));
+            });
+    }
+
+    /// Writes the Activation delay `delay`, in milliseconds, at once. One past
+    /// [`MAX_ACTIVATION_DELAY`] isn't written: GSettings would refuse it with a critical.
+    pub fn set_activation_delay(&self, delay: u32) -> Result<(), Error> {
+        if delay > MAX_ACTIVATION_DELAY {
+            return Err(Error::TooLong(delay));
+        }
+        self.settings
+            .set_uint(ACTIVATION_DELAY, delay)
+            .map_err(|err| Error::Key(ACTIVATION_DELAY, err))
     }
 }
 

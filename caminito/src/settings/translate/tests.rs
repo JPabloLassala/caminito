@@ -183,6 +183,7 @@ fn defaults() -> Reading {
     for corner in ["top-left", "top-right", "bottom-left", "bottom-right"] {
         put(CAMINITO, &format!("hot-corner-{corner}"), s("none"));
     }
+    put(CAMINITO, "hot-corner-activation-delay", Value::Uint(150));
     put(
         CAMINITO,
         "locker-command",
@@ -2677,6 +2678,7 @@ fn every_hot_corner_is_off_by_default() {
             top_right: HotCornerAction::None,
             bottom_left: HotCornerAction::None,
             bottom_right: HotCornerAction::None,
+            activation_delay: Duration::from_millis(150),
         }
     );
 }
@@ -2699,7 +2701,46 @@ fn the_hot_corners_keys_are_read() {
             top_right: HotCornerAction::ShowDesktop,
             bottom_left: HotCornerAction::Lock,
             bottom_right: HotCornerAction::ApplicationOverview,
+            activation_delay: Duration::from_millis(150),
         }
+    );
+}
+
+#[test]
+fn the_activation_delay_is_read() {
+    let reading = with(CAMINITO, "hot-corner-activation-delay", Value::Uint(400));
+    assert_eq!(
+        settings(&reading).hot_corners.activation_delay,
+        Duration::from_millis(400)
+    );
+    let reading = with(CAMINITO, "hot-corner-activation-delay", Value::Uint(0));
+    assert_eq!(
+        settings(&reading).hot_corners.activation_delay,
+        Duration::ZERO
+    );
+}
+
+#[test]
+fn an_activation_delay_over_a_second_is_a_second() {
+    let reading = with(CAMINITO, "hot-corner-activation-delay", Value::Uint(5000));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(
+        settings.hot_corners.activation_delay,
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        problem,
+        out_of_range(CAMINITO, "hot-corner-activation-delay", "5000", "1000")
+    );
+}
+
+#[test]
+fn an_activation_delay_of_another_type_is_150_ms() {
+    let reading = with(CAMINITO, "hot-corner-activation-delay", string("slow"));
+    let (settings, _) = problem(&reading);
+    assert_eq!(
+        settings.hot_corners.activation_delay,
+        Duration::from_millis(150)
     );
 }
 

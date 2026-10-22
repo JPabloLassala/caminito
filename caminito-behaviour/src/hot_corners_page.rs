@@ -1,10 +1,11 @@
 //! The Hot corners page (CMN-184): a picture of a screen with a drop-down in each of its
-//! corners. A choice is written to the corner's key at once, as the Wallpaper dialog's are,
-//! and the drop-downs follow the keys when they change from outside, as by `gsettings set`.
+//! corners, and the Activation delay below it (CMN-191). A choice is written to its key at
+//! once, as the Wallpaper dialog's are, and the page follows the keys when they change from
+//! outside, as by `gsettings set`.
 
 use std::rc::Rc;
 
-use caminito_behaviour::hot_corners::{Action, Corner, HotCorners};
+use caminito_behaviour::hot_corners::{Action, Corner, HotCorners, MAX_ACTIVATION_DELAY};
 use gtk::glib;
 use gtk::prelude::*;
 
@@ -16,6 +17,8 @@ const SCREEN: (i32, i32) = (480, 300);
 const BEZEL: i32 = 8;
 /// The space between a drop-down and its corner of the screen, in pixels.
 const INSET: i32 = 10;
+/// The Activation delay's step, in milliseconds.
+const DELAY_STEP: f64 = 50.0;
 
 /// The screen's look: a monitor's bezel around a desktop of MATE's blue, the wallpaper's
 /// default (212).
@@ -60,9 +63,15 @@ pub fn build(corners: HotCorners) -> gtk::Widget {
             (corner, dropdown)
         })
         .collect();
-    corners.connect_changed(move |corner, action| {
-        if let Some((_, dropdown)) = dropdowns.iter().find(|(each, _)| *each == corner) {
-            dropdown.set_selected(index(action));
+    let delay = activation_delay(&corners);
+    corners.connect_changed({
+        let corners = corners.clone();
+        let delay = delay.clone();
+        move |corner, action| {
+            if let Some((_, dropdown)) = dropdowns.iter().find(|(each, _)| *each == corner) {
+                dropdown.set_selected(index(action));
+            }
+            delay.set_sensitive(corners.any_on());
         }
     });
 
@@ -82,7 +91,50 @@ pub fn build(corners: HotCorners) -> gtk::Widget {
             .build(),
     );
     page.append(&screen);
+    page.append(&delay);
     page.upcast()
+}
+
+/// The Activation delay's row: a spin button in milliseconds, showing its key and writing
+/// the one chosen, greyed out while every corner is off.
+fn activation_delay(corners: &Rc<HotCorners>) -> gtk::Box {
+    let spin = gtk::SpinButton::with_range(0.0, MAX_ACTIVATION_DELAY.into(), DELAY_STEP);
+    spin.set_value(corners.activation_delay().into());
+    spin.connect_value_changed({
+        let corners = corners.clone();
+        move |spin| {
+            let delay = spin.value_as_int() as u32;
+            // A change heard from the key sets the spin button too, and needs no writing
+            // back.
+            if corners.activation_delay() == delay {
+                return;
+            }
+            if let Err(err) = corners.set_activation_delay(delay) {
+                glib::g_warning!(DOMAIN, "can't set the activation delay: {err}");
+                spin.set_value(corners.activation_delay().into());
+            }
+        }
+    });
+    corners.connect_activation_delay_changed({
+        let spin = spin.clone();
+        move |delay| spin.set_value(delay.into())
+    });
+
+    let label = gtk::Label::builder()
+        .label("_Activation delay:")
+        .use_underline(true)
+        .mnemonic_widget(&spin)
+        .build();
+    let row = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(SPACING / 3)
+        .halign(gtk::Align::Center)
+        .sensitive(corners.any_on())
+        .build();
+    row.append(&label);
+    row.append(&spin);
+    row.append(&gtk::Label::new(Some("ms")));
+    row
 }
 
 /// The drop-down of `corner`, in its corner of the screen, showing its key's action and
