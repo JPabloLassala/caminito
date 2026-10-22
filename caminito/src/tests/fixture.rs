@@ -123,6 +123,7 @@ pub const KEY_H: u32 = 35;
 pub const KEY_L: u32 = 38;
 pub const KEY_GRAVE: u32 = 41;
 pub const KEY_LEFTSHIFT: u32 = 42;
+pub const KEY_Z: u32 = 44;
 pub const KEY_X: u32 = 45;
 pub const KEY_C: u32 = 46;
 pub const KEY_N: u32 = 49;

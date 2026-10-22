@@ -258,12 +258,74 @@ pub(crate) fn is_modifier(keysym: Keysym) -> bool {
 /// starts a rule, so a remap never shows it a stray Alt.
 #[derive(Debug, Clone)]
 pub(crate) struct HeldBack {
-    /// Each key held back, with the modifiers its press gave, in the order pressed.
-    pub(crate) keys: Vec<(Keycode, ModifiersState)>,
+    /// Each press held back, in the order pressed.
+    presses: Vec<HeldPress>,
     /// The modifiers the client was last told of, before the first.
-    pub(crate) client: ModifiersState,
+    client: Held,
     /// Whether a rule has taken a key since, so the keys' releases are swallowed.
-    pub(crate) used: bool,
+    taken: bool,
+}
+
+/// A modifier's press held back, with the modifiers it gave.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HeldPress {
+    pub(crate) keycode: Keycode,
+    pub(crate) mods: ModifiersState,
+}
+
+impl HeldBack {
+    /// Nothing held back yet from a client that has `client`.
+    pub(crate) fn new(client: &ModifiersState) -> Self {
+        Self {
+            presses: Vec::new(),
+            client: Held::from(client),
+            taken: false,
+        }
+    }
+
+    /// Holds back `keycode`'s press, which gave `mods`.
+    pub(crate) fn hold(&mut self, keycode: Keycode, mods: ModifiersState) {
+        self.presses.push(HeldPress { keycode, mods });
+    }
+
+    /// A rule took a key while these are held back.
+    pub(crate) fn take(&mut self) {
+        self.taken = true;
+    }
+
+    /// Whether a rule took a key while these were held back.
+    pub(crate) fn is_taken(&self) -> bool {
+        self.taken
+    }
+
+    /// Whether `keycode`'s press is held back.
+    pub(crate) fn holds(&self, keycode: Keycode) -> bool {
+        self.presses.iter().any(|press| press.keycode == keycode)
+    }
+
+    /// Forgets `keycode`'s press, as it's released, and says whether none is held back now.
+    pub(crate) fn forget(&mut self, keycode: Keycode) -> bool {
+        self.presses.retain(|press| press.keycode != keycode);
+        self.presses.is_empty()
+    }
+
+    /// The presses held back, in the order pressed.
+    pub(crate) fn into_presses(self) -> Vec<HeldPress> {
+        self.presses
+    }
+
+    /// The modifiers the client has while `held` are: those held back aren't among them,
+    /// and a release since may have let go of one it had. Its `serialized` is `held`'s, for
+    /// the caller to serialize back.
+    pub(crate) fn client_modifiers(&self, held: &ModifiersState) -> ModifiersState {
+        ModifiersState {
+            ctrl: held.ctrl && self.client.ctrl,
+            alt: held.alt && self.client.alt,
+            shift: held.shift && self.client.shift,
+            logo: held.logo && self.client.logo,
+            ..*held
+        }
+    }
 }
 
 #[cfg(test)]

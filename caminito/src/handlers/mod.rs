@@ -49,6 +49,9 @@ impl SeatHandler for State {
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&KeyboardFocus>) {
+        // The new focus is told of the modifiers held as it enters, those held back from the
+        // last (CMN-188) among them, so they're held back no longer.
+        self.caminito.held_back = None;
         // The clipboards follow keyboard focus.
         let dh = &self.caminito.display_handle;
         let client = focused

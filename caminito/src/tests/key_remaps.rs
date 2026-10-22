@@ -14,15 +14,14 @@
 //! A modifier that starts a rule for the focus is held back from the client (CMN-188), so a
 //! client gets no Alt for a remapped Alt+T, and gets it before a key no rule takes.
 
+use smithay::utils::Point;
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::KeyButMask;
 
 use super::accelerators::Caller;
-use smithay::utils::Point;
-
 use super::fixture::{
     BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_C, KEY_F, KEY_H, KEY_LEFTALT, KEY_LEFTCTRL,
-    KEY_M, KEY_Q, KEY_RIGHTALT, KEY_T, KEY_TAB, Kind, WindowSpec,
+    KEY_LEFTSHIFT, KEY_M, KEY_Q, KEY_RIGHTALT, KEY_T, KEY_TAB, KEY_Z, Kind, WindowSpec,
 };
 use super::lock::lock_with_a_surface;
 use crate::settings::Value;
@@ -315,6 +314,61 @@ fn a_rule_taken_while_alt_is_held_keeps_it_held_back_for_the_next() {
 }
 
 #[test]
+fn another_keys_release_while_alt_is_held_back_never_shows_the_client_the_alt() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[(
+        "Alt+Shift+Z",
+        &["Ctrl+Shift+Z"],
+    )])])]);
+    let client = listening(&mut f);
+    focused(&mut f, client, None);
+
+    f.key(KEY_LEFTSHIFT, true);
+    f.key(KEY_LEFTALT, true);
+    f.chord(&[KEY_Z]);
+    f.key(KEY_LEFTSHIFT, false);
+    f.key(KEY_LEFTALT, false);
+    assert_eq!(
+        keys(&mut f, client),
+        [
+            (KEY_LEFTSHIFT, true, SHIFT),
+            (KEY_Z, true, CTRL | SHIFT),
+            (KEY_Z, false, CTRL | SHIFT),
+            (KEY_LEFTSHIFT, false, 0),
+        ]
+    );
+}
+
+#[test]
+fn a_window_that_takes_the_focus_while_alt_is_held_back_gets_no_alt_tap() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let first = listening(&mut f);
+    focused(&mut f, first, None);
+    let second = listening(&mut f);
+
+    f.key(KEY_LEFTALT, true);
+    focused(&mut f, second, None);
+    f.key(KEY_LEFTALT, false);
+
+    // It's told of the Alt as it enters, as of any modifier held then, and of its release.
+    assert_eq!(keys(&mut f, second), [(KEY_LEFTALT, false, 0)]);
+    assert_eq!(keys(&mut f, first), []);
+}
+
+#[test]
+fn a_scroll_has_the_held_back_alt_sent_first() {
+    let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
+    let client = listening(&mut f);
+    let window = focused(&mut f, client, None);
+    let start = f.geometry(window);
+    let point = (start.loc + Point::from((50, 50))).to_f64();
+    f.pointer_move(point.x, point.y);
+
+    f.key(KEY_LEFTALT, true);
+    f.scroll(120.);
+    assert_eq!(keys(&mut f, client), [(KEY_LEFTALT, true, ALT)]);
+}
+
+#[test]
 fn alt_drag_moves_a_window_while_alt_is_held_back() {
     let mut f = caminito(vec![key_remaps(vec![all(&[("Alt+T", &["Ctrl+T"])])])]);
     let client = listening(&mut f);
@@ -447,9 +501,5 @@ fn an_xwayland_client_gets_the_remaps_too() {
         })
         .collect();
     let t = (KEY_T + 8) as u8;
-    assert_eq!(
-        presses,
-        [(t, KeyButMask::CONTROL)],
-        "{events:?}"
-    );
+    assert_eq!(presses, [(t, KeyButMask::CONTROL)], "{events:?}");
 }

@@ -212,6 +212,8 @@ impl State {
     /// its `action-scroll-*-titlebar` keys ask (162).
     pub(crate) fn on_pointer_scroll(&mut self, scroll: Scroll) {
         self.idle_activity();
+        // As a click does, so an Alt+scroll a client gets comes with its Alt (CMN-188).
+        self.send_held_back(scroll.time);
         self.titlebar_scroll(&scroll);
         let mut frame = AxisFrame::new(scroll.time).source(scroll.source);
         let mut sent = false;
@@ -431,7 +433,7 @@ impl State {
         self.caminito.keyboard_monitor.clear();
         // The client is told of no key held back, then or as it's released.
         if let Some(held_back) = &mut self.caminito.held_back {
-            held_back.used = true;
+            held_back.take();
         }
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let time = InputTime::from_micros(self.caminito.now().as_micros() as u64);
@@ -608,12 +610,11 @@ impl State {
             {
                 return FilterResult::Forward;
             }
-            let held_back = self.caminito.held_back.get_or_insert_with(|| HeldBack {
-                keys: Vec::new(),
-                client: *before,
-                used: false,
-            });
-            held_back.keys.push((keycode, *mods));
+            let held_back = self
+                .caminito
+                .held_back
+                .get_or_insert_with(|| HeldBack::new(before));
+            held_back.hold(keycode, *mods);
             return FilterResult::Intercept(Some(Bound::HeldBack));
         }
         let Some(steps) = remaps.steps_for(app_id.as_deref(), &combination) else {
@@ -630,7 +631,8 @@ impl State {
     /// key's `result`. A press a rule takes keeps them held back, and their releases are
     /// swallowed. Any other press, one that runs a binding among them, has them sent first,
     /// as is the release of one no rule has taken since, so the client sees a lone Alt as a
-    /// tap.
+    /// tap. Another key's release is sent with the modifiers the client has, which those
+    /// held back aren't among.
     fn held_back_stage(
         &mut self,
         keycode: Keycode,
@@ -642,25 +644,32 @@ impl State {
             return result;
         };
         match result {
-            FilterResult::Intercept(Some(Bound::HeldBack)) => {}
-            FilterResult::Intercept(Some(Bound::Remap(_))) => held_back.used = true,
-            _ if pressed => self.send_held_back(time),
-            _ => {
-                let Some(index) = held_back.keys.iter().position(|(key, _)| *key == keycode) else {
-                    return result;
-                };
-                if !held_back.used {
-                    self.send_held_back(time);
-                    return result;
-                }
-                held_back.keys.remove(index);
-                if held_back.keys.is_empty() {
+            FilterResult::Intercept(Some(Bound::HeldBack)) => result,
+            FilterResult::Intercept(Some(Bound::Remap(_))) => {
+                held_back.take();
+                result
+            }
+            _ if pressed => {
+                self.send_held_back(time);
+                result
+            }
+            FilterResult::Intercept(_) => result,
+            FilterResult::Forward if !held_back.holds(keycode) => {
+                let mods = self.client_modifiers();
+                self.send_key(keycode, KeyState::Released, Some(mods), time);
+                FilterResult::Intercept(None)
+            }
+            FilterResult::Forward if !held_back.is_taken() => {
+                self.send_held_back(time);
+                result
+            }
+            FilterResult::Forward => {
+                if held_back.forget(keycode) {
                     self.caminito.held_back = None;
                 }
-                return FilterResult::Intercept(None);
+                FilterResult::Intercept(None)
             }
         }
-        result
     }
 
     /// Sends the client the presses of the modifiers held back from it, each with the
@@ -669,18 +678,50 @@ impl State {
         let Some(held_back) = self.caminito.held_back.take() else {
             return;
         };
+        for press in held_back.into_presses() {
+            self.send_key(press.keycode, KeyState::Pressed, Some(press.mods), time);
+        }
+    }
+
+    /// The modifiers the client with the keyboard has: those held, but any held back from it
+    /// (CMN-188).
+    fn client_modifiers(&mut self) -> ModifiersState {
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
-        let seat = self.caminito.seat.clone();
-        for (keycode, mods) in held_back.keys {
-            let focus = keyboard.current_focus();
-            if let Some(focus) = &focus {
-                focus.modifiers(&seat, self, mods, SERIAL_COUNTER.next_serial());
-            }
-            let serial = SERIAL_COUNTER.next_serial();
+        let held = keyboard.modifier_state();
+        let Some(held_back) = &self.caminito.held_back else {
+            return held;
+        };
+        let mut mods = held_back.client_modifiers(&held);
+        mods.serialized = keyboard.with_xkb_state(self, |context| {
+            let xkb = context.xkb().lock().unwrap();
+            // Safety: the state is only read, and no reference to it outlives the lock.
+            let state = unsafe { xkb.state() };
+            mods.serialize_back(state)
+        });
+        mods
+    }
+
+    /// Sends the client with the keyboard `keycode`'s press or release, told first of `mods`
+    /// if there are any, without touching the keyboard's own state.
+    fn send_key(
+        &mut self,
+        keycode: Keycode,
+        key_state: KeyState,
+        mods: Option<ModifiersState>,
+        time: InputTime,
+    ) {
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        let focus = keyboard.current_focus();
+        if let (Some(focus), Some(mods)) = (&focus, mods) {
+            let seat = self.caminito.seat.clone();
+            focus.modifiers(&seat, self, mods, SERIAL_COUNTER.next_serial());
+        }
+        let serial = SERIAL_COUNTER.next_serial();
+        if key_state == KeyState::Pressed {
             let surface = focus.as_ref().and_then(|focus| focus.wl_surface());
             self.caminito.input_serials.sent(serial, surface.as_deref());
-            keyboard.input_forward(self, keycode, KeyState::Pressed, serial, time, false);
         }
+        keyboard.input_forward(self, keycode, key_state, serial, time, false);
     }
 
     /// The app id of the window whose client has the keyboard. A Layer surface, such as the
@@ -705,12 +746,6 @@ impl State {
         };
         let keyboard = self.caminito.seat.get_keyboard().unwrap();
         let held = keyboard.modifier_state();
-        // The modifiers the client has, which those held back (CMN-188) aren't among.
-        let client = self
-            .caminito
-            .held_back
-            .as_ref()
-            .map_or(held, |held_back| held_back.client);
         let mut mods = target.modifiers(&held);
         let bindings = &self.caminito.settings.bindings;
         if let Some(binding) = bindings.binding_for(&mods, &[target.key]) {
@@ -735,21 +770,18 @@ impl State {
             return;
         };
         // The keyboard's own state isn't touched, so the keys held stay as they are, and
-        // the client is told the modifiers it would have for the target's combination.
+        // the client is told the modifiers it would have for the target's combination, then
+        // those it has, which modifiers held back (CMN-188) aren't among.
         mods.serialized = keyboard.with_xkb_state(self, |context| {
             let xkb = context.xkb().lock().unwrap();
             // Safety: the state is only read, and no reference to it outlives the lock.
             let state = unsafe { xkb.state() };
             mods.serialize_back(state)
         });
+        self.send_key(keycode, KeyState::Pressed, Some(mods), time);
+        self.send_key(keycode, KeyState::Released, None, time);
+        let client = self.client_modifiers();
         let seat = self.caminito.seat.clone();
-        focus.modifiers(&seat, self, mods, SERIAL_COUNTER.next_serial());
-        let serial = SERIAL_COUNTER.next_serial();
-        let surface = focus.wl_surface();
-        self.caminito.input_serials.sent(serial, surface.as_deref());
-        keyboard.input_forward(self, keycode, KeyState::Pressed, serial, time, false);
-        let serial = SERIAL_COUNTER.next_serial();
-        keyboard.input_forward(self, keycode, KeyState::Released, serial, time, false);
         focus.modifiers(&seat, self, client, SERIAL_COUNTER.next_serial());
     }
 
