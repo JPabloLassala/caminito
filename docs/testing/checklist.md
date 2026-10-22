@@ -2153,6 +2153,33 @@ session_env() {
 - **Debug tool:** `ls /usr/share/caminito/xdg/applications`, `gtk-launch caminito-about`, and
   `caminito-about` run from a terminal for GTK's warnings.
 
+## caminito-behaviour
+
+### Workspace Behaviour's Hot corners follow and set the keys, and fire with no restart
+
+- **Milestone:** none (CMN-184)
+- **Steps:**
+  1. With `caminito-git` built from the PKGBUILD and installed, log into *MATE on Caminito*.
+     Open the control center, find *Workspace Behaviour* under *Look and Feel*, and open it.
+  2. Run `gsettings list-recursively org.mate.Caminito | grep hot-corner`.
+  3. Set the bottom-right drop-down to *Show desktop*, run step 2's command again, and rest the
+     pointer in the bottom-right corner of each monitor.
+  4. With the window open, run `gsettings set org.mate.Caminito hot-corner-top-left overview`,
+     and then rest the pointer in the top-left corner.
+  5. Set every drop-down back to *None*, and rest the pointer in each corner.
+  6. With the window open, run `caminito-behaviour` again, and press Escape.
+  7. Log out, log into *MATE*, the X11 session, and look for *Workspace Behaviour* in its
+     control center.
+- **Expected:** in step 1 the window has one tab, *Hot corners*, with a picture of a screen and
+  a drop-down in each of its corners. In step 2 every key is `'none'`, as each drop-down shows.
+  In step 3 the key is `'show-desktop'` with no Apply pressed, and the corner shows the desktop
+  on every monitor, with Caminito not restarted. In step 4 the top-left drop-down changes to
+  *Overview* by itself, and the corner opens the Overview. In step 5 no corner does anything.
+  In step 6 the open window is raised and there is still one, and Escape closes it. In step 7
+  X11 MATE has no *Workspace Behaviour*.
+- **Debug tool:** `gsettings monitor org.mate.Caminito`, `ls /usr/share/caminito/xdg/applications`,
+  and `caminito-behaviour` run from a terminal for GTK's warnings.
+
 ## The wallpaper
 
 ### caminito-wallpaperd draws each output's wallpaper, and follows the monitors

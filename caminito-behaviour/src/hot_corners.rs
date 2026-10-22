@@ -13,9 +13,13 @@ pub const SCHEMA: &str = "org.mate.Caminito";
 /// A corner of every output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Corner {
+    /// `hot-corner-top-left`'s.
     TopLeft,
+    /// `hot-corner-top-right`'s.
     TopRight,
+    /// `hot-corner-bottom-left`'s.
     BottomLeft,
+    /// `hot-corner-bottom-right`'s.
     BottomRight,
 }
 
@@ -44,8 +48,11 @@ impl Corner {
 pub enum Action {
     /// The corner is off.
     None,
+    /// Opens the Overview on the corner's output, or closes it.
     Overview,
+    /// Shows the desktop, or stops.
     ShowDesktop,
+    /// Locks the session.
     Lock,
 }
 
@@ -127,7 +134,7 @@ impl HotCorners {
 
     /// What `corner` does.
     pub fn action(&self, corner: Corner) -> Action {
-        action(&self.settings, corner)
+        read_action(&self.settings, corner)
     }
 
     /// Calls `f` with a corner and its action each time its key changes, as by `gsettings` or
@@ -137,7 +144,7 @@ impl HotCorners {
             let Some(corner) = Corner::ALL.into_iter().find(|corner| corner.key() == key) else {
                 return;
             };
-            f(corner, action(settings, corner));
+            f(corner, read_action(settings, corner));
         });
     }
 
@@ -150,7 +157,7 @@ impl HotCorners {
 }
 
 /// What `corner` of `settings` does.
-fn action(settings: &gio::Settings, corner: Corner) -> Action {
+fn read_action(settings: &gio::Settings, corner: Corner) -> Action {
     let nick = settings.string(corner.key());
     Action::from_nick(&nick).expect("the schema's enum has the four actions")
 }

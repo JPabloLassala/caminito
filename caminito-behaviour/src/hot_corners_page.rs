@@ -12,26 +12,28 @@ use crate::{DOMAIN, SPACING};
 
 /// The screen's size in the picture, in pixels: a 16:10 monitor.
 const SCREEN: (i32, i32) = (480, 300);
-/// The width of the screen's bezel, which the CSS draws, in pixels.
+/// The width of the screen's bezel, in pixels.
 const BEZEL: i32 = 8;
 /// The space between a drop-down and its corner of the screen, in pixels.
 const INSET: i32 = 10;
 
 /// The screen's look: a monitor's bezel around a desktop of MATE's blue, the wallpaper's
 /// default (212).
-const CSS: &str = "
-.hot-corners-screen {
-    background-color: #3a6ea5;
-    border: 8px solid #2e3436;
-    border-radius: 8px;
+fn css() -> String {
+    format!(
+        ".hot-corners-screen {{
+            background-color: #3a6ea5;
+            border: {BEZEL}px solid #2e3436;
+            border-radius: 8px;
+        }}"
+    )
 }
-";
 
 /// Makes the page over `corners`.
 pub fn build(corners: HotCorners) -> gtk::Widget {
     if let Some(display) = gtk::gdk::Display::default() {
         let provider = gtk::CssProvider::new();
-        provider.load_from_string(CSS);
+        provider.load_from_string(&css());
         gtk::style_context_add_provider_for_display(
             &display,
             &provider,
@@ -93,7 +95,7 @@ fn dropdown(corners: &Rc<HotCorners>, corner: Corner) -> gtk::DropDown {
         Corner::BottomLeft => (gtk::Align::Start, gtk::Align::End),
         Corner::BottomRight => (gtk::Align::End, gtk::Align::End),
     };
-    // Inside the bezel, whose width the CSS sets.
+    // Inside the bezel.
     let margin = BEZEL + INSET;
     let dropdown = gtk::DropDown::builder()
         .model(&gtk::StringList::new(&labels))

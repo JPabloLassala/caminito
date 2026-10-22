@@ -28,7 +28,7 @@ smithay = { version = "0.7.0", git = "https://github.com/Smithay/smithay.git", r
 smithay-drm-extras = { git = "https://github.com/Smithay/smithay.git", rev = "928d4a9b222b2adcd739a2c60caf3e8f304a45a5", default-features = false }
 x11rb = "0.13.2"
 # GTK4 without libadwaita (ADR 0014): caminito-displays, caminito-about, caminito-wallpaper's
-# dialog and caminito-bluetooth.
+# dialog, caminito-bluetooth and caminito-behaviour.
 gtk = { package = "gtk4", version = "0.11.5" }
 # The Wayland clients: caminito-displays, and the tests' one.
 wayland-client = "0.31.15"
