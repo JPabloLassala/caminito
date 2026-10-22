@@ -179,6 +179,9 @@ fn defaults() -> Reading {
     put(CAMINITO, "workspace-slide", Value::Bool(true));
     put(CAMINITO, "overview", s("<Super>w"));
     put(CAMINITO, "workspace-layout-columns", Value::Int(0));
+    for corner in ["top-left", "top-right", "bottom-left", "bottom-right"] {
+        put(CAMINITO, &format!("hot-corner-{corner}"), s("none"));
+    }
     put(
         CAMINITO,
         "locker-command",
@@ -2658,5 +2661,54 @@ fn an_unknown_night_light_schedule_is_the_sun() {
     assert_eq!(
         problem,
         invalid(CAMINITO, "night-light-schedule", "'moon'", "'sun'")
+    );
+}
+
+// Hot corners (CMN-183).
+
+#[test]
+fn every_hot_corner_is_off_by_default() {
+    assert_eq!(settings(&defaults()).hot_corners, HotCorners::default());
+    assert_eq!(
+        settings(&Reading::default()).hot_corners,
+        HotCorners {
+            top_left: HotCornerAction::None,
+            top_right: HotCornerAction::None,
+            bottom_left: HotCornerAction::None,
+            bottom_right: HotCornerAction::None,
+        }
+    );
+}
+
+#[test]
+fn the_hot_corners_keys_are_read() {
+    let mut reading = defaults();
+    let mut set = |key: &str, value: &str| {
+        let value = string(value);
+        reading.insert(CAMINITO, key, value, string("none"));
+    };
+    set("hot-corner-top-left", "overview");
+    set("hot-corner-top-right", "show-desktop");
+    set("hot-corner-bottom-left", "lock");
+    set("hot-corner-bottom-right", "none");
+    assert_eq!(
+        settings(&reading).hot_corners,
+        HotCorners {
+            top_left: HotCornerAction::Overview,
+            top_right: HotCornerAction::ShowDesktop,
+            bottom_left: HotCornerAction::Lock,
+            bottom_right: HotCornerAction::None,
+        }
+    );
+}
+
+#[test]
+fn an_unknown_hot_corner_action_is_none() {
+    let reading = with(CAMINITO, "hot-corner-top-right", string("cube"));
+    let (settings, problem) = problem(&reading);
+    assert_eq!(settings.hot_corners.top_right, HotCornerAction::None);
+    assert_eq!(
+        problem,
+        invalid(CAMINITO, "hot-corner-top-right", "'cube'", "'none'")
     );
 }

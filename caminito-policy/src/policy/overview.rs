@@ -120,10 +120,26 @@ impl<W: PolicyWindow> Policy<W> {
     /// so that the workspace bindings switch that one: a press on another output's
     /// wallpaper since the focus last moved gives way to the focused window's output.
     pub(super) fn toggle_overview(&mut self, seat: SeatId) {
+        self.toggle_overview_on(seat, None);
+    }
+
+    /// A hot corner of `output` whose action is the Overview (CMN-183): closes the open
+    /// Overview as the shortcut does, or opens one whose selection is on `output`, which
+    /// becomes `seat`'s Active output, whichever output the focused window is on.
+    pub fn overview_on(&mut self, seat: SeatId, output: OutputId) {
+        self.set_last_seat(seat);
+        self.toggle_overview_on(seat, Some(output));
+        self.apply();
+    }
+
+    /// `toggle_overview`, with the selection on `selection_on` if it's one of policy's
+    /// outputs.
+    fn toggle_overview_on(&mut self, seat: SeatId, selection_on: Option<OutputId>) {
         if self.overview.take().is_some() || self.a_seat_has_an_interaction() {
             return;
         }
-        let Some(output) = self.overview_output(seat) else {
+        let ours = selection_on.filter(|on| self.outputs.iter().any(|output| output.id == *on));
+        let Some(output) = ours.or_else(|| self.overview_output(seat)) else {
             return;
         };
         self.active_outputs.insert(seat, output);

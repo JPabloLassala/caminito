@@ -84,6 +84,33 @@ fn esc_or_a_click_on_the_empty_area_closes_it_and_changes_nothing() {
 }
 
 #[test]
+fn a_hot_corner_opens_it_on_its_output_whatever_the_focused_windows_is() {
+    let mut policy = three();
+    policy.add_output(output(2, 1920, 0, 1920, 1080));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+
+    policy.overview_on(SEAT, OutputId(2));
+
+    let overview = policy.overview().unwrap();
+    assert_eq!(overview.output, OutputId(2));
+    assert_eq!(overview.selected, None);
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+    assert_eq!(policy.interaction(SEAT), Some(Interaction::Overview));
+}
+
+#[test]
+fn a_hot_corner_closes_the_open_one_wherever_it_is() {
+    let mut policy = three();
+    policy.add_output(output(2, 1920, 0, 1920, 1080));
+    toggle(&mut policy);
+
+    policy.overview_on(SEAT, OutputId(2));
+
+    assert!(policy.overview().is_none());
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+}
+
+#[test]
 fn it_opens_on_a_workspace_with_no_windows() {
     let mut policy = Policy::new(four_workspaces());
     policy.add_output(output(1, 0, 0, 1920, 1080));

@@ -82,6 +82,9 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard
 use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibitor_v1::{
     self, ZwpKeyboardShortcutsInhibitorV1,
 };
+use wayland_protocols::wp::pointer_constraints::zv1::client::zwp_confined_pointer_v1::{
+    self, ZwpConfinedPointerV1,
+};
 use wayland_protocols::wp::pointer_constraints::zv1::client::zwp_locked_pointer_v1::{
     self, ZwpLockedPointerV1,
 };
@@ -153,6 +156,8 @@ pub struct State {
     pointer_constraints: Option<ZwpPointerConstraintsV1>,
     /// Whether the pointer lock the client asked for is active.
     pub pointer_locked: bool,
+    /// Whether the pointer confinement the client asked for is active.
+    pub pointer_confined: bool,
     kde_decoration_manager: Option<OrgKdeKwinServerDecorationManager>,
     /// The mode KDE server-decoration said is the default.
     pub kde_default_mode: Option<KdeMode>,
@@ -861,6 +866,20 @@ impl Client {
         );
     }
 
+    /// Asks for the pointer to be confined to the window while it's over it.
+    pub fn confine_pointer(&mut self, id: WindowId) {
+        let constraints = self.global(|state| &mut state.pointer_constraints, 1);
+        let pointer = self.state.pointer.clone().expect("bind_input first");
+        constraints.confine_pointer(
+            &self.window(id).surface,
+            &pointer,
+            None,
+            zwp_pointer_constraints_v1::Lifetime::Persistent,
+            &self.qh,
+            (),
+        );
+    }
+
     /// Asks for the compositor's shortcuts to be inhibited while the window has the keyboard.
     pub fn inhibit_shortcuts(&mut self, id: WindowId) {
         let manager = self.global(|state| &mut state.shortcuts_inhibit_manager, 1);
@@ -1317,6 +1336,23 @@ impl Dispatch<WlKeyboard, ()> for State {
             _ => return,
         };
         state.input.push(input);
+    }
+}
+
+impl Dispatch<ZwpConfinedPointerV1, ()> for State {
+    fn event(
+        state: &mut Self,
+        _: &ZwpConfinedPointerV1,
+        event: zwp_confined_pointer_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            zwp_confined_pointer_v1::Event::Confined => state.pointer_confined = true,
+            zwp_confined_pointer_v1::Event::Unconfined => state.pointer_confined = false,
+            _ => {}
+        }
     }
 }
 

@@ -1278,6 +1278,12 @@ impl State {
     /// Active output. Nothing opens during a move or resize, and a client's open menu is
     /// dismissed first, as for the Window switcher.
     pub(crate) fn toggle_overview(&mut self, time: InputTime) {
+        self.toggle_overview_on(None, time);
+    }
+
+    /// `toggle_overview`, with the selection on `selection_on` if it opens one, as a Hot
+    /// corner of that output asks (CMN-183).
+    pub(crate) fn toggle_overview_on(&mut self, selection_on: Option<OutputId>, time: InputTime) {
         // The pointer is held for a move or resize, which outlasts one that Policy ended
         // itself. Policy refuses for the seat's Interaction (187).
         if self.caminito.window_grab.is_some() {
@@ -1287,7 +1293,10 @@ impl State {
         let now = self.caminito.now();
         let opens = self.caminito.policy.overview().is_none();
         self.caminito.overview_timing.pressed(opens);
-        self.caminito.policy.action(SEAT, Action::Overview, now);
+        match selection_on {
+            Some(output) => self.caminito.policy.overview_on(SEAT, output),
+            None => self.caminito.policy.action(SEAT, Action::Overview, now),
+        }
     }
 
     /// A pointer button with the pointer at `location`. Returns whether its press was the

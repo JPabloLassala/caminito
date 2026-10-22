@@ -95,6 +95,7 @@ use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
 use crate::handlers::{CaptureSession, DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
+use crate::hot_corner::HotCornerState;
 use crate::idle::Idle;
 use crate::input::accessx;
 use crate::input::bindings::accelerators::Grabs;
@@ -278,6 +279,8 @@ pub struct Caminito {
     pub(crate) minimize_animations: MinimizeAnimations,
     /// The outputs whose windows slide between two workspaces (233).
     pub(crate) workspace_slides: WorkspaceSlides,
+    /// The Hot corner the pointer rests in, and the one that fired last (CMN-183).
+    pub(crate) hot_corners: HotCornerState,
     /// The windows that grow and fade in as they open (251).
     pub(crate) open_close_animations: OpenCloseAnimations,
     /// The windows on their way to their new frames as they're maximised (CMN-174).
@@ -1024,6 +1027,7 @@ impl Caminito {
             player,
             minimize_animations: MinimizeAnimations::default(),
             workspace_slides: WorkspaceSlides::default(),
+            hot_corners: HotCornerState::default(),
             open_close_animations: OpenCloseAnimations::default(),
             maximize_animations: MaximizeAnimations::default(),
             popup_slides: PopupSlides::default(),

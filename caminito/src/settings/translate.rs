@@ -426,6 +426,36 @@ pub struct Settings {
     pub locker: LockerSettings,
     pub idle: IdleSettings,
     pub night_light: NightLightSettings,
+    pub hot_corners: HotCorners,
+}
+
+/// What each Hot corner does (CMN-183), from `org.mate.Caminito`'s `hot-corner-*` keys. A
+/// key acts on that corner of every output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HotCorners {
+    /// `hot-corner-top-left`.
+    pub top_left: HotCornerAction,
+    /// `hot-corner-top-right`.
+    pub top_right: HotCornerAction,
+    /// `hot-corner-bottom-left`.
+    pub bottom_left: HotCornerAction,
+    /// `hot-corner-bottom-right`.
+    pub bottom_right: HotCornerAction,
+}
+
+/// A Hot corner's action (`org.mate.Caminito.HotCornerAction`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HotCornerAction {
+    /// The corner is off. MATE's top panel has its menu in the top-left corner, so every
+    /// corner is off by default.
+    #[default]
+    None,
+    /// Opens the Overview on the corner's output, or closes the open one.
+    Overview,
+    /// Show desktop's toggle, for every output.
+    ShowDesktop,
+    /// Locks the session.
+    Lock,
 }
 
 /// Night Light (ADR 0023), from `org.mate.Caminito`'s `night-light-*` keys.
@@ -615,6 +645,16 @@ impl Nick for TitlebarAction {
         ("toggle_above", Self::ToggleAbove),
         ("menu", Self::Menu),
         ("none", Self::None),
+    ];
+}
+
+/// `org.mate.Caminito.HotCornerAction`.
+impl Nick for HotCornerAction {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("none", Self::None),
+        ("overview", Self::Overview),
+        ("show-desktop", Self::ShowDesktop),
+        ("lock", Self::Lock),
     ];
 }
 
@@ -1349,6 +1389,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
             },
         },
         night_light: night_light(&mut r),
+        hot_corners: hot_corners(&mut r),
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -1388,6 +1429,16 @@ fn night_light(r: &mut Reader<'_>) -> NightLightSettings {
         constant_temperature,
         paused_until: r.int64(CAMINITO, "night-light-paused-until", 0),
         last_location: r.maybe_pair(CAMINITO, "night-light-last-location"),
+    }
+}
+
+fn hot_corners(r: &mut Reader<'_>) -> HotCorners {
+    let mut corner = |key| r.nick(CAMINITO, key, HotCornerAction::None);
+    HotCorners {
+        top_left: corner("hot-corner-top-left"),
+        top_right: corner("hot-corner-top-right"),
+        bottom_left: corner("hot-corner-bottom-left"),
+        bottom_right: corner("hot-corner-bottom-right"),
     }
 }
 

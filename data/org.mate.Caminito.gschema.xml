@@ -43,6 +43,13 @@
     <value nick="day" value="3"/>
   </enum>
 
+  <enum id="org.mate.Caminito.HotCornerAction">
+    <value nick="none" value="0"/>
+    <value nick="overview" value="1"/>
+    <value nick="show-desktop" value="2"/>
+    <value nick="lock" value="3"/>
+  </enum>
+
   <schema id="org.mate.Caminito" path="/org/mate/caminito/">
     <!--
       The workspace grid, as _NET_DESKTOP_LAYOUT has it on X11, where the pager sets it and
@@ -91,6 +98,30 @@
       <default>'&lt;Super&gt;w'</default>
       <summary>Show the Overview</summary>
       <description>The shortcut that opens the Overview, which shows the windows of the workspace side by side, and closes it again. It is a key or a mouse button with its modifiers, written as the keys of org.mate.Marco.global-keybindings are: "&lt;Super&gt;w", or "&lt;Super&gt;Button9". With "disabled" or the empty string, nothing opens the Overview.</description>
+    </key>
+    <!--
+      The Hot corners (CMN-183). They act on every output's corner of their kind, and are
+      all off since MATE's top panel has its menu in the top-left corner.
+    -->
+    <key name="hot-corner-top-left" enum="org.mate.Caminito.HotCornerAction">
+      <default>'none'</default>
+      <summary>What the top left corner of a monitor does</summary>
+      <description>What happens when the pointer rests in the top left corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+    </key>
+    <key name="hot-corner-top-right" enum="org.mate.Caminito.HotCornerAction">
+      <default>'none'</default>
+      <summary>What the top right corner of a monitor does</summary>
+      <description>What happens when the pointer rests in the top right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+    </key>
+    <key name="hot-corner-bottom-left" enum="org.mate.Caminito.HotCornerAction">
+      <default>'none'</default>
+      <summary>What the bottom left corner of a monitor does</summary>
+      <description>What happens when the pointer rests in the bottom left corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
+    </key>
+    <key name="hot-corner-bottom-right" enum="org.mate.Caminito.HotCornerAction">
+      <default>'none'</default>
+      <summary>What the bottom right corner of a monitor does</summary>
+      <description>What happens when the pointer rests in the bottom right corner of a monitor, where it can go no further either way: "overview" opens the Overview on that monitor, or closes it, "show-desktop" shows the desktop, or stops, and "lock" locks the session. With "none" the corner does nothing.</description>
     </key>
     <key name="workspace-layout-rows" type="i">
       <default>1</default>

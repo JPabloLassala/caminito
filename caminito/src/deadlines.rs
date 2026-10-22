@@ -20,23 +20,26 @@ use crate::state::{Caminito, State};
 /// 3. Idle, which blanks and locks (128).
 /// 4. AccessX, whose keys go on to the clients and whose beeps ring the bell (134).
 /// 5. The repeat of a held accelerator (99), which signals a key AccessX let through.
-/// 6. The Global menu's grace period (114), which nothing else here looks at.
-/// 7. The Window switcher's popup (108), the bell's flash (169), the minimise animations
+/// 6. The Hot corners (CMN-183), whose actions are bindings', after the keys AccessX let
+///    through.
+/// 7. The Global menu's grace period (114), which nothing else here looks at.
+/// 8. The Window switcher's popup (108), the bell's flash (169), the minimise animations
 ///    (172), the Workspace slides (233), the Overview's transition (243), the Opening
 ///    animations (251), the Maximise animations (CMN-174) and the Popup slides
 ///    (ADR 0037), which only draw.
-/// 8. The Overview's bar (244), which only sends frame callbacks to the windows it alone
+/// 9. The Overview's bar (244), which only sends frame callbacks to the windows it alone
 ///    shows.
-/// 9. Night Light (138), which only moves the outputs' temperatures.
+/// 10. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 16] = [
+const HOLDERS: [Holder; 17] = [
     Holder::Policy,
     Holder::ClosePings,
     Holder::Idle,
     Holder::AccessX,
     Holder::AcceleratorRepeat,
+    Holder::HotCorners,
     Holder::GlobalMenu,
     Holder::SwitcherPopup,
     Holder::Bell,
@@ -57,6 +60,7 @@ enum Holder {
     Idle,
     AccessX,
     AcceleratorRepeat,
+    HotCorners,
     GlobalMenu,
     SwitcherPopup,
     Bell,
@@ -79,6 +83,7 @@ impl Holder {
             Holder::Idle => caminito.idle.deadline(),
             Holder::AccessX => caminito.accessx.deadline(),
             Holder::AcceleratorRepeat => caminito.accelerator_repeat.as_ref().map(Repeat::deadline),
+            Holder::HotCorners => caminito.hot_corners.deadline(),
             Holder::GlobalMenu => caminito.global_menu_switch.deadline(),
             Holder::SwitcherPopup => caminito.switcher_popup_deadline(),
             Holder::Bell => caminito.bells.deadline(),
@@ -103,6 +108,7 @@ impl Holder {
             Holder::Idle => state.idle_elapse(now),
             Holder::AccessX => state.accessx_elapse(now),
             Holder::AcceleratorRepeat => state.caminito.accelerator_repeat_elapse(now),
+            Holder::HotCorners => state.hot_corner_elapse(now),
             Holder::GlobalMenu => state.caminito.global_menu_time_passed(now),
             Holder::SwitcherPopup => state.caminito.switcher_popup_elapse(now),
             Holder::Bell => state.caminito.bell_elapse(now),

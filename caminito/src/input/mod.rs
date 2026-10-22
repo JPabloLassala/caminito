@@ -143,6 +143,12 @@ impl State {
             .map(|(constraint, _)| constraint)
     }
 
+    /// Whether a client has locked or confined the pointer where it is.
+    pub(crate) fn pointer_is_constrained(&self) -> bool {
+        let pointer = self.caminito.seat.get_pointer().unwrap();
+        self.active_constraint(pointer.current_location()).is_some()
+    }
+
     /// The constraint on the surface with pointer focus, and whether it's active, if
     /// `location` is on that surface and inside the constraint's region.
     fn pointer_constraint_at(&self, location: Point<f64, Logical>) -> Option<(Constraint, bool)> {
@@ -590,6 +596,7 @@ impl State {
         pointer.motion(self, under, &event);
         pointer.frame(self);
         self.activate_pointer_constraint();
+        self.hot_corner_motion(location);
         // The cursor moved.
         self.caminito.queue_redraw_all();
     }
@@ -725,7 +732,7 @@ impl State {
     /// client, or an X11 client's menu, whose grab of the pointer is inside Xwayland and
     /// whose grab of the keyboard is all Caminito sees of it. A button's press then runs no
     /// binding (184) and is no accelerator grab's (185): it's the holder's.
-    fn pointer_is_held(&self) -> bool {
+    pub(crate) fn pointer_is_held(&self) -> bool {
         let caminito = &self.caminito;
         let pointer = caminito.seat.get_pointer().unwrap();
         let x11_menu = caminito.xwayland_keyboard_grab.as_ref();

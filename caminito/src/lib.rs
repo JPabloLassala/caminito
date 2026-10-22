@@ -12,6 +12,7 @@ pub mod decoration;
 mod dialogs;
 mod handlers;
 pub mod helpers;
+mod hot_corner;
 pub mod icons;
 mod idle;
 pub mod input;
