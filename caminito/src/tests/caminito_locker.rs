@@ -60,6 +60,12 @@ impl Locker {
     fn write_stand_in_service(&self) {
         let modules = std::env::var("PAM_WRAPPER_MODULES")
             .expect("PAM_WRAPPER_MODULES names pam_wrapper's modules directory");
+        // Without it the locker checks the password against the real service, and the
+        // test only times out at the right password.
+        assert!(
+            Path::new(&modules).join("pam_matrix.so").exists(),
+            "no pam_matrix.so in PAM_WRAPPER_MODULES ({modules:?}): is pam_wrapper installed?",
+        );
         let passdb = self.path("passdb");
         let line = format!("{}:{PASSWORD}:mate-screensaver\n", users_name());
         std::fs::write(&passdb, line).unwrap();
