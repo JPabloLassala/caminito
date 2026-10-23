@@ -232,6 +232,10 @@ _Avoid_: menu animation (tooltips and combo box lists slide too), fading popups 
 The movement that shows a window being maximised, unmaximised, tiled, untiled or given another tile: its frame goes from its old place to its new one while a picture of it as it was fades out. Maximising one way, fullscreen and a drag that pulls a window off its maximised or tiled place aren't animated. It's Plasma's Maximize effect, with tiles too.
 _Avoid_: resize animation (a resize by the pointer isn't one), tile animation (it covers maximising too), morph
 
+**Wheel glide**:
+A mouse wheel's click spread out over a short moment, so the view a client scrolls glides one step instead of jumping it. Caminito makes it for every client but the ones the user lists because they glide the wheel themselves, such as browsers, and the step is as long as without it. A click during a glide lengthens it by a step, and a click the other way starts a new one. What's left of a glide is lost once the pointer is over something else. A click with Ctrl, Alt or Super held isn't glided. A touchpad's scrolling isn't glided, and nothing coasts on once the wheel stops.
+_Avoid_: smooth scrolling (it also covers a touchpad's precise scrolling and kinetic scrolling), kinetic scrolling (that's the coast after a touchpad flick), scroll animation
+
 **Interaction**:
 What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup or the Overview. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
 _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)
