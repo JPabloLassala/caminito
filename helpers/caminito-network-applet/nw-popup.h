@@ -1,17 +1,36 @@
 /*
- * The Network applet's popup (CMN-193): its content, in the shared popup window. With
- * NetworkManager not running it's only its icon and "NetworkManager isn't running".
- * Otherwise it's empty: the tiles and the card (CMN-196), the Networks tab (CMN-200) and the
- * Details tab (CMN-201) fill it.
+ * The Network applet's popup (CMN-193, CMN-196): its content, in the shared popup window,
+ * as the prototype's Popup C. From the top: four tiles for Wi-Fi, Wired, VPN and airplane
+ * mode; the card of the connection the icon shows; the Networks and Details tabs, which
+ * their own tickets fill (CMN-200, CMN-201); and "Configure network connections…". With
+ * NetworkManager not running it's only its icon and "NetworkManager isn't running". It
+ * draws an NwStatus and calls back for what the user does, so that it knows nothing of
+ * NetworkManager.
  */
 
 #pragma once
 
 #include "caminito-applet-popup.h"
+#include "nw-state.h"
 
 typedef struct _NwPopup NwPopup;
 
-NwPopup *nw_popup_new         (CaminitoAppletPopup *applet_popup);
-void     nw_popup_free        (NwPopup *popup);
-/* Whether NetworkManager is running, which shows the popup's content or says it isn't. */
-void     nw_popup_set_running (NwPopup *popup, gboolean running);
+typedef struct
+{
+  /* A tile's click, for the state it doesn't have. The tile stays as it was until an
+     update says NetworkManager has followed. */
+  void (*set_tile)   (NwTile tile, gboolean on, gpointer data);
+  /* The card's Disconnect. */
+  void (*disconnect) (gpointer data);
+  /* "Configure network connections…": the popup closes after it. */
+  void (*configure)  (gpointer data);
+} NwPopupActions;
+
+/* The content of applet_popup's window, which it lives as long as. actions is copied. */
+NwPopup *nw_popup_new    (CaminitoAppletPopup  *applet_popup,
+                          const NwPopupActions *actions,
+                          gpointer              data);
+/* Draws what NetworkManager has now. Called on every change, shown or not. */
+void     nw_popup_update (NwPopup        *popup,
+                          const NwStatus *status);
+void     nw_popup_free   (NwPopup *popup);

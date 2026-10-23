@@ -3,8 +3,9 @@
  * NetworkManager's primary connection, wired or Wi-Fi by its signal, coming up, with no
  * internet behind it, or nothing up, airplane mode and NetworkManager not running, with a
  * lock over it while a VPN is up. It reads NetworkManager through libnm (nw-nm.c).
- * Left-click toggles the popup (nw-popup.c); its right-click menu has "Configure network
- * connections…", which runs nm-connection-editor.
+ * Left-click toggles the popup (nw-popup.c), whose tiles and card (CMN-196) act through
+ * nw-nm.c too; its right-click menu has "Configure network connections…", which runs
+ * nm-connection-editor, as the popup's own button does.
  */
 
 #include <mate-panel-applet.h>
@@ -39,7 +40,7 @@ update (Applet *applet)
   caminito_applet_icon_set (applet->icon, nw_state_icon_names (status));
   gtk_widget_set_visible (applet->lock, status->running && status->vpn != NULL);
   gtk_widget_set_tooltip_text (GTK_WIDGET (applet->applet), tooltip);
-  nw_popup_set_running (applet->content, status->running);
+  nw_popup_update (applet->content, status);
 }
 
 static void
@@ -76,7 +77,7 @@ add_halo (GtkWidget *lock)
 }
 
 static void
-on_configure (GtkAction *action G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+configure (gpointer data G_GNUC_UNUSED)
 {
   g_autoptr (GError) error = NULL;
   const char *argv[] = { "nm-connection-editor", NULL };
@@ -86,6 +87,34 @@ on_configure (GtkAction *action G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
                       &error))
     g_warning ("can't open nm-connection-editor: %s", error->message);
 }
+
+static void
+on_configure (GtkAction *action G_GNUC_UNUSED, gpointer data)
+{
+  configure (data);
+}
+
+static void
+set_tile (NwTile tile, gboolean on, gpointer data)
+{
+  Applet *applet = data;
+
+  nw_nm_set_tile (applet->nm, tile, on);
+}
+
+static void
+disconnect (gpointer data)
+{
+  Applet *applet = data;
+
+  nw_nm_disconnect (applet->nm);
+}
+
+static const NwPopupActions popup_actions = {
+  .set_tile = set_tile,
+  .disconnect = disconnect,
+  .configure = configure,
+};
 
 static void
 applet_free (gpointer data)
@@ -140,7 +169,7 @@ fill (MatePanelApplet *panel_applet)
   g_object_set_data_full (G_OBJECT (panel_applet), "caminito-network-applet", applet,
                           applet_free);
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
-  applet->content = nw_popup_new (applet->popup);
+  applet->content = nw_popup_new (applet->popup, &popup_actions, applet);
   applet->nm = nw_nm_new (on_changed, applet);
   gtk_widget_show_all (GTK_WIDGET (panel_applet));
   /* NetworkManager not running until libnm answers. */
