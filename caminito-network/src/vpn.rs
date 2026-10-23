@@ -123,20 +123,33 @@ pub(crate) fn input(data: &HashMap<String, String>, secrets: &HashMap<String, St
     input
 }
 
-/// The secrets an auth-dialog that draws its own window has printed so far, and whether it
+/// What an auth-dialog that draws its own window has printed so far.
+pub(crate) struct Printed {
+    pub(crate) secrets: HashMap<String, String>,
+    /// It has ended its secrets with an empty pair, and waits for QUIT.
+    pub(crate) ended: bool,
+}
+
+/// The secrets an auth-dialog that draws its own window has printed in `output`, and whether it
 /// has ended them with an empty pair.
-pub(crate) fn printed(output: &str) -> (HashMap<String, String>, bool) {
+pub(crate) fn printed(output: &str) -> Printed {
     // Only whole lines: the last piece is a line still being printed.
     let mut lines: Vec<&str> = output.split('\n').collect();
     lines.pop();
     let mut secrets = HashMap::new();
     for pair in lines.as_chunks::<2>().0 {
         if pair[0].is_empty() {
-            return (secrets, true);
+            return Printed {
+                secrets,
+                ended: true,
+            };
         }
         secrets.insert(pair[0].to_owned(), pair[1].to_owned());
     }
-    (secrets, false)
+    Printed {
+        secrets,
+        ended: false,
+    }
 }
 
 /// What an auth-dialog in the external UI mode asks.
@@ -224,7 +237,7 @@ pub(crate) async fn run(process: gio::Subprocess, input: String, external_ui: bo
         }
         output.extend_from_slice(&bytes);
         // An auth-dialog of its own window waits for QUIT after its secrets, as long as 20 s.
-        if !external_ui && !told_to_quit && printed(&String::from_utf8_lossy(&output)).1 {
+        if !external_ui && !told_to_quit && printed(&String::from_utf8_lossy(&output)).ended {
             told_to_quit = true;
             let _ = stdin
                 .write_all_future(b"QUIT\n\n", glib::Priority::DEFAULT)
@@ -244,7 +257,7 @@ pub(crate) async fn run(process: gio::Subprocess, input: String, external_ui: bo
     if external_ui {
         prompt(&output).map_or(Outcome::Unreadable, Outcome::Prompt)
     } else {
-        Outcome::Secrets(printed(&output).0)
+        Outcome::Secrets(printed(&output).secrets)
     }
 }
 
@@ -270,20 +283,20 @@ mod tests {
 
     #[test]
     fn printed_secrets_end_with_an_empty_pair() {
-        let (secrets, done) = printed("password\nhunter2\ncode\n");
+        let Printed { secrets, ended } = printed("password\nhunter2\ncode\n");
         assert_eq!(
             secrets,
             HashMap::from([("password".to_owned(), "hunter2".to_owned())])
         );
-        assert!(!done);
+        assert!(!ended);
         // One empty line is a value still to come, or the end's first half.
-        assert!(!printed("password\nhunter2\n\n").1);
+        assert!(!printed("password\nhunter2\n\n").ended);
         // An empty value, then the end.
-        let (secrets, done) = printed("password\nhunter2\ncode\n\n\n\n");
+        let Printed { secrets, ended } = printed("password\nhunter2\ncode\n\n\n\n");
         assert_eq!(secrets.len(), 2);
         assert_eq!(secrets["code"], "");
-        assert!(done);
-        assert!(printed("password\nhunter2\ncode\n123\n\n\n").1);
+        assert!(ended);
+        assert!(printed("password\nhunter2\ncode\n123\n\n\n").ended);
     }
 
     #[test]

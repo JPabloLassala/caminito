@@ -113,6 +113,7 @@ pub enum Question {
         title: String,
         /// What the plugin says of the request, empty when it says nothing.
         description: String,
+        /// The fields to fill in, in the dialog's order.
         fields: Vec<Field>,
     },
 }
@@ -122,6 +123,7 @@ pub enum Question {
 pub struct Field {
     /// The secret's key in the VPN setting.
     pub key: String,
+    /// What the plugin calls it, as "Password".
     pub label: String,
     /// What the field starts with, as a saved password.
     pub value: String,
@@ -308,6 +310,15 @@ enum Stage {
         question: Question,
         known: HashMap<String, String>,
     },
+}
+
+impl State {
+    /// Keeps `pending` until it's answered, under a number of its own.
+    fn add(&mut self, pending: Pending) -> u64 {
+        self.last_request += 1;
+        self.pending.insert(self.last_request, pending);
+        self.last_request
+    }
 }
 
 struct State {
@@ -516,20 +527,15 @@ fn get_secrets(
     };
     let (id, dialogs) = {
         let mut state = state.borrow_mut();
-        state.last_request += 1;
-        let id = state.last_request;
-        state.pending.insert(
-            id,
-            Pending {
-                connection_path: path,
-                setting,
-                invocation,
-                stage: Stage::Dialog {
-                    question: request.question.clone(),
-                    key,
-                },
+        let id = state.add(Pending {
+            connection_path: path,
+            setting,
+            invocation,
+            stage: Stage::Dialog {
+                question: request.question.clone(),
+                key,
             },
-        );
+        });
         (id, state.dialogs.clone())
     };
     // Nothing is borrowed while the dialogs run: a fake answers at once.
@@ -683,10 +689,9 @@ fn vpn_secrets(
     };
     let service = string(VPN, "service-type");
     let Some(plugin) = vpn::find(&state.borrow().vpn_plugins, &service) else {
-        invocation.return_dbus_error(
-            FAILED,
-            &format!("no VPN plugin has an auth-dialog for {service}"),
-        );
+        let message = format!("no VPN plugin has an auth-dialog for {service}");
+        glib::g_warning!(DOMAIN, "can't ask for a VPN's secrets: {message}");
+        invocation.return_dbus_error(FAILED, &message);
         return;
     };
     let (uuid, network) = (string("connection", "uuid"), string("connection", "id"));
@@ -706,25 +711,18 @@ fn vpn_secrets(
     let process = match vpn::spawn(&argv) {
         Ok(process) => process,
         Err(err) => {
-            invocation.return_dbus_error(FAILED, &format!("can't run the auth-dialog: {err}"));
+            let message = format!("can't run the auth-dialog: {err}");
+            glib::g_warning!(DOMAIN, "{message}");
+            invocation.return_dbus_error(FAILED, &message);
             return;
         }
     };
-    let id = {
-        let mut state = state.borrow_mut();
-        state.last_request += 1;
-        let id = state.last_request;
-        state.pending.insert(
-            id,
-            Pending {
-                connection_path: path,
-                setting: VPN.to_owned(),
-                invocation,
-                stage: Stage::AuthDialog(process.clone()),
-            },
-        );
-        id
-    };
+    let id = state.borrow_mut().add(Pending {
+        connection_path: path,
+        setting: VPN.to_owned(),
+        invocation,
+        stage: Stage::AuthDialog(process.clone()),
+    });
     let input = vpn::input(&strings("data"), &strings("secrets"));
     let state = Rc::downgrade(state);
     glib::spawn_future_local(async move {
@@ -757,34 +755,36 @@ fn auth_dialog_ended(
             _ => None,
         }
     };
-    let Some(mut pending) = pending else {
+    let Some(pending) = pending else {
         return;
     };
-    let prompt = match outcome {
+    let (error, message) = match outcome {
         vpn::Outcome::Secrets(secrets) => {
             return_vpn_secrets(pending.invocation, secrets, interactive);
             return;
         }
-        vpn::Outcome::Canceled => {
-            pending
-                .invocation
-                .return_dbus_error(USER_CANCELED, "the auth-dialog was cancelled");
+        vpn::Outcome::Prompt(prompt) => {
+            ask_vpn(state, id, pending, prompt, network, again, interactive);
             return;
         }
-        vpn::Outcome::Crashed => {
-            pending
-                .invocation
-                .return_dbus_error(FAILED, "the auth-dialog crashed");
-            return;
-        }
-        vpn::Outcome::Unreadable => {
-            pending
-                .invocation
-                .return_dbus_error(FAILED, "the auth-dialog's external UI can't be read");
-            return;
-        }
-        vpn::Outcome::Prompt(prompt) => prompt,
+        vpn::Outcome::Canceled => (USER_CANCELED, "the auth-dialog was cancelled"),
+        vpn::Outcome::Crashed => (FAILED, "the auth-dialog crashed"),
+        vpn::Outcome::Unreadable => (FAILED, "the auth-dialog's external UI can't be read"),
     };
+    pending.invocation.return_dbus_error(error, message);
+}
+
+/// Asks the fields of the external UI `prompt` in a dialog, or answers with the secrets it
+/// gave without asking when it asks none, or the request may not ask the user.
+fn ask_vpn(
+    state: &Rc<RefCell<State>>,
+    id: u64,
+    mut pending: Pending,
+    prompt: vpn::Prompt,
+    network: String,
+    again: bool,
+    interactive: bool,
+) {
     if prompt.fields.is_empty() || !interactive {
         return_vpn_secrets(pending.invocation, prompt.known, interactive);
         return;
