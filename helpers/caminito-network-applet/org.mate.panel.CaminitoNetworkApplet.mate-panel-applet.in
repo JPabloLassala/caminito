@@ -1,0 +1,13 @@
+[Applet Factory]
+Id=CaminitoNetworkAppletFactory
+InProcess=true
+Location=@APPLET_LOCATION@
+Name=Network Applet Factory
+Description=Caminito's Network applet
+
+[CaminitoNetworkApplet]
+Name=Network
+Description=See how you're connected to the network
+Icon=network-wired
+MateComponentId=OAFIID:Caminito_NetworkApplet;
+Platforms=X11;Wayland;

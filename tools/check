@@ -22,11 +22,12 @@ if [ "${1-}" = --deps ]; then
   # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
   # passwords against. nodejs, npm: the global menu extension (116). desktop-file-utils:
   # desktop-file-validate, for the System Shortcuts entry (183). python-dbusmock: the BlueZ
-  # caminito-bluetooth's tests run against (255).
+  # caminito-bluetooth's tests run against (255), and NetworkManager the Network applet's do.
+  # libnm: the Network applet's build (CMN-193, ADR 0041).
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm desktop-file-utils python-dbusmock
+    nodejs npm desktop-file-utils python-dbusmock libnm
   rustup toolchain install
 fi
 

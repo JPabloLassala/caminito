@@ -1,0 +1,13 @@
+no NetworkManager: the panel lives
+wired: the panel lives
+wifi-20: the panel lives
+wifi-45: the panel lives
+wifi-70: the panel lives
+wifi-95: the panel lives
+connecting: the panel lives
+limited: the panel lives
+vpn: the panel lives
+airplane: the panel lives
+nothing: the panel lives
+NetworkManager stopped again: the panel lives
+A connection to the bus can't be made
