@@ -6,9 +6,12 @@ mod mock;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use caminito_network::agent::{self, Agent, Answer, Dialogs, Medium, Question, Reply, Request};
+use caminito_network::agent::{
+    self, Agent, Answer, Dialogs, Field, Medium, Question, Reply, Request,
+};
 use gio::glib::variant::{ObjectPath, ToVariant};
 use gio::glib::{self, Variant};
 
@@ -17,6 +20,8 @@ use mock::Mock;
 const ALLOW_INTERACTION: u32 = 0x1;
 const REQUEST_NEW: u32 = 0x2;
 const WIFI_SECURITY: &str = "802-11-wireless-security";
+/// NetworkManager's `NM_SECRET_AGENT_CAPABILITY_VPN_HINTS`.
+const VPN_HINTS: u32 = 0x1;
 
 /// The dialogs, as the agent drives them.
 #[derive(Default)]
@@ -91,10 +96,15 @@ fn registrations(mock: &Mock) -> Vec<(String, u32)> {
         .collect()
 }
 
+/// The agent, with no VPN plugins: a test of one starts it with [`start_with_vpn_plugins`].
 fn start(mock: &Mock) -> Running {
+    start_with_vpn_plugins(mock, Path::new("/nonexistent"))
+}
+
+fn start_with_vpn_plugins(mock: &Mock, vpn_plugins: &Path) -> Running {
     let connection = mock.connect();
     let dialogs = Rc::new(FakeDialogs::default());
-    let agent = Agent::new(&connection, dialogs.clone()).unwrap();
+    let agent = Agent::with_vpn_plugins(&connection, dialogs.clone(), vpn_plugins).unwrap();
     mock.wait_until("the agent to register", || !registrations(mock).is_empty());
     Running {
         name: connection.unique_name().unwrap().to_string(),
@@ -107,7 +117,10 @@ fn start(mock: &Mock) -> Running {
 fn the_agent_registers_with_its_identifier() {
     mock::run(|mock| {
         start(mock);
-        assert_eq!(registrations(mock), [(agent::IDENTIFIER.to_owned(), 0)]);
+        assert_eq!(
+            registrations(mock),
+            [(agent::IDENTIFIER.to_owned(), VPN_HINTS)]
+        );
     });
 }
 
@@ -119,7 +132,7 @@ fn the_agent_registers_again_when_network_manager_restarts() {
         // The new NetworkManager has heard of no agent: its calls start from none.
         mock.start_network_manager();
         mock.wait_until("the agent to register again", || {
-            registrations(mock) == [(agent::IDENTIFIER.to_owned(), 0)]
+            registrations(mock) == [(agent::IDENTIFIER.to_owned(), VPN_HINTS)]
         });
     });
 }
@@ -601,5 +614,312 @@ fn a_phase_2_private_key_passphrase_goes_in_its_own_key() {
             secrets(answer(mock, &pending))["802-1x"]["phase2-private-key-password"].str(),
             Some("passphrase")
         );
+    });
+}
+
+/// A VPN plugin whose auth-dialog is `tests/fake-auth-dialog`, with its `.name` file in a
+/// directory of the test's own, where the auth-dialog writes what it was given.
+struct Vpn {
+    dir: tempfile::TempDir,
+}
+
+const VPN_SERVICE: &str = "org.example.Fake";
+const VPN_UUID: &str = "0b6c2a8e-6e8a-4d1e-9f3a-2c8f1d3e4b5a";
+
+impl Vpn {
+    /// The plugin, with the external UI mode and hints when `external_ui`, as OpenVPN's, or
+    /// without either, as OpenConnect's.
+    fn new(external_ui: bool) -> Vpn {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("plugins")).unwrap();
+        let auth_dialog = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake-auth-dialog");
+        let mut name = format!(
+            "[VPN Connection]\nname=fake\nservice={VPN_SERVICE}\nprogram=/bin/false\n\n\
+             [GNOME]\nauth-dialog={auth_dialog}\n"
+        );
+        if external_ui {
+            name.push_str("supports-external-ui-mode=true\nsupports-hints=true\n");
+        }
+        std::fs::write(dir.path().join("plugins/nm-fake-service.name"), name).unwrap();
+        Vpn { dir }
+    }
+
+    fn plugins(&self) -> PathBuf {
+        self.dir.path().join("plugins")
+    }
+
+    /// A VPN connection of the plugin, whose auth-dialog runs in `mode`
+    /// (`tests/fake-auth-dialog`), with a saved password.
+    fn connection(&self, mode: &str) -> Settings {
+        let data = HashMap::from([
+            ("gateway", "vpn.example.com"),
+            ("mode", mode),
+            ("dir", self.dir.path().to_str().unwrap()),
+        ]);
+        let secrets = HashMap::from([("password", "saved")]);
+        HashMap::from([
+            (
+                "connection".to_owned(),
+                HashMap::from([
+                    ("id".to_owned(), "Work".to_variant()),
+                    ("uuid".to_owned(), VPN_UUID.to_variant()),
+                    ("type".to_owned(), "vpn".to_variant()),
+                ]),
+            ),
+            (
+                "vpn".to_owned(),
+                HashMap::from([
+                    ("service-type".to_owned(), VPN_SERVICE.to_variant()),
+                    ("data".to_owned(), data.to_variant()),
+                    ("secrets".to_owned(), secrets.to_variant()),
+                ]),
+            ),
+        ])
+    }
+
+    /// What the auth-dialog wrote in `file`.
+    fn read(&self, file: &str) -> String {
+        std::fs::read_to_string(self.dir.path().join(file)).unwrap()
+    }
+
+    /// The input the auth-dialog read, in `mode`.
+    fn input(&self, mode: &str) -> String {
+        format!(
+            "DATA_KEY=dir\nDATA_VAL={}\n\n\
+             DATA_KEY=gateway\nDATA_VAL=vpn.example.com\n\n\
+             DATA_KEY=mode\nDATA_VAL={mode}\n\n\
+             SECRET_KEY=password\nSECRET_VAL=saved\n\n\
+             DONE\n",
+            self.dir.path().display()
+        )
+    }
+}
+
+/// Asks the agent for the VPN's secrets with `hints`, as NetworkManager does.
+fn get_vpn_secrets(
+    mock: &Mock,
+    running: &Running,
+    connection: &Settings,
+    hints: &[&str],
+    flags: u32,
+) -> Pending {
+    let path = ObjectPath::try_from(CONNECTION.to_owned()).unwrap();
+    call(
+        mock,
+        running,
+        "GetSecrets",
+        (connection, path, "vpn", hints.to_vec(), flags).to_variant(),
+    )
+}
+
+/// The VPN's secrets of an answer to GetSecrets.
+fn vpn_secrets(result: Result<Variant, glib::Error>) -> HashMap<String, String> {
+    let secrets = secrets(result);
+    assert_eq!(secrets.len(), 1);
+    secrets["vpn"]["secrets"].get().unwrap()
+}
+
+fn strings(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[test]
+fn a_vpn_in_the_external_ui_mode_asks_its_fields_in_the_agents_dialog() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(true);
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(
+            mock,
+            &running,
+            &vpn.connection("external"),
+            &["x-vpn-message:Code"],
+            ALLOW_INTERACTION,
+        );
+        mock.wait_until("the VPN's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        assert_eq!(
+            running.dialogs.last_request().unwrap(),
+            Request {
+                network: "Work".to_owned(),
+                medium: Medium::Vpn,
+                question: Question::Vpn {
+                    title: "Authenticate VPN".to_owned(),
+                    description: "You need to authenticate to access the Virtual Private \
+                                  Network 'Work'."
+                        .to_owned(),
+                    fields: vec![Field {
+                        key: "otp".to_owned(),
+                        label: "Code:".to_owned(),
+                        value: String::new(),
+                        secret: false,
+                    }],
+                },
+                again: false,
+            }
+        );
+        assert_eq!(
+            vpn.read("args"),
+            format!(
+                "-u\n{VPN_UUID}\n-n\nWork\n-s\n{VPN_SERVICE}\n-i\n--external-ui-mode\n\
+                 -t\nx-vpn-message:Code\n"
+            )
+        );
+        assert_eq!(vpn.read("input"), vpn.input("external"));
+
+        running
+            .dialogs
+            .answer(Some(Answer::Fields(vec!["123456".to_owned()])));
+        // The password it had without asking goes with the code.
+        assert_eq!(
+            vpn_secrets(answer(mock, &pending)),
+            strings(&[("password", "saved"), ("otp", "123456")])
+        );
+    });
+}
+
+#[test]
+fn a_vpn_that_may_not_ask_gets_what_its_auth_dialog_has_without_a_dialog() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(true);
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(mock, &running, &vpn.connection("external"), &[], 0);
+        assert_eq!(
+            vpn_secrets(answer(mock, &pending)),
+            strings(&[("password", "saved")])
+        );
+        assert!(running.dialogs.asked.borrow().is_empty());
+        assert_eq!(
+            vpn.read("args"),
+            format!("-u\n{VPN_UUID}\n-n\nWork\n-s\n{VPN_SERVICE}\n--external-ui-mode\n")
+        );
+    });
+}
+
+#[test]
+fn a_vpn_without_the_external_ui_mode_gives_the_secrets_its_window_printed() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(false);
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(
+            mock,
+            &running,
+            &vpn.connection("window"),
+            &["x-vpn-message:Code"],
+            ALLOW_INTERACTION | REQUEST_NEW,
+        );
+        assert_eq!(
+            vpn_secrets(answer(mock, &pending)),
+            strings(&[("password", "hunter2"), ("otp", "123456")])
+        );
+        assert!(running.dialogs.asked.borrow().is_empty());
+        // A plugin that takes no hints gets none.
+        assert_eq!(
+            vpn.read("args"),
+            format!("-u\n{VPN_UUID}\n-n\nWork\n-s\n{VPN_SERVICE}\n-i\n-r\n")
+        );
+        assert_eq!(vpn.read("input"), vpn.input("window"));
+        assert_eq!(vpn.read("quit"), "QUIT\n");
+    });
+}
+
+#[test]
+fn a_vpn_whose_auth_dialog_is_cancelled_is_user_canceled() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(false);
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(
+            mock,
+            &running,
+            &vpn.connection("cancel"),
+            &[],
+            ALLOW_INTERACTION,
+        );
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.UserCanceled"
+        );
+    });
+}
+
+#[test]
+fn a_vpn_whose_auth_dialog_crashes_fails() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(false);
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(
+            mock,
+            &running,
+            &vpn.connection("crash"),
+            &[],
+            ALLOW_INTERACTION,
+        );
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.Failed"
+        );
+    });
+}
+
+#[test]
+fn cancel_get_secrets_kills_the_vpns_auth_dialog() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(true);
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(
+            mock,
+            &running,
+            &vpn.connection("hang"),
+            &[],
+            ALLOW_INTERACTION,
+        );
+        let pid = vpn.dir.path().join("pid");
+        mock.wait_until("the auth-dialog to start", || {
+            std::fs::read_to_string(&pid).is_ok_and(|pid| pid.ends_with('\n'))
+        });
+        let proc = PathBuf::from(format!("/proc/{}", vpn.read("pid").trim()));
+        assert!(proc.exists());
+
+        let path = ObjectPath::try_from(CONNECTION.to_owned()).unwrap();
+        answer(
+            mock,
+            &call(
+                mock,
+                &running,
+                "CancelGetSecrets",
+                (path, "vpn").to_variant(),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.AgentCanceled"
+        );
+        mock.wait_until("the auth-dialog to be killed", || !proc.exists());
+        assert!(running.dialogs.closed.borrow().is_empty());
+    });
+}
+
+#[test]
+fn a_vpn_with_no_plugin_fails() {
+    mock::run(|mock| {
+        let vpn = Vpn::new(true);
+        std::fs::remove_file(vpn.plugins().join("nm-fake-service.name")).unwrap();
+        let running = start_with_vpn_plugins(mock, &vpn.plugins());
+        let pending = get_vpn_secrets(
+            mock,
+            &running,
+            &vpn.connection("external"),
+            &[],
+            ALLOW_INTERACTION,
+        );
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.Failed"
+        );
+        assert!(running.dialogs.asked.borrow().is_empty());
     });
 }
