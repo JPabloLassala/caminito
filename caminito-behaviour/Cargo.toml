@@ -8,11 +8,10 @@ repository.workspace = true
 publish = false
 
 # The library reads and writes the keys through gio, and the templates' files, and names no
-# toolkit. GTK is the
-# window's, the binary's.
+# toolkit. GTK is the window's, the binary's.
 [dependencies]
 # The answer of the page's dialog that asks for a name, awaited.
-futures-channel = "0.3.34"
+futures-channel.workspace = true
 gio = "0.22.10"
 # The open windows' app ids, for the Key remaps page's list (CMN-189), through
 # ext-foreign-toplevel-list, which is staging's.

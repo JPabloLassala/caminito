@@ -27,6 +27,8 @@ const APPS: (i32, i32) = (240, 440);
 const RULES: (i32, i32) = (600, 320);
 /// What a target's field says until one is typed.
 const TARGET_HINT: &str = "Ctrl+T · Shift+Home, BackSpace · nothing";
+/// The list's first row, which is no group's.
+const ALL_APPLICATIONS: &str = "All applications";
 
 /// The page's state and the widgets it redraws.
 struct Page {
@@ -38,6 +40,9 @@ struct Page {
     remaps: RefCell<Remaps>,
     /// The templates as last listed, in the drop-down's order.
     listed: RefCell<Vec<Template>>,
+    /// `key-remap-template` as the drop-down last showed it, so that a change of the remaps
+    /// alone leaves the template the user picked in it.
+    shown: RefCell<String>,
     /// The app ids of the windows open when the page opened.
     open: Vec<String>,
     /// The app ids the user added that are in no group yet.
@@ -71,6 +76,7 @@ pub fn build(keys: KeyRemapKeys) -> gtk::Widget {
         templates: Templates::installed(),
         shortcuts: SystemShortcuts::installed(),
         listed: RefCell::new(listed),
+        shown: RefCell::default(),
         open,
         added: RefCell::default(),
         chosen: RefCell::default(),
@@ -139,6 +145,9 @@ pub fn build(keys: KeyRemapKeys) -> gtk::Widget {
             let Some(page) = page.upgrade() else {
                 return;
             };
+            if page.keys.template() != *page.shown.borrow() {
+                page.redraw_templates();
+            }
             let remaps = page.keys.remaps();
             if remaps != *page.remaps.borrow() {
                 *page.remaps.borrow_mut() = remaps;
@@ -148,6 +157,7 @@ pub fn build(keys: KeyRemapKeys) -> gtk::Widget {
             }
         }
     });
+    page.redraw_templates();
     page.redraw();
     page.root.clone().upcast()
 }
@@ -184,7 +194,7 @@ impl Page {
         if let Err(err) = self.keys.set_template(name) {
             glib::g_warning!(DOMAIN, "can't set the remap template: {err}");
         }
-        self.redraw_status();
+        self.redraw_templates();
     }
 
     /// Lists the templates again, for the drop-down.
@@ -194,7 +204,7 @@ impl Page {
             glib::g_warning!(DOMAIN, "can't read a remap template: {problem}");
         }
         *self.listed.borrow_mut() = listed;
-        self.redraw_status();
+        self.redraw_templates();
     }
 
     /// The template the drop-down shows.
@@ -209,8 +219,8 @@ impl Page {
         self.redraw_detail();
     }
 
-    /// The template bar's drop-down, and where the remaps came from.
-    fn redraw_status(&self) {
+    /// The template bar's drop-down, on the template the remaps came from, and the status.
+    fn redraw_templates(&self) {
         let name = self.keys.template();
         let listed = self.listed.borrow();
         let names: Vec<&str> = listed
@@ -223,6 +233,15 @@ impl Page {
             self.dropdown.set_selected(index as u32);
         }
         self.redrawing.set(false);
+        drop(listed);
+        *self.shown.borrow_mut() = name;
+        self.redraw_status();
+    }
+
+    /// Where the remaps came from, and whether they've changed since.
+    fn redraw_status(&self) {
+        let name = self.keys.template();
+        let listed = self.listed.borrow();
         let from = listed.iter().find(|template| template.name == name);
         let text = match from {
             _ if name.is_empty() => "Not loaded from a template".to_owned(),
@@ -286,9 +305,12 @@ impl Page {
 
     /// The right side, for All applications or the app id chosen.
     fn redraw_detail(self: &Rc<Self>) {
+        // A field taken away loses its focus, which must write nothing.
+        self.redrawing.set(true);
         while let Some(child) = self.detail.first_child() {
             self.detail.remove(&child);
         }
+        self.redrawing.set(false);
         let chosen = self.chosen.borrow().clone();
         match chosen {
             None => self.all_applications(),
@@ -510,15 +532,17 @@ impl Page {
         let commit = {
             let page = Rc::downgrade(self);
             let combination = rule.combination.clone();
+            let written = target_text(&rule.steps);
             move |entry: &gtk::Entry| {
                 let Some(page) = page.upgrade() else {
                     return;
                 };
-                // A field the page is taking away loses its focus, which writes nothing.
-                if page.redrawing.get() || entry.parent().is_none() {
+                // A field the page is taking away loses its focus, which writes nothing, and
+                // so does one left as it was drawn: the remaps may have changed under it.
+                if page.redrawing.get() || entry.parent().is_none() || entry.text() == written {
                     return;
                 }
-                match parse_target(&entry.text()) {
+                match read_target(&entry.text()) {
                     Ok(steps) => {
                         entry.remove_css_class("error");
                         entry.set_tooltip_text(None);
@@ -537,7 +561,7 @@ impl Page {
                     }
                     Err(err) => {
                         entry.add_css_class("error");
-                        entry.set_tooltip_text(Some(&err.to_string()));
+                        entry.set_tooltip_text(Some(&err));
                     }
                 }
             }
@@ -606,13 +630,13 @@ impl Page {
                 else {
                     return;
                 };
-                match parse_target(&target.text()) {
+                match read_target(&target.text()) {
                     Ok(steps) => {
                         page.edit(|remaps| remaps.set_rule(scope, Rule { combination, steps }))
                     }
                     Err(err) => {
                         target.add_css_class("error");
-                        target.set_tooltip_text(Some(&err.to_string()));
+                        target.set_tooltip_text(Some(&err));
                     }
                 }
             }
@@ -646,6 +670,19 @@ impl Page {
             }
         }
         marks
+    }
+}
+
+/// A target as the user types it, each step's key a keysym's name, which Caminito would
+/// otherwise leave the rule out for.
+fn read_target(text: &str) -> Result<Vec<Combination>, String> {
+    let steps = parse_target(text).map_err(|err| err.to_string())?;
+    match steps
+        .iter()
+        .find(|step| gdk::Key::from_name(&step.key).is_none())
+    {
+        Some(step) => Err(format!("“{}” isn't a key's name", step.key)),
+        None => Ok(steps),
     }
 }
 
@@ -773,7 +810,11 @@ async fn save_as(page: Rc<Page>) -> bool {
             .listed
             .borrow()
             .iter()
-            .find(|template| template.name.eq_ignore_ascii_case(&name))
+            .find(|template| {
+                let file = template.path.file_stem().and_then(|stem| stem.to_str());
+                template.name.eq_ignore_ascii_case(&name)
+                    || (!template.shipped && file == Some(remap_templates::slug(&name).as_str()))
+            })
             .cloned();
         match existing {
             Some(template) if template.shipped => {
@@ -838,22 +879,33 @@ async fn delete(page: Rc<Page>) {
     if choose(window.as_ref(), &message, "", &["Cancel", "Delete"]).await != Some(1) {
         return;
     }
-    if let Err(err) = page.templates.delete(&template) {
-        choose(
-            window.as_ref(),
-            "The template can't be deleted",
-            &err.to_string(),
-            &["OK"],
-        )
-        .await;
+    match page.templates.delete(&template) {
+        // The remaps no longer came from a template that is there.
+        Ok(()) if page.keys.template() == template.name => page.set_template(""),
+        Ok(()) => {}
+        Err(err) => {
+            choose(
+                window.as_ref(),
+                "The template can't be deleted",
+                &err.to_string(),
+                &["OK"],
+            )
+            .await;
+        }
     }
     page.relist();
 }
 
 /// Asks for an app id the list hasn't, and chooses it.
 async fn add_app_id(page: Rc<Page>) {
-    let asked = ask_text(page.window().as_ref(), "Another app id:", "").await;
+    let window = page.window();
+    let asked = ask_text(window.as_ref(), "Another app id:", "").await;
     match asked.map(|app_id| app_id.trim().to_owned()) {
+        Some(app_id) if app_id.contains(char::is_whitespace) => {
+            let detail = "An app id has no spaces.";
+            let message = format!("“{app_id}” isn't an app id");
+            choose(window.as_ref(), &message, detail, &["OK"]).await;
+        }
         Some(app_id) if !app_id.is_empty() => {
             page.added.borrow_mut().push(app_id.clone());
             *page.chosen.borrow_mut() = Some(app_id);
@@ -865,8 +917,29 @@ async fn add_app_id(page: Rc<Page>) {
 
 /// Asks for a new group's name, and puts `app_id` in it.
 async fn new_group(page: Rc<Page>, app_id: String) {
-    let asked = ask_text(page.window().as_ref(), "The new group's name:", "").await;
+    let window = page.window();
+    let asked = ask_text(window.as_ref(), "The new group's name:", "").await;
+    let refused = |name: &str| {
+        let taken = page
+            .remaps
+            .borrow()
+            .groups
+            .iter()
+            .any(|group| group.name == name);
+        if name.eq_ignore_ascii_case(ALL_APPLICATIONS) || taken {
+            Some("Another group has this name.")
+        } else if name.contains(['[', ']']) {
+            Some("A group's name has no brackets.")
+        } else {
+            None
+        }
+    };
     match asked.map(|name| name.trim().to_owned()) {
+        Some(name) if let Some(detail) = refused(&name) => {
+            let message = format!("“{name}” can't be a group's name");
+            choose(window.as_ref(), &message, detail, &["OK"]).await;
+            page.redraw_detail();
+        }
         Some(name) if !name.is_empty() => page.edit(|remaps| {
             let index = remaps.add_group(&name);
             remaps.move_app_id(&app_id, Some(index));

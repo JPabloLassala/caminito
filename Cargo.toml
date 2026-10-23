@@ -30,7 +30,7 @@ x11rb = "0.13.2"
 # GTK4 without libadwaita (ADR 0014): caminito-displays, caminito-about, caminito-wallpaper's
 # dialog, caminito-bluetooth and caminito-behaviour.
 gtk = { package = "gtk4", version = "0.11.5" }
-# The Wayland clients: caminito-displays, and the tests' one.
+# The Wayland clients: caminito-displays, caminito-behaviour, and the tests' one.
 wayland-client = "0.31.15"
 wayland-protocols = "0.32.13"
 wayland-protocols-wlr = "0.3.12"
@@ -38,6 +38,8 @@ rustix = "1.1.5"
 pangocairo = "0.22.9"
 # caminito's D-Bus and dumps, caminito-theme's palettes, and the wallpaper's feeds (214).
 serde_json = "1.0.151"
+# A one-shot answer awaited: caminito, and caminito-behaviour's dialogs.
+futures-channel = "0.3.34"
 # The property tests of caminito-policy, caminito-layout and caminito-displays.
 proptest = "1.11.0"
 

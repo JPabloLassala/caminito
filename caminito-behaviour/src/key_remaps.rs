@@ -245,19 +245,14 @@ impl Remaps {
             Some(index) => self.groups[index].rules.as_slice(),
             None => &[],
         };
-        let all_for = |combination: &Combination| {
-            let rule = self
-                .all
-                .iter()
-                .find(|rule| rule.combination == *combination);
-            rule.map(|rule| rule.steps.clone())
-        };
         let mut rows: Vec<InEffect> = own
             .iter()
             .map(|rule| InEffect {
                 rule: rule.clone(),
                 source: Source::Group(group.expect("a group's own rules are a group's")),
-                replaces: all_for(&rule.combination),
+                replaces: self
+                    .all_rule(&rule.combination)
+                    .map(|all| all.steps.clone()),
             })
             .collect();
         for rule in &self.all {
@@ -271,6 +266,13 @@ impl Remaps {
         }
         rows.sort_by_key(|row| row.rule.combination.to_string());
         rows
+    }
+
+    /// All applications' rule of `combination`, if it has one.
+    fn all_rule(&self, combination: &Combination) -> Option<&Rule> {
+        self.all
+            .iter()
+            .find(|rule| rule.combination == *combination)
     }
 
     /// The rules of `scope`.
@@ -309,11 +311,7 @@ impl Remaps {
     /// Copies All applications' rule of `combination` into the group at `index`, where the
     /// page then lets it be changed: the page's "Change for <group>".
     pub fn change_for(&mut self, index: usize, combination: &Combination) {
-        let rule = self
-            .all
-            .iter()
-            .find(|rule| rule.combination == *combination);
-        if let Some(rule) = rule.cloned() {
+        if let Some(rule) = self.all_rule(combination).cloned() {
             self.set_rule(Scope::Group(index), rule);
         }
     }
