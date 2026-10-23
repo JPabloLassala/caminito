@@ -1,9 +1,10 @@
 /*
  * The Sound applet (CMN-213, ADR 0035): an in-process mate-panel applet whose icon shows the
  * Default output, the speaker by its level or headphones, crossed out when muted and struck
- * through with no sound server (the strike is the applet's own where themes have none), with a red dot while an application records. It reads the
- * sound server through libpulse (sd-pulse.c). The wheel on it sets the Default output's
- * volume and middle-click mutes it; left-click toggles the popup (sd-popup.c). Its
+ * through with no sound server (the strike is the applet's own where themes have none), with
+ * a red dot while an application records. It reads the sound server through libpulse
+ * (sd-pulse.c). The wheel on it sets the Default output's volume and middle-click mutes it;
+ * left-click toggles the popup (sd-popup.c), with the output and input rows (CMN-215). Its
  * right-click menu mutes the output and the microphone, has a section of profiles for each
  * card, and "Sound settings…", which runs mate-volume-control.
  */
@@ -294,6 +295,146 @@ on_draw_marks (GtkWidget *marks, cairo_t *cr, gpointer data)
   return FALSE;
 }
 
+static guint volume_step (Applet *applet);
+static gboolean above_100 (Applet *applet);
+static void on_settings (GtkAction *action, gpointer data);
+
+static void
+on_popup_set_volume (SdSide side, pa_volume_t volume, gpointer data)
+{
+  Applet *applet = data;
+
+  if (side == SD_OUTPUT)
+    sd_pulse_set_volume (applet->pulse, volume);
+  else
+    sd_pulse_set_input_volume (applet->pulse, volume);
+}
+
+static void
+on_popup_set_muted (SdSide side, gboolean muted, gpointer data)
+{
+  Applet *applet = data;
+
+  if (side == SD_OUTPUT)
+    sd_pulse_set_muted (applet->pulse, muted);
+  else
+    sd_pulse_set_input_muted (applet->pulse, muted);
+}
+
+static void
+on_popup_set_default (SdSide side, const char *device, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_set_default (applet->pulse, side, device);
+}
+
+static void
+on_popup_set_port (SdSide side, const char *device, const char *port, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_set_port (applet->pulse, side, device, port);
+}
+
+static void
+on_popup_open_settings (gpointer data G_GNUC_UNUSED)
+{
+  on_settings (NULL, NULL);
+}
+
+static const SdPopupActions popup_actions = {
+  .set_volume = on_popup_set_volume,
+  .set_muted = on_popup_set_muted,
+  .set_default = on_popup_set_default,
+  .set_port = on_popup_set_port,
+  .open_settings = on_popup_open_settings,
+};
+
+static void
+on_volume_settings_changed (GSettings *settings G_GNUC_UNUSED, const char *key G_GNUC_UNUSED,
+                            gpointer data)
+{
+  Applet *applet = data;
+
+  sd_popup_set_volume_settings (applet->content, volume_step (applet), above_100 (applet));
+}
+
+static void
+on_input_level (double level, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_popup_set_input_level (applet->content, level);
+}
+
+/* The Default input is heard only while the popup shows its meter. */
+static void
+on_popup_shown (GtkWidget *window G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_watch_input_level (applet->pulse, on_input_level, applet);
+}
+
+static void
+on_popup_hidden (GtkWidget *window G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_watch_input_level (applet->pulse, NULL, NULL);
+  sd_popup_set_input_level (applet->content, 0);
+}
+
+static SdRect
+rect_of (const GdkRectangle *rectangle)
+{
+  return (SdRect) { rectangle->x, rectangle->y, rectangle->width, rectangle->height };
+}
+
+/* The room the popup has where it opens against the applet, before each opening: the
+   panel may have moved, or the work area changed. */
+static void
+update_room (Applet *applet)
+{
+  GtkWidget *widget = GTK_WIDGET (applet->applet);
+  GtkWidget *toplevel = gtk_widget_get_toplevel (widget);
+  GdkWindow *window = gtk_widget_get_window (toplevel);
+  GdkDisplay *display;
+  GdkMonitor *monitor;
+  GdkRectangle geometry, workarea;
+  MatePanelAppletOrient orient = mate_panel_applet_get_orient (applet->applet);
+  SdPlace place = { 0 };
+  int width, height;
+
+  if (window == NULL)
+    return;
+  display = gdk_window_get_display (window);
+  monitor = gdk_display_get_monitor_at_window (display, window);
+  if (monitor == NULL)
+    return;
+  gdk_monitor_get_geometry (monitor, &geometry);
+  gdk_monitor_get_workarea (monitor, &workarea);
+  place.geometry = rect_of (&geometry);
+  place.workarea = rect_of (&workarea);
+  width = gdk_window_get_width (window);
+  height = gdk_window_get_height (window);
+  /* X11 places the panel's window in root coordinates; a Wayland client can't learn where
+     its layer surface is. */
+  place.panel_known = g_str_equal (G_OBJECT_TYPE_NAME (display), "GdkX11Display");
+  if (place.panel_known)
+    {
+      gdk_window_get_origin (window, &place.panel.x, &place.panel.y);
+      place.panel.width = width;
+      place.panel.height = height;
+    }
+  place.opens_up = orient == MATE_PANEL_APPLET_ORIENT_UP;
+  place.sideways = orient == MATE_PANEL_APPLET_ORIENT_LEFT
+                   || orient == MATE_PANEL_APPLET_ORIENT_RIGHT;
+  place.panel_thickness = place.sideways ? width : height;
+  sd_popup_set_room (applet->content, sd_state_popup_room (&place));
+}
+
 static guint
 volume_step (Applet *applet)
 {
@@ -305,13 +446,17 @@ volume_step (Applet *applet)
   return step > 0 ? (guint) step : DEFAULT_STEP;
 }
 
+static gboolean
+above_100 (Applet *applet)
+{
+  return applet->sound != NULL
+         && g_settings_get_boolean (applet->sound, "allow-volume-above-100-percent");
+}
+
 static void
 scroll_step (Applet *applet, gboolean up)
 {
   const SdStatus *status = sd_pulse_status (applet->pulse);
-  gboolean above_100 = applet->sound != NULL
-                       && g_settings_get_boolean (applet->sound,
-                                                  "allow-volume-above-100-percent");
 
   gint64 now = g_get_monotonic_time ();
   /* Long enough for the server's answer to a step, short enough that a change made
@@ -321,7 +466,7 @@ scroll_step (Applet *applet, gboolean up)
   if (!status->has_output)
     return;
   applet->asked = sd_state_scroll_volume (answered ? status->volume : applet->asked,
-                                          volume_step (applet), up, above_100);
+                                          volume_step (applet), up, above_100 (applet));
   applet->asked_at = now;
   sd_pulse_set_volume (applet->pulse, applet->asked);
   /* As the volume keys do. */
@@ -370,6 +515,9 @@ on_button_press (GtkWidget *widget G_GNUC_UNUSED, GdkEventButton *event, gpointe
   Applet *applet = data;
   const SdStatus *status = sd_pulse_status (applet->pulse);
 
+  /* Ahead of the popup's own handler, which opens it. */
+  if (event->button == GDK_BUTTON_PRIMARY && event->type == GDK_BUTTON_PRESS)
+    update_room (applet);
   if (event->button != GDK_BUTTON_MIDDLE)
     return FALSE;
   /* A double click's second press, too, which would start a move. */
@@ -433,7 +581,9 @@ applet_free (gpointer data)
 {
   Applet *applet = data;
 
-  /* The popup's window goes with the applet. */
+  /* The popup's window goes with the applet, after this: the applet's data is set first,
+     and GLib frees an object's data in order. */
+  g_signal_handlers_disconnect_by_data (caminito_applet_popup_get_window (applet->popup), applet);
   sd_popup_free (applet->content);
   sd_pulse_free (applet->pulse);
   g_clear_object (&applet->media_keys);
@@ -500,7 +650,18 @@ fill (MatePanelApplet *panel_applet)
   applet->media_keys = settings_new (MEDIA_KEYS_SCHEMA);
   applet->sound = settings_new (SOUND_SCHEMA);
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
-  applet->content = sd_popup_new (applet->popup);
+  applet->content = sd_popup_new (applet->popup, &popup_actions, applet);
+  sd_popup_set_volume_settings (applet->content, volume_step (applet), above_100 (applet));
+  if (applet->media_keys != NULL)
+    g_signal_connect (applet->media_keys, "changed::volume-step",
+                      G_CALLBACK (on_volume_settings_changed), applet);
+  if (applet->sound != NULL)
+    g_signal_connect (applet->sound, "changed::allow-volume-above-100-percent",
+                      G_CALLBACK (on_volume_settings_changed), applet);
+  g_signal_connect (caminito_applet_popup_get_window (applet->popup), "show",
+                    G_CALLBACK (on_popup_shown), applet);
+  g_signal_connect (caminito_applet_popup_get_window (applet->popup), "hide",
+                    G_CALLBACK (on_popup_hidden), applet);
   applet->pulse = sd_pulse_new (on_changed, applet);
   gtk_widget_show_all (GTK_WIDGET (panel_applet));
   /* No sound server until libpulse answers. */

@@ -1,5 +1,5 @@
 /*
- * The sound server through libpulse (CMN-213). See sd-pulse.h.
+ * The sound server through libpulse (CMN-213, CMN-215). See sd-pulse.h.
  *
  * Each event re-reads its facility's whole list, which keeps removals simple, and the status
  * is built again once no list is on its way. A list asked for again before the last one came
@@ -29,11 +29,9 @@ typedef enum
 /* A sink or a source. */
 typedef struct
 {
-  char      *name;
-  char      *description;
+  SdDevice   device;
+  /* Every channel's, which a volume set keeps the balance of. */
   pa_cvolume volume;
-  gboolean   muted;
-  gboolean   headphones;
   /* A source that is an output's monitor. */
   gboolean   monitor;
 } Device;
@@ -78,7 +76,15 @@ struct _SdPulse
   /* The lists on their way, as Request. */
   GList            *requests;
   SdStatus          status;
+  /* Who hears the Default input, and the peak stream on it, while someone does. */
+  SdPulseLevel      level;
+  gpointer          level_data;
+  pa_stream        *level_stream;
+  char             *level_source;
 };
+
+/* As pavucontrol's peak meters, which pipewire-pulse delivers about 18 of (CMN-210). */
+#define PEAKS_PER_SECOND 25
 
 static void connect_to_server (SdPulse *pulse);
 
@@ -96,8 +102,7 @@ device_free (gpointer data)
 {
   Device *device = data;
 
-  g_free (device->name);
-  g_free (device->description);
+  sd_device_clear (&device->device);
   g_free (device);
 }
 
@@ -152,10 +157,28 @@ find_device (GPtrArray *devices, const char *name)
     {
       Device *device = g_ptr_array_index (devices, i);
 
-      if (g_strcmp0 (device->name, name) == 0)
+      if (g_strcmp0 (device->device.name, name) == 0)
         return device;
     }
   return NULL;
+}
+
+/* The popup's list: every device, but the outputs' monitors. */
+static SdDevice *
+copy_devices (GPtrArray *devices, guint *n_copied)
+{
+  SdDevice *copies = g_new0 (SdDevice, devices->len);
+  guint n = 0;
+
+  for (guint i = 0; i < devices->len; i++)
+    {
+      Device *device = g_ptr_array_index (devices, i);
+
+      if (!device->monitor)
+        sd_device_copy (&device->device, &copies[n++]);
+    }
+  *n_copied = n;
+  return copies;
 }
 
 static void
@@ -171,16 +194,20 @@ build_status (SdPulse *pulse, SdStatus *status)
   if (sink != NULL)
     {
       status->has_output = TRUE;
-      status->output_name = g_strdup (sink->description);
-      status->volume = pa_cvolume_max (&sink->volume);
-      status->muted = sink->muted;
-      status->headphones = sink->headphones;
+      status->output_name = g_strdup (sink->device.description);
+      status->volume = sink->device.volume;
+      status->muted = sink->device.muted;
+      status->headphones = sink->device.form == SD_FORM_HEADPHONES;
+      status->default_output = g_strdup (sink->device.name);
     }
   if (source != NULL && !source->monitor)
     {
       status->has_input = TRUE;
-      status->input_muted = source->muted;
+      status->input_muted = source->device.muted;
+      status->default_input = g_strdup (source->device.name);
     }
+  status->outputs = copy_devices (pulse->lists[LIST_SINKS], &status->n_outputs);
+  status->inputs = copy_devices (pulse->lists[LIST_SOURCES], &status->n_inputs);
   for (guint i = 0; i < recording->len; i++)
     {
       RecordingStream *stream = g_ptr_array_index (recording, i);
@@ -209,6 +236,79 @@ set_status (SdPulse *pulse, SdStatus *status)
   pulse->changed (pulse, pulse->data);
 }
 
+static void
+on_peaks (pa_stream *stream, size_t length G_GNUC_UNUSED, void *data)
+{
+  SdPulse *pulse = data;
+  float level = 0;
+  gboolean read = FALSE;
+
+  while (pa_stream_readable_size (stream) > 0)
+    {
+      const void *samples;
+      size_t size;
+
+      if (pa_stream_peek (stream, &samples, &size) < 0)
+        return;
+      /* A hole, which has a size but no samples. */
+      if (samples != NULL)
+        {
+          for (size_t i = 0; i < size / sizeof (float); i++)
+            level = MAX (level, ((const float *) samples)[i]);
+          read = TRUE;
+        }
+      if (size > 0)
+        pa_stream_drop (stream);
+      else
+        break;
+    }
+  if (read && pulse->level != NULL)
+    pulse->level (CLAMP (level, 0, 1), pulse->level_data);
+}
+
+static void
+close_level_stream (SdPulse *pulse)
+{
+  if (pulse->level_stream == NULL)
+    return;
+  pa_stream_set_read_callback (pulse->level_stream, NULL, NULL);
+  pa_stream_disconnect (pulse->level_stream);
+  g_clear_pointer (&pulse->level_stream, pa_stream_unref);
+  g_clear_pointer (&pulse->level_source, g_free);
+}
+
+/* A peak stream on the Default input while someone hears it, as pavucontrol's
+   (src/mainwindow.cc, createMonitorStreamForSource()), with its flags. */
+static void
+follow_input_level (SdPulse *pulse)
+{
+  pa_sample_spec spec = { .format = PA_SAMPLE_FLOAT32NE, .rate = PEAKS_PER_SECOND, .channels = 1 };
+  pa_buffer_attr attr = { .maxlength = (uint32_t) -1, .fragsize = sizeof (float) };
+  const char *source = pulse->level != NULL && pulse->ready ? pulse->status.default_input : NULL;
+
+  if (g_strcmp0 (source, pulse->level_source) == 0)
+    return;
+  close_level_stream (pulse);
+  if (source == NULL)
+    return;
+  pulse->level_stream = pa_stream_new (pulse->context, "Peak detect", &spec, NULL);
+  if (pulse->level_stream == NULL)
+    return;
+  pa_stream_set_read_callback (pulse->level_stream, on_peaks, pulse);
+  if (pa_stream_connect_record (pulse->level_stream, source, &attr,
+                                PA_STREAM_DONT_MOVE | PA_STREAM_PEAK_DETECT
+                                | PA_STREAM_ADJUST_LATENCY
+                                | PA_STREAM_DONT_INHIBIT_AUTO_SUSPEND)
+      < 0)
+    {
+      g_warning ("can't hear the sound server's %s: %s", source,
+                 pa_strerror (pa_context_errno (pulse->context)));
+      g_clear_pointer (&pulse->level_stream, pa_stream_unref);
+      return;
+    }
+  pulse->level_source = g_strdup (source);
+}
+
 /* Once every list has come in. */
 static void
 update (SdPulse *pulse)
@@ -219,6 +319,7 @@ update (SdPulse *pulse)
     return;
   build_status (pulse, &status);
   set_status (pulse, &status);
+  follow_input_level (pulse);
 }
 
 static void
@@ -247,31 +348,27 @@ property (pa_proplist *properties, const char *key)
   return value != NULL && value[0] != '\0' ? value : NULL;
 }
 
-/* A headset, or a device on its Headphones port. */
-static gboolean
-is_headphones (pa_proplist *properties, const char *port_name, pa_device_port_type_t port_type)
-{
-  const char *form = property (properties, PA_PROP_DEVICE_FORM_FACTOR);
-
-  if (g_strcmp0 (form, "headset") == 0 || g_strcmp0 (form, "headphone") == 0
-      || g_strcmp0 (form, "hands-free") == 0)
-    return TRUE;
-  if (port_type == PA_DEVICE_PORT_TYPE_HEADPHONES || port_type == PA_DEVICE_PORT_TYPE_HEADSET)
-    return TRUE;
-  /* A server too old to give the port's type: ALSA's names it so. */
-  return port_type == PA_DEVICE_PORT_TYPE_UNKNOWN && port_name != NULL
-         && strstr (port_name, "headphones") != NULL;
-}
-
+/* The fields sinks and sources share, which libpulse gives in structs of their own. */
 static Device *
-device_new (const char *name, const char *description, const pa_cvolume *volume, int mute)
+device_new (SdSide side, const char *name, const char *description, const pa_cvolume *volume,
+            int mute, guint32 card, pa_proplist *properties, const SdPortInfo *ports,
+            guint32 n_ports, const char *active_name, const char *active_description,
+            int active_type)
 {
   Device *device = g_new0 (Device, 1);
 
-  device->name = g_strdup (name);
-  device->description = g_strdup (description != NULL ? description : name);
+  device->device.name = g_strdup (name);
+  device->device.description = g_strdup (description != NULL ? description : name);
   device->volume = *volume;
-  device->muted = mute != 0;
+  device->device.volume = pa_cvolume_max (volume);
+  device->device.muted = mute != 0;
+  device->device.virtual_device = card == PA_INVALID_INDEX;
+  device->device.form = sd_state_device_form (side,
+                                               property (properties, PA_PROP_DEVICE_FORM_FACTOR),
+                                               active_name, active_type);
+  device->device.active_port = g_strdup (active_name);
+  device->device.active_port_description = g_strdup (active_description);
+  device->device.ports = sd_state_plugged_ports (ports, n_ports, &device->device.n_ports);
   return device;
 }
 
@@ -280,17 +377,24 @@ on_sink (pa_context *context G_GNUC_UNUSED, const pa_sink_info *info, int eol, v
 {
   Request *request = data;
   Device *device;
+  g_autofree SdPortInfo *ports = NULL;
 
   if (eol != 0)
     {
       request_done (request, eol);
       return;
     }
-  device = device_new (info->name, info->description, &info->volume, info->mute);
-  device->headphones = is_headphones (info->proplist,
-                                      info->active_port != NULL ? info->active_port->name : NULL,
-                                      info->active_port != NULL ? info->active_port->type
-                                                                : PA_DEVICE_PORT_TYPE_UNKNOWN);
+  /* A port whose availability isn't known counts as plugged. */
+  ports = g_new0 (SdPortInfo, info->n_ports);
+  for (guint32 i = 0; i < info->n_ports; i++)
+    ports[i] = (SdPortInfo) { info->ports[i]->name, info->ports[i]->description,
+                              info->ports[i]->available == PA_PORT_AVAILABLE_NO };
+  device = device_new (SD_OUTPUT, info->name, info->description, &info->volume, info->mute,
+                       info->card, info->proplist, ports, info->n_ports,
+                       info->active_port != NULL ? info->active_port->name : NULL,
+                       info->active_port != NULL ? info->active_port->description : NULL,
+                       info->active_port != NULL ? info->active_port->type
+                                                 : PA_DEVICE_PORT_TYPE_UNKNOWN);
   g_ptr_array_add (request->items, device);
 }
 
@@ -299,13 +403,23 @@ on_source (pa_context *context G_GNUC_UNUSED, const pa_source_info *info, int eo
 {
   Request *request = data;
   Device *device;
+  g_autofree SdPortInfo *ports = NULL;
 
   if (eol != 0)
     {
       request_done (request, eol);
       return;
     }
-  device = device_new (info->name, info->description, &info->volume, info->mute);
+  ports = g_new0 (SdPortInfo, info->n_ports);
+  for (guint32 i = 0; i < info->n_ports; i++)
+    ports[i] = (SdPortInfo) { info->ports[i]->name, info->ports[i]->description,
+                              info->ports[i]->available == PA_PORT_AVAILABLE_NO };
+  device = device_new (SD_INPUT, info->name, info->description, &info->volume, info->mute,
+                       info->card, info->proplist, ports, info->n_ports,
+                       info->active_port != NULL ? info->active_port->name : NULL,
+                       info->active_port != NULL ? info->active_port->description : NULL,
+                       info->active_port != NULL ? info->active_port->type
+                                                 : PA_DEVICE_PORT_TYPE_UNKNOWN);
   device->monitor = info->monitor_of_sink != PA_INVALID_INDEX;
   g_ptr_array_add (request->items, device);
 }
@@ -460,6 +574,7 @@ on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index
 static void
 forget_server (SdPulse *pulse)
 {
+  close_level_stream (pulse);
   g_list_free_full (g_steal_pointer (&pulse->requests), (GDestroyNotify) request_free);
   for (guint i = 0; i < N_LISTS; i++)
     {
@@ -476,6 +591,7 @@ disconnect (SdPulse *pulse)
 {
   if (pulse->context == NULL)
     return;
+  close_level_stream (pulse);
   pa_context_set_state_callback (pulse->context, NULL, NULL);
   pa_context_set_subscribe_callback (pulse->context, NULL, NULL);
   pa_context_disconnect (pulse->context);
@@ -598,7 +714,55 @@ sd_pulse_set_volume (SdPulse *pulse, pa_volume_t volume)
   channels = sink->volume;
   /* Keeps the balance. */
   pa_cvolume_scale (&channels, volume);
-  drop_operation (pa_context_set_sink_volume_by_name (pulse->context, sink->name, &channels, NULL, NULL));
+  drop_operation (pa_context_set_sink_volume_by_name (pulse->context, sink->device.name, &channels,
+                                                      NULL, NULL));
+}
+
+void
+sd_pulse_set_input_volume (SdPulse *pulse, pa_volume_t volume)
+{
+  Device *source;
+  pa_cvolume channels;
+
+  if (!connected (pulse))
+    return;
+  source = find_device (pulse->lists[LIST_SOURCES], pulse->default_source);
+  if (source == NULL || source->monitor)
+    return;
+  channels = source->volume;
+  pa_cvolume_scale (&channels, volume);
+  drop_operation (pa_context_set_source_volume_by_name (pulse->context, source->device.name,
+                                                        &channels, NULL, NULL));
+}
+
+void
+sd_pulse_set_default (SdPulse *pulse, SdSide side, const char *device)
+{
+  if (!connected (pulse))
+    return;
+  if (side == SD_OUTPUT)
+    drop_operation (pa_context_set_default_sink (pulse->context, device, NULL, NULL));
+  else
+    drop_operation (pa_context_set_default_source (pulse->context, device, NULL, NULL));
+}
+
+void
+sd_pulse_set_port (SdPulse *pulse, SdSide side, const char *device, const char *port)
+{
+  if (!connected (pulse))
+    return;
+  if (side == SD_OUTPUT)
+    drop_operation (pa_context_set_sink_port_by_name (pulse->context, device, port, NULL, NULL));
+  else
+    drop_operation (pa_context_set_source_port_by_name (pulse->context, device, port, NULL, NULL));
+}
+
+void
+sd_pulse_watch_input_level (SdPulse *pulse, SdPulseLevel level, gpointer data)
+{
+  pulse->level = level;
+  pulse->level_data = data;
+  follow_input_level (pulse);
 }
 
 void
