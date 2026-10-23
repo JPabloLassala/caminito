@@ -1,0 +1,28 @@
+no sound server: the panel lives
+the popup with no sound server: the panel lives
+speaker at 100%: the panel lives
+speaker at 50%: the panel lives
+speaker at 20%: the panel lives
+speaker muted: the panel lives
+speaker at 0: the panel lives
+headphones: the panel lives
+headphones muted: the panel lives
+a monitor's output: the panel lives
+recording: the panel lives
+two steps up from 45%: 55%
+one step down: 50%
+two steps up from 98%, with allow-volume-above-100-percent off: 100%
+a step up from 100%, with it on: 105%
+two steps up from 148%, with it on: 150%
+a step up from 45% with volume-step 10: 55%
+four steps of 10 up from 45% in one burst: 85%
+middle-click: Mute: yes
+middle-click again: Mute: no
+the wheel and middle-click: the panel lives
+the popup: the panel lives
+the menu: the panel lives
+the server stopped: the panel lives
+the server back: the panel lives
+panel log: (mate-panel:463405): EggSMClient-WARNING **: 15:56:16.578: Failed to connect to the session manager: None of the authentication protocols specified are supported
+the menu on the user's own server: the panel lives
+A connection to the bus can't be made
