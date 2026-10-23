@@ -4,10 +4,11 @@
  * through with no sound server (the strike is the applet's own where themes have none), with
  * a red dot while an application records. It reads the sound server through libpulse
  * (sd-pulse.c). The wheel on it sets the Default output's volume and middle-click mutes it;
- * left-click toggles the popup (sd-popup.c), with the output and input rows (CMN-215) and the
- * Applications (CMN-216). Its
- * right-click menu mutes the output and the microphone, has a section of profiles for each
- * card, and "Sound settings…", which runs mate-volume-control.
+ * left-click toggles the popup (sd-popup.c), with the output and input rows (CMN-215), the
+ * Applications (CMN-216) and the Pinned applications (CMN-217), whose pins it keeps in its
+ * own settings and the reader applies (ADR 0045). Its right-click menu mutes the output and
+ * the microphone, has a section of profiles for each card, and "Sound settings…", which runs
+ * mate-volume-control.
  */
 
 #include <mate-panel-applet.h>
@@ -23,6 +24,7 @@
 
 #define MEDIA_KEYS_SCHEMA "org.mate.SettingsDaemon.plugins.media-keys"
 #define SOUND_SCHEMA      "org.gnome.desktop.sound"
+#define PINS_SCHEMA       "org.mate.panel.applet.caminito-sound"
 /* mate-settings-daemon's own default, where its schema isn't installed. */
 #define DEFAULT_STEP 5
 
@@ -38,6 +40,12 @@ typedef struct
   /* NULL where their schemas aren't installed. */
   GSettings           *media_keys;
   GSettings           *sound;
+  /* The pins (CMN-217), as SdPin, from the applet's settings: kept for the session alone
+     where its schema isn't installed. What the last unpin took away, as SdUnpinned, for its
+     Undo. */
+  GSettings           *pins_settings;
+  GArray              *pins;
+  GArray              *unpinned;
   /* A touchpad's scroll, until it makes up a step. */
   double               scrolled;
   /* The volume the last step asked for, and when: the next step goes on from it while
@@ -360,12 +368,137 @@ on_popup_set_stream_volume (SdSide side, guint32 stream, pa_volume_t volume, gpo
   sd_pulse_set_stream_volume (applet->pulse, side, stream, volume);
 }
 
+/* The reader applies the pins as they are now. */
+static void
+push_pins (Applet *applet)
+{
+  sd_pulse_set_pins (applet->pulse, (SdPin *) applet->pins->data, applet->pins->len);
+}
+
+/* Kept in the settings, whose change the reader follows, and given to the reader at once,
+   whatever the settings' backend makes of it. */
+static void
+save_pins (Applet *applet)
+{
+  if (applet->pins_settings != NULL)
+    g_settings_set_value (applet->pins_settings, "pins", sd_pins_to_variant (applet->pins));
+  push_pins (applet);
+}
+
+/* Another Sound applet's pin, or dconf's. */
+static void
+on_pins_changed (GSettings *settings, const char *key G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+  g_autoptr (GVariant) value = g_settings_get_value (settings, "pins");
+
+  g_array_unref (applet->pins);
+  applet->pins = sd_pins_from_variant (value);
+  if (applet->pulse != NULL)
+    push_pins (applet);
+}
+
+/* The server's description of the side's device, which a pin keeps for while it's gone. */
+static const char *
+description_of (const SdStatus *status, SdSide side, const char *device)
+{
+  guint n;
+  const SdDevice *devices = sd_status_devices (status, side, &n);
+
+  for (guint i = 0; i < n; i++)
+    if (g_strcmp0 (devices[i].name, device) == 0)
+      return devices[i].description;
+  return NULL;
+}
+
+/* A pinned application's device chosen keeps it pinned, there. */
 static void
 on_popup_move_app (SdSide side, const char *app, const char *device, gpointer data)
 {
   Applet *applet = data;
+  int found = sd_pins_find (applet->pins, side, app);
 
+  if (found >= 0 && device != NULL)
+    {
+      SdPin *pin = &g_array_index (applet->pins, SdPin, found);
+      const char *description = description_of (sd_pulse_status (applet->pulse), side, device);
+
+      g_free (pin->device);
+      g_free (pin->device_description);
+      pin->device = g_strdup (device);
+      pin->device_description = g_strdup (description ?: device);
+      save_pins (applet);
+    }
   sd_pulse_move_app (applet->pulse, side, app, device);
+}
+
+/* To the device it plays to or records from now: the one it's moved to, or the default it
+   follows. */
+static void
+on_popup_pin_app (SdSide side, const char *id, gpointer data)
+{
+  Applet *applet = data;
+  const SdStatus *status = sd_pulse_status (applet->pulse);
+  const SdApp *app = sd_status_app (status, side, id);
+  const char *device;
+  SdPin pin;
+
+  if (app == NULL)
+    return;
+  device = app->device ?: (side == SD_OUTPUT ? status->default_output : status->default_input);
+  if (device == NULL)
+    return;
+  pin = (SdPin) {
+    .side = side,
+    .id = app->id,
+    .name = app->name,
+    .icon = app->icon,
+    .device = (char *) device,
+    .device_description = (char *) (app->device_description ?: description_of (status, side,
+                                                                                device)
+                                                            ?: device),
+  };
+  /* Copied before the status the change brings frees the application. */
+  sd_pins_set (applet->pins, &pin);
+  save_pins (applet);
+}
+
+/* Back to "Follow the default": moved there before the pin goes, while the status still has
+   its streams, paused ones too. */
+static void
+on_popup_unpin_app (SdSide side, const char *id, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_move_app (applet->pulse, side, id, NULL);
+  sd_pins_remove (applet->pins, side, id, applet->unpinned);
+  save_pins (applet);
+}
+
+/* Every pin, and nothing else: volumes and mutes stay. */
+static void
+on_popup_unpin_all (gpointer data)
+{
+  Applet *applet = data;
+
+  for (guint i = 0; i < applet->pins->len; i++)
+    {
+      const SdPin *pin = &g_array_index (applet->pins, SdPin, i);
+
+      sd_pulse_move_app (applet->pulse, pin->side, pin->id, NULL);
+    }
+  sd_pins_remove_all (applet->pins, applet->unpinned);
+  save_pins (applet);
+}
+
+/* The pins back as they were: the reader moves their applications back. */
+static void
+on_popup_undo_unpin (gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pins_restore (applet->pins, applet->unpinned);
+  save_pins (applet);
 }
 
 static void
@@ -386,6 +519,10 @@ static const SdPopupActions popup_actions = {
   .set_stream_volume = on_popup_set_stream_volume,
   .move_app = on_popup_move_app,
   .set_system_volume = on_popup_set_system_volume,
+  .pin_app = on_popup_pin_app,
+  .unpin_app = on_popup_unpin_app,
+  .unpin_all = on_popup_unpin_all,
+  .undo_unpin = on_popup_undo_unpin,
 };
 
 static void
@@ -635,6 +772,9 @@ applet_free (gpointer data)
   sd_pulse_free (applet->pulse);
   g_clear_object (&applet->media_keys);
   g_clear_object (&applet->sound);
+  g_clear_object (&applet->pins_settings);
+  g_array_unref (applet->pins);
+  g_array_unref (applet->unpinned);
   g_ptr_array_unref (applet->profile_items);
   cards_clear (applet);
   g_free (applet);
@@ -696,6 +836,18 @@ fill (MatePanelApplet *panel_applet)
                           applet_free);
   applet->media_keys = settings_new (MEDIA_KEYS_SCHEMA);
   applet->sound = settings_new (SOUND_SCHEMA);
+  applet->pins = sd_pins_new ();
+  applet->unpinned = sd_unpinned_new ();
+  applet->pins_settings = settings_new (PINS_SCHEMA);
+  if (applet->pins_settings != NULL)
+    {
+      g_signal_connect (applet->pins_settings, "changed::pins", G_CALLBACK (on_pins_changed),
+                        applet);
+      on_pins_changed (applet->pins_settings, "pins", applet);
+    }
+  else
+    g_warning ("the schema %s isn't installed: pins last until the panel restarts",
+               PINS_SCHEMA);
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
   applet->content = sd_popup_new (applet->popup, &popup_actions, applet);
   sd_popup_set_volume_settings (applet->content, volume_step (applet), above_100 (applet));
@@ -710,6 +862,8 @@ fill (MatePanelApplet *panel_applet)
   g_signal_connect (caminito_applet_popup_get_window (applet->popup), "hide",
                     G_CALLBACK (on_popup_hidden), applet);
   applet->pulse = sd_pulse_new (on_changed, applet);
+  /* Before the server answers: its streams are moved as they're first listed. */
+  push_pins (applet);
   gtk_widget_show_all (GTK_WIDGET (panel_applet));
   /* No sound server until libpulse answers. */
   update (applet);

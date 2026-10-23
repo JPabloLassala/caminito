@@ -6,8 +6,9 @@
  * defaults, a device's port and the Default input's volume, and it hears the Default input
  * while the popup asks it to; for its Applications (CMN-216), the Sound applications'
  * volumes and devices and System sounds' volume, and it hears the applications while the
- * popup asks it to. With no sound server it waits for one, and when the server goes away it
- * waits for it to come back.
+ * popup asks it to; for its Pinned applications (CMN-217), it applies the pins, and turns
+ * WirePlumber's target restore off (ADR 0045). With no sound server it waits for one, and
+ * when the server goes away it waits for it to come back.
  */
 
 #pragma once
@@ -88,6 +89,12 @@ typedef void (*SdPulseAppLevel) (SdSide side, const char *app, double level, gpo
 void            sd_pulse_watch_app_levels  (SdPulse        *pulse,
                                             SdPulseAppLevel level,
                                             gpointer        data);
+/* The pins the applet keeps (CMN-217), copied: from then on each of their applications' streams
+   is moved to its pinned device as it appears, and whenever it isn't there while the device
+   is, and the status lists them as Pinned applications rather than Applications. */
+void            sd_pulse_set_pins        (SdPulse     *pulse,
+                                          const SdPin *pins,
+                                          guint        n_pins);
 /* The profile of the card at an SdCard's index, by the SdProfile's name. */
 void            sd_pulse_set_profile     (SdPulse    *pulse,
                                           guint32     card,

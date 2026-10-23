@@ -107,6 +107,38 @@ on_set_system_volume (pa_volume_t volume, gpointer data)
   g_string_append_printf (fixture->calls, "system %u;", sd_state_percent (volume));
 }
 
+static void
+on_pin_app (SdSide side, const char *app, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "pin %s %s;", side_names[side], app);
+}
+
+static void
+on_unpin_app (SdSide side, const char *app, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "unpin %s %s;", side_names[side], app);
+}
+
+static void
+on_unpin_all (gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append (fixture->calls, "unpin all;");
+}
+
+static void
+on_undo_unpin (gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append (fixture->calls, "undo;");
+}
+
 static const SdPopupActions actions = {
   .set_volume = on_set_volume,
   .set_muted = on_set_muted,
@@ -117,6 +149,10 @@ static const SdPopupActions actions = {
   .set_stream_volume = on_set_stream_volume,
   .move_app = on_move_app,
   .set_system_volume = on_set_system_volume,
+  .pin_app = on_pin_app,
+  .unpin_app = on_unpin_app,
+  .unpin_all = on_unpin_all,
+  .undo_unpin = on_undo_unpin,
 };
 
 static GtkWidget *
@@ -958,8 +994,9 @@ test_an_apps_row_shows_its_loudest_stream (Fixture *fixture, gconstpointer data 
   /* The application's own icon, and the activity bar under it. */
   g_assert_cmpstr (first_icon_name (named (fixture, "app-output-mpv-icon")), ==, "mpv");
   g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-bar")));
-  /* The pin is CMN-217's. */
-  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-pin")));
+  /* It can be pinned (CMN-217). */
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-pin")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-unpin")));
   /* Following the default: no badge. */
   g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-badge")));
   /* Its slider sets the application: the reader keeps its streams' ratio. */
@@ -1138,9 +1175,346 @@ test_the_keyboard_reaches_the_applications (Fixture *fixture, gconstpointer data
   order = tab_order (fixture);
   g_assert_cmpstr (order, ==,
                    "output-mute output-scale output-pill input-mute input-scale input-pill "
-                   "system-scale app-output-mpv-name app-output-mpv-scale "
-                   "app-output-Firefox-name app-output-Firefox-scale "
-                   "app-input-OBS Studio-name app-input-OBS Studio-scale settings ");
+                   "system-scale app-output-mpv-name app-output-mpv-scale app-output-mpv-pin "
+                   "app-output-Firefox-name app-output-Firefox-scale app-output-Firefox-pin "
+                   "app-input-OBS Studio-name app-input-OBS Studio-scale "
+                   "app-input-OBS Studio-pin settings ");
+}
+
+static SdStreamVolume spotify_streams[] = { { 60, "Song", PERCENT (70) } };
+static SdStreamVolume rhythmbox_streams[] = { { 61, "Podcast", PERCENT (50) } };
+
+/* with_apps(), and pinned: Spotify playing on the headset, Rhythmbox paused on Built-in
+   Audio, and Discord not running, pinned to a headset that's gone. */
+static SdStatus
+with_pinned (SdApp *apps, SdPinnedApp *pinned)
+{
+  SdStatus status = with_apps (apps);
+
+  pinned[0] = (SdPinnedApp) {
+    .app = { .id = "Spotify", .name = "Spotify", .icon = "spotify-client", .side = SD_OUTPUT,
+             .device = "headset", .device_description = "WH-1000XM4", .volume = PERCENT (70),
+             .streams = spotify_streams, .n_streams = 1 },
+    .activity = SD_PIN_PLAYING,
+  };
+  pinned[1] = (SdPinnedApp) {
+    .app = { .id = "Rhythmbox", .name = "Rhythmbox", .side = SD_OUTPUT, .device = "alsa",
+             .device_description = "Built-in Audio", .volume = PERCENT (50),
+             .streams = rhythmbox_streams, .n_streams = 1 },
+    .activity = SD_PIN_PAUSED,
+  };
+  pinned[2] = (SdPinnedApp) {
+    .app = { .id = "Discord", .name = "Discord", .side = SD_OUTPUT, .device = "jabra",
+             .device_description = "Jabra Evolve" },
+    .activity = SD_PIN_NOT_RUNNING,
+    .device_gone = TRUE,
+  };
+  status.pinned = pinned;
+  status.n_pinned = 3;
+  return status;
+}
+
+static gboolean
+has_class (GtkWidget *widget, const char *name)
+{
+  return gtk_style_context_has_class (gtk_widget_get_style_context (widget), name);
+}
+
+static void
+test_pinned_applications_show_only_with_a_pin (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_apps (apps);
+
+  sd_popup_update (fixture->popup, &status);
+  g_assert_false (widget_shows (fixture, named (fixture, "pinned")));
+  status = with_pinned (apps, pinned);
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (widget_shows (fixture, named (fixture, "pinned")));
+  g_assert_true (shows (fixture, "PINNED APPLICATIONS"));
+  /* Between the input row and Applications. */
+  g_assert_true (above (fixture, named (fixture, "input-row"), named (fixture, "pinned")));
+  g_assert_true (above (fixture, named (fixture, "pinned"), named (fixture, "applications")));
+  g_assert_true (above (fixture, named (fixture, "app-output-Spotify"),
+                        named (fixture, "app-output-Discord")));
+  /* The heading's ×, red, with no tooltip; "Unpin all" beside it only on hover or focus. */
+  g_assert_true (widget_shows (fixture, named (fixture, "unpin-all")));
+  g_assert_true (has_class (named (fixture, "unpin-all"), "sd-danger"));
+  g_assert_null (gtk_widget_get_tooltip_text (named (fixture, "unpin-all")));
+  g_assert_false (widget_shows (fixture, named (fixture, "unpin-all-label")));
+  gtk_widget_set_state_flags (named (fixture, "unpin-all"), GTK_STATE_FLAG_PRELIGHT, FALSE);
+  g_assert_true (widget_shows (fixture, named (fixture, "unpin-all-label")));
+  gtk_widget_unset_state_flags (named (fixture, "unpin-all"), GTK_STATE_FLAG_PRELIGHT);
+  g_assert_false (widget_shows (fixture, named (fixture, "unpin-all-label")));
+  focus_in (fixture);
+  gtk_widget_grab_focus (named (fixture, "unpin-all"));
+  g_assert_true (widget_shows (fixture, named (fixture, "unpin-all-label")));
+  /* The heading's × lines up with the rows'. */
+  {
+    int heading_x, row_x;
+
+    settle (fixture);
+    gtk_widget_translate_coordinates (named (fixture, "unpin-all-icon"), window_of (fixture),
+                                      0, 0, &heading_x, NULL);
+    gtk_widget_translate_coordinates (
+      gtk_button_get_image (GTK_BUTTON (named (fixture, "app-output-Spotify-unpin"))),
+      window_of (fixture), 0, 0, &row_x, NULL);
+    gtk_widget_unset_state_flags (named (fixture, "unpin-all"), GTK_STATE_FLAG_FOCUSED);
+    g_assert_cmpint (ABS (heading_x - row_x), <=, 2);
+  }
+  /* None left: no section. */
+  status.n_pinned = 0;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_false (widget_shows (fixture, named (fixture, "pinned")));
+}
+
+static void
+test_a_pinned_row_shows_how_its_app_is (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+  GtkWidget *badge;
+
+  sd_popup_update (fixture->popup, &status);
+  /* Playing: its slider, its activity bar and its device, and the ×, not the pin. */
+  g_assert_cmpfloat (value_of (fixture, "app-output-Spotify-scale"), ==, 70);
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Spotify-bar")));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Spotify-badge")));
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (named (fixture, "app-output-Spotify-badge"))),
+                   ==, "WH-1000XM4");
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-Spotify-state")));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Spotify-unpin")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-Spotify-pin")));
+  g_assert_cmpstr (first_icon_name (named (fixture, "app-output-Spotify-icon")), ==,
+                   "spotify-client");
+  /* Paused: its slider, no bar. */
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Rhythmbox-scale")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-Rhythmbox-bar")));
+  g_assert_true (shows (fixture, "‖ Paused"));
+  /* Not running: no slider, and its device gone. */
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-Discord-scale")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-Discord-percent")));
+  g_assert_true (shows (fixture, "■ Not running"));
+  badge = named (fixture, "app-output-Discord-badge");
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (badge)), ==, "Jabra Evolve · not connected");
+  g_assert_true (has_class (badge, "sd-gone"));
+  g_assert_false (has_class (named (fixture, "app-output-Spotify-badge"), "sd-gone"));
+  /* Its × at the right edge, as the others'. */
+  {
+    int discord_x, spotify_x;
+
+    settle (fixture);
+    gtk_widget_translate_coordinates (named (fixture, "app-output-Discord-unpin"),
+                                      window_of (fixture), 0, 0, &discord_x, NULL);
+    gtk_widget_translate_coordinates (named (fixture, "app-output-Spotify-unpin"),
+                                      window_of (fixture), 0, 0, &spotify_x, NULL);
+    g_assert_cmpint (discord_x, ==, spotify_x);
+  }
+  /* Discord starts, and its headset comes back. */
+  pinned[2].activity = SD_PIN_PLAYING;
+  pinned[2].device_gone = FALSE;
+  pinned[2].app.streams = firefox_streams;
+  pinned[2].app.n_streams = 1;
+  pinned[2].app.volume = PERCENT (100);
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Discord-scale")));
+  g_assert_false (shows (fixture, "■ Not running"));
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (badge)), ==, "Jabra Evolve");
+  g_assert_false (has_class (badge, "sd-gone"));
+}
+
+static void
+test_the_pin_button_pins_an_app (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_apps (apps);
+  GtkWidget *mpv;
+
+  sd_popup_update (fixture->popup, &status);
+  mpv = named (fixture, "app-output-mpv");
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-name")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-input-OBS Studio-pin")));
+  g_assert_cmpstr (fixture->calls->str, ==, "pin input OBS Studio;");
+  /* mpv pinned: its row goes to Pinned applications, still open. */
+  status = with_pinned (apps, pinned);
+  pinned[0].app = apps[0];
+  pinned[0].app.device = "headset";
+  pinned[0].app.device_description = "WH-1000XM4";
+  status.apps = &apps[1];
+  status.n_apps = 2;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (named (fixture, "app-output-mpv") == mpv);
+  g_assert_true (gtk_widget_is_ancestor (mpv, named (fixture, "pinned")));
+  g_assert_true (shows (fixture, "song.flac"));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-unpin")));
+}
+
+static void
+test_a_rows_x_asks_before_unpinning (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+  GtkWidget *strip;
+
+  sd_popup_update (fixture->popup, &status);
+  strip = named (fixture, "app-output-Spotify-confirm");
+  g_assert_false (widget_shows (fixture, strip));
+  /* The × opens it, and again closes it. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-unpin")));
+  g_assert_true (widget_shows (fixture, strip));
+  g_assert_true (shows (fixture, "Unpin Spotify? It goes back to following the default output."));
+  g_assert_true (above (fixture, named (fixture, "app-output-Spotify-scale"), strip));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-unpin")));
+  g_assert_false (widget_shows (fixture, strip));
+  /* Cancel closes it too. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-unpin")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-cancel")));
+  g_assert_false (widget_shows (fixture, strip));
+  g_assert_cmpstr (fixture->calls->str, ==, "");
+}
+
+static void
+test_unpinning_leaves_an_undo_in_the_rows_place (Fixture *fixture,
+                                                 gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+  GtkWidget *undo;
+
+  sd_popup_update (fixture->popup, &status);
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Rhythmbox-unpin")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Rhythmbox-confirm-unpin")));
+  g_assert_cmpstr (fixture->calls->str, ==, "unpin output Rhythmbox;");
+  undo = named (fixture, "undo");
+  g_assert_true (widget_shows (fixture, undo));
+  g_assert_true (shows (fixture, "Rhythmbox unpinned."));
+  /* In its place, before the server has made anything of it. */
+  g_assert_false (shows (fixture, "‖ Paused"));
+  g_assert_true (above (fixture, named (fixture, "app-output-Spotify"), undo));
+  g_assert_true (above (fixture, undo, named (fixture, "app-output-Discord")));
+  /* Unpinned: the other two left, the Undo still between them. */
+  pinned[1] = pinned[2];
+  status.n_pinned = 2;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (above (fixture, named (fixture, "app-output-Spotify"), undo));
+  g_assert_true (above (fixture, undo, named (fixture, "app-output-Discord")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "undo-button")));
+  g_assert_cmpstr (fixture->calls->str, ==, "unpin output Rhythmbox;undo;");
+  g_assert_false (widget_shows (fixture, undo));
+}
+
+static void
+test_unpin_all_asks_and_leaves_one_undo (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+  GtkWidget *strip;
+
+  sd_popup_update (fixture->popup, &status);
+  strip = named (fixture, "unpin-all-confirm");
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "unpin-all")));
+  g_assert_true (widget_shows (fixture, strip));
+  g_assert_true (shows (fixture, "Unpin all 3 applications? They go back to following the "
+                                 "default devices."));
+  g_assert_true (above (fixture, strip, named (fixture, "app-output-Spotify")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "unpin-all")));
+  g_assert_false (widget_shows (fixture, strip));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "unpin-all")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "unpin-all-confirm-unpin")));
+  g_assert_cmpstr (fixture->calls->str, ==, "unpin all;");
+  /* One strip in the list's place. */
+  g_assert_true (shows (fixture, "3 applications unpinned."));
+  g_assert_false (shows (fixture, "Spotify"));
+  g_assert_false (widget_shows (fixture, strip));
+  /* Unpinned, Spotify plays on under Applications, while the Undo shows. */
+  apps[2] = pinned[0].app;
+  apps[2].device = NULL;
+  apps[2].device_description = NULL;
+  status.n_pinned = 0;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (widget_shows (fixture, named (fixture, "pinned")));
+  g_assert_false (widget_shows (fixture, named (fixture, "unpin-all")));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Spotify")));
+  g_assert_true (gtk_widget_is_ancestor (named (fixture, "app-output-Spotify"),
+                                         named (fixture, "applications")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "undo-button")));
+  g_assert_cmpstr (fixture->calls->str, ==, "unpin all;undo;");
+  /* Until the server's pins are back, nothing to show. */
+  g_assert_false (widget_shows (fixture, named (fixture, "pinned")));
+}
+
+static void
+test_the_undo_goes_after_5_seconds (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+  gint64 start, end;
+
+  status.n_pinned = 1;
+  sd_popup_update (fixture->popup, &status);
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-unpin")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-confirm-unpin")));
+  start = g_get_monotonic_time ();
+  status.n_pinned = 0;
+  sd_popup_update (fixture->popup, &status);
+  end = start + 7 * G_USEC_PER_SEC;
+  while (widget_shows (fixture, named (fixture, "undo")))
+    {
+      if (g_get_monotonic_time () > end)
+        g_error ("timed out waiting for the Undo to go");
+      g_main_context_iteration (NULL, FALSE);
+      g_usleep (10000);
+    }
+  g_assert_cmpint (g_get_monotonic_time () - start, >=, 5 * G_USEC_PER_SEC - 100000);
+  /* Nothing pinned and no Undo: no section. */
+  g_assert_false (widget_shows (fixture, named (fixture, "pinned")));
+}
+
+static void
+test_a_pinned_rows_devices_keep_it_pinned (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+
+  sd_popup_update (fixture->popup, &status);
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-name")));
+  /* Its device checked, and no "Follow the default": the × unpins. */
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Spotify-check-headset")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-Spotify-follow")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Spotify-device-alsa")));
+  g_assert_cmpstr (fixture->calls->str, ==, "move output Spotify alsa;");
+  /* Not running: its devices still, to pin it elsewhere. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Discord-name")));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-Discord-device-alsa")));
+}
+
+static void
+test_the_keyboard_reaches_the_pinned_applications (Fixture *fixture,
+                                                   gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdPinnedApp pinned[3];
+  SdStatus status = with_pinned (apps, pinned);
+  g_autofree char *order = NULL;
+
+  status.n_apps = 0;
+  sd_popup_update (fixture->popup, &status);
+  settle (fixture);
+  order = tab_order (fixture);
+  g_assert_cmpstr (order, ==,
+                   "output-mute output-scale output-pill input-mute input-scale input-pill "
+                   "unpin-all app-output-Spotify-name app-output-Spotify-scale "
+                   "app-output-Spotify-unpin app-output-Rhythmbox-name app-output-Rhythmbox-scale "
+                   "app-output-Rhythmbox-unpin app-output-Discord-name app-output-Discord-unpin "
+                   "system-scale settings ");
 }
 
 int
@@ -1188,6 +1562,17 @@ main (int argc, char **argv)
   ADD ("an-update-keeps-the-rows-and-their-state", test_an_update_keeps_the_rows_and_their_state);
   ADD ("the-activity-bars-show-the-levels", test_the_activity_bars_show_the_levels);
   ADD ("the-keyboard-reaches-the-applications", test_the_keyboard_reaches_the_applications);
+  ADD ("pinned-applications-show-only-with-a-pin", test_pinned_applications_show_only_with_a_pin);
+  ADD ("a-pinned-row-shows-how-its-app-is", test_a_pinned_row_shows_how_its_app_is);
+  ADD ("the-pin-button-pins-an-app", test_the_pin_button_pins_an_app);
+  ADD ("a-rows-x-asks-before-unpinning", test_a_rows_x_asks_before_unpinning);
+  ADD ("unpinning-leaves-an-undo-in-the-rows-place",
+       test_unpinning_leaves_an_undo_in_the_rows_place);
+  ADD ("unpin-all-asks-and-leaves-one-undo", test_unpin_all_asks_and_leaves_one_undo);
+  ADD ("the-undo-goes-after-5-seconds", test_the_undo_goes_after_5_seconds);
+  ADD ("a-pinned-rows-devices-keep-it-pinned", test_a_pinned_rows_devices_keep_it_pinned);
+  ADD ("the-keyboard-reaches-the-pinned-applications",
+       test_the_keyboard_reaches_the_pinned_applications);
 #undef ADD
   return g_test_run ();
 }

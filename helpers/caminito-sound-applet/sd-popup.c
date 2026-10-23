@@ -1,11 +1,15 @@
 /*
- * The Sound applet's popup (CMN-213, CMN-215, CMN-216). See sd-popup.h.
+ * The Sound applet's popup (CMN-213, CMN-215, CMN-216, CMN-217). See sd-popup.h.
  *
  * The rows are built once and updated in place, and a device list is built again only when
  * its devices change, in the same box: a new viewport would lose the scroll position, and a
  * widget built again loses the focus (CMN-210). An application's row lives as long as the
- * application plays or records, and is moved into its place rather than built again, so that
- * an open row stays open.
+ * application plays or records, or is pinned, and is moved into its place rather than built
+ * again, so that an open row stays open: into Pinned applications when it's pinned, and back.
+ *
+ * The Undo strip that an unpin leaves is the popup's own: it shows at once, in the place of
+ * the rows it stands for, which are hidden until the status comes without their pins, and
+ * goes after UNDO_MS.
  *
  * The wheel over a slider scrolls the popup; only Shift+wheel changes the slider. GtkRange's
  * class handler of scroll-event takes every wheel event, so the scrolled window would never
@@ -44,6 +48,8 @@
 #define NAME_WIDTH 92
 #define NAME_CHARS 14
 #define ICON_SIZE  22
+/* How long the Undo strip stays after an unpin. */
+#define UNDO_MS    5000
 
 static const char *const side_names[] = { "output", "input" };
 
@@ -119,13 +125,25 @@ typedef struct
   /* The level the bar shows from its next frame. */
   double     level;
   GtkWidget *badge;
+  /* The badge and what a pinned application is doing, under the bar. */
+  GtkWidget *line;
+  GtkWidget *state;
   GtkWidget *revealer;
   GtkWidget *devices;
   char      *devices_key;
+  /* "Follow the default", which a pinned application's list hasn't. */
+  GtkWidget *follow;
   GtkWidget *streams;
   char      *streams_key;
-  /* The device it's moved to, NULL while it follows the default. */
+  /* The device it's moved or pinned to, NULL while it follows the default. */
   char      *device;
+  /* Pinned (CMN-217): the × and the strip it opens, rather than the pin button. */
+  gboolean   pinned;
+  GtkWidget *right;
+  GtkWidget *pin;
+  GtkWidget *unpin;
+  GtkWidget *confirm;
+  GtkWidget *confirm_label;
 } AppRow;
 
 struct _SdPopup
@@ -145,8 +163,24 @@ struct _SdPopup
   Slider               *system;
   GtkWidget            *app_boxes[2];
   GtkWidget            *recording_heading;
-  /* AppRow, by "<side>\x1f<id>". */
+  /* AppRow, by "<side>\x1f<id>", pinned or not. */
   GHashTable           *app_rows;
+  /* Pinned applications (CMN-217): the section, its heading's × with "Unpin all" beside it,
+     the strip the × opens, and the box of the rows with the Undo strip among them. */
+  GtkWidget            *pinned;
+  GtkWidget            *unpin_all;
+  GtkWidget            *unpin_all_label;
+  GtkWidget            *unpin_all_confirm;
+  GtkWidget            *unpin_all_text;
+  GtkWidget            *pinned_box;
+  GtkWidget            *undo;
+  GtkWidget            *undo_label;
+  /* While the Undo strip shows: its timeout, its place among the rows, and the keys of the
+     rows it stands for, which stay hidden while they're there. */
+  guint                 undo_id;
+  guint                 undo_position;
+  GHashTable           *undo_hidden;
+  gboolean              running;
   /* The rows' names, as wide as the widest, so that their sliders line up. */
   GtkSizeGroup         *names;
   /* Every Slider, for the step and the cap. */
@@ -177,6 +211,12 @@ static const char css[] =
   ".sd-name { font-weight: 500; padding: 0 2px; min-height: 0; }"
   ".sd-pct { font-size: 12px; color: alpha(currentColor, 0.6); }"
   ".sd-x { min-width: 24px; min-height: 24px; padding: 0; -gtk-icon-style: symbolic; }"
+  /* Unpin all's ×, and the word beside it (CMN-217). */
+  ".sd-danger, .sd-danger label { color: #e01b24; }"
+  /* A pinned application's device while it's gone. */
+  ".sd-gone { opacity: 0.55; }"
+  ".sd-strip { background-color: alpha(currentColor, 0.06); border-radius: 6px; padding: 6px 8px; }"
+  ".sd-strip label { font-size: 12px; }"
   /* The selection's colour mixed toward the text's, so that it reads on a dark theme: blue
      in Adwaita and BlueMenta, green in Menta (CMN-210). */
   ".sd-badge { color: mix(@theme_selected_bg_color, @theme_fg_color, 0.3);"
@@ -869,18 +909,60 @@ app_grid (SdPopup *popup, GtkWidget *icon, GtkWidget *name, Slider *slider, GtkW
   return grid;
 }
 
-/* The pin button, hidden until CMN-217 pins: it keeps the rows' sliders as wide as theirs
-   will be. */
+/* A row's button at the right: the pin, or a pinned application's ×. */
+static GtkWidget *
+row_button_new (const char *icon_name)
+{
+  GtkWidget *button = gtk_button_new_from_icon_name (icon_name, GTK_ICON_SIZE_MENU);
+
+  gtk_button_set_relief (GTK_BUTTON (button), GTK_RELIEF_NONE);
+  add_class (button, "sd-x");
+  gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
+  gtk_widget_set_no_show_all (button, TRUE);
+  return button;
+}
+
+/* System sounds' place of the pin button, which is never shown: it keeps its slider as wide
+   as the applications'. */
 static GtkWidget *
 pin_new (void)
 {
-  GtkWidget *pin = gtk_button_new_from_icon_name ("view-pin-symbolic", GTK_ICON_SIZE_MENU);
+  return row_button_new ("view-pin-symbolic");
+}
 
-  gtk_button_set_relief (GTK_BUTTON (pin), GTK_RELIEF_NONE);
-  add_class (pin, "sd-x");
-  gtk_widget_set_valign (pin, GTK_ALIGN_CENTER);
-  gtk_widget_set_no_show_all (pin, TRUE);
-  return pin;
+static void
+on_close_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  gtk_revealer_set_reveal_child (GTK_REVEALER (data), FALSE);
+}
+
+/* A strip that asks before unpinning, under what it unpins: the question, then Cancel, which
+   closes it, and the destructive button, at the end. Shut. */
+static GtkWidget *
+confirm_new (const char *confirm_text, GtkWidget **label, GtkWidget **cancel, GtkWidget **confirm)
+{
+  GtkWidget *revealer = gtk_revealer_new ();
+  GtkWidget *strip = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+  GtkWidget *buttons = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+
+  *label = gtk_label_new (NULL);
+  gtk_label_set_xalign (GTK_LABEL (*label), 0);
+  gtk_label_set_line_wrap (GTK_LABEL (*label), TRUE);
+  gtk_box_pack_start (GTK_BOX (strip), *label, FALSE, FALSE, 0);
+  *cancel = gtk_button_new_with_label ("Cancel");
+  *confirm = gtk_button_new_with_label (confirm_text);
+  add_class (*confirm, "destructive-action");
+  gtk_widget_set_halign (buttons, GTK_ALIGN_END);
+  gtk_box_pack_start (GTK_BOX (buttons), *cancel, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (buttons), *confirm, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (strip), buttons, FALSE, FALSE, 0);
+  add_class (strip, "sd-strip");
+  g_object_set (strip, "margin-start", 4, "margin-end", 4, "margin-bottom", 4, NULL);
+  gtk_revealer_set_transition_duration (GTK_REVEALER (revealer), REVEAL_MS);
+  gtk_container_add (GTK_CONTAINER (revealer), strip);
+  g_signal_connect (*cancel, "clicked", G_CALLBACK (on_close_clicked), revealer);
+  gtk_widget_show_all (revealer);
+  return revealer;
 }
 
 static void
@@ -950,6 +1032,80 @@ on_app_device_clicked (GtkButton *button, gpointer data)
 }
 
 static void
+on_pin_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  AppRow *row = data;
+
+  row->popup->actions->pin_app (row->side, row->id, row->popup->data);
+}
+
+static void arrange_pinned (SdPopup *popup);
+
+static gboolean
+on_undo_timeout (gpointer data)
+{
+  SdPopup *popup = data;
+
+  popup->undo_id = 0;
+  g_hash_table_remove_all (popup->undo_hidden);
+  arrange_pinned (popup);
+  return G_SOURCE_REMOVE;
+}
+
+/* The Undo strip, with note, at position among the pinned rows, standing for the rows of
+   keys. It replaces the last one: only the last unpin is undone. */
+static void
+undo_show (SdPopup *popup, const char *note, guint position, GPtrArray *keys)
+{
+  gtk_label_set_text (GTK_LABEL (popup->undo_label), note);
+  g_hash_table_remove_all (popup->undo_hidden);
+  for (guint i = 0; i < keys->len; i++)
+    g_hash_table_add (popup->undo_hidden, g_strdup (g_ptr_array_index (keys, i)));
+  popup->undo_position = position;
+  g_clear_handle_id (&popup->undo_id, g_source_remove);
+  popup->undo_id = g_timeout_add (UNDO_MS, on_undo_timeout, popup);
+  arrange_pinned (popup);
+}
+
+/* The pinned rows that show, in order. */
+static GPtrArray *
+shown_pinned_rows (SdPopup *popup)
+{
+  g_autoptr (GList) children = gtk_container_get_children (GTK_CONTAINER (popup->pinned_box));
+  GPtrArray *rows = g_ptr_array_new ();
+
+  for (GList *l = children; l != NULL; l = l->next)
+    {
+      AppRow *row = g_object_get_data (l->data, "row");
+
+      if (row != NULL && gtk_widget_get_visible (row->box))
+        g_ptr_array_add (rows, row);
+    }
+  return rows;
+}
+
+static void
+on_unpin_confirmed (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  AppRow *row = data;
+  SdPopup *popup = row->popup;
+  SdSide side = row->side;
+  g_autofree char *id = g_strdup (row->id);
+  g_autofree char *note = g_strdup_printf ("%s unpinned.",
+                                           gtk_label_get_text (GTK_LABEL (row->name_label)));
+  g_autoptr (GPtrArray) keys = g_ptr_array_new ();
+  g_autoptr (GPtrArray) rows = shown_pinned_rows (popup);
+  guint position = 0;
+
+  g_ptr_array_find (rows, row, &position);
+  gtk_revealer_set_reveal_child (GTK_REVEALER (row->confirm), FALSE);
+  g_ptr_array_add (keys, row->key);
+  undo_show (popup, note, position, keys);
+  /* Last: the status it brings may take the row away. */
+  popup->actions->unpin_app (side, id, popup->data);
+}
+
+static void
 on_app_row_destroy (GtkWidget *box G_GNUC_UNUSED, gpointer data)
 {
   AppRow *row = data;
@@ -970,8 +1126,9 @@ app_key (SdSide side, const char *id)
 }
 
 /* A Sound application's row, empty until it's updated: its icon, its name, which opens what
-   it plays to or records from beneath, its slider and percent, and the pin; under them its
-   activity bar and its badge. */
+   it plays to or records from beneath, its slider and percent, and the pin or, pinned, the ×
+   with the strip it opens under the row; under them its activity bar, its badge and what a
+   pinned application is doing. */
 static AppRow *
 app_row_new (SdPopup *popup, const SdApp *app)
 {
@@ -979,14 +1136,26 @@ app_row_new (SdPopup *popup, const SdApp *app)
   GtkWidget *sub = gtk_box_new (GTK_ORIENTATION_VERTICAL, 3);
   GtkWidget *drop = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   GtkWidget *heading = gtk_label_new (app->side == SD_OUTPUT ? "Plays to" : "Records from");
-  GtkWidget *pin = pin_new ();
+  GtkWidget *cancel, *unpin;
 
   row->popup = popup;
   row->side = app->side;
   row->id = g_strdup (app->id);
   row->key = app_key (app->side, app->id);
   row->box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  g_object_set_data (G_OBJECT (row->box), "row", row);
   set_app_name (row->box, row, NULL);
+
+  row->pin = row_button_new ("view-pin-symbolic");
+  gtk_widget_set_tooltip_text (row->pin, "Pin to this device");
+  set_app_name (row->pin, row, "pin");
+  g_signal_connect (row->pin, "clicked", G_CALLBACK (on_pin_clicked), row);
+  row->unpin = row_button_new ("window-close-symbolic");
+  set_app_name (row->unpin, row, "unpin");
+  row->right = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_set_halign (row->right, GTK_ALIGN_END);
+  gtk_box_pack_start (GTK_BOX (row->right), row->pin, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (row->right), row->unpin, FALSE, FALSE, 0);
 
   row->icon = gtk_image_new ();
   set_app_name (row->icon, row, "icon");
@@ -999,21 +1168,37 @@ app_row_new (SdPopup *popup, const SdApp *app)
   row->slider = slider_new (popup, app_set_volume, row, TRUE);
   set_app_name (row->slider->scale, row, "scale");
   set_app_name (row->slider->percent, row, "percent");
-  set_app_name (pin, row, "pin");
 
   row->bar = level_bar_new (&row->level);
   set_app_name (row->bar, row, "bar");
+  gtk_widget_set_no_show_all (row->bar, TRUE);
   gtk_box_pack_start (GTK_BOX (sub), row->bar, FALSE, FALSE, 0);
+  row->line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_set_no_show_all (row->line, TRUE);
   row->badge = gtk_label_new (NULL);
   gtk_label_set_ellipsize (GTK_LABEL (row->badge), PANGO_ELLIPSIZE_END);
   gtk_widget_set_halign (row->badge, GTK_ALIGN_START);
   add_class (row->badge, "sd-badge");
   gtk_widget_set_no_show_all (row->badge, TRUE);
   set_app_name (row->badge, row, "badge");
-  gtk_box_pack_start (GTK_BOX (sub), row->badge, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (row->line), row->badge, FALSE, FALSE, 0);
+  row->state = gtk_label_new (NULL);
+  add_class (row->state, "sd-detail");
+  gtk_widget_set_no_show_all (row->state, TRUE);
+  set_app_name (row->state, row, "state");
+  gtk_box_pack_start (GTK_BOX (row->line), row->state, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (sub), row->line, FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (row->box),
-                      app_grid (popup, row->icon, row->name, row->slider, pin, sub), FALSE,
+                      app_grid (popup, row->icon, row->name, row->slider, row->right, sub), FALSE,
                       FALSE, 0);
+
+  row->confirm = confirm_new ("Unpin", &row->confirm_label, &cancel, &unpin);
+  set_app_name (row->confirm, row, "confirm");
+  set_app_name (cancel, row, "cancel");
+  set_app_name (unpin, row, "confirm-unpin");
+  g_signal_connect (unpin, "clicked", G_CALLBACK (on_unpin_confirmed), row);
+  g_signal_connect (row->unpin, "clicked", G_CALLBACK (on_toggle_clicked), row->confirm);
+  gtk_box_pack_start (GTK_BOX (row->box), row->confirm, FALSE, FALSE, 0);
 
   gtk_label_set_xalign (GTK_LABEL (heading), 0);
   add_class (heading, "sd-detail");
@@ -1035,6 +1220,23 @@ app_row_new (SdPopup *popup, const SdApp *app)
   g_hash_table_insert (popup->app_rows, row->key, row);
   gtk_widget_show_all (row->box);
   return row;
+}
+
+/* The row in box at position, moved there from wherever it was, or put there new. */
+static void
+place_row (AppRow *row, GtkWidget *box, int position)
+{
+  GtkWidget *parent = gtk_widget_get_parent (row->box);
+
+  if (parent != box)
+    {
+      g_object_ref (row->box);
+      if (parent != NULL)
+        gtk_container_remove (GTK_CONTAINER (parent), row->box);
+      gtk_box_pack_start (GTK_BOX (box), row->box, FALSE, FALSE, 0);
+      g_object_unref (row->box);
+    }
+  gtk_box_reorder_child (GTK_BOX (box), row->box, position);
 }
 
 /* "Follow the default (WH-1000XM4)" and the side's devices, built again only when they
@@ -1066,6 +1268,7 @@ update_app_devices (AppRow *row, const SdStatus *status)
       g_object_set_data (G_OBJECT (item), "check", check);
       g_signal_connect (item, "clicked", G_CALLBACK (on_app_device_clicked), row);
       gtk_box_pack_start (GTK_BOX (row->devices), item, FALSE, FALSE, 0);
+      row->follow = item;
       for (guint i = 0; i < n_devices; i++)
         {
           g_autofree char *item_name = g_strdup_printf ("device-%s", devices[i].name);
@@ -1083,6 +1286,8 @@ update_app_devices (AppRow *row, const SdStatus *status)
     }
   g_free (row->devices_key);
   row->devices_key = g_string_free (key, FALSE);
+  /* A pinned application's device is chosen here, and it's unpinned with its ×. */
+  gtk_widget_set_visible (row->follow, !row->pinned);
   children = gtk_container_get_children (GTK_CONTAINER (row->devices));
   for (GList *l = children; l != NULL; l = l->next)
     gtk_widget_set_visible (g_object_get_data (l->data, "check"),
@@ -1136,27 +1341,121 @@ update_app_streams (AppRow *row, const SdApp *app)
 }
 
 
+/* What a pinned application is doing, under its name: nothing while it plays. */
+static const char *
+activity_text (SdPinActivity activity)
+{
+  switch (activity)
+    {
+    case SD_PIN_PAUSED:
+      return "‖ Paused";
+    case SD_PIN_NOT_RUNNING:
+      return "■ Not running";
+    case SD_PIN_PLAYING:
+    default:
+      return NULL;
+    }
+}
+
+/* The row of app, which pinned says is pinned, NULL where it isn't. */
 static void
-update_app_row (AppRow *row, const SdApp *app, const SdStatus *status)
+update_app_row (AppRow *row, const SdApp *app, const SdPinnedApp *pinned, const SdStatus *status)
 {
   const char *const icon_names[] = { app->icon ?: "application-x-executable",
                                      "application-x-executable", NULL };
+  /* With no stream there's nothing to read or set. */
+  gboolean running = pinned == NULL || pinned->activity != SD_PIN_NOT_RUNNING;
+  const char *activity = pinned != NULL ? activity_text (pinned->activity) : NULL;
+  g_autofree char *question = g_strdup_printf ("Unpin %s? It goes back to following the default "
+                                               "%s.",
+                                               app->name,
+                                               app->side == SD_OUTPUT ? "output" : "input");
+  gboolean gone = pinned != NULL && pinned->device_gone;
+  GtkStyleContext *badge_style = gtk_widget_get_style_context (row->badge);
 
+  row->pinned = pinned != NULL;
   set_icon (row->icon, icon_names);
   gtk_label_set_text (GTK_LABEL (row->name_label), app->name);
   gtk_widget_set_tooltip_text (row->name, app->name);
   slider_update (row->slider, app->volume);
+  gtk_widget_set_visible (row->slider->scale, running);
+  gtk_widget_set_visible (row->slider->percent, running);
+  /* Without the slider, the × still at the right edge. */
+  gtk_widget_set_hexpand (row->right, !running);
+  gtk_widget_set_visible (row->pin, pinned == NULL);
+  gtk_widget_set_visible (row->unpin, pinned != NULL);
+  if (pinned == NULL)
+    gtk_revealer_set_reveal_child (GTK_REVEALER (row->confirm), FALSE);
+  gtk_label_set_text (GTK_LABEL (row->confirm_label), question);
+  gtk_widget_set_visible (row->bar, pinned == NULL || pinned->activity == SD_PIN_PLAYING);
   g_free (row->device);
   row->device = g_strdup (app->device);
-  /* The server's description, an output's monitor's too, which no list has. */
+  /* The server's description, an output's monitor's too, which no list has; while a pinned
+     device is gone, the one it had. */
   gtk_widget_set_visible (row->badge, app->device != NULL);
-  gtk_label_set_text (GTK_LABEL (row->badge), app->device_description ?: "");
+  if (gone)
+    {
+      g_autofree char *text = g_strdup_printf ("%s · not connected", app->device_description);
+
+      gtk_label_set_text (GTK_LABEL (row->badge), text);
+      gtk_style_context_add_class (badge_style, "sd-gone");
+    }
+  else
+    {
+      gtk_label_set_text (GTK_LABEL (row->badge), app->device_description ?: "");
+      gtk_style_context_remove_class (badge_style, "sd-gone");
+    }
+  gtk_widget_set_visible (row->state, activity != NULL);
+  gtk_label_set_text (GTK_LABEL (row->state), activity ?: "");
+  gtk_widget_set_visible (row->line, app->device != NULL || activity != NULL);
   update_app_devices (row, status);
   update_app_streams (row, app);
 }
 
-/* The applications' rows in the status's order: those gone destroyed, the new ones built,
-   the others updated and moved into their place. */
+/* The row of app, built where it's new, and its key kept. */
+static AppRow *
+kept_row (SdPopup *popup, const SdApp *app, GHashTable *kept)
+{
+  char *key = app_key (app->side, app->id);
+  AppRow *row = g_hash_table_lookup (popup->app_rows, key);
+
+  g_hash_table_add (kept, key);
+  return row != NULL ? row : app_row_new (popup, app);
+}
+
+/* The pinned rows that the Undo strip doesn't stand for, and the strip in its place among
+   them; the section while either shows. */
+static void
+arrange_pinned (SdPopup *popup)
+{
+  g_autoptr (GList) children = gtk_container_get_children (GTK_CONTAINER (popup->pinned_box));
+  gboolean undoing = popup->undo_id != 0;
+  guint shown = 0;
+
+  for (GList *l = children; l != NULL; l = l->next)
+    {
+      AppRow *row = g_object_get_data (l->data, "row");
+      gboolean hidden;
+
+      if (row == NULL)
+        continue;
+      hidden = undoing && g_hash_table_contains (popup->undo_hidden, row->key);
+      gtk_widget_set_visible (row->box, !hidden);
+      shown += !hidden;
+    }
+  gtk_widget_set_visible (popup->undo, undoing);
+  /* The rows are in order, the hidden ones in their places, so this is the place it stood
+     for. */
+  if (undoing)
+    gtk_box_reorder_child (GTK_BOX (popup->pinned_box), popup->undo, popup->undo_position);
+  gtk_widget_set_visible (popup->unpin_all, shown > 0);
+  if (shown == 0)
+    gtk_revealer_set_reveal_child (GTK_REVEALER (popup->unpin_all_confirm), FALSE);
+  gtk_widget_set_visible (popup->pinned, popup->running && (shown > 0 || undoing));
+}
+
+/* The applications' rows in the status's order, the pinned ones under Pinned applications:
+   those gone destroyed, the new ones built, the others updated and moved into their place. */
 static void
 update_apps (SdPopup *popup, const SdStatus *status)
 {
@@ -1168,21 +1467,23 @@ update_apps (SdPopup *popup, const SdStatus *status)
 
   gtk_widget_set_sensitive (popup->system->scale, status->has_system_sounds);
   slider_update (popup->system, status->has_system_sounds ? status->system_volume : 0);
+  for (guint i = 0; i < status->n_pinned; i++)
+    {
+      const SdPinnedApp *pinned = &status->pinned[i];
+      AppRow *row = kept_row (popup, &pinned->app, kept);
+
+      place_row (row, popup->pinned_box, i);
+      update_app_row (row, &pinned->app, pinned, status);
+    }
   for (guint i = 0; i < status->n_apps; i++)
     {
       const SdApp *app = &status->apps[i];
-      char *key = app_key (app->side, app->id);
-      AppRow *row = g_hash_table_lookup (popup->app_rows, key);
-      GtkWidget *box = popup->app_boxes[app->side];
+      AppRow *row = kept_row (popup, app, kept);
 
-      if (row == NULL)
-        {
-          row = app_row_new (popup, app);
-          gtk_box_pack_start (GTK_BOX (box), row->box, FALSE, FALSE, 0);
-        }
-      gtk_box_reorder_child (GTK_BOX (box), row->box, positions[app->side]++);
-      update_app_row (row, app, status);
-      g_hash_table_add (kept, key);
+      place_row (row, popup->app_boxes[app->side], positions[app->side]++);
+      /* Hidden by an Undo while it was pinned: unpinned, it shows here. */
+      gtk_widget_show (row->box);
+      update_app_row (row, app, NULL, status);
     }
   g_hash_table_iter_init (&iter, popup->app_rows);
   while (g_hash_table_iter_next (&iter, NULL, &value))
@@ -1192,6 +1493,140 @@ update_apps (SdPopup *popup, const SdStatus *status)
   for (guint i = 0; i < gone->len; i++)
     gtk_widget_destroy (g_ptr_array_index (gone, i));
   gtk_widget_set_visible (popup->recording_heading, positions[SD_INPUT] > 0);
+  arrange_pinned (popup);
+}
+
+/* "Unpin all" beside the heading's ×, while it's hovered or focused. */
+static void
+on_unpin_all_state (GtkWidget *button, GtkStateFlags previous G_GNUC_UNUSED, gpointer data)
+{
+  SdPopup *popup = data;
+  GtkStateFlags flags = gtk_widget_get_state_flags (button);
+
+  gtk_widget_set_visible (popup->unpin_all_label,
+                          (flags & (GTK_STATE_FLAG_PRELIGHT | GTK_STATE_FLAG_FOCUSED)) != 0);
+}
+
+/* The heading's × opens its strip, counting the rows as it opens, and again closes it. */
+static void
+on_unpin_all_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  SdPopup *popup = data;
+  GtkRevealer *revealer = GTK_REVEALER (popup->unpin_all_confirm);
+  g_autoptr (GPtrArray) rows = shown_pinned_rows (popup);
+  g_autofree char *question = rows->len == 1
+    ? g_strdup ("Unpin all 1 application? It goes back to following the default device.")
+    : g_strdup_printf ("Unpin all %u applications? They go back to following the default "
+                       "devices.",
+                       rows->len);
+
+  gtk_label_set_text (GTK_LABEL (popup->unpin_all_text), question);
+  gtk_revealer_set_reveal_child (revealer, !gtk_revealer_get_reveal_child (revealer));
+}
+
+static void
+on_unpin_all_confirmed (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  SdPopup *popup = data;
+  g_autoptr (GPtrArray) rows = shown_pinned_rows (popup);
+  g_autoptr (GPtrArray) keys = g_ptr_array_new ();
+  g_autofree char *note = rows->len == 1 ? g_strdup ("1 application unpinned.")
+                                         : g_strdup_printf ("%u applications unpinned.", rows->len);
+
+  for (guint i = 0; i < rows->len; i++)
+    g_ptr_array_add (keys, ((AppRow *) g_ptr_array_index (rows, i))->key);
+  gtk_revealer_set_reveal_child (GTK_REVEALER (popup->unpin_all_confirm), FALSE);
+  undo_show (popup, note, 0, keys);
+  popup->actions->unpin_all (popup->data);
+}
+
+static void
+on_undo_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  SdPopup *popup = data;
+
+  g_clear_handle_id (&popup->undo_id, g_source_remove);
+  g_hash_table_remove_all (popup->undo_hidden);
+  arrange_pinned (popup);
+  popup->actions->undo_unpin (popup->data);
+}
+
+/* Pinned applications: the heading with its red × at the right, lined up with the rows'
+   buttons, and "Unpin all" beside it on hover or focus; the strip the × opens; the rows, and
+   the Undo strip among them. No tooltip: the word is the × 's. */
+static GtkWidget *
+pinned_new (SdPopup *popup)
+{
+  GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *heading_row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+  GtkWidget *inside = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 2);
+  GtkWidget *icon = gtk_image_new_from_icon_name ("window-close-symbolic", GTK_ICON_SIZE_MENU);
+  GtkWidget *cancel, *confirm, *undo_button;
+
+  popup->pinned = box;
+  add_class (box, "sd-section");
+  g_object_set (box, "margin-start", 8, "margin-end", 8, "margin-top", 10, NULL);
+  gtk_widget_set_name (box, "pinned");
+  gtk_widget_set_no_show_all (box, TRUE);
+
+  gtk_box_pack_start (GTK_BOX (heading_row), heading_new ("Pinned applications"), TRUE, TRUE, 0);
+  popup->unpin_all_label = gtk_label_new ("Unpin all");
+  gtk_widget_set_name (popup->unpin_all_label, "unpin-all-label");
+  gtk_widget_set_no_show_all (popup->unpin_all_label, TRUE);
+  gtk_box_pack_start (GTK_BOX (inside), popup->unpin_all_label, FALSE, FALSE, 0);
+  /* As wide as a row's ×, whose icon is centred in its 24 pixels. */
+  g_object_set (icon, "margin-start", 4, "margin-end", 4, NULL);
+  gtk_widget_set_name (icon, "unpin-all-icon");
+  gtk_box_pack_start (GTK_BOX (inside), icon, FALSE, FALSE, 0);
+  popup->unpin_all = gtk_button_new ();
+  gtk_container_add (GTK_CONTAINER (popup->unpin_all), inside);
+  gtk_button_set_relief (GTK_BUTTON (popup->unpin_all), GTK_RELIEF_NONE);
+  add_class (popup->unpin_all, "sd-x");
+  add_class (popup->unpin_all, "sd-danger");
+  gtk_widget_set_valign (popup->unpin_all, GTK_ALIGN_CENTER);
+  gtk_widget_set_name (popup->unpin_all, "unpin-all");
+  gtk_widget_set_no_show_all (popup->unpin_all, TRUE);
+  gtk_widget_show_all (inside);
+  gtk_widget_hide (popup->unpin_all_label);
+  g_signal_connect (popup->unpin_all, "state-flags-changed", G_CALLBACK (on_unpin_all_state),
+                    popup);
+  g_signal_connect (popup->unpin_all, "clicked", G_CALLBACK (on_unpin_all_clicked), popup);
+  gtk_box_pack_start (GTK_BOX (heading_row), popup->unpin_all, FALSE, FALSE, 0);
+  /* The rows' grids' margin. */
+  g_object_set (heading_row, "margin-end", 4, NULL);
+  gtk_box_pack_start (GTK_BOX (box), heading_row, FALSE, FALSE, 0);
+
+  popup->unpin_all_confirm = confirm_new ("Unpin all", &popup->unpin_all_text, &cancel, &confirm);
+  gtk_widget_set_name (popup->unpin_all_confirm, "unpin-all-confirm");
+  gtk_widget_set_name (cancel, "unpin-all-cancel");
+  gtk_widget_set_name (confirm, "unpin-all-confirm-unpin");
+  g_signal_connect (confirm, "clicked", G_CALLBACK (on_unpin_all_confirmed), popup);
+  gtk_box_pack_start (GTK_BOX (box), popup->unpin_all_confirm, FALSE, FALSE, 0);
+
+  popup->pinned_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_name (popup->pinned_box, "pinned-apps");
+  popup->undo = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_set_name (popup->undo, "undo");
+  add_class (popup->undo, "sd-strip");
+  g_object_set (popup->undo, "margin-start", 4, "margin-end", 4, "margin-top", 3,
+                "margin-bottom", 3, NULL);
+  popup->undo_label = gtk_label_new (NULL);
+  gtk_label_set_xalign (GTK_LABEL (popup->undo_label), 0);
+  gtk_label_set_ellipsize (GTK_LABEL (popup->undo_label), PANGO_ELLIPSIZE_END);
+  gtk_box_pack_start (GTK_BOX (popup->undo), popup->undo_label, TRUE, TRUE, 0);
+  undo_button = gtk_button_new_with_label ("Undo");
+  gtk_widget_set_name (undo_button, "undo-button");
+  g_signal_connect (undo_button, "clicked", G_CALLBACK (on_undo_clicked), popup);
+  gtk_box_pack_start (GTK_BOX (popup->undo), undo_button, FALSE, FALSE, 0);
+  gtk_widget_show_all (popup->undo);
+  gtk_widget_set_no_show_all (popup->undo, TRUE);
+  gtk_widget_hide (popup->undo);
+  gtk_box_pack_start (GTK_BOX (popup->pinned_box), popup->undo, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (box), popup->pinned_box, FALSE, FALSE, 0);
+  gtk_widget_show_all (heading_row);
+  gtk_widget_show (popup->unpin_all_confirm);
+  gtk_widget_show (popup->pinned_box);
+  return box;
 }
 
 /* Applications: the heading, System sounds, the boxes of the rows playing and recording,
@@ -1324,6 +1759,7 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
   popup->step = 5;
   popup->sliders = g_ptr_array_new ();
   popup->app_rows = g_hash_table_new (g_str_hash, g_str_equal);
+  popup->undo_hidden = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   popup->names = gtk_size_group_new (GTK_SIZE_GROUP_HORIZONTAL);
 
   gtk_widget_set_size_request (content, WIDTH, -1);
@@ -1343,6 +1779,7 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
   gtk_box_pack_start (GTK_BOX (popup->rows), popup->no_server, FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (popup->rows), side_new (popup, SD_OUTPUT), FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (popup->rows), side_new (popup, SD_INPUT), FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (popup->rows), pinned_new (popup), FALSE, FALSE, 0);
   popup->apps = apps_new (popup);
   gtk_box_pack_start (GTK_BOX (popup->rows), popup->apps, FALSE, FALSE, 0);
   gtk_container_add (GTK_CONTAINER (popup->scrolled), popup->rows);
@@ -1377,6 +1814,7 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
 void
 sd_popup_update (SdPopup *popup, const SdStatus *status)
 {
+  popup->running = status->running;
   gtk_widget_set_visible (popup->no_server, !status->running);
   for (guint i = 0; i < G_N_ELEMENTS (popup->sides); i++)
     {
@@ -1423,6 +1861,7 @@ void
 sd_popup_free (SdPopup *popup)
 {
   g_clear_handle_id (&popup->fit_idle, g_source_remove);
+  g_clear_handle_id (&popup->undo_id, g_source_remove);
   g_signal_handlers_disconnect_by_data (caminito_applet_popup_get_window (popup->applet_popup),
                                         popup);
   /* Its widgets' handlers have the popup for their data: the sliders and the rows go with
@@ -1439,6 +1878,7 @@ sd_popup_free (SdPopup *popup)
     }
   g_ptr_array_unref (popup->sliders);
   g_hash_table_unref (popup->app_rows);
+  g_hash_table_unref (popup->undo_hidden);
   g_object_unref (popup->names);
   g_free (popup);
 }
