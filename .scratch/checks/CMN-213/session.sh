@@ -96,6 +96,9 @@ gsettings set org.mate.SettingsDaemon.plugins.media-keys volume-step 10
 pactl set-sink-volume speaker 45%; sleep 0.5
 xt click 12 12 4; sleep 0.5
 echo "a step up from 45% with volume-step 10: $(volume)"
+pactl set-sink-volume speaker 45%; sleep 1.5
+xt burst 12 12 4 4; sleep 1
+echo "four steps of 10 up from 45% in one burst: $(volume)"
 xt click 12 12 2; sleep 0.5
 echo "middle-click: $(mute)"
 xt click 12 12 2; sleep 0.5

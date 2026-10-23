@@ -2,6 +2,7 @@
 
     xtest.py move <x> <y>
     xtest.py click <x> <y> <button>     1 left, 2 middle, 3 right, 4 wheel up, 5 wheel down
+    xtest.py burst <x> <y> <button> <n>  n clicks with no wait, as a fast spin of the wheel
 """
 
 import sys
@@ -21,4 +22,11 @@ if sys.argv[1] == "click":
     d.sync()
     time.sleep(0.05)
     xtest.fake_input(d, X.ButtonRelease, button)
+    d.sync()
+elif sys.argv[1] == "burst":
+    button = int(sys.argv[4])
+    time.sleep(0.2)
+    for _ in range(int(sys.argv[5])):
+        xtest.fake_input(d, X.ButtonPress, button)
+        xtest.fake_input(d, X.ButtonRelease, button)
     d.sync()

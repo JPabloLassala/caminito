@@ -4,8 +4,8 @@
 
 #include "sd-state.h"
 
-static void
-card_clear (SdCard *card)
+void
+sd_card_clear (SdCard *card)
 {
   for (guint i = 0; i < card->n_profiles; i++)
     {
@@ -22,7 +22,7 @@ void
 sd_status_clear (SdStatus *status)
 {
   for (guint i = 0; i < status->n_cards; i++)
-    card_clear (&status->cards[i]);
+    sd_card_clear (&status->cards[i]);
   g_clear_pointer (&status->cards, g_free);
   status->n_cards = 0;
   g_clear_pointer (&status->output_name, g_free);
@@ -44,36 +44,28 @@ card_equal (const SdCard *a, const SdCard *b)
 }
 
 gboolean
-sd_cards_equal (const SdStatus *a, const SdStatus *b)
+sd_cards_equal (const SdCard *a, guint n_a, const SdCard *b, guint n_b)
 {
-  if (a->n_cards != b->n_cards)
+  if (n_a != n_b)
     return FALSE;
-  for (guint i = 0; i < a->n_cards; i++)
-    if (!card_equal (&a->cards[i], &b->cards[i]))
+  for (guint i = 0; i < n_a; i++)
+    if (!card_equal (&a[i], &b[i]))
       return FALSE;
   return TRUE;
 }
 
 void
-sd_cards_copy (const SdStatus *from, SdStatus *to)
+sd_card_copy (const SdCard *card, SdCard *copy)
 {
-  to->n_cards = from->n_cards;
-  to->cards = g_new0 (SdCard, from->n_cards);
-  for (guint i = 0; i < from->n_cards; i++)
+  copy->index = card->index;
+  copy->description = g_strdup (card->description);
+  copy->active = g_strdup (card->active);
+  copy->n_profiles = card->n_profiles;
+  copy->profiles = g_new0 (SdProfile, card->n_profiles);
+  for (guint i = 0; i < card->n_profiles; i++)
     {
-      const SdCard *card = &from->cards[i];
-      SdCard *copy = &to->cards[i];
-
-      copy->index = card->index;
-      copy->description = g_strdup (card->description);
-      copy->active = g_strdup (card->active);
-      copy->n_profiles = card->n_profiles;
-      copy->profiles = g_new0 (SdProfile, card->n_profiles);
-      for (guint j = 0; j < card->n_profiles; j++)
-        {
-          copy->profiles[j].name = g_strdup (card->profiles[j].name);
-          copy->profiles[j].description = g_strdup (card->profiles[j].description);
-        }
+      copy->profiles[i].name = g_strdup (card->profiles[i].name);
+      copy->profiles[i].description = g_strdup (card->profiles[i].description);
     }
 }
 
@@ -93,7 +85,8 @@ sd_status_equal (const SdStatus *a, const SdStatus *b)
          && g_strcmp0 (a->output_name, b->output_name) == 0 && a->volume == b->volume
          && a->muted == b->muted && a->headphones == b->headphones
          && a->has_input == b->has_input && a->input_muted == b->input_muted
-         && strv_equal (a->recording, b->recording) && sd_cards_equal (a, b);
+         && strv_equal (a->recording, b->recording)
+         && sd_cards_equal (a->cards, a->n_cards, b->cards, b->n_cards);
 }
 
 /* As pactl rounds it. */
@@ -106,11 +99,11 @@ percent_of (pa_volume_t volume)
 const char *const *
 sd_state_icon_names (const SdStatus *status)
 {
-  /* MATE's themes have the plain names, Adwaita the symbolic ones. The speaker struck
-     through is MATE's audio-volume-off and Breeze's audio-off; Adwaita has neither, and
-     shows its muted speaker. */
+  /* MATE's themes have the plain names, Adwaita the symbolic ones. With no sound server,
+     the speaker with no waves, which the applet strikes through: MATE's audio-volume-off,
+     and the others' lowest level. Not Breeze's audio-off, which is struck through already. */
   static const char *const no_server[] = {
-    "audio-volume-off", "audio-off", "audio-volume-muted", "audio-volume-muted-symbolic", NULL,
+    "audio-volume-off", "audio-volume-low-symbolic", NULL,
   };
   static const char *const muted[] = { "audio-volume-muted", "audio-volume-muted-symbolic", NULL };
   static const char *const headphones[] = {
@@ -142,7 +135,9 @@ sd_state_icon_names (const SdStatus *status)
 gboolean
 sd_state_icon_struck (const SdStatus *status)
 {
-  return status->running && status->has_output && status->headphones && status->muted;
+  if (!status->running)
+    return TRUE;
+  return status->has_output && status->headphones && status->muted;
 }
 
 char *

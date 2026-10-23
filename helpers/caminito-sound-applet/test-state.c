@@ -26,13 +26,12 @@ test_no_sound_server (void)
   const char *const *names = sd_state_icon_names (&status);
   g_autofree char *tooltip = sd_state_tooltip (&status);
 
-  /* The speaker struck through: MATE's and Breeze's, then the muted one that Adwaita has. */
+  /* The speaker with no waves, MATE's, then the lowest level that the others have, struck
+     through by the applet. */
   g_assert_cmpstr (names[0], ==, "audio-volume-off");
-  g_assert_cmpstr (names[1], ==, "audio-off");
-  g_assert_cmpstr (names[2], ==, "audio-volume-muted");
-  g_assert_cmpstr (names[3], ==, "audio-volume-muted-symbolic");
-  g_assert_null (names[4]);
-  g_assert_false (sd_state_icon_struck (&status));
+  g_assert_cmpstr (names[1], ==, "audio-volume-low-symbolic");
+  g_assert_null (names[2]);
+  g_assert_true (sd_state_icon_struck (&status));
   g_assert_cmpstr (tooltip, ==, "No sound server");
 }
 
@@ -210,6 +209,23 @@ test_recording_names_without_streams (void)
 }
 
 static void
+test_card_copy_is_equal_and_its_own (void)
+{
+  SdProfile profiles[] = { { "a2dp", "High Fidelity Playback (A2DP Sink)" },
+                           { "hfp", "Headset Head Unit (HSP/HFP)" } };
+  SdCard card = { 7, "WH-1000XM4", profiles, 2, "a2dp" };
+  SdCard copy;
+
+  sd_card_copy (&card, &copy);
+  g_assert_true (sd_cards_equal (&card, 1, &copy, 1));
+  g_assert_true (copy.profiles != card.profiles);
+  g_assert_cmpstr (copy.profiles[1].name, ==, "hfp");
+  sd_card_clear (&copy);
+  g_assert_null (copy.profiles);
+  g_assert_cmpuint (copy.n_profiles, ==, 0);
+}
+
+static void
 test_status_equal_compares_cards (void)
 {
   SdProfile duplex[] = { { "duplex", "Analog Stereo Duplex" }, { "off", "Off" } };
@@ -222,14 +238,13 @@ test_status_equal_compares_cards (void)
   b.cards = &other;
   b.n_cards = 1;
   g_assert_true (sd_status_equal (&a, &b));
-  g_assert_true (sd_cards_equal (&a, &b));
   other.active = "off";
   g_assert_false (sd_status_equal (&a, &b));
-  g_assert_false (sd_cards_equal (&a, &b));
+  g_assert_false (sd_cards_equal (a.cards, a.n_cards, b.cards, b.n_cards));
   other.active = "duplex";
   b.volume = PERCENT (50);
   g_assert_false (sd_status_equal (&a, &b));
-  g_assert_true (sd_cards_equal (&a, &b));
+  g_assert_true (sd_cards_equal (a.cards, a.n_cards, b.cards, b.n_cards));
 }
 
 int
@@ -256,5 +271,6 @@ main (int argc, char **argv)
   g_test_add_func ("/state/recording-names-without-streams",
                    test_recording_names_without_streams);
   g_test_add_func ("/state/status-equal-compares-cards", test_status_equal_compares_cards);
+  g_test_add_func ("/state/card-copy-is-equal-and-its-own", test_card_copy_is_equal_and_its_own);
   return g_test_run ();
 }

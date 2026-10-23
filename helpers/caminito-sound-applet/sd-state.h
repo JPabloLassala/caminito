@@ -61,14 +61,18 @@ typedef struct
 
 void     sd_status_clear (SdStatus *status);
 gboolean sd_status_equal (const SdStatus *a, const SdStatus *b);
-gboolean sd_cards_equal  (const SdStatus *a, const SdStatus *b);
-/* Copies from's cards into to, which has none. */
-void     sd_cards_copy   (const SdStatus *from, SdStatus *to);
 
-/* The themed names for the icon, MATE's first, then Adwaita's symbolic ones, then Breeze's
-   where it has neither. NULL-terminated, in static storage. */
+/* Frees what the card holds, not the card. */
+void     sd_card_clear  (SdCard *card);
+/* A deep copy of card into copy, for sd_card_clear(). */
+void     sd_card_copy   (const SdCard *card, SdCard *copy);
+gboolean sd_cards_equal (const SdCard *a, guint n_a, const SdCard *b, guint n_b);
+
+/* The themed names for the icon, MATE's first, then the symbolic ones that Adwaita and
+   Breeze have. NULL-terminated, in static storage. */
 const char *const *sd_state_icon_names   (const SdStatus *status);
-/* Whether the applet strikes the icon out itself: no theme has crossed-out headphones. */
+/* Whether the applet strikes the icon out itself: no theme has crossed-out headphones, and
+   MATE's and Adwaita's have no speaker struck through. */
 gboolean           sd_state_icon_struck  (const SdStatus *status);
 /* "WH-1000XM4: 45% (muted)\nRecording: Discord, OBS Studio", "No sound server"… */
 char              *sd_state_tooltip      (const SdStatus *status);

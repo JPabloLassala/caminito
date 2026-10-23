@@ -1,7 +1,7 @@
 /*
  * The Sound applet (CMN-213, ADR 0035): an in-process mate-panel applet whose icon shows the
  * Default output, the speaker by its level or headphones, crossed out when muted and struck
- * through with no sound server, with a red dot while an application records. It reads the
+ * through with no sound server (the strike is the applet's own where themes have none), with a red dot while an application records. It reads the
  * sound server through libpulse (sd-pulse.c). The wheel on it sets the Default output's
  * volume and middle-click mutes it; left-click toggles the popup (sd-popup.c). Its
  * right-click menu mutes the output and the microphone, has a section of profiles for each
@@ -38,13 +38,18 @@ typedef struct
   GSettings           *sound;
   /* A touchpad's scroll, until it makes up a step. */
   double               scrolled;
+  /* The volume the last step asked for, and when: the next step goes on from it while
+     the server hasn't answered, rather than from the volume it last reported. */
+  pa_volume_t          asked;
+  gint64               asked_at;
   GtkToggleAction     *mute_output;
   GtkToggleAction     *mute_input;
   GtkAction           *settings;
-  /* The profiles' items, in the panel's menu before "Sound settings…", and the cards they
-     were made from. */
+  /* The profiles' items, in the panel's menu before "Sound settings…", which the applet
+     holds a reference to, and the cards they were made from. */
   GPtrArray           *profile_items;
-  SdStatus             cards;
+  SdCard              *cards;
+  guint                n_cards;
   /* The menu is being set to the status, not changed by the user. */
   gboolean             updating;
 } Applet;
@@ -55,16 +60,23 @@ static const char menu_xml[] =
   "<separator/>"
   "<menuitem name='Settings' action='Settings'/>";
 
+/* The item stays as the server has it: an update checks the profile once the server has
+   switched to it. */
 static void
 on_profile_toggled (GtkCheckMenuItem *item, gpointer data)
 {
   Applet *applet = data;
+  gboolean active = gtk_check_menu_item_get_active (item);
 
-  if (applet->updating || !gtk_check_menu_item_get_active (item))
+  if (applet->updating)
     return;
-  sd_pulse_set_profile (applet->pulse,
-                        GPOINTER_TO_UINT (g_object_get_data (G_OBJECT (item), "card")),
-                        g_object_get_data (G_OBJECT (item), "profile"));
+  applet->updating = TRUE;
+  gtk_check_menu_item_set_active (item, !active);
+  applet->updating = FALSE;
+  if (active)
+    sd_pulse_set_profile (applet->pulse,
+                          GPOINTER_TO_UINT (g_object_get_data (G_OBJECT (item), "card")),
+                          g_object_get_data (G_OBJECT (item), "profile"));
 }
 
 static void
@@ -72,7 +84,25 @@ add_profile_item (Applet *applet, GtkMenuShell *menu, int *position, GtkWidget *
 {
   gtk_menu_shell_insert (menu, item, (*position)++);
   gtk_widget_show (item);
-  g_ptr_array_add (applet->profile_items, item);
+  g_ptr_array_add (applet->profile_items, g_object_ref (item));
+}
+
+/* The items may be gone with the menu already, when the applet goes: the reference keeps
+   them until then. */
+static void
+profile_item_free (gpointer item)
+{
+  gtk_widget_destroy (item);
+  g_object_unref (item);
+}
+
+static void
+cards_clear (Applet *applet)
+{
+  for (guint i = 0; i < applet->n_cards; i++)
+    sd_card_clear (&applet->cards[i]);
+  g_clear_pointer (&applet->cards, g_free);
+  applet->n_cards = 0;
 }
 
 /* mate-panel builds the menu from the XML once, so the cards' sections go into its GtkMenu
@@ -86,16 +116,20 @@ update_profiles (Applet *applet, const SdStatus *status)
   GList *children;
   int position;
 
-  if (sd_cards_equal (&applet->cards, status))
+  if (sd_cards_equal (applet->cards, applet->n_cards, status->cards, status->n_cards))
     return;
-  sd_status_clear (&applet->cards);
-  sd_cards_copy (status, &applet->cards);
-  g_ptr_array_set_size (applet->profile_items, 0);
   G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   proxies = gtk_action_get_proxies (applet->settings);
   G_GNUC_END_IGNORE_DEPRECATIONS
+  /* Not built yet: the next update tries again. */
   if (proxies == NULL)
     return;
+  cards_clear (applet);
+  applet->n_cards = status->n_cards;
+  applet->cards = g_new0 (SdCard, status->n_cards);
+  for (guint i = 0; i < status->n_cards; i++)
+    sd_card_copy (&status->cards[i], &applet->cards[i]);
+  g_ptr_array_set_size (applet->profile_items, 0);
   settings_item = proxies->data;
   menu = GTK_MENU_SHELL (gtk_widget_get_parent (settings_item));
   children = gtk_container_get_children (GTK_CONTAINER (menu));
@@ -104,17 +138,17 @@ update_profiles (Applet *applet, const SdStatus *status)
   for (guint i = 0; i < status->n_cards; i++)
     {
       const SdCard *card = &status->cards[i];
-      GSList *group = NULL;
       GtkWidget *heading = gtk_menu_item_new_with_label (card->description);
 
       gtk_widget_set_sensitive (heading, FALSE);
       add_profile_item (applet, menu, &position, heading);
       for (guint j = 0; j < card->n_profiles; j++)
         {
-          GtkWidget *item = gtk_radio_menu_item_new_with_label (group,
-                                                                card->profiles[j].description);
+          /* Drawn as radio items, but not a GtkRadioMenuItem's group, which would always
+             check one: a card may have no active profile. */
+          GtkWidget *item = gtk_check_menu_item_new_with_label (card->profiles[j].description);
 
-          group = gtk_radio_menu_item_get_group (GTK_RADIO_MENU_ITEM (item));
+          gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (item), TRUE);
           gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (item),
                                           g_strcmp0 (card->profiles[j].name, card->active) == 0);
           g_object_set_data (G_OBJECT (item), "card", GUINT_TO_POINTER (card->index));
@@ -127,6 +161,8 @@ update_profiles (Applet *applet, const SdStatus *status)
     }
 }
 
+static gboolean has_marks (const SdStatus *status);
+
 static void
 update (Applet *applet)
 {
@@ -134,6 +170,8 @@ update (Applet *applet)
   g_autofree char *tooltip = sd_state_tooltip (status);
 
   caminito_applet_icon_set (applet->icon, sd_state_icon_names (status));
+  /* The overlay draws it with its marks. */
+  gtk_widget_set_opacity (applet->icon, has_marks (status) ? 0 : 1);
   gtk_widget_queue_draw (applet->marks);
   gtk_widget_set_tooltip_text (GTK_WIDGET (applet->applet), tooltip);
   sd_popup_update (applet->content, status);
@@ -155,48 +193,104 @@ on_changed (SdPulse *pulse G_GNUC_UNUSED, gpointer data)
   update (data);
 }
 
-/* A symbolic icon is drawn in the foreground's colour: a halo of the background's around a
-   mark keeps it apart from the icon under it. */
+/* The icon as the GtkImage shows it, for the marks to cut into. NULL where the theme has
+   none of its names. */
+static cairo_surface_t *
+icon_surface (Applet *applet, int size)
+{
+  GtkIconTheme *theme = gtk_icon_theme_get_for_screen (gtk_widget_get_screen (applet->icon));
+  int scale = gtk_widget_get_scale_factor (applet->icon);
+  GIcon *gicon = NULL;
+  g_autoptr (GtkIconInfo) info = NULL;
+  g_autoptr (GdkPixbuf) pixbuf = NULL;
+
+  gtk_image_get_gicon (GTK_IMAGE (applet->icon), &gicon, NULL);
+  if (gicon == NULL)
+    return NULL;
+  info = gtk_icon_theme_lookup_by_gicon_for_scale (theme, gicon, size, scale,
+                                                   GTK_ICON_LOOKUP_FORCE_SIZE);
+  if (info == NULL)
+    return NULL;
+  /* A symbolic icon in the panel's foreground colour; any other as it is. */
+  pixbuf = gtk_icon_info_load_symbolic_for_context (info,
+                                                    gtk_widget_get_style_context (applet->icon),
+                                                    NULL, NULL);
+  if (pixbuf == NULL)
+    return NULL;
+  return gdk_cairo_surface_create_from_pixbuf (pixbuf, scale,
+                                               gtk_widget_get_window (applet->icon));
+}
+
+static gboolean
+has_marks (const SdStatus *status)
+{
+  return sd_state_icon_struck (status) || (status->running && status->recording != NULL);
+}
+
+/* With a mark, the overlay draws the icon itself, and the GtkImage under it is hidden: a gap
+   cut out of the icon around each mark keeps it apart from the icon's lines, over whatever
+   the panel's background is. */
 static gboolean
 on_draw_marks (GtkWidget *marks, cairo_t *cr, gpointer data)
 {
   Applet *applet = data;
   const SdStatus *status = sd_pulse_status (applet->pulse);
   GtkStyleContext *style = gtk_widget_get_style_context (marks);
-  double size = gtk_image_get_pixel_size (GTK_IMAGE (applet->icon));
-  double x = (gtk_widget_get_allocated_width (marks) - size) / 2;
-  double y = (gtk_widget_get_allocated_height (marks) - size) / 2;
-  GdkRGBA ink, background = { 0, 0, 0, 0 };
+  int size = gtk_image_get_pixel_size (GTK_IMAGE (applet->icon));
+  double x = (gtk_widget_get_allocated_width (marks) - size) / 2.0;
+  double y = (gtk_widget_get_allocated_height (marks) - size) / 2.0;
+  double radius = size / 7.0;
+  gboolean struck = sd_state_icon_struck (status);
+  gboolean recording = status->running && status->recording != NULL;
+  cairo_surface_t *icon;
+  GdkRGBA ink;
 
+  if (!has_marks (status))
+    return FALSE;
   gtk_style_context_get_color (style, gtk_style_context_get_state (style), &ink);
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-  gtk_style_context_lookup_color (style, "theme_bg_color", &background);
-  G_GNUC_END_IGNORE_DEPRECATIONS
-  if (sd_state_icon_struck (status))
+  cairo_push_group (cr);
+  icon = icon_surface (applet, size);
+  if (icon != NULL)
     {
-      /* Corner to corner, as audio-volume-muted's own cross runs. */
-      cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND);
+      cairo_set_source_surface (cr, icon, x, y);
+      cairo_paint (cr);
+      cairo_surface_destroy (icon);
+    }
+  /* The gaps. */
+  cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+  cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND);
+  /* Corner to corner, as audio-volume-muted's own cross runs. */
+  cairo_move_to (cr, x + size * 0.15, y + size * 0.15);
+  cairo_line_to (cr, x + size * 0.85, y + size * 0.85);
+  if (struck)
+    {
+      cairo_set_line_width (cr, size / 6.0);
+      cairo_stroke_preserve (cr);
+    }
+  cairo_new_sub_path (cr);
+  /* In the top right-hand corner. */
+  cairo_arc (cr, x + size - radius, y + radius, radius + 1, 0, 2 * G_PI);
+  if (recording)
+    cairo_fill (cr);
+  cairo_new_path (cr);
+  /* The marks. */
+  cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
+  if (struck)
+    {
       cairo_move_to (cr, x + size * 0.15, y + size * 0.15);
       cairo_line_to (cr, x + size * 0.85, y + size * 0.85);
-      gdk_cairo_set_source_rgba (cr, &background);
-      cairo_set_line_width (cr, size / 6);
-      cairo_stroke_preserve (cr);
       gdk_cairo_set_source_rgba (cr, &ink);
-      cairo_set_line_width (cr, size / 12);
+      cairo_set_line_width (cr, size / 12.0);
       cairo_stroke (cr);
     }
-  if (status->running && status->recording != NULL)
+  if (recording)
     {
-      double radius = size / 7;
-
-      /* In the top right-hand corner. */
-      cairo_arc (cr, x + size - radius, y + radius, radius + 1, 0, 2 * G_PI);
-      gdk_cairo_set_source_rgba (cr, &background);
-      cairo_fill (cr);
       cairo_arc (cr, x + size - radius, y + radius, radius, 0, 2 * G_PI);
       cairo_set_source_rgb (cr, 0.88, 0.11, 0.14);
       cairo_fill (cr);
     }
+  cairo_pop_group_to_source (cr);
+  cairo_paint (cr);
   return FALSE;
 }
 
@@ -219,11 +313,17 @@ scroll_step (Applet *applet, gboolean up)
                        && g_settings_get_boolean (applet->sound,
                                                   "allow-volume-above-100-percent");
 
+  gint64 now = g_get_monotonic_time ();
+  /* Long enough for the server's answer to a step, short enough that a change made
+     elsewhere since is the next step's start. */
+  gboolean answered = now - applet->asked_at > G_USEC_PER_SEC;
+
   if (!status->has_output)
     return;
-  sd_pulse_set_volume (applet->pulse, sd_state_scroll_volume (status->volume,
-                                                              volume_step (applet), up,
-                                                              above_100));
+  applet->asked = sd_state_scroll_volume (answered ? status->volume : applet->asked,
+                                          volume_step (applet), up, above_100);
+  applet->asked_at = now;
+  sd_pulse_set_volume (applet->pulse, applet->asked);
   /* As the volume keys do. */
   if (up && status->muted)
     sd_pulse_set_muted (applet->pulse, FALSE);
@@ -270,9 +370,10 @@ on_button_press (GtkWidget *widget G_GNUC_UNUSED, GdkEventButton *event, gpointe
   Applet *applet = data;
   const SdStatus *status = sd_pulse_status (applet->pulse);
 
-  if (event->button != GDK_BUTTON_MIDDLE || event->type != GDK_BUTTON_PRESS)
+  if (event->button != GDK_BUTTON_MIDDLE)
     return FALSE;
-  if (status->has_output)
+  /* A double click's second press, too, which would start a move. */
+  if (event->type == GDK_BUTTON_PRESS && status->has_output)
     sd_pulse_set_muted (applet->pulse, !status->muted);
   return TRUE;
 }
@@ -338,7 +439,7 @@ applet_free (gpointer data)
   g_clear_object (&applet->media_keys);
   g_clear_object (&applet->sound);
   g_ptr_array_unref (applet->profile_items);
-  sd_status_clear (&applet->cards);
+  cards_clear (applet);
   g_free (applet);
 }
 
@@ -375,7 +476,7 @@ fill (MatePanelApplet *panel_applet)
   Applet *applet = g_new0 (Applet, 1);
 
   applet->applet = panel_applet;
-  applet->profile_items = g_ptr_array_new_with_free_func ((GDestroyNotify) gtk_widget_destroy);
+  applet->profile_items = g_ptr_array_new_with_free_func (profile_item_free);
   mate_panel_applet_set_flags (panel_applet, MATE_PANEL_APPLET_EXPAND_MINOR);
   mate_panel_applet_set_background_widget (panel_applet, GTK_WIDGET (panel_applet));
   overlay = gtk_overlay_new ();
@@ -387,7 +488,9 @@ fill (MatePanelApplet *panel_applet)
   gtk_overlay_set_overlay_pass_through (GTK_OVERLAY (overlay), applet->marks, TRUE);
   gtk_container_add (GTK_CONTAINER (panel_applet), overlay);
 
-  gtk_widget_add_events (GTK_WIDGET (panel_applet), GDK_SCROLL_MASK);
+  /* Smooth too: a touchpad on Wayland gives nothing else. With it, a wheel's clicks come as
+     smooth steps of 1, which on_scroll adds up the same way. */
+  gtk_widget_add_events (GTK_WIDGET (panel_applet), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
   g_signal_connect (panel_applet, "scroll-event", G_CALLBACK (on_scroll), applet);
   g_signal_connect (panel_applet, "button-press-event", G_CALLBACK (on_button_press), applet);
   setup_menu (applet);

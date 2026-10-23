@@ -7,7 +7,7 @@ Description=Caminito's Sound applet
 
 [CaminitoSoundApplet]
 Name=Sound
-Description=Set the volume, and see what is playing or recording
+Description=See and set the sound's volume
 Icon=audio-volume-high
 MateComponentId=OAFIID:Caminito_SoundApplet;
 Platforms=X11;Wayland;

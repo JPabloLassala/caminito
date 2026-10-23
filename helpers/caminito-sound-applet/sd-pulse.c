@@ -21,7 +21,7 @@ typedef enum
 {
   LIST_SINKS,
   LIST_SOURCES,
-  LIST_RECORDERS,
+  LIST_RECORDING,
   LIST_CARDS,
   N_LISTS,
 } ListKind;
@@ -38,7 +38,7 @@ typedef struct
   gboolean   monitor;
 } Device;
 
-/* A source output, which is a stream recording. */
+/* A Stream recording: one of the server's source outputs. */
 typedef struct
 {
   char    *app_id;
@@ -47,7 +47,12 @@ typedef struct
   gboolean corked;
   /* The reader's own, or a volume control's. */
   gboolean ignored;
-} Recorder;
+} RecordingStream;
+
+/* For the warnings. */
+static const char *const list_names[N_LISTS] = {
+  "outputs", "inputs", "recording streams", "cards",
+};
 
 typedef struct
 {
@@ -68,7 +73,7 @@ struct _SdPulse
   gboolean          ready;
   char             *default_sink;
   char             *default_source;
-  /* Of Device, Device, Recorder and SdCard, as the server last listed them. */
+  /* Of Device, Device, RecordingStream and SdCard, as the server last listed them. */
   GPtrArray        *lists[N_LISTS];
   /* The lists on their way, as Request. */
   GList            *requests;
@@ -76,6 +81,15 @@ struct _SdPulse
 };
 
 static void connect_to_server (SdPulse *pulse);
+
+/* An operation whose end the reader doesn't wait for: the server's events tell it what
+   changed. NULL where the context couldn't send it. */
+static void
+drop_operation (pa_operation *operation)
+{
+  if (operation != NULL)
+    pa_operation_unref (operation);
+}
 
 static void
 device_free (gpointer data)
@@ -88,23 +102,21 @@ device_free (gpointer data)
 }
 
 static void
-recorder_free (gpointer data)
+recording_stream_free (gpointer data)
 {
-  Recorder *recorder = data;
+  RecordingStream *stream = data;
 
-  g_free (recorder->app_id);
-  g_free (recorder->name);
-  g_free (recorder->binary);
-  g_free (recorder);
+  g_free (stream->app_id);
+  g_free (stream->name);
+  g_free (stream->binary);
+  g_free (stream);
 }
 
 static void
 card_free (gpointer data)
 {
-  SdStatus status = { .cards = data, .n_cards = 1 };
-
-  /* Frees the SdCard's own memory too. */
-  sd_status_clear (&status);
+  sd_card_clear (data);
+  g_free (data);
 }
 
 static GPtrArray *
@@ -115,8 +127,8 @@ list_new (ListKind kind)
     case LIST_SINKS:
     case LIST_SOURCES:
       return g_ptr_array_new_with_free_func (device_free);
-    case LIST_RECORDERS:
-      return g_ptr_array_new_with_free_func (recorder_free);
+    case LIST_RECORDING:
+      return g_ptr_array_new_with_free_func (recording_stream_free);
     case LIST_CARDS:
     case N_LISTS:
       break;
@@ -151,10 +163,9 @@ build_status (SdPulse *pulse, SdStatus *status)
 {
   Device *sink = find_device (pulse->lists[LIST_SINKS], pulse->default_sink);
   Device *source = find_device (pulse->lists[LIST_SOURCES], pulse->default_source);
-  GPtrArray *recorders = pulse->lists[LIST_RECORDERS];
+  GPtrArray *recording = pulse->lists[LIST_RECORDING];
   GPtrArray *cards = pulse->lists[LIST_CARDS];
   g_autoptr (GArray) streams = g_array_new (FALSE, FALSE, sizeof (SdStream));
-  SdStatus cards_status;
 
   status->running = TRUE;
   if (sink != NULL)
@@ -170,21 +181,19 @@ build_status (SdPulse *pulse, SdStatus *status)
       status->has_input = TRUE;
       status->input_muted = source->muted;
     }
-  for (guint i = 0; i < recorders->len; i++)
+  for (guint i = 0; i < recording->len; i++)
     {
-      Recorder *recorder = g_ptr_array_index (recorders, i);
-      SdStream stream = { recorder->app_id, recorder->name, recorder->binary };
+      RecordingStream *stream = g_ptr_array_index (recording, i);
+      SdStream named = { stream->app_id, stream->name, stream->binary };
 
-      if (!recorder->corked && !recorder->ignored)
-        g_array_append_val (streams, stream);
+      if (!stream->corked && !stream->ignored)
+        g_array_append_val (streams, named);
     }
   status->recording = sd_state_recording_names ((SdStream *) streams->data, streams->len);
-  /* The SdCards of the list, in a status of their own to copy them from. */
-  cards_status = (SdStatus) { .n_cards = cards->len, .cards = g_new (SdCard, cards->len) };
+  status->n_cards = cards->len;
+  status->cards = g_new0 (SdCard, cards->len);
   for (guint i = 0; i < cards->len; i++)
-    cards_status.cards[i] = *(SdCard *) g_ptr_array_index (cards, i);
-  sd_cards_copy (&cards_status, status);
-  g_free (cards_status.cards);
+    sd_card_copy (g_ptr_array_index (cards, i), &status->cards[i]);
 }
 
 static void
@@ -224,7 +233,7 @@ request_done (Request *request, int eol)
       pulse->lists[request->kind] = g_ptr_array_ref (request->items);
     }
   else
-    g_warning ("can't list the sound server's devices: %s",
+    g_warning ("can't read the sound server's %s: %s", list_names[request->kind],
                pa_strerror (pa_context_errno (request->context)));
   request_free (request);
   update (pulse);
@@ -302,10 +311,10 @@ on_source (pa_context *context G_GNUC_UNUSED, const pa_source_info *info, int eo
 }
 
 static void
-on_recorder (pa_context *context, const pa_source_output_info *info, int eol, void *data)
+on_recording_stream (pa_context *context, const pa_source_output_info *info, int eol, void *data)
 {
   Request *request = data;
-  Recorder *recorder;
+  RecordingStream *stream;
   const char *app_id;
 
   if (eol != 0)
@@ -313,16 +322,16 @@ on_recorder (pa_context *context, const pa_source_output_info *info, int eol, vo
       request_done (request, eol);
       return;
     }
-  recorder = g_new0 (Recorder, 1);
+  stream = g_new0 (RecordingStream, 1);
   app_id = property (info->proplist, PA_PROP_APPLICATION_ID);
   /* PipeWire's for a Flatpak's client. */
-  recorder->app_id = g_strdup (property (info->proplist, "pipewire.sec.app-id"));
-  recorder->name = g_strdup (property (info->proplist, PA_PROP_APPLICATION_NAME));
-  recorder->binary = g_strdup (property (info->proplist, PA_PROP_APPLICATION_PROCESS_BINARY));
-  recorder->corked = info->corked != 0;
-  recorder->ignored = info->client == pa_context_get_index (context)
+  stream->app_id = g_strdup (property (info->proplist, "pipewire.sec.app-id"));
+  stream->name = g_strdup (property (info->proplist, PA_PROP_APPLICATION_NAME));
+  stream->binary = g_strdup (property (info->proplist, PA_PROP_APPLICATION_PROCESS_BINARY));
+  stream->corked = info->corked != 0;
+  stream->ignored = info->client == pa_context_get_index (context)
                       || (app_id != NULL && g_strv_contains (volume_controls, app_id));
-  g_ptr_array_add (request->items, recorder);
+  g_ptr_array_add (request->items, stream);
 }
 
 static void
@@ -378,8 +387,8 @@ request_list (SdPulse *pulse, ListKind kind)
     case LIST_SOURCES:
       operation = pa_context_get_source_info_list (pulse->context, on_source, request);
       break;
-    case LIST_RECORDERS:
-      operation = pa_context_get_source_output_info_list (pulse->context, on_recorder, request);
+    case LIST_RECORDING:
+      operation = pa_context_get_source_output_info_list (pulse->context, on_recording_stream, request);
       break;
     case LIST_CARDS:
       operation = pa_context_get_card_info_list (pulse->context, on_card, request);
@@ -414,10 +423,7 @@ on_server_info (pa_context *context, const pa_server_info *info, void *data)
 static void
 request_server_info (SdPulse *pulse)
 {
-  pa_operation *operation = pa_context_get_server_info (pulse->context, on_server_info, pulse);
-
-  if (operation != NULL)
-    pa_operation_unref (operation);
+  drop_operation (pa_context_get_server_info (pulse->context, on_server_info, pulse));
 }
 
 static void
@@ -437,7 +443,7 @@ on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index
       request_list (pulse, LIST_SOURCES);
       break;
     case PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT:
-      request_list (pulse, LIST_RECORDERS);
+      request_list (pulse, LIST_RECORDING);
       break;
     case PA_SUBSCRIPTION_EVENT_CARD:
       request_list (pulse, LIST_CARDS);
@@ -494,21 +500,19 @@ on_state (pa_context *context, void *data)
 {
   SdPulse *pulse = data;
   SdStatus none = { 0 };
-  pa_operation *operation;
 
   switch (pa_context_get_state (context))
     {
     case PA_CONTEXT_READY:
       pa_context_set_subscribe_callback (context, on_event, pulse);
-      operation = pa_context_subscribe (context,
-                                        PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE
-                                        | PA_SUBSCRIPTION_MASK_SINK_INPUT
-                                        | PA_SUBSCRIPTION_MASK_SOURCE_OUTPUT
-                                        | PA_SUBSCRIPTION_MASK_CARD
-                                        | PA_SUBSCRIPTION_MASK_SERVER,
-                                        NULL, NULL);
-      if (operation != NULL)
-        pa_operation_unref (operation);
+      drop_operation (pa_context_subscribe (context,
+                                            PA_SUBSCRIPTION_MASK_SINK
+                                            | PA_SUBSCRIPTION_MASK_SOURCE
+                                            | PA_SUBSCRIPTION_MASK_SINK_INPUT
+                                            | PA_SUBSCRIPTION_MASK_SOURCE_OUTPUT
+                                            | PA_SUBSCRIPTION_MASK_CARD
+                                            | PA_SUBSCRIPTION_MASK_SERVER,
+                                            NULL, NULL));
       for (guint i = 0; i < N_LISTS; i++)
         request_list (pulse, i);
       request_server_info (pulse);
@@ -520,6 +524,8 @@ on_state (pa_context *context, void *data)
          a context that fails at once, with no D-Bus to wait on, from spinning. */
       if (pulse->reconnect_id == 0)
         pulse->reconnect_id = g_timeout_add_seconds (1, on_reconnect, pulse);
+      /* Nothing more is sent to it. */
+      pulse->ready = FALSE;
       set_status (pulse, &none);
       break;
     default:
@@ -572,13 +578,6 @@ sd_pulse_status (SdPulse *pulse)
   return &pulse->status;
 }
 
-static void
-done (pa_operation *operation)
-{
-  if (operation != NULL)
-    pa_operation_unref (operation);
-}
-
 static gboolean
 connected (SdPulse *pulse)
 {
@@ -599,7 +598,7 @@ sd_pulse_set_volume (SdPulse *pulse, pa_volume_t volume)
   channels = sink->volume;
   /* Keeps the balance. */
   pa_cvolume_scale (&channels, volume);
-  done (pa_context_set_sink_volume_by_name (pulse->context, sink->name, &channels, NULL, NULL));
+  drop_operation (pa_context_set_sink_volume_by_name (pulse->context, sink->name, &channels, NULL, NULL));
 }
 
 void
@@ -607,7 +606,7 @@ sd_pulse_set_muted (SdPulse *pulse, gboolean muted)
 {
   if (!connected (pulse) || pulse->default_sink == NULL)
     return;
-  done (pa_context_set_sink_mute_by_name (pulse->context, pulse->default_sink, muted, NULL,
+  drop_operation (pa_context_set_sink_mute_by_name (pulse->context, pulse->default_sink, muted, NULL,
                                           NULL));
 }
 
@@ -616,7 +615,7 @@ sd_pulse_set_input_muted (SdPulse *pulse, gboolean muted)
 {
   if (!connected (pulse) || pulse->default_source == NULL)
     return;
-  done (pa_context_set_source_mute_by_name (pulse->context, pulse->default_source, muted, NULL,
+  drop_operation (pa_context_set_source_mute_by_name (pulse->context, pulse->default_source, muted, NULL,
                                             NULL));
 }
 
@@ -625,7 +624,7 @@ sd_pulse_set_profile (SdPulse *pulse, guint32 card, const char *profile)
 {
   if (!connected (pulse))
     return;
-  done (pa_context_set_card_profile_by_index (pulse->context, card, profile, NULL, NULL));
+  drop_operation (pa_context_set_card_profile_by_index (pulse->context, card, profile, NULL, NULL));
 }
 
 void

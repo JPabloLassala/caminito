@@ -100,17 +100,26 @@ pactl (const char *command)
   return out;
 }
 
+/* Whether pactl's command succeeds. */
 static gboolean
-pulse_answers (gpointer data G_GNUC_UNUSED)
+pactl_succeeds (gpointer data)
 {
-  const char *const argv[] = { "pactl", "info", NULL };
+  g_autofree char *line = g_strconcat ("pactl ", (const char *) data, NULL);
+  g_auto (GStrv) argv = NULL;
   int status;
 
-  return g_spawn_sync (NULL, (char **) argv, NULL,
+  g_assert_true (g_shell_parse_argv (line, NULL, &argv, NULL));
+  return g_spawn_sync (NULL, argv, NULL,
                        G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL
                        | G_SPAWN_STDERR_TO_DEV_NULL,
                        NULL, NULL, NULL, NULL, &status, NULL)
          && g_spawn_check_wait_status (status, NULL);
+}
+
+static gboolean
+pulse_answers (gpointer data G_GNUC_UNUSED)
+{
+  return pactl_succeeds ("info");
 }
 
 static void
@@ -176,11 +185,14 @@ load_sink (const char *name, const char *properties)
   g_autofree char *out = pactl (command);
 }
 
+/* PipeWire makes a null sink's node, and its monitor, a moment after load-module returns:
+   until then the name isn't known. */
 static void
 set_default (const char *what, const char *name)
 {
   g_autofree char *command = g_strdup_printf ("set-default-%s %s", what, name);
-  g_autofree char *out = pactl (command);
+
+  wait_until (pactl_succeeds, command, command);
 }
 
 static void
