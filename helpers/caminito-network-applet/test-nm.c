@@ -3,7 +3,8 @@
  * template on a private bus that stands for the system bus: wired, Wi-Fi at each step of the
  * signal, a connection coming up, limited connectivity, a VPN, airplane mode, nothing up,
  * and NetworkManager stopping and starting again. Each state is checked as the panel shows
- * it: the tooltip and the icon's first name.
+ * it: the tooltip and the icon's first name. Then the popup's tiles and card (CMN-196) as
+ * they follow changes made elsewhere, and what their clicks do to the mock.
  *
  *   test-nm <python>
  */
@@ -25,6 +26,12 @@
 #define PORTAL     2
 #define LIMITED    3
 #define FULL       4
+/* NMDeviceState. */
+#define DEVICE_UNAVAILABLE  20
+#define DEVICE_DISCONNECTED 30
+#define DEVICE_ACTIVATED    100
+/* The template's own methods the tests add, on an interface of their own. */
+#define TEST_IFACE "org.mate.Caminito.Test"
 
 static const char *python;
 
@@ -144,31 +151,62 @@ set_connectivity (Fixture *fixture, guint connectivity)
   update (fixture, NM_PATH, NM_NAME, properties);
 }
 
+/* A saved connection, as text: "{'connection': {'id': <'Office'>, …}}": returns its
+   path. */
+static char *
+add_connection (Fixture *fixture, const char *settings_text)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) settings = g_variant_parse (G_VARIANT_TYPE ("a{sa{sv}}"), settings_text,
+                                                   NULL, NULL, &error);
+  g_autoptr (GVariant) connection = NULL;
+  char *connection_path;
+
+  g_assert_no_error (error);
+  connection = call (fixture, NM_PATH "/Settings", "org.freedesktop.NetworkManager.Settings",
+                     "AddConnection", g_variant_new_tuple (&settings, 1));
+  g_variant_get (connection, "(o)", &connection_path);
+  return connection_path;
+}
+
+/* An ethernet device "eth0" in the device state, with the connection id saved for it, as
+   NetworkManager has it in AvailableConnections: returns the connection's path. */
+static char *
+add_ethernet (Fixture *fixture, const char *id, guint device_state)
+{
+  g_autoptr (GVariant) device = NULL;
+  g_autofree char *settings = g_strdup_printf (
+    "{'connection': {'id': <'%s'>, 'type': <'802-3-ethernet'>}}", id);
+  g_autofree char *available = NULL;
+  const char *device_path;
+  char *connection_path;
+
+  device = call (fixture, NM_PATH, DBUSMOCK, "AddEthernetDevice",
+                 g_variant_new ("(ssi)", "eth0", "eth0", device_state));
+  g_variant_get (device, "(&s)", &device_path);
+  /* NetworkManager's, which the template hasn't: the device's connection goes down. */
+  mock_call (fixture, device_path, "AddMethod",
+             g_variant_new ("(sssss)", NM_NAME ".Device", "Disconnect", "", "",
+                            "objects['" NM_PATH "'].RemoveActiveConnection(self.path,"
+                            " self.Get('" NM_NAME ".Device', 'ActiveConnection'))"));
+  connection_path = add_connection (fixture, settings);
+  available = g_strdup_printf ("{'AvailableConnections': <[objectpath '%s']>}",
+                               connection_path);
+  update (fixture, device_path, NM_NAME ".Device", available);
+  return connection_path;
+}
+
 /* An ethernet device "eth0" with the connection id up on it, as active connection
    "wired": returns its path. */
 static char *
 add_wired (Fixture *fixture, const char *id, guint state)
 {
-  g_autoptr (GVariant) device = NULL;
-  g_autoptr (GVariant) connection = NULL;
   g_autoptr (GVariant) active = NULL;
-  g_autoptr (GError) error = NULL;
-  g_autofree char *settings_text = g_strdup_printf (
-    "({'connection': {'id': <'%s'>, 'type': <'802-3-ethernet'>}},)", id);
-  g_autoptr (GVariant) settings = g_variant_parse (NULL, settings_text, NULL, NULL, &error);
-  const char *device_path;
-  const char *connection_path;
+  g_autofree char *connection_path = add_ethernet (fixture, id, DEVICE_ACTIVATED);
   char *active_path;
 
-  g_assert_no_error (error);
-  device = call (fixture, NM_PATH, DBUSMOCK, "AddEthernetDevice",
-                 g_variant_new ("(ssi)", "eth0", "eth0", 100));
-  g_variant_get (device, "(&s)", &device_path);
-  connection = call (fixture, NM_PATH "/Settings", "org.freedesktop.NetworkManager.Settings",
-                     "AddConnection", settings);
-  g_variant_get (connection, "(&o)", &connection_path);
   active = call (fixture, NM_PATH, DBUSMOCK, "AddActiveConnection",
-                 g_variant_new_parsed ("([%s], %s, '/', 'wired', %u)", device_path,
+                 g_variant_new_parsed ("([%o], %o, '/', 'wired', %u)", DEVICES "eth0",
                                        connection_path, state));
   g_variant_get (active, "(s)", &active_path);
   return active_path;
@@ -255,6 +293,69 @@ add_vpn (Fixture *fixture, const char *id, const char *type, const char *base)
   return active_path;
 }
 
+/* A VPN saved, not up, last activated at the timestamp: returns its path. */
+static char *
+add_saved_vpn (Fixture *fixture, const char *id, guint64 timestamp)
+{
+  g_autofree char *settings = g_strdup_printf (
+    "{'connection': {'id': <'%s'>, 'type': <'vpn'>, 'timestamp': <uint64 %" G_GUINT64_FORMAT
+    ">}}", id, timestamp);
+
+  return add_connection (fixture, settings);
+}
+
+/* The IPv4 address on the active connection at path, as NetworkManager gives it: an
+   IP4Config object, which the template hasn't. */
+static void
+set_address (Fixture *fixture, const char *active_path, const char *address)
+{
+  g_autofree char *properties = NULL;
+
+  /* The mock's AddObject over D-Bus doesn't tell the ObjectManager, which libnm follows. */
+  mock_call (fixture, NM_PATH, "AddMethod",
+             g_variant_new ("(sssss)", TEST_IFACE, "AddIP4Config", "ss", "",
+                            "self.AddObject(args[0], 'org.freedesktop.NetworkManager.IP4Config',"
+                            " {'AddressData': dbus.Array([{'address': args[1],"
+                            " 'prefix': dbus.UInt32(24, variant_level=1)}],"
+                            " signature='a{sv}'), 'Gateway': ''}, [])\n"
+                            "self.object_manager_emit_added(args[0])"));
+  g_variant_unref (call (fixture, NM_PATH, TEST_IFACE, "AddIP4Config",
+                         g_variant_new ("(ss)", NM_PATH "/IP4Config/1", address)));
+  mock_call (fixture, active_path, "AddProperty",
+             g_variant_new ("(ssv)", NM_NAME ".Connection.Active", "Ip4Config",
+                            g_variant_new_object_path ("/")));
+  properties = g_strdup_printf ("{'Ip4Config': <objectpath '%s'>}", NM_PATH "/IP4Config/1");
+  update (fixture, active_path, NM_NAME ".Connection.Active", properties);
+}
+
+static gboolean
+get_boolean (Fixture *fixture, const char *name)
+{
+  g_autoptr (GVariant) reply = call (fixture, NM_PATH, "org.freedesktop.DBus.Properties", "Get",
+                                     g_variant_new ("(ss)", NM_NAME, name));
+  g_autoptr (GVariant) value = NULL;
+
+  g_variant_get (reply, "(v)", &value);
+  return g_variant_get_boolean (value);
+}
+
+/* The four tiles, "on Home, dim Unplugged, off Off, off Off": "dim" for an insensitive
+   tile, which is never on. */
+static char *
+tiles_of (const NwStatus *status)
+{
+  GString *tiles = g_string_new (NULL);
+
+  for (NwTile tile = 0; tile < NW_N_TILES; tile++)
+    {
+      NwTileState state = nw_state_tile (status, tile);
+
+      g_string_append_printf (tiles, "%s%s %s", tile == 0 ? "" : ", ",
+                              !state.sensitive ? "dim" : state.on ? "on" : "off", state.text);
+    }
+  return g_string_free (tiles, FALSE);
+}
+
 typedef gboolean (*Condition) (Fixture *fixture, gconstpointer expected);
 
 /* Runs the main loop until condition holds, or fails after 5 s. */
@@ -268,9 +369,11 @@ wait_until (Fixture *fixture, Condition condition, gconstpointer expected)
       if (g_get_monotonic_time () >= deadline && fixture->nm != NULL)
         {
           g_autofree char *tooltip = nw_state_tooltip (nw_nm_status (fixture->nm));
+          g_autofree char *tiles = tiles_of (nw_nm_status (fixture->nm));
 
-          g_error ("expected %s, the applet shows %s|%s", (const char *) expected, tooltip,
-                   nw_state_icon_names (nw_nm_status (fixture->nm))[0]);
+          g_error ("expected %s, the applet shows %s|%s, with the tiles %s",
+                   (const char *) expected, tooltip,
+                   nw_state_icon_names (nw_nm_status (fixture->nm))[0], tiles);
         }
       g_assert_cmpint (g_get_monotonic_time (), <, deadline);
       g_main_context_iteration (NULL, FALSE);
@@ -285,6 +388,27 @@ shows (Fixture *fixture, gconstpointer expected)
   const NwStatus *status = nw_nm_status (fixture->nm);
   g_autofree char *tooltip = nw_state_tooltip (status);
   g_autofree char *shown = g_strdup_printf ("%s|%s", tooltip, nw_state_icon_names (status)[0]);
+
+  return g_strcmp0 (shown, expected) == 0;
+}
+
+static gboolean
+tiles_show (Fixture *fixture, gconstpointer expected)
+{
+  g_autofree char *tiles = tiles_of (nw_nm_status (fixture->nm));
+
+  return g_strcmp0 (tiles, expected) == 0;
+}
+
+/* The card, "title|detail|address", "-" for what it hasn't. */
+static gboolean
+card_shows (Fixture *fixture, gconstpointer expected)
+{
+  const NwStatus *status = nw_nm_status (fixture->nm);
+  g_autofree char *title = nw_state_card_title (status);
+  g_autofree char *detail = nw_state_card_detail (status);
+  g_autofree char *shown = g_strdup_printf ("%s|%s|%s", title, detail ? detail : "-",
+                                            status->address ? status->address : "-");
 
   return g_strcmp0 (shown, expected) == 0;
 }
@@ -471,6 +595,150 @@ test_late_start (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   wait_until (fixture, shows, "Not connected|network-offline");
 }
 
+/* NetworkManager's WwanEnabled is true unless the user turned it off, which the template's
+   isn't: without it, Wi-Fi off would be airplane mode. */
+static void
+start_mock_with_wwan (Fixture *fixture)
+{
+  start_mock (fixture);
+  update (fixture, NM_PATH, NM_NAME, "{'WwanEnabled': <true>}");
+}
+
+static void
+test_tiles_follow_changes (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *connection = NULL;
+  g_autofree char *wifi = NULL;
+
+  start_mock_with_wwan (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+  connection = add_ethernet (fixture, "Office", DEVICE_UNAVAILABLE);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+  /* The cable in. libnm reads the state from StateReason. */
+  update (fixture, DEVICES "eth0", NM_NAME ".Device",
+          "{'State': <uint32 30>, 'StateReason': <(uint32 30, uint32 0)>}");
+  wait_until (fixture, tiles_show, "on On, off Disconnected, dim Off, off Off");
+  wifi = add_wifi (fixture, 70, ACTIVATED);
+  set_primary (fixture, wifi);
+  wait_until (fixture, tiles_show, "on Home, off Disconnected, dim Off, off Off");
+  /* nmcli radio wifi off. */
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessEnabled': <false>}");
+  wait_until (fixture, tiles_show, "off Off, off Disconnected, dim Off, off Off");
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessEnabled': <true>}");
+  wait_until (fixture, tiles_show, "on Home, off Disconnected, dim Off, off Off");
+  /* The hardware switch. */
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessHardwareEnabled': <false>}");
+  wait_until (fixture, tiles_show, "dim Off, off Disconnected, dim Off, off Off");
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessHardwareEnabled': <true>}");
+  g_free (add_saved_vpn (fixture, "Work", 1000));
+  wait_until (fixture, tiles_show, "on Home, off Disconnected, off Off, off Off");
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessEnabled': <false>, 'WwanEnabled': <false>}");
+  wait_until (fixture, tiles_show, "dim Off, off Disconnected, off Off, on On");
+}
+
+static void
+test_wifi_tile (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  start_mock_with_wwan (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+  nw_nm_set_tile (fixture->nm, NW_TILE_WIFI, FALSE);
+  wait_until (fixture, tiles_show, "off Off, dim Unplugged, dim Off, off Off");
+  g_assert_false (get_boolean (fixture, "WirelessEnabled"));
+  nw_nm_set_tile (fixture->nm, NW_TILE_WIFI, TRUE);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+  g_assert_true (get_boolean (fixture, "WirelessEnabled"));
+}
+
+static void
+test_wired_tile (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  start_mock_with_wwan (fixture);
+  g_free (add_ethernet (fixture, "Office", DEVICE_DISCONNECTED));
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, tiles_show, "on On, off Disconnected, dim Off, off Off");
+  nw_nm_set_tile (fixture->nm, NW_TILE_WIRED, TRUE);
+  wait_until (fixture, tiles_show, "on On, on Connected, dim Off, off Off");
+  nw_nm_set_tile (fixture->nm, NW_TILE_WIRED, FALSE);
+  wait_until (fixture, tiles_show, "on On, off Disconnected, dim Off, off Off");
+}
+
+static void
+test_vpn_tile (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *wired = NULL;
+
+  start_mock_with_wwan (fixture);
+  wired = add_wired (fixture, "Office", ACTIVATED);
+  set_primary (fixture, wired);
+  g_free (add_saved_vpn (fixture, "Old", 1000));
+  g_free (add_saved_vpn (fixture, "Work", 3000));
+  g_free (add_saved_vpn (fixture, "Older", 500));
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, tiles_show, "on On, on Connected, off Off, off Off");
+  g_assert_cmpstr (nw_nm_status (fixture->nm)->last_vpn, ==, "Work");
+  nw_nm_set_tile (fixture->nm, NW_TILE_VPN, TRUE);
+  wait_until (fixture, shows, "Office\nVPN: Work|network-wired");
+  g_assert_true (tiles_show (fixture, "on On, on Connected, on Work, off Off"));
+  nw_nm_set_tile (fixture->nm, NW_TILE_VPN, FALSE);
+  /* The template's DeactivateConnection takes every device down with the VPN. */
+  wait_until (fixture, shows, "Office|network-wired");
+  g_assert_cmpstr (nw_nm_status (fixture->nm)->vpn, ==, NULL);
+}
+
+static void
+test_airplane_tile (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  start_mock_with_wwan (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+  nw_nm_set_tile (fixture->nm, NW_TILE_AIRPLANE, TRUE);
+  wait_until (fixture, tiles_show, "dim Off, dim Unplugged, dim Off, on On");
+  g_assert_false (get_boolean (fixture, "WirelessEnabled"));
+  g_assert_false (get_boolean (fixture, "WwanEnabled"));
+  nw_nm_set_tile (fixture->nm, NW_TILE_AIRPLANE, FALSE);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+  g_assert_true (get_boolean (fixture, "WirelessEnabled"));
+  g_assert_true (get_boolean (fixture, "WwanEnabled"));
+
+  /* Wi-Fi off before: it stays off after. */
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessEnabled': <false>}");
+  wait_until (fixture, tiles_show, "off Off, dim Unplugged, dim Off, off Off");
+  nw_nm_set_tile (fixture->nm, NW_TILE_AIRPLANE, TRUE);
+  wait_until (fixture, tiles_show, "dim Off, dim Unplugged, dim Off, on On");
+  nw_nm_set_tile (fixture->nm, NW_TILE_AIRPLANE, FALSE);
+  wait_until (fixture, tiles_show, "off Off, dim Unplugged, dim Off, off Off");
+  g_assert_false (get_boolean (fixture, "WirelessEnabled"));
+  g_assert_true (get_boolean (fixture, "WwanEnabled"));
+
+  /* Airplane mode from elsewhere, then off here: Wi-Fi comes back. */
+  update (fixture, NM_PATH, NM_NAME, "{'WwanEnabled': <false>}");
+  wait_until (fixture, tiles_show, "dim Off, dim Unplugged, dim Off, on On");
+  nw_nm_set_tile (fixture->nm, NW_TILE_AIRPLANE, FALSE);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, dim Off, off Off");
+}
+
+static void
+test_card (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *wired = NULL;
+
+  start_mock_with_wwan (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, card_shows, "Not connected|-|-");
+  wired = add_wired (fixture, "Office", ACTIVATED);
+  set_primary (fixture, wired);
+  wait_until (fixture, card_shows, "Office|Connected|-");
+  set_address (fixture, wired, "192.168.1.20");
+  update (fixture, DEVICES "eth0", NM_NAME ".Device.Wired", "{'Speed': <uint32 1000>}");
+  wait_until (fixture, card_shows, "Office|Connected · 1 Gb/s|192.168.1.20");
+  set_connectivity (fixture, LIMITED);
+  wait_until (fixture, card_shows, "Office|Connected · No internet · 1 Gb/s|192.168.1.20");
+  nw_nm_disconnect (fixture->nm);
+  wait_until (fixture, card_shows, "Not connected|-|-");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -487,5 +755,11 @@ main (int argc, char **argv)
   g_test_add ("/nm/airplane-mode-is-every-radio-off", Fixture, NULL, setup, test_airplane_mode, teardown);
   g_test_add ("/nm/networkmanager-stopping-and-starting-again-is-followed", Fixture, NULL, setup, test_restart, teardown);
   g_test_add ("/nm/networkmanager-starting-after-the-applet-is-followed", Fixture, NULL, setup, test_late_start, teardown);
+  g_test_add ("/nm/the-tiles-follow-changes-made-elsewhere", Fixture, NULL, setup, test_tiles_follow_changes, teardown);
+  g_test_add ("/nm/the-wi-fi-tile-turns-wireless-off-and-on", Fixture, NULL, setup, test_wifi_tile, teardown);
+  g_test_add ("/nm/the-wired-tile-connects-and-disconnects-the-device", Fixture, NULL, setup, test_wired_tile, teardown);
+  g_test_add ("/nm/the-vpn-tile-turns-the-vpn-used-last-on-and-off", Fixture, NULL, setup, test_vpn_tile, teardown);
+  g_test_add ("/nm/airplane-mode-off-restores-the-radios-as-they-were", Fixture, NULL, setup, test_airplane_tile, teardown);
+  g_test_add ("/nm/the-card-shows-the-connection-and-disconnects-it", Fixture, NULL, setup, test_card, teardown);
   return g_test_run ();
 }

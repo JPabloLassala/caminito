@@ -1,0 +1,11 @@
+no NetworkManager: the panel lives
+wifi-on: the panel lives
+wifi-off: the panel lives
+cable-in: the panel lives
+cable-out: the panel lives
+vpn: the panel lives
+airplane: the panel lives
+limited: the panel lives
+connecting: the panel lives
+nothing: the panel lives
+A connection to the bus can't be made

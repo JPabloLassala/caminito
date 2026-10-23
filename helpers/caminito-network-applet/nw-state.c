@@ -9,6 +9,9 @@ nw_status_clear (NwStatus *status)
 {
   g_clear_pointer (&status->name, g_free);
   g_clear_pointer (&status->vpn, g_free);
+  g_clear_pointer (&status->address, g_free);
+  g_clear_pointer (&status->wifi_network, g_free);
+  g_clear_pointer (&status->last_vpn, g_free);
 }
 
 gboolean
@@ -16,7 +19,11 @@ nw_status_equal (const NwStatus *a, const NwStatus *b)
 {
   return a->running == b->running && a->airplane == b->airplane && a->phase == b->phase
          && a->kind == b->kind && a->strength == b->strength && a->limited == b->limited
-         && g_strcmp0 (a->name, b->name) == 0 && g_strcmp0 (a->vpn, b->vpn) == 0;
+         && g_strcmp0 (a->name, b->name) == 0 && g_strcmp0 (a->vpn, b->vpn) == 0
+         && g_strcmp0 (a->address, b->address) == 0 && a->speed == b->speed
+         && a->wifi_enabled == b->wifi_enabled && a->wifi_blocked == b->wifi_blocked
+         && g_strcmp0 (a->wifi_network, b->wifi_network) == 0 && a->wired == b->wired
+         && g_strcmp0 (a->last_vpn, b->last_vpn) == 0;
 }
 
 /* The signal in GNOME Shell's four steps: weak, ok, good and excellent. */
@@ -131,4 +138,87 @@ nw_state_tooltip (const NwStatus *status)
   if (status->vpn != NULL)
     g_string_append_printf (tooltip, "\nVPN: %s", status->vpn);
   return g_string_free (tooltip, FALSE);
+}
+
+NwTileState
+nw_state_tile (const NwStatus *status, NwTile tile)
+{
+  NwTileState state = { .sensitive = TRUE };
+
+  switch (tile)
+    {
+    case NW_TILE_WIFI:
+      state.on = status->wifi_enabled && !status->wifi_blocked;
+      state.sensitive = !status->airplane && !status->wifi_blocked;
+      if (!state.on)
+        state.text = "Off";
+      else
+        state.text = status->wifi_network != NULL ? status->wifi_network : "On";
+      break;
+    case NW_TILE_WIRED:
+      state.on = status->wired == NW_WIRED_CONNECTING || status->wired == NW_WIRED_CONNECTED;
+      state.sensitive = status->wired != NW_WIRED_ABSENT && status->wired != NW_WIRED_UNPLUGGED;
+      switch (status->wired)
+        {
+        case NW_WIRED_CONNECTED:
+          state.text = "Connected";
+          break;
+        case NW_WIRED_CONNECTING:
+          state.text = "Connecting…";
+          break;
+        case NW_WIRED_DISCONNECTED:
+          state.text = "Disconnected";
+          break;
+        case NW_WIRED_UNPLUGGED:
+        case NW_WIRED_ABSENT:
+          state.text = "Unplugged";
+          break;
+        }
+      break;
+    case NW_TILE_VPN:
+      state.on = status->vpn != NULL;
+      state.sensitive = status->vpn != NULL || status->last_vpn != NULL;
+      state.text = status->vpn != NULL ? status->vpn : "Off";
+      break;
+    case NW_TILE_AIRPLANE:
+      state.on = status->airplane;
+      state.text = status->airplane ? "On" : "Off";
+      break;
+    case NW_N_TILES:
+      g_return_val_if_reached (state);
+    }
+  return state;
+}
+
+char *
+nw_state_card_title (const NwStatus *status)
+{
+  switch (status->phase)
+    {
+    case NW_PHASE_CONNECTING:
+      return g_strdup_printf ("Connecting to %s…", status->name);
+    case NW_PHASE_CONNECTED:
+      return g_strdup (status->name);
+    case NW_PHASE_NONE:
+      break;
+    }
+  return g_strdup ("Not connected");
+}
+
+char *
+nw_state_card_detail (const NwStatus *status)
+{
+  GString *detail;
+
+  if (status->phase != NW_PHASE_CONNECTED)
+    return NULL;
+  detail = g_string_new ("Connected");
+  if (status->limited)
+    g_string_append (detail, " · No internet");
+  /* A Wi-Fi link's rate changes all the time: the Details tab has it (CMN-201). */
+  if (status->kind == NW_KIND_WIRED && status->speed >= 1000)
+    g_string_append_printf (detail, " · %g Gb/s", status->speed / 1000.0);
+  else if (status->kind == NW_KIND_WIRED && status->speed > 0)
+    g_string_append_printf (detail, " · %u Mb/s", status->speed);
+  return g_string_free (detail, FALSE);
 }
