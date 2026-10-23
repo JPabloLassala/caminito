@@ -11,6 +11,7 @@
 #include <pulse/ext-stream-restore.h>
 #include <pulse/glib-mainloop.h>
 #include <pulse/pulseaudio.h>
+#include <stdio.h>
 #include <string.h>
 
 /* The volume controls' own monitor streams, which aren't an application recording. */
@@ -110,10 +111,14 @@ struct _SdPulse
   pa_stream        *level_stream;
   char             *level_source;
   /* Who hears the applications, and the peak streams on their streams while someone does,
-     as AppMonitor by "<side>:<stream>:<device>": a stream moved gets a new one. */
+     as AppMonitor by "<side>:<stream>:<device>": a stream moved gets a new one. One that
+     couldn't be opened has no stream, and isn't tried again. */
   SdPulseAppLevel   app_level;
   gpointer          app_level_data;
   GHashTable       *monitors;
+  /* Each stream's share of its application's loudest when the application's slider went to
+     0, as a double by "<side>:<stream>", which silent streams can't tell. */
+  GHashTable       *shares;
 };
 
 /* A peak stream on one of an application's streams. */
@@ -247,6 +252,18 @@ find_stream (GPtrArray *streams, guint32 index)
   return NULL;
 }
 
+static GPtrArray *
+devices_of (SdPulse *pulse, SdSide side)
+{
+  return pulse->lists[side == SD_OUTPUT ? LIST_SINKS : LIST_SOURCES];
+}
+
+static GPtrArray *
+streams_of (SdPulse *pulse, SdSide side)
+{
+  return pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
+}
+
 /* A stream of a Sound application now: playing or recording, and not the reader's own, a
    volume control's or an event sound. */
 static gboolean
@@ -269,6 +286,7 @@ stream_named (const Stream *stream, GPtrArray *devices)
     .title = stream->title,
     .index = stream->index,
     .device = device != NULL ? device->device.name : NULL,
+    .device_description = device != NULL ? device->device.description : NULL,
     .volume = pa_cvolume_max (&stream->volume),
   };
 }
@@ -277,8 +295,8 @@ stream_named (const Stream *stream, GPtrArray *devices)
 static void
 add_apps (SdPulse *pulse, GArray *apps, SdSide side)
 {
-  GPtrArray *streams = pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
-  GPtrArray *devices = pulse->lists[side == SD_OUTPUT ? LIST_SINKS : LIST_SOURCES];
+  GPtrArray *streams = streams_of (pulse, side);
+  GPtrArray *devices = devices_of (pulse, side);
   g_autoptr (GArray) named = g_array_new (FALSE, FALSE, sizeof (SdStream));
   SdApp *found;
   guint n;
@@ -451,9 +469,12 @@ app_monitor_free (gpointer data)
 {
   AppMonitor *monitor = data;
 
-  pa_stream_set_read_callback (monitor->stream, NULL, NULL);
-  pa_stream_disconnect (monitor->stream);
-  pa_stream_unref (monitor->stream);
+  if (monitor->stream != NULL)
+    {
+      pa_stream_set_read_callback (monitor->stream, NULL, NULL);
+      pa_stream_disconnect (monitor->stream);
+      pa_stream_unref (monitor->stream);
+    }
   g_free (monitor->app);
   g_free (monitor);
 }
@@ -508,7 +529,7 @@ open_app_monitor (SdPulse *pulse, SdSide side, const Stream *stream, const char 
 {
   pa_sample_spec spec = { .format = PA_SAMPLE_FLOAT32NE, .rate = PEAKS_PER_SECOND, .channels = 1 };
   pa_buffer_attr attr = { .maxlength = (uint32_t) -1, .fragsize = sizeof (float) };
-  SdStream named = stream_named (stream, pulse->lists[LIST_SINKS]);
+  SdStream named = stream_named (stream, devices_of (pulse, side));
   const char *app = sd_state_stream_identity (&named);
   g_autofree char *source = NULL;
   AppMonitor *monitor;
@@ -532,8 +553,7 @@ open_app_monitor (SdPulse *pulse, SdSide side, const Stream *stream, const char 
   monitor->stream = pa_stream_new (pulse->context, "Peak detect", &spec, NULL);
   if (monitor->stream == NULL)
     {
-      g_free (monitor->app);
-      g_free (monitor);
+      g_hash_table_insert (pulse->monitors, g_strdup (key), monitor);
       return;
     }
   if (side == SD_OUTPUT)
@@ -547,10 +567,7 @@ open_app_monitor (SdPulse *pulse, SdSide side, const Stream *stream, const char 
     {
       g_warning ("can't hear %s's stream: %s", app,
                  pa_strerror (pa_context_errno (pulse->context)));
-      pa_stream_unref (monitor->stream);
-      g_free (monitor->app);
-      g_free (monitor);
-      return;
+      g_clear_pointer (&monitor->stream, pa_stream_unref);
     }
   g_hash_table_insert (pulse->monitors, g_strdup (key), monitor);
 }
@@ -567,7 +584,7 @@ follow_app_levels (SdPulse *pulse)
   if (pulse->app_level != NULL && pulse->ready)
     for (SdSide side = SD_OUTPUT; side <= SD_INPUT; side++)
       {
-        GPtrArray *streams = pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
+        GPtrArray *streams = streams_of (pulse, side);
 
         for (guint i = 0; i < streams->len; i++)
           {
@@ -588,6 +605,25 @@ follow_app_levels (SdPulse *pulse)
       g_hash_table_iter_remove (&iter);
 }
 
+/* The shares of streams that are gone. */
+static void
+prune_shares (SdPulse *pulse)
+{
+  GHashTableIter iter;
+  gpointer key;
+
+  g_hash_table_iter_init (&iter, pulse->shares);
+  while (g_hash_table_iter_next (&iter, &key, NULL))
+    {
+      int side;
+      guint32 index;
+
+      if (sscanf (key, "%d:%u", &side, &index) != 2
+          || find_stream (streams_of (pulse, side), index) == NULL)
+        g_hash_table_iter_remove (&iter);
+    }
+}
+
 /* Once every list has come in. */
 static void
 update (SdPulse *pulse)
@@ -600,6 +636,7 @@ update (SdPulse *pulse)
   set_status (pulse, &status);
   follow_input_level (pulse);
   follow_app_levels (pulse);
+  prune_shares (pulse);
 }
 
 static void
@@ -929,6 +966,7 @@ forget_server (SdPulse *pulse)
 {
   close_level_stream (pulse);
   g_hash_table_remove_all (pulse->monitors);
+  g_hash_table_remove_all (pulse->shares);
   g_list_free_full (g_steal_pointer (&pulse->requests), (GDestroyNotify) request_free);
   for (guint i = 0; i < N_LISTS; i++)
     {
@@ -1044,6 +1082,7 @@ sd_pulse_new (SdPulseChanged changed, gpointer data)
   pulse->data = data;
   pulse->mainloop = pa_glib_mainloop_new (NULL);
   pulse->monitors = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, app_monitor_free);
+  pulse->shares = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   forget_server (pulse);
   connect_to_server (pulse);
   return pulse;
@@ -1162,12 +1201,6 @@ set_stream_volume (SdPulse *pulse, SdSide side, const Stream *stream, pa_volume_
                                                          &channels, NULL, NULL));
 }
 
-static GPtrArray *
-streams_of (SdPulse *pulse, SdSide side)
-{
-  return pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
-}
-
 void
 sd_pulse_set_app_volume (SdPulse *pulse, SdSide side, const char *app, pa_volume_t volume)
 {
@@ -1178,15 +1211,29 @@ sd_pulse_set_app_volume (SdPulse *pulse, SdSide side, const char *app, pa_volume
   found = sd_status_app (&pulse->status, side, app);
   if (found == NULL)
     return;
-  /* The ratio from the volumes the slider showed, which are the status's. */
+  /* The ratio from the volumes the slider showed, which are the status's; from silence, the
+     shares the streams had before it. */
   for (guint i = 0; i < found->n_streams; i++)
     {
       Stream *stream = find_stream (streams_of (pulse, side), found->streams[i].index);
+      g_autofree char *key = g_strdup_printf ("%d:%u", side, found->streams[i].index);
+      double *share = g_hash_table_lookup (pulse->shares, key);
+      pa_volume_t scaled;
 
+      if (found->volume > 0)
+        {
+          scaled = sd_state_scaled_volume (found->streams[i].volume, found->volume, volume);
+          if (volume == 0)
+            {
+              share = g_new (double, 1);
+              *share = (double) found->streams[i].volume / found->volume;
+              g_hash_table_insert (pulse->shares, g_steal_pointer (&key), share);
+            }
+        }
+      else
+        scaled = share != NULL ? (pa_volume_t) (*share * volume + 0.5) : volume;
       if (stream != NULL)
-        set_stream_volume (pulse, side, stream,
-                           sd_state_scaled_volume (found->streams[i].volume, found->volume,
-                                                   volume));
+        set_stream_volume (pulse, side, stream, scaled);
     }
 }
 
@@ -1277,6 +1324,7 @@ sd_pulse_free (SdPulse *pulse)
   for (guint i = 0; i < N_LISTS; i++)
     g_clear_pointer (&pulse->lists[i], g_ptr_array_unref);
   g_hash_table_unref (pulse->monitors);
+  g_hash_table_unref (pulse->shares);
   pa_glib_mainloop_free (pulse->mainloop);
   sd_status_clear (&pulse->status);
   g_free (pulse);

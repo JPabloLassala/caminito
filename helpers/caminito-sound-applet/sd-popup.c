@@ -67,7 +67,7 @@ struct _Slider
   /* Asks for the volume the user moved it to, for owner. */
   void     (*set) (Slider *slider, pa_volume_t volume);
   gpointer   owner;
-  /* An application's stream's, by its SdAppStream's index. */
+  /* An application's stream's, by its SdStreamVolume's index. */
   guint32    stream;
 };
 
@@ -1105,14 +1105,11 @@ update_app_streams (AppRow *row, const SdApp *app)
       for (guint i = 0; app->n_streams > 1 && i < app->n_streams; i++)
         {
           GtkWidget *line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
-          GtkWidget *title = gtk_label_new (app->streams[i].title ?: app->name);
+          GtkWidget *title = name_label_new (app->streams[i].title ?: app->name);
           Slider *slider = slider_new (row->popup, stream_set_volume, row, TRUE);
           g_autofree char *name = g_strdup_printf ("stream-%u", app->streams[i].index);
 
           slider->stream = app->streams[i].index;
-          gtk_label_set_xalign (GTK_LABEL (title), 0);
-          gtk_label_set_ellipsize (GTK_LABEL (title), PANGO_ELLIPSIZE_END);
-          gtk_label_set_max_width_chars (GTK_LABEL (title), NAME_CHARS);
           gtk_widget_set_size_request (title, NAME_WIDTH, -1);
           add_class (title, "sd-detail");
           set_app_name (slider->scale, row, name);
@@ -1138,21 +1135,6 @@ update_app_streams (AppRow *row, const SdApp *app)
     }
 }
 
-/* The badge names the device it's moved to: the server's description, or its name for a
-   device of no list, an output's monitor that it records. */
-static void
-update_badge (AppRow *row, const SdStatus *status)
-{
-  guint n_devices;
-  const SdDevice *devices = sd_status_devices (status, row->side, &n_devices);
-  const char *text = row->device;
-
-  for (guint i = 0; row->device != NULL && i < n_devices; i++)
-    if (g_strcmp0 (devices[i].name, row->device) == 0)
-      text = devices[i].description;
-  gtk_widget_set_visible (row->badge, row->device != NULL);
-  gtk_label_set_text (GTK_LABEL (row->badge), text ?: "");
-}
 
 static void
 update_app_row (AppRow *row, const SdApp *app, const SdStatus *status)
@@ -1166,7 +1148,9 @@ update_app_row (AppRow *row, const SdApp *app, const SdStatus *status)
   slider_update (row->slider, app->volume);
   g_free (row->device);
   row->device = g_strdup (app->device);
-  update_badge (row, status);
+  /* The server's description, an output's monitor's too, which no list has. */
+  gtk_widget_set_visible (row->badge, app->device != NULL);
+  gtk_label_set_text (GTK_LABEL (row->badge), app->device_description ?: "");
   update_app_devices (row, status);
   update_app_streams (row, app);
 }
@@ -1301,7 +1285,8 @@ on_window_show (GtkWidget *window, gpointer data G_GNUC_UNUSED)
   gtk_window_set_focus (GTK_WINDOW (window), NULL);
 }
 
-/* Closed, the activity bars go quiet: the reader stops hearing the applications. */
+/* Closed, the meter and the activity bars go quiet: the reader stops hearing the Default
+   input and the applications. */
 static void
 on_window_hide (GtkWidget *window G_GNUC_UNUSED, gpointer data)
 {
@@ -1309,6 +1294,7 @@ on_window_hide (GtkWidget *window G_GNUC_UNUSED, gpointer data)
   GHashTableIter iter;
   gpointer value;
 
+  popup->sides[SD_INPUT].level = 0;
   g_hash_table_iter_init (&iter, popup->app_rows);
   while (g_hash_table_iter_next (&iter, NULL, &value))
     ((AppRow *) value)->level = 0;

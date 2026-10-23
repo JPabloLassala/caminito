@@ -431,7 +431,6 @@ on_popup_hidden (GtkWidget *window G_GNUC_UNUSED, gpointer data)
 
   sd_pulse_watch_input_level (applet->pulse, NULL, NULL);
   sd_pulse_watch_app_levels (applet->pulse, NULL, NULL);
-  sd_popup_set_input_level (applet->content, 0);
 }
 
 static SdRect

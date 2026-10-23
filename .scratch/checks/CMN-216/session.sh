@@ -102,7 +102,7 @@ default sink hdmi; sleep 1
 echo "mpv after the default changed to HDMI:"; streams mpv
 default sink speaker
 
-pw-record -P '{ application.name = "OBS Studio" }' "$work/recording.wav" >/dev/null & recorder=$!
+pw-record -P '{ application.name = "OBS Studio" }' "$work/recording.wav" >/dev/null 2>&1 & recorder=$!
 sleep 1.5
 # OBS Studio's name, back from the footer's "Sound settings…" past its slider: mpv's row is
 # still open from the opening before.

@@ -501,7 +501,7 @@ sd_state_apps (const SdStream *streams, guint n_streams, SdSide side, const char
       const char *identity = sd_state_stream_identity (stream);
       gpointer position;
       SdApp *app;
-      SdAppStream member;
+      SdStreamVolume member;
 
       if (identity == NULL)
         continue;
@@ -515,15 +515,18 @@ sd_state_apps (const SdStream *streams, guint n_streams, SdSide side, const char
           added.side = side;
           position = GUINT_TO_POINTER (apps->len);
           g_array_append_val (apps, added);
-          g_ptr_array_add (members, g_array_new (FALSE, TRUE, sizeof (SdAppStream)));
+          g_ptr_array_add (members, g_array_new (FALSE, TRUE, sizeof (SdStreamVolume)));
           g_hash_table_insert (seen, (char *) identity, position);
         }
       app = &g_array_index (apps, SdApp, GPOINTER_TO_UINT (position));
-      member = (SdAppStream) { stream->index, g_strdup (stream->title), stream->volume };
+      member = (SdStreamVolume) { stream->index, g_strdup (stream->title), stream->volume };
       g_array_append_val (g_ptr_array_index (members, GPOINTER_TO_UINT (position)), member);
       app->volume = MAX (app->volume, stream->volume);
       if (app->device == NULL && g_strcmp0 (stream->device, default_device) != 0)
-        app->device = g_strdup (stream->device);
+        {
+          app->device = g_strdup (stream->device);
+          app->device_description = g_strdup (stream->device_description ?: stream->device);
+        }
     }
   for (guint i = 0; i < apps->len; i++)
     {
@@ -531,7 +534,7 @@ sd_state_apps (const SdStream *streams, guint n_streams, SdSide side, const char
       GArray *of_app = g_ptr_array_index (members, i);
 
       app->n_streams = of_app->len;
-      app->streams = (SdAppStream *) g_array_free (g_array_ref (of_app), FALSE);
+      app->streams = (SdStreamVolume *) g_array_free (g_array_ref (of_app), FALSE);
     }
   *n_apps = apps->len;
   if (apps->len == 0)
@@ -561,22 +564,7 @@ sd_app_clear (SdApp *app)
   g_clear_pointer (&app->name, g_free);
   g_clear_pointer (&app->icon, g_free);
   g_clear_pointer (&app->device, g_free);
-}
-
-void
-sd_app_copy (const SdApp *app, SdApp *copy)
-{
-  *copy = *app;
-  copy->id = g_strdup (app->id);
-  copy->name = g_strdup (app->name);
-  copy->icon = g_strdup (app->icon);
-  copy->device = g_strdup (app->device);
-  copy->streams = g_new0 (SdAppStream, app->n_streams);
-  for (guint i = 0; i < app->n_streams; i++)
-    {
-      copy->streams[i] = app->streams[i];
-      copy->streams[i].title = g_strdup (app->streams[i].title);
-    }
+  g_clear_pointer (&app->device_description, g_free);
 }
 
 gboolean
@@ -584,7 +572,8 @@ sd_app_equal (const SdApp *a, const SdApp *b)
 {
   if (g_strcmp0 (a->id, b->id) != 0 || g_strcmp0 (a->name, b->name) != 0
       || g_strcmp0 (a->icon, b->icon) != 0 || a->side != b->side
-      || g_strcmp0 (a->device, b->device) != 0 || a->volume != b->volume
+      || g_strcmp0 (a->device, b->device) != 0
+      || g_strcmp0 (a->device_description, b->device_description) != 0 || a->volume != b->volume
       || a->n_streams != b->n_streams)
     return FALSE;
   for (guint i = 0; i < a->n_streams; i++)

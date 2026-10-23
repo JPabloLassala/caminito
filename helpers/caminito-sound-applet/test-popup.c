@@ -885,10 +885,10 @@ test_sound_settings_closes_the_popup_and_calls_back (Fixture *fixture,
   g_assert_false (gtk_widget_get_visible (window_of (fixture)));
 }
 
-static SdAppStream mpv_streams[] = { { 40, "song.flac", PERCENT (80) },
+static SdStreamVolume mpv_streams[] = { { 40, "song.flac", PERCENT (80) },
                                      { 41, "talk.webm", PERCENT (40) } };
-static SdAppStream firefox_streams[] = { { 42, "A video", PERCENT (100) } };
-static SdAppStream obs_streams[] = { { 50, "Mic/Aux", PERCENT (90) } };
+static SdStreamVolume firefox_streams[] = { { 42, "A video", PERCENT (100) } };
+static SdStreamVolume obs_streams[] = { { 50, "Mic/Aux", PERCENT (90) } };
 
 /* devices(), with System sounds at 70%, mpv's two streams and Firefox playing, and OBS
    Studio recording. */
@@ -897,11 +897,12 @@ with_apps (SdApp *apps)
 {
   SdStatus status = devices ();
 
-  apps[0] = (SdApp) { "mpv", "mpv", "mpv", SD_OUTPUT, NULL, PERCENT (80), mpv_streams, 2 };
-  apps[1] = (SdApp) { "Firefox", "Firefox", "firefox", SD_OUTPUT, NULL, PERCENT (100),
-                      firefox_streams, 1 };
-  apps[2] = (SdApp) { "OBS Studio", "OBS Studio", NULL, SD_INPUT, NULL, PERCENT (90),
-                      obs_streams, 1 };
+  apps[0] = (SdApp) { .id = "mpv", .name = "mpv", .icon = "mpv", .side = SD_OUTPUT,
+                      .volume = PERCENT (80), .streams = mpv_streams, .n_streams = 2 };
+  apps[1] = (SdApp) { .id = "Firefox", .name = "Firefox", .icon = "firefox", .side = SD_OUTPUT,
+                      .volume = PERCENT (100), .streams = firefox_streams, .n_streams = 1 };
+  apps[2] = (SdApp) { .id = "OBS Studio", .name = "OBS Studio", .side = SD_INPUT,
+                      .volume = PERCENT (90), .streams = obs_streams, .n_streams = 1 };
   status.apps = apps;
   status.n_apps = 3;
   status.has_system_sounds = TRUE;
@@ -1034,6 +1035,7 @@ test_choosing_a_device_moves_the_app (Fixture *fixture, gconstpointer data G_GNU
   /* It shows what the server makes of it: moved, with its device as a badge. */
   g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-badge")));
   apps[0].device = "alsa";
+  apps[0].device_description = "Built-in Audio";
   sd_popup_update (fixture->popup, &status);
   badge = named (fixture, "app-output-mpv-badge");
   g_assert_true (widget_shows (fixture, badge));
@@ -1044,8 +1046,17 @@ test_choosing_a_device_moves_the_app (Fixture *fixture, gconstpointer data G_GNU
   gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-follow")));
   g_assert_cmpstr (fixture->calls->str, ==, "move output mpv alsa;move output mpv default;");
   apps[0].device = NULL;
+  apps[0].device_description = NULL;
   sd_popup_update (fixture->popup, &status);
   g_assert_false (widget_shows (fixture, badge));
+  /* Recording an output's monitor, which no list has: the server's description. */
+  apps[2].device = "alsa.monitor";
+  apps[2].device_description = "Monitor of Built-in Audio";
+  sd_popup_update (fixture->popup, &status);
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (named (fixture, "app-input-OBS Studio-badge"))),
+                   ==, "Monitor of Built-in Audio");
+  apps[2].device = NULL;
+  apps[2].device_description = NULL;
   /* The default changed: the item names the new one. */
   status.default_output = "easyeffects";
   sd_popup_update (fixture->popup, &status);
@@ -1065,8 +1076,8 @@ test_an_update_keeps_the_rows_and_their_state (Fixture *fixture, gconstpointer d
   /* A new application before it, and the volume changed: the same row, still open. */
   apps[2] = apps[1];
   apps[1] = apps[0];
-  apps[0] = (SdApp) { "Discord", "Discord", NULL, SD_OUTPUT, NULL, PERCENT (50),
-                      firefox_streams, 1 };
+  apps[0] = (SdApp) { .id = "Discord", .name = "Discord", .side = SD_OUTPUT,
+                      .volume = PERCENT (50), .streams = firefox_streams, .n_streams = 1 };
   apps[1].volume = PERCENT (30);
   sd_popup_update (fixture->popup, &status);
   g_assert_true (named (fixture, "app-output-mpv") == mpv);

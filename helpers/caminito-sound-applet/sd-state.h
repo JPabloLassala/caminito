@@ -116,13 +116,13 @@ typedef struct
   gboolean sideways;
 } SdPlace;
 
-/* One of a Sound application's streams, as its expanded row has it. */
+/* One of a Sound application's Streams, as its expanded row has it. */
 typedef struct
 {
   guint32     index;
   char       *title;
   pa_volume_t volume;
-} SdAppStream;
+} SdStreamVolume;
 
 /* A Sound application playing or recording now (CMN-216): its streams under one row. */
 typedef struct
@@ -134,13 +134,15 @@ typedef struct
   char        *icon;
   /* SD_OUTPUT where it plays, SD_INPUT where it records. */
   SdSide       side;
-  /* The sound device it's moved to, by its SdDevice's name: NULL while it follows the
+  /* The sound device it's moved to, by its SdDevice's name, and the server's description of
+     it, which may be an output's monitor that it records: NULL while it follows the
      default. */
-  char        *device;
+  char           *device;
+  char           *device_description;
   /* Its loudest stream's, which its slider shows. */
-  pa_volume_t  volume;
-  SdAppStream *streams;
-  guint        n_streams;
+  pa_volume_t     volume;
+  SdStreamVolume *streams;
+  guint           n_streams;
 } SdApp;
 
 typedef struct
@@ -192,8 +194,10 @@ typedef struct
   /* What it plays or records, as a tab's title. */
   const char *title;
   guint32     index;
-  /* The sound device it plays to or records from, by its SdDevice's name. */
+  /* The sound device it plays to or records from, by its SdDevice's name, and the server's
+     description of it. */
   const char *device;
+  const char *device_description;
   /* Its loudest channel's. */
   pa_volume_t volume;
 } SdStream;
@@ -245,8 +249,6 @@ pa_volume_t        sd_state_scaled_volume   (pa_volume_t stream,
 
 /* Frees what the application holds, not the application. */
 void            sd_app_clear (SdApp *app);
-/* A deep copy of app into copy, for sd_app_clear(). */
-void            sd_app_copy  (const SdApp *app, SdApp *copy);
 gboolean        sd_app_equal (const SdApp *a, const SdApp *b);
 /* The status's application on side by its SdApp's id, NULL where there's none. */
 const SdApp    *sd_status_app (const SdStatus *status,

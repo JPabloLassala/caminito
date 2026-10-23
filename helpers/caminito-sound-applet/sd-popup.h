@@ -59,7 +59,8 @@ void     sd_popup_set_volume_settings (SdPopup *popup,
    the footer scrolls past it. */
 void     sd_popup_set_room            (SdPopup *popup,
                                        int      room);
-/* The Default input's peak, from 0 to 1, which the meter shows from its next frame. */
+/* The Default input's peak, from 0 to 1, which the meter shows from its next frame, until
+   the popup is closed. */
 void     sd_popup_set_input_level     (SdPopup *popup,
                                        double   level);
 /* An application's peak, from 0 to 1, which its activity bar shows from its next frame,

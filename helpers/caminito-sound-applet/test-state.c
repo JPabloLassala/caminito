@@ -213,19 +213,27 @@ test_apps_share_a_row_per_program (void)
 {
   const SdStream streams[] = {
     /* Two copies of one program, whose loudest stream the row shows. */
-    { NULL, "mpv", "mpv", "mpv", "song.flac", 40, "speaker", PERCENT (50) },
-    { NULL, "Firefox", "firefox", "firefox", "A video", 41, "speaker", PERCENT (100) },
-    { NULL, "mpv", "mpv", "mpv", "talk.webm", 42, "speaker", PERCENT (80) },
+    { .name = "mpv", .binary = "mpv", .icon = "mpv", .title = "song.flac", .index = 40,
+      .device = "speaker", .volume = PERCENT (50) },
+    { .name = "Firefox", .binary = "firefox", .icon = "firefox", .title = "A video", .index = 41,
+      .device = "speaker", .volume = PERCENT (100) },
+    { .name = "mpv", .binary = "mpv", .icon = "mpv", .title = "talk.webm", .index = 42,
+      .device = "speaker", .volume = PERCENT (80) },
     /* Two Electron programs, apart by name and not by binary. */
-    { NULL, "Discord", "electron", NULL, "playStream", 43, "speaker", PERCENT (90) },
-    { NULL, "Slack", "electron", NULL, "playback", 44, "speaker", PERCENT (70) },
+    { .name = "Discord", .binary = "electron", .title = "playStream", .index = 43,
+      .device = "speaker", .volume = PERCENT (90) },
+    { .name = "Slack", .binary = "electron", .title = "playback", .index = 44,
+      .device = "speaker", .volume = PERCENT (70) },
     /* A Flatpak's, by its app ID whatever its streams call themselves. */
-    { "com.spotify.Client", "Spotify", "spotify", NULL, "Spotify", 45, "headset", PERCENT (60) },
-    { "com.spotify.Client", "spotify", "spotify", NULL, "ad", 46, "speaker", PERCENT (60) },
+    { .app_id = "com.spotify.Client", .name = "Spotify", .binary = "spotify", .title = "Spotify",
+      .index = 45, .device = "headset", .device_description = "WH-1000XM4",
+      .volume = PERCENT (60) },
+    { .app_id = "com.spotify.Client", .name = "spotify", .binary = "spotify", .title = "ad",
+      .index = 46, .device = "speaker", .volume = PERCENT (60) },
     /* Nameless, by its binary. */
-    { NULL, NULL, "aplay", NULL, NULL, 47, "speaker", PERCENT (100) },
+    { .binary = "aplay", .index = 47, .device = "speaker", .volume = PERCENT (100) },
     /* No identity at all: left out. */
-    { NULL, NULL, NULL, NULL, NULL, 48, "speaker", PERCENT (100) },
+    { .index = 48, .device = "speaker", .volume = PERCENT (100) },
   };
   guint n = 0;
   SdApp *apps = sd_state_apps (streams, G_N_ELEMENTS (streams), SD_OUTPUT, "speaker", &n);
@@ -247,6 +255,8 @@ test_apps_share_a_row_per_program (void)
   g_assert_cmpuint (apps[4].n_streams, ==, 2);
   /* A stream off the default: the application is moved. */
   g_assert_cmpstr (apps[4].device, ==, "headset");
+  g_assert_cmpstr (apps[4].device_description, ==, "WH-1000XM4");
+  g_assert_null (apps[0].device_description);
   g_assert_cmpstr (apps[5].id, ==, "aplay");
   g_assert_cmpstr (apps[5].name, ==, "aplay");
   for (guint i = 0; i < n; i++)
@@ -273,29 +283,29 @@ test_an_apps_streams_keep_their_ratio (void)
 }
 
 static void
-test_app_copy_is_equal_and_its_own (void)
+test_apps_equal_compares_streams_and_devices (void)
 {
-  SdAppStream streams[] = { { 40, "song.flac", PERCENT (50) }, { 42, "talk.webm", PERCENT (80) } };
-  SdApp app = { "mpv", "mpv", "mpv", SD_OUTPUT, "headset", PERCENT (80), streams, 2 };
-  SdApp copy;
+  SdStreamVolume streams[] = { { 40, "song.flac", PERCENT (50) }, { 42, "talk.webm", PERCENT (80) } };
+  SdStreamVolume louder[] = { { 40, "song.flac", PERCENT (50) }, { 42, "talk.webm", PERCENT (70) } };
+  SdApp app = { .id = "mpv", .name = "mpv", .icon = "mpv", .side = SD_OUTPUT, .device = "headset",
+                .device_description = "WH-1000XM4", .volume = PERCENT (80), .streams = streams,
+                .n_streams = 2 };
+  SdApp other = app;
   SdStatus a = { .running = TRUE, .apps = &app, .n_apps = 1 };
-  SdStatus b = a;
+  SdStatus b = { .running = TRUE, .apps = &other, .n_apps = 1 };
 
-  sd_app_copy (&app, &copy);
-  g_assert_true (sd_app_equal (&app, &copy));
-  g_assert_true (copy.streams != app.streams);
-  g_assert_cmpstr (copy.streams[1].title, ==, "talk.webm");
-  copy.streams[1].volume = PERCENT (70);
-  g_assert_false (sd_app_equal (&app, &copy));
-  b.apps = &copy;
+  g_assert_true (sd_app_equal (&app, &other));
+  g_assert_true (sd_status_equal (&a, &b));
+  other.streams = louder;
+  g_assert_false (sd_app_equal (&app, &other));
   g_assert_false (sd_status_equal (&a, &b));
+  other = app;
+  other.device_description = "Headset";
+  g_assert_false (sd_app_equal (&app, &other));
   g_assert_true (sd_status_app (&a, SD_OUTPUT, "mpv") == &app);
   g_assert_null (sd_status_app (&a, SD_INPUT, "mpv"));
-  sd_app_clear (&copy);
-  g_assert_null (copy.streams);
-  g_assert_cmpuint (copy.n_streams, ==, 0);
   /* System sounds' volume is the status's too. */
-  b = a;
+  other = app;
   b.has_system_sounds = TRUE;
   g_assert_false (sd_status_equal (&a, &b));
 }
@@ -641,7 +651,8 @@ main (int argc, char **argv)
                    test_recording_names_without_streams);
   g_test_add_func ("/state/apps-share-a-row-per-program", test_apps_share_a_row_per_program);
   g_test_add_func ("/state/an-apps-streams-keep-their-ratio", test_an_apps_streams_keep_their_ratio);
-  g_test_add_func ("/state/app-copy-is-equal-and-its-own", test_app_copy_is_equal_and_its_own);
+  g_test_add_func ("/state/apps-equal-compares-streams-and-devices",
+                   test_apps_equal_compares_streams_and_devices);
   g_test_add_func ("/state/status-equal-compares-cards", test_status_equal_compares_cards);
   g_test_add_func ("/state/card-copy-is-equal-and-its-own", test_card_copy_is_equal_and_its_own);
   return g_test_run ();

@@ -54,7 +54,8 @@ void            sd_pulse_watch_input_level (SdPulse     *pulse,
                                             SdPulseLevel level,
                                             gpointer     data);
 /* The Sound application's loudest stream to volume, its others in the same proportion
-   (CMN-216), by its SdApp's id. */
+   (CMN-216), by its SdApp's id. The proportion outlasts the application's silence: from 0,
+   its streams go back to their shares before it. */
 void            sd_pulse_set_app_volume    (SdPulse    *pulse,
                                             SdSide      side,
                                             const char *app,
@@ -66,7 +67,8 @@ void            sd_pulse_set_stream_volume (SdPulse    *pulse,
                                             pa_volume_t volume);
 /* Moves the application's streams to the device, by its SdDevice's name, without pinning
    it; NULL moves them to the Default device, which they then follow: the sound server
-   forgets a stream's target when it's moved to the default. */
+   forgets a stream's target when it's moved to the default. So choosing the Default device
+   itself is following it too. */
 void            sd_pulse_move_app          (SdPulse    *pulse,
                                             SdSide      side,
                                             const char *app,

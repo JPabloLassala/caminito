@@ -17,7 +17,6 @@ the move: the panel lives
 mpv after the default changed to HDMI:
   78 mpv hdmi 75% playing music
   79 mpv hdmi 38% playing music
-/tmp/caminito-cmn-216.8eA3lp/recording.wav
 the recording: the panel lives
 a canberra-gtk-play event sound after System sounds' slider went to 30%:
   291 canberra-gtk-play speaker 30% 30% playing event

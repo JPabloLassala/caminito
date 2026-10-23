@@ -792,6 +792,16 @@ test_sets_an_apps_streams_in_proportion (Fixture *fixture, gconstpointer data G_
   volumes = pactl ("list sink-inputs");
   g_assert_nonnull (strstr (volumes, "/  60% /"));
   g_assert_nonnull (strstr (volumes, "/  30% /"));
+  /* Down to 0 and up again: the streams keep their ratio, which their silence alone
+     wouldn't. */
+  {
+    Proportion silent = { fixture, 0, 0 };
+
+    sd_pulse_set_app_volume (fixture->pulse, SD_OUTPUT, "mpv", 0);
+    wait_until (mpv_at, &silent, "mpv's streams at 0%");
+    sd_pulse_set_app_volume (fixture->pulse, SD_OUTPUT, "mpv", PERCENT (60));
+    wait_until (mpv_at, &after, "mpv's streams at 60% and 30% again");
+  }
   /* A stream of its own, from the expanded row. */
   sd_pulse_set_stream_volume (fixture->pulse, SD_OUTPUT,
                               sd_status_app (status_of (fixture), SD_OUTPUT, "mpv")->streams[0].index,
@@ -939,6 +949,41 @@ event_at_30_percent (gpointer data)
   return FALSE;
 }
 
+static gboolean
+obs_records_the_speakers (gpointer data)
+{
+  const SdApp *obs = sd_status_app (status_of (data), SD_INPUT, "OBS Studio");
+
+  return obs != NULL && g_strcmp0 (obs->device, "speaker.monitor") == 0;
+}
+
+static void
+test_names_a_monitor_an_app_records (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autoptr (GError) error = NULL;
+  g_autofree char *file = g_build_filename (runtime_dir, "recording.wav", NULL);
+  g_autoptr (GSubprocess) recorder = NULL;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("mic", "media.class=Audio/Source/Virtual device.description=Microphone");
+  set_default ("sink", "speaker");
+  set_default ("source", "mic");
+  wait_until (has_input, fixture, "the microphone");
+  /* What the speakers play, as OBS Studio's desktop audio records it. */
+  recorder = g_subprocess_new (G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error, "pw-record", "--target",
+                               "speaker", "-P",
+                               "{ application.name = \"OBS Studio\" stream.capture.sink = true }",
+                               file, NULL);
+  g_assert_no_error (error);
+  wait_until (obs_records_the_speakers, fixture, "OBS Studio recording the speakers' monitor");
+  g_assert_cmpstr (sd_status_app (status_of (fixture), SD_INPUT, "OBS Studio")->device_description,
+                   ==, "Monitor of Speakers");
+  stop (&recorder);
+  server_stop (&server);
+}
+
 static void
 test_sets_the_system_sounds_volume (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
@@ -1082,6 +1127,7 @@ main (int argc, char **argv)
   ADD ("sets-an-apps-streams-in-proportion", test_sets_an_apps_streams_in_proportion);
   ADD ("moves-an-app-and-lets-it-follow-the-default-again",
        test_moves_an_app_and_lets_it_follow_the_default_again);
+  ADD ("names-a-monitor-an-app-records", test_names_a_monitor_an_app_records);
   ADD ("sets-the-system-sounds-volume", test_sets_the_system_sounds_volume);
   ADD ("hears-the-applications", test_hears_the_applications);
 #undef ADD
