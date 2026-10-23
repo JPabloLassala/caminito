@@ -3,9 +3,9 @@
  * NetworkManager's primary connection, wired or Wi-Fi by its signal, coming up, with no
  * internet behind it, or nothing up, airplane mode and NetworkManager not running, with a
  * lock over it while a VPN is up. It reads NetworkManager through libnm (nw-nm.c).
- * Left-click toggles the popup (nw-popup.c), whose tiles and card (CMN-196) act through
- * nw-nm.c too; its right-click menu has "Configure network connections…", which runs
- * nm-connection-editor, as the popup's own button does.
+ * Left-click toggles the popup (nw-popup.c), whose tiles and card (CMN-196) and Networks
+ * tab (CMN-200) act through nw-nm.c too; its right-click menu has "Configure network
+ * connections…", which runs nm-connection-editor, as the popup's own button does.
  */
 
 #include <mate-panel-applet.h>
@@ -77,15 +77,34 @@ add_halo (GtkWidget *lock)
 }
 
 static void
-configure (gpointer data G_GNUC_UNUSED)
+run_editor (const char *const *argv)
 {
   g_autoptr (GError) error = NULL;
-  const char *argv[] = { "nm-connection-editor", NULL };
 
   if (!g_spawn_async (NULL, (char **) argv, NULL,
                       G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL, NULL, NULL, NULL,
                       &error))
     g_warning ("can't open nm-connection-editor: %s", error->message);
+}
+
+static void
+configure (gpointer data G_GNUC_UNUSED)
+{
+  const char *const argv[] = { "nm-connection-editor", NULL };
+
+  run_editor (argv);
+}
+
+/* A new Wi-Fi connection in nm-connection-editor. It takes no SSID: --create has only
+   --type, whose ":detail" is a VPN's plugin, so the user types it in. */
+static void
+create_wifi (gpointer data G_GNUC_UNUSED)
+{
+  const char *const argv[] = {
+    "nm-connection-editor", "--create", "--type=802-11-wireless", NULL,
+  };
+
+  run_editor (argv);
 }
 
 static void
@@ -110,10 +129,20 @@ disconnect (gpointer data)
   nw_nm_disconnect (applet->nm);
 }
 
+static void
+join (const char *key, const char *password, gpointer data)
+{
+  Applet *applet = data;
+
+  nw_nm_join (applet->nm, key, password);
+}
+
 static const NwPopupActions popup_actions = {
   .set_tile = set_tile,
   .disconnect = disconnect,
   .configure = configure,
+  .join = join,
+  .create_wifi = create_wifi,
 };
 
 static void

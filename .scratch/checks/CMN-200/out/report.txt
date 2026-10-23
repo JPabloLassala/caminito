@@ -1,0 +1,6 @@
+list: the panel lives
+connecting: the panel lives
+wifi-off: the panel lives
+ran: nm-connection-editor --create --type=802-11-wireless
+ran: nm-connection-editor --create --type=802-11-wireless
+A connection to the bus can't be made

@@ -4,9 +4,23 @@
 
 #include "nw-state.h"
 
+#include <stdlib.h>
+#include <string.h>
+
+static void
+network_clear (NwNetwork *network)
+{
+  g_clear_pointer (&network->key, g_free);
+  g_clear_pointer (&network->name, g_free);
+}
+
 void
 nw_status_clear (NwStatus *status)
 {
+  for (guint i = 0; i < status->n_networks; i++)
+    network_clear (&status->networks[i]);
+  g_clear_pointer (&status->networks, g_free);
+  status->n_networks = 0;
   g_clear_pointer (&status->name, g_free);
   g_clear_pointer (&status->vpn, g_free);
   g_clear_pointer (&status->address, g_free);
@@ -14,10 +28,29 @@ nw_status_clear (NwStatus *status)
   g_clear_pointer (&status->last_vpn, g_free);
 }
 
+static gboolean
+network_equal (const NwNetwork *a, const NwNetwork *b)
+{
+  return g_strcmp0 (a->key, b->key) == 0 && g_strcmp0 (a->name, b->name) == 0
+         && a->kind == b->kind && a->security == b->security && a->strength == b->strength
+         && a->saved == b->saved && a->active == b->active && a->connecting == b->connecting;
+}
+
+static gboolean
+networks_equal (const NwStatus *a, const NwStatus *b)
+{
+  if (a->n_networks != b->n_networks)
+    return FALSE;
+  for (guint i = 0; i < a->n_networks; i++)
+    if (!network_equal (&a->networks[i], &b->networks[i]))
+      return FALSE;
+  return TRUE;
+}
+
 gboolean
 nw_status_equal (const NwStatus *a, const NwStatus *b)
 {
-  return a->running == b->running && a->airplane == b->airplane && a->phase == b->phase
+  return networks_equal (a, b) && a->running == b->running && a->airplane == b->airplane && a->phase == b->phase
          && a->kind == b->kind && a->strength == b->strength && a->limited == b->limited
          && g_strcmp0 (a->name, b->name) == 0 && g_strcmp0 (a->vpn, b->vpn) == 0
          && g_strcmp0 (a->address, b->address) == 0 && a->speed == b->speed
@@ -221,4 +254,100 @@ nw_state_card_detail (const NwStatus *status)
   else if (status->kind == NW_KIND_WIRED && status->speed > 0)
     g_string_append_printf (detail, " · %u Mb/s", status->speed);
   return g_string_free (detail, FALSE);
+}
+
+/* The group a network is listed in, in the list's order. */
+static int
+group_of (const NwNetwork *network)
+{
+  if (network->active || network->connecting)
+    return 0;
+  if (network->kind == NW_NETWORK_VPN)
+    return 1;
+  return network->saved ? 2 : 3;
+}
+
+static int
+compare_networks (gconstpointer a, gconstpointer b)
+{
+  const NwNetwork *first = a;
+  const NwNetwork *second = b;
+
+  if (group_of (first) != group_of (second))
+    return group_of (first) - group_of (second);
+  if (first->strength != second->strength)
+    return second->strength - first->strength;
+  return g_utf8_collate (first->name, second->name);
+}
+
+void
+nw_networks_sort (NwNetwork *networks, guint n_networks)
+{
+  qsort (networks, n_networks, sizeof *networks, compare_networks);
+}
+
+gboolean
+nw_network_matches (const NwNetwork *network, const char *search)
+{
+  g_autofree char *name = NULL;
+  g_autofree char *part = NULL;
+
+  if (search == NULL || *search == '\0')
+    return TRUE;
+  name = g_utf8_casefold (network->name, -1);
+  part = g_utf8_casefold (search, -1);
+  return strstr (name, part) != NULL;
+}
+
+const char *const *
+nw_network_icon_names (const NwNetwork *network)
+{
+  static const char *const wired[] = { "network-wired", "network-wired-symbolic", NULL };
+  static const char *const vpn[] = {
+    "network-vpn", "network-vpn-symbolic", "changes-prevent-symbolic", NULL,
+  };
+  NwStatus wifi = { .running = TRUE, .phase = NW_PHASE_CONNECTED, .kind = NW_KIND_WIFI,
+                    .strength = MAX (network->strength, 0) };
+
+  switch (network->kind)
+    {
+    case NW_NETWORK_WIRED:
+      return wired;
+    case NW_NETWORK_VPN:
+      return vpn;
+    case NW_NETWORK_WIFI:
+      break;
+    }
+  return nw_state_icon_names (&wifi);
+}
+
+NwBar
+nw_state_bar (const NwNetwork *network, char **text)
+{
+  *text = NULL;
+  if (network->connecting)
+    {
+      *text = g_strdup_printf ("Connecting to %s…", network->name);
+      return NW_BAR_CONNECTING;
+    }
+  if (network->active)
+    return NW_BAR_NONE;
+  if (network->kind == NW_NETWORK_VPN)
+    {
+      *text = g_strdup_printf ("Connect %s", network->name);
+      return NW_BAR_JOIN;
+    }
+  if (!network->saved && network->security == NW_SECURITY_ENTERPRISE)
+    {
+      *text = g_strdup_printf ("Join %s…", network->name);
+      return NW_BAR_EDITOR;
+    }
+  if (!network->saved
+      && (network->security == NW_SECURITY_PSK || network->security == NW_SECURITY_WEP))
+    {
+      *text = g_strdup ("Join");
+      return NW_BAR_PASSWORD;
+    }
+  *text = g_strdup_printf ("Join %s", network->name);
+  return NW_BAR_JOIN;
 }

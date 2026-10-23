@@ -1,6 +1,7 @@
 /*
- * The icon's names, the lock and the tooltip (CMN-193), and the popup's tiles and card
- * (CMN-196), from statuses built by hand.
+ * The icon's names, the lock and the tooltip (CMN-193), the popup's tiles and card
+ * (CMN-196), and the Networks tab's order, search and bar (CMN-200), from statuses built by
+ * hand.
  */
 
 #include "nw-state.h"
@@ -191,7 +192,24 @@ test_equal (void)
   status.wifi_enabled = FALSE;
   status.wifi_blocked = TRUE;
   g_assert_false (nw_status_equal (&other, &status));
+  status.wifi_blocked = FALSE;
+  other.n_networks = 1;
+  other.networks = g_new0 (NwNetwork, 1);
+  other.networks[0] = (NwNetwork) { .key = g_strdup ("ssid:Cafe"), .name = g_strdup ("Cafe"),
+                                    .kind = NW_NETWORK_WIFI, .strength = 40 };
+  g_assert_false (nw_status_equal (&other, &status));
+  status.n_networks = 1;
+  status.networks = &(NwNetwork) { .key = "ssid:Cafe", .name = "Cafe", .kind = NW_NETWORK_WIFI,
+                                   .strength = 40 };
+  g_assert_true (nw_status_equal (&other, &status));
+  status.networks[0].strength = 41;
+  g_assert_false (nw_status_equal (&other, &status));
+  status.networks[0].strength = 40;
+  status.networks[0].connecting = TRUE;
+  g_assert_false (nw_status_equal (&other, &status));
   nw_status_clear (&other);
+  g_assert_null (other.networks);
+  g_assert_cmpuint (other.n_networks, ==, 0);
   g_assert_null (other.name);
   g_assert_null (other.wifi_network);
   g_assert_null (other.address);
@@ -319,6 +337,106 @@ test_card_without_a_connection (void)
   g_assert_null (nw_state_card_detail (&status));
 }
 
+static NwNetwork
+network (NwNetworkKind kind, const char *name, int strength)
+{
+  return (NwNetwork) { .key = (char *) name, .name = (char *) name, .kind = kind,
+                       .strength = strength };
+}
+
+static void
+test_order (void)
+{
+  NwNetwork networks[] = {
+    network (NW_NETWORK_WIFI, "Cafe", 40),
+    network (NW_NETWORK_VPN, "Work", -1),
+    network (NW_NETWORK_WIFI, "Airport", 40),
+    network (NW_NETWORK_WIFI, "Library", 80),
+    network (NW_NETWORK_WIFI, "Neighbour", 90),
+    network (NW_NETWORK_WIRED, "Dock", -1),
+    network (NW_NETWORK_VPN, "Office VPN", -1),
+    network (NW_NETWORK_WIFI, "Phone", 30),
+    network (NW_NETWORK_VPN, "Home VPN", -1),
+  };
+  g_autoptr (GString) order = g_string_new (NULL);
+
+  networks[2].saved = networks[3].saved = networks[5].saved = TRUE;
+  networks[1].saved = networks[6].saved = networks[8].saved = TRUE;
+  networks[6].active = TRUE;
+  /* Coming up is with the active ones. */
+  networks[7].connecting = TRUE;
+  nw_networks_sort (networks, G_N_ELEMENTS (networks));
+  for (guint i = 0; i < G_N_ELEMENTS (networks); i++)
+    g_string_append_printf (order, "%s%s", i == 0 ? "" : ", ", networks[i].name);
+  /* Active, then VPNs, then saved, then available, each by signal then name. */
+  g_assert_cmpstr (order->str, ==, "Phone, Office VPN, Home VPN, Work, Library, Airport, Dock,"
+                                   " Neighbour, Cafe");
+}
+
+static void
+test_search (void)
+{
+  NwNetwork cafe = network (NW_NETWORK_WIFI, "Café Central", 40);
+
+  g_assert_true (nw_network_matches (&cafe, ""));
+  g_assert_true (nw_network_matches (&cafe, NULL));
+  g_assert_true (nw_network_matches (&cafe, "central"));
+  g_assert_true (nw_network_matches (&cafe, "CAFÉ"));
+  g_assert_true (nw_network_matches (&cafe, "é c"));
+  g_assert_false (nw_network_matches (&cafe, "home"));
+}
+
+static void
+assert_bar (const NwNetwork *network, NwBar bar, const char *text)
+{
+  g_autofree char *shown = NULL;
+
+  g_assert_cmpint (nw_state_bar (network, &shown), ==, bar);
+  g_assert_cmpstr (shown, ==, text);
+}
+
+static void
+test_bar (void)
+{
+  NwNetwork wifi = network (NW_NETWORK_WIFI, "Cafe", 40);
+  NwNetwork vpn = network (NW_NETWORK_VPN, "Work", -1);
+  NwNetwork wired = network (NW_NETWORK_WIRED, "Dock", -1);
+
+  assert_bar (&wifi, NW_BAR_JOIN, "Join Cafe");
+  wifi.security = NW_SECURITY_PSK;
+  assert_bar (&wifi, NW_BAR_PASSWORD, "Join");
+  wifi.security = NW_SECURITY_WEP;
+  assert_bar (&wifi, NW_BAR_PASSWORD, "Join");
+  /* nm-connection-editor's, in a window of its own. */
+  wifi.security = NW_SECURITY_ENTERPRISE;
+  assert_bar (&wifi, NW_BAR_EDITOR, "Join Cafe…");
+  /* Saved, its secret is NetworkManager's or the agent's. */
+  wifi.saved = TRUE;
+  assert_bar (&wifi, NW_BAR_JOIN, "Join Cafe");
+  wifi.security = NW_SECURITY_PSK;
+  assert_bar (&wifi, NW_BAR_JOIN, "Join Cafe");
+  wifi.connecting = TRUE;
+  assert_bar (&wifi, NW_BAR_CONNECTING, "Connecting to Cafe…");
+  wifi.connecting = FALSE;
+  wifi.active = TRUE;
+  assert_bar (&wifi, NW_BAR_NONE, NULL);
+  vpn.saved = wired.saved = TRUE;
+  assert_bar (&vpn, NW_BAR_JOIN, "Connect Work");
+  assert_bar (&wired, NW_BAR_JOIN, "Join Dock");
+}
+
+static void
+test_network_icons (void)
+{
+  NwNetwork wifi = network (NW_NETWORK_WIFI, "Cafe", 40);
+  NwNetwork vpn = network (NW_NETWORK_VPN, "Work", -1);
+  NwNetwork wired = network (NW_NETWORK_WIRED, "Dock", -1);
+
+  g_assert_cmpstr (nw_network_icon_names (&wifi)[0], ==, "network-wireless-signal-ok");
+  g_assert_cmpstr (nw_network_icon_names (&vpn)[0], ==, "network-vpn");
+  g_assert_cmpstr (nw_network_icon_names (&wired)[0], ==, "network-wired");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -339,5 +457,9 @@ main (int argc, char **argv)
   g_test_add_func ("/state/the-airplane-mode-tile-is-on-while-every-radio-is-off", test_airplane_tile);
   g_test_add_func ("/state/the-card-shows-the-connection-up", test_card);
   g_test_add_func ("/state/the-card-without-a-connection-up", test_card_without_a_connection);
+  g_test_add_func ("/state/networks-are-active-then-vpns-then-saved-then-available", test_order);
+  g_test_add_func ("/state/the-search-finds-part-of-a-name-in-any-case", test_search);
+  g_test_add_func ("/state/the-bar-joins-the-network-selected", test_bar);
+  g_test_add_func ("/state/a-network-has-its-kind-s-icon", test_network_icons);
   return g_test_run ();
 }

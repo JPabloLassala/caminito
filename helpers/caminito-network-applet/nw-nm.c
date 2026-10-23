@@ -3,13 +3,15 @@
  *
  * NMClient follows NetworkManager's name and its objects. The status is built again from it
  * on any change to the client, to an active connection, to the device under the connection,
- * to its access point or its IPv4 configuration, or to the wired device; those objects are
- * watched again each time, since which ones matter changes with the status.
+ * to its access point or its IPv4 configuration, to the wired devices, or to the Wi-Fi
+ * devices and their access points; those objects are watched again each time, since which
+ * ones matter changes with the status.
  */
 
 #include "nw-nm.h"
 
 #include <NetworkManager.h>
+#include <string.h>
 
 struct _NwNm
 {
@@ -25,7 +27,17 @@ struct _NwNm
   gboolean      radios_saved;
   gboolean      saved_wireless;
   gboolean      saved_wwan;
+  /* The key of the network joined last, until NetworkManager answers. */
+  char         *joining;
 };
+
+#define SSID_KEY "ssid:"
+#define UUID_KEY "uuid:"
+
+/* caminito-network's notifier on the session bus (ADR 0044). */
+#define NOTIFIER_NAME  "org.mate.Caminito.Network"
+#define NOTIFIER_PATH  "/org/mate/Caminito/Network/Notifier"
+#define NOTIFIER_IFACE "org.mate.Caminito.Network.Notifier"
 
 static gboolean
 is_vpn (NMActiveConnection *active)
@@ -143,9 +155,17 @@ most_recent (const GPtrArray *connections, gboolean (*matches) (NMConnection *))
   return found;
 }
 
-/* The wired device the Wired tile is for: the first ethernet device NetworkManager
-   manages, one that's up before one with its cable in before the rest. Not a veth, which a
-   container's network is. NULL with none. */
+/* An ethernet device the Wired tile or the Networks tab is for: managed, and not a veth,
+   which a container's network is. */
+static gboolean
+is_wired_device (NMDevice *device)
+{
+  return NM_IS_DEVICE_ETHERNET (device) && !NM_IS_DEVICE_VETH (device)
+         && nm_device_get_state (device) > NM_DEVICE_STATE_UNMANAGED;
+}
+
+/* The wired device the Wired tile is for: the first one, one that's up before one with its
+   cable in before the rest. NULL with none. */
 static NMDevice *
 wired_device (NMClient *client)
 {
@@ -157,8 +177,7 @@ wired_device (NMClient *client)
       NMDevice *device = g_ptr_array_index (devices, i);
       NMDeviceState state = nm_device_get_state (device);
 
-      if (!NM_IS_DEVICE_ETHERNET (device) || NM_IS_DEVICE_VETH (device)
-          || state <= NM_DEVICE_STATE_UNMANAGED)
+      if (!is_wired_device (device))
         continue;
       if (state == NM_DEVICE_STATE_ACTIVATED)
         return device;
@@ -216,6 +235,8 @@ static void on_notify (GObject *object, GParamSpec *pspec, gpointer data);
 static void
 watch (NwNm *nm, gpointer object)
 {
+  if (g_ptr_array_find (nm->watched, object, NULL))
+    return;
   g_signal_connect (object, "notify", G_CALLBACK (on_notify), nm);
   g_ptr_array_add (nm->watched, g_object_ref (object));
 }
@@ -226,6 +247,286 @@ unwatch_all (NwNm *nm)
   for (guint i = 0; i < nm->watched->len; i++)
     g_signal_handlers_disconnect_by_data (g_ptr_array_index (nm->watched, i), nm);
   g_ptr_array_set_size (nm->watched, 0);
+}
+
+static gboolean
+is_wifi_connection (NMConnection *connection)
+{
+  return nm_connection_is_type (connection, NM_SETTING_WIRELESS_SETTING_NAME);
+}
+
+/* An SSID as the list names it, NULL for a hidden network's. */
+static char *
+ssid_text (GBytes *ssid)
+{
+  if (ssid == NULL || g_bytes_get_size (ssid) == 0)
+    return NULL;
+  return nm_utils_ssid_to_utf8 (g_bytes_get_data (ssid, NULL), g_bytes_get_size (ssid));
+}
+
+static char *
+ssid_of_connection (NMConnection *connection)
+{
+  NMSettingWireless *wireless = nm_connection_get_setting_wireless (connection);
+
+  return wireless != NULL ? ssid_text (nm_setting_wireless_get_ssid (wireless)) : NULL;
+}
+
+/* A connection's NwNetwork key: a Wi-Fi network's by its SSID, the rest by their UUID. */
+static char *
+key_of (NMConnection *connection)
+{
+  g_autofree char *ssid = ssid_of_connection (connection);
+
+  if (ssid != NULL)
+    return g_strconcat (SSID_KEY, ssid, NULL);
+  return g_strconcat (UUID_KEY, nm_connection_get_uuid (connection), NULL);
+}
+
+static NwNetworkKind
+kind_of (NMConnection *connection)
+{
+  if (is_vpn_connection (connection))
+    return NW_NETWORK_VPN;
+  return is_wifi_connection (connection) ? NW_NETWORK_WIFI : NW_NETWORK_WIRED;
+}
+
+/* The Wi-Fi network's saved connection, the one activated most recently; NULL with none. */
+static NMRemoteConnection *
+saved_wifi (NMClient *client, const char *ssid)
+{
+  const GPtrArray *connections = nm_client_get_connections (client);
+  NMRemoteConnection *found = NULL;
+
+  for (guint i = 0; i < connections->len; i++)
+    {
+      NMConnection *connection = g_ptr_array_index (connections, i);
+      g_autofree char *its = NULL;
+
+      if (!is_wifi_connection (connection))
+        continue;
+      its = ssid_of_connection (connection);
+      if (g_strcmp0 (its, ssid) == 0
+          && (found == NULL || timestamp_of (connection) > timestamp_of (NM_CONNECTION (found))))
+        found = NM_REMOTE_CONNECTION (connection);
+    }
+  return found;
+}
+
+static NwSecurity
+security_of (NMAccessPoint *ap)
+{
+  NM80211ApSecurityFlags wpa = nm_access_point_get_wpa_flags (ap)
+                               | nm_access_point_get_rsn_flags (ap);
+
+  if (wpa & (NM_802_11_AP_SEC_KEY_MGMT_802_1X | NM_802_11_AP_SEC_KEY_MGMT_EAP_SUITE_B_192))
+    return NW_SECURITY_ENTERPRISE;
+  if (wpa & (NM_802_11_AP_SEC_KEY_MGMT_PSK | NM_802_11_AP_SEC_KEY_MGMT_SAE))
+    return NW_SECURITY_PSK;
+  if (wpa & NM_802_11_AP_SEC_KEY_MGMT_OWE)
+    return NW_SECURITY_NONE;
+  if (nm_access_point_get_flags (ap) & NM_802_11_AP_FLAGS_PRIVACY)
+    return wpa == NM_802_11_AP_SEC_NONE ? NW_SECURITY_WEP : NW_SECURITY_PSK;
+  return NW_SECURITY_NONE;
+}
+
+/* The Wi-Fi network's strongest access point, and in device the device that sees it; NULL
+   with none in range. */
+static NMAccessPoint *
+strongest_ap (NMClient *client, const char *ssid, NMDevice **device)
+{
+  const GPtrArray *devices = nm_client_get_devices (client);
+  NMAccessPoint *found = NULL;
+
+  for (guint i = 0; i < devices->len; i++)
+    {
+      const GPtrArray *aps;
+
+      if (!NM_IS_DEVICE_WIFI (g_ptr_array_index (devices, i)))
+        continue;
+      aps = nm_device_wifi_get_access_points (g_ptr_array_index (devices, i));
+      for (guint j = 0; j < aps->len; j++)
+        {
+          NMAccessPoint *ap = g_ptr_array_index (aps, j);
+          g_autofree char *its = ssid_text (nm_access_point_get_ssid (ap));
+
+          if (g_strcmp0 (its, ssid) == 0
+              && (found == NULL
+                  || nm_access_point_get_strength (ap) > nm_access_point_get_strength (found)))
+            {
+              found = ap;
+              *device = g_ptr_array_index (devices, i);
+            }
+        }
+    }
+  return found;
+}
+
+/* The first device the connection can come up on, NULL with none. */
+static NMDevice *
+device_for (NMClient *client, NMRemoteConnection *connection)
+{
+  const GPtrArray *devices = nm_client_get_devices (client);
+
+  for (guint i = 0; i < devices->len; i++)
+    {
+      NMDevice *device = g_ptr_array_index (devices, i);
+
+      if (g_ptr_array_find ((GPtrArray *) nm_device_get_available_connections (device),
+                            connection, NULL))
+        return device;
+    }
+  return NULL;
+}
+
+/* The Networks tab's rows as they're gathered: an index into the array, plus one, by key. */
+#define EXCLUDED GUINT_TO_POINTER (G_MAXUINT)
+
+/* The row with key, added with name if there's none yet; NULL where the key is the card's,
+   which the list leaves out. The row is valid until the next one is added. */
+static NwNetwork *
+row_for (GArray *networks, GHashTable *rows, const char *key, const char *name,
+         NwNetworkKind kind)
+{
+  gpointer found = g_hash_table_lookup (rows, key);
+  NwNetwork network = { .key = g_strdup (key), .name = g_strdup (name), .kind = kind,
+                        .strength = -1 };
+
+  if (found == EXCLUDED)
+    return NULL;
+  if (found != NULL)
+    {
+      g_free (network.key);
+      g_free (network.name);
+      return &g_array_index (networks, NwNetwork, GPOINTER_TO_UINT (found) - 1);
+    }
+  g_array_append_val (networks, network);
+  g_hash_table_insert (rows, g_strdup (key), GUINT_TO_POINTER (networks->len));
+  return &g_array_index (networks, NwNetwork, networks->len - 1);
+}
+
+/* The Networks tab's rows: the connections up or coming up, the VPNs, the wired devices'
+   connections with their cable in, and the Wi-Fi networks in range while Wi-Fi is on, one
+   row an SSID; all but card, the connection the card shows. */
+static void
+read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
+{
+  NMClient *client = nm->client;
+  g_autoptr (GArray) networks = g_array_new (FALSE, FALSE, sizeof (NwNetwork));
+  g_autoptr (GHashTable) rows = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  const GPtrArray *actives = nm_client_get_active_connections (client);
+  const GPtrArray *connections = nm_client_get_connections (client);
+  const GPtrArray *devices = nm_client_get_devices (client);
+  gboolean wifi_on = status->wifi_enabled && !status->wifi_blocked;
+  gpointer joining;
+
+  if (card != NULL && nm_active_connection_get_connection (card) != NULL)
+    g_hash_table_insert (rows, key_of (NM_CONNECTION (nm_active_connection_get_connection (card))),
+                         EXCLUDED);
+  for (guint i = 0; i < actives->len; i++)
+    {
+      NMActiveConnection *active = g_ptr_array_index (actives, i);
+      NMActiveConnectionState state = nm_active_connection_get_state (active);
+      NMConnection *connection = (NMConnection *) nm_active_connection_get_connection (active);
+      g_autofree char *key = NULL;
+      NwNetwork *row;
+
+      if (connection == NULL || !(is_physical (active) || is_vpn (active))
+          || (state != NM_ACTIVE_CONNECTION_STATE_ACTIVATING
+              && state != NM_ACTIVE_CONNECTION_STATE_ACTIVATED))
+        continue;
+      key = key_of (connection);
+      row = row_for (networks, rows, key, nm_connection_get_id (connection),
+                     kind_of (connection));
+      if (row == NULL)
+        continue;
+      row->saved = TRUE;
+      row->active = state == NM_ACTIVE_CONNECTION_STATE_ACTIVATED;
+      row->connecting = !row->active;
+    }
+
+  for (guint i = 0; i < connections->len; i++)
+    {
+      NMConnection *connection = g_ptr_array_index (connections, i);
+      g_autofree char *key = NULL;
+      NwNetwork *row;
+
+      if (!is_vpn_connection (connection))
+        continue;
+      key = key_of (connection);
+      row = row_for (networks, rows, key, nm_connection_get_id (connection), NW_NETWORK_VPN);
+      if (row != NULL)
+        row->saved = TRUE;
+    }
+
+  for (guint i = 0; i < devices->len; i++)
+    {
+      NMDevice *device = g_ptr_array_index (devices, i);
+      const GPtrArray *available;
+
+      if (!is_wired_device (device))
+        continue;
+      /* For the cable going in or out. */
+      watch (nm, device);
+      if (nm_device_get_state (device) <= NM_DEVICE_STATE_UNAVAILABLE)
+        continue;
+      available = nm_device_get_available_connections (device);
+      for (guint j = 0; j < available->len; j++)
+        {
+          NMConnection *connection = g_ptr_array_index (available, j);
+          g_autofree char *key = key_of (connection);
+          NwNetwork *row = row_for (networks, rows, key, nm_connection_get_id (connection),
+                                    NW_NETWORK_WIRED);
+
+          if (row != NULL)
+            row->saved = TRUE;
+        }
+    }
+
+  for (guint i = 0; wifi_on && i < devices->len; i++)
+    {
+      NMDevice *device = g_ptr_array_index (devices, i);
+      const GPtrArray *aps;
+
+      if (!NM_IS_DEVICE_WIFI (device))
+        continue;
+      /* For access points coming and going. */
+      watch (nm, device);
+      aps = nm_device_wifi_get_access_points (NM_DEVICE_WIFI (device));
+      for (guint j = 0; j < aps->len; j++)
+        {
+          NMAccessPoint *ap = g_ptr_array_index (aps, j);
+          g_autofree char *ssid = ssid_text (nm_access_point_get_ssid (ap));
+          g_autofree char *key = NULL;
+          NwNetwork *row;
+
+          if (ssid == NULL)
+            continue;
+          watch (nm, ap);
+          key = g_strconcat (SSID_KEY, ssid, NULL);
+          if (!g_hash_table_contains (rows, key))
+            {
+              NMRemoteConnection *saved = saved_wifi (client, ssid);
+
+              row = row_for (networks, rows, key,
+                             saved != NULL ? nm_connection_get_id (NM_CONNECTION (saved)) : ssid,
+                             NW_NETWORK_WIFI);
+              row->saved = saved != NULL;
+            }
+          row = row_for (networks, rows, key, ssid, NW_NETWORK_WIFI);
+          if (row == NULL || nm_access_point_get_strength (ap) <= row->strength)
+            continue;
+          row->strength = nm_access_point_get_strength (ap);
+          row->security = security_of (ap);
+        }
+    }
+
+  joining = nm->joining != NULL ? g_hash_table_lookup (rows, nm->joining) : NULL;
+  if (joining != NULL && joining != EXCLUDED)
+    g_array_index (networks, NwNetwork, GPOINTER_TO_UINT (joining) - 1).connecting = TRUE;
+  nw_networks_sort ((NwNetwork *) (gpointer) networks->data, networks->len);
+  status->n_networks = networks->len;
+  status->networks = (NwNetwork *) (gpointer) g_array_free (g_steal_pointer (&networks), FALSE);
 }
 
 /* Fills status from the client, and watches what it was read from. */
@@ -258,8 +559,6 @@ read_status (NwNm *nm, NwStatus *status)
     status->wifi_network = g_strdup (nm_active_connection_get_id (wifi));
   wired = wired_device (client);
   status->wired = wired_of (wired);
-  if (wired != NULL)
-    watch (nm, wired);
   last_vpn = vpn_for_tile (client);
   if (last_vpn != NULL)
     status->last_vpn = g_strdup (nm_connection_get_id (last_vpn));
@@ -299,8 +598,7 @@ read_status (NwNm *nm, NwStatus *status)
         {
           NMDeviceEthernet *ethernet = g_ptr_array_index (devices, 0);
 
-          if (ethernet != (gpointer) wired)
-            watch (nm, ethernet);
+          watch (nm, ethernet);
           status->speed = nm_device_ethernet_get_speed (ethernet);
         }
       status->kind = is_wifi (base) || device != NULL ? NW_KIND_WIFI : NW_KIND_WIRED;
@@ -320,6 +618,8 @@ read_status (NwNm *nm, NwStatus *status)
   vpn = find_active (client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_vpn);
   if (vpn != NULL)
     status->vpn = g_strdup (nm_active_connection_get_id (vpn));
+  /* While it's only coming up, the card has it and so does the list, whose bar says so. */
+  read_networks (nm, status, status->phase == NW_PHASE_CONNECTED ? base : NULL);
 }
 
 static void
@@ -350,6 +650,13 @@ on_notify (GObject *object G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpoin
 }
 
 static void
+on_connections_changed (NMClient *client G_GNUC_UNUSED, NMRemoteConnection *connection G_GNUC_UNUSED,
+                        gpointer data)
+{
+  refresh (data);
+}
+
+static void
 on_client_ready (GObject *source G_GNUC_UNUSED, GAsyncResult *result, gpointer data)
 {
   g_autoptr (GError) error = NULL;
@@ -367,6 +674,9 @@ on_client_ready (GObject *source G_GNUC_UNUSED, GAsyncResult *result, gpointer d
   nm->client = client;
   /* NMClient follows NetworkManager's name: nm-running and the rest come as notify. */
   g_signal_connect (client, "notify", G_CALLBACK (on_notify), nm);
+  /* A VPN or a Wi-Fi network saved or forgotten. */
+  g_signal_connect (client, "connection-added", G_CALLBACK (on_connections_changed), nm);
+  g_signal_connect (client, "connection-removed", G_CALLBACK (on_connections_changed), nm);
   refresh (nm);
 }
 
@@ -436,6 +746,30 @@ on_disconnect_done (GObject *source, GAsyncResult *result, gpointer what)
   warn_unless_cancelled (error, what);
 }
 
+/* caminito-network's word that the user is activating the connection uuid, so that it
+   doesn't announce it (ADR 0044). Outside a Session nobody answers, which is harmless. */
+static void
+on_session_bus (GObject *source G_GNUC_UNUSED, GAsyncResult *result, gpointer data)
+{
+  g_autofree char *uuid = data;
+  g_autoptr (GDBusConnection) bus = g_bus_get_finish (result, NULL);
+
+  if (bus == NULL)
+    return;
+  /* No reply wanted: caminito-network takes the word before or after NetworkManager's. */
+  g_dbus_connection_call (bus, NOTIFIER_NAME, NOTIFIER_PATH, NOTIFIER_IFACE, "UserActivating",
+                          g_variant_new ("(s)", uuid), NULL, G_DBUS_CALL_FLAGS_NO_AUTO_START,
+                          -1, NULL, NULL, NULL);
+}
+
+static void
+user_activating (NMConnection *connection)
+{
+  if (connection != NULL)
+    g_bus_get (G_BUS_TYPE_SESSION, NULL, on_session_bus,
+               g_strdup (nm_connection_get_uuid (connection)));
+}
+
 /* WirelessEnabled or WwanEnabled, which nm_client_wireless_set_enabled() would set without
    saying whether NetworkManager refused. */
 static void
@@ -475,6 +809,7 @@ set_wired (NwNm *nm, gboolean on)
       NMRemoteConnection *connection = most_recent (
         nm_device_get_available_connections (device), NULL);
 
+      user_activating (NM_CONNECTION (connection));
       nm_client_activate_connection_async (nm->client, NM_CONNECTION (connection), device,
                                            NULL, nm->cancellable, on_activate_done,
                                            "connect the wired device");
@@ -498,6 +833,7 @@ set_vpn (NwNm *nm, gboolean on)
       return;
     }
   vpn = vpn_for_tile (nm->client);
+  user_activating (vpn);
   if (vpn != NULL)
     nm_client_activate_connection_async (nm->client, vpn, NULL, NULL, nm->cancellable,
                                          on_activate_done, "turn the VPN on");
@@ -569,6 +905,186 @@ nw_nm_disconnect (NwNm *nm)
     deactivate (nm, base, "disconnect");
 }
 
+/* A join waiting for NetworkManager's answer. */
+typedef struct
+{
+  NwNm *nm;
+  char *key;
+} Join;
+
+static void
+join_free (Join *join)
+{
+  g_free (join->key);
+  g_free (join);
+}
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (Join, join_free)
+
+static void
+joined (Join *join, const GError *error)
+{
+  NwNm *nm = join->nm;
+
+  /* The applet gone, nm with it. */
+  if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+    return;
+  if (error != NULL)
+    g_warning ("can't join %s: %s", join->key, error->message);
+  /* From now on the active connection says whether it's coming up. */
+  if (g_strcmp0 (nm->joining, join->key) == 0)
+    {
+      g_clear_pointer (&nm->joining, g_free);
+      refresh (nm);
+    }
+}
+
+static void
+on_join_activated (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (Join) join = data;
+  g_autoptr (GError) error = NULL;
+  g_autoptr (NMActiveConnection) active = nm_client_activate_connection_finish (
+    NM_CLIENT (source), result, &error);
+
+  joined (join, error);
+}
+
+static void
+on_join_added (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (Join) join = data;
+  g_autoptr (GError) error = NULL;
+  g_autoptr (NMActiveConnection) active = nm_client_add_and_activate_connection_finish (
+    NM_CLIENT (source), result, &error);
+
+  joined (join, error);
+}
+
+/* A new Wi-Fi network's connection, for every user, as nmcli device wifi connect makes it:
+   NetworkManager keeps the password, and fills in the rest from the access point. */
+static NMConnection *
+new_wifi (NMAccessPoint *ap, const char *ssid, const char *password)
+{
+  NMConnection *connection = nm_simple_connection_new ();
+  NMSetting *setting = nm_setting_connection_new ();
+  g_autofree char *uuid = nm_utils_uuid_generate ();
+  NMSettingWirelessSecurity *security;
+  NM80211ApSecurityFlags wpa = nm_access_point_get_wpa_flags (ap)
+                               | nm_access_point_get_rsn_flags (ap);
+
+  /* Its UUID now, for caminito-network to know it by. */
+  g_object_set (setting, NM_SETTING_CONNECTION_ID, ssid, NM_SETTING_CONNECTION_UUID, uuid,
+                NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME, NULL);
+  nm_connection_add_setting (connection, setting);
+  setting = nm_setting_wireless_new ();
+  g_object_set (setting, NM_SETTING_WIRELESS_SSID, nm_access_point_get_ssid (ap),
+                NM_SETTING_WIRELESS_MODE, NM_SETTING_WIRELESS_MODE_INFRA, NULL);
+  nm_connection_add_setting (connection, setting);
+  switch (security_of (ap))
+    {
+    case NW_SECURITY_PSK:
+      security = NM_SETTING_WIRELESS_SECURITY (nm_setting_wireless_security_new ());
+      /* WPA3 alone is SAE; an access point with both takes either. */
+      g_object_set (security, NM_SETTING_WIRELESS_SECURITY_KEY_MGMT,
+                    wpa & NM_802_11_AP_SEC_KEY_MGMT_PSK ? "wpa-psk" : "sae",
+                    NM_SETTING_WIRELESS_SECURITY_PSK, password,
+                    NM_SETTING_WIRELESS_SECURITY_PSK_FLAGS, NM_SETTING_SECRET_FLAG_NONE, NULL);
+      nm_connection_add_setting (connection, NM_SETTING (security));
+      break;
+    case NW_SECURITY_WEP:
+      security = NM_SETTING_WIRELESS_SECURITY (nm_setting_wireless_security_new ());
+      /* A hex or ASCII key as it is; anything else is a passphrase. */
+      g_object_set (security, NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
+                    NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE,
+                    nm_utils_wep_key_valid (password, NM_WEP_KEY_TYPE_KEY)
+                      ? NM_WEP_KEY_TYPE_KEY : NM_WEP_KEY_TYPE_PASSPHRASE,
+                    NM_SETTING_WIRELESS_SECURITY_WEP_KEY_FLAGS, NM_SETTING_SECRET_FLAG_NONE,
+                    NULL);
+      nm_setting_wireless_security_set_wep_key (security, 0, password);
+      nm_connection_add_setting (connection, NM_SETTING (security));
+      break;
+    case NW_SECURITY_NONE:
+    case NW_SECURITY_ENTERPRISE:
+      /* OWE's NetworkManager fills in. An Enterprise network is nm-connection-editor's. */
+      break;
+    }
+  return connection;
+}
+
+/* A Wi-Fi network, on the device that sees its strongest access point: its saved
+   connection, or else a new one. FALSE with none in range. */
+static gboolean
+join_wifi (NwNm *nm, const char *ssid, const char *password, Join *join)
+{
+  NMDevice *device = NULL;
+  NMAccessPoint *ap = strongest_ap (nm->client, ssid, &device);
+  NMRemoteConnection *saved;
+  g_autoptr (NMConnection) connection = NULL;
+
+  if (ap == NULL)
+    return FALSE;
+  saved = saved_wifi (nm->client, ssid);
+  if (saved != NULL)
+    {
+      user_activating (NM_CONNECTION (saved));
+      nm_client_activate_connection_async (nm->client, NM_CONNECTION (saved), device,
+                                           nm_object_get_path (NM_OBJECT (ap)), nm->cancellable,
+                                           on_join_activated, join);
+      return TRUE;
+    }
+  connection = new_wifi (ap, ssid, password);
+  user_activating (connection);
+  nm_client_add_and_activate_connection_async (nm->client, connection, device,
+                                               nm_object_get_path (NM_OBJECT (ap)),
+                                               nm->cancellable, on_join_added, join);
+  return TRUE;
+}
+
+/* A wired connection, on a device it can come up on, or a VPN. FALSE where it's gone. */
+static gboolean
+join_saved (NwNm *nm, const char *uuid, Join *join)
+{
+  NMRemoteConnection *connection = nm_client_get_connection_by_uuid (nm->client, uuid);
+  NMDevice *device;
+
+  if (connection == NULL)
+    return FALSE;
+  device = is_vpn_connection (NM_CONNECTION (connection)) ? NULL
+                                                          : device_for (nm->client, connection);
+  user_activating (NM_CONNECTION (connection));
+  nm_client_activate_connection_async (nm->client, NM_CONNECTION (connection), device, NULL,
+                                       nm->cancellable, on_join_activated, join);
+  return TRUE;
+}
+
+void
+nw_nm_join (NwNm *nm, const char *key, const char *password)
+{
+  Join *join;
+  gboolean asked;
+
+  if (!nm->status.running)
+    return;
+  join = g_new0 (Join, 1);
+  join->nm = nm;
+  join->key = g_strdup (key);
+  if (g_str_has_prefix (key, SSID_KEY))
+    asked = join_wifi (nm, key + strlen (SSID_KEY), password, join);
+  else if (g_str_has_prefix (key, UUID_KEY))
+    asked = join_saved (nm, key + strlen (UUID_KEY), join);
+  else
+    asked = FALSE;
+  if (!asked)
+    {
+      join_free (join);
+      return;
+    }
+  g_free (nm->joining);
+  nm->joining = g_strdup (key);
+  refresh (nm);
+}
+
 void
 nw_nm_free (NwNm *nm)
 {
@@ -582,5 +1098,6 @@ nw_nm_free (NwNm *nm)
       g_clear_object (&nm->client);
     }
   nw_status_clear (&nm->status);
+  g_free (nm->joining);
   g_free (nm);
 }
