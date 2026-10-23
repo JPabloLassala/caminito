@@ -1,0 +1,6 @@
+# 44. The Network applet tells caminito-network of the user's activations
+
+Date: 2026-10-23
+Status: Accepted
+
+caminito-network says "Connected to *X*" only for an activation the user didn't start, such as an auto-connect after resume (CMN-199). NetworkManager doesn't say on D-Bus who started an activation: an auto-connect's active connection looks like one from `ActivateConnection`, and the agent's `USER_REQUESTED` flag comes only when NetworkManager asks it for a secret. A deactivation does say: `DeactivateConnection` and the device's `Disconnect` give the reason `USER_DISCONNECTED`. So caminito-network exports `org.mate.Caminito.Network.Notifier` at `/org/mate/Caminito/Network/Notifier` under its name on the session bus, and the Network applet calls its `UserActivating(s uuid)` before it activates a connection, with the UUID it gives a new one. An activation of that connection within a minute is the user's, and no news. An activation that nmcli or nm-connection-editor starts still gets "Connected to *X*", which is wrong but harmless. Telling the two apart only by time, as around a resume, was rejected: it misses a network that comes into range later. Using the secrets' `USER_REQUESTED` flag alone was rejected too: it misses a connection whose secret NetworkManager keeps.
