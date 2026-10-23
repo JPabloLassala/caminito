@@ -1,7 +1,9 @@
 //! A private bus of each test's own, with python-dbusmock's `networkmanager` template on it as
-//! NetworkManager, and an AgentManager added to it (`networkmanager.py` beside this file). The
-//! test runs on a main context of its own too, so that the tests, each on its thread, don't
-//! share GLib's default one.
+//! NetworkManager, and an AgentManager added to it (`networkmanager.py` beside this file). A
+//! test may start python-dbusmock's `notification_daemon` template on it too, as the session's
+//! notification server: the bus is both the system bus and the session bus. The test runs on a
+//! main context of its own too, so that the tests, each on its thread, don't share GLib's
+//! default one.
 
 #![allow(dead_code, reason = "each test binary uses a part of the fixture")]
 
@@ -23,7 +25,9 @@ const PATIENCE: Duration = Duration::from_secs(20);
 /// How often a test checks again for what another process does.
 const POLL: Duration = Duration::from_millis(20);
 
-const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
+pub const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
+pub const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
+const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
 pub const AGENT_MANAGER: &str = "/org/freedesktop/NetworkManager/AgentManager";
 
 /// The bus and the mock NetworkManager on it, stopped when dropped.
@@ -35,6 +39,7 @@ pub struct Mock {
     context: glib::MainContext,
     daemon: Child,
     network_manager: Option<Child>,
+    notification_daemon: Option<Child>,
 }
 
 /// Runs `test` on a main context of its own, with a private bus.
@@ -64,6 +69,7 @@ impl Mock {
             context,
             daemon,
             network_manager: None,
+            notification_daemon: None,
         };
         mock.start_network_manager();
         mock
@@ -83,6 +89,21 @@ impl Mock {
                 .expect("python3 runs python-dbusmock"),
         );
         self.wait_for_name(NETWORK_MANAGER);
+    }
+
+    /// Starts the mock notification server, which owns its name on the bus as the session's
+    /// owns it on the session bus.
+    pub fn start_notification_daemon(&mut self) {
+        self.notification_daemon = Some(
+            Command::new("python3")
+                .args(["-m", "dbusmock", "--template", "notification_daemon"])
+                .env("DBUS_SYSTEM_BUS_ADDRESS", &self.address)
+                .env("DBUS_SESSION_BUS_ADDRESS", &self.address)
+                .stdout(Stdio::null())
+                .spawn()
+                .expect("python3 runs python-dbusmock"),
+        );
+        self.wait_for_name(NOTIFICATIONS);
     }
 
     /// Stops the mock NetworkManager, as when the service stops or crashes, and waits until
@@ -156,12 +177,61 @@ impl Mock {
         timeout.destroy();
     }
 
+    /// Runs the main context for `time`, for a test that nothing happens in it.
+    pub fn run_for(&self, time: Duration) {
+        let over = Arc::new(AtomicBool::new(false));
+        let timeout = glib::timeout_source_new(time, None, glib::Priority::DEFAULT, {
+            let over = over.clone();
+            move || {
+                over.store(true, Ordering::Relaxed);
+                glib::ControlFlow::Break
+            }
+        });
+        timeout.attach(Some(&self.context));
+        while !over.load(Ordering::Relaxed) {
+            self.context.iteration(true);
+        }
+    }
+
     /// The arguments of each call the mock's object at `path` has had to `method`, oldest
     /// first.
     pub fn calls(&self, path: &str, method: &str) -> Vec<Variant> {
+        self.calls_of(NETWORK_MANAGER, path, method)
+    }
+
+    /// The arguments of each `Notify` the mock notification server has had, oldest first.
+    pub fn notifies(&self) -> Vec<Variant> {
+        self.calls_of(NOTIFICATIONS, NOTIFICATIONS_PATH, "Notify")
+    }
+
+    /// The arguments of each `CloseNotification` the mock notification server has had.
+    pub fn closes(&self) -> Vec<Variant> {
+        self.calls_of(NOTIFICATIONS, NOTIFICATIONS_PATH, "CloseNotification")
+    }
+
+    /// Calls `method` of the mock NetworkManager's object at `path`, as the test drives it.
+    pub fn call(&self, path: &str, interface: &str, method: &str, parameters: Variant) -> Variant {
         self.connection
             .call_sync(
                 Some(NETWORK_MANAGER),
+                path,
+                interface,
+                method,
+                Some(&parameters),
+                None,
+                gio::DBusCallFlags::NONE,
+                -1,
+                gio::Cancellable::NONE,
+            )
+            .unwrap_or_else(|err| panic!("the mock's {method} answers: {err}"))
+    }
+
+    /// The arguments of each call to `method` that the mocked service `name` has had at
+    /// `path`, oldest first.
+    fn calls_of(&self, name: &str, path: &str, method: &str) -> Vec<Variant> {
+        self.connection
+            .call_sync(
+                Some(name),
                 path,
                 "org.freedesktop.DBus.Mock",
                 "GetMethodCalls",
@@ -181,9 +251,12 @@ impl Mock {
 
 impl Drop for Mock {
     fn drop(&mut self) {
-        if let Some(network_manager) = &mut self.network_manager {
-            let _ = network_manager.kill();
-            let _ = network_manager.wait();
+        for child in [&mut self.network_manager, &mut self.notification_daemon]
+            .into_iter()
+            .flatten()
+        {
+            let _ = child.kill();
+            let _ = child.wait();
         }
         let _ = self.daemon.kill();
         let _ = self.daemon.wait();

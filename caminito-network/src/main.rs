@@ -1,5 +1,6 @@
 //! `caminito-network` (ADR 0041): one process through a Session, a single-instance
-//! `GtkApplication` with no window, which is NetworkManager's secret agent.
+//! `GtkApplication` with no window, which is NetworkManager's secret agent and sends the
+//! connection notifications.
 //!
 //! The autostart entry starts it at login. A second start finds the first on the session bus
 //! and exits. Outside Caminito it exits at once, so that under X11 MATE nm-applet stays the
@@ -14,6 +15,7 @@ use std::rc::Rc;
 
 use caminito_network::DOMAIN;
 use caminito_network::agent::Agent;
+use caminito_network::notifications::Notifier;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
@@ -26,8 +28,10 @@ fn main() -> glib::ExitCode {
         .application_id("org.mate.Caminito.Network")
         .build();
 
-    // The primary instance's: the agent, and the hold it takes at its first activation.
+    // The primary instance's: the agent, the notifier, and the hold it takes at its first
+    // activation.
     let agent: Rc<RefCell<Option<Agent>>> = Rc::default();
+    let notifier: Rc<RefCell<Option<Notifier>>> = Rc::default();
     let hold: Rc<RefCell<Option<gio::ApplicationHoldGuard>>> = Rc::default();
 
     application.connect_startup(move |application| {
@@ -47,6 +51,15 @@ fn main() -> glib::ExitCode {
         };
         match Agent::new(&system, &session, Rc::new(dialogs::GtkDialogs::default())) {
             Ok(started) => *agent.borrow_mut() = Some(started),
+            Err(err) => glib::g_warning!(DOMAIN, "{err}"),
+        }
+        // The application's own connection, so the notifier is at the program's name.
+        let Some(session) = application.dbus_connection() else {
+            glib::g_warning!(DOMAIN, "can't notify: the program isn't on the session bus");
+            return;
+        };
+        match Notifier::new(&system, &session) {
+            Ok(started) => *notifier.borrow_mut() = Some(started),
             Err(err) => glib::g_warning!(DOMAIN, "{err}"),
         }
     });
