@@ -3,10 +3,9 @@
  * window, as the prototype's Popup C. From the top: four tiles for Wi-Fi, Wired, VPN and
  * airplane mode; the card of the connection the icon shows; the Networks tab, which its own
  * ticket fills (CMN-200), and the Details tab, each connection up with its addresses and
- * the rest; and "Configure network connections…". With
- * NetworkManager not running it's only its icon and "NetworkManager isn't running". It
- * draws an NwStatus and calls back for what the user does, so that it knows nothing of
- * NetworkManager.
+ * the rest; and "Configure network connections…". With NetworkManager not running it's
+ * only its icon and "NetworkManager isn't running". It draws an NwStatus and calls back for
+ * what the user does, so that it knows nothing of NetworkManager.
  */
 
 #pragma once

@@ -404,7 +404,8 @@ update_details (NwPopup *popup, const GPtrArray *all)
   g_autoptr (GPtrArray) rows = g_ptr_array_new_with_free_func (
     (GDestroyNotify) g_ptr_array_unref);
   g_autoptr (GString) shape = g_string_new (NULL);
-  guint value = 0;
+  /* The next row's value, counted through every connection. */
+  guint next_value = 0;
 
   for (guint i = 0; i < count; i++)
     {
@@ -440,7 +441,7 @@ update_details (NwPopup *popup, const GPtrArray *all)
                 GTK_ICON_SIZE_LARGE_TOOLBAR);
       for (guint j = 0; j < its_rows->len; j++)
         {
-          GtkLabel *label = g_ptr_array_index (popup->detail_values, value++);
+          GtkLabel *label = g_ptr_array_index (popup->detail_values, next_value++);
           const char *text = ((NwDetailRow *) g_ptr_array_index (its_rows, j))->value;
 
           /* Setting the same text would lose the selection. */

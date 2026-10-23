@@ -831,7 +831,7 @@ test_details_of_wired_and_a_vpn (Fixture *fixture, gconstpointer data G_GNUC_UNU
   set_ip_config (fixture, wired, "6", NM_PATH "/IP6Config/1",
                  "{'AddressData': <[{'address': <'fe80::1'>, 'prefix': <uint32 64>},"
                  " {'address': <'2001:db8::20'>, 'prefix': <uint32 64>}]>,"
-                 " 'Gateway': <''>}");
+                 " 'Gateway': <'fe80::fe'>}");
   vpn = add_vpn (fixture, "Work", "vpn", wired);
   set_ip_config (fixture, vpn, "4", NM_PATH "/IP4Config/2",
                  "{'AddressData': <[{'address': <'10.8.0.6'>, 'prefix': <uint32 24>}]>,"
@@ -841,7 +841,7 @@ test_details_of_wired_and_a_vpn (Fixture *fixture, gconstpointer data G_GNUC_UNU
   set_primary (fixture, vpn);
   wait_until (fixture, details_show,
               "Office: Interface eth0, IPv4 192.168.1.20/24, IPv6 fe80::1/64 2001:db8::20/64,"
-              " Gateway 192.168.1.1, MAC address 78:DD:08:D2:3D:43, Link speed 1 Gb/s"
+              " Gateway 192.168.1.1 fe80::fe, MAC address 78:DD:08:D2:3D:43, Link speed 1 Gb/s"
               " / Work: IPv4 10.8.0.6/24, DNS 10.8.0.1");
 }
 

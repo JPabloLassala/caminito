@@ -23,7 +23,7 @@ nw_details_free (NwDetails *details)
   g_free (details->interface);
   g_strfreev (details->ipv4);
   g_strfreev (details->ipv6);
-  g_free (details->gateway);
+  g_strfreev (details->gateway);
   g_strfreev (details->dns);
   g_free (details->mac);
   g_free (details->security);
@@ -44,7 +44,7 @@ details_equal (const NwDetails *a, const NwDetails *b)
 {
   return a->kind == b->kind && g_strcmp0 (a->name, b->name) == 0
          && g_strcmp0 (a->interface, b->interface) == 0 && strv_equal (a->ipv4, b->ipv4)
-         && strv_equal (a->ipv6, b->ipv6) && g_strcmp0 (a->gateway, b->gateway) == 0
+         && strv_equal (a->ipv6, b->ipv6) && strv_equal (a->gateway, b->gateway)
          && strv_equal (a->dns, b->dns) && g_strcmp0 (a->mac, b->mac) == 0
          && a->speed == b->speed && a->frequency == b->frequency
          && g_strcmp0 (a->security, b->security) == 0 && a->strength == b->strength;
@@ -343,7 +343,13 @@ channel_of (guint frequency, const char **band, guint *channel)
       *band = "6 GHz";
       *channel = (frequency - 5950) / 5;
     }
-  else if (frequency >= 4910 && frequency <= 5895)
+  else if (frequency >= 4910 && frequency <= 4990)
+    {
+      /* Japan's, numbered from 4000 MHz. */
+      *band = "5 GHz";
+      *channel = (frequency - 4000) / 5;
+    }
+  else if (frequency >= 5000 && frequency <= 5895)
     {
       *band = "5 GHz";
       *channel = (frequency - 5000) / 5;
@@ -363,7 +369,7 @@ nw_state_detail_rows (const NwDetails *details)
   add_row (rows, "Interface", g_strdup (details->interface));
   add_row (rows, "IPv4", lines_of (details->ipv4));
   add_row (rows, "IPv6", lines_of (details->ipv6));
-  add_row (rows, "Gateway", g_strdup (details->gateway));
+  add_row (rows, "Gateway", lines_of (details->gateway));
   add_row (rows, "DNS", lines_of (details->dns));
   add_row (rows, "MAC address", g_strdup (details->mac));
   if (details->speed > 0)

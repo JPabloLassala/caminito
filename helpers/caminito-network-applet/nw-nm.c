@@ -214,9 +214,12 @@ wifi_device (NMActiveConnection *active)
 
 static void on_notify (GObject *object, GParamSpec *pspec, gpointer data);
 
+/* Once, however many parts of the status are read from object. */
 static void
 watch (NwNm *nm, gpointer object)
 {
+  if (g_ptr_array_find (nm->watched, object, NULL))
+    return;
   g_signal_connect (object, "notify", G_CALLBACK (on_notify), nm);
   g_ptr_array_add (nm->watched, g_object_ref (object));
 }
@@ -256,13 +259,23 @@ addresses_of (NMIPConfig *config)
   return g_strv_builder_unref_to_strv (builder);
 }
 
+/* The builder's values, NULL with none. */
+static char **
+values_of (GStrvBuilder *builder)
+{
+  char **values = g_strv_builder_end (builder);
+
+  if (values[0] == NULL)
+    g_clear_pointer (&values, g_strfreev);
+  return values;
+}
+
 /* IPv4's name servers, then IPv6's; NULL with none. */
 static char **
 dns_of (NMIPConfig *ip4, NMIPConfig *ip6)
 {
   NMIPConfig *configs[] = { ip4, ip6 };
   g_autoptr (GStrvBuilder) builder = g_strv_builder_new ();
-  char **dns;
 
   for (guint i = 0; i < G_N_ELEMENTS (configs); i++)
     {
@@ -272,10 +285,25 @@ dns_of (NMIPConfig *ip4, NMIPConfig *ip6)
       for (guint j = 0; servers != NULL && servers[j] != NULL; j++)
         g_strv_builder_add (builder, servers[j]);
     }
-  dns = g_strv_builder_end (builder);
-  if (dns[0] == NULL)
-    g_clear_pointer (&dns, g_strfreev);
-  return dns;
+  return values_of (builder);
+}
+
+/* IPv4's gateway, then IPv6's; NULL with neither. */
+static char **
+gateways_of (NMIPConfig *ip4, NMIPConfig *ip6)
+{
+  NMIPConfig *configs[] = { ip4, ip6 };
+  g_autoptr (GStrvBuilder) builder = g_strv_builder_new ();
+
+  for (guint i = 0; i < G_N_ELEMENTS (configs); i++)
+    {
+      const char *gateway = configs[i] != NULL ? nm_ip_config_get_gateway (configs[i]) : NULL;
+
+      /* NetworkManager's "" is none. */
+      if (gateway != NULL && gateway[0] != '\0')
+        g_strv_builder_add (builder, gateway);
+    }
+  return values_of (builder);
 }
 
 /* An access point's security as the user knows it, the strongest it offers first. */
@@ -322,15 +350,13 @@ details_of (NwNm *nm, NMActiveConnection *active)
     {
       watch (nm, ip4);
       details->ipv4 = addresses_of (ip4);
-      details->gateway = dup_value (nm_ip_config_get_gateway (ip4));
     }
   if (ip6 != NULL)
     {
       watch (nm, ip6);
       details->ipv6 = addresses_of (ip6);
-      if (details->gateway == NULL)
-        details->gateway = dup_value (nm_ip_config_get_gateway (ip6));
     }
+  details->gateway = gateways_of (ip4, ip6);
   details->dns = dns_of (ip4, ip6);
 
   /* A VPN plugin's device is the one it goes over, whose interface isn't the VPN's.
@@ -461,8 +487,7 @@ read_status (NwNm *nm, NwStatus *status)
         {
           NMDeviceEthernet *ethernet = g_ptr_array_index (devices, 0);
 
-          if (ethernet != (gpointer) wired)
-            watch (nm, ethernet);
+          watch (nm, ethernet);
           status->speed = nm_device_ethernet_get_speed (ethernet);
         }
       status->kind = is_wifi (base) || device != NULL ? NW_KIND_WIFI : NW_KIND_WIRED;

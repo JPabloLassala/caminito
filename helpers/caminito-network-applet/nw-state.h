@@ -55,7 +55,8 @@ typedef struct
   /* "192.168.1.34/24", NULL-terminated. */
   char        **ipv4;
   char        **ipv6;
-  char         *gateway;
+  /* IPv4's, then IPv6's. */
+  char        **gateway;
   char        **dns;
   char         *mac;
   /* The link's speed in Mb/s: a wired one's, or Wi-Fi's bitrate. */

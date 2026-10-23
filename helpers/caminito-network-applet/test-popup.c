@@ -1,8 +1,8 @@
 /*
  * The popup's content (CMN-193, CMN-196): with NetworkManager not running it says so, and
  * once NetworkManager runs it shows the tiles, the card and the Details tab (CMN-201), drawn
- * from statuses built by hand, and calls back for what the user clicks. Without a display, GTK can't start, and
- * it's skipped.
+ * from statuses built by hand, and calls back for what the user clicks. Without a display,
+ * GTK can't start, and it's skipped.
  */
 
 #include "nw-popup.h"
@@ -319,6 +319,7 @@ test_configure (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 static char *home_ipv4[] = { "192.168.1.34/24", NULL };
 static char *home_ipv6[] = { "fe80::1/64", "2001:db8::34/64", NULL };
 static char *work_ipv4[] = { "10.8.0.6/24", NULL };
+static char *home_gateway[] = { "192.168.1.1", NULL };
 
 static NwDetails
 home_details (void)
@@ -329,7 +330,7 @@ home_details (void)
     .interface = "wlan0",
     .ipv4 = home_ipv4,
     .ipv6 = home_ipv6,
-    .gateway = "192.168.1.1",
+    .gateway = home_gateway,
     .mac = "11:22:33:44:55:66",
     .speed = 54,
     .frequency = 2437,

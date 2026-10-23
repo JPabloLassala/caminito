@@ -343,13 +343,14 @@ test_wifi_details (void)
   char *ipv4[] = { "192.168.1.34/24", NULL };
   char *ipv6[] = { "fe80::1/64", "2001:db8::34/64", NULL };
   char *dns[] = { "192.168.1.1", "1.1.1.1", NULL };
+  char *gateway[] = { "192.168.1.1", NULL };
   NwDetails home = {
     .kind = NW_DETAILS_WIFI,
     .name = "Home",
     .interface = "wlan0",
     .ipv4 = ipv4,
     .ipv6 = ipv6,
-    .gateway = "192.168.1.1",
+    .gateway = gateway,
     .dns = dns,
     .mac = "11:22:33:44:55:66",
     .speed = 54,
@@ -381,6 +382,11 @@ test_wifi_bands (void)
   details.frequency = 5180;
   rows = rows_of (&details);
   g_assert_cmpstr (rows, ==, "Band: 5 GHz|Channel: 36");
+  g_clear_pointer (&rows, g_free);
+  /* Japan's 4.9 GHz channels, numbered from 4000 MHz. */
+  details.frequency = 4920;
+  rows = rows_of (&details);
+  g_assert_cmpstr (rows, ==, "Band: 5 GHz|Channel: 184");
   g_clear_pointer (&rows, g_free);
   details.frequency = 5955;
   details.speed = 1200;
