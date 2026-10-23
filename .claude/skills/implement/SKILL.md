@@ -26,6 +26,12 @@ Start from the ticket. It names the files, the seams and the ADRs of the work. R
 
 Before each step, list everything the step needs to read: files, greps, test output. Ask for all of it in one turn. A read waits for an earlier result only when it depends on that result (open the file the grep found).
 
+This holds for the whole run, not only the start. A turn with one read is the exception: before you send it, name what else you will read next, and send that too. In particular:
+
+- When a grep or `ls` returns several files you will open, open them all in the next turn.
+- Read several paths from another branch in one Bash call: `for p in a.c b.c; do echo "== $p"; git show <branch>:$p; done`.
+- When a test fails, read the test and the code it exercises in the same turn.
+
 ## Build
 
 Call the Skill tool with "tdd" where possible, at pre-agreed seams. Run `cargo check` regularly.
