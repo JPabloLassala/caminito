@@ -756,4 +756,19 @@ fn the_menu_is_drawn_with_its_items_a_greyed_one_and_the_selected_one() {
     let unset = middle_of_mark(row(&f, "Always on Visible Workspace"));
     assert_ne!(distance(pixel(&mut f, set), background), 0);
     assert_eq!(distance(pixel(&mut f, unset), background), 0);
+
+    // Nothing joins a radio button to the text of the row above it: the mark column is
+    // the background above each button's circle.
+    for label in ["Always on Visible Workspace", "Only on This Workspace"] {
+        let radio = row(&f, label);
+        for x in radio.loc.x + 2..radio.loc.x + 24 {
+            for y in radio.loc.y..radio.loc.y + 5 {
+                assert_eq!(
+                    distance(pixel(&mut f, (x, y).into()), background),
+                    0,
+                    "{label} at ({x}, {y})"
+                );
+            }
+        }
+    }
 }

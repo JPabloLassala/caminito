@@ -176,6 +176,8 @@ fn draw_mark(
     let (x, y, size) = (rect.loc.x, rect.loc.y, rect.size.w);
     set_color(cr, color, 1.0);
     cr.set_line_width(MARK_LINE);
+    // The text drawn before leaves a current point, which an arc would join with a line.
+    cr.new_path();
     match mark {
         MenuMark::None => {}
         MenuMark::Check(checked) => {
