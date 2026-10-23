@@ -9,8 +9,8 @@ mate-maximus call Xlib without checking for an X display, and die with
 SIGSEGV at every login. plank, Ubuntu MATE's dock, calls GDK's X11
 functions unchecked too.
 
-None of these has work to do there, and on XWayland each would see the
-XWayland windows alone:
+None of these has work to do there, and on XWayland each X11-only one
+would see the XWayland windows alone:
 
 - Caminito owns org.mate.ScreenSaver before mate-session starts, so
   mate-screensaver would find the name taken and exit.
@@ -35,7 +35,7 @@ nothing changes.
  1 file changed, 29 insertions(+)
 
 diff --git a/mate-session/gsm-autostart-app.c b/mate-session/gsm-autostart-app.c
-index a23a132..b441a4c 100644
+index a23a132..627a0f8 100644
 --- a/mate-session/gsm-autostart-app.c
 +++ b/mate-session/gsm-autostart-app.c
 @@ -108,6 +108,28 @@ gsm_autostart_app_init (GsmAutostartApp *app)
@@ -43,9 +43,9 @@ index a23a132..b441a4c 100644
  }
  
 +/* Autostart entries that must not start under Caminito, the Wayland compositor
-+ * for MATE. Each is X11-only, and its work is Caminito's or the compositor's, so
-+ * on XWayland it would see the XWayland windows alone. plank is the dock
-+ * required component, and dock-replace starts it again. */
++ * for MATE. Their work is Caminito's or the compositor's, and an X11-only one
++ * would see the XWayland windows alone on XWayland. plank is the dock required
++ * component, and dock-replace starts it again. */
 +static const char * const caminito_skipped_ids[] = {
 +        "mate-screensaver.desktop",       /* Caminito owns org.mate.ScreenSaver */
 +        "mate-maximus-autostart.desktop", /* undecorates maximised windows */
