@@ -1,3 +1,10 @@
+mate-session-manager (1.28.0+git20260721.57a9178-0caminito2) resolute; urgency=medium
+
+  * Carry 0003 with nm-applet skipped under Caminito: caminito-network and
+    the Network applet do its work (CMN-195).
+
+ -- jpablo <jpablolassala@gmail.com>  Fri, 23 Oct 2026 00:00:00 +0000
+
 mate-session-manager (1.28.0+git20260721.57a9178-0caminito1) resolute; urgency=medium
 
   * Master 57a9178, with Caminito's carried patches, which tools/debian-build

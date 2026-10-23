@@ -23,19 +23,22 @@ XWayland windows alone:
   MATE's dock-replace starts it again.
 - picom is an X compositor, and magnus a magnifier that reads the X root
   window. Both are the compositor's work.
+- nm-applet is the network tray icon and NetworkManager's secret agent.
+  Under Caminito, caminito-network is the agent and mate-panel's Network
+  applet the icon, so only one secret agent registers in the session.
 
 Treat their autostart entries as disabled when MATE_WM_NAME is Caminito,
 whichever autostart directory they are read from. Without that variable,
 nothing changes.
 ---
- mate-session/gsm-autostart-app.c | 28 ++++++++++++++++++++++++++++
- 1 file changed, 28 insertions(+)
+ mate-session/gsm-autostart-app.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
 
 diff --git a/mate-session/gsm-autostart-app.c b/mate-session/gsm-autostart-app.c
 index a23a132..b441a4c 100644
 --- a/mate-session/gsm-autostart-app.c
 +++ b/mate-session/gsm-autostart-app.c
-@@ -108,6 +108,27 @@ gsm_autostart_app_init (GsmAutostartApp *app)
+@@ -108,6 +108,28 @@ gsm_autostart_app_init (GsmAutostartApp *app)
          priv->autostart_delay = -1;
  }
  
@@ -51,6 +54,7 @@ index a23a132..b441a4c 100644
 +        "dock-replace.desktop",
 +        "picom.desktop",                  /* an X compositor */
 +        "magnus-autostart.desktop",       /* a magnifier */
++        "nm-applet.desktop",              /* caminito-network and the Network applet */
 +        NULL
 +};
 +
@@ -63,14 +67,14 @@ index a23a132..b441a4c 100644
  static gboolean
  is_disabled (GsmApp *app)
  {
-@@ -115,6 +136,13 @@ is_disabled (GsmApp *app)
+@@ -115,6 +137,13 @@ is_disabled (GsmApp *app)
  
          priv = gsm_autostart_app_get_instance_private (GSM_AUTOSTART_APP(app));
  
 +        if (is_under_caminito () && priv->desktop_id != NULL &&
 +            g_strv_contains (caminito_skipped_ids, priv->desktop_id)) {
 +                g_debug ("app %s is disabled under Caminito",
-+                         gsm_app_peek_id (app));
++                         priv->desktop_id);
 +                return TRUE;
 +        }
 +
