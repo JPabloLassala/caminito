@@ -4,7 +4,7 @@
 //! nm-applet saved are found and nm-applet finds the ones saved here.
 //!
 //! nm-applet saves through libsecret, with its schema `org.freedesktop.NetworkManager.Connection`
-//! (network-manager-applet's src/applet-agent.c, `network_manager_secret_schema`): an item for
+//! (network-manager-applet's src/applet-agent.c, line 21, `network_manager_secret_schema`): an item for
 //! each secret, in the default collection, with the attributes `connection-uuid`,
 //! `setting-name` and `setting-key`, and `xdg:schema` that libsecret adds. It searches by the
 //! first two alone, as libsecret does for a schema with `SECRET_SCHEMA_DONT_MATCH_NAME`, so an
@@ -44,7 +44,7 @@ type Secret = (ObjectPath, Vec<u8>, Vec<u8>, String);
 
 /// A call to the Secret Service failed.
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     /// The Secret Service isn't there, or refused the call.
     Call(glib::Error),
     /// The default collection is locked, and the user didn't unlock it.
@@ -79,35 +79,46 @@ impl From<glib::Error> for Error {
 }
 
 /// One secret to save.
-pub struct Entry<'a> {
-    pub uuid: &'a str,
-    pub setting: &'a str,
-    pub key: &'a str,
+pub(crate) struct Entry {
+    /// The connection's UUID.
+    pub(crate) uuid: String,
+    /// The setting the secret is in, as `802-11-wireless-security`.
+    pub(crate) setting: String,
+    /// The secret's key in the setting, as `psk`.
+    pub(crate) key: String,
     /// The item's name, as the keyring's manager shows it.
-    pub label: String,
-    pub secret: &'a str,
+    pub(crate) label: String,
+    pub(crate) secret: String,
 }
 
 /// The Secret Service, on the session bus.
-pub struct Keyring {
+pub(crate) struct Keyring {
     connection: gio::DBusConnection,
     /// The session the secrets travel in, opened at the first need of one.
     session: RefCell<Option<ObjectPath>>,
 }
 
 impl Keyring {
-    pub fn new(connection: &gio::DBusConnection) -> Keyring {
+    /// The Secret Service on `connection`, the session bus. Nothing is called until it's
+    /// needed.
+    pub(crate) fn new(connection: &gio::DBusConnection) -> Keyring {
         Keyring {
             connection: connection.clone(),
             session: RefCell::default(),
         }
     }
 
-    /// The secrets saved for `setting` of the connection `uuid`, by their keys. Those the user
-    /// won't unlock are left out.
-    pub async fn find(&self, uuid: &str, setting: &str) -> Result<HashMap<String, String>, Error> {
-        let items = self
-            .search(&[(UUID_TAG, uuid), (SETTING_NAME_TAG, setting)])
+    /// The secrets saved for `setting` of the connection `uuid`, by their keys. Locked ones
+    /// are unlocked through the keyring's prompt if `may_prompt`; those that stay locked are
+    /// left out.
+    pub(crate) async fn find(
+        &self,
+        uuid: &str,
+        setting: &str,
+        may_prompt: bool,
+    ) -> Result<HashMap<String, String>, Error> {
+        let (items, _) = self
+            .search(&[(UUID_TAG, uuid), (SETTING_NAME_TAG, setting)], may_prompt)
             .await?;
         if items.is_empty() {
             return Ok(HashMap::new());
@@ -141,32 +152,36 @@ impl Keyring {
         Ok(found)
     }
 
-    /// Saves `entry` in the default collection, in place of what was saved for its key.
-    pub async fn store(&self, entry: Entry<'_>) -> Result<(), Error> {
+    /// Saves `entry` in the default collection, in place of what was saved for its key. A
+    /// locked collection is unlocked through the keyring's prompt if `may_prompt`.
+    pub(crate) async fn store(&self, entry: &Entry, may_prompt: bool) -> Result<(), Error> {
         let collection = self.default_collection().await?;
         let locked = self
             .property(collection.as_str(), COLLECTION, "Locked")
             .await?;
         if locked.get::<bool>() == Some(true)
-            && self.unlock(vec![collection.clone()]).await?.is_empty()
+            && self
+                .unlock(vec![collection.clone()], may_prompt)
+                .await?
+                .is_empty()
         {
             return Err(Error::Locked);
         }
-        let attributes = HashMap::from([
-            (UUID_TAG, entry.uuid),
-            (SETTING_NAME_TAG, entry.setting),
-            (SETTING_KEY_TAG, entry.key),
-            ("xdg:schema", SCHEMA),
-        ]);
+        // CreateItem replaces only an item with the very same attributes, and one saved
+        // without `xdg:schema` has others: it would stay, and be found beside this one.
+        let key = [
+            (UUID_TAG, entry.uuid.as_str()),
+            (SETTING_NAME_TAG, entry.setting.as_str()),
+            (SETTING_KEY_TAG, entry.key.as_str()),
+        ];
+        let (old, _) = self.search(&key, false).await?;
+        self.delete(old).await?;
+
+        let mut attributes: HashMap<&str, &str> = key.into_iter().collect();
+        attributes.insert("xdg:schema", SCHEMA);
         let properties = HashMap::from([
-            (
-                "org.freedesktop.Secret.Item.Label",
-                entry.label.to_variant(),
-            ),
-            (
-                "org.freedesktop.Secret.Item.Attributes",
-                attributes.to_variant(),
-            ),
+            (format!("{ITEM}.Label"), entry.label.to_variant()),
+            (format!("{ITEM}.Attributes"), attributes.to_variant()),
         ]);
         let secret: Secret = (
             self.session().await?,
@@ -190,9 +205,19 @@ impl Keyring {
         Ok(())
     }
 
-    /// Deletes every secret saved for the connection `uuid`.
-    pub async fn clear(&self, uuid: &str) -> Result<(), Error> {
-        for item in self.search(&[(UUID_TAG, uuid)]).await? {
+    /// Deletes every secret saved for the connection `uuid`, unlocking them through the
+    /// keyring's prompt. It fails if some stay locked.
+    pub(crate) async fn clear(&self, uuid: &str) -> Result<(), Error> {
+        let (items, locked) = self.search(&[(UUID_TAG, uuid)], true).await?;
+        self.delete(items).await?;
+        if locked > 0 {
+            return Err(Error::Locked);
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, items: Vec<ObjectPath>) -> Result<(), Error> {
+        for item in items {
             let reply = self
                 .call(item.as_str(), ITEM, "Delete", ().to_variant())
                 .await?;
@@ -204,9 +229,13 @@ impl Keyring {
         Ok(())
     }
 
-    /// The items with `attributes`, those that were locked unlocked first, except those the
-    /// user didn't unlock.
-    async fn search(&self, attributes: &[(&str, &str)]) -> Result<Vec<ObjectPath>, Error> {
+    /// The unlocked items with `attributes`, those that were locked unlocked first if
+    /// `may_prompt`, and how many stayed locked.
+    async fn search(
+        &self,
+        attributes: &[(&str, &str)],
+        may_prompt: bool,
+    ) -> Result<(Vec<ObjectPath>, usize), Error> {
         let attributes: HashMap<&str, &str> = attributes.iter().copied().collect();
         let reply = self
             .call(
@@ -218,15 +247,28 @@ impl Keyring {
             .await?;
         let (mut unlocked, locked): (Vec<ObjectPath>, Vec<ObjectPath>) =
             reply.get().expect("SearchItems answers (aoao)");
+        let mut still_locked = locked.len();
         if !locked.is_empty() {
-            unlocked.extend(self.unlock(locked).await?);
+            let now_unlocked = self.unlock(locked, may_prompt).await?;
+            still_locked -= now_unlocked.len().min(still_locked);
+            unlocked.extend(now_unlocked);
         }
-        Ok(unlocked)
+        Ok((unlocked, still_locked))
     }
 
-    /// Unlocks `objects`, through the Secret Service's prompt where it has one, and gives
-    /// those that are unlocked: none when the user dismissed the prompt.
-    async fn unlock(&self, objects: Vec<ObjectPath>) -> Result<Vec<ObjectPath>, Error> {
+    /// Unlocks `objects`, through the Secret Service's prompt where it has one and
+    /// `may_prompt`, and gives those that are unlocked: none when the user dismissed the
+    /// prompt, or there was one and no leave to show it.
+    async fn unlock(
+        &self,
+        objects: Vec<ObjectPath>,
+        may_prompt: bool,
+    ) -> Result<Vec<ObjectPath>, Error> {
+        if !may_prompt {
+            // Unlock would hand back a prompt to show, or to dismiss: there's no asking it
+            // without the risk of one.
+            return Ok(Vec::new());
+        }
         let reply = self
             .call(SERVICE_PATH, SERVICE, "Unlock", (objects,).to_variant())
             .await?;

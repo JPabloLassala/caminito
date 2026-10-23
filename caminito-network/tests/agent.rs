@@ -884,3 +884,87 @@ fn a_request_that_may_not_ask_has_no_secrets_the_keyring_lacks() {
         assert!(running.dialogs.asked.borrow().is_empty());
     });
 }
+
+#[test]
+fn a_new_password_replaces_one_saved_without_the_schema() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        let mut old = as_nm_applet_saves(WIFI_SECURITY, "psk", "old password");
+        old.attributes.remove("xdg:schema");
+        keyring.add(old);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        // Found by nm-applet's search, which leaves the schema out.
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        assert_eq!(
+            secrets(answer(mock, &pending))[WIFI_SECURITY]["psk"].str(),
+            Some("old password")
+        );
+
+        let _pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION | REQUEST_NEW,
+        );
+        mock.wait_until("the password's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("new password".to_owned())));
+        mock.wait_until("the new password alone in the keyring", || {
+            keyring.items() == [as_nm_applet_saves(WIFI_SECURITY, "psk", "new password")]
+        });
+    });
+}
+
+#[test]
+fn a_request_that_may_not_ask_shows_no_unlock_prompt() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "correct horse"));
+        keyring.lock(false);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let pending = get_secrets(mock, &running, &connection, WIFI_SECURITY, 0);
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.NoSecrets"
+        );
+        assert_eq!(keyring.prompts(), 0);
+    });
+}
+
+#[test]
+fn delete_secrets_fails_when_the_keyring_stays_locked() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "password"));
+        keyring.lock(true);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let path = ObjectPath::try_from(CONNECTION.to_owned()).unwrap();
+        let pending = call(
+            mock,
+            &running,
+            "DeleteSecrets",
+            (&connection, &path).to_variant(),
+        );
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.Failed"
+        );
+        assert_eq!(keyring.items().len(), 1);
+    });
+}

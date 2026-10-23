@@ -2,7 +2,7 @@
 //! secret agent, asking for the passwords a connection needs.
 //!
 //! The library holds what names no toolkit: [`agent`], the secret agent over gio's D-Bus,
-//! which answers NetworkManager's requests through dialogs the binary draws, and [`keyring`],
+//! which answers NetworkManager's requests through dialogs the binary draws, and `keyring`,
 //! the agent-owned secrets it keeps in the Secret Service. The integration
 //! tests drive it against python-dbusmock's `networkmanager` template on a private bus. The
 //! application and its dialogs are the binary's, the one part that uses GTK.
@@ -13,4 +13,4 @@
 pub const DOMAIN: &str = "caminito-network";
 
 pub mod agent;
-pub mod keyring;
+mod keyring;
