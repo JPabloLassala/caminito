@@ -48,7 +48,8 @@ pulse = static_library(
   'sd-pulse',
   'sd-pulse.c',
   link_with: state,
-  dependencies: [glib, libpulse, libpulse_glib],
+  # gio for wpctl, which turns WirePlumber's target restore off (ADR 0045).
+  dependencies: [glib, gio, libpulse, libpulse_glib],
   pic: true,
 )
 
@@ -90,6 +91,19 @@ shared_module(
   install: true,
   install_dir: applet_dir,
 )
+
+# Its pins (CMN-217). The package's hook compiles the schemas, so nothing is compiled here.
+install_data(
+  'org.mate.panel.applet.caminito-sound.gschema.xml',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
+)
+
+# The schema as glib-compile-schemas reads it, strictly.
+glib_compile_schemas = find_program('glib-compile-schemas', required: false)
+if glib_compile_schemas.found()
+  test('schema', glib_compile_schemas,
+       args: ['--strict', '--dry-run', meson.current_source_dir()])
+endif
 
 # Its entry in Add to Panel, in the normal directory, not Caminito's own: the applet works
 # under X11 MATE too.

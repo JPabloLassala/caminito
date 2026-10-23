@@ -1,16 +1,18 @@
 /*
- * The Sound applet's popup (CMN-213, CMN-215, CMN-216): its content, in the shared popup
- * window. From the top, in one scrolled window, the output row and the input row: each a
- * round mute button with the device's form, the Default device's slider and a pill with its
+ * The Sound applet's popup (CMN-213, CMN-215, CMN-216, CMN-217): its content, in the shared
+ * popup window. From the top, in one scrolled window, the output row and the input row: each
+ * a round mute button with the device's form, the Default device's slider and a pill with its
  * name, which opens the side's list of sound devices beneath, with a port dropdown under it
  * when the default has more than one plugged port; the input's has a level meter under its
- * slider. Then Applications: System sounds first, the Sound applications playing, and those
- * recording under their own heading; each with its icon, its name, which opens "Plays to" or
- * "Records from" beneath with a slider for each of its streams when it has several, its
- * slider and percent, its activity bar, and its device as a badge while it doesn't follow the
- * default. Under the scrolled window, the footer's "Sound settings…". With no sound server
- * it's "No sound server" and the footer. Pinned applications are CMN-217's, and so is the
- * pin button, hidden until then.
+ * slider. Then Pinned applications, while there's a pin or an Undo: the heading with its red
+ * × for "Unpin all", and a row for each, running or not, with a neutral × that unpins it;
+ * each × asks first in a strip beneath, and an unpin leaves an Undo for 5 seconds. Then
+ * Applications: System sounds first, the Sound applications playing, and those recording
+ * under their own heading, with the pin button. Each application's row has its icon, its
+ * name, which opens "Plays to" or "Records from" beneath with a slider for each of its
+ * streams when it has several, its slider and percent, its activity bar, and its device as a
+ * badge while it doesn't follow the default. Under the scrolled window, the footer's "Sound
+ * settings…". With no sound server it's "No sound server" and the footer.
  *
  * It draws an SdStatus, so that it knows nothing of the sound server, and calls back for what
  * the user does. It never changes a default by itself.
@@ -41,6 +43,14 @@ typedef struct
   /* A device for the application, by its SdDevice's name; NULL to follow the default. */
   void (*move_app) (SdSide side, const char *app, const char *device, gpointer data);
   void (*set_system_volume) (pa_volume_t volume, gpointer data);
+  /* The pin button (CMN-217): the application to the device it plays to or records from now. A
+     pinned application's device is chosen with move_app, which keeps it pinned there. */
+  void (*pin_app) (SdSide side, const char *app, gpointer data);
+  /* Unpin, and "Unpin all", once confirmed: back to following the default. */
+  void (*unpin_app) (SdSide side, const char *app, gpointer data);
+  void (*unpin_all) (gpointer data);
+  /* The Undo strip's: the pins the last unpin took away, back as they were. */
+  void (*undo_unpin) (gpointer data);
 } SdPopupActions;
 
 /* The content of applet_popup's window, which it lives as long as. */

@@ -1,13 +1,21 @@
 /*
- * The sound server through libpulse (CMN-213, CMN-215, CMN-216). See sd-pulse.h.
+ * The sound server through libpulse (CMN-213, CMN-215, CMN-216, CMN-217). See sd-pulse.h.
  *
  * Each event re-reads its facility's whole list, which keeps removals simple, and the status
  * is built again once no list is on its way. A list asked for again before the last one came
  * in replaces it when it comes: the server answers in order.
+ *
+ * Pins are applied twice (ADR 0045). A new stream's own info is asked for from its `new`
+ * event, ahead of its facility's list, and the stream is moved from that answer: the move
+ * lands before WirePlumber links the stream, about 4 ms after the event, so it never plays on
+ * the default. And each time the status is built, any pinned application's stream that isn't
+ * on its device while the device is there is moved: a device that comes back, a pin made or
+ * changed, a stream that was there before the reader.
  */
 
 #include "sd-pulse.h"
 
+#include <gio/gio.h>
 #include <pulse/ext-stream-restore.h>
 #include <pulse/glib-mainloop.h>
 #include <pulse/pulseaudio.h>
@@ -119,6 +127,13 @@ struct _SdPulse
   /* Each stream's share of its application's loudest when the application's slider went to
      0, as a double by "<side>:<stream>", which silent streams can't tell. */
   GHashTable       *shares;
+  /* The pins, as SdPin (CMN-217), and the moves to a pinned device on their way, as the
+     device's index plus one by "<side>:<stream>": a move isn't asked for twice, and one the
+     server refuses isn't asked for again. */
+  GArray           *pins;
+  GHashTable       *moving;
+  /* WirePlumber's target restore was turned off on this connection. */
+  gboolean          restore_target_off;
 };
 
 /* A peak stream on one of an application's streams. */
@@ -288,7 +303,107 @@ stream_named (const Stream *stream, GPtrArray *devices)
     .device = device != NULL ? device->device.name : NULL,
     .device_description = device != NULL ? device->device.description : NULL,
     .volume = pa_cvolume_max (&stream->volume),
+    .corked = stream->corked,
   };
+}
+
+/* The pin of a stream's application, NULL where it isn't pinned or isn't an application's. */
+static const SdPin *
+pin_of (SdPulse *pulse, SdSide side, const Stream *stream)
+{
+  SdStream named = { .app_id = stream->app_id, .name = stream->name, .binary = stream->binary };
+  const char *identity = sd_state_stream_identity (&named);
+  int found;
+
+  if (identity == NULL || stream->ignored || stream->event)
+    return NULL;
+  found = sd_pins_find (pulse->pins, side, identity);
+  return found >= 0 ? &g_array_index (pulse->pins, SdPin, found) : NULL;
+}
+
+/* Moves a pinned application's stream to its device, where the device is on the server and
+   the stream isn't on it yet. Paused, it's moved too, so that it plays there. */
+static void
+apply_pin (SdPulse *pulse, SdSide side, const Stream *stream)
+{
+  const SdPin *pin = pin_of (pulse, side, stream);
+  Device *device;
+  g_autofree char *key = NULL;
+
+  if (pin == NULL)
+    return;
+  device = find_device (devices_of (pulse, side), pin->device);
+  if (device == NULL || device->index == stream->device)
+    return;
+  key = g_strdup_printf ("%d:%u", side, stream->index);
+  if (GPOINTER_TO_UINT (g_hash_table_lookup (pulse->moving, key)) == device->index + 1)
+    return;
+  if (side == SD_OUTPUT)
+    drop_operation (pa_context_move_sink_input_by_index (pulse->context, stream->index,
+                                                         device->index, NULL, NULL));
+  else
+    drop_operation (pa_context_move_source_output_by_index (pulse->context, stream->index,
+                                                            device->index, NULL, NULL));
+  g_hash_table_insert (pulse->moving, g_steal_pointer (&key), GUINT_TO_POINTER (device->index + 1));
+}
+
+/* Every pinned application's streams onto their devices, and the moves that are done or
+   whose stream is gone forgotten. */
+static void
+apply_pins (SdPulse *pulse)
+{
+  GHashTableIter iter;
+  gpointer key, value;
+
+  g_hash_table_iter_init (&iter, pulse->moving);
+  while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+      int side;
+      guint32 index;
+      Stream *stream = NULL;
+
+      if (sscanf (key, "%d:%u", &side, &index) == 2)
+        stream = find_stream (streams_of (pulse, side), index);
+      if (stream == NULL || stream->device + 1 == GPOINTER_TO_UINT (value))
+        g_hash_table_iter_remove (&iter);
+    }
+  for (SdSide side = SD_OUTPUT; pulse->pins->len > 0 && side <= SD_INPUT; side++)
+    {
+      GPtrArray *streams = streams_of (pulse, side);
+
+      for (guint i = 0; i < streams->len; i++)
+        apply_pin (pulse, side, g_ptr_array_index (streams, i));
+    }
+}
+
+/* The status's Pinned applications, in the pins' order, from every stream of theirs, paused
+   ones too, and every device, monitors too: an application may record one. */
+static void
+add_pinned (SdPulse *pulse, SdStatus *status)
+{
+  status->n_pinned = pulse->pins->len;
+  status->pinned = g_new0 (SdPinnedApp, pulse->pins->len);
+  for (guint i = 0; i < pulse->pins->len; i++)
+    {
+      const SdPin *pin = &g_array_index (pulse->pins, SdPin, i);
+      GPtrArray *streams = streams_of (pulse, pin->side);
+      GPtrArray *devices = devices_of (pulse, pin->side);
+      g_autoptr (GArray) named = g_array_new (FALSE, FALSE, sizeof (SdStream));
+      g_autoptr (GArray) known = g_array_new (FALSE, FALSE, sizeof (SdDevice));
+
+      for (guint j = 0; j < streams->len; j++)
+        {
+          Stream *stream = g_ptr_array_index (streams, j);
+          SdStream copy = stream_named (stream, devices);
+
+          if (!stream->ignored && !stream->event)
+            g_array_append_val (named, copy);
+        }
+      for (guint j = 0; j < devices->len; j++)
+        g_array_append_val (known, ((Device *) g_ptr_array_index (devices, j))->device);
+      sd_state_pinned_app (pin, (SdStream *) named->data, named->len, (SdDevice *) known->data,
+                           known->len, &status->pinned[i]);
+    }
 }
 
 /* The side's Sound applications, onto apps. */
@@ -306,7 +421,7 @@ add_apps (SdPulse *pulse, GArray *apps, SdSide side)
       Stream *stream = g_ptr_array_index (streams, i);
       SdStream copy;
 
-      if (!stream_listed (stream))
+      if (!stream_listed (stream) || pin_of (pulse, side, stream) != NULL)
         continue;
       copy = stream_named (stream, devices);
       g_array_append_val (named, copy);
@@ -381,6 +496,7 @@ build_status (SdPulse *pulse, SdStatus *status)
   add_apps (pulse, apps, SD_INPUT);
   status->n_apps = apps->len;
   status->apps = (SdApp *) g_array_free (apps, FALSE);
+  add_pinned (pulse, status);
   status->has_system_sounds = pulse->listed[LIST_SYSTEM_SOUNDS];
   /* With no entry, an event sound plays at the server's full volume. */
   status->system_volume = system_sounds->len > 0
@@ -634,6 +750,7 @@ update (SdPulse *pulse)
     return;
   build_status (pulse, &status);
   set_status (pulse, &status);
+  apply_pins (pulse);
   follow_input_level (pulse);
   follow_app_levels (pulse);
   prune_shares (pulse);
@@ -899,12 +1016,49 @@ request_list (SdPulse *pulse, ListKind kind)
 }
 
 static void
+on_restore_target_off (GObject *source, GAsyncResult *result, gpointer data G_GNUC_UNUSED)
+{
+  g_autoptr (GError) error = NULL;
+
+  if (!g_subprocess_wait_check_finish (G_SUBPROCESS (source), result, &error))
+    g_warning ("can't turn off WirePlumber's target restore: %s", error->message);
+}
+
+/* WirePlumber remembers no stream's device, so that a move without a pin is forgotten when
+   the application closes (ADR 0045): saved, so that it lasts across WirePlumber's restarts
+   and logins. Asked on each connection, which covers a user who turned it back on. Without
+   wpctl a move is remembered as WirePlumber remembers it by default, and the pins still
+   work. */
+static void
+turn_off_restore_target (void)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GSubprocess) wpctl = g_subprocess_new (G_SUBPROCESS_FLAGS_STDOUT_SILENCE, &error,
+                                                    "wpctl", "settings", "--save",
+                                                    "node.stream.restore-target", "false", NULL);
+
+  if (wpctl == NULL)
+    {
+      g_warning ("can't turn off WirePlumber's target restore: %s", error->message);
+      return;
+    }
+  g_subprocess_wait_check_async (wpctl, NULL, on_restore_target_off, NULL);
+}
+
+static void
 on_server_info (pa_context *context, const pa_server_info *info, void *data)
 {
   SdPulse *pulse = data;
 
   if (context != pulse->context || info == NULL)
     return;
+  /* pipewire-pulse's "PulseAudio (on PipeWire 1.6.8)": PulseAudio has no WirePlumber. */
+  if (!pulse->restore_target_off && info->server_name != NULL
+      && strstr (info->server_name, "PipeWire") != NULL)
+    {
+      pulse->restore_target_off = TRUE;
+      turn_off_restore_target ();
+    }
   g_free (pulse->default_sink);
   g_free (pulse->default_source);
   pulse->default_sink = g_strdup (info->default_sink_name);
@@ -919,11 +1073,44 @@ request_server_info (SdPulse *pulse)
   drop_operation (pa_context_get_server_info (pulse->context, on_server_info, pulse));
 }
 
+/* A new stream's info, asked for from its event: moved first thing where it's pinned. */
 static void
-on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index G_GNUC_UNUSED,
-          void *data)
+on_new_playing_stream (pa_context *context, const pa_sink_input_info *info, int eol, void *data)
 {
   SdPulse *pulse = data;
+  Stream *stream;
+
+  if (eol != 0 || context != pulse->context)
+    return;
+  stream = stream_new (context, info->index, info->client, info->sink, info->proplist,
+                       &info->volume, info->has_volume, info->corked);
+  apply_pin (pulse, SD_OUTPUT, stream);
+  stream_free (stream);
+}
+
+static void
+on_new_recording_stream (pa_context *context, const pa_source_output_info *info, int eol,
+                         void *data)
+{
+  SdPulse *pulse = data;
+  Stream *stream;
+
+  if (eol != 0 || context != pulse->context)
+    return;
+  stream = stream_new (context, info->index, info->client, info->source, info->proplist,
+                       &info->volume, info->has_volume, info->corked);
+  apply_pin (pulse, SD_INPUT, stream);
+  stream_free (stream);
+}
+
+static void
+on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index, void *data)
+{
+  SdPulse *pulse = data;
+  /* Before the list, which the server answers after: WirePlumber links the stream about 4 ms
+     after the event, and the move must land first (ADR 0045). */
+  gboolean pinning = (type & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_NEW
+                     && pulse->pins->len > 0;
 
   if (context != pulse->context)
     return;
@@ -936,9 +1123,15 @@ on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index
       request_list (pulse, LIST_SOURCES);
       break;
     case PA_SUBSCRIPTION_EVENT_SINK_INPUT:
+      if (pinning)
+        drop_operation (pa_context_get_sink_input_info (context, index, on_new_playing_stream,
+                                                        pulse));
       request_list (pulse, LIST_PLAYING);
       break;
     case PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT:
+      if (pinning)
+        drop_operation (pa_context_get_source_output_info (context, index,
+                                                           on_new_recording_stream, pulse));
       request_list (pulse, LIST_RECORDING);
       break;
     case PA_SUBSCRIPTION_EVENT_CARD:
@@ -967,6 +1160,8 @@ forget_server (SdPulse *pulse)
   close_level_stream (pulse);
   g_hash_table_remove_all (pulse->monitors);
   g_hash_table_remove_all (pulse->shares);
+  g_hash_table_remove_all (pulse->moving);
+  pulse->restore_target_off = FALSE;
   g_list_free_full (g_steal_pointer (&pulse->requests), (GDestroyNotify) request_free);
   for (guint i = 0; i < N_LISTS; i++)
     {
@@ -1083,6 +1278,8 @@ sd_pulse_new (SdPulseChanged changed, gpointer data)
   pulse->mainloop = pa_glib_mainloop_new (NULL);
   pulse->monitors = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, app_monitor_free);
   pulse->shares = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+  pulse->pins = sd_pins_new ();
+  pulse->moving = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   forget_server (pulse);
   connect_to_server (pulse);
   return pulse;
@@ -1309,6 +1506,15 @@ sd_pulse_watch_app_levels (SdPulse *pulse, SdPulseAppLevel level, gpointer data)
 }
 
 void
+sd_pulse_set_pins (SdPulse *pulse, const SdPin *pins, guint n_pins)
+{
+  g_array_set_size (pulse->pins, 0);
+  for (guint i = 0; i < n_pins; i++)
+    sd_pins_set (pulse->pins, &pins[i]);
+  update (pulse);
+}
+
+void
 sd_pulse_set_profile (SdPulse *pulse, guint32 card, const char *profile)
 {
   if (!connected (pulse))
@@ -1325,6 +1531,8 @@ sd_pulse_free (SdPulse *pulse)
     g_clear_pointer (&pulse->lists[i], g_ptr_array_unref);
   g_hash_table_unref (pulse->monitors);
   g_hash_table_unref (pulse->shares);
+  g_hash_table_unref (pulse->moving);
+  g_array_unref (pulse->pins);
   pa_glib_mainloop_free (pulse->mainloop);
   sd_status_clear (&pulse->status);
   g_free (pulse);

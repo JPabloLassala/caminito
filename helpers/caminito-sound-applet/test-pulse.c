@@ -204,9 +204,14 @@ set_default (const char *what, const char *name)
   wait_until (pactl_succeeds, command, command);
 }
 
+static gboolean on_fatal_log (const char *domain, GLogLevelFlags level, const char *message,
+                              gpointer data);
+
 static void
 fixture_set_up (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
+  /* GLib forgets it at each test's start. */
+  g_test_log_set_fatal_handler (on_fatal_log, NULL);
   fixture->pulse = sd_pulse_new (on_changed, fixture);
 }
 
@@ -896,6 +901,266 @@ test_moves_an_app_and_lets_it_follow_the_default_again (Fixture *fixture,
   server_stop (&server);
 }
 
+/* The sink the application's stream is on, by pactl; NULL while it has none. */
+static char *
+app_sink (const char *app)
+{
+  g_autofree char *inputs = pactl ("list sink-inputs");
+  g_autofree char *sinks = pactl ("list short sinks");
+  g_autofree char *named = g_strdup_printf ("application.name = \"%s\"", app);
+  g_auto (GStrv) blocks = g_strsplit (inputs, "Sink Input #", -1);
+  g_auto (GStrv) sink_lines = g_strsplit (sinks, "\n", -1);
+  const char *index = NULL;
+
+  for (guint i = 0; blocks[i] != NULL && index == NULL; i++)
+    if (strstr (blocks[i], named) != NULL)
+      index = strstr (blocks[i], "\tSink: ");
+  if (index == NULL)
+    return NULL;
+  index += strlen ("\tSink: ");
+  for (guint i = 0; sink_lines[i] != NULL; i++)
+    {
+      g_auto (GStrv) sink = g_strsplit (sink_lines[i], "\t", -1);
+
+      if (sink[0] != NULL && sink[1] != NULL && g_str_has_prefix (index, sink[0])
+          && index[strlen (sink[0])] == '\n')
+        return g_strdup (sink[1]);
+    }
+  return NULL;
+}
+
+typedef struct
+{
+  const char *app;
+  const char *sink;
+} AppOn;
+
+static gboolean
+app_is_on (gpointer data)
+{
+  AppOn *on = data;
+  g_autofree char *sink = app_sink (on->app);
+
+  return g_strcmp0 (sink, on->sink) == 0;
+}
+
+/* The module's index, to unload it. */
+static char *
+load_sink_module (const char *name, const char *properties)
+{
+  g_autofree char *command = g_strdup_printf ("load-module module-null-sink sink_name=%s "
+                                              "'sink_properties=%s'",
+                                              name, properties);
+
+  return g_strstrip (pactl (command));
+}
+
+static gboolean
+wpctl_says_restore_target_off (gpointer data G_GNUC_UNUSED)
+{
+  const char *const argv[] = { "wpctl", "settings", "node.stream.restore-target", NULL };
+  g_autofree char *out = NULL;
+
+  g_spawn_sync (NULL, (char **) argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                NULL, NULL, &out, NULL, NULL, NULL);
+  return out != NULL && strstr (out, "Value: false") != NULL;
+}
+
+static gboolean
+restore_target_saved_off (gpointer data)
+{
+  g_autofree char *saved = NULL;
+
+  return g_file_get_contents (data, &saved, NULL, NULL)
+         && strstr (saved, "node.stream.restore-target=false") != NULL;
+}
+
+static void
+test_turns_off_wireplumbers_target_restore (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *saved = g_build_filename (g_getenv ("XDG_STATE_HOME"), "wireplumber",
+                                             "sm-settings", NULL);
+
+  /* What an earlier test's reader saved. */
+  g_unlink (saved);
+  server_start (&server);
+  wait_until (running, fixture, "the reader to connect");
+  wait_until (wpctl_says_restore_target_off, NULL, "WirePlumber's target restore off");
+  /* Saved, so that it lasts across a WirePlumber restart and a login (ADR 0045). */
+  wait_until (restore_target_saved_off, saved, "the setting saved in WirePlumber's state");
+  server_stop (&server);
+}
+
+static SdPin headset_pins[] = {
+  { SD_OUTPUT, "mpv", "mpv", NULL, "headset", "WH-1000XM4" },
+  { SD_OUTPUT, "Audacious", "Audacious", "audacious", "headset", "WH-1000XM4" },
+  { SD_OUTPUT, "Spotify", "Spotify", "spotify-client", "headset", "WH-1000XM4" },
+};
+
+static const SdPinnedApp *
+pinned_app (Fixture *fixture, const char *id)
+{
+  const SdStatus *status = status_of (fixture);
+
+  for (guint i = 0; i < status->n_pinned; i++)
+    if (g_strcmp0 (status->pinned[i].app.id, id) == 0)
+      return &status->pinned[i];
+  return NULL;
+}
+
+static gboolean
+mpv_pinned_and_playing (gpointer data)
+{
+  const SdPinnedApp *mpv = pinned_app (data, "mpv");
+
+  return mpv != NULL && mpv->activity == SD_PIN_PLAYING && mpv->app.n_streams == 1;
+}
+
+static void
+test_a_pinned_apps_new_stream_goes_to_its_device (Fixture *fixture,
+                                                  gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *tone = NULL;
+  g_autoptr (GSubprocess) mpv = NULL;
+  AppOn on_headset = { "mpv", "headset" };
+  const SdStatus *status;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("headset", "device.description=WH-1000XM4");
+  set_default ("sink", "speaker");
+  wait_until (running, fixture, "the reader to connect");
+  sd_pulse_set_pins (fixture->pulse, headset_pins, 1);
+  tone = write_tone ();
+  mpv = play ("mpv", tone);
+  wait_until (app_is_on, &on_headset, "mpv on its pinned headset");
+  wait_until (mpv_pinned_and_playing, fixture, "mpv pinned and playing");
+  status = status_of (fixture);
+  /* Under Pinned applications, not Applications. */
+  g_assert_cmpuint (status->n_apps, ==, 0);
+  g_assert_cmpstr (status->pinned[0].app.device, ==, "headset");
+  g_assert_false (status->pinned[0].device_gone);
+  stop (&mpv);
+  server_stop (&server);
+}
+
+static gboolean
+audacious_paused_on_the_headset (gpointer data)
+{
+  const SdPinnedApp *audacious = pinned_app (data, "Audacious");
+  AppOn on_headset = { "Audacious", "headset" };
+
+  return audacious != NULL && audacious->activity == SD_PIN_PAUSED && app_is_on (&on_headset);
+}
+
+static void
+test_pinned_apps_paused_or_not_running_are_listed (Fixture *fixture,
+                                                   gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  Paused paused = { 0 };
+  const SdPinnedApp *spotify;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("headset", "device.description=WH-1000XM4");
+  set_default ("sink", "speaker");
+  wait_until (running, fixture, "the reader to connect");
+  sd_pulse_set_pins (fixture->pulse, headset_pins, 3);
+  /* A paused stream is moved too, so that it plays there when it starts. */
+  paused_start (&paused, "Audacious");
+  wait_until (audacious_paused_on_the_headset, fixture, "Audacious paused on the headset");
+  spotify = pinned_app (fixture, "Spotify");
+  g_assert_nonnull (spotify);
+  g_assert_cmpint (spotify->activity, ==, SD_PIN_NOT_RUNNING);
+  g_assert_cmpstr (spotify->app.name, ==, "Spotify");
+  g_assert_cmpstr (spotify->app.icon, ==, "spotify-client");
+  /* In the pins' order. */
+  g_assert_cmpstr (status_of (fixture)->pinned[0].app.id, ==, "mpv");
+  g_assert_cmpstr (status_of (fixture)->pinned[2].app.id, ==, "Spotify");
+  paused_stop (&paused);
+  server_stop (&server);
+}
+
+static gboolean
+mpv_device_gone (gpointer data)
+{
+  const SdPinnedApp *mpv = pinned_app (data, "mpv");
+
+  return mpv != NULL && mpv->device_gone && mpv->activity == SD_PIN_PLAYING;
+}
+
+static gboolean
+mpv_device_back (gpointer data)
+{
+  const SdPinnedApp *mpv = pinned_app (data, "mpv");
+
+  return mpv != NULL && !mpv->device_gone;
+}
+
+static void
+test_a_pinned_device_gone_and_back (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *tone = NULL;
+  g_autofree char *headset = NULL;
+  g_autofree char *unload = NULL;
+  g_autoptr (GSubprocess) mpv = NULL;
+  AppOn on_headset = { "mpv", "headset" };
+  AppOn on_speaker = { "mpv", "speaker" };
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  headset = load_sink_module ("headset", "device.description=WH-1000XM4");
+  set_default ("sink", "speaker");
+  wait_until (running, fixture, "the reader to connect");
+  sd_pulse_set_pins (fixture->pulse, headset_pins, 1);
+  tone = write_tone ();
+  mpv = play ("mpv", tone);
+  wait_until (app_is_on, &on_headset, "mpv on its pinned headset");
+  /* The headset turned off: the default meanwhile, and still pinned. */
+  unload = g_strdup_printf ("unload-module %s", headset);
+  g_free (pactl (unload));
+  wait_until (mpv_device_gone, fixture, "mpv's headset gone");
+  wait_until (app_is_on, &on_speaker, "mpv on the default meanwhile");
+  g_assert_cmpstr (pinned_app (fixture, "mpv")->app.device_description, ==, "WH-1000XM4");
+  /* And on again: back there. */
+  load_sink ("headset", "device.description=WH-1000XM4");
+  wait_until (mpv_device_back, fixture, "mpv's headset back");
+  wait_until (app_is_on, &on_headset, "mpv back on its headset");
+  stop (&mpv);
+  server_stop (&server);
+}
+
+static void
+test_a_move_without_a_pin_is_forgotten (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *tone = NULL;
+  g_autoptr (GSubprocess) mpv = NULL;
+  AppOn on_speaker = { "mpv", "speaker" };
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("headset", "device.description=WH-1000XM4");
+  set_default ("sink", "speaker");
+  wait_until (wpctl_says_restore_target_off, NULL, "WirePlumber's target restore off");
+  tone = write_tone ();
+  mpv = play ("mpv", tone);
+  wait_until (mpv_follows_the_default, fixture, "mpv on the speakers");
+  sd_pulse_move_app (fixture->pulse, SD_OUTPUT, "mpv", "headset");
+  wait_until (mpv_on_the_headset, fixture, "mpv moved to the headset");
+  /* mpv again: WirePlumber doesn't send it back to the headset. */
+  stop (&mpv);
+  mpv = play ("mpv", tone);
+  wait_until (mpv_follows_the_default, fixture, "mpv playing again");
+  g_assert_true (app_is_on (&on_speaker));
+  stop (&mpv);
+  server_stop (&server);
+}
+
 static gboolean
 has_system_sounds (gpointer data)
 {
@@ -1066,6 +1331,29 @@ test_hears_the_applications (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_assert_cmpuint (levels.levels, ==, 0);
 }
 
+/* wpctl loses the server when a test stops it right after the reader connected, and the
+   reader says so: not a failure. Every other warning goes to GLib's handler, which fails the
+   test. */
+static gboolean
+lost_server (const char *message)
+{
+  return g_str_has_prefix (message, "can't turn off WirePlumber's target restore");
+}
+
+static void
+on_log (const char *domain, GLogLevelFlags level, const char *message, gpointer data)
+{
+  if (!lost_server (message))
+    g_log_default_handler (domain, level, message, data);
+}
+
+static gboolean
+on_fatal_log (const char *domain G_GNUC_UNUSED, GLogLevelFlags level G_GNUC_UNUSED,
+              const char *message, gpointer data G_GNUC_UNUSED)
+{
+  return !lost_server (message);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -1078,13 +1366,16 @@ main (int argc, char **argv)
   int result;
 
   g_test_init (&argc, &argv, NULL);
+  g_log_set_handler (NULL, G_LOG_LEVEL_WARNING | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION, on_log,
+                     NULL);
   if (g_find_program_in_path ("pipewire") == NULL
       || g_find_program_in_path ("wireplumber") == NULL
       || g_find_program_in_path ("pipewire-pulse") == NULL
       || g_find_program_in_path ("pactl") == NULL
       || g_find_program_in_path ("pw-record") == NULL
       || g_find_program_in_path ("pw-play") == NULL
-      || g_find_program_in_path ("pw-metadata") == NULL)
+      || g_find_program_in_path ("pw-metadata") == NULL
+      || g_find_program_in_path ("wpctl") == NULL)
     {
       g_test_skip ("PipeWire, WirePlumber, pipewire-pulse and its tools aren't all installed");
       return g_test_run ();
@@ -1130,6 +1421,13 @@ main (int argc, char **argv)
   ADD ("names-a-monitor-an-app-records", test_names_a_monitor_an_app_records);
   ADD ("sets-the-system-sounds-volume", test_sets_the_system_sounds_volume);
   ADD ("hears-the-applications", test_hears_the_applications);
+  ADD ("turns-off-wireplumbers-target-restore", test_turns_off_wireplumbers_target_restore);
+  ADD ("a-pinned-apps-new-stream-goes-to-its-device",
+       test_a_pinned_apps_new_stream_goes_to_its_device);
+  ADD ("pinned-apps-paused-or-not-running-are-listed",
+       test_pinned_apps_paused_or_not_running_are_listed);
+  ADD ("a-pinned-device-gone-and-back", test_a_pinned_device_gone_and_back);
+  ADD ("a-move-without-a-pin-is-forgotten", test_a_move_without_a_pin_is_forgotten);
 #undef ADD
   result = g_test_run ();
 

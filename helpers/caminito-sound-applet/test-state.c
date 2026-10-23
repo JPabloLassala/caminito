@@ -606,10 +606,259 @@ test_room_beside_a_vertical_panel (void)
   g_assert_cmpint (sd_state_popup_room (&place), ==, 1080);
 }
 
+static SdPin spotify_pin = { SD_OUTPUT, (char *) "Spotify", (char *) "Spotify",
+                             (char *) "spotify-client", (char *) "headset",
+                             (char *) "WH-1000XM4" };
+static SdPin discord_pin = { SD_INPUT, (char *) "com.discordapp.Discord", (char *) "Discord", NULL,
+                             (char *) "usb", (char *) "Yeti Stereo Microphone" };
+static SdPin mpv_pin = { SD_OUTPUT, (char *) "mpv", (char *) "mpv", NULL, (char *) "hdmi",
+                         (char *) "DELL U2720Q" };
+
+/* "output:Spotify>headset,input:…", the pins in order. */
+static char *
+pins_text (GArray *pins)
+{
+  GString *text = g_string_new (NULL);
+
+  for (guint i = 0; i < pins->len; i++)
+    {
+      const SdPin *pin = &g_array_index (pins, SdPin, i);
+
+      g_string_append_printf (text, "%s%s:%s>%s", i > 0 ? "," : "",
+                              pin->side == SD_OUTPUT ? "output" : "input", pin->id, pin->device);
+    }
+  return g_string_free (text, FALSE);
+}
+
+static GArray *
+three_pins (void)
+{
+  GArray *pins = sd_pins_new ();
+
+  sd_pins_set (pins, &spotify_pin);
+  sd_pins_set (pins, &discord_pin);
+  sd_pins_set (pins, &mpv_pin);
+  return pins;
+}
+
+static void
+test_pins_are_kept_through_the_settings_value (void)
+{
+  g_autoptr (GArray) pins = three_pins ();
+  g_autoptr (GVariant) value = g_variant_ref_sink (sd_pins_to_variant (pins));
+  g_autoptr (GArray) read = sd_pins_from_variant (value);
+  g_autofree char *text = pins_text (read);
+  const SdPin *spotify = &g_array_index (read, SdPin, 0);
+  const SdPin *discord = &g_array_index (read, SdPin, 1);
+
+  g_assert_cmpstr (g_variant_get_type_string (value), ==, "aa{ss}");
+  g_assert_cmpstr (text, ==, "output:Spotify>headset,input:com.discordapp.Discord>usb,"
+                             "output:mpv>hdmi");
+  g_assert_cmpstr (spotify->name, ==, "Spotify");
+  g_assert_cmpstr (spotify->icon, ==, "spotify-client");
+  g_assert_cmpstr (spotify->device_description, ==, "WH-1000XM4");
+  g_assert_null (discord->icon);
+}
+
+static void
+test_a_pin_without_an_app_or_a_device_is_left_out (void)
+{
+  g_autoptr (GVariant) value = g_variant_ref_sink (g_variant_new_parsed (
+    "[{'side': 'output', 'app': 'mpv'}, {'side': 'output', 'device': 'hdmi'},"
+    " {'side': 'sideways', 'app': 'vlc', 'device': 'hdmi'},"
+    " {'side': 'input', 'app': 'OBS', 'device': 'usb'}]"));
+  g_autoptr (GArray) read = sd_pins_from_variant (value);
+  g_autofree char *text = pins_text (read);
+
+  g_assert_cmpstr (text, ==, "input:OBS>usb");
+  /* With no name kept, the row shows its identity. */
+  g_assert_cmpstr (g_array_index (read, SdPin, 0).name, ==, "OBS");
+}
+
+static void
+test_pinning_again_changes_the_device_in_place (void)
+{
+  g_autoptr (GArray) pins = three_pins ();
+  SdPin moved = spotify_pin;
+  g_autofree char *text = NULL;
+
+  moved.device = (char *) "speaker";
+  moved.device_description = (char *) "Speakers";
+  sd_pins_set (pins, &moved);
+  text = pins_text (pins);
+  g_assert_cmpstr (text, ==, "output:Spotify>speaker,input:com.discordapp.Discord>usb,"
+                             "output:mpv>hdmi");
+  g_assert_cmpint (sd_pins_find (pins, SD_OUTPUT, "mpv"), ==, 2);
+  /* An application is pinned on each side apart. */
+  g_assert_cmpint (sd_pins_find (pins, SD_INPUT, "mpv"), ==, -1);
+}
+
+static void
+test_undo_puts_an_unpinned_app_back_in_its_place (void)
+{
+  g_autoptr (GArray) pins = three_pins ();
+  g_autoptr (GArray) removed = sd_removed_pins_new ();
+  g_autofree char *after = NULL;
+  g_autofree char *restored = NULL;
+
+  sd_pins_remove (pins, SD_INPUT, "com.discordapp.Discord", removed);
+  after = pins_text (pins);
+  g_assert_cmpstr (after, ==, "output:Spotify>headset,output:mpv>hdmi");
+  sd_pins_restore (pins, removed);
+  restored = pins_text (pins);
+  g_assert_cmpstr (restored, ==, "output:Spotify>headset,input:com.discordapp.Discord>usb,"
+                                 "output:mpv>hdmi");
+  g_assert_cmpstr (g_array_index (pins, SdPin, 1).device_description, ==,
+                   "Yeti Stereo Microphone");
+  /* Undone once. */
+  g_assert_cmpuint (removed->len, ==, 0);
+}
+
+static void
+test_undo_puts_back_every_pin_of_unpin_all (void)
+{
+  g_autoptr (GArray) pins = three_pins ();
+  g_autoptr (GArray) removed = sd_removed_pins_new ();
+  g_autofree char *restored = NULL;
+
+  sd_pins_remove_all (pins, removed);
+  g_assert_cmpuint (pins->len, ==, 0);
+  g_assert_cmpuint (removed->len, ==, 3);
+  /* Pinned again meanwhile, to another device: undone, it's as it was. */
+  {
+    SdPin again = mpv_pin;
+
+    again.device = (char *) "speaker";
+    sd_pins_set (pins, &again);
+  }
+  sd_pins_restore (pins, removed);
+  restored = pins_text (pins);
+  g_assert_cmpstr (restored, ==, "output:Spotify>headset,input:com.discordapp.Discord>usb,"
+                                 "output:mpv>hdmi");
+}
+
+static void
+test_an_unpin_replaces_the_last_ones_undo (void)
+{
+  g_autoptr (GArray) pins = three_pins ();
+  g_autoptr (GArray) removed = sd_removed_pins_new ();
+  g_autofree char *restored = NULL;
+
+  sd_pins_remove (pins, SD_OUTPUT, "Spotify", removed);
+  sd_pins_remove (pins, SD_OUTPUT, "mpv", removed);
+  sd_pins_restore (pins, removed);
+  restored = pins_text (pins);
+  g_assert_cmpstr (restored, ==, "input:com.discordapp.Discord>usb,output:mpv>hdmi");
+}
+
+static SdDevice pin_outputs[] = {
+  { .name = (char *) "speaker", .description = (char *) "Speakers" },
+  { .name = (char *) "headset", .description = (char *) "WH-1000XM4 (renamed)" },
+};
+
+static void
+test_a_pinned_app_playing_paused_or_not_running (void)
+{
+  SdStream streams[] = {
+    { .name = "Spotify", .binary = "spotify", .icon = "spotify", .title = "Song", .index = 7,
+      .device = "headset", .volume = PERCENT (40), .corked = TRUE },
+    { .name = "mpv", .index = 8, .device = "speaker", .volume = PERCENT (90) },
+    { .name = "Spotify", .index = 9, .device = "headset", .volume = PERCENT (60) },
+  };
+  SdPinnedApp pinned = { 0 };
+
+  sd_state_pinned_app (&spotify_pin, streams, 3, pin_outputs, 2, &pinned);
+  g_assert_cmpint (pinned.activity, ==, SD_PIN_PLAYING);
+  g_assert_false (pinned.device_gone);
+  g_assert_cmpstr (pinned.app.id, ==, "Spotify");
+  g_assert_cmpstr (pinned.app.icon, ==, "spotify");
+  g_assert_cmpint (pinned.app.side, ==, SD_OUTPUT);
+  g_assert_cmpstr (pinned.app.device, ==, "headset");
+  /* The server's name for it now. */
+  g_assert_cmpstr (pinned.app.device_description, ==, "WH-1000XM4 (renamed)");
+  g_assert_cmpuint (pinned.app.n_streams, ==, 2);
+  g_assert_cmpuint (sd_state_percent (pinned.app.volume), ==, 60);
+  sd_pinned_app_clear (&pinned);
+
+  /* Only its paused stream. */
+  sd_state_pinned_app (&spotify_pin, streams, 2, pin_outputs, 2, &pinned);
+  g_assert_cmpint (pinned.activity, ==, SD_PIN_PAUSED);
+  g_assert_cmpuint (pinned.app.n_streams, ==, 1);
+  sd_pinned_app_clear (&pinned);
+
+  /* None: the name and icon it was pinned with, no streams. */
+  sd_state_pinned_app (&spotify_pin, &streams[1], 1, pin_outputs, 2, &pinned);
+  g_assert_cmpint (pinned.activity, ==, SD_PIN_NOT_RUNNING);
+  g_assert_cmpstr (pinned.app.name, ==, "Spotify");
+  g_assert_cmpstr (pinned.app.icon, ==, "spotify-client");
+  g_assert_cmpuint (pinned.app.n_streams, ==, 0);
+  sd_pinned_app_clear (&pinned);
+}
+
+static void
+test_a_pinned_apps_device_gone_keeps_its_name (void)
+{
+  SdStream streams[] = {
+    { .name = "Spotify", .index = 9, .device = "speaker", .volume = PERCENT (60) },
+  };
+  SdPinnedApp pinned = { 0 };
+
+  sd_state_pinned_app (&spotify_pin, streams, 1, pin_outputs, 1, &pinned);
+  g_assert_true (pinned.device_gone);
+  g_assert_cmpstr (pinned.app.device, ==, "headset");
+  g_assert_cmpstr (pinned.app.device_description, ==, "WH-1000XM4");
+  g_assert_cmpint (pinned.activity, ==, SD_PIN_PLAYING);
+  sd_pinned_app_clear (&pinned);
+}
+
+static void
+test_status_app_finds_a_pinned_app (void)
+{
+  SdPinnedApp pinned[] = { { .app = { .id = (char *) "Spotify", .side = SD_OUTPUT } } };
+  SdStatus status = { .running = TRUE, .pinned = pinned, .n_pinned = 1 };
+
+  g_assert_true (sd_status_app (&status, SD_OUTPUT, "Spotify") == &pinned[0].app);
+  g_assert_null (sd_status_app (&status, SD_INPUT, "Spotify"));
+}
+
+static void
+test_status_equal_compares_the_pinned_apps (void)
+{
+  SdPinnedApp a[] = { { .app = { .id = (char *) "Spotify" }, .activity = SD_PIN_PLAYING } };
+  SdPinnedApp b[] = { { .app = { .id = (char *) "Spotify" }, .activity = SD_PIN_PAUSED } };
+  SdStatus first = { .running = TRUE, .pinned = a, .n_pinned = 1 };
+  SdStatus second = { .running = TRUE, .pinned = b, .n_pinned = 1 };
+
+  g_assert_false (sd_status_equal (&first, &second));
+  b[0].activity = SD_PIN_PLAYING;
+  g_assert_true (sd_status_equal (&first, &second));
+  b[0].device_gone = TRUE;
+  g_assert_false (sd_status_equal (&first, &second));
+}
+
 int
 main (int argc, char **argv)
 {
   g_test_init (&argc, &argv, NULL);
+  g_test_add_func ("/state/pins-are-kept-through-the-settings-value",
+                   test_pins_are_kept_through_the_settings_value);
+  g_test_add_func ("/state/a-pin-without-an-app-or-a-device-is-left-out",
+                   test_a_pin_without_an_app_or_a_device_is_left_out);
+  g_test_add_func ("/state/pinning-again-changes-the-device-in-place",
+                   test_pinning_again_changes_the_device_in_place);
+  g_test_add_func ("/state/undo-puts-an-unpinned-app-back-in-its-place",
+                   test_undo_puts_an_unpinned_app_back_in_its_place);
+  g_test_add_func ("/state/undo-puts-back-every-pin-of-unpin-all",
+                   test_undo_puts_back_every_pin_of_unpin_all);
+  g_test_add_func ("/state/an-unpin-replaces-the-last-ones-undo",
+                   test_an_unpin_replaces_the_last_ones_undo);
+  g_test_add_func ("/state/a-pinned-app-playing-paused-or-not-running",
+                   test_a_pinned_app_playing_paused_or_not_running);
+  g_test_add_func ("/state/a-pinned-apps-device-gone-keeps-its-name",
+                   test_a_pinned_apps_device_gone_keeps_its_name);
+  g_test_add_func ("/state/status-app-finds-a-pinned-app", test_status_app_finds_a_pinned_app);
+  g_test_add_func ("/state/status-equal-compares-the-pinned-apps",
+                   test_status_equal_compares_the_pinned_apps);
   g_test_add_func ("/state/device-forms", test_device_forms);
   g_test_add_func ("/state/unplugged-ports-are-left-out", test_unplugged_ports_are_left_out);
   g_test_add_func ("/state/device-detail-is-its-port-or-virtual",

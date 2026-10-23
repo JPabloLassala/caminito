@@ -5,8 +5,9 @@
  * profiles. For the popup's output and input rows (CMN-215): the sound devices of each side,
  * their forms, ports and icons, and the room the popup has where it opens. For its
  * Applications (CMN-216): the streams grouped into Sound applications, their slider's volume
- * and System sounds' volume. Nothing here talks to the sound server, so that the tests can
- * build any status by hand.
+ * and System sounds' volume. For its Pinned applications (CMN-217): the pins as the applet's
+ * settings keep them, unpinning and its undo, and each pinned application, running or not.
+ * Nothing here talks to the sound server, so that the tests can build any status by hand.
  */
 
 #pragma once
@@ -145,6 +146,50 @@ typedef struct
   guint           n_streams;
 } SdApp;
 
+/* A pin (CMN-217): a Sound application that the applet sends to a sound device every time it
+   plays or records, as the applet keeps it. */
+typedef struct
+{
+  SdSide side;
+  /* The application's identity, sd_state_stream_identity()'s. */
+  char  *id;
+  /* What its row shows while it isn't running: its name and themed icon when it was pinned,
+     the icon NULL with none. */
+  char  *name;
+  char  *icon;
+  /* The device by its SdDevice's name, and the server's description of it, which its badge
+     shows while it's gone. */
+  char  *device;
+  char  *device_description;
+} SdPin;
+
+/* A pin taken away, and where it was among the pins, for sd_pins_restore(). */
+typedef struct
+{
+  SdPin pin;
+  guint position;
+} SdRemovedPin;
+
+typedef enum
+{
+  /* A stream of it plays or records. */
+  SD_PIN_PLAYING,
+  /* Its streams are all paused. */
+  SD_PIN_PAUSED,
+  /* It has no stream. */
+  SD_PIN_NOT_RUNNING,
+} SdPinActivity;
+
+/* A pinned application, running or not (CMN-217). */
+typedef struct
+{
+  /* Its device is always the pin's; it has no streams while it isn't running. */
+  SdApp         app;
+  SdPinActivity activity;
+  /* The pinned device isn't on the server: the application plays to the default meanwhile. */
+  gboolean      device_gone;
+} SdPinnedApp;
+
 typedef struct
 {
   /* Connected to a sound server. The rest is meaningless without it. */
@@ -173,9 +218,12 @@ typedef struct
   SdCard     *cards;
   guint       n_cards;
   /* The popup's Applications (CMN-216): those playing, in the server's order, then those
-     recording. */
+     recording, but the pinned ones. */
   SdApp      *apps;
   guint       n_apps;
+  /* Its Pinned applications (CMN-217), in the pins' order. */
+  SdPinnedApp *pinned;
+  guint        n_pinned;
   /* System sounds' volume, the event role's in the stream-restore extension: FALSE until
      the server has given it. */
   gboolean    has_system_sounds;
@@ -200,6 +248,8 @@ typedef struct
   const char *device_description;
   /* Its loudest channel's. */
   pa_volume_t volume;
+  /* Paused. */
+  gboolean    corked;
 } SdStream;
 
 void     sd_status_clear (SdStatus *status);
@@ -250,10 +300,57 @@ pa_volume_t        sd_state_scaled_volume   (pa_volume_t stream,
 /* Frees what the application holds, not the application. */
 void            sd_app_clear (SdApp *app);
 gboolean        sd_app_equal (const SdApp *a, const SdApp *b);
-/* The status's application on side by its SdApp's id, NULL where there's none. */
+/* The status's application on side by its SdApp's id, pinned or not, NULL where there's
+   none. */
 const SdApp    *sd_status_app (const SdStatus *status,
                                SdSide          side,
                                const char     *id);
+
+/* Frees what the pin holds, not the pin. */
+void            sd_pin_clear   (SdPin *pin);
+/* A deep copy of pin into copy, for sd_pin_clear(). */
+void            sd_pin_copy    (const SdPin *pin, SdPin *copy);
+/* An empty GArray of SdPin, which frees the pins it drops. */
+GArray         *sd_pins_new    (void);
+/* An empty GArray of SdRemovedPin, which frees the pins it drops. */
+GArray         *sd_removed_pins_new (void);
+/* The pin's index for the application on side, -1 where it isn't pinned. */
+int             sd_pins_find   (GArray     *pins,
+                                SdSide      side,
+                                const char *id);
+/* A copy of pin among pins: in its application's place where it's pinned already, at the
+   end otherwise. */
+void            sd_pins_set    (GArray      *pins,
+                                const SdPin *pin);
+/* Takes the application's pin away, into removed, which forgets what an unpin before put
+   there: only the last unpin is undone. */
+void            sd_pins_remove (GArray     *pins,
+                                SdSide      side,
+                                const char *id,
+                                GArray     *removed);
+/* Takes every pin away, into removed, as sd_pins_remove(). */
+void            sd_pins_remove_all (GArray *pins,
+                                    GArray *removed);
+/* Puts the pins of removed back where they were, as they were, and empties it: an
+   application pinned again meanwhile is pinned as before. */
+void            sd_pins_restore (GArray *pins,
+                                 GArray *removed);
+/* The pins as the applet's settings keep them: an aa{ss} of side, app, name, icon, device and
+   device-description. A floating reference. */
+GVariant       *sd_pins_to_variant   (GArray *pins);
+/* The pins of the settings' value, leaving out those with no side, application or device,
+   and an application's second pin on a side. */
+GArray         *sd_pins_from_variant (GVariant *value);
+/* The pinned application of pin, from its side's streams, paused ones too, and its side's
+   devices, monitors too. */
+void            sd_state_pinned_app  (const SdPin    *pin,
+                                      const SdStream *streams,
+                                      guint           n_streams,
+                                      const SdDevice *devices,
+                                      guint           n_devices,
+                                      SdPinnedApp    *pinned);
+/* Frees what the pinned application holds, not the pinned application. */
+void            sd_pinned_app_clear  (SdPinnedApp *pinned);
 
 /* Frees what the device holds, not the device. */
 void            sd_device_clear (SdDevice *device);

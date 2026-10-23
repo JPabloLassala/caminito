@@ -10,6 +10,8 @@ static void devices_free (SdDevice **devices, guint *n_devices);
 static gboolean devices_equal (const SdDevice *a, guint n_a, const SdDevice *b, guint n_b);
 static void apps_free (SdApp **apps, guint *n_apps);
 static gboolean apps_equal (const SdApp *a, guint n_a, const SdApp *b, guint n_b);
+static void pinned_free (SdPinnedApp **pinned, guint *n_pinned);
+static gboolean pinned_equal (const SdPinnedApp *a, guint n_a, const SdPinnedApp *b, guint n_b);
 
 void
 sd_card_clear (SdCard *card)
@@ -39,6 +41,7 @@ sd_status_clear (SdStatus *status)
   g_clear_pointer (&status->default_output, g_free);
   g_clear_pointer (&status->default_input, g_free);
   apps_free (&status->apps, &status->n_apps);
+  pinned_free (&status->pinned, &status->n_pinned);
 }
 
 static gboolean
@@ -104,6 +107,7 @@ sd_status_equal (const SdStatus *a, const SdStatus *b)
          && g_strcmp0 (a->default_output, b->default_output) == 0
          && g_strcmp0 (a->default_input, b->default_input) == 0
          && apps_equal (a->apps, a->n_apps, b->apps, b->n_apps)
+         && pinned_equal (a->pinned, a->n_pinned, b->pinned, b->n_pinned)
          && a->has_system_sounds == b->has_system_sounds
          && a->system_volume == b->system_volume;
 }
@@ -610,5 +614,273 @@ sd_status_app (const SdStatus *status, SdSide side, const char *id)
   for (guint i = 0; i < status->n_apps; i++)
     if (status->apps[i].side == side && g_strcmp0 (status->apps[i].id, id) == 0)
       return &status->apps[i];
+  for (guint i = 0; i < status->n_pinned; i++)
+    if (status->pinned[i].app.side == side && g_strcmp0 (status->pinned[i].app.id, id) == 0)
+      return &status->pinned[i].app;
   return NULL;
+}
+
+void
+sd_pin_clear (SdPin *pin)
+{
+  g_clear_pointer (&pin->id, g_free);
+  g_clear_pointer (&pin->name, g_free);
+  g_clear_pointer (&pin->icon, g_free);
+  g_clear_pointer (&pin->device, g_free);
+  g_clear_pointer (&pin->device_description, g_free);
+}
+
+void
+sd_pin_copy (const SdPin *pin, SdPin *copy)
+{
+  copy->side = pin->side;
+  copy->id = g_strdup (pin->id);
+  copy->name = g_strdup (pin->name);
+  copy->icon = g_strdup (pin->icon);
+  copy->device = g_strdup (pin->device);
+  copy->device_description = g_strdup (pin->device_description);
+}
+
+static void
+removed_pin_clear (gpointer data)
+{
+  sd_pin_clear (&((SdRemovedPin *) data)->pin);
+}
+
+GArray *
+sd_pins_new (void)
+{
+  GArray *pins = g_array_new (FALSE, TRUE, sizeof (SdPin));
+
+  g_array_set_clear_func (pins, (GDestroyNotify) sd_pin_clear);
+  return pins;
+}
+
+GArray *
+sd_removed_pins_new (void)
+{
+  GArray *removed = g_array_new (FALSE, TRUE, sizeof (SdRemovedPin));
+
+  g_array_set_clear_func (removed, removed_pin_clear);
+  return removed;
+}
+
+int
+sd_pins_find (GArray *pins, SdSide side, const char *id)
+{
+  for (guint i = 0; i < pins->len; i++)
+    {
+      const SdPin *pin = &g_array_index (pins, SdPin, i);
+
+      if (pin->side == side && g_strcmp0 (pin->id, id) == 0)
+        return (int) i;
+    }
+  return -1;
+}
+
+void
+sd_pins_set (GArray *pins, const SdPin *pin)
+{
+  int found = sd_pins_find (pins, pin->side, pin->id);
+  SdPin copy;
+
+  sd_pin_copy (pin, &copy);
+  if (found < 0)
+    g_array_append_val (pins, copy);
+  else
+    {
+      sd_pin_clear (&g_array_index (pins, SdPin, found));
+      g_array_index (pins, SdPin, found) = copy;
+    }
+}
+
+/* The pin at index, out of pins without freeing it, into removed. */
+static void
+take_pin (GArray *pins, guint index, guint position, GArray *removed)
+{
+  SdRemovedPin taken = { g_array_index (pins, SdPin, index), position };
+
+  /* Its strings are the taken pin's now: the array's clear finds nothing to free. */
+  g_array_index (pins, SdPin, index) = (SdPin) { 0 };
+  g_array_remove_index (pins, index);
+  g_array_append_val (removed, taken);
+}
+
+void
+sd_pins_remove (GArray *pins, SdSide side, const char *id, GArray *removed)
+{
+  int found = sd_pins_find (pins, side, id);
+
+  g_array_set_size (removed, 0);
+  if (found >= 0)
+    take_pin (pins, found, found, removed);
+}
+
+void
+sd_pins_remove_all (GArray *pins, GArray *removed)
+{
+  g_array_set_size (removed, 0);
+  for (guint position = 0; pins->len > 0; position++)
+    take_pin (pins, 0, position, removed);
+}
+
+void
+sd_pins_restore (GArray *pins, GArray *removed)
+{
+  /* In the order they were taken, which is their positions' order: each goes back in front
+     of what followed it. */
+  for (guint i = 0; i < removed->len; i++)
+    {
+      SdRemovedPin *taken = &g_array_index (removed, SdRemovedPin, i);
+      int again = sd_pins_find (pins, taken->pin.side, taken->pin.id);
+
+      if (again >= 0)
+        g_array_remove_index (pins, again);
+      g_array_insert_val (pins, MIN (taken->position, pins->len), taken->pin);
+      taken->pin = (SdPin) { 0 };
+    }
+  g_array_set_size (removed, 0);
+}
+
+static const char *const pin_sides[] = { "output", "input" };
+
+static void
+add_entry (GVariantBuilder *entry, const char *key, const char *value)
+{
+  if (value != NULL)
+    g_variant_builder_add (entry, "{ss}", key, value);
+}
+
+GVariant *
+sd_pins_to_variant (GArray *pins)
+{
+  GVariantBuilder builder;
+
+  g_variant_builder_init (&builder, G_VARIANT_TYPE ("aa{ss}"));
+  for (guint i = 0; i < pins->len; i++)
+    {
+      const SdPin *pin = &g_array_index (pins, SdPin, i);
+
+      g_variant_builder_open (&builder, G_VARIANT_TYPE ("a{ss}"));
+      add_entry (&builder, "side", pin_sides[pin->side]);
+      add_entry (&builder, "app", pin->id);
+      add_entry (&builder, "name", pin->name);
+      add_entry (&builder, "icon", pin->icon);
+      add_entry (&builder, "device", pin->device);
+      add_entry (&builder, "device-description", pin->device_description);
+      g_variant_builder_close (&builder);
+    }
+  return g_variant_builder_end (&builder);
+}
+
+GArray *
+sd_pins_from_variant (GVariant *value)
+{
+  GArray *pins = sd_pins_new ();
+  GVariantIter iter;
+  GVariant *entry;
+
+  if (!g_variant_is_of_type (value, G_VARIANT_TYPE ("aa{ss}")))
+    return pins;
+  g_variant_iter_init (&iter, value);
+  while ((entry = g_variant_iter_next_value (&iter)) != NULL)
+    {
+      g_autoptr (GVariant) owned = entry;
+      const char *side = NULL, *id = NULL, *device = NULL;
+      const char *name = NULL, *icon = NULL, *description = NULL;
+      SdPin pin;
+
+      g_variant_lookup (entry, "side", "&s", &side);
+      g_variant_lookup (entry, "app", "&s", &id);
+      g_variant_lookup (entry, "device", "&s", &device);
+      g_variant_lookup (entry, "name", "&s", &name);
+      g_variant_lookup (entry, "icon", "&s", &icon);
+      g_variant_lookup (entry, "device-description", "&s", &description);
+      if (g_strcmp0 (side, pin_sides[SD_OUTPUT]) == 0)
+        pin.side = SD_OUTPUT;
+      else if (g_strcmp0 (side, pin_sides[SD_INPUT]) == 0)
+        pin.side = SD_INPUT;
+      else
+        continue;
+      if (nonempty (id) == NULL || nonempty (device) == NULL
+          || sd_pins_find (pins, pin.side, id) >= 0)
+        continue;
+      pin.id = (char *) id;
+      pin.name = (char *) (nonempty (name) ?: id);
+      pin.icon = (char *) nonempty (icon);
+      pin.device = (char *) device;
+      pin.device_description = (char *) (nonempty (description) ?: device);
+      sd_pins_set (pins, &pin);
+    }
+  return pins;
+}
+
+void
+sd_state_pinned_app (const SdPin *pin, const SdStream *streams, guint n_streams,
+                     const SdDevice *devices, guint n_devices, SdPinnedApp *pinned)
+{
+  g_autoptr (GArray) members = g_array_new (FALSE, TRUE, sizeof (SdStreamVolume));
+  const SdStream *first = NULL;
+  const SdDevice *device = NULL;
+  gboolean playing = FALSE;
+  SdApp *app = &pinned->app;
+
+  *pinned = (SdPinnedApp) { 0 };
+  for (guint i = 0; i < n_streams; i++)
+    {
+      SdStreamVolume member;
+
+      if (g_strcmp0 (sd_state_stream_identity (&streams[i]), pin->id) != 0)
+        continue;
+      first = first ?: &streams[i];
+      playing = playing || !streams[i].corked;
+      member = (SdStreamVolume) { streams[i].index, g_strdup (streams[i].title),
+                                  streams[i].volume };
+      g_array_append_val (members, member);
+      app->volume = MAX (app->volume, streams[i].volume);
+    }
+  for (guint i = 0; i < n_devices && device == NULL; i++)
+    if (g_strcmp0 (devices[i].name, pin->device) == 0)
+      device = &devices[i];
+  app->id = g_strdup (pin->id);
+  app->side = pin->side;
+  /* A running application's own, which may have changed since it was pinned. */
+  app->name = g_strdup (first != NULL ? stream_app_name (first) : pin->name ?: pin->id);
+  app->icon = g_strdup (first != NULL && nonempty (first->icon) ? first->icon : pin->icon);
+  app->device = g_strdup (pin->device);
+  app->device_description = g_strdup (device != NULL ? device->description
+                                                     : pin->device_description ?: pin->device);
+  app->n_streams = members->len;
+  app->streams = members->len > 0 ? (SdStreamVolume *) g_array_free (g_steal_pointer (&members),
+                                                                     FALSE)
+                                  : NULL;
+  pinned->activity = first == NULL ? SD_PIN_NOT_RUNNING : playing ? SD_PIN_PLAYING : SD_PIN_PAUSED;
+  pinned->device_gone = device == NULL;
+}
+
+void
+sd_pinned_app_clear (SdPinnedApp *pinned)
+{
+  sd_app_clear (&pinned->app);
+}
+
+static gboolean
+pinned_equal (const SdPinnedApp *a, guint n_a, const SdPinnedApp *b, guint n_b)
+{
+  if (n_a != n_b)
+    return FALSE;
+  for (guint i = 0; i < n_a; i++)
+    if (a[i].activity != b[i].activity || a[i].device_gone != b[i].device_gone
+        || !sd_app_equal (&a[i].app, &b[i].app))
+      return FALSE;
+  return TRUE;
+}
+
+static void
+pinned_free (SdPinnedApp **pinned, guint *n_pinned)
+{
+  for (guint i = 0; i < *n_pinned; i++)
+    sd_pinned_app_clear (&(*pinned)[i]);
+  g_clear_pointer (pinned, g_free);
+  *n_pinned = 0;
 }

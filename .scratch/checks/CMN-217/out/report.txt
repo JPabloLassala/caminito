@@ -1,0 +1,65 @@
+WirePlumber's target restore, once the applet connected: Value: false (Saved: false)
+mpv pinned from its row:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}]
+the pins:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+the streams, Rhythmbox's paused one moved to its pin:
+  79 mpv headset 100% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox headset 100% 100% unmuted corked 
+the pins: the panel lives
+WH-1000XM4 turned off:
+  79 mpv speaker 100% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox speaker 100% 100% unmuted corked 
+WH-1000XM4 on again:
+  79 mpv headset 100% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox headset 100% 100% unmuted corked 
+the device gone and back: the panel lives
+the strips: the panel lives
+before unpinning mpv:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+  79 mpv headset 60% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox headset 100% 100% unmuted corked 
+mpv unpinned:
+  [{'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+  79 mpv speaker 60% unmuted playing music
+undone:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+  79 mpv headset 60% unmuted playing music
+the unpin: the panel lives
+before unpinning all:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+  79 mpv headset 60% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox headset 100% 100% muted corked 
+all unpinned, volumes and mutes as they were:
+  @aa{ss} []
+  79 mpv speaker 60% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox speaker 100% 100% muted corked 
+undone:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+  79 mpv headset 60% unmuted playing music
+  86 Firefox speaker 100% unmuted playing music
+  87 Rhythmbox headset 100% 100% muted corked 
+unpin all: the panel lives
+Spotify started ten times, pinned to HDMI, from WirePlumber's links:
+  links: 10; to the default (speaker): 0; to the pinned device (hdmi): 10
+  played on the default first: never
+Spotify after mate-panel restarted:
+  372 Spotify hdmi 100% unmuted playing music
+the restart: the panel lives
+Firefox moved to WH-1000XM4 without a pin:
+  380 Firefox headset 100% unmuted playing music
+Firefox started again:
+  393 Firefox speaker 100% unmuted playing music
+A connection to the bus can't be made
+after logging out, the new session's pins:
+  [{'side': 'output', 'app': 'mpv', 'name': 'mpv', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Rhythmbox', 'name': 'Rhythmbox', 'icon': 'rhythmbox', 'device': 'headset', 'device-description': 'WH-1000XM4'}, {'side': 'output', 'app': 'Spotify', 'name': 'Spotify', 'icon': 'spotify-client', 'device': 'hdmi', 'device-description': 'DELL U2720Q'}]
+WirePlumber's target restore before the panel starts: Value: false (Saved: false)
+Spotify in the new session:
+  65 Spotify hdmi 100% unmuted playing music
+A connection to the bus can't be made

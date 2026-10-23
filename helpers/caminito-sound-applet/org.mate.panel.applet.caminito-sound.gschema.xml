@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Sound applet's own settings (CMN-217). At a path of its own, not each applet's: a pin
+     is the user's, and outlives the applet being taken off the panel and put back. -->
+<schemalist>
+  <schema id="org.mate.panel.applet.caminito-sound" path="/org/mate/panel/applet/caminito-sound/">
+    <key name="pins" type="aa{ss}">
+      <default>[]</default>
+      <summary>Pinned applications</summary>
+      <description>The Sound applications sent to a sound device every time they play or record, in the popup's order. Each is a dictionary of "side" ("output" or "input"), "app" (the application's Flatpak app ID, name or binary), "device" (the sound server's name for the device), and what the popup shows while the application isn't running or the device is gone: "name", "icon" and "device-description".</description>
+    </key>
+  </schema>
+</schemalist>
