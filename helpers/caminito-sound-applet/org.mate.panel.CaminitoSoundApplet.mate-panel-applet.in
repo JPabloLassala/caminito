@@ -1,0 +1,13 @@
+[Applet Factory]
+Id=CaminitoSoundAppletFactory
+InProcess=true
+Location=@APPLET_LOCATION@
+Name=Sound Applet Factory
+Description=Caminito's Sound applet
+
+[CaminitoSoundApplet]
+Name=Sound
+Description=Set the volume, and see what is playing or recording
+Icon=audio-volume-high
+MateComponentId=OAFIID:Caminito_SoundApplet;
+Platforms=X11;Wayland;
