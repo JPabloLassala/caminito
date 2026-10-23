@@ -539,13 +539,29 @@ fn a_switch_with_the_pointer_on_another_output_switches_that_one() {
 }
 
 #[test]
-fn a_switch_with_an_interaction_open_keeps_its_output() {
+fn a_switch_with_the_workspace_popup_open_keeps_its_output() {
     let mut policy = two_outputs(true);
-    policy.action(SEAT, Action::Overview, ms(3));
+    assert!(policy.open_workspace_popup(false));
 
     policy.switch_on_output(SEAT, OutputId(1));
 
     assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+}
+
+#[test]
+fn a_switch_in_the_overview_takes_the_selection_to_the_pointers_output() {
+    let mut policy = two_outputs(true);
+    policy.action(SEAT, Action::Overview, ms(3));
+    assert_eq!(policy.overview().unwrap().output, OutputId(2));
+
+    policy.switch_on_output(SEAT, OutputId(1));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(4));
+
+    // The left output switched, and the selection is on it.
+    assert_eq!(active(&policy), (1, 0));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+    let open = policy.overview().unwrap();
+    assert_eq!((open.output, open.workspace), (OutputId(1), 1));
 }
 
 #[test]

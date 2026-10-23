@@ -383,6 +383,19 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// A switch binding ran with `seat`'s pointer on `output` and the Overview open (ADR
+    /// 0046): the selection goes to `output`, if it's another of policy's outputs, so the
+    /// switch is that output's.
+    pub(crate) fn overview_follow(&mut self, seat: SeatId, output: OutputId) {
+        let Some(open) = &self.overview else {
+            return;
+        };
+        if open.seat == seat && open.output != output && self.outputs.iter().any(|o| o.id == output)
+        {
+            self.overview_select_output(seat, output);
+        }
+    }
+
     /// Makes `output` `seat`'s Active output and the open Overview's selection's (248),
     /// with nothing selected.
     fn overview_select_output(&mut self, seat: SeatId, output: OutputId) {

@@ -1292,10 +1292,12 @@ impl Caminito {
 impl State {
     /// The shortcut of the Overview or of the Application overview, as `scope` says,
     /// fired: it closes the open one of that scope, changes the other to it in place
-    /// (CMN-185), or opens one on the Active output. Nothing opens during a move or
-    /// resize, and a client's open menu is dismissed first, as for the Window switcher.
+    /// (CMN-185), or opens one with its selection on the pointer's output (ADR 0046).
+    /// Nothing opens during a move or resize, and a client's open menu is dismissed first,
+    /// as for the Window switcher.
     pub(crate) fn toggle_overview(&mut self, scope: OverviewScope, time: InputTime) {
-        self.toggle_overview_on(None, scope, time);
+        let pointer = self.caminito.pointer_output();
+        self.toggle_overview_on(pointer, scope, time);
     }
 
     /// `toggle_overview`, with the selection on `selection_on` if it opens one, as a Hot

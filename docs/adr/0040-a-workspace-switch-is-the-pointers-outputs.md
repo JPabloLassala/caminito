@@ -1,7 +1,7 @@
 # 40. A workspace switch is the pointer's output's
 
 Date: 2026-10-23
-Status: Accepted
+Status: Accepted. Qualified on 2026-10-23 by [ADR 0046](0046-the-overview-opens-and-switches-on-the-pointers-output.md): the Overview and the Application overview open on the pointer's output, and a switch binding in them takes the selection to the pointer's output.
 
 ## Context
 

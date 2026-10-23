@@ -252,7 +252,8 @@ fn clicked_on_the_left(per_output: bool) -> (Fixture, Output, Output) {
 }
 
 #[test]
-fn under_per_output_workspaces_after_a_click_on_the_other_outputs_cell_the_bindings_switch_it() {
+fn under_per_output_workspaces_after_a_click_on_the_other_outputs_cell_the_bindings_switch_the_pointers()
+ {
     let (mut f, left, right) = clicked_on_the_left(true);
     assert_eq!(active_workspaces(&f, &left, &right), (1, 0));
 
@@ -261,15 +262,27 @@ fn under_per_output_workspaces_after_a_click_on_the_other_outputs_cell_the_bindi
     assert_eq!(active_workspaces(&f, &left, &right), (2, 0));
     assert_eq!(listed_on(&f, &left), Vec::<u64>::new());
 
+    // With the pointer on the right output, the key switches that one, and the selection
+    // goes there (ADR 0046).
     let at = global(&right, Point::from((960, 900)));
+    f.pointer_move(f64::from(at.x), f64::from(at.y));
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+    assert!(is_open(&f));
+    assert_eq!(active_workspaces(&f, &left, &right), (2, 1));
+    assert_eq!(selection_output(&f), right.name());
+
+    // And the button on the left output's layout switches the left one.
+    let at = global(&left, Point::from((960, 900)));
     press_at(&mut f, at, BTN_SIDE);
     assert!(is_open(&f));
-    assert_eq!(active_workspaces(&f, &left, &right), (1, 0));
+    assert_eq!(active_workspaces(&f, &left, &right), (1, 1));
+    assert_eq!(selection_output(&f), left.name());
     assert!(!popup_shown(&f));
 }
 
 #[test]
-fn under_spanning_workspaces_after_a_click_on_the_other_outputs_cell_the_bindings_switch_it() {
+fn under_spanning_workspaces_after_a_click_on_the_other_outputs_cell_the_bindings_follow_the_pointer()
+ {
     let (mut f, left, right) = clicked_on_the_left(false);
     assert_eq!(active_workspaces(&f, &left, &right), (1, 1));
 
@@ -278,10 +291,11 @@ fn under_spanning_workspaces_after_a_click_on_the_other_outputs_cell_the_binding
     assert_eq!(active_workspaces(&f, &left, &right), (2, 2));
     assert_eq!(selection_output(&f), left.name());
 
+    // The button on the right output switches both, and takes the selection there.
     let at = global(&right, Point::from((960, 900)));
     press_at(&mut f, at, BTN_SIDE);
     assert!(is_open(&f));
     assert_eq!(active_workspaces(&f, &left, &right), (1, 1));
-    assert_eq!(selection_output(&f), left.name());
+    assert_eq!(selection_output(&f), right.name());
     assert!(!popup_shown(&f));
 }

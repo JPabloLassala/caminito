@@ -1283,11 +1283,14 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// A binding that switches the workspace ran with `seat`'s pointer on `output`: it
     /// makes `output` the seat's Active output, as a press there does, so the switch is
-    /// that output's and the focus goes to its default there. An open Interaction has its
-    /// own output, and keeps it.
+    /// that output's and the focus goes to its default there. With the Overview open the
+    /// selection goes there too, as a click on that output's bar takes it (ADR 0046). Any
+    /// other open Interaction has its own output, and keeps it.
     pub fn switch_on_output(&mut self, seat: SeatId, output: OutputId) {
-        if self.interaction(seat).is_none() {
-            self.press_on_output(seat, output);
+        match self.interaction(seat) {
+            None => self.press_on_output(seat, output),
+            Some(Interaction::Overview) => self.overview_follow(seat, output),
+            Some(_) => {}
         }
     }
 

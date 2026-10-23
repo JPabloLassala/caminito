@@ -163,6 +163,22 @@ fn the_overviews_shortcut_changes_it_in_place_and_its_own_closes_it() {
 }
 
 #[test]
+fn its_shortcut_opens_it_with_the_selection_on_the_pointers_output() {
+    let (mut f, left, right, [a, _, c, _]) = desk(true, vec![]);
+    f.pointer_move(3500., 900.);
+
+    press_shortcut(&mut f);
+
+    // The focused window's application's, with the selection on the pointer's output
+    // (ADR 0046), where nothing is selected since the focused window isn't there.
+    assert_eq!(scope(&f), "application");
+    assert_eq!(overview(&f)["output"], right.name());
+    assert_eq!(overview(&f)["selected"], serde_json::Value::Null);
+    assert_eq!(listed_on(&f, &left), ids(&f, &[a]));
+    assert_eq!(listed_on(&f, &right), ids(&f, &[c]));
+}
+
+#[test]
 fn a_hot_corner_set_to_it_opens_it_on_its_output_and_closes_it() {
     let corner = (
         CAMINITO,

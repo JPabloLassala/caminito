@@ -16,7 +16,7 @@ pub use grab::GrabKind;
 pub(crate) use serials::InputSerials;
 
 use caminito_policy::{
-    Action, Crossing, GrabKey, Interaction, OverviewScope, PointerTarget, PolicyWindow,
+    Action, Crossing, GrabKey, Interaction, OutputId, OverviewScope, PointerTarget, PolicyWindow,
     ResizeEdges, WindowId,
 };
 use smithay::backend::input::{
@@ -1369,14 +1369,19 @@ impl Caminito {
     /// A binding that switches the workspace is about to run: the output under the pointer
     /// becomes the Active output, unless an Interaction holds one of its own.
     pub(crate) fn pointer_output_switches(&mut self) {
+        if let Some(output) = self.pointer_output() {
+            self.policy.switch_on_output(SEAT, output);
+        }
+    }
+
+    /// The output the pointer is on.
+    pub(crate) fn pointer_output(&self) -> Option<OutputId> {
         let location = self.seat.get_pointer().unwrap().current_location();
         let under = self
             .outputs
             .iter()
             .find(|output| output_geometry(output).to_f64().contains(location));
-        if let Some(output) = under {
-            self.policy.switch_on_output(SEAT, output_id(output));
-        }
+        under.map(output_id)
     }
 
     /// What's at `location` in the topmost layer surface of one of the scene's layers that

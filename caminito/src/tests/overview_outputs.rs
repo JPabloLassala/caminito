@@ -31,7 +31,8 @@ use crate::state::SEAT;
 
 /// The two outputs with `workspaces-per-output` as `per_output` says, and a client of
 /// `kind`: on the left output's first workspace a window at (100, 100) and one at
-/// (900, 500), and on the right one's a window at (2300, 200), which is focused.
+/// (900, 500), and on the right one's a window at (2300, 200), which is focused. The
+/// pointer rests on the right output, beside that window, so the Overview opens there.
 fn desk(kind: Kind, per_output: bool) -> (Fixture, ClientId, Output, Output, [ClientWindow; 3]) {
     desk_with(kind, per_output, vec![])
 }
@@ -51,6 +52,7 @@ pub(super) fn desk_with(
         .caminito
         .policy
         .activate(SEAT, id, f.state.caminito.now());
+    f.pointer_move(3000., 900.);
     f.dispatch();
     (f, client, left, right, [first, second, third])
 }
@@ -282,6 +284,37 @@ fn a_click_on_a_cell_switches_both_outputs_under_spanning_workspaces() {
         assert_eq!(active_cell(&f, output), 2);
         assert_eq!(listed_on(&f, output), Vec::<u64>::new());
     }
+}
+
+#[test]
+fn the_shortcut_opens_it_with_the_selection_on_the_pointers_output() {
+    let (mut f, _, left, _, [first, second, _]) = desk(Kind::Xdg, true);
+    f.pointer_move(1500., 900.);
+
+    open(&mut f);
+
+    // The focused window is on the other output, so nothing is selected (ADR 0046).
+    assert_eq!(overview(&f)["output"], left.name().as_str());
+    assert_eq!(overview(&f)["selected"], serde_json::Value::Null);
+    assert_eq!(listed_on(&f, &left), ids(&f, &[first, second]));
+    let active = f.state.caminito.policy.active_output(SEAT);
+    assert_eq!(active, Some(output_id(&left)));
+}
+
+#[test]
+fn a_workspace_binding_switches_the_pointers_output_and_takes_the_selection_there() {
+    let (mut f, _, left, right, _) = desk(Kind::Xdg, true);
+    open(&mut f);
+    assert_eq!(overview(&f)["output"], right.name().as_str());
+
+    f.pointer_move(1500., 900.);
+    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHT]);
+
+    assert!(is_open(&f));
+    assert_eq!(active_workspaces(&f, &left, &right), (1, 0));
+    assert_eq!(overview(&f)["output"], left.name().as_str());
+    assert_eq!(active_cell(&f, &left), 1);
+    assert_eq!(active_cell(&f, &right), 0);
 }
 
 #[test]
