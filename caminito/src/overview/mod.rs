@@ -64,9 +64,7 @@ pub(crate) mod transition;
 
 use std::time::{Duration, Instant};
 
-use caminito_policy::{
-    Action, Direction, OutputId, OverviewOutput, OverviewScope, PolicyWindow, WindowId,
-};
+use caminito_policy::{Direction, OutputId, OverviewOutput, OverviewScope, PolicyWindow, WindowId};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::backend::renderer::element::Id;
@@ -1159,7 +1157,7 @@ impl Caminito {
             return Some(FilterResult::Intercept(None));
         }
         if let Some(Binding::Policy(action)) = binding
-            && switches_workspace(action)
+            && action.switches_workspace()
         {
             return Some(FilterResult::Intercept(Some(Bound::Action(action))));
         }
@@ -1221,21 +1219,6 @@ impl Caminito {
 /// `rect`, in global logical coordinates, from `output`'s top left corner.
 fn local(rect: Rectangle<i32, Logical>, output: &Output) -> Rectangle<i32, Logical> {
     Rectangle::new(rect.loc - output_geometry(output).loc, rect.size)
-}
-
-/// Whether `action` is one of the workspace bindings that switch the Active output's
-/// workspace, which work with the Overview open (244). Those that move a window there too
-/// don't.
-fn switches_workspace(action: Action) -> bool {
-    matches!(
-        action,
-        Action::SwitchToWorkspace(_)
-            | Action::SwitchToWorkspaceLeft
-            | Action::SwitchToWorkspaceRight
-            | Action::SwitchToWorkspaceUp
-            | Action::SwitchToWorkspaceDown
-            | Action::SwitchToWorkspacePrev
-    )
 }
 
 impl Caminito {
@@ -1387,7 +1370,7 @@ impl State {
             _ => None,
         });
         let switch = binding.and_then(|(_, binding)| match binding {
-            Binding::Policy(action) if switches_workspace(action) => Some(action),
+            Binding::Policy(action) if action.switches_workspace() => Some(action),
             _ => None,
         });
         let cell = caminito.overview_cell_at(location);

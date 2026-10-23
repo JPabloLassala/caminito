@@ -10,8 +10,8 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
 use super::fixture::{
-    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTSHIFT,
-    KEY_RIGHT, KEY_TAB, Kind, WindowSpec, on_both_kinds,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_LEFTALT, KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_RIGHT,
+    KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use crate::output::{output_geometry, output_id};
 use crate::settings::Value;
@@ -234,7 +234,7 @@ fn dump(f: &Fixture) -> serde_json::Value {
 
 // On one kind: where the popup opens goes by the outputs, whatever the windows are.
 #[test]
-fn the_workspace_popup_is_on_the_active_output_with_the_pointer_on_the_other() {
+fn a_switch_is_the_pointers_outputs_and_the_popup_shows_there() {
     let (mut f, client, left, right) = two_outputs(Kind::Xdg);
     window_at(&mut f, client, (100, 100), 0);
     let on_right = window_at(&mut f, client, (2500, 600), 0);
@@ -247,26 +247,28 @@ fn the_workspace_popup_is_on_the_active_output_with_the_pointer_on_the_other() {
     f.key(KEY_RIGHT, true);
     f.key(KEY_RIGHT, false);
 
-    // The binding switched the right output, where the focused window is, and the popup
-    // shows that output's workspaces there.
+    // The binding switched the left output, where the pointer is, not the focused
+    // window's, and the popup shows that output's workspaces there.
     let dumped = dump(&f);
-    assert_eq!(dumped["workspace_popup"]["output"], right.name());
+    assert_eq!(dumped["workspace_popup"]["output"], left.name());
     assert_eq!(dumped["workspace_popup"]["selected"], 1);
     assert_eq!(dumped["outputs"][0]["name"], left.name());
-    assert_eq!(dumped["outputs"][0]["active_workspace"], 0);
-    assert_eq!(dumped["outputs"][1]["active_workspace"], 1);
-    // The workspace is empty, so nothing is focused, and it's the Active output still.
+    assert_eq!(dumped["outputs"][0]["active_workspace"], 1);
+    assert_eq!(dumped["outputs"][1]["active_workspace"], 0);
+    // It's the Active output now, and its workspace is empty, so nothing is focused.
     assert_eq!(dumped["focus"], serde_json::Value::Null);
-    assert_eq!(dumped["active_output"], right.name());
+    assert_eq!(dumped["active_output"], left.name());
 
-    // A second press acts on the same output, and the popup stays.
+    // A second press with the pointer moved to the other output steps the open popup on
+    // the same output.
+    f.pointer_move(2500., 900.);
     f.key(KEY_RIGHT, true);
     f.key(KEY_RIGHT, false);
     let dumped = dump(&f);
-    assert_eq!(dumped["workspace_popup"]["output"], right.name());
+    assert_eq!(dumped["workspace_popup"]["output"], left.name());
     assert_eq!(dumped["workspace_popup"]["selected"], 2);
-    assert_eq!(dumped["outputs"][0]["active_workspace"], 0);
-    assert_eq!(dumped["outputs"][1]["active_workspace"], 2);
+    assert_eq!(dumped["outputs"][0]["active_workspace"], 2);
+    assert_eq!(dumped["outputs"][1]["active_workspace"], 0);
 
     f.key(KEY_LEFTALT, false);
     f.key(KEY_LEFTCTRL, false);
@@ -319,11 +321,6 @@ fn a_press_on_the_other_outputs_panel_or_background_makes_it_the_active_output()
     // Moving the pointer to the other output, onto its panel, changes nothing.
     f.pointer_move(900., 10.);
     assert_eq!(dump(&f)["active_output"], right.name());
-    switch_right(&mut f);
-    assert_eq!(active_workspaces(&f, &left, &right), (0, 1));
-    f.chord(&[KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT]);
-    assert_eq!(active_workspaces(&f, &left, &right), (0, 0));
-    assert_eq!(dump(&f)["focus"], f.pid(on_right).0);
 
     // A press on the panel does, and leaves the focus where it is.
     f.wait_between_inputs(1000);
@@ -347,8 +344,8 @@ on_both_kinds! {
         let (mut f, client, left, right) = two_outputs(kind);
         window_at(&mut f, client, (100, 100), 0);
         window_at(&mut f, client, (2500, 600), 0);
-        // The pointer is on the left output, which decides nothing.
-        f.pointer_move(300., 900.);
+        // The pointer is on the right output, which the binding switches.
+        f.pointer_move(3000., 1000.);
         switch_right(&mut f);
         assert_eq!(active_workspaces(&f, &left, &right), (0, 1));
         assert_eq!(dump(&f)["focus"], serde_json::Value::Null);

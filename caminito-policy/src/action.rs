@@ -89,6 +89,23 @@ pub enum Action {
     ApplicationOverview,
 }
 
+impl Action {
+    /// Whether this is one of the workspace bindings that switch an output's workspace,
+    /// which act on the pointer's output and work with the Overview open (244).
+    /// Those that move a window there too don't.
+    pub fn switches_workspace(self) -> bool {
+        matches!(
+            self,
+            Action::SwitchToWorkspace(_)
+                | Action::SwitchToWorkspaceLeft
+                | Action::SwitchToWorkspaceRight
+                | Action::SwitchToWorkspaceUp
+                | Action::SwitchToWorkspaceDown
+                | Action::SwitchToWorkspacePrev
+        )
+    }
+}
+
 /// Where in a work area `Action::MoveTo` puts a window's Frame (160): against a corner,
 /// against a side, which moves it along one axis alone, or in the middle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

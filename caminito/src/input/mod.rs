@@ -418,6 +418,10 @@ impl State {
         if action == Action::ActivateWindowMenu {
             self.dismiss_menus(time);
         }
+        // A switch is the pointer's output's, which it makes the Active output.
+        if action.switches_workspace() {
+            self.caminito.pointer_output_switches();
+        }
         let now = self.caminito.now();
         // Before the action, which may leave no window with the focus a move needs.
         let shows_popup = self.caminito.workspace_popup_shows_for(action);
@@ -1359,6 +1363,19 @@ impl Caminito {
             .find(|output| output_geometry(output).to_f64().contains(location));
         if let Some(output) = pressed {
             self.policy.press_on_output(SEAT, output_id(output));
+        }
+    }
+
+    /// A binding that switches the workspace is about to run: the output under the pointer
+    /// becomes the Active output, unless an Interaction holds one of its own.
+    pub(crate) fn pointer_output_switches(&mut self) {
+        let location = self.seat.get_pointer().unwrap().current_location();
+        let under = self
+            .outputs
+            .iter()
+            .find(|output| output_geometry(output).to_f64().contains(location));
+        if let Some(output) = under {
+            self.policy.switch_on_output(SEAT, output_id(output));
         }
     }
 

@@ -523,6 +523,31 @@ fn a_press_on_another_output_stays_until_the_focus_changes() {
     assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
 }
 
+// A switch binding acts on the pointer's output.
+
+#[test]
+fn a_switch_with_the_pointer_on_another_output_switches_that_one() {
+    let mut policy = two_outputs(true);
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+    policy.switch_on_output(SEAT, OutputId(1));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(3));
+
+    // The left output switched, and the right one, with the focused window, didn't.
+    assert_eq!(active(&policy), (1, 0));
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(1)));
+}
+
+#[test]
+fn a_switch_with_an_interaction_open_keeps_its_output() {
+    let mut policy = two_outputs(true);
+    policy.action(SEAT, Action::Overview, ms(3));
+
+    policy.switch_on_output(SEAT, OutputId(1));
+
+    assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+}
+
 #[test]
 fn a_press_on_an_output_there_isnt_changes_nothing() {
     let mut policy = two_outputs(true);

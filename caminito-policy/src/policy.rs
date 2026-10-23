@@ -1281,6 +1281,16 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
+    /// A binding that switches the workspace ran with `seat`'s pointer on `output`: it
+    /// makes `output` the seat's Active output, as a press there does, so the switch is
+    /// that output's and the focus goes to its default there. An open Interaction has its
+    /// own output, and keeps it.
+    pub fn switch_on_output(&mut self, seat: SeatId, output: OutputId) {
+        if self.interaction(seat).is_none() {
+            self.press_on_output(seat, output);
+        }
+    }
+
     /// A press on a window's titlebar ended without dragging it. With `raise-on-click` off
     /// that raises the window, as Marco raises one it was about to move when the pointer
     /// hardly moved (display.c:3857-3870); with it on, the press raised it already (153).
