@@ -41,11 +41,11 @@ typedef struct
   GSettings           *media_keys;
   GSettings           *sound;
   /* The pins (CMN-217), as SdPin, from the applet's settings: kept for the session alone
-     where its schema isn't installed. What the last unpin took away, as SdUnpinned, for its
+     where its schema isn't installed. What the last unpin took away, as SdRemovedPin, for its
      Undo. */
   GSettings           *pins_settings;
   GArray              *pins;
-  GArray              *unpinned;
+  GArray              *removed;
   /* A touchpad's scroll, until it makes up a step. */
   double               scrolled;
   /* The volume the last step asked for, and when: the next step goes on from it while
@@ -420,13 +420,13 @@ on_popup_move_app (SdSide side, const char *app, const char *device, gpointer da
 
   if (found >= 0 && device != NULL)
     {
-      SdPin *pin = &g_array_index (applet->pins, SdPin, found);
+      SdPin pin = g_array_index (applet->pins, SdPin, found);
       const char *description = description_of (sd_pulse_status (applet->pulse), side, device);
 
-      g_free (pin->device);
-      g_free (pin->device_description);
-      pin->device = g_strdup (device);
-      pin->device_description = g_strdup (description ?: device);
+      /* The pin's own strings but these two, which sd_pins_set() copies over them. */
+      pin.device = (char *) device;
+      pin.device_description = (char *) (description ?: device);
+      sd_pins_set (applet->pins, &pin);
       save_pins (applet);
     }
   sd_pulse_move_app (applet->pulse, side, app, device);
@@ -471,7 +471,7 @@ on_popup_unpin_app (SdSide side, const char *id, gpointer data)
   Applet *applet = data;
 
   sd_pulse_move_app (applet->pulse, side, id, NULL);
-  sd_pins_remove (applet->pins, side, id, applet->unpinned);
+  sd_pins_remove (applet->pins, side, id, applet->removed);
   save_pins (applet);
 }
 
@@ -487,7 +487,7 @@ on_popup_unpin_all (gpointer data)
 
       sd_pulse_move_app (applet->pulse, pin->side, pin->id, NULL);
     }
-  sd_pins_remove_all (applet->pins, applet->unpinned);
+  sd_pins_remove_all (applet->pins, applet->removed);
   save_pins (applet);
 }
 
@@ -497,7 +497,7 @@ on_popup_undo_unpin (gpointer data)
 {
   Applet *applet = data;
 
-  sd_pins_restore (applet->pins, applet->unpinned);
+  sd_pins_restore (applet->pins, applet->removed);
   save_pins (applet);
 }
 
@@ -774,7 +774,7 @@ applet_free (gpointer data)
   g_clear_object (&applet->sound);
   g_clear_object (&applet->pins_settings);
   g_array_unref (applet->pins);
-  g_array_unref (applet->unpinned);
+  g_array_unref (applet->removed);
   g_ptr_array_unref (applet->profile_items);
   cards_clear (applet);
   g_free (applet);
@@ -837,7 +837,7 @@ fill (MatePanelApplet *panel_applet)
   applet->media_keys = settings_new (MEDIA_KEYS_SCHEMA);
   applet->sound = settings_new (SOUND_SCHEMA);
   applet->pins = sd_pins_new ();
-  applet->unpinned = sd_unpinned_new ();
+  applet->removed = sd_removed_pins_new ();
   applet->pins_settings = settings_new (PINS_SCHEMA);
   if (applet->pins_settings != NULL)
     {
@@ -846,7 +846,7 @@ fill (MatePanelApplet *panel_applet)
       on_pins_changed (applet->pins_settings, "pins", applet);
     }
   else
-    g_warning ("the schema %s isn't installed: pins last until the panel restarts",
+    g_warning ("can't keep the pins past the panel's restart: the schema %s isn't installed",
                PINS_SCHEMA);
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
   applet->content = sd_popup_new (applet->popup, &popup_actions, applet);

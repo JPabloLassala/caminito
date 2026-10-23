@@ -24,7 +24,7 @@
 # application's new stream played on the default before the applet moved it (from
 # WirePlumber's links, as CMN-209's blip.sh read them), a pin after mate-panel restarts, a move
 # without a pin after the application restarts, and, from a new session after this one
-# ended, the pins and WirePlumber's saved target restore.
+# ended (login.sh), the pins, WirePlumber's target restore, and the pinned Spotify playing.
 #
 #   run.sh [<meson build directory with the applet built>] [<output directory>]
 #
@@ -87,14 +87,11 @@ export XDG_CONFIG_HOME=$work/config XDG_RUNTIME_DIR=$work/run XDG_STATE_HOME=$wo
 DISPLAY=:$n MATE_PANEL_APPLETS_DIR=$work/applets NO_AT_BRIDGE=1 GDK_BACKEND=x11 \
   WAYLAND_DISPLAY= timeout 400 dbus-run-session -- bash "$here/session.sh" "$here" "$work" "$out" \
   2>&1 | grep -vE '^(dbus-daemon\[|fusermount)|RTKit' >>"$out/report.txt" || true
+# A login after this one: a bus of its own, the same settings and state, the panel and the
+# sound server started again.
+DISPLAY=:$n MATE_PANEL_APPLETS_DIR=$work/applets NO_AT_BRIDGE=1 GDK_BACKEND=x11 \
+  WAYLAND_DISPLAY= timeout 60 dbus-run-session -- bash "$here/login.sh" "$here" "$work" \
+  2>&1 | grep -vE '^(dbus-daemon\[|fusermount)|RTKit' >>"$out/report.txt" || true
 kill "$xserver" 2>/dev/null; wait "$xserver" 2>/dev/null || true
-
-# A login after this one: a bus of its own, the same settings and state.
-{
-  echo "after logging out, a new session's pins:"
-  dbus-run-session -- dconf read /org/mate/panel/applet/caminito-sound/pins | sed 's/^/  /'
-  echo "and WirePlumber's saved settings:"
-  sed 's/^/  /' "$work/state/wireplumber/sm-settings" 2>/dev/null || echo "  none"
-} >>"$out/report.txt"
 cat "$out/report.txt"
 echo "screenshots in $out"

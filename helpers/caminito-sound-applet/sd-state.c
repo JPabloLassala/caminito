@@ -642,9 +642,9 @@ sd_pin_copy (const SdPin *pin, SdPin *copy)
 }
 
 static void
-unpinned_clear (gpointer data)
+removed_pin_clear (gpointer data)
 {
-  sd_pin_clear (&((SdUnpinned *) data)->pin);
+  sd_pin_clear (&((SdRemovedPin *) data)->pin);
 }
 
 GArray *
@@ -657,12 +657,12 @@ sd_pins_new (void)
 }
 
 GArray *
-sd_unpinned_new (void)
+sd_removed_pins_new (void)
 {
-  GArray *unpinned = g_array_new (FALSE, TRUE, sizeof (SdUnpinned));
+  GArray *removed = g_array_new (FALSE, TRUE, sizeof (SdRemovedPin));
 
-  g_array_set_clear_func (unpinned, unpinned_clear);
-  return unpinned;
+  g_array_set_clear_func (removed, removed_pin_clear);
+  return removed;
 }
 
 int
@@ -694,44 +694,44 @@ sd_pins_set (GArray *pins, const SdPin *pin)
     }
 }
 
-/* The pin at index, out of pins without freeing it, into unpinned. */
+/* The pin at index, out of pins without freeing it, into removed. */
 static void
-take_pin (GArray *pins, guint index, guint position, GArray *unpinned)
+take_pin (GArray *pins, guint index, guint position, GArray *removed)
 {
-  SdUnpinned taken = { g_array_index (pins, SdPin, index), position };
+  SdRemovedPin taken = { g_array_index (pins, SdPin, index), position };
 
   /* Its strings are the taken pin's now: the array's clear finds nothing to free. */
   g_array_index (pins, SdPin, index) = (SdPin) { 0 };
   g_array_remove_index (pins, index);
-  g_array_append_val (unpinned, taken);
+  g_array_append_val (removed, taken);
 }
 
 void
-sd_pins_remove (GArray *pins, SdSide side, const char *id, GArray *unpinned)
+sd_pins_remove (GArray *pins, SdSide side, const char *id, GArray *removed)
 {
   int found = sd_pins_find (pins, side, id);
 
-  g_array_set_size (unpinned, 0);
+  g_array_set_size (removed, 0);
   if (found >= 0)
-    take_pin (pins, found, found, unpinned);
+    take_pin (pins, found, found, removed);
 }
 
 void
-sd_pins_remove_all (GArray *pins, GArray *unpinned)
+sd_pins_remove_all (GArray *pins, GArray *removed)
 {
-  g_array_set_size (unpinned, 0);
+  g_array_set_size (removed, 0);
   for (guint position = 0; pins->len > 0; position++)
-    take_pin (pins, 0, position, unpinned);
+    take_pin (pins, 0, position, removed);
 }
 
 void
-sd_pins_restore (GArray *pins, GArray *unpinned)
+sd_pins_restore (GArray *pins, GArray *removed)
 {
   /* In the order they were taken, which is their positions' order: each goes back in front
      of what followed it. */
-  for (guint i = 0; i < unpinned->len; i++)
+  for (guint i = 0; i < removed->len; i++)
     {
-      SdUnpinned *taken = &g_array_index (unpinned, SdUnpinned, i);
+      SdRemovedPin *taken = &g_array_index (removed, SdRemovedPin, i);
       int again = sd_pins_find (pins, taken->pin.side, taken->pin.id);
 
       if (again >= 0)
@@ -739,7 +739,7 @@ sd_pins_restore (GArray *pins, GArray *unpinned)
       g_array_insert_val (pins, MIN (taken->position, pins->len), taken->pin);
       taken->pin = (SdPin) { 0 };
     }
-  g_array_set_size (unpinned, 0);
+  g_array_set_size (removed, 0);
 }
 
 static const char *const pin_sides[] = { "output", "input" };

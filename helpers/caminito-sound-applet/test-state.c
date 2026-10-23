@@ -697,33 +697,33 @@ static void
 test_undo_puts_an_unpinned_app_back_in_its_place (void)
 {
   g_autoptr (GArray) pins = three_pins ();
-  g_autoptr (GArray) unpinned = sd_unpinned_new ();
+  g_autoptr (GArray) removed = sd_removed_pins_new ();
   g_autofree char *after = NULL;
   g_autofree char *restored = NULL;
 
-  sd_pins_remove (pins, SD_INPUT, "com.discordapp.Discord", unpinned);
+  sd_pins_remove (pins, SD_INPUT, "com.discordapp.Discord", removed);
   after = pins_text (pins);
   g_assert_cmpstr (after, ==, "output:Spotify>headset,output:mpv>hdmi");
-  sd_pins_restore (pins, unpinned);
+  sd_pins_restore (pins, removed);
   restored = pins_text (pins);
   g_assert_cmpstr (restored, ==, "output:Spotify>headset,input:com.discordapp.Discord>usb,"
                                  "output:mpv>hdmi");
   g_assert_cmpstr (g_array_index (pins, SdPin, 1).device_description, ==,
                    "Yeti Stereo Microphone");
   /* Undone once. */
-  g_assert_cmpuint (unpinned->len, ==, 0);
+  g_assert_cmpuint (removed->len, ==, 0);
 }
 
 static void
 test_undo_puts_back_every_pin_of_unpin_all (void)
 {
   g_autoptr (GArray) pins = three_pins ();
-  g_autoptr (GArray) unpinned = sd_unpinned_new ();
+  g_autoptr (GArray) removed = sd_removed_pins_new ();
   g_autofree char *restored = NULL;
 
-  sd_pins_remove_all (pins, unpinned);
+  sd_pins_remove_all (pins, removed);
   g_assert_cmpuint (pins->len, ==, 0);
-  g_assert_cmpuint (unpinned->len, ==, 3);
+  g_assert_cmpuint (removed->len, ==, 3);
   /* Pinned again meanwhile, to another device: undone, it's as it was. */
   {
     SdPin again = mpv_pin;
@@ -731,7 +731,7 @@ test_undo_puts_back_every_pin_of_unpin_all (void)
     again.device = (char *) "speaker";
     sd_pins_set (pins, &again);
   }
-  sd_pins_restore (pins, unpinned);
+  sd_pins_restore (pins, removed);
   restored = pins_text (pins);
   g_assert_cmpstr (restored, ==, "output:Spotify>headset,input:com.discordapp.Discord>usb,"
                                  "output:mpv>hdmi");
@@ -741,12 +741,12 @@ static void
 test_an_unpin_replaces_the_last_ones_undo (void)
 {
   g_autoptr (GArray) pins = three_pins ();
-  g_autoptr (GArray) unpinned = sd_unpinned_new ();
+  g_autoptr (GArray) removed = sd_removed_pins_new ();
   g_autofree char *restored = NULL;
 
-  sd_pins_remove (pins, SD_OUTPUT, "Spotify", unpinned);
-  sd_pins_remove (pins, SD_OUTPUT, "mpv", unpinned);
-  sd_pins_restore (pins, unpinned);
+  sd_pins_remove (pins, SD_OUTPUT, "Spotify", removed);
+  sd_pins_remove (pins, SD_OUTPUT, "mpv", removed);
+  sd_pins_restore (pins, removed);
   restored = pins_text (pins);
   g_assert_cmpstr (restored, ==, "input:com.discordapp.Discord>usb,output:mpv>hdmi");
 }

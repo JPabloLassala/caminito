@@ -180,7 +180,7 @@ struct _SdPopup
   guint                 undo_id;
   guint                 undo_position;
   GHashTable           *undo_hidden;
-  gboolean              running;
+  gboolean              has_server;
   /* The rows' names, as wide as the widest, so that their sliders line up. */
   GtkSizeGroup         *names;
   /* Every Slider, for the step and the cap. */
@@ -922,8 +922,8 @@ row_button_new (const char *icon_name)
   return button;
 }
 
-/* System sounds' place of the pin button, which is never shown: it keeps its slider as wide
-   as the applications'. */
+/* The pin button; in System sounds' row, never shown, it keeps the slider as wide as the
+   applications'. */
 static GtkWidget *
 pin_new (void)
 {
@@ -1041,14 +1041,23 @@ on_pin_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
 
 static void arrange_pinned (SdPopup *popup);
 
+/* The Undo strip gone, and the rows it stood for shown where they're still pinned. */
+static void
+undo_hide (SdPopup *popup)
+{
+  g_clear_handle_id (&popup->undo_id, g_source_remove);
+  g_hash_table_remove_all (popup->undo_hidden);
+  arrange_pinned (popup);
+}
+
 static gboolean
 on_undo_timeout (gpointer data)
 {
   SdPopup *popup = data;
 
+  /* Gone with its return. */
   popup->undo_id = 0;
-  g_hash_table_remove_all (popup->undo_hidden);
-  arrange_pinned (popup);
+  undo_hide (popup);
   return G_SOURCE_REMOVE;
 }
 
@@ -1146,7 +1155,7 @@ app_row_new (SdPopup *popup, const SdApp *app)
   g_object_set_data (G_OBJECT (row->box), "row", row);
   set_app_name (row->box, row, NULL);
 
-  row->pin = row_button_new ("view-pin-symbolic");
+  row->pin = pin_new ();
   gtk_widget_set_tooltip_text (row->pin, "Pin to this device");
   set_app_name (row->pin, row, "pin");
   g_signal_connect (row->pin, "clicked", G_CALLBACK (on_pin_clicked), row);
@@ -1451,7 +1460,7 @@ arrange_pinned (SdPopup *popup)
   gtk_widget_set_visible (popup->unpin_all, shown > 0);
   if (shown == 0)
     gtk_revealer_set_reveal_child (GTK_REVEALER (popup->unpin_all_confirm), FALSE);
-  gtk_widget_set_visible (popup->pinned, popup->running && (shown > 0 || undoing));
+  gtk_widget_set_visible (popup->pinned, popup->has_server && (shown > 0 || undoing));
 }
 
 /* The applications' rows in the status's order, the pinned ones under Pinned applications:
@@ -1545,9 +1554,7 @@ on_undo_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
 {
   SdPopup *popup = data;
 
-  g_clear_handle_id (&popup->undo_id, g_source_remove);
-  g_hash_table_remove_all (popup->undo_hidden);
-  arrange_pinned (popup);
+  undo_hide (popup);
   popup->actions->undo_unpin (popup->data);
 }
 
@@ -1814,7 +1821,7 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
 void
 sd_popup_update (SdPopup *popup, const SdStatus *status)
 {
-  popup->running = status->running;
+  popup->has_server = status->running;
   gtk_widget_set_visible (popup->no_server, !status->running);
   for (guint i = 0; i < G_N_ELEMENTS (popup->sides); i++)
     {

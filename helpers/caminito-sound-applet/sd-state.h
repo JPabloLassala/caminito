@@ -168,7 +168,7 @@ typedef struct
 {
   SdPin pin;
   guint position;
-} SdUnpinned;
+} SdRemovedPin;
 
 typedef enum
 {
@@ -312,8 +312,8 @@ void            sd_pin_clear   (SdPin *pin);
 void            sd_pin_copy    (const SdPin *pin, SdPin *copy);
 /* An empty GArray of SdPin, which frees the pins it drops. */
 GArray         *sd_pins_new    (void);
-/* An empty GArray of SdUnpinned, which frees the pins it drops. */
-GArray         *sd_unpinned_new (void);
+/* An empty GArray of SdRemovedPin, which frees the pins it drops. */
+GArray         *sd_removed_pins_new (void);
 /* The pin's index for the application on side, -1 where it isn't pinned. */
 int             sd_pins_find   (GArray     *pins,
                                 SdSide      side,
@@ -322,19 +322,19 @@ int             sd_pins_find   (GArray     *pins,
    end otherwise. */
 void            sd_pins_set    (GArray      *pins,
                                 const SdPin *pin);
-/* Takes the application's pin away, into unpinned, which forgets what an unpin before put
+/* Takes the application's pin away, into removed, which forgets what an unpin before put
    there: only the last unpin is undone. */
 void            sd_pins_remove (GArray     *pins,
                                 SdSide      side,
                                 const char *id,
-                                GArray     *unpinned);
-/* Takes every pin away, into unpinned, as sd_pins_remove(). */
+                                GArray     *removed);
+/* Takes every pin away, into removed, as sd_pins_remove(). */
 void            sd_pins_remove_all (GArray *pins,
-                                    GArray *unpinned);
-/* Puts the pins of unpinned back where they were, as they were, and empties it: an
+                                    GArray *removed);
+/* Puts the pins of removed back where they were, as they were, and empties it: an
    application pinned again meanwhile is pinned as before. */
 void            sd_pins_restore (GArray *pins,
-                                 GArray *unpinned);
+                                 GArray *removed);
 /* The pins as the applet's settings keep them: an aa{ss} of side, app, name, icon, device and
    device-description. A floating reference. */
 GVariant       *sd_pins_to_variant   (GArray *pins);
