@@ -25,9 +25,12 @@ writes each rule in terms of the keys the user presses:
 
 import argparse
 import ast
+import hashlib
 import re
 import sys
+import urllib.error
 import urllib.request
+from collections import namedtuple
 from pathlib import Path
 
 TOSHY_COMMIT = "a07f6f69b0cac2d29eeb91d29d9a1128efb9bf09"
@@ -35,6 +38,8 @@ TOSHY_URL = (
     f"https://raw.githubusercontent.com/RedBearAK/toshy/{TOSHY_COMMIT}"
     "/default-toshy-config/toshy_config.py"
 )
+# The file's SHA-256 at TOSHY_COMMIT, so a copy given with --toshy is that commit's.
+TOSHY_SHA256 = "32edcae0b2f00a00b45cabdbc3ad3d4a082b72c0d42b79ea1b04362b4307452c"
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "data/remap-templates/macos-pc.remaps"
 
@@ -92,6 +97,8 @@ KEY_NAMES = {
     "semicolon": "semicolon", "apostrophe": "apostrophe",
     "comma": "comma", "dot": "period", "slash": "slash",
     "left_meta": "Super_L", "numlock": "Num_Lock", "pause": "Pause",
+    "kpplus": "KP_Add", "kpminus": "KP_Subtract", "kpasterisk": "KP_Multiply",
+    "kpslash": "KP_Divide", "kpenter": "KP_Enter", "kpdot": "KP_Decimal",
 }
 
 LETTERS = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
@@ -137,9 +144,28 @@ KINDS = {
     "option": "options Toshy has off by default",
     "optspec": "the Option special characters: XKB's mac variants give them",
     "deadkeys": "dead keys: XKB's mac variants give them",
-    "modmap": "Toshy's other modifier swaps: Super stays Super and Ctrl stays Ctrl",
-    "pattern": "app classes matched by a pattern: a Remap group lists app ids",
+    "modmap": "Toshy's Option and Control swaps, which no rule writes out: a combination of Super"
+    " or Ctrl with no rule reaches the app as it's pressed",
+    "pattern": "app classes matched by a pattern no app id is known for: a Remap group lists"
+    " app ids",
     "space": "app classes with a space: a template's app ids are split at spaces",
+}
+
+# The app ids of the apps Toshy names by a pattern alone, by the pattern.
+PATTERN_APP_IDS = {
+    ".*ghostty.*": ["com.mitchellh.ghostty"],
+    ".*Ptyxis.*": ["org.gnome.Ptyxis"],
+    "jetbrains-(?!.*toolbox).*": [
+        "jetbrains-idea", "jetbrains-idea-ce", "jetbrains-pycharm", "jetbrains-pycharm-ce",
+        "jetbrains-clion", "jetbrains-goland", "jetbrains-webstorm", "jetbrains-phpstorm",
+        "jetbrains-rider", "jetbrains-rubymine", "jetbrains-datagrip", "jetbrains-rustrover",
+        "jetbrains-studio",
+    ],
+    "Vivaldi.*": ["vivaldi-stable"],
+    ".*Zotero.*": ["Zotero"],
+    "com.transmissionbt.Transmission.*": ["com.transmissionbt.Transmission"],
+    "firefox-nightly.*": ["firefox-nightly"],
+    "qemu-system-.*": ["qemu-system-x86_64"],
 }
 
 # Toshy's rules the template changes, by keymap and combination, with the steps it sends instead.
@@ -184,18 +210,25 @@ def main():
     parser.add_argument("--check", action="store_true", help="compare with the committed file")
     args = parser.parse_args()
 
-    if args.toshy:
-        source = args.toshy.read_text()
-    else:
-        with urllib.request.urlopen(TOSHY_URL) as response:
-            source = response.read().decode()
+    try:
+        if args.toshy:
+            data = args.toshy.read_bytes()
+        else:
+            with urllib.request.urlopen(TOSHY_URL) as response:
+                data = response.read()
+    except (OSError, urllib.error.URLError) as err:
+        raise Unsupported(f"can't read Toshy's config: {err}") from err
+    if hashlib.sha256(data).hexdigest() != TOSHY_SHA256:
+        raise Unsupported(f"that toshy_config.py isn't the one at {TOSHY_COMMIT}")
+    source = data.decode()
 
     config = Config(source)
     text = config.template()
     print(config.report(), end="")
 
     if args.check:
-        if OUTPUT.read_text() != text:
+        committed = OUTPUT.read_text() if OUTPUT.exists() else None
+        if committed != text:
             output = OUTPUT.relative_to(ROOT)
             sys.exit(f"toshy-to-remaps: {output} isn't what the conversion writes")
         print(f"\n{OUTPUT.relative_to(ROOT)} is what the conversion writes.")
@@ -204,12 +237,16 @@ def main():
         print(f"\nWrote {OUTPUT.relative_to(ROOT)}.")
 
 
+# One of matchProps' alternatives: the patterns of the class, whether it's not_clas, and
+# whether it needs a window's title too.
+Alternative = namedtuple("Alternative", "patterns negated titled")
+
+
 class Classes:
     """App classes a `when` matches, as Toshy's matchProps does: alternatives, each by its class
     and maybe its window's title, matched in any case."""
 
     def __init__(self, alternatives):
-        # Each is (patterns of the class, whether it's not_clas, whether it needs a title).
         self.alternatives = alternatives
 
     def matches(self, app):
@@ -224,16 +261,22 @@ class Classes:
         return False
 
     def titled(self):
-        return any(titled for _, _, titled in self.alternatives)
+        return any(a.titled for a in self.alternatives)
 
     def patterns(self):
+        """The patterns it names apps by, no app id known for."""
         return [
-            p for patterns, negated, _ in self.alternatives if not negated
-            for p in patterns if is_pattern(p)
+            p for a in self.alternatives if not a.negated
+            for p in a.patterns if is_pattern(p) and p not in PATTERN_APP_IDS
         ]
 
     def names(self):
-        return [p for patterns, _, _ in self.alternatives for p in patterns if not is_pattern(p)]
+        """The apps it names: its classes, and the app ids of its patterns."""
+        names = []
+        for a in self.alternatives:
+            for p in a.patterns:
+                names += PATTERN_APP_IDS.get(p, []) if is_pattern(p) else [p]
+        return names
 
 
 def fullmatch(pattern, app):
@@ -253,14 +296,14 @@ def class_names(text):
 class Keymap:
     """One of Toshy's keymaps or modmaps, in the order the file has them."""
 
-    def __init__(self, call, node, desktop):
+    def __init__(self, call, node, conditional):
         self.call = call
         self.name = node.args[0].value
         self.rules = list(zip(node.args[1].keys, node.args[1].values))
         when = [k.value for k in node.keywords if k.arg == "when"]
         self.when = when[0] if when else None
-        # Whether it's under an `if` of the desktop, the distro or the session.
-        self.desktop = desktop
+        # Whether it's under an `if`, which is of the desktop or the distro in Toshy's config.
+        self.conditional = conditional
 
 
 class Config:
@@ -271,16 +314,19 @@ class Config:
         # Each module-level name's assignments, by line.
         self.assignments = {}
         self.keymaps = []
-        self.walk(self.tree.body, desktop=False)
+        self.walk(self.tree.body, conditional=False)
         self.terminals = self.resolve_classes("hmp_is_terminal")
         self.remotes = self.resolve_classes("hmp_is_remote")
-        self.left_out = {kind: [] for kind in KINDS}
+        for pattern, app_ids in PATTERN_APP_IDS.items():
+            for app_id in app_ids:
+                if not fullmatch(pattern, app_id):
+                    raise Unsupported(f"{app_id} isn't one of {pattern}")
+        # What's left out of the template, by kind, and what it changes: {item: rules}.
+        self.left_out = {kind: {} for kind in KINDS}
+        self.changed = {}
         self.candidates = self.app_classes()
-        # The assumption kind_off drops to find why a keymap applies to no app.
-        self.relaxed = None
-        self.changed = []
 
-    def walk(self, body, desktop):
+    def walk(self, body, conditional):
         for statement in body:
             if isinstance(statement, ast.Assign):
                 for target in statement.targets:
@@ -289,9 +335,9 @@ class Config:
             elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
                 func = statement.value.func
                 if isinstance(func, ast.Name) and func.id in KEYMAP_CALLS:
-                    self.keymaps.append(Keymap(func.id, statement.value, desktop))
+                    self.keymaps.append(Keymap(func.id, statement.value, conditional))
             elif isinstance(statement, ast.If):
-                self.walk(statement.body + statement.orelse, desktop=True)
+                self.walk(statement.body + statement.orelse, conditional=True)
 
     def assignment(self, name, before=None):
         """The value name has at a line, or its last."""
@@ -352,7 +398,7 @@ class Config:
                 raise LeftOut("device")
             else:
                 raise Unsupported(f"line {line}: matchProps' {key}")
-        return patterns, negated, titled
+        return Alternative(patterns, negated, titled)
 
     def resolve_classes(self, name):
         """What an hmp_ name matches: a matchProps call, or a lambda over closures of a list of
@@ -396,15 +442,20 @@ class Config:
             return "term"
         return "gui"
 
-    def evaluate(self, node, app):
-        """A `when`'s value for an app, or None for an app it names nowhere."""
+    def evaluate(self, node, app, any_keyboard=False):
+        """A `when`'s value for an app, or None for an app it names nowhere, on a PC keyboard or
+        with any_keyboard on every keyboard at once."""
+
+        def evaluate(node):
+            return self.evaluate(node, app, any_keyboard)
+
         if isinstance(node, ast.Lambda):
-            return self.evaluate(node.body, app)
+            return evaluate(node.body)
         if isinstance(node, ast.BoolOp):
-            values = [self.evaluate(v, app) for v in node.values]
+            values = [evaluate(v) for v in node.values]
             return all(values) if isinstance(node.op, ast.And) else any(values)
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            return not self.evaluate(node.operand, app)
+            return not evaluate(node.operand)
         if isinstance(node, ast.Constant):
             return node.value
         if isinstance(node, ast.Name):
@@ -415,7 +466,7 @@ class Config:
             if node.id.startswith("ctx_ovl_"):
                 return not node.id.startswith("ctx_ovl_user_flag_")
             if node.id in CONTEXT:
-                if self.relaxed == "keyboard" and node.id.startswith("ctx_kbd_"):
+                if any_keyboard and node.id.startswith("ctx_kbd_"):
                     return True
                 return CONTEXT[node.id]
             if node.id in ("DESKTOP_ENV", "DE_MAJ_VER", "DISTRO_ID"):
@@ -428,8 +479,8 @@ class Config:
                 raise LeftOut("optspec")
             return SETTINGS[node.attr]
         if isinstance(node, ast.Compare) and len(node.ops) == 1:
-            left = self.evaluate(node.left, app)
-            right = self.evaluate(node.comparators[0], app)
+            left = evaluate(node.left)
+            right = evaluate(node.comparators[0])
             if isinstance(node.ops[0], ast.Eq):
                 return left == right
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
@@ -448,12 +499,8 @@ class Config:
             n.attr for n in ast.walk(keymap.when)
             if isinstance(n, ast.Attribute) and getattr(n.value, "id", None) == "cnfg"
         }
-        self.relaxed = "keyboard"
-        try:
-            any_keyboard = any(self.evaluate(keymap.when, app) for app in [None] + self.candidates)
-        finally:
-            self.relaxed = None
-        if any_keyboard:
+        apps = [None] + self.candidates
+        if any(self.evaluate(keymap.when, app, any_keyboard=True) for app in apps):
             return "keyboard"
         if any(n.startswith("ctx_caps_") for n in names) or settings - {"screen_has_focus"}:
             return "option"
@@ -471,7 +518,7 @@ class Config:
                 # The modmaps are read in modmap_left_out. A `when` that isn't a lambda is
                 # Toshy's context pre-check, which has no rules.
                 continue
-            if keymap.desktop:
+            if keymap.conditional:
                 self.leave_out("desktop", keymap)
                 continue
             try:
@@ -490,22 +537,17 @@ class Config:
         left out for."""
         hmps = {n.func.id for n in ast.walk(keymap.when)
                 if isinstance(n, ast.Call) and getattr(n.func, "id", "").startswith("hmp_")}
-        for hmp in sorted(hmps):
+        for hmp in sorted(hmps - {"hmp_is_terminal", "hmp_is_remote"}):
             classes = self.resolve_classes(hmp)
-            if hmp in ("hmp_is_terminal", "hmp_is_remote"):
-                continue
             if classes.titled():
                 self.leave_out("title", keymap, "for its windows matched by title")
             if classes.patterns():
                 self.leave_out("pattern", keymap, "for " + ", ".join(classes.patterns()))
 
-    def leave_out(self, kind, keymap, what=None):
-        if what is None:
-            count = len(keymap.rules)
-            what = f"{count} rule{'s' if count != 1 else ''}"
-        item = f'{keymap.call} "{keymap.name}": {what}'
-        if item not in self.left_out[kind]:
-            self.left_out[kind].append(item)
+    def leave_out(self, kind, keymap, what=None, rules=None):
+        """Notes a keymap left out of the template, or what of it is, `what`, of `rules` rules:
+        all of the keymap's unless given."""
+        note(self.left_out[kind], keymap, what, rules)
 
     def modmap_left_out(self):
         """Toshy's modmaps: the PC keyboard's Cmd is written out as rules, and the rest left out."""
@@ -515,8 +557,9 @@ class Config:
             if keymap.call == "multipurpose_modmap":
                 self.leave_out("tap-or-hold", keymap)
                 continue
+            terminal = next(app for app in self.candidates if self.context(app) == "term")
             try:
-                applies = self.evaluate(keymap.when, None) or self.evaluate(keymap.when, "kitty")
+                applies = self.evaluate(keymap.when, None) or self.evaluate(keymap.when, terminal)
             except LeftOut as left_out:
                 self.leave_out(left_out.kind, keymap)
                 continue
@@ -528,7 +571,7 @@ class Config:
             for key, value in keymap.rules:
                 key, value = ast.unparse(key), ast.unparse(value)
                 if value != "Key.RIGHT_CTRL" and key != value:
-                    self.leave_out("modmap", keymap, f"{key} as {value}")
+                    self.leave_out("modmap", keymap, f"{key} as {value}", rules=1)
 
     def triggers(self, node, context):
         """The combinations the user presses that one of Toshy's matches in a context."""
@@ -607,10 +650,8 @@ class Config:
                         continue
                     change = CHANGES.get((keymap.name, self.combo_text(key)))
                     if change is not None:
-                        text = f"{self.combo_text(key)} as {', '.join(change)}"
-                        item = f'keymap "{keymap.name}": {text}'
-                        if item not in self.changed:
-                            self.changed.append(item)
+                        what = f"{self.combo_text(key)} as {', '.join(change)}"
+                        note(self.changed, keymap, what, 1)
                         rules[trigger] = (change, keymap.name)
                         continue
                     try:
@@ -619,18 +660,13 @@ class Config:
                         # The combination is the left-out rule's, as in Toshy: no later
                         # keymap's and not the modmap's.
                         rules[trigger] = (None, keymap.name)
-                        self.left_out_rule(left_out.kind, keymap, key)
+                        self.leave_out(left_out.kind, keymap, self.combo_text(key), rules=1)
         for key in TYPING_KEYS:
             for shift in ([], ["Shift"]):
                 trigger = combination(["Alt"] + shift, key)
                 if trigger not in rules:
                     rules[trigger] = ([combination(["Ctrl"] + shift, key)], None)
         return rules
-
-    def left_out_rule(self, kind, keymap, key):
-        item = f'keymap "{keymap.name}": {self.combo_text(key)}'
-        if item not in self.left_out[kind]:
-            self.left_out[kind].append(item)
 
     def template(self):
         applying = list(self.applying())
@@ -642,7 +678,7 @@ class Config:
             if is_pattern(app):
                 continue
             if " " in app:
-                self.left_out["space"].append(f'app class "{app}"')
+                self.left_out["space"][f'app class "{app}"'] = 0
                 continue
             own = self.effective(app, applying)
             if not own:
@@ -664,9 +700,11 @@ class Config:
         names = set()
         sections = []
         for key, apps in groups.items():
-            name = self.group_name(apps, applying, key == ("no remaps",))
-            if name in names:
-                name = f"{name} ({apps[0]})"
+            base = self.group_name(apps, applying, key == ("no remaps",))
+            name, count = base, 1
+            while name in names:
+                count += 1
+                name = f"{base} ({apps[0]})" if count == 2 else f"{base} ({apps[0]}, {count})"
             names.add(name)
             sections.append((name, apps, key))
 
@@ -711,13 +749,27 @@ class Config:
     def report(self):
         lines = ["Changed from Toshy's:"]
         lines += [f"  {item}" for item in self.changed]
-        lines += ["", "Left out of the template, by kind:"]
+        lines += ["", "Left out of the template, by kind, with the number of Toshy's rules:"]
         for kind, why in KINDS.items():
             items = self.left_out[kind]
+            count = f"{len(items)} app classes" if kind == "space" else rules(sum(items.values()))
             lines.append("")
-            lines.append(f"{why} ({len(items)}):")
+            lines.append(f"{why} ({count}):")
             lines += [f"  {item}" for item in items]
         return "\n".join(lines) + "\n"
+
+
+def note(items, keymap, what, count):
+    """Adds a keymap, or `what` of it, of `count` rules, to items, once."""
+    if count is None:
+        count = len(keymap.rules)
+    if what is None:
+        what = rules(count)
+    items.setdefault(f'{keymap.call} "{keymap.name}": {what}', count)
+
+
+def rules(count):
+    return f"{count} rule{'s' if count != 1 else ''}"
 
 
 def key_name(key, node):
@@ -728,6 +780,8 @@ def key_name(key, node):
         return lower.upper()
     if re.fullmatch(r"f\d{1,2}", lower):
         return lower.upper()
+    if re.fullmatch(r"kp\d", lower):
+        return f"KP_{lower[2]}"
     if lower in KEY_NAMES:
         return KEY_NAMES[lower]
     raise Unsupported(f"line {node.lineno}: the key {key}")
@@ -748,9 +802,7 @@ def sends(rules, trigger):
 def as_pressed(trigger):
     """What Toshy sends for a combination no rule takes in a group: Cmd's modmap's alone."""
     *modifiers, key = trigger.split("+")
-    if "Alt" in modifiers:
-        modifiers = ["Ctrl" if m == "Alt" else m for m in modifiers]
-    return combination(modifiers, key)
+    return combination(["Ctrl" if m == "Alt" else m for m in modifiers], key)
 
 
 def rule_lines(rules):

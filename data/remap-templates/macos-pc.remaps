@@ -139,7 +139,7 @@ Alt+Shift+period = Ctrl+Shift+period
 Alt+slash = Ctrl+slash
 Alt+Shift+slash = Ctrl+Shift+slash
 
-[Remote desktops] Anydesk anydesk Gnome-boxes gnome-boxes gnome-connections org.gnome.Boxes org.gnome.boxes org.remmina.Remmina org.remmina.remmina Nxplayer.bin nxplayer.bin remmina qemu Spicy spicy Virt-manager virt-manager VirtualBox virtualbox xfreerdp Wfica wfica
+[Remote desktops] Anydesk anydesk Gnome-boxes gnome-boxes gnome-connections org.gnome.Boxes org.gnome.boxes org.remmina.Remmina org.remmina.remmina Nxplayer.bin nxplayer.bin remmina qemu-system-x86_64 qemu Spicy spicy Virt-manager virt-manager VirtualBox virtualbox xfreerdp Wfica wfica
 no remaps
 
 [Alacritty terminal] alacritty
@@ -306,6 +306,41 @@ Ctrl+P = Ctrl+P
 Ctrl+K = Ctrl+K
 Ctrl+D = Ctrl+D
 
+[Ghostty terminal] com.mitchellh.ghostty
+# Ghostty terminal overrides
+Alt+D = Ctrl+Shift+O
+Alt+Shift+D = Ctrl+Shift+E
+Alt+Super+I = Ctrl+Shift+I
+Alt+K = Ctrl+L
+# General Terminals
+Super+BackSpace = Ctrl+W
+Super+Delete = Escape, D
+Alt+BackSpace = Ctrl+U
+Alt+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Alt+W = Ctrl+Shift+W
+Alt+T = Ctrl+Shift+T
+Alt+bracketleft = Ctrl+Shift+bracketleft
+Alt+bracketright = Ctrl+Shift+bracketright
+Alt+S = Ctrl+Shift+S
+Alt+F = Ctrl+Shift+F
+Alt+L = Ctrl+Shift+L
+Alt+C = Ctrl+Shift+C
+Alt+V = Ctrl+Shift+V
+Alt+N = Ctrl+Shift+N
+Alt+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
 [Hyper terminal] hyper
 # General Terminals
 Super+BackSpace = Ctrl+W
@@ -406,6 +441,39 @@ Super+BackSpace = Ctrl+W
 Super+Delete = Escape, D
 Alt+BackSpace = Ctrl+U
 Alt+Delete = Ctrl+K
+Alt+equal = Ctrl+Shift+equal
+Alt+W = Ctrl+Shift+W
+Alt+T = Ctrl+Shift+T
+Alt+bracketleft = Ctrl+Shift+bracketleft
+Alt+bracketright = Ctrl+Shift+bracketright
+Alt+S = Ctrl+Shift+S
+Alt+D = Ctrl+Shift+D
+Alt+F = Ctrl+Shift+F
+Alt+L = Ctrl+Shift+L
+Alt+V = Ctrl+Shift+V
+Alt+N = Ctrl+Shift+N
+Alt+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Terminals (org.gnome.Ptyxis)] org.gnome.Ptyxis org.gnome.ptyxis
+# SIGINT Preventer
+Alt+C = Ctrl+Insert
+# General Terminals
+Super+BackSpace = Ctrl+W
+Super+Delete = Escape, D
+Alt+BackSpace = Ctrl+U
+Alt+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
 Alt+equal = Ctrl+Shift+equal
 Alt+W = Ctrl+Shift+W
 Alt+T = Ctrl+Shift+T
@@ -550,7 +618,7 @@ Alt+Super+J = Ctrl+Shift+J
 Alt+Super+Left = Ctrl+Page_Up
 Alt+Super+Right = Ctrl+Page_Down
 
-[Chrome Browsers] Chromium chromium Chromium-browser chromium-browser Google-chrome google-chrome Io.github.ungoogled_software.ungoogled_chromium io.github.ungoogled_software.ungoogled_chromium microsoft-edge microsoft-edge-dev org.deepin.browser
+[Chrome Browsers] Chromium chromium Chromium-browser chromium-browser Google-chrome google-chrome Io.github.ungoogled_software.ungoogled_chromium io.github.ungoogled_software.ungoogled_chromium microsoft-edge microsoft-edge-dev org.deepin.browser vivaldi-stable
 # Chrome Browsers Overrides
 Alt+bracketleft = Alt+Left
 Alt+bracketright = Alt+Right
@@ -578,7 +646,7 @@ Alt+Super+J = Ctrl+Shift+J
 Alt+Super+Left = Ctrl+Page_Up
 Alt+Super+Right = Ctrl+Page_Down
 
-[Firefox Browsers] firedragon Firefox firefox firefox-esr firefoxdeveloperedition floorp LibreWolf librewolf Navigator navigator org.mozilla.firefox Waterfox waterfox zen-browser zen zen-alpha zen-beta zen-bin zen-twilight
+[Firefox Browsers] firedragon Firefox firefox firefox-esr firefoxdeveloperedition firefox-nightly floorp LibreWolf librewolf Navigator navigator org.mozilla.firefox Waterfox waterfox zen-browser zen zen-alpha zen-beta zen-bin zen-twilight
 # Firefox Browsers Overrides
 Alt+Shift+N = Ctrl+Shift+P
 Alt+Delete = Shift+End, Delete
@@ -799,7 +867,7 @@ Alt+G = F3
 Alt+Shift+G = Shift+F3
 Alt+BackSpace = Ctrl+K
 
-[Transmission bittorrent client] Transmission-gtk transmission-gtk Transmission-qt transmission-qt
+[Transmission bittorrent client] Transmission-gtk transmission-gtk Transmission-qt transmission-qt com.transmissionbt.Transmission com.transmissionbt.transmission
 # Transmission bittorrent client
 Alt+I = Alt+Return
 Alt+comma = Alt+E, P
@@ -820,6 +888,71 @@ Alt+I = Alt+Return
 [LibreOffice Writer] libreoffice-writer
 # LibreOffice Writer
 Alt+comma = Alt+F12
+
+[Zotero] Zotero zotero
+# Zotero
+Alt+Shift+Super+I = Ctrl+Alt+Shift+I
+
+[Jetbrains] jetbrains-idea jetbrains-idea-ce jetbrains-pycharm jetbrains-pycharm-ce jetbrains-clion jetbrains-goland jetbrains-webstorm jetbrains-phpstorm jetbrains-rider jetbrains-rubymine jetbrains-datagrip jetbrains-rustrover jetbrains-studio
+# Jetbrains
+Alt+0 = Alt+0
+Alt+1 = Alt+1
+Alt+2 = Alt+2
+Alt+3 = Alt+3
+Alt+4 = Alt+4
+Alt+5 = Alt+5
+Alt+6 = Alt+6
+Alt+7 = Alt+7
+Alt+8 = Alt+8
+Alt+9 = Alt+9
+Alt+comma = Ctrl+Alt+S
+Alt+semicolon = Ctrl+Alt+Shift+S
+Alt+Super+R = F9
+Alt+G = F3
+Alt+Shift+G = Shift+F3
+Ctrl+G = Alt+J
+Ctrl+Alt+G = Ctrl+Alt+Shift+J
+Ctrl+Shift+G = Alt+Shift+J
+Ctrl+J = Ctrl+Q
+F1 = Ctrl+Q
+Alt+N = Alt+Insert
+Super+Up = Ctrl+W
+Super+Down = Ctrl+Shift+W
+Ctrl+Shift+Q = Alt+Q
+Ctrl+Super+O = Ctrl+Alt+O
+Ctrl+Super+I = Ctrl+Alt+I
+Alt+BackSpace = Ctrl+Y
+Alt+equal = Ctrl+KP_Add
+Alt+minus = Ctrl+KP_Subtract
+Alt+Shift+equal = Ctrl+Shift+KP_Add
+Alt+Shift+minus = Ctrl+Shift+KP_Subtract
+Alt+W = Ctrl+F4
+Ctrl+T = Ctrl+Alt+Shift+T
+Alt+O = Ctrl+N
+Alt+Shift+O = Ctrl+Shift+N
+Alt+Super+O = Ctrl+Alt+Shift+N
+Ctrl+Right = Alt+Right
+Ctrl+Left = Alt+Left
+Alt+L = Ctrl+G
+Super+space = Ctrl+Shift+I
+Alt+Y = Ctrl+Shift+I
+Ctrl+Shift+Up = Alt+Up
+Ctrl+Shift+Down = Alt+Down
+Alt+bracketleft = Alt+Shift+Left
+Alt+bracketright = Alt+Shift+Right
+Ctrl+Super+H = Ctrl+Alt+H
+Alt+Down = Ctrl+Return
+Super+Home = Alt+Home
+F3 = F11
+Super+F3 = Ctrl+F11
+Alt+F3 = Shift+F11
+Ctrl+Super+R = Alt+Shift+F10
+Ctrl+Super+D = Alt+Shift+F9
+Ctrl+R = Shift+F10
+Ctrl+D = Shift+F9
+Ctrl+Shift+R = Ctrl+Shift+F10
+Ctrl+Shift+D = Ctrl+Shift+F9
+Ctrl+V = Alt+grave
 
 [Sublime Text] sublime_text subl
 # Sublime Text overrides for not Chromebook/IBM
