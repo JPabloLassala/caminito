@@ -1,13 +1,15 @@
 //! `caminito-behaviour` (CMN-184): Workspace Behaviour, the settings of how Caminito itself
 //! behaves beyond what MATE's capplets set. One window of pages, in GTK4 without libadwaita,
-//! as caminito-displays is (ADR 0014). Hot corners is its only page for now; the animations
-//! and Per-output workspaces join it later, each a tab of its own.
+//! as caminito-displays is (ADR 0014). Hot corners and Key remaps (CMN-189) are its pages
+//! for now; the animations and Per-output workspaces join them later, each a tab of its own.
 
 #![forbid(unsafe_code)]
 
 mod hot_corners_page;
+mod key_remaps_page;
 
 use caminito_behaviour::hot_corners::HotCorners;
+use caminito_behaviour::key_remaps::KeyRemapKeys;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 
@@ -45,18 +47,19 @@ fn open(application: &gtk::Application) {
                 &hot_corners_page::build(corners),
                 Some(&gtk::Label::new(Some("Hot corners"))),
             );
+            let remaps = match KeyRemapKeys::open() {
+                Ok(keys) => key_remaps_page::build(keys),
+                Err(err) => {
+                    glib::g_critical!(DOMAIN, "can't open the key remaps: {err}");
+                    unavailable(&format!("The key remaps can't be opened: {err}."))
+                }
+            };
+            pages.append_page(&remaps, Some(&gtk::Label::new(Some("Key remaps"))));
             pages.upcast::<gtk::Widget>()
         }
         Err(err) => {
             glib::g_critical!(DOMAIN, "can't open the settings: {err}");
-            gtk::Label::builder()
-                .label(format!("Caminito's settings can't be opened: {err}."))
-                .margin_top(SPACING)
-                .margin_bottom(SPACING)
-                .margin_start(SPACING)
-                .margin_end(SPACING)
-                .build()
-                .upcast()
+            unavailable(&format!("Caminito's settings can't be opened: {err}."))
         }
     };
     window.set_child(Some(&child));
@@ -77,4 +80,16 @@ fn open(application: &gtk::Application) {
     });
     window.add_controller(keys);
     window.present();
+}
+
+/// What the window or a page shows in place of what can't be opened.
+fn unavailable(text: &str) -> gtk::Widget {
+    gtk::Label::builder()
+        .label(text)
+        .margin_top(SPACING)
+        .margin_bottom(SPACING)
+        .margin_start(SPACING)
+        .margin_end(SPACING)
+        .build()
+        .upcast()
 }

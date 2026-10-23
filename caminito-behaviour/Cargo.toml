@@ -7,10 +7,16 @@ repository.workspace = true
 # Shipped through the PKGBUILD (16), never crates.io.
 publish = false
 
-# The library reads and writes the keys through gio, and names no toolkit. GTK is the
-# window's, the binary's.
+# The library reads and writes the keys through gio, and the templates' files, and names no
+# toolkit. GTK is the window's, the binary's.
 [dependencies]
+# The answer of the page's dialog that asks for a name, awaited.
+futures-channel.workspace = true
 gio = "0.22.10"
+# The open windows' app ids, for the Key remaps page's list (CMN-189), through
+# ext-foreign-toplevel-list, which is staging's.
+wayland-client.workspace = true
+wayland-protocols = { workspace = true, features = ["client", "staging"] }
 # The window, without libadwaita (ADR 0014). v4_12: CSS from a string.
 gtk = { workspace = true, features = ["v4_12"] }
 

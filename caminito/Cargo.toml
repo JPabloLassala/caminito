@@ -16,7 +16,7 @@ caminito-version = { path = "../caminito-version" }
 # GAMMA_LUT's blob of a CRTC's size, which drm's `create_property_blob` can't make from a
 # slice (137). Smithay's drm already depends on it.
 drm-ffi = "0.9.1"
-futures-channel = "0.3.34"
+futures-channel.workspace = true
 gio = "0.22.10"
 libc = "0.2.189"
 # process: SIGTERM to the helpers and to the session command (61), and Force Quit's SIGKILL

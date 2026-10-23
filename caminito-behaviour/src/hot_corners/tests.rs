@@ -1,37 +1,8 @@
 use std::cell::RefCell;
-use std::path::Path;
-use std::process::Command;
 use std::rc::Rc;
 
 use super::*;
-
-/// `org.mate.Caminito` as data/ has it, compiled into `dir`, over a backend in memory.
-fn settings(dir: &Path) -> gio::Settings {
-    let schema = schema(dir);
-    gio::Settings::new_full(&schema, Some(&gio::memory_settings_backend_new()), None)
-}
-
-/// Another `Settings` over the same keys as `settings`, as `gsettings` would have.
-fn outside(settings: &gio::Settings) -> gio::Settings {
-    let schema = settings.settings_schema().unwrap();
-    gio::Settings::new_full(&schema, settings.backend().as_ref(), None)
-}
-
-/// `org.mate.Caminito` as data/ has it, compiled into `dir`.
-fn schema(dir: &Path) -> gio::SettingsSchema {
-    let xml = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../data/org.mate.Caminito.gschema.xml"
-    );
-    std::fs::copy(xml, dir.join("org.mate.Caminito.gschema.xml")).unwrap();
-    let status = Command::new("glib-compile-schemas")
-        .arg(dir)
-        .status()
-        .unwrap();
-    assert!(status.success());
-    let source = gio::SettingsSchemaSource::from_directory(dir, None, false).unwrap();
-    source.lookup(SCHEMA, false).unwrap()
-}
+use crate::testing::{outside, settings};
 
 #[test]
 fn every_corner_is_off_until_it_is_set() {

@@ -86,6 +86,13 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# The Remap templates that come with Caminito (CMN-189), which caminito-behaviour's Key remaps
+# page lists and can't change or delete.
+install_data(
+  'data/remap-templates/no-remaps.remaps',
+  install_dir: get_option('datadir') / 'caminito' / 'remap-templates',
+)
+
 # caminito-bluetooth's entries (255). Unlike the entries above, these are in the normal XDG
 # directories: it doesn't depend on Caminito, and works under X11 MATE too (ADR 0035). Its
 # categories put the window under Hardware in the control center. The autostart entry starts

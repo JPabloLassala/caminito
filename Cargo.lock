@@ -368,9 +368,12 @@ dependencies = [
 name = "caminito-behaviour"
 version = "0.1.0"
 dependencies = [
+ "futures-channel",
  "gio",
  "gtk4",
  "tempfile",
+ "wayland-client",
+ "wayland-protocols",
 ]
 
 [[package]]
