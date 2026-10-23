@@ -2,13 +2,19 @@
  * The sound server's reader (CMN-213) against a private PipeWire, WirePlumber and
  * pipewire-pulse, in a throwaway XDG_RUNTIME_DIR on a private session bus, with null sinks
  * and sources for sound devices and pw-record for an application recording, and the
- * popup's device lists, defaults and the input's level (CMN-215). pactl sets up the devices
- * and reads back what the reader set. Skipped where PipeWire isn't installed.
+ * popup's device lists, defaults and the input's level (CMN-215), and its Applications
+ * (CMN-216): pw-play and pw-record for Sound applications, a paused stream of the test's own,
+ * and an event sound through libcanberra, as canberra-gtk-play and Caminito's bell play one
+ * (ADR 0027). pactl sets up the devices and reads back what the
+ * reader set. Skipped where PipeWire isn't installed.
  */
 
 #include <glib/gstdio.h>
+#include <canberra.h>
 #include <gio/gio.h>
 #include <math.h>
+#include <pulse/glib-mainloop.h>
+#include <pulse/pulseaudio.h>
 #include <string.h>
 
 #include "sd-pulse.h"
@@ -584,6 +590,437 @@ test_hears_the_default_input (Fixture *fixture, gconstpointer data G_GNUC_UNUSED
   g_assert_cmpuint (levels.levels, ==, 0);
 }
 
+/* A tone for ten seconds, played as application by pw-play: a Sound application. */
+static GSubprocess *
+play (const char *application, const char *tone)
+{
+  g_autoptr (GError) error = NULL;
+  g_autofree char *properties = g_strdup_printf ("{ application.name = \"%s\" }", application);
+  GSubprocess *player = g_subprocess_new (G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error, "pw-play",
+                                          "-P", properties, tone, NULL);
+
+  g_assert_no_error (error);
+  return player;
+}
+
+/* A paused stream: a client of the test's own whose stream starts corked, which pw-play
+   can't make. */
+typedef struct
+{
+  pa_glib_mainloop *loop;
+  pa_context       *context;
+  pa_stream        *stream;
+} Paused;
+
+static void
+on_paused_state (pa_context *context, void *data)
+{
+  Paused *paused = data;
+  pa_sample_spec spec = { .format = PA_SAMPLE_S16LE, .rate = 48000, .channels = 2 };
+
+  if (pa_context_get_state (context) != PA_CONTEXT_READY || paused->stream != NULL)
+    return;
+  paused->stream = pa_stream_new (context, "paused song", &spec, NULL);
+  g_assert_nonnull (paused->stream);
+  g_assert_cmpint (pa_stream_connect_playback (paused->stream, NULL, NULL,
+                                               PA_STREAM_START_CORKED, NULL, NULL),
+                   ==, 0);
+}
+
+static void
+paused_start (Paused *paused, const char *application)
+{
+  pa_proplist *properties = pa_proplist_new ();
+
+  pa_proplist_sets (properties, PA_PROP_APPLICATION_NAME, application);
+  paused->loop = pa_glib_mainloop_new (NULL);
+  paused->context = pa_context_new_with_proplist (pa_glib_mainloop_get_api (paused->loop), NULL,
+                                                  properties);
+  pa_proplist_free (properties);
+  pa_context_set_state_callback (paused->context, on_paused_state, paused);
+  g_assert_cmpint (pa_context_connect (paused->context, NULL, PA_CONTEXT_NOAUTOSPAWN, NULL), ==, 0);
+}
+
+static void
+paused_stop (Paused *paused)
+{
+  if (paused->stream != NULL)
+    {
+      pa_stream_disconnect (paused->stream);
+      pa_stream_unref (paused->stream);
+    }
+  pa_context_set_state_callback (paused->context, NULL, NULL);
+  pa_context_disconnect (paused->context);
+  pa_context_unref (paused->context);
+  pa_glib_mainloop_free (paused->loop);
+}
+
+/* Whether pactl lists a stream of the application, paused or not. */
+static gboolean
+server_lists (gpointer data)
+{
+  g_autofree char *out = pactl ("list sink-inputs");
+  g_autofree char *line = g_strdup_printf ("application.name = \"%s\"", (const char *) data);
+
+  return strstr (out, line) != NULL;
+}
+
+static gboolean
+mpv_firefox_and_obs (gpointer data)
+{
+  const SdStatus *status = status_of (data);
+  const SdApp *mpv = sd_status_app (status, SD_OUTPUT, "mpv");
+
+  return mpv != NULL && mpv->n_streams == 2 && sd_status_app (status, SD_OUTPUT, "Firefox") != NULL
+         && sd_status_app (status, SD_INPUT, "OBS Studio") != NULL;
+}
+
+static void
+test_lists_the_applications_playing_and_recording (Fixture *fixture,
+                                                   gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  Paused paused = { 0 };
+  g_autoptr (GError) error = NULL;
+  g_autofree char *tone = NULL;
+  g_autofree char *file = g_build_filename (runtime_dir, "recording.wav", NULL);
+  g_autoptr (GSubprocess) mpv = NULL;
+  g_autoptr (GSubprocess) mpv_again = NULL;
+  g_autoptr (GSubprocess) firefox = NULL;
+  g_autoptr (GSubprocess) recorder = NULL;
+  const SdStatus *status;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("mic", "media.class=Audio/Source/Virtual device.description=Microphone");
+  set_default ("sink", "speaker");
+  set_default ("source", "mic");
+  wait_until (has_input, fixture, "the microphone");
+  tone = write_tone ();
+  paused_start (&paused, "Audacious");
+  wait_until (server_lists, "Audacious", "Audacious's paused stream");
+  /* Two copies of one program. */
+  mpv = play ("mpv", tone);
+  mpv_again = play ("mpv", tone);
+  firefox = play ("Firefox", tone);
+  recorder = g_subprocess_new (G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error, "pw-record", "-P",
+                               "{ application.name = \"OBS Studio\" }", file, NULL);
+  g_assert_no_error (error);
+  wait_until (mpv_firefox_and_obs, fixture, "mpv, Firefox and OBS Studio");
+  status = status_of (fixture);
+  /* Playing first, then recording; the paused one not at all. */
+  g_assert_cmpuint (status->n_apps, ==, 3);
+  g_assert_cmpint (status->apps[0].side, ==, SD_OUTPUT);
+  g_assert_cmpint (status->apps[1].side, ==, SD_OUTPUT);
+  g_assert_cmpstr (status->apps[2].id, ==, "OBS Studio");
+  g_assert_null (sd_status_app (status, SD_OUTPUT, "Audacious"));
+  /* Following the default. */
+  g_assert_null (sd_status_app (status, SD_OUTPUT, "mpv")->device);
+  g_assert_null (sd_status_app (status, SD_INPUT, "OBS Studio")->device);
+  stop (&mpv);
+  stop (&mpv_again);
+  stop (&firefox);
+  stop (&recorder);
+  paused_stop (&paused);
+  server_stop (&server);
+}
+
+typedef struct
+{
+  Fixture *fixture;
+  guint    loudest;
+  guint    other;
+} Proportion;
+
+/* mpv's two streams at the percents asked for, in either order. */
+static gboolean
+mpv_at (gpointer data)
+{
+  Proportion *proportion = data;
+  const SdApp *mpv = sd_status_app (status_of (proportion->fixture), SD_OUTPUT, "mpv");
+  guint a, b;
+
+  if (mpv == NULL || mpv->n_streams != 2)
+    return FALSE;
+  a = sd_state_percent (mpv->streams[0].volume);
+  b = sd_state_percent (mpv->streams[1].volume);
+  return sd_state_percent (mpv->volume) == proportion->loudest
+         && ((a == proportion->loudest && b == proportion->other)
+             || (b == proportion->loudest && a == proportion->other));
+}
+
+static gboolean
+mpv_plays_twice (gpointer data)
+{
+  const SdApp *mpv = sd_status_app (status_of (data), SD_OUTPUT, "mpv");
+
+  return mpv != NULL && mpv->n_streams == 2;
+}
+
+static void
+test_sets_an_apps_streams_in_proportion (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *tone = NULL;
+  g_autoptr (GSubprocess) mpv = NULL;
+  g_autoptr (GSubprocess) mpv_again = NULL;
+  const SdApp *app;
+  Proportion before = { fixture, 80, 40 };
+  Proportion after = { fixture, 60, 30 };
+  g_autofree char *volumes = NULL;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  set_default ("sink", "speaker");
+  tone = write_tone ();
+  mpv = play ("mpv", tone);
+  mpv_again = play ("mpv", tone);
+  wait_until (mpv_plays_twice, fixture, "mpv's two streams");
+  app = sd_status_app (status_of (fixture), SD_OUTPUT, "mpv");
+  {
+    g_autofree char *first = g_strdup_printf ("set-sink-input-volume %u 80%%",
+                                              app->streams[0].index);
+    g_autofree char *second = g_strdup_printf ("set-sink-input-volume %u 40%%",
+                                               app->streams[1].index);
+    g_autofree char *out = pactl (first);
+    g_autofree char *out_again = pactl (second);
+  }
+  wait_until (mpv_at, &before, "mpv's streams at 80% and 40%");
+  /* The row's slider dragged to 60%. */
+  sd_pulse_set_app_volume (fixture->pulse, SD_OUTPUT, "mpv", PERCENT (60));
+  wait_until (mpv_at, &after, "mpv's streams at 60% and 30%");
+  volumes = pactl ("list sink-inputs");
+  g_assert_nonnull (strstr (volumes, "/  60% /"));
+  g_assert_nonnull (strstr (volumes, "/  30% /"));
+  /* A stream of its own, from the expanded row. */
+  sd_pulse_set_stream_volume (fixture->pulse, SD_OUTPUT,
+                              sd_status_app (status_of (fixture), SD_OUTPUT, "mpv")->streams[0].index,
+                              PERCENT (100));
+  {
+    Proportion own = { fixture, 100, 0 };
+
+    own.other = sd_state_percent (sd_status_app (status_of (fixture), SD_OUTPUT, "mpv")
+                                    ->streams[1].volume);
+    wait_until (mpv_at, &own, "mpv's first stream at 100%");
+  }
+  stop (&mpv);
+  stop (&mpv_again);
+  server_stop (&server);
+}
+
+static gboolean
+mpv_on_the_headset (gpointer data)
+{
+  const SdApp *mpv = sd_status_app (status_of (data), SD_OUTPUT, "mpv");
+
+  return mpv != NULL && g_strcmp0 (mpv->device, "headset") == 0;
+}
+
+static gboolean
+mpv_follows_the_default (gpointer data)
+{
+  const SdApp *mpv = sd_status_app (status_of (data), SD_OUTPUT, "mpv");
+
+  return mpv != NULL && mpv->device == NULL;
+}
+
+/* The sink mpv's stream is on, by pactl. */
+static char *
+mpv_sink (void)
+{
+  g_autofree char *inputs = pactl ("list short sink-inputs");
+  g_autofree char *sinks = pactl ("list short sinks");
+  g_auto (GStrv) input_lines = g_strsplit (inputs, "\n", -1);
+  g_auto (GStrv) sink_lines = g_strsplit (sinks, "\n", -1);
+  g_auto (GStrv) input = NULL;
+
+  g_assert_nonnull (input_lines[0]);
+  input = g_strsplit (input_lines[0], "\t", -1);
+  for (guint i = 0; sink_lines[i] != NULL; i++)
+    {
+      g_auto (GStrv) sink = g_strsplit (sink_lines[i], "\t", -1);
+
+      if (sink[0] != NULL && sink[1] != NULL && g_strcmp0 (sink[0], input[1]) == 0)
+        return g_strdup (sink[1]);
+    }
+  return NULL;
+}
+
+static gboolean
+mpv_on_hdmi (gpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *sink = mpv_sink ();
+
+  return g_strcmp0 (sink, "hdmi") == 0;
+}
+
+static void
+test_moves_an_app_and_lets_it_follow_the_default_again (Fixture *fixture,
+                                                        gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *tone = NULL;
+  g_autofree char *sink = NULL;
+  g_autoptr (GSubprocess) mpv = NULL;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("headset", "device.description=WH-1000XM4");
+  load_sink ("hdmi", "device.description=HDMI");
+  set_default ("sink", "speaker");
+  tone = write_tone ();
+  mpv = play ("mpv", tone);
+  wait_until (mpv_follows_the_default, fixture, "mpv on the speakers");
+  sd_pulse_move_app (fixture->pulse, SD_OUTPUT, "mpv", "headset");
+  wait_until (mpv_on_the_headset, fixture, "mpv moved to the headset");
+  sink = mpv_sink ();
+  g_assert_cmpstr (sink, ==, "headset");
+  /* "Follow the default". */
+  sd_pulse_move_app (fixture->pulse, SD_OUTPUT, "mpv", NULL);
+  wait_until (mpv_follows_the_default, fixture, "mpv back on the default");
+  /* And it follows a change of the default, which a moved stream wouldn't. */
+  set_default ("sink", "hdmi");
+  wait_until (mpv_on_hdmi, NULL, "mpv following the default to HDMI");
+  wait_until (mpv_follows_the_default, fixture, "mpv following the default");
+  stop (&mpv);
+  server_stop (&server);
+}
+
+static gboolean
+has_system_sounds (gpointer data)
+{
+  return status_of (data)->has_system_sounds;
+}
+
+static gboolean
+has_route_settings (gpointer data G_GNUC_UNUSED)
+{
+  const char *const argv[] = { "pw-metadata", "-n", "route-settings", NULL };
+  g_autofree char *out = NULL;
+
+  g_spawn_sync (NULL, (char **) argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                NULL, NULL, &out, NULL, NULL, NULL);
+  return out != NULL && strstr (out, "Found \"route-settings\"") != NULL;
+}
+
+static gboolean
+system_sounds_at_30_percent (gpointer data)
+{
+  return sd_state_percent (status_of (data)->system_volume) == 30;
+}
+
+typedef struct
+{
+  ca_context *context;
+  const char *tone;
+  guint32     id;
+  gint64      next;
+} Events;
+
+/* An event sound playing at 30%, on every channel. WirePlumber takes the volume in from its
+   route-settings a moment after pipewire-pulse has it, and a stream that starts before then
+   keeps its own: another event sound starts every half second until one plays at it. */
+static gboolean
+event_at_30_percent (gpointer data)
+{
+  Events *events = data;
+  g_autofree char *out = pactl ("list sink-inputs");
+
+  if (strstr (out, "media.role = \"event\"") != NULL && strstr (out, "/  30% /") != NULL
+      && strstr (out, "/   0% /") == NULL)
+    return TRUE;
+  if (g_get_monotonic_time () >= events->next)
+    {
+      g_assert_cmpint (ca_context_play (events->context, events->id++, CA_PROP_EVENT_ID, "bell",
+                                        CA_PROP_MEDIA_FILENAME, events->tone, NULL),
+                       ==, CA_SUCCESS);
+      events->next = g_get_monotonic_time () + G_USEC_PER_SEC / 2;
+    }
+  return FALSE;
+}
+
+static void
+test_sets_the_system_sounds_volume (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *tone = NULL;
+  Events events = { 0 };
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  set_default ("sink", "speaker");
+  wait_until (has_system_sounds, fixture, "System sounds' volume");
+  /* pipewire-pulse keeps the entry in WirePlumber's route-settings, which a write before
+     WirePlumber has made it loses. */
+  wait_until (has_route_settings, NULL, "WirePlumber's route-settings");
+  sd_pulse_set_system_volume (fixture->pulse, PERCENT (30));
+  wait_until (system_sounds_at_30_percent, fixture, "System sounds at 30%");
+  /* An event sound, as the bell is played: libcanberra's pulse driver gives it the event
+     role. canberra-gtk-play's own gate, GTK's gtk-enable-event-sounds, is the desktop's
+     setting, and the check script's (.scratch/checks/CMN-216). */
+  tone = write_tone ();
+  g_assert_cmpint (ca_context_create (&events.context), ==, CA_SUCCESS);
+  g_assert_cmpint (ca_context_set_driver (events.context, "pulse"), ==, CA_SUCCESS);
+  events.tone = tone;
+  wait_until (event_at_30_percent, &events, "an event sound at 30%");
+  /* It isn't an application of the list: System sounds' row has it. */
+  g_assert_cmpuint (status_of (fixture)->n_apps, ==, 0);
+  ca_context_destroy (events.context);
+  server_stop (&server);
+}
+
+typedef struct
+{
+  double   loudest;
+  guint    levels;
+  gboolean other;
+} AppLevels;
+
+static void
+on_app_level (SdSide side, const char *app, double level, gpointer data)
+{
+  AppLevels *levels = data;
+
+  levels->levels++;
+  if (side == SD_OUTPUT && g_strcmp0 (app, "mpv") == 0)
+    levels->loudest = MAX (levels->loudest, level);
+  else
+    levels->other = TRUE;
+}
+
+static gboolean
+mpv_heard (gpointer data)
+{
+  return ((AppLevels *) data)->loudest > 0.5;
+}
+
+static void
+test_hears_the_applications (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  AppLevels levels = { 0 };
+  g_autofree char *tone = NULL;
+  g_autoptr (GSubprocess) mpv = NULL;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  set_default ("sink", "speaker");
+  tone = write_tone ();
+  mpv = play ("mpv", tone);
+  wait_until (mpv_follows_the_default, fixture, "mpv playing");
+  sd_pulse_watch_app_levels (fixture->pulse, on_app_level, &levels);
+  wait_until (mpv_heard, &levels, "mpv's peak");
+  g_assert_false (levels.other);
+  /* Its own peak streams aren't applications recording. */
+  g_assert_cmpuint (status_of (fixture)->n_apps, ==, 1);
+  g_assert_null (status_of (fixture)->recording);
+  sd_pulse_watch_app_levels (fixture->pulse, NULL, NULL);
+  levels.levels = 0;
+  stop (&mpv);
+  server_stop (&server);
+  g_assert_cmpuint (levels.levels, ==, 0);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -600,9 +1037,11 @@ main (int argc, char **argv)
       || g_find_program_in_path ("wireplumber") == NULL
       || g_find_program_in_path ("pipewire-pulse") == NULL
       || g_find_program_in_path ("pactl") == NULL
-      || g_find_program_in_path ("pw-record") == NULL)
+      || g_find_program_in_path ("pw-record") == NULL
+      || g_find_program_in_path ("pw-play") == NULL
+      || g_find_program_in_path ("pw-metadata") == NULL)
     {
-      g_test_skip ("PipeWire, WirePlumber, pipewire-pulse and pactl aren't all installed");
+      g_test_skip ("PipeWire, WirePlumber, pipewire-pulse and its tools aren't all installed");
       return g_test_run ();
     }
   root = g_dir_make_tmp ("caminito-sound-XXXXXX", NULL);
@@ -638,6 +1077,13 @@ main (int argc, char **argv)
   ADD ("makes-a-device-the-default", test_makes_a_device_the_default);
   ADD ("sets-the-input-volume", test_sets_the_input_volume);
   ADD ("hears-the-default-input", test_hears_the_default_input);
+  ADD ("lists-the-applications-playing-and-recording",
+       test_lists_the_applications_playing_and_recording);
+  ADD ("sets-an-apps-streams-in-proportion", test_sets_an_apps_streams_in_proportion);
+  ADD ("moves-an-app-and-lets-it-follow-the-default-again",
+       test_moves_an_app_and_lets_it_follow_the_default_again);
+  ADD ("sets-the-system-sounds-volume", test_sets_the_system_sounds_volume);
+  ADD ("hears-the-applications", test_hears_the_applications);
 #undef ADD
   result = g_test_run ();
 

@@ -1,9 +1,11 @@
 /*
- * The Sound applet's popup (CMN-213, CMN-215). See sd-popup.h.
+ * The Sound applet's popup (CMN-213, CMN-215, CMN-216). See sd-popup.h.
  *
  * The rows are built once and updated in place, and a device list is built again only when
  * its devices change, in the same box: a new viewport would lose the scroll position, and a
- * widget built again loses the focus (CMN-210).
+ * widget built again loses the focus (CMN-210). An application's row lives as long as the
+ * application plays or records, and is moved into its place rather than built again, so that
+ * an open row stays open.
  *
  * The wheel over a slider scrolls the popup; only Shift+wheel changes the slider. GtkRange's
  * class handler of scroll-event takes every wheel event, so the scrolled window would never
@@ -37,8 +39,37 @@
    server's answers to the moves, short enough that a change made elsewhere since shows
    soon, as the panel icon's wheel waits (CMN-213). */
 #define HOLD_MS   1000
+/* An application's name, as wide in every row up to a limit, so that the sliders line up
+   (CMN-210). */
+#define NAME_WIDTH 92
+#define NAME_CHARS 14
+#define ICON_SIZE  22
 
 static const char *const side_names[] = { "output", "input" };
+
+typedef struct _Slider Slider;
+
+/* A volume slider: a Default device's, an application's, one of its streams' or System
+   sounds'. */
+struct _Slider
+{
+  SdPopup   *popup;
+  GtkWidget *scale;
+  /* "45%", NULL where the row has none. */
+  GtkWidget *percent;
+  gulong     value_changed;
+  /* A button is held on the slider, or the user moved it a moment ago: the server's volume
+     waits, since its answers to the earlier moves may come after the later ones. */
+  gboolean   dragging;
+  guint      hold_id;
+  /* The volume as the server last gave it, in percent. */
+  guint      server_percent;
+  /* Asks for the volume the user moved it to, for owner. */
+  void     (*set) (Slider *slider, pa_volume_t volume);
+  gpointer   owner;
+  /* An application's stream's, by its SdAppStream's index. */
+  guint32    stream;
+};
 
 typedef struct
 {
@@ -50,14 +81,7 @@ typedef struct
   /* What the mute button shows. */
   gboolean   muted;
   gboolean   struck;
-  GtkWidget *scale;
-  gulong     value_changed;
-  /* A button is held on the slider, or the user moved it a moment ago: the server's volume
-     waits, since its answers to the earlier moves may come after the later ones. */
-  gboolean   dragging;
-  guint      hold_id;
-  /* The Default device's volume as the server last gave it, in percent. */
-  guint      server_percent;
+  Slider    *slider;
   GtkWidget *pill;
   GtkWidget *pill_label;
   GtkWidget *revealer;
@@ -78,6 +102,32 @@ typedef struct
   double     level;
 } Side;
 
+/* A Sound application's row, which lives as long as its box. */
+typedef struct
+{
+  SdPopup   *popup;
+  SdSide     side;
+  char      *id;
+  /* Its key in the popup's rows. */
+  char      *key;
+  GtkWidget *box;
+  GtkWidget *icon;
+  GtkWidget *name;
+  GtkWidget *name_label;
+  Slider    *slider;
+  GtkWidget *bar;
+  /* The level the bar shows from its next frame. */
+  double     level;
+  GtkWidget *badge;
+  GtkWidget *revealer;
+  GtkWidget *devices;
+  char      *devices_key;
+  GtkWidget *streams;
+  char      *streams_key;
+  /* The device it's moved to, NULL while it follows the default. */
+  char      *device;
+} AppRow;
+
 struct _SdPopup
 {
   CaminitoAppletPopup  *applet_popup;
@@ -89,6 +139,18 @@ struct _SdPopup
   GtkWidget            *no_server;
   GtkWidget            *footer;
   Side                  sides[2];
+  /* Applications: System sounds, then the rows of those playing, the Recording heading and
+     the rows of those recording. */
+  GtkWidget            *apps;
+  Slider               *system;
+  GtkWidget            *app_boxes[2];
+  GtkWidget            *recording_heading;
+  /* AppRow, by "<side>\x1f<id>". */
+  GHashTable           *app_rows;
+  /* The rows' names, as wide as the widest, so that their sliders line up. */
+  GtkSizeGroup         *names;
+  /* Every Slider, for the step and the cap. */
+  GPtrArray            *sliders;
   guint                 step;
   gboolean              above_100;
   /* The most it may take, or 0 while it isn't known. */
@@ -110,6 +172,16 @@ static const char css[] =
   ".sd-detail { font-size: 11px; color: alpha(currentColor, 0.6); }"
   ".sd-link { color: @theme_selected_bg_color; font-size: 12px; }"
   ".sd-footer { border-top: 1px solid alpha(currentColor, 0.15); }"
+  ".sd-heading { font-size: 11px; font-weight: bold; color: alpha(currentColor, 0.6); }"
+  ".sd-section { border-top: 1px solid alpha(currentColor, 0.15); }"
+  ".sd-name { font-weight: 500; padding: 0 2px; min-height: 0; }"
+  ".sd-pct { font-size: 12px; color: alpha(currentColor, 0.6); }"
+  ".sd-x { min-width: 24px; min-height: 24px; padding: 0; -gtk-icon-style: symbolic; }"
+  /* The selection's colour mixed toward the text's, so that it reads on a dark theme: blue
+     in Adwaita and BlueMenta, green in Menta (CMN-210). */
+  ".sd-badge { color: mix(@theme_selected_bg_color, @theme_fg_color, 0.3);"
+  "  background-color: alpha(@theme_selected_bg_color, 0.18);"
+  "  border-radius: 3px; padding: 0 5px; font-size: 11px; }"
   "levelbar.sd-meter trough { min-height: 3px; padding: 0; border: none;"
   "  border-radius: 2px; background-image: none;"
   "  background-color: alpha(currentColor, 0.12); }"
@@ -151,6 +223,18 @@ set_name (GtkWidget *widget, const Side *side, const char *what, const char *id)
   gtk_widget_set_name (widget, name);
 }
 
+/* "app-output-mpv", "app-output-mpv-scale"… */
+static void
+set_app_name (GtkWidget *widget, const AppRow *row, const char *what)
+{
+  g_autofree char *name = what != NULL ? g_strdup_printf ("app-%s-%s-%s", side_names[row->side],
+                                                          row->id, what)
+                                       : g_strdup_printf ("app-%s-%s", side_names[row->side],
+                                                          row->id);
+
+  gtk_widget_set_name (widget, name);
+}
+
 static void
 set_icon (GtkWidget *image, const char *const *names)
 {
@@ -165,42 +249,61 @@ cap (SdPopup *popup)
   return popup->above_100 ? 150 : 100;
 }
 
+static void
+show_percent (Slider *slider)
+{
+  g_autofree char *text = NULL;
+
+  if (slider->percent == NULL)
+    return;
+  text = g_strdup_printf ("%.0f%%", gtk_range_get_value (GTK_RANGE (slider->scale)));
+  gtk_label_set_text (GTK_LABEL (slider->percent), text);
+}
+
 /* The volume a slider shows: the server's, unless the slider is already on it, so that a
    glide's unrounded shares aren't rounded away by the server's answers. */
 static void
-show_volume (Side *side)
+show_volume (Slider *slider)
 {
-  GtkRange *range = GTK_RANGE (side->scale);
-  double shown = MIN (side->server_percent, cap (side->popup));
+  GtkRange *range = GTK_RANGE (slider->scale);
+  double shown = MIN (slider->server_percent, cap (slider->popup));
 
-  if (side->dragging || side->hold_id != 0
+  if (slider->dragging || slider->hold_id != 0
       || (guint) (gtk_range_get_value (range) + 0.5) == (guint) shown)
     return;
-  g_signal_handler_block (side->scale, side->value_changed);
+  g_signal_handler_block (slider->scale, slider->value_changed);
   gtk_range_set_value (range, shown);
-  g_signal_handler_unblock (side->scale, side->value_changed);
+  g_signal_handler_unblock (slider->scale, slider->value_changed);
+  show_percent (slider);
+}
+
+/* The server's volume, which the slider shows unless the user is moving it. */
+static void
+slider_update (Slider *slider, pa_volume_t volume)
+{
+  slider->server_percent = sd_state_percent (volume);
+  show_volume (slider);
 }
 
 static gboolean
 on_hold_end (gpointer data)
 {
-  Side *side = data;
+  Slider *slider = data;
 
-  side->hold_id = 0;
-  show_volume (side);
+  slider->hold_id = 0;
+  show_volume (slider);
   return G_SOURCE_REMOVE;
 }
 
 static void
 on_value_changed (GtkRange *range, gpointer data)
 {
-  Side *side = data;
-  SdPopup *popup = side->popup;
+  Slider *slider = data;
 
-  g_clear_handle_id (&side->hold_id, g_source_remove);
-  side->hold_id = g_timeout_add (HOLD_MS, on_hold_end, side);
-  popup->actions->set_volume (side->side, sd_state_volume_of_percent (gtk_range_get_value (range)),
-                              popup->data);
+  g_clear_handle_id (&slider->hold_id, g_source_remove);
+  slider->hold_id = g_timeout_add (HOLD_MS, on_hold_end, slider);
+  show_percent (slider);
+  slider->set (slider, sd_state_volume_of_percent (gtk_range_get_value (range)));
 }
 
 /* A wheel click's smooth delta on the event's backend. */
@@ -217,7 +320,7 @@ click_unit (GdkEvent *event)
 static gboolean
 on_scale_scroll (GtkWidget *scale, GdkEventScroll *event, gpointer data)
 {
-  Side *side = data;
+  Slider *slider = data;
   GtkRange *range = GTK_RANGE (scale);
   GdkDevice *source = gdk_event_get_source_device ((GdkEvent *) event);
   double clicks = 0;
@@ -255,7 +358,7 @@ on_scale_scroll (GtkWidget *scale, GdkEventScroll *event, gpointer data)
         break;
       }
   if (clicks != 0)
-    gtk_range_set_value (range, gtk_range_get_value (range) + clicks * side->popup->step);
+    gtk_range_set_value (range, gtk_range_get_value (range) + clicks * slider->popup->step);
   return TRUE;
 }
 
@@ -263,9 +366,9 @@ static gboolean
 on_scale_press (GtkWidget *scale G_GNUC_UNUSED, GdkEventButton *event G_GNUC_UNUSED,
                 gpointer data)
 {
-  Side *side = data;
+  Slider *slider = data;
 
-  side->dragging = TRUE;
+  slider->dragging = TRUE;
   return FALSE;
 }
 
@@ -273,11 +376,77 @@ static gboolean
 on_scale_release (GtkWidget *scale G_GNUC_UNUSED, GdkEventButton *event G_GNUC_UNUSED,
                   gpointer data)
 {
-  Side *side = data;
+  Slider *slider = data;
 
-  side->dragging = FALSE;
-  show_volume (side);
+  slider->dragging = FALSE;
+  show_volume (slider);
   return FALSE;
+}
+
+static void
+on_scale_destroy (GtkWidget *scale G_GNUC_UNUSED, gpointer data)
+{
+  Slider *slider = data;
+
+  g_clear_handle_id (&slider->hold_id, g_source_remove);
+  g_ptr_array_remove_fast (slider->popup->sliders, slider);
+  g_free (slider);
+}
+
+/* The step and the cap a slider has. */
+static void
+slider_set_range (Slider *slider)
+{
+  GtkRange *range = GTK_RANGE (slider->scale);
+
+  /* A narrower range clamps the value, which isn't the user asking for it. */
+  g_signal_handler_block (slider->scale, slider->value_changed);
+  gtk_range_set_range (range, 0, cap (slider->popup));
+  gtk_range_set_increments (range, slider->popup->step, 2.0 * slider->popup->step);
+  g_signal_handler_unblock (slider->scale, slider->value_changed);
+  show_volume (slider);
+  show_percent (slider);
+}
+
+/* A slider that asks set for the volume the user moves it to, with its percent beside it
+   when with_percent. It's freed with its scale. */
+static Slider *
+slider_new (SdPopup *popup, void (*set) (Slider *slider, pa_volume_t volume), gpointer owner,
+            gboolean with_percent)
+{
+  Slider *slider = g_new0 (Slider, 1);
+
+  slider->popup = popup;
+  slider->set = set;
+  slider->owner = owner;
+  slider->scale = gtk_scale_new_with_range (GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
+  gtk_scale_set_draw_value (GTK_SCALE (slider->scale), FALSE);
+  gtk_widget_set_hexpand (slider->scale, TRUE);
+  slider->value_changed = g_signal_connect (slider->scale, "value-changed",
+                                            G_CALLBACK (on_value_changed), slider);
+  /* Before GtkRange's class handlers, which they run ahead of. */
+  g_signal_connect (slider->scale, "scroll-event", G_CALLBACK (on_scale_scroll), slider);
+  g_signal_connect (slider->scale, "button-press-event", G_CALLBACK (on_scale_press), slider);
+  g_signal_connect (slider->scale, "button-release-event", G_CALLBACK (on_scale_release), slider);
+  g_signal_connect (slider->scale, "destroy", G_CALLBACK (on_scale_destroy), slider);
+  if (with_percent)
+    {
+      slider->percent = gtk_label_new (NULL);
+      gtk_label_set_xalign (GTK_LABEL (slider->percent), 1);
+      gtk_widget_set_size_request (slider->percent, 34, -1);
+      add_class (slider->percent, "sd-pct");
+    }
+  g_ptr_array_add (popup->sliders, slider);
+  slider_set_range (slider);
+  return slider;
+}
+
+static void
+side_set_volume (Slider *slider, pa_volume_t volume)
+{
+  Side *side = slider->owner;
+
+  side->popup->actions->set_volume (side->side, volume, side->popup->data);
 }
 
 static void
@@ -312,7 +481,7 @@ on_draw_strike (GtkWidget *image, cairo_t *cr, gpointer data)
   return FALSE;
 }
 
-/* The pill's list, or the port dropdown's ports, open or shut. */
+/* The pill's list, the port dropdown's ports, or an application's row, open or shut. */
 static void
 on_toggle_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
 {
@@ -342,15 +511,30 @@ on_port_clicked (GtkButton *button, gpointer data)
                                   side->popup->data);
 }
 
-/* The meter takes the latest level once a frame, rather than at every peak (CMN-210). */
+/* A level bar, the input's meter or an application's activity bar, takes the latest level
+   once a frame, rather than at every peak (CMN-210). */
 static gboolean
-on_meter_tick (GtkWidget *meter, GdkFrameClock *clock G_GNUC_UNUSED, gpointer data)
+on_level_tick (GtkWidget *bar, GdkFrameClock *clock G_GNUC_UNUSED, gpointer data)
 {
-  Side *side = data;
+  double level = *(double *) data;
 
-  if (gtk_level_bar_get_value (GTK_LEVEL_BAR (meter)) != side->level)
-    gtk_level_bar_set_value (GTK_LEVEL_BAR (meter), side->level);
+  if (gtk_level_bar_get_value (GTK_LEVEL_BAR (bar)) != level)
+    gtk_level_bar_set_value (GTK_LEVEL_BAR (bar), level);
   return G_SOURCE_CONTINUE;
+}
+
+/* A level bar in one green, not the theme's low, high and full colours, showing *level. */
+static GtkWidget *
+level_bar_new (double *level)
+{
+  GtkWidget *bar = gtk_level_bar_new_for_interval (0, 1);
+
+  gtk_level_bar_remove_offset_value (GTK_LEVEL_BAR (bar), GTK_LEVEL_BAR_OFFSET_LOW);
+  gtk_level_bar_remove_offset_value (GTK_LEVEL_BAR (bar), GTK_LEVEL_BAR_OFFSET_HIGH);
+  gtk_level_bar_remove_offset_value (GTK_LEVEL_BAR (bar), GTK_LEVEL_BAR_OFFSET_FULL);
+  add_class (bar, "sd-meter");
+  gtk_widget_add_tick_callback (bar, on_level_tick, level, NULL);
+  return bar;
 }
 
 /* A row of a list: the icon, the name with a line under it, and the check, in a flat
@@ -503,9 +687,8 @@ update_side (Side *side, const SdStatus *status)
   set_icon (side->mute_image, sd_state_mute_icon_names (side->side, device));
   gtk_widget_queue_draw (side->mute_image);
   gtk_widget_set_sensitive (side->mute, device != NULL);
-  gtk_widget_set_sensitive (side->scale, device != NULL);
-  side->server_percent = device != NULL ? sd_state_percent (device->volume) : 0;
-  show_volume (side);
+  gtk_widget_set_sensitive (side->slider->scale, device != NULL);
+  slider_update (side->slider, device != NULL ? device->volume : 0);
   if (device != NULL)
     gtk_label_set_text (GTK_LABEL (side->pill_label), device->description);
   else
@@ -547,28 +730,14 @@ side_new (SdPopup *popup, SdSide which)
   set_name (side->mute_image, side, "mute-image", NULL);
   g_signal_connect (side->mute, "clicked", G_CALLBACK (on_mute_clicked), side);
 
-  side->scale = gtk_scale_new_with_range (GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
-  gtk_scale_set_draw_value (GTK_SCALE (side->scale), FALSE);
-  gtk_widget_set_hexpand (side->scale, TRUE);
-  set_name (side->scale, side, "scale", NULL);
-  side->value_changed = g_signal_connect (side->scale, "value-changed",
-                                          G_CALLBACK (on_value_changed), side);
-  /* Before GtkRange's class handlers, which they run ahead of. */
-  g_signal_connect (side->scale, "scroll-event", G_CALLBACK (on_scale_scroll), side);
-  g_signal_connect (side->scale, "button-press-event", G_CALLBACK (on_scale_press), side);
-  g_signal_connect (side->scale, "button-release-event", G_CALLBACK (on_scale_release), side);
-  gtk_box_pack_start (GTK_BOX (middle), side->scale, FALSE, FALSE, 0);
+  side->slider = slider_new (popup, side_set_volume, side, FALSE);
+  set_name (side->slider->scale, side, "scale", NULL);
+  gtk_box_pack_start (GTK_BOX (middle), side->slider->scale, FALSE, FALSE, 0);
   if (which == SD_INPUT)
     {
-      side->meter = gtk_level_bar_new_for_interval (0, 1);
-      /* One green, not the theme's low, high and full colours. */
-      gtk_level_bar_remove_offset_value (GTK_LEVEL_BAR (side->meter), GTK_LEVEL_BAR_OFFSET_LOW);
-      gtk_level_bar_remove_offset_value (GTK_LEVEL_BAR (side->meter), GTK_LEVEL_BAR_OFFSET_HIGH);
-      gtk_level_bar_remove_offset_value (GTK_LEVEL_BAR (side->meter), GTK_LEVEL_BAR_OFFSET_FULL);
-      add_class (side->meter, "sd-meter");
+      side->meter = level_bar_new (&side->level);
       g_object_set (side->meter, "margin-start", 8, "margin-end", 8, NULL);
       set_name (side->meter, side, "meter", NULL);
-      gtk_widget_add_tick_callback (side->meter, on_meter_tick, side, NULL);
       gtk_box_pack_start (GTK_BOX (middle), side->meter, FALSE, FALSE, 0);
     }
   gtk_widget_set_valign (middle, GTK_ALIGN_CENTER);
@@ -652,6 +821,424 @@ side_new (SdPopup *popup, SdSide which)
   return box;
 }
 
+static GtkWidget *
+heading_new (const char *text)
+{
+  g_autofree char *upper = g_utf8_strup (text, -1);
+  GtkWidget *label = gtk_label_new (upper);
+
+  gtk_label_set_xalign (GTK_LABEL (label), 0);
+  add_class (label, "sd-heading");
+  g_object_set (label, "margin-start", 2, "margin-top", 6, "margin-bottom", 2, NULL);
+  return label;
+}
+
+/* A row's grid: the icon, the name, the slider and its percent, and the button at the
+   right; under the name, what sub holds. The focus goes from the name to the slider. */
+static GtkWidget *
+app_grid (SdPopup *popup, GtkWidget *icon, GtkWidget *name, Slider *slider, GtkWidget *right,
+          GtkWidget *sub)
+{
+  GtkWidget *grid = gtk_grid_new ();
+
+  gtk_grid_set_column_spacing (GTK_GRID (grid), 8);
+  gtk_grid_set_row_spacing (GTK_GRID (grid), 3);
+  g_object_set (grid, "margin-start", 4, "margin-end", 4, "margin-top", 3, "margin-bottom", 3,
+                NULL);
+  gtk_image_set_pixel_size (GTK_IMAGE (icon), ICON_SIZE);
+  gtk_widget_set_valign (icon, GTK_ALIGN_START);
+  gtk_grid_attach (GTK_GRID (grid), icon, 0, 0, 1, 1);
+  gtk_widget_set_size_request (name, NAME_WIDTH, -1);
+  gtk_size_group_add_widget (popup->names, name);
+  gtk_grid_attach (GTK_GRID (grid), name, 1, 0, 1, 1);
+  gtk_widget_set_valign (slider->scale, GTK_ALIGN_CENTER);
+  gtk_grid_attach (GTK_GRID (grid), slider->scale, 2, 0, 1, 1);
+  gtk_grid_attach (GTK_GRID (grid), slider->percent, 3, 0, 1, 1);
+  gtk_grid_attach (GTK_GRID (grid), right, 4, 0, 1, 1);
+  if (sub != NULL)
+    gtk_grid_attach (GTK_GRID (grid), sub, 1, 1, 3, 1);
+  {
+    GList *chain = g_list_append (g_list_append (g_list_append (NULL, name), slider->scale),
+                                  right);
+
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    gtk_container_set_focus_chain (GTK_CONTAINER (grid), chain);
+    G_GNUC_END_IGNORE_DEPRECATIONS
+    g_list_free (chain);
+  }
+  return grid;
+}
+
+/* The pin button, hidden until CMN-217 pins: it keeps the rows' sliders as wide as theirs
+   will be. */
+static GtkWidget *
+pin_new (void)
+{
+  GtkWidget *pin = gtk_button_new_from_icon_name ("view-pin-symbolic", GTK_ICON_SIZE_MENU);
+
+  gtk_button_set_relief (GTK_BUTTON (pin), GTK_RELIEF_NONE);
+  add_class (pin, "sd-x");
+  gtk_widget_set_valign (pin, GTK_ALIGN_CENTER);
+  gtk_widget_set_no_show_all (pin, TRUE);
+  return pin;
+}
+
+static void
+system_set_volume (Slider *slider, pa_volume_t volume)
+{
+  SdPopup *popup = slider->owner;
+
+  popup->actions->set_system_volume (volume, popup->data);
+}
+
+/* A name, left-aligned and cut short past NAME_CHARS. */
+static GtkWidget *
+name_label_new (const char *text)
+{
+  GtkWidget *label = gtk_label_new (text);
+
+  gtk_label_set_xalign (GTK_LABEL (label), 0);
+  gtk_label_set_ellipsize (GTK_LABEL (label), PANGO_ELLIPSIZE_END);
+  gtk_label_set_max_width_chars (GTK_LABEL (label), NAME_CHARS);
+  return label;
+}
+
+/* System sounds' row: the event role's volume, as pavucontrol's. */
+static GtkWidget *
+system_row_new (SdPopup *popup)
+{
+  const char *const icon_names[] = { "preferences-desktop-sound", "audio-x-generic",
+                                     "audio-x-generic-symbolic", NULL };
+  GtkWidget *icon = gtk_image_new ();
+  GtkWidget *name = name_label_new ("System sounds");
+  GtkWidget *grid;
+
+  set_icon (icon, icon_names);
+  add_class (name, "sd-name");
+  popup->system = slider_new (popup, system_set_volume, popup, TRUE);
+  gtk_widget_set_name (popup->system->scale, "system-scale");
+  grid = app_grid (popup, icon, name, popup->system, pin_new (), NULL);
+  gtk_widget_set_name (grid, "system-row");
+  return grid;
+}
+
+static void
+app_set_volume (Slider *slider, pa_volume_t volume)
+{
+  AppRow *row = slider->owner;
+
+  row->popup->actions->set_app_volume (row->side, row->id, volume, row->popup->data);
+}
+
+static void
+stream_set_volume (Slider *slider, pa_volume_t volume)
+{
+  AppRow *row = slider->owner;
+
+  row->popup->actions->set_stream_volume (row->side, slider->stream, volume, row->popup->data);
+}
+
+static void
+on_app_device_clicked (GtkButton *button, gpointer data)
+{
+  AppRow *row = data;
+
+  /* NULL from "Follow the default". */
+  row->popup->actions->move_app (row->side, row->id,
+                                 g_object_get_data (G_OBJECT (button), "device"),
+                                 row->popup->data);
+}
+
+static void
+on_app_row_destroy (GtkWidget *box G_GNUC_UNUSED, gpointer data)
+{
+  AppRow *row = data;
+
+  g_hash_table_remove (row->popup->app_rows, row->key);
+  g_free (row->id);
+  g_free (row->key);
+  g_free (row->devices_key);
+  g_free (row->streams_key);
+  g_free (row->device);
+  g_free (row);
+}
+
+static char *
+app_key (SdSide side, const char *id)
+{
+  return g_strdup_printf ("%d\x1f%s", side, id);
+}
+
+/* A Sound application's row, empty until it's updated: its icon, its name, which opens what
+   it plays to or records from beneath, its slider and percent, and the pin; under them its
+   activity bar and its badge. */
+static AppRow *
+app_row_new (SdPopup *popup, const SdApp *app)
+{
+  AppRow *row = g_new0 (AppRow, 1);
+  GtkWidget *sub = gtk_box_new (GTK_ORIENTATION_VERTICAL, 3);
+  GtkWidget *drop = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *heading = gtk_label_new (app->side == SD_OUTPUT ? "Plays to" : "Records from");
+  GtkWidget *pin = pin_new ();
+
+  row->popup = popup;
+  row->side = app->side;
+  row->id = g_strdup (app->id);
+  row->key = app_key (app->side, app->id);
+  row->box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  set_app_name (row->box, row, NULL);
+
+  row->icon = gtk_image_new ();
+  set_app_name (row->icon, row, "icon");
+  row->name = gtk_button_new ();
+  row->name_label = name_label_new (app->name);
+  gtk_container_add (GTK_CONTAINER (row->name), row->name_label);
+  gtk_button_set_relief (GTK_BUTTON (row->name), GTK_RELIEF_NONE);
+  add_class (row->name, "sd-name");
+  set_app_name (row->name, row, "name");
+  row->slider = slider_new (popup, app_set_volume, row, TRUE);
+  set_app_name (row->slider->scale, row, "scale");
+  set_app_name (row->slider->percent, row, "percent");
+  set_app_name (pin, row, "pin");
+
+  row->bar = level_bar_new (&row->level);
+  set_app_name (row->bar, row, "bar");
+  gtk_box_pack_start (GTK_BOX (sub), row->bar, FALSE, FALSE, 0);
+  row->badge = gtk_label_new (NULL);
+  gtk_label_set_ellipsize (GTK_LABEL (row->badge), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_halign (row->badge, GTK_ALIGN_START);
+  add_class (row->badge, "sd-badge");
+  gtk_widget_set_no_show_all (row->badge, TRUE);
+  set_app_name (row->badge, row, "badge");
+  gtk_box_pack_start (GTK_BOX (sub), row->badge, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (row->box),
+                      app_grid (popup, row->icon, row->name, row->slider, pin, sub), FALSE,
+                      FALSE, 0);
+
+  gtk_label_set_xalign (GTK_LABEL (heading), 0);
+  add_class (heading, "sd-detail");
+  g_object_set (heading, "margin-start", 8, "margin-top", 4, NULL);
+  gtk_box_pack_start (GTK_BOX (drop), heading, FALSE, FALSE, 0);
+  row->devices = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  gtk_box_pack_start (GTK_BOX (drop), row->devices, FALSE, FALSE, 0);
+  row->streams = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  gtk_box_pack_start (GTK_BOX (drop), row->streams, FALSE, FALSE, 0);
+  add_class (drop, "sd-drop");
+  g_object_set (drop, "margin-start", 4, "margin-end", 4, "margin-bottom", 4, NULL);
+  row->revealer = gtk_revealer_new ();
+  gtk_revealer_set_transition_duration (GTK_REVEALER (row->revealer), REVEAL_MS);
+  gtk_container_add (GTK_CONTAINER (row->revealer), drop);
+  gtk_box_pack_start (GTK_BOX (row->box), row->revealer, FALSE, FALSE, 0);
+  g_signal_connect (row->name, "clicked", G_CALLBACK (on_toggle_clicked), row->revealer);
+
+  g_signal_connect (row->box, "destroy", G_CALLBACK (on_app_row_destroy), row);
+  g_hash_table_insert (popup->app_rows, row->key, row);
+  gtk_widget_show_all (row->box);
+  return row;
+}
+
+/* "Follow the default (WH-1000XM4)" and the side's devices, built again only when they
+   change; the checks follow the application's device in place. */
+static void
+update_app_devices (AppRow *row, const SdStatus *status)
+{
+  const SdDevice *fallback = sd_status_default_device (status, row->side);
+  guint n_devices;
+  const SdDevice *devices = sd_status_devices (status, row->side, &n_devices);
+  g_autofree char *follow = fallback != NULL
+                              ? g_strdup_printf ("Follow the default (%s)", fallback->description)
+                              : g_strdup ("Follow the default");
+  GString *key = g_string_new (follow);
+  g_autoptr (GList) children = NULL;
+
+  for (guint i = 0; i < n_devices; i++)
+    g_string_append_printf (key, "\x1e%s\x1f%s\x1f%s\x1f%d", devices[i].name,
+                            devices[i].description, sd_state_device_detail (&devices[i]) ?: "",
+                            devices[i].form);
+  if (g_strcmp0 (key->str, row->devices_key) != 0)
+    {
+      GtkWidget *check;
+      GtkWidget *item = list_item (NULL, follow, NULL, &check);
+
+      clear_box (row->devices);
+      set_app_name (item, row, "follow");
+      set_app_name (check, row, "check-follow");
+      g_object_set_data (G_OBJECT (item), "check", check);
+      g_signal_connect (item, "clicked", G_CALLBACK (on_app_device_clicked), row);
+      gtk_box_pack_start (GTK_BOX (row->devices), item, FALSE, FALSE, 0);
+      for (guint i = 0; i < n_devices; i++)
+        {
+          g_autofree char *item_name = g_strdup_printf ("device-%s", devices[i].name);
+          g_autofree char *check_name = g_strdup_printf ("check-%s", devices[i].name);
+
+          item = list_item (sd_state_device_icon_names (&devices[i]), devices[i].description,
+                            sd_state_device_detail (&devices[i]), &check);
+          set_app_name (item, row, item_name);
+          set_app_name (check, row, check_name);
+          g_object_set_data_full (G_OBJECT (item), "device", g_strdup (devices[i].name), g_free);
+          g_object_set_data (G_OBJECT (item), "check", check);
+          g_signal_connect (item, "clicked", G_CALLBACK (on_app_device_clicked), row);
+          gtk_box_pack_start (GTK_BOX (row->devices), item, FALSE, FALSE, 0);
+        }
+    }
+  g_free (row->devices_key);
+  row->devices_key = g_string_free (key, FALSE);
+  children = gtk_container_get_children (GTK_CONTAINER (row->devices));
+  for (GList *l = children; l != NULL; l = l->next)
+    gtk_widget_set_visible (g_object_get_data (l->data, "check"),
+                            g_strcmp0 (g_object_get_data (l->data, "device"), row->device) == 0);
+}
+
+/* A slider for each stream, when there's more than one, built again only when they change. */
+static void
+update_app_streams (AppRow *row, const SdApp *app)
+{
+  GString *key = g_string_new (NULL);
+  g_autoptr (GList) children = NULL;
+
+  for (guint i = 0; app->n_streams > 1 && i < app->n_streams; i++)
+    g_string_append_printf (key, "%u\x1f%s\x1e", app->streams[i].index,
+                            app->streams[i].title ?: "");
+  if (g_strcmp0 (key->str, row->streams_key) != 0)
+    {
+      clear_box (row->streams);
+      for (guint i = 0; app->n_streams > 1 && i < app->n_streams; i++)
+        {
+          GtkWidget *line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
+          GtkWidget *title = gtk_label_new (app->streams[i].title ?: app->name);
+          Slider *slider = slider_new (row->popup, stream_set_volume, row, TRUE);
+          g_autofree char *name = g_strdup_printf ("stream-%u", app->streams[i].index);
+
+          slider->stream = app->streams[i].index;
+          gtk_label_set_xalign (GTK_LABEL (title), 0);
+          gtk_label_set_ellipsize (GTK_LABEL (title), PANGO_ELLIPSIZE_END);
+          gtk_label_set_max_width_chars (GTK_LABEL (title), NAME_CHARS);
+          gtk_widget_set_size_request (title, NAME_WIDTH, -1);
+          add_class (title, "sd-detail");
+          set_app_name (slider->scale, row, name);
+          g_object_set_data (G_OBJECT (line), "slider", slider);
+          g_object_set (line, "margin-start", 8, "margin-end", 8, NULL);
+          gtk_box_pack_start (GTK_BOX (line), title, FALSE, FALSE, 0);
+          gtk_box_pack_start (GTK_BOX (line), slider->scale, TRUE, TRUE, 0);
+          gtk_box_pack_start (GTK_BOX (line), slider->percent, FALSE, FALSE, 0);
+          gtk_widget_show_all (line);
+          gtk_box_pack_start (GTK_BOX (row->streams), line, FALSE, FALSE, 0);
+        }
+    }
+  g_free (row->streams_key);
+  row->streams_key = g_string_free (key, FALSE);
+  children = gtk_container_get_children (GTK_CONTAINER (row->streams));
+  for (GList *l = children; l != NULL; l = l->next)
+    {
+      Slider *slider = g_object_get_data (l->data, "slider");
+
+      for (guint i = 0; i < app->n_streams; i++)
+        if (app->streams[i].index == slider->stream)
+          slider_update (slider, app->streams[i].volume);
+    }
+}
+
+/* The badge names the device it's moved to: the server's description, or its name for a
+   device of no list, an output's monitor that it records. */
+static void
+update_badge (AppRow *row, const SdStatus *status)
+{
+  guint n_devices;
+  const SdDevice *devices = sd_status_devices (status, row->side, &n_devices);
+  const char *text = row->device;
+
+  for (guint i = 0; row->device != NULL && i < n_devices; i++)
+    if (g_strcmp0 (devices[i].name, row->device) == 0)
+      text = devices[i].description;
+  gtk_widget_set_visible (row->badge, row->device != NULL);
+  gtk_label_set_text (GTK_LABEL (row->badge), text ?: "");
+}
+
+static void
+update_app_row (AppRow *row, const SdApp *app, const SdStatus *status)
+{
+  const char *const icon_names[] = { app->icon ?: "application-x-executable",
+                                     "application-x-executable", NULL };
+
+  set_icon (row->icon, icon_names);
+  gtk_label_set_text (GTK_LABEL (row->name_label), app->name);
+  gtk_widget_set_tooltip_text (row->name, app->name);
+  slider_update (row->slider, app->volume);
+  g_free (row->device);
+  row->device = g_strdup (app->device);
+  update_badge (row, status);
+  update_app_devices (row, status);
+  update_app_streams (row, app);
+}
+
+/* The applications' rows in the status's order: those gone destroyed, the new ones built,
+   the others updated and moved into their place. */
+static void
+update_apps (SdPopup *popup, const SdStatus *status)
+{
+  g_autoptr (GHashTable) kept = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  g_autoptr (GPtrArray) gone = g_ptr_array_new ();
+  int positions[2] = { 0, 0 };
+  GHashTableIter iter;
+  gpointer value;
+
+  gtk_widget_set_sensitive (popup->system->scale, status->has_system_sounds);
+  slider_update (popup->system, status->has_system_sounds ? status->system_volume : 0);
+  for (guint i = 0; i < status->n_apps; i++)
+    {
+      const SdApp *app = &status->apps[i];
+      char *key = app_key (app->side, app->id);
+      AppRow *row = g_hash_table_lookup (popup->app_rows, key);
+      GtkWidget *box = popup->app_boxes[app->side];
+
+      if (row == NULL)
+        {
+          row = app_row_new (popup, app);
+          gtk_box_pack_start (GTK_BOX (box), row->box, FALSE, FALSE, 0);
+        }
+      gtk_box_reorder_child (GTK_BOX (box), row->box, positions[app->side]++);
+      update_app_row (row, app, status);
+      g_hash_table_add (kept, key);
+    }
+  g_hash_table_iter_init (&iter, popup->app_rows);
+  while (g_hash_table_iter_next (&iter, NULL, &value))
+    if (!g_hash_table_contains (kept, ((AppRow *) value)->key))
+      g_ptr_array_add (gone, ((AppRow *) value)->box);
+  /* Not while iterating: a row leaves the table as it's destroyed. */
+  for (guint i = 0; i < gone->len; i++)
+    gtk_widget_destroy (g_ptr_array_index (gone, i));
+  gtk_widget_set_visible (popup->recording_heading, positions[SD_INPUT] > 0);
+}
+
+/* Applications: the heading, System sounds, the boxes of the rows playing and recording,
+   and the Recording heading between them. */
+static GtkWidget *
+apps_new (SdPopup *popup)
+{
+  GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+
+  add_class (box, "sd-section");
+  g_object_set (box, "margin-start", 8, "margin-end", 8, "margin-top", 10, NULL);
+  gtk_widget_set_name (box, "applications");
+  gtk_box_pack_start (GTK_BOX (box), heading_new ("Applications"), FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (box), system_row_new (popup), FALSE, FALSE, 0);
+  for (SdSide side = SD_OUTPUT; side <= SD_INPUT; side++)
+    {
+      popup->app_boxes[side] = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+      gtk_widget_set_name (popup->app_boxes[side],
+                           side == SD_OUTPUT ? "apps-playing" : "apps-recording");
+      if (side == SD_INPUT)
+        {
+          popup->recording_heading = heading_new ("Recording");
+          gtk_widget_set_name (popup->recording_heading, "recording-heading");
+          gtk_widget_set_no_show_all (popup->recording_heading, TRUE);
+          gtk_box_pack_start (GTK_BOX (box), popup->recording_heading, FALSE, FALSE, 0);
+        }
+      gtk_box_pack_start (GTK_BOX (box), popup->app_boxes[side], FALSE, FALSE, 0);
+    }
+  return box;
+}
+
 /* A shown GtkWindow follows its content's minimum height and never its natural one, and a
    scrolled window's minimum is its scroll bar's: the rows' natural height for their width,
    up to the room, is made the scrolled window's minimum, so that the popup grows with its
@@ -714,6 +1301,19 @@ on_window_show (GtkWidget *window, gpointer data G_GNUC_UNUSED)
   gtk_window_set_focus (GTK_WINDOW (window), NULL);
 }
 
+/* Closed, the activity bars go quiet: the reader stops hearing the applications. */
+static void
+on_window_hide (GtkWidget *window G_GNUC_UNUSED, gpointer data)
+{
+  SdPopup *popup = data;
+  GHashTableIter iter;
+  gpointer value;
+
+  g_hash_table_iter_init (&iter, popup->app_rows);
+  while (g_hash_table_iter_next (&iter, NULL, &value))
+    ((AppRow *) value)->level = 0;
+}
+
 static void
 on_settings_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
 {
@@ -729,12 +1329,16 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
   SdPopup *popup = g_new0 (SdPopup, 1);
   GtkWidget *content = popup->content = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   GtkWidget *settings = gtk_button_new_with_label ("Sound settings…");
+  GtkWidget *window = caminito_applet_popup_get_window (applet_popup);
 
   add_css ();
   popup->applet_popup = applet_popup;
   popup->actions = actions;
   popup->data = data;
   popup->step = 5;
+  popup->sliders = g_ptr_array_new ();
+  popup->app_rows = g_hash_table_new (g_str_hash, g_str_equal);
+  popup->names = gtk_size_group_new (GTK_SIZE_GROUP_HORIZONTAL);
 
   gtk_widget_set_size_request (content, WIDTH, -1);
   popup->scrolled = gtk_scrolled_window_new (NULL, NULL);
@@ -753,6 +1357,8 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
   gtk_box_pack_start (GTK_BOX (popup->rows), popup->no_server, FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (popup->rows), side_new (popup, SD_OUTPUT), FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (popup->rows), side_new (popup, SD_INPUT), FALSE, FALSE, 0);
+  popup->apps = apps_new (popup);
+  gtk_box_pack_start (GTK_BOX (popup->rows), popup->apps, FALSE, FALSE, 0);
   gtk_container_add (GTK_CONTAINER (popup->scrolled), popup->rows);
   g_signal_connect_after (popup->rows, "size-allocate", G_CALLBACK (on_rows_allocate), popup);
   gtk_box_pack_start (GTK_BOX (content), popup->scrolled, TRUE, TRUE, 0);
@@ -769,10 +1375,10 @@ sd_popup_new (CaminitoAppletPopup *applet_popup, const SdPopupActions *actions, 
   gtk_box_pack_start (GTK_BOX (content), popup->footer, FALSE, FALSE, 0);
 
   gtk_widget_show_all (content);
-  gtk_container_add (GTK_CONTAINER (caminito_applet_popup_get_window (applet_popup)), content);
+  gtk_container_add (GTK_CONTAINER (window), content);
   /* After GtkWindow's own handler, which maps it. */
-  g_signal_connect (caminito_applet_popup_get_window (applet_popup), "show",
-                    G_CALLBACK (on_window_show), NULL);
+  g_signal_connect (window, "show", G_CALLBACK (on_window_show), NULL);
+  g_signal_connect (window, "hide", G_CALLBACK (on_window_hide), popup);
   sd_popup_set_volume_settings (popup, popup->step, FALSE);
   {
     SdStatus none = { .running = FALSE };
@@ -791,6 +1397,8 @@ sd_popup_update (SdPopup *popup, const SdStatus *status)
       gtk_widget_set_visible (popup->sides[i].row, status->running);
       update_side (&popup->sides[i], status);
     }
+  gtk_widget_set_visible (popup->apps, status->running);
+  update_apps (popup, status);
 }
 
 void
@@ -798,18 +1406,8 @@ sd_popup_set_volume_settings (SdPopup *popup, guint step, gboolean above_100)
 {
   popup->step = step;
   popup->above_100 = above_100;
-  for (guint i = 0; i < G_N_ELEMENTS (popup->sides); i++)
-    {
-      Side *side = &popup->sides[i];
-      GtkRange *range = GTK_RANGE (side->scale);
-
-      /* A narrower range clamps the value, which isn't the user asking for it. */
-      g_signal_handler_block (side->scale, side->value_changed);
-      gtk_range_set_range (range, 0, cap (popup));
-      gtk_range_set_increments (range, step, 2.0 * step);
-      g_signal_handler_unblock (side->scale, side->value_changed);
-      show_volume (side);
-    }
+  for (guint i = 0; i < popup->sliders->len; i++)
+    slider_set_range (g_ptr_array_index (popup->sliders, i));
 }
 
 void
@@ -826,20 +1424,35 @@ sd_popup_set_input_level (SdPopup *popup, double level)
 }
 
 void
+sd_popup_set_app_level (SdPopup *popup, SdSide side, const char *app, double level)
+{
+  g_autofree char *key = app_key (side, app);
+  AppRow *row = g_hash_table_lookup (popup->app_rows, key);
+
+  if (row != NULL)
+    row->level = CLAMP (level, 0, 1);
+}
+
+void
 sd_popup_free (SdPopup *popup)
 {
   g_clear_handle_id (&popup->fit_idle, g_source_remove);
-  /* Its widgets' handlers have the popup for their data. */
+  g_signal_handlers_disconnect_by_data (caminito_applet_popup_get_window (popup->applet_popup),
+                                        popup);
+  /* Its widgets' handlers have the popup for their data: the sliders and the rows go with
+     them. */
   gtk_widget_destroy (popup->content);
   for (guint i = 0; i < G_N_ELEMENTS (popup->sides); i++)
     {
       Side *side = &popup->sides[i];
 
-      g_clear_handle_id (&side->hold_id, g_source_remove);
       g_free (side->list_key);
       g_free (side->ports_key);
       g_free (side->device);
       g_free (side->active_port);
     }
+  g_ptr_array_unref (popup->sliders);
+  g_hash_table_unref (popup->app_rows);
+  g_object_unref (popup->names);
   g_free (popup);
 }

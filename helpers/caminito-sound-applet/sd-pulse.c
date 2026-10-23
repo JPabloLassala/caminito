@@ -1,5 +1,5 @@
 /*
- * The sound server through libpulse (CMN-213, CMN-215). See sd-pulse.h.
+ * The sound server through libpulse (CMN-213, CMN-215, CMN-216). See sd-pulse.h.
  *
  * Each event re-reads its facility's whole list, which keeps removals simple, and the status
  * is built again once no list is on its way. A list asked for again before the last one came
@@ -8,6 +8,7 @@
 
 #include "sd-pulse.h"
 
+#include <pulse/ext-stream-restore.h>
 #include <pulse/glib-mainloop.h>
 #include <pulse/pulseaudio.h>
 #include <string.h>
@@ -17,12 +18,17 @@ static const char *const volume_controls[] = {
   "org.mate.VolumeControl", "org.gnome.VolumeControl", "org.PulseAudio.pavucontrol", NULL,
 };
 
+/* System sounds' entry in the stream-restore extension, as pavucontrol names it. */
+#define EVENT_ROLE "sink-input-by-media-role:event"
+
 typedef enum
 {
   LIST_SINKS,
   LIST_SOURCES,
+  LIST_PLAYING,
   LIST_RECORDING,
   LIST_CARDS,
+  LIST_SYSTEM_SOUNDS,
   N_LISTS,
 } ListKind;
 
@@ -30,26 +36,46 @@ typedef enum
 typedef struct
 {
   SdDevice   device;
+  guint32    index;
   /* Every channel's, which a volume set keeps the balance of. */
   pa_cvolume volume;
   /* A source that is an output's monitor. */
   gboolean   monitor;
+  /* A sink's monitor, which its streams' peaks are heard on. */
+  guint32    monitor_source;
 } Device;
 
-/* A Stream recording: one of the server's source outputs. */
+/* A Stream: one of the server's sink inputs or source outputs. */
 typedef struct
 {
-  char    *app_id;
-  char    *name;
-  char    *binary;
-  gboolean corked;
+  char      *app_id;
+  char      *name;
+  char      *binary;
+  char      *icon;
+  char      *title;
+  guint32    index;
+  /* The sink's or the source's index. */
+  guint32    device;
+  /* Every channel's, none where it has no volume. */
+  pa_cvolume volume;
+  gboolean   corked;
   /* The reader's own, or a volume control's. */
-  gboolean ignored;
-} RecordingStream;
+  gboolean   ignored;
+  /* An event sound's, which System sounds' row has rather than an application's. */
+  gboolean   event;
+} Stream;
+
+/* System sounds' entry, where the server has one. */
+typedef struct
+{
+  pa_cvolume volume;
+  char      *device;
+  gboolean   mute;
+} SystemSounds;
 
 /* For the warnings. */
 static const char *const list_names[N_LISTS] = {
-  "outputs", "inputs", "recording streams", "cards",
+  "outputs", "inputs", "playing streams", "recording streams", "cards", "system sounds' volume",
 };
 
 typedef struct
@@ -71,8 +97,10 @@ struct _SdPulse
   gboolean          ready;
   char             *default_sink;
   char             *default_source;
-  /* Of Device, Device, RecordingStream and SdCard, as the server last listed them. */
+  /* Of Device, Device, Stream, Stream, SdCard and SystemSounds, as the server last listed
+     them, and whether it has listed each since the context was ready. */
   GPtrArray        *lists[N_LISTS];
+  gboolean          listed[N_LISTS];
   /* The lists on their way, as Request. */
   GList            *requests;
   SdStatus          status;
@@ -81,7 +109,23 @@ struct _SdPulse
   gpointer          level_data;
   pa_stream        *level_stream;
   char             *level_source;
+  /* Who hears the applications, and the peak streams on their streams while someone does,
+     as AppMonitor by "<side>:<stream>:<device>": a stream moved gets a new one. */
+  SdPulseAppLevel   app_level;
+  gpointer          app_level_data;
+  GHashTable       *monitors;
 };
+
+/* A peak stream on one of an application's streams. */
+typedef struct
+{
+  SdPulse   *pulse;
+  SdSide     side;
+  char      *app;
+  pa_stream *stream;
+  /* Its last peak. */
+  double     level;
+} AppMonitor;
 
 /* As pavucontrol's peak meters, which pipewire-pulse delivers about 18 of (CMN-210). */
 #define PEAKS_PER_SECOND 25
@@ -107,14 +151,25 @@ device_free (gpointer data)
 }
 
 static void
-recording_stream_free (gpointer data)
+stream_free (gpointer data)
 {
-  RecordingStream *stream = data;
+  Stream *stream = data;
 
   g_free (stream->app_id);
   g_free (stream->name);
   g_free (stream->binary);
+  g_free (stream->icon);
+  g_free (stream->title);
   g_free (stream);
+}
+
+static void
+system_sounds_free (gpointer data)
+{
+  SystemSounds *entry = data;
+
+  g_free (entry->device);
+  g_free (entry);
 }
 
 static void
@@ -132,8 +187,11 @@ list_new (ListKind kind)
     case LIST_SINKS:
     case LIST_SOURCES:
       return g_ptr_array_new_with_free_func (device_free);
+    case LIST_PLAYING:
     case LIST_RECORDING:
-      return g_ptr_array_new_with_free_func (recording_stream_free);
+      return g_ptr_array_new_with_free_func (stream_free);
+    case LIST_SYSTEM_SOUNDS:
+      return g_ptr_array_new_with_free_func (system_sounds_free);
     case LIST_CARDS:
     case N_LISTS:
       break;
@@ -163,6 +221,84 @@ find_device (GPtrArray *devices, const char *name)
   return NULL;
 }
 
+static Device *
+find_device_by_index (GPtrArray *devices, guint32 index)
+{
+  for (guint i = 0; i < devices->len; i++)
+    {
+      Device *device = g_ptr_array_index (devices, i);
+
+      if (device->index == index)
+        return device;
+    }
+  return NULL;
+}
+
+static Stream *
+find_stream (GPtrArray *streams, guint32 index)
+{
+  for (guint i = 0; i < streams->len; i++)
+    {
+      Stream *stream = g_ptr_array_index (streams, i);
+
+      if (stream->index == index)
+        return stream;
+    }
+  return NULL;
+}
+
+/* A stream of a Sound application now: playing or recording, and not the reader's own, a
+   volume control's or an event sound. */
+static gboolean
+stream_listed (const Stream *stream)
+{
+  return !stream->corked && !stream->ignored && !stream->event;
+}
+
+/* The stream as sd-state takes it. */
+static SdStream
+stream_named (const Stream *stream, GPtrArray *devices)
+{
+  Device *device = find_device_by_index (devices, stream->device);
+
+  return (SdStream) {
+    .app_id = stream->app_id,
+    .name = stream->name,
+    .binary = stream->binary,
+    .icon = stream->icon,
+    .title = stream->title,
+    .index = stream->index,
+    .device = device != NULL ? device->device.name : NULL,
+    .volume = pa_cvolume_max (&stream->volume),
+  };
+}
+
+/* The side's Sound applications, onto apps. */
+static void
+add_apps (SdPulse *pulse, GArray *apps, SdSide side)
+{
+  GPtrArray *streams = pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
+  GPtrArray *devices = pulse->lists[side == SD_OUTPUT ? LIST_SINKS : LIST_SOURCES];
+  g_autoptr (GArray) named = g_array_new (FALSE, FALSE, sizeof (SdStream));
+  SdApp *found;
+  guint n;
+
+  for (guint i = 0; i < streams->len; i++)
+    {
+      Stream *stream = g_ptr_array_index (streams, i);
+      SdStream copy;
+
+      if (!stream_listed (stream))
+        continue;
+      copy = stream_named (stream, devices);
+      g_array_append_val (named, copy);
+    }
+  found = sd_state_apps ((SdStream *) named->data, named->len, side,
+                         side == SD_OUTPUT ? pulse->default_sink : pulse->default_source, &n);
+  g_array_append_vals (apps, found, n);
+  g_free (found);
+}
+
 /* The popup's list: every device, but the outputs' monitors. */
 static SdDevice *
 copy_devices (GPtrArray *devices, guint *n_copied)
@@ -188,7 +324,9 @@ build_status (SdPulse *pulse, SdStatus *status)
   Device *source = find_device (pulse->lists[LIST_SOURCES], pulse->default_source);
   GPtrArray *recording = pulse->lists[LIST_RECORDING];
   GPtrArray *cards = pulse->lists[LIST_CARDS];
+  GPtrArray *system_sounds = pulse->lists[LIST_SYSTEM_SOUNDS];
   g_autoptr (GArray) streams = g_array_new (FALSE, FALSE, sizeof (SdStream));
+  GArray *apps = g_array_new (FALSE, TRUE, sizeof (SdApp));
 
   status->running = TRUE;
   if (sink != NULL)
@@ -210,10 +348,10 @@ build_status (SdPulse *pulse, SdStatus *status)
   status->inputs = copy_devices (pulse->lists[LIST_SOURCES], &status->n_inputs);
   for (guint i = 0; i < recording->len; i++)
     {
-      RecordingStream *stream = g_ptr_array_index (recording, i);
-      SdStream named = { stream->app_id, stream->name, stream->binary };
+      Stream *stream = g_ptr_array_index (recording, i);
+      SdStream named = stream_named (stream, pulse->lists[LIST_SOURCES]);
 
-      if (!stream->corked && !stream->ignored)
+      if (stream_listed (stream))
         g_array_append_val (streams, named);
     }
   status->recording = sd_state_recording_names ((SdStream *) streams->data, streams->len);
@@ -221,6 +359,15 @@ build_status (SdPulse *pulse, SdStatus *status)
   status->cards = g_new0 (SdCard, cards->len);
   for (guint i = 0; i < cards->len; i++)
     sd_card_copy (g_ptr_array_index (cards, i), &status->cards[i]);
+  add_apps (pulse, apps, SD_OUTPUT);
+  add_apps (pulse, apps, SD_INPUT);
+  status->n_apps = apps->len;
+  status->apps = (SdApp *) g_array_free (apps, FALSE);
+  status->has_system_sounds = pulse->listed[LIST_SYSTEM_SOUNDS];
+  /* With no entry, an event sound plays at the server's full volume. */
+  status->system_volume = system_sounds->len > 0
+                            ? pa_cvolume_max (&((SystemSounds *) g_ptr_array_index (system_sounds, 0))->volume)
+                            : PA_VOLUME_NORM;
 }
 
 static void
@@ -236,10 +383,10 @@ set_status (SdPulse *pulse, SdStatus *status)
   pulse->changed (pulse, pulse->data);
 }
 
-static void
-on_peaks (pa_stream *stream, size_t length G_GNUC_UNUSED, void *data)
+/* The loudest of the peaks a peak stream has for us, from 0 to 1; FALSE with none. */
+static gboolean
+read_peaks (pa_stream *stream, double *peak)
 {
-  SdPulse *pulse = data;
   float level = 0;
   gboolean read = FALSE;
 
@@ -249,7 +396,7 @@ on_peaks (pa_stream *stream, size_t length G_GNUC_UNUSED, void *data)
       size_t size;
 
       if (pa_stream_peek (stream, &samples, &size) < 0)
-        return;
+        return FALSE;
       /* A hole, which has a size but no samples. */
       if (samples != NULL)
         {
@@ -262,8 +409,53 @@ on_peaks (pa_stream *stream, size_t length G_GNUC_UNUSED, void *data)
       else
         break;
     }
-  if (read && pulse->level != NULL)
-    pulse->level (CLAMP (level, 0, 1), pulse->level_data);
+  *peak = CLAMP (level, 0, 1);
+  return read;
+}
+
+static void
+on_peaks (pa_stream *stream, size_t length G_GNUC_UNUSED, void *data)
+{
+  SdPulse *pulse = data;
+  double level;
+
+  if (read_peaks (stream, &level) && pulse->level != NULL)
+    pulse->level (level, pulse->level_data);
+}
+
+/* An application's level is its loudest stream's. */
+static void
+on_app_peaks (pa_stream *stream, size_t length G_GNUC_UNUSED, void *data)
+{
+  AppMonitor *monitor = data;
+  SdPulse *pulse = monitor->pulse;
+  GHashTableIter iter;
+  gpointer value;
+  double level = 0;
+
+  if (!read_peaks (stream, &monitor->level) || pulse->app_level == NULL)
+    return;
+  g_hash_table_iter_init (&iter, pulse->monitors);
+  while (g_hash_table_iter_next (&iter, NULL, &value))
+    {
+      AppMonitor *other = value;
+
+      if (other->side == monitor->side && g_str_equal (other->app, monitor->app))
+        level = MAX (level, other->level);
+    }
+  pulse->app_level (monitor->side, monitor->app, level, pulse->app_level_data);
+}
+
+static void
+app_monitor_free (gpointer data)
+{
+  AppMonitor *monitor = data;
+
+  pa_stream_set_read_callback (monitor->stream, NULL, NULL);
+  pa_stream_disconnect (monitor->stream);
+  pa_stream_unref (monitor->stream);
+  g_free (monitor->app);
+  g_free (monitor);
 }
 
 static void
@@ -309,6 +501,93 @@ follow_input_level (SdPulse *pulse)
   pulse->level_source = g_strdup (source);
 }
 
+/* A peak stream on one stream of an application: on its sink's monitor, hearing that stream
+   alone, or on the source it records from (CMN-210's sp-peaks.c, as pavucontrol's). */
+static void
+open_app_monitor (SdPulse *pulse, SdSide side, const Stream *stream, const char *key)
+{
+  pa_sample_spec spec = { .format = PA_SAMPLE_FLOAT32NE, .rate = PEAKS_PER_SECOND, .channels = 1 };
+  pa_buffer_attr attr = { .maxlength = (uint32_t) -1, .fragsize = sizeof (float) };
+  SdStream named = stream_named (stream, pulse->lists[LIST_SINKS]);
+  const char *app = sd_state_stream_identity (&named);
+  g_autofree char *source = NULL;
+  AppMonitor *monitor;
+
+  if (app == NULL)
+    return;
+  if (side == SD_OUTPUT)
+    {
+      Device *sink = find_device_by_index (pulse->lists[LIST_SINKS], stream->device);
+
+      if (sink == NULL)
+        return;
+      source = g_strdup_printf ("%u", sink->monitor_source);
+    }
+  else
+    source = g_strdup_printf ("%u", stream->device);
+  monitor = g_new0 (AppMonitor, 1);
+  monitor->pulse = pulse;
+  monitor->side = side;
+  monitor->app = g_strdup (app);
+  monitor->stream = pa_stream_new (pulse->context, "Peak detect", &spec, NULL);
+  if (monitor->stream == NULL)
+    {
+      g_free (monitor->app);
+      g_free (monitor);
+      return;
+    }
+  if (side == SD_OUTPUT)
+    pa_stream_set_monitor_stream (monitor->stream, stream->index);
+  pa_stream_set_read_callback (monitor->stream, on_app_peaks, monitor);
+  if (pa_stream_connect_record (monitor->stream, source, &attr,
+                                PA_STREAM_DONT_MOVE | PA_STREAM_PEAK_DETECT
+                                | PA_STREAM_ADJUST_LATENCY
+                                | PA_STREAM_DONT_INHIBIT_AUTO_SUSPEND)
+      < 0)
+    {
+      g_warning ("can't hear %s's stream: %s", app,
+                 pa_strerror (pa_context_errno (pulse->context)));
+      pa_stream_unref (monitor->stream);
+      g_free (monitor->app);
+      g_free (monitor);
+      return;
+    }
+  g_hash_table_insert (pulse->monitors, g_strdup (key), monitor);
+}
+
+/* A peak stream on each stream of the applications while someone hears them, and none
+   otherwise. */
+static void
+follow_app_levels (SdPulse *pulse)
+{
+  g_autoptr (GHashTable) kept = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  GHashTableIter iter;
+  gpointer key;
+
+  if (pulse->app_level != NULL && pulse->ready)
+    for (SdSide side = SD_OUTPUT; side <= SD_INPUT; side++)
+      {
+        GPtrArray *streams = pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
+
+        for (guint i = 0; i < streams->len; i++)
+          {
+            Stream *stream = g_ptr_array_index (streams, i);
+            char *name;
+
+            if (!stream_listed (stream))
+              continue;
+            name = g_strdup_printf ("%d:%u:%u", side, stream->index, stream->device);
+            if (!g_hash_table_contains (pulse->monitors, name))
+              open_app_monitor (pulse, side, stream, name);
+            g_hash_table_add (kept, name);
+          }
+      }
+  g_hash_table_iter_init (&iter, pulse->monitors);
+  while (g_hash_table_iter_next (&iter, &key, NULL))
+    if (!g_hash_table_contains (kept, key))
+      g_hash_table_iter_remove (&iter);
+}
+
 /* Once every list has come in. */
 static void
 update (SdPulse *pulse)
@@ -320,6 +599,7 @@ update (SdPulse *pulse)
   build_status (pulse, &status);
   set_status (pulse, &status);
   follow_input_level (pulse);
+  follow_app_levels (pulse);
 }
 
 static void
@@ -332,6 +612,7 @@ request_done (Request *request, int eol)
     {
       g_ptr_array_unref (pulse->lists[request->kind]);
       pulse->lists[request->kind] = g_ptr_array_ref (request->items);
+      pulse->listed[request->kind] = TRUE;
     }
   else
     g_warning ("can't read the sound server's %s: %s", list_names[request->kind],
@@ -395,6 +676,8 @@ on_sink (pa_context *context G_GNUC_UNUSED, const pa_sink_info *info, int eol, v
                        info->active_port != NULL ? info->active_port->description : NULL,
                        info->active_port != NULL ? info->active_port->type
                                                  : PA_DEVICE_PORT_TYPE_UNKNOWN);
+  device->index = info->index;
+  device->monitor_source = info->monitor_source;
   g_ptr_array_add (request->items, device);
 }
 
@@ -420,32 +703,85 @@ on_source (pa_context *context G_GNUC_UNUSED, const pa_source_info *info, int eo
                        info->active_port != NULL ? info->active_port->description : NULL,
                        info->active_port != NULL ? info->active_port->type
                                                  : PA_DEVICE_PORT_TYPE_UNKNOWN);
+  device->index = info->index;
   device->monitor = info->monitor_of_sink != PA_INVALID_INDEX;
   g_ptr_array_add (request->items, device);
 }
 
+/* The fields sink inputs and source outputs share. */
+static Stream *
+stream_new (pa_context *context, guint32 index, guint32 client, guint32 device,
+            pa_proplist *properties, const pa_cvolume *volume, gboolean has_volume, int corked)
+{
+  Stream *stream = g_new0 (Stream, 1);
+  const char *app_id = property (properties, PA_PROP_APPLICATION_ID);
+
+  /* PipeWire's for a Flatpak's client. */
+  stream->app_id = g_strdup (property (properties, "pipewire.sec.app-id"));
+  stream->name = g_strdup (property (properties, PA_PROP_APPLICATION_NAME));
+  stream->binary = g_strdup (property (properties, PA_PROP_APPLICATION_PROCESS_BINARY));
+  stream->icon = g_strdup (property (properties, PA_PROP_APPLICATION_ICON_NAME));
+  stream->title = g_strdup (property (properties, PA_PROP_MEDIA_NAME));
+  stream->index = index;
+  stream->device = device;
+  if (has_volume)
+    stream->volume = *volume;
+  stream->corked = corked != 0;
+  stream->ignored = client == pa_context_get_index (context)
+                      || (app_id != NULL && g_strv_contains (volume_controls, app_id));
+  stream->event = g_strcmp0 (property (properties, PA_PROP_MEDIA_ROLE), "event") == 0;
+  return stream;
+}
+
 static void
-on_recording_stream (pa_context *context, const pa_source_output_info *info, int eol, void *data)
+on_playing_stream (pa_context *context, const pa_sink_input_info *info, int eol, void *data)
 {
   Request *request = data;
-  RecordingStream *stream;
-  const char *app_id;
 
   if (eol != 0)
     {
       request_done (request, eol);
       return;
     }
-  stream = g_new0 (RecordingStream, 1);
-  app_id = property (info->proplist, PA_PROP_APPLICATION_ID);
-  /* PipeWire's for a Flatpak's client. */
-  stream->app_id = g_strdup (property (info->proplist, "pipewire.sec.app-id"));
-  stream->name = g_strdup (property (info->proplist, PA_PROP_APPLICATION_NAME));
-  stream->binary = g_strdup (property (info->proplist, PA_PROP_APPLICATION_PROCESS_BINARY));
-  stream->corked = info->corked != 0;
-  stream->ignored = info->client == pa_context_get_index (context)
-                      || (app_id != NULL && g_strv_contains (volume_controls, app_id));
-  g_ptr_array_add (request->items, stream);
+  g_ptr_array_add (request->items,
+                   stream_new (context, info->index, info->client, info->sink, info->proplist,
+                               &info->volume, info->has_volume, info->corked));
+}
+
+static void
+on_recording_stream (pa_context *context, const pa_source_output_info *info, int eol, void *data)
+{
+  Request *request = data;
+
+  if (eol != 0)
+    {
+      request_done (request, eol);
+      return;
+    }
+  g_ptr_array_add (request->items,
+                   stream_new (context, info->index, info->client, info->source, info->proplist,
+                               &info->volume, info->has_volume, info->corked));
+}
+
+static void
+on_system_sounds (pa_context *context G_GNUC_UNUSED, const pa_ext_stream_restore_info *info,
+                  int eol, void *data)
+{
+  Request *request = data;
+  SystemSounds *entry;
+
+  if (eol != 0)
+    {
+      request_done (request, eol);
+      return;
+    }
+  if (g_strcmp0 (info->name, EVENT_ROLE) != 0)
+    return;
+  entry = g_new0 (SystemSounds, 1);
+  entry->volume = info->volume;
+  entry->device = g_strdup (info->device);
+  entry->mute = info->mute != 0;
+  g_ptr_array_add (request->items, entry);
 }
 
 static void
@@ -501,8 +837,14 @@ request_list (SdPulse *pulse, ListKind kind)
     case LIST_SOURCES:
       operation = pa_context_get_source_info_list (pulse->context, on_source, request);
       break;
+    case LIST_PLAYING:
+      operation = pa_context_get_sink_input_info_list (pulse->context, on_playing_stream, request);
+      break;
     case LIST_RECORDING:
       operation = pa_context_get_source_output_info_list (pulse->context, on_recording_stream, request);
+      break;
+    case LIST_SYSTEM_SOUNDS:
+      operation = pa_ext_stream_restore_read (pulse->context, on_system_sounds, request);
       break;
     case LIST_CARDS:
       operation = pa_context_get_card_info_list (pulse->context, on_card, request);
@@ -556,6 +898,9 @@ on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index
     case PA_SUBSCRIPTION_EVENT_SOURCE:
       request_list (pulse, LIST_SOURCES);
       break;
+    case PA_SUBSCRIPTION_EVENT_SINK_INPUT:
+      request_list (pulse, LIST_PLAYING);
+      break;
     case PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT:
       request_list (pulse, LIST_RECORDING);
       break;
@@ -566,20 +911,30 @@ on_event (pa_context *context, pa_subscription_event_type_t type, uint32_t index
       request_server_info (pulse);
       break;
     default:
-      /* Sink inputs: the popup's (CMN-216). */
       break;
     }
+}
+
+static void
+on_system_sounds_changed (pa_context *context, void *data)
+{
+  SdPulse *pulse = data;
+
+  if (context == pulse->context)
+    request_list (pulse, LIST_SYSTEM_SOUNDS);
 }
 
 static void
 forget_server (SdPulse *pulse)
 {
   close_level_stream (pulse);
+  g_hash_table_remove_all (pulse->monitors);
   g_list_free_full (g_steal_pointer (&pulse->requests), (GDestroyNotify) request_free);
   for (guint i = 0; i < N_LISTS; i++)
     {
       g_clear_pointer (&pulse->lists[i], g_ptr_array_unref);
       pulse->lists[i] = list_new (i);
+      pulse->listed[i] = FALSE;
     }
   g_clear_pointer (&pulse->default_sink, g_free);
   g_clear_pointer (&pulse->default_source, g_free);
@@ -592,8 +947,10 @@ disconnect (SdPulse *pulse)
   if (pulse->context == NULL)
     return;
   close_level_stream (pulse);
+  g_hash_table_remove_all (pulse->monitors);
   pa_context_set_state_callback (pulse->context, NULL, NULL);
   pa_context_set_subscribe_callback (pulse->context, NULL, NULL);
+  pa_ext_stream_restore_set_subscribe_cb (pulse->context, NULL, NULL);
   pa_context_disconnect (pulse->context);
   /* Cancels the operations on their way, whose callbacks don't run: their Requests go
      next. */
@@ -629,6 +986,9 @@ on_state (pa_context *context, void *data)
                                             | PA_SUBSCRIPTION_MASK_CARD
                                             | PA_SUBSCRIPTION_MASK_SERVER,
                                             NULL, NULL));
+      /* System sounds' entry is the extension's, which has events of its own. */
+      pa_ext_stream_restore_set_subscribe_cb (context, on_system_sounds_changed, pulse);
+      drop_operation (pa_ext_stream_restore_subscribe (context, 1, NULL, NULL));
       for (guint i = 0; i < N_LISTS; i++)
         request_list (pulse, i);
       request_server_info (pulse);
@@ -683,6 +1043,7 @@ sd_pulse_new (SdPulseChanged changed, gpointer data)
   pulse->changed = changed;
   pulse->data = data;
   pulse->mainloop = pa_glib_mainloop_new (NULL);
+  pulse->monitors = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, app_monitor_free);
   forget_server (pulse);
   connect_to_server (pulse);
   return pulse;
@@ -783,6 +1144,123 @@ sd_pulse_set_input_muted (SdPulse *pulse, gboolean muted)
                                             NULL));
 }
 
+/* One stream's loudest channel to volume, the others in proportion. */
+static void
+set_stream_volume (SdPulse *pulse, SdSide side, const Stream *stream, pa_volume_t volume)
+{
+  pa_cvolume channels = stream->volume;
+
+  /* A stream with no volume of its own: a passthrough one. */
+  if (channels.channels == 0)
+    return;
+  pa_cvolume_scale (&channels, volume);
+  if (side == SD_OUTPUT)
+    drop_operation (pa_context_set_sink_input_volume (pulse->context, stream->index, &channels,
+                                                      NULL, NULL));
+  else
+    drop_operation (pa_context_set_source_output_volume (pulse->context, stream->index,
+                                                         &channels, NULL, NULL));
+}
+
+static GPtrArray *
+streams_of (SdPulse *pulse, SdSide side)
+{
+  return pulse->lists[side == SD_OUTPUT ? LIST_PLAYING : LIST_RECORDING];
+}
+
+void
+sd_pulse_set_app_volume (SdPulse *pulse, SdSide side, const char *app, pa_volume_t volume)
+{
+  const SdApp *found;
+
+  if (!connected (pulse))
+    return;
+  found = sd_status_app (&pulse->status, side, app);
+  if (found == NULL)
+    return;
+  /* The ratio from the volumes the slider showed, which are the status's. */
+  for (guint i = 0; i < found->n_streams; i++)
+    {
+      Stream *stream = find_stream (streams_of (pulse, side), found->streams[i].index);
+
+      if (stream != NULL)
+        set_stream_volume (pulse, side, stream,
+                           sd_state_scaled_volume (found->streams[i].volume, found->volume,
+                                                   volume));
+    }
+}
+
+void
+sd_pulse_set_stream_volume (SdPulse *pulse, SdSide side, guint32 index, pa_volume_t volume)
+{
+  Stream *stream;
+
+  if (!connected (pulse))
+    return;
+  stream = find_stream (streams_of (pulse, side), index);
+  if (stream != NULL)
+    set_stream_volume (pulse, side, stream, volume);
+}
+
+void
+sd_pulse_move_app (SdPulse *pulse, SdSide side, const char *app, const char *device)
+{
+  const SdApp *found;
+  const char *target;
+
+  if (!connected (pulse))
+    return;
+  found = sd_status_app (&pulse->status, side, app);
+  /* The server forgets a stream's target when it's moved to the default, as PulseAudio
+     does (pipewire-pulse's pulse-server.c, do_move_stream()), so that it follows the
+     default from then on. */
+  target = device ?: (side == SD_OUTPUT ? pulse->default_sink : pulse->default_source);
+  if (found == NULL || target == NULL)
+    return;
+  for (guint i = 0; i < found->n_streams; i++)
+    if (side == SD_OUTPUT)
+      drop_operation (pa_context_move_sink_input_by_name (pulse->context,
+                                                          found->streams[i].index, target,
+                                                          NULL, NULL));
+    else
+      drop_operation (pa_context_move_source_output_by_name (pulse->context,
+                                                             found->streams[i].index, target,
+                                                             NULL, NULL));
+}
+
+void
+sd_pulse_set_system_volume (SdPulse *pulse, pa_volume_t volume)
+{
+  GPtrArray *entries = pulse->lists[LIST_SYSTEM_SOUNDS];
+  SystemSounds *entry = entries->len > 0 ? g_ptr_array_index (entries, 0) : NULL;
+  pa_ext_stream_restore_info info = { .name = EVENT_ROLE };
+
+  if (!connected (pulse) || !pulse->listed[LIST_SYSTEM_SOUNDS])
+    return;
+  /* Stereo, whatever the entry had: WirePlumber gives a mono entry's volume to a stereo
+     stream's first channel alone and silences the other, where a stereo one's reaches a
+     mono stream too. The entry's device and mute are kept. */
+  pa_channel_map_init_stereo (&info.channel_map);
+  pa_cvolume_set (&info.volume, info.channel_map.channels, volume);
+  if (entry != NULL)
+    {
+      info.device = entry->device;
+      info.mute = entry->mute;
+    }
+  drop_operation (pa_ext_stream_restore_write (pulse->context, PA_UPDATE_REPLACE, &info, 1, TRUE,
+                                               NULL, NULL));
+  /* Read back, after the write, for a server that sends no event for it. */
+  request_list (pulse, LIST_SYSTEM_SOUNDS);
+}
+
+void
+sd_pulse_watch_app_levels (SdPulse *pulse, SdPulseAppLevel level, gpointer data)
+{
+  pulse->app_level = level;
+  pulse->app_level_data = data;
+  follow_app_levels (pulse);
+}
+
 void
 sd_pulse_set_profile (SdPulse *pulse, guint32 card, const char *profile)
 {
@@ -798,6 +1276,7 @@ sd_pulse_free (SdPulse *pulse)
   disconnect (pulse);
   for (guint i = 0; i < N_LISTS; i++)
     g_clear_pointer (&pulse->lists[i], g_ptr_array_unref);
+  g_hash_table_unref (pulse->monitors);
   pa_glib_mainloop_free (pulse->mainloop);
   sd_status_clear (&pulse->status);
   g_free (pulse);

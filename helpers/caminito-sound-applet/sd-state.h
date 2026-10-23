@@ -3,8 +3,10 @@
  * icon's names, the strike over it, the red dot while an application records, and the
  * tooltip; the volume a scroll on it sets; and the right-click menu's cards and their
  * profiles. For the popup's output and input rows (CMN-215): the sound devices of each side,
- * their forms, ports and icons, and the room the popup has where it opens. Nothing here
- * talks to the sound server, so that the tests can build any status by hand.
+ * their forms, ports and icons, and the room the popup has where it opens. For its
+ * Applications (CMN-216): the streams grouped into Sound applications, their slider's volume
+ * and System sounds' volume. Nothing here talks to the sound server, so that the tests can
+ * build any status by hand.
  */
 
 #pragma once
@@ -114,6 +116,33 @@ typedef struct
   gboolean sideways;
 } SdPlace;
 
+/* One of a Sound application's streams, as its expanded row has it. */
+typedef struct
+{
+  guint32     index;
+  char       *title;
+  pa_volume_t volume;
+} SdAppStream;
+
+/* A Sound application playing or recording now (CMN-216): its streams under one row. */
+typedef struct
+{
+  /* Its Flatpak app ID, name or binary, which tell programs apart. */
+  char        *id;
+  char        *name;
+  /* Its themed icon's name, NULL with none. */
+  char        *icon;
+  /* SD_OUTPUT where it plays, SD_INPUT where it records. */
+  SdSide       side;
+  /* The sound device it's moved to, by its SdDevice's name: NULL while it follows the
+     default. */
+  char        *device;
+  /* Its loudest stream's, which its slider shows. */
+  pa_volume_t  volume;
+  SdAppStream *streams;
+  guint        n_streams;
+} SdApp;
+
 typedef struct
 {
   /* Connected to a sound server. The rest is meaningless without it. */
@@ -141,15 +170,32 @@ typedef struct
   char      **recording;
   SdCard     *cards;
   guint       n_cards;
+  /* The popup's Applications (CMN-216): those playing, in the server's order, then those
+     recording. */
+  SdApp      *apps;
+  guint       n_apps;
+  /* System sounds' volume, the event role's in the stream-restore extension: FALSE until
+     the server has given it. */
+  gboolean    has_system_sounds;
+  pa_volume_t system_volume;
 } SdStatus;
 
-/* One stream recording, as sd_state_recording_names() is given it. NULL where the sound
-   server hasn't the property. */
+/* A Stream as the sound server has it, for sd_state_recording_names() and sd_state_apps().
+   NULL where the sound server hasn't the property. */
 typedef struct
 {
   const char *app_id;
   const char *name;
   const char *binary;
+  /* Its themed icon's name. */
+  const char *icon;
+  /* What it plays or records, as a tab's title. */
+  const char *title;
+  guint32     index;
+  /* The sound device it plays to or records from, by its SdDevice's name. */
+  const char *device;
+  /* Its loudest channel's. */
+  pa_volume_t volume;
 } SdStream;
 
 void     sd_status_clear (SdStatus *status);
@@ -180,6 +226,32 @@ pa_volume_t        sd_state_scroll_volume (pa_volume_t volume,
    NULL with none. */
 char             **sd_state_recording_names (const SdStream *streams,
                                              guint           n_streams);
+/* What tells a stream's program apart: its Flatpak app ID, then the application's name,
+   then its binary. NULL with none of them. */
+const char        *sd_state_stream_identity (const SdStream *stream);
+/* The side's streams as Sound applications, one for the copies of a program, in the order
+   each first comes. A stream with no identity is left out. An application whose stream is
+   on another device than default_device is moved there. NULL with none. */
+SdApp             *sd_state_apps            (const SdStream *streams,
+                                             guint           n_streams,
+                                             SdSide          side,
+                                             const char     *default_device,
+                                             guint          *n_apps);
+/* A stream's volume once its application's slider goes from loudest to volume: the same
+   share of it. With every stream silent, volume. */
+pa_volume_t        sd_state_scaled_volume   (pa_volume_t stream,
+                                             pa_volume_t loudest,
+                                             pa_volume_t volume);
+
+/* Frees what the application holds, not the application. */
+void            sd_app_clear (SdApp *app);
+/* A deep copy of app into copy, for sd_app_clear(). */
+void            sd_app_copy  (const SdApp *app, SdApp *copy);
+gboolean        sd_app_equal (const SdApp *a, const SdApp *b);
+/* The status's application on side by its SdApp's id, NULL where there's none. */
+const SdApp    *sd_status_app (const SdStatus *status,
+                               SdSide          side,
+                               const char     *id);
 
 /* Frees what the device holds, not the device. */
 void            sd_device_clear (SdDevice *device);

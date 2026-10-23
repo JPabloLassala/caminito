@@ -1,5 +1,5 @@
 /*
- * What the Sound applet's icon and popup show (CMN-213, CMN-215). See sd-state.h.
+ * What the Sound applet's icon and popup show (CMN-213, CMN-215, CMN-216). See sd-state.h.
  */
 
 #include "sd-state.h"
@@ -8,6 +8,8 @@
 
 static void devices_free (SdDevice **devices, guint *n_devices);
 static gboolean devices_equal (const SdDevice *a, guint n_a, const SdDevice *b, guint n_b);
+static void apps_free (SdApp **apps, guint *n_apps);
+static gboolean apps_equal (const SdApp *a, guint n_a, const SdApp *b, guint n_b);
 
 void
 sd_card_clear (SdCard *card)
@@ -36,6 +38,7 @@ sd_status_clear (SdStatus *status)
   devices_free (&status->inputs, &status->n_inputs);
   g_clear_pointer (&status->default_output, g_free);
   g_clear_pointer (&status->default_input, g_free);
+  apps_free (&status->apps, &status->n_apps);
 }
 
 static gboolean
@@ -99,7 +102,10 @@ sd_status_equal (const SdStatus *a, const SdStatus *b)
          && devices_equal (a->outputs, a->n_outputs, b->outputs, b->n_outputs)
          && devices_equal (a->inputs, a->n_inputs, b->inputs, b->n_inputs)
          && g_strcmp0 (a->default_output, b->default_output) == 0
-         && g_strcmp0 (a->default_input, b->default_input) == 0;
+         && g_strcmp0 (a->default_input, b->default_input) == 0
+         && apps_equal (a->apps, a->n_apps, b->apps, b->n_apps)
+         && a->has_system_sounds == b->has_system_sounds
+         && a->system_volume == b->system_volume;
 }
 
 /* As pactl rounds it. */
@@ -201,6 +207,21 @@ nonempty (const char *value)
   return value != NULL && value[0] != '\0' ? value : NULL;
 }
 
+const char *
+sd_state_stream_identity (const SdStream *stream)
+{
+  /* Not the binary first: several Electron programs run as electron. Not the process:
+     Chromium plays from an audio-service process. */
+  return nonempty (stream->app_id) ?: nonempty (stream->name) ?: nonempty (stream->binary);
+}
+
+/* The name a row shows. */
+static const char *
+stream_app_name (const SdStream *stream)
+{
+  return nonempty (stream->name) ?: nonempty (stream->binary) ?: sd_state_stream_identity (stream);
+}
+
 char **
 sd_state_recording_names (const SdStream *streams, guint n_streams)
 {
@@ -209,14 +230,11 @@ sd_state_recording_names (const SdStream *streams, guint n_streams)
 
   for (guint i = 0; i < n_streams; i++)
     {
-      const SdStream *stream = &streams[i];
-      const char *name = nonempty (stream->name) ?: nonempty (stream->binary);
-      /* Not the binary first: several Electron programs run as electron. */
-      const char *identity = nonempty (stream->app_id) ?: name;
+      const char *identity = sd_state_stream_identity (&streams[i]);
 
       if (identity == NULL || !g_hash_table_add (seen, (char *) identity))
         continue;
-      g_ptr_array_add (names, g_strdup (name ?: identity));
+      g_ptr_array_add (names, g_strdup (stream_app_name (&streams[i])));
     }
   if (names->len == 0)
     {
@@ -466,4 +484,142 @@ sd_state_popup_room (const SdPlace *place)
   else
     edge = area->y + area->height;
   return MAX (0, edge - area->y);
+}
+
+SdApp *
+sd_state_apps (const SdStream *streams, guint n_streams, SdSide side, const char *default_device,
+               guint *n_apps)
+{
+  /* Each application's index in apps, by its identity. */
+  g_autoptr (GHashTable) seen = g_hash_table_new (g_str_hash, g_str_equal);
+  g_autoptr (GPtrArray) members = g_ptr_array_new_with_free_func ((GDestroyNotify) g_array_unref);
+  GArray *apps = g_array_new (FALSE, TRUE, sizeof (SdApp));
+
+  for (guint i = 0; i < n_streams; i++)
+    {
+      const SdStream *stream = &streams[i];
+      const char *identity = sd_state_stream_identity (stream);
+      gpointer position;
+      SdApp *app;
+      SdAppStream member;
+
+      if (identity == NULL)
+        continue;
+      if (!g_hash_table_lookup_extended (seen, identity, NULL, &position))
+        {
+          SdApp added = { 0 };
+
+          added.id = g_strdup (identity);
+          added.name = g_strdup (stream_app_name (stream));
+          added.icon = g_strdup (nonempty (stream->icon));
+          added.side = side;
+          position = GUINT_TO_POINTER (apps->len);
+          g_array_append_val (apps, added);
+          g_ptr_array_add (members, g_array_new (FALSE, TRUE, sizeof (SdAppStream)));
+          g_hash_table_insert (seen, (char *) identity, position);
+        }
+      app = &g_array_index (apps, SdApp, GPOINTER_TO_UINT (position));
+      member = (SdAppStream) { stream->index, g_strdup (stream->title), stream->volume };
+      g_array_append_val (g_ptr_array_index (members, GPOINTER_TO_UINT (position)), member);
+      app->volume = MAX (app->volume, stream->volume);
+      if (app->device == NULL && g_strcmp0 (stream->device, default_device) != 0)
+        app->device = g_strdup (stream->device);
+    }
+  for (guint i = 0; i < apps->len; i++)
+    {
+      SdApp *app = &g_array_index (apps, SdApp, i);
+      GArray *of_app = g_ptr_array_index (members, i);
+
+      app->n_streams = of_app->len;
+      app->streams = (SdAppStream *) g_array_free (g_array_ref (of_app), FALSE);
+    }
+  *n_apps = apps->len;
+  if (apps->len == 0)
+    {
+      g_array_free (apps, TRUE);
+      return NULL;
+    }
+  return (SdApp *) g_array_free (apps, FALSE);
+}
+
+pa_volume_t
+sd_state_scaled_volume (pa_volume_t stream, pa_volume_t loudest, pa_volume_t volume)
+{
+  if (loudest == 0)
+    return volume;
+  return (pa_volume_t) (((guint64) stream * volume + loudest / 2) / loudest);
+}
+
+void
+sd_app_clear (SdApp *app)
+{
+  for (guint i = 0; i < app->n_streams; i++)
+    g_free (app->streams[i].title);
+  g_clear_pointer (&app->streams, g_free);
+  app->n_streams = 0;
+  g_clear_pointer (&app->id, g_free);
+  g_clear_pointer (&app->name, g_free);
+  g_clear_pointer (&app->icon, g_free);
+  g_clear_pointer (&app->device, g_free);
+}
+
+void
+sd_app_copy (const SdApp *app, SdApp *copy)
+{
+  *copy = *app;
+  copy->id = g_strdup (app->id);
+  copy->name = g_strdup (app->name);
+  copy->icon = g_strdup (app->icon);
+  copy->device = g_strdup (app->device);
+  copy->streams = g_new0 (SdAppStream, app->n_streams);
+  for (guint i = 0; i < app->n_streams; i++)
+    {
+      copy->streams[i] = app->streams[i];
+      copy->streams[i].title = g_strdup (app->streams[i].title);
+    }
+}
+
+gboolean
+sd_app_equal (const SdApp *a, const SdApp *b)
+{
+  if (g_strcmp0 (a->id, b->id) != 0 || g_strcmp0 (a->name, b->name) != 0
+      || g_strcmp0 (a->icon, b->icon) != 0 || a->side != b->side
+      || g_strcmp0 (a->device, b->device) != 0 || a->volume != b->volume
+      || a->n_streams != b->n_streams)
+    return FALSE;
+  for (guint i = 0; i < a->n_streams; i++)
+    if (a->streams[i].index != b->streams[i].index
+        || g_strcmp0 (a->streams[i].title, b->streams[i].title) != 0
+        || a->streams[i].volume != b->streams[i].volume)
+      return FALSE;
+  return TRUE;
+}
+
+static gboolean
+apps_equal (const SdApp *a, guint n_a, const SdApp *b, guint n_b)
+{
+  if (n_a != n_b)
+    return FALSE;
+  for (guint i = 0; i < n_a; i++)
+    if (!sd_app_equal (&a[i], &b[i]))
+      return FALSE;
+  return TRUE;
+}
+
+static void
+apps_free (SdApp **apps, guint *n_apps)
+{
+  for (guint i = 0; i < *n_apps; i++)
+    sd_app_clear (&(*apps)[i]);
+  g_clear_pointer (apps, g_free);
+  *n_apps = 0;
+}
+
+const SdApp *
+sd_status_app (const SdStatus *status, SdSide side, const char *id)
+{
+  for (guint i = 0; i < status->n_apps; i++)
+    if (status->apps[i].side == side && g_strcmp0 (status->apps[i].id, id) == 0)
+      return &status->apps[i];
+  return NULL;
 }

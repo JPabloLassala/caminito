@@ -2,8 +2,10 @@
  * The Sound popup's output and input rows (CMN-215), drawn from statuses built by hand: the
  * mute buttons, the sliders and the pills, the device lists and the port dropdown, the
  * input's meter, the wheel, the height against the room it's given, the scroll position
- * across an update, and the keyboard. What the user does is read back from the calls it
- * makes. Without a display, GTK can't start, and it's skipped.
+ * across an update, and the keyboard. Its Applications (CMN-216): System sounds, a row for
+ * each Sound application with its loudest stream's slider, the Recording heading, the
+ * expanded row's devices and streams, the badge and the activity bars. What the user does is
+ * read back from the calls it makes. Without a display, GTK can't start, and it's skipped.
  *
  * The popup's window is shown off every output, without the grab: it's the popup's own kind
  * of window, which follows its content's minimum height as the real one does, where an
@@ -70,12 +72,51 @@ on_open_settings (gpointer data)
   g_string_append (fixture->calls, "settings;");
 }
 
+static void
+on_set_app_volume (SdSide side, const char *app, pa_volume_t volume, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "app %s %s %u;", side_names[side], app,
+                          sd_state_percent (volume));
+}
+
+static void
+on_set_stream_volume (SdSide side, guint32 stream, pa_volume_t volume, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "stream %s %u %u;", side_names[side], stream,
+                          sd_state_percent (volume));
+}
+
+static void
+on_move_app (SdSide side, const char *app, const char *device, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "move %s %s %s;", side_names[side], app,
+                          device != NULL ? device : "default");
+}
+
+static void
+on_set_system_volume (pa_volume_t volume, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "system %u;", sd_state_percent (volume));
+}
+
 static const SdPopupActions actions = {
   .set_volume = on_set_volume,
   .set_muted = on_set_muted,
   .set_default = on_set_default,
   .set_port = on_set_port,
   .open_settings = on_open_settings,
+  .set_app_volume = on_set_app_volume,
+  .set_stream_volume = on_set_stream_volume,
+  .move_app = on_move_app,
+  .set_system_volume = on_set_system_volume,
 };
 
 static GtkWidget *
@@ -844,6 +885,253 @@ test_sound_settings_closes_the_popup_and_calls_back (Fixture *fixture,
   g_assert_false (gtk_widget_get_visible (window_of (fixture)));
 }
 
+static SdAppStream mpv_streams[] = { { 40, "song.flac", PERCENT (80) },
+                                     { 41, "talk.webm", PERCENT (40) } };
+static SdAppStream firefox_streams[] = { { 42, "A video", PERCENT (100) } };
+static SdAppStream obs_streams[] = { { 50, "Mic/Aux", PERCENT (90) } };
+
+/* devices(), with System sounds at 70%, mpv's two streams and Firefox playing, and OBS
+   Studio recording. */
+static SdStatus
+with_apps (SdApp *apps)
+{
+  SdStatus status = devices ();
+
+  apps[0] = (SdApp) { "mpv", "mpv", "mpv", SD_OUTPUT, NULL, PERCENT (80), mpv_streams, 2 };
+  apps[1] = (SdApp) { "Firefox", "Firefox", "firefox", SD_OUTPUT, NULL, PERCENT (100),
+                      firefox_streams, 1 };
+  apps[2] = (SdApp) { "OBS Studio", "OBS Studio", NULL, SD_INPUT, NULL, PERCENT (90),
+                      obs_streams, 1 };
+  status.apps = apps;
+  status.n_apps = 3;
+  status.has_system_sounds = TRUE;
+  status.system_volume = PERCENT (70);
+  return status;
+}
+
+/* Whether a is above b in the popup. */
+static gboolean
+above (Fixture *fixture, GtkWidget *a, GtkWidget *b)
+{
+  int ay, by;
+
+  settle (fixture);
+  g_assert_true (gtk_widget_translate_coordinates (a, window_of (fixture), 0, 0, NULL, &ay));
+  g_assert_true (gtk_widget_translate_coordinates (b, window_of (fixture), 0, 0, NULL, &by));
+  return ay < by;
+}
+
+static void
+test_system_sounds_is_the_first_application (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "System sounds"));
+  g_assert_cmpfloat (value_of (fixture, "system-scale"), ==, 70);
+  g_assert_true (above (fixture, named (fixture, "input-row"), named (fixture, "system-row")));
+  g_assert_true (above (fixture, named (fixture, "system-row"), named (fixture, "app-output-mpv")));
+  gtk_range_set_value (GTK_RANGE (named (fixture, "system-scale")), 40);
+  g_assert_cmpstr (fixture->calls->str, ==, "system 40;");
+  /* A server without the stream-restore extension: nothing to set. */
+  status.has_system_sounds = FALSE;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_false (gtk_widget_is_sensitive (named (fixture, "system-scale")));
+}
+
+static void
+test_an_apps_row_shows_its_loudest_stream (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "mpv"));
+  g_assert_true (shows (fixture, "Firefox"));
+  g_assert_cmpfloat (value_of (fixture, "app-output-mpv-scale"), ==, 80);
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (named (fixture, "app-output-mpv-percent"))), ==,
+                   "80%");
+  g_assert_true (above (fixture, named (fixture, "app-output-mpv"),
+                        named (fixture, "app-output-Firefox")));
+  /* The application's own icon, and the activity bar under it. */
+  g_assert_cmpstr (first_icon_name (named (fixture, "app-output-mpv-icon")), ==, "mpv");
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-bar")));
+  /* The pin is CMN-217's. */
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-pin")));
+  /* Following the default: no badge. */
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-badge")));
+  /* Its slider sets the application: the reader keeps its streams' ratio. */
+  gtk_range_set_value (GTK_RANGE (named (fixture, "app-output-mpv-scale")), 60);
+  g_assert_cmpstr (fixture->calls->str, ==, "app output mpv 60;");
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (named (fixture, "app-output-mpv-percent"))), ==,
+                   "60%");
+}
+
+static void
+test_the_recording_applications_have_a_heading (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (widget_shows (fixture, named (fixture, "recording-heading")));
+  g_assert_true (above (fixture, named (fixture, "app-output-Firefox"),
+                        named (fixture, "recording-heading")));
+  g_assert_true (above (fixture, named (fixture, "recording-heading"),
+                        named (fixture, "app-input-OBS Studio")));
+  /* OBS stops recording: no heading, and its row is gone. */
+  status.n_apps = 2;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_false (widget_shows (fixture, named (fixture, "recording-heading")));
+  g_assert_false (shows (fixture, "OBS Studio"));
+}
+
+static void
+test_the_name_opens_the_devices_and_the_streams (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+
+  sd_popup_update (fixture->popup, &status);
+  g_assert_false (shows (fixture, "Plays to"));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-name")));
+  g_assert_true (shows (fixture, "Plays to"));
+  g_assert_true (shows (fixture, "Follow the default (WH-1000XM4)"));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-check-follow")));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-device-alsa")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-check-alsa")));
+  /* A slider for each of its two streams, by its title. */
+  g_assert_true (shows (fixture, "song.flac"));
+  g_assert_true (shows (fixture, "talk.webm"));
+  g_assert_cmpfloat (value_of (fixture, "app-output-mpv-stream-41"), ==, 40);
+  gtk_range_set_value (GTK_RANGE (named (fixture, "app-output-mpv-stream-41")), 50);
+  g_assert_cmpstr (fixture->calls->str, ==, "stream output 41 50;");
+  /* Firefox's stays closed, and has one stream: no stream sliders when it opens. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-Firefox-name")));
+  g_assert_false (shows (fixture, "A video"));
+  /* A recording application records from. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-input-OBS Studio-name")));
+  g_assert_true (shows (fixture, "Records from"));
+  g_assert_true (shows (fixture, "Follow the default (Yeti Stereo Microphone)"));
+  g_assert_true (widget_shows (fixture, named (fixture, "app-input-OBS Studio-device-mic")));
+  /* The name again closes it. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-name")));
+  g_assert_false (shows (fixture, "song.flac"));
+}
+
+static void
+test_choosing_a_device_moves_the_app (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+  GtkWidget *badge;
+
+  sd_popup_update (fixture->popup, &status);
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-name")));
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-device-alsa")));
+  g_assert_cmpstr (fixture->calls->str, ==, "move output mpv alsa;");
+  /* It shows what the server makes of it: moved, with its device as a badge. */
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-badge")));
+  apps[0].device = "alsa";
+  sd_popup_update (fixture->popup, &status);
+  badge = named (fixture, "app-output-mpv-badge");
+  g_assert_true (widget_shows (fixture, badge));
+  g_assert_cmpstr (gtk_label_get_text (GTK_LABEL (badge)), ==, "Built-in Audio");
+  g_assert_true (widget_shows (fixture, named (fixture, "app-output-mpv-check-alsa")));
+  g_assert_false (widget_shows (fixture, named (fixture, "app-output-mpv-check-follow")));
+  /* And back to following the default. */
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-follow")));
+  g_assert_cmpstr (fixture->calls->str, ==, "move output mpv alsa;move output mpv default;");
+  apps[0].device = NULL;
+  sd_popup_update (fixture->popup, &status);
+  g_assert_false (widget_shows (fixture, badge));
+  /* The default changed: the item names the new one. */
+  status.default_output = "easyeffects";
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "Follow the default (Easy Effects Sink)"));
+}
+
+static void
+test_an_update_keeps_the_rows_and_their_state (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+  GtkWidget *mpv;
+
+  sd_popup_update (fixture->popup, &status);
+  mpv = named (fixture, "app-output-mpv");
+  gtk_button_clicked (GTK_BUTTON (named (fixture, "app-output-mpv-name")));
+  /* A new application before it, and the volume changed: the same row, still open. */
+  apps[2] = apps[1];
+  apps[1] = apps[0];
+  apps[0] = (SdApp) { "Discord", "Discord", NULL, SD_OUTPUT, NULL, PERCENT (50),
+                      firefox_streams, 1 };
+  apps[1].volume = PERCENT (30);
+  sd_popup_update (fixture->popup, &status);
+  g_assert_true (named (fixture, "app-output-mpv") == mpv);
+  g_assert_true (shows (fixture, "song.flac"));
+  g_assert_cmpfloat (value_of (fixture, "app-output-mpv-scale"), ==, 30);
+  g_assert_true (above (fixture, named (fixture, "app-output-Discord"), mpv));
+  /* Without an icon of its own, a generic one. */
+  g_assert_cmpstr (first_icon_name (named (fixture, "app-output-Discord-icon")), ==,
+                   "application-x-executable");
+  g_assert_cmpstr (fixture->calls->str, ==, "");
+}
+
+static void
+test_the_activity_bars_show_the_levels (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+  GtkWidget *bar;
+  gint64 end;
+
+  sd_popup_update (fixture->popup, &status);
+  bar = named (fixture, "app-output-mpv-bar");
+  sd_popup_set_app_level (fixture->popup, SD_OUTPUT, "mpv", 0.6);
+  /* Unknown to the popup: nothing. */
+  sd_popup_set_app_level (fixture->popup, SD_OUTPUT, "Spotify", 0.9);
+  settle (fixture);
+  g_assert_cmpfloat_with_epsilon (gtk_level_bar_get_value (GTK_LEVEL_BAR (bar)), 0.6, 1e-9);
+  g_assert_cmpfloat (gtk_level_bar_get_value (GTK_LEVEL_BAR (named (fixture,
+                                                                    "app-output-Firefox-bar"))),
+                     ==, 0);
+  /* Closed, the bars go quiet: the reader stops hearing them. Opened again, the next frame
+     shows it. */
+  end = g_get_monotonic_time () + WAIT_LIMIT_USEC;
+  gtk_widget_hide (window_of (fixture));
+  /* The unmap's own event, which would close the popup shown again. */
+  gdk_display_sync (gtk_widget_get_display (bar));
+  while (gtk_events_pending ())
+    gtk_main_iteration ();
+  gtk_widget_show (window_of (fixture));
+  while (gtk_level_bar_get_value (GTK_LEVEL_BAR (bar)) != 0)
+    {
+      if (g_get_monotonic_time () > end)
+        g_error ("timed out waiting for the bar to go quiet");
+      g_main_context_iteration (NULL, FALSE);
+      g_usleep (1000);
+    }
+}
+
+static void
+test_the_keyboard_reaches_the_applications (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  SdApp apps[3];
+  SdStatus status = with_apps (apps);
+  g_autofree char *order = NULL;
+
+  sd_popup_update (fixture->popup, &status);
+  settle (fixture);
+  order = tab_order (fixture);
+  g_assert_cmpstr (order, ==,
+                   "output-mute output-scale output-pill input-mute input-scale input-pill "
+                   "system-scale app-output-mpv-name app-output-mpv-scale "
+                   "app-output-Firefox-name app-output-Firefox-scale "
+                   "app-input-OBS Studio-name app-input-OBS Studio-scale settings ");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -879,6 +1167,16 @@ main (int argc, char **argv)
        test_each_opening_starts_the_keyboard_at_the_top);
   ADD ("sound-settings-closes-the-popup-and-calls-back",
        test_sound_settings_closes_the_popup_and_calls_back);
+  ADD ("system-sounds-is-the-first-application", test_system_sounds_is_the_first_application);
+  ADD ("an-apps-row-shows-its-loudest-stream", test_an_apps_row_shows_its_loudest_stream);
+  ADD ("the-recording-applications-have-a-heading",
+       test_the_recording_applications_have_a_heading);
+  ADD ("the-name-opens-the-devices-and-the-streams",
+       test_the_name_opens_the_devices_and_the_streams);
+  ADD ("choosing-a-device-moves-the-app", test_choosing_a_device_moves_the_app);
+  ADD ("an-update-keeps-the-rows-and-their-state", test_an_update_keeps_the_rows_and_their_state);
+  ADD ("the-activity-bars-show-the-levels", test_the_activity_bars_show_the_levels);
+  ADD ("the-keyboard-reaches-the-applications", test_the_keyboard_reaches_the_applications);
 #undef ADD
   return g_test_run ();
 }

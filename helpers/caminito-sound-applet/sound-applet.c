@@ -4,7 +4,8 @@
  * through with no sound server (the strike is the applet's own where themes have none), with
  * a red dot while an application records. It reads the sound server through libpulse
  * (sd-pulse.c). The wheel on it sets the Default output's volume and middle-click mutes it;
- * left-click toggles the popup (sd-popup.c), with the output and input rows (CMN-215). Its
+ * left-click toggles the popup (sd-popup.c), with the output and input rows (CMN-215) and the
+ * Applications (CMN-216). Its
  * right-click menu mutes the output and the microphone, has a section of profiles for each
  * card, and "Sound settings…", which runs mate-volume-control.
  */
@@ -343,12 +344,48 @@ on_popup_open_settings (gpointer data G_GNUC_UNUSED)
   on_settings (NULL, NULL);
 }
 
+static void
+on_popup_set_app_volume (SdSide side, const char *app, pa_volume_t volume, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_set_app_volume (applet->pulse, side, app, volume);
+}
+
+static void
+on_popup_set_stream_volume (SdSide side, guint32 stream, pa_volume_t volume, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_set_stream_volume (applet->pulse, side, stream, volume);
+}
+
+static void
+on_popup_move_app (SdSide side, const char *app, const char *device, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_move_app (applet->pulse, side, app, device);
+}
+
+static void
+on_popup_set_system_volume (pa_volume_t volume, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_pulse_set_system_volume (applet->pulse, volume);
+}
+
 static const SdPopupActions popup_actions = {
   .set_volume = on_popup_set_volume,
   .set_muted = on_popup_set_muted,
   .set_default = on_popup_set_default,
   .set_port = on_popup_set_port,
   .open_settings = on_popup_open_settings,
+  .set_app_volume = on_popup_set_app_volume,
+  .set_stream_volume = on_popup_set_stream_volume,
+  .move_app = on_popup_move_app,
+  .set_system_volume = on_popup_set_system_volume,
 };
 
 static void
@@ -368,13 +405,23 @@ on_input_level (double level, gpointer data)
   sd_popup_set_input_level (applet->content, level);
 }
 
-/* The Default input is heard only while the popup shows its meter. */
+static void
+on_app_level (SdSide side, const char *app, double level, gpointer data)
+{
+  Applet *applet = data;
+
+  sd_popup_set_app_level (applet->content, side, app, level);
+}
+
+/* The Default input and the applications are heard only while the popup shows their bars
+   (CMN-210). */
 static void
 on_popup_shown (GtkWidget *window G_GNUC_UNUSED, gpointer data)
 {
   Applet *applet = data;
 
   sd_pulse_watch_input_level (applet->pulse, on_input_level, applet);
+  sd_pulse_watch_app_levels (applet->pulse, on_app_level, applet);
 }
 
 static void
@@ -383,6 +430,7 @@ on_popup_hidden (GtkWidget *window G_GNUC_UNUSED, gpointer data)
   Applet *applet = data;
 
   sd_pulse_watch_input_level (applet->pulse, NULL, NULL);
+  sd_pulse_watch_app_levels (applet->pulse, NULL, NULL);
   sd_popup_set_input_level (applet->content, 0);
 }
 

@@ -16,6 +16,8 @@ gio = dependency('gio-2.0')
 libpulse = dependency('libpulse')
 libpulse_glib = dependency('libpulse-mainloop-glib')
 libm = meson.get_compiler('c').find_library('m', required: false)
+# The tests' event sound, as Caminito plays the bell (ADR 0027).
+libcanberra = dependency('libcanberra')
 applet_dep = dependency('libmatepanelapplet-4.0')
 # The popup and the icon, which the applets share (ADR 0035). A subproject of a subproject is
 # looked for in the top-level project's helpers/.
@@ -55,7 +57,7 @@ pulse = static_library(
 test(
   'pulse',
   executable('test-pulse', 'test-pulse.c', link_with: [pulse, state],
-             dependencies: [gio, libpulse, libm]),
+             dependencies: [gio, libpulse, libpulse_glib, libcanberra, libm]),
   timeout: 180,
 )
 

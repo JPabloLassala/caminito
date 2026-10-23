@@ -184,17 +184,17 @@ static void
 test_recording_names_share_a_row_per_program (void)
 {
   const SdStream streams[] = {
-    { NULL, "Discord", "electron" },
-    { NULL, "OBS Studio", "obs" },
+    { .name = "Discord", .binary = "electron" },
+    { .name = "OBS Studio", .binary = "obs" },
     /* Another of Discord's streams. */
-    { NULL, "Discord", "electron" },
+    { .name = "Discord", .binary = "electron" },
     /* Two Electron programs, apart by name and not by binary. */
-    { NULL, "Slack", "electron" },
+    { .name = "Slack", .binary = "electron" },
     /* A Flatpak's, by its app ID whatever its streams call themselves. */
-    { "com.spotify.Client", "Spotify", "spotify" },
-    { "com.spotify.Client", "spotify", "spotify" },
+    { .app_id = "com.spotify.Client", .name = "Spotify", .binary = "spotify" },
+    { .app_id = "com.spotify.Client", .name = "spotify", .binary = "spotify" },
     /* Nameless, by its binary. */
-    { NULL, NULL, "arecord" },
+    { .binary = "arecord" },
   };
   g_auto (GStrv) names = sd_state_recording_names (streams, G_N_ELEMENTS (streams));
   const char *const expected[] = { "Discord", "OBS Studio", "Slack", "Spotify", "arecord", NULL };
@@ -206,6 +206,98 @@ static void
 test_recording_names_without_streams (void)
 {
   g_assert_null (sd_state_recording_names (NULL, 0));
+}
+
+static void
+test_apps_share_a_row_per_program (void)
+{
+  const SdStream streams[] = {
+    /* Two copies of one program, whose loudest stream the row shows. */
+    { NULL, "mpv", "mpv", "mpv", "song.flac", 40, "speaker", PERCENT (50) },
+    { NULL, "Firefox", "firefox", "firefox", "A video", 41, "speaker", PERCENT (100) },
+    { NULL, "mpv", "mpv", "mpv", "talk.webm", 42, "speaker", PERCENT (80) },
+    /* Two Electron programs, apart by name and not by binary. */
+    { NULL, "Discord", "electron", NULL, "playStream", 43, "speaker", PERCENT (90) },
+    { NULL, "Slack", "electron", NULL, "playback", 44, "speaker", PERCENT (70) },
+    /* A Flatpak's, by its app ID whatever its streams call themselves. */
+    { "com.spotify.Client", "Spotify", "spotify", NULL, "Spotify", 45, "headset", PERCENT (60) },
+    { "com.spotify.Client", "spotify", "spotify", NULL, "ad", 46, "speaker", PERCENT (60) },
+    /* Nameless, by its binary. */
+    { NULL, NULL, "aplay", NULL, NULL, 47, "speaker", PERCENT (100) },
+    /* No identity at all: left out. */
+    { NULL, NULL, NULL, NULL, NULL, 48, "speaker", PERCENT (100) },
+  };
+  guint n = 0;
+  SdApp *apps = sd_state_apps (streams, G_N_ELEMENTS (streams), SD_OUTPUT, "speaker", &n);
+
+  g_assert_cmpuint (n, ==, 6);
+  g_assert_cmpstr (apps[0].id, ==, "mpv");
+  g_assert_cmpstr (apps[0].icon, ==, "mpv");
+  g_assert_cmpint (apps[0].side, ==, SD_OUTPUT);
+  g_assert_cmpuint (apps[0].n_streams, ==, 2);
+  g_assert_cmpuint (apps[0].streams[0].index, ==, 40);
+  g_assert_cmpstr (apps[0].streams[1].title, ==, "talk.webm");
+  g_assert_cmpuint (apps[0].volume, ==, PERCENT (80));
+  g_assert_null (apps[0].device);
+  g_assert_cmpstr (apps[1].name, ==, "Firefox");
+  g_assert_cmpstr (apps[2].name, ==, "Discord");
+  g_assert_cmpstr (apps[3].name, ==, "Slack");
+  g_assert_cmpstr (apps[4].id, ==, "com.spotify.Client");
+  g_assert_cmpstr (apps[4].name, ==, "Spotify");
+  g_assert_cmpuint (apps[4].n_streams, ==, 2);
+  /* A stream off the default: the application is moved. */
+  g_assert_cmpstr (apps[4].device, ==, "headset");
+  g_assert_cmpstr (apps[5].id, ==, "aplay");
+  g_assert_cmpstr (apps[5].name, ==, "aplay");
+  for (guint i = 0; i < n; i++)
+    sd_app_clear (&apps[i]);
+  g_free (apps);
+  g_assert_null (sd_state_apps (NULL, 0, SD_INPUT, "mic", &n));
+  g_assert_cmpuint (n, ==, 0);
+}
+
+static void
+test_an_apps_streams_keep_their_ratio (void)
+{
+  /* In percent, as pactl shows the server's volumes. The loudest at 80%, another at 40%:
+     the slider to 60% takes them to 60% and 30%. */
+  g_assert_cmpuint (sd_state_percent (sd_state_scaled_volume (PERCENT (80), PERCENT (80),
+                                                              PERCENT (60))), ==, 60);
+  g_assert_cmpuint (sd_state_percent (sd_state_scaled_volume (PERCENT (40), PERCENT (80),
+                                                              PERCENT (60))), ==, 30);
+  /* Up past the loudest's own, too. */
+  g_assert_cmpuint (sd_state_percent (sd_state_scaled_volume (PERCENT (40), PERCENT (80),
+                                                              PERCENT (100))), ==, 50);
+  /* Every stream silent has no ratio to keep. */
+  g_assert_cmpuint (sd_state_scaled_volume (0, 0, PERCENT (25)), ==, PERCENT (25));
+}
+
+static void
+test_app_copy_is_equal_and_its_own (void)
+{
+  SdAppStream streams[] = { { 40, "song.flac", PERCENT (50) }, { 42, "talk.webm", PERCENT (80) } };
+  SdApp app = { "mpv", "mpv", "mpv", SD_OUTPUT, "headset", PERCENT (80), streams, 2 };
+  SdApp copy;
+  SdStatus a = { .running = TRUE, .apps = &app, .n_apps = 1 };
+  SdStatus b = a;
+
+  sd_app_copy (&app, &copy);
+  g_assert_true (sd_app_equal (&app, &copy));
+  g_assert_true (copy.streams != app.streams);
+  g_assert_cmpstr (copy.streams[1].title, ==, "talk.webm");
+  copy.streams[1].volume = PERCENT (70);
+  g_assert_false (sd_app_equal (&app, &copy));
+  b.apps = &copy;
+  g_assert_false (sd_status_equal (&a, &b));
+  g_assert_true (sd_status_app (&a, SD_OUTPUT, "mpv") == &app);
+  g_assert_null (sd_status_app (&a, SD_INPUT, "mpv"));
+  sd_app_clear (&copy);
+  g_assert_null (copy.streams);
+  g_assert_cmpuint (copy.n_streams, ==, 0);
+  /* System sounds' volume is the status's too. */
+  b = a;
+  b.has_system_sounds = TRUE;
+  g_assert_false (sd_status_equal (&a, &b));
 }
 
 static void
@@ -547,6 +639,9 @@ main (int argc, char **argv)
                    test_recording_names_share_a_row_per_program);
   g_test_add_func ("/state/recording-names-without-streams",
                    test_recording_names_without_streams);
+  g_test_add_func ("/state/apps-share-a-row-per-program", test_apps_share_a_row_per_program);
+  g_test_add_func ("/state/an-apps-streams-keep-their-ratio", test_an_apps_streams_keep_their_ratio);
+  g_test_add_func ("/state/app-copy-is-equal-and-its-own", test_app_copy_is_equal_and_its_own);
   g_test_add_func ("/state/status-equal-compares-cards", test_status_equal_compares_cards);
   g_test_add_func ("/state/card-copy-is-equal-and-its-own", test_card_copy_is_equal_and_its_own);
   return g_test_run ();

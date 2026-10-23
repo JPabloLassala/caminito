@@ -1,0 +1,25 @@
+the streams:
+  78 mpv speaker 80% playing music
+  79 mpv speaker 40% playing music
+  90 Firefox speaker 100% playing music
+  91 Audacious speaker 100% 100% corked 
+the applications: the panel lives
+mpv's slider down a step from 80%:
+  78 mpv speaker 75% playing music
+  79 mpv speaker 38% playing music
+mpv moved to WH-1000XM4:
+  78 mpv headset 75% playing music
+  79 mpv headset 38% playing music
+mpv following the default again:
+  78 mpv speaker 75% playing music
+  79 mpv speaker 38% playing music
+the move: the panel lives
+mpv after the default changed to HDMI:
+  78 mpv hdmi 75% playing music
+  79 mpv hdmi 38% playing music
+/tmp/caminito-cmn-216.8eA3lp/recording.wav
+the recording: the panel lives
+a canberra-gtk-play event sound after System sounds' slider went to 30%:
+  291 canberra-gtk-play speaker 30% 30% playing event
+System sounds: the panel lives
+A connection to the bus can't be made

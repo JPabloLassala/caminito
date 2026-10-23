@@ -4,8 +4,10 @@
  * outputs, cards and defaults into an SdStatus, and sets the Default output's volume and
  * mute, the Default input's mute and a card's profile; for the popup (CMN-215), the
  * defaults, a device's port and the Default input's volume, and it hears the Default input
- * while the popup asks it to. With no sound server it waits for one, and when the server
- * goes away it waits for it to come back.
+ * while the popup asks it to; for its Applications (CMN-216), the Sound applications'
+ * volumes and devices and System sounds' volume, and it hears the applications while the
+ * popup asks it to. With no sound server it waits for one, and when the server goes away it
+ * waits for it to come back.
  */
 
 #pragma once
@@ -51,6 +53,39 @@ typedef void (*SdPulseLevel) (double level, gpointer data);
 void            sd_pulse_watch_input_level (SdPulse     *pulse,
                                             SdPulseLevel level,
                                             gpointer     data);
+/* The Sound application's loudest stream to volume, its others in the same proportion
+   (CMN-216), by its SdApp's id. */
+void            sd_pulse_set_app_volume    (SdPulse    *pulse,
+                                            SdSide      side,
+                                            const char *app,
+                                            pa_volume_t volume);
+/* One stream of an application, by its SdAppStream's index. */
+void            sd_pulse_set_stream_volume (SdPulse    *pulse,
+                                            SdSide      side,
+                                            guint32     stream,
+                                            pa_volume_t volume);
+/* Moves the application's streams to the device, by its SdDevice's name, without pinning
+   it; NULL moves them to the Default device, which they then follow: the sound server
+   forgets a stream's target when it's moved to the default. */
+void            sd_pulse_move_app          (SdPulse    *pulse,
+                                            SdSide      side,
+                                            const char *app,
+                                            const char *device);
+/* System sounds' volume: the event role's in the stream-restore extension, as pavucontrol
+   sets it. */
+void            sd_pulse_set_system_volume (SdPulse    *pulse,
+                                            pa_volume_t volume);
+
+/* An application's peak since the last call, from 0 to 1. */
+typedef void (*SdPulseAppLevel) (SdSide side, const char *app, double level, gpointer data);
+
+/* Calls level about 25 times a second for each application playing or recording, with its
+   loudest stream's peak, until it's called with NULL: a peak stream for each of their
+   streams is open on the server meanwhile, which the popup asks for only while it's shown
+   (CMN-210). */
+void            sd_pulse_watch_app_levels  (SdPulse        *pulse,
+                                            SdPulseAppLevel level,
+                                            gpointer        data);
 /* The profile of the card at an SdCard's index, by the SdProfile's name. */
 void            sd_pulse_set_profile     (SdPulse    *pulse,
                                           guint32     card,
