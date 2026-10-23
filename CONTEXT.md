@@ -29,7 +29,7 @@ A stock MATE component built at a newer upstream version, with no carried patche
 _Avoid_: patched package
 
 **Layer surface**:
-A shell surface that sits in a fixed layer of an output rather than among ordinary windows: the panel, caja's desktop, the wallpaper, notification bubbles and the screenshot area picker.
+A shell surface that sits in a fixed layer of an output rather than among ordinary windows: the panel, caja's desktop, the wallpaper, notification bubbles and mate-screenshot's area picker.
 _Avoid_: panel window, dock window
 
 **Frame**:
@@ -237,7 +237,7 @@ A mouse wheel's click spread out over a short moment, so the view a client scrol
 _Avoid_: smooth scrolling (it also covers a touchpad's precise scrolling and kinetic scrolling), kinetic scrolling (that's the coast after a touchpad flick), scroll animation
 
 **Interaction**:
-What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup or the Overview. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
+What a seat is in the middle of, which has its keyboard and holds its pointer's focus where it is: a move or resize, the Window switcher, the Window menu, the Workspace popup, the Overview or the Capture picker. A seat has one at most, and none opens while it has another. The session lock isn't one: it ends the seat's interaction and lets none open.
 _Avoid_: grab (that's Smithay's pointer and keyboard grabs, an accelerator grab, and Xwayland's keyboard grab), grab op (Marco's word for it), mode (that's `focus-mode` and `placement-mode`), modal (that's a dialog)
 
 **System shortcut**:
@@ -255,6 +255,26 @@ _Avoid_: app group, class list (Toshy's), group alone (that's Marco's `switch-gr
 **Remap template**:
 A named, saved set of Key remaps, those for all applications and each Remap group's. Caminito comes with some, such as the macOS one, and the user saves their own; loading one replaces the Key remaps in use.
 _Avoid_: preset, profile (suggests switching sets as you work), keymap (that's XKB's)
+
+**Capture**:
+A Screenshot or a Screen recording that the user takes with a System shortcut.
+_Avoid_: grab, snap
+
+**Capture picker**:
+The Interaction in which the user shows Caminito what to capture: an area dragged out, a window clicked or an output clicked, with the rest of the output dimmed. Escape cancels it.
+_Avoid_: area picker alone (it picks windows and outputs too), selection, crosshair
+
+**Screenshot**:
+A still picture of an output, of a window with its frame, or of an area the user drags out, saved to the Desktop or Pictures folder or put on the clipboard. Each kind has a System shortcut that saves it and one that copies it.
+_Avoid_: screen capture, screen grab, snapshot
+
+**Screen recording**:
+A silent video of an output or of an area the user drags out, saved to the Desktop or Videos folder. The same System shortcut starts and stops it.
+_Avoid_: screencast (that's the stream), video capture
+
+**Screencast**:
+A live stream of an output, a window or an area that Caminito hands to a program through the portal, such as a browser sharing the screen. A Screen recording is made from one.
+_Avoid_: screen sharing (that's what a program does with it), screen recording (that's the saved video)
 
 **Global menu**:
 The focused window's menubar, shown in the panel instead of inside the window. There is one, whatever the number of panels or outputs, and a window without a menubar has none.
