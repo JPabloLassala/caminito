@@ -40,7 +40,8 @@ override_dh_auto_install:
 	install -Dm755 target/release/caminito target/release/caminito-displays \
 		target/release/caminito-about target/release/caminito-wallpaperd \
 		target/release/caminito-wallpaper target/release/caminito-bluetooth \
-		target/release/caminito-behaviour -t debian/caminito/usr/bin
+		target/release/caminito-behaviour target/release/caminito-network \
+		-t debian/caminito/usr/bin
 
 override_dh_auto_clean:
 	dh_auto_clean

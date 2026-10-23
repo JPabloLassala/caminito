@@ -1,0 +1,16 @@
+default-layout: 'caminito'
+object-id-list before: @as []
+panel running
+object-id-list: menu-bar notification-area network bluetooth power clock show-desktop window-list workspace-switcher
+  menu-bar: 'top' 'start' 0 ''
+  notification-area: 'top' 'end' 1 'NotificationAreaAppletFactory::NotificationArea'
+  network: 'top' 'end' 2 'CaminitoNetworkAppletFactory::CaminitoNetworkApplet'
+  bluetooth: 'top' 'end' 3 'CaminitoBluetoothAppletFactory::CaminitoBluetoothApplet'
+  power: 'top' 'end' 4 'CaminitoPowerAppletFactory::CaminitoPowerApplet'
+  clock: 'top' 'end' 0 'ClockAppletFactory::ClockApplet'
+  show-desktop: 'bottom' 'start' 0 'WnckletFactory::ShowDesktopApplet'
+  window-list: 'bottom' 'start' 1 'WnckletFactory::WindowListApplet'
+  workspace-switcher: 'bottom' 'end' 0 'WnckletFactory::WorkspaceSwitcherApplet'
+** (mate-panel:358470): WARNING **: 15:04:37.152: Call can set time zone dbus method: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.mate.SettingsDaemon.DateTimeMechanism was not provided by any .service files
+** (mate-panel:358470): WARNING **: 15:04:37.172: Could not ask session manager if shut down is available: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files
+A connection to the bus can't be made
