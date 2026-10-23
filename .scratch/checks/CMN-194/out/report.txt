@@ -1,0 +1,6 @@
+1-psk: Error: GDBus.Error:org.freedesktop.NetworkManager.SecretAgent.AgentCanceled: the request was cancelled
+2-psk-again: Error: GDBus.Error:org.freedesktop.NetworkManager.SecretAgent.AgentCanceled: the request was cancelled
+3-wep: Error: GDBus.Error:org.freedesktop.NetworkManager.SecretAgent.AgentCanceled: the request was cancelled
+4-8021x-wifi: Error: GDBus.Error:org.freedesktop.NetworkManager.SecretAgent.AgentCanceled: the request was cancelled
+5-8021x-wired: Error: GDBus.Error:org.freedesktop.NetworkManager.SecretAgent.AgentCanceled: the request was cancelled
+6-private-key: Error: GDBus.Error:org.freedesktop.NetworkManager.SecretAgent.AgentCanceled: the request was cancelled

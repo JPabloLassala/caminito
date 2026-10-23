@@ -112,6 +112,15 @@ install_data(
   install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
 )
 
+# caminito-network's autostart entry (ADR 0041), in the normal XDG directories like
+# caminito-bluetooth's. The program exits at once outside Caminito, where nm-applet stays the
+# secret agent, and mate-session starts it again if it crashes.
+install_data(
+  'data/caminito-network-autostart.desktop',
+  rename: 'caminito-network.desktop',
+  install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
+)
+
 # The default panel (CMN-105): mate-panel's default layout with the Bluetooth applet beside the
 # notification area, and the Power applet beside it (CMN-100), and the override that makes it
 # the default. Like caminito-bluetooth's entries these are in the normal XDG directories, not

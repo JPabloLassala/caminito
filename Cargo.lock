@@ -407,6 +407,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "caminito-network"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "gtk4",
+]
+
+[[package]]
 name = "caminito-policy"
 version = "0.1.0"
 dependencies = [
