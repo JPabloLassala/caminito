@@ -157,6 +157,12 @@ pub fn build(keys: KeyRemapKeys) -> gtk::Widget {
             }
         }
     });
+    // The widgets' handlers hold the page weakly, so that it doesn't hold itself through
+    // them: its root holds it, until the root is destroyed.
+    let kept = RefCell::new(Some(page.clone()));
+    page.root.connect_destroy(move |_| {
+        kept.borrow_mut().take();
+    });
     page.redraw_templates();
     page.redraw();
     page.root.clone().upcast()
