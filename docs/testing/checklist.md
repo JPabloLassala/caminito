@@ -3617,3 +3617,25 @@ They are the developer's to run.
 - **Debug tool:** `journalctl -t caminito` for `forcing … to quit` and `can't force … to
   quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
   `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.
+
+### A secret nm-applet saved "for this user only" still works in a Session
+
+- **Milestone:** network-applet (CMN-197).
+- **Steps:**
+  1. In X11 MATE, with nm-applet running, edit a WPA2 Wi-Fi connection in
+     `nm-connection-editor`: on *Wi-Fi Security*, set the password's icon to *Store the
+     password only for this user*, and save. Connect to it once.
+  2. Run `secret-tool search --all connection-uuid "$(nmcli -g connection.uuid connection show
+     <name>)"`.
+  3. Log out, and log into *MATE on Caminito*, with `caminito-network` installed. Disconnect
+     from the network and connect again with `nmcli connection up <name>`.
+  4. Lock the keyring (`seahorse`, right-click *Login*, *Lock*), and connect again. Unlock it
+     in the prompt that shows.
+  5. Lock it again and connect again; dismiss the keyring's prompt.
+- **Expected:** step 2 lists one item labelled *Network secret for <name>/802-11-wireless-security/psk*.
+  In step 3 the connection comes up with no prompt. In step 4 only the keyring's own prompt
+  shows, and the connection comes up after it. In step 5 caminito-network's password dialog
+  shows instead; with the password typed, the connection comes up.
+- **Debug tool:** `journalctl --user -t caminito-network` for `can't read the keyring's
+  secrets` and `can't save the secret in the keyring`; `busctl --user monitor
+  org.freedesktop.secrets`.
