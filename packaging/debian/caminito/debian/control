@@ -7,7 +7,8 @@ Rules-Requires-Root: no
 # tools/debian-build installs. The rest are what the binaries and helpers link, and, after
 # dbus, what the tests need: a private session bus, pixman for the headless backend,
 # libwayland-client for the fixture's clients and the Xwayland the X11 tier spawns, and
-# python-dbusmock, the BlueZ caminito-bluetooth's tests run against (255).
+# python-dbusmock, the BlueZ caminito-bluetooth's tests run against (255) and the
+# NetworkManager caminito-network's and the Network applet's run against.
 # libaudit-dev: Ubuntu's pam.pc requires audit's, and libpam0g-dev doesn't bring it.
 # libmate-panel-applet-dev has the applet library the Bluetooth applet is built against (259,
 # ADR 0035). It's the patched mate-panel's, at its baseline, which no stock version reaches
@@ -15,6 +16,8 @@ Rules-Requires-Root: no
 # libsensors-dev is lm_sensors' library, which the Thermal applet reads its temperatures and
 # fans through (267). The applet links libsensors5, which ${shlibs:Depends} brings at run time
 # (270).
+# libnm-dev is NetworkManager's client library, which the Network applet reads it through (ADR
+# 0041). The applet links libnm0, which ${shlibs:Depends} brings at run time.
 Build-Depends:
  debhelper-compat (= 13),
  rustup,
@@ -37,6 +40,7 @@ Build-Depends:
  libmate-desktop-dev,
  libmate-panel-applet-dev (>= 1.29.0~git20260925.58ac6c1),
  libsensors-dev,
+ libnm-dev,
  libpam0g-dev,
  libaudit-dev,
  dbus-daemon,
@@ -61,7 +65,9 @@ Architecture: amd64
 # a picture of the day with, and bluez, the daemon caminito-bluetooth and the Bluetooth applet
 # talk to (255, 259), and upower, which the Power applet reads the batteries from (262).
 # power-profiles-daemon has the power profiles of the applet's popup (264), which has none
-# without it.
+# without it. nm-connection-editor is the Network applet's settings window, which it also runs
+# for an Enterprise network and a hidden one (ADR 0041): without it, those buttons only log
+# that it can't run.
 # The patched packages and marco join these in ticket 205, at versions no stock one has.
 Depends:
  ${shlibs:Depends},
@@ -88,6 +94,7 @@ Recommends:
  appmenu-gtk3-module (>= 1:25.04-0caminito1),
  caminito-vscode,
  power-profiles-daemon,
+ nm-connection-editor,
 Suggests:
  libheif-examples,
 Description: Wayland compositor for the MATE desktop
@@ -98,5 +105,6 @@ Description: Wayland compositor for the MATE desktop
  This package has the compositor, caminito-displays, caminito-about, the
  wallpaper's drawer and Wallpaper dialog, Workspace Behaviour
  (caminito-behaviour), the palette and locker helpers,
- caminito-bluetooth, the Bluetooth, Power and Thermal panel applets, and the
- "MATE on Caminito" session that display managers list.
+ caminito-bluetooth, caminito-network, the Bluetooth, Power, Thermal and
+ Network panel applets, and the "MATE on Caminito" session that display
+ managers list.

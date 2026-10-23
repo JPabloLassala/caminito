@@ -61,9 +61,12 @@ BuildRequires:  mate-desktop-devel
 BuildRequires:  mate-panel-devel >= %{panel_baseline}
 BuildRequires:  pam-devel
 BuildRequires:  lm_sensors-devel
+# NetworkManager's client library, which the Network applet reads it through (ADR 0041).
+BuildRequires:  NetworkManager-libnm-devel
 # The tests: a private session bus, pixman for the headless backend, libwayland-client for the
 # fixture's clients and the Xwayland the X11 tier spawns, and python-dbusmock, the BlueZ
-# caminito-bluetooth's tests run against (255).
+# caminito-bluetooth's tests run against (255) and the NetworkManager caminito-network's and
+# the Network applet's run against.
 %if %{with tests}
 BuildRequires:  dbus-daemon
 BuildRequires:  pixman-devel
@@ -101,6 +104,9 @@ Requires:       bluez
 # popup (264), which Fedora has from tuned-ppd, with power-profiles-daemon's names.
 Requires:       upower
 Recommends:     (tuned-ppd or power-profiles-daemon)
+# The Network applet's settings window, which it also runs for an Enterprise network and a
+# hidden one (ADR 0041). Fedora has it apart from nm-applet.
+Requires:       nm-connection-editor
 # The session that `caminito --session` starts (08, 17). The patched and backported packages
 # are required at their baselines, so that a stock package never satisfies them (16, ADR
 # 0011, ADR 0029): marco, the panel, the session manager, the settings daemon, the control
@@ -125,9 +131,9 @@ settings, draws its themes and binds its keys, so that MATE runs on Wayland as i
 X11.
 
 This package has the compositor, caminito-displays, caminito-about, the wallpaper's drawer
-and Wallpaper dialog, Workspace Behaviour (caminito-behaviour), caminito-bluetooth, the
-Bluetooth, Power and Thermal panel applets, the palette and locker helpers, and the "MATE on
-Caminito" session that display managers list.
+and Wallpaper dialog, Workspace Behaviour (caminito-behaviour), caminito-bluetooth,
+caminito-network, the Bluetooth, Power, Thermal and Network panel applets, the palette and
+locker helpers, and the "MATE on Caminito" session that display managers list.
 
 %prep
 %autosetup
@@ -149,7 +155,8 @@ cargo build --frozen --release
 install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-about target/release/caminito-wallpaperd \
     target/release/caminito-wallpaper target/release/caminito-bluetooth \
-    target/release/caminito-behaviour -t %{buildroot}%{_bindir}
+    target/release/caminito-behaviour target/release/caminito-network \
+    -t %{buildroot}%{_bindir}
 
 %check
 # The meson_test macro expands to more than one line, so it cannot follow dbus-run-session.
@@ -168,11 +175,13 @@ dbus-run-session -- cargo test --frozen --release
 %{_bindir}/caminito-behaviour
 %{_bindir}/caminito-bluetooth
 %{_bindir}/caminito-displays
+%{_bindir}/caminito-network
 %{_bindir}/caminito-wallpaper
 %{_bindir}/caminito-wallpaperd
 %{_bindir}/caminito-gtk-palette
 %{_bindir}/caminito-locker
 %{_libdir}/mate-panel/libcaminito-bluetooth-applet.so
+%{_libdir}/mate-panel/libcaminito-network-applet.so
 %{_libdir}/mate-panel/libcaminito-power-applet.so
 %{_libdir}/mate-panel/libcaminito-thermal-applet.so
 %{_datadir}/caminito/
@@ -186,11 +195,13 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/icons/hicolor/scalable/status/caminito-thermometer-symbolic.svg
 %{_datadir}/mate-control-center/keybindings/50-caminito-*.xml
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoBluetoothApplet.mate-panel-applet
+%{_datadir}/mate-panel/applets/org.mate.panel.CaminitoNetworkApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoPowerApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoThermalApplet.mate-panel-applet
 %{_datadir}/mate-panel/layouts/caminito.layout
 %{_datadir}/wayland-sessions/mate-caminito.desktop
 %config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-bluetooth.desktop
+%config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-network.desktop
 
 %changelog
 * Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - %{version}-1

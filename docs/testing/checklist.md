@@ -3003,6 +3003,57 @@ in for. They are the developer's to run.
 These need a real NetworkManager and a real VPN server, which caminito-network's tests only fake.
 They are the developer's to run.
 
+### A fresh user's top panel has the applet, and no nm-applet in a Session
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` installed and nm-applet's `network-manager-applet` too, make a user
+     with no panel settings: `sudo useradd -m nwfresh`, and log in as them to *MATE on
+     Caminito*.
+  2. Look at the top panel, and run `pgrep -a nm-applet` and `pgrep -a caminito-network`.
+  3. Right-click the Network icon and choose *Configure network connections…*.
+  4. Log out. Log in as the same user to *MATE*, the X11 session, and run the two commands again.
+- **Expected:** in step 2 the Network icon is in the top panel, between the notification area
+  and the Bluetooth icon, and the notification area has no network icon of its own. `pgrep`
+  finds no nm-applet, and finds `caminito-network`. In step 3 nm-connection-editor opens. In
+  step 4 the same panel, now with nm-applet's icon in the notification area too, and
+  `caminito-network` not running: nm-applet is the agent there.
+- **Debug tool:** `dconf dump /org/mate/panel/objects/`, and `journalctl -b -u NetworkManager |
+  grep -i agent`, which names the secret agent that registered: `org.mate.Caminito.Network` in
+  a Session.
+
+### Joining a WPA2 network from the popup
+
+- **Milestone:** M9
+- **Steps:**
+  1. In a Session, near a WPA2 network the machine has never joined, open the Network popup and
+     its *Networks* tab. Type part of the network's name in the search field.
+  2. Click its row. Type the password in the bar under the list and press Enter.
+  3. Run `nmcli -f connection.permissions,802-11-wireless-security.psk-flags connection show
+     <name>`.
+- **Expected:** in step 1 the list narrows to the networks whose names match, the network's row
+  with a lock and its signal. In step 2 the bar shows a spinner with *Connecting to
+  <name>…*, then the card shows the network, *Connected*, with its IPv4 address, and the icon
+  shows the signal. In step 3 the permissions are empty (for all users) and the flags are `0`
+  (NetworkManager keeps the secret).
+- **Debug tool:** `nmcli device wifi list`, and `journalctl -b -u NetworkManager`.
+
+### A wrong password is asked for again
+
+- **Milestone:** M9
+- **Steps:**
+  1. In a Session, join a new WPA2 network from the popup, as above, with a wrong password.
+  2. In the dialog that shows, type the right one and press *Connect*.
+  3. Change the network's saved password to a wrong one with `nmcli connection modify <name>
+     wifi-sec.psk wrongpassword`, then run `nmcli connection up <name>`, and press *Cancel* in
+     the dialog.
+- **Expected:** in step 1 a *Network Authentication* window from caminito-network says *The
+  password for the Wi-Fi network <name> didn't work. Type it again.* In step 2 the network
+  connects. In step 3 the same window shows; after *Cancel* the network doesn't come up, and a
+  *Connection failed* notification gives the reason.
+- **Debug tool:** `journalctl --user -b -t caminito-network`, and `journalctl -b -u
+  NetworkManager` for `no secrets`.
+
 ### A VPN with a one-time code connects
 
 - **Milestone:** M9
@@ -3023,6 +3074,28 @@ They are the developer's to run.
   the secrets weren't given.
 - **Debug tool:** `journalctl -b -u NetworkManager` for the agent's answer, and `journalctl
   --user -b -t caminito-network`.
+
+### A secret nm-applet saved "for this user only" still works in a Session
+
+- **Milestone:** M9
+- **Steps:**
+  1. In X11 MATE, with nm-applet running, edit a WPA2 Wi-Fi connection in
+     `nm-connection-editor`: on *Wi-Fi Security*, set the password's icon to *Store the
+     password only for this user*, and save. Connect to it once.
+  2. Run `secret-tool search --all connection-uuid "$(nmcli -g connection.uuid connection show
+     <name>)"`.
+  3. Log out, and log into *MATE on Caminito*, with `caminito-network` installed. Disconnect
+     from the network and connect again with `nmcli connection up <name>`.
+  4. Lock the keyring (`seahorse`, right-click *Login*, *Lock*), and connect again. Unlock it
+     in the prompt that shows.
+  5. Lock it again and connect again; dismiss the keyring's prompt.
+- **Expected:** step 2 lists one item labelled *Network secret for <name>/802-11-wireless-security/psk*.
+  In step 3 the connection comes up with no prompt. In step 4 only the keyring's own prompt
+  shows, and the connection comes up after it. In step 5 caminito-network's password dialog
+  shows instead; with the password typed, the connection comes up.
+- **Debug tool:** `journalctl --user -t caminito-network` for `can't read the keyring's
+  secrets` and `can't save the secret in the keyring`; `busctl --user monitor
+  org.freedesktop.secrets`.
 
 ## Marco parity
 
@@ -3617,25 +3690,3 @@ They are the developer's to run.
 - **Debug tool:** `journalctl -t caminito` for `forcing … to quit` and `can't force … to
   quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
   `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.
-
-### A secret nm-applet saved "for this user only" still works in a Session
-
-- **Milestone:** network-applet (CMN-197).
-- **Steps:**
-  1. In X11 MATE, with nm-applet running, edit a WPA2 Wi-Fi connection in
-     `nm-connection-editor`: on *Wi-Fi Security*, set the password's icon to *Store the
-     password only for this user*, and save. Connect to it once.
-  2. Run `secret-tool search --all connection-uuid "$(nmcli -g connection.uuid connection show
-     <name>)"`.
-  3. Log out, and log into *MATE on Caminito*, with `caminito-network` installed. Disconnect
-     from the network and connect again with `nmcli connection up <name>`.
-  4. Lock the keyring (`seahorse`, right-click *Login*, *Lock*), and connect again. Unlock it
-     in the prompt that shows.
-  5. Lock it again and connect again; dismiss the keyring's prompt.
-- **Expected:** step 2 lists one item labelled *Network secret for <name>/802-11-wireless-security/psk*.
-  In step 3 the connection comes up with no prompt. In step 4 only the keyring's own prompt
-  shows, and the connection comes up after it. In step 5 caminito-network's password dialog
-  shows instead; with the password typed, the connection comes up.
-- **Debug tool:** `journalctl --user -t caminito-network` for `can't read the keyring's
-  secrets` and `can't save the secret in the keyring`; `busctl --user monitor
-  org.freedesktop.secrets`.
