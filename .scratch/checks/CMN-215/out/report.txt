@@ -1,0 +1,22 @@
+no sound server: the panel lives
+the speaker: the panel lives
+each output's form: the panel lives
+the output the keyboard chose: headset
+the output's list: the panel lives
+Space on the output's mute button: Mute: yes
+Right on the output's slider from 45%: 50%
+the output's mute button and slider: the panel lives
+the input the keyboard chose: yeti
+the input's list: the panel lives
+the meter: the panel lives
+Shift+wheel up over the slider from 60%: 65%
+Shift+wheel down twice: 55%
+the plain wheel down and up over the slider: 55%
+the wheel: the panel lives
+Shift+wheel up twice from 148%, with allow-volume-above-100-percent on: 150%
+Shift+wheel up twice from 98%, with it off: 100%
+the cap: the panel lives
+A connection to the bus can't be made
+the plain wheel down over the slider on the short screen: 60%, then 60%
+the short screen: the panel lives
+A connection to the bus can't be made

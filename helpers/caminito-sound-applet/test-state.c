@@ -247,10 +247,287 @@ test_status_equal_compares_cards (void)
   g_assert_true (sd_cards_equal (a.cards, a.n_cards, b.cards, b.n_cards));
 }
 
+static void
+test_device_forms (void)
+{
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, NULL, NULL, PA_DEVICE_PORT_TYPE_UNKNOWN), ==,
+                   SD_FORM_SPEAKER);
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, "headset", NULL, PA_DEVICE_PORT_TYPE_UNKNOWN),
+                   ==, SD_FORM_HEADPHONES);
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, "internal", "analog-output-headphones",
+                                         PA_DEVICE_PORT_TYPE_HEADPHONES),
+                   ==, SD_FORM_HEADPHONES);
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, "internal", "analog-output-speaker",
+                                         PA_DEVICE_PORT_TYPE_SPEAKER),
+                   ==, SD_FORM_SPEAKER);
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, NULL, "hdmi-output-0",
+                                         PA_DEVICE_PORT_TYPE_HDMI),
+                   ==, SD_FORM_DISPLAY);
+  /* A server too old to give the port's type: ALSA's names say it. */
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, NULL, "hdmi-output-1",
+                                         PA_DEVICE_PORT_TYPE_UNKNOWN),
+                   ==, SD_FORM_DISPLAY);
+  g_assert_cmpint (sd_state_device_form (SD_OUTPUT, "tv", NULL, PA_DEVICE_PORT_TYPE_UNKNOWN), ==,
+                   SD_FORM_DISPLAY);
+  /* A headset's microphone is a microphone. */
+  g_assert_cmpint (sd_state_device_form (SD_INPUT, "headset", NULL, PA_DEVICE_PORT_TYPE_UNKNOWN),
+                   ==, SD_FORM_MICROPHONE);
+}
+
+static void
+test_unplugged_ports_are_left_out (void)
+{
+  SdPortInfo ports[] = {
+    { "analog-output-speaker", "Speakers", FALSE },
+    { "analog-output-headphones", "Headphones", TRUE },
+    { "analog-output-lineout", "Line Out", FALSE },
+  };
+  guint n = 0;
+  SdPort *plugged = sd_state_plugged_ports (ports, G_N_ELEMENTS (ports), &n);
+
+  g_assert_cmpuint (n, ==, 2);
+  g_assert_cmpstr (plugged[0].name, ==, "analog-output-speaker");
+  g_assert_cmpstr (plugged[0].description, ==, "Speakers");
+  g_assert_cmpstr (plugged[1].description, ==, "Line Out");
+  for (guint i = 0; i < n; i++)
+    {
+      g_free (plugged[i].name);
+      g_free (plugged[i].description);
+    }
+  g_free (plugged);
+  g_assert_null (sd_state_plugged_ports (ports + 1, 1, &n));
+  g_assert_cmpuint (n, ==, 0);
+}
+
+static void
+test_device_detail_is_its_port_or_virtual (void)
+{
+  SdDevice hardware = { .name = "alsa_output.pci", .description = "Built-in Audio",
+                        .active_port = "analog-output-speaker",
+                        .active_port_description = "Speakers" };
+  SdDevice easy_effects = { .name = "easyeffects_sink", .description = "Easy Effects Sink",
+                            .virtual_device = TRUE };
+  SdDevice bare = { .name = "bluez_output", .description = "WH-1000XM4" };
+
+  g_assert_cmpstr (sd_state_device_detail (&hardware), ==, "Speakers");
+  g_assert_cmpstr (sd_state_device_detail (&easy_effects), ==, "Virtual device");
+  g_assert_null (sd_state_device_detail (&bare));
+}
+
+static void
+test_device_icons_in_the_lists (void)
+{
+  SdDevice speaker = { .form = SD_FORM_SPEAKER };
+  SdDevice headphones = { .form = SD_FORM_HEADPHONES };
+  SdDevice display = { .form = SD_FORM_DISPLAY };
+  SdDevice microphone = { .form = SD_FORM_MICROPHONE };
+
+  g_assert_cmpstr (sd_state_device_icon_names (&speaker)[0], ==, "audio-speakers");
+  g_assert_cmpstr (sd_state_device_icon_names (&speaker)[1], ==, "audio-speakers-symbolic");
+  g_assert_cmpstr (sd_state_device_icon_names (&headphones)[0], ==, "audio-headphones");
+  g_assert_cmpstr (sd_state_device_icon_names (&display)[0], ==, "video-display");
+  g_assert_cmpstr (sd_state_device_icon_names (&microphone)[0], ==, "audio-input-microphone");
+}
+
+static void
+test_mute_button_shows_the_outputs_form (void)
+{
+  SdDevice speaker = { .form = SD_FORM_SPEAKER, .volume = PERCENT (50) };
+  SdDevice loud = { .form = SD_FORM_SPEAKER, .volume = PERCENT (90) };
+  SdDevice muted = { .form = SD_FORM_SPEAKER, .volume = PERCENT (50), .muted = TRUE };
+  SdDevice headphones = { .form = SD_FORM_HEADPHONES, .volume = PERCENT (50) };
+  SdDevice display = { .form = SD_FORM_DISPLAY, .volume = PERCENT (50), .muted = TRUE };
+
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_OUTPUT, &speaker)[0], ==, "audio-volume-medium");
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_OUTPUT, &loud)[0], ==, "audio-volume-high");
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_OUTPUT, &muted)[0], ==, "audio-volume-muted");
+  g_assert_false (sd_state_mute_struck (SD_OUTPUT, &muted));
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_OUTPUT, &headphones)[0], ==, "audio-headphones");
+  g_assert_false (sd_state_mute_struck (SD_OUTPUT, &headphones));
+  headphones.muted = TRUE;
+  g_assert_true (sd_state_mute_struck (SD_OUTPUT, &headphones));
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_OUTPUT, &display)[0], ==, "video-display");
+  g_assert_true (sd_state_mute_struck (SD_OUTPUT, &display));
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_OUTPUT, NULL)[0], ==, "audio-volume-muted");
+}
+
+static void
+test_mute_button_shows_the_microphones_level (void)
+{
+  SdDevice quiet = { .form = SD_FORM_MICROPHONE, .volume = PERCENT (20) };
+  SdDevice loud = { .form = SD_FORM_MICROPHONE, .volume = PERCENT (100) };
+  SdDevice muted = { .form = SD_FORM_MICROPHONE, .volume = PERCENT (100), .muted = TRUE };
+
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_INPUT, &quiet)[0], ==,
+                   "microphone-sensitivity-low");
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_INPUT, &quiet)[1], ==,
+                   "microphone-sensitivity-low-symbolic");
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_INPUT, &loud)[0], ==,
+                   "microphone-sensitivity-high");
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_INPUT, &muted)[0], ==,
+                   "microphone-sensitivity-muted");
+  g_assert_false (sd_state_mute_struck (SD_INPUT, &muted));
+  g_assert_cmpstr (sd_state_mute_icon_names (SD_INPUT, NULL)[0], ==,
+                   "microphone-sensitivity-muted");
+}
+
+static void
+test_default_device_by_name (void)
+{
+  SdDevice outputs[] = { { .name = "speaker" }, { .name = "hdmi" } };
+  SdStatus status = { .running = TRUE, .outputs = outputs, .n_outputs = 2,
+                      .default_output = "hdmi" };
+  guint n = 0;
+
+  g_assert_true (sd_status_default_device (&status, SD_OUTPUT) == &outputs[1]);
+  g_assert_null (sd_status_default_device (&status, SD_INPUT));
+  g_assert_true (sd_status_devices (&status, SD_OUTPUT, &n) == outputs);
+  g_assert_cmpuint (n, ==, 2);
+  status.default_output = "gone";
+  g_assert_null (sd_status_default_device (&status, SD_OUTPUT));
+}
+
+static void
+test_device_copy_is_equal_and_its_own (void)
+{
+  SdPort ports[] = { { "speaker", "Speakers" }, { "lineout", "Line Out" } };
+  SdDevice device = { "alsa", "Built-in Audio", SD_FORM_SPEAKER, FALSE, PERCENT (40), FALSE,
+                      ports, 2, "speaker", "Speakers" };
+  SdDevice copy;
+
+  sd_device_copy (&device, &copy);
+  g_assert_true (sd_device_equal (&device, &copy));
+  g_assert_true (copy.ports != device.ports);
+  g_assert_cmpstr (copy.ports[1].description, ==, "Line Out");
+  copy.ports[1].description[0] = 'X';
+  g_assert_false (sd_device_equal (&device, &copy));
+  sd_device_clear (&copy);
+  g_assert_null (copy.name);
+  g_assert_cmpuint (copy.n_ports, ==, 0);
+}
+
+static void
+test_status_equal_compares_the_lists (void)
+{
+  SdDevice a_outputs[] = { { .name = "speaker", .description = "Speakers" } };
+  SdDevice b_outputs[] = { { .name = "speaker", .description = "Speakers" } };
+  SdStatus a = playing ("Speakers", 45), b = playing ("Speakers", 45);
+
+  a.outputs = a_outputs;
+  a.n_outputs = 1;
+  b.outputs = b_outputs;
+  b.n_outputs = 1;
+  g_assert_true (sd_status_equal (&a, &b));
+  b_outputs[0].volume = PERCENT (10);
+  g_assert_false (sd_status_equal (&a, &b));
+  b_outputs[0].volume = 0;
+  b.default_input = "mic";
+  g_assert_false (sd_status_equal (&a, &b));
+}
+
+static void
+test_percent_round_trips (void)
+{
+  g_assert_cmpuint (sd_state_percent (PA_VOLUME_NORM), ==, 100);
+  g_assert_cmpuint (sd_state_volume_of_percent (100), ==, PA_VOLUME_NORM);
+  g_assert_cmpuint (sd_state_volume_of_percent (0), ==, 0);
+  g_assert_cmpuint (sd_state_percent (sd_state_volume_of_percent (45)), ==, 45);
+  g_assert_cmpuint (sd_state_percent (sd_state_volume_of_percent (150)), ==, 150);
+  /* A glide's share is rounded where it's sent. */
+  g_assert_cmpuint (sd_state_volume_of_percent (44.6), ==, sd_state_volume_of_percent (44.6));
+  g_assert_cmpuint (sd_state_percent (sd_state_volume_of_percent (44.625)), ==, 45);
+}
+
+static void
+test_room_under_a_top_panel_on_x11 (void)
+{
+  /* The work area leaves the panel's strut out. */
+  SdPlace place = {
+    .geometry = { 0, 0, 1920, 1080 },
+    .workarea = { 0, 24, 1920, 1056 },
+    .panel_known = TRUE,
+    .panel = { 0, 0, 1920, 24 },
+    .panel_thickness = 24,
+  };
+
+  g_assert_cmpint (sd_state_popup_room (&place), ==, 1056);
+  /* A second monitor, below the first. */
+  place.geometry = (SdRect) { 0, 1080, 1280, 720 };
+  place.workarea = (SdRect) { 0, 1104, 1280, 696 };
+  place.panel = (SdRect) { 0, 1080, 1280, 24 };
+  g_assert_cmpint (sd_state_popup_room (&place), ==, 696);
+}
+
+static void
+test_room_above_a_bottom_panel_on_x11 (void)
+{
+  SdPlace place = {
+    .geometry = { 0, 0, 1920, 1080 },
+    .workarea = { 0, 0, 1920, 1048 },
+    .panel_known = TRUE,
+    .panel = { 0, 1048, 1920, 32 },
+    .panel_thickness = 32,
+    .opens_up = TRUE,
+  };
+
+  g_assert_cmpint (sd_state_popup_room (&place), ==, 1048);
+}
+
+static void
+test_room_on_wayland_from_the_panels_thickness (void)
+{
+  /* GDK3 gives the monitor's geometry for the work area, and the panel's place isn't known. */
+  SdPlace place = {
+    .geometry = { 0, 0, 1366, 768 },
+    .workarea = { 0, 0, 1366, 768 },
+    .panel_thickness = 24,
+  };
+
+  g_assert_cmpint (sd_state_popup_room (&place), ==, 744);
+  place.opens_up = TRUE;
+  g_assert_cmpint (sd_state_popup_room (&place), ==, 744);
+}
+
+static void
+test_room_beside_a_vertical_panel (void)
+{
+  SdPlace place = {
+    .geometry = { 0, 0, 1920, 1080 },
+    .workarea = { 48, 0, 1872, 1080 },
+    .panel_known = TRUE,
+    .panel = { 0, 0, 48, 1080 },
+    .panel_thickness = 48,
+    .sideways = TRUE,
+  };
+
+  /* It slides along the panel: the whole height. */
+  g_assert_cmpint (sd_state_popup_room (&place), ==, 1080);
+}
+
 int
 main (int argc, char **argv)
 {
   g_test_init (&argc, &argv, NULL);
+  g_test_add_func ("/state/device-forms", test_device_forms);
+  g_test_add_func ("/state/unplugged-ports-are-left-out", test_unplugged_ports_are_left_out);
+  g_test_add_func ("/state/device-detail-is-its-port-or-virtual",
+                   test_device_detail_is_its_port_or_virtual);
+  g_test_add_func ("/state/device-icons-in-the-lists", test_device_icons_in_the_lists);
+  g_test_add_func ("/state/mute-button-shows-the-outputs-form",
+                   test_mute_button_shows_the_outputs_form);
+  g_test_add_func ("/state/mute-button-shows-the-microphones-level",
+                   test_mute_button_shows_the_microphones_level);
+  g_test_add_func ("/state/default-device-by-name", test_default_device_by_name);
+  g_test_add_func ("/state/device-copy-is-equal-and-its-own",
+                   test_device_copy_is_equal_and_its_own);
+  g_test_add_func ("/state/status-equal-compares-the-lists", test_status_equal_compares_the_lists);
+  g_test_add_func ("/state/percent-round-trips", test_percent_round_trips);
+  g_test_add_func ("/state/room-under-a-top-panel-on-x11", test_room_under_a_top_panel_on_x11);
+  g_test_add_func ("/state/room-above-a-bottom-panel-on-x11",
+                   test_room_above_a_bottom_panel_on_x11);
+  g_test_add_func ("/state/room-on-wayland-from-the-panels-thickness",
+                   test_room_on_wayland_from_the_panels_thickness);
+  g_test_add_func ("/state/room-beside-a-vertical-panel", test_room_beside_a_vertical_panel);
   g_test_add_func ("/state/no-sound-server", test_no_sound_server);
   g_test_add_func ("/state/speaker-levels", test_speaker_levels);
   g_test_add_func ("/state/speaker-muted-or-at-zero", test_speaker_muted_or_at_zero);

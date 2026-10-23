@@ -93,6 +93,7 @@ mod session;
 mod settings;
 mod shadows;
 mod show_desktop;
+mod sound_popup_wheel;
 mod sounds;
 mod sun;
 mod switcher;

@@ -1,7 +1,7 @@
 /*
  * The applets' popup (ADR 0035): where it goes for each edge of the panel, and, with a
  * display, that the applet's left-click toggles it, a click elsewhere and Escape close it,
- * and it opens against the applet.
+ * it opens against the applet, and Space clicks a button in it (CMN-215).
  */
 
 #include "caminito-applet-popup.h"
@@ -154,6 +154,71 @@ test_toggle (void)
   settle ();
 }
 
+static void
+on_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  (*(guint *) data)++;
+}
+
+static void
+key (CaminitoAppletPopup *popup, guint keyval)
+{
+  GdkEvent *event = gdk_event_new (GDK_KEY_PRESS);
+
+  event->key.window =
+    g_object_ref (gtk_widget_get_window (caminito_applet_popup_get_window (popup)));
+  event->key.keyval = keyval;
+  event->key.time = GDK_CURRENT_TIME;
+  gdk_event_set_device (event, gdk_seat_get_keyboard (gdk_display_get_default_seat (
+                                 gdk_display_get_default ())));
+  gtk_main_do_event (event);
+  gdk_event_free (event);
+}
+
+/* GtkButton's own activation takes a keyboard grab, which would break the popup's: the
+   popup would close, and the button, unmapped, would drop its click. */
+static void
+test_space_clicks_a_button_and_keeps_the_popup (void)
+{
+  GtkWidget *panel, *applet, *button;
+  CaminitoAppletPopup *popup;
+  guint clicks = 0;
+
+  panel = gtk_window_new (GTK_WINDOW_POPUP);
+  gtk_window_move (GTK_WINDOW (panel), 100, 0);
+  gtk_window_set_default_size (GTK_WINDOW (panel), 200, 24);
+  applet = gtk_event_box_new ();
+  gtk_widget_set_size_request (applet, 24, 24);
+  gtk_widget_set_halign (applet, GTK_ALIGN_START);
+  gtk_container_add (GTK_CONTAINER (panel), applet);
+  popup = caminito_applet_popup_new (applet);
+  button = gtk_button_new_with_label ("Mute");
+  g_signal_connect (button, "clicked", G_CALLBACK (on_clicked), &clicks);
+  gtk_container_add (GTK_CONTAINER (caminito_applet_popup_get_window (popup)), button);
+  gtk_widget_show_all (panel);
+  gtk_widget_show (button);
+  settle ();
+  /* Past an earlier test's delay against reopening. */
+  g_usleep (300 * 1000);
+  click (applet, GDK_BUTTON_PRIMARY);
+  settle ();
+  g_assert_true (caminito_applet_popup_is_shown (popup));
+  gtk_widget_grab_focus (button);
+
+  key (popup, GDK_KEY_space);
+  settle ();
+  g_assert_cmpuint (clicks, ==, 1);
+  g_assert_true (caminito_applet_popup_is_shown (popup));
+  key (popup, GDK_KEY_Return);
+  key (popup, GDK_KEY_KP_Enter);
+  settle ();
+  g_assert_cmpuint (clicks, ==, 3);
+  g_assert_true (caminito_applet_popup_is_shown (popup));
+
+  gtk_widget_destroy (panel);
+  settle ();
+}
+
 /* On X11 a click outside the popup, on the applet, say, is reported to the popup's window
    (the grab's) with coordinates of the window the click was in, so that the popup's own
    rectangle can contain them. Only the root coordinates tell. */
@@ -283,6 +348,8 @@ main (int argc, char **argv)
                        test_click_reported_to_the_popup_from_outside);
       g_test_add_func ("/popup/one-that-opens-upwards-keeps-its-bottom-at-the-panel-as-it-grows",
                        test_grows_upwards);
+      g_test_add_func ("/popup/space-clicks-a-button-and-keeps-the-popup",
+                       test_space_clicks_a_button_and_keeps_the_popup);
     }
   else
     g_test_message ("No display: the popup's clicks aren't tested");

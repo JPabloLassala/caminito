@@ -226,12 +226,26 @@ on_window_button_press (GtkWidget *window, GdkEventButton *event, gpointer data)
 }
 
 static gboolean
-on_window_key_press (GtkWidget *window G_GNUC_UNUSED, GdkEventKey *event, gpointer data)
+on_window_key_press (GtkWidget *window, GdkEventKey *event, gpointer data)
 {
-  if (event->keyval != GDK_KEY_Escape)
-    return FALSE;
-  caminito_applet_popup_hide (data);
-  return TRUE;
+  GtkWidget *focus = gtk_window_get_focus (GTK_WINDOW (window));
+
+  if (event->keyval == GDK_KEY_Escape)
+    {
+      caminito_applet_popup_hide (data);
+      return TRUE;
+    }
+  /* A button clicks at once: GtkButton's own activation takes a keyboard grab, which ends
+     the popup's, so that the popup would close and the button drop its click (CMN-215). */
+  if (GTK_IS_BUTTON (focus) && gtk_widget_is_sensitive (focus)
+      && (event->keyval == GDK_KEY_space || event->keyval == GDK_KEY_KP_Space
+          || event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter
+          || event->keyval == GDK_KEY_ISO_Enter))
+    {
+      gtk_button_clicked (GTK_BUTTON (focus));
+      return TRUE;
+    }
+  return FALSE;
 }
 
 static gboolean

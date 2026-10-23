@@ -15,6 +15,7 @@ glib = dependency('glib-2.0')
 gio = dependency('gio-2.0')
 libpulse = dependency('libpulse')
 libpulse_glib = dependency('libpulse-mainloop-glib')
+libm = meson.get_compiler('c').find_library('m', required: false)
 applet_dep = dependency('libmatepanelapplet-4.0')
 # The popup and the icon, which the applets share (ADR 0035). A subproject of a subproject is
 # looked for in the top-level project's helpers/.
@@ -53,7 +54,8 @@ pulse = static_library(
 # null devices, where they're installed.
 test(
   'pulse',
-  executable('test-pulse', 'test-pulse.c', link_with: [pulse, state], dependencies: [gio, libpulse]),
+  executable('test-pulse', 'test-pulse.c', link_with: [pulse, state],
+             dependencies: [gio, libpulse, libm]),
   timeout: 180,
 )
 
@@ -61,6 +63,20 @@ test(
 popup = static_library('sd-popup', 'sd-popup.c', link_with: state,
                        dependencies: [common, libpulse.partial_dependency(compile_args: true)],
                        pic: true)
+
+# The popup's rows, lists, wheel, height and keyboard, from statuses built by hand, where
+# there's a display. On X11, whose wheel click is the one the test sends.
+test(
+  'popup',
+  executable('test-popup', 'test-popup.c', link_with: [popup, state],
+             dependencies: [common, libpulse.partial_dependency(compile_args: true)]),
+  env: {'NO_AT_BRIDGE': '1', 'GDK_BACKEND': 'x11'},
+)
+
+# The popup's wheel end to end: caminito's sound_popup_wheel test runs this under a headless
+# Caminito, on GDK's Wayland backend (CAMINITO_SOUND_WHEEL_PROBE names it). Not installed.
+executable('sd-wheel-probe', 'sd-wheel-probe.c', link_with: [popup, state],
+           dependencies: [common, libpulse.partial_dependency(compile_args: true)])
 
 applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(

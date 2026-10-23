@@ -1,12 +1,15 @@
 /*
  * The sound server's reader (CMN-213) against a private PipeWire, WirePlumber and
  * pipewire-pulse, in a throwaway XDG_RUNTIME_DIR on a private session bus, with null sinks
- * and sources for sound devices and pw-record for an application recording. pactl sets up
- * the devices and reads back what the reader set. Skipped where PipeWire isn't installed.
+ * and sources for sound devices and pw-record for an application recording, and the
+ * popup's device lists, defaults and the input's level (CMN-215). pactl sets up the devices
+ * and reads back what the reader set. Skipped where PipeWire isn't installed.
  */
 
 #include <glib/gstdio.h>
 #include <gio/gio.h>
+#include <math.h>
+#include <string.h>
 
 #include "sd-pulse.h"
 
@@ -378,6 +381,209 @@ test_names_the_applications_recording (Fixture *fixture, gconstpointer data G_GN
   server_stop (&server);
 }
 
+static gboolean
+three_outputs_and_a_microphone (gpointer data)
+{
+  const SdStatus *status = status_of (data);
+
+  return status->n_outputs == 3 && status->n_inputs == 1
+         && g_strcmp0 (status->default_output, "headset") == 0;
+}
+
+static void
+test_lists_the_devices_but_the_monitors (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  const SdStatus *status;
+  const SdDevice *headset;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("headset", "device.description=WH-1000XM4 device.form_factor=headset");
+  load_sink ("hdmi", "device.description=HDMI device.form_factor=tv");
+  load_sink ("mic", "media.class=Audio/Source/Virtual device.description=Microphone");
+  set_default ("sink", "headset");
+  wait_until (three_outputs_and_a_microphone, fixture, "the devices");
+  status = status_of (fixture);
+  /* The server's own descriptions, in its order. */
+  g_assert_cmpstr (status->outputs[0].description, ==, "Speakers");
+  g_assert_cmpstr (status->outputs[1].description, ==, "WH-1000XM4");
+  g_assert_cmpstr (status->outputs[2].description, ==, "HDMI");
+  g_assert_cmpint (status->outputs[0].form, ==, SD_FORM_SPEAKER);
+  g_assert_cmpint (status->outputs[1].form, ==, SD_FORM_HEADPHONES);
+  g_assert_cmpint (status->outputs[2].form, ==, SD_FORM_DISPLAY);
+  /* Null devices have no card. */
+  g_assert_true (status->outputs[0].virtual_device);
+  g_assert_cmpstr (status->inputs[0].name, ==, "mic");
+  g_assert_cmpint (status->inputs[0].form, ==, SD_FORM_MICROPHONE);
+  headset = sd_status_default_device (status, SD_OUTPUT);
+  g_assert_nonnull (headset);
+  g_assert_cmpstr (headset->name, ==, "headset");
+  server_stop (&server);
+}
+
+static gboolean
+default_output_is_hdmi (gpointer data)
+{
+  return g_strcmp0 (status_of (data)->default_output, "hdmi") == 0;
+}
+
+static gboolean
+default_input_is_usb (gpointer data)
+{
+  return g_strcmp0 (status_of (data)->default_input, "usb") == 0;
+}
+
+static gboolean
+default_input_is_mic (gpointer data)
+{
+  return g_strcmp0 (status_of (data)->default_input, "mic") == 0;
+}
+
+static gboolean
+default_output_is_speaker (gpointer data)
+{
+  return g_strcmp0 (status_of (data)->default_output, "speaker") == 0;
+}
+
+static void
+test_makes_a_device_the_default (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *info = NULL;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  load_sink ("hdmi", "device.description=HDMI");
+  load_sink ("mic", "media.class=Audio/Source/Virtual device.description=Microphone");
+  load_sink ("usb", "media.class=Audio/Source/Virtual device.description=Yeti");
+  set_default ("sink", "speaker");
+  set_default ("source", "mic");
+  wait_until (default_output_is_speaker, fixture, "the speakers the default");
+  wait_until (default_input_is_mic, fixture, "the microphone the default");
+  sd_pulse_set_default (fixture->pulse, SD_OUTPUT, "hdmi");
+  sd_pulse_set_default (fixture->pulse, SD_INPUT, "usb");
+  wait_until (default_output_is_hdmi, fixture, "HDMI the default");
+  wait_until (default_input_is_usb, fixture, "the Yeti the default");
+  info = pactl ("info");
+  g_assert_nonnull (strstr (info, "Default Sink: hdmi\n"));
+  g_assert_nonnull (strstr (info, "Default Source: usb\n"));
+  server_stop (&server);
+}
+
+static gboolean
+input_at_30_percent (gpointer data)
+{
+  const SdDevice *mic = sd_status_default_device (status_of (data), SD_INPUT);
+
+  return mic != NULL && mic->volume == PERCENT (30);
+}
+
+static void
+test_sets_the_input_volume (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  g_autofree char *volume = NULL;
+
+  server_start (&server);
+  load_sink ("mic", "media.class=Audio/Source/Virtual device.description=Microphone");
+  set_default ("source", "mic");
+  wait_until (has_input, fixture, "the microphone");
+  sd_pulse_set_input_volume (fixture->pulse, PERCENT (30));
+  wait_until (input_at_30_percent, fixture, "the microphone at 30%");
+  volume = pactl ("get-source-volume mic");
+  g_assert_nonnull (strstr (volume, "/  30% /"));
+  server_stop (&server);
+}
+
+typedef struct
+{
+  Fixture *fixture;
+  double   loudest;
+  guint    levels;
+} Levels;
+
+static void
+on_level (double level, gpointer data)
+{
+  Levels *levels = data;
+
+  levels->levels++;
+  levels->loudest = MAX (levels->loudest, level);
+}
+
+static gboolean
+heard (gpointer data)
+{
+  Levels *levels = data;
+
+  return levels->loudest > 0.5;
+}
+
+/* A sine at full scale for ten seconds, as a WAV file. */
+static char *
+write_tone (void)
+{
+  const guint rate = 48000, seconds = 10;
+  guint32 samples = rate * seconds;
+  g_autoptr (GByteArray) wav = g_byte_array_new ();
+  guint32 u32;
+  guint16 u16;
+  char *file = g_build_filename (runtime_dir, "tone.wav", NULL);
+
+#define PUT(value, type) (type = (value), g_byte_array_append (wav, (guint8 *) &type, sizeof type))
+  g_byte_array_append (wav, (guint8 *) "RIFF", 4);
+  PUT (GUINT32_TO_LE (36 + samples * 2), u32);
+  g_byte_array_append (wav, (guint8 *) "WAVEfmt ", 8);
+  PUT (GUINT32_TO_LE (16), u32);
+  PUT (GUINT16_TO_LE (1), u16);
+  PUT (GUINT16_TO_LE (1), u16);
+  PUT (GUINT32_TO_LE (rate), u32);
+  PUT (GUINT32_TO_LE (rate * 2), u32);
+  PUT (GUINT16_TO_LE (2), u16);
+  PUT (GUINT16_TO_LE (16), u16);
+  g_byte_array_append (wav, (guint8 *) "data", 4);
+  PUT (GUINT32_TO_LE (samples * 2), u32);
+  for (guint32 i = 0; i < samples; i++)
+    PUT (GUINT16_TO_LE ((gint16) (32000 * sin (2 * G_PI * 440 * i / rate))), u16);
+#undef PUT
+  g_assert_true (g_file_set_contents (file, (char *) wav->data, wav->len, NULL));
+  return file;
+}
+
+static void
+test_hears_the_default_input (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  Server server = { 0 };
+  Levels levels = { fixture, 0, 0 };
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GSubprocess) player = NULL;
+  g_autofree char *tone = NULL;
+  g_autofree char *out = NULL;
+
+  server_start (&server);
+  load_sink ("speaker", "device.description=Speakers");
+  set_default ("sink", "speaker");
+  /* A microphone that hears what the speakers play: a source that isn't a monitor. */
+  out = pactl ("load-module module-remap-source source_name=mic master=speaker.monitor "
+               "source_properties=device.description=Microphone");
+  set_default ("source", "mic");
+  wait_until (has_input, fixture, "the microphone");
+  sd_pulse_watch_input_level (fixture->pulse, on_level, &levels);
+  tone = write_tone ();
+  player = g_subprocess_new (G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error, "pw-play", "--target",
+                             "speaker", tone, NULL);
+  g_assert_no_error (error);
+  wait_until (heard, &levels, "the tone on the microphone");
+  /* Its own peak stream isn't an application recording. */
+  g_assert_null (status_of (fixture)->recording);
+  sd_pulse_watch_input_level (fixture->pulse, NULL, NULL);
+  levels.levels = 0;
+  stop (&player);
+  server_stop (&server);
+  g_assert_cmpuint (levels.levels, ==, 0);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -428,6 +634,10 @@ main (int argc, char **argv)
   ADD ("mutes-the-default-input", test_mutes_the_default_input);
   ADD ("an-outputs-monitor-isnt-a-microphone", test_an_outputs_monitor_isnt_a_microphone);
   ADD ("names-the-applications-recording", test_names_the_applications_recording);
+  ADD ("lists-the-devices-but-the-monitors", test_lists_the_devices_but_the_monitors);
+  ADD ("makes-a-device-the-default", test_makes_a_device_the_default);
+  ADD ("sets-the-input-volume", test_sets_the_input_volume);
+  ADD ("hears-the-default-input", test_hears_the_default_input);
 #undef ADD
   result = g_test_run ();
 
