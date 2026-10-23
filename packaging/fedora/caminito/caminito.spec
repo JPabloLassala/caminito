@@ -65,8 +65,8 @@ BuildRequires:  lm_sensors-devel
 BuildRequires:  NetworkManager-libnm-devel
 # The tests: a private session bus, pixman for the headless backend, libwayland-client for the
 # fixture's clients and the Xwayland the X11 tier spawns, and python-dbusmock, the BlueZ
-# caminito-bluetooth's tests run against (255) and the NetworkManager caminito-network's run
-# against.
+# caminito-bluetooth's tests run against (255) and the NetworkManager caminito-network's and
+# the Network applet's run against.
 %if %{with tests}
 BuildRequires:  dbus-daemon
 BuildRequires:  pixman-devel

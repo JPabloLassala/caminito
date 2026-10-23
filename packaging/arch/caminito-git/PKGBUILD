@@ -78,7 +78,8 @@ license=(GPL-2.0-or-later GPL-3.0-only)
 # (CMN-202), reads NetworkManager through libnm, and runs nm-connection-editor for its settings,
 # an Enterprise network and a hidden one. caminito-network, its secret agent in a Session, links
 # gtk4 and speaks to NetworkManager and the Secret Service over D-Bus, so it needs nothing more.
-# Both work under X11 MATE too, where caminito-network exits and nm-applet stays the agent.
+# The applet works under X11 MATE too, where caminito-network exits and nm-applet stays the
+# agent.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking
@@ -100,7 +101,8 @@ optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the pa
   "caminito-vscode-git: the menus of VS Code, VSCodium, Code - OSS and Cursor in the panel's global menu")
 # caminito's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14). caminito-bluetooth's
-# run against python-dbusmock's BlueZ (255), and caminito-network's against its NetworkManager.
+# run against python-dbusmock's BlueZ (255), and caminito-network's and the Network applet's
+# against its NetworkManager.
 checkdepends=(dbus pixman wayland python-dbusmock)
 provides=("$_pkgname")
 conflicts=("$_pkgname")

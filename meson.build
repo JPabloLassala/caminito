@@ -122,11 +122,11 @@ install_data(
 )
 
 # The default panel (CMN-105): mate-panel's default layout with the Network applet beside the
-# notification area (CMN-202), the Bluetooth applet beside it, and the Power applet beside that
-# (CMN-100), and the override that makes it the default. Like caminito-bluetooth's entries these are in the normal XDG directories, not
-# share/caminito/xdg/: the layout is right under X11 MATE too, and the panel finds it by name in
-# its own layouts directory. Only a user with no panel settings gets it (the applets are in Add
-# to Panel for the rest).
+# notification area (CMN-202), the Bluetooth applet beside it, and the Power applet beside
+# that (CMN-100), and the override that makes it the default. Like caminito-bluetooth's
+# entries these are in the normal XDG directories, not share/caminito/xdg/: the layout is right
+# under X11 MATE too, and the panel finds it by name in its own layouts directory. Only a user
+# with no panel settings gets it (the applets are in Add to Panel for the rest).
 # The package's hook compiles the override with the schemas.
 install_data(
   'data/caminito.layout',

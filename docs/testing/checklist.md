@@ -3077,7 +3077,7 @@ They are the developer's to run.
 
 ### A secret nm-applet saved "for this user only" still works in a Session
 
-- **Milestone:** network-applet (CMN-197).
+- **Milestone:** M9
 - **Steps:**
   1. In X11 MATE, with nm-applet running, edit a WPA2 Wi-Fi connection in
      `nm-connection-editor`: on *Wi-Fi Security*, set the password's icon to *Store the
