@@ -37,7 +37,7 @@ nothing changes.
  1 file changed, 30 insertions(+)
 
 diff --git a/mate-session/gsm-autostart-app.c b/mate-session/gsm-autostart-app.c
-index a23a132..627a0f8 100644
+index a23a132..d51cadc 100644
 --- a/mate-session/gsm-autostart-app.c
 +++ b/mate-session/gsm-autostart-app.c
 @@ -108,6 +108,29 @@ gsm_autostart_app_init (GsmAutostartApp *app)
