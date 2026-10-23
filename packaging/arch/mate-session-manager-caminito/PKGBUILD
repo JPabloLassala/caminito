@@ -13,7 +13,7 @@ _pkgname=mate-session-manager
 # so the package needs no -git suffix. The weekly job builds the patches on master instead.
 _commit=57a9178e766cd02176dc1c2d70cc48f963ee9fff
 pkgver=1.28.0.r23.g57a9178
-pkgrel=5
+pkgrel=6
 pkgdesc="The MATE Session Handler, with Caminito's carried patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-session-manager'
@@ -60,8 +60,8 @@ groups=(mate)
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
-# Every patch is active only when MATE_WM_NAME=Caminito (08, ADR 0004; 78, 206 and CMN-195,
-# ADR 0014).
+# Every patch is active only when MATE_WM_NAME=Caminito (08, ADR 0004; 78, 206, CMN-195 and
+# CMN-214, ADR 0014).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-session-manager")"
@@ -78,7 +78,7 @@ b2sums=(
   SKIP
   79e304146b97b1fcdd07f25aa88afa1f8b09cb692101c8d02fc8c023a0f630b9b1aa5be998fe0079669db8e46073df254e0e2aefbbc607a012420b6608e6db06
   c7425bf55dc429dd784a04ab9b4066db94198d33016b01483ae3193a118cd91d7d0cc6e4b12aa8f3410c074512774d0ce3fc5075d312d793bfecb52c28472d19
-  07f445251a19c6c1c1b6d3ef1b2fad330ef7fa006ea4c8e49d3d20250bbd56665d6803aaec8cc78b3f336b1aed23ca458a177eeba863653484e0a5526de0d53a
+  6e02718f888d91d2ed4f0ca411496d7c8eef8a19f325bf15d96bcdbc7118ec3dba3fa2cc08313df40a97d47bac79bd1bd8a28f0e37af40f63dac9421f59dfaa4
   b3c5aeb7ed240d6075245b825e25ef794a959a86c64f654b63af03db0f0fa06a621858f9afdfe97bc13500bf540181059d1730fea2d74001ca87586c7e2d76a7
 )
 

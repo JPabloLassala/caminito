@@ -17,7 +17,7 @@ Summary:       MATE Desktop session manager
 # Automatically converted from old format: GPLv2+ - review is highly recommended.
 License:       GPL-2.0-or-later
 Version:       1.28.0^%{commitdate}git%{shortcommit}
-Release:       0.caminito2%{?dist}
+Release:       0.caminito3%{?dist}
 Source0:       https://github.com/mate-desktop/%{name}/archive/%{commit}/%{name}-%{commit}.tar.gz
 Source1:       https://github.com/mate-desktop/mate-submodules/archive/%{submodules_commit}/mate-submodules-%{submodules_commit}.tar.gz
 
@@ -110,6 +110,9 @@ desktop-file-install                               \
 
 
 %changelog
+* Fri Oct 23 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.0^20260721git57a9178-0.caminito3
+- Carry 0003 with mate-media's volume icon skipped under Caminito: the Sound applet is the volume icon (CMN-214)
+
 * Fri Oct 23 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.28.0^20260721git57a9178-0.caminito2
 - Carry 0003 with nm-applet skipped under Caminito: caminito-network and the Network applet do its work (CMN-195)
 

@@ -26,19 +26,21 @@ would see the XWayland windows alone:
 - nm-applet is the network tray icon and NetworkManager's secret agent.
   Under Caminito, caminito-network is the agent and mate-panel's Network
   applet the icon, so only one secret agent registers in the session.
+- mate-volume-control-status-icon is mate-media's volume tray icon. Under
+  Caminito, mate-panel's Sound applet is the volume icon.
 
 Treat their autostart entries as disabled when MATE_WM_NAME is Caminito,
 whichever autostart directory they are read from. Without that variable,
 nothing changes.
 ---
- mate-session/gsm-autostart-app.c | 29 +++++++++++++++++++++++++++++
- 1 file changed, 29 insertions(+)
+ mate-session/gsm-autostart-app.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
 
 diff --git a/mate-session/gsm-autostart-app.c b/mate-session/gsm-autostart-app.c
 index a23a132..627a0f8 100644
 --- a/mate-session/gsm-autostart-app.c
 +++ b/mate-session/gsm-autostart-app.c
-@@ -108,6 +108,28 @@ gsm_autostart_app_init (GsmAutostartApp *app)
+@@ -108,6 +108,29 @@ gsm_autostart_app_init (GsmAutostartApp *app)
          priv->autostart_delay = -1;
  }
  
@@ -55,6 +57,7 @@ index a23a132..627a0f8 100644
 +        "picom.desktop",                  /* an X compositor */
 +        "magnus-autostart.desktop",       /* a magnifier */
 +        "nm-applet.desktop",              /* caminito-network and the Network applet */
++        "mate-volume-control-status-icon.desktop", /* the Sound applet */
 +        NULL
 +};
 +
@@ -67,7 +70,7 @@ index a23a132..627a0f8 100644
  static gboolean
  is_disabled (GsmApp *app)
  {
-@@ -115,6 +137,13 @@ is_disabled (GsmApp *app)
+@@ -115,6 +138,13 @@ is_disabled (GsmApp *app)
  
          priv = gsm_autostart_app_get_instance_private (GSM_AUTOSTART_APP(app));
  
