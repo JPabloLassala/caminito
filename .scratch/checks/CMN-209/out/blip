@@ -1,0 +1,23 @@
+== blip.sh 20 0 paplay
+runs: 20; links to speakers: 0; links to headset: 20
+sink-input-new -> move acked (ms): min 0.1  median 0.2  max 0.3
+sink-input-new -> first link (ms): min 3.4  median 3.8  max 5.0
+== blip.sh 20 0 pw-cat
+runs: 20; links to speakers: 0; links to headset: 20
+sink-input-new -> move acked (ms): min 0.1  median 0.2  max 0.3
+sink-input-new -> first link (ms): min 5.4  median 6.1  max 8.6
+== blip.sh 10 5 paplay
+runs: 10; links to speakers: 10; links to headset: 10
+blip, speakers link -> headset link (ms): min 7.2  median 7.8  max 9.3
+sink-input-new -> move acked (ms): min 5.3  median 5.4  max 5.4
+sink-input-new -> first link (ms): min 3.4  median 3.8  max 4.7
+== blip.sh 10 20 paplay
+runs: 10; links to speakers: 10; links to headset: 10
+blip, speakers link -> headset link (ms): min 17.2  median 19.5  max 22.1
+sink-input-new -> move acked (ms): min 20.3  median 20.5  max 20.6
+sink-input-new -> first link (ms): min 3.5  median 3.7  max 6.1
+== blip.sh 10 100 paplay
+runs: 10; links to speakers: 10; links to headset: 10
+blip, speakers link -> headset link (ms): min 99.1  median 99.4  max 100.0
+sink-input-new -> move acked (ms): min 100.4  median 100.5  max 100.6
+sink-input-new -> first link (ms): min 3.6  median 3.8  max 4.1

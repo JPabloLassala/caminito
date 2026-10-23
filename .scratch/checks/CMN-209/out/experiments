@@ -1,0 +1,71 @@
+== versions
+Linked with libwireplumber 0.5.17
+Linked with libpipewire 1.6.8
+Server Name: PulseAudio (on PipeWire 1.6.8)
+
+== 1a. wpctl settings --save node.stream.restore-target false
+  before: value true, persistent (none)
+Updated and saved setting 'node.stream.restore-target' to: false
+  after: value false (Saved: false), persistent value:'false'
+  state files: stream-properties
+  sm-settings file:
+  after a WirePlumber restart: value false (Saved: false), persistent value:'false'
+  after a restart of the whole stack (a new login): value false (Saved: false)
+
+== 3. a move with it off
+  starts on: speakers
+  moved by index to sink 55: headset
+  stored: "target":"headset"
+  reopened on: speakers
+
+== 2a. volume and mute restore with it off
+  reopened: volume 40% mute True
+
+== 2b. a target stored while it was on, with it off
+Updated setting 'node.stream.restore-target' to: true
+  turned on for now (not saved): value true (Saved: false)
+  starts on: speakers
+  moved by index to sink 55: headset
+  stored: "target":"headset"
+  reopened on: headset
+Updated setting 'node.stream.restore-target' to: false
+  turned off again: value false (Saved: false)
+  Audacious reopened, its stored target still there: speakers
+
+== 1b. undoing --save
+Deleted setting 'node.stream.restore-target' successfully
+  --delete: value false, persistent (none)
+  after a WirePlumber restart: value true
+  Audacious stored target comes back into force:
+  Audacious reopened: headset
+
+== 1c. --reset
+Updated and saved setting 'node.stream.restore-target' to: false
+Reset setting 'node.stream.restore-target' successfully
+  --save false, then --reset: value true (Saved: false), persistent value:'false'
+  after a WirePlumber restart: value false (Saved: false), persistent value:'false'
+Deleted setting 'node.stream.restore-target' successfully
+
+== 1d. writing the sm-settings metadata directly
+  sm-settings written: value false
+  after a WirePlumber restart: value true
+  persistent-sm-settings written: value false (Saved: false), persistent value:'false'
+  after a WirePlumber restart: value false (Saved: false)
+Deleted setting 'node.stream.restore-target' successfully
+  --delete and restart: value true
+
+== 1e. a user drop-in under ~/.config/wireplumber
+  written, no restart: value true
+  after a WirePlumber restart: value false
+  starts on: speakers
+  moved by index to sink 55: headset
+  stored: "target":"headset"
+  reopened on: speakers
+Updated and saved setting 'node.stream.restore-target' to: true
+  drop-in false and --save true, after a restart: value true (Saved: true)
+Deleted setting 'node.stream.restore-target' successfully
+  drop-in removed, after a restart: value true
+
+== 4. placing a stream before it starts: a stream.rules drop-in for pipewire-pulse
+  written, pipewire-pulse running: speakers
+  after a pipewire-pulse restart: headset
