@@ -5,7 +5,10 @@
  * and NetworkManager stopping and starting again. Each state is checked as the panel shows
  * it: the tooltip and the icon's first name. Then the popup's tiles and card (CMN-196) as
  * they follow changes made elsewhere, and what their clicks do to the mock. Then the Details
- * tab's connections (CMN-201), as they follow the signal and the address.
+ * tab's connections (CMN-201), as they follow the signal and the address; and the Networks
+ * tab's list and what joining a network does (CMN-200). The test's bus is the session bus
+ * too, where the test stands for caminito-network's notifier, which the applet tells of the
+ * user's activations (ADR 0044).
  *
  *   test-nm <python>
  */
@@ -33,6 +36,15 @@
 #define DEVICE_ACTIVATED    100
 /* The template's own methods the tests add, on an interface of their own. */
 #define TEST_IFACE "org.mate.Caminito.Test"
+/* NM80211ApSecurityFlags. */
+#define SEC_NONE       0x000
+#define SEC_PSK        0x100
+#define SEC_ENTERPRISE 0x200
+
+/* caminito-network's notifier (ADR 0044). */
+#define NOTIFIER_NAME  "org.mate.Caminito.Network"
+#define NOTIFIER_PATH  "/org/mate/Caminito/Network/Notifier"
+#define NOTIFIER_IFACE "org.mate.Caminito.Network.Notifier"
 
 static const char *python;
 
@@ -40,9 +52,13 @@ typedef struct
 {
   GTestDBus       *bus;
   GDBusConnection *connection;
+  /* The same bus as the session bus, where the test is the notifier. */
+  GDBusConnection *session;
   GSubprocess     *mock;
   NwNm            *nm;
   guint            changes;
+  /* The UUIDs the applet said the user is activating, as "uuid;uuid;". */
+  GString         *activating;
 } Fixture;
 
 static void
@@ -462,7 +478,45 @@ details_show (Fixture *fixture, gconstpointer expected)
 static gboolean
 connection_gone (Fixture *fixture, gconstpointer expected G_GNUC_UNUSED)
 {
-  return fixture->connection == NULL;
+  return fixture->connection == NULL && fixture->session == NULL;
+}
+
+static void
+on_notifier_call (GDBusConnection *connection G_GNUC_UNUSED, const char *sender G_GNUC_UNUSED,
+                  const char *path G_GNUC_UNUSED, const char *interface G_GNUC_UNUSED,
+                  const char *method G_GNUC_UNUSED, GVariant *parameters,
+                  GDBusMethodInvocation *invocation, gpointer data)
+{
+  Fixture *fixture = data;
+  const char *uuid;
+
+  g_variant_get (parameters, "(&s)", &uuid);
+  g_string_append_printf (fixture->activating, "%s;", uuid);
+  g_dbus_method_invocation_return_value (invocation, NULL);
+}
+
+/* The notifier's UserActivating, which records what it's told. */
+static void
+be_the_notifier (Fixture *fixture)
+{
+  static const GDBusInterfaceVTable vtable = { .method_call = on_notifier_call };
+  g_autoptr (GDBusNodeInfo) node = NULL;
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) reply = NULL;
+
+  node = g_dbus_node_info_new_for_xml (
+    "<node><interface name='" NOTIFIER_IFACE "'><method name='UserActivating'>"
+    "<arg name='uuid' type='s' direction='in'/></method></interface></node>", &error);
+  g_assert_no_error (error);
+  g_dbus_connection_register_object (fixture->session, NOTIFIER_PATH, node->interfaces[0],
+                                     &vtable, fixture, NULL, &error);
+  g_assert_no_error (error);
+  reply = g_dbus_connection_call_sync (fixture->session, "org.freedesktop.DBus",
+                                       "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                       "RequestName", g_variant_new ("(su)", NOTIFIER_NAME, 0),
+                                       G_VARIANT_TYPE ("(u)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL,
+                                       &error);
+  g_assert_no_error (error);
 }
 
 static void
@@ -471,13 +525,19 @@ setup (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_autoptr (GError) error = NULL;
 
   fixture->bus = g_test_dbus_new (G_TEST_DBUS_NONE);
+  /* It sets the session bus's address too. */
   g_test_dbus_up (fixture->bus);
   /* GDBus reads the system bus's address from here, and so does dbusmock. */
   g_setenv ("DBUS_SYSTEM_BUS_ADDRESS", g_test_dbus_get_bus_address (fixture->bus), TRUE);
   fixture->connection = g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, &error);
   g_assert_no_error (error);
+  fixture->session = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, &error);
+  g_assert_no_error (error);
   /* The bus goes down at the end of each test, which mustn't end the test program. */
   g_dbus_connection_set_exit_on_close (fixture->connection, FALSE);
+  g_dbus_connection_set_exit_on_close (fixture->session, FALSE);
+  fixture->activating = g_string_new (NULL);
+  be_the_notifier (fixture);
 }
 
 static void
@@ -486,13 +546,16 @@ teardown (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_clear_pointer (&fixture->nm, nw_nm_free);
   if (fixture->mock != NULL)
     stop_mock (fixture);
-  /* GDBus keeps the system bus's connection while anything holds it, and the next test's
-     bus is a new one: wait for this one to go before taking the bus down. */
+  /* GDBus keeps the buses' connections while anything holds them, and the next test's bus
+     is a new one: wait for these to go before taking the bus down. */
   g_object_add_weak_pointer (G_OBJECT (fixture->connection), (gpointer *) &fixture->connection);
+  g_object_add_weak_pointer (G_OBJECT (fixture->session), (gpointer *) &fixture->session);
   g_object_unref (fixture->connection);
+  g_object_unref (fixture->session);
   wait_until (fixture, connection_gone, NULL);
   g_test_dbus_down (fixture->bus);
   g_clear_object (&fixture->bus);
+  g_string_free (fixture->activating, TRUE);
 }
 
 static void
@@ -845,6 +908,248 @@ test_details_of_wired_and_a_vpn (Fixture *fixture, gconstpointer data G_GNUC_UNU
               " / Work: IPv4 10.8.0.6/24, DNS 10.8.0.1");
 }
 
+/* A Wi-Fi device "wlan0" with nothing up on it: returns its path. */
+static char *
+add_wifi_device (Fixture *fixture)
+{
+  g_autoptr (GVariant) device = call (fixture, NM_PATH, DBUSMOCK, "AddWiFiDevice",
+                                      g_variant_new ("(ssi)", "wlan0", "wlan0",
+                                                     DEVICE_DISCONNECTED));
+  char *device_path;
+
+  g_variant_get (device, "(s)", &device_path);
+  /* NetworkManager's, which the template hasn't. */
+  mock_call (fixture, device_path, "AddProperty",
+             g_variant_new ("(ssv)", NM_NAME ".Device.Wireless", "ActiveAccessPoint",
+                            g_variant_new_object_path ("/")));
+  return device_path;
+}
+
+/* An access point of wlan0 named name, with the SSID, the strength and the security, as
+   NM80211ApSecurityFlags. */
+static void
+add_ap (Fixture *fixture, const char *name, const char *ssid, guint strength, guint security)
+{
+  g_autoptr (GVariant) ap = call (fixture, NM_PATH, DBUSMOCK, "AddAccessPoint",
+                                  g_variant_new ("(ssssuuuyu)", DEVICES "wlan0", name, ssid,
+                                                 "00:11:22:33:44:66", 2, 2437, 54000,
+                                                 (guchar) strength, security));
+
+  (void) ap;
+}
+
+/* WEP: the privacy flag with neither WPA nor RSN, which the template's own can't make. */
+static void
+add_wep_ap (Fixture *fixture, const char *name, const char *ssid, guint strength)
+{
+  g_autofree char *path = g_strconcat (AP, name, NULL);
+
+  add_ap (fixture, name, ssid, strength, SEC_NONE);
+  update (fixture, path, NM_NAME ".AccessPoint", "{'Flags': <uint32 1>}");
+}
+
+/* The rows of the Networks tab: "Cafe 40%, Home lock 70% saved", with "lock" for a secured
+   network, and "saved", "active" or "connecting". */
+static char *
+networks_of (const NwStatus *status)
+{
+  GString *networks = g_string_new (NULL);
+
+  for (guint i = 0; i < status->n_networks; i++)
+    {
+      const NwNetwork *network = &status->networks[i];
+
+      g_string_append_printf (networks, "%s%s", i == 0 ? "" : ", ", network->name);
+      if (network->security != NW_SECURITY_NONE)
+        g_string_append (networks, " lock");
+      if (network->strength >= 0)
+        g_string_append_printf (networks, " %d%%", network->strength);
+      if (network->connecting)
+        g_string_append (networks, " connecting");
+      else if (network->active)
+        g_string_append (networks, " active");
+      else if (network->saved)
+        g_string_append (networks, " saved");
+    }
+  return g_string_free (networks, FALSE);
+}
+
+static gboolean
+networks_show (Fixture *fixture, gconstpointer expected)
+{
+  g_autofree char *networks = networks_of (nw_nm_status (fixture->nm));
+
+  if (g_strcmp0 (networks, expected) != 0 && g_test_verbose ())
+    g_printerr ("networks: %s\n", networks);
+  return g_strcmp0 (networks, expected) == 0;
+}
+
+static void
+test_networks (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *wifi = NULL;
+
+  start_mock_with_wwan (fixture);
+  g_free (add_ethernet (fixture, "Dock", DEVICE_DISCONNECTED));
+  /* Home, up and primary: the card's, not the list's. */
+  wifi = add_wifi (fixture, 70, ACTIVATED);
+  set_primary (fixture, wifi);
+  add_ap (fixture, "library", "Library", 50, SEC_PSK);
+  add_ap (fixture, "library2", "Library", 80, SEC_PSK);
+  g_variant_unref (call (fixture, NM_PATH, DBUSMOCK, "AddWiFiConnection",
+                         g_variant_new ("(ssss)", DEVICES "wlan0", "library", "Library",
+                                        "wpa-psk")));
+  add_ap (fixture, "cafe", "Cafe", 40, SEC_NONE);
+  add_ap (fixture, "eduroam", "eduroam", 60, SEC_ENTERPRISE);
+  add_wep_ap (fixture, "old", "Old", 20);
+  /* A hidden network, which "Connect to hidden network…" is for. */
+  add_ap (fixture, "hidden", "", 90, SEC_PSK);
+  g_free (add_saved_vpn (fixture, "Work", 1000));
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, networks_show,
+              "Work saved, Library lock 80% saved, Dock saved, eduroam lock 60%, Cafe 40%,"
+              " Old lock 20%");
+  /* The cable out. */
+  update (fixture, DEVICES "eth0", NM_NAME ".Device",
+          "{'State': <uint32 20>, 'StateReason': <(uint32 20, uint32 0)>}");
+  wait_until (fixture, networks_show,
+              "Work saved, Library lock 80% saved, eduroam lock 60%, Cafe 40%, Old lock 20%");
+  update (fixture, NM_PATH, NM_NAME, "{'WirelessEnabled': <false>}");
+  wait_until (fixture, networks_show, "Work saved");
+}
+
+/* The settings of the connection at path, from the mock. */
+static GVariant *
+settings_of (Fixture *fixture, const char *path)
+{
+  g_autoptr (GVariant) reply = call (fixture, path, NM_NAME ".Settings.Connection",
+                                     "GetSettings", NULL);
+
+  return g_variant_get_child_value (reply, 0);
+}
+
+static char *
+setting_string (GVariant *settings, const char *setting, const char *key)
+{
+  g_autoptr (GVariant) values = g_variant_lookup_value (settings, setting,
+                                                        G_VARIANT_TYPE_VARDICT);
+  char *value = NULL;
+
+  if (values != NULL)
+    g_variant_lookup (values, key, "s", &value);
+  return value;
+}
+
+static gboolean
+activated_one (Fixture *fixture, gconstpointer expected G_GNUC_UNUSED)
+{
+  return fixture->activating->len > 0;
+}
+
+static void
+test_join_new_network (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *device = NULL;
+  g_autoptr (GVariant) connections = NULL;
+  g_autoptr (GVariant) settings = NULL;
+  g_autoptr (GVariant) security = NULL;
+  g_autoptr (GVariant) connection = NULL;
+  g_autoptr (GVariant) permissions = NULL;
+  g_autofree const char **paths = NULL;
+  g_autofree char *uuid = NULL;
+  g_autofree char *key_mgmt = NULL;
+  g_autofree char *psk = NULL;
+  g_autofree char *said = NULL;
+  guint32 flags = 0;
+
+  start_mock_with_wwan (fixture);
+  device = add_wifi_device (fixture);
+  add_ap (fixture, "cafe", "Cafe", 60, SEC_PSK);
+  /* The template's drops what it's given: the connection is saved as the applet sent it,
+     then activated. */
+  mock_call (fixture, NM_PATH, "AddMethod",
+             g_variant_new ("(sssss)", NM_NAME, "AddAndActivateConnection", "a{sa{sv}}oo",
+                            "oo",
+                            "connection = self.SettingsAddConnection(args[0])\n"
+                            "ret = (connection,"
+                            " self.activate_connection(self, connection, args[1], args[2]))"));
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, networks_show, "Cafe lock 60%");
+  nw_nm_join (fixture->nm, "ssid:Cafe", "correct horse");
+  wait_until (fixture, networks_show, "Cafe lock 60% active");
+
+  connections = call (fixture, NM_PATH "/Settings", NM_NAME ".Settings", "ListConnections",
+                      NULL);
+  g_variant_get (connections, "(^a&o)", &paths);
+  g_assert_cmpuint (g_strv_length ((char **) paths), ==, 1);
+  settings = settings_of (fixture, paths[0]);
+  uuid = setting_string (settings, "connection", "uuid");
+  key_mgmt = setting_string (settings, "802-11-wireless-security", "key-mgmt");
+  psk = setting_string (settings, "802-11-wireless-security", "psk");
+  g_assert_cmpstr (key_mgmt, ==, "wpa-psk");
+  g_assert_cmpstr (psk, ==, "correct horse");
+  /* The secret is NetworkManager's to keep: no flags, which libnm leaves out. */
+  security = g_variant_lookup_value (settings, "802-11-wireless-security",
+                                     G_VARIANT_TYPE_VARDICT);
+  g_variant_lookup (security, "psk-flags", "u", &flags);
+  g_assert_cmpuint (flags, ==, 0);
+  /* For every user: no permissions, which libnm sends as an empty list. */
+  connection = g_variant_lookup_value (settings, "connection", G_VARIANT_TYPE_VARDICT);
+  permissions = g_variant_lookup_value (connection, "permissions", G_VARIANT_TYPE_STRING_ARRAY);
+  g_assert_true (permissions == NULL || g_variant_n_children (permissions) == 0);
+  /* caminito-network was told first, with the UUID the applet gave it. */
+  wait_until (fixture, activated_one, NULL);
+  said = g_strdup_printf ("%s;", uuid);
+  g_assert_cmpstr (fixture->activating->str, ==, said);
+}
+
+static void
+test_join_saved (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *device = NULL;
+  g_autofree char *vpn = NULL;
+  g_autoptr (GVariant) settings = NULL;
+  g_autofree char *uuid = NULL;
+  g_autofree char *said = NULL;
+
+  start_mock_with_wwan (fixture);
+  device = add_wifi_device (fixture);
+  add_ap (fixture, "library", "Library", 80, SEC_PSK);
+  g_variant_unref (call (fixture, NM_PATH, DBUSMOCK, "AddWiFiConnection",
+                         g_variant_new ("(ssss)", DEVICES "wlan0", "library", "Library",
+                                        "wpa-psk")));
+  vpn = add_saved_vpn (fixture, "Work", 1000);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, networks_show, "Work saved, Library lock 80% saved");
+  nw_nm_join (fixture->nm, "ssid:Library", NULL);
+  wait_until (fixture, networks_show, "Library lock 80% active, Work saved");
+  settings = settings_of (fixture, vpn);
+  uuid = setting_string (settings, "connection", "uuid");
+  said = g_strdup_printf ("uuid:%s", uuid);
+  nw_nm_join (fixture->nm, said, NULL);
+  wait_until (fixture, networks_show, "Library lock 80% active, Work active");
+}
+
+static void
+test_tiles_tell_the_notifier (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *vpn = NULL;
+  g_autoptr (GVariant) settings = NULL;
+  g_autofree char *uuid = NULL;
+  g_autofree char *said = NULL;
+
+  start_mock_with_wwan (fixture);
+  vpn = add_saved_vpn (fixture, "Work", 1000);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, tiles_show, "on On, dim Unplugged, off Off, off Off");
+  nw_nm_set_tile (fixture->nm, NW_TILE_VPN, TRUE);
+  wait_until (fixture, activated_one, NULL);
+  settings = settings_of (fixture, vpn);
+  uuid = setting_string (settings, "connection", "uuid");
+  said = g_strdup_printf ("%s;", uuid);
+  g_assert_cmpstr (fixture->activating->str, ==, said);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -869,5 +1174,9 @@ main (int argc, char **argv)
   g_test_add ("/nm/the-card-shows-the-connection-and-disconnects-it", Fixture, NULL, setup, test_card, teardown);
   g_test_add ("/nm/details-of-wi-fi-follow-its-signal-and-address", Fixture, NULL, setup, test_details_of_wifi, teardown);
   g_test_add ("/nm/details-of-wired-and-a-vpn-over-it", Fixture, NULL, setup, test_details_of_wired_and_a_vpn, teardown);
+  g_test_add ("/nm/the-networks-are-listed-without-the-primary-one", Fixture, NULL, setup, test_networks, teardown);
+  g_test_add ("/nm/joining-a-new-network-saves-its-password-for-every-user", Fixture, NULL, setup, test_join_new_network, teardown);
+  g_test_add ("/nm/joining-a-saved-network-or-a-vpn-activates-it", Fixture, NULL, setup, test_join_saved, teardown);
+  g_test_add ("/nm/the-tiles-tell-caminito-network-of-the-user-s-activations", Fixture, NULL, setup, test_tiles_tell_the_notifier, teardown);
   return g_test_run ();
 }

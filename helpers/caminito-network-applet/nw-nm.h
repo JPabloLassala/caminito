@@ -3,7 +3,8 @@
  * primary connection, what's coming up, connectivity, the radios and the VPN, as an
  * NwStatus, with each connection up as the Details tab shows it (CMN-201). It follows
  * NetworkManager stopping and starting again. It also does what the popup's tiles and card
- * ask (CMN-196).
+ * ask (CMN-196), and joins the Networks tab's networks (CMN-200). Before it activates a
+ * connection it tells caminito-network, which then doesn't announce it (ADR 0044).
  */
 
 #pragma once
@@ -27,4 +28,8 @@ void            nw_nm_set_tile   (NwNm *nm, NwTile tile, gboolean on);
 /* The card's Disconnect: the device of the connection it shows goes down, as nmcli device
    disconnect does, so that NetworkManager doesn't bring up another network on it. */
 void            nw_nm_disconnect (NwNm *nm);
+/* The Networks tab's join: the network with the NwNetwork key comes up. A Wi-Fi network
+   that isn't saved is saved first, for every user, with password, if it has one, kept by
+   NetworkManager. The network is connecting from now until NetworkManager answers. */
+void            nw_nm_join       (NwNm *nm, const char *key, const char *password);
 void            nw_nm_free       (NwNm *nm);

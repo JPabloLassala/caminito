@@ -1,6 +1,7 @@
 /*
- * The popup's content (CMN-193, CMN-196): with NetworkManager not running it says so, and
- * once NetworkManager runs it shows the tiles, the card and the Details tab (CMN-201), drawn
+ * The popup's content (CMN-193, CMN-196, CMN-200): with NetworkManager not running it says
+ * so, and once NetworkManager runs it shows the tiles, the card, the Networks tab and the
+ * Details tab (CMN-201), drawn
  * from statuses built by hand, and calls back for what the user clicks. Without a display,
  * GTK can't start, and it's skipped.
  */
@@ -44,10 +45,29 @@ on_configure (gpointer data)
   g_string_append (fixture->calls, "configure;");
 }
 
+static void
+on_join (const char *key, const char *password, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "join %s%s%s;", key, password ? " " : "",
+                          password ? password : "");
+}
+
+static void
+on_create_wifi (gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append (fixture->calls, "create wifi;");
+}
+
 static const NwPopupActions actions = {
   .set_tile = on_set_tile,
   .disconnect = on_disconnect,
   .configure = on_configure,
+  .join = on_join,
+  .create_wifi = on_create_wifi,
 };
 
 static void
@@ -138,7 +158,8 @@ widget_shows (Fixture *fixture, GtkWidget *found)
     {
       GtkWidget *parent = gtk_widget_get_parent (widget);
 
-      if (!gtk_widget_get_visible (widget))
+      /* A list's filter hides a row with its child visibility. */
+      if (!gtk_widget_get_visible (widget) || !gtk_widget_get_child_visible (widget))
         return FALSE;
       if (GTK_IS_STACK (parent) && gtk_stack_get_visible_child (GTK_STACK (parent)) != widget)
         return FALSE;
@@ -417,6 +438,234 @@ test_details_follow_changes (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_assert_cmpint (end, ==, 5);
 }
 
+/* The Networks tab's rows, in nw_networks_sort()'s order: Work, a VPN; Library, saved;
+   Cafe, open; Old, WEP; eduroam, Enterprise. */
+static NwNetwork *
+networks (void)
+{
+  static NwNetwork networks[] = {
+    { .key = "uuid:work", .name = "Work", .kind = NW_NETWORK_VPN, .strength = -1,
+      .saved = TRUE },
+    { .key = "ssid:Library", .name = "Library", .kind = NW_NETWORK_WIFI,
+      .security = NW_SECURITY_PSK, .strength = 80, .saved = TRUE },
+    { .key = "ssid:eduroam", .name = "eduroam", .kind = NW_NETWORK_WIFI,
+      .security = NW_SECURITY_ENTERPRISE, .strength = 60 },
+    { .key = "ssid:Cafe", .name = "Cafe", .kind = NW_NETWORK_WIFI, .strength = 40 },
+    { .key = "ssid:Old", .name = "Old", .kind = NW_NETWORK_WIFI, .security = NW_SECURITY_WEP,
+      .strength = 20 },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (networks); i++)
+    networks[i].connecting = networks[i].active = FALSE;
+  return networks;
+}
+
+static NwStatus
+with_networks (void)
+{
+  NwStatus status = office ();
+
+  status.networks = networks ();
+  status.n_networks = 5;
+  return status;
+}
+
+static GtkListBox *
+list_of (Fixture *fixture)
+{
+  return GTK_LIST_BOX (find_type (fixture, GTK_TYPE_LIST_BOX));
+}
+
+/* The rows shown, in order: "Work, Library 80%, …". */
+static char *
+rows_shown (Fixture *fixture)
+{
+  GString *rows = g_string_new (NULL);
+  GtkListBox *list = list_of (fixture);
+  GtkListBoxRow *row;
+
+  for (int i = 0; (row = gtk_list_box_get_row_at_index (list, i)) != NULL; i++)
+    {
+      NwNetwork *network = networks ();
+
+      if (!widget_shows (fixture, GTK_WIDGET (row)))
+        continue;
+      for (guint j = 0; j < 5; j++)
+        if (label_under (GTK_WIDGET (row), network[j].name) != NULL)
+          {
+            g_autofree char *strength = g_strdup_printf ("%d%%", network[j].strength);
+
+            g_string_append_printf (rows, "%s%s", rows->len > 0 ? ", " : "", network[j].name);
+            if (label_under (GTK_WIDGET (row), strength) != NULL)
+              g_string_append_printf (rows, " %s", strength);
+          }
+    }
+  return g_string_free (rows, FALSE);
+}
+
+static void
+select_row (Fixture *fixture, const char *name)
+{
+  GtkWidget *widget = find_label (fixture, name);
+
+  while (!GTK_IS_LIST_BOX_ROW (widget))
+    widget = gtk_widget_get_parent (widget);
+  gtk_list_box_select_row (list_of (fixture), GTK_LIST_BOX_ROW (widget));
+}
+
+static void
+visit_password (GtkWidget *widget, gpointer data)
+{
+  GtkWidget **found = data;
+
+  if (*found != NULL)
+    return;
+  /* The search field is an entry too. */
+  if (GTK_IS_ENTRY (widget) && !GTK_IS_SEARCH_ENTRY (widget))
+    *found = widget;
+  else if (GTK_IS_CONTAINER (widget))
+    gtk_container_forall (GTK_CONTAINER (widget), visit_password, found);
+}
+
+/* The bar's password field. */
+static GtkEntry *
+password_entry (Fixture *fixture)
+{
+  GtkWidget *found = NULL;
+
+  visit_password (window_of (fixture), &found);
+  g_assert_nonnull (found);
+  return GTK_ENTRY (found);
+}
+
+static void
+test_the_list (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  NwStatus status = with_networks ();
+  g_autofree char *rows = NULL;
+  GtkWidget *search = find_type (fixture, GTK_TYPE_SEARCH_ENTRY);
+
+  nw_popup_update (fixture->popup, &status);
+  rows = rows_shown (fixture);
+  g_assert_cmpstr (rows, ==, "Work, Library 80%, eduroam 60%, Cafe 40%, Old 20%");
+  g_clear_pointer (&rows, g_free);
+  /* A search, in any case. */
+  gtk_entry_set_text (GTK_ENTRY (search), "LIB");
+  rows = rows_shown (fixture);
+  g_assert_cmpstr (rows, ==, "Library 80%");
+  g_clear_pointer (&rows, g_free);
+  gtk_entry_set_text (GTK_ENTRY (search), "");
+  rows = rows_shown (fixture);
+  g_assert_cmpstr (rows, ==, "Work, Library 80%, eduroam 60%, Cafe 40%, Old 20%");
+}
+
+/* The bar's text field for a password, NULL where it isn't shown. */
+static GtkWidget *
+password_shown (Fixture *fixture)
+{
+  GtkWidget *entry = GTK_WIDGET (password_entry (fixture));
+
+  return entry != NULL && widget_shows (fixture, entry) ? entry : NULL;
+}
+
+static void
+test_the_bar (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  NwStatus status = with_networks ();
+  GtkWidget *password;
+
+  nw_popup_update (fixture->popup, &status);
+  /* Nothing selected, nothing to join. */
+  g_assert_null (password_shown (fixture));
+  g_assert_false (shows (fixture, "Join"));
+
+  select_row (fixture, "Old");
+  password = password_shown (fixture);
+  g_assert_nonnull (password);
+  /* Ready to type in. */
+  g_assert_true (gtk_widget_is_focus (password));
+  g_assert_true (shows (fixture, "Join"));
+  /* Not until there's a password NetworkManager takes. */
+  g_assert_false (gtk_widget_get_sensitive (button_of (fixture, "Join")));
+  g_signal_emit_by_name (password, "activate");
+  g_assert_cmpstr (fixture->calls->str, ==, "");
+  gtk_entry_set_text (GTK_ENTRY (password), "s3cret");
+  g_assert_true (gtk_widget_get_sensitive (button_of (fixture, "Join")));
+  /* Enter joins. */
+  g_signal_emit_by_name (password, "activate");
+  g_assert_cmpstr (fixture->calls->str, ==, "join ssid:Old s3cret;");
+  gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Join")));
+  g_assert_cmpstr (fixture->calls->str, ==, "join ssid:Old s3cret;join ssid:Old s3cret;");
+  g_string_truncate (fixture->calls, 0);
+
+  /* The password stays while the network stays selected, and goes with another one. */
+  nw_popup_update (fixture->popup, &status);
+  g_assert_cmpstr (gtk_entry_get_text (GTK_ENTRY (password_shown (fixture))), ==, "s3cret");
+
+  select_row (fixture, "Library");
+  g_assert_null (password_shown (fixture));
+  gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Join Library")));
+  select_row (fixture, "Cafe");
+  gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Join Cafe")));
+  select_row (fixture, "Work");
+  gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Connect Work")));
+  g_assert_cmpstr (fixture->calls->str, ==, "join ssid:Library;join ssid:Cafe;join uuid:work;");
+
+  select_row (fixture, "Old");
+  g_assert_cmpstr (gtk_entry_get_text (GTK_ENTRY (password_shown (fixture))), ==, "");
+}
+
+static void
+test_connecting (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  NwStatus status = with_networks ();
+  GtkWidget *spinner;
+  gboolean spinning;
+
+  nw_popup_update (fixture->popup, &status);
+  select_row (fixture, "Library");
+  status.networks[1].connecting = TRUE;
+  nw_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "Connecting to Library…"));
+  g_assert_false (shows (fixture, "Join Library"));
+  /* Beside it, a spinner, which the card's isn't. */
+  spinner = find_label (fixture, "Connecting to Library…");
+  {
+    Search search = { NULL, GTK_TYPE_SPINNER, NULL };
+
+    visit (gtk_widget_get_parent (spinner), &search);
+    spinner = search.found;
+  }
+  g_assert_true (widget_shows (fixture, spinner));
+  g_object_get (spinner, "active", &spinning, NULL);
+  g_assert_true (spinning);
+  /* Up: nothing left to do. */
+  status.networks[1].connecting = FALSE;
+  status.networks[1].active = TRUE;
+  nw_popup_update (fixture->popup, &status);
+  g_assert_false (shows (fixture, "Connecting to Library…"));
+  g_assert_false (shows (fixture, "Join Library"));
+}
+
+static void
+test_editor (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  NwStatus status = with_networks ();
+
+  nw_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "Connect to hidden network…"));
+  select_row (fixture, "eduroam");
+  gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Join eduroam…")));
+  g_assert_cmpstr (fixture->calls->str, ==, "create wifi;");
+  g_assert_false (caminito_applet_popup_is_shown (fixture->applet_popup));
+  gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Connect to hidden network…")));
+  g_assert_cmpstr (fixture->calls->str, ==, "create wifi;create wifi;");
+  /* Only while Wi-Fi is on. */
+  status.wifi_enabled = FALSE;
+  nw_popup_update (fixture->popup, &status);
+  g_assert_false (shows (fixture, "Connect to hidden network…"));
+}
+
 int
 main (int argc, char **argv)
 {
@@ -434,5 +683,9 @@ main (int argc, char **argv)
   g_test_add ("/popup/configure-closes-the-popup-and-calls-back", Fixture, NULL, setup, test_configure, teardown);
   g_test_add ("/popup/the-details-tab-shows-each-connection", Fixture, NULL, setup, test_details, teardown);
   g_test_add ("/popup/the-details-tab-follows-changes-and-keeps-the-selection", Fixture, NULL, setup, test_details_follow_changes, teardown);
+  g_test_add ("/popup/the-networks-are-listed-and-searched", Fixture, NULL, setup, test_the_list, teardown);
+  g_test_add ("/popup/the-bar-joins-the-network-selected", Fixture, NULL, setup, test_the_bar, teardown);
+  g_test_add ("/popup/the-bar-says-a-network-is-connecting", Fixture, NULL, setup, test_connecting, teardown);
+  g_test_add ("/popup/enterprise-and-hidden-networks-open-the-editor", Fixture, NULL, setup, test_editor, teardown);
   return g_test_run ();
 }
