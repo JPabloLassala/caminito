@@ -20,6 +20,9 @@ subproject('caminito-bluetooth-applet')
 subproject('caminito-power-applet')
 # The Thermal applet (267), which shares caminito-applet-common with them (ADR 0035).
 subproject('caminito-thermal-applet')
+# The Network applet (CMN-193, ADR 0041), on caminito-applet-common too, which reads
+# NetworkManager through libnm.
+subproject('caminito-network-applet')
 
 # The display manager's entry for the session (08). Its name isn't the Wayfire session's
 # MATE.desktop, and it needs no wrapper script and no systemd unit.
