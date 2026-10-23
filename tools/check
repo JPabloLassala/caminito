@@ -22,7 +22,7 @@ if [ "${1-}" = --deps ]; then
   # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
   # passwords against. nodejs, npm: the global menu extension (116). desktop-file-utils:
   # desktop-file-validate, for the System Shortcuts entry (183). python-dbusmock: the BlueZ
-  # caminito-bluetooth's tests run against (255).
+  # caminito-bluetooth's tests run against (255), and caminito-network's NetworkManager.
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
@@ -82,10 +82,15 @@ meson test -C target/meson --print-errorlogs
 step "caminito-bluetooth's single instance"
 xvfb-run -a cargo test -p caminito-bluetooth --test single_instance -- --ignored
 
-# caminito-bluetooth's entries go in the normal XDG directories (255), not a Session's own.
-step "caminito-bluetooth's entries"
+# caminito-network is one process in a Session (ADR 0041), on X under Xvfb for the same reason.
+step "caminito-network's single instance"
+xvfb-run -a cargo test -p caminito-network --test single_instance -- --ignored
+
+# caminito-bluetooth's entries, and caminito-network's (ADR 0041), go in the normal XDG
+# directories (255), not a Session's own.
+step "caminito-bluetooth's and caminito-network's entries"
 for entry in share/applications/caminito-bluetooth.desktop \
-  xdg/autostart/caminito-bluetooth.desktop; do
+  xdg/autostart/caminito-bluetooth.desktop xdg/autostart/caminito-network.desktop; do
   installed=$(find target/meson-destdir -path "*/$entry")
   if [ -z "$installed" ]; then
     echo "$entry isn't installed" >&2

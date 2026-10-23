@@ -7,6 +7,7 @@ members = [
     "caminito-bluetooth",
     "caminito-displays",
     "caminito-layout",
+    "caminito-network",
     "caminito-policy",
     "caminito-theme",
     "caminito-test-client",

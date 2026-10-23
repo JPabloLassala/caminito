@@ -1,0 +1,537 @@
+//! The secret agent (ADR 0041): an `org.freedesktop.NetworkManager.SecretAgent` that
+//! NetworkManager asks for the secrets a connection needs and doesn't have, as a Wi-Fi
+//! network's password. It's registered with NetworkManager's AgentManager each time
+//! NetworkManager comes on the bus, since NetworkManager forgets its agents when it stops.
+//!
+//! It asks for a Wi-Fi network's password or WEP key, and for an 802.1X password or private
+//! key's passphrase, Wi-Fi or wired. It keeps no secrets of its own yet, so a request that
+//! may not ask the user has none to give, and saving or deleting secrets is answered with
+//! nothing done.
+//!
+//! The dialogs are behind [`Dialogs`], which the binary draws in GTK and the tests replace.
+//! Each request has its dialog, and NetworkManager may have several open at once, one for
+//! each connection that is coming up.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt;
+use std::rc::{Rc, Weak};
+
+use gio::glib::variant::ToVariant;
+use gio::glib::{self, Variant};
+
+use crate::DOMAIN;
+
+/// Where NetworkManager calls every secret agent.
+pub const PATH: &str = "/org/freedesktop/NetworkManager/SecretAgent";
+/// The agent's name to NetworkManager.
+pub const IDENTIFIER: &str = "org.mate.Caminito.Network";
+
+const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
+const AGENT: &str = "org.freedesktop.NetworkManager.SecretAgent";
+const AGENT_MANAGER_PATH: &str = "/org/freedesktop/NetworkManager/AgentManager";
+const AGENT_MANAGER: &str = "org.freedesktop.NetworkManager.AgentManager";
+/// No VPN hints: the agent asks for no VPN's secrets yet.
+const CAPABILITIES: u32 = 0;
+
+/// `GetSecrets`'s flags, NetworkManager's `NMSecretAgentGetSecretsFlags`. The agent may ask
+/// the user.
+const ALLOW_INTERACTION: u32 = 0x1;
+/// The secrets NetworkManager has are wrong, or it has none: they're to be asked again.
+const REQUEST_NEW: u32 = 0x2;
+
+/// The errors of NetworkManager's `NMSecretAgentError`, as their D-Bus names.
+const USER_CANCELED: &str = "org.freedesktop.NetworkManager.SecretAgent.UserCanceled";
+const AGENT_CANCELED: &str = "org.freedesktop.NetworkManager.SecretAgent.AgentCanceled";
+const NO_SECRETS: &str = "org.freedesktop.NetworkManager.SecretAgent.NoSecrets";
+
+const WIFI_SECURITY: &str = "802-11-wireless-security";
+const IEEE_8021X: &str = "802-1x";
+
+/// `org.freedesktop.NetworkManager.SecretAgent`, as NetworkManager's
+/// introspection/org.freedesktop.NetworkManager.SecretAgent.xml gives it.
+const INTERFACE: &str = r#"<node>
+  <interface name="org.freedesktop.NetworkManager.SecretAgent">
+    <method name="GetSecrets">
+      <arg name="connection" type="a{sa{sv}}" direction="in"/>
+      <arg name="connection_path" type="o" direction="in"/>
+      <arg name="setting_name" type="s" direction="in"/>
+      <arg name="hints" type="as" direction="in"/>
+      <arg name="flags" type="u" direction="in"/>
+      <arg name="secrets" type="a{sa{sv}}" direction="out"/>
+    </method>
+    <method name="CancelGetSecrets">
+      <arg name="connection_path" type="o" direction="in"/>
+      <arg name="setting_name" type="s" direction="in"/>
+    </method>
+    <method name="SaveSecrets">
+      <arg name="connection" type="a{sa{sv}}" direction="in"/>
+      <arg name="connection_path" type="o" direction="in"/>
+    </method>
+    <method name="DeleteSecrets">
+      <arg name="connection" type="a{sa{sv}}" direction="in"/>
+      <arg name="connection_path" type="o" direction="in"/>
+    </method>
+  </interface>
+</node>"#;
+
+/// How the connection that needs a secret reaches its network.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Medium {
+    Wifi,
+    Wired,
+}
+
+/// The secret NetworkManager asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Question {
+    /// A WPA or WPA3 Personal network's password: 8 to 63 characters, or 64 hexadecimal
+    /// digits.
+    Psk,
+    /// A WEP network's key: 5 or 13 characters, or 10 or 26 hexadecimal digits, or a
+    /// passphrase of up to 64 characters where the connection says it's one.
+    WepKey { passphrase: bool },
+    /// An 802.1X password, with the identity it goes with, which the user may change.
+    Password {
+        /// The connection's identity, empty when it has none.
+        identity: String,
+    },
+    /// The passphrase of an 802.1X private key, for EAP-TLS.
+    PrivateKeyPassphrase,
+}
+
+impl Question {
+    /// Whether `answer` is one NetworkManager takes for this question.
+    pub fn accepts(&self, answer: &Answer) -> bool {
+        let hex = |secret: &str| secret.bytes().all(|byte| byte.is_ascii_hexdigit());
+        match (self, answer) {
+            // NetworkManager counts bytes, as WPA does.
+            (Question::Psk, Answer::Secret(psk)) => {
+                (8..=63).contains(&psk.len()) || (psk.len() == 64 && hex(psk))
+            }
+            (Question::WepKey { passphrase: true }, Answer::Secret(key)) => {
+                (1..=64).contains(&key.len())
+            }
+            (Question::WepKey { passphrase: false }, Answer::Secret(key)) => {
+                (key.is_ascii() && matches!(key.len(), 5 | 13))
+                    || (matches!(key.len(), 10 | 26) && hex(key))
+            }
+            (Question::Password { .. }, Answer::Login { identity, password }) => {
+                !identity.is_empty() && !password.is_empty()
+            }
+            (Question::PrivateKeyPassphrase, Answer::Secret(passphrase)) => !passphrase.is_empty(),
+            _ => false,
+        }
+    }
+}
+
+/// What NetworkManager asks the user, and of which network.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Request {
+    /// The network's name: a Wi-Fi network's SSID, or the connection's name for a wired
+    /// one.
+    pub network: String,
+    pub medium: Medium,
+    pub question: Question,
+    /// The secret was asked before and didn't work, or was never given.
+    pub again: bool,
+}
+
+/// The user's answer to a [`Request`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Answer {
+    /// A password, a key or a passphrase.
+    Secret(String),
+    /// An 802.1X identity and its password, for [`Question::Password`].
+    Login { identity: String, password: String },
+}
+
+/// The agent's dialogs: GTK's in the binary, a fake in the tests.
+pub trait Dialogs {
+    /// Asks `request` of the user. The answer goes to `reply`, once, unless
+    /// [`Dialogs::close`] comes first for its [`Reply::id`].
+    fn ask(&self, request: Request, reply: Reply);
+    /// Closes the dialog of the request `id`: NetworkManager cancelled it, or went away. A
+    /// reply sent after it is ignored.
+    fn close(&self, id: u64);
+}
+
+/// Where the answer to one request goes.
+pub struct Reply {
+    state: Weak<RefCell<State>>,
+    id: u64,
+}
+
+impl Reply {
+    /// The request's number, which [`Dialogs::close`] names it by.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Answers NetworkManager with the secret, unless the request was closed since. An
+    /// answer the question doesn't accept is a cancel.
+    pub fn send(self, answer: Answer) {
+        let Some(pending) = self.take() else {
+            return;
+        };
+        if !pending.question.accepts(&answer) {
+            pending
+                .invocation
+                .return_dbus_error(USER_CANCELED, "the answer isn't a valid secret");
+            return;
+        }
+        let keys: HashMap<String, Variant> = match answer {
+            Answer::Secret(secret) => HashMap::from([(pending.key, secret.to_variant())]),
+            Answer::Login { identity, password } => HashMap::from([
+                ("identity".to_owned(), identity.to_variant()),
+                (pending.key, password.to_variant()),
+            ]),
+        };
+        let secrets = HashMap::from([(pending.setting, keys)]);
+        pending
+            .invocation
+            .return_value(Some(&(secrets,).to_variant()));
+    }
+
+    /// Answers NetworkManager that the user cancelled, unless the request was closed since.
+    pub fn cancel(self) {
+        if let Some(pending) = self.take() {
+            pending
+                .invocation
+                .return_dbus_error(USER_CANCELED, "the user cancelled");
+        }
+    }
+
+    fn take(&self) -> Option<Pending> {
+        let state = self.state.upgrade()?;
+        state.borrow_mut().pending.remove(&self.id)
+    }
+}
+
+/// Exporting the agent failed.
+#[derive(Debug)]
+pub enum Error {
+    /// The connection refused the object, as when another is at its path.
+    Export(glib::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Export(err) => write!(f, "can't export the secret agent: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Export(err) => Some(err),
+        }
+    }
+}
+
+/// A request waiting for its dialog's answer.
+struct Pending {
+    connection: String,
+    setting: String,
+    question: Question,
+    /// The key of the secret in the setting.
+    key: String,
+    invocation: gio::DBusMethodInvocation,
+}
+
+struct State {
+    dialogs: Rc<dyn Dialogs>,
+    /// The last request's number.
+    requests: u64,
+    pending: HashMap<u64, Pending>,
+}
+
+/// The secret agent, exported and registered with NetworkManager for as long as it lives.
+pub struct Agent {
+    connection: gio::DBusConnection,
+    registration: Option<gio::RegistrationId>,
+    /// Stops watching NetworkManager's name. A closure, since the watcher's id is of a type
+    /// gio doesn't export.
+    unwatch: Option<Box<dyn FnOnce()>>,
+    _state: Rc<RefCell<State>>,
+}
+
+impl Drop for Agent {
+    fn drop(&mut self) {
+        if let Some(registration) = self.registration.take() {
+            let _ = self.connection.unregister_object(registration);
+        }
+        if let Some(unwatch) = self.unwatch.take() {
+            unwatch();
+        }
+    }
+}
+
+impl Agent {
+    /// Exports the agent on `connection`, the system bus, and registers it with
+    /// NetworkManager now and whenever NetworkManager comes back on the bus.
+    pub fn new(connection: &gio::DBusConnection, dialogs: Rc<dyn Dialogs>) -> Result<Agent, Error> {
+        let state = Rc::new(RefCell::new(State {
+            dialogs,
+            requests: 0,
+            pending: HashMap::new(),
+        }));
+
+        let node = gio::DBusNodeInfo::for_xml(INTERFACE).expect("the agent's interface is valid");
+        let interface = node
+            .lookup_interface(AGENT)
+            .expect("the node has the agent's interface");
+        let registration = connection
+            .register_object(PATH, &interface)
+            .method_call({
+                let state = Rc::downgrade(&state);
+                move |_, _, _, _, method, parameters, invocation| {
+                    handle(&state, method, &parameters, invocation);
+                }
+            })
+            .build()
+            .map_err(Error::Export)?;
+
+        let watcher = gio::bus_watch_name_on_connection(
+            connection,
+            NETWORK_MANAGER,
+            gio::BusNameWatcherFlags::NONE,
+            |connection, _, _| {
+                let connection = connection.clone();
+                glib::spawn_future_local(async move {
+                    if let Err(err) = register(&connection).await {
+                        glib::g_warning!(DOMAIN, "can't register the secret agent: {err}");
+                    }
+                });
+            },
+            {
+                // NetworkManager won't hear the answers: its requests went with it.
+                let state = Rc::downgrade(&state);
+                move |_, _| {
+                    if let Some(state) = state.upgrade() {
+                        let open: Vec<u64> = state.borrow().pending.keys().copied().collect();
+                        for id in open {
+                            dismiss(&state, id);
+                        }
+                    }
+                }
+            },
+        );
+
+        Ok(Agent {
+            connection: connection.clone(),
+            registration: Some(registration),
+            unwatch: Some(Box::new(move || gio::bus_unwatch_name(watcher))),
+            _state: state,
+        })
+    }
+}
+
+/// Registers the agent with a NetworkManager that has just come on the bus.
+async fn register(connection: &gio::DBusConnection) -> Result<Variant, glib::Error> {
+    connection
+        .call_future(
+            Some(NETWORK_MANAGER),
+            AGENT_MANAGER_PATH,
+            AGENT_MANAGER,
+            "RegisterWithCapabilities",
+            Some(&(IDENTIFIER, CAPABILITIES).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            -1,
+        )
+        .await
+}
+
+/// Answers one of NetworkManager's calls. gio has checked its arguments against
+/// [`INTERFACE`].
+fn handle(
+    state: &Weak<RefCell<State>>,
+    method: &str,
+    parameters: &Variant,
+    invocation: gio::DBusMethodInvocation,
+) {
+    let Some(state) = state.upgrade() else {
+        invocation.return_dbus_error(AGENT_CANCELED, "the agent has stopped");
+        return;
+    };
+    let string_at = |index| {
+        parameters
+            .child_value(index)
+            .str()
+            .expect("the argument is a string")
+            .to_owned()
+    };
+    match method {
+        "GetSecrets" => {
+            let connection: Settings = parameters
+                .child_value(0)
+                .get()
+                .expect("the connection is a{sa{sv}}");
+            let flags = parameters
+                .child_value(4)
+                .get::<u32>()
+                .expect("the flags are a u32");
+            get_secrets(
+                &state,
+                &connection,
+                string_at(1),
+                string_at(2),
+                flags,
+                invocation,
+            );
+        }
+        "CancelGetSecrets" => {
+            let (connection, setting) = (string_at(0), string_at(1));
+            let canceled: Vec<u64> = state
+                .borrow()
+                .pending
+                .iter()
+                .filter(|(_, pending)| {
+                    pending.connection == connection && pending.setting == setting
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            for id in canceled {
+                dismiss(&state, id);
+            }
+            invocation.return_value(None);
+        }
+        // The Secret Service keeps them, in a later ticket.
+        "SaveSecrets" | "DeleteSecrets" => invocation.return_value(None),
+        _ => invocation.return_dbus_error(
+            "org.freedesktop.DBus.Error.UnknownMethod",
+            &format!("the agent has no method {method}"),
+        ),
+    }
+}
+
+/// A connection's settings, as NetworkManager sends them: each setting's name and its keys.
+type Settings = HashMap<String, HashMap<String, Variant>>;
+
+/// Opens a dialog for the secret NetworkManager asks for, or answers that there's none.
+fn get_secrets(
+    state: &Rc<RefCell<State>>,
+    connection: &Settings,
+    path: String,
+    setting: String,
+    flags: u32,
+    invocation: gio::DBusMethodInvocation,
+) {
+    if flags & ALLOW_INTERACTION == 0 {
+        invocation.return_dbus_error(NO_SECRETS, "the agent keeps no secrets");
+        return;
+    }
+    let Some((request, key)) = read(connection, &setting, flags) else {
+        invocation.return_dbus_error(
+            NO_SECRETS,
+            &format!("the agent doesn't ask for the secrets of {setting}"),
+        );
+        return;
+    };
+    let (id, dialogs) = {
+        let mut state = state.borrow_mut();
+        state.requests += 1;
+        let id = state.requests;
+        state.pending.insert(
+            id,
+            Pending {
+                connection: path,
+                setting,
+                question: request.question.clone(),
+                key,
+                invocation,
+            },
+        );
+        (id, state.dialogs.clone())
+    };
+    // Nothing is borrowed while the dialogs run: a fake answers at once.
+    let reply = Reply {
+        state: Rc::downgrade(state),
+        id,
+    };
+    dialogs.ask(request, reply);
+}
+
+/// The request NetworkManager's call makes of the user, and the key its secret goes in, or
+/// None for a secret the agent doesn't ask for.
+fn read(connection: &Settings, setting: &str, flags: u32) -> Option<(Request, String)> {
+    let string = |setting: &str, key: &str| {
+        connection
+            .get(setting)
+            .and_then(|keys| keys.get(key))
+            .and_then(|value| value.str().map(str::to_owned))
+    };
+    let medium = match string("connection", "type")?.as_str() {
+        "802-11-wireless" => Medium::Wifi,
+        "802-3-ethernet" => Medium::Wired,
+        _ => return None,
+    };
+    let ssid = connection
+        .get("802-11-wireless")
+        .and_then(|keys| keys.get("ssid"))
+        .and_then(|ssid| ssid.get::<Vec<u8>>())
+        .filter(|ssid| !ssid.is_empty())
+        // An SSID is any bytes: a NUL among them would end the name in a C string.
+        .map(|ssid| String::from_utf8_lossy(&ssid).replace('\0', ""));
+    let network = ssid
+        .or_else(|| string("connection", "id"))
+        .unwrap_or_default();
+
+    let (question, key) = match setting {
+        WIFI_SECURITY => match string(WIFI_SECURITY, "key-mgmt")?.as_str() {
+            "wpa-psk" | "sae" => (Question::Psk, "psk".to_owned()),
+            // Static WEP: a key-mgmt of none with a key.
+            "none" => {
+                let keys = connection.get(WIFI_SECURITY)?;
+                let index = keys
+                    .get("wep-tx-keyidx")
+                    .and_then(Variant::get::<u32>)
+                    .unwrap_or(0);
+                // NM_WEP_KEY_TYPE_PASSPHRASE.
+                let passphrase = keys.get("wep-key-type").and_then(Variant::get::<u32>) == Some(2);
+                (Question::WepKey { passphrase }, format!("wep-key{index}"))
+            }
+            _ => return None,
+        },
+        IEEE_8021X => {
+            let methods = connection
+                .get(IEEE_8021X)
+                .and_then(|keys| keys.get("eap"))
+                .and_then(Variant::get::<Vec<String>>)
+                .unwrap_or_default();
+            if methods.first().is_some_and(|method| method == "tls") {
+                (
+                    Question::PrivateKeyPassphrase,
+                    "private-key-password".to_owned(),
+                )
+            } else {
+                let identity = string(IEEE_8021X, "identity").unwrap_or_default();
+                (Question::Password { identity }, "password".to_owned())
+            }
+        }
+        _ => return None,
+    };
+    let request = Request {
+        network,
+        medium,
+        question,
+        again: flags & REQUEST_NEW != 0,
+    };
+    Some((request, key))
+}
+
+/// Closes the dialog of the request `id`, if it's still open, and answers NetworkManager
+/// that the agent cancelled it.
+fn dismiss(state: &Rc<RefCell<State>>, id: u64) {
+    let pending = state.borrow_mut().pending.remove(&id);
+    if let Some(pending) = pending {
+        pending
+            .invocation
+            .return_dbus_error(AGENT_CANCELED, "the request was cancelled");
+        let dialogs = state.borrow().dialogs.clone();
+        dialogs.close(id);
+    }
+}

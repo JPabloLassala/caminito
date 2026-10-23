@@ -1,0 +1,18 @@
+[package]
+name = "caminito-network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shipped through the PKGBUILD, never crates.io.
+publish = false
+
+# The library is NetworkManager's secret agent over gio's D-Bus (ADR 0041), with no zbus and no
+# libnm, and names no toolkit. Only the binary uses GTK.
+[dependencies]
+gio = "0.22.10"
+# The application and its dialogs, without libadwaita (ADR 0014).
+gtk = { workspace = true }
+
+[lints]
+workspace = true

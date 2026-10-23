@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Network
+Comment=Ask for the passwords network connections need
+TryExec=caminito-network
+Exec=caminito-network
+Icon=network-wireless
+Terminal=false
+NoDisplay=true
+OnlyShowIn=MATE;
+X-MATE-AutoRestart=true
