@@ -4,9 +4,9 @@
 //! NetworkManager comes on the bus, since NetworkManager forgets its agents when it stops.
 //!
 //! It asks for a Wi-Fi network's password or WEP key, and for an 802.1X password or private
-//! key's passphrase, Wi-Fi or wired. It keeps no secrets of its own yet, so a request that
-//! may not ask the user has none to give, and saving or deleting secrets is answered with
-//! nothing done.
+//! key's passphrase, Wi-Fi or wired. It keeps no secrets of its own yet (CMN-197), so a
+//! request that may not ask the user has none to give, and saving or deleting secrets is
+//! answered with nothing done.
 //!
 //! The dialogs are behind [`Dialogs`], which the binary draws in GTK and the tests replace.
 //! Each request has its dialog, and NetworkManager may have several open at once, one for
@@ -85,9 +85,10 @@ pub enum Medium {
 /// The secret NetworkManager asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Question {
-    /// A WPA or WPA3 Personal network's password: 8 to 63 characters, or 64 hexadecimal
-    /// digits.
+    /// A WPA Personal network's password: 8 to 63 characters, or 64 hexadecimal digits.
     Psk,
+    /// A WPA3 Personal (SAE) network's password, of any length.
+    Sae,
     /// A WEP network's key: 5 or 13 characters, or 10 or 26 hexadecimal digits, or a
     /// passphrase of up to 64 characters where the connection says it's one.
     WepKey { passphrase: bool },
@@ -96,7 +97,7 @@ pub enum Question {
         /// The connection's identity, empty when it has none.
         identity: String,
     },
-    /// The passphrase of an 802.1X private key, for EAP-TLS.
+    /// The passphrase of an 802.1X private key, for EAP-TLS or a phase 2 of TLS.
     PrivateKeyPassphrase,
 }
 
@@ -109,6 +110,7 @@ impl Question {
             (Question::Psk, Answer::Secret(psk)) => {
                 (8..=63).contains(&psk.len()) || (psk.len() == 64 && hex(psk))
             }
+            (Question::Sae, Answer::Secret(password)) => !password.is_empty(),
             (Question::WepKey { passphrase: true }, Answer::Secret(key)) => {
                 (1..=64).contains(&key.len())
             }
@@ -233,7 +235,7 @@ impl std::error::Error for Error {
 
 /// A request waiting for its dialog's answer.
 struct Pending {
-    connection: String,
+    connection_path: String,
     setting: String,
     question: Question,
     /// The key of the secret in the setting.
@@ -244,7 +246,7 @@ struct Pending {
 struct State {
     dialogs: Rc<dyn Dialogs>,
     /// The last request's number.
-    requests: u64,
+    last_request: u64,
     pending: HashMap<u64, Pending>,
 }
 
@@ -275,7 +277,7 @@ impl Agent {
     pub fn new(connection: &gio::DBusConnection, dialogs: Rc<dyn Dialogs>) -> Result<Agent, Error> {
         let state = Rc::new(RefCell::new(State {
             dialogs,
-            requests: 0,
+            last_request: 0,
             pending: HashMap::new(),
         }));
 
@@ -390,7 +392,7 @@ fn handle(
                 .pending
                 .iter()
                 .filter(|(_, pending)| {
-                    pending.connection == connection && pending.setting == setting
+                    pending.connection_path == connection && pending.setting == setting
                 })
                 .map(|(id, _)| *id)
                 .collect();
@@ -399,7 +401,7 @@ fn handle(
             }
             invocation.return_value(None);
         }
-        // The Secret Service keeps them, in a later ticket.
+        // The Secret Service keeps them (CMN-197).
         "SaveSecrets" | "DeleteSecrets" => invocation.return_value(None),
         _ => invocation.return_dbus_error(
             "org.freedesktop.DBus.Error.UnknownMethod",
@@ -424,7 +426,7 @@ fn get_secrets(
         invocation.return_dbus_error(NO_SECRETS, "the agent keeps no secrets");
         return;
     }
-    let Some((request, key)) = read(connection, &setting, flags) else {
+    let Some((request, key)) = request_for(connection, &setting, flags) else {
         invocation.return_dbus_error(
             NO_SECRETS,
             &format!("the agent doesn't ask for the secrets of {setting}"),
@@ -433,12 +435,12 @@ fn get_secrets(
     };
     let (id, dialogs) = {
         let mut state = state.borrow_mut();
-        state.requests += 1;
-        let id = state.requests;
+        state.last_request += 1;
+        let id = state.last_request;
         state.pending.insert(
             id,
             Pending {
-                connection: path,
+                connection_path: path,
                 setting,
                 question: request.question.clone(),
                 key,
@@ -457,7 +459,7 @@ fn get_secrets(
 
 /// The request NetworkManager's call makes of the user, and the key its secret goes in, or
 /// None for a secret the agent doesn't ask for.
-fn read(connection: &Settings, setting: &str, flags: u32) -> Option<(Request, String)> {
+fn request_for(connection: &Settings, setting: &str, flags: u32) -> Option<(Request, String)> {
     let string = |setting: &str, key: &str| {
         connection
             .get(setting)
@@ -482,7 +484,8 @@ fn read(connection: &Settings, setting: &str, flags: u32) -> Option<(Request, St
 
     let (question, key) = match setting {
         WIFI_SECURITY => match string(WIFI_SECURITY, "key-mgmt")?.as_str() {
-            "wpa-psk" | "sae" => (Question::Psk, "psk".to_owned()),
+            "wpa-psk" => (Question::Psk, "psk".to_owned()),
+            "sae" => (Question::Sae, "psk".to_owned()),
             // Static WEP: a key-mgmt of none with a key.
             "none" => {
                 let keys = connection.get(WIFI_SECURITY)?;
@@ -502,10 +505,19 @@ fn read(connection: &Settings, setting: &str, flags: u32) -> Option<(Request, St
                 .and_then(|keys| keys.get("eap"))
                 .and_then(Variant::get::<Vec<String>>)
                 .unwrap_or_default();
+            // TLS inside PEAP or TTLS has a private key of its own, phase 2's.
+            let phase2 = ["phase2-auth", "phase2-autheap"]
+                .iter()
+                .any(|key| string(IEEE_8021X, key).as_deref() == Some("tls"));
             if methods.first().is_some_and(|method| method == "tls") {
                 (
                     Question::PrivateKeyPassphrase,
                     "private-key-password".to_owned(),
+                )
+            } else if phase2 {
+                (
+                    Question::PrivateKeyPassphrase,
+                    "phase2-private-key-password".to_owned(),
                 )
             } else {
                 let identity = string(IEEE_8021X, "identity").unwrap_or_default();

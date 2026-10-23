@@ -341,7 +341,7 @@ fn a_wrong_password_is_asked_again() {
         let _pending = get_secrets(
             mock,
             &running,
-            &wifi("Home", "sae", &[]),
+            &wifi("Home", "wpa-psk", &[]),
             WIFI_SECURITY,
             ALLOW_INTERACTION | REQUEST_NEW,
         );
@@ -546,5 +546,60 @@ fn an_ssid_is_named_without_its_nul_bytes() {
             running.dialogs.last_request().is_some()
         });
         assert_eq!(running.dialogs.last_request().unwrap().network, "Home");
+    });
+}
+
+#[test]
+fn a_wpa3_password_has_no_wpa2_length() {
+    mock::run(|mock| {
+        let running = start(mock);
+        let pending = get_secrets(
+            mock,
+            &running,
+            &wifi("Home", "sae", &[]),
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        mock.wait_until("the password's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        assert_eq!(
+            running.dialogs.last_request().unwrap().question,
+            Question::Sae
+        );
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("short".to_owned())));
+        assert_eq!(
+            secrets(answer(mock, &pending))[WIFI_SECURITY]["psk"].str(),
+            Some("short")
+        );
+    });
+}
+
+#[test]
+fn a_phase_2_private_key_passphrase_goes_in_its_own_key() {
+    mock::run(|mock| {
+        let running = start(mock);
+        let mut connection = wired_8021x("peap", "ana");
+        connection
+            .get_mut("802-1x")
+            .unwrap()
+            .insert("phase2-autheap".to_owned(), "tls".to_variant());
+        let pending = get_secrets(mock, &running, &connection, "802-1x", ALLOW_INTERACTION);
+        mock.wait_until("the passphrase's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        assert_eq!(
+            running.dialogs.last_request().unwrap().question,
+            Question::PrivateKeyPassphrase
+        );
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("passphrase".to_owned())));
+        assert_eq!(
+            secrets(answer(mock, &pending))["802-1x"]["phase2-private-key-password"].str(),
+            Some("passphrase")
+        );
     });
 }

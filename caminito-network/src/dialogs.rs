@@ -136,14 +136,10 @@ impl Dialogs for GtkDialogs {
         });
 
         // An 802.1X identity that's there already only wants its password.
-        if identity
-            .as_ref()
-            .is_some_and(|identity| identity.text().is_empty())
-        {
-            identity.as_ref().unwrap().grab_focus();
-        } else {
-            secret.grab_focus();
-        }
+        match identity.filter(|identity| identity.text().is_empty()) {
+            Some(identity) => identity.grab_focus(),
+            None => secret.grab_focus(),
+        };
         window.present();
         self.open.borrow_mut().insert(id, window);
     }
@@ -164,7 +160,7 @@ fn text(request: &Request) -> String {
         Medium::Wired => "wired network",
     };
     let secret = match &request.question {
-        Question::Psk => "password",
+        Question::Psk | Question::Sae => "password",
         Question::WepKey { passphrase: false } => "WEP key",
         Question::WepKey { passphrase: true } => "WEP passphrase",
         Question::Password { .. } => "username and password",
@@ -179,7 +175,7 @@ fn text(request: &Request) -> String {
 
 fn placeholder(question: &Question) -> &'static str {
     match question {
-        Question::Psk | Question::Password { .. } => "Password",
+        Question::Psk | Question::Sae | Question::Password { .. } => "Password",
         Question::WepKey { passphrase: false } => "Key",
         Question::WepKey { passphrase: true } | Question::PrivateKeyPassphrase => "Passphrase",
     }
