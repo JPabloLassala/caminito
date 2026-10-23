@@ -66,8 +66,8 @@ typedef struct
   gboolean    unplugged;
 } SdPortInfo;
 
-/* A sound device of the popup's lists (CMN-215): a sink, or a source that isn't an output's
-   monitor. */
+/* A sound device of the popup's lists (CMN-215): an output, or an input that isn't an
+   output's monitor. */
 typedef struct
 {
   /* The server's name, which the applet sets the default by. */

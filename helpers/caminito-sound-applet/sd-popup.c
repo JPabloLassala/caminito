@@ -312,20 +312,11 @@ on_draw_strike (GtkWidget *image, cairo_t *cr, gpointer data)
   return FALSE;
 }
 
+/* The pill's list, or the port dropdown's ports, open or shut. */
 static void
-on_pill_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
+on_toggle_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
 {
-  Side *side = data;
-  GtkRevealer *revealer = GTK_REVEALER (side->revealer);
-
-  gtk_revealer_set_reveal_child (revealer, !gtk_revealer_get_reveal_child (revealer));
-}
-
-static void
-on_ports_clicked (GtkButton *button G_GNUC_UNUSED, gpointer data)
-{
-  Side *side = data;
-  GtkRevealer *revealer = GTK_REVEALER (side->ports_revealer);
+  GtkRevealer *revealer = data;
 
   gtk_revealer_set_reveal_child (revealer, !gtk_revealer_get_reveal_child (revealer));
 }
@@ -595,7 +586,7 @@ side_new (SdPopup *popup, SdSide which)
   gtk_widget_set_valign (side->pill, GTK_ALIGN_CENTER);
   gtk_widget_set_tooltip_text (side->pill, which == SD_OUTPUT ? "Outputs" : "Inputs");
   set_name (side->pill, side, "pill", NULL);
-  g_signal_connect (side->pill, "clicked", G_CALLBACK (on_pill_clicked), side);
+
 
   gtk_grid_set_column_spacing (GTK_GRID (grid), 8);
   g_object_set (grid, "margin-start", 12, "margin-end", 12, "margin-top", 8, NULL);
@@ -637,12 +628,14 @@ side_new (SdPopup *popup, SdSide which)
                       gtk_image_new_from_icon_name ("pan-down-symbolic", GTK_ICON_SIZE_MENU),
                       FALSE, FALSE, 0);
   gtk_container_add (GTK_CONTAINER (side->ports_button), ports_box);
-  g_signal_connect (side->ports_button, "clicked", G_CALLBACK (on_ports_clicked), side);
+
   gtk_box_pack_start (GTK_BOX (side->ports), side->ports_button, FALSE, FALSE, 0);
   side->ports_list = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   g_object_set (side->ports_list, "margin-start", 12, NULL);
   side->ports_revealer = gtk_revealer_new ();
   gtk_revealer_set_transition_duration (GTK_REVEALER (side->ports_revealer), REVEAL_MS);
+  g_signal_connect (side->ports_button, "clicked", G_CALLBACK (on_toggle_clicked),
+                    side->ports_revealer);
   gtk_container_add (GTK_CONTAINER (side->ports_revealer), side->ports_list);
   gtk_box_pack_start (GTK_BOX (side->ports), side->ports_revealer, FALSE, FALSE, 0);
   gtk_widget_show_all (side->ports_button);
@@ -653,6 +646,7 @@ side_new (SdPopup *popup, SdSide which)
   g_object_set (drop, "margin-start", 12, "margin-end", 12, "margin-top", 4, NULL);
   side->revealer = gtk_revealer_new ();
   gtk_revealer_set_transition_duration (GTK_REVEALER (side->revealer), REVEAL_MS);
+  g_signal_connect (side->pill, "clicked", G_CALLBACK (on_toggle_clicked), side->revealer);
   gtk_container_add (GTK_CONTAINER (side->revealer), drop);
   gtk_box_pack_start (GTK_BOX (box), side->revealer, FALSE, FALSE, 0);
   return box;

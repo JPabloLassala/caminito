@@ -4,8 +4,8 @@
  * outputs, cards and defaults into an SdStatus, and sets the Default output's volume and
  * mute, the Default input's mute and a card's profile; for the popup (CMN-215), the
  * defaults, a device's port and the Default input's volume, and it hears the Default input
- * while the popup asks it to. With no sound server it waits for
- * one, and when the server goes away it waits for it to come back.
+ * while the popup asks it to. With no sound server it waits for one, and when the server
+ * goes away it waits for it to come back.
  */
 
 #pragma once

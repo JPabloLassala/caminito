@@ -118,6 +118,9 @@ impl Probe {
     /// Lets the probe handle what it was sent, then returns the slider's and the scroll's
     /// values, and the volumes the popup asked for since the reset.
     fn report(&mut self, f: &mut Fixture, name: &str) -> (f64, f64, Vec<u32>) {
+        // A plain wheel must leave the slider alone, which only a time can show: 200 ms is
+        // a dozen of the probe's frames, and its answer below comes after GDK has read
+        // everything Caminito sent before it.
         f.dispatch_for(Duration::from_millis(200));
         self.send(&format!("state {name}"));
         self.wait_for_line(f, &format!("state {name} "));
@@ -167,6 +170,8 @@ fn the_wheel_scrolls_the_sound_popup_and_shift_moves_its_slider() {
     let (x, y) = probe_origin(&f).unwrap();
     let (slider_x, slider_y) = probe.slider();
     f.pointer_move(x + slider_x, y + slider_y);
+    // The pointer's enter, before any wheel: the probe has no state to wait on for it, and
+    // 100 ms is several of its frames.
     f.dispatch_for(Duration::from_millis(100));
 
     let mut results = Vec::new();
@@ -185,6 +190,8 @@ fn the_wheel_scrolls_the_sound_popup_and_shift_moves_its_slider() {
             f.wait_between_inputs(50);
             f.key(KEY_LEFTSHIFT, false);
         }
+        // Past the scroll's end, and long enough that a slider moved the wrong way, or a
+        // plain wheel taken as a step, would have shown in the frames since.
         f.wait_between_inputs(500);
         results.push((name.to_owned(), probe.report(f, name)));
     };
