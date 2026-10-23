@@ -62,7 +62,7 @@ printf '[Settings]\ngtk-theme-name=%s\ngtk-icon-theme-name=%s\n' \
 XDG_CONFIG_HOME=$work/config MATE_PANEL_APPLETS_DIR=$work/applets NO_AT_BRIDGE=1 \
   GDK_BACKEND=x11 WAYLAND_DISPLAY= \
   timeout 180 dbus-run-session -- bash "$here/session.sh" "$here" "$work" "$out" "$python" \
-  2>&1 | grep -v '^dbus-daemon\[' >>"$out/report.txt" || true
+  2>&1 | grep -vE '^(dbus-daemon\[|fusermount)' >>"$out/report.txt" || true
 [ -n "$xvfb" ] && kill "$xvfb"
 cat "$out/report.txt"
 echo "screenshots in $out"

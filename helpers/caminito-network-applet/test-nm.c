@@ -155,7 +155,7 @@ add_wired (Fixture *fixture, const char *id, guint state)
   g_autoptr (GError) error = NULL;
   g_autofree char *settings_text = g_strdup_printf (
     "({'connection': {'id': <'%s'>, 'type': <'802-3-ethernet'>}},)", id);
-  GVariant *settings = g_variant_parse (NULL, settings_text, NULL, NULL, &error);
+  g_autoptr (GVariant) settings = g_variant_parse (NULL, settings_text, NULL, NULL, &error);
   const char *device_path;
   const char *connection_path;
   char *active_path;
@@ -228,15 +228,18 @@ set_state (Fixture *fixture, const char *active_path, guint state)
   update (fixture, active_path, NM_NAME ".Connection.Active", properties);
 }
 
-/* A VPN "Work" up over the active connection at base: returns its path. */
+/* A VPN up over the active connection at base, or "/" for a WireGuard connection, whose
+   specific object NetworkManager leaves empty: returns its path. type is the connection's,
+   "vpn" or "wireguard". */
 static char *
-add_vpn (Fixture *fixture, const char *base)
+add_vpn (Fixture *fixture, const char *id, const char *type, const char *base)
 {
   g_autoptr (GVariant) connection = NULL;
   g_autoptr (GVariant) active = NULL;
   g_autoptr (GError) error = NULL;
-  GVariant *settings = g_variant_parse (
-    NULL, "({'connection': {'id': <'Work'>, 'type': <'vpn'>}},)", NULL, NULL, &error);
+  g_autofree char *settings_text = g_strdup_printf (
+    "({'connection': {'id': <'%s'>, 'type': <'%s'>}},)", id, type);
+  g_autoptr (GVariant) settings = g_variant_parse (NULL, settings_text, NULL, NULL, &error);
   const char *connection_path;
   char *active_path;
 
@@ -246,7 +249,7 @@ add_vpn (Fixture *fixture, const char *base)
   g_variant_get (connection, "(&o)", &connection_path);
   /* A VPN's specific object is the active connection it goes over. */
   active = call (fixture, NM_PATH, DBUSMOCK, "AddActiveConnection",
-                 g_variant_new_parsed ("(@as [], %s, %s, 'vpn', %u)", connection_path, base,
+                 g_variant_new_parsed ("(@as [], %s, %s, %s, %u)", connection_path, base, id,
                                        ACTIVATED));
   g_variant_get (active, "(s)", &active_path);
   return active_path;
@@ -395,7 +398,7 @@ test_vpn (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   wired = add_wired (fixture, "Office", ACTIVATED);
   set_primary (fixture, wired);
   wait_until (fixture, shows, "Office|network-wired");
-  vpn = add_vpn (fixture, wired);
+  vpn = add_vpn (fixture, "Work", "vpn", wired);
   wait_until (fixture, shows, "Office\nVPN: Work|network-wired");
   /* A VPN that takes the default route is the primary connection: the icon is still the
      connection it goes over. */
@@ -407,6 +410,21 @@ test_vpn (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   properties = g_strdup_printf ("{'ActiveConnections': <[objectpath '%s']>}", wired);
   update (fixture, NM_PATH, NM_NAME, properties);
   wait_until (fixture, shows, "Office|network-wired");
+}
+
+static void
+test_wireguard (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *wired = NULL;
+  g_autofree char *wireguard = NULL;
+
+  start_mock (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wired = add_wired (fixture, "Office", ACTIVATED);
+  wireguard = add_vpn (fixture, "wg0", "wireguard", "/");
+  /* WireGuard taking the default route: the icon is the connection that's up under it. */
+  set_primary (fixture, wireguard);
+  wait_until (fixture, shows, "Office\nVPN: wg0|network-wired");
 }
 
 static void
@@ -465,6 +483,7 @@ main (int argc, char **argv)
   g_test_add ("/nm/wi-fi-follows-the-signal", Fixture, NULL, setup, test_wifi_steps, teardown);
   g_test_add ("/nm/a-connection-coming-up-then-up", Fixture, NULL, setup, test_connecting, teardown);
   g_test_add ("/nm/a-vpn-is-shown-over-its-connection", Fixture, NULL, setup, test_vpn, teardown);
+  g_test_add ("/nm/wireguard-is-a-vpn-over-the-connection-up", Fixture, NULL, setup, test_wireguard, teardown);
   g_test_add ("/nm/airplane-mode-is-every-radio-off", Fixture, NULL, setup, test_airplane_mode, teardown);
   g_test_add ("/nm/networkmanager-stopping-and-starting-again-is-followed", Fixture, NULL, setup, test_restart, teardown);
   g_test_add ("/nm/networkmanager-starting-after-the-applet-is-followed", Fixture, NULL, setup, test_late_start, teardown);

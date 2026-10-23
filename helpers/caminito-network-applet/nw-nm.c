@@ -65,22 +65,44 @@ find_active (NMClient *client, NMActiveConnectionState state,
   return NULL;
 }
 
+static gboolean
+is_loopback (NMActiveConnection *active)
+{
+  return g_strcmp0 (nm_active_connection_get_connection_type (active),
+                    NM_SETTING_LOOPBACK_SETTING_NAME) == 0;
+}
+
+/* What a VPN can go over: anything up but another VPN or the loopback. */
+static gboolean
+is_carrier (NMActiveConnection *active)
+{
+  return !is_vpn (active) && !is_loopback (active);
+}
+
 /* The connection the icon shows: the primary one, or, where a VPN is primary, the one it
    goes over. NULL with none up. */
 static NMActiveConnection *
 base_connection (NMClient *client)
 {
   NMActiveConnection *primary = nm_client_get_primary_connection (client);
-  NMObject *over;
+  const char *over_path;
+  NMObject *over = NULL;
+  NMActiveConnection *carrier;
 
   if (primary == NULL || !is_vpn (primary))
     return primary;
-  /* A VPN's specific object is the active connection it goes over. */
-  over = nm_client_get_object_by_path (client,
-                                       nm_active_connection_get_specific_object_path (primary));
+  /* A VPN's specific object is the active connection it goes over. WireGuard's is empty,
+     which libnm gives as NULL. */
+  over_path = nm_active_connection_get_specific_object_path (primary);
+  if (over_path != NULL)
+    over = nm_client_get_object_by_path (client, over_path);
   if (NM_IS_ACTIVE_CONNECTION (over))
     return NM_ACTIVE_CONNECTION (over);
-  return find_active (client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_physical);
+  /* Ethernet or Wi-Fi first, over a bridge or a tun that may be up beside them. */
+  carrier = find_active (client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_physical);
+  if (carrier == NULL)
+    carrier = find_active (client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_carrier);
+  return carrier;
 }
 
 /* The Wi-Fi device under active, NULL where it isn't Wi-Fi. */

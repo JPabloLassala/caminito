@@ -4,20 +4,24 @@
 
 #include "nw-popup.h"
 
+#include "nw-state.h"
+
 struct _NwPopup
 {
   GtkWidget *stack;
 };
 
-/* What the popup is with NetworkManager not running: its icon over the words. */
+/* What the popup is with NetworkManager not running: the panel's icon over its tooltip. */
 static GtkWidget *
 not_running_page (void)
 {
-  static const char *const names[] = { "network-offline", "network-offline-symbolic", NULL };
-  g_autoptr (GIcon) gicon = g_themed_icon_new_from_names ((char **) names, -1);
+  const NwStatus not_running = { .running = FALSE };
+  g_autoptr (GIcon) gicon = g_themed_icon_new_from_names (
+    (char **) nw_state_icon_names (&not_running), -1);
+  g_autofree char *text = nw_state_tooltip (&not_running);
   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 12);
   GtkWidget *icon = gtk_image_new_from_gicon (gicon, GTK_ICON_SIZE_DIALOG);
-  GtkWidget *label = gtk_label_new ("NetworkManager isn't running");
+  GtkWidget *label = gtk_label_new (text);
 
   gtk_image_set_pixel_size (GTK_IMAGE (icon), 64);
   gtk_container_set_border_width (GTK_CONTAINER (box), 24);

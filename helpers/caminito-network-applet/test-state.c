@@ -158,19 +158,18 @@ test_vpn (void)
 }
 
 static void
-test_equal_and_copy (void)
+test_equal (void)
 {
   NwStatus status = connected (NW_KIND_WIFI, "Home", 72);
-  NwStatus copy = { 0 };
+  NwStatus other = connected (NW_KIND_WIFI, g_strdup ("Home"), 72);
 
   status.vpn = "Work";
-  nw_status_copy (&copy, &status);
-  g_assert_true (nw_status_equal (&copy, &status));
-  g_assert_true (copy.name != status.name);
+  other.vpn = g_strdup ("Work");
+  g_assert_true (nw_status_equal (&other, &status));
   status.strength = 73;
-  g_assert_false (nw_status_equal (&copy, &status));
-  nw_status_clear (&copy);
-  g_assert_null (copy.name);
+  g_assert_false (nw_status_equal (&other, &status));
+  nw_status_clear (&other);
+  g_assert_null (other.name);
 }
 
 int
@@ -186,6 +185,6 @@ main (int argc, char **argv)
   g_test_add_func ("/state/limited-connectivity-is-no-route-and-no-internet", test_limited);
   g_test_add_func ("/state/a-connection-coming-up-is-acquiring", test_connecting);
   g_test_add_func ("/state/a-vpn-is-on-the-second-line", test_vpn);
-  g_test_add_func ("/state/statuses-compare-and-copy", test_equal_and_copy);
+  g_test_add_func ("/state/statuses-compare", test_equal);
   return g_test_run ();
 }

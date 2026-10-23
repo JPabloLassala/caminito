@@ -27,7 +27,7 @@ test('state', executable('test-state', 'test-state.c', link_with: state, depende
 # NetworkManager through libnm (ADR 0041).
 nm = static_library('nw-nm', 'nw-nm.c', link_with: state, dependencies: [gio, libnm])
 # The popup's content, in the shared popup window.
-popup = static_library('nw-popup', 'nw-popup.c', dependencies: common, pic: true)
+popup = static_library('nw-popup', 'nw-popup.c', link_with: state, dependencies: common, pic: true)
 
 applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
@@ -55,7 +55,7 @@ configure_file(
 # The popup's content, which needs a display and is skipped without one.
 test(
   'popup',
-  executable('test-popup', 'test-popup.c', link_with: popup, dependencies: common),
+  executable('test-popup', 'test-popup.c', link_with: [popup, state], dependencies: common),
   env: {'NO_AT_BRIDGE': '1'},
 )
 

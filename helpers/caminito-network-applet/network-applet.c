@@ -129,7 +129,7 @@ fill (MatePanelApplet *panel_applet)
   G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   /* mate-panel's applet menu still takes GtkActions. */
   actions = gtk_action_group_new ("Network Applet Actions");
-  action = gtk_action_new ("Configure", "_Configure Network Connections…", NULL, NULL);
+  action = gtk_action_new ("Configure", "_Configure network connections…", NULL, NULL);
   g_signal_connect (action, "activate", G_CALLBACK (on_configure), NULL);
   gtk_action_group_add_action (actions, action);
   g_object_unref (action);

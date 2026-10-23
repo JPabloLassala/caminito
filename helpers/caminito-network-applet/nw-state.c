@@ -19,14 +19,6 @@ nw_status_equal (const NwStatus *a, const NwStatus *b)
          && g_strcmp0 (a->name, b->name) == 0 && g_strcmp0 (a->vpn, b->vpn) == 0;
 }
 
-void
-nw_status_copy (NwStatus *dest, const NwStatus *src)
-{
-  *dest = *src;
-  dest->name = g_strdup (src->name);
-  dest->vpn = g_strdup (src->vpn);
-}
-
 /* The signal in GNOME Shell's four steps: weak, ok, good and excellent. */
 static int
 step_of (int strength)

@@ -44,8 +44,6 @@ typedef struct
 
 void     nw_status_clear (NwStatus *status);
 gboolean nw_status_equal (const NwStatus *a, const NwStatus *b);
-/* Copies src into dest, which holds nothing to free. */
-void     nw_status_copy  (NwStatus *dest, const NwStatus *src);
 
 /* The themed names for the icon, MATE's first, then Adwaita's symbolic ones, then Breeze's
    where it has neither. NULL-terminated, in static storage. */
