@@ -14,6 +14,24 @@ network_clear (NwNetwork *network)
   g_clear_pointer (&network->name, g_free);
 }
 
+NwNetwork *
+nw_network_copy (const NwNetwork *network)
+{
+  NwNetwork *copy = g_new (NwNetwork, 1);
+
+  *copy = *network;
+  copy->key = g_strdup (network->key);
+  copy->name = g_strdup (network->name);
+  return copy;
+}
+
+void
+nw_network_free (NwNetwork *network)
+{
+  network_clear (network);
+  g_free (network);
+}
+
 void
 nw_status_clear (NwStatus *status)
 {
@@ -50,7 +68,8 @@ networks_equal (const NwStatus *a, const NwStatus *b)
 gboolean
 nw_status_equal (const NwStatus *a, const NwStatus *b)
 {
-  return networks_equal (a, b) && a->running == b->running && a->airplane == b->airplane && a->phase == b->phase
+  return networks_equal (a, b)
+         && a->running == b->running && a->airplane == b->airplane && a->phase == b->phase
          && a->kind == b->kind && a->strength == b->strength && a->limited == b->limited
          && g_strcmp0 (a->name, b->name) == 0 && g_strcmp0 (a->vpn, b->vpn) == 0
          && g_strcmp0 (a->address, b->address) == 0 && a->speed == b->speed
@@ -302,23 +321,15 @@ nw_network_matches (const NwNetwork *network, const char *search)
 const char *const *
 nw_network_icon_names (const NwNetwork *network)
 {
-  static const char *const wired[] = { "network-wired", "network-wired-symbolic", NULL };
   static const char *const vpn[] = {
     "network-vpn", "network-vpn-symbolic", "changes-prevent-symbolic", NULL,
   };
-  NwStatus wifi = { .running = TRUE, .phase = NW_PHASE_CONNECTED, .kind = NW_KIND_WIFI,
-                    .strength = MAX (network->strength, 0) };
+  /* The icon's own, as if it were up. */
+  NwStatus up = { .running = TRUE, .phase = NW_PHASE_CONNECTED,
+                  .kind = network->kind == NW_NETWORK_WIFI ? NW_KIND_WIFI : NW_KIND_WIRED,
+                  .strength = MAX (network->strength, 0) };
 
-  switch (network->kind)
-    {
-    case NW_NETWORK_WIRED:
-      return wired;
-    case NW_NETWORK_VPN:
-      return vpn;
-    case NW_NETWORK_WIFI:
-      break;
-    }
-  return nw_state_icon_names (&wifi);
+  return network->kind == NW_NETWORK_VPN ? vpn : nw_state_icon_names (&up);
 }
 
 NwBar
@@ -350,4 +361,31 @@ nw_state_bar (const NwNetwork *network, char **text)
     }
   *text = g_strdup_printf ("Join %s", network->name);
   return NW_BAR_JOIN;
+}
+
+static gboolean
+is_hex (const char *text)
+{
+  for (; *text != '\0'; text++)
+    if (!g_ascii_isxdigit (*text))
+      return FALSE;
+  return TRUE;
+}
+
+gboolean
+nw_state_password_valid (const NwNetwork *network, const char *password)
+{
+  gsize length = strlen (password);
+
+  switch (network->security)
+    {
+    case NW_SECURITY_PSK:
+      return (length >= 8 && length <= 63) || (length == 64 && is_hex (password));
+    case NW_SECURITY_WEP:
+      return length > 0 && length <= 64;
+    case NW_SECURITY_NONE:
+    case NW_SECURITY_ENTERPRISE:
+      break;
+    }
+  return TRUE;
 }

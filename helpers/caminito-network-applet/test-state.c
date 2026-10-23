@@ -437,6 +437,26 @@ test_network_icons (void)
   g_assert_cmpstr (nw_network_icon_names (&wired)[0], ==, "network-wired");
 }
 
+static void
+test_password_valid (void)
+{
+  NwNetwork wifi = network (NW_NETWORK_WIFI, "Cafe", 40);
+  g_autofree char *hex = g_strnfill (64, 'a');
+  g_autofree char *long_text = g_strnfill (64, 'z');
+
+  wifi.security = NW_SECURITY_PSK;
+  g_assert_false (nw_state_password_valid (&wifi, ""));
+  /* WPA's: 8 to 63 characters, or 64 hex digits. */
+  g_assert_false (nw_state_password_valid (&wifi, "1234567"));
+  g_assert_true (nw_state_password_valid (&wifi, "12345678"));
+  g_assert_true (nw_state_password_valid (&wifi, hex));
+  g_assert_false (nw_state_password_valid (&wifi, long_text));
+  /* WEP's key or passphrase. */
+  wifi.security = NW_SECURITY_WEP;
+  g_assert_false (nw_state_password_valid (&wifi, ""));
+  g_assert_true (nw_state_password_valid (&wifi, "abcde"));
+}
+
 int
 main (int argc, char **argv)
 {
@@ -461,5 +481,6 @@ main (int argc, char **argv)
   g_test_add_func ("/state/the-search-finds-part-of-a-name-in-any-case", test_search);
   g_test_add_func ("/state/the-bar-joins-the-network-selected", test_bar);
   g_test_add_func ("/state/a-network-has-its-kind-s-icon", test_network_icons);
+  g_test_add_func ("/state/a-password-is-one-networkmanager-takes", test_password_valid);
   return g_test_run ();
 }

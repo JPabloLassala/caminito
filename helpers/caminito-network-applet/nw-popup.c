@@ -58,6 +58,8 @@ struct _NwPopup
   /* The Networks tab. */
   GtkWidget           *search;
   GtkWidget           *list;
+  /* Its scroll bar's, kept while the rows are built again. */
+  GtkAdjustment       *scroll;
   /* Under the list: a stack of a page for each NwBar but NW_BAR_NONE. */
   GtkWidget           *bar;
   NwBar                bar_kind;
@@ -259,16 +261,6 @@ selected_row (NwPopup *popup)
   return gtk_list_box_get_selected_row (GTK_LIST_BOX (popup->list));
 }
 
-static void
-network_free (gpointer data)
-{
-  NwNetwork *network = data;
-
-  g_free (network->key);
-  g_free (network->name);
-  g_free (network);
-}
-
 /* A row: the network's icon, its name, a lock if it's secured, and its signal. */
 static GtkWidget *
 row_new (const NwNetwork *network)
@@ -276,12 +268,9 @@ row_new (const NwNetwork *network)
   GtkWidget *row = gtk_list_box_row_new ();
   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
   GtkWidget *icon = gtk_image_new ();
-  NwNetwork *copy = g_new (NwNetwork, 1);
 
-  *copy = *network;
-  copy->key = g_strdup (network->key);
-  copy->name = g_strdup (network->name);
-  g_object_set_data_full (G_OBJECT (row), "caminito-network", copy, network_free);
+  g_object_set_data_full (G_OBJECT (row), "caminito-network", nw_network_copy (network),
+                          (GDestroyNotify) nw_network_free);
   gtk_container_set_border_width (GTK_CONTAINER (box), 4);
   set_icon (icon, nw_network_icon_names (network), GTK_ICON_SIZE_LARGE_TOOLBAR);
   gtk_box_pack_start (GTK_BOX (box), icon, FALSE, FALSE, 0);
@@ -388,6 +377,24 @@ on_row_activated (GtkListBox *list G_GNUC_UNUSED, GtkListBoxRow *row G_GNUC_UNUS
   focus_password (data);
 }
 
+/* A Wi-Fi network for nm-connection-editor to set up, in a window of its own. */
+static void
+create_wifi (NwPopup *popup)
+{
+  caminito_applet_popup_hide (popup->applet_popup);
+  popup->actions.create_wifi (popup->data);
+}
+
+/* Whether the password typed is one NetworkManager takes for the network selected. */
+static gboolean
+password_valid (NwPopup *popup)
+{
+  const NwNetwork *network = network_of (selected_row (popup));
+
+  return network != NULL
+         && nw_state_password_valid (network, gtk_entry_get_text (GTK_ENTRY (popup->password)));
+}
+
 static void
 join_selected (NwPopup *popup)
 {
@@ -405,8 +412,7 @@ join_selected (NwPopup *popup)
       popup->actions.join (network->key, NULL, popup->data);
       break;
     case NW_BAR_EDITOR:
-      caminito_applet_popup_hide (popup->applet_popup);
-      popup->actions.create_wifi (popup->data);
+      create_wifi (popup);
       break;
     case NW_BAR_CONNECTING:
     case NW_BAR_NONE:
@@ -420,29 +426,26 @@ on_join (GtkWidget *widget G_GNUC_UNUSED, gpointer data)
   join_selected (data);
 }
 
+/* NetworkManager would refuse a WPA password too short, and say so only in its log. */
 static void
-on_password_changed (GtkEditable *password, gpointer data)
+on_password_changed (GtkEditable *password G_GNUC_UNUSED, gpointer data)
 {
   NwPopup *popup = data;
 
-  gtk_widget_set_sensitive (popup->password_join,
-                            *gtk_entry_get_text (GTK_ENTRY (password)) != '\0');
+  gtk_widget_set_sensitive (popup->password_join, password_valid (popup));
 }
 
 static void
-on_password_activate (GtkEntry *password, gpointer data)
+on_password_activate (GtkEntry *password G_GNUC_UNUSED, gpointer data)
 {
-  if (*gtk_entry_get_text (password) != '\0')
+  if (password_valid (data))
     join_selected (data);
 }
 
 static void
 on_hidden (GtkButton *button G_GNUC_UNUSED, gpointer data)
 {
-  NwPopup *popup = data;
-
-  caminito_applet_popup_hide (popup->applet_popup);
-  popup->actions.create_wifi (popup->data);
+  create_wifi (data);
 }
 
 /* The bar under the list: a password and "Join", a button, or a spinner and its line. */
@@ -502,6 +505,7 @@ networks_page_new (NwPopup *popup)
   gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (scrolled), LIST_HEIGHT);
   gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (scrolled), GTK_SHADOW_IN);
   gtk_container_add (GTK_CONTAINER (scrolled), popup->list);
+  popup->scroll = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (scrolled));
   popup->hidden = gtk_button_new_with_label ("Connect to hidden network…");
   gtk_button_set_relief (GTK_BUTTON (popup->hidden), GTK_RELIEF_NONE);
   gtk_widget_set_halign (popup->hidden, GTK_ALIGN_START);
@@ -606,6 +610,8 @@ update_networks (NwPopup *popup, const NwStatus *status)
 {
   g_autoptr (GList) rows = gtk_container_get_children (GTK_CONTAINER (popup->list));
   GtkWidget *selected = NULL;
+  /* The signal changes all the time: the list stays where the user scrolled it. */
+  double scrolled = gtk_adjustment_get_value (popup->scroll);
 
   popup->rebuilding = TRUE;
   for (GList *row = rows; row != NULL; row = row->next)
@@ -623,6 +629,7 @@ update_networks (NwPopup *popup, const NwStatus *status)
   else
     g_clear_pointer (&popup->selected, g_free);
   popup->rebuilding = FALSE;
+  gtk_adjustment_set_value (popup->scroll, scrolled);
   update_bar (popup, network_of (GTK_LIST_BOX_ROW (selected)));
   gtk_widget_set_visible (popup->hidden, nw_state_tile (status, NW_TILE_WIFI).on);
 }

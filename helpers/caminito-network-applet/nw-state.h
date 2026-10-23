@@ -61,8 +61,8 @@ typedef enum
 
 typedef struct
 {
-  /* What nw_nm_join() takes: "ssid:<SSID>" for a Wi-Fi network, saved or not, so that it
-     stays the same while a new one is saved and comes up; "uuid:<UUID>" for the rest. */
+  /* What a join is asked for by: "ssid:<SSID>" for a Wi-Fi network, saved or not, so that
+     it stays the same while a new one is saved and comes up; "uuid:<UUID>" for the rest. */
   char         *key;
   char         *name;
   NwNetworkKind kind;
@@ -147,6 +147,9 @@ char              *nw_state_card_title  (const NwStatus *status);
 /* Its second, with a connection up: "Connected · No internet · 1 Gb/s"; NULL without. */
 char              *nw_state_card_detail (const NwStatus *status);
 
+/* A copy of network, for nw_network_free(). */
+NwNetwork         *nw_network_copy        (const NwNetwork *network);
+void               nw_network_free        (NwNetwork *network);
 /* Active or coming up first, then VPNs, then saved, then available, each by signal then
    name. */
 void               nw_networks_sort       (NwNetwork *networks, guint n_networks);
@@ -173,3 +176,6 @@ typedef enum
 
 /* The bar for network, and in text its button's label or its line, NULL for NW_BAR_NONE. */
 NwBar              nw_state_bar           (const NwNetwork *network, char **text);
+/* Whether NetworkManager takes password for the new network: WPA's 8 to 63 characters or
+   64 hex digits, WEP's key or passphrase. */
+gboolean           nw_state_password_valid (const NwNetwork *network, const char *password);

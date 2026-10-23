@@ -301,12 +301,12 @@ saved_wifi (NMClient *client, const char *ssid)
   for (guint i = 0; i < connections->len; i++)
     {
       NMConnection *connection = g_ptr_array_index (connections, i);
-      g_autofree char *its = NULL;
+      g_autofree char *connection_ssid = NULL;
 
       if (!is_wifi_connection (connection))
         continue;
-      its = ssid_of_connection (connection);
-      if (g_strcmp0 (its, ssid) == 0
+      connection_ssid = ssid_of_connection (connection);
+      if (g_strcmp0 (connection_ssid, ssid) == 0
           && (found == NULL || timestamp_of (connection) > timestamp_of (NM_CONNECTION (found))))
         found = NM_REMOTE_CONNECTION (connection);
     }
@@ -348,9 +348,9 @@ strongest_ap (NMClient *client, const char *ssid, NMDevice **device)
       for (guint j = 0; j < aps->len; j++)
         {
           NMAccessPoint *ap = g_ptr_array_index (aps, j);
-          g_autofree char *its = ssid_text (nm_access_point_get_ssid (ap));
+          g_autofree char *ap_ssid = ssid_text (nm_access_point_get_ssid (ap));
 
-          if (g_strcmp0 (its, ssid) == 0
+          if (g_strcmp0 (ap_ssid, ssid) == 0
               && (found == NULL
                   || nm_access_point_get_strength (ap) > nm_access_point_get_strength (found)))
             {
@@ -379,29 +379,27 @@ device_for (NMClient *client, NMRemoteConnection *connection)
   return NULL;
 }
 
-/* The Networks tab's rows as they're gathered: an index into the array, plus one, by key. */
+/* In read_networks()'s index, the key the list leaves out: the card's connection's. */
 #define EXCLUDED GUINT_TO_POINTER (G_MAXUINT)
 
-/* The row with key, added with name if there's none yet; NULL where the key is the card's,
-   which the list leaves out. The row is valid until the next one is added. */
+/* The row with key, added with name if there's none yet; NULL where the key is the card's.
+   index_of has each row's index in networks, plus one, by its key. The row is valid until
+   the next one is added. */
 static NwNetwork *
-row_for (GArray *networks, GHashTable *rows, const char *key, const char *name,
+row_for (GArray *networks, GHashTable *index_of, const char *key, const char *name,
          NwNetworkKind kind)
 {
-  gpointer found = g_hash_table_lookup (rows, key);
-  NwNetwork network = { .key = g_strdup (key), .name = g_strdup (name), .kind = kind,
-                        .strength = -1 };
+  gpointer found = g_hash_table_lookup (index_of, key);
+  NwNetwork network = { .kind = kind, .strength = -1 };
 
   if (found == EXCLUDED)
     return NULL;
   if (found != NULL)
-    {
-      g_free (network.key);
-      g_free (network.name);
-      return &g_array_index (networks, NwNetwork, GPOINTER_TO_UINT (found) - 1);
-    }
+    return &g_array_index (networks, NwNetwork, GPOINTER_TO_UINT (found) - 1);
+  network.key = g_strdup (key);
+  network.name = g_strdup (name);
   g_array_append_val (networks, network);
-  g_hash_table_insert (rows, g_strdup (key), GUINT_TO_POINTER (networks->len));
+  g_hash_table_insert (index_of, g_strdup (key), GUINT_TO_POINTER (networks->len));
   return &g_array_index (networks, NwNetwork, networks->len - 1);
 }
 
@@ -413,7 +411,8 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
 {
   NMClient *client = nm->client;
   g_autoptr (GArray) networks = g_array_new (FALSE, FALSE, sizeof (NwNetwork));
-  g_autoptr (GHashTable) rows = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  g_autoptr (GHashTable) index_of = g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
+                                                           NULL);
   const GPtrArray *actives = nm_client_get_active_connections (client);
   const GPtrArray *connections = nm_client_get_connections (client);
   const GPtrArray *devices = nm_client_get_devices (client);
@@ -421,7 +420,8 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
   gpointer joining;
 
   if (card != NULL && nm_active_connection_get_connection (card) != NULL)
-    g_hash_table_insert (rows, key_of (NM_CONNECTION (nm_active_connection_get_connection (card))),
+    g_hash_table_insert (index_of,
+                         key_of (NM_CONNECTION (nm_active_connection_get_connection (card))),
                          EXCLUDED);
   for (guint i = 0; i < actives->len; i++)
     {
@@ -436,7 +436,7 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
               && state != NM_ACTIVE_CONNECTION_STATE_ACTIVATED))
         continue;
       key = key_of (connection);
-      row = row_for (networks, rows, key, nm_connection_get_id (connection),
+      row = row_for (networks, index_of, key, nm_connection_get_id (connection),
                      kind_of (connection));
       if (row == NULL)
         continue;
@@ -454,7 +454,7 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
       if (!is_vpn_connection (connection))
         continue;
       key = key_of (connection);
-      row = row_for (networks, rows, key, nm_connection_get_id (connection), NW_NETWORK_VPN);
+      row = row_for (networks, index_of, key, nm_connection_get_id (connection), NW_NETWORK_VPN);
       if (row != NULL)
         row->saved = TRUE;
     }
@@ -475,7 +475,7 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
         {
           NMConnection *connection = g_ptr_array_index (available, j);
           g_autofree char *key = key_of (connection);
-          NwNetwork *row = row_for (networks, rows, key, nm_connection_get_id (connection),
+          NwNetwork *row = row_for (networks, index_of, key, nm_connection_get_id (connection),
                                     NW_NETWORK_WIRED);
 
           if (row != NULL)
@@ -504,16 +504,17 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
             continue;
           watch (nm, ap);
           key = g_strconcat (SSID_KEY, ssid, NULL);
-          if (!g_hash_table_contains (rows, key))
+          if (g_hash_table_contains (index_of, key))
+            row = row_for (networks, index_of, key, ssid, NW_NETWORK_WIFI);
+          else
             {
               NMRemoteConnection *saved = saved_wifi (client, ssid);
 
-              row = row_for (networks, rows, key,
+              row = row_for (networks, index_of, key,
                              saved != NULL ? nm_connection_get_id (NM_CONNECTION (saved)) : ssid,
                              NW_NETWORK_WIFI);
               row->saved = saved != NULL;
             }
-          row = row_for (networks, rows, key, ssid, NW_NETWORK_WIFI);
           if (row == NULL || nm_access_point_get_strength (ap) <= row->strength)
             continue;
           row->strength = nm_access_point_get_strength (ap);
@@ -521,7 +522,7 @@ read_networks (NwNm *nm, NwStatus *status, NMActiveConnection *card)
         }
     }
 
-  joining = nm->joining != NULL ? g_hash_table_lookup (rows, nm->joining) : NULL;
+  joining = nm->joining != NULL ? g_hash_table_lookup (index_of, nm->joining) : NULL;
   if (joining != NULL && joining != EXCLUDED)
     g_array_index (networks, NwNetwork, GPOINTER_TO_UINT (joining) - 1).connecting = TRUE;
   nw_networks_sort ((NwNetwork *) (gpointer) networks->data, networks->len);
@@ -650,8 +651,8 @@ on_notify (GObject *object G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpoin
 }
 
 static void
-on_connections_changed (NMClient *client G_GNUC_UNUSED, NMRemoteConnection *connection G_GNUC_UNUSED,
-                        gpointer data)
+on_connections_changed (NMClient *client G_GNUC_UNUSED,
+                        NMRemoteConnection *connection G_GNUC_UNUSED, gpointer data)
 {
   refresh (data);
 }
@@ -910,19 +911,22 @@ typedef struct
 {
   NwNm *nm;
   char *key;
+  /* The network's, for a warning. */
+  char *name;
 } Join;
 
 static void
 join_free (Join *join)
 {
   g_free (join->key);
+  g_free (join->name);
   g_free (join);
 }
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (Join, join_free)
 
 static void
-joined (Join *join, const GError *error)
+on_join_answered (Join *join, const GError *error)
 {
   NwNm *nm = join->nm;
 
@@ -930,7 +934,7 @@ joined (Join *join, const GError *error)
   if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
     return;
   if (error != NULL)
-    g_warning ("can't join %s: %s", join->key, error->message);
+    g_warning ("can't join %s: %s", join->name, error->message);
   /* From now on the active connection says whether it's coming up. */
   if (g_strcmp0 (nm->joining, join->key) == 0)
     {
@@ -947,7 +951,7 @@ on_join_activated (GObject *source, GAsyncResult *result, gpointer data)
   g_autoptr (NMActiveConnection) active = nm_client_activate_connection_finish (
     NM_CLIENT (source), result, &error);
 
-  joined (join, error);
+  on_join_answered (join, error);
 }
 
 static void
@@ -958,7 +962,7 @@ on_join_added (GObject *source, GAsyncResult *result, gpointer data)
   g_autoptr (NMActiveConnection) active = nm_client_add_and_activate_connection_finish (
     NM_CLIENT (source), result, &error);
 
-  joined (join, error);
+  on_join_answered (join, error);
 }
 
 /* A new Wi-Fi network's connection, for every user, as nmcli device wifi connect makes it:
@@ -987,7 +991,9 @@ new_wifi (NMAccessPoint *ap, const char *ssid, const char *password)
       security = NM_SETTING_WIRELESS_SECURITY (nm_setting_wireless_security_new ());
       /* WPA3 alone is SAE; an access point with both takes either. */
       g_object_set (security, NM_SETTING_WIRELESS_SECURITY_KEY_MGMT,
-                    wpa & NM_802_11_AP_SEC_KEY_MGMT_PSK ? "wpa-psk" : "sae",
+                    (wpa & NM_802_11_AP_SEC_KEY_MGMT_SAE)
+                        && !(wpa & NM_802_11_AP_SEC_KEY_MGMT_PSK)
+                      ? "sae" : "wpa-psk",
                     NM_SETTING_WIRELESS_SECURITY_PSK, password,
                     NM_SETTING_WIRELESS_SECURITY_PSK_FLAGS, NM_SETTING_SECRET_FLAG_NONE, NULL);
       nm_connection_add_setting (connection, NM_SETTING (security));
@@ -1024,6 +1030,7 @@ join_wifi (NwNm *nm, const char *ssid, const char *password, Join *join)
 
   if (ap == NULL)
     return FALSE;
+  join->name = g_strdup (ssid);
   saved = saved_wifi (nm->client, ssid);
   if (saved != NULL)
     {
@@ -1050,6 +1057,7 @@ join_saved (NwNm *nm, const char *uuid, Join *join)
 
   if (connection == NULL)
     return FALSE;
+  join->name = g_strdup (nm_connection_get_id (NM_CONNECTION (connection)));
   device = is_vpn_connection (NM_CONNECTION (connection)) ? NULL
                                                           : device_for (nm->client, connection);
   user_activating (NM_CONNECTION (connection));
@@ -1062,7 +1070,7 @@ void
 nw_nm_join (NwNm *nm, const char *key, const char *password)
 {
   Join *join;
-  gboolean asked;
+  gboolean sent;
 
   if (!nm->status.running)
     return;
@@ -1070,12 +1078,12 @@ nw_nm_join (NwNm *nm, const char *key, const char *password)
   join->nm = nm;
   join->key = g_strdup (key);
   if (g_str_has_prefix (key, SSID_KEY))
-    asked = join_wifi (nm, key + strlen (SSID_KEY), password, join);
+    sent = join_wifi (nm, key + strlen (SSID_KEY), password, join);
   else if (g_str_has_prefix (key, UUID_KEY))
-    asked = join_saved (nm, key + strlen (UUID_KEY), join);
+    sent = join_saved (nm, key + strlen (UUID_KEY), join);
   else
-    asked = FALSE;
-  if (!asked)
+    sent = FALSE;
+  if (!sent)
     {
       join_free (join);
       return;

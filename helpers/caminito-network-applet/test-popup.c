@@ -483,7 +483,12 @@ test_the_bar (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   /* Ready to type in. */
   g_assert_true (gtk_widget_is_focus (password));
   g_assert_true (shows (fixture, "Join"));
+  /* Not until there's a password NetworkManager takes. */
+  g_assert_false (gtk_widget_get_sensitive (button_of (fixture, "Join")));
+  g_signal_emit_by_name (password, "activate");
+  g_assert_cmpstr (fixture->calls->str, ==, "");
   gtk_entry_set_text (GTK_ENTRY (password), "s3cret");
+  g_assert_true (gtk_widget_get_sensitive (button_of (fixture, "Join")));
   /* Enter joins. */
   g_signal_emit_by_name (password, "activate");
   g_assert_cmpstr (fixture->calls->str, ==, "join ssid:Old s3cret;");
