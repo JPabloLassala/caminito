@@ -14,5 +14,8 @@ gio = "0.22.10"
 # The application and its dialogs, without libadwaita (ADR 0014).
 gtk = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.27.0"
+
 [lints]
 workspace = true

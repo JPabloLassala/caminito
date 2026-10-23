@@ -2998,6 +2998,32 @@ in for. They are the developer's to run.
   and the row under the pointer and *Show all sensors* stay as they are.
 - **Debug tool:** `sensors -u`, and CMN-97's check script for the same popup on fake trees.
 
+## Network
+
+These need a real NetworkManager and a real VPN server, which caminito-network's tests only fake.
+They are the developer's to run.
+
+### A VPN with a one-time code connects
+
+- **Milestone:** M9
+- **Steps:**
+  1. With `caminito-git` installed and `networkmanager-openconnect` or `networkmanager-openvpn`,
+     set up in nm-connection-editor a VPN whose server asks for a one-time code: OpenConnect
+     with a token, or OpenVPN with a static or dynamic challenge. For OpenVPN, leave the
+     password *Stored for all users* or *Ask every time*.
+  2. Log into *MATE on Caminito*. Run `nmcli connection up <the VPN> --ask` in a terminal and
+     wait, without typing in the terminal.
+  3. Type the code, and the password where it's asked, and press *Connect*.
+  4. Bring the VPN down and up again, and press *Cancel* this time.
+- **Expected:** in step 2 a window asks for the VPN's secrets: for OpenVPN caminito-network's
+  own, titled *Authentication required*, with the plugin's line naming the VPN and a field for
+  each secret it asks, the code among them; for OpenConnect, the plugin's own login window. In
+  step 3 the VPN connects, `nmcli connection show --active` lists it, and the Network applet's
+  icon has its lock. In step 4 the window closes and the VPN doesn't come up, `nmcli` saying
+  the secrets weren't given.
+- **Debug tool:** `journalctl -b -u NetworkManager` for the agent's answer, and `journalctl
+  --user -b -t caminito-network`.
+
 ## Marco parity
 
 ### Each placement mode places a native and an X11 window on two outputs

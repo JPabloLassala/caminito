@@ -1,0 +1,66 @@
+#!/bin/sh
+# A VPN plugin's auth-dialog for caminito-network's tests (agent.rs). The connection's VPN data
+# says what it does: `dir` is where it writes its arguments, its input and its pid, and `mode`
+# is one of
+#   external  print an external UI's key file, as `--external-ui-mode` asks
+#   window    print the secrets as its own window would, then wait for QUIT
+#   cancel    exit with a failure, as when the user cancels its window
+#   crash     die of a signal
+#   hang      wait until it's killed
+# The file is executable in git: writing one in a test could fail to run with ETXTBSY.
+
+mode=
+dir=
+input=
+while IFS= read -r line; do
+    input="$input$line
+"
+    case $line in
+    DATA_KEY=*) key=${line#DATA_KEY=} ;;
+    DATA_VAL=*)
+        case $key in
+        mode) mode=${line#DATA_VAL=} ;;
+        dir) dir=${line#DATA_VAL=} ;;
+        esac
+        ;;
+    DONE) break ;;
+    esac
+done
+
+printf '%s\n' "$@" >"$dir/args"
+printf '%s' "$input" >"$dir/input"
+echo $$ >"$dir/pid"
+
+case $mode in
+external)
+    cat <<'EOF'
+[VPN Plugin UI]
+Version=2
+Description=You need to authenticate to access the Virtual Private Network 'Work'.
+Title=Authenticate VPN
+
+[password]
+Value=saved
+Label=Password:
+IsSecret=true
+ShouldAsk=false
+
+[otp]
+Value=
+Label=Code:
+IsSecret=false
+ShouldAsk=true
+EOF
+    ;;
+window)
+    printf 'password\nhunter2\notp\n123456\n\n\n'
+    # The empty line after DONE comes first.
+    while IFS= read -r line; do
+        [ -n "$line" ] && break
+    done
+    printf '%s\n' "$line" >"$dir/quit"
+    ;;
+cancel) exit 1 ;;
+crash) kill -SEGV $$ ;;
+hang) exec sleep 600 ;;
+esac

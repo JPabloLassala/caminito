@@ -4,7 +4,8 @@
 //! NetworkManager comes on the bus, since NetworkManager forgets its agents when it stops.
 //!
 //! It asks for a Wi-Fi network's password or WEP key, and for an 802.1X password or private
-//! key's passphrase, Wi-Fi or wired. It keeps no secrets of its own yet (CMN-197), so a
+//! key's passphrase, Wi-Fi or wired. A VPN's secrets are its plugin's auth-dialog's to find
+//! or ask (the `vpn` module, CMN-198). It keeps no secrets of its own yet (CMN-197), so a
 //! request that may not ask the user has none to give, and saving or deleting secrets is
 //! answered with nothing done.
 //!
@@ -15,12 +16,14 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 use gio::glib::variant::ToVariant;
 use gio::glib::{self, Variant};
 
 use crate::DOMAIN;
+use crate::vpn;
 
 /// Where NetworkManager calls every secret agent.
 pub const PATH: &str = "/org/freedesktop/NetworkManager/SecretAgent";
@@ -31,8 +34,9 @@ const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
 const AGENT: &str = "org.freedesktop.NetworkManager.SecretAgent";
 const AGENT_MANAGER_PATH: &str = "/org/freedesktop/NetworkManager/AgentManager";
 const AGENT_MANAGER: &str = "org.freedesktop.NetworkManager.AgentManager";
-/// No VPN hints: the agent asks for no VPN's secrets yet.
-const CAPABILITIES: u32 = 0;
+/// NetworkManager's `NM_SECRET_AGENT_CAPABILITY_VPN_HINTS`: a VPN's hints, as the prompt of a
+/// one-time code, come to the agent, which passes them to the auth-dialog, as nm-applet does.
+const CAPABILITIES: u32 = 0x1;
 
 /// `GetSecrets`'s flags, NetworkManager's `NMSecretAgentGetSecretsFlags`. The agent may ask
 /// the user.
@@ -44,9 +48,11 @@ const REQUEST_NEW: u32 = 0x2;
 const USER_CANCELED: &str = "org.freedesktop.NetworkManager.SecretAgent.UserCanceled";
 const AGENT_CANCELED: &str = "org.freedesktop.NetworkManager.SecretAgent.AgentCanceled";
 const NO_SECRETS: &str = "org.freedesktop.NetworkManager.SecretAgent.NoSecrets";
+const FAILED: &str = "org.freedesktop.NetworkManager.SecretAgent.Failed";
 
 const WIFI_SECURITY: &str = "802-11-wireless-security";
 const IEEE_8021X: &str = "802-1x";
+const VPN: &str = "vpn";
 
 /// `org.freedesktop.NetworkManager.SecretAgent`, as NetworkManager's
 /// introspection/org.freedesktop.NetworkManager.SecretAgent.xml gives it.
@@ -80,6 +86,7 @@ const INTERFACE: &str = r#"<node>
 pub enum Medium {
     Wifi,
     Wired,
+    Vpn,
 }
 
 /// The secret NetworkManager asks for.
@@ -99,6 +106,27 @@ pub enum Question {
     },
     /// The passphrase of an 802.1X private key, for EAP-TLS or a phase 2 of TLS.
     PrivateKeyPassphrase,
+    /// The fields a VPN plugin's auth-dialog asks in the external UI mode, as a password or
+    /// a one-time code.
+    Vpn {
+        /// The dialog's title, empty when the plugin gives none.
+        title: String,
+        /// What the plugin says of the request, empty when it says nothing.
+        description: String,
+        fields: Vec<Field>,
+    },
+}
+
+/// One field a VPN's auth-dialog asks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Field {
+    /// The secret's key in the VPN setting.
+    pub key: String,
+    pub label: String,
+    /// What the field starts with, as a saved password.
+    pub value: String,
+    /// It's typed hidden, as a password.
+    pub secret: bool,
 }
 
 impl Question {
@@ -122,6 +150,8 @@ impl Question {
                 !identity.is_empty() && !password.is_empty()
             }
             (Question::PrivateKeyPassphrase, Answer::Secret(passphrase)) => !passphrase.is_empty(),
+            // The plugin knows what it takes, and tells NetworkManager.
+            (Question::Vpn { fields, .. }, Answer::Fields(values)) => values.len() == fields.len(),
             _ => false,
         }
     }
@@ -131,7 +161,7 @@ impl Question {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     /// The network's name: a Wi-Fi network's SSID, or the connection's name for a wired
-    /// one.
+    /// one or a VPN.
     pub network: String,
     pub medium: Medium,
     pub question: Question,
@@ -146,6 +176,8 @@ pub enum Answer {
     Secret(String),
     /// An 802.1X identity and its password, for [`Question::Password`].
     Login { identity: String, password: String },
+    /// The values of a [`Question::Vpn`]'s fields, in their order.
+    Fields(Vec<String>),
 }
 
 /// The agent's dialogs: GTK's in the binary, a fake in the tests.
@@ -176,19 +208,42 @@ impl Reply {
         let Some(pending) = self.take() else {
             return;
         };
-        if !pending.question.accepts(&answer) {
+        let (question, keys) = match pending.stage {
+            Stage::Dialog { question, key } => {
+                let keys = match answer.clone() {
+                    Answer::Secret(secret) => HashMap::from([(key, secret.to_variant())]),
+                    Answer::Login { identity, password } => HashMap::from([
+                        ("identity".to_owned(), identity.to_variant()),
+                        (key, password.to_variant()),
+                    ]),
+                    Answer::Fields(_) => HashMap::new(),
+                };
+                (question, keys)
+            }
+            Stage::VpnDialog {
+                question,
+                mut known,
+            } => {
+                if let (Question::Vpn { fields, .. }, Answer::Fields(values)) = (&question, &answer)
+                {
+                    known.extend(
+                        fields
+                            .iter()
+                            .map(|field| field.key.clone())
+                            .zip(values.iter().cloned()),
+                    );
+                }
+                (question, vpn_keys(known))
+            }
+            // The auth-dialog is still running: no dialog has a reply yet.
+            Stage::AuthDialog(_) => return,
+        };
+        if !question.accepts(&answer) {
             pending
                 .invocation
                 .return_dbus_error(USER_CANCELED, "the answer isn't a valid secret");
             return;
         }
-        let keys: HashMap<String, Variant> = match answer {
-            Answer::Secret(secret) => HashMap::from([(pending.key, secret.to_variant())]),
-            Answer::Login { identity, password } => HashMap::from([
-                ("identity".to_owned(), identity.to_variant()),
-                (pending.key, password.to_variant()),
-            ]),
-        };
         let secrets = HashMap::from([(pending.setting, keys)]);
         pending
             .invocation
@@ -233,18 +288,32 @@ impl std::error::Error for Error {
     }
 }
 
-/// A request waiting for its dialog's answer.
+/// A request waiting for its secrets.
 struct Pending {
     connection_path: String,
     setting: String,
-    question: Question,
-    /// The key of the secret in the setting.
-    key: String,
     invocation: gio::DBusMethodInvocation,
+    stage: Stage,
+}
+
+/// What a request waits for.
+enum Stage {
+    /// Its dialog's answer, which goes in the setting's `key`.
+    Dialog { question: Question, key: String },
+    /// Its VPN plugin's auth-dialog, still running.
+    AuthDialog(gio::Subprocess),
+    /// Its dialog's answer to the auth-dialog's fields, which go in the VPN's secrets with
+    /// those the auth-dialog gave without asking, `known`.
+    VpnDialog {
+        question: Question,
+        known: HashMap<String, String>,
+    },
 }
 
 struct State {
     dialogs: Rc<dyn Dialogs>,
+    /// Where the VPN plugins' `.name` files are.
+    vpn_plugins: PathBuf,
     /// The last request's number.
     last_request: u64,
     pending: HashMap<u64, Pending>,
@@ -275,8 +344,18 @@ impl Agent {
     /// Exports the agent on `connection`, the system bus, and registers it with
     /// NetworkManager now and whenever NetworkManager comes back on the bus.
     pub fn new(connection: &gio::DBusConnection, dialogs: Rc<dyn Dialogs>) -> Result<Agent, Error> {
+        Agent::with_vpn_plugins(connection, dialogs, vpn::PLUGINS)
+    }
+
+    /// [`Agent::new`], with the VPN plugins' `.name` files in `vpn_plugins`.
+    pub fn with_vpn_plugins(
+        connection: &gio::DBusConnection,
+        dialogs: Rc<dyn Dialogs>,
+        vpn_plugins: impl Into<PathBuf>,
+    ) -> Result<Agent, Error> {
         let state = Rc::new(RefCell::new(State {
             dialogs,
+            vpn_plugins: vpn_plugins.into(),
             last_request: 0,
             pending: HashMap::new(),
         }));
@@ -372,18 +451,20 @@ fn handle(
                 .child_value(0)
                 .get()
                 .expect("the connection is a{sa{sv}}");
+            let hints: Vec<String> = parameters
+                .child_value(3)
+                .get()
+                .expect("the hints are an as");
             let flags = parameters
                 .child_value(4)
                 .get::<u32>()
                 .expect("the flags are a u32");
-            get_secrets(
-                &state,
-                &connection,
-                string_at(1),
-                string_at(2),
-                flags,
-                invocation,
-            );
+            let (path, setting) = (string_at(1), string_at(2));
+            if setting == VPN {
+                vpn_secrets(&state, &connection, path, &hints, flags, invocation);
+            } else {
+                get_secrets(&state, &connection, path, setting, flags, invocation);
+            }
         }
         "CancelGetSecrets" => {
             let (connection, setting) = (string_at(0), string_at(1));
@@ -442,9 +523,11 @@ fn get_secrets(
             Pending {
                 connection_path: path,
                 setting,
-                question: request.question.clone(),
-                key,
                 invocation,
+                stage: Stage::Dialog {
+                    question: request.question.clone(),
+                    key,
+                },
             },
         );
         (id, state.dialogs.clone())
@@ -535,15 +618,199 @@ fn request_for(connection: &Settings, setting: &str, flags: u32) -> Option<(Requ
     Some((request, key))
 }
 
-/// Closes the dialog of the request `id`, if it's still open, and answers NetworkManager
-/// that the agent cancelled it.
+/// Closes the dialog of the request `id`, or kills its auth-dialog, if it's still open, and
+/// answers NetworkManager that the agent cancelled it.
 fn dismiss(state: &Rc<RefCell<State>>, id: u64) {
     let pending = state.borrow_mut().pending.remove(&id);
     if let Some(pending) = pending {
         pending
             .invocation
             .return_dbus_error(AGENT_CANCELED, "the request was cancelled");
-        let dialogs = state.borrow().dialogs.clone();
-        dialogs.close(id);
+        match pending.stage {
+            Stage::AuthDialog(process) => process.force_exit(),
+            Stage::Dialog { .. } | Stage::VpnDialog { .. } => {
+                let dialogs = state.borrow().dialogs.clone();
+                dialogs.close(id);
+            }
+        }
     }
+}
+
+/// The keys of a VPN setting's answer: its secrets, as a dictionary of strings.
+fn vpn_keys(secrets: HashMap<String, String>) -> HashMap<String, Variant> {
+    HashMap::from([("secrets".to_owned(), secrets.to_variant())])
+}
+
+/// Answers NetworkManager with a VPN's `secrets`, or that there are none when the request
+/// may not ask the user and the auth-dialog found none.
+fn return_vpn_secrets(
+    invocation: gio::DBusMethodInvocation,
+    secrets: HashMap<String, String>,
+    interactive: bool,
+) {
+    if secrets.is_empty() && !interactive {
+        invocation.return_dbus_error(NO_SECRETS, "the VPN's auth-dialog found no secrets");
+        return;
+    }
+    let secrets = HashMap::from([(VPN.to_owned(), vpn_keys(secrets))]);
+    invocation.return_value(Some(&(secrets,).to_variant()));
+}
+
+/// Runs the auth-dialog of the VPN plugin of `connection`, which finds the secrets or asks
+/// for them, as nm-applet does. It runs whether or not the request may ask the user: the
+/// plugin may have them saved.
+fn vpn_secrets(
+    state: &Rc<RefCell<State>>,
+    connection: &Settings,
+    path: String,
+    hints: &[String],
+    flags: u32,
+    invocation: gio::DBusMethodInvocation,
+) {
+    let string = |setting: &str, key: &str| {
+        connection
+            .get(setting)
+            .and_then(|keys| keys.get(key))
+            .and_then(|value| value.str().map(str::to_owned))
+            .unwrap_or_default()
+    };
+    let strings = |key: &str| {
+        connection
+            .get(VPN)
+            .and_then(|keys| keys.get(key))
+            .and_then(Variant::get::<HashMap<String, String>>)
+            .unwrap_or_default()
+    };
+    let service = string(VPN, "service-type");
+    let Some(plugin) = vpn::find(&state.borrow().vpn_plugins, &service) else {
+        invocation.return_dbus_error(
+            FAILED,
+            &format!("no VPN plugin has an auth-dialog for {service}"),
+        );
+        return;
+    };
+    let (uuid, network) = (string("connection", "uuid"), string("connection", "id"));
+    let interactive = flags & ALLOW_INTERACTION != 0;
+    let again = flags & REQUEST_NEW != 0;
+    let argv = vpn::command(
+        &plugin,
+        &vpn::Run {
+            uuid: &uuid,
+            id: &network,
+            service: &service,
+            hints,
+            interactive,
+            again,
+        },
+    );
+    let process = match vpn::spawn(&argv) {
+        Ok(process) => process,
+        Err(err) => {
+            invocation.return_dbus_error(FAILED, &format!("can't run the auth-dialog: {err}"));
+            return;
+        }
+    };
+    let id = {
+        let mut state = state.borrow_mut();
+        state.last_request += 1;
+        let id = state.last_request;
+        state.pending.insert(
+            id,
+            Pending {
+                connection_path: path,
+                setting: VPN.to_owned(),
+                invocation,
+                stage: Stage::AuthDialog(process.clone()),
+            },
+        );
+        id
+    };
+    let input = vpn::input(&strings("data"), &strings("secrets"));
+    let state = Rc::downgrade(state);
+    glib::spawn_future_local(async move {
+        let outcome = vpn::run(process, input, plugin.external_ui).await;
+        let Some(state) = state.upgrade() else {
+            return;
+        };
+        auth_dialog_ended(&state, id, outcome, network, again, interactive);
+    });
+}
+
+/// Answers the request `id` from how its auth-dialog ended, or asks the fields it printed in
+/// a dialog that names the VPN, `network`.
+fn auth_dialog_ended(
+    state: &Rc<RefCell<State>>,
+    id: u64,
+    outcome: vpn::Outcome,
+    network: String,
+    again: bool,
+    interactive: bool,
+) {
+    // A request that was cancelled while it ran has been answered.
+    let pending = {
+        let mut state = state.borrow_mut();
+        match state.pending.get(&id) {
+            Some(Pending {
+                stage: Stage::AuthDialog(_),
+                ..
+            }) => state.pending.remove(&id),
+            _ => None,
+        }
+    };
+    let Some(mut pending) = pending else {
+        return;
+    };
+    let prompt = match outcome {
+        vpn::Outcome::Secrets(secrets) => {
+            return_vpn_secrets(pending.invocation, secrets, interactive);
+            return;
+        }
+        vpn::Outcome::Canceled => {
+            pending
+                .invocation
+                .return_dbus_error(USER_CANCELED, "the auth-dialog was cancelled");
+            return;
+        }
+        vpn::Outcome::Crashed => {
+            pending
+                .invocation
+                .return_dbus_error(FAILED, "the auth-dialog crashed");
+            return;
+        }
+        vpn::Outcome::Unreadable => {
+            pending
+                .invocation
+                .return_dbus_error(FAILED, "the auth-dialog's external UI can't be read");
+            return;
+        }
+        vpn::Outcome::Prompt(prompt) => prompt,
+    };
+    if prompt.fields.is_empty() || !interactive {
+        return_vpn_secrets(pending.invocation, prompt.known, interactive);
+        return;
+    }
+    let request = Request {
+        network,
+        medium: Medium::Vpn,
+        question: Question::Vpn {
+            title: prompt.title,
+            description: prompt.description,
+            fields: prompt.fields,
+        },
+        again,
+    };
+    pending.stage = Stage::VpnDialog {
+        question: request.question.clone(),
+        known: prompt.known,
+    };
+    let dialogs = {
+        let mut state = state.borrow_mut();
+        state.pending.insert(id, pending);
+        state.dialogs.clone()
+    };
+    let reply = Reply {
+        state: Rc::downgrade(state),
+        id,
+    };
+    dialogs.ask(request, reply);
 }
