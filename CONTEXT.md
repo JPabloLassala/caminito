@@ -352,6 +352,38 @@ _Avoid_: sensors applet (MATE's own mate-sensors-applet), temperature applet, th
 One of the temperatures, two at most, that the Thermal applet shows in the panel, chosen by pinning it in the popup. By default they're the CPU's and, when there's a GPU, the GPU's.
 _Avoid_: main sensor, primary temperature, pinned sensor
 
+**Sound applet**:
+Caminito's mate-panel applet for sound: the volume icon in the panel and its popup of the sound devices and the applications playing or recording. In a Session it takes the place of mate-media's volume icon, and its settings window is mate-volume-control.
+_Avoid_: widget, plasmoid, tray icon, volume applet, GvcApplet (mate-media's own), mixer
+
+**Sound device**:
+An output or an input of the sound server, such as the speakers, an HDMI output, a headset or a microphone: the sound server's sink or source, not the card behind it.
+_Avoid_: sink, source (the sound server's names), card (it can have several), endpoint
+
+**Default output**, **Default input**:
+The sound device that new streams play to or record from unless they're moved, chosen by the user. The panel icon shows the default output's volume.
+_Avoid_: primary device, fallback device, preferred device
+
+**Sound application**:
+A program playing or recording sound, as the Sound applet shows it: all its streams under one row, whose volume sets them all.
+_Avoid_: client (the sound server's connection), sink input, source output, app stream
+
+**Stream**:
+One of a sound application's channels of playback or recording, such as one browser tab's video or one side of a call.
+_Avoid_: sink input, source output, channel (that's left and right)
+
+**Follow the default**:
+A Sound application's choice to play to whatever the Default output is, moving when the user changes it. Choosing a sound device for it moves it there while it runs; only pinning keeps the choice for the next time.
+_Avoid_: auto, system default, unpinned
+
+**Pinned application**:
+A program the user has pinned to a sound device, so that it plays to it or records from it instead of following the default. It stays pinned when it stops playing or isn't running, until the user unpins it.
+_Avoid_: custom setting, override, routed app
+
+**System sounds**:
+The Sound applet's row for event sounds, such as the bell, the workspace sounds and notification sounds, whichever program plays them, with one volume for them all.
+_Avoid_: event sounds, notification sounds (only some of them), alerts
+
 **Night Light**:
 Caminito's warming of the outputs' colours toward a lower colour temperature, on a schedule. It is one feature, and the gradual change through the day that follows the sun is one of its schedules, not a feature of its own.
 _Avoid_: Night Shift and True Tone (macOS's, and True Tone reads a light sensor, which Caminito doesn't), natural light, blue-light filter, redshift
