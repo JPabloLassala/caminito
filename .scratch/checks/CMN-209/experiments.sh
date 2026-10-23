@@ -3,7 +3,7 @@
 #
 #   .scratch/checks/CMN-209/experiments.sh
 #
-# Prints what it finds; the answers in CMN-209 quote this output.
+# Prints what it finds; out/experiments is the run CMN-209's answers quote.
 
 here=$(cd "$(dirname "$0")" && pwd)
 export CMN209_ROOT=${CMN209_ROOT:-$(mktemp -d)}
@@ -20,7 +20,7 @@ persistent() { pw-metadata -n persistent-sm-settings 0 node.stream.restore-targe
 # reopens it, and prints where it plays each time.
 move_close_reopen() {
     play_app "$1" 2; sleep 0.8
-    local idx; idx=$(pactl -f json list sinks | python3 -c "import json,sys; print([s[\"index\"] for s in json.load(sys.stdin) if s[\"name\"]==\"headset\"][0])")
+    local idx; idx=$(sink_index_of headset)
     echo "  starts on: $(sink_of "$1")"
     pactl move-sink-input "$(sink_input_of "$1")" "$idx"; sleep 0.4
     echo "  moved by index to sink $idx: $(sink_of "$1")"
@@ -135,6 +135,26 @@ wpctl settings --delete node.stream.restore-target; sleep 0.3
 rm "$dropin"
 wp_restart
 echo "  drop-in removed, after a restart: value $(restore_target)"
+
+echo
+echo "== 4. placing a stream before it starts: a stream.rules drop-in for pipewire-pulse"
+mkdir -p "$XDG_CONFIG_HOME/pipewire/pipewire-pulse.conf.d"
+cat > "$XDG_CONFIG_HOME/pipewire/pipewire-pulse.conf.d/50-pin.conf" <<EOF
+stream.rules = [
+  { matches = [ { application.name = "Winamp" } ]
+    actions = { update-props = { target.object = "headset" } } }
+]
+EOF
+play_app Winamp 2; sleep 0.8
+echo "  written, pipewire-pulse running: $(sink_of Winamp)"
+wait $APP_PID
+kill $PP_PID; wait $PP_PID 2>/dev/null
+pipewire-pulse >> "$CMN209_ROOT/log/pipewire-pulse" 2>&1 & PP_PID=$!
+for _ in $(seq 50); do pactl info > /dev/null 2>&1 && break; sleep 0.1; done
+make_sinks  # the null sinks were pipewire-pulse modules, gone with it
+play_app Winamp 2; sleep 0.8
+echo "  after a pipewire-pulse restart: $(sink_of Winamp)"
+wait $APP_PID
 
 pw_cleanup
 '

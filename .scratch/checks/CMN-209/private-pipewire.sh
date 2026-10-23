@@ -97,6 +97,14 @@ play_app() {
         --property=application.name="$1" /dev/zero & APP_PID=$!
 }
 
+# sink_index_of SINK: the index of the sink named SINK.
+sink_index_of() {
+    pactl -f json list sinks | python3 -c '
+import json, sys
+print(next(s["index"] for s in json.load(sys.stdin) if s["name"] == sys.argv[1]))
+' "$1"
+}
+
 # sink_of NAME: the sink the application NAME's sink input plays to.
 sink_of() {
     local idx
