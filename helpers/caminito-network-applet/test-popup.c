@@ -1,7 +1,7 @@
 /*
  * The popup's content (CMN-193, CMN-196): with NetworkManager not running it says so, and
- * once NetworkManager runs it shows the tiles and the card, drawn from statuses built by
- * hand, and calls back for what the user clicks. Without a display, GTK can't start, and
+ * once NetworkManager runs it shows the tiles, the card and the Details tab (CMN-201), drawn
+ * from statuses built by hand, and calls back for what the user clicks. Without a display, GTK can't start, and
  * it's skipped.
  */
 
@@ -316,6 +316,106 @@ test_configure (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_assert_false (caminito_applet_popup_is_shown (fixture->applet_popup));
 }
 
+static char *home_ipv4[] = { "192.168.1.34/24", NULL };
+static char *home_ipv6[] = { "fe80::1/64", "2001:db8::34/64", NULL };
+static char *work_ipv4[] = { "10.8.0.6/24", NULL };
+
+static NwDetails
+home_details (void)
+{
+  return (NwDetails) {
+    .kind = NW_DETAILS_WIFI,
+    .name = "Home",
+    .interface = "wlan0",
+    .ipv4 = home_ipv4,
+    .ipv6 = home_ipv6,
+    .gateway = "192.168.1.1",
+    .mac = "11:22:33:44:55:66",
+    .speed = 54,
+    .frequency = 2437,
+    .security = "WPA2",
+    .strength = 70,
+  };
+}
+
+/* The Details tab shown, as the user would have it. */
+static void
+show_details (Fixture *fixture)
+{
+  GtkWidget *switcher = find_type (fixture, GTK_TYPE_STACK_SWITCHER);
+
+  gtk_stack_set_visible_child_name (gtk_stack_switcher_get_stack (GTK_STACK_SWITCHER (switcher)),
+                                    "details");
+}
+
+static void
+test_details (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  NwStatus status = office ();
+  NwDetails home = home_details ();
+  NwDetails work = { .kind = NW_DETAILS_VPN, .name = "Work", .ipv4 = work_ipv4,
+                     .strength = -1 };
+  g_autoptr (GPtrArray) details = g_ptr_array_new ();
+  GtkWidget *value;
+
+  status.details = details;
+  show_details (fixture);
+  nw_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "No active connections"));
+
+  g_ptr_array_add (details, &home);
+  g_ptr_array_add (details, &work);
+  nw_popup_update (fixture->popup, &status);
+  g_assert_false (shows (fixture, "No active connections"));
+  g_assert_true (shows (fixture, "Home"));
+  g_assert_true (shows (fixture, "Interface"));
+  g_assert_true (shows (fixture, "wlan0"));
+  g_assert_true (shows (fixture, "fe80::1/64\n2001:db8::34/64"));
+  g_assert_true (shows (fixture, "Channel"));
+  g_assert_true (shows (fixture, "70%"));
+  g_assert_true (shows (fixture, "Work"));
+  g_assert_true (shows (fixture, "10.8.0.6/24"));
+  value = find_label (fixture, "192.168.1.34/24");
+  g_assert_true (gtk_label_get_selectable (GTK_LABEL (value)));
+
+  /* A VPN has no Wi-Fi rows, and nothing NetworkManager hasn't. */
+  g_ptr_array_remove_index (details, 0);
+  nw_popup_update (fixture->popup, &status);
+  g_assert_false (shows (fixture, "Home"));
+  g_assert_false (shows (fixture, "Channel"));
+  g_assert_false (shows (fixture, "Interface"));
+  g_assert_true (shows (fixture, "Work"));
+}
+
+static void
+test_details_follow_changes (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  NwStatus status = office ();
+  NwDetails home = home_details ();
+  char *moved[] = { "192.168.1.77/24", NULL };
+  g_autoptr (GPtrArray) details = g_ptr_array_new ();
+  GtkWidget *mac;
+  int start;
+  int end;
+
+  g_ptr_array_add (details, &home);
+  status.details = details;
+  show_details (fixture);
+  nw_popup_update (fixture->popup, &status);
+  mac = find_label (fixture, "11:22:33:44:55:66");
+  gtk_label_select_region (GTK_LABEL (mac), 0, 5);
+  home.strength = 45;
+  home.ipv4 = moved;
+  nw_popup_update (fixture->popup, &status);
+  g_assert_true (shows (fixture, "45%"));
+  g_assert_true (shows (fixture, "192.168.1.77/24"));
+  g_assert_false (shows (fixture, "192.168.1.34/24"));
+  /* A new signal doesn't take away what the user has selected. */
+  g_assert_true (widget_shows (fixture, mac));
+  g_assert_true (gtk_label_get_selection_bounds (GTK_LABEL (mac), &start, &end));
+  g_assert_cmpint (end, ==, 5);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -331,5 +431,7 @@ main (int argc, char **argv)
   g_test_add ("/popup/the-card-shows-the-connection-coming-up-or-none", Fixture, NULL, setup, test_card, teardown);
   g_test_add ("/popup/the-tab-chosen-last-is-kept", Fixture, NULL, setup, test_tab_is_kept, teardown);
   g_test_add ("/popup/configure-closes-the-popup-and-calls-back", Fixture, NULL, setup, test_configure, teardown);
+  g_test_add ("/popup/the-details-tab-shows-each-connection", Fixture, NULL, setup, test_details, teardown);
+  g_test_add ("/popup/the-details-tab-follows-changes-and-keeps-the-selection", Fixture, NULL, setup, test_details_follow_changes, teardown);
   return g_test_run ();
 }

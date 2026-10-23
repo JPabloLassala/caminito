@@ -1,8 +1,9 @@
 /*
  * NetworkManager as the Network applet reads it (CMN-193), through libnm (ADR 0041): the
  * primary connection, what's coming up, connectivity, the radios and the VPN, as an
- * NwStatus. It follows NetworkManager stopping and starting again. It also does what the
- * popup's tiles and card ask (CMN-196).
+ * NwStatus, with each connection up as the Details tab shows it (CMN-201). It follows
+ * NetworkManager stopping and starting again. It also does what the popup's tiles and card
+ * ask (CMN-196).
  */
 
 #pragma once

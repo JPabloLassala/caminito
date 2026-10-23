@@ -4,7 +4,8 @@
  * signal, a connection coming up, limited connectivity, a VPN, airplane mode, nothing up,
  * and NetworkManager stopping and starting again. Each state is checked as the panel shows
  * it: the tooltip and the icon's first name. Then the popup's tiles and card (CMN-196) as
- * they follow changes made elsewhere, and what their clicks do to the mock.
+ * they follow changes made elsewhere, and what their clicks do to the mock. Then the Details
+ * tab's connections (CMN-201), as they follow the signal and the address.
  *
  *   test-nm <python>
  */
@@ -304,28 +305,43 @@ add_saved_vpn (Fixture *fixture, const char *id, guint64 timestamp)
   return add_connection (fixture, settings);
 }
 
-/* The IPv4 address on the active connection at path, as NetworkManager gives it: an
-   IP4Config object, which the template hasn't. */
+/* An IP configuration of the active connection at path, as NetworkManager gives it: an
+   IP4Config or IP6Config object, which the template hasn't, with the properties as text.
+   family is "4" or "6", and config the object's path. */
+static void
+set_ip_config (Fixture *fixture, const char *active_path, const char *family,
+               const char *config, const char *properties_text)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) properties = g_variant_parse (G_VARIANT_TYPE ("a{sv}"), properties_text,
+                                                     NULL, NULL, &error);
+  g_autofree char *interface = g_strdup_printf (NM_NAME ".IP%sConfig", family);
+  g_autofree char *property = g_strdup_printf ("Ip%sConfig", family);
+  g_autofree char *update_text = g_strdup_printf ("{'%s': <objectpath '%s'>}", property, config);
+
+  g_assert_no_error (error);
+  /* The mock's AddObject over D-Bus doesn't tell the ObjectManager, which libnm follows. */
+  mock_call (fixture, NM_PATH, "AddMethod",
+             g_variant_new ("(sssss)", TEST_IFACE, "AddIPConfig", "ssa{sv}", "",
+                            "self.AddObject(args[0], args[1], args[2], [])\n"
+                            "self.object_manager_emit_added(args[0])"));
+  g_variant_unref (call (fixture, NM_PATH, TEST_IFACE, "AddIPConfig",
+                         g_variant_new ("(ss@a{sv})", config, interface, properties)));
+  mock_call (fixture, active_path, "AddProperty",
+             g_variant_new ("(ssv)", NM_NAME ".Connection.Active", property,
+                            g_variant_new_object_path ("/")));
+  update (fixture, active_path, NM_NAME ".Connection.Active", update_text);
+}
+
+/* The IPv4 address on the active connection at path, with a /24 prefix and no gateway. */
 static void
 set_address (Fixture *fixture, const char *active_path, const char *address)
 {
-  g_autofree char *properties = NULL;
+  g_autofree char *properties = g_strdup_printf (
+    "{'AddressData': <[{'address': <'%s'>, 'prefix': <uint32 24>}]>, 'Gateway': <''>}",
+    address);
 
-  /* The mock's AddObject over D-Bus doesn't tell the ObjectManager, which libnm follows. */
-  mock_call (fixture, NM_PATH, "AddMethod",
-             g_variant_new ("(sssss)", TEST_IFACE, "AddIP4Config", "ss", "",
-                            "self.AddObject(args[0], 'org.freedesktop.NetworkManager.IP4Config',"
-                            " {'AddressData': dbus.Array([{'address': args[1],"
-                            " 'prefix': dbus.UInt32(24, variant_level=1)}],"
-                            " signature='a{sv}'), 'Gateway': ''}, [])\n"
-                            "self.object_manager_emit_added(args[0])"));
-  g_variant_unref (call (fixture, NM_PATH, TEST_IFACE, "AddIP4Config",
-                         g_variant_new ("(ss)", NM_PATH "/IP4Config/1", address)));
-  mock_call (fixture, active_path, "AddProperty",
-             g_variant_new ("(ssv)", NM_NAME ".Connection.Active", "Ip4Config",
-                            g_variant_new_object_path ("/")));
-  properties = g_strdup_printf ("{'Ip4Config': <objectpath '%s'>}", NM_PATH "/IP4Config/1");
-  update (fixture, active_path, NM_NAME ".Connection.Active", properties);
+  set_ip_config (fixture, active_path, "4", NM_PATH "/IP4Config/1", properties);
 }
 
 static gboolean
@@ -371,9 +387,11 @@ wait_until (Fixture *fixture, Condition condition, gconstpointer expected)
           g_autofree char *tooltip = nw_state_tooltip (nw_nm_status (fixture->nm));
           g_autofree char *tiles = tiles_of (nw_nm_status (fixture->nm));
 
-          g_error ("expected %s, the applet shows %s|%s, with the tiles %s",
-                   (const char *) expected, tooltip,
-                   nw_state_icon_names (nw_nm_status (fixture->nm))[0], tiles);
+          g_error ("expected %s, the applet shows %s|%s, with the tiles %s and %u connections"
+                   " in Details", (const char *) expected, tooltip,
+                   nw_state_icon_names (nw_nm_status (fixture->nm))[0], tiles,
+                   nw_nm_status (fixture->nm)->details != NULL
+                     ? nw_nm_status (fixture->nm)->details->len : 0);
         }
       g_assert_cmpint (g_get_monotonic_time (), <, deadline);
       g_main_context_iteration (NULL, FALSE);
@@ -411,6 +429,34 @@ card_shows (Fixture *fixture, gconstpointer expected)
                                             status->address ? status->address : "-");
 
   return g_strcmp0 (shown, expected) == 0;
+}
+
+/* The Details tab, "Name: Label value, …" for each connection, apart by " / ", or "-" with
+   none. */
+static gboolean
+details_show (Fixture *fixture, gconstpointer expected)
+{
+  const GPtrArray *all = nw_nm_status (fixture->nm)->details;
+  g_autoptr (GString) shown = g_string_new (NULL);
+
+  for (guint i = 0; all != NULL && i < all->len; i++)
+    {
+      const NwDetails *details = g_ptr_array_index (all, i);
+      g_autoptr (GPtrArray) rows = nw_state_detail_rows (details);
+
+      g_string_append_printf (shown, "%s%s:", i == 0 ? "" : " / ", details->name);
+      for (guint j = 0; j < rows->len; j++)
+        {
+          const NwDetailRow *row = g_ptr_array_index (rows, j);
+          g_auto (GStrv) lines = g_strsplit (row->value, "\n", -1);
+          g_autofree char *value = g_strjoinv (" ", lines);
+
+          g_string_append_printf (shown, "%s %s %s", j == 0 ? "" : ",", row->label, value);
+        }
+    }
+  if (shown->len == 0)
+    g_string_append (shown, "-");
+  return g_strcmp0 (shown->str, expected) == 0;
 }
 
 static gboolean
@@ -739,6 +785,66 @@ test_card (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   wait_until (fixture, card_shows, "Not connected|-|-");
 }
 
+static void
+test_details_of_wifi (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *wifi = NULL;
+
+  start_mock_with_wwan (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wait_until (fixture, details_show, "-");
+  wifi = add_wifi (fixture, 70, ACTIVATED);
+  set_primary (fixture, wifi);
+  set_ip_config (fixture, wifi, "4", NM_PATH "/IP4Config/1",
+                 "{'AddressData': <[{'address': <'192.168.1.34'>, 'prefix': <uint32 24>}]>,"
+                 " 'Gateway': <'192.168.1.1'>,"
+                 " 'NameserverData': <[{'address': <'192.168.1.1'>}]>}");
+  /* The template's Wi-Fi device has its bitrate at 5400 Kb/s, and the access point is on
+     2437 MHz with WPA2's PSK. */
+  wait_until (fixture, details_show,
+              "Home: Interface wlan0, IPv4 192.168.1.34/24, Gateway 192.168.1.1,"
+              " DNS 192.168.1.1, MAC address 11:22:33:44:55:66, Link speed 5 Mb/s,"
+              " Band 2.4 GHz, Channel 6, Security WPA2, Signal 70%");
+  /* It follows the signal and the address while the applet runs. */
+  set_strength (fixture, 45);
+  update (fixture, NM_PATH "/IP4Config/1", NM_NAME ".IP4Config",
+          "{'AddressData': <[{'address': <'192.168.1.77'>, 'prefix': <uint32 24>}]>}");
+  wait_until (fixture, details_show,
+              "Home: Interface wlan0, IPv4 192.168.1.77/24, Gateway 192.168.1.1,"
+              " DNS 192.168.1.1, MAC address 11:22:33:44:55:66, Link speed 5 Mb/s,"
+              " Band 2.4 GHz, Channel 6, Security WPA2, Signal 45%");
+}
+
+static void
+test_details_of_wired_and_a_vpn (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autofree char *wired = NULL;
+  g_autofree char *vpn = NULL;
+
+  start_mock_with_wwan (fixture);
+  fixture->nm = nw_nm_new (on_changed, fixture);
+  wired = add_wired (fixture, "Office", ACTIVATED);
+  update (fixture, DEVICES "eth0", NM_NAME ".Device.Wired", "{'Speed': <uint32 1000>}");
+  set_ip_config (fixture, wired, "4", NM_PATH "/IP4Config/1",
+                 "{'AddressData': <[{'address': <'192.168.1.20'>, 'prefix': <uint32 24>}]>,"
+                 " 'Gateway': <'192.168.1.1'>}");
+  set_ip_config (fixture, wired, "6", NM_PATH "/IP6Config/1",
+                 "{'AddressData': <[{'address': <'fe80::1'>, 'prefix': <uint32 64>},"
+                 " {'address': <'2001:db8::20'>, 'prefix': <uint32 64>}]>,"
+                 " 'Gateway': <''>}");
+  vpn = add_vpn (fixture, "Work", "vpn", wired);
+  set_ip_config (fixture, vpn, "4", NM_PATH "/IP4Config/2",
+                 "{'AddressData': <[{'address': <'10.8.0.6'>, 'prefix': <uint32 24>}]>,"
+                 " 'Gateway': <''>, 'NameserverData': <[{'address': <'10.8.0.1'>}]>}");
+  /* The VPN takes the default route, and the connection under it comes first: the card's.
+     A VPN's device is the one it goes over, whose interface and address aren't the VPN's. */
+  set_primary (fixture, vpn);
+  wait_until (fixture, details_show,
+              "Office: Interface eth0, IPv4 192.168.1.20/24, IPv6 fe80::1/64 2001:db8::20/64,"
+              " Gateway 192.168.1.1, MAC address 78:DD:08:D2:3D:43, Link speed 1 Gb/s"
+              " / Work: IPv4 10.8.0.6/24, DNS 10.8.0.1");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -761,5 +867,7 @@ main (int argc, char **argv)
   g_test_add ("/nm/the-vpn-tile-turns-the-vpn-used-last-on-and-off", Fixture, NULL, setup, test_vpn_tile, teardown);
   g_test_add ("/nm/airplane-mode-off-restores-the-radios-as-they-were", Fixture, NULL, setup, test_airplane_tile, teardown);
   g_test_add ("/nm/the-card-shows-the-connection-and-disconnects-it", Fixture, NULL, setup, test_card, teardown);
+  g_test_add ("/nm/details-of-wi-fi-follow-its-signal-and-address", Fixture, NULL, setup, test_details_of_wifi, teardown);
+  g_test_add ("/nm/details-of-wired-and-a-vpn-over-it", Fixture, NULL, setup, test_details_of_wired_and_a_vpn, teardown);
   return g_test_run ();
 }

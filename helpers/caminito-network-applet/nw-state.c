@@ -1,5 +1,6 @@
 /*
- * What the Network applet's icon shows (CMN-193). See nw-state.h.
+ * What the Network applet's icon shows (CMN-193), and its popup's tiles, card (CMN-196)
+ * and Details tab (CMN-201). See nw-state.h.
  */
 
 #include "nw-state.h"
@@ -12,6 +13,54 @@ nw_status_clear (NwStatus *status)
   g_clear_pointer (&status->address, g_free);
   g_clear_pointer (&status->wifi_network, g_free);
   g_clear_pointer (&status->last_vpn, g_free);
+  g_clear_pointer (&status->details, g_ptr_array_unref);
+}
+
+void
+nw_details_free (NwDetails *details)
+{
+  g_free (details->name);
+  g_free (details->interface);
+  g_strfreev (details->ipv4);
+  g_strfreev (details->ipv6);
+  g_free (details->gateway);
+  g_strfreev (details->dns);
+  g_free (details->mac);
+  g_free (details->security);
+  g_free (details);
+}
+
+/* Either NULL, which is no values. */
+static gboolean
+strv_equal (char **a, char **b)
+{
+  if (a == NULL || b == NULL)
+    return a == b;
+  return g_strv_equal ((const char *const *) a, (const char *const *) b);
+}
+
+static gboolean
+details_equal (const NwDetails *a, const NwDetails *b)
+{
+  return a->kind == b->kind && g_strcmp0 (a->name, b->name) == 0
+         && g_strcmp0 (a->interface, b->interface) == 0 && strv_equal (a->ipv4, b->ipv4)
+         && strv_equal (a->ipv6, b->ipv6) && g_strcmp0 (a->gateway, b->gateway) == 0
+         && strv_equal (a->dns, b->dns) && g_strcmp0 (a->mac, b->mac) == 0
+         && a->speed == b->speed && a->frequency == b->frequency
+         && g_strcmp0 (a->security, b->security) == 0 && a->strength == b->strength;
+}
+
+static gboolean
+all_details_equal (const GPtrArray *a, const GPtrArray *b)
+{
+  guint length = a != NULL ? a->len : 0;
+
+  if (length != (b != NULL ? b->len : 0))
+    return FALSE;
+  for (guint i = 0; i < length; i++)
+    if (!details_equal (g_ptr_array_index (a, i), g_ptr_array_index (b, i)))
+      return FALSE;
+  return TRUE;
 }
 
 gboolean
@@ -23,7 +72,8 @@ nw_status_equal (const NwStatus *a, const NwStatus *b)
          && g_strcmp0 (a->address, b->address) == 0 && a->speed == b->speed
          && a->wifi_enabled == b->wifi_enabled && a->wifi_blocked == b->wifi_blocked
          && g_strcmp0 (a->wifi_network, b->wifi_network) == 0 && a->wired == b->wired
-         && g_strcmp0 (a->last_vpn, b->last_vpn) == 0;
+         && g_strcmp0 (a->last_vpn, b->last_vpn) == 0
+         && all_details_equal (a->details, b->details);
 }
 
 /* The signal in GNOME Shell's four steps: weak, ok, good and excellent. */
@@ -39,6 +89,21 @@ step_of (int strength)
   return 0;
 }
 
+static const char *const wired_names[] = { "network-wired", "network-wired-symbolic", NULL };
+static const char *const wifi_names[4][3] = {
+  { "network-wireless-signal-weak", "network-wireless-signal-weak-symbolic", NULL },
+  { "network-wireless-signal-ok", "network-wireless-signal-ok-symbolic", NULL },
+  { "network-wireless-signal-good", "network-wireless-signal-good-symbolic", NULL },
+  { "network-wireless-signal-excellent", "network-wireless-signal-excellent-symbolic", NULL },
+};
+
+/* An access point not known yet shows full bars rather than a weak signal. */
+static int
+bars_of (int strength)
+{
+  return strength < 0 ? 3 : step_of (strength);
+}
+
 const char *const *
 nw_state_icon_names (const NwStatus *status)
 {
@@ -50,7 +115,6 @@ nw_state_icon_names (const NwStatus *status)
   static const char *const airplane[] = {
     "airplane-mode", "airplane-mode-symbolic", "network-flightmode-on", NULL,
   };
-  static const char *const wired[] = { "network-wired", "network-wired-symbolic", NULL };
   static const char *const wired_no_route[] = {
     "network-wired-no-route", "network-wired-no-route-symbolic",
     "network-wired-activated-limited", NULL,
@@ -60,12 +124,6 @@ nw_state_icon_names (const NwStatus *status)
   };
   static const char *const wifi_acquiring[] = {
     "network-wireless-acquiring", "network-wireless-acquiring-symbolic", NULL,
-  };
-  static const char *const wifi[4][3] = {
-    { "network-wireless-signal-weak", "network-wireless-signal-weak-symbolic", NULL },
-    { "network-wireless-signal-ok", "network-wireless-signal-ok-symbolic", NULL },
-    { "network-wireless-signal-good", "network-wireless-signal-good-symbolic", NULL },
-    { "network-wireless-signal-excellent", "network-wireless-signal-excellent-symbolic", NULL },
   };
   static const char *const wifi_no_route[4][4] = {
     { "network-wireless-no-route", "network-wireless-no-route-symbolic",
@@ -87,10 +145,9 @@ nw_state_icon_names (const NwStatus *status)
       return status->kind == NW_KIND_WIFI ? wifi_acquiring : wired_acquiring;
     case NW_PHASE_CONNECTED:
       if (status->kind == NW_KIND_WIRED)
-        return status->limited ? wired_no_route : wired;
-      /* An access point not known yet shows full bars rather than a weak signal. */
-      step = status->strength < 0 ? 3 : step_of (status->strength);
-      return status->limited ? wifi_no_route[step] : wifi[step];
+        return status->limited ? wired_no_route : wired_names;
+      step = bars_of (status->strength);
+      return status->limited ? wifi_no_route[step] : wifi_names[step];
     case NW_PHASE_NONE:
     default:
       return status->airplane ? airplane : offline;
@@ -205,6 +262,16 @@ nw_state_card_title (const NwStatus *status)
   return g_strdup ("Not connected");
 }
 
+/* "1 Gb/s", "2.5 Gb/s", "100 Mb/s". */
+static void
+append_speed (GString *text, guint speed)
+{
+  if (speed >= 1000)
+    g_string_append_printf (text, "%g Gb/s", speed / 1000.0);
+  else
+    g_string_append_printf (text, "%u Mb/s", speed);
+}
+
 char *
 nw_state_card_detail (const NwStatus *status)
 {
@@ -216,9 +283,124 @@ nw_state_card_detail (const NwStatus *status)
   if (status->limited)
     g_string_append (detail, " · No internet");
   /* A Wi-Fi link's rate changes all the time: the Details tab has it (CMN-201). */
-  if (status->kind == NW_KIND_WIRED && status->speed >= 1000)
-    g_string_append_printf (detail, " · %g Gb/s", status->speed / 1000.0);
-  else if (status->kind == NW_KIND_WIRED && status->speed > 0)
-    g_string_append_printf (detail, " · %u Mb/s", status->speed);
+  if (status->kind == NW_KIND_WIRED && status->speed > 0)
+    {
+      g_string_append (detail, " · ");
+      append_speed (detail, status->speed);
+    }
   return g_string_free (detail, FALSE);
+}
+
+static void
+add_row (GPtrArray *rows, const char *label, char *value)
+{
+  NwDetailRow *row;
+
+  if (value == NULL)
+    return;
+  row = g_new (NwDetailRow, 1);
+  row->label = label;
+  row->value = value;
+  g_ptr_array_add (rows, row);
+}
+
+static void
+row_free (NwDetailRow *row)
+{
+  g_free (row->value);
+  g_free (row);
+}
+
+/* The values one to a line, NULL with none. */
+static char *
+lines_of (char **values)
+{
+  return values != NULL && values[0] != NULL ? g_strjoinv ("\n", values) : NULL;
+}
+
+/* The band and the channel of a frequency in MHz: FALSE for one outside Wi-Fi's bands. */
+static gboolean
+channel_of (guint frequency, const char **band, guint *channel)
+{
+  if (frequency == 2484)
+    {
+      *band = "2.4 GHz";
+      *channel = 14;
+    }
+  else if (frequency >= 2412 && frequency < 2484)
+    {
+      *band = "2.4 GHz";
+      *channel = (frequency - 2407) / 5;
+    }
+  else if (frequency == 5935)
+    {
+      /* 6 GHz's channel 2, out of step with the rest. */
+      *band = "6 GHz";
+      *channel = 2;
+    }
+  else if (frequency >= 5955 && frequency <= 7115)
+    {
+      *band = "6 GHz";
+      *channel = (frequency - 5950) / 5;
+    }
+  else if (frequency >= 4910 && frequency <= 5895)
+    {
+      *band = "5 GHz";
+      *channel = (frequency - 5000) / 5;
+    }
+  else
+    return FALSE;
+  return TRUE;
+}
+
+GPtrArray *
+nw_state_detail_rows (const NwDetails *details)
+{
+  GPtrArray *rows = g_ptr_array_new_with_free_func ((GDestroyNotify) row_free);
+  const char *band;
+  guint channel;
+
+  add_row (rows, "Interface", g_strdup (details->interface));
+  add_row (rows, "IPv4", lines_of (details->ipv4));
+  add_row (rows, "IPv6", lines_of (details->ipv6));
+  add_row (rows, "Gateway", g_strdup (details->gateway));
+  add_row (rows, "DNS", lines_of (details->dns));
+  add_row (rows, "MAC address", g_strdup (details->mac));
+  if (details->speed > 0)
+    {
+      GString *speed = g_string_new (NULL);
+
+      append_speed (speed, details->speed);
+      add_row (rows, "Link speed", g_string_free (speed, FALSE));
+    }
+  if (details->kind != NW_DETAILS_WIFI)
+    return rows;
+  if (channel_of (details->frequency, &band, &channel))
+    {
+      add_row (rows, "Band", g_strdup (band));
+      add_row (rows, "Channel", g_strdup_printf ("%u", channel));
+    }
+  add_row (rows, "Security", g_strdup (details->security));
+  if (details->strength >= 0)
+    add_row (rows, "Signal", g_strdup_printf ("%d%%", details->strength));
+  return rows;
+}
+
+const char *const *
+nw_state_details_icon_names (const NwDetails *details)
+{
+  static const char *const vpn[] = {
+    "network-vpn", "network-vpn-symbolic", "changes-prevent-symbolic", NULL,
+  };
+
+  switch (details->kind)
+    {
+    case NW_DETAILS_WIFI:
+      return wifi_names[bars_of (details->strength)];
+    case NW_DETAILS_VPN:
+      return vpn;
+    case NW_DETAILS_WIRED:
+    default:
+      return wired_names;
+    }
 }

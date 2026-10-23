@@ -2,9 +2,10 @@
  * NetworkManager as the Network applet reads it (CMN-193). See nw-nm.h.
  *
  * NMClient follows NetworkManager's name and its objects. The status is built again from it
- * on any change to the client, to an active connection, to the device under the connection,
- * to its access point or its IPv4 configuration, or to the wired device; those objects are
- * watched again each time, since which ones matter changes with the status.
+ * on any change to the client, to an active connection, to the devices under the
+ * connections, to their access points or their IP configurations, or to the wired device;
+ * those objects are watched again each time, since which ones matter changes with the
+ * status.
  */
 
 #include "nw-nm.h"
@@ -228,6 +229,167 @@ unwatch_all (NwNm *nm)
   g_ptr_array_set_size (nm->watched, 0);
 }
 
+/* NULL for NetworkManager's "", which is a value it hasn't. */
+static char *
+dup_value (const char *value)
+{
+  return value != NULL && value[0] != '\0' ? g_strdup (value) : NULL;
+}
+
+/* "192.168.1.34/24", one for each address; NULL with none. */
+static char **
+addresses_of (NMIPConfig *config)
+{
+  GPtrArray *addresses = nm_ip_config_get_addresses (config);
+  GStrvBuilder *builder;
+
+  if (addresses->len == 0)
+    return NULL;
+  builder = g_strv_builder_new ();
+  for (guint i = 0; i < addresses->len; i++)
+    {
+      NMIPAddress *address = g_ptr_array_index (addresses, i);
+
+      g_strv_builder_take (builder, g_strdup_printf ("%s/%u", nm_ip_address_get_address (address),
+                                                     nm_ip_address_get_prefix (address)));
+    }
+  return g_strv_builder_unref_to_strv (builder);
+}
+
+/* IPv4's name servers, then IPv6's; NULL with none. */
+static char **
+dns_of (NMIPConfig *ip4, NMIPConfig *ip6)
+{
+  NMIPConfig *configs[] = { ip4, ip6 };
+  g_autoptr (GStrvBuilder) builder = g_strv_builder_new ();
+  char **dns;
+
+  for (guint i = 0; i < G_N_ELEMENTS (configs); i++)
+    {
+      const char *const *servers = configs[i] != NULL
+                                     ? nm_ip_config_get_nameservers (configs[i]) : NULL;
+
+      for (guint j = 0; servers != NULL && servers[j] != NULL; j++)
+        g_strv_builder_add (builder, servers[j]);
+    }
+  dns = g_strv_builder_end (builder);
+  if (dns[0] == NULL)
+    g_clear_pointer (&dns, g_strfreev);
+  return dns;
+}
+
+/* An access point's security as the user knows it, the strongest it offers first. */
+static char *
+security_of (NMAccessPoint *ap)
+{
+  NM80211ApSecurityFlags rsn = nm_access_point_get_rsn_flags (ap);
+  NM80211ApSecurityFlags wpa = nm_access_point_get_wpa_flags (ap);
+
+  if (rsn & NM_802_11_AP_SEC_KEY_MGMT_EAP_SUITE_B_192)
+    return g_strdup ("WPA3 Enterprise");
+  if (rsn & NM_802_11_AP_SEC_KEY_MGMT_SAE)
+    return g_strdup ("WPA3");
+  if (rsn & NM_802_11_AP_SEC_KEY_MGMT_OWE)
+    return g_strdup ("Enhanced Open");
+  if (rsn & NM_802_11_AP_SEC_KEY_MGMT_802_1X)
+    return g_strdup ("WPA2 Enterprise");
+  if (rsn != NM_802_11_AP_SEC_NONE)
+    return g_strdup ("WPA2");
+  if (wpa & NM_802_11_AP_SEC_KEY_MGMT_802_1X)
+    return g_strdup ("WPA Enterprise");
+  if (wpa != NM_802_11_AP_SEC_NONE)
+    return g_strdup ("WPA");
+  if (nm_access_point_get_flags (ap) & NM_802_11_AP_FLAGS_PRIVACY)
+    return g_strdup ("WEP");
+  return g_strdup ("None");
+}
+
+/* The Details tab's for active, and watches what they were read from. */
+static NwDetails *
+details_of (NwNm *nm, NMActiveConnection *active)
+{
+  NwDetails *details = g_new0 (NwDetails, 1);
+  NMIPConfig *ip4 = nm_active_connection_get_ip4_config (active);
+  NMIPConfig *ip6 = nm_active_connection_get_ip6_config (active);
+  const GPtrArray *devices = nm_active_connection_get_devices (active);
+  NMDevice *device = NULL;
+
+  details->strength = -1;
+  details->name = g_strdup (nm_active_connection_get_id (active));
+  details->kind = is_vpn (active) ? NW_DETAILS_VPN
+                  : is_wifi (active) ? NW_DETAILS_WIFI : NW_DETAILS_WIRED;
+  if (ip4 != NULL)
+    {
+      watch (nm, ip4);
+      details->ipv4 = addresses_of (ip4);
+      details->gateway = dup_value (nm_ip_config_get_gateway (ip4));
+    }
+  if (ip6 != NULL)
+    {
+      watch (nm, ip6);
+      details->ipv6 = addresses_of (ip6);
+      if (details->gateway == NULL)
+        details->gateway = dup_value (nm_ip_config_get_gateway (ip6));
+    }
+  details->dns = dns_of (ip4, ip6);
+
+  /* A VPN plugin's device is the one it goes over, whose interface isn't the VPN's.
+     WireGuard's is its own. */
+  if (!nm_active_connection_get_vpn (active) && devices->len > 0)
+    device = g_ptr_array_index (devices, 0);
+  if (device == NULL)
+    return details;
+  watch (nm, device);
+  details->interface = dup_value (nm_device_get_ip_iface (device));
+  if (details->interface == NULL)
+    details->interface = dup_value (nm_device_get_iface (device));
+  details->mac = dup_value (nm_device_get_hw_address (device));
+  if (NM_IS_DEVICE_ETHERNET (device))
+    details->speed = nm_device_ethernet_get_speed (NM_DEVICE_ETHERNET (device));
+  if (NM_IS_DEVICE_WIFI (device))
+    {
+      NMAccessPoint *ap = nm_device_wifi_get_active_access_point (NM_DEVICE_WIFI (device));
+
+      /* In Kb/s. */
+      details->speed = nm_device_wifi_get_bitrate (NM_DEVICE_WIFI (device)) / 1000;
+      if (ap != NULL)
+        {
+          watch (nm, ap);
+          details->frequency = nm_access_point_get_frequency (ap);
+          details->security = security_of (ap);
+          details->strength = nm_access_point_get_strength (ap);
+        }
+    }
+  return details;
+}
+
+/* What a user connects to, and what goes over it. */
+static gboolean
+has_details (NMActiveConnection *active)
+{
+  return is_physical (active) || is_vpn (active);
+}
+
+/* The Details tab's: each connection up, the card's first. */
+static GPtrArray *
+all_details_of (NwNm *nm, NMActiveConnection *base)
+{
+  const GPtrArray *actives = nm_client_get_active_connections (nm->client);
+  GPtrArray *all = g_ptr_array_new_with_free_func ((GDestroyNotify) nw_details_free);
+
+  if (base != NULL)
+    g_ptr_array_add (all, details_of (nm, base));
+  for (guint i = 0; i < actives->len; i++)
+    {
+      NMActiveConnection *active = g_ptr_array_index (actives, i);
+
+      if (active != base && has_details (active)
+          && nm_active_connection_get_state (active) == NM_ACTIVE_CONNECTION_STATE_ACTIVATED)
+        g_ptr_array_add (all, details_of (nm, active));
+    }
+  return all;
+}
+
 /* Fills status from the client, and watches what it was read from. */
 static void
 read_status (NwNm *nm, NwStatus *status)
@@ -320,6 +482,7 @@ read_status (NwNm *nm, NwStatus *status)
   vpn = find_active (client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_vpn);
   if (vpn != NULL)
     status->vpn = g_strdup (nm_active_connection_get_id (vpn));
+  status->details = all_details_of (nm, status->phase == NW_PHASE_CONNECTED ? base : NULL);
 }
 
 static void

@@ -319,6 +319,120 @@ test_card_without_a_connection (void)
   g_assert_null (nw_state_card_detail (&status));
 }
 
+/* The Details tab's rows for a connection, "Label: value|…", lines of a value by ", ". */
+static char *
+rows_of (const NwDetails *details)
+{
+  g_autoptr (GPtrArray) rows = nw_state_detail_rows (details);
+  GString *shown = g_string_new (NULL);
+
+  for (guint i = 0; i < rows->len; i++)
+    {
+      const NwDetailRow *row = g_ptr_array_index (rows, i);
+      g_auto (GStrv) lines = g_strsplit (row->value, "\n", -1);
+      g_autofree char *value = g_strjoinv (", ", lines);
+
+      g_string_append_printf (shown, "%s%s: %s", i == 0 ? "" : "|", row->label, value);
+    }
+  return g_string_free (shown, FALSE);
+}
+
+static void
+test_wifi_details (void)
+{
+  char *ipv4[] = { "192.168.1.34/24", NULL };
+  char *ipv6[] = { "fe80::1/64", "2001:db8::34/64", NULL };
+  char *dns[] = { "192.168.1.1", "1.1.1.1", NULL };
+  NwDetails home = {
+    .kind = NW_DETAILS_WIFI,
+    .name = "Home",
+    .interface = "wlan0",
+    .ipv4 = ipv4,
+    .ipv6 = ipv6,
+    .gateway = "192.168.1.1",
+    .dns = dns,
+    .mac = "11:22:33:44:55:66",
+    .speed = 54,
+    .frequency = 2437,
+    .security = "WPA2",
+    .strength = 70,
+  };
+  g_autofree char *rows = rows_of (&home);
+  const char *const *names = nw_state_details_icon_names (&home);
+
+  g_assert_cmpstr (rows, ==,
+                   "Interface: wlan0|IPv4: 192.168.1.34/24|IPv6: fe80::1/64, 2001:db8::34/64"
+                   "|Gateway: 192.168.1.1|DNS: 192.168.1.1, 1.1.1.1"
+                   "|MAC address: 11:22:33:44:55:66|Link speed: 54 Mb/s|Band: 2.4 GHz"
+                   "|Channel: 6|Security: WPA2|Signal: 70%");
+  g_assert_cmpstr (names[0], ==, "network-wireless-signal-good");
+}
+
+static void
+test_wifi_bands (void)
+{
+  NwDetails details = { .kind = NW_DETAILS_WIFI, .name = "Home", .strength = -1 };
+  g_autofree char *rows = NULL;
+
+  details.frequency = 2484;
+  rows = rows_of (&details);
+  g_assert_cmpstr (rows, ==, "Band: 2.4 GHz|Channel: 14");
+  g_clear_pointer (&rows, g_free);
+  details.frequency = 5180;
+  rows = rows_of (&details);
+  g_assert_cmpstr (rows, ==, "Band: 5 GHz|Channel: 36");
+  g_clear_pointer (&rows, g_free);
+  details.frequency = 5955;
+  details.speed = 1200;
+  rows = rows_of (&details);
+  g_assert_cmpstr (rows, ==, "Link speed: 1.2 Gb/s|Band: 6 GHz|Channel: 1");
+}
+
+static void
+test_details_leave_out_what_is_unknown (void)
+{
+  char *ipv4[] = { "10.8.0.6/24", NULL };
+  NwDetails vpn = { .kind = NW_DETAILS_VPN, .name = "Work", .ipv4 = ipv4, .strength = -1 };
+  NwDetails wired = { .kind = NW_DETAILS_WIRED, .name = "Office", .interface = "eth0",
+                      .strength = -1 };
+  g_autofree char *vpn_rows = rows_of (&vpn);
+  g_autofree char *wired_rows = rows_of (&wired);
+
+  g_assert_cmpstr (vpn_rows, ==, "IPv4: 10.8.0.6/24");
+  g_assert_cmpstr (nw_state_details_icon_names (&vpn)[0], ==, "network-vpn");
+  g_assert_cmpstr (wired_rows, ==, "Interface: eth0");
+  g_assert_cmpstr (nw_state_details_icon_names (&wired)[0], ==, "network-wired");
+}
+
+static void
+test_details_compare (void)
+{
+  char *before[] = { "192.168.1.20/24", NULL };
+  char *after[] = { "192.168.1.21/24", NULL };
+  NwDetails office = { .kind = NW_DETAILS_WIRED, .name = "Office", .ipv4 = before,
+                       .strength = -1 };
+  NwDetails moved = office;
+  g_autoptr (GPtrArray) a = g_ptr_array_new ();
+  g_autoptr (GPtrArray) b = g_ptr_array_new ();
+  NwStatus with = { .running = TRUE, .strength = -1, .details = a };
+  NwStatus other = { .running = TRUE, .strength = -1, .details = b };
+
+  g_ptr_array_add (a, &office);
+  g_assert_false (nw_status_equal (&with, &other));
+  g_ptr_array_add (b, &office);
+  g_assert_true (nw_status_equal (&with, &other));
+  moved.ipv4 = after;
+  b->pdata[0] = &moved;
+  g_assert_false (nw_status_equal (&with, &other));
+  moved.ipv4 = before;
+  moved.strength = 40;
+  g_assert_false (nw_status_equal (&with, &other));
+  /* No details and an empty list are the same: no connection up. */
+  g_ptr_array_set_size (a, 0);
+  other.details = NULL;
+  g_assert_true (nw_status_equal (&with, &other));
+}
+
 int
 main (int argc, char **argv)
 {
@@ -339,5 +453,9 @@ main (int argc, char **argv)
   g_test_add_func ("/state/the-airplane-mode-tile-is-on-while-every-radio-is-off", test_airplane_tile);
   g_test_add_func ("/state/the-card-shows-the-connection-up", test_card);
   g_test_add_func ("/state/the-card-without-a-connection-up", test_card_without_a_connection);
+  g_test_add_func ("/state/a-wi-fi-connection-has-every-detail", test_wifi_details);
+  g_test_add_func ("/state/the-band-and-channel-come-from-the-frequency", test_wifi_bands);
+  g_test_add_func ("/state/details-leave-out-what-networkmanager-has-not", test_details_leave_out_what_is_unknown);
+  g_test_add_func ("/state/statuses-compare-their-details", test_details_compare);
   return g_test_run ();
 }

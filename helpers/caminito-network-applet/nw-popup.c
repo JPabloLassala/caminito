@@ -1,15 +1,17 @@
 /*
- * The Network applet's popup (CMN-193, CMN-196). See nw-popup.h.
+ * The Network applet's popup (CMN-193, CMN-196, CMN-201). See nw-popup.h.
  *
  * The widgets are built once and updated in place, so that the tab chosen last stays
- * chosen while the panel runs.
+ * chosen while the panel runs. The Details tab is built again only when its connections or
+ * their rows change, and otherwise has its values set, so that what the user has selected
+ * stays selected as the signal moves.
  */
 
 #include "nw-popup.h"
 
 #define POPUP_WIDTH     380
 #define CARD_ICON_SIZE  48
-/* Room for the Networks and Details tabs, empty until their tickets (CMN-200, CMN-201). */
+/* Room for the Networks and Details tabs, which scroll beyond it. */
 #define TABS_HEIGHT     160
 
 static const struct
@@ -52,6 +54,16 @@ struct _NwPopup
   GtkWidget           *card_address;
   GtkWidget           *spinner;
   GtkWidget           *disconnect;
+  /* The Details tab: a box of the connections, and what it says with none. */
+  GtkWidget           *details;
+  GtkWidget           *no_details;
+  /* What the tab is built for: each connection's kind and name, and its rows' labels. */
+  char                *details_shape;
+  /* The icon by each connection's name, and the value of each row, in their order. */
+  GPtrArray           *detail_icons;
+  GPtrArray           *detail_values;
+  /* The rows' labels, one width in every section, so that their values line up. */
+  GtkSizeGroup        *detail_labels;
 };
 
 static void
@@ -76,7 +88,8 @@ add_styles (void)
     " color: @theme_selected_fg_color; }"
     ".caminito-network-tile:checked label { color: @theme_selected_fg_color; }"
     ".caminito-network-title { font-weight: bold; }"
-    ".caminito-network-card-title { font-weight: bold; font-size: 115%; }",
+    ".caminito-network-card-title { font-weight: bold; font-size: 115%; }"
+    ".caminito-network-details { padding: 4px 2px; }",
     -1, NULL);
   gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
                                              GTK_STYLE_PROVIDER (provider),
@@ -228,8 +241,32 @@ card_new (NwPopup *popup)
   return card;
 }
 
+/* Details (CMN-201): for each connection up, its icon and name over a grid of its values,
+   which update_details() fills. */
 static GtkWidget *
-tabs_new (void)
+details_new (NwPopup *popup)
+{
+  GtkWidget *scrolled = gtk_scrolled_window_new (NULL, NULL);
+  GtkWidget *page = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+
+  gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled), GTK_POLICY_NEVER,
+                                  GTK_POLICY_AUTOMATIC);
+  add_class (page, "caminito-network-details");
+  popup->no_details = gtk_label_new ("No active connections");
+  add_class (popup->no_details, GTK_STYLE_CLASS_DIM_LABEL);
+  gtk_widget_set_vexpand (popup->no_details, TRUE);
+  popup->details = gtk_box_new (GTK_ORIENTATION_VERTICAL, 12);
+  popup->detail_icons = g_ptr_array_new ();
+  popup->detail_values = g_ptr_array_new ();
+  popup->detail_labels = gtk_size_group_new (GTK_SIZE_GROUP_HORIZONTAL);
+  gtk_box_pack_start (GTK_BOX (page), popup->no_details, TRUE, TRUE, 0);
+  gtk_box_pack_start (GTK_BOX (page), popup->details, FALSE, FALSE, 0);
+  gtk_container_add (GTK_CONTAINER (scrolled), page);
+  return scrolled;
+}
+
+static GtkWidget *
+tabs_new (NwPopup *popup)
 {
   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
   GtkWidget *stack = gtk_stack_new ();
@@ -237,8 +274,7 @@ tabs_new (void)
 
   gtk_stack_add_titled (GTK_STACK (stack), gtk_box_new (GTK_ORIENTATION_VERTICAL, 0),
                         "networks", "Networks");
-  gtk_stack_add_titled (GTK_STACK (stack), gtk_box_new (GTK_ORIENTATION_VERTICAL, 0),
-                        "details", "Details");
+  gtk_stack_add_titled (GTK_STACK (stack), details_new (popup), "details", "Details");
   gtk_widget_set_size_request (stack, -1, TABS_HEIGHT);
   gtk_stack_switcher_set_stack (GTK_STACK_SWITCHER (switcher), GTK_STACK (stack));
   gtk_widget_set_halign (switcher, GTK_ALIGN_CENTER);
@@ -282,7 +318,7 @@ nw_popup_new (CaminitoAppletPopup *applet_popup, const NwPopupActions *actions,
   gtk_container_set_border_width (GTK_CONTAINER (content), 12);
   gtk_box_pack_start (GTK_BOX (content), tiles_new (popup), FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (content), card_new (popup), FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (content), tabs_new (), TRUE, TRUE, 0);
+  gtk_box_pack_start (GTK_BOX (content), tabs_new (popup), TRUE, TRUE, 0);
   gtk_box_pack_start (GTK_BOX (content), footer_new (popup), FALSE, FALSE, 0);
   popup->stack = gtk_stack_new ();
   gtk_stack_add_named (GTK_STACK (popup->stack), not_running_page (), "not-running");
@@ -316,6 +352,104 @@ update_card (NwPopup *popup, const NwStatus *status)
     gtk_spinner_stop (GTK_SPINNER (popup->spinner));
 }
 
+/* A connection's section of the Details tab: its icon and name, then its rows. */
+static GtkWidget *
+details_section_new (NwPopup *popup, const NwDetails *details, const GPtrArray *rows)
+{
+  GtkWidget *section = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+  GtkWidget *header = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
+  GtkWidget *icon = gtk_image_new ();
+  GtkWidget *grid = gtk_grid_new ();
+
+  g_ptr_array_add (popup->detail_icons, icon);
+  gtk_box_pack_start (GTK_BOX (header), icon, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (header), label_new (details->name, "caminito-network-title"),
+                      TRUE, TRUE, 0);
+  gtk_grid_set_row_spacing (GTK_GRID (grid), 4);
+  gtk_grid_set_column_spacing (GTK_GRID (grid), 12);
+  for (guint i = 0; i < rows->len; i++)
+    {
+      const NwDetailRow *row = g_ptr_array_index (rows, i);
+      GtkWidget *label = label_new (row->label, GTK_STYLE_CLASS_DIM_LABEL);
+      /* Whole, to be copied: an IPv6 address wraps rather than lose its end. */
+      GtkWidget *value = label_new (NULL, NULL);
+
+      gtk_widget_set_valign (label, GTK_ALIGN_START);
+      gtk_size_group_add_widget (popup->detail_labels, label);
+      gtk_label_set_ellipsize (GTK_LABEL (value), PANGO_ELLIPSIZE_NONE);
+      gtk_label_set_line_wrap (GTK_LABEL (value), TRUE);
+      gtk_label_set_line_wrap_mode (GTK_LABEL (value), PANGO_WRAP_WORD_CHAR);
+      gtk_label_set_selectable (GTK_LABEL (value), TRUE);
+      gtk_widget_set_hexpand (value, TRUE);
+      g_ptr_array_add (popup->detail_values, value);
+      gtk_grid_attach (GTK_GRID (grid), label, 0, i, 1, 1);
+      gtk_grid_attach (GTK_GRID (grid), value, 1, i, 1, 1);
+    }
+  gtk_box_pack_start (GTK_BOX (section), header, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (section), grid, FALSE, FALSE, 0);
+  gtk_widget_show_all (section);
+  return section;
+}
+
+static void
+destroy_widget (GtkWidget *widget, gpointer data G_GNUC_UNUSED)
+{
+  gtk_widget_destroy (widget);
+}
+
+static void
+update_details (NwPopup *popup, const GPtrArray *all)
+{
+  guint count = all != NULL ? all->len : 0;
+  g_autoptr (GPtrArray) rows = g_ptr_array_new_with_free_func (
+    (GDestroyNotify) g_ptr_array_unref);
+  g_autoptr (GString) shape = g_string_new (NULL);
+  guint value = 0;
+
+  for (guint i = 0; i < count; i++)
+    {
+      const NwDetails *details = g_ptr_array_index (all, i);
+      GPtrArray *its_rows = nw_state_detail_rows (details);
+
+      g_ptr_array_add (rows, its_rows);
+      g_string_append_printf (shape, "%d %s\n", details->kind, details->name);
+      for (guint j = 0; j < its_rows->len; j++)
+        g_string_append_printf (shape, "\t%s\n",
+                                ((NwDetailRow *) g_ptr_array_index (its_rows, j))->label);
+    }
+  gtk_widget_set_visible (popup->no_details, count == 0);
+  if (g_strcmp0 (shape->str, popup->details_shape) != 0)
+    {
+      g_free (popup->details_shape);
+      popup->details_shape = g_strdup (shape->str);
+      gtk_container_foreach (GTK_CONTAINER (popup->details), destroy_widget, NULL);
+      g_ptr_array_set_size (popup->detail_icons, 0);
+      g_ptr_array_set_size (popup->detail_values, 0);
+      for (guint i = 0; i < count; i++)
+        gtk_box_pack_start (GTK_BOX (popup->details),
+                            details_section_new (popup, g_ptr_array_index (all, i),
+                                                 g_ptr_array_index (rows, i)),
+                            FALSE, FALSE, 0);
+    }
+  for (guint i = 0; i < count; i++)
+    {
+      const GPtrArray *its_rows = g_ptr_array_index (rows, i);
+
+      set_icon (g_ptr_array_index (popup->detail_icons, i),
+                nw_state_details_icon_names (g_ptr_array_index (all, i)),
+                GTK_ICON_SIZE_LARGE_TOOLBAR);
+      for (guint j = 0; j < its_rows->len; j++)
+        {
+          GtkLabel *label = g_ptr_array_index (popup->detail_values, value++);
+          const char *text = ((NwDetailRow *) g_ptr_array_index (its_rows, j))->value;
+
+          /* Setting the same text would lose the selection. */
+          if (g_strcmp0 (gtk_label_get_text (label), text) != 0)
+            gtk_label_set_text (label, text);
+        }
+    }
+}
+
 void
 nw_popup_update (NwPopup *popup, const NwStatus *status)
 {
@@ -334,10 +468,15 @@ nw_popup_update (NwPopup *popup, const NwStatus *status)
       gtk_label_set_text (GTK_LABEL (tile->text), state.text);
     }
   update_card (popup, status);
+  update_details (popup, status->details);
 }
 
 void
 nw_popup_free (NwPopup *popup)
 {
+  g_free (popup->details_shape);
+  g_ptr_array_unref (popup->detail_icons);
+  g_ptr_array_unref (popup->detail_values);
+  g_object_unref (popup->detail_labels);
   g_free (popup);
 }
