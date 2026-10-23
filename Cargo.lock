@@ -410,6 +410,7 @@ dependencies = [
 name = "caminito-network"
 version = "0.1.0"
 dependencies = [
+ "futures-channel",
  "gio",
  "gtk4",
 ]

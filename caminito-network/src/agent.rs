@@ -4,9 +4,11 @@
 //! NetworkManager comes on the bus, since NetworkManager forgets its agents when it stops.
 //!
 //! It asks for a Wi-Fi network's password or WEP key, and for an 802.1X password or private
-//! key's passphrase, Wi-Fi or wired. It keeps no secrets of its own yet (CMN-197), so a
-//! request that may not ask the user has none to give, and saving or deleting secrets is
-//! answered with nothing done.
+//! key's passphrase, Wi-Fi or wired. A secret whose flags say it's agent-owned, saved "for
+//! this user only", is looked for in the Secret Service first, through [`Keyring`], and asked
+//! only when it isn't there or NetworkManager asks for a new one (CMN-197). The answer to such
+//! a question is saved there, as nm-applet saves it, and so is what `SaveSecrets` sends;
+//! `DeleteSecrets` deletes them.
 //!
 //! The dialogs are behind [`Dialogs`], which the binary draws in GTK and the tests replace.
 //! Each request has its dialog, and NetworkManager may have several open at once, one for
@@ -21,6 +23,7 @@ use gio::glib::variant::ToVariant;
 use gio::glib::{self, Variant};
 
 use crate::DOMAIN;
+use crate::keyring::{self, Keyring};
 
 /// Where NetworkManager calls every secret agent.
 pub const PATH: &str = "/org/freedesktop/NetworkManager/SecretAgent";
@@ -40,10 +43,17 @@ const ALLOW_INTERACTION: u32 = 0x1;
 /// The secrets NetworkManager has are wrong, or it has none: they're to be asked again.
 const REQUEST_NEW: u32 = 0x2;
 
+/// A secret's flags, NetworkManager's `NMSettingSecretFlags`, in the key named for it with
+/// `-flags`. The agent keeps the secret, not NetworkManager.
+const AGENT_OWNED: u32 = 0x1;
+/// The secret is asked each time, and kept by no one.
+const NOT_SAVED: u32 = 0x2;
+
 /// The errors of NetworkManager's `NMSecretAgentError`, as their D-Bus names.
 const USER_CANCELED: &str = "org.freedesktop.NetworkManager.SecretAgent.UserCanceled";
 const AGENT_CANCELED: &str = "org.freedesktop.NetworkManager.SecretAgent.AgentCanceled";
 const NO_SECRETS: &str = "org.freedesktop.NetworkManager.SecretAgent.NoSecrets";
+const FAILED: &str = "org.freedesktop.NetworkManager.SecretAgent.Failed";
 
 const WIFI_SECURITY: &str = "802-11-wireless-security";
 const IEEE_8021X: &str = "802-1x";
@@ -182,17 +192,43 @@ impl Reply {
                 .return_dbus_error(USER_CANCELED, "the answer isn't a valid secret");
             return;
         }
-        let keys: HashMap<String, Variant> = match answer {
-            Answer::Secret(secret) => HashMap::from([(pending.key, secret.to_variant())]),
-            Answer::Login { identity, password } => HashMap::from([
-                ("identity".to_owned(), identity.to_variant()),
-                (pending.key, password.to_variant()),
-            ]),
+        let (secret, identity) = match answer {
+            Answer::Secret(secret) => (secret, None),
+            Answer::Login { identity, password } => (password, Some(identity)),
         };
-        let secrets = HashMap::from([(pending.setting, keys)]);
+        let mut keys = HashMap::from([(pending.key.clone(), secret.to_variant())]);
+        if let Some(identity) = identity {
+            keys.insert("identity".to_owned(), identity.to_variant());
+        }
+        let secrets = HashMap::from([(pending.setting.clone(), keys)]);
         pending
             .invocation
             .return_value(Some(&(secrets,).to_variant()));
+
+        // An agent-owned secret is the agent's to keep, as nm-applet keeps the answers to its
+        // dialogs.
+        let Some(owner) = pending.owner else {
+            return;
+        };
+        let Some(keyring) = self
+            .state
+            .upgrade()
+            .map(|state| state.borrow().keyring.clone())
+        else {
+            return;
+        };
+        glib::spawn_future_local(async move {
+            let entry = keyring::Entry {
+                uuid: &owner.uuid,
+                setting: &pending.setting,
+                key: &pending.key,
+                label: label(&owner.name, &pending.setting, &pending.key),
+                secret: &secret,
+            };
+            if let Err(err) = keyring.store(entry).await {
+                glib::g_warning!(DOMAIN, "can't save the secret in the keyring: {err}");
+            }
+        });
     }
 
     /// Answers NetworkManager that the user cancelled, unless the request was closed since.
@@ -233,18 +269,28 @@ impl std::error::Error for Error {
     }
 }
 
-/// A request waiting for its dialog's answer.
+/// A request waiting for the keyring or its dialog's answer.
 struct Pending {
     connection_path: String,
     setting: String,
     question: Question,
     /// The key of the secret in the setting.
     key: String,
+    /// The connection whose secret is agent-owned, which the answer is saved for.
+    owner: Option<Owner>,
     invocation: gio::DBusMethodInvocation,
+}
+
+/// The connection an agent-owned secret is kept for.
+struct Owner {
+    uuid: String,
+    /// The connection's name, which the keyring's items are labelled with.
+    name: String,
 }
 
 struct State {
     dialogs: Rc<dyn Dialogs>,
+    keyring: Rc<Keyring>,
     /// The last request's number.
     last_request: u64,
     pending: HashMap<u64, Pending>,
@@ -273,10 +319,16 @@ impl Drop for Agent {
 
 impl Agent {
     /// Exports the agent on `connection`, the system bus, and registers it with
-    /// NetworkManager now and whenever NetworkManager comes back on the bus.
-    pub fn new(connection: &gio::DBusConnection, dialogs: Rc<dyn Dialogs>) -> Result<Agent, Error> {
+    /// NetworkManager now and whenever NetworkManager comes back on the bus. The agent-owned
+    /// secrets are kept by the Secret Service on `session`, the session bus.
+    pub fn new(
+        connection: &gio::DBusConnection,
+        session: &gio::DBusConnection,
+        dialogs: Rc<dyn Dialogs>,
+    ) -> Result<Agent, Error> {
         let state = Rc::new(RefCell::new(State {
             dialogs,
+            keyring: Rc::new(Keyring::new(session)),
             last_request: 0,
             pending: HashMap::new(),
         }));
@@ -401,8 +453,18 @@ fn handle(
             }
             invocation.return_value(None);
         }
-        // The Secret Service keeps them (CMN-197).
-        "SaveSecrets" | "DeleteSecrets" => invocation.return_value(None),
+        "SaveSecrets" | "DeleteSecrets" => {
+            let connection: Settings = parameters
+                .child_value(0)
+                .get()
+                .expect("the connection is a{sa{sv}}");
+            let keyring = state.borrow().keyring.clone();
+            if method == "SaveSecrets" {
+                glib::spawn_future_local(save_secrets(keyring, connection, invocation));
+            } else {
+                glib::spawn_future_local(delete_secrets(keyring, connection, invocation));
+            }
+        }
         _ => invocation.return_dbus_error(
             "org.freedesktop.DBus.Error.UnknownMethod",
             &format!("the agent has no method {method}"),
@@ -413,7 +475,8 @@ fn handle(
 /// A connection's settings, as NetworkManager sends them: each setting's name and its keys.
 type Settings = HashMap<String, HashMap<String, Variant>>;
 
-/// Opens a dialog for the secret NetworkManager asks for, or answers that there's none.
+/// Answers NetworkManager with the secret it asks for, from the keyring where it's
+/// agent-owned and saved there, else from a dialog, or answers that there's none.
 fn get_secrets(
     state: &Rc<RefCell<State>>,
     connection: &Settings,
@@ -422,10 +485,6 @@ fn get_secrets(
     flags: u32,
     invocation: gio::DBusMethodInvocation,
 ) {
-    if flags & ALLOW_INTERACTION == 0 {
-        invocation.return_dbus_error(NO_SECRETS, "the agent keeps no secrets");
-        return;
-    }
     let Some((request, key)) = request_for(connection, &setting, flags) else {
         invocation.return_dbus_error(
             NO_SECRETS,
@@ -433,7 +492,27 @@ fn get_secrets(
         );
         return;
     };
-    let (id, dialogs) = {
+    let interactive = flags & ALLOW_INTERACTION != 0;
+    let owner = string(connection, "connection", "uuid")
+        .filter(|_| {
+            secret_flags(connection, &setting, &key) & (AGENT_OWNED | NOT_SAVED) == AGENT_OWNED
+        })
+        .map(|uuid| Owner {
+            uuid,
+            name: string(connection, "connection", "id").unwrap_or_default(),
+        });
+    // A new secret is wanted because the saved one is wrong.
+    let look = owner.is_some() && flags & REQUEST_NEW == 0;
+    if !look && !interactive {
+        invocation.return_dbus_error(NO_SECRETS, "the agent may not ask, and keeps no secret");
+        return;
+    }
+    let lookup = owner
+        .as_ref()
+        .filter(|_| look)
+        .map(|owner| owner.uuid.clone());
+
+    let (id, keyring) = {
         let mut state = state.borrow_mut();
         state.last_request += 1;
         let id = state.last_request;
@@ -441,14 +520,59 @@ fn get_secrets(
             id,
             Pending {
                 connection_path: path,
-                setting,
+                setting: setting.clone(),
                 question: request.question.clone(),
-                key,
+                key: key.clone(),
+                owner,
                 invocation,
             },
         );
-        (id, state.dialogs.clone())
+        (id, state.keyring.clone())
     };
+    let Some(uuid) = lookup else {
+        ask(state, id, request);
+        return;
+    };
+
+    let state = Rc::downgrade(state);
+    glib::spawn_future_local(async move {
+        let found = keyring.find(&uuid, &setting).await.unwrap_or_else(|err| {
+            glib::g_warning!(DOMAIN, "can't read the keyring's secrets: {err}");
+            HashMap::new()
+        });
+        let Some(state) = state.upgrade() else {
+            return;
+        };
+        if !state.borrow().pending.contains_key(&id) {
+            // NetworkManager cancelled the request meanwhile.
+            return;
+        }
+        if found.contains_key(&key) {
+            let pending = state.borrow_mut().pending.remove(&id);
+            let pending = pending.expect("the request is pending");
+            let keys: HashMap<String, Variant> = found
+                .into_iter()
+                .map(|(key, secret)| (key, secret.to_variant()))
+                .collect();
+            let secrets = HashMap::from([(setting, keys)]);
+            pending
+                .invocation
+                .return_value(Some(&(secrets,).to_variant()));
+        } else if interactive {
+            ask(&state, id, request);
+        } else {
+            let pending = state.borrow_mut().pending.remove(&id);
+            let pending = pending.expect("the request is pending");
+            pending
+                .invocation
+                .return_dbus_error(NO_SECRETS, "the keyring has no such secret");
+        }
+    });
+}
+
+/// Opens the dialog of the pending request `id`.
+fn ask(state: &Rc<RefCell<State>>, id: u64, request: Request) {
+    let dialogs = state.borrow().dialogs.clone();
     // Nothing is borrowed while the dialogs run: a fake answers at once.
     let reply = Reply {
         state: Rc::downgrade(state),
@@ -457,15 +581,131 @@ fn get_secrets(
     dialogs.ask(request, reply);
 }
 
+/// Saves the agent-owned secrets of `connection` in place of those saved for it before, as
+/// nm-applet does.
+async fn save_secrets(
+    keyring: Rc<Keyring>,
+    connection: Settings,
+    invocation: gio::DBusMethodInvocation,
+) {
+    if let Some(uuid) = string(&connection, "connection", "uuid") {
+        let name = string(&connection, "connection", "id").unwrap_or_default();
+        if let Err(err) = keyring.clear(&uuid).await {
+            glib::g_warning!(DOMAIN, "can't delete the keyring's old secrets: {err}");
+        }
+        for (setting, key, label, secret) in agent_owned(&connection, &name) {
+            let entry = keyring::Entry {
+                uuid: &uuid,
+                setting: &setting,
+                key: &key,
+                label,
+                secret: &secret,
+            };
+            if let Err(err) = keyring.store(entry).await {
+                glib::g_warning!(DOMAIN, "can't save the secret in the keyring: {err}");
+            }
+        }
+    }
+    invocation.return_value(None);
+}
+
+/// Deletes every secret the keyring has for `connection`.
+async fn delete_secrets(
+    keyring: Rc<Keyring>,
+    connection: Settings,
+    invocation: gio::DBusMethodInvocation,
+) {
+    let Some(uuid) = string(&connection, "connection", "uuid") else {
+        invocation.return_value(None);
+        return;
+    };
+    match keyring.clear(&uuid).await {
+        Ok(()) => invocation.return_value(None),
+        Err(err) => {
+            invocation.return_dbus_error(FAILED, &format!("can't delete the secrets: {err}"))
+        }
+    }
+}
+
+/// The agent-owned secrets `connection` has, each as its setting, its key, the label of its
+/// item and the secret. A secret is the agent's only when its flags are agent-owned and
+/// nothing else, as nm-applet saves it (network-manager-applet's src/applet-agent.c,
+/// `save_one_secret`).
+fn agent_owned(connection: &Settings, name: &str) -> Vec<(String, String, String, String)> {
+    let mut secrets = Vec::new();
+    for (setting, keys) in connection {
+        if setting == "vpn" {
+            // A VPN's secrets are a dictionary of their own, and their flags are in its data.
+            let dictionary = |key| {
+                keys.get(key)
+                    .and_then(Variant::get::<HashMap<String, String>>)
+                    .unwrap_or_default()
+            };
+            let data = dictionary("data");
+            let service = keys
+                .get("service-type")
+                .and_then(|value| value.str().map(str::to_owned))
+                .unwrap_or_default();
+            for (key, secret) in dictionary("secrets") {
+                let flags = data
+                    .get(&format!("{key}-flags"))
+                    .and_then(|flags| flags.parse::<u32>().ok());
+                if !secret.is_empty() && flags == Some(AGENT_OWNED) {
+                    let label = format!("VPN {key} secret for {name}/{service}/vpn");
+                    secrets.push((setting.clone(), key, label, secret));
+                }
+            }
+            continue;
+        }
+        for (key, value) in keys {
+            let Some(secret) = value.str().filter(|secret| !secret.is_empty()) else {
+                continue;
+            };
+            if secret_flags(connection, setting, key) == AGENT_OWNED {
+                let label = label(name, setting, key);
+                secrets.push((setting.clone(), key.clone(), label, secret.to_owned()));
+            }
+        }
+    }
+    secrets
+}
+
+/// The label nm-applet gives a secret's item.
+fn label(name: &str, setting: &str, key: &str) -> String {
+    format!("Network secret for {name}/{setting}/{key}")
+}
+
+/// The flags of the secret `key` of `setting`: none where the connection gives none, which
+/// leaves it to NetworkManager.
+fn secret_flags(connection: &Settings, setting: &str, key: &str) -> u32 {
+    // The four WEP keys share their flags.
+    let flags = if key
+        .strip_prefix("wep-key")
+        .is_some_and(|index| index.len() == 1 && index.as_bytes()[0].is_ascii_digit())
+    {
+        "wep-key-flags".to_owned()
+    } else {
+        format!("{key}-flags")
+    };
+    connection
+        .get(setting)
+        .and_then(|keys| keys.get(&flags))
+        .and_then(Variant::get::<u32>)
+        .unwrap_or(0)
+}
+
+/// The string `key` of `setting`, if the connection has it.
+fn string(connection: &Settings, setting: &str, key: &str) -> Option<String> {
+    connection
+        .get(setting)
+        .and_then(|keys| keys.get(key))
+        .and_then(|value| value.str().map(str::to_owned))
+}
+
 /// The request NetworkManager's call makes of the user, and the key its secret goes in, or
 /// None for a secret the agent doesn't ask for.
 fn request_for(connection: &Settings, setting: &str, flags: u32) -> Option<(Request, String)> {
-    let string = |setting: &str, key: &str| {
-        connection
-            .get(setting)
-            .and_then(|keys| keys.get(key))
-            .and_then(|value| value.str().map(str::to_owned))
-    };
+    let string = |setting: &str, key: &str| string(connection, setting, key);
     let medium = match string("connection", "type")?.as_str() {
         "802-11-wireless" => Medium::Wifi,
         "802-3-ethernet" => Medium::Wired,

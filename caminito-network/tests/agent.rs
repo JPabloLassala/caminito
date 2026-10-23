@@ -1,18 +1,21 @@
 //! The secret agent against python-dbusmock's `networkmanager` template on a private bus, with
 //! an AgentManager added to it. The mock never calls an agent, so the test calls it as
-//! NetworkManager would, and the dialogs are a fake that the test answers.
+//! NetworkManager would, and the dialogs are a fake that the test answers. The Secret Service
+//! is a fake too, on the same bus, which serves as the session bus.
 
 mod mock;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use caminito_network::agent::{self, Agent, Answer, Dialogs, Medium, Question, Reply, Request};
 use gio::glib::variant::{ObjectPath, ToVariant};
 use gio::glib::{self, Variant};
 
 use mock::Mock;
+use mock::secret_service::{Item, SecretService};
 
 const ALLOW_INTERACTION: u32 = 0x1;
 const REQUEST_NEW: u32 = 0x2;
@@ -94,7 +97,7 @@ fn registrations(mock: &Mock) -> Vec<(String, u32)> {
 fn start(mock: &Mock) -> Running {
     let connection = mock.connect();
     let dialogs = Rc::new(FakeDialogs::default());
-    let agent = Agent::new(&connection, dialogs.clone()).unwrap();
+    let agent = Agent::new(&connection, &connection, dialogs.clone()).unwrap();
     mock.wait_until("the agent to register", || !registrations(mock).is_empty());
     Running {
         name: connection.unique_name().unwrap().to_string(),
@@ -601,5 +604,283 @@ fn a_phase_2_private_key_passphrase_goes_in_its_own_key() {
             secrets(answer(mock, &pending))["802-1x"]["phase2-private-key-password"].str(),
             Some("passphrase")
         );
+    });
+}
+
+const UUID: &str = "6d1c3a4e-0b9f-4d0a-9a1e-2f7c5b8e3d21";
+
+/// `connection` with a UUID, and its secret `key` agent-owned: saved "for this user only".
+fn agent_owned(mut connection: Settings, setting: &str, key: &str) -> Settings {
+    connection
+        .get_mut("connection")
+        .unwrap()
+        .insert("uuid".to_owned(), UUID.to_variant());
+    connection
+        .entry(setting.to_owned())
+        .or_default()
+        .insert(format!("{key}-flags"), 1u32.to_variant());
+    connection
+}
+
+/// The item nm-applet writes for `key` of `setting`, through libsecret with its schema.
+fn as_nm_applet_saves(setting: &str, key: &str, secret: &str) -> Item {
+    Item {
+        label: format!("Network secret for Home 1/{setting}/{key}"),
+        attributes: HashMap::from([
+            ("connection-uuid".to_owned(), UUID.to_owned()),
+            ("setting-name".to_owned(), setting.to_owned()),
+            ("setting-key".to_owned(), key.to_owned()),
+            (
+                "xdg:schema".to_owned(),
+                "org.freedesktop.NetworkManager.Connection".to_owned(),
+            ),
+        ]),
+        secret: secret.to_owned(),
+    }
+}
+
+#[test]
+fn a_secret_nm_applet_saved_is_answered_with_no_dialog() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "correct horse"));
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        let secrets = secrets(answer(mock, &pending));
+        assert_eq!(secrets[WIFI_SECURITY]["psk"].str(), Some("correct horse"));
+        assert!(running.dialogs.asked.borrow().is_empty());
+    });
+}
+
+#[test]
+fn request_new_asks_though_the_keyring_has_the_secret() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "old password"));
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION | REQUEST_NEW,
+        );
+        mock.wait_until("the password's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        assert!(running.dialogs.last_request().unwrap().again);
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("new password".to_owned())));
+        assert_eq!(
+            secrets(answer(mock, &pending))[WIFI_SECURITY]["psk"].str(),
+            Some("new password")
+        );
+        // The new password takes the old one's place, as nm-applet would find it.
+        mock.wait_until("the new password in the keyring", || {
+            keyring.items() == [as_nm_applet_saves(WIFI_SECURITY, "psk", "new password")]
+        });
+    });
+}
+
+#[test]
+fn an_agent_owned_answer_is_saved_as_nm_applet_saves_it() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        // Nothing is saved yet: the agent asks.
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        mock.wait_until("the password's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("correct horse".to_owned())));
+        answer(mock, &pending).unwrap();
+        mock.wait_until("the password in the keyring", || {
+            keyring.items() == [as_nm_applet_saves(WIFI_SECURITY, "psk", "correct horse")]
+        });
+    });
+}
+
+#[test]
+fn a_secret_network_manager_keeps_is_not_saved() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        let running = start(mock);
+        let mut connection = wifi("Home", "wpa-psk", &[]);
+        connection
+            .get_mut("connection")
+            .unwrap()
+            .insert("uuid".to_owned(), UUID.to_variant());
+
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        mock.wait_until("the password's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("correct horse".to_owned())));
+        answer(mock, &pending).unwrap();
+        // Nothing is to happen: a save would take a few calls on the private bus, far less
+        // than this.
+        let until = Instant::now() + Duration::from_millis(300);
+        mock.wait_until("a while", || Instant::now() >= until);
+        assert!(keyring.items().is_empty());
+    });
+}
+
+#[test]
+fn save_secrets_keeps_the_agent_owned_ones_in_place_of_the_old() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "old password"));
+        keyring.add(as_nm_applet_saves("802-1x", "password", "gone"));
+        let running = start(mock);
+        let mut connection = agent_owned(
+            wifi("Home", "wpa-psk", &[("psk", "new password".to_variant())]),
+            WIFI_SECURITY,
+            "psk",
+        );
+        // A secret NetworkManager keeps, and one asked each time, aren't the agent's.
+        let security = connection.get_mut(WIFI_SECURITY).unwrap();
+        security.insert("wep-key0".to_owned(), "system".to_variant());
+        security.insert("wep-key-flags".to_owned(), 0u32.to_variant());
+        security.insert("leap-password".to_owned(), "asked".to_variant());
+        security.insert("leap-password-flags".to_owned(), 2u32.to_variant());
+
+        let path = ObjectPath::try_from(CONNECTION.to_owned()).unwrap();
+        let pending = call(
+            mock,
+            &running,
+            "SaveSecrets",
+            (&connection, &path).to_variant(),
+        );
+        answer(mock, &pending).unwrap();
+        assert_eq!(
+            keyring.items(),
+            [as_nm_applet_saves(WIFI_SECURITY, "psk", "new password")]
+        );
+    });
+}
+
+#[test]
+fn delete_secrets_deletes_the_connections_secrets() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "password"));
+        keyring.add(as_nm_applet_saves("802-1x", "password", "password"));
+        let mut other = as_nm_applet_saves(WIFI_SECURITY, "psk", "another's");
+        other
+            .attributes
+            .insert("connection-uuid".to_owned(), "another".to_owned());
+        keyring.add(other.clone());
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let path = ObjectPath::try_from(CONNECTION.to_owned()).unwrap();
+        let pending = call(
+            mock,
+            &running,
+            "DeleteSecrets",
+            (&connection, &path).to_variant(),
+        );
+        answer(mock, &pending).unwrap();
+        assert_eq!(keyring.items(), [other]);
+    });
+}
+
+#[test]
+fn a_locked_keyring_is_unlocked_through_its_prompt() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "correct horse"));
+        keyring.lock(false);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        assert_eq!(
+            secrets(answer(mock, &pending))[WIFI_SECURITY]["psk"].str(),
+            Some("correct horse")
+        );
+        assert_eq!(keyring.prompts(), 1);
+        assert!(running.dialogs.asked.borrow().is_empty());
+    });
+}
+
+#[test]
+fn a_locked_keyring_the_user_refuses_to_unlock_falls_back_to_asking() {
+    mock::run(|mock| {
+        let keyring = SecretService::start(mock);
+        keyring.add(as_nm_applet_saves(WIFI_SECURITY, "psk", "correct horse"));
+        keyring.lock(true);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+
+        let pending = get_secrets(
+            mock,
+            &running,
+            &connection,
+            WIFI_SECURITY,
+            ALLOW_INTERACTION,
+        );
+        mock.wait_until("the password's dialog", || {
+            running.dialogs.last_request().is_some()
+        });
+        assert_eq!(keyring.prompts(), 1);
+        running
+            .dialogs
+            .answer(Some(Answer::Secret("typed again".to_owned())));
+        assert_eq!(
+            secrets(answer(mock, &pending))[WIFI_SECURITY]["psk"].str(),
+            Some("typed again")
+        );
+        assert!(keyring.locked());
+    });
+}
+
+#[test]
+fn a_request_that_may_not_ask_has_no_secrets_the_keyring_lacks() {
+    mock::run(|mock| {
+        let _keyring = SecretService::start(mock);
+        let running = start(mock);
+        let connection = agent_owned(wifi("Home", "wpa-psk", &[]), WIFI_SECURITY, "psk");
+        let pending = get_secrets(mock, &running, &connection, WIFI_SECURITY, 0);
+        assert_eq!(
+            error(answer(mock, &pending)),
+            "org.freedesktop.NetworkManager.SecretAgent.NoSecrets"
+        );
+        assert!(running.dialogs.asked.borrow().is_empty());
     });
 }

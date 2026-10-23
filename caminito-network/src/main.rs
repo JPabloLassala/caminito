@@ -30,7 +30,7 @@ fn main() -> glib::ExitCode {
     let agent: Rc<RefCell<Option<Agent>>> = Rc::default();
     let hold: Rc<RefCell<Option<gio::ApplicationHoldGuard>>> = Rc::default();
 
-    application.connect_startup(move |_| {
+    application.connect_startup(move |application| {
         let system = match gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) {
             Ok(system) => system,
             Err(err) => {
@@ -41,7 +41,11 @@ fn main() -> glib::ExitCode {
                 return;
             }
         };
-        match Agent::new(&system, Rc::new(dialogs::GtkDialogs::default())) {
+        let Some(session) = application.dbus_connection() else {
+            glib::g_warning!(DOMAIN, "can't reach the keyring without the session bus");
+            return;
+        };
+        match Agent::new(&system, &session, Rc::new(dialogs::GtkDialogs::default())) {
             Ok(started) => *agent.borrow_mut() = Some(started),
             Err(err) => glib::g_warning!(DOMAIN, "{err}"),
         }

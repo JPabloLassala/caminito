@@ -16,6 +16,8 @@ use std::time::Duration;
 use gio::glib::variant::ToVariant;
 use gio::glib::{self, Variant};
 
+pub mod secret_service;
+
 /// How long a test waits for what it expects before it fails.
 const PATIENCE: Duration = Duration::from_secs(20);
 /// How often a test checks again for what another process does.
