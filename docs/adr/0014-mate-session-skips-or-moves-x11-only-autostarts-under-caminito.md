@@ -1,7 +1,7 @@
 # 14. mate-session skips X11-only autostart entries under Caminito, or starts them on XWayland
 
 Date: 2026-10-05
-Status: Accepted. Qualified on 2026-10-08 by ticket 107: mate-power-manager's keys are grabbed through Caminito, by a carried patch (ADR 0011), so they work whatever has the focus. Qualified on 2026-10-12 by ticket 206: an audit of Ubuntu 26.04's `ubuntu-mate-desktop` adds `mate-hud`, `plank`, `dock-replace`, `picom` and `magnus-autostart` to the skipped list and `tilda` to the XWayland one. `plank` is the `dock` required component, which mate-session starts as an autostart entry of that id.
+Status: Accepted. Qualified on 2026-10-08 by ticket 107: mate-power-manager's keys are grabbed through Caminito, by a carried patch (ADR 0011), so they work whatever has the focus. Qualified on 2026-10-12 by ticket 206: an audit of Ubuntu 26.04's `ubuntu-mate-desktop` adds `mate-hud`, `plank`, `dock-replace`, `picom` and `magnus-autostart` to the skipped list and `tilda` to the XWayland one. `plank` is the `dock` required component, which mate-session starts as an autostart entry of that id. Qualified on 2026-10-23 by ADR 0041: `nm-applet.desktop` is skipped, because `caminito-network` and the Network applet do its work.
 
 ## Context
 

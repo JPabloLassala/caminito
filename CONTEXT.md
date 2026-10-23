@@ -304,6 +304,14 @@ _Avoid_: the capplet, blueman, bluedevil
 Caminito's mate-panel applet for Bluetooth: the icon in the panel and its popup of devices, in the manner of Plasma's.
 _Avoid_: widget, plasmoid, tray icon
 
+**caminito-network**:
+Caminito's network program, which runs through the whole session as NetworkManager's secret agent, asking for the passwords and codes a connection needs. With the Network applet it takes the place of nm-applet.
+_Avoid_: nm-applet (the program it replaces), network manager (that's NetworkManager, the system service), the capplet
+
+**Network applet**:
+Caminito's mate-panel applet for networking: the icon in the panel and its popup of connections, in the manner of Plasma's Networks widget. Its settings window is nm-connection-editor.
+_Avoid_: widget, plasmoid, tray icon, nm-applet (the program whose tray icon it replaces)
+
 **Power applet**:
 Caminito's mate-panel applet for power: the battery icon in the panel and its popup of the power profile, the batteries, and what is keeping the computer awake, in the manner of Plasma's Power and Battery.
 _Avoid_: battery monitor, mate-power-manager's tray icon, power capplet (mate-power-preferences is the settings window)
