@@ -23,6 +23,7 @@ const NwStatus *nw_nm_status     (NwNm *nm);
    last up or down; airplane mode, every radio off, then back as they were before it. The
    status follows once NetworkManager has done it, and doesn't if it refuses. */
 void            nw_nm_set_tile   (NwNm *nm, NwTile tile, gboolean on);
-/* The card's Disconnect: the connection it shows goes down. */
+/* The card's Disconnect: the device of the connection it shows goes down, as nmcli device
+   disconnect does, so that NetworkManager doesn't bring up another network on it. */
 void            nw_nm_disconnect (NwNm *nm);
 void            nw_nm_free       (NwNm *nm);

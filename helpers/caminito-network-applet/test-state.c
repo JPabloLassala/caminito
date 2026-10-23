@@ -336,7 +336,7 @@ main (int argc, char **argv)
   g_test_add_func ("/state/the-wi-fi-tile-is-wireless-enabled", test_wifi_tile);
   g_test_add_func ("/state/the-wired-tile-follows-the-cable", test_wired_tile);
   g_test_add_func ("/state/the-vpn-tile-is-the-vpn-used-last", test_vpn_tile);
-  g_test_add_func ("/state/the-airplane-mode-tile", test_airplane_tile);
+  g_test_add_func ("/state/the-airplane-mode-tile-is-on-while-every-radio-is-off", test_airplane_tile);
   g_test_add_func ("/state/the-card-shows-the-connection-up", test_card);
   g_test_add_func ("/state/the-card-without-a-connection-up", test_card_without_a_connection);
   return g_test_run ();

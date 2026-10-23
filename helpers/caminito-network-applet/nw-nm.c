@@ -117,18 +117,6 @@ base_connection (NMClient *client)
   return carrier;
 }
 
-/* The first active connection in any state that matches, NULL with none. */
-static NMActiveConnection *
-find_any (NMClient *client, gboolean (*matches) (NMActiveConnection *))
-{
-  const GPtrArray *actives = nm_client_get_active_connections (client);
-
-  for (guint i = 0; i < actives->len; i++)
-    if (matches (g_ptr_array_index (actives, i)))
-      return g_ptr_array_index (actives, i);
-  return NULL;
-}
-
 static guint64
 timestamp_of (NMConnection *connection)
 {
@@ -202,7 +190,7 @@ wired_of (NMDevice *device)
 /* What the VPN tile turns on and off: the VPN up, or else the one activated most
    recently. NULL with none set up. */
 static NMConnection *
-tile_vpn (NMClient *client)
+vpn_for_tile (NMClient *client)
 {
   NMActiveConnection *vpn = find_active (client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_vpn);
 
@@ -272,7 +260,7 @@ read_status (NwNm *nm, NwStatus *status)
   status->wired = wired_of (wired);
   if (wired != NULL)
     watch (nm, wired);
-  last_vpn = tile_vpn (client);
+  last_vpn = vpn_for_tile (client);
   if (last_vpn != NULL)
     status->last_vpn = g_strdup (nm_connection_get_id (last_vpn));
 
@@ -402,16 +390,22 @@ nw_nm_status (NwNm *nm)
   return &nm->status;
 }
 
-/* The end of a call that the status follows: only a failure is worth saying. what is the
-   call, as "can't <what>". */
+/* The end of a call that the status follows: only a failure is worth saying, and not the
+   applet going away. what is the call, as "can't <what>". */
+static void
+warn_unless_cancelled (const GError *error, const char *what)
+{
+  if (error != NULL && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+    g_warning ("can't %s: %s", what, error->message);
+}
+
 static void
 on_set_done (GObject *source, GAsyncResult *result, gpointer what)
 {
   g_autoptr (GError) error = NULL;
 
   nm_client_dbus_set_property_finish (NM_CLIENT (source), result, &error);
-  if (error != NULL && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-    g_warning ("can't %s: %s", (const char *) what, error->message);
+  warn_unless_cancelled (error, what);
 }
 
 static void
@@ -421,8 +415,7 @@ on_activate_done (GObject *source, GAsyncResult *result, gpointer what)
   g_autoptr (NMActiveConnection) active = nm_client_activate_connection_finish (
     NM_CLIENT (source), result, &error);
 
-  if (error != NULL && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-    g_warning ("can't %s: %s", (const char *) what, error->message);
+  warn_unless_cancelled (error, what);
 }
 
 static void
@@ -431,8 +424,16 @@ on_deactivate_done (GObject *source, GAsyncResult *result, gpointer what)
   g_autoptr (GError) error = NULL;
 
   nm_client_deactivate_connection_finish (NM_CLIENT (source), result, &error);
-  if (error != NULL && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-    g_warning ("can't %s: %s", (const char *) what, error->message);
+  warn_unless_cancelled (error, what);
+}
+
+static void
+on_disconnect_done (GObject *source, GAsyncResult *result, gpointer what)
+{
+  g_autoptr (GError) error = NULL;
+
+  nm_device_disconnect_finish (NM_DEVICE (source), result, &error);
+  warn_unless_cancelled (error, what);
 }
 
 /* WirelessEnabled or WwanEnabled, which nm_client_wireless_set_enabled() would set without
@@ -452,18 +453,25 @@ deactivate (NwNm *nm, NMActiveConnection *active, const char *what)
                                          on_deactivate_done, (gpointer) what);
 }
 
+/* As nmcli device disconnect: the device stays down until it's connected again, where
+   deactivating its connection would let NetworkManager bring up another of its own. */
+static void
+disconnect_device (NwNm *nm, NMDevice *device, const char *what)
+{
+  nm_device_disconnect_async (device, nm->cancellable, on_disconnect_done, (gpointer) what);
+}
+
 static void
 set_wired (NwNm *nm, gboolean on)
 {
   NMDevice *device = wired_device (nm->client);
-  NMActiveConnection *active;
 
   if (device == NULL)
     return;
   if (on)
     {
-      /* The connection the device had last. With none saved for it, NetworkManager makes
-         one, as nmcli device connect does. */
+      /* The connection the device had last. With none saved for it, NetworkManager picks
+         the best one it has, as nmcli device connect does. */
       NMRemoteConnection *connection = most_recent (
         nm_device_get_available_connections (device), NULL);
 
@@ -472,10 +480,7 @@ set_wired (NwNm *nm, gboolean on)
                                            "connect the wired device");
       return;
     }
-  /* Deactivated by the user, NetworkManager doesn't connect it again by itself. */
-  active = nm_device_get_active_connection (device);
-  if (active != NULL)
-    deactivate (nm, active, "disconnect the wired device");
+  disconnect_device (nm, device, "disconnect the wired device");
 }
 
 static void
@@ -486,12 +491,13 @@ set_vpn (NwNm *nm, gboolean on)
 
   if (!on)
     {
-      active = find_any (nm->client, is_vpn);
+      /* The one the tile shows. */
+      active = find_active (nm->client, NM_ACTIVE_CONNECTION_STATE_ACTIVATED, is_vpn);
       if (active != NULL)
         deactivate (nm, active, "turn the VPN off");
       return;
     }
-  vpn = tile_vpn (nm->client);
+  vpn = vpn_for_tile (nm->client);
   if (vpn != NULL)
     nm_client_activate_connection_async (nm->client, vpn, NULL, NULL, nm->cancellable,
                                          on_activate_done, "turn the VPN on");
@@ -538,9 +544,10 @@ nw_nm_set_tile (NwNm *nm, NwTile tile, gboolean on)
       set_vpn (nm, on);
       break;
     case NW_TILE_AIRPLANE:
-    default:
       set_airplane (nm, on);
       break;
+    case NW_N_TILES:
+      g_return_if_reached ();
     }
 }
 
@@ -548,11 +555,17 @@ void
 nw_nm_disconnect (NwNm *nm)
 {
   NMActiveConnection *base;
+  const GPtrArray *devices;
 
   if (!nm->status.running)
     return;
   base = base_connection (nm->client);
-  if (base != NULL)
+  if (base == NULL)
+    return;
+  devices = nm_active_connection_get_devices (base);
+  if (devices->len > 0)
+    disconnect_device (nm, g_ptr_array_index (devices, 0), "disconnect");
+  else
     deactivate (nm, base, "disconnect");
 }
 

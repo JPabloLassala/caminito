@@ -58,7 +58,7 @@ typedef struct
      speed in Mb/s, 0 where it isn't known. */
   char    *address;
   guint    speed;
-  /* WirelessEnabled, and the hardware switch off (not WirelessHardwareEnabled). */
+  /* WirelessEnabled, and the hardware switch off: WirelessHardwareEnabled false. */
   gboolean wifi_enabled;
   gboolean wifi_blocked;
   /* The Wi-Fi network that's up, NULL with none. */

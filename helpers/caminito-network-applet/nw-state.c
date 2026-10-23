@@ -171,7 +171,6 @@ nw_state_tile (const NwStatus *status, NwTile tile)
           break;
         case NW_WIRED_UNPLUGGED:
         case NW_WIRED_ABSENT:
-        default:
           state.text = "Unplugged";
           break;
         }
@@ -182,10 +181,11 @@ nw_state_tile (const NwStatus *status, NwTile tile)
       state.text = status->vpn != NULL ? status->vpn : "Off";
       break;
     case NW_TILE_AIRPLANE:
-    default:
       state.on = status->airplane;
       state.text = status->airplane ? "On" : "Off";
       break;
+    case NW_N_TILES:
+      g_return_val_if_reached (state);
     }
   return state;
 }
@@ -200,9 +200,9 @@ nw_state_card_title (const NwStatus *status)
     case NW_PHASE_CONNECTED:
       return g_strdup (status->name);
     case NW_PHASE_NONE:
-    default:
-      return g_strdup ("Not connected");
+      break;
     }
+  return g_strdup ("Not connected");
 }
 
 char *

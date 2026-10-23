@@ -22,7 +22,7 @@ typedef struct
   void (*set_tile)   (NwTile tile, gboolean on, gpointer data);
   /* The card's Disconnect. */
   void (*disconnect) (gpointer data);
-  /* "Configure network connections…": the popup closes after it. */
+  /* "Configure network connections…": the popup has closed before it's called. */
   void (*configure)  (gpointer data);
 } NwPopupActions;
 

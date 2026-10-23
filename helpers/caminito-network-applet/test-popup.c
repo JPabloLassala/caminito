@@ -313,6 +313,7 @@ test_configure (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_assert_true (shows (fixture, "Configure network connections…"));
   gtk_button_clicked (GTK_BUTTON (button_of (fixture, "Configure network connections…")));
   g_assert_cmpstr (fixture->calls->str, ==, "configure;");
+  g_assert_false (caminito_applet_popup_is_shown (fixture->applet_popup));
 }
 
 int
@@ -329,6 +330,6 @@ main (int argc, char **argv)
   g_test_add ("/popup/a-tile-click-asks-for-the-other-state", Fixture, NULL, setup, test_tile_click, teardown);
   g_test_add ("/popup/the-card-shows-the-connection-coming-up-or-none", Fixture, NULL, setup, test_card, teardown);
   g_test_add ("/popup/the-tab-chosen-last-is-kept", Fixture, NULL, setup, test_tab_is_kept, teardown);
-  g_test_add ("/popup/configure-opens-the-connection-editor", Fixture, NULL, setup, test_configure, teardown);
+  g_test_add ("/popup/configure-closes-the-popup-and-calls-back", Fixture, NULL, setup, test_configure, teardown);
   return g_test_run ();
 }

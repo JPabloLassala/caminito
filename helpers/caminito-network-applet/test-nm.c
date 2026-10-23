@@ -184,6 +184,11 @@ add_ethernet (Fixture *fixture, const char *id, guint device_state)
   device = call (fixture, NM_PATH, DBUSMOCK, "AddEthernetDevice",
                  g_variant_new ("(ssi)", "eth0", "eth0", device_state));
   g_variant_get (device, "(&s)", &device_path);
+  /* NetworkManager's, which the template hasn't: the device's connection goes down. */
+  mock_call (fixture, device_path, "AddMethod",
+             g_variant_new ("(sssss)", NM_NAME ".Device", "Disconnect", "", "",
+                            "objects['" NM_PATH "'].RemoveActiveConnection(self.path,"
+                            " self.Get('" NM_NAME ".Device', 'ActiveConnection'))"));
   connection_path = add_connection (fixture, settings);
   available = g_strdup_printf ("{'AvailableConnections': <[objectpath '%s']>}",
                                connection_path);
