@@ -10,6 +10,13 @@ Files: *
 Copyright: 2025-2026 jpablo <jpablolassala@gmail.com>
 License: GPL-2.0-or-later
 
+Files: data/remap-templates/macos-pc.remaps
+Copyright: RedBearAK, the author of Toshy (https://github.com/RedBearAK/toshy)
+           Ben Reaves, the author of Kinto (https://github.com/rbreaves/kinto)
+License: GPL-3
+Comment: The macOS Remap template, converted from Toshy's config by
+ tools/toshy-to-remaps (CMN-190). Toshy's config is based on Kinto's.
+
 License: GPL-2.0-or-later
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -23,3 +30,16 @@ License: GPL-2.0-or-later
  .
  On Debian systems, the complete text of the GNU General Public License
  version 2 can be found in `/usr/share/common-licenses/GPL-2'.
+
+License: GPL-3
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, version 3.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in `/usr/share/common-licenses/GPL-3'.
