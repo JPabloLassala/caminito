@@ -4,11 +4,10 @@
 
 use gio::prelude::*;
 
+use crate::SCHEMA;
+
 #[cfg(test)]
 mod tests;
-
-/// The schema the keys are in.
-pub const SCHEMA: &str = "org.mate.Caminito";
 
 /// The Activation delay's key, in milliseconds.
 const ACTIVATION_DELAY: &str = "hot-corner-activation-delay";
@@ -141,12 +140,9 @@ impl HotCorners {
 
     /// Opens the installed `org.mate.Caminito`.
     pub fn open() -> Result<Self, Error> {
-        let installed = gio::SettingsSchemaSource::default()
-            .is_some_and(|source| source.lookup(SCHEMA, true).is_some());
-        if !installed {
-            return Err(Error::NoSchema);
-        }
-        Ok(HotCorners::new(gio::Settings::new(SCHEMA)))
+        crate::installed()
+            .map(HotCorners::new)
+            .ok_or(Error::NoSchema)
     }
 
     /// What `corner` does.
