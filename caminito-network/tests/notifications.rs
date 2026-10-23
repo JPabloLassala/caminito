@@ -1,7 +1,9 @@
 //! The connection notifications against python-dbusmock's `networkmanager` and
 //! `notification_daemon` templates on a private bus. The mock NetworkManager doesn't move an
-//! active connection through its states, so the test emits its `StateChanged` as NetworkManager
-//! would, and reads what reached the notification server from the mock's calls.
+//! active connection or a device through its states, so the test emits their `StateChanged`
+//! as NetworkManager would, with its reasons: a Wi-Fi connection's own reason is only
+//! `DEVICE_DISCONNECTED` or `USER_DISCONNECTED` (nm-act-request.c), and why it went is the
+//! device's. It reads what reached the notification server from the mock's calls.
 
 mod mock;
 
@@ -21,6 +23,7 @@ const MOCK_PATH: &str = "/org/freedesktop";
 const MANAGER_PATH: &str = "/org/freedesktop/NetworkManager";
 const MANAGER: &str = "org.freedesktop.NetworkManager";
 const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
+const DEVICE: &str = "org.freedesktop.NetworkManager.Device";
 
 /// NetworkManager's `NMActiveConnectionState`.
 const ACTIVATING: u32 = 1;
@@ -32,13 +35,34 @@ const DEACTIVATED: u32 = 4;
 const NONE: u32 = 1;
 const USER_DISCONNECTED: u32 = 2;
 const DEVICE_DISCONNECTED: u32 = 3;
-const IP_CONFIG_INVALID: u32 = 5;
 const CONNECT_TIMEOUT: u32 = 6;
-const NO_SECRETS: u32 = 9;
 const LOGIN_FAILED: u32 = 10;
 
-/// NetworkManager's `NMDeviceState` for a device with nothing up.
-const DEVICE_DISCONNECTED_STATE: u32 = 30;
+/// NetworkManager's `NMDeviceState`.
+mod device {
+    pub const UNMANAGED: u32 = 10;
+    pub const DISCONNECTED: u32 = 30;
+    pub const IP_CONFIG: u32 = 70;
+    pub const ACTIVATED: u32 = 100;
+    pub const DEACTIVATING: u32 = 110;
+    pub const FAILED: u32 = 120;
+}
+
+/// NetworkManager's `NMDeviceStateReason`.
+mod device_reason {
+    pub const NONE: u32 = 0;
+    pub const NO_SECRETS: u32 = 7;
+    pub const SUPPLICANT_DISCONNECT: u32 = 8;
+    pub const DHCP_FAILED: u32 = 17;
+    pub const SLEEPING: u32 = 37;
+    pub const USER_REQUESTED: u32 = 39;
+    pub const SSID_NOT_FOUND: u32 = 53;
+    pub const NEW_ACTIVATION: u32 = 60;
+}
+
+/// NetworkManager's `NMState`.
+const ASLEEP: u32 = 10;
+const CONNECTED_GLOBAL: u32 = 70;
 
 /// A notification, as the notification server had it.
 #[derive(Debug, PartialEq, Eq)]
@@ -95,7 +119,7 @@ fn start(mock: &mut Mock) -> Fixture {
             MOCK_PATH,
             MOCK,
             "AddWiFiDevice",
-            ("wlan0", "wlan0", DEVICE_DISCONNECTED_STATE).to_variant(),
+            ("wlan0", "wlan0", device::DISCONNECTED).to_variant(),
         )
         .child_value(0)
         .str()
@@ -170,6 +194,47 @@ impl Fixture {
         .to_owned()
     }
 
+    /// A saved VPN connection named `name`, as its path.
+    fn vpn(&self, mock: &Mock, name: &str) -> String {
+        let settings: HashMap<String, HashMap<String, Variant>> = HashMap::from([(
+            "connection".to_owned(),
+            HashMap::from([
+                ("id".to_owned(), name.to_variant()),
+                ("type".to_owned(), "vpn".to_variant()),
+            ]),
+        )]);
+        mock.call(
+            "/org/freedesktop/NetworkManager/Settings",
+            "org.freedesktop.NetworkManager.Settings",
+            "AddConnection",
+            (settings,).to_variant(),
+        )
+        .child_value(0)
+        .str()
+        .unwrap()
+        .to_owned()
+    }
+
+    /// Starts activating the VPN `connection` by itself, as its active connection's path.
+    fn activate_vpn(&self, mock: &Mock, connection: &str) -> String {
+        self.activate_vpn_on(mock, connection, &[])
+    }
+
+    /// Starts activating the VPN `connection` over `devices`, as its active connection's
+    /// path.
+    fn activate_vpn_on(&self, mock: &Mock, connection: &str, devices: &[&str]) -> String {
+        mock.call(
+            MOCK_PATH,
+            MOCK,
+            "AddActiveConnection",
+            (devices.to_vec(), connection, "/", "vpn", ACTIVATING).to_variant(),
+        )
+        .child_value(0)
+        .str()
+        .unwrap()
+        .to_owned()
+    }
+
     /// Takes the active connection away, as NetworkManager does once it's deactivated.
     fn remove(&self, mock: &Mock, active: &str) {
         mock.call(
@@ -205,6 +270,22 @@ impl Fixture {
         );
         mock.wait_until("the notifier to hear of the activation", || answered.get());
     }
+}
+
+/// Emits the device's `StateChanged`, as NetworkManager does when it moves.
+fn device_changed(mock: &Mock, fixture: &Fixture, state: u32, old: u32, reason: u32) {
+    mock.call(
+        &fixture.device,
+        MOCK,
+        "EmitSignal",
+        (
+            DEVICE,
+            "StateChanged",
+            "uuu",
+            vec![state.to_variant(), old.to_variant(), reason.to_variant()],
+        )
+            .to_variant(),
+    );
 }
 
 /// Emits the active connection's `StateChanged`, as NetworkManager does when it moves.
@@ -256,30 +337,51 @@ fn wait_for_notifications(mock: &Mock, count: usize) -> Vec<Notification> {
     notifications(mock)
 }
 
-/// A connection that fails as it comes up, with `reason`, and what the notification says.
-fn failure(reason: u32) -> Notification {
+/// A Wi-Fi connection that fails as it comes up, its device with `reason`, and what the
+/// notification says.
+fn wifi_failure(reason: u32) -> Notification {
     let mut failed = None;
     mock::run(|mock| {
         let fixture = start(mock);
         let home = fixture.network(mock, "Home");
         let active = fixture.activate(mock, &home, "0");
-        state_changed(mock, &active, DEACTIVATING, reason);
-        state_changed(mock, &active, DEACTIVATED, reason);
+        device_changed(mock, &fixture, device::FAILED, device::IP_CONFIG, reason);
+        state_changed(mock, &active, DEACTIVATED, DEVICE_DISCONNECTED);
+        // Failed, the device goes on to disconnected, with no reason.
+        device_changed(
+            mock,
+            &fixture,
+            device::DISCONNECTED,
+            device::FAILED,
+            device_reason::NONE,
+        );
         fixture.remove(mock, &active);
-        let mut shown = wait_for_notifications(mock, 1);
-        failed = shown.pop();
+        failed = wait_for_notifications(mock, 1).pop();
+    });
+    failed.unwrap()
+}
+
+/// A VPN that fails as it comes up with `reason`, and what the notification says.
+fn vpn_failure(reason: u32) -> Notification {
+    let mut failed = None;
+    mock::run(|mock| {
+        let fixture = start(mock);
+        let office = fixture.vpn(mock, "Office");
+        let active = fixture.activate_vpn(mock, &office);
+        state_changed(mock, &active, DEACTIVATED, reason);
+        failed = wait_for_notifications(mock, 1).pop();
     });
     failed.unwrap()
 }
 
 #[test]
-fn a_wrong_password_is_a_failed_connection_whose_login_failed() {
+fn a_wrong_wifi_password_is_a_failed_connection_the_network_turned_away() {
     assert_eq!(
-        failure(LOGIN_FAILED),
+        wifi_failure(device_reason::SUPPLICANT_DISCONNECT),
         notification(
             "network-wireless",
             "Connection failed",
-            "Couldn't connect to Home. The login failed.",
+            "Couldn't connect to Home. The network turned it away. The password may be wrong.",
             "network.error",
         )
     );
@@ -288,24 +390,45 @@ fn a_wrong_password_is_a_failed_connection_whose_login_failed() {
 #[test]
 fn a_connection_without_its_password_fails_for_want_of_one() {
     assert_eq!(
-        failure(NO_SECRETS).body,
+        wifi_failure(device_reason::NO_SECRETS).body,
         "Couldn't connect to Home. It needs a password, and none was given."
     );
 }
 
 #[test]
-fn a_connection_that_takes_too_long_fails_with_a_timeout() {
+fn a_connection_without_an_address_fails_for_want_of_one() {
     assert_eq!(
-        failure(CONNECT_TIMEOUT).body,
-        "Couldn't connect to Home. The attempt timed out."
+        wifi_failure(device_reason::DHCP_FAILED).body,
+        "Couldn't connect to Home. The network gave it no address."
     );
 }
 
 #[test]
-fn a_connection_without_an_address_fails_for_its_ip_configuration() {
+fn a_network_out_of_range_fails_as_one() {
     assert_eq!(
-        failure(IP_CONFIG_INVALID).body,
-        "Couldn't connect to Home. It got no valid IP address."
+        wifi_failure(device_reason::SSID_NOT_FOUND).body,
+        "Couldn't connect to Home. The network isn't in range."
+    );
+}
+
+#[test]
+fn a_vpn_whose_login_is_refused_fails_with_its_login() {
+    assert_eq!(
+        vpn_failure(LOGIN_FAILED),
+        notification(
+            "network-vpn",
+            "Connection failed",
+            "Couldn't connect to Office. The login failed.",
+            "network.error",
+        )
+    );
+}
+
+#[test]
+fn a_vpn_that_takes_too_long_fails_with_a_timeout() {
+    assert_eq!(
+        vpn_failure(CONNECT_TIMEOUT).body,
+        "Couldn't connect to Office. The attempt timed out."
     );
 }
 
@@ -331,14 +454,39 @@ fn user_connects(mock: &Mock, fixture: &Fixture, connection: &str) -> String {
     active.child_value(0).str().unwrap().to_owned()
 }
 
+/// The Wi-Fi connection `active` goes down as NetworkManager takes it down for the device's
+/// `reason`, with the device's signal before the connection's or after it.
+fn wifi_down(mock: &Mock, fixture: &Fixture, active: &str, reason: u32, device_first: bool) {
+    // Only the user's request reaches the connection's own reason (nm-act-request.c).
+    let own = if reason == device_reason::USER_REQUESTED {
+        USER_DISCONNECTED
+    } else {
+        DEVICE_DISCONNECTED
+    };
+    if device_first {
+        device_changed(
+            mock,
+            fixture,
+            device::DEACTIVATING,
+            device::ACTIVATED,
+            reason,
+        );
+    }
+    state_changed(mock, active, DEACTIVATING, own);
+    state_changed(mock, active, DEACTIVATED, own);
+    if !device_first {
+        device_changed(mock, fixture, device::UNMANAGED, device::ACTIVATED, reason);
+    }
+    fixture.remove(mock, active);
+}
+
 #[test]
 fn a_connection_the_user_cancels_as_it_comes_up_is_no_failure() {
     mock::run(|mock| {
         let fixture = start(mock);
         let home = fixture.network(mock, "Home");
         let active = fixture.activate(mock, &home, "0");
-        state_changed(mock, &active, DEACTIVATED, USER_DISCONNECTED);
-        fixture.remove(mock, &active);
+        wifi_down(mock, &fixture, &active, device_reason::USER_REQUESTED, true);
         mock.run_for(QUIET);
         assert_eq!(notifications(mock), []);
     });
@@ -382,9 +530,13 @@ fn a_dropped_connection_replaces_its_connected_notification() {
         let active = fixture.activate(mock, &home, "0");
         state_changed(mock, &active, ACTIVATED, NONE);
         wait_for_notifications(mock, 1);
-        state_changed(mock, &active, DEACTIVATING, DEVICE_DISCONNECTED);
-        state_changed(mock, &active, DEACTIVATED, DEVICE_DISCONNECTED);
-        fixture.remove(mock, &active);
+        wifi_down(
+            mock,
+            &fixture,
+            &active,
+            device_reason::SUPPLICANT_DISCONNECT,
+            true,
+        );
         let dropped = wait_for_notifications(mock, 2).pop().unwrap();
         assert_eq!(
             dropped,
@@ -408,7 +560,14 @@ fn a_connection_the_user_disconnects_is_no_news() {
         let fixture = start(mock);
         let home = fixture.network(mock, "Home");
         let active = user_connects(mock, &fixture, &home);
-        // NetworkManager's reason for DeactivateConnection, as for the device's Disconnect.
+        // DeactivateConnection, as the device's Disconnect, is the device's USER_REQUESTED.
+        device_changed(
+            mock,
+            &fixture,
+            device::DEACTIVATING,
+            device::ACTIVATED,
+            device_reason::USER_REQUESTED,
+        );
         state_changed(mock, &active, DEACTIVATING, USER_DISCONNECTED);
         state_changed(mock, &active, DEACTIVATED, USER_DISCONNECTED);
         mock.call(
@@ -419,6 +578,29 @@ fn a_connection_the_user_disconnects_is_no_news() {
         );
         mock.run_for(QUIET);
         assert_eq!(notifications(mock), []);
+    });
+}
+
+#[test]
+fn a_vpn_on_a_link_the_user_disconnects_is_no_news() {
+    mock::run(|mock| {
+        let fixture = start(mock);
+        let home = fixture.network(mock, "Home");
+        let at_home = user_connects(mock, &fixture, &home);
+        let office = fixture.vpn(mock, "Office");
+        let vpn = fixture.activate_vpn_on(mock, &office, &[fixture.device.as_str()]);
+        state_changed(mock, &vpn, ACTIVATED, NONE);
+        wait_for_notifications(mock, 1);
+        wifi_down(
+            mock,
+            &fixture,
+            &at_home,
+            device_reason::USER_REQUESTED,
+            false,
+        );
+        state_changed(mock, &vpn, DEACTIVATED, DEVICE_DISCONNECTED);
+        mock.run_for(QUIET);
+        assert_eq!(notifications(mock).len(), 1);
     });
 }
 
@@ -438,6 +620,49 @@ fn wifi_turned_off_is_no_news_of_its_connection() {
 }
 
 #[test]
+fn the_airplane_mode_switch_is_no_news_of_the_wifi_connection() {
+    mock::run(|mock| {
+        let fixture = start(mock);
+        let home = fixture.network(mock, "Home");
+        let active = user_connects(mock, &fixture, &home);
+        state_changed(mock, &active, DEACTIVATED, DEVICE_DISCONNECTED);
+        fixture.remove(mock, &active);
+        set_manager(mock, "WirelessHardwareEnabled", false.to_variant());
+        mock.run_for(QUIET);
+        assert_eq!(notifications(mock), []);
+    });
+}
+
+#[test]
+fn sleep_is_no_news_of_the_connections_it_takes_down() {
+    mock::run(|mock| {
+        let fixture = start(mock);
+        let home = fixture.network(mock, "Home");
+        let active = user_connects(mock, &fixture, &home);
+        // The device says why after the connection went.
+        wifi_down(mock, &fixture, &active, device_reason::SLEEPING, false);
+        mock.run_for(QUIET);
+        assert_eq!(notifications(mock), []);
+    });
+}
+
+#[test]
+fn a_resume_before_the_notifier_decides_is_still_no_news_of_sleep() {
+    mock::run(|mock| {
+        let fixture = start(mock);
+        let home = fixture.network(mock, "Home");
+        let active = user_connects(mock, &fixture, &home);
+        state_changed(mock, &active, DEACTIVATED, DEVICE_DISCONNECTED);
+        fixture.remove(mock, &active);
+        // The machine sleeps, and wakes, within the notifier's second, as its clock has it.
+        set_manager(mock, "State", ASLEEP.to_variant());
+        set_manager(mock, "State", CONNECTED_GLOBAL.to_variant());
+        mock.run_for(QUIET);
+        assert_eq!(notifications(mock), []);
+    });
+}
+
+#[test]
 fn a_network_the_user_switches_to_is_no_news_of_the_one_before() {
     mock::run(|mock| {
         let fixture = start(mock);
@@ -445,9 +670,14 @@ fn a_network_the_user_switches_to_is_no_news_of_the_one_before() {
         let work = fixture.network(mock, "Work");
         let at_home = user_connects(mock, &fixture, &home);
         fixture.user_activating(mock, &uuid(mock, &work));
+        wifi_down(
+            mock,
+            &fixture,
+            &at_home,
+            device_reason::NEW_ACTIVATION,
+            true,
+        );
         let at_work = fixture.activate(mock, &work, "1");
-        state_changed(mock, &at_home, DEACTIVATED, DEVICE_DISCONNECTED);
-        fixture.remove(mock, &at_home);
         state_changed(mock, &at_work, ACTIVATED, NONE);
         mock.run_for(QUIET);
         assert_eq!(notifications(mock), []);
@@ -460,8 +690,7 @@ fn a_connection_the_user_brings_back_closes_its_notification() {
         let fixture = start(mock);
         let home = fixture.network(mock, "Home");
         let active = fixture.activate(mock, &home, "0");
-        state_changed(mock, &active, DEACTIVATED, LOGIN_FAILED);
-        fixture.remove(mock, &active);
+        wifi_down(mock, &fixture, &active, device_reason::NO_SECRETS, true);
         wait_for_notifications(mock, 1);
         user_connects(mock, &fixture, &home);
         mock.wait_until("the notification to close", || !mock.closes().is_empty());
