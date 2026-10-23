@@ -191,3 +191,49 @@ fn the_remaps_in_use_are_found_in_the_template_that_holds_them() {
     changed.all.pop();
     assert!(holding(&listed, &changed).is_none());
 }
+
+/// The macOS template, as tools/toshy-to-remaps writes it from Toshy's config (CMN-190).
+const MACOS: &str = include_str!("../../../data/remap-templates/macos-pc.remaps");
+
+#[test]
+fn the_macos_template_has_toshys_shortcuts_on_a_pc_keyboard() {
+    let (name, remaps) = parse(MACOS).unwrap();
+    assert_eq!(name.as_deref(), Some("macOS (PC keyboard)"));
+    let target = |scope, combination| {
+        let combination = Combination::parse(combination).unwrap();
+        let rule = remaps
+            .rules(scope)
+            .iter()
+            .find(|rule| rule.combination == combination);
+        rule.map(|rule| target_text(&rule.steps))
+    };
+    let all = Scope::AllApplications;
+    assert_eq!(target(all, "Alt+T").as_deref(), Some("Ctrl+T"));
+    assert_eq!(target(all, "Alt+Right").as_deref(), Some("End"));
+    assert_eq!(
+        target(all, "Alt+BackSpace").as_deref(),
+        Some("Shift+Home, BackSpace")
+    );
+    let terminals = remaps.group_of("mate-terminal").unwrap();
+    assert_eq!(remaps.groups[terminals].name, "Terminals");
+    assert_eq!(
+        target(Scope::Group(terminals), "Alt+C").as_deref(),
+        Some("Ctrl+Shift+C")
+    );
+    let remote = remaps.group_of("org.remmina.Remmina").unwrap();
+    assert!(remaps.groups[remote].no_remaps);
+}
+
+#[test]
+fn the_macos_template_is_listed_with_caminitos_with_no_problem() {
+    let dirs = dirs();
+    fs::write(dirs.shipped.join("macos-pc.remaps"), MACOS).unwrap();
+    let templates = Templates::new(dirs.shipped.clone(), dirs.user.clone());
+    let (listed, problems) = templates.list();
+    assert!(problems.is_empty(), "{problems:?}");
+    assert!(
+        listed
+            .iter()
+            .any(|t| t.name == "macOS (PC keyboard)" && t.shipped)
+    );
+}

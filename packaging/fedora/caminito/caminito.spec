@@ -32,7 +32,9 @@ Name:           caminito
 Version:        0.0~r%{rev_count}.g%{shortcommit}
 Release:        1%{?dist}
 Summary:        Wayland compositor for the MATE desktop
-License:        GPL-2.0-or-later
+# The macOS Remap template, macos-pc.remaps, is converted from Toshy's config, and is GPL-3,
+# as Toshy is (CMN-190).
+License:        GPL-2.0-or-later AND GPL-3.0-only
 URL:            https://github.com/JPabloLassala/caminito
 Source0:        %{name}-%{version}.tar.gz
 

@@ -159,3 +159,25 @@ fn no_groups_or_no_rules_are_no_remaps() {
         .is_empty()
     );
 }
+
+#[test]
+fn every_rule_of_the_macos_template_is_one_caminito_remaps() {
+    // The template's rules, as caminito-behaviour writes them into `key-remaps` (CMN-190).
+    let template = include_str!("../../../../data/remap-templates/macos-pc.remaps");
+    let rules: Vec<(String, Vec<String>)> = template
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| line.split_once(" = "))
+        .map(|(trigger, target)| {
+            let steps = match target {
+                "nothing" => Vec::new(),
+                steps => steps.split(", ").map(str::to_owned).collect(),
+            };
+            (trigger.to_owned(), steps)
+        })
+        .collect();
+    assert!(rules.len() > 500, "{} rules", rules.len());
+    let group: RemapGroupValue = (String::new(), Vec::new(), false, rules);
+    let (_, unremappable) = KeyRemaps::from_groups(&[group]);
+    assert_eq!(unremappable, []);
+}
