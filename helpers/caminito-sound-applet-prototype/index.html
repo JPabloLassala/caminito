@@ -1,0 +1,895 @@
+<title>Sound Applet Shapes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<!--
+  PROTOTYPE — throwaway. Four shapes of the Sound applet's popup, switchable with the bottom bar
+  (or ← →, or #A..#D). Fake devices and applications; nothing talks to a sound server.
+  Question it answers: what should the popup look like? (grilling session, 2026-10-23)
+-->
+<style>
+/* Layout: page header, then a stage (a mock desktop with MATE's top panel and the popup under the
+   Sound applet's icon) beside a side panel with the model's state, simulation switches and notes. */
+:root {
+  --page: #eef0f3; --ink: #1d2128; --ink-soft: #5b6472; --rule: #d5dae1;
+  --wall: #4f6b73; --wall-2: #5b7880;
+  --panel: #2a2e35; --panel-ink: #e8eaee; --panel-hover: #3b414b;
+  --pop: #fbfbfc; --pop-ink: #1f232a; --pop-soft: #6b7380; --pop-line: #e2e5ea; --pop-hover: #eff1f4; --pop-sunk: #f2f4f7;
+  --accent: #2f6fd6; --accent-ink: #ffffff; --accent-soft: #dfe9fb;
+  --warn: #c2410c; --rec: #d23c3c; --meter: #3aa86b;
+  --a1: #e8702a; --a2: #1db954; --a3: #5865f2; --a4: #7a4fd1; --a5: #8a94a3; --a6: #c2407a; --danger-ink: #ffffff;
+  --bar: #14171c; --bar-ink: #f4f5f7;
+  --shadow: 0 10px 30px rgba(10, 15, 25, .28), 0 2px 6px rgba(10, 15, 25, .18);
+  --f-ui: "Noto Sans", "Cantarell", "DejaVu Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #15181d; --ink: #e6e9ee; --ink-soft: #9aa3b1; --rule: #2c323b;
+  --wall: #22343a; --wall-2: #2a3f46;
+  --panel: #1b1e23; --panel-ink: #e1e4e9; --panel-hover: #2d323a;
+  --pop: #262a31; --pop-ink: #e7e9ed; --pop-soft: #9aa2ae; --pop-line: #363b44; --pop-hover: #30353d; --pop-sunk: #1f2329;
+  --accent: #5b93ec; --accent-ink: #0d1420; --accent-soft: #24344f;
+  --warn: #f08a4b; --rec: #ef6464; --meter: #4cc283;
+  --bar: #f1f3f6; --bar-ink: #14171c;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #15181d; --ink: #e6e9ee; --ink-soft: #9aa3b1; --rule: #2c323b;
+  --wall: #22343a; --wall-2: #2a3f46;
+  --panel: #1b1e23; --panel-ink: #e1e4e9; --panel-hover: #2d323a;
+  --pop: #262a31; --pop-ink: #e7e9ed; --pop-soft: #9aa2ae; --pop-line: #363b44; --pop-hover: #30353d; --pop-sunk: #1f2329;
+  --accent: #5b93ec; --accent-ink: #0d1420; --accent-soft: #24344f;
+  --warn: #f08a4b; --rec: #ef6464; --meter: #4cc283;
+  --bar: #f1f3f6; --bar-ink: #14171c;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--f-ui); font-size: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 96px }
+button, select, input { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+.page { max-width: 1180px; margin: 0 auto; display: grid; gap: 18px }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px }
+.head h1 { font-size: 20px; font-weight: 700; margin: 0; text-wrap: balance }
+.head p { margin: 0; color: var(--ink-soft); max-width: 70ch }
+.tag { font: 600 11px var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--warn);
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr) } }
+
+/* ---- the mock desktop ---- */
+.stage { position: relative; border-radius: 8px; overflow: hidden; min-height: 640px;
+  background: repeating-linear-gradient(135deg, var(--wall) 0 22px, var(--wall-2) 22px 44px); border: 1px solid var(--rule) }
+.mpanel { height: 28px; background: var(--panel); color: var(--panel-ink); display: flex; align-items: center;
+  padding: 0 6px; gap: 2px; font-size: 13px; user-select: none }
+.mpanel .menu { padding: 0 8px; font-weight: 600 }
+.mpanel .spacer { flex: 1 }
+.mpanel .ic { height: 28px; min-width: 28px; display: grid; place-items: center; border-radius: 3px; position: relative;
+  background: none; border: 0; padding: 0 5px; cursor: default }
+.mpanel .ic svg { width: 16px; height: 16px; fill: currentColor }
+.mpanel .ic.sound { cursor: pointer }
+.mpanel .ic.sound:hover, .mpanel .ic.sound.on { background: var(--panel-hover) }
+.mpanel .clock { padding: 0 10px; font-variant-numeric: tabular-nums }
+.recdot { position: absolute; right: 2px; top: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--rec);
+  box-shadow: 0 0 0 1.5px var(--panel) }
+.hint { position: absolute; left: 16px; bottom: 14px; right: 16px; color: #fff; opacity: .85; font-size: 12px; text-shadow: 0 1px 2px rgba(0,0,0,.5) }
+
+.pop { position: absolute; top: 32px; width: 372px; max-width: calc(100% - 16px); background: var(--pop); color: var(--pop-ink);
+  border-radius: 8px; box-shadow: var(--shadow); border: 1px solid var(--pop-line); font-size: 13px; overflow: hidden }
+.pop[hidden] { display: none }
+.toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: 44px; background: var(--bar); color: var(--bar-ink);
+  padding: 7px 12px; border-radius: 6px; font-size: 12px; box-shadow: var(--shadow) }
+
+/* ---- shared popup pieces ---- */
+.sec { padding: 6px 8px }
+.sec + .sec { border-top: 1px solid var(--pop-line) }
+.sech { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--pop-soft); padding: 6px 6px 4px }
+.row { display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) auto; align-items: center; gap: 4px 8px;
+  padding: 6px; border-radius: 6px }
+.row:hover { background: var(--pop-hover) }
+.row .name { min-width: 0 }
+.row .t { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.row .s { color: var(--pop-soft); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.row .full { grid-column: 2 / -1 }
+.radio { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--pop-soft); background: none; padding: 0; cursor: pointer }
+.radio.on { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px) }
+.dico svg { width: 20px; height: 20px; fill: var(--pop-ink); opacity: .8; display: block }
+.ibtn { width: 26px; height: 26px; border-radius: 5px; border: 0; background: none; display: grid; place-items: center; cursor: pointer; padding: 0 }
+.ibtn:hover { background: var(--pop-line) }
+.ibtn svg { width: 16px; height: 16px; fill: var(--pop-ink) }
+.ibtn.muted svg { fill: var(--warn) }
+.vol { display: grid; grid-template-columns: auto minmax(0, 1fr) 38px; align-items: center; gap: 6px }
+.pct { font-variant-numeric: tabular-nums; text-align: right; color: var(--pop-soft); font-size: 12px }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; height: 18px }
+input[type=range].dim { opacity: .45 }
+.meter { height: 3px; border-radius: 2px; background: var(--pop-line); overflow: hidden; margin-top: 2px }
+.meter i { display: block; height: 100%; width: 0; background: var(--meter); transition: width .08s linear }
+select.mini { font-size: 12px; padding: 1px 4px; border: 1px solid var(--pop-line); border-radius: 4px; background: var(--pop); max-width: 100% }
+.chev { transition: transform .15s } .chev.open { transform: rotate(90deg) }
+.mono { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #fff }
+.badge { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-radius: 3px; padding: 0 5px; white-space: nowrap }
+.badge.off { opacity: .6 }
+.badge.rec { color: var(--rec); background: transparent; border: 1px solid currentColor }
+.streams { grid-column: 2 / -1; display: grid; gap: 4px; padding: 4px 0 2px; border-left: 2px solid var(--pop-line); padding-left: 10px; margin-left: 2px }
+.streams .st { display: grid; gap: 1px }
+.streams .st .s { font-size: 12px }
+.foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--pop-line) }
+.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 12px }
+.link:hover { background: var(--accent-soft) }
+.empty { padding: 34px 20px; text-align: center; color: var(--pop-soft) }
+.empty b { display: block; color: var(--pop-ink); margin-bottom: 4px; font-size: 14px }
+
+/* A: tabs */
+.tabs { display: flex; align-items: center; gap: 2px; padding: 6px 6px 0; border-bottom: 1px solid var(--pop-line) }
+.tab { border: 0; background: none; padding: 7px 12px 8px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--pop-soft); font-weight: 500 }
+.tab.on { color: var(--pop-ink); border-bottom-color: var(--accent) }
+.tabs .grow { flex: 1 }
+.scroll { max-height: 470px; overflow: auto; min-height: 0; flex: 1 1 auto }
+/* the popup never grows past the screen: what's between its fixed top and footer scrolls */
+.pop { display: flex; flex-direction: column }
+.pop > * { flex: none }
+.pop > .scroll { flex: 1 1 auto }
+.stage.short { min-height: 0; height: 430px }
+
+/* B: stacked */
+.big { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 12px 4px }
+.big .ibtn { width: 30px; height: 30px; border-radius: 50%; background: var(--pop-sunk) }
+.big .ibtn.muted { background: var(--accent-soft) }
+.pill { display: flex; align-items: center; gap: 4px; border: 1px solid var(--pop-line); border-radius: 999px; padding: 3px 8px 3px 10px;
+  background: var(--pop-sunk); cursor: pointer; max-width: 150px; font-size: 12px }
+.pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pill svg { width: 12px; height: 12px; fill: var(--pop-ink); flex: none }
+.drop { margin: 4px 12px 8px; border-radius: 8px; background: var(--pop-sunk); padding: 4px }
+.opt { display: grid; grid-template-columns: 20px minmax(0, 1fr) 18px; gap: 8px; align-items: center; width: 100%; text-align: left;
+  border: 0; background: none; padding: 7px 8px; border-radius: 6px; cursor: pointer }
+.opt:hover { background: var(--pop-hover) }
+.opt svg { width: 16px; height: 16px; fill: var(--pop-ink) }
+.opt .ck { fill: var(--accent) }
+.apps-b { padding: 4px 8px 6px }
+.arow { display: grid; grid-template-columns: 22px 92px minmax(0, 1fr) 34px; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px }
+.arow .nm { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500 }
+.arow .nm:hover { color: var(--accent) }
+.arow.pin { grid-template-columns: 22px 92px minmax(0, 1fr) 34px minmax(24px, auto) }
+.arow .sub { grid-column: 2 / 4; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0 }
+.arow .tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+.arow .state { font-size: 11px; color: var(--pop-soft); display: inline-flex; align-items: center; gap: 3px }
+.arow .state svg { width: 11px; height: 11px; fill: currentColor; flex: none }
+.ibtn.sm { width: 24px; height: 24px }
+.ibtn.sm svg { width: 14px; height: 14px; opacity: .7 }
+.ibtn.sm:hover svg { opacity: 1 }
+.confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 2px 0 4px 30px; padding: 6px 8px;
+  background: var(--pop-sunk); border-radius: 6px; font-size: 12px; animation: slide .14s ease-out }
+.confirm .grow { flex: 1 }
+@keyframes slide { from { opacity: 0; transform: translateY(-4px) } }
+.btn { border: 1px solid var(--pop-line); background: var(--pop); border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px }
+.btn:hover { background: var(--pop-hover) }
+.btn.danger { background: var(--rec); color: var(--danger-ink); border-color: transparent }
+.armed { background: var(--rec); color: var(--danger-ink); border: 0; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; animation: slide .14s ease-out }
+.sech.flex { display: flex; align-items: center; justify-content: space-between; padding-right: 12px }   /* lines its × up with the rows' */
+/* "Unpin all" appears left of the heading's × while it's hovered or focused (the label comes after the button so CSS can reach it) */
+.allx { display: flex; flex-direction: row-reverse; align-items: center; gap: 4px }
+.allx .lbl { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--rec); opacity: 0; transform: translateX(4px);
+  transition: opacity .12s, transform .12s; pointer-events: none }
+.allx button:hover + .lbl, .allx button:focus-visible + .lbl { opacity: 1; transform: none }
+.ibtn.sm.danger svg { fill: var(--rec); opacity: .85 }
+.ibtn.sm.danger:hover { background: color-mix(in srgb, var(--rec) 14%, transparent) }
+.arow .sub .meter { align-self: stretch; margin-top: 0 }
+.badge .x { border: 0; background: none; color: inherit; padding: 0 0 0 5px; margin-left: 2px; cursor: pointer; font-size: 13px; line-height: 1;
+  border-left: 1px solid currentColor; opacity: .8 }
+.badge .x:hover { opacity: 1 }
+.custom { font-size: 12px; color: var(--pop-soft); padding: 0 6px 6px }
+.custom .link { padding: 0 3px; font-size: 12px }
+
+/* C: drill-down */
+.navh { display: grid; grid-template-columns: 70px 1fr 70px; align-items: center; padding: 8px 6px; border-bottom: 1px solid var(--pop-line) }
+.navh h3 { margin: 0; text-align: center; font-size: 13px; font-weight: 600 }
+.back { justify-self: start; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 3px 6px; border-radius: 4px; font-size: 13px }
+.lrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 14px; gap: 8px; align-items: center; width: 100%; text-align: left;
+  border: 0; background: none; padding: 7px 10px; border-radius: 6px; cursor: pointer }
+.lrow:hover { background: var(--pop-hover) }
+.lrow svg { width: 15px; height: 15px; fill: var(--pop-ink) }
+.lrow .ck { fill: var(--accent) }
+.lrow .more { opacity: .55 }
+.lrow .s { color: var(--pop-soft); font-size: 12px }
+.cpad { padding: 8px 10px }
+
+/* D: routing tree */
+.dev { border: 1px solid var(--pop-line); border-radius: 8px; margin: 6px 4px; background: var(--pop) }
+.dev.def { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent) }
+.dev.over { background: var(--accent-soft) }
+.dev .row:hover { background: transparent }
+.lane { padding: 0 8px 6px 36px; display: grid; gap: 4px }
+.chip { display: grid; grid-template-columns: 12px 20px minmax(0, 1fr) 90px 30px; gap: 6px; align-items: center; padding: 3px 6px;
+  border-radius: 6px; background: var(--pop-sunk); cursor: grab }
+.chip.dragging { opacity: .4 }
+.chip .mono { width: 20px; height: 20px; font-size: 11px }
+.chip .grip { width: 12px; height: 14px; background: radial-gradient(circle, var(--pop-soft) 1px, transparent 1.5px) 0 0 / 4px 4px; opacity: .8 }
+.chip .nm { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 500 }
+.chip .nm small { color: var(--pop-soft); font-weight: 400 }
+.chipx { padding: 4px 6px 6px 38px; display: grid; gap: 4px }
+.lane .none { font-size: 12px; color: var(--pop-soft); padding: 2px 0 }
+.follow { font-size: 11px; color: var(--accent) }
+
+/* context menu */
+.ctx { position: absolute; top: 32px; min-width: 230px; background: var(--pop); color: var(--pop-ink); border: 1px solid var(--pop-line);
+  border-radius: 6px; box-shadow: var(--shadow); padding: 4px; font-size: 13px }
+.ctx[hidden] { display: none }
+.mi { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 6px; align-items: center; width: 100%; text-align: left; border: 0;
+  background: none; padding: 5px 8px; border-radius: 4px; cursor: pointer }
+.mi:hover { background: var(--accent); color: var(--accent-ink) }
+.mi:hover svg { fill: var(--accent-ink) }
+.mi svg { width: 14px; height: 14px; fill: var(--pop-ink) }
+.msep { height: 1px; background: var(--pop-line); margin: 4px 2px }
+.mh { font-size: 11px; color: var(--pop-soft); padding: 4px 8px 2px 32px }
+
+/* ---- side panel ---- */
+.side { display: grid; gap: 14px; min-width: 0 }
+.card { border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0 }
+.card h2 { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft) }
+.card p, .card li { margin: 0; line-height: 1.5; color: var(--ink) }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px }
+.state { font: 12px/1.55 var(--f-mono); white-space: pre-wrap; margin: 0; overflow-x: auto; color: var(--ink) }
+.log { font: 11.5px/1.5 var(--f-mono); color: var(--ink-soft); margin: 0; white-space: pre-wrap }
+.sw { display: flex; gap: 8px; align-items: center; cursor: pointer }
+.sw code { font: 11.5px var(--f-mono); color: var(--ink-soft) }
+
+/* ---- variant switcher (not part of the design) ---- */
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 4px; background: var(--bar); color: var(--bar-ink); border-radius: 999px; padding: 5px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 10; max-width: calc(100% - 32px) }
+.switcher button { border: 0; background: none; color: inherit; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 16px }
+.switcher button:hover { background: rgba(127,127,127,.25) }
+.switcher .lbl { padding: 0 10px; font: 600 13px var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-spk0" viewBox="0 0 16 16"><path d="M2 5.5h2.5L8 2.5v11L4.5 10.5H2z"/></symbol>
+  <symbol id="i-spk1" viewBox="0 0 16 16"><path d="M2 5.5h2.5L8 2.5v11L4.5 10.5H2z"/><path d="M9.6 5.6a3.2 3.2 0 0 1 0 4.8l-.8-.9a2 2 0 0 0 0-3z"/></symbol>
+  <symbol id="i-spk2" viewBox="0 0 16 16"><path d="M2 5.5h2.5L8 2.5v11L4.5 10.5H2z"/><path d="M9.6 5.6a3.2 3.2 0 0 1 0 4.8l-.8-.9a2 2 0 0 0 0-3z"/><path d="M11.3 3.8a5.6 5.6 0 0 1 0 8.4l-.8-.9a4.4 4.4 0 0 0 0-6.6z"/></symbol>
+  <symbol id="i-spk3" viewBox="0 0 16 16"><path d="M2 5.5h2.5L8 2.5v11L4.5 10.5H2z"/><path d="M9.6 5.6a3.2 3.2 0 0 1 0 4.8l-.8-.9a2 2 0 0 0 0-3z"/><path d="M11.3 3.8a5.6 5.6 0 0 1 0 8.4l-.8-.9a4.4 4.4 0 0 0 0-6.6z"/><path d="M13 2a8 8 0 0 1 0 12l-.85-.9a6.8 6.8 0 0 0 0-10.2z"/></symbol>
+  <symbol id="i-spkx" viewBox="0 0 16 16"><path d="M2 5.5h2.5L8 2.5v11L4.5 10.5H2z"/><path d="M10 5.8l.8-.8 1.7 1.7L14.2 5l.8.8-1.7 1.7L15 9.2l-.8.8-1.7-1.7-1.7 1.7-.8-.8 1.7-1.7z"/></symbol>
+  <symbol id="i-spkoff" viewBox="0 0 16 16"><path d="M2 5.5h2.5L8 2.5v11L4.5 10.5H2z" opacity=".45"/><path d="M1.5 2.3l.8-.8 12.2 12.2-.8.8z"/></symbol>
+  <symbol id="i-head" viewBox="0 0 16 16"><path d="M8 1.5a6 6 0 0 0-6 6V13a1.5 1.5 0 0 0 1.5 1.5H5V9.5H3.3V7.5a4.7 4.7 0 0 1 9.4 0v2H11v5h1.5A1.5 1.5 0 0 0 14 13V7.5a6 6 0 0 0-6-6z"/></symbol>
+  <symbol id="i-headx" viewBox="0 0 16 16"><path d="M8 1.5a6 6 0 0 0-6 6V13a1.5 1.5 0 0 0 1.5 1.5H5V9.5H3.3V7.5a4.7 4.7 0 0 1 9.4 0v2H11v5h1.5A1.5 1.5 0 0 0 14 13V7.5a6 6 0 0 0-6-6z" opacity=".45"/><path d="M1.5 2.3l.8-.8 12.2 12.2-.8.8z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><path d="M3.6 2.7L8 7.1l4.4-4.4.9.9L8.9 8l4.4 4.4-.9.9L8 8.9l-4.4 4.4-.9-.9L7.1 8 2.7 3.6z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 16 16"><path d="M10.2 1.2l4.6 4.6-.9.9-1-.3-2.7 2.7.4 3.1-1 1L6.4 10l-3.9 3.9H1.6v-.9L5.5 9.1 2.3 5.9l1-1 3.1.4 2.7-2.7-.3-1z"/></symbol>
+  <symbol id="i-mon" viewBox="0 0 16 16"><path d="M1.5 2.5h13v8.5h-13zM2.8 3.8v5.9h10.4V3.8zM5.5 12.5h5v1.3h-5z"/></symbol>
+  <symbol id="i-monx" viewBox="0 0 16 16"><path d="M1.5 2.5h13v8.5h-13zM2.8 3.8v5.9h10.4V3.8zM5.5 12.5h5v1.3h-5z" opacity=".45"/><path d="M1.5 1.8l.8-.8 12.2 12.2-.8.8z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><path d="M4 2.5h2.8v11H4zm5.2 0H12v11H9.2z"/></symbol>
+  <symbol id="i-closed" viewBox="0 0 16 16"><path d="M3.5 3.5h9v9h-9z"/></symbol>
+  <symbol id="i-virt" viewBox="0 0 16 16"><path d="M2 3h12v10H2zm1.3 1.3v7.4h9.4V4.3zM4.5 9.5l2-4 1.5 3 1-2 2 3z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><path d="M8 1.5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0V4A2.5 2.5 0 0 0 8 1.5z"/><path d="M3.8 7.5h1.2a3 3 0 0 0 6 0h1.2a4.2 4.2 0 0 1-3.6 4.15V14h-1.2v-2.35A4.2 4.2 0 0 1 3.8 7.5z"/></symbol>
+  <symbol id="i-micx" viewBox="0 0 16 16"><path d="M8 1.5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0V4A2.5 2.5 0 0 0 8 1.5z" opacity=".45"/><path d="M2 2.8l.8-.8 11.2 11.2-.8.8z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="M5.5 3l5 5-5 5-.9-.9L8.7 8 4.6 3.9z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="M3 5.5l5 5 5-5-.9-.9L8 8.7 3.9 4.6z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M6.2 11.6L2.6 8l.9-.9 2.7 2.7 6.3-6.3.9.9z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 16 16"><path d="M7 1h2l.35 1.9 1.25.52 1.6-1.1 1.42 1.42-1.1 1.6.52 1.25L15 7v2l-1.9.35-.52 1.25 1.1 1.6-1.42 1.42-1.6-1.1-1.25.52L9 15H7l-.35-1.9-1.25-.52-1.6 1.1-1.42-1.42 1.1-1.6-.52-1.25L1 9V7l1.9-.35.52-1.25-1.1-1.6L3.74 2.38l1.6 1.1 1.25-.52zM8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8z"/></symbol>
+  <symbol id="i-bt" viewBox="0 0 16 16"><path d="M7.4 1l4.4 3.8L8.9 8l2.9 3.2L7.4 15V9.4L4.9 11.7l-.8-.9L7.1 8 4.1 5.2l.8-.9 2.5 2.3zm1.2 2.6v3l1.7-1.5zm0 5.8v3l1.7-1.5z"/></symbol>
+  <symbol id="i-bat" viewBox="0 0 16 16"><path d="M1.5 4.5h11.5v7H1.5zm1.2 1.2v4.6h9.1V5.7zM13.7 6.5h1v3h-1zM3.4 6.4h5.4v3.2H3.4z"/></symbol>
+  <symbol id="i-net" viewBox="0 0 16 16"><path d="M8 3a10 10 0 0 1 7 2.8l-.9.9A8.7 8.7 0 0 0 8 4.3a8.7 8.7 0 0 0-6.1 2.4L1 5.8A10 10 0 0 1 8 3zm0 3.2a6.6 6.6 0 0 1 4.7 1.9l-.9.9A5.3 5.3 0 0 0 8 7.5 5.3 5.3 0 0 0 4.2 9l-.9-.9A6.6 6.6 0 0 1 8 6.2zm0 3.3a3.2 3.2 0 0 1 2.3 1l-2.3 2.3-2.3-2.3a3.2 3.2 0 0 1 2.3-1z"/></symbol>
+</svg>
+
+<div class="page">
+  <div class="head">
+    <h1>Sound applet shapes</h1>
+    <span class="tag">Prototype · throwaway</span>
+    <p>Four popups for the same model. Click the speaker in the panel to open one, scroll on it to change the volume, middle-click to mute and right-click for the menu. The devices and applications are made up.</p>
+  </div>
+  <div class="grid">
+    <div class="stage" id="stage">
+      <div class="mpanel">
+        <span class="menu">Applications</span><span class="menu">Places</span><span class="menu">System</span>
+        <span class="spacer"></span>
+        <span class="ic" title="Network applet"><svg><use href="#i-net"/></svg></span>
+        <span class="ic" title="Bluetooth applet"><svg><use href="#i-bt"/></svg></span>
+        <button class="ic sound" id="sicon" aria-label="Sound" aria-haspopup="true"></button>
+        <span class="ic" title="Power applet"><svg><use href="#i-bat"/></svg></span>
+        <span class="clock">Fri 23 Oct&nbsp; 14:32</span>
+      </div>
+      <div class="pop" id="pop" hidden></div>
+      <div class="ctx" id="ctx" hidden></div>
+      <div class="toast" id="toast" hidden></div>
+      <div class="hint" id="hint">The popup opens under the speaker. In D, drag an application onto another device.</div>
+    </div>
+
+    <aside class="side">
+      <div class="card">
+        <h2 id="vname">Variant</h2>
+        <ul id="vnotes"></ul>
+      </div>
+      <div class="card">
+        <h2>Simulate</h2>
+        <label class="sw"><input type="checkbox" id="sim-over"> Allow above 100% <code>allow-volume-above-100-percent</code></label>
+        <label class="sw"><input type="checkbox" id="sim-head"> Plug headphones into Built-in Audio</label>
+        <label class="sw"><input type="checkbox" id="sim-rec" checked> Discord call and OBS recording</label>
+        <label class="sw"><input type="checkbox" id="sim-sp"> Spotify plays</label>
+        <label class="sw"><input type="checkbox" id="sim-bt"> Turn off the WH-1000XM4</label>
+        <label class="sw"><input type="checkbox" id="sim-off"> The sound server stops</label>
+        <label class="sw"><input type="checkbox" id="sim-short"> A short screen</label>
+      </div>
+      <div class="card">
+        <h2>Model</h2>
+        <pre class="state" id="state"></pre>
+        <pre class="log" id="log"></pre>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="switcher" role="toolbar" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="lbl" id="vlabel"></span>
+  <button id="next" aria-label="Next variant">→</button>
+</div>
+
+<script>
+// ---------- model ----------
+const S = {
+  server: true, over: false,
+  defOut: 'spk', defIn: 'usb',
+  devs: {
+    spk:  { kind: 'out', name: 'Built-in Audio', icon: 'spk', vol: 62, mute: false, ports: [{ n: 'Speakers', on: true }, { n: 'Headphones', on: false }], port: 'Speakers',
+            card: 'Built-in Audio', profiles: ['Analog Stereo Duplex', 'Analog Stereo Output', 'Off'], profile: 'Analog Stereo Duplex' },
+    hdmi: { kind: 'out', name: 'DELL U2720Q', icon: 'mon', vol: 80, mute: false, ports: [{ n: 'DisplayPort 1', on: true }], port: 'DisplayPort 1',
+            card: 'HDMI / DisplayPort', profiles: ['Digital Stereo (HDMI)', 'Off'], profile: 'Digital Stereo (HDMI)' },
+    bt:   { kind: 'out', name: 'WH-1000XM4', icon: 'head', vol: 45, mute: false, ports: [{ n: 'Headphones', on: true }], port: 'Headphones',
+            card: 'WH-1000XM4', profiles: ['High Fidelity Playback (A2DP)', 'Headset Head Unit (HFP)', 'Off'], profile: 'High Fidelity Playback (A2DP)' },
+    ee:   { kind: 'out', name: 'Easy Effects Sink', icon: 'virt', vol: 100, mute: false, virtual: true, ports: [], port: '' },
+    mic:  { kind: 'in', name: 'Built-in Audio', icon: 'mic', vol: 70, mute: false, ports: [{ n: 'Internal Microphone', on: true }, { n: 'Headset Microphone', on: false }], port: 'Internal Microphone', card: 'Built-in Audio' },
+    usb:  { kind: 'in', name: 'Yeti Stereo Microphone', icon: 'mic', vol: 55, mute: false, ports: [{ n: 'Microphone', on: true }], port: 'Microphone' },
+  },
+  apps: [
+    // a stream with on: false is paused (corked): the app is listed but makes no sound
+    { id: 'ff', name: 'Firefox', c: 'a1', dir: 'play', target: null, mute: false, streams: [{ t: 'YouTube — Lo-fi beats to code to', v: 100, on: true }, { t: 'Bandcamp — paused', v: 60, on: false }] },
+    // target: the device it plays to (null = follow the default). pinned: the choice is kept, and the app listed, until unpinned
+    { id: 'sp', name: 'Spotify', c: 'a2', dir: 'play', target: 'bt', pinned: true, mute: false, streams: [{ t: 'Khruangbin — María También (paused)', v: 80, on: false }] },
+    // closed: not running, but WirePlumber remembers its device and volume
+    { id: 'rb', name: 'Rhythmbox', c: 'a6', dir: 'play', target: 'hdmi', pinned: true, mute: false, closed: true, streams: [{ t: 'Not running', v: 70, on: false }] },
+    { id: 'dc', name: 'Discord', c: 'a3', dir: 'play', target: null, mute: false, rec: true, streams: [{ t: 'Voice call — #general', v: 90, on: true }] },
+    { id: 'dcr', name: 'Discord', c: 'a3', dir: 'rec', target: null, mute: false, rec: true, streams: [{ t: 'Voice call — #general', v: 100, on: true }] },
+    { id: 'obs', name: 'OBS Studio', c: 'a4', dir: 'rec', target: 'mic', pinned: true, mute: false, rec: true, streams: [{ t: 'Mic/Aux', v: 100, on: true }] },
+  ],
+  sys: { vol: 70, mute: false },
+};
+const UI = { variant: 'A', open: false, tab: 'dev', exp: new Set(), drop: null, view: ['root'], ctx: false, log: [],
+  confirm: 'collapse', pending: null, undo: null };   // how an unpin is confirmed; pending: an app id or '*' for all
+
+const VARIANTS = {
+  A: { name: 'Tabs', notes: [
+    'Plasma\'s shape: Devices and Applications on two tabs.',
+    'Each device has its own slider and a radio for the default, so every volume is one click away.',
+    'Routing lives in each application\'s expanded row ("Plays to").',
+    'Cost: switching device and adjusting an app are on different tabs.'] },
+  B: { name: 'Stacked sliders', notes: [
+    'GNOME\'s quick-settings shape: one slider for the Default output and one for the Default input, each with a pill that opens its device list.',
+    'The applications follow directly underneath. Click a name for its streams and "Plays to".',
+    'Only the default devices have a slider here. Other devices\' volumes need the settings window.',
+    'The quickest way to switch outputs: the pill, then a device.',
+    'Applications lists only what is playing or recording now, each with a green activity bar. The pin on the right pins it to the device it plays to now.',
+    'Click an application\'s name to choose its device or set its streams. Choosing a device moves the app without pinning it, and the device shows in blue.',
+    'Pinned applications lists every pinned app, playing, paused or not running. × on the right unpins one and × in the heading unpins all, after a strip that asks. An Undo then stays for a few seconds.',
+    'An app that isn\'t running has no slider, since there\'s no stream to set. Turn off the WH-1000XM4 under Simulate: Spotify plays to the default, keeps its pin, and its device shows as not connected.',
+    'The icon beside the output slider turns into headphones when the default output is a headset or the Headphones port. Try "Plug headphones" with Built-in Audio as the default.'] },
+  C: { name: 'Drill-down', notes: [
+    'macOS\'s shape: a short list with checkmarks, where every detail is one level deeper.',
+    'The root view shows the output volume, the devices to pick from and the input level.',
+    '› on a device opens its volume, port and profile. Applications opens the mixer, and an app opens its streams and routing.',
+    'Calm at rest, but more clicks for per-app work.'] },
+  D: { name: 'Routing tree', notes: [
+    'Our own shape: the applications sit under the device they play to.',
+    'Drag an application onto another device to pin it there. Drop it under the default device to make it follow the default again.',
+    'Shows at a glance which apps are pinned and where the sound is going.',
+    'Drag needs a fallback (the app\'s expanded row has the picker), and the tree grows tall with many devices.'] },
+};
+const ORDER = Object.keys(VARIANTS);
+
+// ---------- helpers ----------
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ic = (id, cls = '') => `<svg class="${cls}"><use href="#i-${id}"/></svg>`;
+const max = () => S.over ? 150 : 100;
+// a device that's gone (a headset turned off) isn't listed; an app pinned to it plays to the default meanwhile
+const outs = () => Object.entries(S.devs).filter(([, d]) => d.kind === 'out' && !d.gone);
+const ins = () => Object.entries(S.devs).filter(([, d]) => d.kind === 'in');
+const apps = dir => S.apps.filter(a => a.dir === dir && (!a.rec || recOn));
+let recOn = true;
+const appVol = a => Math.max(...a.streams.map(s => s.v));
+const active = a => !a.closed && a.streams.some(s => s.on);
+// the icon beside the output slider: headphones when the default output is a headset or the Headphones port
+// beside the output slider: headphones or a monitor when the default output is one, crossed out when muted; a speaker shows its level
+const outIcon = d => { const f = outForm(d); return f === 'head' || f === 'mon' ? f + (d.mute ? 'x' : '') : spkLevel(d.vol, d.mute); };
+const pinnedApps = () => S.apps.filter(a => a.pinned && (!a.rec || recOn));
+const where = a => a.target && !S.devs[a.target].gone ? a.target : (a.dir === 'play' ? S.defOut : S.defIn);
+// an output's form: headphones (a headset, or a speaker device on its Headphones port), a monitor (HDMI/DisplayPort), else a speaker
+const outForm = d => d.port === 'Headphones' || d.icon === 'head' ? 'head' : d.icon === 'mon' ? 'mon' : d.icon === 'virt' ? 'virt' : 'spk';
+const devIcon = (d, id) => d.kind === 'in' ? (d.mute ? 'micx' : 'mic')
+  : outForm(d) === 'spk' ? (d.mute ? 'spkx' : 'spk2') : outForm(d) === 'virt' ? 'virt' : outForm(d) + (d.mute ? 'x' : '');
+const spkLevel = (v, m) => m || v === 0 ? 'spkx' : v < 34 ? 'spk1' : v < 67 ? 'spk2' : 'spk3';
+const sub = d => d.virtual ? 'Virtual device' : d.port;
+const livePorts = d => d.ports.filter(p => p.on);
+const log = m => { UI.log.unshift(m); UI.log.length = Math.min(UI.log.length, 5); };
+
+function get(k) {
+  const [t, a, b] = k.split(':');
+  if (t === 'dev') return S.devs[a].vol;
+  if (t === 'app') return appVol(S.apps.find(x => x.id === a));
+  if (t === 'str') return S.apps.find(x => x.id === a).streams[+b].v;
+  if (t === 'sys') return S.sys.vol;
+}
+function set(k, v) {
+  const [t, a, b] = k.split(':');
+  if (t === 'dev') S.devs[a].vol = v;
+  if (t === 'sys') S.sys.vol = v;
+  if (t === 'str') S.apps.find(x => x.id === a).streams[+b].v = v;
+  if (t === 'app') {
+    const app = S.apps.find(x => x.id === a), m = appVol(app);
+    // the slider shows the loudest stream and scales the others with it, keeping their ratio
+    app.streams.forEach(s => { s.v = m === 0 ? v : s.v * v / m; });
+    app._last = `${app.name} → ${Math.round(v)}%: streams ${app.streams.map(s => Math.round(s.v)).join(', ')}`;
+  }
+}
+function isMuted(k) {
+  const [t, a] = k.split(':');
+  if (t === 'dev') return S.devs[a].mute;
+  if (t === 'app') return S.apps.find(x => x.id === a).mute;
+  if (t === 'sys') return S.sys.mute;
+  return false;
+}
+function toggleMute(k) {
+  const [t, a] = k.split(':');
+  if (t === 'dev') S.devs[a].mute = !S.devs[a].mute;
+  if (t === 'app') { const x = S.apps.find(x => x.id === a); x.mute = !x.mute; }
+  if (t === 'sys') S.sys.mute = !S.sys.mute;
+  log(`${isMuted(k) ? 'muted' : 'unmuted'} ${label(k)}`);
+}
+const label = k => { const [t, a] = k.split(':'); return t === 'dev' ? S.devs[a].name : t === 'app' ? S.apps.find(x => x.id === a).name : 'System sounds'; };
+
+// ---------- shared fragments ----------
+const slider = (k, extra = '') => `<input type="range" min="0" max="${max()}" step="1" value="${Math.round(get(k))}" data-k="${k}" aria-label="Volume" class="${isMuted(k) ? 'dim' : ''}" ${extra}>`;
+const pct = k => `<span class="pct" data-p="${k}">${Math.round(get(k))}%</span>`;
+const muteBtn = (k, kind) => `<button class="ibtn ${isMuted(k) ? 'muted' : ''}" data-act="mute" data-v="${k}" aria-label="Mute" title="Mute">${ic(isMuted(k) ? (kind === 'in' ? 'micx' : 'spkx') : (kind === 'in' ? 'mic' : 'spk2'))}</button>`;
+const volLine = (k, kind) => `<div class="vol">${muteBtn(k, kind)}${slider(k)}${pct(k)}</div>`;
+const mono = a => `<span class="mono" style="background:var(--${a.c})">${a.name[0]}</span>`;
+const sysMono = () => `<span class="mono" style="background:var(--a5)">${'♪'}</span>`;
+const meter = id => `<div class="meter"><i data-m="${id}"></i></div>`;
+function portSel(id) {
+  const d = S.devs[id], lp = livePorts(d);
+  if (lp.length < 2) return '';
+  return `<select class="mini" data-sel="port" data-v="${id}" aria-label="Port">${lp.map(p => `<option ${p.n === d.port ? 'selected' : ''}>${esc(p.n)}</option>`).join('')}</select>`;
+}
+function targetSel(a) {
+  const list = a.dir === 'play' ? outs() : ins();
+  const defName = S.devs[a.dir === 'play' ? S.defOut : S.defIn].name;
+  return `<label class="s" style="display:flex;gap:6px;align-items:center">${a.dir === 'play' ? 'Plays to' : 'Records from'}
+    <select class="mini" data-sel="target" data-v="${a.id}">
+      <option value="" ${a.target ? '' : 'selected'}>Follow the default (${esc(defName)})</option>
+      ${list.map(([id, d]) => `<option value="${id}" ${a.target === id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+      ${a.target && S.devs[a.target].gone ? `<option value="${a.target}" selected>${esc(S.devs[a.target].name)} (not connected)</option>` : ''}
+    </select></label>`;
+}
+const pinBadge = a => a.target ? `<span class="badge" title="Pinned">${esc(S.devs[a.target].name)}</span>` : '';
+function streamsBlock(a, withTarget = true) {
+  return `<div class="streams">${withTarget ? targetSel(a) : ''}
+    ${a.streams.length > 1 || !withTarget ? a.streams.map((s, i) => `<div class="st"><span class="s">${esc(s.t)}</span>
+      <div class="vol"><span></span>${slider(`str:${a.id}:${i}`)}${pct(`str:${a.id}:${i}`)}</div></div>`).join('')
+      : `<span class="s">${esc(a.streams[0].t)}</span>`}
+  </div>`;
+}
+const settingsBtn = () => `<button class="link" data-act="settings">Sound settings…</button>`;
+const noServer = () => `<div class="empty"><b>No sound server</b>The applet reconnects when PipeWire is back.</div>`;
+
+// ---------- A: tabs ----------
+function devRowA(id) {
+  const d = S.devs[id], def = (d.kind === 'out' ? S.defOut : S.defIn) === id, k = `dev:${id}`;
+  return `<div class="row">
+    <button class="radio ${def ? 'on' : ''}" data-act="def" data-v="${id}" aria-label="Make default" title="Make default"></button>
+    <span class="dico">${ic(devIcon(d))}</span>
+    <div class="name"><div class="t">${esc(d.name)}</div><div class="s">${portSel(id) || esc(sub(d))}</div></div>
+    <span></span>
+    <div class="full">${volLine(k, d.kind)}${d.kind === 'in' ? meter(id) : ''}</div>
+  </div>`;
+}
+function appRowA(a) {
+  const k = `app:${a.id}`, open = UI.exp.has(a.id);
+  return `<div class="row">
+    <button class="ibtn" data-act="exp" data-v="${a.id}" aria-label="Show streams">${ic('chev', 'chev ' + (open ? 'open' : ''))}</button>
+    ${mono(a)}
+    <div class="name"><div class="t">${esc(a.name)} ${a.streams.length > 1 ? `<span class="s">· ${a.streams.length} streams</span>` : ''}</div></div>
+    ${pinBadge(a)}
+    <div class="full">${volLine(k, a.dir === 'rec' ? 'in' : 'out')}</div>
+    ${open ? streamsBlock(a) : ''}
+  </div>`;
+}
+function sysRow() {
+  return `<div class="row"><span></span>${sysMono()}<div class="name"><div class="t">System sounds</div></div><span></span>
+    <div class="full">${volLine('sys', 'out')}</div></div>`;
+}
+function renderA() {
+  const tabs = `<div class="tabs" role="tablist">
+    <button class="tab ${UI.tab === 'dev' ? 'on' : ''}" data-act="tab" data-v="dev" role="tab">Devices</button>
+    <button class="tab ${UI.tab === 'app' ? 'on' : ''}" data-act="tab" data-v="app" role="tab">Applications</button>
+    <span class="grow"></span><button class="ibtn" data-act="settings" title="Sound settings…" aria-label="Sound settings">${ic('gear')}</button></div>`;
+  if (!S.server) return tabs + noServer();
+  const body = UI.tab === 'dev'
+    ? `<div class="sec"><div class="sech">Output</div>${outs().map(([id]) => devRowA(id)).join('')}</div>
+       <div class="sec"><div class="sech">Input</div>${ins().map(([id]) => devRowA(id)).join('')}</div>`
+    : `<div class="sec"><div class="sech">Playing</div>${sysRow()}${apps('play').map(appRowA).join('')}</div>
+       ${apps('rec').length ? `<div class="sec"><div class="sech">Recording</div>${apps('rec').map(appRowA).join('')}</div>` : ''}`;
+  return tabs + `<div class="scroll">${body}</div>`;
+}
+
+// ---------- B: stacked ----------
+function bigB(kind) {
+  const id = kind === 'out' ? S.defOut : S.defIn, d = S.devs[id], k = `dev:${id}`, key = 'b-' + kind;
+  const icon = kind === 'out' ? outIcon(d) : (d.mute ? 'micx' : 'mic');
+  return `<div class="big">
+      <button class="ibtn ${d.mute ? 'muted' : ''}" data-act="mute" data-v="${k}" aria-label="Mute">${ic(icon)}</button>
+      <div>${slider(k)}${kind === 'in' ? meter(id) : ''}</div>
+      <button class="pill" data-act="exp" data-v="${key}" aria-expanded="${UI.exp.has(key)}"><span>${esc(d.name)}</span>${ic('down')}</button>
+    </div>
+    ${UI.exp.has(key) ? `<div class="drop">${(kind === 'out' ? outs() : ins()).map(([oid, od]) => `
+      <button class="opt" data-act="def" data-v="${oid}">${ic(devIcon(od))}<span><div>${esc(od.name)}</div><div class="s" style="color:var(--pop-soft);font-size:12px">${esc(sub(od))}</div></span>${oid === id ? ic('check', 'ck') : '<span></span>'}</button>`).join('')}
+      ${portSel(id) ? `<div style="padding:4px 8px 6px" class="s">Port ${portSel(id)}</div>` : ''}</div>` : ''}`;
+}
+function appRowB(a, pinned) {
+  const k = `app:${a.id}`, open = UI.exp.has(a.id), on = active(a);
+  const gone = a.target && S.devs[a.target].gone;
+  const badge = a.target ? `<span class="badge ${gone ? 'off' : ''}" title="${gone ? 'Plays to the default until it comes back' : pinned ? 'Pinned to this device' : 'Moved to this device while it runs'}">${esc(S.devs[a.target].name)}${gone ? ' · not connected' : ''}</span>` : '';
+  const state = pinned && !on ? `<span class="state">${a.closed ? ic('closed') + 'Not running' : ic('pause') + 'Paused'}</span>` : '';
+  const right = !pinned ? `<button class="ibtn sm" data-act="pin" data-v="${a.id}" aria-label="Pin" title="Pin to ${esc(S.devs[where(a)].name)}">${ic('pin')}</button>`
+    : UI.confirm === 'arm' && UI.pending === a.id ? `<button class="armed" data-act="unpin-yes" data-v="${a.id}">Unpin?</button>`
+    : `<button class="ibtn sm" data-act="unpin" data-v="${a.id}" aria-label="Unpin" title="Unpin" aria-expanded="${UI.pending === a.id}">${ic('x')}</button>`;
+  const strip = UI.confirm === 'collapse' && UI.pending === a.id ? `<div class="confirm">Unpin ${esc(a.name)}? It goes back to following the default ${a.dir === 'play' ? 'output' : 'input'}.
+      <span class="grow"></span><button class="btn" data-act="unpin-no">Cancel</button><button class="btn danger" data-act="unpin-yes" data-v="${a.id}">Unpin</button></div>` : '';
+  return `<div class="arow pin">${mono(a)}<button class="nm" data-act="exp" data-v="${a.id}" title="Streams and device">${esc(a.name)}</button>${a.closed ? '<span></span><span></span>' : slider(k) + pct(k)}${right}
+      ${on || badge || state ? `<div class="sub">${on ? `<div class="meter"><i data-am="${a.id}"></i></div>` : ''}${badge || state ? `<div class="tags">${badge}${state}</div>` : ''}</div>` : ''}${strip}</div>
+    ${open ? `<div style="display:grid;grid-template-columns:22px 1fr;padding:0 4px 6px">${streamsBlock(a)}</div>` : ''}`;
+}
+function renderB() {
+  if (!S.server) return noServer() + `<div class="foot">${settingsBtn()}</div>`;
+  // Pinned: every pinned app, running or not. Applications: only what is playing or recording now.
+  const pinned = pinnedApps(), live = dir => apps(dir).filter(a => !a.pinned && active(a)), rec = live('rec');
+  const showPinned = pinned.length || UI.undo;
+  const allBtn = !pinned.length ? '' : UI.confirm === 'arm' && UI.pending === '*' ? `<button class="armed" data-act="unpin-yes" data-v="*">Unpin all?</button>`
+    : `<span class="allx"><button class="ibtn sm danger" data-act="unpin" data-v="*" aria-label="Unpin all" aria-expanded="${UI.pending === '*'}">${ic('x')}</button><span class="lbl" aria-hidden="true">Unpin all</span></span>`;
+  const allStrip = UI.confirm === 'collapse' && UI.pending === '*' ? `<div class="confirm" style="margin:0 6px 6px">Unpin all ${pinned.length} applications? They go back to following the default.
+      <span class="grow"></span><button class="btn" data-act="unpin-no">Cancel</button><button class="btn danger" data-act="unpin-yes" data-v="*">Unpin all</button></div>` : '';
+  // the Undo takes the place of what was unpinned: the app's row, or the whole list for Unpin all
+  const undone = a => UI.undo?.save.some(s => s.id === a.id);
+  const undoStrip = () => `<div class="confirm" style="margin:3px 0">${esc(UI.undo.label)}<span class="grow"></span><button class="btn" data-act="undo">Undo</button></div>`;
+  let undoShown = false;
+  const pinnedRows = S.apps.filter(a => (a.pinned || undone(a)) && (!a.rec || recOn)).map(a => {
+    if (a.pinned) return appRowB(a, true);
+    if (undoShown) return '';
+    undoShown = true; return undoStrip();
+  }).join('');
+  return `<div class="scroll">${bigB('out')}${bigB('in')}
+    ${showPinned ? `<div class="sec" style="margin-top:6px"><div class="sech flex"><span>Pinned applications</span>${allBtn}</div>${allStrip}
+      <div class="apps-b">${pinnedRows}</div></div>` : ''}
+    <div class="sec" ${showPinned ? '' : 'style="margin-top:6px"'}><div class="sech">Applications</div>
+    <div class="apps-b">
+      <div class="arow pin">${sysMono()}<span class="nm" style="cursor:default">System sounds</span>${slider('sys')}${pct('sys')}<span></span></div>
+      ${live('play').map(a => appRowB(a, false)).join('')}
+      ${rec.length ? `<div class="sech" style="padding-left:4px">Recording</div>${rec.map(a => appRowB(a, false)).join('')}` : ''}
+    </div></div></div>
+    <div class="foot">${settingsBtn()}</div>`;
+}
+
+// ---------- C: drill-down ----------
+function renderC() {
+  const v = UI.view[UI.view.length - 1], back = UI.view.length > 1 ? `<button class="back" data-act="back">‹ Back</button>` : '<span></span>';
+  const head = t => `<div class="navh">${back}<h3>${esc(t)}</h3><span></span></div>`;
+  if (!S.server) return head('Sound') + noServer();
+  if (v === 'root') {
+    const o = S.devs[S.defOut], n = apps('play').length, r = apps('rec').length;
+    const list = arr => arr.map(([id, d]) => {
+      const def = (d.kind === 'out' ? S.defOut : S.defIn) === id;
+      return `<div style="display:grid;grid-template-columns:minmax(0,1fr) 30px;align-items:center">
+        <button class="lrow" data-act="def" data-v="${id}">${def ? ic('check', 'ck') : '<span></span>'}<span><div>${esc(d.name)}</div></span><span class="s">${esc(sub(d))}</span><span></span></button>
+        <button class="ibtn" data-act="go" data-v="dev:${id}" aria-label="Device details">${ic('chev', 'more')}</button></div>`;
+    }).join('');
+    return head('Sound') + `
+      <div class="cpad"><div class="sech" style="padding-left:0">Output volume</div><div class="vol">${muteBtn('dev:' + S.defOut, 'out')}${slider('dev:' + S.defOut)}${pct('dev:' + S.defOut)}</div></div>
+      <div class="sec"><div class="sech">Output</div>${list(outs())}</div>
+      <div class="sec"><div class="sech">Input</div>${list(ins())}<div style="padding:2px 10px 6px"><span class="s" style="font-size:12px;color:var(--pop-soft)">Input level</span>${meter(S.defIn)}</div></div>
+      <div class="sec"><button class="lrow" data-act="go" data-v="mixer">${ic('spk2')}<span>Applications</span><span class="s">${n} playing${r ? ` · ${r} recording` : ''}</span>${ic('chev', 'more')}</button>
+        <button class="lrow" data-act="settings">${ic('gear')}<span>Sound settings…</span><span></span><span></span></button></div>`;
+  }
+  if (v.startsWith('dev:')) {
+    const id = v.slice(4), d = S.devs[id];
+    return head(d.name) + `<div class="cpad" style="display:grid;gap:10px">
+      ${volLine('dev:' + id, d.kind)}${d.kind === 'in' ? meter(id) : ''}
+      ${livePorts(d).length > 1 ? `<label class="s">Port ${portSel(id)}</label>` : `<div class="s" style="color:var(--pop-soft)">${esc(sub(d))}</div>`}
+      ${d.profiles ? `<label class="s">Profile <select class="mini" data-sel="profile" data-v="${id}">${d.profiles.map(p => `<option ${p === d.profile ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>` : ''}
+      ${(d.kind === 'out' ? S.defOut : S.defIn) === id ? `<span class="badge" style="justify-self:start">Default ${d.kind === 'out' ? 'output' : 'input'}</span>` : `<button class="link" style="justify-self:start" data-act="def" data-v="${id}">Make default</button>`}
+    </div>`;
+  }
+  if (v === 'mixer') {
+    const line = a => `<div style="display:grid;grid-template-columns:minmax(0,1fr) 30px;align-items:center">
+      <div class="row" style="grid-template-columns:22px minmax(0,1fr) auto"><span>${mono(a)}</span><div class="name"><div class="t">${esc(a.name)}</div></div>${pinBadge(a)}
+        <div style="grid-column:1/-1">${volLine('app:' + a.id, a.dir === 'rec' ? 'in' : 'out')}</div></div>
+      <button class="ibtn" data-act="go" data-v="app:${a.id}" aria-label="Streams and device">${ic('chev', 'more')}</button></div>`;
+    return head('Applications') + `<div class="scroll">
+      <div class="sec"><div class="sech">Playing</div>
+        <div class="row" style="grid-template-columns:22px minmax(0,1fr)"><span>${sysMono()}</span><div class="t">System sounds</div><div style="grid-column:1/-1">${volLine('sys', 'out')}</div></div>
+        ${apps('play').map(line).join('')}</div>
+      ${apps('rec').length ? `<div class="sec"><div class="sech">Recording</div>${apps('rec').map(line).join('')}</div>` : ''}</div>`;
+  }
+  if (v.startsWith('app:')) {
+    const a = S.apps.find(x => x.id === v.slice(4)), list = a.dir === 'play' ? outs() : ins();
+    return head(a.name) + `<div class="cpad">${volLine('app:' + a.id, a.dir === 'rec' ? 'in' : 'out')}</div>
+      <div class="sec"><div class="sech">${a.dir === 'play' ? 'Plays to' : 'Records from'}</div>
+        <button class="lrow" data-act="target" data-v="${a.id}|">${a.target ? '<span></span>' : ic('check', 'ck')}<span>Follow the default</span><span class="s">${esc(S.devs[a.dir === 'play' ? S.defOut : S.defIn].name)}</span><span></span></button>
+        ${list.map(([id, d]) => `<button class="lrow" data-act="target" data-v="${a.id}|${id}">${a.target === id ? ic('check', 'ck') : '<span></span>'}<span>${esc(d.name)}</span><span></span><span></span></button>`).join('')}</div>
+      <div class="sec"><div class="sech">Streams</div><div class="cpad" style="padding-top:0;display:grid;gap:6px">${a.streams.map((s, i) => `<div><div class="s" style="font-size:12px;color:var(--pop-soft)">${esc(s.t)}</div><div class="vol"><span></span>${slider(`str:${a.id}:${i}`)}${pct(`str:${a.id}:${i}`)}</div></div>`).join('')}</div></div>`;
+  }
+}
+
+// ---------- D: routing tree ----------
+function chipD(a) {
+  const k = `app:${a.id}`, open = UI.exp.has(a.id);
+  return `<div class="chip" draggable="true" data-drag="${a.id}">
+      <span class="grip" aria-hidden="true"></span>${a.id === 'sys' ? sysMono() : mono(a)}
+      <button class="nm" data-act="exp" data-v="${a.id}">${esc(a.name)}${a.id !== 'sys' && !a.target ? ' <small>· follows</small>' : ''}</button>
+      ${slider(k)}${pct(k)}</div>
+    ${open ? `<div class="chipx">${a.id === 'sys' ? '' : targetSel(a)}${a.streams.length > 1 ? a.streams.map((s, i) => `<div><div class="s" style="font-size:12px;color:var(--pop-soft)">${esc(s.t)}</div><div class="vol"><span></span>${slider(`str:${a.id}:${i}`)}${pct(`str:${a.id}:${i}`)}</div></div>`).join('') : `<span class="s" style="font-size:12px;color:var(--pop-soft)">${esc(a.streams[0].t)}</span>`}</div>` : ''}`;
+}
+function devD(id) {
+  const d = S.devs[id], def = (d.kind === 'out' ? S.defOut : S.defIn) === id, k = `dev:${id}`;
+  const here = apps(d.kind === 'out' ? 'play' : 'rec').filter(a => where(a) === id);
+  const pinned = here.filter(a => a.target), following = here.filter(a => !a.target);
+  return `<div class="dev ${def ? 'def' : ''} ${UI.drop === id ? 'over' : ''}" data-dropdev="${id}">
+    <div class="row">
+      <button class="radio ${def ? 'on' : ''}" data-act="def" data-v="${id}" aria-label="Make default"></button>
+      <span class="dico">${ic(devIcon(d))}</span>
+      <div class="name"><div class="t">${esc(d.name)}</div><div class="s">${portSel(id) || esc(sub(d))}</div></div>
+      ${def ? `<span class="badge">Default</span>` : '<span></span>'}
+      <div class="full">${volLine(k, d.kind)}${d.kind === 'in' ? meter(id) : ''}</div>
+    </div>
+    <div class="lane">
+      ${def && d.kind === 'out' ? chipD({ id: 'sys', name: 'System sounds', streams: [{ t: 'Bell, workspace and notification sounds', v: S.sys.vol }] }).replace('app:sys', 'sys').replace('draggable="true"', '') : ''}
+      ${following.map(chipD).join('')}${pinned.map(chipD).join('')}
+      ${!here.length && !(def && d.kind === 'out') ? `<div class="none">${d.kind === 'out' ? 'Nothing playing here' : 'Nothing recording'}</div>` : ''}
+    </div></div>`;
+}
+function renderD() {
+  if (!S.server) return noServer() + `<div class="foot">${settingsBtn()}</div>`;
+  return `<div class="scroll" style="max-height:520px">
+    <div class="sec"><div class="sech">Outputs</div>${outs().map(([id]) => devD(id)).join('')}</div>
+    <div class="sec"><div class="sech">Inputs</div>${ins().map(([id]) => devD(id)).join('')}</div></div>
+    <div class="foot">${settingsBtn()}</div>`;
+}
+
+// ---------- context menu ----------
+function renderCtx() {
+  const o = S.devs[S.defOut], i = S.devs[S.defIn];
+  const cards = Object.entries(S.devs).filter(([, d]) => d.profiles);
+  return `<button class="mi" data-act="mute" data-v="dev:${S.defOut}">${o.mute ? ic('check') : '<span></span>'}<span>Mute output</span><span></span></button>
+    <button class="mi" data-act="mute" data-v="dev:${S.defIn}">${i.mute ? ic('check') : '<span></span>'}<span>Mute microphone</span><span></span></button>
+    <div class="msep"></div>
+    ${cards.map(([id, d]) => `<div class="mh">${esc(d.card)}</div>${d.profiles.map(p => `<button class="mi" data-act="profile" data-v="${id}|${p}">${p === d.profile ? ic('check') : '<span></span>'}<span>${esc(p)}</span><span></span></button>`).join('')}`).join('')}
+    <div class="msep"></div>
+    <button class="mi" data-act="settings"><span></span><span>Sound settings…</span><span></span></button>`;
+}
+
+// ---------- render ----------
+function renderIcon() {
+  const o = S.devs[S.defOut];
+  // the panel shows headphones when they apply, else the speaker with its level (a monitor too)
+  const id = !S.server ? 'spkoff' : outForm(o) === 'head' ? (o.mute ? 'headx' : 'head') : spkLevel(o.vol, o.mute);
+  $('#sicon').innerHTML = `<svg><use href="#i-${id}"/></svg>${S.server && apps('rec').length ? '<span class="recdot" title="An application is recording"></span>' : ''}`;
+  $('#sicon').classList.toggle('on', UI.open);
+  $('#sicon').title = S.server ? `${o.name}: ${Math.round(o.vol)}%${o.mute ? ' (muted)' : ''}${apps('rec').length ? '\nRecording: ' + [...new Set(apps('rec').map(a => a.name))].join(', ') : ''}` : 'No sound server';
+}
+function place(el) {
+  const st = $('#stage').getBoundingClientRect(), r = $('#sicon').getBoundingClientRect();
+  const w = el.offsetWidth, left = Math.max(8, Math.min(r.right - st.left - w + 40, st.width - w - 8));
+  el.style.left = left + 'px';
+  el.style.maxHeight = (st.height - 40) + 'px';   // as far as the screen's bottom edge, less a margin
+}
+function render() {
+  const pop = $('#pop');
+  pop.hidden = !UI.open;
+  if (UI.open) {
+    const sc = pop.querySelector('.scroll')?.scrollTop;
+    pop.innerHTML = ({ A: renderA, B: renderB, C: renderC, D: renderD })[UI.variant]();
+    if (sc) { const s = pop.querySelector('.scroll'); if (s) s.scrollTop = sc; }
+    place(pop);
+  }
+  const ctx = $('#ctx');
+  ctx.hidden = !UI.ctx;
+  if (UI.ctx) { ctx.innerHTML = renderCtx(); place(ctx); }
+  renderIcon(); renderSide();
+}
+// the slider being dragged is left alone; every other one, focused or not, follows the model
+let dragging = null;
+addEventListener('pointerdown', e => { if (e.target.matches?.('input[type=range]')) dragging = e.target; });
+addEventListener('pointerup', () => { dragging = null; });
+addEventListener('pointercancel', () => { dragging = null; });
+function sync() {
+  document.querySelectorAll('input[data-k]').forEach(el => {
+    if (el !== dragging) el.value = Math.round(get(el.dataset.k));
+    el.max = max();
+  });
+  document.querySelectorAll('[data-p]').forEach(el => { el.textContent = Math.round(get(el.dataset.p)) + '%'; });
+  renderIcon(); renderSide();
+}
+function renderSide() {
+  const v = VARIANTS[UI.variant];
+  $('#vlabel').textContent = `${UI.variant} · ${v.name}`;
+  $('#vname').textContent = `${UI.variant} · ${v.name}`;
+  $('#vnotes').innerHTML = v.notes.map(n => `<li>${esc(n)}</li>`).join('');
+  const d = id => `${S.devs[id].name} ${Math.round(S.devs[id].vol)}%${S.devs[id].mute ? ' muted' : ''}`;
+  const a = x => `${active(x) ? '▶' : '‖'} ${x.name.padEnd(10)} ${String(Math.round(appVol(x))).padStart(3)}%${x.mute ? ' muted' : ''}  → ${x.target ? S.devs[x.target].name : 'follow (' + S.devs[where(x)].name + ')'}${x.pinned ? ' [pinned]' : ''}\n` +
+                 (x.streams.length > 1 ? `             streams ${x.streams.map(s => Math.round(s.v)).join(' / ')}\n` : '');
+  $('#state').textContent = !S.server ? 'sound server: gone, reconnecting…' :
+    `default output  ${d(S.defOut)}\ndefault input   ${d(S.defIn)}\nmax volume      ${max()}%\n\nplaying\n  System     ${String(Math.round(S.sys.vol)).padStart(3)}%${S.sys.mute ? ' muted' : ''}\n${apps('play').map(a).join('')}` +
+    (apps('rec').length ? `recording\n${apps('rec').map(a).join('')}` : '');
+  $('#log').textContent = UI.log.join('\n');
+}
+
+// ---------- events ----------
+function setVariant(v) {
+  UI.variant = v; UI.view = ['root']; UI.exp.clear();
+  try { history.replaceState(null, '', '#' + v); } catch (e) {}
+  render();
+}
+function step(n) { setVariant(ORDER[(ORDER.indexOf(UI.variant) + n + ORDER.length) % ORDER.length]); }
+$('#prev').onclick = () => step(-1);
+$('#next').onclick = () => step(1);
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, select, [contenteditable]')) {
+    if (e.key === 'Escape') { UI.open = false; UI.ctx = false; render(); $('#sicon').focus(); }
+    return;
+  }
+  if (e.key === 'ArrowLeft') step(-1);
+  if (e.key === 'ArrowRight') step(1);
+  if (e.key === 'Escape') { UI.open = false; UI.ctx = false; render(); }
+});
+
+const sicon = $('#sicon');
+sicon.addEventListener('click', () => { UI.ctx = false; UI.open = !UI.open; render(); });
+sicon.addEventListener('contextmenu', e => { e.preventDefault(); UI.open = false; UI.ctx = !UI.ctx; render(); });
+sicon.addEventListener('auxclick', e => { if (e.button === 1) { e.preventDefault(); toggleMute('dev:' + S.defOut); render(); } });
+sicon.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+sicon.addEventListener('wheel', e => {
+  e.preventDefault(); if (!S.server) return;
+  const o = S.devs[S.defOut]; o.vol = Math.max(0, Math.min(max(), Math.round(o.vol) + (e.deltaY < 0 ? 5 : -5)));
+  log(`scroll: ${o.name} ${o.vol}%`); sync();
+}, { passive: false });
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest('#pop, #ctx, #sicon, .switcher, .side')) { if (UI.open || UI.ctx) { UI.open = false; UI.ctx = false; render(); } }
+});
+
+function act(t) {
+  const a = t.dataset.act, v = t.dataset.v;
+  if (a === 'tab') UI.tab = v;
+  if (a === 'exp') UI.exp.has(v) ? UI.exp.delete(v) : UI.exp.add(v);
+  if (a === 'mute') toggleMute(v);
+  if (a === 'def') { const d = S.devs[v]; d.kind === 'out' ? S.defOut = v : S.defIn = v; log(`default ${d.kind === 'out' ? 'output' : 'input'} → ${d.name}`); }
+  if (a === 'go') UI.view.push(v);
+  if (a === 'back') UI.view.pop();
+  if (a === 'target') { const [id, dev] = v.split('|'); setTarget(id, dev || null); }
+  if (a === 'pin') { const x = S.apps.find(x => x.id === v); x.target = where(x); x.pinned = true; log(`${x.name} pinned to ${S.devs[x.target].name}`); }
+  if (a === 'unpin') {
+    if (UI.confirm === 'undo') unpin(v);
+    else if (UI.pending === v) UI.pending = null;   // the same × again closes its confirmation
+    else {
+      UI.pending = v;
+      clearTimeout(UI.armT);
+      if (UI.confirm === 'arm') UI.armT = setTimeout(() => { UI.pending = null; render(); }, 3000);   // the armed button reverts by itself
+    }
+  }
+  if (a === 'unpin-yes') { unpin(v); UI.pending = null; }
+  if (a === 'unpin-no') UI.pending = null;
+  if (a === 'undo') { UI.undo.save.forEach(s => { const x = S.apps.find(x => x.id === s.id); x.pinned = true; x.target = s.target; }); log('undo: pinned again'); UI.undo = null; }
+  if (a === 'profile') { const [id, p] = v.split('|'); S.devs[id].profile = p; log(`${S.devs[id].card} profile → ${p}`); UI.ctx = false; }
+  if (a === 'settings') { toast('Would open mate-volume-control'); UI.ctx = false; }
+  render();
+}
+// choosing a device moves the app; it doesn't pin it (a pinned app stays pinned, to the new device)
+function setTarget(id, dev) {
+  const app = S.apps.find(x => x.id === id); app.target = dev;
+  log(`${app.name} → ${dev ? S.devs[dev].name : 'follow the default'}${app.pinned ? ' (pinned)' : ' (not pinned)'}`);
+}
+function unpin(v) {
+  const list = v === '*' ? pinnedApps() : [S.apps.find(x => x.id === v)];
+  const save = list.map(x => ({ id: x.id, target: x.target }));
+  list.forEach(x => { x.pinned = false; x.target = null; });
+  log(v === '*' ? `unpinned all ${list.length}: they follow the default` : `${list[0].name} unpinned: follows the default`);
+  // after the inline strip's Unpin, an Undo stays for a few seconds
+  if (UI.confirm !== 'arm') {
+    UI.undo = { save, label: v === '*' ? `${list.length} applications unpinned.` : `${list[0].name} unpinned.` };
+    clearTimeout(UI.undoT); UI.undoT = setTimeout(() => { UI.undo = null; render(); }, 5000);
+  }
+}
+for (const root of [$('#pop'), $('#ctx')]) {
+  root.addEventListener('click', e => { const t = e.target.closest('[data-act]'); if (t) act(t); });
+  root.addEventListener('input', e => {
+    const k = e.target.dataset.k; if (!k) return;
+    set(k, +e.target.value);
+    const app = k.startsWith('app:') && S.apps.find(x => x.id === k.split(':')[1]);
+    if (app) { UI.log[0]?.startsWith(app.name + ' →') ? UI.log[0] = app._last : log(app._last); }
+    sync();
+  });
+  root.addEventListener('wheel', e => {
+    // the wheel scrolls the list; only Shift+wheel changes a slider's volume
+    const el = e.target.closest('input[data-k]'); if (!el || !e.shiftKey) return;
+    const d = e.deltaY || e.deltaX; if (!d) return;   // browsers often turn Shift+wheel into a horizontal scroll
+    e.preventDefault(); set(el.dataset.k, Math.max(0, Math.min(max(), Math.round(get(el.dataset.k)) + (d < 0 ? 5 : -5)))); sync();
+  }, { passive: false });
+  root.addEventListener('change', e => {
+    const s = e.target.dataset.sel, v = e.target.dataset.v; if (!s) return;
+    if (s === 'port') { S.devs[v].port = e.target.value; log(`${S.devs[v].name} port → ${e.target.value}`); }
+    if (s === 'target') setTarget(v, e.target.value || null);
+    if (s === 'profile') { S.devs[v].profile = e.target.value; log(`${S.devs[v].card} profile → ${e.target.value}`); }
+    render();
+  });
+}
+// D: drag an application onto a device
+const pop = $('#pop');
+pop.addEventListener('dragstart', e => { const c = e.target.closest('[data-drag]'); if (!c) return; e.dataTransfer.setData('text/plain', c.dataset.drag); c.classList.add('dragging'); });
+pop.addEventListener('dragend', e => { UI.drop = null; e.target.closest?.('[data-drag]')?.classList.remove('dragging'); render(); });
+pop.addEventListener('dragover', e => {
+  const d = e.target.closest('[data-dropdev]'); if (!d) return; e.preventDefault();
+  if (UI.drop !== d.dataset.dropdev) { document.querySelectorAll('.dev.over').forEach(x => x.classList.remove('over')); d.classList.add('over'); UI.drop = d.dataset.dropdev; }
+});
+pop.addEventListener('drop', e => {
+  const d = e.target.closest('[data-dropdev]'); if (!d) return; e.preventDefault();
+  const app = S.apps.find(x => x.id === e.dataTransfer.getData('text/plain')), dev = d.dataset.dropdev;
+  UI.drop = null;
+  if (!app || S.devs[dev].kind !== (app.dir === 'play' ? 'out' : 'in')) return render();
+  const def = app.dir === 'play' ? S.defOut : S.defIn;
+  setTarget(app.id, dev === def ? null : dev);   // dropping under the default means "follow the default"
+  render();
+});
+
+// simulation switches
+$('#sim-over').onchange = e => {
+  S.over = e.target.checked;
+  if (!S.over) { Object.values(S.devs).forEach(d => d.vol = Math.min(d.vol, 100)); S.apps.forEach(a => a.streams.forEach(s => s.v = Math.min(s.v, 100))); S.sys.vol = Math.min(S.sys.vol, 100); }
+  log(`allow-volume-above-100-percent ${S.over}`); render();
+};
+$('#sim-head').onchange = e => {
+  const d = S.devs.spk; d.ports[1].on = e.target.checked; d.port = e.target.checked ? 'Headphones' : 'Speakers';
+  S.devs.mic.ports[1].on = e.target.checked;
+  log(e.target.checked ? 'headphones plugged in: port → Headphones' : 'headphones unplugged: port → Speakers'); render();
+};
+$('#sim-rec').onchange = e => { recOn = e.target.checked; log(recOn ? 'Discord call and OBS start' : 'Discord call and OBS stop'); render(); };
+$('#sim-sp').onchange = e => { S.apps.find(x => x.id === 'sp').streams[0].on = e.target.checked; log(e.target.checked ? 'Spotify plays' : 'Spotify pauses'); render(); };
+$('#sim-bt').onchange = e => {
+  const off = e.target.checked; S.devs.bt.gone = off;
+  // the sound server falls back to another default while the headset is off, and returns to it after
+  if (off && S.defOut === 'bt') { S._backTo = 'bt'; S.defOut = 'spk'; }
+  if (!off && S._backTo) { S.defOut = S._backTo; S._backTo = null; }
+  log(off ? 'WH-1000XM4 off: Spotify plays to the default' : 'WH-1000XM4 back: Spotify moves to it'); render();
+};
+$('#sim-short').onchange = e => { $('#stage').classList.toggle('short', e.target.checked); render(); };
+$('#sim-off').onchange = e => { S.server = !e.target.checked; log(S.server ? 'sound server back: reconnected' : 'sound server gone'); render(); };
+
+let toastT;
+function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 1800); }
+
+// input level meters: the default input moves while something records, the others idle low
+setInterval(() => {
+  document.querySelectorAll('[data-m]').forEach(el => {
+    const d = S.devs[el.dataset.m], live = S.server && !d.mute && (el.dataset.m === S.defIn || apps('rec').some(a => where(a) === el.dataset.m));
+    el.style.width = (live ? (20 + Math.random() * 55) * d.vol / 100 : Math.random() * 4) + '%';
+  });
+  // an application's activity: only while one of its streams is playing or recording
+  document.querySelectorAll('[data-am]').forEach(el => {
+    const a = S.apps.find(x => x.id === el.dataset.am), live = S.server && !a.mute && active(a);
+    el.style.width = (live ? (25 + Math.random() * 60) * Math.min(appVol(a), 100) / 100 : 0) + '%';
+  });
+}, 120);
+
+const h = (location.hash || '').slice(1).toUpperCase();
+UI.variant = ORDER.includes(h) ? h : 'B';
+UI.open = true;
+render();
+addEventListener('resize', () => { if (UI.open) place($('#pop')); if (UI.ctx) place($('#ctx')); });
+</script>
