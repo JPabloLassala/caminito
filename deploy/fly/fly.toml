@@ -1,0 +1,20 @@
+# The machine of deploy/fly/README.md. Deploy from this directory: `fly deploy`.
+app = "caminito-claude"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# The author of the commits Claude makes.
+[env]
+  GIT_NAME = "Your Name"
+  GIT_EMAIL = "you@example.com"
+
+[mounts]
+  source = "caminito_data"
+  destination = "/data"
+
+# Linking Caminito wants the memory; the cores only make cargo faster.
+[[vm]]
+  size = "shared-cpu-4x"
+  memory = "8gb"

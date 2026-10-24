@@ -1,0 +1,25 @@
+#!/bin/bash
+# Fly mounts the volume as root's: give it to agent, then go on as agent.
+set -euo pipefail
+
+if [[ $(id -u) == 0 ]]; then
+  mkdir -p /data/claude /data/gh /data/cargo
+  chown agent:agent /data /data/claude /data/gh /data/cargo
+  exec setpriv --reuid=agent --regid=agent --init-groups env HOME=/home/agent "$0" "$@"
+fi
+
+repo=/data/camino
+if [[ -n ${GH_TOKEN:-} ]]; then
+  gh auth setup-git
+  [[ -d $repo ]] || gh repo clone JPabloLassala/camino "$repo"
+fi
+if [[ -n ${GIT_NAME:-} ]]; then
+  git config --global user.name "$GIT_NAME"
+  git config --global user.email "$GIT_EMAIL"
+fi
+
+# Remote Control can't start before Claude is logged in (README.md, "Log in"), nor before the
+# clone: it's tried again every 30 seconds until it runs, and again whenever it exits.
+tmux new-session -d -s claude \
+  "while :; do cd $repo && claude remote-control; echo 'Remote Control exited; again in 30s'; sleep 30; done"
+exec sleep infinity
