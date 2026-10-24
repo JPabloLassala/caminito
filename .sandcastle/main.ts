@@ -1,8 +1,9 @@
-// Ships an epic's tickets one at a time, each in a Podman sandbox of its own, as /ship does by
+// Ships an epic's tickets one at a time, each in a Docker sandbox of its own, as /ship does by
 // hand: an agent builds the ticket on a branch named after it, a second one reviews the branch
 // with /code-review, and the host merges it into master and resolves the ticket in Linear.
 //
-//   tools/sandcastle start --epic <epic> [--max <n>] [--no-merge] [--model <model>]
+//   tools/sandcastle start --epic <epic> [--max <n>] [--no-merge]
+//     [--implement-model <model>] [--review-model <model>]
 //
 // The tickets are the epic's frontier, narrowed to ready-for-agent implementation tickets (see
 // linear.ts). The run stops when the frontier is empty, after --max tickets, or when a merge
@@ -14,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import * as sandcastle from "@ai-hero/sandcastle";
-import { podman } from "@ai-hero/sandcastle/sandboxes/podman";
+import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { Linear, type Ticket } from "./linear.ts";
 
 const IMAGE = "camino-sandcastle";
@@ -25,11 +26,14 @@ const { values, positionals } = parseArgs({
     epic: { type: "string" },
     max: { type: "string", default: "10" },
     "no-merge": { type: "boolean", default: false },
-    model: { type: "string", default: "claude-opus-5-5" },
+    "implement-model": { type: "string", default: "claude-sonnet-5-5" },
+    "review-model": { type: "string", default: "claude-opus-5-5" },
   },
 });
 if (positionals[0] !== "start" || !values.epic) {
-  console.error("usage: tools/sandcastle start --epic <epic> [--max <n>] [--no-merge] [--model <model>]");
+  console.error(
+    "usage: tools/sandcastle start --epic <epic> [--max <n>] [--no-merge] [--implement-model <model>] [--review-model <model>]",
+  );
   process.exit(2);
 }
 const epic = values.epic;
@@ -54,7 +58,7 @@ if (!(await linear.milestoneExists(epic))) {
 const cache = join(homedir(), ".cache", "camino-sandcastle");
 mkdirSync(join(cache, "target"), { recursive: true });
 mkdirSync(join(cache, "cargo-registry"), { recursive: true });
-const provider = podman({
+const provider = docker({
   imageName: IMAGE,
   mounts: [
     { hostPath: join(cache, "target"), sandboxPath: "~/target" },
@@ -62,7 +66,8 @@ const provider = podman({
   ],
   env: { CARGO_TARGET_DIR: "/home/agent/target" },
 });
-const agent = sandcastle.claudeCode(values.model, { effort: "medium" });
+const implementer = sandcastle.claudeCode(values["implement-model"], { effort: "high" });
+const reviewer = sandcastle.claudeCode(values["review-model"], { effort: "medium" });
 
 // What the implementer reports, inside <result> tags.
 interface Result {
@@ -115,11 +120,12 @@ while (shipped < max) {
 
   const sandbox = await sandcastle.createSandbox({ branch, baseBranch: "master", sandbox: provider });
   let result: Result | undefined;
+  let failed = false;
   try {
     const implement = await sandbox.run({
       name: "implementer",
       maxIterations: 1,
-      agent,
+      agent: implementer,
       promptFile: ".sandcastle/implement-prompt.md",
       promptArgs: {
         ID: ticket.identifier,
@@ -136,11 +142,17 @@ while (shipped < max) {
       await sandbox.run({
         name: "reviewer",
         maxIterations: 1,
-        agent,
+        agent: reviewer,
         promptFile: ".sandcastle/review-prompt.md",
         promptArgs: { ID: ticket.identifier, BRANCH: branch, BODY: ticket.description },
       });
     }
+  } catch (error) {
+    // An agent that fails, as one that isn't logged in, blocks the ticket instead of the run's
+    // stopping with the ticket claimed. It would fail on the next ticket too, so the run stops.
+    failed = true;
+    const message = error instanceof Error ? error.message : String(error);
+    result = { status: "blocked", met: [], decisions: [], note: `The agent failed: ${message.trim()}` };
   } finally {
     await sandbox.close();
   }
@@ -150,6 +162,7 @@ while (shipped < max) {
     console.log(`${ticket.identifier} is blocked: ${note}`);
     await linear.comment(ticket, `Sandcastle couldn't finish this ticket on branch \`${branch}\`: ${note}`);
     await linear.release(ticket);
+    if (failed) break;
     continue;
   }
 

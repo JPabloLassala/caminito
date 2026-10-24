@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Runs agents over an epic's tickets in Podman sandboxes, with Sandcastle (.sandcastle/main.ts).
+# Runs agents over an epic's tickets in Docker sandboxes (OrbStack's on a Mac), with Sandcastle
+# (.sandcastle/main.ts).
 #
 #   tools/sandcastle build-image
-#   tools/sandcastle start --epic <epic> [--max <n>] [--no-merge] [--model <model>]
+#   tools/sandcastle start --epic <epic> [--max <n>] [--no-merge]
+#     [--implement-model <model>] [--review-model <model>]
 #
 # build-image builds the sandbox from .sandcastle/Containerfile; rerun it when tools/check's
 # packages change. start needs .sandcastle/.env and .sandcastle/host.env, from their examples.
@@ -14,13 +16,14 @@ cd "$(dirname "$(realpath "$0")")/.."
 
 case ${1-} in
   build-image)
-    exec npm --prefix .sandcastle exec -- sandcastle podman build-image --image-name camino-sandcastle
+    exec npm --prefix .sandcastle exec -- sandcastle docker build-image --image-name camino-sandcastle \
+      --dockerfile .sandcastle/Containerfile
     ;;
   start)
     exec .sandcastle/node_modules/.bin/tsx .sandcastle/main.ts "$@"
     ;;
   *)
-    sed -n '4,5s/^# //p' "$0" >&2
+    sed -n '5,7s/^# //p' "$0" >&2
     exit 2
     ;;
 esac
