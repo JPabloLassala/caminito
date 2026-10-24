@@ -9,8 +9,10 @@ import sys
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+from gi.repository import GLib, Gtk
 
+# The app id, which the Dock resolves to run.sh's cmn-223-window.desktop.
+GLib.set_prgname("cmn-223-window")
 window = Gtk.Window(title="CMN-223 test window")
 window.set_default_size(560, 320)
 if sys.argv[1:] == ["maximized"]:

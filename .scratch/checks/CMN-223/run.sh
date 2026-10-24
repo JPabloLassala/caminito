@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # CMN-223's check of the floating mate-panel (carried patch 0015): the patched mate-panel
 # under a nested Caminito on Xvfb, with a bottom panel and a left panel that aren't expanded.
-# The Dock applet is CMN-219's and isn't built yet, so the bottom panel has the window list,
-# the applet it replaces, and a Clock; the left panel has a Clock. Each case is a screenshot
+# The bottom panel has the Dock applet (CMN-219), with a kept program that isn't running and
+# the maximised window's, and a Clock; the left panel has a Clock. Each case is a screenshot
 # and the work area Caminito reports, with a maximised window open for it:
 #
 #   01-floating       both panels floating: they stand off their edges, with rounded
@@ -25,32 +25,58 @@
 # in the build, which isn't in the patch.
 #
 #   run.sh [<mate-panel's install prefix>] [<caminito>] [<output directory>]
+#          [<meson build directory with the Dock applet built>]
 #
 # The prefix is a build of mate-panel with packaging/patches/mate-panel/ applied, with
 # -Din-process-applets=all (a Wayland panel has no out-of-process applets), installed with
 # `meson install` (default /tmp/mp/prefix); the compositor defaults to the debug build of this
-# checkout. XFW_LIB names a directory of libxfce4windowing's libraries, where the system hasn't
-# them. It needs Xvfb, python-gobject with GTK 3, dbus-run-session, busctl,
-# gsettings, glib-compile-schemas and the libraries mate-panel is built against.
+# checkout. The Dock applet is to be built against that mate-panel's applet library, .so.2: one
+# built against the stock .so.1 takes the panel's other applets down with it. Without a build
+# directory it builds the top-level project in a scratch one so, as CMN-219's check does. XFW_LIB names a directory of libxfce4windowing's libraries, where the
+# system hasn't them. It needs Meson, Xvfb, python-gobject with GTK 3, dbus-run-session,
+# busctl, gsettings, glib-compile-schemas and the libraries mate-panel is built against.
 set -euo pipefail
 here=$(dirname "$(realpath "$0")")
 root=$(git -C "$here" rev-parse --show-toplevel)
 pkg=$(realpath "${1:-/tmp/mp/prefix}")
 caminito=$(realpath "${2:-${CARGO_TARGET_DIR:-$HOME/target}/debug/caminito}")
 out=$(realpath -m "${3:-$here/out}")
+build=${4:-}
 work=$(mktemp -d "${TMPDIR:-/tmp}/cmn-223.XXXXXX")
 trap 'kill $(jobs -p) 2>/dev/null; [ "${KEEP:-}" ] && echo "kept $work" || rm -rf "${work:?}"' EXIT
-mkdir -p "$work/config" "$work/rt" "$work/schemas" "$out"
+mkdir -p "$work/config" "$work/rt" "$work/schemas" "$work/applets" "$work/data/applications" "$out"
 chmod 700 "$work/rt"
 rm -f "${out:?}"/0[1-4]-*.png "${out:?}/report.txt"
-# Marco's schemas and the rest that Caminito reads, vendored for its tests.
-cp "$root"/tests/schemas/*.xml "$pkg"/share/glib-2.0/schemas/*.xml "$work/schemas/"
+if [ -z "$build" ]; then
+    build=$work/build
+    PKG_CONFIG_PATH=$pkg/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH} \
+        meson setup "$build" "$root" >/dev/null
+fi
+ninja -C "$build" >/dev/null
+dock=$(find "$(realpath "$build")" -name libcaminito-dock-applet.so | head -1)
+[ -n "$dock" ] || { echo "no Dock applet in $build" >&2; exit 1; }
+# Marco's schemas and the rest that Caminito reads, vendored for its tests, and the Dock's.
+cp "$root"/tests/schemas/*.xml "$pkg"/share/glib-2.0/schemas/*.xml \
+    "$root"/helpers/caminito-dock-applet/*.gschema.xml "$work/schemas/"
 glib-compile-schemas "$work/schemas"
+# The panel's own applets and the Dock, as its package installs it.
+cp "$pkg"/share/mate-panel/applets/* "$work/applets/"
+sed "s#@APPLET_LOCATION@#$dock#" \
+    "$root/helpers/caminito-dock-applet/org.mate.panel.CaminitoDockApplet.mate-panel-applet.in" \
+    >"$work/applets/org.mate.panel.CaminitoDockApplet.mate-panel-applet"
+# The maximised window's desktop entry, which client.py's app id resolves to, and a kept one.
+entry() { # id name icon
+    printf '[Desktop Entry]\nType=Application\nName=%s\nIcon=%s\nExec=true\nStartupWMClass=%s\n' \
+        "$2" "$3" "$1" >"$work/data/applications/$1.desktop"
+}
+entry cmn-223-window "CMN-223 test window" utilities-terminal
+entry cmn-223-kept "A kept program" system-file-manager
 
 export XDG_RUNTIME_DIR=$work/rt XDG_CONFIG_HOME=$work/config GSETTINGS_SCHEMA_DIR=$work/schemas
+export XDG_DATA_HOME=$work/data
 export XDG_DATA_DIRS=$pkg/share:/usr/local/share:/usr/share
 export LD_LIBRARY_PATH=$pkg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${XFW_LIB:+:$XFW_LIB}
-export MATE_PANEL_APPLETS_DIR=$pkg/share/mate-panel/applets
+export MATE_PANEL_APPLETS_DIR=$work/applets
 export LANG=C LANGUAGE=C GDK_BACKEND=x11 NO_AT_BRIDGE=1
 unset WAYLAND_DISPLAY GTK_MODULES
 
@@ -88,11 +114,13 @@ inner() {
     configure() { # floating
         panel bottom bottom "$1"
         panel left left "$1"
-        applet window-list bottom WnckletFactory::WindowListApplet 0
+        applet dock bottom CaminitoDockAppletFactory::CaminitoDockApplet 0
+        gs "org.mate.panel.applet.caminito-dock:/org/mate/panel/objects/dock/prefs/" kept \
+            "['cmn-223-kept.desktop', 'cmn-223-window.desktop']"
         applet bottom-clock bottom ClockAppletFactory::ClockApplet 1
         applet left-clock left ClockAppletFactory::ClockApplet 0
         gs org.mate.panel toplevel-id-list "['bottom', 'left']"
-        gs org.mate.panel object-id-list "['window-list', 'bottom-clock', 'left-clock']"
+        gs org.mate.panel object-id-list "['dock', 'bottom-clock', 'left-clock']"
     }
     state() { # label
         busctl --user call org.mate.Caminito.Debug /org/mate/Caminito/Debug \
