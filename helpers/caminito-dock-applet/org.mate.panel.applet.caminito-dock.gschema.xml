@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The Dock applet's own settings (CMN-219). Relocatable: mate-panel gives every instance of
+<!-- The Dock applet's own settings (CMN-219, CMN-239). Relocatable: mate-panel gives every instance of
      an applet a path of its own, so each Dock keeps its own items. -->
 <schemalist>
   <schema id="org.mate.panel.applet.caminito-dock">
@@ -7,6 +7,11 @@
       <default>[]</default>
       <summary>Kept Dock items</summary>
       <description>The Dock items kept in the dock when the program has no window, in the order they are shown in. Each is a desktop entry's id, such as "firefox.desktop", or the path of a desktop entry that has no id.</description>
+    </key>
+    <key name="kept-folders" type="as">
+      <default>[]</default>
+      <summary>Kept folders</summary>
+      <description>The folders kept in the dock after the separator, in the order they are shown in. Each is a folder's URI, such as "file:///home/user/Documents".</description>
     </key>
   </schema>
 </schemalist>

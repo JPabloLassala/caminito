@@ -25,6 +25,10 @@ struct _DkItemView
   GPtrArray       *windows;
   gboolean         active;
   gboolean         hover;
+  /* The target it is dragged by, or NULL when it can't be dragged; and whether it is shown
+     faint, as a Kept folder that is gone is (CMN-239). */
+  char            *drag_target;
+  gboolean         dimmed;
   GtkPositionType  edge;
   DkFeedbackState  feedback;
   DkLauncherEntry  launcher;
@@ -42,6 +46,7 @@ view_free (gpointer data)
   DkItemView *view = data;
 
   g_free (view->key);
+  g_free (view->drag_target);
   g_clear_object (&view->icon);
   g_clear_pointer (&view->windows, g_ptr_array_unref);
   g_clear_pointer (&view->surface, cairo_surface_destroy);
@@ -391,6 +396,8 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
   int scale = gtk_widget_get_scale_factor (widget);
   IconPose pose = icon_pose (view, width, height, size, g_get_monotonic_time ());
 
+  if (view->dimmed)
+    pose.alpha *= 0.4;
   if (view->hover)
     {
       GdkRGBA color;
@@ -511,7 +518,9 @@ on_drag_data_get (GtkWidget *widget G_GNUC_UNUSED, GdkDragContext *context G_GNU
 {
   DkItemView *view = data;
 
-  gtk_selection_data_set (selection, gdk_atom_intern_static_string (DK_DRAG_TARGET), 8,
+  if (view->drag_target == NULL)
+    return;
+  gtk_selection_data_set (selection, gdk_atom_intern (view->drag_target, FALSE), 8,
                           (const guchar *) view->key, strlen (view->key));
 }
 
@@ -587,10 +596,6 @@ void
 dk_item_view_set (DkItemView *view, const char *key, GIcon *icon, const char *name,
                   GPtrArray *windows, gboolean active, gboolean draggable)
 {
-  static const GtkTargetEntry targets[] = {
-    { (char *) DK_DRAG_TARGET, GTK_TARGET_SAME_APP, 0 },
-  };
-
   if (g_strcmp0 (view->key, key) != 0)
     {
       g_free (view->key);
@@ -607,11 +612,35 @@ dk_item_view_set (DkItemView *view, const char *key, GIcon *icon, const char *na
     g_ptr_array_add (view->windows, g_object_ref (windows->pdata[i]));
   view->active = active;
   gtk_widget_set_tooltip_text (view->widget, name);
+  /* A Kept folder's target is its own to set, and not undone here. */
   if (draggable)
-    gtk_drag_source_set (view->widget, GDK_BUTTON1_MASK, targets, G_N_ELEMENTS (targets),
-                         GDK_ACTION_MOVE);
-  else
-    gtk_drag_source_unset (view->widget);
+    dk_item_view_set_drag (view, DK_DRAG_TARGET);
+  else if (g_strcmp0 (view->drag_target, DK_DRAG_TARGET) == 0)
+    dk_item_view_set_drag (view, NULL);
   gtk_widget_queue_draw (view->widget);
   dk_item_view_update_rectangles (view);
+}
+
+void
+dk_item_view_set_drag (DkItemView *view, const char *target)
+{
+  GtkTargetEntry entry = { (char *) target, GTK_TARGET_SAME_APP, 0 };
+
+  if (g_strcmp0 (view->drag_target, target) == 0)
+    return;
+  g_free (view->drag_target);
+  view->drag_target = g_strdup (target);
+  if (target != NULL)
+    gtk_drag_source_set (view->widget, GDK_BUTTON1_MASK, &entry, 1, GDK_ACTION_MOVE);
+  else
+    gtk_drag_source_unset (view->widget);
+}
+
+void
+dk_item_view_set_dimmed (DkItemView *view, gboolean dimmed)
+{
+  if (view->dimmed == dimmed)
+    return;
+  view->dimmed = dimmed;
+  gtk_widget_queue_draw (view->widget);
 }

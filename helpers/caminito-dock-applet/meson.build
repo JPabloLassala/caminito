@@ -63,7 +63,7 @@ test(
              dependencies: [glib, m]),
 )
 
-# The kept items in the applet's relocatable settings. The package's hook compiles the
+# The kept items and the Kept folders in the applet's relocatable settings. The package's hook compiles the
 # schemas, so nothing is compiled for the install.
 install_data(
   'org.mate.panel.applet.caminito-dock.gschema.xml',
@@ -125,6 +125,14 @@ activation = static_library(
   pic: true,
 )
 
+# A Kept folder's folder (CMN-239): its icon, its contents and putting files in it, through GIO.
+folder = static_library('dk-folder', 'dk-folder.c', dependencies: [glib, gio], pic: true)
+
+test(
+  'folder',
+  executable('test-folder', 'test-folder.c', link_with: folder, dependencies: [glib, gio]),
+)
+
 # The Trash: whether it is full, putting files in it and emptying it, through GIO.
 trash = static_library('dk-trash', 'dk-trash.c', dependencies: [glib, gio], pic: true)
 
@@ -138,7 +146,7 @@ dock = static_library(
   'dk-dock',
   'dk-dock.c',
   'dk-item.c',
-  link_with: [activation, feedback, launcher, store, model, resolve, trash],
+  link_with: [activation, feedback, launcher, store, model, resolve, trash, folder],
   dependencies: [glib, gio_unix, gtk, xfw, m],
   pic: true,
 )
@@ -152,7 +160,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,
@@ -162,7 +170,7 @@ applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-dock-applet',
   'dock-applet.c',
-  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder],
   dependencies: [glib, gio_unix, gtk, xfw, wayland_client, m, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,

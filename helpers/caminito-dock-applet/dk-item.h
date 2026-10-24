@@ -16,6 +16,9 @@ typedef struct _DkItemView DkItemView;
 /* The drag target the items are dragged by inside the dock. */
 #define DK_DRAG_TARGET "application/x-caminito-dock-item"
 
+/* The drag target the Kept folders (CMN-239) are dragged by, among themselves. */
+#define DK_FOLDER_DRAG_TARGET "application/x-caminito-dock-folder"
+
 /* A view and its widget, which the widget owns: the view lives as long as it. */
 DkItemView *dk_item_view_new        (void);
 GtkWidget  *dk_item_view_get_widget (DkItemView *view);
@@ -35,6 +38,11 @@ void        dk_item_view_set          (DkItemView *view,
                                        GPtrArray  *windows,
                                        gboolean    active,
                                        gboolean    draggable);
+/* The item is dragged by target, which carries its key, or can't be dragged (NULL). The setter
+   above sets DK_DRAG_TARGET for a draggable item. */
+void        dk_item_view_set_drag     (DkItemView *view, const char *target);
+/* The item is shown faint: a Kept folder that is gone. */
+void        dk_item_view_set_dimmed   (DkItemView *view, gboolean dimmed);
 const char *dk_item_view_get_key      (DkItemView *view);
 GPtrArray  *dk_item_view_get_windows  (DkItemView *view);
 gboolean    dk_item_view_is_active    (DkItemView *view);
