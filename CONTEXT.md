@@ -120,9 +120,9 @@ _Avoid_: configuration (that's one client's request over output management), arr
 A layout Caminito keeps for one set of connected monitors and restores when that set is connected again. A monitor is known by its make, model and serial, or by its connector when it reports none.
 _Avoid_: profile, monitors file
 
-**Dock**:
+**Attach**:
 To place an output against the outline of the others, which is the only way an output is moved in a layout.
-_Avoid_: snap (that's the finer alignment of matching edges while docking; centres don't snap)
+_Avoid_: dock (that's the Dock applet), snap (that's the finer alignment of matching edges while attaching; centres don't snap)
 
 **Heal**:
 To make a layout contiguous again after a change that broke it: an output removed, added, turned off, or changed in size.
@@ -201,7 +201,7 @@ A view of each output's active workspace with its windows shrunk and set side by
 _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), activities overview (GNOME's, which has a launcher), workspace switcher (the panel's pager)
 
 **Application overview**:
-The Overview opened for the focused window's Application: each output's active workspace shows only that application's windows. It's the Overview in every other way, and opens only when a window is focused. It's Plasma's Window View for the current application.
+The Overview opened for the focused window's Application: each output's active workspace shows only that application's windows. It's the Overview in every other way, and opens only when a window is focused. Opened from a Dock item, it shows that item's windows, which may be several applications'. It's Plasma's Window View for the current application.
 _Avoid_: app exposé (macOS's), present windows for the current application (KWin's older name), application switcher (that's `switch-group`'s Window switcher)
 
 **Hot corner**:
@@ -351,6 +351,22 @@ _Avoid_: sensors applet (MATE's own mate-sensors-applet), temperature applet, th
 **Panel sensor**:
 One of the temperatures, two at most, that the Thermal applet shows in the panel, chosen by pinning it in the popup. By default they're the CPU's and, when there's a GPU, the GPU's.
 _Avoid_: main sensor, primary temperature, pinned sensor
+
+**Dock applet**:
+Caminito's mate-panel applet for the dock: a row of Dock items and the Trash, in a panel of its own, in the manner of Plasma's Icons-only Task Manager on a floating panel and of macOS's Dock.
+_Avoid_: dock program, Plank, mate-dock-applet (the X11 applet it isn't), window list (mate-panel's own applet, with one button per window), task manager
+
+**Dock item**:
+One icon of the Dock applet: a program, known by its desktop entry, with the windows of every Application whose app id resolves to it, so two processes of one program share one item. A window with no desktop entry has an item of its own, by its app id.
+_Avoid_: task, launcher (a mate-panel launcher is a different panel object), Application (one process's windows only), group
+
+**Kept Dock item**:
+A Dock item the user has chosen to keep in the dock, which stays when the program has no window, until they remove it. The menu item is _Keep in Dock_.
+_Avoid_: pinned (pinning is the Sound applet's and the Thermal applet's), favourite, launcher
+
+**Intellihide**:
+A panel's hiding off its edge whenever a window on its output's active workspace overlaps it, and coming back when none does or when the pointer rests at that edge. A panel with intellihide reserves no space. Caminito decides when it hides and slides it, not the panel.
+_Avoid_: autohide (mate-panel's own, which hides whenever the pointer leaves), dodge windows (Ubuntu Dock's), smart hide
 
 **Sound applet**:
 Caminito's mate-panel applet for sound: the volume icon in the panel and its popup of the sound devices and the applications playing or recording. In a Session it takes the place of mate-media's volume icon, and its settings window is mate-volume-control.

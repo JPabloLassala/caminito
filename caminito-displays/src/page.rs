@@ -669,7 +669,7 @@ impl Page {
     }
 
     /// Moves the display being dragged to `dx`, `dy` logical pixels from where it was
-    /// picked up. The others close up without it, and it docks against them, within `snap`
+    /// picked up. The others close up without it, and it attaches to them, within `snap`
     /// logical pixels of a matching edge on that edge (82).
     pub fn drag_to(&mut self, dx: i32, dy: i32, snap: i32) {
         let Some(drag) = self.drag.clone() else {
