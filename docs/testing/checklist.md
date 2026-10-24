@@ -3759,9 +3759,9 @@ They are the developer's to run.
 - **Expected:** in step 1 the disk has an item with its icon, before the Trash, and its tooltip
   is the disk's name; the internal disks have none. In step 2 Caja opens the disk. In step 3 the
   file is copied to the disk and is still in the home folder. In step 4 the menu has *Open* and
-  *Eject* (*Unmount* for a disk that can't be ejected), the first eject shows an error, as the Trash shows one, that the disk is busy, and
-  the second takes the item away. In step 5 the item goes with the unmount, and the network
-  share has no item.
+  *Eject* (*Unmount* for a disk that can't be ejected), the first eject shows an error that the
+  disk is busy, as the Trash shows its errors, and the second takes the item away. In step 5 the
+  item goes with the unmount, and the network share has no item.
 - **Debug tool:** `gio mount -li` for each mount's drive, volume and whether it can be ejected or
   unmounted, and `gio mount -o` to watch the monitor's events.
 

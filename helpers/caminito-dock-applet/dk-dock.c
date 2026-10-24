@@ -1133,27 +1133,39 @@ over_item (DkDock *dock, GtkWidget *widget, int x, int y, gboolean both_ends)
   return along >= length / 4 && (!both_ends || along < length - length / 4);
 }
 
-/* Files dropped on the Trash go to it, whichever action the source offers: the files are
-   put in the Trash here, so the source has nothing to delete. */
+/* A drag of files over an item that takes them, the Trash or a Removable drive item, at the
+   action it shows, preferred if the source offers it: the files are put there by the dock,
+   so the source has nothing to delete either way. */
 static gboolean
-on_trash_drag_motion (GtkWidget *widget, GdkDragContext *context, int x,
-                      int y, guint time, gpointer data)
+files_drag_motion (DkDock *dock, GtkWidget *widget, GdkDragContext *context, int x, int y,
+                   guint time, GdkDragAction preferred)
 {
   GdkDragAction offered = gdk_drag_context_get_actions (context);
   GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
   GdkDragAction action = target == GDK_NONE ? 0
+                         : offered & preferred ? preferred
                          : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE
                          : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY : 0;
 
   /* At its start a folder is kept before it: the items after the separator take it from here. */
-  if (!over_item (data, widget, x, y, FALSE))
+  if (!over_item (dock, widget, x, y, FALSE))
     return FALSE;
   gdk_drag_status (context, action, time);
   return action != 0;
 }
 
+/* Files dropped on the Trash are moved to it. */
 static gboolean
-on_trash_drag_drop (GtkWidget *widget, GdkDragContext *context, int x,
+on_trash_drag_motion (GtkWidget *widget, GdkDragContext *context, int x,
+                      int y, guint time, gpointer data)
+{
+  return files_drag_motion (data, widget, context, x, y, time, GDK_ACTION_MOVE);
+}
+
+/* The drop of files on the Trash or a Removable drive item, past the start where a folder is
+   kept instead. */
+static gboolean
+on_files_drag_drop (GtkWidget *widget, GdkDragContext *context, int x,
                     int y, guint time, gpointer data)
 {
   GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
@@ -1195,7 +1207,7 @@ trash_new (DkDock *dock)
   gtk_drag_dest_set (widget, 0, targets, G_N_ELEMENTS (targets),
                      GDK_ACTION_MOVE | GDK_ACTION_COPY);
   g_signal_connect (widget, "drag-motion", G_CALLBACK (on_trash_drag_motion), dock);
-  g_signal_connect (widget, "drag-drop", G_CALLBACK (on_trash_drag_drop), dock);
+  g_signal_connect (widget, "drag-drop", G_CALLBACK (on_files_drag_drop), dock);
   g_signal_connect (widget, "drag-data-received", G_CALLBACK (on_trash_drag_data_received),
                     dock);
   update_trash_view (dock);
@@ -1550,8 +1562,9 @@ popup_folder_menu (DkDock *dock, DkItemView *view, const GdkEvent *event)
   menu_show (dock, menu, dk_item_view_get_widget (view), event);
 }
 
+/* A right-click on a Kept folder or a Removable drive item pops up its menu. */
 static gboolean
-on_folder_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data)
+on_after_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data)
 {
   if (event->button != 3)
     return GDK_EVENT_PROPAGATE;
@@ -1793,15 +1806,6 @@ on_drives_changed (gpointer data)
 }
 
 static gboolean
-on_drive_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data)
-{
-  if (event->button != 3)
-    return GDK_EVENT_PROPAGATE;
-  dk_dock_popup_menu (data, widget, (GdkEvent *) event);
-  return GDK_EVENT_STOP;
-}
-
-static gboolean
 on_drive_button_release (GtkWidget *widget, GdkEventButton *event, gpointer data)
 {
   /* Released away from the item: a click abandoned. */
@@ -1819,29 +1823,34 @@ on_drive_menu_open (GtkMenuItem *menu_item, gpointer data)
   open_in_caja (data, g_object_get_data (G_OBJECT (menu_item), "uri"));
 }
 
+/* What an eject or an unmount that fails reports. */
 typedef struct
 {
-  DkDock *dock;
+  DkDock   *dock;
+  char     *uri;
+  gboolean  eject;
   /* What the error says first: "Can't eject “USB”". */
-  char   *primary;
-} Removal;
+  char     *primary;
+} RemoveReport;
 
 static void
-removal_free (Removal *removal)
+remove_report_free (RemoveReport *report)
 {
-  g_free (removal->primary);
-  g_free (removal);
+  g_free (report->uri);
+  g_free (report->primary);
+  g_free (report);
 }
 
 static void
 on_drive_removed (GError *error, gpointer data)
 {
-  Removal *removal = data;
+  RemoveReport *report = data;
 
   if (error != NULL)
     {
-      g_warning ("%s: %s", removal->primary, error->message);
-      report_error (removal->dock, removal->primary, error->message);
+      g_warning ("can't %s %s: %s", report->eject ? "eject" : "unmount", report->uri,
+                 error->message);
+      report_error (report->dock, report->primary, error->message);
     }
 }
 
@@ -1850,21 +1859,23 @@ static void
 on_drive_menu_remove (GtkMenuItem *menu_item, gpointer data)
 {
   DkDock *dock = data;
-  GMount *mount = dk_drives_lookup (dock->drives,
-                                    g_object_get_data (G_OBJECT (menu_item), "uri"));
+  const char *uri = g_object_get_data (G_OBJECT (menu_item), "uri");
+  GMount *mount = dk_drives_lookup (dock->drives, uri);
   g_autofree char *name = NULL;
-  Removal *removal;
+  RemoveReport *report;
 
   /* Gone while the menu was open. */
   if (mount == NULL)
     return;
   name = g_mount_get_name (mount);
-  removal = g_new0 (Removal, 1);
-  removal->dock = dock;
-  removal->primary = g_strdup_printf (g_mount_can_eject (mount) ? "Can't eject “%s”"
-                                                                : "Can't unmount “%s”", name);
-  dk_drive_remove (mount, dock->cancellable, on_drive_removed, removal,
-                   (GDestroyNotify) removal_free);
+  report = g_new0 (RemoveReport, 1);
+  report->dock = dock;
+  report->uri = g_strdup (uri);
+  report->eject = g_mount_can_eject (mount);
+  report->primary = g_strdup_printf (report->eject ? "Can't eject “%s”" : "Can't unmount “%s”",
+                                     name);
+  dk_drive_remove (mount, dock->cancellable, on_drive_removed, report,
+                   (GDestroyNotify) remove_report_free);
 }
 
 static void
@@ -1905,35 +1916,12 @@ drop_on_drive (DkDock *dock, const char *key, const char *const *uris)
     dk_drive_put (mount, uris, dock->cancellable, on_drive_put_failed, NULL, dock, NULL);
 }
 
-/* The files are copied here, so the source has nothing to delete, whichever action it
-   offers: a copy where it offers one. */
+/* Files dropped on it are copied there: a copy where the source offers one. */
 static gboolean
 on_drive_drag_motion (GtkWidget *widget, GdkDragContext *context, int x, int y, guint time,
                       gpointer data)
 {
-  GdkDragAction offered = gdk_drag_context_get_actions (context);
-  GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
-  GdkDragAction action = target == GDK_NONE ? 0
-                         : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY
-                         : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE : 0;
-
-  /* At its start a folder is kept before it: the items after the separator take it from here. */
-  if (!over_item (data, widget, x, y, FALSE))
-    return FALSE;
-  gdk_drag_status (context, action, time);
-  return action != 0;
-}
-
-static gboolean
-on_drive_drag_drop (GtkWidget *widget, GdkDragContext *context, int x, int y, guint time,
-                    gpointer data)
-{
-  GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
-
-  if (target == GDK_NONE || !over_item (data, widget, x, y, FALSE))
-    return FALSE;
-  gtk_drag_get_data (widget, context, target, time);
-  return TRUE;
+  return files_drag_motion (data, widget, context, x, y, time, GDK_ACTION_COPY);
 }
 
 static void
@@ -1960,12 +1948,12 @@ drive_view_new (DkDock *dock, const char *key)
   g_hash_table_insert (dock->drive_views, g_strdup (key), view);
   gtk_box_pack_start (GTK_BOX (dock->after), widget, FALSE, FALSE, 0);
   gtk_widget_show (widget);
-  g_signal_connect (widget, "button-press-event", G_CALLBACK (on_drive_button_press), dock);
+  g_signal_connect (widget, "button-press-event", G_CALLBACK (on_after_button_press), dock);
   g_signal_connect (widget, "button-release-event", G_CALLBACK (on_drive_button_release), dock);
   gtk_drag_dest_set (widget, 0, targets, G_N_ELEMENTS (targets),
                      GDK_ACTION_MOVE | GDK_ACTION_COPY);
   g_signal_connect (widget, "drag-motion", G_CALLBACK (on_drive_drag_motion), dock);
-  g_signal_connect (widget, "drag-drop", G_CALLBACK (on_drive_drag_drop), dock);
+  g_signal_connect (widget, "drag-drop", G_CALLBACK (on_files_drag_drop), dock);
   g_signal_connect (widget, "drag-data-received", G_CALLBACK (on_drive_drag_data_received),
                     dock);
   return view;
@@ -2021,7 +2009,7 @@ folder_view_new (DkDock *dock, const char *uri)
   g_hash_table_insert (dock->folder_views, g_strdup (uri), view);
   gtk_box_pack_start (GTK_BOX (dock->after), widget, FALSE, FALSE, 0);
   gtk_widget_show (widget);
-  g_signal_connect (widget, "button-press-event", G_CALLBACK (on_folder_button_press), dock);
+  g_signal_connect (widget, "button-press-event", G_CALLBACK (on_after_button_press), dock);
   g_signal_connect (widget, "button-release-event", G_CALLBACK (on_folder_button_release), dock);
   gtk_drag_dest_set (widget, 0, targets, G_N_ELEMENTS (targets),
                      GDK_ACTION_MOVE | GDK_ACTION_COPY);
