@@ -628,19 +628,23 @@ fn an_xwayland_window_joins_the_item_its_startup_wm_class_names() {
 #[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
 fn a_minimised_window_animates_into_its_dock_item() {
     let mut d = Desk::new();
+    // A kept item before the terminal's, so that its item isn't at the dock's origin.
+    d.probe.send("keep caja.desktop");
+    d.wait_for("caja.desktop", 0);
     let terminal = d.open("mate-terminal", "Terminal");
     let item = d.wait_for("mate-terminal.desktop", 1);
+    assert_ne!(item.rect.loc, Point::from((0, 0)), "{item:?}");
     d.wait_for_focus(terminal);
     let target = d.probe.rect_of(&item);
     let pid = d.f.pid(terminal);
-    // The window's rectangle is the item's, set when the window came.
+    // The window's rectangle is the item's in the dock's surface, set when the window came.
     d.f.dispatch_until(|f| {
         f.state
             .caminito
             .policy
             .window(pid)
             .and_then(|mapped| mapped.minimize_rectangle())
-            .is_some_and(|(_, rect)| rect.size == target.size)
+            .is_some_and(|(_, rect)| rect == item.rect)
     });
 
     let frame = d.f.visible_frame(terminal);
@@ -736,6 +740,22 @@ fn removing_a_kept_program_with_no_window_takes_its_item_away() {
     let mut d = Desk::new();
     d.probe.send("keep caja.desktop");
     let item = d.wait_for("caja.desktop", 0);
+
+    d.press(&item, BTN_RIGHT);
+    d.f.dispatch_until_mut(|f| !d.probe.menu(f).is_empty());
+    assert_eq!(d.probe.menu(&mut d.f), ["Remove from Dock"]);
+    d.probe.send("choose Remove from Dock");
+
+    d.probe.wait_for_items(&mut d.f, |items| items.is_empty());
+}
+
+/// As an uninstall leaves it.
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_kept_program_whose_entry_is_gone_can_be_removed() {
+    let mut d = Desk::new();
+    d.probe.send("keep uninstalled.desktop");
+    let item = d.wait_for("uninstalled.desktop", 0);
 
     d.press(&item, BTN_RIGHT);
     d.f.dispatch_until_mut(|f| !d.probe.menu(f).is_empty());

@@ -4,6 +4,9 @@
 
 #include "dk-model.h"
 
+/* The prefix of an item's key that has no desktop entry, before its app id. */
+#define WINDOW_KEY_PREFIX "window:"
+
 static void
 window_clear (DkWindow *window)
 {
@@ -89,7 +92,7 @@ dk_items_build (const DkCatalog *catalog, const char *const *kept,
       DkWindow copy = *window;
 
       if (entry == NULL)
-        key = g_strconcat ("window:", window->app_id != NULL ? window->app_id : "", NULL);
+        key = g_strconcat (WINDOW_KEY_PREFIX, window->app_id != NULL ? window->app_id : "", NULL);
       item = item_find (items, entry != NULL ? entry : key);
       if (item == NULL)
         item = item_add (items, entry != NULL ? entry : key, entry != NULL, FALSE);
@@ -113,6 +116,12 @@ dk_items_build (const DkCatalog *catalog, const char *const *kept,
         *b = swap;
       }
   return items;
+}
+
+gboolean
+dk_key_is_entry (const char *key)
+{
+  return !g_str_has_prefix (key, WINDOW_KEY_PREFIX);
 }
 
 DkClick

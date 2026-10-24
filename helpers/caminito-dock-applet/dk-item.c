@@ -14,7 +14,6 @@ struct _DkItemView
   GPtrArray       *windows;
   gboolean         active;
   gboolean         hover;
-  guint            thickness;
   GtkPositionType  edge;
   /* The icon at the size and scale it was last drawn at, until one of them or the theme
      changes. */
@@ -244,14 +243,19 @@ on_crossing (GtkWidget *widget G_GNUC_UNUSED, GdkEventCrossing *event, gpointer 
   return FALSE;
 }
 
+/* The rectangle is the item's in its toplevel: on Wayland libxfce4windowing hands it to
+   set_rectangle as it is, against the toplevel's surface, so one relative to the item's own
+   GdkWindow would put every item at the dock's origin. */
 void
 dk_item_view_update_rectangles (DkItemView *view)
 {
-  GdkWindow *window = gtk_widget_get_window (view->widget);
+  GtkWidget *toplevel = gtk_widget_get_toplevel (view->widget);
+  GdkWindow *window = gtk_widget_get_window (toplevel);
   GdkRectangle rect = { 0, 0, gtk_widget_get_allocated_width (view->widget),
                         gtk_widget_get_allocated_height (view->widget) };
 
-  if (window == NULL || !gtk_widget_get_mapped (view->widget))
+  if (window == NULL || !gtk_widget_get_mapped (view->widget)
+      || !gtk_widget_translate_coordinates (view->widget, toplevel, 0, 0, &rect.x, &rect.y))
     return;
   for (guint i = 0; i < view->windows->len; i++)
     xfw_window_set_button_geometry (view->windows->pdata[i], window, &rect, NULL);
@@ -335,7 +339,6 @@ dk_item_view_new (void)
 void
 dk_item_view_set_geometry (DkItemView *view, guint thickness, GtkPositionType edge)
 {
-  view->thickness = thickness;
   view->edge = edge;
   gtk_widget_set_size_request (view->widget, thickness, thickness);
   gtk_widget_queue_draw (view->widget);

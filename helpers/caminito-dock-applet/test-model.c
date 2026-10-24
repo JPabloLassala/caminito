@@ -114,6 +114,8 @@ test_a_window_with_no_entry_has_an_item_by_its_app_id (void)
   g_assert_null (item (items, 0)->entry_id);
   g_assert_cmpuint (item (items, 0)->windows->len, ==, 2);
   g_assert_cmpstr (item (items, 1)->key, ==, "window:other-mystery");
+  g_assert_false (dk_key_is_entry (item (items, 0)->key));
+  g_assert_true (dk_key_is_entry ("firefox.desktop"));
   g_array_unref (items);
   desk_free (desk);
 }

@@ -231,6 +231,11 @@ refresh (gpointer data)
 
       if (!g_hash_table_contains (wanted, dk_item_view_get_key (view)))
         {
+          if (dock->pressed_view == view)
+            {
+              g_clear_pointer (&dock->pressed, g_array_unref);
+              dock->pressed_view = NULL;
+            }
           gtk_widget_destroy (dk_item_view_get_widget (view));
           g_hash_table_iter_remove (&iter);
         }
@@ -346,18 +351,26 @@ view_of (GtkWidget *widget)
   return dk_item_view_from_widget (widget);
 }
 
-/* The item as the model sees it, for a click: its windows, most recent first. */
+static void
+pressed_window_clear (DkWindow *window)
+{
+  g_object_unref (window->handle);
+}
+
+/* The item as the model sees it, for a click: its windows, most recent first. It holds them,
+   as one may close between the press and the release. */
 static GArray *
 item_for_click (DkDock *dock, DkItemView *view)
 {
   g_autoptr (GArray) windows = g_array_new (FALSE, TRUE, sizeof (DkWindow));
   GPtrArray *views = dk_item_view_get_windows (view);
 
+  g_array_set_clear_func (windows, (GDestroyNotify) pressed_window_clear);
   for (guint i = 0; i < views->len; i++)
     {
       WindowInfo *info = g_hash_table_lookup (dock->windows, views->pdata[i]);
       DkWindow window = {
-        .handle = views->pdata[i],
+        .handle = g_object_ref (views->pdata[i]),
         .minimised = xfw_window_is_minimized (views->pdata[i]),
         .active = xfw_window_is_active (views->pdata[i]),
         .opened = info != NULL ? info->opened : 0,
@@ -408,7 +421,7 @@ item_new_instance (DkDock *dock, DkItemView *view)
 {
   const char *key = dk_item_view_get_key (view);
 
-  if (!g_str_has_prefix (key, "window:"))
+  if (dk_key_is_entry (key))
     launch_entry (dock, key, NULL);
 }
 
@@ -498,6 +511,16 @@ on_menu_deactivate (GtkMenuShell *menu, gpointer data)
   g_idle_add_full (G_PRIORITY_LOW, destroy_menu, g_object_ref (menu), g_object_unref);
 }
 
+/* Gone with the item it's attached to. */
+static void
+on_menu_destroy (GtkWidget *menu, gpointer data)
+{
+  DkDock *dock = data;
+
+  if (dock->menu == menu)
+    dock->menu = NULL;
+}
+
 /* The menu opens away from the panel's edge. */
 static void
 menu_anchors (const DkDock *dock, GdkGravity *rect_anchor, GdkGravity *menu_anchor)
@@ -528,7 +551,7 @@ dk_dock_popup_menu (DkDock *dock, GtkWidget *widget, const GdkEvent *event)
   DkItemView *view = view_of (widget);
   const char *key = dk_item_view_get_key (view);
   GPtrArray *windows = dk_item_view_get_windows (view);
-  GDesktopAppInfo *info = g_str_has_prefix (key, "window:") ? NULL : entry_info (dock, key);
+  GDesktopAppInfo *info = dk_key_is_entry (key) ? entry_info (dock, key) : NULL;
   GdkGravity rect_anchor, menu_anchor;
   GtkWidget *menu;
 
@@ -563,20 +586,22 @@ dk_dock_popup_menu (DkDock *dock, GtkWidget *widget, const GdkEvent *event)
           g_object_set_data_full (G_OBJECT (item), "key", g_strdup (key), g_free);
           g_object_set_data_full (G_OBJECT (item), "action", g_strdup (actions[i]), g_free);
         }
+    }
+  /* A kept item can be removed even once its entry is gone, as an uninstall leaves it. */
+  if (info != NULL || dk_store_is_kept (dock->store, key))
+    {
+      gboolean kept = dk_store_is_kept (dock->store, key);
+      GtkWidget *item;
+
       if (menu_has_items (menu))
         menu_separator (menu);
-      {
-        gboolean kept = dk_store_is_kept (dock->store, key);
-        GtkWidget *item = menu_item (menu, kept ? "Remove from Dock" : "Keep in Dock",
-                                     kept ? G_CALLBACK (on_menu_remove) : G_CALLBACK (on_menu_keep),
-                                     dock);
-
-        g_object_set_data_full (G_OBJECT (item), "key", g_strdup (key), g_free);
-      }
+      item = menu_item (menu, kept ? "Remove from Dock" : "Keep in Dock",
+                        kept ? G_CALLBACK (on_menu_remove) : G_CALLBACK (on_menu_keep), dock);
+      g_object_set_data_full (G_OBJECT (item), "key", g_strdup (key), g_free);
     }
   if (windows->len > 0)
     {
-      if (menu_has_items (menu) && info == NULL)
+      if (menu_has_items (menu) && info == NULL && !dk_store_is_kept (dock->store, key))
         menu_separator (menu);
       menu_item (menu, "Close all windows", G_CALLBACK (on_menu_close_all), menu);
       /* The windows as they are now, for the menu's life. */
@@ -596,6 +621,7 @@ dk_dock_popup_menu (DkDock *dock, GtkWidget *widget, const GdkEvent *event)
       return;
     }
   g_signal_connect (menu, "deactivate", G_CALLBACK (on_menu_deactivate), dock);
+  g_signal_connect (menu, "destroy", G_CALLBACK (on_menu_destroy), dock);
   menu_anchors (dock, &rect_anchor, &menu_anchor);
   gtk_menu_attach_to_widget (GTK_MENU (menu), widget, NULL);
   gtk_menu_popup_at_widget (GTK_MENU (menu), widget, rect_anchor, menu_anchor, event);
@@ -692,7 +718,7 @@ kept_position (DkDock *dock, int slot)
 void
 dk_dock_drop_key (DkDock *dock, const char *key, int x, int y)
 {
-  if (key == NULL || g_str_has_prefix (key, "window:"))
+  if (key == NULL || !dk_key_is_entry (key))
     return;
   dk_store_move (dock->store, key, kept_position (dock, slot_at (dock, x, y)));
 }
@@ -737,17 +763,6 @@ on_box_draw_after (GtkWidget *box, cairo_t *cr, gpointer data)
   return FALSE;
 }
 
-static gboolean
-on_drag_motion (GtkWidget *box, GdkDragContext *context, int x, int y, guint time, gpointer data)
-{
-  DkDock *dock = data;
-
-  dock->drop_slot = slot_at (dock, x, y);
-  gtk_widget_queue_draw (box);
-  gdk_drag_status (context, GDK_ACTION_MOVE, time);
-  return TRUE;
-}
-
 static void
 on_drag_leave (GtkWidget *box, GdkDragContext *context G_GNUC_UNUSED, guint time G_GNUC_UNUSED,
                gpointer data)
@@ -756,6 +771,28 @@ on_drag_leave (GtkWidget *box, GdkDragContext *context G_GNUC_UNUSED, guint time
 
   dock->drop_slot = -1;
   gtk_widget_queue_draw (box);
+}
+
+/* An item is moved; a launcher from the main menu, which offers only a copy, is copied. */
+static gboolean
+on_drag_motion (GtkWidget *box, GdkDragContext *context, int x, int y, guint time, gpointer data)
+{
+  DkDock *dock = data;
+  GdkAtom target = gtk_drag_dest_find_target (box, context, NULL);
+  GdkDragAction offered = gdk_drag_context_get_actions (context);
+  GdkDragAction action = target == GDK_NONE ? 0
+                         : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE
+                         : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY : 0;
+
+  gdk_drag_status (context, action, time);
+  if (action == 0)
+    {
+      on_drag_leave (box, context, time, dock);
+      return FALSE;
+    }
+  dock->drop_slot = slot_at (dock, x, y);
+  gtk_widget_queue_draw (box);
+  return TRUE;
 }
 
 static gboolean
@@ -879,7 +916,8 @@ dk_dock_new (DkStore *store)
   dock->box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
   g_object_set_data_full (G_OBJECT (dock->box), "dk-dock", dock, NULL);
   g_signal_connect_after (dock->box, "draw", G_CALLBACK (on_box_draw_after), dock);
-  gtk_drag_dest_set (dock->box, 0, targets, G_N_ELEMENTS (targets), GDK_ACTION_MOVE);
+  gtk_drag_dest_set (dock->box, 0, targets, G_N_ELEMENTS (targets),
+                     GDK_ACTION_MOVE | GDK_ACTION_COPY);
   g_signal_connect (dock->box, "drag-motion", G_CALLBACK (on_drag_motion), dock);
   g_signal_connect (dock->box, "drag-leave", G_CALLBACK (on_drag_leave), dock);
   g_signal_connect (dock->box, "drag-drop", G_CALLBACK (on_drag_drop), dock);
@@ -912,6 +950,12 @@ dk_dock_free (DkDock *dock)
   while (g_hash_table_iter_next (&iter, &window, NULL))
     g_signal_handlers_disconnect_by_data (window, dock);
   dk_store_set_changed (dock->store, NULL, NULL);
+  /* Its items' handlers are the dock's. */
+  if (dock->menu != NULL)
+    {
+      g_signal_handlers_disconnect_by_data (dock->menu, dock);
+      gtk_widget_destroy (dock->menu);
+    }
   g_clear_object (&dock->screen);
   g_object_unref (dock->monitor);
   g_hash_table_unref (dock->windows);

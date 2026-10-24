@@ -53,6 +53,9 @@ GArray *dk_items_build (const DkCatalog *catalog,
                         guint            n_windows);
 void    dk_item_clear  (DkItem *item);
 
+/* Whether key is a desktop entry's, not the item of an app id that has none. */
+gboolean dk_key_is_entry (const char *key);
+
 /* What a click does: launch a program that isn't running; minimise the one window of a
    focused item; activate the most recent window otherwise (the Application overview will
    take the several windows' case). target is that window, or NULL for a launch. */
