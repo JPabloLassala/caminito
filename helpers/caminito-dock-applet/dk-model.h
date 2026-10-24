@@ -21,7 +21,8 @@ typedef struct
   gboolean minimised;
   gboolean active;
   /* It demands attention (the xfce private protocol's state, which libxfce4windowing calls
-     urgent); Caminito clears it when the window is focused. */
+     urgent). Caminito clears its own demand when the window is focused, but an X11 client's
+     urgency hint stays until the client drops it. */
   gboolean urgent;
   /* When it was opened and when it was last active: a counter, larger for later. */
   guint64 opened;

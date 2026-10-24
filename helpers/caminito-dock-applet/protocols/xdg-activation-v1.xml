@@ -2,7 +2,7 @@
 <!--
   xdg-activation-v1, vendored unchanged below this comment from wayland-protocols 1.45's
   staging/xdg-activation/xdg-activation-v1.xml (CMN-221). The Dock applet asks for a token
-  with it, since GDK 3 can't. Its licence is in its own header.
+  with it, since GDK 3 makes one only for some launches. Its licence is in its own header.
 -->
 <protocol name="xdg_activation_v1">
 

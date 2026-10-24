@@ -7,9 +7,9 @@
 /* A launch from the dock whose first window hasn't mapped. */
 typedef struct
 {
-  gint64      start;
-  /* The handles of the item's windows when it was launched. */
-  GHashTable *baseline;
+  gint64  start;
+  /* The dock's window counter when it was launched: a window opened later is the launch's. */
+  guint64 since;
 } Launch;
 
 /* An item's windows that demand attention. */
@@ -27,17 +27,12 @@ struct _DkFeedback
   GHashTable *launches;
   /* An item's key to its Attention, while a window of it demands. */
   GHashTable *attention;
+  /* The handles of the windows that are still urgent but have been focused since they began
+     to demand attention: an X11 client's urgency hint stays until the client drops it, and
+     the highlight lasts only until the window is focused. */
+  GHashTable *answered;
   gint64      launch_timeout;
 };
-
-static void
-launch_free (gpointer data)
-{
-  Launch *launch = data;
-
-  g_hash_table_unref (launch->baseline);
-  g_free (launch);
-}
 
 static void
 attention_free (gpointer data)
@@ -53,8 +48,9 @@ dk_feedback_new (void)
 {
   DkFeedback *feedback = g_new0 (DkFeedback, 1);
 
-  feedback->launches = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, launch_free);
+  feedback->launches = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   feedback->attention = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, attention_free);
+  feedback->answered = g_hash_table_new (NULL, NULL);
   feedback->launch_timeout = DK_LAUNCH_TIMEOUT;
   return feedback;
 }
@@ -66,6 +62,7 @@ dk_feedback_free (DkFeedback *feedback)
     return;
   g_hash_table_unref (feedback->launches);
   g_hash_table_unref (feedback->attention);
+  g_hash_table_unref (feedback->answered);
   g_free (feedback);
 }
 
@@ -76,8 +73,7 @@ dk_feedback_set_launch_timeout (DkFeedback *feedback, gint64 timeout)
 }
 
 void
-dk_feedback_launch (DkFeedback *feedback, const char *key, const gpointer *windows,
-                    guint n_windows, gint64 now)
+dk_feedback_launch (DkFeedback *feedback, const char *key, guint64 since, gint64 now)
 {
   Launch *launch = g_hash_table_lookup (feedback->launches, key);
 
@@ -89,9 +85,7 @@ dk_feedback_launch (DkFeedback *feedback, const char *key, const gpointer *windo
     }
   launch = g_new0 (Launch, 1);
   launch->start = now;
-  launch->baseline = g_hash_table_new (NULL, NULL);
-  for (guint i = 0; i < n_windows; i++)
-    g_hash_table_add (launch->baseline, windows[i]);
+  launch->since = since;
   g_hash_table_insert (feedback->launches, g_strdup (key), launch);
 }
 
@@ -104,12 +98,12 @@ item_for (const GArray *items, const char *key)
   return NULL;
 }
 
-/* Whether the item has a window that the launch's baseline doesn't. */
+/* Whether the item has a window opened after the launch. */
 static gboolean
 has_new_window (const DkItem *item, const Launch *launch)
 {
   for (guint i = 0; i < item->windows->len; i++)
-    if (!g_hash_table_contains (launch->baseline, g_array_index (item->windows, DkWindow, i).handle))
+    if (g_array_index (item->windows, DkWindow, i).opened > launch->since)
       return TRUE;
   return FALSE;
 }
@@ -136,6 +130,7 @@ static void
 update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
 {
   g_autoptr (GHashTable) seen = g_hash_table_new (g_str_hash, g_str_equal);
+  GHashTable *answered = g_hash_table_new (NULL, NULL);
   GHashTableIter iter;
   gpointer key, value;
 
@@ -146,12 +141,17 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
       g_autoptr (GHashTable) demanding = g_hash_table_new (NULL, NULL);
       gboolean began = FALSE;
 
-      /* The focused window demands nothing, whatever its flag says. */
+      /* The focused window demands nothing, whatever its flag says, and nor does one that
+         has been focused since it began to. */
       for (guint j = 0; j < item->windows->len; j++)
         {
           const DkWindow *window = &g_array_index (item->windows, DkWindow, j);
 
-          if (window->urgent && !window->active)
+          if (!window->urgent)
+            continue;
+          if (window->active || g_hash_table_contains (feedback->answered, window->handle))
+            g_hash_table_add (answered, window->handle);
+          else
             {
               g_hash_table_add (demanding, window->handle);
               if (attention == NULL || !g_hash_table_contains (attention->demanding, window->handle))
@@ -175,6 +175,8 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
         attention->bounce_start = now;
       g_hash_table_add (seen, item->key);
     }
+  g_hash_table_unref (feedback->answered);
+  feedback->answered = answered;
   /* An item that has gone takes its attention with it. */
   g_hash_table_iter_init (&iter, feedback->attention);
   while (g_hash_table_iter_next (&iter, &key, &value))

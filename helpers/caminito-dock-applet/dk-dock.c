@@ -137,15 +137,11 @@ window_activate (DkDock *dock, XfwWindow *window, const GdkEvent *event)
     g_warning ("can't activate the window: %s", error->message);
 }
 
-/* The item pulses until a window of it that wasn't there maps (CMN-221). */
+/* The item pulses until a window of it opened after the launch maps (CMN-221). */
 static void
 launch_pulse (DkDock *dock, const char *key)
 {
-  DkItemView *view = g_hash_table_lookup (dock->views, key);
-  GPtrArray *windows = view != NULL ? dk_item_view_get_windows (view) : NULL;
-
-  dk_feedback_launch (dock->feedback, key, windows != NULL ? windows->pdata : NULL,
-                      windows != NULL ? windows->len : 0, g_get_monotonic_time ());
+  dk_feedback_launch (dock->feedback, key, dock->clock, g_get_monotonic_time ());
   schedule_refresh (dock);
 }
 
@@ -161,14 +157,15 @@ launch_token (DkDock *dock, const char *key)
   return dk_activation_token_new (gtk_widget_get_window (toplevel), app_id);
 }
 
-/* The launch carries an xdg-activation token, which GDK 3 makes none of on Wayland, so the dock
-   asks for it: the program maps its first window with it (CMN-221). */
+/* The launch carries an xdg-activation token: the program maps its first window with it
+   (CMN-221). GDK 3's launch context makes one only for an entry with StartupNotify=true, and
+   GIO puts that one over any the environment has, so a launch with the dock's own token goes
+   through a plain context, which makes none. */
 static void
 launch_entry (DkDock *dock, const char *key, const char *action)
 {
   GDesktopAppInfo *info = entry_info (dock, key);
-  GdkDisplay *display = gdk_display_get_default ();
-  g_autoptr (GdkAppLaunchContext) context = gdk_display_get_app_launch_context (display);
+  g_autoptr (GAppLaunchContext) context = NULL;
   g_autoptr (GError) error = NULL;
   g_autofree char *token = NULL;
 
@@ -180,13 +177,16 @@ launch_entry (DkDock *dock, const char *key, const char *action)
   token = launch_token (dock, key);
   if (token != NULL)
     {
+      context = g_app_launch_context_new ();
       /* The standard variable, and the one GTK 3 reads as the token on Wayland. */
-      g_app_launch_context_setenv (G_APP_LAUNCH_CONTEXT (context), "XDG_ACTIVATION_TOKEN", token);
-      g_app_launch_context_setenv (G_APP_LAUNCH_CONTEXT (context), "DESKTOP_STARTUP_ID", token);
+      g_app_launch_context_setenv (context, "XDG_ACTIVATION_TOKEN", token);
+      g_app_launch_context_setenv (context, "DESKTOP_STARTUP_ID", token);
     }
+  else
+    context = G_APP_LAUNCH_CONTEXT (gdk_display_get_app_launch_context (gdk_display_get_default ()));
   if (action != NULL)
-    g_desktop_app_info_launch_action (info, action, G_APP_LAUNCH_CONTEXT (context));
-  else if (!g_app_info_launch (G_APP_INFO (info), NULL, G_APP_LAUNCH_CONTEXT (context), &error))
+    g_desktop_app_info_launch_action (info, action, context);
+  else if (!g_app_info_launch (G_APP_INFO (info), NULL, context, &error))
     {
       g_warning ("can't launch %s: %s", key, error->message);
       return;

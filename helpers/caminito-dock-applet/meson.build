@@ -87,9 +87,9 @@ if glib_compile_schemas.found()
   )
 endif
 
-# The xdg-activation token of a launch (CMN-221). GDK 3 makes none on Wayland, so the dock
-# binds the protocol on GDK's connection and asks for it. The protocol's code is generated
-# from its vendored XML.
+# The xdg-activation token of a launch (CMN-221). GDK 3 makes one only for an entry with
+# StartupNotify=true, so the dock binds the protocol on GDK's connection and asks for it. The
+# protocol's code is generated from its vendored XML.
 wayland_client = dependency('wayland-client')
 wayland_scanner = find_program('wayland-scanner')
 activation_xml = files('protocols/xdg-activation-v1.xml')

@@ -66,15 +66,6 @@ build (Desk *desk, const char *const *kept)
                          desk->windows->len);
 }
 
-static const DkItem *
-find (const GArray *items, const char *key)
-{
-  for (guint i = 0; i < items->len; i++)
-    if (g_strcmp0 (g_array_index (items, DkItem, i).key, key) == 0)
-      return &g_array_index (items, DkItem, i);
-  return NULL;
-}
-
 /* The desk's items at now, as the dock updates the feedback with them. */
 static void
 update (Desk *desk, const char *const *kept, gint64 now)
@@ -89,12 +80,8 @@ static void
 launch (Desk *desk, const char *const *kept, const char *key, gint64 now)
 {
   g_autoptr (GArray) items = build (desk, kept);
-  const DkItem *item = find (items, key);
-  g_autoptr (GPtrArray) handles = g_ptr_array_new ();
 
-  for (guint i = 0; item != NULL && i < item->windows->len; i++)
-    g_ptr_array_add (handles, g_array_index (item->windows, DkWindow, i).handle);
-  dk_feedback_launch (desk->feedback, key, handles->pdata, handles->len, now);
+  dk_feedback_launch (desk->feedback, key, desk->clock, now);
   dk_feedback_update (desk->feedback, items, now);
 }
 
@@ -191,6 +178,26 @@ test_a_new_instance_of_a_running_program_pulses_until_its_own_window (void)
   launch (desk, kept, "mate-terminal.desktop", 0);
 
   g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 0).pulsing);
+  update (desk, kept, SECOND);
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", SECOND).pulsing);
+
+  open_window (desk, "mate-terminal");
+  update (desk, kept, 2 * SECOND);
+
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 2 * SECOND).pulsing);
+  desk_free (desk);
+}
+
+/* The dock tells windows by their XfwWindow, whose address a later window can have. */
+static void
+test_a_new_window_ends_the_pulse_even_with_the_handle_of_one_that_closed (void)
+{
+  const char *kept[] = { "mate-terminal.desktop", NULL };
+  Desk *desk = desk_new ();
+
+  open_window (desk, "mate-terminal");
+  launch (desk, kept, "mate-terminal.desktop", 0);
+  g_array_set_size (desk->windows, 0);
   update (desk, kept, SECOND);
   g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", SECOND).pulsing);
 
@@ -350,6 +357,36 @@ test_a_window_that_demands_attention_again_bounces_again (void)
   desk_free (desk);
 }
 
+/* An X11 client's urgency hint can outlast the focus. */
+static void
+test_a_window_still_urgent_after_the_focus_is_not_highlighted_again (void)
+{
+  const char *none[] = { NULL };
+  Desk *desk = desk_new ();
+  DkWindow *other = open_window (desk, "caja");
+  DkWindow *window = open_window (desk, "mate-terminal");
+
+  window->urgent = TRUE;
+  update (desk, none, 0);
+  focus (desk, window);
+  window->urgent = TRUE;
+  update (desk, none, SECOND);
+  focus (desk, other);
+  window->urgent = TRUE;
+  update (desk, none, 2 * SECOND);
+
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 2 * SECOND).highlighted);
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 2 * SECOND).bouncing);
+
+  window->urgent = FALSE;
+  update (desk, none, 3 * SECOND);
+  window->urgent = TRUE;
+  update (desk, none, 4 * SECOND);
+
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 4 * SECOND).bouncing);
+  desk_free (desk);
+}
+
 static void
 test_a_focused_window_does_not_count_as_demanding (void)
 {
@@ -395,6 +432,8 @@ main (int argc, char **argv)
   g_test_add_func ("/launch/only-the-launched-item-pulses", test_only_the_launched_item_pulses);
   g_test_add_func ("/launch/new-instance-pulses-until-its-own-window",
                    test_a_new_instance_of_a_running_program_pulses_until_its_own_window);
+  g_test_add_func ("/launch/new-window-with-a-reused-handle-ends-the-pulse",
+                   test_a_new_window_ends_the_pulse_even_with_the_handle_of_one_that_closed);
   g_test_add_func ("/launch/second-launch-extends-the-pulse",
                    test_a_second_launch_while_pulsing_extends_the_pulse);
   g_test_add_func ("/launch/pulse-ends-with-an-item-that-goes",
@@ -409,6 +448,8 @@ main (int argc, char **argv)
                    test_a_window_already_demanding_does_not_bounce_again_but_a_new_one_does);
   g_test_add_func ("/attention/demanding-again-bounces-again",
                    test_a_window_that_demands_attention_again_bounces_again);
+  g_test_add_func ("/attention/still-urgent-after-the-focus-is-not-highlighted-again",
+                   test_a_window_still_urgent_after_the_focus_is_not_highlighted_again);
   g_test_add_func ("/attention/a-focused-window-does-not-demand",
                    test_a_focused_window_does_not_count_as_demanding);
   g_test_add_func ("/attention/highlight-ends-with-the-window",

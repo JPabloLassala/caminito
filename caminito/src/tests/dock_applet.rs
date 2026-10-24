@@ -978,6 +978,8 @@ fn a_launch_carries_an_activation_token_and_the_icon_pulses_until_the_first_wind
     let item = d.wait_for_item("mate-terminal.desktop", |item| item.pulsing);
     assert_eq!(item.windows, 0);
     assert!(!d.item("mate-terminal.desktop").highlighted);
+    // Off the dock, so that neither the pointer nor the hover hides the pulse.
+    d.f.pointer_move(f64::from(OUTPUT.0) / 2., f64::from(OUTPUT.1) / 2.);
     d.frames("07-launch-pulse", 4);
 
     let _terminal = d.open("mate-terminal", "Terminal");

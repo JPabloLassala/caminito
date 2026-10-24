@@ -89,7 +89,9 @@ depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gt
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
   mate-notification-daemon mate-polkit hicolor-icon-theme bluez lm_sensors upower libnm
   nm-connection-editor libxfce4windowing)
-makedepends=(cargo git meson)
+# wayland's wayland-scanner makes the xdg-activation client the Dock applet asks for a launch's
+# token with (CMN-221), from the XML it vendors.
+makedepends=(cargo git meson wayland)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module
 # (111, 192). It's named by its real name, as the patched packages above are: the stock one

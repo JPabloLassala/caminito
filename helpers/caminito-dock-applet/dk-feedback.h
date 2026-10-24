@@ -36,18 +36,18 @@ void        dk_feedback_free (DkFeedback *feedback);
 /* Changes the pulse's timeout, for the tests that mean to see it end. */
 void        dk_feedback_set_launch_timeout (DkFeedback *feedback, gint64 timeout);
 
-/* The dock launched the item with key at now. windows are the handles of the windows it has
-   then: only a window it hasn't now ends the pulse, so a new instance of a running program
-   pulses until its own first window. */
+/* The dock launched the item with key at now, when the latest window had opened at since (a
+   DkWindow's opened): only a window opened later ends the pulse, so a new instance of a running
+   program pulses until its own first window. */
 void        dk_feedback_launch (DkFeedback *feedback,
                                 const char *key,
-                                const gpointer *windows,
-                                guint n_windows,
+                                guint64 since,
                                 gint64 now);
 
 /* The items as they are at now (dk_items_build's, with each window's urgent flag): ends the
    pulses of the items that have a new window or have timed out or gone, begins a bounce for
-   each window that has begun to demand attention, and forgets the windows that no longer do. */
+   each window that has begun to demand attention, and forgets the windows that no longer do
+   or have been focused since they began to. */
 void        dk_feedback_update (DkFeedback *feedback, const GArray *items, gint64 now);
 
 DkFeedbackState dk_feedback_get (const DkFeedback *feedback, const char *key, gint64 now);

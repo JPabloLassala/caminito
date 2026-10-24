@@ -16,7 +16,7 @@ test tests::dock_applet::a_new_window_that_maps_without_a_token_is_refused_the_f
 test tests::dock_applet::a_vertical_dock_is_a_column_with_the_indicator_on_the_panels_edge ... ok
 test tests::dock_applet::a_window_that_demands_attention_bounces_then_keeps_a_highlight_until_it_is_focused ... ok
 test tests::dock_applet::a_window_with_no_desktop_entry_has_an_item_of_its_own ... ok
-test tests::dock_applet::an_xwayland_window_joins_the_item_its_startup_wm_class_names ... FAILED
+test tests::dock_applet::an_xwayland_window_joins_the_item_its_startup_wm_class_names ... WARNING: Glycin running without sandbox. Bubblewrap (bwrap) doesn't work in the environment.
 test tests::dock_applet::keeping_removing_and_reordering_survive_the_panels_restart ... ok
 test tests::dock_applet::middle_click_launches_a_new_instance_of_a_running_program ... ok
 test tests::dock_applet::only_the_item_whose_window_demands_attention_is_highlighted ... ok
@@ -25,4 +25,4 @@ test tests::dock_applet::the_context_menu_has_the_windows_the_actions_keep_and_c
 test tests::dock_applet::the_highlight_clears_when_the_window_is_focused_otherwise_than_from_the_dock ... ok
 test tests::dock_applet::the_pulse_ends_after_the_timeout_for_a_program_that_maps_no_window ... ok
 test tests::dock_applet::the_token_a_launch_carries_gives_the_launched_programs_new_window_the_focus ... ok
-test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 2411 filtered out; finished in 6.65s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 2411 filtered out; finished in 6.88s
