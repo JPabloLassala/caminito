@@ -27,12 +27,12 @@ pub use output::{Output, OutputId, ReservedEdges};
 pub use placement::PlacementMode;
 pub use policy::{
     ActivationSource, ActivationToken, Application, Config, Crossing, FocusClaim, FocusMode,
-    FocusNewWindows, GrabKey, GrabStep, Interaction, LayerSurfaceId, MAX_WORKSPACES, MapStates,
-    MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection, MinimizedPlacement,
-    OutputSwitch, Overview, OverviewDrag, OverviewOutput, OverviewScope, PointerTarget, Policy,
-    PreMapConfigure, PreMapWindow, ResizeEdges, SeatId, StateRequest, SwitchEntry, SwitchList,
-    Switcher, TOKEN_LIFETIME, TileShare, UrgentPlacement, WindowMenu, WorkspacePopup,
-    default_workspace_name,
+    FocusNewWindows, GrabKey, GrabStep, IntellihidePanel, Interaction, LayerSurfaceId,
+    MAX_WORKSPACES, MapStates, MenuEntry, MenuItem, MenuKey, MenuMark, MenuOp, MenuSelection,
+    MinimizedPlacement, OutputSwitch, Overview, OverviewDrag, OverviewOutput, OverviewScope,
+    PanelEdge, PointerTarget, Policy, PreMapConfigure, PreMapWindow, ResizeEdges, SeatId,
+    StateRequest, SwitchEntry, SwitchList, Switcher, TOKEN_LIFETIME, TileShare, UrgentPlacement,
+    WindowMenu, WorkspacePopup, default_workspace_name,
 };
 pub use skip_list::ShowDesktopSkipList;
 pub use stack::Layer;

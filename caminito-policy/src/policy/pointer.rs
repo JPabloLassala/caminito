@@ -162,15 +162,21 @@ impl<W: PolicyWindow> Policy<W> {
         self.apply();
     }
 
-    /// When policy next needs `elapse` called: an auto-raise's deadline.
+    /// When policy next needs `elapse` called: an auto-raise's deadline, or the end of the
+    /// pointer's rest at a hidden panel's edge (CMN-224).
     pub fn deadline(&self) -> Option<Duration> {
-        self.pointer_focus.pending.map(|p| p.due)
+        let auto_raise = self.pointer_focus.pending.map(|p| p.due);
+        auto_raise
+            .into_iter()
+            .chain(self.intellihide_deadline())
+            .min()
     }
 
     /// Runs what's due by `now`: an auto-raise, which raises its window if the pointer is
     /// still in it and it still has the focus, as Marco's
     /// `window_raise_with_delay_callback` checks (display.c:1311-1361).
     pub fn elapse(&mut self, now: Duration) {
+        self.intellihide_elapse(now);
         let Some(p) = self.pointer_focus.pending.take_if(|p| p.due <= now) else {
             return;
         };
