@@ -1,5 +1,6 @@
 /*
- * The Dock (CMN-219), and the Trash that ends its row (CMN-220).
+ * The Dock (CMN-219), the Kept folders after its separator (CMN-239), and the Trash that ends
+ * its row (CMN-220).
  */
 
 #include <gio/gdesktopappinfo.h>
@@ -8,6 +9,7 @@
 #include "dk-activation.h"
 #include "dk-dock.h"
 #include "dk-feedback.h"
+#include "dk-folder.h"
 #include "dk-item.h"
 #include "dk-launcher.h"
 #include "dk-model.h"
@@ -23,11 +25,28 @@ typedef struct
 
 struct _DkDock
 {
-  /* The dock: the items' box, a separator and the Trash. */
+  /* The dock: the items' box, a separator, and the items after it. */
   GtkWidget       *widget;
   /* The Dock items. */
   GtkWidget       *box;
   GtkWidget       *separator;
+  /* The items after the separator: the Kept folders (CMN-239), in the user's order, and then
+     the Trash. */
+  GtkWidget       *after;
+  /* A Kept folder's URI to its DkItemView, whose widget `after` holds, and to the monitor that
+     tells when the folder is deleted or its icon changes. */
+  GHashTable      *folder_views;
+  GHashTable      *folder_monitors;
+  /* The folders that are gone are looked for again until they come back. */
+  guint            gone_id;
+  /* The popup grid of a folder's contents, and the URI of the folder it shows. */
+  GtkWidget       *popup;
+  char            *popup_uri;
+  /* The work on files dropped on a folder, which a dock that is freed leaves unfinished. */
+  GCancellable    *cancellable;
+  /* Where a Kept folder would be dropped, as the number of Kept folders before it; -1 when
+     none is over. */
+  int              after_slot;
   DkTrash         *trash;
   DkItemView      *trash_view;
   /* The question being shown. */
@@ -74,6 +93,8 @@ struct _DkDock
 #define TRASH_URI "trash:///"
 
 static void schedule_refresh (DkDock *dock);
+static void refresh_after (DkDock *dock);
+static void popup_folder_menu (DkDock *dock, DkItemView *view, const GdkEvent *event);
 static gboolean on_item_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data);
 static gboolean on_item_button_release (GtkWidget *widget, GdkEventButton *event, gpointer data);
 
@@ -347,6 +368,7 @@ refresh (gpointer data)
           g_hash_table_iter_remove (&iter);
         }
     }
+  refresh_after (dock);
   schedule_feedback_end (dock, now);
   return G_SOURCE_REMOVE;
 }
@@ -730,6 +752,11 @@ dk_dock_popup_menu (DkDock *dock, GtkWidget *widget, const GdkEvent *event)
       popup_trash_menu (dock, event);
       return;
     }
+  if (g_hash_table_lookup (dock->folder_views, dk_item_view_get_key (view)) == view)
+    {
+      popup_folder_menu (dock, view, event);
+      return;
+    }
   key = dk_item_view_get_key (view);
   windows = dk_item_view_get_windows (view);
   info = dk_key_is_entry (key) ? entry_info (dock, key) : NULL;
@@ -947,11 +974,11 @@ ask_to_empty (DkDock *dock)
 /* In Caja, which is what opens folders on a Caminito Session; the default folder handler
    where there is none. */
 static void
-open_trash (DkDock *dock G_GNUC_UNUSED)
+open_in_caja (DkDock *dock G_GNUC_UNUSED, const char *uri)
 {
   static const char *const handlers[] = { "caja-folder-handler.desktop",
                                           "caja-browser.desktop", NULL };
-  g_autoptr (GList) uris = g_list_prepend (NULL, (gpointer) TRASH_URI);
+  g_autoptr (GList) uris = g_list_prepend (NULL, (gpointer) uri);
   GdkDisplay *display = gdk_display_get_default ();
   g_autoptr (GdkAppLaunchContext) context = gdk_display_get_app_launch_context (display);
   g_autoptr (GError) error = NULL;
@@ -964,12 +991,18 @@ open_trash (DkDock *dock G_GNUC_UNUSED)
         {
           if (!g_app_info_launch_uris (G_APP_INFO (info), uris, G_APP_LAUNCH_CONTEXT (context),
                                        &error))
-            g_warning ("can't open the Trash: %s", error->message);
+            g_warning ("can't open %s: %s", uri, error->message);
           return;
         }
     }
-  if (!g_app_info_launch_default_for_uri (TRASH_URI, G_APP_LAUNCH_CONTEXT (context), &error))
-    g_warning ("can't open the Trash: %s", error->message);
+  if (!g_app_info_launch_default_for_uri (uri, G_APP_LAUNCH_CONTEXT (context), &error))
+    g_warning ("can't open %s: %s", uri, error->message);
+}
+
+static void
+open_trash (DkDock *dock)
+{
+  open_in_caja (dock, TRASH_URI);
 }
 
 static void
@@ -1075,11 +1108,24 @@ dk_dock_get_dialog (DkDock *dock)
   return dock->dialog;
 }
 
+/* Whether a point in an item after the separator is over the part files are dropped on. The
+   part along the dock at the start of the item, a quarter of it (and of a Kept folder's end
+   too), is where a folder dropped from Caja is kept before it instead (CMN-239). */
+static gboolean
+over_item (DkDock *dock, GtkWidget *widget, int x, int y, gboolean both_ends)
+{
+  int along = is_horizontal (dock) ? x : y;
+  int length = is_horizontal (dock) ? gtk_widget_get_allocated_width (widget)
+                                    : gtk_widget_get_allocated_height (widget);
+
+  return along >= length / 4 && (!both_ends || along < length - length / 4);
+}
+
 /* Files dropped on the Trash go to it, whichever action the source offers: the files are
    put in the Trash here, so the source has nothing to delete. */
 static gboolean
-on_trash_drag_motion (GtkWidget *widget, GdkDragContext *context, int x G_GNUC_UNUSED,
-                      int y G_GNUC_UNUSED, guint time, gpointer data G_GNUC_UNUSED)
+on_trash_drag_motion (GtkWidget *widget, GdkDragContext *context, int x,
+                      int y, guint time, gpointer data)
 {
   GdkDragAction offered = gdk_drag_context_get_actions (context);
   GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
@@ -1087,17 +1133,20 @@ on_trash_drag_motion (GtkWidget *widget, GdkDragContext *context, int x G_GNUC_U
                          : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE
                          : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY : 0;
 
+  /* At its start a folder is kept before it: the items after the separator take it from here. */
+  if (!over_item (data, widget, x, y, FALSE))
+    return FALSE;
   gdk_drag_status (context, action, time);
   return action != 0;
 }
 
 static gboolean
-on_trash_drag_drop (GtkWidget *widget, GdkDragContext *context, int x G_GNUC_UNUSED,
-                    int y G_GNUC_UNUSED, guint time, gpointer data G_GNUC_UNUSED)
+on_trash_drag_drop (GtkWidget *widget, GdkDragContext *context, int x,
+                    int y, guint time, gpointer data)
 {
   GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
 
-  if (target == GDK_NONE)
+  if (target == GDK_NONE || !over_item (data, widget, x, y, FALSE))
     return FALSE;
   gtk_drag_get_data (widget, context, target, time);
   return TRUE;
@@ -1138,6 +1187,698 @@ trash_new (DkDock *dock)
   g_signal_connect (widget, "drag-data-received", G_CALLBACK (on_trash_drag_data_received),
                     dock);
   update_trash_view (dock);
+}
+
+/* The Kept folders (CMN-239). */
+
+#define FOLDER_CELL_WIDTH 96
+#define FOLDER_GRID_COLUMNS 5
+#define FOLDER_GRID_MAX_HEIGHT 360
+#define GONE_POLL_SECONDS 2
+
+static DkItemView *
+folder_view (DkDock *dock, const char *uri)
+{
+  return g_hash_table_lookup (dock->folder_views, uri);
+}
+
+/* The name a folder that is gone is shown by: the last part of its URI. */
+static char *
+folder_fallback_name (GFile *folder)
+{
+  g_autofree char *name = g_file_get_basename (folder);
+
+  return g_strdup (name != NULL ? name : "Folder");
+}
+
+static void
+folder_not_available (DkDock *dock, const char *uri)
+{
+  g_autoptr (GFile) folder = g_file_new_for_uri (uri);
+  g_autofree char *name = folder_fallback_name (folder);
+  g_autofree char *primary = g_strdup_printf ("“%s” isn't available", name);
+
+  report_error (dock, primary, "The folder is gone, or it is on a drive that isn't connected.");
+}
+
+gboolean
+dk_dock_folder_is_gone (DkDock *dock G_GNUC_UNUSED, const char *uri)
+{
+  g_autoptr (GFile) folder = g_file_new_for_uri (uri);
+
+  return !dk_folder_exists (folder);
+}
+
+GtkWidget *
+dk_dock_get_folder (DkDock *dock, const char *uri)
+{
+  DkItemView *view = folder_view (dock, uri);
+
+  return view != NULL ? dk_item_view_get_widget (view) : NULL;
+}
+
+GPtrArray *
+dk_dock_get_folders (DkDock *dock)
+{
+  GPtrArray *uris = g_ptr_array_new_with_free_func (g_free);
+  g_autoptr (GList) children = gtk_container_get_children (GTK_CONTAINER (dock->after));
+
+  for (GList *l = children; l != NULL; l = l->next)
+    if (view_of (l->data) != dock->trash_view)
+      g_ptr_array_add (uris, g_strdup (dk_item_view_get_key (view_of (l->data))));
+  return uris;
+}
+
+GtkWidget *
+dk_dock_get_error_dialog (DkDock *dock)
+{
+  return dock->error_dialog;
+}
+
+/* The popup grid. */
+
+static void
+popup_close (DkDock *dock)
+{
+  if (dock->popup != NULL)
+    gtk_widget_destroy (dock->popup);
+  g_clear_pointer (&dock->popup_uri, g_free);
+}
+
+static void
+on_popup_destroy (GtkWidget *popup, gpointer data)
+{
+  DkDock *dock = data;
+
+  if (dock->popup == popup)
+    {
+      dock->popup = NULL;
+      g_clear_pointer (&dock->popup_uri, g_free);
+    }
+}
+
+/* After the popover has closed itself, with the item chosen in it activated. */
+static gboolean
+destroy_popup (gpointer popup)
+{
+  gtk_widget_destroy (popup);
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_popup_closed (GtkPopover *popup, gpointer data G_GNUC_UNUSED)
+{
+  g_idle_add_full (G_PRIORITY_LOW, destroy_popup, g_object_ref (popup), g_object_unref);
+}
+
+static void
+on_popup_entry (GtkFlowBox *grid G_GNUC_UNUSED, GtkFlowBoxChild *child, gpointer data)
+{
+  DkDock *dock = data;
+  GtkWidget *cell = gtk_bin_get_child (GTK_BIN (child));
+  const char *uri = g_object_get_data (G_OBJECT (cell), "uri");
+
+  /* A sub-folder opens in Caja, a file with its default program. */
+  if (GPOINTER_TO_INT (g_object_get_data (G_OBJECT (cell), "is-folder")))
+    open_in_caja (dock, uri);
+  else
+    {
+      GdkDisplay *display = gdk_display_get_default ();
+      g_autoptr (GdkAppLaunchContext) context = gdk_display_get_app_launch_context (display);
+      g_autoptr (GError) error = NULL;
+
+      if (!g_app_info_launch_default_for_uri (uri, G_APP_LAUNCH_CONTEXT (context), &error))
+        {
+          g_autoptr (GFile) file = g_file_new_for_uri (uri);
+          g_autofree char *name = folder_fallback_name (file);
+          g_autofree char *primary = g_strdup_printf ("Can't open “%s”", name);
+
+          g_warning ("can't open %s: %s", uri, error->message);
+          report_error (dock, primary, error->message);
+        }
+    }
+  popup_close (dock);
+}
+
+static void
+on_popup_open_in_caja (GtkButton *button G_GNUC_UNUSED, gpointer data)
+{
+  DkDock *dock = data;
+  g_autofree char *uri = g_strdup (dock->popup_uri);
+
+  if (uri != NULL)
+    open_in_caja (dock, uri);
+  popup_close (dock);
+}
+
+static GtkWidget *
+popup_cell (const DkFolderEntry *entry)
+{
+  GtkWidget *cell = gtk_box_new (GTK_ORIENTATION_VERTICAL, 4);
+  GtkWidget *image = gtk_image_new_from_gicon (
+    entry->icon != NULL ? entry->icon : G_ICON (g_themed_icon_new (entry->is_folder ? "folder" : "text-x-generic")),
+    GTK_ICON_SIZE_DIALOG);
+  GtkWidget *label = gtk_label_new (entry->name);
+
+  gtk_image_set_pixel_size (GTK_IMAGE (image), 48);
+  gtk_label_set_ellipsize (GTK_LABEL (label), PANGO_ELLIPSIZE_MIDDLE);
+  gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+  gtk_label_set_line_wrap_mode (GTK_LABEL (label), PANGO_WRAP_WORD_CHAR);
+  gtk_label_set_lines (GTK_LABEL (label), 2);
+  gtk_label_set_max_width_chars (GTK_LABEL (label), 12);
+  gtk_label_set_justify (GTK_LABEL (label), GTK_JUSTIFY_CENTER);
+  gtk_box_pack_start (GTK_BOX (cell), image, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (cell), label, FALSE, FALSE, 0);
+  gtk_widget_set_size_request (cell, FOLDER_CELL_WIDTH, -1);
+  gtk_widget_set_margin_top (cell, 4);
+  gtk_widget_set_margin_bottom (cell, 4);
+  gtk_widget_set_tooltip_text (cell, entry->name);
+  g_object_set_data_full (G_OBJECT (cell), "uri", g_strdup (entry->uri), g_free);
+  g_object_set_data (G_OBJECT (cell), "is-folder", GINT_TO_POINTER (entry->is_folder));
+  return cell;
+}
+
+static GtkPositionType
+popup_position (const DkDock *dock)
+{
+  /* Away from the panel's edge. */
+  switch (dock->edge)
+    {
+    case GTK_POS_TOP:
+      return GTK_POS_BOTTOM;
+    case GTK_POS_LEFT:
+      return GTK_POS_RIGHT;
+    case GTK_POS_RIGHT:
+      return GTK_POS_LEFT;
+    default:
+      return GTK_POS_TOP;
+    }
+}
+
+/* The grid of the folder's contents, icon and name, folders first and then by name, and Open
+   in Caja at the bottom. It doesn't navigate. */
+static void
+popup_open (DkDock *dock, DkItemView *view)
+{
+  const char *uri = dk_item_view_get_key (view);
+  g_autoptr (GFile) folder = g_file_new_for_uri (uri);
+  g_autoptr (GPtrArray) entries = NULL;
+  g_autoptr (GError) error = NULL;
+  GtkWidget *box, *scrolled, *grid, *button;
+
+  entries = dk_folder_list (folder, &error);
+  if (entries == NULL)
+    {
+      g_autofree char *name = folder_fallback_name (folder);
+      g_autofree char *primary = g_strdup_printf ("Can't read “%s”", name);
+
+      g_warning ("can't read %s: %s", uri, error->message);
+      report_error (dock, primary, error->message);
+      return;
+    }
+  popup_close (dock);
+  dock->popup = gtk_popover_new (dk_item_view_get_widget (view));
+  dock->popup_uri = g_strdup (uri);
+  gtk_popover_set_position (GTK_POPOVER (dock->popup), popup_position (dock));
+  /* The panel is no larger than the dock: the popup is a window of its own. */
+  gtk_popover_set_constrain_to (GTK_POPOVER (dock->popup), GTK_POPOVER_CONSTRAINT_NONE);
+  g_signal_connect (dock->popup, "closed", G_CALLBACK (on_popup_closed), dock);
+  g_signal_connect (dock->popup, "destroy", G_CALLBACK (on_popup_destroy), dock);
+  box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+  gtk_container_set_border_width (GTK_CONTAINER (box), 8);
+  if (entries->len > 0)
+    {
+      grid = gtk_flow_box_new ();
+      gtk_flow_box_set_selection_mode (GTK_FLOW_BOX (grid), GTK_SELECTION_NONE);
+      gtk_flow_box_set_activate_on_single_click (GTK_FLOW_BOX (grid), TRUE);
+      gtk_flow_box_set_homogeneous (GTK_FLOW_BOX (grid), TRUE);
+      gtk_flow_box_set_min_children_per_line (GTK_FLOW_BOX (grid), 1);
+      gtk_flow_box_set_max_children_per_line (GTK_FLOW_BOX (grid),
+                                              MIN (entries->len, FOLDER_GRID_COLUMNS));
+      for (guint i = 0; i < entries->len; i++)
+        gtk_container_add (GTK_CONTAINER (grid), popup_cell (entries->pdata[i]));
+      g_signal_connect (grid, "child-activated", G_CALLBACK (on_popup_entry), dock);
+      scrolled = gtk_scrolled_window_new (NULL, NULL);
+      gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled), GTK_POLICY_NEVER,
+                                      GTK_POLICY_AUTOMATIC);
+      gtk_scrolled_window_set_propagate_natural_width (GTK_SCROLLED_WINDOW (scrolled), TRUE);
+      gtk_scrolled_window_set_propagate_natural_height (GTK_SCROLLED_WINDOW (scrolled), TRUE);
+      gtk_scrolled_window_set_max_content_height (GTK_SCROLLED_WINDOW (scrolled),
+                                                  FOLDER_GRID_MAX_HEIGHT);
+      gtk_container_add (GTK_CONTAINER (scrolled), grid);
+      gtk_box_pack_start (GTK_BOX (box), scrolled, TRUE, TRUE, 0);
+    }
+  else
+    {
+      GtkWidget *empty = gtk_label_new ("This folder is empty.");
+
+      gtk_widget_set_margin_top (empty, 12);
+      gtk_widget_set_margin_bottom (empty, 12);
+      gtk_box_pack_start (GTK_BOX (box), empty, FALSE, FALSE, 0);
+    }
+  button = gtk_button_new_with_label ("Open in Caja");
+  g_signal_connect (button, "clicked", G_CALLBACK (on_popup_open_in_caja), dock);
+  gtk_box_pack_end (GTK_BOX (box), button, FALSE, FALSE, 0);
+  gtk_container_add (GTK_CONTAINER (dock->popup), box);
+  gtk_widget_show_all (box);
+  gtk_popover_popup (GTK_POPOVER (dock->popup));
+}
+
+/* A click: the grid of the folder's contents, or that the folder isn't available. */
+void
+dk_dock_open_folder (DkDock *dock, const char *uri)
+{
+  DkItemView *view = folder_view (dock, uri);
+
+  if (view == NULL)
+    return;
+  if (dk_dock_folder_is_gone (dock, uri))
+    folder_not_available (dock, uri);
+  else if (dock->popup != NULL && g_strcmp0 (dock->popup_uri, uri) == 0)
+    popup_close (dock);
+  else
+    popup_open (dock, view);
+}
+
+GtkWidget *
+dk_dock_get_popup (DkDock *dock)
+{
+  return dock->popup;
+}
+
+/* The popup's cells as "name" and whether each is a folder, for the probe. */
+GPtrArray *
+dk_dock_get_popup_entries (DkDock *dock)
+{
+  GPtrArray *entries = g_ptr_array_new_with_free_func (g_free);
+  GtkWidget *scrolled = NULL, *grid = NULL;
+  g_autoptr (GList) children = NULL;
+
+  if (dock->popup == NULL)
+    return entries;
+  {
+    g_autoptr (GList) box = gtk_container_get_children (GTK_CONTAINER (gtk_bin_get_child (GTK_BIN (dock->popup))));
+
+    for (GList *l = box; l != NULL; l = l->next)
+      if (GTK_IS_SCROLLED_WINDOW (l->data))
+        scrolled = l->data;
+  }
+  if (scrolled != NULL)
+    grid = gtk_bin_get_child (GTK_BIN (gtk_bin_get_child (GTK_BIN (scrolled))));
+  if (grid != NULL)
+    children = gtk_container_get_children (GTK_CONTAINER (grid));
+  for (GList *l = children; l != NULL; l = l->next)
+    {
+      GtkWidget *cell = gtk_bin_get_child (GTK_BIN (l->data));
+
+      g_ptr_array_add (entries, g_strdup_printf ("%s%s", gtk_widget_get_tooltip_text (cell),
+                                                 GPOINTER_TO_INT (g_object_get_data (G_OBJECT (cell), "is-folder")) ? "/" : ""));
+    }
+  return entries;
+}
+
+/* Its menu. */
+
+static void
+on_folder_menu_open (GtkMenuItem *menu_item, gpointer data)
+{
+  open_in_caja (data, g_object_get_data (G_OBJECT (menu_item), "uri"));
+}
+
+static void
+on_folder_menu_remove (GtkMenuItem *menu_item, gpointer data)
+{
+  DkDock *dock = data;
+
+  dk_store_remove_folder (dock->store, g_object_get_data (G_OBJECT (menu_item), "uri"));
+}
+
+static void
+popup_folder_menu (DkDock *dock, DkItemView *view, const GdkEvent *event)
+{
+  const char *uri = dk_item_view_get_key (view);
+  GtkWidget *menu = menu_begin (dock);
+  GtkWidget *open = menu_item (menu, "Open in Caja", G_CALLBACK (on_folder_menu_open), dock);
+  GtkWidget *remove = menu_item (menu, "Remove from Dock", G_CALLBACK (on_folder_menu_remove),
+                                 dock);
+
+  g_object_set_data_full (G_OBJECT (open), "uri", g_strdup (uri), g_free);
+  g_object_set_data_full (G_OBJECT (remove), "uri", g_strdup (uri), g_free);
+  /* Caja can't open what isn't there. */
+  gtk_widget_set_sensitive (open, !dk_dock_folder_is_gone (dock, uri));
+  menu_show (dock, menu, dk_item_view_get_widget (view), event);
+}
+
+static gboolean
+on_folder_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data)
+{
+  if (event->button != 3)
+    return GDK_EVENT_PROPAGATE;
+  dk_dock_popup_menu (data, widget, (GdkEvent *) event);
+  return GDK_EVENT_STOP;
+}
+
+static gboolean
+on_folder_button_release (GtkWidget *widget, GdkEventButton *event, gpointer data)
+{
+  /* Released away from the item: a drag, or a click abandoned. */
+  if (event->button != 1 || event->x < 0 || event->y < 0
+      || event->x >= gtk_widget_get_allocated_width (widget)
+      || event->y >= gtk_widget_get_allocated_height (widget))
+    return GDK_EVENT_PROPAGATE;
+  dk_dock_open_folder (data, dk_item_view_get_key (view_of (widget)));
+  return GDK_EVENT_STOP;
+}
+
+/* Files dropped on it. */
+
+static void
+on_folder_put_failed (const char *uri, GError *error, gpointer data)
+{
+  g_autoptr (GFile) file = g_file_new_for_uri (uri);
+  g_autofree char *name = g_file_get_basename (file);
+  g_autofree char *primary = g_strdup_printf ("Can't put “%s” in the folder", name);
+
+  g_warning ("can't put %s in a Kept folder: %s", uri, error->message);
+  report_error (data, primary, error->message);
+}
+
+void
+dk_dock_drop_on_folder (DkDock *dock, const char *folder_uri, const char *const *uris)
+{
+  g_autoptr (GFile) folder = g_file_new_for_uri (folder_uri);
+
+  if (!dk_folder_exists (folder))
+    {
+      folder_not_available (dock, folder_uri);
+      return;
+    }
+  dk_folder_put (folder, uris, dock->cancellable, on_folder_put_failed, NULL, dock, NULL);
+}
+
+/* The files are put in the folder here, so the source has nothing to delete, whichever
+   action it offers. */
+static gboolean
+on_folder_drag_motion (GtkWidget *widget, GdkDragContext *context, int x, int y, guint time,
+                       gpointer data)
+{
+  GdkDragAction offered = gdk_drag_context_get_actions (context);
+  GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
+  GdkDragAction action = target == GDK_NONE ? 0
+                         : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE
+                         : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY : 0;
+
+  /* At either end a folder is kept next to it, which the items' box decides. */
+  if (!over_item (data, widget, x, y, TRUE))
+    return FALSE;
+  gdk_drag_status (context, action, time);
+  return action != 0;
+}
+
+static gboolean
+on_folder_drag_drop (GtkWidget *widget, GdkDragContext *context, int x, int y, guint time,
+                     gpointer data)
+{
+  GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
+
+  if (target == GDK_NONE || !over_item (data, widget, x, y, TRUE))
+    return FALSE;
+  gtk_drag_get_data (widget, context, target, time);
+  return TRUE;
+}
+
+static void
+on_folder_drag_data_received (GtkWidget *widget, GdkDragContext *context, int x G_GNUC_UNUSED,
+                              int y G_GNUC_UNUSED, GtkSelectionData *selection,
+                              guint info G_GNUC_UNUSED, guint time, gpointer data)
+{
+  g_auto (GStrv) uris = gtk_selection_data_get_uris (selection);
+
+  if (uris != NULL)
+    dk_dock_drop_on_folder (data, dk_item_view_get_key (view_of (widget)),
+                            (const char *const *) uris);
+  gtk_drag_finish (context, uris != NULL, FALSE, time);
+}
+
+/* Keeping and reordering. */
+
+void
+dk_dock_keep_folders (DkDock *dock, const char *const *uris, guint position)
+{
+  for (guint i = 0; uris != NULL && uris[i] != NULL; i++)
+    if (dk_folder_uri_is_folder (uris[i]) && !dk_store_is_folder_kept (dock->store, uris[i]))
+      dk_store_move_folder (dock->store, uris[i], position++);
+}
+
+void
+dk_dock_move_folder (DkDock *dock, const char *uri, guint position)
+{
+  if (dk_store_is_folder_kept (dock->store, uri))
+    dk_store_move_folder (dock->store, uri, position);
+}
+
+/* The number of Kept folders before the point (along the dock, in the box of the items after
+   the separator), and so where a drop goes: never past the Trash. */
+static int
+after_slot_at (DkDock *dock, int x, int y)
+{
+  g_autoptr (GList) children = gtk_container_get_children (GTK_CONTAINER (dock->after));
+  int slot = 0;
+
+  for (GList *l = children; l != NULL && view_of (l->data) != dock->trash_view; l = l->next, slot++)
+    {
+      GtkAllocation a;
+
+      gtk_widget_get_allocation (l->data, &a);
+      if (is_horizontal (dock) ? x < a.x + a.width / 2 : y < a.y + a.height / 2)
+        return slot;
+    }
+  return slot;
+}
+
+static gboolean
+on_after_draw_after (GtkWidget *after, cairo_t *cr, gpointer data)
+{
+  DkDock *dock = data;
+  g_autoptr (GList) children = NULL;
+  GtkStyleContext *context = gtk_widget_get_style_context (after);
+  GdkRGBA color;
+  GtkAllocation a;
+  GList *l;
+  double at;
+
+  if (dock->after_slot < 0)
+    return FALSE;
+  children = gtk_container_get_children (GTK_CONTAINER (dock->after));
+  l = g_list_nth (children, dock->after_slot);
+  if (l == NULL)
+    return FALSE;
+  gtk_widget_get_allocation (l->data, &a);
+  at = is_horizontal (dock) ? a.x : a.y;
+  if (!gtk_style_context_lookup_color (context, "theme_selected_bg_color", &color))
+    gdk_rgba_parse (&color, "#3daee9");
+  gdk_cairo_set_source_rgba (cr, &color);
+  if (is_horizontal (dock))
+    cairo_rectangle (cr, at - 1, 0, 2, gtk_widget_get_allocated_height (after));
+  else
+    cairo_rectangle (cr, 0, at - 1, gtk_widget_get_allocated_width (after), 2);
+  cairo_fill (cr);
+  return FALSE;
+}
+
+static void
+on_after_drag_leave (GtkWidget *after, GdkDragContext *context G_GNUC_UNUSED,
+                     guint time G_GNUC_UNUSED, gpointer data)
+{
+  DkDock *dock = data;
+
+  dock->after_slot = -1;
+  gtk_widget_queue_draw (after);
+}
+
+/* A folder from Caja is kept, a Kept folder is moved: both leave the source nothing to do. */
+static gboolean
+on_after_drag_motion (GtkWidget *after, GdkDragContext *context, int x, int y, guint time,
+                      gpointer data)
+{
+  DkDock *dock = data;
+  GdkAtom target = gtk_drag_dest_find_target (after, context, NULL);
+  GdkDragAction offered = gdk_drag_context_get_actions (context);
+  GdkDragAction action = target == GDK_NONE ? 0
+                         : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE
+                         : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY
+                         : offered & GDK_ACTION_LINK ? GDK_ACTION_LINK : 0;
+
+  gdk_drag_status (context, action, time);
+  if (action == 0)
+    {
+      on_after_drag_leave (after, context, time, dock);
+      return FALSE;
+    }
+  dock->after_slot = after_slot_at (dock, x, y);
+  gtk_widget_queue_draw (after);
+  return TRUE;
+}
+
+static gboolean
+on_after_drag_drop (GtkWidget *after, GdkDragContext *context, int x G_GNUC_UNUSED,
+                    int y G_GNUC_UNUSED, guint time, gpointer data G_GNUC_UNUSED)
+{
+  GdkAtom target = gtk_drag_dest_find_target (after, context, NULL);
+
+  if (target == GDK_NONE)
+    return FALSE;
+  gtk_drag_get_data (after, context, target, time);
+  return TRUE;
+}
+
+static void
+on_after_drag_data_received (GtkWidget *after, GdkDragContext *context, int x, int y,
+                             GtkSelectionData *selection, guint info G_GNUC_UNUSED, guint time,
+                             gpointer data)
+{
+  DkDock *dock = data;
+  g_auto (GStrv) uris = gtk_selection_data_get_uris (selection);
+  gboolean done = FALSE;
+  int slot = after_slot_at (dock, x, y);
+
+  dock->after_slot = -1;
+  gtk_widget_queue_draw (after);
+  if (gtk_selection_data_get_data_type (selection)
+      == gdk_atom_intern_static_string (DK_FOLDER_DRAG_TARGET))
+    {
+      g_autofree char *uri = g_strndup ((const char *) gtk_selection_data_get_data (selection),
+                                        gtk_selection_data_get_length (selection));
+
+      dk_dock_move_folder (dock, uri, slot);
+      done = TRUE;
+    }
+  else if (uris != NULL)
+    {
+      /* Only folders are kept: a file dropped here, between the items, is refused. */
+      for (guint i = 0; uris[i] != NULL; i++)
+        done = done || dk_folder_uri_is_folder (uris[i]);
+      dk_dock_keep_folders (dock, (const char *const *) uris, slot);
+    }
+  gtk_drag_finish (context, done, FALSE, time);
+}
+
+/* Makes the widgets of the Kept folders match the store: the icon, the name, and whether the
+   folder is there. */
+
+static void
+on_folder_changed (GFileMonitor *monitor G_GNUC_UNUSED, GFile *file G_GNUC_UNUSED,
+                   GFile *other G_GNUC_UNUSED, GFileMonitorEvent event G_GNUC_UNUSED,
+                   gpointer data)
+{
+  schedule_refresh (data);
+}
+
+static gboolean
+on_gone_poll (gpointer data)
+{
+  DkDock *dock = data;
+
+  schedule_refresh (dock);
+  return G_SOURCE_CONTINUE;
+}
+
+static DkItemView *
+folder_view_new (DkDock *dock, const char *uri)
+{
+  static const GtkTargetEntry targets[] = {
+    { (char *) "text/uri-list", 0, 0 },
+  };
+  DkItemView *view = dk_item_view_new ();
+  GtkWidget *widget = dk_item_view_get_widget (view);
+
+  g_hash_table_insert (dock->folder_views, g_strdup (uri), view);
+  gtk_box_pack_start (GTK_BOX (dock->after), widget, FALSE, FALSE, 0);
+  gtk_widget_show (widget);
+  g_signal_connect (widget, "button-press-event", G_CALLBACK (on_folder_button_press), dock);
+  g_signal_connect (widget, "button-release-event", G_CALLBACK (on_folder_button_release), dock);
+  gtk_drag_dest_set (widget, 0, targets, G_N_ELEMENTS (targets),
+                     GDK_ACTION_MOVE | GDK_ACTION_COPY);
+  g_signal_connect (widget, "drag-motion", G_CALLBACK (on_folder_drag_motion), dock);
+  g_signal_connect (widget, "drag-drop", G_CALLBACK (on_folder_drag_drop), dock);
+  g_signal_connect (widget, "drag-data-received", G_CALLBACK (on_folder_drag_data_received),
+                    dock);
+  return view;
+}
+
+static void
+refresh_after (DkDock *dock)
+{
+  g_autoptr (GArray) items = dk_after_build (dk_store_get_folders (dock->store));
+  g_autoptr (GHashTable) wanted = g_hash_table_new (g_str_hash, g_str_equal);
+  g_autoptr (GPtrArray) none = g_ptr_array_new ();
+  GHashTableIter iter;
+  gpointer key, value;
+  gboolean any_gone = FALSE;
+  int slot = 0;
+
+  for (guint i = 0; i < items->len; i++)
+    {
+      const DkAfterItem *item = &g_array_index (items, DkAfterItem, i);
+      g_autoptr (GFile) folder = NULL;
+      g_autoptr (GIcon) icon = NULL;
+      g_autofree char *name = NULL;
+      DkItemView *view;
+      gboolean gone;
+
+      if (item->kind != DK_AFTER_KEPT_FOLDER)
+        continue;
+      view = folder_view (dock, item->key);
+      if (view == NULL)
+        view = folder_view_new (dock, item->key);
+      folder = g_file_new_for_uri (item->key);
+      gone = !dk_folder_exists (folder);
+      any_gone = any_gone || gone;
+      if (!gone)
+        {
+          icon = dk_folder_icon (folder);
+          name = dk_folder_display_name (folder);
+        }
+      if (icon == NULL)
+        icon = g_themed_icon_new ("folder");
+      if (name == NULL)
+        name = folder_fallback_name (folder);
+      dk_item_view_set_geometry (view, dock->thickness, dock->edge);
+      dk_item_view_set (view, item->key, icon, name, none, FALSE, FALSE);
+      dk_item_view_set_drag (view, DK_FOLDER_DRAG_TARGET);
+      dk_item_view_set_dimmed (view, gone);
+      gtk_box_reorder_child (GTK_BOX (dock->after), dk_item_view_get_widget (view), slot++);
+      g_hash_table_add (wanted, item->key);
+      /* A folder that is there is watched for its deletion and a new icon; one that is gone
+         is looked for again. */
+      if (gone)
+        g_hash_table_remove (dock->folder_monitors, item->key);
+      else if (!g_hash_table_contains (dock->folder_monitors, item->key))
+        {
+          GFileMonitor *monitor = g_file_monitor_file (folder, G_FILE_MONITOR_WATCH_MOVES, NULL,
+                                                       NULL);
+
+          if (monitor != NULL)
+            {
+              g_signal_connect (monitor, "changed", G_CALLBACK (on_folder_changed), dock);
+              g_hash_table_insert (dock->folder_monitors, g_strdup (item->key), monitor);
+            }
+        }
+    }
+  g_hash_table_iter_init (&iter, dock->folder_views);
+  while (g_hash_table_iter_next (&iter, &key, &value))
+    if (!g_hash_table_contains (wanted, key))
+      {
+        if (g_strcmp0 (dock->popup_uri, key) == 0)
+          popup_close (dock);
+        g_hash_table_remove (dock->folder_monitors, key);
+        gtk_widget_destroy (dk_item_view_get_widget (value));
+        g_hash_table_iter_remove (&iter);
+      }
+  if (any_gone && dock->gone_id == 0)
+    dock->gone_id = g_timeout_add_seconds (GONE_POLL_SECONDS, on_gone_poll, dock);
+  else if (!any_gone)
+    g_clear_handle_id (&dock->gone_id, g_source_remove);
 }
 
 GPtrArray *
@@ -1378,6 +2119,9 @@ dk_dock_set_layout (DkDock *dock, guint thickness, GtkPositionType edge)
   gtk_orientable_set_orientation (GTK_ORIENTABLE (dock->box),
                                   is_horizontal (dock) ? GTK_ORIENTATION_HORIZONTAL
                                                        : GTK_ORIENTATION_VERTICAL);
+  gtk_orientable_set_orientation (GTK_ORIENTABLE (dock->after),
+                                  is_horizontal (dock) ? GTK_ORIENTATION_HORIZONTAL
+                                                       : GTK_ORIENTATION_VERTICAL);
   /* The separator's line is across the row, a little shorter than the items are thick. */
   gtk_orientable_set_orientation (GTK_ORIENTABLE (dock->separator),
                                   is_horizontal (dock) ? GTK_ORIENTATION_VERTICAL
@@ -1411,6 +2155,11 @@ dk_dock_new (DkStore *store)
   dock->thickness = 48;
   dock->edge = GTK_POS_BOTTOM;
   dock->drop_slot = -1;
+  dock->after_slot = -1;
+  dock->cancellable = g_cancellable_new ();
+  dock->folder_views = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  dock->folder_monitors = g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
+                                                 g_object_unref);
   dock->windows = g_hash_table_new_full (NULL, NULL, NULL, window_info_free);
   dock->views = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   dock->infos = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_object_unref);
@@ -1430,11 +2179,30 @@ dk_dock_new (DkStore *store)
                                     GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   }
   trash_new (dock);
+  dock->after = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_box_pack_start (GTK_BOX (dock->after), dk_item_view_get_widget (dock->trash_view), FALSE,
+                      FALSE, 0);
   gtk_box_pack_start (GTK_BOX (dock->widget), dock->box, FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (dock->widget), dock->separator, FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (dock->widget), dk_item_view_get_widget (dock->trash_view), FALSE,
-                      FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (dock->widget), dock->after, FALSE, FALSE, 0);
   gtk_widget_show_all (dock->widget);
+  {
+    /* Folders from Caja are kept, and Kept folders reordered, in the items after the
+       separator: the part of an item that isn't over it, and the space between. */
+    static const GtkTargetEntry after_targets[] = {
+      { (char *) DK_FOLDER_DRAG_TARGET, GTK_TARGET_SAME_APP, 0 },
+      { (char *) "text/uri-list", 0, 1 },
+    };
+
+    g_signal_connect_after (dock->after, "draw", G_CALLBACK (on_after_draw_after), dock);
+    gtk_drag_dest_set (dock->after, 0, after_targets, G_N_ELEMENTS (after_targets),
+                       GDK_ACTION_MOVE | GDK_ACTION_COPY | GDK_ACTION_LINK);
+    g_signal_connect (dock->after, "drag-motion", G_CALLBACK (on_after_drag_motion), dock);
+    g_signal_connect (dock->after, "drag-leave", G_CALLBACK (on_after_drag_leave), dock);
+    g_signal_connect (dock->after, "drag-drop", G_CALLBACK (on_after_drag_drop), dock);
+    g_signal_connect (dock->after, "drag-data-received",
+                      G_CALLBACK (on_after_drag_data_received), dock);
+  }
   g_object_set_data_full (G_OBJECT (dock->box), "dk-dock", dock, NULL);
   g_signal_connect_after (dock->box, "draw", G_CALLBACK (on_box_draw_after), dock);
   gtk_drag_dest_set (dock->box, 0, targets, G_N_ELEMENTS (targets),
@@ -1509,6 +2277,18 @@ dk_dock_free (DkDock *dock)
     }
   if (dock->error_dialog != NULL)
     gtk_widget_destroy (dock->error_dialog);
+  /* The files being put in a folder are let go of: nothing is told once the dock is. */
+  g_cancellable_cancel (dock->cancellable);
+  g_object_unref (dock->cancellable);
+  g_clear_handle_id (&dock->gone_id, g_source_remove);
+  if (dock->popup != NULL)
+    {
+      g_signal_handlers_disconnect_by_data (dock->popup, dock);
+      gtk_widget_destroy (dock->popup);
+    }
+  g_free (dock->popup_uri);
+  g_hash_table_unref (dock->folder_monitors);
+  g_hash_table_unref (dock->folder_views);
   dk_trash_free (dock->trash);
   g_clear_object (&dock->screen);
   g_object_unref (dock->monitor);
