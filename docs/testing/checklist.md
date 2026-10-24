@@ -3690,3 +3690,30 @@ They are the developer's to run.
 - **Debug tool:** `journalctl -t caminito` for `forcing … to quit` and `can't force … to
   quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
   `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.
+
+### Intellihide under a maximised window
+
+- **Milestone:** `dock-applet`, with the Dock applet's other items.
+- **Steps:**
+  1. Log into *MATE on Caminito*. Add a panel along the bottom of the primary output, with the
+     *Dock* applet or any applet, and open its *Properties*. Turn on *Intellihide*, which is
+     beside *Autohide* and turns it off.
+  2. Maximise a window (`pluma`). Then drag another window, not maximised, over the panel, and
+     away from it.
+  3. Put the pointer on the bottom row of pixels of the output under the panel and leave it
+     there for a second. Move it up into the window, and down to the edge again for less than a
+     quarter of a second.
+  4. Switch to another workspace that has no window over the panel and back, and open the
+     panel's menu (*Applications*, if it has one) with the pointer at the edge.
+  5. Turn *Intellihide* off with the window still maximised. Log in once to *MATE on Wayfire*,
+     or any other Wayland session, or to *MATE*, and open the same panel's *Properties*.
+- **Expected:** in step 1 the panel reserves no space: a maximised window reaches the bottom of
+  the output. In step 2 the panel slides down out of the output as the window covers it, over
+  about 200 ms, and slides back when the window no longer overlaps it. In step 3 it slides up
+  after the pointer has rested at the edge for about a quarter of a second, stays while the
+  pointer is on it, slides down when the pointer leaves, and a short visit to the edge does
+  nothing. In step 4 the panel is shown on the workspace where nothing overlaps it, and stays
+  shown while its menu is open. In step 5 the panel is where it was, reserving its edge again,
+  and under any other compositor *Properties* has no *Intellihide* (CMN-224, ADR 0047).
+- **Debug tool:** `DumpState`'s `outputs`, whose panel's layer surface has `intellihide` with
+  `hidden` and where it is `drawn`.

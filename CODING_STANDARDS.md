@@ -92,6 +92,9 @@ Where each tier lives, per ticket 15's test seams:
 | caminito-network's connection notifications against python-dbusmock's `networkmanager` and `notification_daemon` templates on a private bus, with the test emitting each active connection's and device's `StateChanged` as NetworkManager would, with its reasons, and calling `UserActivating` as the Network applet would | `caminito-network/tests/notifications.rs`, through `mock::run` |
 | caminito-network's single instance and its exit outside Caminito, the real binary | `caminito-network/tests/single_instance.rs`; the single instance ignored unless run under a display, as tools/check runs it under Xvfb |
 | Pure logic in `caminito` (settings translation, AccessX, scale rules, the lock state machine) | a `tests` module beside the code |
+| Intellihide's hiding and the pointer's rest at the edge, against `TestWindow` (CMN-224) | `caminito-policy/src/tests/intellihide.rs` |
+| Intellihide's protocol and slide, through the test client: the debug dump's account of where a panel is drawn, and pixels | `caminito/src/tests/intellihide.rs`, through `Fixture` |
+| The mate-panel patch's own `wayland-intellihide.c` understood by Caminito, in a probe on GDK's Wayland backend (CMN-224) | `caminito/src/tests/mate_panel_intellihide.rs`, through `Fixture`, ignored unless `CAMINITO_INTELLIHIDE_PROBE` names the probe `.scratch/checks/CMN-224/run.sh` builds from the patch |
 | Headless integration, X11 tier, D-Bus | `caminito/src/tests/`, through `Fixture` |
 | The version string, and where a build's revision comes from | `caminito-version/src/string.rs`, which the build script compiles too |
 | The `caminito` binary's own arguments, such as `--version` | `caminito/tests/`, running the binary |

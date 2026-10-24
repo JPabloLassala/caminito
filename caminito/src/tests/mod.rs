@@ -53,6 +53,7 @@ mod lock;
 mod locker;
 mod logind;
 mod logo;
+mod mate_panel_intellihide;
 mod maximise_animation;
 mod maximise_animation_effects;
 mod maximise_animation_tiles;
