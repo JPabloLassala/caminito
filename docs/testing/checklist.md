@@ -3693,7 +3693,7 @@ They are the developer's to run.
 
 ### A floating panel stands off its edge
 
-- **Milestone:** the Dock applet's, after M9 (CMN-223).
+- **Milestone:** the Dock applet's, after M9 (223).
 - **Steps:**
   1. With `mate-panel-caminito` at `pkgrel` 14 or later, log into *MATE on Caminito*. Right-click
      the bottom panel, choose *Properties*, and tick *Floating*.
@@ -3707,8 +3707,8 @@ They are the developer's to run.
 - **Expected:** in step 1 the panel stands 8 pixels off the bottom edge, with rounded corners
   and no line along its top, and a maximised window ends at the panel's top edge, not behind
   it and not short of it. In step 2 the panel shrinks to its applets and stays centred along
-  the edge, still 8 pixels off it. In step 3 the left panel stands off the left edge in the same way, centred
-  from top to bottom. In step 4 each panel goes back to its edge, with square corners and
+  the edge, still 8 pixels off it. In step 3 the left panel stands off the left edge in the
+  same way, centred from top to bottom. In step 4 each panel goes back to its edge, with square corners and
   its frame, and the work area grows back. In step 5 *Floating* isn't in the properties, and
   a panel whose `floating` key is set looks as it did (223).
 - **Debug tool:** each output's `layer_surfaces` (their `geometry` and `exclusive_zone`) and

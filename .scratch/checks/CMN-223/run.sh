@@ -42,7 +42,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/cmn-223.XXXXXX")
 trap 'kill $(jobs -p) 2>/dev/null; [ "${KEEP:-}" ] && echo "kept $work" || rm -rf "${work:?}"' EXIT
 mkdir -p "$work/config" "$work/rt" "$work/schemas" "$out"
 chmod 700 "$work/rt"
-rm -f "${out:?}"/*.png "${out:?}/report.txt"
+rm -f "${out:?}"/0[1-4]-*.png "${out:?}/report.txt"
 # Marco's schemas and the rest that Caminito reads, vendored for its tests.
 cp "$root"/tests/schemas/*.xml "$pkg"/share/glib-2.0/schemas/*.xml "$work/schemas/"
 glib-compile-schemas "$work/schemas"

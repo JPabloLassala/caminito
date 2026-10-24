@@ -9,28 +9,29 @@ panel isn't.
 A panel has a Floating property, a key of its schema, in its properties
 below Autohide. Under Caminito, the Wayland compositor, a floating panel
 stands off the edge it is at by a gap of 8 pixels, which is the layer-shell
-margin of that edge, and its corners are rounded, with the frame along its
-edge left out. The exclusive zone is the panel's size as before: the
-compositor counts the margin in it, so a maximized window ends where the
-panel does, not behind it. A panel that isn't expanded keeps being centred
-along its edge, since it is anchored to the edge alone, and an expanded one
-reaches both of its sides.
+margin of that edge, and its corners are rounded, with no frame. The
+exclusive zone is the panel's size as before: the compositor counts the
+margin in it, so a maximized window ends where the panel does, not behind
+it. A panel that isn't expanded keeps being centred along its edge, since it
+is anchored to the edge alone, and an expanded one reaches both of its
+sides. An autohidden panel leaves its strip at the edge, and a drawer opens
+from where its floating panel is.
 
 Without an owner of org.mate.Caminito, which is X11 and any other Wayland
 compositor, and for a drawer, the key does nothing and the properties have
 no row for it.
 ---
  data/org.mate.panel.toplevel.gschema.xml.in |   5 +
- mate-panel/panel-multimonitor.c             |  15 +++
+ mate-panel/panel-multimonitor.c             |  16 +++
  mate-panel/panel-multimonitor.h             |   1 +
  mate-panel/panel-profile.c                  |   3 +
  mate-panel/panel-profile.h                  |   3 +
- mate-panel/panel-properties-dialog.c        |  40 +++++++
+ mate-panel/panel-properties-dialog.c        |  40 ++++++
  mate-panel/panel-schemas.h                  |   1 +
- mate-panel/panel-toplevel.c                 | 116 +++++++++++++++++++-
+ mate-panel/panel-toplevel.c                 | 137 +++++++++++++++++++-
  mate-panel/panel-toplevel.h                 |   4 +
  mate-panel/wayland-backend.c                |  18 +++
- 10 files changed, 204 insertions(+), 2 deletions(-)
+ 10 files changed, 226 insertions(+), 2 deletions(-)
 
 diff --git a/data/org.mate.panel.toplevel.gschema.xml.in b/data/org.mate.panel.toplevel.gschema.xml.in
 index 25e712c1..4b80fef9 100644
@@ -49,15 +50,16 @@ index 25e712c1..4b80fef9 100644
        <default>true</default>
        <summary>Enable animations</summary>
 diff --git a/mate-panel/panel-multimonitor.c b/mate-panel/panel-multimonitor.c
-index de556bae..8856baef 100644
+index de556bae..7a3fc044 100644
 --- a/mate-panel/panel-multimonitor.c
 +++ b/mate-panel/panel-multimonitor.c
-@@ -94,6 +94,21 @@ panel_multimonitor_get_caminito_primary (void)
+@@ -94,6 +94,22 @@ panel_multimonitor_get_caminito_primary (void)
  	return connector;
  }
  
-+/* Whether Caminito owns its name, which is the only compositor a carried patch's
-+ * Caminito-only behaviour turns on for. */
++/* Whether Caminito is there: it owns its name and has told its primary output,
++ * as it does from its start. A carried patch's Caminito-only behaviour turns on
++ * for it alone. */
 +gboolean
 +panel_multimonitor_is_caminito (void)
 +{
@@ -213,7 +215,7 @@ index 6b22e2a7..c3229f87 100644
  #define PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY    "enable-buttons"
  #define PANEL_TOPLEVEL_ENABLE_ARROWS_KEY     "enable-arrows"
 diff --git a/mate-panel/panel-toplevel.c b/mate-panel/panel-toplevel.c
-index 8a6fdabd..495ec805 100644
+index 8a6fdabd..7acf3f10 100644
 --- a/mate-panel/panel-toplevel.c
 +++ b/mate-panel/panel-toplevel.c
 @@ -66,6 +66,9 @@
@@ -255,7 +257,40 @@ index 8a6fdabd..495ec805 100644
  		wayland_panel_toplevel_update_exclusive_zone (toplevel, exclusive);
  	}
  #endif /* HAVE_WAYLAND */
-@@ -3426,7 +3437,7 @@ panel_toplevel_size_allocate (GtkWidget     *widget,
+@@ -1768,6 +1779,7 @@ static void panel_toplevel_update_attached_position(PanelToplevel* toplevel, gbo
+ 	GdkRectangle      parent_box;
+ 	GdkRectangle      attach_box;
+ 	int               x_origin = 0, y_origin = 0;
++	int               floating_margin;
+ 	GdkRectangle      monitor_geom;
+ 
+ 	if (!gtk_widget_get_realized (GTK_WIDGET (toplevel->priv->attach_toplevel)) ||
+@@ -1780,6 +1792,24 @@ static void panel_toplevel_update_attached_position(PanelToplevel* toplevel, gbo
+ 	parent_box   = toplevel->priv->attach_toplevel->priv->geometry;
+ 	attach_box   = attach_allocation;
+ 
++	/* A floating panel stands off its edge by its layer-shell margin, which
++	 * its geometry doesn't count: its drawer opens from where it is. */
++	floating_margin = panel_toplevel_get_floating_margin (toplevel->priv->attach_toplevel);
++	switch (panel_toplevel_get_orientation (toplevel->priv->attach_toplevel)) {
++	case PANEL_ORIENTATION_TOP:
++		parent_box.y += floating_margin;
++		break;
++	case PANEL_ORIENTATION_BOTTOM:
++		parent_box.y -= floating_margin;
++		break;
++	case PANEL_ORIENTATION_LEFT:
++		parent_box.x += floating_margin;
++		break;
++	case PANEL_ORIENTATION_RIGHT:
++		parent_box.x -= floating_margin;
++		break;
++	}
++
+ 	if (attach_box.x != -1) {
+ 		gdk_window_get_origin (gtk_widget_get_window (GTK_WIDGET (toplevel->priv->attach_widget)),
+ 				       &x_origin, &y_origin);
+@@ -3426,7 +3456,7 @@ panel_toplevel_size_allocate (GtkWidget     *widget,
  	set_background_region (toplevel);
  }
  
@@ -264,7 +299,7 @@ index 8a6fdabd..495ec805 100644
  {
  	PanelToplevel*   toplevel = (PanelToplevel*) widget;
  	PanelFrameEdge   edges;
-@@ -3444,7 +3455,9 @@ static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
+@@ -3444,7 +3474,9 @@ static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
  		retval = GTK_WIDGET_CLASS (panel_toplevel_parent_class)->draw (widget, cr);
  
  	edges = toplevel->priv->edges;
@@ -275,7 +310,7 @@ index 8a6fdabd..495ec805 100644
  
  	if (toplevel->priv->expand ||
  	    toplevel->priv->buttons_enabled ||
-@@ -3524,6 +3537,40 @@ static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
+@@ -3524,6 +3556,40 @@ static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
  	return retval;
  }
  
@@ -316,7 +351,7 @@ index 8a6fdabd..495ec805 100644
  static gboolean
  panel_toplevel_button_press_event (GtkWidget      *widget,
  				   GdkEventButton *event)
-@@ -4294,6 +4341,9 @@ panel_toplevel_set_property (GObject      *object,
+@@ -4294,6 +4360,9 @@ panel_toplevel_set_property (GObject      *object,
  	case PROP_EXPAND:
  		panel_toplevel_set_expand (toplevel, g_value_get_boolean (value));
  		break;
@@ -326,7 +361,7 @@ index 8a6fdabd..495ec805 100644
  	case PROP_ORIENTATION:
  		panel_toplevel_set_orientation (toplevel, g_value_get_enum (value));
  		break;
-@@ -4391,6 +4441,9 @@ panel_toplevel_get_property (GObject    *object,
+@@ -4391,6 +4460,9 @@ panel_toplevel_get_property (GObject    *object,
  	case PROP_EXPAND:
  		g_value_set_boolean (value, toplevel->priv->expand);
  		break;
@@ -336,7 +371,7 @@ index 8a6fdabd..495ec805 100644
  	case PROP_ORIENTATION:
  		g_value_set_enum (value, toplevel->priv->orientation);
  		break;
-@@ -4561,6 +4614,16 @@ panel_toplevel_class_init (PanelToplevelClass *klass)
+@@ -4561,6 +4633,16 @@ panel_toplevel_class_init (PanelToplevelClass *klass)
  			TRUE,
  			G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
  
@@ -353,7 +388,7 @@ index 8a6fdabd..495ec805 100644
  	g_object_class_install_property (
  		gobject_class,
  		PROP_ORIENTATION,
-@@ -5712,6 +5775,55 @@ panel_toplevel_set_auto_hide (PanelToplevel *toplevel,
+@@ -5712,6 +5794,57 @@ panel_toplevel_set_auto_hide (PanelToplevel *toplevel,
  	g_object_notify (G_OBJECT (toplevel), "auto-hide");
  }
  
@@ -388,7 +423,8 @@ index 8a6fdabd..495ec805 100644
 +
 +/* The gap between a floating panel and its screen edge, in pixels: 0 for a panel
 + * that isn't floating, a drawer, and anywhere but Caminito's Wayland, where the
-+ * property does nothing. The panel stands off only the edge it is at, so that a
++ * property does nothing. 0 too while the panel is autohidden, so that it leaves
++ * its strip at the edge. The panel stands off only the edge it is at, so that a
 + * panel that isn't expanded stays centred along it, as it does lined up. */
 +int
 +panel_toplevel_get_floating_margin (PanelToplevel *toplevel)
@@ -398,6 +434,7 @@ index 8a6fdabd..495ec805 100644
 +#ifdef HAVE_WAYLAND
 +	if (toplevel->priv->floating_panel &&
 +	    !toplevel->priv->attached &&
++	    toplevel->priv->state != PANEL_STATE_AUTO_HIDDEN &&
 +	    GDK_IS_WAYLAND_DISPLAY (gtk_widget_get_display (GTK_WIDGET (toplevel))) &&
 +	    panel_multimonitor_is_caminito ())
 +		return PANEL_FLOATING_MARGIN;

@@ -22,7 +22,7 @@
 
 Name:          mate-panel
 Version:       1.29.0~%{commitdate}git%{shortcommit}
-Release:       0.caminito1%{?dist}
+Release:       0.caminito2%{?dist}
 Summary:       MATE Desktop panel and applets
 #libs are LGPL-2.0-or-later
 #applications GPL-2.0-or-later
@@ -206,6 +206,10 @@ install -D -m 0644 %{SOURCE2} %{buildroot}%{_datadir}/mate-panel/layouts/rhel.la
 
 
 %changelog
+* Sat Oct 24 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito2
+- Carry 0015: a panel has a Floating property, which stands it off its edge, with rounded
+  corners (CMN-223)
+
 * Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito1
 - mate-panel's master at 58ac6c1, with Caminito's carried patches, from Fedora f45's spec
   (CMN-170)
