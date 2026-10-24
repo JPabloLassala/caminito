@@ -30,12 +30,21 @@
  *                                "identifiers" (CMN-243): the identifier Caminito names it by,
  *                                or "-" for none, and EXT=1 if the dock found its ext handle,
  *                                and then "identifiers-end"
+ *   folder URI gone=G x=X y=Y w=W h=H
+ *                                one for each Kept folder (CMN-239), in order, in answer to
+ *                                "folders", and then "folders-end"
+ *   grid NAME                    one for each cell of the open grid popup, a folder's name with
+ *                                a slash after, in answer to "grid", and then "grid-end"
+ *   error PRIMARY                the error being shown, if any, in answer to "error", and
+ *                                then "error-end"
  * stdin:
  *   items | identifiers | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y |
- *   launch-timeout MS | trash | popup-trash | drop-files URI... | dialog | respond accept|cancel |
+ *   launch-timeout MS | trash | popup-trash | drop-files URI... | dialog |
+ *   respond accept|cancel | folders | open-folder URI | popup-folder URI | grid | error |
+ *   keep-folders POSITION URI... | move-folder URI POSITION | drop-on-folder URI FILE_URI... |
  *   quit
  * "choose" activates the open menu's item with that label. "drop-files" is a drop of files
- * on the Trash.
+ * on the Trash, "drop-on-folder" on a Kept folder.
  */
 
 #include <stdio.h>
@@ -164,6 +173,58 @@ print_identifiers (void)
 }
 
 static void
+print_folders (void)
+{
+  g_autoptr (GPtrArray) uris = dk_dock_get_folders (dock);
+
+  gtk_container_check_resize (GTK_CONTAINER (window));
+  for (guint i = 0; i < uris->len; i++)
+    {
+      GtkWidget *widget = dk_dock_get_folder (dock, uris->pdata[i]);
+      GtkAllocation a;
+      int x, y;
+
+      gtk_widget_get_allocation (widget, &a);
+      gtk_widget_translate_coordinates (widget, window, 0, 0, &x, &y);
+      printf ("folder %s gone=%d x=%d y=%d w=%d h=%d\n", (char *) uris->pdata[i],
+              dk_dock_folder_is_gone (dock, uris->pdata[i]), x, y, a.width, a.height);
+    }
+  printf ("folders-end\n");
+}
+
+static gboolean
+answer_folders (gpointer data G_GNUC_UNUSED)
+{
+  print_folders ();
+  return G_SOURCE_REMOVE;
+}
+
+static void
+print_grid (void)
+{
+  g_autoptr (GPtrArray) entries = dk_dock_get_popup_entries (dock);
+
+  for (guint i = 0; i < entries->len; i++)
+    printf ("grid %s\n", (char *) entries->pdata[i]);
+  printf ("grid-end\n");
+}
+
+static void
+print_error (void)
+{
+  GtkWidget *dialog = dk_dock_get_error_dialog (dock);
+
+  if (dialog != NULL)
+    {
+      g_autofree char *primary = NULL;
+
+      g_object_get (dialog, "text", &primary, NULL);
+      printf ("error %s\n", primary);
+    }
+  printf ("error-end\n");
+}
+
+static void
 run_command (char *line)
 {
   g_auto (GStrv) words = NULL;
@@ -202,6 +263,40 @@ run_command (char *line)
       g_auto (GStrv) uris = g_strsplit (strchr (g_strstrip (line), ' ') + 1, " ", -1);
 
       dk_dock_drop_uris (dock, (const char *const *) uris);
+    }
+  else if (g_strcmp0 (words[0], "folders") == 0)
+    {
+      /* A folder that was just kept has its item at the next refresh. */
+      gdk_display_sync (gdk_display_get_default ());
+      g_idle_add_full (G_PRIORITY_LOW, answer_folders, NULL, NULL);
+    }
+  else if (g_strcmp0 (words[0], "grid") == 0)
+    print_grid ();
+  else if (g_strcmp0 (words[0], "error") == 0)
+    print_error ();
+  else if (g_strcmp0 (words[0], "open-folder") == 0 && words[1] != NULL)
+    dk_dock_open_folder (dock, words[1]);
+  else if (g_strcmp0 (words[0], "popup-folder") == 0 && words[1] != NULL)
+    {
+      GtkWidget *item = dk_dock_get_folder (dock, words[1]);
+
+      if (item != NULL)
+        dk_dock_popup_menu (dock, item, NULL);
+    }
+  else if (g_strcmp0 (words[0], "keep-folders") == 0 && words[1] != NULL && words[2] != NULL)
+    {
+      /* The URIs are the rest of the line, after the position. */
+      g_auto (GStrv) all = g_strsplit (g_strstrip (line), " ", -1);
+
+      dk_dock_keep_folders (dock, (const char *const *) all + 2, atoi (all[1]));
+    }
+  else if (g_strcmp0 (words[0], "move-folder") == 0 && words[1] != NULL && words[2] != NULL)
+    dk_dock_move_folder (dock, words[1], atoi (words[2]));
+  else if (g_strcmp0 (words[0], "drop-on-folder") == 0 && words[1] != NULL && words[2] != NULL)
+    {
+      g_auto (GStrv) all = g_strsplit (g_strstrip (line), " ", -1);
+
+      dk_dock_drop_on_folder (dock, all[1], (const char *const *) all + 2);
     }
   else if (g_strcmp0 (words[0], "popup") == 0 && words[1] != NULL)
     {

@@ -3,6 +3,10 @@
  * for every desktop entry, with the windows of every Application whose app id resolves to
  * it, and one for every app id that resolves to none. The kept items come first, in the
  * user's order. What a click on an item does is decided here too.
+ *
+ * The items after the separator (CMN-239) are a second list: the Kept folders, in the user's
+ * order, and the Trash last. The Removable drive items and the Minimised window items will
+ * come between them (CMN-240, CMN-241).
  */
 
 #pragma once
@@ -64,6 +68,27 @@ gboolean dk_key_is_entry (const char *key);
    focused item; activate the most recent window otherwise (the Application overview will
    take the several windows' case). target is that window, or NULL for a launch. */
 DkClick dk_item_click  (const DkItem *item, const DkWindow **target);
+
+typedef enum
+{
+  DK_AFTER_KEPT_FOLDER,
+  DK_AFTER_TRASH,
+} DkAfterKind;
+
+/* The key of the Trash's item. */
+#define DK_TRASH_KEY "trash:///"
+
+typedef struct
+{
+  DkAfterKind kind;
+  /* The folder's URI, or DK_TRASH_KEY. */
+  char *key;
+} DkAfterItem;
+
+/* The items after the separator for the folders' URIs (NULL-terminated, in the user's order):
+   a Kept folder for each, once, then the Trash. The array is of DkAfterItem, and owns them. */
+GArray *dk_after_build      (const char *const *folders);
+void    dk_after_item_clear (DkAfterItem *item);
 
 /* The kept keys, changed. They return TRUE when the list changed. A key is added at the
    end, moved to the position given (counted before it leaves its old one), or removed. */

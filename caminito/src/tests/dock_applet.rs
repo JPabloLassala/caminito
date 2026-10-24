@@ -9,6 +9,9 @@
 //! the tests that need it give a session bus of its own, with `XDG_DATA_HOME` the test's, so
 //! that the Trash is the test's too; they need gvfs installed, as Caja does.
 //!
+//! The Kept folders (CMN-239) are between the separator and the Trash. They need no gvfs: the
+//! folders are the test's own, and a move or a copy goes through GIO's local files.
+//!
 //! The app id to item resolution has its own tests without a panel, in
 //! `helpers/caminito-dock-applet/test-resolve.c` and `test-model.c`; what this adds is what
 //! the compositor does with the clicks: activating a window on another workspace, minimising
@@ -93,6 +96,15 @@ struct Probe {
 struct Trash {
     full: bool,
     /// The Trash's rectangle in the probe's window.
+    rect: Rectangle<i32, Logical>,
+}
+
+/// A Kept folder as the dock shows it.
+#[derive(Debug, Clone)]
+struct Folder {
+    uri: String,
+    gone: bool,
+    /// The folder's rectangle in the probe's window.
     rect: Rectangle<i32, Logical>,
 }
 
@@ -387,6 +399,54 @@ impl Probe {
         }
     }
 
+    /// The Kept folders in the dock now, in order.
+    fn folders(&mut self, f: &mut Fixture) -> Vec<Folder> {
+        self.ask(f, "folders", "folders-end")
+            .iter()
+            .filter_map(|line| line.strip_prefix("folder "))
+            .map(|line| {
+                let mut words = line.split(' ');
+                let uri = words.next().unwrap().to_owned();
+                let fields: Vec<i32> = words
+                    .map(|word| word.split_once('=').unwrap().1.parse().unwrap())
+                    .collect();
+                Folder {
+                    uri,
+                    gone: fields[0] != 0,
+                    rect: Rectangle::new(
+                        (fields[1], fields[2]).into(),
+                        (fields[3], fields[4]).into(),
+                    ),
+                }
+            })
+            .collect()
+    }
+
+    /// The cells of the grid popup being shown, a folder's with a slash after.
+    fn grid(&mut self, f: &mut Fixture) -> Vec<String> {
+        self.ask(f, "grid", "grid-end")
+            .iter()
+            .filter_map(|line| line.strip_prefix("grid ").map(str::to_owned))
+            .collect()
+    }
+
+    /// The title of the error being shown, none if there isn't one.
+    fn error(&mut self, f: &mut Fixture) -> Vec<String> {
+        self.ask(f, "error", "error-end")
+            .iter()
+            .filter_map(|line| line.strip_prefix("error ").map(str::to_owned))
+            .collect()
+    }
+
+    /// A folder of the test's own, with a file in it, and its URI.
+    fn folder(&self, name: &str) -> (PathBuf, String) {
+        let path = self.dir.path().join("folders").join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("inside.txt"), "content").unwrap();
+        let uri = format!("file://{}", path.display());
+        (path, uri)
+    }
+
     /// The titles of the confirmation being shown, none if there isn't one.
     fn dialog(&mut self, f: &mut Fixture) -> Vec<String> {
         self.ask(f, "dialog", "dialog-end")
@@ -619,6 +679,21 @@ impl Desk {
                 found = Some(trash);
             }
             laid_out
+        });
+        found.unwrap()
+    }
+
+    /// Dispatches until the Kept folders satisfy `done` once laid out, and returns them.
+    #[track_caller]
+    fn wait_for_folders(&mut self, done: impl Fn(&[Folder]) -> bool) -> Vec<Folder> {
+        let mut found = None;
+        self.f.dispatch_until_mut(|f| {
+            let folders = self.probe.folders(f);
+            let holds = folders.iter().all(|folder| folder.rect.size.w > 1) && done(&folders);
+            if holds {
+                found = Some(folders);
+            }
+            holds
         });
         found.unwrap()
     }
@@ -1584,4 +1659,166 @@ fn two_windows_of_one_program_with_one_title_get_their_own_identifiers_and_ext_h
     expected.sort();
     found.sort();
     assert_eq!(found, expected);
+}
+
+fn uris(folders: &[Folder]) -> Vec<String> {
+    folders.iter().map(|folder| folder.uri.clone()).collect()
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_kept_folder_is_between_the_separator_and_the_trash_in_every_orientation() {
+    for edge in ["bottom", "top", "left", "right"] {
+        let mut d = Desk::with(edge, 40);
+        let _terminal = d.open("mate-terminal", "Terminal");
+        let last = d.wait_for("mate-terminal.desktop", 1);
+        let (_, uri) = d.probe.folder("Documents");
+        d.probe.send(&format!("keep-folders 0 {uri}"));
+        let folders = d.wait_for_folders(|folders| folders.len() == 1);
+        let trash = d.trash();
+        let horizontal = edge == "bottom" || edge == "top";
+        let (last_end, folder_start, folder_end, trash_start) = if horizontal {
+            (
+                last.rect.loc.x + last.rect.size.w,
+                folders[0].rect.loc.x,
+                folders[0].rect.loc.x + folders[0].rect.size.w,
+                trash.rect.loc.x,
+            )
+        } else {
+            (
+                last.rect.loc.y + last.rect.size.h,
+                folders[0].rect.loc.y,
+                folders[0].rect.loc.y + folders[0].rect.size.h,
+                trash.rect.loc.y,
+            )
+        };
+
+        assert_eq!(
+            folders[0].rect.size,
+            (40, 40).into(),
+            "{edge}: an item's size"
+        );
+        assert!(folder_start >= last_end + 8, "{edge}: after the separator");
+        assert_eq!(
+            folder_end, trash_start,
+            "{edge}: and right before the Trash"
+        );
+        if edge == "bottom" {
+            d.shot("10-kept-folder");
+        }
+        if edge == "left" {
+            d.shot("14-kept-folder-vertical");
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_kept_folder_survives_the_panels_restart_and_remove_from_dock_takes_it_away() {
+    let mut d = Desk::new();
+    let (_, music) = d.probe.folder("Music");
+    let (_, documents) = d.probe.folder("Documents");
+    // A file is not a folder, so it is not kept.
+    let (_, file) = d.probe.file("report.txt");
+    d.probe
+        .send(&format!("keep-folders 0 {music} {file} {documents}"));
+    let folders = d.wait_for_folders(|folders| folders.len() == 2);
+    assert_eq!(uris(&folders), [music.clone(), documents.clone()]);
+
+    // The panel restarts: a second probe over the same settings.
+    let Desk { mut f, probe } = d;
+    let dir = probe.stop(&mut f);
+    let probe = Probe::start(&mut f, dir, "bottom", 48, false);
+    let mut d = Desk { f, probe };
+    let folders = d.wait_for_folders(|folders| folders.len() == 2);
+    assert_eq!(uris(&folders), [music, documents.clone()]);
+
+    d.press_rect(folders[1].rect, BTN_RIGHT);
+    assert_eq!(
+        d.wait_for_menu(),
+        ["Open in Caja", "Remove from Dock"].map(str::to_owned)
+    );
+    d.shot("12-kept-folder-menu");
+    d.probe.send("choose Remove from Dock");
+    let folders = d.wait_for_folders(|folders| folders.len() == 1);
+    assert!(!uris(&folders).contains(&documents));
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn kept_folders_are_reordered_among_themselves_and_never_before_the_separator() {
+    let mut d = Desk::new();
+    let _terminal = d.open("mate-terminal", "Terminal");
+    d.wait_for("mate-terminal.desktop", 1);
+    let uri = |name: &str| d.probe.folder(name).1;
+    let (a, b, c) = (uri("A"), uri("B"), uri("C"));
+    d.probe.send(&format!("keep-folders 0 {a} {b} {c}"));
+    d.wait_for_folders(|folders| folders.len() == 3);
+
+    d.probe.send(&format!("move-folder {c} 0"));
+    let folders = d.wait_for_folders(|folders| folders.first().is_some_and(|f| f.uri == c));
+    assert_eq!(uris(&folders), [c.clone(), a.clone(), b.clone()]);
+    // A position past the end is the end, and the Dock items stay before the separator.
+    d.probe.send(&format!("move-folder {c} 99"));
+    let folders = d.wait_for_folders(|folders| folders.last().is_some_and(|f| f.uri == c));
+    assert_eq!(uris(&folders), [a, b, c]);
+    let item = d.item("mate-terminal.desktop");
+    assert!(
+        folders
+            .iter()
+            .all(|folder| folder.rect.loc.x > item.rect.loc.x)
+    );
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_click_on_a_kept_folder_shows_a_grid_of_its_contents_folders_first() {
+    let mut d = Desk::new();
+    let (path, uri) = d.probe.folder("Documents");
+    std::fs::write(path.join("b.txt"), "b").unwrap();
+    std::fs::write(path.join("A.txt"), "a").unwrap();
+    std::fs::create_dir(path.join("zeta")).unwrap();
+    d.probe.send(&format!("keep-folders 0 {uri}"));
+    let folders = d.wait_for_folders(|folders| folders.len() == 1);
+
+    d.press_rect(folders[0].rect, BTN_LEFT);
+    d.f.dispatch_until_mut(|f| !d.probe.grid(f).is_empty());
+    assert_eq!(
+        d.probe.grid(&mut d.f),
+        ["zeta/", "A.txt", "b.txt", "inside.txt"]
+    );
+    d.shot("11-kept-folder-grid");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_file_dropped_on_a_kept_folder_is_moved_into_it_on_the_same_file_system() {
+    let mut d = Desk::new();
+    let (folder, uri) = d.probe.folder("Documents");
+    d.probe.send(&format!("keep-folders 0 {uri}"));
+    d.wait_for_folders(|folders| folders.len() == 1);
+
+    let (path, file) = d.probe.file("report.txt");
+    d.probe.send(&format!("drop-on-folder {uri} {file}"));
+    d.f.dispatch_until(|_| folder.join("report.txt").exists());
+    assert!(!path.exists(), "the file left its place");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_kept_folder_that_is_gone_is_dimmed_says_so_on_a_click_and_comes_back_with_the_folder() {
+    let mut d = Desk::new();
+    let (path, uri) = d.probe.folder("Documents");
+    d.probe.send(&format!("keep-folders 0 {uri}"));
+    d.wait_for_folders(|folders| folders.len() == 1 && !folders[0].gone);
+
+    std::fs::remove_dir_all(&path).unwrap();
+    let folders = d.wait_for_folders(|folders| folders.len() == 1 && folders[0].gone);
+    d.press_rect(folders[0].rect, BTN_LEFT);
+    d.f.dispatch_until_mut(|f| !d.probe.error(f).is_empty());
+    assert_eq!(d.probe.error(&mut d.f), ["“Documents” isn't available"]);
+    d.shot("13-kept-folder-gone");
+
+    std::fs::create_dir(&path).unwrap();
+    d.wait_for_folders(|folders| folders.len() == 1 && !folders[0].gone);
 }

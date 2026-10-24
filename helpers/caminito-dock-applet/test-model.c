@@ -316,6 +316,41 @@ test_moving_puts_a_key_at_a_position (void)
   g_ptr_array_unref (kept);
 }
 
+static DkAfterItem *
+after_item (GArray *items, guint i)
+{
+  return &g_array_index (items, DkAfterItem, i);
+}
+
+static void
+test_the_trash_is_the_only_item_after_the_separator_by_default (void)
+{
+  GArray *items = dk_after_build (NULL);
+
+  g_assert_cmpuint (items->len, ==, 1);
+  g_assert_cmpint (after_item (items, 0)->kind, ==, DK_AFTER_TRASH);
+  g_assert_cmpstr (after_item (items, 0)->key, ==, DK_TRASH_KEY);
+  g_array_unref (items);
+}
+
+static void
+test_kept_folders_come_in_the_users_order_and_the_trash_last (void)
+{
+  const char *const folders[] = { "file:///home/u/Music", "file:///home/u/Documents",
+                                  "file:///home/u/Music", "file:///tmp", NULL };
+  GArray *items = dk_after_build (folders);
+
+  /* A duplicate is one item. */
+  g_assert_cmpuint (items->len, ==, 4);
+  g_assert_cmpint (after_item (items, 0)->kind, ==, DK_AFTER_KEPT_FOLDER);
+  g_assert_cmpstr (after_item (items, 0)->key, ==, "file:///home/u/Music");
+  g_assert_cmpstr (after_item (items, 1)->key, ==, "file:///home/u/Documents");
+  g_assert_cmpstr (after_item (items, 2)->key, ==, "file:///tmp");
+  g_assert_cmpint (after_item (items, 2)->kind, ==, DK_AFTER_KEPT_FOLDER);
+  g_assert_cmpint (after_item (items, 3)->kind, ==, DK_AFTER_TRASH);
+  g_array_unref (items);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -334,6 +369,10 @@ main (int argc, char **argv)
                    test_running_items_keep_the_order_their_programs_were_opened_in);
   g_test_add_func ("/model/a-duplicate-kept-key-is-one-item",
                    test_a_kept_key_that_is_a_duplicate_or_a_window_item_is_one_item);
+  g_test_add_func ("/after/the-trash-alone-by-default",
+                   test_the_trash_is_the_only_item_after_the_separator_by_default);
+  g_test_add_func ("/after/kept-folders-in-the-users-order-and-the-trash-last",
+                   test_kept_folders_come_in_the_users_order_and_the_trash_last);
   g_test_add_func ("/click/launches-a-program-that-isnt-running",
                    test_a_click_launches_a_program_that_isnt_running);
   g_test_add_func ("/click/activates-the-most-recent-window",

@@ -1,11 +1,11 @@
 # Issue tracker: Linear
 
-Tickets, specs and maps live in Linear, in the project **camino** of the team **Camino**. Use the Linear MCP tools (`mcp__linear-server__*`; load their schemas with ToolSearch). Name a ticket by its Linear identifier, as `CMN-12`.
+Tickets, specs and maps live in Linear, in the project **camino** of the team **Camino**. Use the `linear` CLI ([schpet/linear-cli](https://github.com/schpet/linear-cli)); it reads its key from `LINEAR_API_KEY`, and `--help` on each command gives its flags. It has no default team: pass `--team CMN` to `issue create` and `issue query`. Name a ticket by its Linear identifier, as `CMN-12`.
 
 ## Layout
 
-- **Epic**: a milestone of the project, named by the epic's slug (`overview`, `wallpaper`, …). `list_milestones` on the project lists them.
-- **Spec and map**: project documents, one spec and one map per epic where the epic has them. `list_documents` on the project lists them.
+- **Epic**: a milestone of the project, named by the epic's slug (`overview`, `wallpaper`, …). `linear milestone list --project camino` lists them.
+- **Spec and map**: project documents, one spec and one map per epic where the epic has them. `linear document list --project camino` lists them.
 - **Ticket**: one issue in the project, in its epic's milestone, with one label of the "Type" group (`implementation`, `grilling`, `research`, `verification`, `prototype`, or `Bug`).
 - **Migrated tickets** keep their old number in the title, as `[217] Dynamic wallpapers from HEIC files`. "Ticket 217" in a commit, a doc or another ticket means the issue whose title starts `[217]`. The numbers 01 to 13 are both `caminito-v0.1`'s and `vscode-global-menu`'s, so take the milestone into account for those. New tickets have no number in the title.
 - **The archive**: `.scratch/` holds the tickets as they were before the move, with the 140 resolved tickets that weren't migrated, and every check script. Read it for history; write new tickets in Linear only.
@@ -23,17 +23,17 @@ Tickets, specs and maps live in Linear, in the project **camino** of the team **
 
 ## Blocking
 
-Only a ticket with the `ready-for-agent` label blocks another. Use Linear's native relation (`blockedBy` / `blocks` on `save_issue`) for such a ticket, and none for any other. When a blocker loses `ready-for-agent`, remove its relations.
+Only a ticket with the `ready-for-agent` label blocks another. Use Linear's native relation (`linear issue relation add <ISSUE> blocked-by <BLOCKER>`) for such a ticket, and none for any other. When a blocker loses `ready-for-agent`, remove its relations (`relation delete`, with the same arguments).
 
 ## Operations
 
-- **Create**: `save_issue` with `team: "Camino"`, `project: "camino"`, `milestone: <epic>`, the Type label, a triage label, and the body as Markdown.
-- **Read**: `get_issue` with the identifier; `list_comments` for its comments.
-- **List**: `list_issues` with `project: "camino"`, filtered by `state`, `label` or `query`.
-- **Comment**: `save_comment`.
-- **Edit part of a body**: `save_issue` with `patch` (`append`, `replace`), so the rest stays as it is.
-- **Change state or labels**: `save_issue` with `state`, `addLabels` or `removeLabels`.
-- **Edit a spec or map**: `save_document` with the document's URL as `id` and a `patch`.
+- **Create**: `linear issue create --team CMN --project camino --milestone <epic> --label <Type> --label <triage> --title <title> --description-file <file> --yes`.
+- **Read**: `linear issue view <ID>`, which shows its comments too.
+- **List**: `linear issue query --team CMN --project camino`, filtered by `--state`, `--label` or `--search`. `issue list` shows only your own unstarted issues.
+- **Comment**: `linear issue comment add <ID> --body-file <file>`.
+- **Edit part of a body**: the CLI has no patch, and `--description-file` replaces the whole body. Take the body from `linear issue view <ID> --json` (`.description`), change that copy, and write all of it back with `linear issue update <ID> --description-file <file>`.
+- **Change state or labels**: `linear issue update <ID>` with `--state`, `--add-label` or `--remove-label`. `--label` replaces every label.
+- **Edit a spec or map**: the same as a body: `linear document view <slug> --raw`, change the copy, and `linear document update <slug> --content-file <file> --yes`. The slug is the last part of the document's URL.
 
 ## When a skill says "publish to the issue tracker"
 
@@ -41,7 +41,7 @@ Create the spec or map as a project document, and the tickets as issues in the e
 
 ## When a skill says "fetch the relevant ticket"
 
-`get_issue` with the identifier the user gives. If the user gives an old number, `list_issues` with `query: "[<NN>]"` in the project.
+`linear issue view <ID>` with the identifier the user gives. If the user gives an old number, `linear issue query --team CMN --project camino --search "[<NN>]"`, and take the issue whose title starts `[<NN>]`: the search also matches bodies.
 
 ## Wayfinding operations
 
@@ -51,5 +51,5 @@ Used by `/wayfinder`.
 - **Child ticket**: an issue in the epic's milestone, with the question in the body and a Type label (`research`, `prototype`, `grilling`, or `implementation` for a task).
 - **Blocking**: native relations, under the rule in "Blocking" above. A ticket is unblocked when every blocker is Done.
 - **Frontier**: the milestone's issues in Todo that have no blocker left open and no assignee; the oldest wins.
-- **Claim**: assign it to `me` and set In Progress, before any other work.
+- **Claim**: `linear issue update <ID> --assignee @me --state "In Progress"`, before any other work.
 - **Resolve**: append the answer to the body under an `## Answer` heading, set Done, then append a context pointer (gist + link) to Decisions-so-far in the map document.
