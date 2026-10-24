@@ -21,6 +21,7 @@ use crate::{
 mod active_workspaces;
 mod dynamic_workspaces;
 mod focus_stealing;
+mod intellihide;
 mod interaction;
 mod keyboard_grab;
 mod move_to;
@@ -36,6 +37,7 @@ pub use active_workspaces::OutputSwitch;
 pub use focus_stealing::{
     ActivationSource, ActivationToken, FocusClaim, FocusNewWindows, TOKEN_LIFETIME, UrgentPlacement,
 };
+pub use intellihide::{IntellihidePanel, PanelEdge};
 pub use interaction::{Interaction, WorkspacePopup};
 pub use keyboard_grab::{GrabKey, GrabStep};
 pub use overview::{Overview, OverviewDrag, OverviewOutput, OverviewScope};
@@ -737,6 +739,9 @@ pub struct Policy<W: PolicyWindow> {
     pointer: Option<Point<f64, Logical>>,
     /// The pointer focus modes' and auto-raise's state (153).
     pointer_focus: pointer::PointerFocus,
+    /// The panels that ask for intellihide, and what the pointer has done for them
+    /// (CMN-224).
+    intellihide: intellihide::Intellihide,
     /// Whether `apply` waits for the end of a change made of several, which applies once.
     holding: bool,
     /// What the Scene read when `take_scene_changed` was last asked (179).
@@ -774,6 +779,7 @@ impl<W: PolicyWindow> Policy<W> {
             chosen: None,
             pointer: None,
             pointer_focus: pointer::PointerFocus::default(),
+            intellihide: intellihide::Intellihide::default(),
             holding: false,
             last_scene_reads: SceneReads::default(),
         };

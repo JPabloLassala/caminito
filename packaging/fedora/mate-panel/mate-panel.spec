@@ -22,7 +22,7 @@
 
 Name:          mate-panel
 Version:       1.29.0~%{commitdate}git%{shortcommit}
-Release:       0.caminito2%{?dist}
+Release:       0.caminito3%{?dist}
 Summary:       MATE Desktop panel and applets
 #libs are LGPL-2.0-or-later
 #applications GPL-2.0-or-later
@@ -53,6 +53,7 @@ Patch112:      0012-wayland-workspace-Show-the-workspaces-of-the-panel-s.patch
 Patch113:      0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch
 Patch114:      0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch
 Patch115:      0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch
+Patch116:      0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch
 
 Requires:      %{name}-libs%{?_isa} = %{version}-%{release}
 #for fish
@@ -206,6 +207,10 @@ install -D -m 0644 %{SOURCE2} %{buildroot}%{_datadir}/mate-panel/layouts/rhel.la
 
 
 %changelog
+* Sat Oct 24 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito3
+- Carry 0016: Intellihide in a panel's Properties, which asks Caminito to hide the panel while a
+  window overlaps it (CMN-224)
+
 * Sat Oct 24 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito2
 - Carry 0015: a panel has a Floating property, which stands it off its edge, with rounded
   corners (CMN-223)

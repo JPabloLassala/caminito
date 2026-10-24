@@ -103,6 +103,7 @@ use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
+use crate::intellihide::IntellihideSlides;
 use crate::lock::{Lock, Locker};
 use crate::maximize_animation::MaximizeAnimations;
 use crate::minimize_animation::MinimizeAnimations;
@@ -120,6 +121,7 @@ use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gamma_control::GammaControlState;
 use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::idle_notify::IdleNotifyState;
+use crate::protocols::intellihide::IntellihideState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
@@ -187,6 +189,8 @@ pub struct Caminito {
     pub popups: PopupManager,
     /// wlr-layer-shell, for the panel, the desktop and the wallpaper (63).
     pub(crate) layer_shell_state: WlrLayerShellState,
+    /// Which layer surfaces ask for intellihide (CMN-224).
+    pub(crate) intellihide_state: IntellihideState,
 
     // The windows as a panel sees them (65).
     pub foreign_toplevel_state: ForeignToplevelState,
@@ -292,6 +296,8 @@ pub struct Caminito {
     pub(crate) maximize_animations: MaximizeAnimations,
     /// The popups that slide out of what they're attached to as they open (ADR 0037).
     pub(crate) popup_slides: PopupSlides,
+    /// How far the panels that ask for intellihide have slid (CMN-224).
+    pub(crate) intellihide_slides: IntellihideSlides,
     /// The grabbed accelerator whose key is held and repeating (99).
     pub(crate) accelerator_repeat: Option<Repeat>,
     /// Where the pointer is on the frames, and what it's doing with them.
@@ -674,6 +680,9 @@ impl State {
         // Before Night Light, which steps in on an output that went from a gamma client.
         self.refresh_gamma_control();
         self.refresh_night_light();
+        // After the views, which move the windows a panel hides for, and before the
+        // pointer's focus, which finds a panel where it is drawn (CMN-224).
+        self.caminito.refresh_intellihide();
         self.update_pointer_focus();
         self.caminito.update_button_states();
         // Before the Frames are drawn in a new state, from which a maximised window's
@@ -743,6 +752,7 @@ impl State {
                         || caminito.open_close_animation_on(&output, now)
                         || caminito.maximize_animation_on(&output, now)
                         || caminito.popup_slide_on(&output, now)
+                        || caminito.intellihide_slide_on(&output, now)
                     {
                         self.caminito.queue_redraw(&output);
                     }
@@ -968,6 +978,7 @@ impl Caminito {
             kde_decoration_state: KdeDecorationState::new::<State>(dh, KdeDefaultMode::Server),
             popups: PopupManager::default(),
             layer_shell_state: WlrLayerShellState::new_with_filter::<State, _>(dh, privileged),
+            intellihide_state: IntellihideState::new::<State, _>(dh, privileged),
 
             foreign_toplevel_state: ForeignToplevelState::new::<State, _>(dh, privileged),
             foreign_toplevel_list_state: ForeignToplevelListState::new_with_filter::<State>(
@@ -1038,6 +1049,7 @@ impl Caminito {
             open_close_animations: OpenCloseAnimations::default(),
             maximize_animations: MaximizeAnimations::default(),
             popup_slides: PopupSlides::default(),
+            intellihide_slides: IntellihideSlides::default(),
             accelerator_repeat: None,
             frame_pointer: FramePointer::default(),
             window_grab: None,

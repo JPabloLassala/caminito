@@ -10,6 +10,7 @@ mod focus;
 mod focus_stealing;
 mod functions;
 mod grid;
+mod intellihide;
 mod interaction;
 mod interactive;
 mod invariants;

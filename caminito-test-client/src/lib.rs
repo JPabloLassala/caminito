@@ -24,6 +24,7 @@ pub mod gamma_control;
 pub mod gtk_shell;
 pub mod idle;
 pub mod image_capture;
+pub mod intellihide;
 pub mod layer_shell;
 pub mod output_management;
 pub mod security_context;
@@ -218,6 +219,13 @@ pub struct State {
     /// The capabilities `gtk_shell1` was sent, oldest first.
     gtk_capabilities: Vec<u32>,
     appmenu_manager: Option<appmenu::raw::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager>,
+    intellihide_manager:
+        Option<intellihide::raw::caminito_intellihide_manager_v1::CaminitoIntellihideManagerV1>,
+    /// The layer surfaces the client asks for intellihide on, with the object that asks.
+    intellihides: Vec<(
+        layer_shell::LayerId,
+        intellihide::raw::caminito_intellihide_v1::CaminitoIntellihideV1,
+    )>,
     /// The capture sessions the client opened, and their frames.
     image_capture: image_capture::ImageCapture,
     gamma_control_manager: Option<ZwlrGammaControlManagerV1>,

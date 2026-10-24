@@ -720,10 +720,26 @@ struct LayerSurfaceDump {
     exclusive_zone: i32,
     /// `none`, `exclusive` or `on_demand`.
     keyboard_interactivity: &'static str,
+    /// What intellihide does to it, if it asks for it (CMN-224).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    intellihide: Option<IntellihideDump>,
+}
+
+/// A panel that asks for intellihide.
+#[derive(Serialize)]
+struct IntellihideDump {
+    /// Whether policy has it hidden, which it is drawn as once its slide is over.
+    hidden: bool,
+    /// Where it is drawn now, moved from `geometry` by its slide.
+    drawn: RectDump,
 }
 
 impl LayerSurfaceDump {
-    fn new(layer: &LayerSurface, geometry: Rectangle<i32, Logical>) -> Self {
+    fn new(
+        layer: &LayerSurface,
+        geometry: Rectangle<i32, Logical>,
+        intellihide: Option<IntellihideDump>,
+    ) -> Self {
         let state = layer.cached_state();
         Self {
             layer: match state.layer {
@@ -744,6 +760,7 @@ impl LayerSurfaceDump {
                 KeyboardInteractivity::Exclusive => "exclusive",
                 KeyboardInteractivity::OnDemand => "on_demand",
             },
+            intellihide,
         }
     }
 }
@@ -884,7 +901,13 @@ impl Caminito {
                 layer_surfaces: self
                     .layer_surfaces(output)
                     .iter()
-                    .map(|(layer, geometry)| LayerSurfaceDump::new(layer, *geometry))
+                    .map(|(layer, geometry)| {
+                        LayerSurfaceDump::new(
+                            layer,
+                            *geometry,
+                            self.intellihide_dump(layer, *geometry),
+                        )
+                    })
                     .collect(),
                 lock_surface: self.lock.surface_on(output).is_some(),
             })
@@ -1413,6 +1436,24 @@ impl Caminito {
                 })
                 .map(|(layer, _)| layer.namespace().to_owned())
                 .collect(),
+        })
+    }
+}
+
+impl Caminito {
+    /// What intellihide does to `layer`, if it asks for it, for the dump.
+    fn intellihide_dump(
+        &self,
+        layer: &LayerSurface,
+        geometry: Rectangle<i32, Logical>,
+    ) -> Option<IntellihideDump> {
+        let id = crate::layer::policy_name(layer)?;
+        let hidden = self.intellihide_slides.is_hidden(id)?;
+        let mut drawn = geometry;
+        drawn.loc += self.layer_slide_offset(layer);
+        Some(IntellihideDump {
+            hidden,
+            drawn: drawn.into(),
         })
     }
 }

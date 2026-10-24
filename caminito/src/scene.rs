@@ -1422,6 +1422,11 @@ fn layer_surfaces_on(
 ) -> Vec<(LayerSurface, Rectangle<i32, Logical>)> {
     let mut surfaces = caminito.layer_surfaces(output);
     surfaces.retain(|(surface, _)| surface.layer() == layer);
+    // A panel that hides is drawn, and found by the pointer, where it has slid to
+    // (CMN-224).
+    for (surface, geometry) in &mut surfaces {
+        geometry.loc += caminito.layer_slide_offset(surface);
+    }
     surfaces.reverse();
     if layer == Layer::Background {
         surfaces.sort_by_key(|(surface, _)| surface.namespace() == WALLPAPER_NAMESPACE);
