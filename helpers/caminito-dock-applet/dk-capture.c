@@ -29,7 +29,7 @@ typedef struct
 {
   struct wl_display                                          *display;
   struct ext_image_copy_capture_manager_v1                   *manager;
-  struct ext_foreign_toplevel_image_capture_source_manager_v1 *sources;
+  struct ext_foreign_toplevel_image_capture_source_manager_v1 *source_manager;
   struct wl_shm                                              *shm;
 } Binding;
 
@@ -80,7 +80,7 @@ on_global (void *data, struct wl_registry *registry, uint32_t name, const char *
                                          &ext_image_copy_capture_manager_v1_interface, 1);
   else if (g_str_equal (interface,
                         ext_foreign_toplevel_image_capture_source_manager_v1_interface.name))
-    binding->sources =
+    binding->source_manager =
       wl_registry_bind (registry, name,
                         &ext_foreign_toplevel_image_capture_source_manager_v1_interface, 1);
   else if (g_str_equal (interface, wl_shm_interface.name))
@@ -120,18 +120,15 @@ binding_for (struct wl_display *display)
       wl_display_roundtrip_queue (display, queue);
       wl_registry_destroy (registry);
       wl_proxy_wrapper_destroy (wrapper);
-      for (guint i = 0; i < 3; i++)
-        {
-          struct wl_proxy *proxy = i == 0   ? (struct wl_proxy *) binding.manager
-                                   : i == 1 ? (struct wl_proxy *) binding.sources
-                                            : (struct wl_proxy *) binding.shm;
-
-          if (proxy != NULL)
-            wl_proxy_set_queue (proxy, NULL);
-        }
+      if (binding.manager != NULL)
+        wl_proxy_set_queue ((struct wl_proxy *) binding.manager, NULL);
+      if (binding.source_manager != NULL)
+        wl_proxy_set_queue ((struct wl_proxy *) binding.source_manager, NULL);
+      if (binding.shm != NULL)
+        wl_proxy_set_queue ((struct wl_proxy *) binding.shm, NULL);
       wl_event_queue_destroy (queue);
     }
-  return binding.manager != NULL && binding.sources != NULL && binding.shm != NULL ? &binding
+  return binding.manager != NULL && binding.source_manager != NULL && binding.shm != NULL ? &binding
                                                                                    : NULL;
 }
 
@@ -197,7 +194,8 @@ make_buffer (DkCapture *capture)
   int fd;
 
   drop_buffer (capture);
-  if (stride <= 0 || length == 0)
+  /* A pool's size is an int32. */
+  if (stride <= 0 || length == 0 || length > G_MAXINT32)
     return FALSE;
   fd = memfd_create ("dk-capture", MFD_CLOEXEC);
   if (fd < 0)
@@ -298,7 +296,7 @@ on_frame_ready (void *data, struct ext_image_copy_capture_frame_v1 *frame G_GNUC
 {
   DkCapture *capture = data;
   cairo_surface_t *surface;
-  gboolean kept;
+  gboolean alive;
 
   g_clear_pointer (&capture->frame, ext_image_copy_capture_frame_v1_destroy);
   surface = copy_frame (capture);
@@ -310,9 +308,9 @@ on_frame_ready (void *data, struct ext_image_copy_capture_frame_v1 *frame G_GNUC
     }
   if (capture->once)
     close_session (capture);
-  kept = deliver (capture, surface, NULL);
+  alive = deliver (capture, surface, NULL);
   cairo_surface_destroy (surface);
-  if (kept && capture->session != NULL)
+  if (alive && capture->session != NULL)
     request_frame (capture);
 }
 
@@ -326,10 +324,12 @@ on_frame_failed (void *data, struct ext_image_copy_capture_frame_v1 *frame G_GNU
   switch (reason)
     {
     case EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_BUFFER_CONSTRAINTS:
-      /* The window changed size as the frame was asked for. The new constraints are here
-         already, or their done event asks for the frame again. */
+      /* The window changed size as the frame was asked for. A compositor sends the new
+         constraints before it fails the frame, so with none the buffer can't be met. */
       if (!same_constraints (&capture->buffer_constraints, &capture->constraints))
         request_frame (capture);
+      else
+        fail (capture, DK_CAPTURE_ERROR_BUFFER, "the window's picture refuses the dock's buffer");
       break;
     case EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_STOPPED:
       fail (capture, DK_CAPTURE_ERROR_STOPPED, "the window's capture session stopped");
@@ -404,8 +404,7 @@ on_done (void *data, struct ext_image_copy_capture_session_v1 *session G_GNUC_UN
       fail (capture, DK_CAPTURE_ERROR_BUFFER, "the window's picture has no shm format cairo reads");
       return;
     }
-  /* The first frame, or one that failed for the constraints before these. A frame being
-     copied has the next asked for once it is in. */
+  /* The first frame. A frame being copied has the next asked for once it is in. */
   if (capture->frame == NULL)
     request_frame (capture);
 }
@@ -450,7 +449,7 @@ dk_capture_start (struct ext_foreign_toplevel_handle_v1 *handle, gboolean once,
   capture->pending.format = -1;
   capture->constraints.format = -1;
   capture->source =
-    ext_foreign_toplevel_image_capture_source_manager_v1_create_source (binding->sources, handle);
+    ext_foreign_toplevel_image_capture_source_manager_v1_create_source (binding->source_manager, handle);
   capture->session =
     ext_image_copy_capture_manager_v1_create_session (binding->manager, capture->source, 0);
   ext_image_copy_capture_session_v1_add_listener (capture->session, &session_listener, capture);

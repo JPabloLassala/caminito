@@ -98,7 +98,12 @@ struct Live {
     open: bool,
     /// The last frame, if any.
     last: Option<Picture>,
+    /// The `DkCaptureError` that ended the session, if one did.
+    error: Option<i32>,
 }
+
+/// `DK_CAPTURE_ERROR_STOPPED`: the compositor stopped the session.
+const CAPTURE_STOPPED: i32 = 1;
 
 /// The probe in a scratch directory with its log, its settings and its desktop entries.
 struct Probe {
@@ -416,6 +421,7 @@ impl Probe {
                 size: (fields[2].parse().unwrap(), fields[3].parse().unwrap()),
                 color: u32::from_str_radix(fields[4], 16).unwrap(),
             }),
+            error: Some(fields[5].parse().unwrap()).filter(|&code| code >= 0),
         }
     }
 
@@ -1980,5 +1986,6 @@ fn a_live_capture_of_a_window_that_closes_ends_with_an_error() {
     d.f.client(window.client()).destroy_window(window.xdg());
     d.f.roundtrip(window.client());
 
-    d.probe.wait_for_live(&mut d.f, |live| !live.open);
+    let ended = d.probe.wait_for_live(&mut d.f, |live| !live.open);
+    assert_eq!(ended.error, Some(CAPTURE_STOPPED));
 }

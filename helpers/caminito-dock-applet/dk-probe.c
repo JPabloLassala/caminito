@@ -35,10 +35,11 @@
  *                                "capture-end"
  *   capture-error MESSAGE        instead, why that window or the one "live" names can't be
  *                                captured, and then "capture-end" or "live-end"
- *   live frames=N open=O w=W h=H color=COLOR
- *                                the live session's frames so far, whether it is open, and its
- *                                last frame's size and centre colour, in answer to "live-status",
- *                                and then "live-end"
+ *   live frames=N open=O w=W h=H color=COLOR error=E
+ *                                the live session's frames so far, whether it is open, its
+ *                                last frame's size and centre colour, and the DkCaptureError
+ *                                that ended it, or -1, in answer to "live-status", and then
+ *                                "live-end"
  *   folder URI gone=G x=X y=Y w=W h=H
  *                                one for each Kept folder (CMN-239), in order, in answer to
  *                                "folders", and then "folders-end"
@@ -47,7 +48,8 @@
  *   error PRIMARY                the error being shown, if any, in answer to "error", and
  *                                then "error-end"
  * stdin:
- *   items | identifiers | capture TITLE | live TITLE | live-status | live-stop | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y |
+ *   items | identifiers | capture TITLE | live TITLE | live-status | live-stop |
+ *   menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y |
  *   launch-timeout MS | trash | popup-trash | drop-files URI... | dialog |
  *   respond accept|cancel | folders | open-folder URI | popup-folder URI | grid | error |
  *   keep-folders POSITION URI... | move-folder URI POSITION | drop-on-folder URI FILE_URI... |
@@ -254,14 +256,18 @@ static struct
   int        width;
   int        height;
   guint32    colour;
+  int        error;
 } live;
 
 static void
-on_live_frame (DkCapture *capture G_GNUC_UNUSED, cairo_surface_t *frame,
-               const GError *error G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+on_live_frame (DkCapture *capture G_GNUC_UNUSED, cairo_surface_t *frame, const GError *error,
+               gpointer data G_GNUC_UNUSED)
 {
   if (frame == NULL)
-    return;
+    {
+      live.error = error->code;
+      return;
+    }
   live.frames++;
   live.width = cairo_image_surface_get_width (frame);
   live.height = cairo_image_surface_get_height (frame);
@@ -271,9 +277,9 @@ on_live_frame (DkCapture *capture G_GNUC_UNUSED, cairo_surface_t *frame,
 static void
 print_live (void)
 {
-  printf ("live frames=%u open=%d w=%d h=%d color=%08x\n", live.frames,
+  printf ("live frames=%u open=%d w=%d h=%d color=%08x error=%d\n", live.frames,
           live.capture != NULL && dk_capture_is_open (live.capture), live.width, live.height,
-          live.colour);
+          live.colour, live.error);
   printf ("live-end\n");
 }
 
@@ -357,6 +363,7 @@ run_command (char *line)
     {
       g_clear_pointer (&live.capture, dk_capture_free);
       memset (&live, 0, sizeof live);
+      live.error = -1;
       live.capture = start_capture (strchr (g_strstrip (line), ' ') + 1, FALSE, on_live_frame);
       printf ("live-end\n");
     }

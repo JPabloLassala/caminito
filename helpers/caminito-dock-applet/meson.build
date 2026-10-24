@@ -183,6 +183,8 @@ capture = static_library(
   'dk-capture',
   'dk-capture.c',
   capture_sources,
+  # The capture source's code names ext_foreign_toplevel_handle_v1's interface, which the
+  # lookup's library has.
   link_with: toplevel,
   dependencies: [glib, gtk, wayland_client],
   pic: true,
