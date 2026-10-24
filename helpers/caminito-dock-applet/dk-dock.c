@@ -1,6 +1,6 @@
 /*
- * The Dock (CMN-219), the Kept folders after its separator (CMN-239), and the Trash that ends
- * its row (CMN-220).
+ * The Dock (CMN-219), the Kept folders after its separator (CMN-239), the Removable drive
+ * items after them (CMN-240), and the Trash that ends its row (CMN-220).
  */
 
 #include <gio/gdesktopappinfo.h>
@@ -8,6 +8,7 @@
 
 #include "dk-activation.h"
 #include "dk-dock.h"
+#include "dk-drive.h"
 #include "dk-feedback.h"
 #include "dk-folder.h"
 #include "dk-item.h"
@@ -30,19 +31,24 @@ struct _DkDock
   /* The Dock items. */
   GtkWidget       *box;
   GtkWidget       *separator;
-  /* The items after the separator: the Kept folders (CMN-239), in the user's order, and then
-     the Trash. */
+  /* The items after the separator: the Kept folders (CMN-239), in the user's order, the
+     Removable drive items (CMN-240), and then the Trash. */
   GtkWidget       *after;
   /* A Kept folder's URI to its DkItemView, whose widget `after` holds, and to the monitor that
      tells when the folder is deleted or its icon changes. */
   GHashTable      *folder_views;
   GHashTable      *folder_monitors;
+  /* The removable drives' mounts, and a drive's key (its root's URI) to its DkItemView, whose
+     widget `after` holds. */
+  DkDrives        *drives;
+  GHashTable      *drive_views;
   /* The folders that are gone are looked for again until they come back. */
   guint            gone_id;
   /* The popup grid of a folder's contents, and the URI of the folder it shows. */
   GtkWidget       *popup;
   char            *popup_uri;
-  /* The work on files dropped on a folder, which a dock that is freed leaves unfinished. */
+  /* The work on files dropped on a folder or a drive, and the ejects, which a dock that is
+     freed no longer hears the end of. */
   GCancellable    *cancellable;
   /* Where a Kept folder would be dropped, as the number of Kept folders before it; -1 when
      none is over. */
@@ -95,6 +101,7 @@ struct _DkDock
 static void schedule_refresh (DkDock *dock);
 static void refresh_after (DkDock *dock);
 static void popup_folder_menu (DkDock *dock, DkItemView *view, const GdkEvent *event);
+static void popup_drive_menu (DkDock *dock, DkItemView *view, const GdkEvent *event);
 static gboolean on_item_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data);
 static gboolean on_item_button_release (GtkWidget *widget, GdkEventButton *event, gpointer data);
 
@@ -757,6 +764,11 @@ dk_dock_popup_menu (DkDock *dock, GtkWidget *widget, const GdkEvent *event)
       popup_folder_menu (dock, view, event);
       return;
     }
+  if (g_hash_table_lookup (dock->drive_views, dk_item_view_get_key (view)) == view)
+    {
+      popup_drive_menu (dock, view, event);
+      return;
+    }
   key = dk_item_view_get_key (view);
   windows = dk_item_view_get_windows (view);
   info = dk_key_is_entry (key) ? entry_info (dock, key) : NULL;
@@ -1202,6 +1214,15 @@ folder_view (DkDock *dock, const char *uri)
   return g_hash_table_lookup (dock->folder_views, uri);
 }
 
+/* Whether the widget is a Kept folder's, not a drive's or the Trash's. */
+static gboolean
+is_folder_widget (DkDock *dock, GtkWidget *widget)
+{
+  DkItemView *view = view_of (widget);
+
+  return folder_view (dock, dk_item_view_get_key (view)) == view;
+}
+
 /* The name a folder that is gone is shown by: the last part of its URI. */
 static char *
 folder_fallback_name (GFile *folder)
@@ -1244,7 +1265,7 @@ dk_dock_get_folders (DkDock *dock)
   g_autoptr (GList) children = gtk_container_get_children (GTK_CONTAINER (dock->after));
 
   for (GList *l = children; l != NULL; l = l->next)
-    if (view_of (l->data) != dock->trash_view)
+    if (is_folder_widget (dock, l->data))
       g_ptr_array_add (uris, g_strdup (dk_item_view_get_key (view_of (l->data))));
   return uris;
 }
@@ -1638,14 +1659,14 @@ dk_dock_move_folder (DkDock *dock, const char *uri, guint position)
 }
 
 /* The number of Kept folders before the point (along the dock, in the box of the items after
-   the separator), and so where a drop goes: never past the Trash. */
+   the separator), and so where a drop goes: never past the last Kept folder. */
 static int
 after_slot_at (DkDock *dock, int x, int y)
 {
   g_autoptr (GList) children = gtk_container_get_children (GTK_CONTAINER (dock->after));
   int slot = 0;
 
-  for (GList *l = children; l != NULL && view_of (l->data) != dock->trash_view; l = l->next, slot++)
+  for (GList *l = children; l != NULL && is_folder_widget (dock, l->data); l = l->next, slot++)
     {
       GtkAllocation a;
 
@@ -1763,6 +1784,211 @@ on_after_drag_data_received (GtkWidget *after, GdkDragContext *context, int x, i
   gtk_drag_finish (context, done, FALSE, time);
 }
 
+/* The Removable drive items (CMN-240). */
+
+static void
+on_drives_changed (gpointer data)
+{
+  schedule_refresh (data);
+}
+
+static gboolean
+on_drive_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data)
+{
+  if (event->button != 3)
+    return GDK_EVENT_PROPAGATE;
+  dk_dock_popup_menu (data, widget, (GdkEvent *) event);
+  return GDK_EVENT_STOP;
+}
+
+static gboolean
+on_drive_button_release (GtkWidget *widget, GdkEventButton *event, gpointer data)
+{
+  /* Released away from the item: a click abandoned. */
+  if (event->button != 1 || event->x < 0 || event->y < 0
+      || event->x >= gtk_widget_get_allocated_width (widget)
+      || event->y >= gtk_widget_get_allocated_height (widget))
+    return GDK_EVENT_PROPAGATE;
+  open_in_caja (data, dk_item_view_get_key (view_of (widget)));
+  return GDK_EVENT_STOP;
+}
+
+static void
+on_drive_menu_open (GtkMenuItem *menu_item, gpointer data)
+{
+  open_in_caja (data, g_object_get_data (G_OBJECT (menu_item), "uri"));
+}
+
+typedef struct
+{
+  DkDock *dock;
+  /* What the error says first: "Can't eject “USB”". */
+  char   *primary;
+} Removal;
+
+static void
+removal_free (Removal *removal)
+{
+  g_free (removal->primary);
+  g_free (removal);
+}
+
+static void
+on_drive_removed (GError *error, gpointer data)
+{
+  Removal *removal = data;
+
+  if (error != NULL)
+    {
+      g_warning ("%s: %s", removal->primary, error->message);
+      report_error (removal->dock, removal->primary, error->message);
+    }
+}
+
+/* Eject, or Unmount, as the menu said. The item goes when the monitor tells the mount has. */
+static void
+on_drive_menu_remove (GtkMenuItem *menu_item, gpointer data)
+{
+  DkDock *dock = data;
+  GMount *mount = dk_drives_lookup (dock->drives,
+                                    g_object_get_data (G_OBJECT (menu_item), "uri"));
+  g_autofree char *name = NULL;
+  Removal *removal;
+
+  /* Gone while the menu was open. */
+  if (mount == NULL)
+    return;
+  name = g_mount_get_name (mount);
+  removal = g_new0 (Removal, 1);
+  removal->dock = dock;
+  removal->primary = g_strdup_printf (g_mount_can_eject (mount) ? "Can't eject “%s”"
+                                                                : "Can't unmount “%s”", name);
+  dk_drive_remove (mount, dock->cancellable, on_drive_removed, removal,
+                   (GDestroyNotify) removal_free);
+}
+
+static void
+popup_drive_menu (DkDock *dock, DkItemView *view, const GdkEvent *event)
+{
+  const char *uri = dk_item_view_get_key (view);
+  GMount *mount = dk_drives_lookup (dock->drives, uri);
+  GtkWidget *menu = menu_begin (dock);
+  GtkWidget *open = menu_item (menu, "Open", G_CALLBACK (on_drive_menu_open), dock);
+  GtkWidget *remove = menu_item (menu, mount != NULL && g_mount_can_eject (mount) ? "Eject"
+                                                                                  : "Unmount",
+                                 G_CALLBACK (on_drive_menu_remove), dock);
+
+  g_object_set_data_full (G_OBJECT (open), "uri", g_strdup (uri), g_free);
+  g_object_set_data_full (G_OBJECT (remove), "uri", g_strdup (uri), g_free);
+  menu_show (dock, menu, dk_item_view_get_widget (view), event);
+}
+
+/* Files dropped on it are copied there. */
+
+static void
+on_drive_put_failed (const char *uri, GError *error, gpointer data)
+{
+  g_autoptr (GFile) file = g_file_new_for_uri (uri);
+  g_autofree char *name = g_file_get_basename (file);
+  g_autofree char *primary = g_strdup_printf ("Can't copy “%s” to the disk", name);
+
+  g_warning ("can't copy %s to a removable drive: %s", uri, error->message);
+  report_error (data, primary, error->message);
+}
+
+static void
+drop_on_drive (DkDock *dock, const char *key, const char *const *uris)
+{
+  GMount *mount = dk_drives_lookup (dock->drives, key);
+
+  if (mount != NULL)
+    dk_drive_put (mount, uris, dock->cancellable, on_drive_put_failed, NULL, dock, NULL);
+}
+
+/* The files are copied here, so the source has nothing to delete, whichever action it
+   offers: a copy where it offers one. */
+static gboolean
+on_drive_drag_motion (GtkWidget *widget, GdkDragContext *context, int x, int y, guint time,
+                      gpointer data)
+{
+  GdkDragAction offered = gdk_drag_context_get_actions (context);
+  GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
+  GdkDragAction action = target == GDK_NONE ? 0
+                         : offered & GDK_ACTION_COPY ? GDK_ACTION_COPY
+                         : offered & GDK_ACTION_MOVE ? GDK_ACTION_MOVE : 0;
+
+  /* At its start a folder is kept before it: the items after the separator take it from here. */
+  if (!over_item (data, widget, x, y, FALSE))
+    return FALSE;
+  gdk_drag_status (context, action, time);
+  return action != 0;
+}
+
+static gboolean
+on_drive_drag_drop (GtkWidget *widget, GdkDragContext *context, int x, int y, guint time,
+                    gpointer data)
+{
+  GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
+
+  if (target == GDK_NONE || !over_item (data, widget, x, y, FALSE))
+    return FALSE;
+  gtk_drag_get_data (widget, context, target, time);
+  return TRUE;
+}
+
+static void
+on_drive_drag_data_received (GtkWidget *widget, GdkDragContext *context, int x G_GNUC_UNUSED,
+                             int y G_GNUC_UNUSED, GtkSelectionData *selection,
+                             guint info G_GNUC_UNUSED, guint time, gpointer data)
+{
+  g_auto (GStrv) uris = gtk_selection_data_get_uris (selection);
+
+  if (uris != NULL)
+    drop_on_drive (data, dk_item_view_get_key (view_of (widget)), (const char *const *) uris);
+  gtk_drag_finish (context, uris != NULL, FALSE, time);
+}
+
+static DkItemView *
+drive_view_new (DkDock *dock, const char *key)
+{
+  static const GtkTargetEntry targets[] = {
+    { (char *) "text/uri-list", 0, 0 },
+  };
+  DkItemView *view = dk_item_view_new ();
+  GtkWidget *widget = dk_item_view_get_widget (view);
+
+  g_hash_table_insert (dock->drive_views, g_strdup (key), view);
+  gtk_box_pack_start (GTK_BOX (dock->after), widget, FALSE, FALSE, 0);
+  gtk_widget_show (widget);
+  g_signal_connect (widget, "button-press-event", G_CALLBACK (on_drive_button_press), dock);
+  g_signal_connect (widget, "button-release-event", G_CALLBACK (on_drive_button_release), dock);
+  gtk_drag_dest_set (widget, 0, targets, G_N_ELEMENTS (targets),
+                     GDK_ACTION_MOVE | GDK_ACTION_COPY);
+  g_signal_connect (widget, "drag-motion", G_CALLBACK (on_drive_drag_motion), dock);
+  g_signal_connect (widget, "drag-drop", G_CALLBACK (on_drive_drag_drop), dock);
+  g_signal_connect (widget, "drag-data-received", G_CALLBACK (on_drive_drag_data_received),
+                    dock);
+  return view;
+}
+
+/* The drive's item shows its mount's icon and name, at the slot among the items after the
+   separator. It can't be kept or dragged. */
+static void
+drive_view_update (DkDock *dock, const char *key, int slot)
+{
+  GMount *mount = dk_drives_lookup (dock->drives, key);
+  DkItemView *view = g_hash_table_lookup (dock->drive_views, key);
+  g_autoptr (GIcon) icon = g_mount_get_icon (mount);
+  g_autofree char *name = g_mount_get_name (mount);
+  g_autoptr (GPtrArray) none = g_ptr_array_new ();
+
+  if (view == NULL)
+    view = drive_view_new (dock, key);
+  dk_item_view_set_geometry (view, dock->thickness, dock->edge);
+  dk_item_view_set (view, key, icon, name, none, FALSE, FALSE);
+  gtk_box_reorder_child (GTK_BOX (dock->after), dk_item_view_get_widget (view), slot);
+}
+
 /* Makes the widgets of the Kept folders match the store: the icon, the name, and whether the
    folder is there. */
 
@@ -1809,8 +2035,10 @@ folder_view_new (DkDock *dock, const char *uri)
 static void
 refresh_after (DkDock *dock)
 {
-  g_autoptr (GArray) items = dk_after_build (dk_store_get_folders (dock->store));
+  g_autoptr (GArray) items = dk_after_build (dk_store_get_folders (dock->store),
+                                             dk_drives_get_keys (dock->drives));
   g_autoptr (GHashTable) wanted = g_hash_table_new (g_str_hash, g_str_equal);
+  g_autoptr (GHashTable) wanted_drives = g_hash_table_new (g_str_hash, g_str_equal);
   g_autoptr (GPtrArray) none = g_ptr_array_new ();
   GHashTableIter iter;
   gpointer key, value;
@@ -1826,6 +2054,12 @@ refresh_after (DkDock *dock)
       DkItemView *view;
       gboolean gone;
 
+      if (item->kind == DK_AFTER_REMOVABLE_DRIVE)
+        {
+          drive_view_update (dock, item->key, slot++);
+          g_hash_table_add (wanted_drives, item->key);
+          continue;
+        }
       if (item->kind != DK_AFTER_KEPT_FOLDER)
         continue;
       view = folder_view (dock, item->key);
@@ -1872,6 +2106,13 @@ refresh_after (DkDock *dock)
         if (g_strcmp0 (dock->popup_uri, key) == 0)
           popup_close (dock);
         g_hash_table_remove (dock->folder_monitors, key);
+        gtk_widget_destroy (dk_item_view_get_widget (value));
+        g_hash_table_iter_remove (&iter);
+      }
+  g_hash_table_iter_init (&iter, dock->drive_views);
+  while (g_hash_table_iter_next (&iter, &key, &value))
+    if (!g_hash_table_contains (wanted_drives, key))
+      {
         gtk_widget_destroy (dk_item_view_get_widget (value));
         g_hash_table_iter_remove (&iter);
       }
@@ -2160,6 +2401,13 @@ dk_dock_new (DkStore *store)
   dock->folder_views = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   dock->folder_monitors = g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
                                                  g_object_unref);
+  dock->drive_views = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  {
+    g_autoptr (GVolumeMonitor) monitor = g_volume_monitor_get ();
+
+    dock->drives = dk_drives_new (monitor);
+    dk_drives_set_changed (dock->drives, on_drives_changed, dock);
+  }
   dock->windows = g_hash_table_new_full (NULL, NULL, NULL, window_info_free);
   dock->views = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   dock->infos = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_object_unref);
@@ -2289,6 +2537,8 @@ dk_dock_free (DkDock *dock)
   g_free (dock->popup_uri);
   g_hash_table_unref (dock->folder_monitors);
   g_hash_table_unref (dock->folder_views);
+  dk_drives_free (dock->drives);
+  g_hash_table_unref (dock->drive_views);
   dk_trash_free (dock->trash);
   g_clear_object (&dock->screen);
   g_object_unref (dock->monitor);

@@ -46,4 +46,11 @@ void       dk_folder_put          (GFile *folder, const char *const *uris,
                                    DkFolderPutFailed failed, DkFolderPutDone done,
                                    gpointer data, GDestroyNotify destroy);
 
+/* Copies the files the URIs name in the folder, as dk_folder_put does, but never moves one, on
+   whichever file system it is: a drop on a Removable drive item (CMN-240). */
+void       dk_folder_copy         (GFile *folder, const char *const *uris,
+                                   GCancellable *cancellable,
+                                   DkFolderPutFailed failed, DkFolderPutDone done,
+                                   gpointer data, GDestroyNotify destroy);
+
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (DkFolderEntry, dk_folder_entry_free)

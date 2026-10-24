@@ -133,6 +133,16 @@ test(
   executable('test-folder', 'test-folder.c', link_with: folder, dependencies: [glib, gio]),
 )
 
+# The Removable drive items (CMN-240): which mounts have one, the list as disks come and go,
+# ejecting or unmounting, and copying files to one, through GIO's GVolumeMonitor.
+drive = static_library('dk-drive', 'dk-drive.c', link_with: folder, dependencies: [glib, gio],
+                       pic: true)
+
+test(
+  'drive',
+  executable('test-drive', 'test-drive.c', link_with: [drive, folder], dependencies: [glib, gio]),
+)
+
 # The Trash: whether it is full, putting files in it and emptying it, through GIO.
 trash = static_library('dk-trash', 'dk-trash.c', dependencies: [glib, gio], pic: true)
 
@@ -146,7 +156,7 @@ dock = static_library(
   'dk-dock',
   'dk-dock.c',
   'dk-item.c',
-  link_with: [activation, feedback, launcher, store, model, resolve, trash, folder],
+  link_with: [activation, feedback, launcher, store, model, resolve, trash, folder, drive],
   dependencies: [glib, gio_unix, gtk, xfw, m],
   pic: true,
 )
@@ -160,7 +170,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder, drive],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,
@@ -170,7 +180,7 @@ applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-dock-applet',
   'dock-applet.c',
-  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder, drive],
   dependencies: [glib, gio_unix, gtk, xfw, wayland_client, m, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,

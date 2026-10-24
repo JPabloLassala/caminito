@@ -169,6 +169,8 @@ typedef struct
 {
   char **uris;
   GFile *folder;
+  /* Copied whatever their file system, never moved. */
+  gboolean copy;
   /* Of Failure, in the order the files were. */
   GPtrArray *failures;
 } Put;
@@ -209,7 +211,7 @@ put_one (Put *put, const char *uri)
   /* Dropped back where it came from. */
   if (parent != NULL && g_file_equal (parent, put->folder))
     return;
-  if (same_filesystem (source, put->folder))
+  if (!put->copy && same_filesystem (source, put->folder))
     done = g_file_move (source, target, G_FILE_COPY_NOFOLLOW_SYMLINKS | G_FILE_COPY_NO_FALLBACK_FOR_MOVE,
                         NULL, NULL, NULL, &error);
   else
@@ -266,10 +268,9 @@ on_put (GObject *source G_GNUC_UNUSED, GAsyncResult *result, gpointer data)
   g_free (told);
 }
 
-void
-dk_folder_put (GFile *folder, const char *const *uris, GCancellable *cancellable,
-               DkFolderPutFailed failed, DkFolderPutDone done, gpointer data,
-               GDestroyNotify destroy)
+static void
+put_files (GFile *folder, const char *const *uris, gboolean copy, GCancellable *cancellable,
+           DkFolderPutFailed failed, DkFolderPutDone done, gpointer data, GDestroyNotify destroy)
 {
   Put *put = g_new0 (Put, 1);
   Told *told = g_new0 (Told, 1);
@@ -277,6 +278,7 @@ dk_folder_put (GFile *folder, const char *const *uris, GCancellable *cancellable
 
   put->uris = uris != NULL ? g_strdupv ((char **) uris) : g_new0 (char *, 1);
   put->folder = g_object_ref (folder);
+  put->copy = copy;
   put->failures = g_ptr_array_new_with_free_func ((GDestroyNotify) failure_free);
   told->failed = failed;
   told->done = done;
@@ -284,4 +286,20 @@ dk_folder_put (GFile *folder, const char *const *uris, GCancellable *cancellable
   told->destroy = destroy;
   g_task_set_task_data (task, put, (GDestroyNotify) put_free);
   g_task_run_in_thread (task, put_in_thread);
+}
+
+void
+dk_folder_put (GFile *folder, const char *const *uris, GCancellable *cancellable,
+               DkFolderPutFailed failed, DkFolderPutDone done, gpointer data,
+               GDestroyNotify destroy)
+{
+  put_files (folder, uris, FALSE, cancellable, failed, done, data, destroy);
+}
+
+void
+dk_folder_copy (GFile *folder, const char *const *uris, GCancellable *cancellable,
+                DkFolderPutFailed failed, DkFolderPutDone done, gpointer data,
+                GDestroyNotify destroy)
+{
+  put_files (folder, uris, TRUE, cancellable, failed, done, data, destroy);
 }
