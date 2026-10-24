@@ -24,10 +24,12 @@ if [ "${1-}" = --deps ]; then
   # desktop-file-validate, for the System Shortcuts entry (183). python-dbusmock: the BlueZ
   # caminito-bluetooth's tests run against (255), and NetworkManager the Network applet's and
   # caminito-network's do. libnm: the Network applet's build (CMN-193, ADR 0041).
+  # libxfce4windowing: the Dock applet's build (CMN-219), which reads the windows through it.
+  # gtk-layer-shell: the Dock's probe is a layer surface as the panel is, so its tests need it.
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm desktop-file-utils python-dbusmock libnm
+    nodejs npm desktop-file-utils python-dbusmock libnm libxfce4windowing gtk-layer-shell
   rustup toolchain install
 fi
 
@@ -138,6 +140,13 @@ CAMINITO_WALLPAPERD=${CARGO_TARGET_DIR:-$PWD/target}/debug/caminito-wallpaperd \
 step "the Sound popup's wheel against caminito"
 CAMINITO_SOUND_WHEEL_PROBE=$PWD/target/meson/helpers/caminito-sound-applet/sd-wheel-probe \
   cargo test -p caminito tests::sound_popup_wheel -- --ignored
+
+# The Dock applet's items and clicks end to end (CMN-219): its probe, the dock as a layer
+# surface on GDK's Wayland backend, against the headless fixture, with the real
+# libxfce4windowing reading the windows.
+step "the Dock applet against caminito"
+CAMINITO_DOCK_PROBE=$PWD/target/meson/helpers/caminito-dock-applet/dk-probe \
+  cargo test -p caminito tests::dock_applet -- --ignored
 
 # The global menu extension (116): type-checked, tested on a private dbus-daemon of each
 # test's own, and bundled.

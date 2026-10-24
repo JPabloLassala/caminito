@@ -1,0 +1,28 @@
+== the items and clicks against a headless Caminito
+test tests::dock_applet::a_click_activates_the_window_of_a_running_program ... ok
+test tests::dock_applet::a_click_launches_a_kept_program_that_is_not_running ... ok
+test tests::dock_applet::a_click_on_a_program_with_several_windows_activates_the_most_recent_one ... ok
+test tests::dock_applet::a_click_on_a_window_on_another_workspace_switches_to_it ... ok
+test tests::dock_applet::a_click_on_the_focused_programs_one_window_minimises_it_and_the_next_restores_it ... ok
+test tests::dock_applet::a_minimised_window_animates_into_its_dock_item ... ok
+test tests::dock_applet::a_vertical_dock_is_a_column_with_the_indicator_on_the_panels_edge ... ok
+test tests::dock_applet::a_window_with_no_desktop_entry_has_an_item_of_its_own ... ok
+test tests::dock_applet::an_xwayland_window_joins_the_item_its_startup_wm_class_names ... WARNING: Glycin running without sandbox. Bubblewrap (bwrap) doesn't work in the environment.
+test tests::dock_applet::keeping_removing_and_reordering_survive_the_panels_restart ... ok
+test tests::dock_applet::middle_click_launches_a_new_instance_of_a_running_program ... ok
+test tests::dock_applet::removing_a_kept_program_with_no_window_takes_its_item_away ... ok
+test tests::dock_applet::the_context_menu_has_the_windows_the_actions_keep_and_close_all ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2411 filtered out; finished in 2.17s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+== the applet in mate-panel on X11
+the panel lives with the Dock applet
+the instance's keys:
+[/]
+applet-iid='CaminitoDockAppletFactory::CaminitoDockApplet'
+object-type='applet'
+position=0
+toplevel-id='panel'
+
+[prefs]
+kept=['caja.desktop']

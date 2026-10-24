@@ -63,6 +63,8 @@ BuildRequires:  pam-devel
 BuildRequires:  lm_sensors-devel
 # NetworkManager's client library, which the Network applet reads it through (ADR 0041).
 BuildRequires:  NetworkManager-libnm-devel
+BuildRequires:  libxfce4windowing-devel
+BuildRequires:  gtk-layer-shell-devel
 # The tests: a private session bus, pixman for the headless backend, libwayland-client for the
 # fixture's clients and the Xwayland the X11 tier spawns, and python-dbusmock, the BlueZ
 # caminito-bluetooth's tests run against (255) and the NetworkManager caminito-network's and
@@ -181,6 +183,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_bindir}/caminito-gtk-palette
 %{_bindir}/caminito-locker
 %{_libdir}/mate-panel/libcaminito-bluetooth-applet.so
+%{_libdir}/mate-panel/libcaminito-dock-applet.so
 %{_libdir}/mate-panel/libcaminito-network-applet.so
 %{_libdir}/mate-panel/libcaminito-power-applet.so
 %{_libdir}/mate-panel/libcaminito-thermal-applet.so
@@ -189,12 +192,14 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
 %{_datadir}/glib-2.0/schemas/90_caminito-power-applet.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml
+%{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-dock.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-thermal.gschema.xml
 %{_datadir}/icons/hicolor/scalable/apps/caminito.svg
 %{_datadir}/icons/hicolor/scalable/status/caminito-thermometer-symbolic.svg
 %{_datadir}/mate-control-center/keybindings/50-caminito-*.xml
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoBluetoothApplet.mate-panel-applet
+%{_datadir}/mate-panel/applets/org.mate.panel.CaminitoDockApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoNetworkApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoPowerApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoThermalApplet.mate-panel-applet

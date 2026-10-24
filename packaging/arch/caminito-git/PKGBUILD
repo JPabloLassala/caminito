@@ -80,13 +80,15 @@ license=(GPL-2.0-or-later GPL-3.0-only)
 # gtk4 and speaks to NetworkManager and the Secret Service over D-Bus, so it needs nothing more.
 # The applet works under X11 MATE too, where caminito-network exits and nm-applet stays the
 # agent.
+# The Dock applet (CMN-219) reads the windows through libxfce4windowing, as mate-panel's window
+# list does on Caminito (ADR 0013), and works under X11 MATE too.
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking
   mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
   mate-notification-daemon mate-polkit hicolor-icon-theme bluez lm_sensors upower libnm
-  nm-connection-editor)
+  nm-connection-editor libxfce4windowing)
 makedepends=(cargo git meson)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module
