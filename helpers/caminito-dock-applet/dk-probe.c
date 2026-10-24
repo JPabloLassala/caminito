@@ -21,9 +21,16 @@
  *                                window, and then "items-end"
  *   menu LABEL                   one for each item of the open menu, in answer to "menu",
  *                                and then "menu-end"
+ *   menu-disabled LABEL          one more for each of those that can't be chosen
+ *   trash full=F x=X y=Y w=W h=H the Trash (CMN-220), in answer to "trash", and then
+ *                                "trash-end"
+ *   dialog PRIMARY               the confirmation being shown, if any, in answer to
+ *                                "dialog", and then "dialog-end"
  * stdin:
- *   items | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | launch-timeout MS | quit
- * "choose" activates the open menu's item with that label.
+ *   items | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | launch-timeout MS |
+ *   trash | popup-trash | drop-files URI... | dialog | respond accept|cancel | quit
+ * "choose" activates the open menu's item with that label. "drop-files" is a drop of files
+ * on the Trash.
  */
 
 #include <stdio.h>
@@ -96,8 +103,41 @@ print_menu (void)
           printf ("menu ---\n");
         else
           printf ("menu %s\n", gtk_menu_item_get_label (GTK_MENU_ITEM (l->data)));
+      for (GList *l = children; l != NULL; l = l->next)
+        if (!GTK_IS_SEPARATOR_MENU_ITEM (l->data) && !gtk_widget_get_sensitive (l->data))
+          printf ("menu-disabled %s\n", gtk_menu_item_get_label (GTK_MENU_ITEM (l->data)));
     }
   printf ("menu-end\n");
+}
+
+static void
+print_trash (void)
+{
+  GtkWidget *trash = dk_dock_get_trash (dock);
+  GtkAllocation a;
+  int x, y;
+
+  gtk_container_check_resize (GTK_CONTAINER (window));
+  gtk_widget_get_allocation (trash, &a);
+  gtk_widget_translate_coordinates (trash, window, 0, 0, &x, &y);
+  printf ("trash full=%d x=%d y=%d w=%d h=%d\n", dk_dock_trash_is_full (dock), x, y, a.width,
+          a.height);
+  printf ("trash-end\n");
+}
+
+static void
+print_dialog (void)
+{
+  GtkWidget *dialog = dk_dock_get_dialog (dock);
+
+  if (dialog != NULL)
+    {
+      g_autofree char *primary = NULL;
+
+      g_object_get (dialog, "text", &primary, NULL);
+      printf ("dialog %s\n", primary);
+    }
+  printf ("dialog-end\n");
 }
 
 static void
@@ -118,6 +158,26 @@ run_command (char *line)
     }
   else if (g_strcmp0 (words[0], "menu") == 0)
     print_menu ();
+  else if (g_strcmp0 (words[0], "trash") == 0)
+    {
+      print_trash ();
+    }
+  else if (g_strcmp0 (words[0], "popup-trash") == 0)
+    dk_dock_popup_menu (dock, dk_dock_get_trash (dock), NULL);
+  else if (g_strcmp0 (words[0], "dialog") == 0)
+    print_dialog ();
+  else if (g_strcmp0 (words[0], "respond") == 0 && words[1] != NULL
+           && dk_dock_get_dialog (dock) != NULL)
+    gtk_dialog_response (GTK_DIALOG (dk_dock_get_dialog (dock)),
+                         g_strcmp0 (words[1], "accept") == 0 ? GTK_RESPONSE_ACCEPT
+                                                             : GTK_RESPONSE_CANCEL);
+  else if (g_strcmp0 (words[0], "drop-files") == 0 && words[1] != NULL)
+    {
+      /* The URIs are the rest of the line. */
+      g_auto (GStrv) uris = g_strsplit (strchr (g_strstrip (line), ' ') + 1, " ", -1);
+
+      dk_dock_drop_uris (dock, (const char *const *) uris);
+    }
   else if (g_strcmp0 (words[0], "popup") == 0 && words[1] != NULL)
     {
       GtkWidget *item = dk_dock_get_item (dock, words[1]);
