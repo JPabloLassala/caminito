@@ -18,6 +18,7 @@
 pub mod appmenu;
 pub mod data_control;
 pub mod dbus;
+pub mod dock_activation;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gamma_control;
@@ -229,6 +230,8 @@ pub struct State {
     )>,
     /// The manager that names a window by its ext identifier, and its answers.
     toplevel_identifiers: toplevel_identifier::ToplevelIdentifiers,
+    /// The manager the Dock applet is told through, and its objects.
+    dock_activations: dock_activation::DockActivations,
     /// The capture sessions the client opened, and their frames.
     image_capture: image_capture::ImageCapture,
     gamma_control_manager: Option<ZwlrGammaControlManagerV1>,

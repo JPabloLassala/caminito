@@ -361,7 +361,7 @@ Caminito's mate-panel applet for the dock: a row of Dock items and the Trash, in
 _Avoid_: dock program, Plank, mate-dock-applet (the X11 applet it isn't), window list (mate-panel's own applet, with one button per window), task manager
 
 **Dock item**:
-One icon of the Dock applet: a program, known by its desktop entry, with the windows of every Application whose app id resolves to it, so two processes of one program share one item. A window with no desktop entry has an item of its own, by its app id.
+One icon of the Dock applet: a program, known by its desktop entry, with the windows of every Application whose app id resolves to it, so two processes of one program share one item. A window with no desktop entry has an item of its own, by its app id. Super+1 to Super+9 activate the first nine, as a click does: Caminito binds the keys and tells the applet (ADR 0050).
 _Avoid_: task, launcher (a mate-panel launcher is a different panel object), Application (one process's windows only), group
 
 **Kept Dock item**:

@@ -116,6 +116,7 @@ use crate::output::saved::{self, SavedLayouts};
 use crate::overview::Overview;
 use crate::popup_slide::PopupSlides;
 use crate::protocols::appmenu::AppmenuState;
+use crate::protocols::dock_activation::DockActivationState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gamma_control::GammaControlState;
@@ -194,6 +195,8 @@ pub struct Caminito {
     pub(crate) intellihide_state: IntellihideState,
     /// The global that names a window by its ext identifier to the Dock applet (CMN-243).
     pub(crate) _toplevel_identifier_state: ToplevelIdentifierState,
+    /// The Dock applets Caminito tells which Dock item to activate (CMN-245).
+    pub(crate) dock_activation_state: DockActivationState,
 
     // The windows as a panel sees them (65).
     pub foreign_toplevel_state: ForeignToplevelState,
@@ -983,6 +986,7 @@ impl Caminito {
             layer_shell_state: WlrLayerShellState::new_with_filter::<State, _>(dh, privileged),
             intellihide_state: IntellihideState::new::<State, _>(dh, privileged),
             _toplevel_identifier_state: ToplevelIdentifierState::new::<State, _>(dh, privileged),
+            dock_activation_state: DockActivationState::new::<State, _>(dh, privileged),
 
             foreign_toplevel_state: ForeignToplevelState::new::<State, _>(dh, privileged),
             foreign_toplevel_list_state: ForeignToplevelListState::new_with_filter::<State>(

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Caminito's private protocol for the Dock applet's keys (CMN-245, ADR 0050): the
+  compositor, which has the keyboard, tells the Dock applet which Dock item to activate.
+  Nothing here is standard, and no other compositor has it.
+-->
+<protocol name="caminito_dock_activation_v1">
+  <copyright>
+    Copyright © 2026 Juan Pablo Lassala
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+    THE SOFTWARE.
+  </copyright>
+
+  <interface name="caminito_dock_activation_manager_v1" version="1">
+    <description summary="be told which Dock item to activate">
+      On Wayland a panel applet can't grab keys, so the compositor binds the keys
+      that activate a Dock item, and tells a Dock applet which item the user asked
+      for. Each Dock applet makes one object for the surface of the panel it is in.
+      The compositor tells one of them, chosen by the output that surface is on.
+
+      This is a private protocol of Caminito's. A client that finds no global does
+      nothing, and the compositor binds no keys for it.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroys the manager. Objects it made are not affected.
+      </description>
+    </request>
+
+    <request name="get_dock_activation">
+      <description summary="be told which Dock item to activate">
+        Makes the object a Dock applet is told through. The surface is the panel's,
+        the layer surface the applet is drawn in; the compositor reads its output
+        each time it chooses an applet, so a panel that moves goes with it. One
+        client can make several objects, one for each Dock applet it has.
+      </description>
+      <arg name="id" type="new_id" interface="caminito_dock_activation_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="caminito_dock_activation_v1" version="1">
+    <description summary="a Dock applet the compositor tells which item to activate">
+      While the object exists, the compositor can send it activate.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop being told">
+        The applet is told nothing more. It is not chosen in place of another.
+      </description>
+    </request>
+
+    <event name="activate">
+      <description summary="activate a Dock item">
+        The user asked for the Dock item at index, counted from 0 in the order the
+        applet shows its Dock items. What the activation does is the applet's. An
+        index past its last Dock item does nothing.
+      </description>
+      <arg name="index" type="uint" summary="the Dock item, counted from 0"/>
+    </event>
+  </interface>
+</protocol>
