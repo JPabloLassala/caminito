@@ -1,6 +1,6 @@
 # Issue tracker: Linear
 
-Tickets, specs and maps live in Linear, in the project **camino** of the team **Camino**. Use the Linear MCP tools (`mcp__linear-server__*`; load their schemas with ToolSearch). Name a ticket by its Linear identifier, as `CMN-12`.
+Tickets, specs and maps live in Linear, in the project **camino** of the team **Camino**. Use the Linear MCP tools (`mcp__linear-server__*`; load their schemas with ToolSearch). Where ToolSearch finds none, as on the Raspberry Pi, use the `linear` CLI instead (see "Without the MCP tools"). Name a ticket by its Linear identifier, as `CMN-12`.
 
 ## Layout
 
@@ -34,6 +34,12 @@ Only a ticket with the `ready-for-agent` label blocks another. Use Linear's nati
 - **Edit part of a body**: `save_issue` with `patch` (`append`, `replace`), so the rest stays as it is.
 - **Change state or labels**: `save_issue` with `state`, `addLabels` or `removeLabels`.
 - **Edit a spec or map**: `save_document` with the document's URL as `id` and a `patch`.
+
+## Without the MCP tools
+
+The `linear` CLI ([schpet/linear-cli](https://github.com/schpet/linear-cli)) does each operation above: `linear issue`, `linear document`, `linear milestone`, `linear label`, and `linear api` for a raw GraphQL request. `--help` on each gives its flags. It reads its key from `LINEAR_API_KEY`.
+
+It has no `patch`: `issue update --description-file` and `document update --content-file` replace the whole text. To edit part of a body, `view` it, change the copy, and write all of it back.
 
 ## When a skill says "publish to the issue tracker"
 
