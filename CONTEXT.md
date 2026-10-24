@@ -374,7 +374,11 @@ _Avoid_: stack (that's the stacking order of windows), folder stack (macOS's nam
 
 **Minimised window item**:
 An icon of the Dock applet for one minimised window, after the separator, showing a picture of the window as it was minimised, with its program's icon on the corner. It is there while the window is minimised, on any workspace and output, and a click unminimises it. Its program's Dock item still has the window, but shows it only in its menu.
-_Avoid_: minimised item alone (a Dock item can have minimised windows), iconified window (X11's word), thumbnail (that's the hover preview)
+_Avoid_: minimised item alone (a Dock item can have minimised windows), iconified window (X11's word), thumbnail (a window's picture in the Dock preview, the Overview and the window switcher)
+
+**Dock preview**:
+The popup that opens over a Dock item with windows when the pointer rests on it: a live thumbnail of each of the item's windows, on every workspace and output, with its title. A click on a thumbnail activates its window, and a middle-click or its close button closes it. An item with no window shows its name tooltip instead.
+_Avoid_: window preview, tooltip (that's the name an item with no window shows), peek, thumbnail alone (that's one window's picture in it)
 
 **Removable drive item**:
 An icon of the Dock applet for a mounted disk the user can eject or unmount, such as a USB disk, an SD card, a phone or a disc, after the separator. It is there while the disk is mounted. Internal disks and network shares have none.
