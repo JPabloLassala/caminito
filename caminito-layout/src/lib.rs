@@ -1,4 +1,4 @@
-//! Keeping a layout contiguous (82, ADR 0014): docking an output against the others, and
+//! Keeping a layout contiguous (82, ADR 0014): attaching an output to the others, and
 //! healing a layout after a change that broke it.
 //!
 //! Caminito and caminito-displays both use it, so it names no protocol and no toolkit, and has
@@ -117,7 +117,7 @@ pub fn is_contiguous(outputs: &[Rect]) -> bool {
 /// output it would lie against (top with top, bottom with bottom, left with left, right
 /// with right), it takes that place. Outputs it wouldn't touch don't pull, and centres
 /// don't. A `snap` of 0 turns that off.
-pub fn dock(output: Rect, others: &[Rect], snap: i32) -> Rect {
+pub fn attach(output: Rect, others: &[Rect], snap: i32) -> Rect {
     // Above and below are left and right of the layout mirrored in its diagonal.
     let mirrored: Vec<Rect> = others.iter().map(|other| other.transposed()).collect();
     let beside = places_beside(output, others, snap);
@@ -203,7 +203,7 @@ pub fn heal(outputs: &[Rect], anchor: usize) -> Vec<Rect> {
     let mut healed = outputs.to_vec();
     while !rest.is_empty() {
         // An output that already lies against the placed ones stays. Else the nearest to
-        // them is docked, which leaves the fewest to move after it.
+        // them is attached, which leaves the fewest to move after it.
         let fits = |&i: &usize| {
             placed.iter().any(|p| p.joins(&healed[i]))
                 && !placed.iter().any(|p| p.overlaps(&healed[i]))
@@ -214,7 +214,7 @@ pub fn heal(outputs: &[Rect], anchor: usize) -> Vec<Rect> {
             None => {
                 let nearest = (0..rest.len()).min_by_key(|&k| gap(&rest[k]));
                 let nearest = nearest.expect("there is an output left to place");
-                healed[rest[nearest]] = dock(healed[rest[nearest]], &placed, 0);
+                healed[rest[nearest]] = attach(healed[rest[nearest]], &placed, 0);
                 nearest
             }
         };

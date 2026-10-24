@@ -1,10 +1,10 @@
-//! Docking, snapping, healing and resizing, by example and by property. The checks of the
+//! Attaching, snapping, healing and resizing, by example and by property. The checks of the
 //! properties are written apart from `is_contiguous`, pair by pair, so they don't share
 //! its mistakes.
 
 use proptest::prelude::*;
 
-use crate::{MIN_SHARED_EDGE, Rect, at_origin, at_the_right, dock, heal, is_contiguous, resized};
+use crate::{MIN_SHARED_EDGE, Rect, at_origin, at_the_right, attach, heal, is_contiguous, resized};
 
 const fn rect(x: i32, y: i32, w: i32, h: i32) -> Rect {
     Rect { x, y, w, h }
@@ -109,17 +109,17 @@ proptest! {
     }
 
     #[test]
-    fn a_docked_output_leaves_the_layout_contiguous(
+    fn a_attached_output_leaves_the_layout_contiguous(
         (others, anchor) in any_layout(),
         output in any_rect(),
         snap in prop_oneof![Just(0), 1..300],
     ) {
         let mut layout = heal(&others, anchor);
 
-        let docked = dock(output, &layout, snap);
+        let attached = attach(output, &layout, snap);
 
-        prop_assert_eq!((docked.w, docked.h), (output.w, output.h));
-        layout.push(docked);
+        prop_assert_eq!((attached.w, attached.h), (output.w, output.h));
+        layout.push(attached);
         prop_assert_eq!(overlapping(&layout), []);
         prop_assert_eq!(cut_off(&layout), []);
         prop_assert!(is_contiguous(&layout));
@@ -131,46 +131,46 @@ proptest! {
         output in any_rect(),
     ) {
         let layout = heal(&others, anchor);
-        let docked = dock(output, &layout, 0);
+        let attached = attach(output, &layout, 0);
 
-        prop_assert_eq!(dock(docked, &layout, 0), docked);
+        prop_assert_eq!(attach(attached, &layout, 0), attached);
     }
 }
 
 #[test]
-fn an_output_docks_to_the_nearest_place_on_the_outline() {
+fn an_output_attaches_to_the_nearest_place_on_the_outline() {
     // Wanted with a gap to A's right, and then partly on top of it.
     assert_eq!(
-        dock(rect(2500, 200, 1280, 720), &[A], 0),
+        attach(rect(2500, 200, 1280, 720), &[A], 0),
         rect(1920, 200, 1280, 720)
     );
     assert_eq!(
-        dock(rect(1800, 200, 1280, 720), &[A], 0),
+        attach(rect(1800, 200, 1280, 720), &[A], 0),
         rect(1920, 200, 1280, 720)
     );
     assert_eq!(
-        dock(rect(300, -900, 1280, 720), &[A], 0),
+        attach(rect(300, -900, 1280, 720), &[A], 0),
         rect(300, -720, 1280, 720)
     );
     assert_eq!(
-        dock(rect(-1500, 200, 1280, 720), &[A], 0),
+        attach(rect(-1500, 200, 1280, 720), &[A], 0),
         rect(-1280, 200, 1280, 720)
     );
     assert_eq!(
-        dock(rect(300, 1300, 1280, 720), &[A], 0),
+        attach(rect(300, 1300, 1280, 720), &[A], 0),
         rect(300, 1080, 1280, 720)
     );
 }
 
 #[test]
-fn a_docked_output_shares_at_least_100_pixels_of_edge() {
+fn a_attached_output_shares_at_least_100_pixels_of_edge() {
     // Wanted well right of A, below its corner and above it.
     assert_eq!(
-        dock(rect(3000, 1500, 1280, 720), &[A], 0),
+        attach(rect(3000, 1500, 1280, 720), &[A], 0),
         rect(1920, 980, 1280, 720)
     );
     assert_eq!(
-        dock(rect(3000, -1500, 1280, 720), &[A], 0),
+        attach(rect(3000, -1500, 1280, 720), &[A], 0),
         rect(1920, -620, 1280, 720)
     );
 }
@@ -178,51 +178,51 @@ fn a_docked_output_shares_at_least_100_pixels_of_edge() {
 #[test]
 fn an_output_shorter_than_100_pixels_shares_its_whole_edge() {
     assert_eq!(
-        dock(rect(3000, 1500, 800, 60), &[A], 0),
+        attach(rect(3000, 1500, 800, 60), &[A], 0),
         rect(1920, 1020, 800, 60)
     );
     assert_eq!(
-        dock(rect(3000, -1500, 800, 60), &[A], 0),
+        attach(rect(3000, -1500, 800, 60), &[A], 0),
         rect(1920, 0, 800, 60)
     );
 }
 
 #[test]
-fn an_output_doesnt_dock_on_top_of_a_third() {
+fn an_output_doesnt_attach_on_top_of_a_third() {
     let right = rect(1920, 0, 1920, 1080);
 
     // Below A it would reach under `right` too, which is fine. Beside A it would cover it.
-    let docked = dock(rect(1900, 300, 1280, 720), &[A, right], 0);
+    let attached = attach(rect(1900, 300, 1280, 720), &[A, right], 0);
 
-    assert_eq!(docked, rect(1900, 1080, 1280, 720));
+    assert_eq!(attached, rect(1900, 1080, 1280, 720));
 }
 
 #[test]
 fn the_first_output_stays_where_it_is_wanted() {
     assert_eq!(
-        dock(rect(40, -7, 1280, 720), &[], 12),
+        attach(rect(40, -7, 1280, 720), &[], 12),
         rect(40, -7, 1280, 720)
     );
 }
 
 #[test]
-fn a_docked_output_snaps_to_the_matching_edge_of_the_output_it_lies_against() {
+fn a_attached_output_snaps_to_the_matching_edge_of_the_output_it_lies_against() {
     // Top with top, and bottom with bottom: 1080 - 720 = 360.
     assert_eq!(
-        dock(rect(1925, 9, 1280, 720), &[A], 12),
+        attach(rect(1925, 9, 1280, 720), &[A], 12),
         rect(1920, 0, 1280, 720)
     );
     assert_eq!(
-        dock(rect(1925, 351, 1280, 720), &[A], 12),
+        attach(rect(1925, 351, 1280, 720), &[A], 12),
         rect(1920, 360, 1280, 720)
     );
     // Left with left, and right with right: 1920 - 1280 = 640.
     assert_eq!(
-        dock(rect(-11, 1090, 1280, 720), &[A], 12),
+        attach(rect(-11, 1090, 1280, 720), &[A], 12),
         rect(0, 1080, 1280, 720)
     );
     assert_eq!(
-        dock(rect(652, 1090, 1280, 720), &[A], 12),
+        attach(rect(652, 1090, 1280, 720), &[A], 12),
         rect(640, 1080, 1280, 720)
     );
 }
@@ -230,11 +230,11 @@ fn a_docked_output_snaps_to_the_matching_edge_of_the_output_it_lies_against() {
 #[test]
 fn an_edge_further_than_the_snap_distance_doesnt_pull() {
     assert_eq!(
-        dock(rect(1925, 13, 1280, 720), &[A], 12),
+        attach(rect(1925, 13, 1280, 720), &[A], 12),
         rect(1920, 13, 1280, 720)
     );
     assert_eq!(
-        dock(rect(1925, 9, 1280, 720), &[A], 0),
+        attach(rect(1925, 9, 1280, 720), &[A], 0),
         rect(1920, 9, 1280, 720)
     );
 }
@@ -243,52 +243,52 @@ fn an_edge_further_than_the_snap_distance_doesnt_pull() {
 fn the_nearer_of_two_edges_within_the_snap_distance_wins() {
     // 20 pixels shorter than A, so both its top and its bottom can line up near y = 10.
     assert_eq!(
-        dock(rect(1925, 4, 1280, 1060), &[A], 30),
+        attach(rect(1925, 4, 1280, 1060), &[A], 30),
         rect(1920, 0, 1280, 1060)
     );
     assert_eq!(
-        dock(rect(1925, 16, 1280, 1060), &[A], 30),
+        attach(rect(1925, 16, 1280, 1060), &[A], 30),
         rect(1920, 20, 1280, 1060)
     );
 }
 
 #[test]
 fn an_output_snaps_to_one_it_lies_against_on_its_far_side() {
-    // The docked output fills the 1280 pixels between A and `far`.
+    // The attached output fills the 1280 pixels between A and `far`.
     let far = rect(3200, 300, 1920, 1080);
 
-    let docked = dock(rect(1925, 308, 1280, 720), &[A, far], 12);
+    let attached = attach(rect(1925, 308, 1280, 720), &[A, far], 12);
 
-    assert_eq!(docked, rect(1920, 300, 1280, 720));
+    assert_eq!(attached, rect(1920, 300, 1280, 720));
 }
 
 #[test]
 fn an_output_it_doesnt_touch_doesnt_pull() {
-    // `left` has its top at 300 too, but A is between it and the docked output.
+    // `left` has its top at 300 too, but A is between it and the attached output.
     let left = rect(-1920, 300, 1920, 1080);
 
-    let docked = dock(rect(1925, 308, 1280, 720), &[A, left], 12);
+    let attached = attach(rect(1925, 308, 1280, 720), &[A, left], 12);
 
-    assert_eq!(docked, rect(1920, 308, 1280, 720));
+    assert_eq!(attached, rect(1920, 308, 1280, 720));
 }
 
 #[test]
 fn centres_dont_snap() {
     // Centred against A it would be at y = 180.
     assert_eq!(
-        dock(rect(1925, 183, 1280, 720), &[A], 12),
+        attach(rect(1925, 183, 1280, 720), &[A], 12),
         rect(1920, 183, 1280, 720)
     );
 }
 
 #[test]
 fn a_snap_never_puts_an_output_on_top_of_another() {
-    // `low`'s top would pull the docked output's top to 1000, where it would cover `low`.
+    // `low`'s top would pull the attached output's top to 1000, where it would cover `low`.
     let low = rect(1920, 1000, 1920, 1080);
 
-    let docked = dock(rect(1925, 270, 1280, 720), &[A, low], 12);
+    let attached = attach(rect(1925, 270, 1280, 720), &[A, low], 12);
 
-    assert_eq!(docked, rect(1920, 270, 1280, 720));
+    assert_eq!(attached, rect(1920, 270, 1280, 720));
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn healing_joins_outputs_that_only_touch_at_a_corner_or_along_too_little() {
 
 #[test]
 fn healing_brings_a_chain_of_outputs_along() {
-    // Three in a row after the first of four is gone from x = 0: the nearest is docked
+    // Three in a row after the first of four is gone from x = 0: the nearest is attached
     // first, and the next follows it.
     let row = [
         rect(-1920, 0, 1920, 1080),

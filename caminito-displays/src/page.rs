@@ -7,7 +7,7 @@
 //! Ported from the page of the caminito-displays prototype
 //! (`.scratch/caminito-displays-prototype/index.html` at 8a4981d).
 
-use caminito_layout::{Rect, at_origin, at_the_right, dock, heal, resized};
+use caminito_layout::{Rect, at_origin, at_the_right, attach, heal, resized};
 
 #[cfg(test)]
 mod tests;
@@ -685,9 +685,9 @@ impl Page {
             y: drag.origin.y.saturating_add(dy),
             ..drag.origin
         };
-        let docked = dock(wanted, &others, snap);
+        let attached = attach(wanted, &others, snap);
         self.place(&indices, &others);
-        self.place(&[drag.index], &[docked]);
+        self.place(&[drag.index], &[attached]);
     }
 
     /// Puts down the display being dragged, where it is.
