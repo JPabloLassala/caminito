@@ -27,6 +27,7 @@ struct _DkItemView
   gboolean         hover;
   GtkPositionType  edge;
   DkFeedbackState  feedback;
+  DkLauncherEntry  launcher;
   guint            tick_id;
   /* The icon at the size and scale it was last drawn at, until one of them or the theme
      changes. */
@@ -232,6 +233,91 @@ draw_highlight (cairo_t *cr, GtkStyleContext *context, int width, int height)
   cairo_stroke (cr);
 }
 
+static void
+rounded_rect (cairo_t *cr, double x, double y, double w, double h)
+{
+  double r = MIN (w, h) / 2;
+
+  cairo_new_sub_path (cr);
+  cairo_arc (cr, x + r, y + r, r, G_PI, 1.5 * G_PI);
+  cairo_arc (cr, x + w - r, y + r, r, 1.5 * G_PI, 2 * G_PI);
+  cairo_arc (cr, x + w - r, y + h - r, r, 0, 0.5 * G_PI);
+  cairo_arc (cr, x + r, y + h - r, r, 0.5 * G_PI, G_PI);
+  cairo_close_path (cr);
+}
+
+/* The program's count (CMN-227): a pill on the icon's top-right corner, in the highlight
+   colour with white text, and "99+" above 99. */
+static void
+draw_badge (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, int height)
+{
+  g_autofree char *text = view->launcher.count_visible
+                            ? dk_launcher_badge_text (view->launcher.count) : NULL;
+  g_autoptr (PangoLayout) layout = NULL;
+  PangoFontDescription *font;
+  GdkRGBA color;
+  double size = MIN (width, height);
+  double pill_height, pill_width, pad;
+  int text_width, text_height;
+
+  if (text == NULL)
+    return;
+  layout = gtk_widget_create_pango_layout (view->widget, text);
+  font = pango_font_description_new ();
+  pango_font_description_set_absolute_size (font, MAX (8.0, size * 0.27) * PANGO_SCALE);
+  pango_font_description_set_weight (font, PANGO_WEIGHT_BOLD);
+  pango_layout_set_font_description (layout, font);
+  pango_font_description_free (font);
+  pango_layout_get_pixel_size (layout, &text_width, &text_height);
+  pad = text_height * 0.3;
+  pill_height = text_height + pad;
+  /* A circle for one digit, a pill for more. */
+  pill_width = MAX (pill_height, text_width + 2 * pad);
+  highlight_color (context, &color);
+  rounded_rect (cr, width - pill_width, 0, pill_width, pill_height);
+  gdk_cairo_set_source_rgba (cr, &color);
+  cairo_fill (cr);
+  cairo_set_source_rgb (cr, 1, 1, 1);
+  cairo_move_to (cr, width - pill_width + (pill_width - text_width) / 2.0,
+                 (pill_height - text_height) / 2.0);
+  pango_cairo_show_layout (cr, layout);
+}
+
+/* The program's progress (CMN-227): a thin bar across the side of the icon away from the
+   panel's edge, where the indicator isn't, filling from the start of the row or column. */
+static void
+draw_progress (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, int height)
+{
+  gboolean horizontal = view->edge == GTK_POS_BOTTOM || view->edge == GTK_POS_TOP;
+  double along = horizontal ? width : height;
+  double across = horizontal ? height : width;
+  double thickness = MAX (3.0, MIN (width, height) / 12.0);
+  double margin = along / 8.0;
+  double length = along - 2 * margin;
+  /* Against the side opposite the edge, a little in. */
+  double inset = 1.0;
+  double offset = (view->edge == GTK_POS_BOTTOM || view->edge == GTK_POS_RIGHT)
+                    ? inset : across - thickness - inset;
+  double fill = length * view->launcher.progress;
+  GdkRGBA color;
+
+  if (!view->launcher.progress_visible)
+    return;
+  cairo_set_source_rgba (cr, 0, 0, 0, 0.55);
+  rounded_rect (cr, horizontal ? margin : offset, horizontal ? offset : margin,
+                horizontal ? length : thickness, horizontal ? thickness : length);
+  cairo_fill (cr);
+  if (fill < thickness / 2)
+    return;
+  highlight_color (context, &color);
+  gdk_cairo_set_source_rgba (cr, &color);
+  /* The fill is at least as long as it is thick, so that its ends stay round. */
+  fill = MAX (fill, thickness);
+  rounded_rect (cr, horizontal ? margin : offset, horizontal ? offset : margin,
+                horizontal ? fill : thickness, horizontal ? thickness : fill);
+  cairo_fill (cr);
+}
+
 /* Where the icon is and how it looks at now (CMN-221): a pulse breathes its opacity and size
    about the item's middle; a bounce is smaller, and jumps from the panel's edge and back
    BOUNCES times. */
@@ -341,6 +427,8 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
     }
   cairo_restore (cr);
   draw_indicator (view, cr, context, width, height);
+  draw_progress (view, cr, context, width, height);
+  draw_badge (view, cr, context, width, height);
   return FALSE;
 }
 
@@ -475,6 +563,13 @@ DkFeedbackState
 dk_item_view_get_feedback (DkItemView *view)
 {
   return view->feedback;
+}
+
+void
+dk_item_view_set_launcher (DkItemView *view, const DkLauncherEntry *entry)
+{
+  view->launcher = *entry;
+  gtk_widget_queue_draw (view->widget);
 }
 
 void

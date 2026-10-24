@@ -3767,6 +3767,40 @@ They are the developer's to run.
   XDG_ACTIVATION_TOKEN` on the launched program, and Caminito's `DumpState` for each window's
   `urgent`.
 
+### The Dock applet's badges and progress bars in a real Session
+
+- **Milestone:** `dock-applet`, the developer's to run (CMN-227).
+- **Steps:** in a terminal of the Session, with `emit` for `.scratch/checks/CMN-227/hold-emit.py`,
+  which sends the signal as `gdbus emit` does and then stays on the bus until Ctrl+C. (A
+  `gdbus emit --session --object-path /test --signal com.canonical.Unity.LauncherEntry.Update`
+  with the same two arguments leaves the bus as soon as it has sent, and the Dock then
+  drops its state at once, as it does for any program that exits.)
+  1. With the Dock applet on a panel and Caja running, run `emit
+     'application://org.mate.Caja.desktop' "{'count': <int64 5>, 'count-visible': <true>}"`.
+     Leave it running.
+  2. In another terminal, `emit` the same with `count` 150, and then with
+     `'count-visible': <false>`.
+  3. `emit` `"{'progress': <0.4>, 'progress-visible': <true>}"`, with the panel on the bottom
+     edge, and again with it on the top, left and right edges. Then `progress` 0.9, and
+     `'progress-visible': <false>`.
+  4. `emit` `"{'urgent': <true>}"`, focus Caja's window, and `emit` `"{'urgent': <false>}"`.
+  5. With a badge and a bar showing, end the `emit` that sent them with Ctrl+C.
+  6. Close Caja and, with its item not kept, `emit` a count for `org.mate.Caja.desktop`, and
+     then open Caja. Then `emit` a count for `application://nothing.desktop`.
+  7. With a badge showing from an `emit` that is still running, close Caja's last window.
+- **Expected:** in step 1 Caja's item has a round badge with a white "5" on its top-right
+  corner, in the highlight colour. In step 2 it reads "99+", and then the badge goes away. In
+  step 3 a thin bar, 40 % full, runs across the side of the icon away from the panel's edge on
+  each of the four edges, never over the indicator line, and goes away with `progress-visible`
+  false. In step 4 the item gets the highlighted box and bounces a few times; focusing Caja's
+  window leaves the box, and `urgent` false takes it away. In step 5 the badge and bar are gone
+  as soon as the program ends. In step 6 the first signal makes no item, and when Caja opens
+  its item shows the badge; the last signal makes no item. In step 7 the badge goes with the
+  item's last window (CMN-227).
+- **Debug tool:** `dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"` for what
+  programs send and from which unique name, and `dbus-monitor --session
+  "member='NameOwnerChanged'"` for a sender leaving.
+
 ### A floating panel stands off its edge
 
 - **Milestone:** `dock-applet`, the developer's to run (CMN-223).

@@ -418,6 +418,147 @@ test_the_highlight_ends_with_the_window (void)
   desk_free (desk);
 }
 
+/* The Launcher entry's urgent (CMN-227) is a second source of the same attention. */
+static void
+test_a_launcher_entry_that_is_urgent_bounces_and_keeps_a_highlight (void)
+{
+  const char *kept[] = { "mate-terminal.desktop", NULL };
+  Desk *desk = desk_new ();
+  DkFeedbackState state;
+
+  update (desk, kept, 0);
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, kept, 4 * SECOND);
+
+  state = dk_feedback_get (desk->feedback, "mate-terminal.desktop", 4 * SECOND);
+  g_assert_true (state.bouncing);
+  g_assert_cmpint (state.bounce_start, ==, 4 * SECOND);
+  g_assert_true (state.highlighted);
+  update (desk, kept, 4 * SECOND + DK_BOUNCE_LENGTH);
+  state = dk_feedback_get (desk->feedback, "mate-terminal.desktop", 4 * SECOND + DK_BOUNCE_LENGTH);
+  g_assert_false (state.bouncing);
+  g_assert_true (state.highlighted);
+  desk_free (desk);
+}
+
+static void
+test_a_launcher_entry_that_is_no_longer_urgent_ends_its_attention (void)
+{
+  const char *kept[] = { "mate-terminal.desktop", NULL };
+  Desk *desk = desk_new ();
+
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, kept, 0);
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", FALSE);
+  update (desk, kept, SECOND);
+
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", SECOND).highlighted);
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", SECOND).bouncing);
+  desk_free (desk);
+}
+
+static void
+test_a_launcher_entry_that_is_no_longer_urgent_leaves_an_urgent_windows_attention (void)
+{
+  const char *none[] = { NULL };
+  Desk *desk = desk_new ();
+  DkWindow *window = open_window (desk, "mate-terminal");
+
+  window->urgent = TRUE;
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, none, 0);
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", FALSE);
+  update (desk, none, SECOND);
+
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", SECOND).highlighted);
+  desk_free (desk);
+}
+
+static void
+test_focusing_the_window_leaves_the_attention_a_launcher_entry_gave (void)
+{
+  const char *none[] = { NULL };
+  Desk *desk = desk_new ();
+  DkWindow *window = open_window (desk, "mate-terminal");
+
+  update (desk, none, 0);
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, none, SECOND);
+  focus (desk, window);
+  update (desk, none, 2 * SECOND);
+
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 2 * SECOND).highlighted);
+  desk_free (desk);
+}
+
+static void
+test_a_window_that_begins_to_demand_attention_bounces_an_item_the_launcher_entry_made_urgent (void)
+{
+  const char *none[] = { NULL };
+  Desk *desk = desk_new ();
+  DkWindow *window = open_window (desk, "mate-terminal");
+
+  update (desk, none, 0);
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, none, SECOND);
+  window->urgent = TRUE;
+  update (desk, none, 5 * SECOND);
+
+  /* A window that begins to demand attention bounces the icon, as it does anyway. */
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 5 * SECOND).bouncing);
+  desk_free (desk);
+}
+
+static void
+test_urgent_again_from_the_launcher_entry_does_not_bounce_again (void)
+{
+  const char *kept[] = { "mate-terminal.desktop", NULL };
+  Desk *desk = desk_new ();
+
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, kept, 0);
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, kept, 5 * SECOND);
+
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 5 * SECOND).bouncing);
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 5 * SECOND).highlighted);
+  desk_free (desk);
+}
+
+static void
+test_a_launcher_entry_urgent_before_its_item_exists_shows_when_the_item_appears (void)
+{
+  const char *none[] = { NULL };
+  Desk *desk = desk_new ();
+
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, none, 0);
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 0).highlighted);
+
+  open_window (desk, "mate-terminal");
+  update (desk, none, 3 * SECOND);
+
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 3 * SECOND).highlighted);
+  g_assert_true (dk_feedback_get (desk->feedback, "mate-terminal.desktop", 3 * SECOND).bouncing);
+  desk_free (desk);
+}
+
+static void
+test_the_highlight_a_launcher_entry_gave_ends_with_its_item (void)
+{
+  const char *none[] = { NULL };
+  Desk *desk = desk_new ();
+
+  open_window (desk, "mate-terminal");
+  dk_feedback_set_launcher_urgent (desk->feedback, "mate-terminal.desktop", TRUE);
+  update (desk, none, 0);
+  g_array_set_size (desk->windows, 0);
+  update (desk, none, SECOND);
+
+  g_assert_false (dk_feedback_get (desk->feedback, "mate-terminal.desktop", SECOND).highlighted);
+  desk_free (desk);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -454,5 +595,21 @@ main (int argc, char **argv)
                    test_a_focused_window_does_not_count_as_demanding);
   g_test_add_func ("/attention/highlight-ends-with-the-window",
                    test_the_highlight_ends_with_the_window);
+  g_test_add_func ("/launcher/urgent-bounces-and-keeps-a-highlight",
+                   test_a_launcher_entry_that_is_urgent_bounces_and_keeps_a_highlight);
+  g_test_add_func ("/launcher/not-urgent-ends-its-attention",
+                   test_a_launcher_entry_that_is_no_longer_urgent_ends_its_attention);
+  g_test_add_func ("/launcher/not-urgent-leaves-an-urgent-windows-attention",
+                   test_a_launcher_entry_that_is_no_longer_urgent_leaves_an_urgent_windows_attention);
+  g_test_add_func ("/launcher/focus-leaves-its-attention",
+                   test_focusing_the_window_leaves_the_attention_a_launcher_entry_gave);
+  g_test_add_func ("/launcher/a-window-demanding-bounces-too",
+                   test_a_window_that_begins_to_demand_attention_bounces_an_item_the_launcher_entry_made_urgent);
+  g_test_add_func ("/launcher/urgent-again-does-not-bounce-again",
+                   test_urgent_again_from_the_launcher_entry_does_not_bounce_again);
+  g_test_add_func ("/launcher/urgent-before-its-item-exists",
+                   test_a_launcher_entry_urgent_before_its_item_exists_shows_when_the_item_appears);
+  g_test_add_func ("/launcher/highlight-ends-with-the-item",
+                   test_the_highlight_a_launcher_entry_gave_ends_with_its_item);
   return g_test_run ();
 }
