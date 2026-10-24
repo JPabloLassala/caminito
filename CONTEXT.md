@@ -368,6 +368,10 @@ _Avoid_: task, launcher (a mate-panel launcher is a different panel object), App
 A Dock item the user has chosen to keep in the dock, which stays when the program has no window, until they remove it. The menu item is _Keep in Dock_.
 _Avoid_: pinned (pinning is the Sound applet's and the Thermal applet's), favourite, launcher
 
+**Launcher entry**:
+What a program tells the Dock applet about its Dock item through Unity's `com.canonical.Unity.LauncherEntry` D-Bus signal: a count, shown as a badge on the icon's corner, a progress, shown as a bar across the icon, and whether it is urgent. It lasts until the program clears it, leaves the bus, or has no window left.
+_Avoid_: notification count (the notification daemon's), quicklist (the API's menu, which the Dock applet doesn't take)
+
 **Intellihide**:
 A panel's hiding off its edge whenever a window on its output's active workspace overlaps it, and coming back when none does or when the pointer rests at that edge. A panel with intellihide reserves no space. Caminito decides when it hides and slides it, not the panel.
 _Avoid_: autohide (mate-panel's own, which hides whenever the pointer leaves), dodge windows (Ubuntu Dock's), smart hide

@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-The Dock applet sits in a panel of its own, and that panel should get out of the way when a window overlaps it and come back when none does. This is Intellihide. mate-panel's own autohide is different: it hides whenever the pointer leaves, its Wayland version is unreleased 1.29 work, and the panel can't know when a window overlaps it, because foreign-toplevel carries no geometry.
+The Dock applet sits in a panel of its own, and that panel should get out of the way when a window overlaps it and come back when none does. This is Intellihide. mate-panel's own autohide is different: it hides whenever the pointer leaves, its Wayland version is unreleased 1.29 work (master's `58ac6c1`, which the Patched mate-panel is built from, so it carries it; CMN-228 checks it), and the panel can't know when a window overlaps it, because foreign-toplevel carries no geometry.
 
 ## Decision
 
