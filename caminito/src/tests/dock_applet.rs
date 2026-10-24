@@ -1,4 +1,5 @@
-//! The Dock applet's items and clicks end to end (CMN-219): `dk-probe`, the dock in a toplevel
+//! The Dock applet's items and clicks end to end (CMN-219), and its launch and attention
+//! feedback (CMN-221): `dk-probe`, the dock in a toplevel
 //! of its own, runs on GDK's Wayland backend against Caminito, reads the windows through
 //! libxfce4windowing as mate-panel's window list does (ADR 0013), and is clicked with the
 //! pointer the way a user would. Desktop entries in a directory of the test's own say what a
@@ -18,11 +19,13 @@
 //! directory, the scenarios also leave a picture of the output there, as a PPM.
 
 use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::time::Duration;
 
+use caminito_policy::FocusNewWindows;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
@@ -30,6 +33,8 @@ use super::fixture::{
     WindowSpec,
 };
 use crate::minimize_animation::LENGTH;
+use crate::settings::Value;
+use crate::settings::translate::MARCO_GENERAL;
 use crate::state::SEAT;
 
 /// The output the dock and the windows are on.
@@ -57,6 +62,12 @@ struct Item {
     windows: usize,
     active: bool,
     kept: bool,
+    /// The icon pulses: the dock launched the program and no window of it has mapped (CMN-221).
+    pulsing: bool,
+    /// The icon bounces, and `highlighted` is kept after the last bounce.
+    bouncing: bool,
+    /// A window of the item demands attention and hasn't had the focus since.
+    highlighted: bool,
     /// The item's rectangle in the probe's window.
     rect: Rectangle<i32, Logical>,
     /// The title of the item's most recent window.
@@ -98,10 +109,20 @@ impl Probe {
         );
         let applications = dir.path().join("data/applications");
         std::fs::create_dir_all(&applications).unwrap();
+        // What a launch runs: a line in the entry's file, with the activation token the
+        // launch carried, as a program would read it from its environment (CMN-221).
+        let script = dir.path().join("log-launch");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\necho \"$1 xdg=${XDG_ACTIVATION_TOKEN} dsi=${DESKTOP_STARTUP_ID}\" >> \"$2\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         for (id, name, class, action) in ENTRIES {
             let run = |what: &str| {
                 format!(
-                    "sh -c \"echo {what} >> {}\"",
+                    "{} {what} {}",
+                    script.display(),
                     dir.path().join(format!("launched-{id}")).display()
                 )
             };
@@ -283,12 +304,16 @@ impl Probe {
                 let mut fields = words.map(field);
                 let mut next = || fields.next().unwrap();
                 let (windows, active, kept) = (next(), next(), next());
+                let (pulsing, bouncing, highlighted) = (next(), next(), next());
                 let (x, y, w, h) = (next(), next(), next(), next());
                 Item {
                     key,
                     windows: windows as usize,
                     active: active != 0,
                     kept: kept != 0,
+                    pulsing: pulsing != 0,
+                    bouncing: bouncing != 0,
+                    highlighted: highlighted != 0,
                     rect: Rectangle::new((x, y).into(), (w, h).into()),
                     title: title.to_owned(),
                 }
@@ -387,6 +412,15 @@ impl Probe {
     fn launches(&self, id: &str) -> usize {
         std::fs::read_to_string(self.dir.path().join(format!("launched-{id}")))
             .map_or(0, |launched| launched.lines().count())
+    }
+
+    /// The lines the entry's command has written, `run xdg=TOKEN dsi=ID` for each launch.
+    fn launch_lines(&self, id: &str) -> Vec<String> {
+        std::fs::read_to_string(self.dir.path().join(format!("launched-{id}")))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     /// The probe's surface, along its edge of the screen as a panel is.
@@ -612,6 +646,109 @@ impl Desk {
             |f| f.state.caminito.policy.focus(SEAT) == Some(pid),
             || format!("{pid:?} never had the focus: {}", probe.log()),
         );
+    }
+
+    /// Maps a window of a client of the process `pid`, which policy tells a client's windows by.
+    fn open_process(
+        &mut self,
+        pid: u32,
+        app_id: &'static str,
+        title: &'static str,
+    ) -> ClientWindow {
+        let client = self.f.connect_as_process(pid);
+        self.open_as(client, app_id, title)
+    }
+
+    /// Maps a window of a client that has the pointer and keyboard, as a toolkit has them, so
+    /// that it can ask for an activation token with the input it has had.
+    fn open_with_input(&mut self, app_id: &'static str, title: &'static str) -> ClientWindow {
+        let client = self.f.connect(Kind::Xdg);
+        self.f.client(client).bind_input();
+        self.f.roundtrip(client);
+        self.open_as(client, app_id, title)
+    }
+
+    /// From now on `focus-new-windows` is `mode`: under strict a window that isn't focused is
+    /// refused the focus by an activation, and demands attention; under smart a window of
+    /// another client maps with the focus only with a recent token (165, 166).
+    fn focus_new_windows(&mut self, mode: &str, expected: FocusNewWindows) {
+        self.f
+            .set_setting(MARCO_GENERAL, "focus-new-windows", Value::Str(mode.into()));
+        self.f
+            .dispatch_until(|f| f.state.caminito.settings.policy.focus_new_windows == expected);
+    }
+
+    fn strict(&mut self) {
+        self.focus_new_windows("strict", FocusNewWindows::Strict);
+    }
+
+    /// Maps a window of `id`, as a launched program does: with the activation token, if it has
+    /// one, used before the window has content.
+    fn map_launched(
+        &mut self,
+        id: ClientId,
+        app_id: &'static str,
+        title: &'static str,
+        token: Option<&str>,
+    ) -> ClientWindow {
+        let window = self.f.client(id).create_window();
+        self.f.client(id).set_title(window, title);
+        self.f.client(id).set_app_id(window, app_id);
+        self.f.client(id).commit(window);
+        self.f.roundtrip(id);
+        if let Some(token) = token {
+            self.f.client(id).activate(token, window);
+        }
+        self.f
+            .client(id)
+            .ack_and_commit_buffer(window, (240, 160), WINDOW_COLOR);
+        self.f.roundtrip(id);
+        ClientWindow::Xdg(id, window)
+    }
+
+    /// A token from `from`'s client with the input serial it has had.
+    fn token_from(&mut self, from: ClientWindow) -> String {
+        let id = from.client();
+        let serial = self.f.client_state(id).last_input_serial;
+        assert!(serial.is_some(), "{from:?}'s client has had input");
+        let token = self
+            .f
+            .client(id)
+            .request_activation_token(serial, Some(from.xdg()));
+        self.f.roundtrip(id);
+        self.f
+            .client(id)
+            .activation_token(token)
+            .unwrap()
+            .to_owned()
+    }
+
+    /// The activation token the launch of the entry's command carried.
+    #[track_caller]
+    fn launch_token(&self, id: &str) -> String {
+        let lines = self.probe.launch_lines(id);
+        let line = lines.last().unwrap_or_else(|| panic!("{id} was launched"));
+        line.split_whitespace()
+            .find_map(|word| word.strip_prefix("xdg="))
+            .unwrap_or("")
+            .to_owned()
+    }
+
+    /// Dispatches until the item with `key` satisfies `done`, and returns it.
+    #[track_caller]
+    fn wait_for_item(&mut self, key: &str, done: impl Fn(&Item) -> bool) -> Item {
+        let items = self.probe.wait_for_items(&mut self.f, |items| {
+            items.iter().any(|item| item.key == key && done(item))
+        });
+        items.into_iter().find(|item| item.key == key).unwrap()
+    }
+
+    /// `count` pictures of the output, `name` and a number, one after another: the frames of
+    /// an animation.
+    fn frames(&mut self, name: &str, count: usize) {
+        for i in 1..=count {
+            self.shot(&format!("{name}-{i}"));
+        }
     }
 
     /// Leaves a picture of the output where `CAMINITO_DOCK_SHOTS` says, as a PPM.
@@ -1010,6 +1147,208 @@ fn a_vertical_dock_is_a_column_with_the_indicator_on_the_panels_edge() {
     assert_eq!(items[1].rect.loc.y, items[0].rect.loc.y + 40);
     assert_eq!(items[0].rect.size, (40, 40).into());
     d.shot("05-vertical-dock");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_launch_carries_an_activation_token_and_the_icon_pulses_until_the_first_window_maps() {
+    let mut d = Desk::new();
+    d.probe.send("keep mate-terminal.desktop");
+    let item = d.wait_for("mate-terminal.desktop", 0);
+    assert!(!item.pulsing, "nothing is launched");
+
+    d.click(&item);
+
+    d.wait_for_launches("mate-terminal", 1);
+    assert!(
+        !d.launch_token("mate-terminal").is_empty(),
+        "the launch carries a token: {:?}",
+        d.probe.launch_lines("mate-terminal")
+    );
+    let item = d.wait_for_item("mate-terminal.desktop", |item| item.pulsing);
+    assert_eq!(item.windows, 0);
+    assert!(!d.item("mate-terminal.desktop").highlighted);
+    // Off the dock, so that neither the pointer nor the hover hides the pulse.
+    d.f.pointer_move(f64::from(OUTPUT.0) / 2., f64::from(OUTPUT.1) / 2.);
+    d.frames("07-launch-pulse", 4);
+
+    let _terminal = d.open("mate-terminal", "Terminal");
+
+    let item = d.wait_for("mate-terminal.desktop", 1);
+    assert!(!item.pulsing, "the first window mapped");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn the_token_a_launch_carries_gives_the_launched_programs_new_window_the_focus() {
+    let mut d = Desk::new();
+    let terminal = d.open_process(100, "mate-terminal", "Terminal");
+    let files = d.open("caja", "Files");
+    // A client that has a window of its own is refused the focus for a second one that
+    // maps while another client has it, unless it comes with a recent token, which has to be
+    // Caminito's: this is what the launch's token is for. A new instance of the program that
+    // is running is the launch to try it with.
+    d.focus_new_windows("smart", FocusNewWindows::Smart);
+    let item = d.wait_for("mate-terminal.desktop", 1);
+
+    d.press(&item, BTN_MIDDLE);
+
+    d.wait_for_launches("mate-terminal", 1);
+    let token = d.launch_token("mate-terminal");
+    assert!(!token.is_empty(), "the launch carries a token");
+    // In both variables: GTK 3 reads one, and other toolkits the other.
+    let line = d.probe.launch_lines("mate-terminal").remove(0);
+    assert!(line.ends_with(&format!("dsi={token}")), "{line}");
+    d.wait_for_focus(files);
+    let launched = d.map_launched(
+        terminal.client(),
+        "mate-terminal",
+        "Terminal 2",
+        Some(&token),
+    );
+
+    d.wait_for_focus(launched);
+    assert!(!d.f.state.caminito.policy.is_urgent(d.f.pid(launched)));
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_new_window_that_maps_without_a_token_is_refused_the_focus() {
+    let mut d = Desk::new();
+    let terminal = d.open_process(100, "mate-terminal", "Terminal");
+    let files = d.open("caja", "Files");
+    d.focus_new_windows("smart", FocusNewWindows::Smart);
+
+    let stranger = d.map_launched(terminal.client(), "mate-terminal", "Terminal 2", None);
+
+    d.wait_for_focus(files);
+    assert!(d.f.state.caminito.policy.is_urgent(d.f.pid(stranger)));
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn the_pulse_ends_after_the_timeout_for_a_program_that_maps_no_window() {
+    let mut d = Desk::new();
+    // The dock's ten seconds, shortened for the test.
+    d.probe.send("launch-timeout 1500");
+    d.probe.send("keep mate-terminal.desktop");
+    let item = d.wait_for("mate-terminal.desktop", 0);
+
+    d.click(&item);
+
+    d.wait_for_launches("mate-terminal", 1);
+    d.wait_for_item("mate-terminal.desktop", |item| item.pulsing);
+    let item = d.wait_for_item("mate-terminal.desktop", |item| !item.pulsing);
+    assert_eq!(item.windows, 0, "it never mapped a window");
+    assert!(item.kept);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_new_instance_of_a_running_program_pulses_until_its_own_window() {
+    let mut d = Desk::new();
+    let _terminal = d.open("mate-terminal", "Terminal");
+    let item = d.wait_for("mate-terminal.desktop", 1);
+    assert!(!item.pulsing, "a running program doesn't pulse");
+
+    d.press(&item, BTN_MIDDLE);
+
+    d.wait_for_launches("mate-terminal", 1);
+    let item = d.wait_for_item("mate-terminal.desktop", |item| item.pulsing);
+    assert_eq!(item.windows, 1, "its first window doesn't end it");
+    let _second = d.open("mate-terminal", "Terminal 2");
+    let item = d.wait_for("mate-terminal.desktop", 2);
+    assert!(!item.pulsing);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn a_window_that_demands_attention_bounces_then_keeps_a_highlight_until_it_is_focused() {
+    let mut d = Desk::new();
+    let terminal = d.open_with_input("mate-terminal", "Terminal");
+    let _files = d.open("caja", "Files");
+    d.strict();
+    let item = d.item("mate-terminal.desktop");
+    assert!(!item.bouncing && !item.highlighted);
+
+    // The terminal asks to be activated with a token, and is refused the focus.
+    let token = d.token_from(terminal);
+    d.f.client(terminal.client())
+        .activate(&token, terminal.xdg());
+    d.f.roundtrip(terminal.client());
+
+    let item = d.wait_for_item("mate-terminal.desktop", |item| item.highlighted);
+    assert!(item.bouncing, "it bounces when the demand begins");
+    d.frames("08-bounce", 6);
+    // A few bounces, and then the highlight alone.
+    let item = d.wait_for_item("mate-terminal.desktop", |item| !item.bouncing);
+    assert!(item.highlighted);
+    assert!(!d.item("caja.desktop").highlighted);
+    d.shot("09-highlight");
+
+    // From the dock.
+    d.click(&item);
+
+    d.wait_for_focus(terminal);
+    let item = d.wait_for_item("mate-terminal.desktop", |item| !item.highlighted);
+    assert!(!item.bouncing);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn the_highlight_clears_when_the_window_is_focused_otherwise_than_from_the_dock() {
+    let mut d = Desk::new();
+    let terminal = d.open_with_input("mate-terminal", "Terminal");
+    let _files = d.open("caja", "Files");
+    d.strict();
+    let token = d.token_from(terminal);
+    d.f.client(terminal.client())
+        .activate(&token, terminal.xdg());
+    d.f.roundtrip(terminal.client());
+    d.wait_for_item("mate-terminal.desktop", |item| item.highlighted);
+
+    // A click on the window itself.
+    click(&mut d.f, terminal);
+
+    d.wait_for_focus(terminal);
+    d.wait_for_item("mate-terminal.desktop", |item| {
+        !item.highlighted && !item.bouncing
+    });
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn only_the_item_whose_window_demands_attention_is_highlighted() {
+    let mut d = Desk::new();
+    let terminal = d.open_with_input("mate-terminal", "Terminal");
+    let _files = d.open("caja", "Files");
+    let _other = d.open("mystery-app", "Mystery");
+    d.strict();
+    let token = d.token_from(terminal);
+    d.f.client(terminal.client())
+        .activate(&token, terminal.xdg());
+    d.f.roundtrip(terminal.client());
+
+    let items = d
+        .probe
+        .wait_for_items(&mut d.f, |items| items.iter().any(|item| item.highlighted));
+
+    let highlighted: Vec<_> = items
+        .iter()
+        .filter(|item| item.highlighted)
+        .map(|item| item.key.as_str())
+        .collect();
+    assert_eq!(highlighted, ["mate-terminal.desktop"]);
+}
+
+/// A click on the middle of a window, as the user focuses it.
+fn click(f: &mut Fixture, window: ClientWindow) {
+    let geometry = f.geometry(window);
+    f.click(
+        f64::from(geometry.loc.x) + f64::from(geometry.size.w) / 2.,
+        f64::from(geometry.loc.y) + f64::from(geometry.size.h) / 2.,
+    );
+    f.sync(window);
 }
 
 #[test]

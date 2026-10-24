@@ -3743,6 +3743,30 @@ They are the developer's to run.
 - **Debug tool:** `gio list trash:///` and `gio monitor trash:///` for what the Trash holds
   and what it tells; `ls ~/.local/share/Trash/files`.
 
+### The Dock applet's launch and attention feedback in a real Session
+
+- **Milestone:** `dock-applet`, the developer's to run (CMN-221).
+- **Steps:**
+  1. With the Dock applet on a panel and Firefox kept in it but closed, click its item.
+  2. Click the item of a kept program that never opens a window, such as a desktop entry
+     whose `Exec` is `sleep 30`.
+  3. With Firefox running, middle-click its item for a new instance.
+  4. Open a terminal and Firefox. In the terminal run `sleep 3; mate-terminal
+     --disable-factory`, and click Firefox's window before the three seconds are up.
+  5. Leave the terminal's item highlighted a while, then focus its new window from the dock.
+     Do it again, and focus the window by its titlebar or with Alt+Tab.
+- **Expected:** in step 1 the icon pulses until Firefox's first window shows, and stops
+  then. In step 2 the icon pulses for about 10 seconds and stops. In step 3 the running
+  item pulses until the second window shows. In step 4 the new terminal's window is refused
+  the focus, and the terminal's icon bounces a few times and keeps a highlighted box behind
+  it. In step 5 the highlight goes away as the window takes the focus, from the dock or
+  otherwise. Under `focus-new-windows` strict a window a launch from the dock opens is still
+  refused the focus, as the dock has no keyboard focus for Caminito to tie the token to.
+- **Debug tool:** `WAYLAND_DEBUG=1 mate-panel --replace` for `xdg_activation_v1` and
+  `xdg_activation_token_v1.set_app_id`, `cat /proc/PID/environ | tr '\0' '\n' | grep
+  XDG_ACTIVATION_TOKEN` on the launched program, and Caminito's `DumpState` for each window's
+  `urgent`.
+
 ### A floating panel stands off its edge
 
 - **Milestone:** `dock-applet`, the developer's to run (CMN-223).

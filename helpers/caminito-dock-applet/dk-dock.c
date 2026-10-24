@@ -5,7 +5,9 @@
 #include <gio/gdesktopappinfo.h>
 #include <libxfce4windowing/libxfce4windowing.h>
 
+#include "dk-activation.h"
 #include "dk-dock.h"
+#include "dk-feedback.h"
 #include "dk-item.h"
 #include "dk-model.h"
 #include "dk-resolve.h"
@@ -33,6 +35,10 @@ struct _DkDock
   GtkWidget       *error_dialog;
   DkStore         *store;
   DkCatalog       *catalog;
+  /* The launch pulses and the attention bounces and highlights (CMN-221), and the source that
+     refreshes the items when the next of them ends by itself. */
+  DkFeedback      *feedback;
+  guint            feedback_id;
   XfwScreen       *screen;
   GAppInfoMonitor *monitor;
   char            *ignored;
@@ -143,23 +149,84 @@ window_activate (DkDock *dock, XfwWindow *window, const GdkEvent *event)
     g_warning ("can't activate the window: %s", error->message);
 }
 
+/* The item pulses until a window of it opened after the launch maps (CMN-221). */
+static void
+launch_pulse (DkDock *dock, const char *key)
+{
+  dk_feedback_launch (dock->feedback, key, dock->clock, g_get_monotonic_time ());
+  schedule_refresh (dock);
+}
+
+/* The token for the launch of the entry with key, from the dock's window. */
+static char *
+launch_token (DkDock *dock, const char *key)
+{
+  GtkWidget *toplevel = gtk_widget_get_toplevel (dock->box);
+  g_autofree char *name = g_path_get_basename (key);
+  g_autofree char *app_id = g_str_has_suffix (name, ".desktop")
+                              ? g_strndup (name, strlen (name) - strlen (".desktop")) : NULL;
+
+  return dk_activation_token_new (gtk_widget_get_window (toplevel), app_id);
+}
+
+/* The launch carries an xdg-activation token: the program maps its first window with it
+   (CMN-221). GDK 3's launch context makes one only for an entry with StartupNotify=true, and
+   GIO puts that one over any the environment has, so a launch with the dock's own token goes
+   through a plain context, which makes none. */
 static void
 launch_entry (DkDock *dock, const char *key, const char *action)
 {
   GDesktopAppInfo *info = entry_info (dock, key);
-  GdkDisplay *display = gdk_display_get_default ();
-  g_autoptr (GdkAppLaunchContext) context = gdk_display_get_app_launch_context (display);
+  g_autoptr (GAppLaunchContext) context = NULL;
   g_autoptr (GError) error = NULL;
+  g_autofree char *token = NULL;
 
   if (info == NULL)
     {
       g_warning ("can't launch %s: no such desktop entry", key);
       return;
     }
+  token = launch_token (dock, key);
+  if (token != NULL)
+    {
+      context = g_app_launch_context_new ();
+      /* The standard variable, and the one GTK 3 reads as the token on Wayland. */
+      g_app_launch_context_setenv (context, "XDG_ACTIVATION_TOKEN", token);
+      g_app_launch_context_setenv (context, "DESKTOP_STARTUP_ID", token);
+    }
+  else
+    context = G_APP_LAUNCH_CONTEXT (gdk_display_get_app_launch_context (gdk_display_get_default ()));
   if (action != NULL)
-    g_desktop_app_info_launch_action (info, action, G_APP_LAUNCH_CONTEXT (context));
-  else if (!g_app_info_launch (G_APP_INFO (info), NULL, G_APP_LAUNCH_CONTEXT (context), &error))
-    g_warning ("can't launch %s: %s", key, error->message);
+    g_desktop_app_info_launch_action (info, action, context);
+  else if (!g_app_info_launch (G_APP_INFO (info), NULL, context, &error))
+    {
+      g_warning ("can't launch %s: %s", key, error->message);
+      return;
+    }
+  launch_pulse (dock, key);
+}
+
+static gboolean
+on_feedback_end (gpointer data)
+{
+  DkDock *dock = data;
+
+  dock->feedback_id = 0;
+  schedule_refresh (dock);
+  return G_SOURCE_REMOVE;
+}
+
+/* A pulse times out and a bounce ends with no event from a window, so the dock looks again
+   then. */
+static void
+schedule_feedback_end (DkDock *dock, gint64 now)
+{
+  gint64 deadline = dk_feedback_deadline (dock->feedback, now);
+
+  g_clear_handle_id (&dock->feedback_id, g_source_remove);
+  if (deadline >= 0)
+    dock->feedback_id = g_timeout_add (MAX (1, (deadline - now + 999) / 1000), on_feedback_end,
+                                       dock);
 }
 
 /* Rebuilds the items from the windows and the kept items, and makes the widgets match. */
@@ -172,6 +239,7 @@ refresh (gpointer data)
   g_autoptr (GHashTable) wanted = g_hash_table_new (g_str_hash, g_str_equal);
   GHashTableIter iter;
   gpointer value;
+  gint64 now;
 
   dock->refresh_id = 0;
   g_hash_table_iter_init (&iter, dock->windows);
@@ -184,6 +252,7 @@ refresh (gpointer data)
         .title = xfw_window_get_name (info->window),
         .minimised = xfw_window_is_minimized (info->window),
         .active = xfw_window_is_active (info->window),
+        .urgent = xfw_window_is_urgent (info->window),
         .opened = info->opened,
         .activated = info->activated,
       };
@@ -192,6 +261,8 @@ refresh (gpointer data)
     }
   items = dk_items_build (dock->catalog, dk_store_get (dock->store),
                           (DkWindow *) windows->data, windows->len);
+  now = g_get_monotonic_time ();
+  dk_feedback_update (dock->feedback, items, now);
   for (guint i = 0; i < items->len; i++)
     {
       const DkItem *item = &g_array_index (items, DkItem, i);
@@ -233,6 +304,11 @@ refresh (gpointer data)
       dk_item_view_set (view, item->key, icon, name, item_windows,
                         first != NULL && first->active,
                         item->entry_id != NULL);
+      {
+        DkFeedbackState state = dk_feedback_get (dock->feedback, item->key, now);
+
+        dk_item_view_set_feedback (view, &state);
+      }
       gtk_box_reorder_child (GTK_BOX (dock->box), dk_item_view_get_widget (view), i);
       g_hash_table_add (wanted, item->key);
     }
@@ -252,6 +328,7 @@ refresh (gpointer data)
           g_hash_table_iter_remove (&iter);
         }
     }
+  schedule_feedback_end (dock, now);
   return G_SOURCE_REMOVE;
 }
 
@@ -1212,6 +1289,12 @@ dk_dock_ignore_app_id (DkDock *dock, const char *app_id)
       window_forget (dock, windows->data);
 }
 
+void
+dk_dock_set_launch_timeout (DkDock *dock, gint64 timeout)
+{
+  dk_feedback_set_launch_timeout (dock->feedback, timeout);
+}
+
 GtkWidget *
 dk_dock_get_menu (DkDock *dock)
 {
@@ -1266,6 +1349,7 @@ dk_dock_new (DkStore *store)
 
   dock->store = store;
   dock->catalog = dk_catalog_new_installed ();
+  dock->feedback = dk_feedback_new ();
   dock->thickness = 48;
   dock->edge = GTK_POS_BOTTOM;
   dock->drop_slot = -1;
@@ -1323,6 +1407,7 @@ dk_dock_free (DkDock *dock)
     return;
   if (dock->refresh_id != 0)
     g_source_remove (dock->refresh_id);
+  g_clear_handle_id (&dock->feedback_id, g_source_remove);
   g_signal_handlers_disconnect_by_data (dock->screen, dock);
   g_signal_handlers_disconnect_by_data (dock->monitor, dock);
   g_hash_table_iter_init (&iter, dock->windows);
@@ -1350,6 +1435,7 @@ dk_dock_free (DkDock *dock)
   g_hash_table_unref (dock->infos);
   g_clear_pointer (&dock->pressed, g_array_unref);
   dk_catalog_free (dock->catalog);
+  dk_feedback_free (dock->feedback);
   g_free (dock->ignored);
   g_free (dock);
 }

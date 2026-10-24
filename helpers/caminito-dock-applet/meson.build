@@ -16,6 +16,8 @@ glib = dependency('glib-2.0')
 gio = dependency('gio-2.0')
 gio_unix = dependency('gio-unix-2.0')
 gtk = dependency('gtk+-3.0')
+# The pulse and the bounce are cosines and sines.
+m = meson.get_compiler('c').find_library('m')
 # The windows, as mate-panel's own window list reads them on Caminito (ADR 0013).
 xfw = dependency('libxfce4windowing-0')
 applet_dep = dependency('libmatepanelapplet-4.0')
@@ -37,6 +39,17 @@ model = static_library('dk-model', 'dk-model.c', link_with: resolve, dependencie
 test(
   'model',
   executable('test-model', 'test-model.c', link_with: [model, resolve], dependencies: glib),
+)
+
+# What pulses because it was launched and what bounces and glows because a window wants
+# attention (CMN-221), with the clock passed in.
+feedback = static_library('dk-feedback', 'dk-feedback.c', link_with: model, dependencies: glib,
+                          pic: true)
+
+test(
+  'feedback',
+  executable('test-feedback', 'test-feedback.c', link_with: [feedback, model, resolve],
+             dependencies: glib),
 )
 
 # The kept items in the applet's relocatable settings. The package's hook compiles the
@@ -74,6 +87,33 @@ if glib_compile_schemas.found()
   )
 endif
 
+# The xdg-activation token of a launch (CMN-221). GDK 3 makes one only for an entry with
+# StartupNotify=true, so the dock binds the protocol on GDK's connection and asks for it. The
+# protocol's code is generated from its vendored XML.
+wayland_client = dependency('wayland-client')
+wayland_scanner = find_program('wayland-scanner')
+activation_xml = files('protocols/xdg-activation-v1.xml')
+activation_header = custom_target(
+  'xdg-activation-header',
+  input: activation_xml,
+  output: 'xdg-activation-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+activation_code = custom_target(
+  'xdg-activation-code',
+  input: activation_xml,
+  output: 'xdg-activation-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+activation = static_library(
+  'dk-activation',
+  'dk-activation.c',
+  activation_header,
+  activation_code,
+  dependencies: [glib, gtk, wayland_client],
+  pic: true,
+)
+
 # The Trash: whether it is full, putting files in it and emptying it, through GIO.
 trash = static_library('dk-trash', 'dk-trash.c', dependencies: [glib, gio], pic: true)
 
@@ -87,8 +127,8 @@ dock = static_library(
   'dk-dock',
   'dk-dock.c',
   'dk-item.c',
-  link_with: [store, model, resolve, trash],
-  dependencies: [glib, gio_unix, gtk, xfw],
+  link_with: [activation, feedback, store, model, resolve, trash],
+  dependencies: [glib, gio_unix, gtk, xfw, m],
   pic: true,
 )
 
@@ -101,9 +141,9 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, store, model, resolve, trash],
+  link_with: [dock, activation, feedback, store, model, resolve, trash],
   # The layer shell first: it has to be linked before libwayland-client.
-  dependencies: [layer_shell, glib, gio_unix, gtk, xfw],
+  dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,
 )
 
@@ -111,8 +151,8 @@ applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-dock-applet',
   'dock-applet.c',
-  link_with: [dock, store, model, resolve, trash],
-  dependencies: [glib, gio_unix, gtk, xfw, applet_dep, common],
+  link_with: [dock, activation, feedback, store, model, resolve, trash],
+  dependencies: [glib, gio_unix, gtk, xfw, wayland_client, m, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,
   install_dir: applet_dir,
