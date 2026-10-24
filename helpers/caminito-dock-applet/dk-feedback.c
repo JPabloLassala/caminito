@@ -17,6 +17,9 @@ typedef struct
 {
   /* The handles of the windows that do. */
   GHashTable *demanding;
+  /* The item's Launcher entry is urgent (CMN-227): a source of attention beside the windows,
+     which only the entry ends. */
+  gboolean    entry_urgent;
   /* When the latest began to, or -1. */
   gint64      bounce_start;
 } Attention;
@@ -31,6 +34,8 @@ struct _DkFeedback
      to demand attention: an X11 client's urgency hint stays until the client drops it, and
      the highlight lasts only until the window is focused. */
   GHashTable *answered;
+  /* The keys whose Launcher entry is urgent. */
+  GHashTable *launcher_urgent;
   gint64      launch_timeout;
 };
 
@@ -51,6 +56,7 @@ dk_feedback_new (void)
   feedback->launches = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   feedback->attention = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, attention_free);
   feedback->answered = g_hash_table_new (NULL, NULL);
+  feedback->launcher_urgent = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   feedback->launch_timeout = DK_LAUNCH_TIMEOUT;
   return feedback;
 }
@@ -63,6 +69,7 @@ dk_feedback_free (DkFeedback *feedback)
   g_hash_table_unref (feedback->launches);
   g_hash_table_unref (feedback->attention);
   g_hash_table_unref (feedback->answered);
+  g_hash_table_unref (feedback->launcher_urgent);
   g_free (feedback);
 }
 
@@ -87,6 +94,15 @@ dk_feedback_launch (DkFeedback *feedback, const char *key, guint64 since, gint64
   launch->start = now;
   launch->since = since;
   g_hash_table_insert (feedback->launches, g_strdup (key), launch);
+}
+
+void
+dk_feedback_set_launcher_urgent (DkFeedback *feedback, const char *key, gboolean urgent)
+{
+  if (urgent)
+    g_hash_table_add (feedback->launcher_urgent, g_strdup (key));
+  else
+    g_hash_table_remove (feedback->launcher_urgent, key);
 }
 
 static const DkItem *
@@ -139,6 +155,7 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
       const DkItem *item = &g_array_index (items, DkItem, i);
       Attention *attention = g_hash_table_lookup (feedback->attention, item->key);
       g_autoptr (GHashTable) demanding = g_hash_table_new (NULL, NULL);
+      gboolean entry_urgent = g_hash_table_contains (feedback->launcher_urgent, item->key);
       gboolean began = FALSE;
 
       /* The focused window demands nothing, whatever its flag says, and nor does one that
@@ -158,7 +175,7 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
                 began = TRUE;
             }
         }
-      if (g_hash_table_size (demanding) == 0)
+      if (g_hash_table_size (demanding) == 0 && !entry_urgent)
         {
           g_hash_table_remove (feedback->attention, item->key);
           continue;
@@ -171,6 +188,10 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
         }
       g_clear_pointer (&attention->demanding, g_hash_table_unref);
       attention->demanding = g_hash_table_ref (demanding);
+      /* The entry's urgency begins a bounce when it begins, as a window's does. */
+      if (entry_urgent && !attention->entry_urgent)
+        began = TRUE;
+      attention->entry_urgent = entry_urgent;
       if (began)
         attention->bounce_start = now;
       g_hash_table_add (seen, item->key);

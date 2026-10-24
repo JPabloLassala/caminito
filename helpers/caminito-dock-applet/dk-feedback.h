@@ -50,6 +50,13 @@ void        dk_feedback_launch (DkFeedback *feedback,
    or have been focused since they began to. */
 void        dk_feedback_update (DkFeedback *feedback, const GArray *items, gint64 now);
 
+/* Whether the Launcher entry of the item with key is urgent (CMN-227). Attention has a second
+   source in it, beside the urgent windows: the next update bounces the icon when it becomes
+   urgent, and the highlight lasts while it is, whatever the windows do, and the windows' lasts
+   whatever it does. Focusing a window doesn't end it; the entry saying it isn't urgent does. */
+void        dk_feedback_set_launcher_urgent (DkFeedback *feedback, const char *key,
+                                             gboolean urgent);
+
 DkFeedbackState dk_feedback_get (const DkFeedback *feedback, const char *key, gint64 now);
 
 /* The next time after now that something ends by itself, a pulse's timeout or a bounce's end,

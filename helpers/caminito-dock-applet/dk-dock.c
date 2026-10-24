@@ -9,6 +9,7 @@
 #include "dk-dock.h"
 #include "dk-feedback.h"
 #include "dk-item.h"
+#include "dk-launcher.h"
 #include "dk-model.h"
 #include "dk-resolve.h"
 #include "dk-trash.h"
@@ -39,6 +40,12 @@ struct _DkDock
      refreshes the items when the next of them ends by itself. */
   DkFeedback      *feedback;
   guint            feedback_id;
+  /* What programs tell their items through Unity's LauncherEntry signal (CMN-227), and the
+     session bus subscriptions that bring it and tell when a sender leaves. */
+  DkLauncher      *launcher;
+  GDBusConnection *bus;
+  guint            update_subscription;
+  guint            owner_subscription;
   XfwScreen       *screen;
   GAppInfoMonitor *monitor;
   char            *ignored;
@@ -63,6 +70,7 @@ struct _DkDock
 };
 
 #define MENU_TITLE_CHARS 36
+#define LAUNCHER_ENTRY_INTERFACE "com.canonical.Unity.LauncherEntry"
 #define TRASH_URI "trash:///"
 
 static void schedule_refresh (DkDock *dock);
@@ -262,6 +270,14 @@ refresh (gpointer data)
   items = dk_items_build (dock->catalog, dk_store_get (dock->store),
                           (DkWindow *) windows->data, windows->len);
   now = g_get_monotonic_time ();
+  dk_launcher_sync (dock->launcher, items);
+  for (guint i = 0; i < items->len; i++)
+    {
+      const DkItem *item = &g_array_index (items, DkItem, i);
+
+      dk_feedback_set_launcher_urgent (dock->feedback, item->key,
+                                       dk_launcher_get (dock->launcher, item->key).urgent);
+    }
   dk_feedback_update (dock->feedback, items, now);
   for (guint i = 0; i < items->len; i++)
     {
@@ -307,7 +323,10 @@ refresh (gpointer data)
       {
         DkFeedbackState state = dk_feedback_get (dock->feedback, item->key, now);
 
+        DkLauncherEntry entry = dk_launcher_get (dock->launcher, item->key);
+
         dk_item_view_set_feedback (view, &state);
+        dk_item_view_set_launcher (view, &entry);
       }
       gtk_box_reorder_child (GTK_BOX (dock->box), dk_item_view_get_widget (view), i);
       g_hash_table_add (wanted, item->key);
@@ -413,6 +432,44 @@ static void
 on_window_closed_on_screen (XfwScreen *screen G_GNUC_UNUSED, XfwWindow *window, gpointer data)
 {
   window_forget (data, window);
+}
+
+/* A program's Update signal, from any sender and any object path (CMN-227): (s app_uri,
+   a{sv} properties). */
+static void
+on_launcher_update (GDBusConnection *connection G_GNUC_UNUSED, const char *sender,
+                    const char *object_path G_GNUC_UNUSED,
+                    const char *interface_name G_GNUC_UNUSED,
+                    const char *signal_name G_GNUC_UNUSED, GVariant *parameters, gpointer data)
+{
+  DkDock *dock = data;
+  const char *app_uri;
+  g_autoptr (GVariant) properties = NULL;
+
+  if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(sa{sv})")))
+    return;
+  g_variant_get (parameters, "(&s@a{sv})", &app_uri, &properties);
+  if (dk_launcher_update (dock->launcher, dock->catalog, sender, app_uri, properties))
+    schedule_refresh (dock);
+}
+
+/* A program that leaves the bus takes its badge, bar and urgency with it. */
+static void
+on_name_owner_changed (GDBusConnection *connection G_GNUC_UNUSED,
+                       const char *sender G_GNUC_UNUSED,
+                       const char *object_path G_GNUC_UNUSED,
+                       const char *interface_name G_GNUC_UNUSED,
+                       const char *signal_name G_GNUC_UNUSED, GVariant *parameters, gpointer data)
+{
+  DkDock *dock = data;
+  const char *name, *old_owner, *new_owner;
+
+  if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(sss)")))
+    return;
+  g_variant_get (parameters, "(&s&s&s)", &name, &old_owner, &new_owner);
+  /* Senders are unique names; a well-known name's change is its owner's, which is not gone. */
+  if (name[0] == ':' && new_owner[0] == '\0' && dk_launcher_clear_sender (dock->launcher, name))
+    schedule_refresh (dock);
 }
 
 /* The desktop entries changed on disk: an install, a removal or an edit. */
@@ -1350,6 +1407,7 @@ dk_dock_new (DkStore *store)
   dock->store = store;
   dock->catalog = dk_catalog_new_installed ();
   dock->feedback = dk_feedback_new ();
+  dock->launcher = dk_launcher_new ();
   dock->thickness = 48;
   dock->edge = GTK_POS_BOTTOM;
   dock->drop_slot = -1;
@@ -1386,6 +1444,24 @@ dk_dock_new (DkStore *store)
   g_signal_connect (dock->box, "drag-drop", G_CALLBACK (on_drag_drop), dock);
   g_signal_connect (dock->box, "drag-data-received", G_CALLBACK (on_drag_data_received), dock);
   dk_store_set_changed (store, on_store_changed, dock);
+  {
+    g_autoptr (GError) error = NULL;
+
+    dock->bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, &error);
+    if (dock->bus == NULL)
+      g_warning ("can't reach the session bus, so no badges or progress bars: %s",
+                 error->message);
+    else
+      {
+        dock->update_subscription = g_dbus_connection_signal_subscribe (
+          dock->bus, NULL, LAUNCHER_ENTRY_INTERFACE, "Update", NULL, NULL,
+          G_DBUS_SIGNAL_FLAGS_NONE, on_launcher_update, dock, NULL);
+        dock->owner_subscription = g_dbus_connection_signal_subscribe (
+          dock->bus, "org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
+          "/org/freedesktop/DBus", NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_name_owner_changed, dock,
+          NULL);
+      }
+  }
   dock->monitor = g_app_info_monitor_get ();
   g_signal_connect (dock->monitor, "changed", G_CALLBACK (on_apps_changed), dock);
   dock->screen = xfw_screen_get_default ();
@@ -1408,6 +1484,12 @@ dk_dock_free (DkDock *dock)
   if (dock->refresh_id != 0)
     g_source_remove (dock->refresh_id);
   g_clear_handle_id (&dock->feedback_id, g_source_remove);
+  if (dock->bus != NULL)
+    {
+      g_dbus_connection_signal_unsubscribe (dock->bus, dock->update_subscription);
+      g_dbus_connection_signal_unsubscribe (dock->bus, dock->owner_subscription);
+      g_object_unref (dock->bus);
+    }
   g_signal_handlers_disconnect_by_data (dock->screen, dock);
   g_signal_handlers_disconnect_by_data (dock->monitor, dock);
   g_hash_table_iter_init (&iter, dock->windows);
@@ -1436,6 +1518,7 @@ dk_dock_free (DkDock *dock)
   g_clear_pointer (&dock->pressed, g_array_unref);
   dk_catalog_free (dock->catalog);
   dk_feedback_free (dock->feedback);
+  dk_launcher_free (dock->launcher);
   g_free (dock->ignored);
   g_free (dock);
 }

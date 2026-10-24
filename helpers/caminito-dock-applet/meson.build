@@ -52,6 +52,17 @@ test(
              dependencies: glib),
 )
 
+# What programs tell their Dock items through Unity's LauncherEntry signal (CMN-227): a count,
+# a progress and urgency, kept for each desktop entry.
+launcher = static_library('dk-launcher', 'dk-launcher.c', link_with: [model, resolve],
+                          dependencies: [glib, m], pic: true)
+
+test(
+  'launcher',
+  executable('test-launcher', 'test-launcher.c', link_with: [launcher, model, resolve],
+             dependencies: [glib, m]),
+)
+
 # The kept items in the applet's relocatable settings. The package's hook compiles the
 # schemas, so nothing is compiled for the install.
 install_data(
@@ -127,7 +138,7 @@ dock = static_library(
   'dk-dock',
   'dk-dock.c',
   'dk-item.c',
-  link_with: [activation, feedback, store, model, resolve, trash],
+  link_with: [activation, feedback, launcher, store, model, resolve, trash],
   dependencies: [glib, gio_unix, gtk, xfw, m],
   pic: true,
 )
@@ -141,7 +152,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, activation, feedback, store, model, resolve, trash],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,
@@ -151,7 +162,7 @@ applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-dock-applet',
   'dock-applet.c',
-  link_with: [dock, activation, feedback, store, model, resolve, trash],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash],
   dependencies: [glib, gio_unix, gtk, xfw, wayland_client, m, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,

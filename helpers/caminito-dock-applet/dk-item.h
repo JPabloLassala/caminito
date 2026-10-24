@@ -9,6 +9,7 @@
 #include <gtk/gtk.h>
 
 #include "dk-feedback.h"
+#include "dk-launcher.h"
 
 typedef struct _DkItemView DkItemView;
 
@@ -42,5 +43,9 @@ gboolean    dk_item_view_is_active    (DkItemView *view);
    animates what it is given against the monotonic clock, until it is given something else. */
 void            dk_item_view_set_feedback (DkItemView *view, const DkFeedbackState *state);
 DkFeedbackState dk_item_view_get_feedback (DkItemView *view);
+/* The Launcher entry (CMN-227) the program has told the item: a count badge on the icon's
+   corner away from the panel's edge, and a progress bar across the icon just inside the
+   indicator. Its urgency is the feedback's. */
+void            dk_item_view_set_launcher (DkItemView *view, const DkLauncherEntry *entry);
 /* Tells the compositor where each window's item is, for the minimise animation. */
 void        dk_item_view_update_rectangles (DkItemView *view);
