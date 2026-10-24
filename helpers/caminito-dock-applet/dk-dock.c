@@ -27,8 +27,10 @@ struct _DkDock
   GtkWidget       *separator;
   DkTrash         *trash;
   DkItemView      *trash_view;
-  /* The question or the error being shown. */
+  /* The question being shown. */
   GtkWidget       *dialog;
+  /* The error being shown: one at a time, however many files a drop couldn't put. */
+  GtkWidget       *error_dialog;
   DkStore         *store;
   DkCatalog       *catalog;
   XfwScreen       *screen;
@@ -714,14 +716,20 @@ on_error_response (GtkDialog *dialog, int response G_GNUC_UNUSED, gpointer data 
   gtk_widget_destroy (GTK_WIDGET (dialog));
 }
 
+/* The first error is shown until it is closed; those that come meanwhile are only logged. */
 static void
 report_error (DkDock *dock, const char *primary, const char *secondary)
 {
-  GtkWidget *dialog = gtk_message_dialog_new (dialog_parent (dock), 0, GTK_MESSAGE_ERROR,
-                                              GTK_BUTTONS_CLOSE, "%s", primary);
+  GtkWidget *dialog;
 
+  if (dock->error_dialog != NULL)
+    return;
+  dialog = gtk_message_dialog_new (dialog_parent (dock), GTK_DIALOG_DESTROY_WITH_PARENT,
+                                   GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", primary);
   gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog), "%s", secondary);
   g_signal_connect (dialog, "response", G_CALLBACK (on_error_response), NULL);
+  g_signal_connect (dialog, "destroy", G_CALLBACK (gtk_widget_destroyed), &dock->error_dialog);
+  dock->error_dialog = dialog;
   gtk_widget_show (dialog);
 }
 
@@ -729,7 +737,18 @@ static void
 on_trash_emptied (GError *error, gpointer data)
 {
   if (error != NULL)
-    report_error (data, "Can't empty the Trash", error->message);
+    {
+      g_warning ("can't empty the Trash: %s", error->message);
+      report_error (data, "Can't empty the Trash", error->message);
+    }
+}
+
+/* One emptying at a time: a second would find the first's files gone, and report it. */
+static void
+empty_trash (DkDock *dock)
+{
+  if (!dk_trash_is_emptying (dock->trash))
+    dk_trash_empty (dock->trash, on_trash_emptied, dock);
 }
 
 static void
@@ -739,10 +758,27 @@ on_empty_response (GtkDialog *dialog, int response, gpointer data)
 
   gtk_widget_destroy (GTK_WIDGET (dialog));
   if (response == GTK_RESPONSE_ACCEPT)
-    dk_trash_empty (dock->trash, on_trash_emptied, dock);
+    empty_trash (dock);
 }
 
-/* Emptying is for good, so it asks first, with Caja's words. */
+/* Whether Caja's preference is to ask before emptying, as it is unless the user said not to,
+   or where Caja's settings aren't installed. */
+static gboolean
+should_confirm_empty (void)
+{
+  GSettingsSchemaSource *source = g_settings_schema_source_get_default ();
+  g_autoptr (GSettingsSchema) schema = source != NULL
+    ? g_settings_schema_source_lookup (source, "org.mate.caja.preferences", TRUE)
+    : NULL;
+  g_autoptr (GSettings) settings = NULL;
+
+  if (schema == NULL || !g_settings_schema_has_key (schema, "confirm-trash"))
+    return TRUE;
+  settings = g_settings_new_full (schema, NULL, NULL);
+  return g_settings_get_boolean (settings, "confirm-trash");
+}
+
+/* Emptying is for good, so it asks first, with Caja's words, unless Caja is set not to. */
 static void
 ask_to_empty (DkDock *dock)
 {
@@ -753,13 +789,17 @@ ask_to_empty (DkDock *dock)
       gtk_window_present (GTK_WINDOW (dock->dialog));
       return;
     }
+  if (!should_confirm_empty ())
+    {
+      empty_trash (dock);
+      return;
+    }
   dialog = gtk_message_dialog_new (dialog_parent (dock), GTK_DIALOG_DESTROY_WITH_PARENT,
                                    GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE, "%s",
                                    "Empty all items from Trash?");
   gtk_message_dialog_format_secondary_text (
     GTK_MESSAGE_DIALOG (dialog), "%s",
-    "If you choose to empty the Trash, all items in it will be permanently lost. "
-    "Please note that you can also delete them separately.");
+    "All items in the Trash will be permanently deleted.");
   gtk_dialog_add_button (GTK_DIALOG (dialog), "_Cancel", GTK_RESPONSE_CANCEL);
   button = gtk_dialog_add_button (GTK_DIALOG (dialog), "Empty _Trash", GTK_RESPONSE_ACCEPT);
   gtk_style_context_add_class (gtk_widget_get_style_context (button), "destructive-action");
@@ -818,8 +858,9 @@ popup_trash_menu (DkDock *dock, const GdkEvent *event)
 
   menu_item (menu, "Open", G_CALLBACK (on_trash_open), dock);
   empty = menu_item (menu, "Empty Trash", G_CALLBACK (on_trash_empty), dock);
-  /* There is nothing to empty, as in Caja. */
-  gtk_widget_set_sensitive (empty, dk_trash_is_full (dock->trash));
+  /* There is nothing to empty, as in Caja, or it is being emptied. */
+  gtk_widget_set_sensitive (empty, dk_trash_is_full (dock->trash)
+                                     && !dk_trash_is_emptying (dock->trash));
   menu_show (dock, menu, dk_item_view_get_widget (dock->trash_view), event);
 }
 
@@ -1299,6 +1340,8 @@ dk_dock_free (DkDock *dock)
       g_signal_handlers_disconnect_by_data (dock->dialog, dock);
       gtk_widget_destroy (dock->dialog);
     }
+  if (dock->error_dialog != NULL)
+    gtk_widget_destroy (dock->error_dialog);
   dk_trash_free (dock->trash);
   g_clear_object (&dock->screen);
   g_object_unref (dock->monitor);

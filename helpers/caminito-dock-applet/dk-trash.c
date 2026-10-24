@@ -14,6 +14,7 @@ struct _DkTrash
   /* A look is under way; a change came while it was, and wants another. */
   gboolean        looking;
   gboolean        stale;
+  gboolean        emptying;
   DkTrashChanged  changed;
   gpointer        data;
 };
@@ -155,8 +156,16 @@ dk_trash_is_full (DkTrash *trash)
   return trash->full;
 }
 
-/* Deletes what is in the folder, depth first, and then the folder itself unless it is
-   the Trash's own. Goes on past an error and keeps the first. */
+gboolean
+dk_trash_is_emptying (DkTrash *trash)
+{
+  return trash->emptying;
+}
+
+/* Deletes what is in the folder, each child at once where it can be, and then the folder
+   itself unless it is the Trash's own. gvfs's Trash deletes a trashed folder whole, and
+   refuses to delete what is in one, so only a folder that isn't empty, as a plain directory
+   is, is gone into first. Goes on past an error and keeps the first. */
 static void
 delete_tree (GFile *file, gboolean keep, GError **first)
 {
@@ -172,17 +181,20 @@ delete_tree (GFile *file, gboolean keep, GError **first)
       {
         g_autoptr (GFile) child = g_file_get_child (file, g_file_info_get_name (info));
 
-        if (g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY)
-          delete_tree (child, FALSE, first);
-        else if (!g_file_delete (child, NULL, &error))
+        if (!g_file_delete (child, NULL, &error))
           {
-            if (*first == NULL)
+            if (g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY
+                && g_error_matches (error, G_IO_ERROR, G_IO_ERROR_NOT_EMPTY))
+              {
+                g_clear_error (&error);
+                delete_tree (child, FALSE, first);
+              }
+            else if (*first == NULL)
               *first = g_steal_pointer (&error);
             g_clear_error (&error);
           }
         g_object_unref (info);
       }
-  /* A file that is no folder has no children to list, and is deleted by its parent. */
   g_clear_error (&error);
   if (!keep && !g_file_delete (file, NULL, &error))
     {
@@ -219,6 +231,7 @@ on_emptied (GObject *source G_GNUC_UNUSED, GAsyncResult *result, gpointer data)
   g_autoptr (GError) error = NULL;
 
   g_task_propagate_boolean (G_TASK (result), &error);
+  emptying->trash->emptying = FALSE;
   /* Nothing is told once the Trash has been let go. */
   if (!g_cancellable_is_cancelled (emptying->trash->cancellable))
     {
@@ -237,6 +250,7 @@ dk_trash_empty (DkTrash *trash, DkTrashEmptied done, gpointer data)
   Emptying *emptying = g_new0 (Emptying, 1);
   g_autoptr (GTask) task = g_task_new (NULL, NULL, on_emptied, emptying);
 
+  trash->emptying = TRUE;
   emptying->trash = g_rc_box_acquire (trash);
   emptying->done = done;
   emptying->data = data;

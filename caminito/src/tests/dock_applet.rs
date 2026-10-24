@@ -17,7 +17,7 @@
 //! `tools/check` runs it after the C helpers' build. With `CAMINITO_DOCK_SHOTS` naming a
 //! directory, the scenarios also leave a picture of the output there, as a PPM.
 
-use std::io::{ErrorKind, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -146,30 +146,28 @@ impl Probe {
             .unwrap();
         // The Trash: gvfs's trash daemon, which a bus starts, over this test's data directory.
         // The bus itself looks for the daemon's service file where the system keeps them.
-        let bus = gvfs.then(|| {
-            let address = dir.path().join("bus");
-            let child = Command::new("dbus-daemon")
-                .args(["--session", "--nofork"])
-                .arg(format!("--address=unix:path={}", address.display()))
+        let (bus, bus_address) = if gvfs {
+            let mut child = Command::new("dbus-daemon")
+                .args(["--session", "--nofork", "--print-address=1"])
+                .arg(format!(
+                    "--address=unix:path={}",
+                    dir.path().join("bus").display()
+                ))
                 .env("HOME", dir.path())
                 .env("XDG_DATA_HOME", dir.path().join("data"))
-                .stdout(Stdio::null())
+                .stdout(Stdio::piped())
                 .stderr(Stdio::null())
                 .spawn()
                 .expect("dbus-daemon starts");
-            for _ in 0..100 {
-                if address.exists() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            assert!(address.exists(), "the session bus listens");
-            child
-        });
-        let bus_address = if gvfs {
-            format!("unix:path={}", dir.path().join("bus").display())
+            // The bus prints its address once it listens.
+            let mut address = String::new();
+            BufReader::new(child.stdout.take().unwrap())
+                .read_line(&mut address)
+                .unwrap();
+            assert!(!address.trim().is_empty(), "the session bus listens");
+            (Some(child), address.trim().to_owned())
         } else {
-            "unix:path=/nonexistent".to_owned()
+            (None, "unix:path=/nonexistent".to_owned())
         };
         let mut command = Command::new(&program);
         command
@@ -1196,6 +1194,8 @@ fn cancelling_the_confirmation_leaves_the_trash_as_it_was() {
     d.f.dispatch_until_mut(|f| !d.probe.dialog(f).is_empty());
     d.probe.send("respond cancel");
     d.f.dispatch_until_mut(|f| d.probe.dialog(f).is_empty());
+    // Nothing is to happen: an emptying, had cancelling started one, would have deleted the
+    // two small files and told the monitor well within half a second.
     d.f.dispatch_for(Duration::from_millis(500));
 
     assert_eq!(d.probe.trashed(), ["folder", "one.txt"]);

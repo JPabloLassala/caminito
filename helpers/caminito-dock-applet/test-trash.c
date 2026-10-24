@@ -172,8 +172,10 @@ test_emptying_removes_files_and_folders_with_their_contents (Fixture *f,
   c = write_file (inner, "c.txt");
   wait_for_full (f->trash, TRUE);
   dk_trash_empty (f->trash, on_emptied, &r);
+  g_assert_true (dk_trash_is_emptying (f->trash));
   run_until_done (&r.done);
   g_assert_no_error (r.error);
+  g_assert_false (dk_trash_is_emptying (f->trash));
   wait_for_full (f->trash, FALSE);
   g_assert_false (g_file_test (b, G_FILE_TEST_EXISTS));
   g_assert_false (g_file_test (c, G_FILE_TEST_EXISTS));

@@ -25,6 +25,8 @@ void      dk_trash_free        (DkTrash *trash);
 /* Tells changed when the Trash turns full or empty. */
 void      dk_trash_set_changed (DkTrash *trash, DkTrashChanged changed, gpointer data);
 gboolean  dk_trash_is_full     (DkTrash *trash);
+/* An emptying is under way, which another would only race. */
+gboolean  dk_trash_is_emptying (DkTrash *trash);
 /* Deletes everything in it, folders with their contents, off the main thread. It goes on
    past a file it can't delete, and reports the first error. */
 void      dk_trash_empty       (DkTrash *trash, DkTrashEmptied done, gpointer data);
