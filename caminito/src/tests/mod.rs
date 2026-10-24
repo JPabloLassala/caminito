@@ -102,6 +102,7 @@ mod sun;
 mod switcher;
 mod system_shortcuts_entry;
 mod tiling;
+mod toplevel_identifier;
 mod window_actions;
 mod window_menu;
 mod window_menu_slide;

@@ -26,8 +26,12 @@
  *                                "trash-end"
  *   dialog PRIMARY               the confirmation being shown, if any, in answer to
  *                                "dialog", and then "dialog-end"
+ *   toplevel ID EXT title=TITLE  one for each window libxfce4windowing lists, in answer to
+ *                                "identifiers" (CMN-243): the identifier Caminito names it by,
+ *                                or "-" for none, and EXT=1 if the dock found its ext handle,
+ *                                and then "identifiers-end"
  * stdin:
- *   items | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | launch-timeout MS |
+ *   items | identifiers | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | launch-timeout MS |
  *   trash | popup-trash | drop-files URI... | dialog | respond accept|cancel | quit
  * "choose" activates the open menu's item with that label. "drop-files" is a drop of files
  * on the Trash.
@@ -44,6 +48,7 @@
 
 #include "dk-dock.h"
 #include "dk-item.h"
+#include "dk-toplevel.h"
 
 #define PATH "/org/mate/panel/objects/probe/prefs/"
 
@@ -141,6 +146,23 @@ print_dialog (void)
 }
 
 static void
+print_identifiers (void)
+{
+  XfwScreen *screen = xfw_screen_get_default ();
+
+  for (GList *windows = xfw_screen_get_windows (screen); windows != NULL; windows = windows->next)
+    {
+      g_autofree char *identifier = NULL;
+      struct ext_foreign_toplevel_handle_v1 *handle = NULL;
+      gboolean found = dk_toplevel_lookup (G_OBJECT (windows->data), &identifier, &handle);
+
+      printf ("toplevel %s %d title=%s\n", found ? identifier : "-", found && handle != NULL,
+              xfw_window_get_name (windows->data));
+    }
+  printf ("identifiers-end\n");
+}
+
+static void
 run_command (char *line)
 {
   g_auto (GStrv) words = NULL;
@@ -156,6 +178,8 @@ run_command (char *line)
       gdk_display_sync (gdk_display_get_default ());
       g_idle_add_full (G_PRIORITY_LOW, answer_items, NULL, NULL);
     }
+  else if (g_strcmp0 (words[0], "identifiers") == 0)
+    print_identifiers ();
   else if (g_strcmp0 (words[0], "menu") == 0)
     print_menu ();
   else if (g_strcmp0 (words[0], "trash") == 0)

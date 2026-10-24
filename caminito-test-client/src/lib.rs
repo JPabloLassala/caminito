@@ -30,6 +30,7 @@ pub mod output_management;
 pub mod security_context;
 pub mod selection;
 pub mod session_lock;
+pub mod toplevel_identifier;
 pub mod x11;
 pub mod xdg_activation;
 pub mod xfce_foreign_toplevel;
@@ -226,6 +227,8 @@ pub struct State {
         layer_shell::LayerId,
         intellihide::raw::caminito_intellihide_v1::CaminitoIntellihideV1,
     )>,
+    /// The manager that names a window by its ext identifier, and its answers.
+    toplevel_identifiers: toplevel_identifier::ToplevelIdentifiers,
     /// The capture sessions the client opened, and their frames.
     image_capture: image_capture::ImageCapture,
     gamma_control_manager: Option<ZwlrGammaControlManagerV1>,

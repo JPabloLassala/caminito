@@ -125,6 +125,41 @@ activation = static_library(
   pic: true,
 )
 
+# A window's name for Caminito (CMN-243, ADR 0049): the dock binds ext-foreign-toplevel-list on
+# GDK's connection, and asks Caminito's caminito-toplevel-identifier-v1, with the wlr handle
+# libxfce4windowing gives a window, for the identifier to find the window's ext handle by. The
+# protocols' code is generated from their vendored XML; the wlr one only for the handle's
+# interface, which the Caminito request names.
+toplevel_sources = []
+foreach name : [
+  'caminito-toplevel-identifier-v1',
+  'ext-foreign-toplevel-list-v1',
+  'wlr-foreign-toplevel-management-unstable-v1',
+]
+  xml = files('protocols' / name + '.xml')
+  toplevel_sources += custom_target(
+    name + '-code',
+    input: xml,
+    output: name + '-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
+  if name != 'wlr-foreign-toplevel-management-unstable-v1'
+    toplevel_sources += custom_target(
+      name + '-header',
+      input: xml,
+      output: name + '-client-protocol.h',
+      command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+    )
+  endif
+endforeach
+toplevel = static_library(
+  'dk-toplevel',
+  'dk-toplevel.c',
+  toplevel_sources,
+  dependencies: [glib, gtk, wayland_client],
+  pic: true,
+)
+
 # The Trash: whether it is full, putting files in it and emptying it, through GIO.
 trash = static_library('dk-trash', 'dk-trash.c', dependencies: [glib, gio], pic: true)
 
@@ -152,7 +187,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash],
+  link_with: [dock, toplevel, activation, feedback, launcher, store, model, resolve, trash],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,

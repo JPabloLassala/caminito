@@ -10,6 +10,7 @@ pub mod idle_notify;
 pub mod intellihide;
 pub mod output_management;
 pub mod raw;
+pub mod toplevel_identifier;
 pub mod xfce_foreign_toplevel;
 
 use smithay::reexports::wayland_server::Client;

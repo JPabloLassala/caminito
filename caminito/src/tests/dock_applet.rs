@@ -321,6 +321,24 @@ impl Probe {
             .collect()
     }
 
+    /// What the dock's lookup of Caminito's name makes of each window libxfce4windowing
+    /// lists (CMN-243): the title, the identifier or none, and whether the ext handle with
+    /// that identifier was found.
+    fn identifiers(&mut self, f: &mut Fixture) -> Vec<(String, Option<String>, bool)> {
+        self.ask(f, "identifiers", "identifiers-end")
+            .iter()
+            .filter_map(|line| line.strip_prefix("toplevel "))
+            .map(|line| {
+                let (line, title) = line.split_once(" title=").unwrap();
+                let mut words = line.split(' ');
+                let identifier = words.next().unwrap();
+                let found = words.next().unwrap() == "1";
+                let identifier = (identifier != "-").then(|| identifier.to_owned());
+                (title.to_owned(), identifier, found)
+            })
+            .collect()
+    }
+
     /// Dispatches until the dock's items satisfy `done`, and returns them.
     #[track_caller]
     fn wait_for_items(&mut self, f: &mut Fixture, done: impl Fn(&[Item]) -> bool) -> Vec<Item> {
@@ -1539,4 +1557,31 @@ fn cancelling_the_confirmation_leaves_the_trash_as_it_was() {
 
     assert_eq!(d.probe.trashed(), ["folder", "one.txt"]);
     assert!(d.probe.trash(&mut d.f).full, "the icon is still full");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn two_windows_of_one_program_with_one_title_get_their_own_identifiers_and_ext_handles() {
+    let mut d = Desk::new();
+    let first = d.open("mate-terminal", "Terminal");
+    let second = d.open("mate-terminal", "Terminal");
+
+    let named = d.probe.identifiers(&mut d.f);
+
+    assert_eq!(named.len(), 2, "{named:?}");
+    let caminito = &d.f.state.caminito;
+    let mut expected = [first, second].map(|window| caminito.toplevel_identifier(d.f.pid(window)));
+    let mut found: Vec<_> = named
+        .iter()
+        .map(|(title, identifier, ext)| {
+            assert_eq!(title, "Terminal");
+            assert!(ext, "the ext handle with {identifier:?} is found");
+            identifier.clone()
+        })
+        .collect();
+    assert_ne!(found[0], found[1], "one identifier for two windows");
+    // Each window has the identifier the ext list gives it, whatever order they are listed in.
+    expected.sort();
+    found.sort();
+    assert_eq!(found, expected);
 }

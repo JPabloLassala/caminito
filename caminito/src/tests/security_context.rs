@@ -9,7 +9,7 @@ use super::fixture::{ClientId, Fixture, Kind};
 
 /// The globals that show or change what belongs to other clients, and security-context
 /// itself.
-const PRIVILEGED: [&str; 13] = [
+const PRIVILEGED: [&str; 14] = [
     "zwlr_layer_shell_v1",
     "zwlr_foreign_toplevel_manager_v1",
     "xfce_foreign_toplevel_manager_private_v1",
@@ -23,6 +23,7 @@ const PRIVILEGED: [&str; 13] = [
     "ext_image_copy_capture_manager_v1",
     "ext_session_lock_manager_v1",
     "wp_security_context_manager_v1",
+    "caminito_toplevel_identifier_manager_v1",
 ];
 
 fn sees(f: &Fixture, client: ClientId, interface: &str) -> bool {
