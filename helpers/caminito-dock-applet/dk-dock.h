@@ -35,3 +35,14 @@ void       dk_dock_drop_key    (DkDock *dock, const char *key, int x, int y);
 void       dk_dock_popup_menu  (DkDock *dock, GtkWidget *item, const GdkEvent *event);
 /* The menu being shown, or NULL. */
 GtkWidget *dk_dock_get_menu    (DkDock *dock);
+
+/* The Trash (CMN-220), after a separator at the end of the row. Its icon is full or empty,
+   a click opens it in Caja, and its menu is Open and Empty Trash, which asks first. */
+GtkWidget *dk_dock_get_trash    (DkDock *dock);
+gboolean   dk_dock_trash_is_full (DkDock *dock);
+/* What a drop of files on the Trash does: moves the URIs' files to it. The probe's way to
+   a drag, and the drag's own. */
+void       dk_dock_drop_uris   (DkDock *dock, const char *const *uris);
+/* The confirmation of emptying being shown, or NULL. Answer it with gtk_dialog_response
+   (GTK_RESPONSE_ACCEPT to empty). */
+GtkWidget *dk_dock_get_dialog  (DkDock *dock);

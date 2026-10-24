@@ -74,12 +74,20 @@ if glib_compile_schemas.found()
   )
 endif
 
+# The Trash: whether it is full, putting files in it and emptying it, through GIO.
+trash = static_library('dk-trash', 'dk-trash.c', dependencies: [glib, gio], pic: true)
+
+test(
+  'trash',
+  executable('test-trash', 'test-trash.c', link_with: trash, dependencies: [glib, gio]),
+)
+
 # The dock: the items' widgets, the windows, the clicks, the menu and the drags.
 dock = static_library(
   'dk-dock',
   'dk-dock.c',
   'dk-item.c',
-  link_with: [store, model, resolve],
+  link_with: [store, model, resolve, trash],
   dependencies: [glib, gio_unix, gtk, xfw],
   pic: true,
 )
@@ -93,7 +101,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, store, model, resolve],
+  link_with: [dock, store, model, resolve, trash],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw],
   c_args: probe_args,
@@ -103,7 +111,7 @@ applet_dir = get_option('libdir') / 'mate-panel'
 shared_module(
   'caminito-dock-applet',
   'dock-applet.c',
-  link_with: [dock, store, model, resolve],
+  link_with: [dock, store, model, resolve, trash],
   dependencies: [glib, gio_unix, gtk, xfw, applet_dep, common],
   gnu_symbol_visibility: 'hidden',
   install: true,

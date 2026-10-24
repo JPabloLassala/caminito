@@ -71,6 +71,8 @@ BuildRequires:  gtk-layer-shell-devel
 # the Network applet's run against.
 %if %{with tests}
 BuildRequires:  dbus-daemon
+# The Dock applet's Trash is trash:///, which gvfs serves, and its tests start it (CMN-220).
+BuildRequires:  gvfs
 BuildRequires:  pixman-devel
 BuildRequires:  wayland-devel
 BuildRequires:  xorg-x11-server-Xwayland
@@ -105,6 +107,8 @@ Requires:       bluez
 # The daemon the Power applet reads the batteries from (262), and the power profiles of its
 # popup (264), which Fedora has from tuned-ppd, with power-profiles-daemon's names.
 Requires:       upower
+# The Dock applet's Trash, GIO's trash:///, as Caja has it (CMN-220).
+Requires:       gvfs
 Recommends:     (tuned-ppd or power-profiles-daemon)
 # The Network applet's settings window, which it also runs for an Enterprise network and a
 # hidden one (ADR 0041). Fedora has it apart from nm-applet.

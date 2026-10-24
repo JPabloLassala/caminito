@@ -4,7 +4,8 @@
  * own. The windows come from libxfce4windowing (dk-dock.c), the kept items from the
  * instance's own relocatable settings (dk-store.c). Left-click launches a program, or
  * activates, or minimises, its window; middle-click launches a new instance; right-click
- * opens the item's menu. The panel's own menu is where the dock has no item.
+ * opens the item's menu. The panel's own menu is where the dock has no item. The Trash
+ * (CMN-220) ends the row, after a separator.
  */
 
 #include <mate-panel-applet.h>

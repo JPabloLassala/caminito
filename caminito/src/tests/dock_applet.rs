@@ -4,6 +4,10 @@
 //! pointer the way a user would. Desktop entries in a directory of the test's own say what a
 //! launch runs: each appends a line to a file named for it.
 //!
+//! The Trash (CMN-220) is at the end of the row. It reads `trash:///` through gvfs, which
+//! the tests that need it give a session bus of its own, with `XDG_DATA_HOME` the test's, so
+//! that the Trash is the test's too; they need gvfs installed, as Caja does.
+//!
 //! The app id to item resolution has its own tests without a panel, in
 //! `helpers/caminito-dock-applet/test-resolve.c` and `test-model.c`; what this adds is what
 //! the compositor does with the clicks: activating a window on another workspace, minimising
@@ -69,10 +73,26 @@ struct Probe {
     /// The edge of the screen it's along, and how thick it is.
     edge: &'static str,
     thickness: i32,
+    /// The session bus gvfs's Trash is reached through, for the tests that have one.
+    bus: Option<Child>,
+}
+
+/// The Trash as the dock shows it.
+#[derive(Debug, Clone)]
+struct Trash {
+    full: bool,
+    /// The Trash's rectangle in the probe's window.
+    rect: Rectangle<i32, Logical>,
 }
 
 impl Probe {
-    fn start(f: &mut Fixture, dir: tempfile::TempDir, edge: &'static str, size: i32) -> Self {
+    fn start(
+        f: &mut Fixture,
+        dir: tempfile::TempDir,
+        edge: &'static str,
+        size: i32,
+        gvfs: bool,
+    ) -> Self {
         let program = PathBuf::from(
             std::env::var_os("CAMINITO_DOCK_PROBE").expect("CAMINITO_DOCK_PROBE names the probe"),
         );
@@ -100,8 +120,23 @@ impl Probe {
             }
             std::fs::write(applications.join(format!("{id}.desktop")), entry).unwrap();
         }
-        // The system's icons, for the items and the menu's.
-        let _ = std::os::unix::fs::symlink("/usr/share/icons", dir.path().join("data/icons"));
+        // What opens a folder: Caja's handler on a Session. It records the URIs it is given.
+        std::fs::write(
+            applications.join("caja-folder-handler.desktop"),
+            format!(
+                "[Desktop Entry]\nType=Application\nName=Caja\nNoDisplay=true\nExec=sh -c \"echo %U >> {}\"\n",
+                dir.path().join("opened-in-caja").display()
+            ),
+        )
+        .unwrap();
+        // The system's icons, for the items and the menu's, and what the image loaders need
+        // to read them: the types of the images, and their own programs.
+        for shared in ["icons", "mime", "glycin-loaders"] {
+            let _ = std::os::unix::fs::symlink(
+                Path::new("/usr/share").join(shared),
+                dir.path().join("data").join(shared),
+            );
+        }
         let listener = UnixListener::bind(dir.path().join("wayland-test")).unwrap();
         listener.set_nonblocking(true).unwrap();
         let log = std::fs::File::options()
@@ -109,6 +144,33 @@ impl Probe {
             .append(true)
             .open(dir.path().join("log"))
             .unwrap();
+        // The Trash: gvfs's trash daemon, which a bus starts, over this test's data directory.
+        // The bus itself looks for the daemon's service file where the system keeps them.
+        let bus = gvfs.then(|| {
+            let address = dir.path().join("bus");
+            let child = Command::new("dbus-daemon")
+                .args(["--session", "--nofork"])
+                .arg(format!("--address=unix:path={}", address.display()))
+                .env("HOME", dir.path())
+                .env("XDG_DATA_HOME", dir.path().join("data"))
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("dbus-daemon starts");
+            for _ in 0..100 {
+                if address.exists() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            assert!(address.exists(), "the session bus listens");
+            child
+        });
+        let bus_address = if gvfs {
+            format!("unix:path={}", dir.path().join("bus").display())
+        } else {
+            "unix:path=/nonexistent".to_owned()
+        };
         let mut command = Command::new(&program);
         command
             .arg(format!("--edge={edge}"))
@@ -127,12 +189,17 @@ impl Probe {
             // The settings in a keyfile of the test's, which a second probe reads back.
             .env("GSETTINGS_BACKEND", "keyfile")
             .env("GSETTINGS_SCHEMA_DIR", program.parent().unwrap())
-            .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent")
+            .env("DBUS_SESSION_BUS_ADDRESS", bus_address)
             .stdin(Stdio::piped())
             .stdout(log.try_clone().unwrap())
             .stderr(log);
         // Where libxfce4windowing isn't in the system's directories, and to look into the probe.
-        for name in ["LD_LIBRARY_PATH", "G_MESSAGES_DEBUG", "WAYLAND_DEBUG"] {
+        for name in [
+            "LD_LIBRARY_PATH",
+            "G_MESSAGES_DEBUG",
+            "WAYLAND_DEBUG",
+            "GIO_EXTRA_MODULES",
+        ] {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
             }
@@ -155,6 +222,7 @@ impl Probe {
             read: 0,
             edge,
             thickness: size,
+            bus,
         };
         probe.wait_for_line(f, "ready");
         probe
@@ -253,6 +321,70 @@ impl Probe {
             .collect()
     }
 
+    /// The labels of the open menu's items that can't be chosen.
+    fn menu_disabled(&mut self, f: &mut Fixture) -> Vec<String> {
+        self.ask(f, "menu", "menu-end")
+            .iter()
+            .filter_map(|line| line.strip_prefix("menu-disabled ").map(str::to_owned))
+            .collect()
+    }
+
+    /// The Trash as the dock shows it now.
+    fn trash(&mut self, f: &mut Fixture) -> Trash {
+        let lines = self.ask(f, "trash", "trash-end");
+        let line = lines
+            .iter()
+            .find_map(|line| line.strip_prefix("trash "))
+            .expect("the probe answers with the Trash");
+        let fields: Vec<i32> = line
+            .split(' ')
+            .map(|word| word.split_once('=').unwrap().1.parse().unwrap())
+            .collect();
+        Trash {
+            full: fields[0] != 0,
+            rect: Rectangle::new((fields[1], fields[2]).into(), (fields[3], fields[4]).into()),
+        }
+    }
+
+    /// The titles of the confirmation being shown, none if there isn't one.
+    fn dialog(&mut self, f: &mut Fixture) -> Vec<String> {
+        self.ask(f, "dialog", "dialog-end")
+            .iter()
+            .filter_map(|line| line.strip_prefix("dialog ").map(str::to_owned))
+            .collect()
+    }
+
+    /// The names in the Trash's folder, which gvfs's `trash:///` is.
+    fn trashed(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.dir.path().join("data/Trash/files"))
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    /// A file of the test's own, outside the Trash, and its URI.
+    fn file(&self, name: &str) -> (PathBuf, String) {
+        let path = self.dir.path().join("outside").join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "content").unwrap();
+        let uri = format!("file://{}", path.display());
+        (path, uri)
+    }
+
+    /// The URIs Caja was asked to open.
+    fn opened_in_caja(&self) -> Vec<String> {
+        std::fs::read_to_string(self.dir.path().join("opened-in-caja"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
     /// How many times the entry's command has run.
     fn launches(&self, id: &str) -> usize {
         std::fs::read_to_string(self.dir.path().join(format!("launched-{id}")))
@@ -272,11 +404,15 @@ impl Probe {
 
     /// Where an item is, globally.
     fn rect_of(&self, item: &Item) -> Rectangle<i32, Logical> {
-        Rectangle::new(item.rect.loc + self.surface().loc, item.rect.size)
+        self.global(item.rect)
     }
 
-    fn middle_of(&self, item: &Item) -> (f64, f64) {
-        let rect = self.rect_of(item);
+    fn global(&self, rect: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
+        Rectangle::new(rect.loc + self.surface().loc, rect.size)
+    }
+
+    fn middle_of_rect(&self, rect: Rectangle<i32, Logical>) -> (f64, f64) {
+        let rect = self.global(rect);
         (
             f64::from(rect.loc.x) + f64::from(rect.size.w) / 2.,
             f64::from(rect.loc.y) + f64::from(rect.size.h) / 2.,
@@ -301,6 +437,10 @@ impl Drop for Probe {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(bus) = &mut self.bus {
+            let _ = bus.kill();
+            let _ = bus.wait();
+        }
     }
 }
 
@@ -315,11 +455,20 @@ impl Desk {
         Self::with("bottom", 48)
     }
 
+    /// A dock whose Trash is gvfs's, on a session bus of its own.
+    fn with_gvfs() -> Self {
+        Self::start("bottom", 48, true)
+    }
+
     /// A dock along `edge` of the screen, whose items are `size` pixels square.
     fn with(edge: &'static str, size: i32) -> Self {
+        Self::start(edge, size, false)
+    }
+
+    fn start(edge: &'static str, size: i32, gvfs: bool) -> Self {
         let mut f = Fixture::new();
         f.add_output(OUTPUT, 1.0);
-        let mut probe = Probe::start(&mut f, tempfile::tempdir().unwrap(), edge, size);
+        let mut probe = Probe::start(&mut f, tempfile::tempdir().unwrap(), edge, size, gvfs);
         probe.wait_for_items(&mut f, |_| true);
         Desk { f, probe }
     }
@@ -400,10 +549,53 @@ impl Desk {
     }
 
     fn press(&mut self, item: &Item, button: u32) {
-        let (x, y) = self.probe.middle_of(item);
+        self.press_rect(item.rect, button);
+    }
+
+    fn press_rect(&mut self, rect: Rectangle<i32, Logical>, button: u32) {
+        let (x, y) = self.probe.middle_of_rect(rect);
         self.f.pointer_move(x, y);
         self.f.pointer_button(button, true);
         self.f.pointer_button(button, false);
+    }
+
+    /// The Trash once the dock has laid it out.
+    fn trash(&mut self) -> Trash {
+        let mut found = None;
+        self.f.dispatch_until_mut(|f| {
+            let trash = self.probe.trash(f);
+            let laid_out = trash.rect.size.w > 1;
+            if laid_out {
+                found = Some(trash);
+            }
+            laid_out
+        });
+        found.unwrap()
+    }
+
+    /// Dispatches until the dock shows the Trash full or empty, and returns it.
+    #[track_caller]
+    fn wait_for_trash(&mut self, full: bool) -> Trash {
+        let mut found = None;
+        self.f.dispatch_until_mut(|f| {
+            let trash = self.probe.trash(f);
+            let holds = trash.full == full && trash.rect.size.w > 1;
+            if holds {
+                found = Some(trash);
+            }
+            holds
+        });
+        found.unwrap()
+    }
+
+    /// Dispatches until the menu has labels, which it takes the probe a turn to show.
+    fn wait_for_menu(&mut self) -> Vec<String> {
+        let mut labels = Vec::new();
+        self.f.dispatch_until_mut(|f| {
+            labels = self.probe.menu(f);
+            !labels.is_empty()
+        });
+        labels
     }
 
     fn click(&mut self, item: &Item) {
@@ -799,7 +991,7 @@ fn keeping_removing_and_reordering_survive_the_panels_restart() {
     // The panel restarts: a second probe over the same settings.
     let Desk { mut f, probe } = d;
     let dir = probe.stop(&mut f);
-    let mut probe = Probe::start(&mut f, dir, "bottom", 48);
+    let mut probe = Probe::start(&mut f, dir, "bottom", 48, false);
     let items = probe.wait_for_items(&mut f, |items| items.len() == 2);
     assert_eq!(keys(&items), ["caja.desktop", "mate-terminal.desktop"]);
     assert!(items.iter().all(|item| item.kept && item.windows == 0));
@@ -820,4 +1012,192 @@ fn a_vertical_dock_is_a_column_with_the_indicator_on_the_panels_edge() {
     assert_eq!(items[1].rect.loc.y, items[0].rect.loc.y + 40);
     assert_eq!(items[0].rect.size, (40, 40).into());
     d.shot("05-vertical-dock");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
+fn the_trash_is_at_the_end_of_the_row_after_a_separator_in_every_orientation() {
+    for edge in ["bottom", "top", "left", "right"] {
+        let mut d = Desk::with(edge, 40);
+        let _terminal = d.open("mate-terminal", "Terminal");
+        let last = d.wait_for("mate-terminal.desktop", 1);
+        let trash = d.trash();
+        let horizontal = edge == "bottom" || edge == "top";
+
+        assert_eq!(trash.rect.size, (40, 40).into(), "{edge}: an item's size");
+        let (last_end, trash_start, across_last, across_trash) = if horizontal {
+            (
+                last.rect.loc.x + last.rect.size.w,
+                trash.rect.loc.x,
+                last.rect.loc.y,
+                trash.rect.loc.y,
+            )
+        } else {
+            (
+                last.rect.loc.y + last.rect.size.h,
+                trash.rect.loc.y,
+                last.rect.loc.x,
+                trash.rect.loc.x,
+            )
+        };
+        assert_eq!(across_last, across_trash, "{edge}: in the row of the items");
+        assert!(
+            trash_start >= last_end + 8,
+            "{edge}: a separator between the last item at {last_end} and the Trash at \
+             {trash_start}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe, and gvfs"]
+fn dropping_a_file_on_the_trash_moves_it_there_and_the_icon_turns_full() {
+    let mut d = Desk::with_gvfs();
+    let _terminal = d.open("mate-terminal", "Terminal");
+    d.wait_for_trash(false);
+    d.shot("07-trash-empty");
+
+    let (path, uri) = d.probe.file("report.txt");
+    d.probe.send(&format!("drop-files {uri}"));
+    d.wait_for_trash(true);
+    assert!(!path.exists(), "the file left its place");
+    assert_eq!(d.probe.trashed(), ["report.txt"], "and is in the Trash");
+    d.shot("08-trash-full");
+
+    // The icon follows the Trash as it changes by other hands too: Caja emptying it.
+    std::fs::remove_file(d.probe.dir.path().join("data/Trash/files/report.txt")).unwrap();
+    d.wait_for_trash(false);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe, and gvfs"]
+fn a_file_that_cannot_be_trashed_is_reported_and_the_others_still_go() {
+    let mut d = Desk::with_gvfs();
+    d.wait_for_trash(false);
+    let missing = d.probe.dir.path().join("outside/missing.txt");
+    let (good, uri) = d.probe.file("good.txt");
+    d.probe
+        .send(&format!("drop-files file://{} {uri}", missing.display()));
+
+    d.wait_for_trash(true);
+    assert!(!good.exists(), "the file that can go went");
+    let probe = &d.probe;
+    d.f.dispatch_until_explained(
+        |_| probe.log().contains("can't move file://"),
+        || format!("the failure wasn't reported: {}", probe.log()),
+    );
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe, and gvfs"]
+fn a_click_on_the_trash_opens_it_in_caja() {
+    let mut d = Desk::with_gvfs();
+    let trash = d.trash();
+
+    d.press_rect(trash.rect, BTN_LEFT);
+    let probe = &d.probe;
+    d.f.dispatch_until_explained(
+        |_| !probe.opened_in_caja().is_empty(),
+        || format!("Caja wasn't asked to open the Trash: {}", probe.log()),
+    );
+    assert_eq!(d.probe.opened_in_caja(), ["trash:///"]);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe, and gvfs"]
+fn the_trashs_menu_is_open_and_empty_trash_which_is_only_for_a_full_trash() {
+    let mut d = Desk::with_gvfs();
+    let trash = d.wait_for_trash(false);
+
+    d.press_rect(trash.rect, BTN_RIGHT);
+    assert_eq!(
+        d.wait_for_menu(),
+        ["Open", "Empty Trash"].map(str::to_owned)
+    );
+    assert_eq!(d.probe.menu_disabled(&mut d.f), ["Empty Trash"]);
+    d.probe.send("choose Open");
+    let probe = &d.probe;
+    d.f.dispatch_until_explained(
+        |_| !probe.opened_in_caja().is_empty(),
+        || format!("Open didn't open the Trash: {}", probe.log()),
+    );
+
+    let (_, uri) = d.probe.file("a.txt");
+    d.probe.send(&format!("drop-files {uri}"));
+    d.wait_for_trash(true);
+    d.press_rect(trash.rect, BTN_RIGHT);
+    d.wait_for_menu();
+    assert!(d.probe.menu_disabled(&mut d.f).is_empty());
+    d.shot("09-trash-menu");
+}
+
+/// A full Trash: a file and a folder with a file in it.
+fn fill_the_trash(d: &mut Desk) {
+    let (_, one) = d.probe.file("one.txt");
+    let (folder, _) = d.probe.file("folder/inside.txt");
+    d.probe.send(&format!(
+        "drop-files {one} file://{}",
+        folder.parent().unwrap().display()
+    ));
+    d.wait_for_trash(true);
+    let probe = &d.probe;
+    d.f.dispatch_until_explained(
+        |_| probe.trashed() == ["folder", "one.txt"],
+        || format!("the Trash holds {:?}: {}", probe.trashed(), probe.log()),
+    );
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe, and gvfs"]
+fn emptying_the_trash_asks_first_and_confirmed_empties_it() {
+    let mut d = Desk::with_gvfs();
+    fill_the_trash(&mut d);
+    let trash = d.trash();
+
+    d.press_rect(trash.rect, BTN_RIGHT);
+    d.wait_for_menu();
+    d.probe.send("choose Empty Trash");
+    d.f.dispatch_until_mut(|f| !d.probe.dialog(f).is_empty());
+    assert_eq!(
+        d.probe.dialog(&mut d.f),
+        ["Empty all items from Trash?"],
+        "it asks, as Caja does"
+    );
+    assert_eq!(
+        d.probe.trashed(),
+        ["folder", "one.txt"],
+        "and has emptied nothing yet"
+    );
+    d.shot("10-trash-confirmation");
+
+    d.probe.send("respond accept");
+    d.wait_for_trash(false);
+    assert_eq!(
+        d.probe.trashed(),
+        Vec::<String>::new(),
+        "confirmed, it is empty"
+    );
+    assert!(
+        d.probe.dialog(&mut d.f).is_empty(),
+        "and the question is gone"
+    );
+}
+
+#[test]
+#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe, and gvfs"]
+fn cancelling_the_confirmation_leaves_the_trash_as_it_was() {
+    let mut d = Desk::with_gvfs();
+    fill_the_trash(&mut d);
+    let trash = d.trash();
+
+    d.press_rect(trash.rect, BTN_RIGHT);
+    d.wait_for_menu();
+    d.probe.send("choose Empty Trash");
+    d.f.dispatch_until_mut(|f| !d.probe.dialog(f).is_empty());
+    d.probe.send("respond cancel");
+    d.f.dispatch_until_mut(|f| d.probe.dialog(f).is_empty());
+    d.f.dispatch_for(Duration::from_millis(500));
+
+    assert_eq!(d.probe.trashed(), ["folder", "one.txt"]);
+    assert!(d.probe.trash(&mut d.f).full, "the icon is still full");
 }
