@@ -12,7 +12,7 @@ RUN pacman -Syu --noconfirm --needed git curl jq \
     gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm desktop-file-utils python-dbusmock libnm mate-panel \
+    nodejs npm desktop-file-utils python-dbusmock libnm mate-panel libxfce4windowing gtk-layer-shell gvfs \
   && pacman -Scc --noconfirm
 
 # build-image sets these to the host user's UID and GID, and Docker runs the sandbox as that

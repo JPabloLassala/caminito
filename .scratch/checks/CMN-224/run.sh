@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CMN-224's check of Intellihide end to end, for what the headless tests of caminito and
-# caminito-policy can't reach: the mate-panel patch (packaging/patches/mate-panel/0015) builds
+# caminito-policy can't reach: the mate-panel patch (packaging/patches/mate-panel/0016) builds
 # against upstream's pinned commit with the series before it, and its own wayland-intellihide.c,
 # run by a probe on GDK's Wayland backend with gtk-layer-shell, is understood by Caminito
 # (caminito/src/tests/mate_panel_intellihide.rs).

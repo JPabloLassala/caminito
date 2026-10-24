@@ -26,7 +26,7 @@ _basever=1.28.7
 # weekly job knows this source by its -stock name, and leaves it at the tag.
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=14
+pkgrel=15
 pkgdesc="The MATE Panel, with Caminito's carried patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -67,7 +67,10 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # before a switch to a lower one (240).
 # The fourteenth is an upstream fix, with no gate: the scroll wheel over the workspace
 # switcher's buttons changes the workspace, where it did nothing on Wayland (240).
-# The fifteenth adds Intellihide to a panel's Properties, beside Autohide: the panel reserves no
+# The fifteenth is active only while org.mate.Caminito has an owner: a panel has a Floating
+# property, beside Autohide in its properties, which stands it off its edge through the
+# layer-shell margin, with rounded corners (223).
+# The sixteenth adds Intellihide to a panel's Properties, beside Autohide: the panel reserves no
 # space and asks Caminito, through its private caminito_intellihide_manager_v1, to hide it while a
 # window overlaps it (CMN-224, ADR 0047). It is gated on the global, which only Caminito offers:
 # without it the option is not shown and the panel is an ordinary one.
@@ -91,7 +94,8 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "$_patches/0012-wayland-workspace-Show-the-workspaces-of-the-panel-s.patch"
         "$_patches/0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch"
         "$_patches/0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch"
-        "$_patches/0015-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch")
+        "$_patches/0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch"
+        "$_patches/0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch")
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
@@ -109,7 +113,8 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             'a34da48b20d86529e5b3ce18f9e2e03d66c0d050613514ece1d32502992cdf7c'
             'f0d9f14c12a8b85f7065bd24a7808365abf53a6b17fe818e5b72c9db9f02309b'
             '2be33d3f7f79e14b5d96e3a72ceff13d2f94b1f9da50aab503284a03247dd04f'
-            '23fc36f3b28bfd2a5ced0933d3b906988be220dfb64214b7c92df691b67e8def')
+            'e91e262b4441cc80af0c9c63f4b75b95e959736e7d30175b0acb35658c77d1e9'
+            'ac39ccd0903a025787f59004bbae2e79d16efb21b514055f74d438cceb9c2c37')
 
 pkgver() {
     cd "${_pkgname}"

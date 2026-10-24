@@ -29,7 +29,7 @@ the protocol has no events. The key is a new one in the toplevel schema,
 The gate is the global: only Caminito offers it. Without it the checkbox is
 not shown, the panel asks for nothing and reserves its edge as it did, and on
 X11 nothing changes. Intellihide and Autohide turn each other off in the
-dialog.
+dialog, and Floating, which is on top of this, goes below Intellihide.
 ---
  data/org.mate.panel.toplevel.gschema.xml.in |   5 +
  mate-panel/Makefile.am                      |   6 +-
@@ -37,7 +37,7 @@ dialog.
  mate-panel/panel-layout.c                   |   1 +
  mate-panel/panel-profile.c                  |   3 +
  mate-panel/panel-profile.h                  |   4 +
- mate-panel/panel-properties-dialog.c        |  51 +++++
+ mate-panel/panel-properties-dialog.c        |  55 ++++-
  mate-panel/panel-properties-dialog.ui       |  19 +-
  mate-panel/panel-schemas.h                  |   1 +
  mate-panel/panel-toplevel.c                 |  57 ++++-
@@ -46,17 +46,17 @@ dialog.
  mate-panel/wayland-backend.h                |   2 +
  mate-panel/wayland-intellihide.c            | 217 ++++++++++++++++++++
  mate-panel/wayland-intellihide.h            |  38 ++++
- 15 files changed, 452 insertions(+), 5 deletions(-)
+ 15 files changed, 454 insertions(+), 7 deletions(-)
  create mode 100644 mate-panel/wayland-intellihide.c
  create mode 100644 mate-panel/wayland-intellihide.h
 
 diff --git a/data/org.mate.panel.toplevel.gschema.xml.in b/data/org.mate.panel.toplevel.gschema.xml.in
-index 25e712c1..0462d201 100644
+index 4b80fef9..9476ca9b 100644
 --- a/data/org.mate.panel.toplevel.gschema.xml.in
 +++ b/data/org.mate.panel.toplevel.gschema.xml.in
-@@ -65,6 +65,11 @@
-       <summary>Automatically hide panel into corner</summary>
-       <description>If true, the panel is automatically hidden into a corner of the screen when the pointer leaves the panel area. Moving the pointer to that corner again will cause the panel to re-appear.</description>
+@@ -70,6 +70,11 @@
+       <summary>Float the panel off the screen edge</summary>
+       <description>If true, the panel stands off the edge of the screen it is at, with rounded corners, and the space it reserves counts the gap. This is only done under Caminito, the Wayland compositor, and is ignored anywhere else.</description>
      </key>
 +    <key name="intellihide" type="b">
 +      <default>false</default>
@@ -121,40 +121,40 @@ index c0ab9ba6..e0cc2dc7 100644
          { PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY,    G_TYPE_BOOLEAN  },
          { PANEL_TOPLEVEL_ENABLE_ARROWS_KEY,     G_TYPE_BOOLEAN  },
 diff --git a/mate-panel/panel-profile.c b/mate-panel/panel-profile.c
-index 512a18b3..85f58362 100644
+index 95adf301..5de6b418 100644
 --- a/mate-panel/panel-profile.c
 +++ b/mate-panel/panel-profile.c
-@@ -351,6 +351,7 @@ panel_profile_get_toplevel_orientation (PanelToplevel *toplevel)
- TOPLEVEL_GET_SET_FUNCS ("size",               toplevel,   int,     size,           int)
+@@ -352,6 +352,7 @@ TOPLEVEL_GET_SET_FUNCS ("size",               toplevel,   int,     size,
  TOPLEVEL_GET_SET_FUNCS ("expand",             toplevel,   boolean, expand,         gboolean)
  TOPLEVEL_GET_SET_FUNCS ("auto-hide",          toplevel,   boolean, auto_hide,      gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("floating",           toplevel,   boolean, floating,       gboolean)
 +TOPLEVEL_GET_SET_FUNCS ("intellihide",        toplevel,   boolean, intellihide,    gboolean)
  TOPLEVEL_GET_SET_FUNCS ("enable-buttons",     toplevel,   boolean, enable_buttons, gboolean)
  TOPLEVEL_GET_SET_FUNCS ("enable-arrows",      toplevel,   boolean, enable_arrows,  gboolean)
  
-@@ -775,6 +776,7 @@ panel_profile_toplevel_change_notify (GSettings *settings,
- 	else UPDATE_CENTERED ("x-centered", x, x_right)
+@@ -777,6 +778,7 @@ panel_profile_toplevel_change_notify (GSettings *settings,
  	else UPDATE_CENTERED ("y-centered", y, y_bottom)
  	else UPDATE_BOOL ("auto-hide", auto_hide)
+ 	else UPDATE_BOOL ("floating", floating)
 +	else UPDATE_BOOL ("intellihide", intellihide)
  	else UPDATE_BOOL ("enable-animations", animate)
  	else UPDATE_BOOL ("enable-buttons", enable_buttons)
  	else UPDATE_BOOL ("enable-arrows", enable_arrows)
-@@ -1149,6 +1151,7 @@ panel_profile_load_toplevel (const char *toplevel_id)
- 	GET_ENUM ("orientation", orientation);
+@@ -1152,6 +1154,7 @@ panel_profile_load_toplevel (const char *toplevel_id)
  	GET_INT ("size", size);
  	GET_BOOL ("auto-hide", auto_hide);
+ 	GET_BOOL ("floating", floating);
 +	GET_BOOL ("intellihide", intellihide);
  	GET_BOOL ("enable-animations", animate);
  	GET_BOOL ("enable-buttons", enable_buttons);
  	GET_BOOL ("enable-arrows", enable_arrows);
 diff --git a/mate-panel/panel-profile.h b/mate-panel/panel-profile.h
-index 152603e2..ff0fc012 100644
+index 442cfe3a..5ff10689 100644
 --- a/mate-panel/panel-profile.h
 +++ b/mate-panel/panel-profile.h
-@@ -97,6 +97,10 @@ void        panel_profile_set_toplevel_auto_hide      (PanelToplevel *toplevel,
- 						       gboolean       auto_hide);
- gboolean    panel_profile_get_toplevel_auto_hide      (PanelToplevel *toplevel);
+@@ -100,6 +100,10 @@ void        panel_profile_set_toplevel_floating       (PanelToplevel *toplevel,
+ 						       gboolean       floating);
+ gboolean    panel_profile_get_toplevel_floating       (PanelToplevel *toplevel);
  
 +void        panel_profile_set_toplevel_intellihide    (PanelToplevel *toplevel,
 +						       gboolean       intellihide);
@@ -164,7 +164,7 @@ index 152603e2..ff0fc012 100644
  						       gboolean       enable_buttons);
  gboolean    panel_profile_get_toplevel_enable_buttons (PanelToplevel *toplevel);
 diff --git a/mate-panel/panel-properties-dialog.c b/mate-panel/panel-properties-dialog.c
-index bc7e8875..349a5fbc 100644
+index efd76ba6..539b5fc6 100644
 --- a/mate-panel/panel-properties-dialog.c
 +++ b/mate-panel/panel-properties-dialog.c
 @@ -30,6 +30,9 @@
@@ -187,15 +187,33 @@ index bc7e8875..349a5fbc 100644
  
  typedef struct {
  	PanelToplevel *toplevel;
-@@ -66,6 +72,7 @@ typedef struct {
- 	GtkWidget     *icon_label;
+@@ -67,6 +73,7 @@ typedef struct {
    	GtkWidget     *expand_toggle;
  	GtkWidget     *autohide_toggle;
+ 	GtkWidget     *floating_toggle;
 +	GtkWidget     *intellihide_toggle;
  	GtkWidget     *hidebuttons_toggle;
  	GtkWidget     *arrows_toggle;
  	GtkWidget     *default_radio;
-@@ -541,6 +548,45 @@ panel_properties_dialog_setup_icon_chooser (PanelPropertiesDialog *dialog,
+@@ -441,7 +448,7 @@ panel_properties_dialog_floating_toggled (PanelPropertiesDialog *dialog,
+ }
+ 
+ /* A panel stands off its edge only under Caminito, so the toggle is added there
+- * alone, below Autohide. A drawer has none. */
++ * alone, below Autohide and Intellihide. A drawer has none. */
+ static void
+ panel_properties_dialog_setup_floating_toggle (PanelPropertiesDialog *dialog)
+ {
+@@ -454,7 +461,7 @@ panel_properties_dialog_setup_floating_toggle (PanelPropertiesDialog *dialog)
+ 
+ 	gtk_box_pack_start (GTK_BOX (dialog->general_vbox), dialog->floating_toggle,
+ 			    FALSE, FALSE, 0);
+-	gtk_box_reorder_child (GTK_BOX (dialog->general_vbox), dialog->floating_toggle, 4);
++	gtk_box_reorder_child (GTK_BOX (dialog->general_vbox), dialog->floating_toggle, 5);
+ 	gtk_widget_show (dialog->floating_toggle);
+ 
+ 	if (! panel_profile_key_is_writable (dialog->toplevel, PANEL_TOPLEVEL_FLOATING_KEY)) {
+@@ -573,6 +580,45 @@ panel_properties_dialog_setup_icon_chooser (PanelPropertiesDialog *dialog,
  
  SETUP_TOGGLE_BUTTON ("expand_toggle",      expand_toggle,      expand,           PANEL_TOPLEVEL_EXPAND_KEY)
  SETUP_TOGGLE_BUTTON ("autohide_toggle",    autohide_toggle,    auto_hide,        PANEL_TOPLEVEL_AUTO_HIDE_KEY)
@@ -241,15 +259,15 @@ index bc7e8875..349a5fbc 100644
  SETUP_TOGGLE_BUTTON ("hidebuttons_toggle", hidebuttons_toggle, enable_buttons,   PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY)
  SETUP_TOGGLE_BUTTON ("arrows_toggle",      arrows_toggle,      enable_arrows,    PANEL_TOPLEVEL_ENABLE_ARROWS_KEY)
  
-@@ -893,6 +939,7 @@ panel_properties_dialog_toplevel_notify (GSettings             *settings,
- 		panel_properties_dialog_update_size (dialog, g_settings_get_int (settings, key));
+@@ -929,6 +975,7 @@ panel_properties_dialog_toplevel_notify (GSettings             *settings,
+ 	}
  	else UPDATE_TOGGLE ("expand",         expand_toggle)
  	else UPDATE_TOGGLE ("auto-hide",      autohide_toggle)
 +	else UPDATE_TOGGLE ("intellihide",    intellihide_toggle)
  	else UPDATE_TOGGLE ("enable-buttons", hidebuttons_toggle)
  	else UPDATE_TOGGLE ("enable-arrows",  arrows_toggle)
  }
-@@ -1050,9 +1097,11 @@ panel_properties_dialog_remove_toggles (PanelPropertiesDialog *dialog)
+@@ -1086,9 +1133,11 @@ panel_properties_dialog_remove_toggles (PanelPropertiesDialog *dialog)
  	GtkContainer *container = GTK_CONTAINER (dialog->general_vbox);
  
  	gtk_container_remove (container, dialog->autohide_toggle);
@@ -261,7 +279,7 @@ index bc7e8875..349a5fbc 100644
  	dialog->expand_toggle   = NULL;
  }
  
-@@ -1109,6 +1158,8 @@ panel_properties_dialog_new (PanelToplevel *toplevel)
+@@ -1145,6 +1194,8 @@ panel_properties_dialog_new (PanelToplevel *toplevel)
  	panel_properties_dialog_setup_icon_chooser       (dialog, gui);
  	panel_properties_dialog_setup_expand_toggle      (dialog, gui);
  	panel_properties_dialog_setup_autohide_toggle    (dialog, gui);
@@ -308,38 +326,38 @@ index 9073f182..64b0d3b9 100644
                  </child>
                </object>
 diff --git a/mate-panel/panel-schemas.h b/mate-panel/panel-schemas.h
-index 6b22e2a7..683d09ac 100644
+index c3229f87..5bcc8b5e 100644
 --- a/mate-panel/panel-schemas.h
 +++ b/mate-panel/panel-schemas.h
-@@ -31,6 +31,7 @@
- #define PANEL_TOPLEVEL_X_CENTERED_KEY        "x-centered"
+@@ -32,6 +32,7 @@
  #define PANEL_TOPLEVEL_Y_CENTERED_KEY        "y-centered"
  #define PANEL_TOPLEVEL_AUTO_HIDE_KEY         "auto-hide"
+ #define PANEL_TOPLEVEL_FLOATING_KEY          "floating"
 +#define PANEL_TOPLEVEL_INTELLIHIDE_KEY       "intellihide"
  #define PANEL_TOPLEVEL_ENABLE_ANIMATIONS_KEY "enable-animations"
  #define PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY    "enable-buttons"
  #define PANEL_TOPLEVEL_ENABLE_ARROWS_KEY     "enable-arrows"
 diff --git a/mate-panel/panel-toplevel.c b/mate-panel/panel-toplevel.c
-index 8a6fdabd..52ee4c87 100644
+index 7acf3f10..c23dad29 100644
 --- a/mate-panel/panel-toplevel.c
 +++ b/mate-panel/panel-toplevel.c
-@@ -173,6 +173,7 @@ struct _PanelToplevelPrivate {
- 	gint			n_autohide_disablers;
- 
- 	guint                   auto_hide : 1;
+@@ -179,6 +179,7 @@ struct _PanelToplevelPrivate {
+ 	/* Stands off the edge, as the Floating property says. Not the same as
+ 	 * floating below, which is a panel that isn't lined up with an edge. */
+ 	guint                   floating_panel : 1;
 +	guint                   intellihide : 1;
  	guint                   animate : 1;
  	guint                   buttons_enabled : 1;
  	guint                   arrows_enabled : 1;
-@@ -251,6 +252,7 @@ enum {
- 	PROP_Y_CENTERED,
+@@ -258,6 +259,7 @@ enum {
  	PROP_MONITOR,
  	PROP_AUTOHIDE,
+ 	PROP_FLOATING,
 +	PROP_INTELLIHIDE,
  	PROP_HIDE_DELAY,
  	PROP_UNHIDE_DELAY,
  	PROP_AUTOHIDE_SIZE,
-@@ -1626,8 +1628,11 @@ static gboolean panel_toplevel_update_struts(PanelToplevel* toplevel, gboolean e
+@@ -1633,8 +1635,11 @@ static gboolean panel_toplevel_update_struts(PanelToplevel* toplevel, gboolean e
  		 * Wayland desktop wallpaper services size their surfaces to the
  		 * reserved work area, so a reserved strip while hidden shows the
  		 * compositor's native background instead of the wallpaper. */
@@ -352,7 +370,7 @@ index 8a6fdabd..52ee4c87 100644
  			exclusive = 0;
  		else
  			exclusive = strut;
-@@ -4342,6 +4347,9 @@ panel_toplevel_set_property (GObject      *object,
+@@ -4411,6 +4416,9 @@ panel_toplevel_set_property (GObject      *object,
  	case PROP_AUTOHIDE:
  		panel_toplevel_set_auto_hide (toplevel, g_value_get_boolean (value));
  		break;
@@ -362,7 +380,7 @@ index 8a6fdabd..52ee4c87 100644
  	case PROP_HIDE_DELAY:
  		panel_toplevel_set_hide_delay (toplevel, g_value_get_int (value));
  		break;
-@@ -4421,6 +4429,9 @@ panel_toplevel_get_property (GObject    *object,
+@@ -4493,6 +4501,9 @@ panel_toplevel_get_property (GObject    *object,
  	case PROP_AUTOHIDE:
  		g_value_set_boolean (value, toplevel->priv->auto_hide);
  		break;
@@ -372,7 +390,7 @@ index 8a6fdabd..52ee4c87 100644
  	case PROP_HIDE_DELAY:
  		g_value_set_int (value, toplevel->priv->hide_delay);
  		break;
-@@ -4674,6 +4685,16 @@ panel_toplevel_class_init (PanelToplevelClass *klass)
+@@ -4756,6 +4767,16 @@ panel_toplevel_class_init (PanelToplevelClass *klass)
  			FALSE,
  			G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
  
@@ -389,7 +407,7 @@ index 8a6fdabd..52ee4c87 100644
  	g_object_class_install_property (
  		gobject_class,
  		PROP_HIDE_DELAY,
-@@ -5720,6 +5741,40 @@ panel_toplevel_get_auto_hide (PanelToplevel *toplevel)
+@@ -5853,6 +5874,40 @@ panel_toplevel_get_auto_hide (PanelToplevel *toplevel)
  	return toplevel->priv->auto_hide;
  }
  
@@ -431,13 +449,13 @@ index 8a6fdabd..52ee4c87 100644
  panel_toplevel_set_hide_delay (PanelToplevel *toplevel,
  			       int            hide_delay)
 diff --git a/mate-panel/panel-toplevel.h b/mate-panel/panel-toplevel.h
-index 2d8961c0..b250612a 100644
+index 2c6ee4f3..b8737105 100644
 --- a/mate-panel/panel-toplevel.h
 +++ b/mate-panel/panel-toplevel.h
-@@ -149,6 +149,10 @@ void                 panel_toplevel_pop_autohide_disabler  (PanelToplevel
- void                 panel_toplevel_set_auto_hide          (PanelToplevel       *toplevel,
-                                                             gboolean             autohide);
- gboolean             panel_toplevel_get_auto_hide          (PanelToplevel       *toplevel);
+@@ -153,6 +153,10 @@ void                 panel_toplevel_set_floating           (PanelToplevel
+                                                             gboolean             floating);
+ gboolean             panel_toplevel_get_floating           (PanelToplevel       *toplevel);
+ int                  panel_toplevel_get_floating_margin    (PanelToplevel       *toplevel);
 +
 +void                 panel_toplevel_set_intellihide        (PanelToplevel       *toplevel,
 +                                                            gboolean             intellihide);
@@ -446,7 +464,7 @@ index 2d8961c0..b250612a 100644
                                                              int                  hide_delay);
  int                  panel_toplevel_get_hide_delay         (PanelToplevel       *toplevel);
 diff --git a/mate-panel/wayland-backend.c b/mate-panel/wayland-backend.c
-index 4030bacd..66033206 100644
+index 1d5c8eb8..ee2b93d9 100644
 --- a/mate-panel/wayland-backend.c
 +++ b/mate-panel/wayland-backend.c
 @@ -33,6 +33,7 @@

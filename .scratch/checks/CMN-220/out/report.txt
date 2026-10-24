@@ -1,0 +1,42 @@
+== the Trash's own tests, without a panel
+1/1 caminito-dock-applet:trash OK              0.01s
+Ok:                1   
+Fail:              0   
+== the Trash against a headless Caminito, over gvfs
+test tests::dock_applet::a_click_activates_the_window_of_a_running_program ... ok
+test tests::dock_applet::a_click_launches_a_kept_program_that_is_not_running ... ok
+test tests::dock_applet::a_click_on_a_program_with_several_windows_activates_the_most_recent_one ... ok
+test tests::dock_applet::a_click_on_a_window_on_another_workspace_switches_to_it ... ok
+test tests::dock_applet::a_click_on_the_focused_programs_one_window_minimises_it_and_the_next_restores_it ... ok
+test tests::dock_applet::a_click_on_the_trash_opens_it_in_caja ... ok
+test tests::dock_applet::a_file_that_cannot_be_trashed_is_reported_and_the_others_still_go ... ok
+test tests::dock_applet::a_kept_program_whose_entry_is_gone_can_be_removed ... ok
+test tests::dock_applet::a_minimised_window_animates_into_its_dock_item ... ok
+test tests::dock_applet::a_vertical_dock_is_a_column_with_the_indicator_on_the_panels_edge ... ok
+test tests::dock_applet::a_window_with_no_desktop_entry_has_an_item_of_its_own ... ok
+test tests::dock_applet::an_xwayland_window_joins_the_item_its_startup_wm_class_names ... WARNING: Glycin running without sandbox. Bubblewrap (bwrap) doesn't work in the environment.
+test tests::dock_applet::cancelling_the_confirmation_leaves_the_trash_as_it_was ... ok
+test tests::dock_applet::dropping_a_file_on_the_trash_moves_it_there_and_the_icon_turns_full ... ok
+test tests::dock_applet::emptying_the_trash_asks_first_and_confirmed_empties_it ... ok
+test tests::dock_applet::keeping_removing_and_reordering_survive_the_panels_restart ... ok
+test tests::dock_applet::middle_click_launches_a_new_instance_of_a_running_program ... ok
+test tests::dock_applet::removing_a_kept_program_with_no_window_takes_its_item_away ... ok
+test tests::dock_applet::the_context_menu_has_the_windows_the_actions_keep_and_close_all ... ok
+test tests::dock_applet::the_trash_is_at_the_end_of_the_row_after_a_separator_in_every_orientation ... ok
+test tests::dock_applet::the_trashs_menu_is_open_and_empty_trash_which_is_only_for_a_full_trash ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 2411 filtered out; finished in 5.08s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+== the applet in mate-panel on X11
+the panel lives with the Dock applet
+the instance's keys:
+[/]
+applet-iid='CaminitoDockAppletFactory::CaminitoDockApplet'
+object-type='applet'
+position=0
+toplevel-id='panel'
+
+[prefs]
+kept=['caja.desktop']
+A connection to the bus can't be made
+A connection to the bus can't be made
