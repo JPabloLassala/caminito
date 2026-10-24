@@ -1,6 +1,8 @@
 // What the host side of a Sandcastle run asks of Linear, through its GraphQL API. The sandbox
 // never sees the API key: the host claims and resolves the tickets, and the agents only code.
 
+import { execFileSync } from "node:child_process";
+
 const API = "https://api.linear.app/graphql";
 const PROJECT = "camino";
 const TEAM = "Camino";
@@ -12,6 +14,11 @@ export interface Ticket {
   description: string;
   createdAt: string;
   comments: { author: string; body: string }[];
+}
+
+export interface Doc {
+  title: string;
+  content: string;
 }
 
 interface IssueNode {
@@ -129,6 +136,37 @@ export class Linear {
   // Hands a ticket the run couldn't finish back to the frontier.
   async release(ticket: Ticket): Promise<void> {
     await this.#update(ticket.id, { assigneeId: null, stateId: await this.#stateId("Todo") });
+  }
+
+  // release, for a signal handler, which can't wait for a promise: Sandcastle's own handler
+  // exits the process as soon as it runs. The state ids are known from the claim.
+  releaseSync(ticket: Ticket): void {
+    const body = JSON.stringify({
+      query: `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,
+      variables: { id: ticket.id, input: { assigneeId: null, stateId: this.#states.get("Todo") } },
+    });
+    // The key goes in on stdin, so it isn't on curl's command line.
+    const out = execFileSync("curl", ["-sS", "-X", "POST", API, "-H", "Content-Type: application/json", "-H", "@-", "-d", body], {
+      input: `Authorization: ${this.#key}\n`,
+      encoding: "utf8",
+    });
+    if (!out.includes('"success":true')) throw new Error(`Linear: ${out}`);
+  }
+
+  // The Linear documents the ticket and its comments link to, as the spec, which the agents
+  // can't read from the sandbox.
+  async documents(ticket: Ticket): Promise<Doc[]> {
+    const text = [ticket.description, ...ticket.comments.map((c) => c.body)].join("\n");
+    const slugs = new Set([...text.matchAll(/linear\.app\/[^/\s]+\/document\/[\w-]*?([0-9a-f]{12})\b/g)].map((m) => m[1]));
+    const docs: Doc[] = [];
+    for (const slug of slugs) {
+      const { document } = await this.#query<{ document: Doc }>(
+        `query($id: String!) { document(id: $id) { title content } }`,
+        { id: slug },
+      );
+      docs.push(document);
+    }
+    return docs;
   }
 
   async setState(ticket: Ticket, state: "Done" | "In Review"): Promise<void> {

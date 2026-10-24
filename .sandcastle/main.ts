@@ -104,6 +104,28 @@ const resolvedDescription = (ticket: Ticket, result: Result, mergeCommit?: strin
   return `${ticked}\n\n## Done (${date})\n\n${bullets.map((b) => `- ${b}`).join("\n")}\n`;
 };
 
+// Sandcastle runs ``!`command` `` blocks in a prompt after it puts the arguments in, so text
+// from Linear is kept from running as one.
+const inert = (text: string) => text.replaceAll("!`", "! `");
+
+// The ticket the run holds, handed back to Todo if the run is stopped, as with Ctrl-C.
+let claimed: Ticket | undefined;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.prependListener(signal, () => {
+    if (claimed) {
+      console.error(`\nStopped: handing ${claimed.identifier} back to Todo.`);
+      try {
+        linear.releaseSync(claimed);
+      } catch {
+        console.error(`Couldn't release ${claimed.identifier}: set it to Todo, unassigned, by hand.`);
+      }
+      claimed = undefined;
+    }
+    // Before a sandbox exists, Sandcastle has no handler of its own to exit with.
+    if (process.listenerCount(signal) === 1) process.exit(130);
+  });
+}
+
 const tried = new Set<string>();
 let shipped = 0;
 
@@ -116,7 +138,10 @@ while (shipped < max) {
   tried.add(ticket.identifier);
   const branch = ticket.identifier.toLowerCase();
   console.log(`\n=== ${ticket.identifier}: ${ticket.title} ===\n`);
+  const docs =
+    (await linear.documents(ticket)).map((d) => `## ${d.title}\n\n${d.content}`).join("\n\n") || "(none)";
   await linear.claim(ticket);
+  claimed = ticket;
 
   const sandbox = await sandcastle.createSandbox({ branch, baseBranch: "master", sandbox: provider });
   let result: Result | undefined;
@@ -129,9 +154,10 @@ while (shipped < max) {
       promptFile: ".sandcastle/implement-prompt.md",
       promptArgs: {
         ID: ticket.identifier,
-        TITLE: ticket.title,
-        BODY: ticket.description,
-        COMMENTS: ticket.comments.map((c) => `**${c.author}**: ${c.body}`).join("\n\n") || "(none)",
+        TITLE: inert(ticket.title),
+        BODY: inert(ticket.description),
+        COMMENTS: inert(ticket.comments.map((c) => `**${c.author}**: ${c.body}`).join("\n\n") || "(none)"),
+        DOCS: inert(docs),
       },
     });
     result = parseResult(implement.stdout);
@@ -144,7 +170,7 @@ while (shipped < max) {
         maxIterations: 1,
         agent: reviewer,
         promptFile: ".sandcastle/review-prompt.md",
-        promptArgs: { ID: ticket.identifier, BRANCH: branch, BODY: ticket.description },
+        promptArgs: { ID: ticket.identifier, BRANCH: branch, BODY: inert(ticket.description), DOCS: inert(docs) },
       });
     }
   } catch (error) {
@@ -168,6 +194,7 @@ while (shipped < max) {
     console.log(`${ticket.identifier} is blocked: ${note}`);
     await linear.comment(ticket, `Sandcastle couldn't finish this ticket on branch \`${branch}\`: ${note}`);
     await linear.release(ticket);
+    claimed = undefined;
     if (failed) break;
     continue;
   }
@@ -190,6 +217,7 @@ while (shipped < max) {
   }
 
   await linear.setDescription(ticket, resolvedDescription(ticket, result, mergeCommit));
+  claimed = undefined;
   const left = [result.status === "in-review" ? result.left : undefined, mergeLeft].filter(Boolean);
   if (left.length) {
     await linear.setState(ticket, "In Review");
