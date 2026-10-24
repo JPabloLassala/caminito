@@ -1,5 +1,6 @@
 //! `zwlr_layer_shell_v1` (63). The handlers resolve the output a client names, and
-//! otherwise only translate its events into `layer`'s.
+//! otherwise only translate its events into `layer`'s. Intellihide's protocol (CMN-224) is
+//! asked about from `layer`'s refresh pass, so its handler only lends the state.
 
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -8,6 +9,7 @@ use smithay::wayland::shell::wlr_layer::{
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 
+use crate::protocols::intellihide::{IntellihideHandler, IntellihideState};
 use crate::state::State;
 
 impl WlrLayerShellHandler for State {
@@ -43,5 +45,11 @@ impl WlrLayerShellHandler for State {
 
     fn layer_destroyed(&mut self, surface: LayerSurface) {
         self.caminito.layer_surface_destroyed(&surface);
+    }
+}
+
+impl IntellihideHandler for State {
+    fn intellihide_state(&mut self) -> &mut IntellihideState {
+        &mut self.caminito.intellihide_state
     }
 }

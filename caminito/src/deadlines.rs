@@ -14,7 +14,8 @@ use crate::state::{Caminito, State};
 /// Everything that waits on Caminito's clock, in the order `run_due` runs what's due at one
 /// time:
 ///
-/// 1. Policy, whose auto-raise restacks the windows the rest looks at (153).
+/// 1. Policy, whose auto-raise restacks the windows the rest looks at (153), and whose rest
+///    at an intellihide panel's edge reveals it (CMN-224).
 /// 2. The pings that go with a request to close (168): one with no answer brings the "not
 ///    responding" dialog forward if it shows, which restacks the windows too.
 /// 3. Idle, which blanks and locks (128).
@@ -25,15 +26,15 @@ use crate::state::{Caminito, State};
 /// 7. The Global menu's grace period (114), which nothing else here looks at.
 /// 8. The Window switcher's popup (108), the bell's flash (169), the minimise animations
 ///    (172), the Workspace slides (233), the Overview's transition (243), the Opening
-///    animations (251), the Maximise animations (CMN-174) and the Popup slides
-///    (ADR 0037), which only draw.
+///    animations (251), the Maximise animations (CMN-174), the Popup slides
+///    (ADR 0037) and the Intellihide panels' slides (CMN-224), which only draw.
 /// 9. The Overview's bar (244), which only sends frame callbacks to the windows it alone
 ///    shows.
 /// 10. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 17] = [
+const HOLDERS: [Holder; 18] = [
     Holder::Policy,
     Holder::ClosePings,
     Holder::Idle,
@@ -49,6 +50,7 @@ const HOLDERS: [Holder; 17] = [
     Holder::OpenCloseAnimations,
     Holder::MaximizeAnimations,
     Holder::PopupSlides,
+    Holder::IntellihideSlides,
     Holder::OverviewBar,
     Holder::NightLight,
 ];
@@ -70,6 +72,7 @@ enum Holder {
     OpenCloseAnimations,
     MaximizeAnimations,
     PopupSlides,
+    IntellihideSlides,
     OverviewBar,
     NightLight,
 }
@@ -95,6 +98,7 @@ impl Holder {
             Holder::OpenCloseAnimations => caminito.open_close_animations.deadline(),
             Holder::MaximizeAnimations => caminito.maximize_animations.deadline(),
             Holder::PopupSlides => caminito.popup_slides.deadline(),
+            Holder::IntellihideSlides => caminito.intellihide_slides.deadline(),
             Holder::OverviewBar => caminito.overview_deadline(),
             Holder::NightLight => caminito.night_light.deadline(caminito.now()),
         }
@@ -120,6 +124,7 @@ impl Holder {
             Holder::OpenCloseAnimations => state.caminito.open_close_animation_elapse(now),
             Holder::MaximizeAnimations => state.caminito.maximize_animation_elapse(now),
             Holder::PopupSlides => state.caminito.popup_slide_elapse(now),
+            Holder::IntellihideSlides => state.caminito.intellihide_elapse(now),
             Holder::OverviewBar => state.caminito.overview_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),
         }

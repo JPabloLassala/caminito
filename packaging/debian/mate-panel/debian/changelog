@@ -1,3 +1,10 @@
+mate-panel (1.29.0~git20260925.58ac6c1-0caminito5) resolute; urgency=medium
+
+  * Take the sixteenth carried patch: Intellihide in a panel's Properties,
+    which asks Caminito to hide the panel while a window overlaps it.
+
+ -- jpablo <jpablolassala@gmail.com>  Sat, 24 Oct 2026 00:00:00 +0000
+
 mate-panel (1.29.0~git20260925.58ac6c1-0caminito4) resolute; urgency=medium
 
   * Take the fifteenth carried patch: a panel has a Floating property, which

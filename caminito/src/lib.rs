@@ -16,6 +16,7 @@ mod hot_corner;
 pub mod icons;
 mod idle;
 pub mod input;
+mod intellihide;
 mod layer;
 mod lock;
 pub mod logging;

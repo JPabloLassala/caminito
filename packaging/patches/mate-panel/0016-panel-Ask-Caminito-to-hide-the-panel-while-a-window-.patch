@@ -1,0 +1,812 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sat, 24 Oct 2026 12:00:00 -0300
+Subject: [PATCH] panel: Ask Caminito to hide the panel while a window overlaps
+ it
+
+A panel for a dock should get out of the way when a window covers it, and
+come back when none does. mate-panel's own autohide hides whenever the
+pointer leaves, and a panel can't tell when a window overlaps it, since a
+Wayland client knows no window's geometry.
+
+Add Intellihide to a panel's Properties, beside Autohide. With it on, the
+panel reserves no space, and asks Caminito, the Wayland compositor, through
+caminito_intellihide_manager_v1, a private protocol on its layer surface
+(ADR 0047), to hide it. Caminito knows every window's geometry: it hides the
+layer surface off its edge while a window on the panel's output's active
+workspace overlaps it, and shows it when none does or when the pointer rests
+at that edge. The panel is never told that it is hidden, and draws as usual.
+The request is the protocol object's existence, so turning the option off,
+unmapping the panel, or moving it to another monitor, which makes another
+layer surface, ends it and asks again.
+
+The protocol's two interfaces are written out in wayland-intellihide.c, from
+caminito/resources/caminito-intellihide-v1.xml in Caminito's source, to keep
+wayland-scanner out of the panel's build: the panel only makes requests, and
+the protocol has no events. The key is a new one in the toplevel schema,
+"intellihide", false by default.
+
+The gate is the global: only Caminito offers it. Without it the checkbox is
+not shown, the panel asks for nothing and reserves its edge as it did, and on
+X11 nothing changes. Intellihide and Autohide turn each other off in the
+dialog, and Floating, which is on top of this, goes below Intellihide.
+---
+ data/org.mate.panel.toplevel.gschema.xml.in |   5 +
+ mate-panel/Makefile.am                      |   6 +-
+ mate-panel/meson.build                      |   7 +-
+ mate-panel/panel-layout.c                   |   1 +
+ mate-panel/panel-profile.c                  |   3 +
+ mate-panel/panel-profile.h                  |   4 +
+ mate-panel/panel-properties-dialog.c        |  55 ++++-
+ mate-panel/panel-properties-dialog.ui       |  19 +-
+ mate-panel/panel-schemas.h                  |   1 +
+ mate-panel/panel-toplevel.c                 |  57 ++++-
+ mate-panel/panel-toplevel.h                 |   4 +
+ mate-panel/wayland-backend.c                |  42 ++++
+ mate-panel/wayland-backend.h                |   2 +
+ mate-panel/wayland-intellihide.c            | 217 ++++++++++++++++++++
+ mate-panel/wayland-intellihide.h            |  38 ++++
+ 15 files changed, 454 insertions(+), 7 deletions(-)
+ create mode 100644 mate-panel/wayland-intellihide.c
+ create mode 100644 mate-panel/wayland-intellihide.h
+
+diff --git a/data/org.mate.panel.toplevel.gschema.xml.in b/data/org.mate.panel.toplevel.gschema.xml.in
+index 4b80fef9..9476ca9b 100644
+--- a/data/org.mate.panel.toplevel.gschema.xml.in
++++ b/data/org.mate.panel.toplevel.gschema.xml.in
+@@ -70,6 +70,11 @@
+       <summary>Float the panel off the screen edge</summary>
+       <description>If true, the panel stands off the edge of the screen it is at, with rounded corners, and the space it reserves counts the gap. This is only done under Caminito, the Wayland compositor, and is ignored anywhere else.</description>
+     </key>
++    <key name="intellihide" type="b">
++      <default>false</default>
++      <summary>Hide the panel while a window overlaps it</summary>
++      <description>If true, the panel reserves no space and asks Caminito, the Wayland compositor, to hide it while a window on its output's active workspace overlaps it, and to show it again when none does or when the pointer rests at its edge. The key does nothing under any other compositor or on X11.</description>
++    </key>
+     <key name="enable-animations" type="b">
+       <default>true</default>
+       <summary>Enable animations</summary>
+diff --git a/mate-panel/Makefile.am b/mate-panel/Makefile.am
+index 3a807f10..1b8d84c7 100644
+--- a/mate-panel/Makefile.am
++++ b/mate-panel/Makefile.am
+@@ -64,7 +64,8 @@ panel_sources = \
+ 
+ if ENABLE_WAYLAND
+ panel_sources += \
+-	wayland-backend.c
++	wayland-backend.c \
++	wayland-intellihide.c
+ endif
+ 
+ if ENABLE_X11
+@@ -125,7 +126,8 @@ panel_headers = \
+ 
+ if ENABLE_WAYLAND
+ panel_headers += \
+-	wayland-backend.h
++	wayland-backend.h \
++	wayland-intellihide.h
+ endif
+ 
+ if ENABLE_X11
+diff --git a/mate-panel/meson.build b/mate-panel/meson.build
+index eb2c0021..b04c2011 100644
+--- a/mate-panel/meson.build
++++ b/mate-panel/meson.build
+@@ -260,7 +260,12 @@ panel_sources = [
+ ]
+ 
+ if have_wayland
+-  panel_sources += ['wayland-backend.c', 'wayland-backend.h']
++  panel_sources += [
++    'wayland-backend.c',
++    'wayland-backend.h',
++    'wayland-intellihide.c',
++    'wayland-intellihide.h',
++  ]
+ endif
+ 
+ if have_x11
+diff --git a/mate-panel/panel-layout.c b/mate-panel/panel-layout.c
+index c0ab9ba6..e0cc2dc7 100644
+--- a/mate-panel/panel-layout.c
++++ b/mate-panel/panel-layout.c
+@@ -68,6 +68,7 @@ static PanelLayoutKeyDefinition panel_layout_toplevel_keys[] = {
+         { PANEL_TOPLEVEL_X_CENTERED_KEY,        G_TYPE_BOOLEAN  },
+         { PANEL_TOPLEVEL_Y_CENTERED_KEY,        G_TYPE_BOOLEAN  },
+         { PANEL_TOPLEVEL_AUTO_HIDE_KEY,         G_TYPE_BOOLEAN  },
++        { PANEL_TOPLEVEL_INTELLIHIDE_KEY,       G_TYPE_BOOLEAN  },
+         { PANEL_TOPLEVEL_ENABLE_ANIMATIONS_KEY, G_TYPE_BOOLEAN },
+         { PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY,    G_TYPE_BOOLEAN  },
+         { PANEL_TOPLEVEL_ENABLE_ARROWS_KEY,     G_TYPE_BOOLEAN  },
+diff --git a/mate-panel/panel-profile.c b/mate-panel/panel-profile.c
+index 95adf301..5de6b418 100644
+--- a/mate-panel/panel-profile.c
++++ b/mate-panel/panel-profile.c
+@@ -352,6 +352,7 @@ TOPLEVEL_GET_SET_FUNCS ("size",               toplevel,   int,     size,
+ TOPLEVEL_GET_SET_FUNCS ("expand",             toplevel,   boolean, expand,         gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("auto-hide",          toplevel,   boolean, auto_hide,      gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("floating",           toplevel,   boolean, floating,       gboolean)
++TOPLEVEL_GET_SET_FUNCS ("intellihide",        toplevel,   boolean, intellihide,    gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("enable-buttons",     toplevel,   boolean, enable_buttons, gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("enable-arrows",      toplevel,   boolean, enable_arrows,  gboolean)
+ 
+@@ -777,6 +778,7 @@ panel_profile_toplevel_change_notify (GSettings *settings,
+ 	else UPDATE_CENTERED ("y-centered", y, y_bottom)
+ 	else UPDATE_BOOL ("auto-hide", auto_hide)
+ 	else UPDATE_BOOL ("floating", floating)
++	else UPDATE_BOOL ("intellihide", intellihide)
+ 	else UPDATE_BOOL ("enable-animations", animate)
+ 	else UPDATE_BOOL ("enable-buttons", enable_buttons)
+ 	else UPDATE_BOOL ("enable-arrows", enable_arrows)
+@@ -1152,6 +1154,7 @@ panel_profile_load_toplevel (const char *toplevel_id)
+ 	GET_INT ("size", size);
+ 	GET_BOOL ("auto-hide", auto_hide);
+ 	GET_BOOL ("floating", floating);
++	GET_BOOL ("intellihide", intellihide);
+ 	GET_BOOL ("enable-animations", animate);
+ 	GET_BOOL ("enable-buttons", enable_buttons);
+ 	GET_BOOL ("enable-arrows", enable_arrows);
+diff --git a/mate-panel/panel-profile.h b/mate-panel/panel-profile.h
+index 442cfe3a..5ff10689 100644
+--- a/mate-panel/panel-profile.h
++++ b/mate-panel/panel-profile.h
+@@ -100,6 +100,10 @@ void        panel_profile_set_toplevel_floating       (PanelToplevel *toplevel,
+ 						       gboolean       floating);
+ gboolean    panel_profile_get_toplevel_floating       (PanelToplevel *toplevel);
+ 
++void        panel_profile_set_toplevel_intellihide    (PanelToplevel *toplevel,
++						       gboolean       intellihide);
++gboolean    panel_profile_get_toplevel_intellihide    (PanelToplevel *toplevel);
++
+ void        panel_profile_set_toplevel_enable_buttons (PanelToplevel *toplevel,
+ 						       gboolean       enable_buttons);
+ gboolean    panel_profile_get_toplevel_enable_buttons (PanelToplevel *toplevel);
+diff --git a/mate-panel/panel-properties-dialog.c b/mate-panel/panel-properties-dialog.c
+index efd76ba6..539b5fc6 100644
+--- a/mate-panel/panel-properties-dialog.c
++++ b/mate-panel/panel-properties-dialog.c
+@@ -30,6 +30,9 @@
+ #include <string.h>
+ #include <glib/gi18n.h>
+ #include <gio/gio.h>
++#ifdef HAVE_WAYLAND
++#include <gdk/gdkwayland.h>
++#endif
+ 
+ #include <libpanel-util/panel-glib.h>
+ #include <libpanel-util/panel-gtk.h>
+@@ -42,6 +45,9 @@
+ #include "panel-util.h"
+ #include "panel-globals.h"
+ #include "panel-icon-names.h"
++#ifdef HAVE_WAYLAND
++#include "wayland-intellihide.h"
++#endif
+ 
+ typedef struct {
+ 	PanelToplevel *toplevel;
+@@ -67,6 +73,7 @@ typedef struct {
+   	GtkWidget     *expand_toggle;
+ 	GtkWidget     *autohide_toggle;
+ 	GtkWidget     *floating_toggle;
++	GtkWidget     *intellihide_toggle;
+ 	GtkWidget     *hidebuttons_toggle;
+ 	GtkWidget     *arrows_toggle;
+ 	GtkWidget     *default_radio;
+@@ -441,7 +448,7 @@ panel_properties_dialog_floating_toggled (PanelPropertiesDialog *dialog,
+ }
+ 
+ /* A panel stands off its edge only under Caminito, so the toggle is added there
+- * alone, below Autohide. A drawer has none. */
++ * alone, below Autohide and Intellihide. A drawer has none. */
+ static void
+ panel_properties_dialog_setup_floating_toggle (PanelPropertiesDialog *dialog)
+ {
+@@ -454,7 +461,7 @@ panel_properties_dialog_setup_floating_toggle (PanelPropertiesDialog *dialog)
+ 
+ 	gtk_box_pack_start (GTK_BOX (dialog->general_vbox), dialog->floating_toggle,
+ 			    FALSE, FALSE, 0);
+-	gtk_box_reorder_child (GTK_BOX (dialog->general_vbox), dialog->floating_toggle, 4);
++	gtk_box_reorder_child (GTK_BOX (dialog->general_vbox), dialog->floating_toggle, 5);
+ 	gtk_widget_show (dialog->floating_toggle);
+ 
+ 	if (! panel_profile_key_is_writable (dialog->toplevel, PANEL_TOPLEVEL_FLOATING_KEY)) {
+@@ -573,6 +580,45 @@ panel_properties_dialog_setup_icon_chooser (PanelPropertiesDialog *dialog,
+ 
+ SETUP_TOGGLE_BUTTON ("expand_toggle",      expand_toggle,      expand,           PANEL_TOPLEVEL_EXPAND_KEY)
+ SETUP_TOGGLE_BUTTON ("autohide_toggle",    autohide_toggle,    auto_hide,        PANEL_TOPLEVEL_AUTO_HIDE_KEY)
++SETUP_TOGGLE_BUTTON ("intellihide_toggle", intellihide_toggle, intellihide,      PANEL_TOPLEVEL_INTELLIHIDE_KEY)
++/* Intellihide is Caminito's: the toggle is there only where the compositor
++ * offers it, and a panel that hides itself when the pointer leaves doesn't
++ * also hide off the edge for a window, so each turns the other off. */
++static void
++panel_properties_dialog_autohide_turned_on (PanelPropertiesDialog *dialog,
++					    GtkToggleButton       *autohide_toggle)
++{
++	if (gtk_toggle_button_get_active (autohide_toggle) &&
++	    gtk_widget_get_visible (dialog->intellihide_toggle))
++		gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (dialog->intellihide_toggle), FALSE);
++}
++
++static void
++panel_properties_dialog_intellihide_turned_on (PanelPropertiesDialog *dialog,
++					       GtkToggleButton       *intellihide_toggle)
++{
++	if (gtk_toggle_button_get_active (intellihide_toggle))
++		gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (dialog->autohide_toggle), FALSE);
++}
++
++static void
++panel_properties_dialog_setup_intellihide_exclusion (PanelPropertiesDialog *dialog)
++{
++#ifdef HAVE_WAYLAND
++	if (!GDK_IS_WAYLAND_DISPLAY (gdk_display_get_default ()) ||
++	    !wayland_intellihide_available ())
++		return;
++
++	gtk_widget_show (dialog->intellihide_toggle);
++	g_signal_connect_swapped (dialog->intellihide_toggle, "toggled",
++				  G_CALLBACK (panel_properties_dialog_intellihide_turned_on),
++				  dialog);
++	g_signal_connect_swapped (dialog->autohide_toggle, "toggled",
++				  G_CALLBACK (panel_properties_dialog_autohide_turned_on),
++				  dialog);
++#endif /* HAVE_WAYLAND */
++}
++
+ SETUP_TOGGLE_BUTTON ("hidebuttons_toggle", hidebuttons_toggle, enable_buttons,   PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY)
+ SETUP_TOGGLE_BUTTON ("arrows_toggle",      arrows_toggle,      enable_arrows,    PANEL_TOPLEVEL_ENABLE_ARROWS_KEY)
+ 
+@@ -929,6 +975,7 @@ panel_properties_dialog_toplevel_notify (GSettings             *settings,
+ 	}
+ 	else UPDATE_TOGGLE ("expand",         expand_toggle)
+ 	else UPDATE_TOGGLE ("auto-hide",      autohide_toggle)
++	else UPDATE_TOGGLE ("intellihide",    intellihide_toggle)
+ 	else UPDATE_TOGGLE ("enable-buttons", hidebuttons_toggle)
+ 	else UPDATE_TOGGLE ("enable-arrows",  arrows_toggle)
+ }
+@@ -1086,9 +1133,11 @@ panel_properties_dialog_remove_toggles (PanelPropertiesDialog *dialog)
+ 	GtkContainer *container = GTK_CONTAINER (dialog->general_vbox);
+ 
+ 	gtk_container_remove (container, dialog->autohide_toggle);
++	gtk_container_remove (container, dialog->intellihide_toggle);
+ 	gtk_container_remove (container, dialog->expand_toggle);
+ 
+ 	dialog->autohide_toggle = NULL;
++	dialog->intellihide_toggle = NULL;
+ 	dialog->expand_toggle   = NULL;
+ }
+ 
+@@ -1145,6 +1194,8 @@ panel_properties_dialog_new (PanelToplevel *toplevel)
+ 	panel_properties_dialog_setup_icon_chooser       (dialog, gui);
+ 	panel_properties_dialog_setup_expand_toggle      (dialog, gui);
+ 	panel_properties_dialog_setup_autohide_toggle    (dialog, gui);
++	panel_properties_dialog_setup_intellihide_toggle (dialog, gui);
++	panel_properties_dialog_setup_intellihide_exclusion (dialog);
+ 	panel_properties_dialog_setup_hidebuttons_toggle (dialog, gui);
+ 	panel_properties_dialog_setup_arrows_toggle      (dialog, gui);
+ 
+diff --git a/mate-panel/panel-properties-dialog.ui b/mate-panel/panel-properties-dialog.ui
+index 9073f182..64b0d3b9 100644
+--- a/mate-panel/panel-properties-dialog.ui
++++ b/mate-panel/panel-properties-dialog.ui
+@@ -306,6 +306,23 @@ Author: Wolfgang Ulbrich
+                     <property name="position">3</property>
+                   </packing>
+                 </child>
++                <child>
++                  <object class="GtkCheckButton" id="intellihide_toggle">
++                    <property name="label" translatable="yes">_Intellihide</property>
++                    <property name="visible">False</property>
++                    <property name="no_show_all">True</property>
++                    <property name="can_focus">True</property>
++                    <property name="receives_default">False</property>
++                    <property name="use_underline">True</property>
++                    <property name="draw_indicator">True</property>
++                    <property name="tooltip_text" translatable="yes">Hide the panel while a window overlaps it, and show it when the pointer rests at the edge of the screen</property>
++                  </object>
++                  <packing>
++                    <property name="expand">False</property>
++                    <property name="fill">False</property>
++                    <property name="position">4</property>
++                  </packing>
++                </child>
+                 <child>
+                   <object class="GtkBox" id="vbox2">
+                     <property name="visible">True</property>
+@@ -369,7 +386,7 @@ Author: Wolfgang Ulbrich
+                   <packing>
+                     <property name="expand">True</property>
+                     <property name="fill">False</property>
+-                    <property name="position">4</property>
++                    <property name="position">5</property>
+                   </packing>
+                 </child>
+               </object>
+diff --git a/mate-panel/panel-schemas.h b/mate-panel/panel-schemas.h
+index c3229f87..5bcc8b5e 100644
+--- a/mate-panel/panel-schemas.h
++++ b/mate-panel/panel-schemas.h
+@@ -32,6 +32,7 @@
+ #define PANEL_TOPLEVEL_Y_CENTERED_KEY        "y-centered"
+ #define PANEL_TOPLEVEL_AUTO_HIDE_KEY         "auto-hide"
+ #define PANEL_TOPLEVEL_FLOATING_KEY          "floating"
++#define PANEL_TOPLEVEL_INTELLIHIDE_KEY       "intellihide"
+ #define PANEL_TOPLEVEL_ENABLE_ANIMATIONS_KEY "enable-animations"
+ #define PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY    "enable-buttons"
+ #define PANEL_TOPLEVEL_ENABLE_ARROWS_KEY     "enable-arrows"
+diff --git a/mate-panel/panel-toplevel.c b/mate-panel/panel-toplevel.c
+index 7acf3f10..c23dad29 100644
+--- a/mate-panel/panel-toplevel.c
++++ b/mate-panel/panel-toplevel.c
+@@ -179,6 +179,7 @@ struct _PanelToplevelPrivate {
+ 	/* Stands off the edge, as the Floating property says. Not the same as
+ 	 * floating below, which is a panel that isn't lined up with an edge. */
+ 	guint                   floating_panel : 1;
++	guint                   intellihide : 1;
+ 	guint                   animate : 1;
+ 	guint                   buttons_enabled : 1;
+ 	guint                   arrows_enabled : 1;
+@@ -258,6 +259,7 @@ enum {
+ 	PROP_MONITOR,
+ 	PROP_AUTOHIDE,
+ 	PROP_FLOATING,
++	PROP_INTELLIHIDE,
+ 	PROP_HIDE_DELAY,
+ 	PROP_UNHIDE_DELAY,
+ 	PROP_AUTOHIDE_SIZE,
+@@ -1633,8 +1635,11 @@ static gboolean panel_toplevel_update_struts(PanelToplevel* toplevel, gboolean e
+ 		 * Wayland desktop wallpaper services size their surfaces to the
+ 		 * reserved work area, so a reserved strip while hidden shows the
+ 		 * compositor's native background instead of the wallpaper. */
++		/* A panel that asks Caminito to hide it while a window overlaps
++		 * it can't keep its edge for itself, so it reserves nothing. */
+ 		if (strut == 0 ||
+-		    toplevel->priv->state != PANEL_STATE_NORMAL)
++		    toplevel->priv->state != PANEL_STATE_NORMAL ||
++		    wayland_panel_toplevel_has_intellihide (toplevel))
+ 			exclusive = 0;
+ 		else
+ 			exclusive = strut;
+@@ -4411,6 +4416,9 @@ panel_toplevel_set_property (GObject      *object,
+ 	case PROP_AUTOHIDE:
+ 		panel_toplevel_set_auto_hide (toplevel, g_value_get_boolean (value));
+ 		break;
++	case PROP_INTELLIHIDE:
++		panel_toplevel_set_intellihide (toplevel, g_value_get_boolean (value));
++		break;
+ 	case PROP_HIDE_DELAY:
+ 		panel_toplevel_set_hide_delay (toplevel, g_value_get_int (value));
+ 		break;
+@@ -4493,6 +4501,9 @@ panel_toplevel_get_property (GObject    *object,
+ 	case PROP_AUTOHIDE:
+ 		g_value_set_boolean (value, toplevel->priv->auto_hide);
+ 		break;
++	case PROP_INTELLIHIDE:
++		g_value_set_boolean (value, toplevel->priv->intellihide);
++		break;
+ 	case PROP_HIDE_DELAY:
+ 		g_value_set_int (value, toplevel->priv->hide_delay);
+ 		break;
+@@ -4756,6 +4767,16 @@ panel_toplevel_class_init (PanelToplevelClass *klass)
+ 			FALSE,
+ 			G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
+ 
++	g_object_class_install_property (
++		gobject_class,
++		PROP_INTELLIHIDE,
++		g_param_spec_boolean (
++			"intellihide",
++			"Intellihide",
++			"Reserve no space and ask Caminito to hide the panel while a window overlaps it",
++			FALSE,
++			G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
++
+ 	g_object_class_install_property (
+ 		gobject_class,
+ 		PROP_HIDE_DELAY,
+@@ -5853,6 +5874,40 @@ panel_toplevel_get_auto_hide (PanelToplevel *toplevel)
+ 	return toplevel->priv->auto_hide;
+ }
+ 
++void
++panel_toplevel_set_intellihide (PanelToplevel *toplevel,
++				gboolean       intellihide)
++{
++	g_return_if_fail (PANEL_IS_TOPLEVEL (toplevel));
++
++	intellihide = intellihide != FALSE;
++
++	if (toplevel->priv->intellihide == intellihide)
++		return;
++
++	toplevel->priv->intellihide = intellihide;
++
++#ifdef HAVE_WAYLAND
++	/* Nothing changes anywhere but under Caminito, which is the only
++	 * compositor that offers intellihide. */
++	if (GDK_IS_WAYLAND_DISPLAY (gtk_widget_get_display (GTK_WIDGET (toplevel)))) {
++		wayland_panel_toplevel_update_intellihide (toplevel);
++		if (panel_toplevel_update_struts (toplevel, FALSE))
++			gtk_widget_queue_resize (GTK_WIDGET (toplevel));
++	}
++#endif /* HAVE_WAYLAND */
++
++	g_object_notify (G_OBJECT (toplevel), "intellihide");
++}
++
++gboolean
++panel_toplevel_get_intellihide (PanelToplevel *toplevel)
++{
++	g_return_val_if_fail (PANEL_IS_TOPLEVEL (toplevel), FALSE);
++
++	return toplevel->priv->intellihide;
++}
++
+ void
+ panel_toplevel_set_hide_delay (PanelToplevel *toplevel,
+ 			       int            hide_delay)
+diff --git a/mate-panel/panel-toplevel.h b/mate-panel/panel-toplevel.h
+index 2c6ee4f3..b8737105 100644
+--- a/mate-panel/panel-toplevel.h
++++ b/mate-panel/panel-toplevel.h
+@@ -153,6 +153,10 @@ void                 panel_toplevel_set_floating           (PanelToplevel
+                                                             gboolean             floating);
+ gboolean             panel_toplevel_get_floating           (PanelToplevel       *toplevel);
+ int                  panel_toplevel_get_floating_margin    (PanelToplevel       *toplevel);
++
++void                 panel_toplevel_set_intellihide        (PanelToplevel       *toplevel,
++                                                            gboolean             intellihide);
++gboolean             panel_toplevel_get_intellihide        (PanelToplevel       *toplevel);
+ void                 panel_toplevel_set_hide_delay         (PanelToplevel       *toplevel,
+                                                             int                  hide_delay);
+ int                  panel_toplevel_get_hide_delay         (PanelToplevel       *toplevel);
+diff --git a/mate-panel/wayland-backend.c b/mate-panel/wayland-backend.c
+index 1d5c8eb8..ee2b93d9 100644
+--- a/mate-panel/wayland-backend.c
++++ b/mate-panel/wayland-backend.c
+@@ -33,6 +33,7 @@
+ #include <gtk-layer-shell.h>
+ 
+ #include "wayland-backend.h"
++#include "wayland-intellihide.h"
+ #include "panel-multimonitor.h"
+ 
+ static void
+@@ -182,6 +183,41 @@ wayland_panel_toplevel_update_placement (PanelToplevel* toplevel)
+ 	wayland_panel_toplevel_apply_anchors (toplevel, orientation, expand);
+ }
+ 
++/* Whether the panel asks the compositor to hide it while a window overlaps
++ * it: its Intellihide is on, and the compositor is Caminito, the one that
++ * offers intellihide. With either missing the panel is an ordinary one. */
++gboolean
++wayland_panel_toplevel_has_intellihide (PanelToplevel* toplevel)
++{
++	return panel_toplevel_get_intellihide (toplevel) &&
++	       wayland_intellihide_available ();
++}
++
++/* Asks the compositor for intellihide on the panel's layer surface, or stops
++ * asking. */
++void
++wayland_panel_toplevel_update_intellihide (PanelToplevel* toplevel)
++{
++	wayland_intellihide_update (GTK_WINDOW (toplevel),
++				    wayland_panel_toplevel_has_intellihide (toplevel));
++}
++
++/* The layer surface is made when the panel maps, and again when it maps on
++ * another monitor, and ends when it unmaps. */
++static void
++wayland_panel_toplevel_mapped (GtkWidget* widget,
++			       gpointer   data)
++{
++	wayland_panel_toplevel_update_intellihide (PANEL_TOPLEVEL (widget));
++}
++
++static void
++wayland_panel_toplevel_unmapped (GtkWidget* widget,
++				 gpointer   data)
++{
++	wayland_intellihide_update (GTK_WINDOW (widget), FALSE);
++}
++
+ void
+ wayland_panel_toplevel_init (PanelToplevel* toplevel)
+ {
+@@ -192,6 +228,12 @@ wayland_panel_toplevel_init (PanelToplevel* toplevel)
+ 	gtk_layer_set_layer (window, GTK_LAYER_SHELL_LAYER_TOP);
+ 	gtk_layer_set_namespace (window, "panel");
+ 	wayland_panel_toplevel_update_placement (toplevel);
++
++	/* After the class handler, which makes the layer surface. */
++	g_signal_connect_after (toplevel, "map",
++				G_CALLBACK (wayland_panel_toplevel_mapped), NULL);
++	g_signal_connect (toplevel, "unmap",
++			  G_CALLBACK (wayland_panel_toplevel_unmapped), NULL);
+ }
+ 
+ void
+diff --git a/mate-panel/wayland-backend.h b/mate-panel/wayland-backend.h
+index f001fa57..c93a872f 100644
+--- a/mate-panel/wayland-backend.h
++++ b/mate-panel/wayland-backend.h
+@@ -44,6 +44,8 @@ void wayland_panel_toplevel_move_resize (PanelToplevel*           toplevel,
+                                          const GdkRectangle      *monitor_geom);
+ void wayland_panel_toplevel_update_exclusive_zone (PanelToplevel* toplevel,
+                                                    gint           exclusive_zone);
++gboolean wayland_panel_toplevel_has_intellihide (PanelToplevel* toplevel);
++void wayland_panel_toplevel_update_intellihide (PanelToplevel* toplevel);
+ GtkWindow *wayland_panel_toplevel_create_autohide_window (PanelToplevel *toplevel);
+ void wayland_panel_toplevel_autohide_window_show (GtkWindow              *window,
+                                                   PanelToplevel          *toplevel,
+diff --git a/mate-panel/wayland-intellihide.c b/mate-panel/wayland-intellihide.c
+new file mode 100644
+index 00000000..05812508
+--- /dev/null
++++ b/mate-panel/wayland-intellihide.c
+@@ -0,0 +1,217 @@
++/*
++ * wayland-intellihide.c: Ask Caminito, the Wayland compositor, to hide a
++ * panel while a window overlaps it
++ *
++ * Copyright (C) 2026 Juan Pablo Lassala
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301, USA.
++ */
++
++/*
++ * Caminito hides and slides a panel that asks for intellihide, and the panel
++ * is never told. It asks through caminito_intellihide_manager_v1, a private
++ * protocol of Caminito's (caminito/resources/caminito-intellihide-v1.xml in
++ * its source), by making a caminito_intellihide_v1 for the panel's layer
++ * surface: the object's existence is the request.
++ *
++ * The protocol is Caminito's alone, so the global is only there under it, and
++ * a panel anywhere else asks for nothing. The interfaces below are written
++ * out by hand from that XML instead of generated from it, to keep a
++ * dependency on wayland-scanner out of the panel's build; the panel only
++ * makes requests, and the protocol has no events.
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <string.h>
++
++#include <gdk/gdkwayland.h>
++#include <gtk-layer-shell.h>
++#include <wayland-client.h>
++
++#include "wayland-intellihide.h"
++
++#define MANAGER_INTERFACE "caminito_intellihide_manager_v1"
++
++/* caminito_intellihide_v1: 0 destroy */
++static const struct wl_interface caminito_intellihide_v1_interface = {
++	"caminito_intellihide_v1", 1,
++	1, (const struct wl_message[]) {
++		{ "destroy", "", NULL },
++	},
++	0, NULL,
++};
++
++/* caminito_intellihide_manager_v1: 0 destroy,
++ * 1 get_intellihide (new caminito_intellihide_v1, zwlr_layer_surface_v1).
++ * The layer surface's interface is gtk-layer-shell's, whose symbol is not
++ * exported, and a request only sends the object's id. */
++static const struct wl_interface *get_intellihide_types[] = {
++	&caminito_intellihide_v1_interface,
++	NULL,
++};
++
++static const struct wl_interface caminito_intellihide_manager_v1_interface = {
++	MANAGER_INTERFACE, 1,
++	2, (const struct wl_message[]) {
++		{ "destroy", "", NULL },
++		{ "get_intellihide", "no", get_intellihide_types },
++	},
++	0, NULL,
++};
++
++enum {
++	MANAGER_DESTROY,
++	MANAGER_GET_INTELLIHIDE,
++};
++
++enum {
++	INTELLIHIDE_DESTROY,
++};
++
++/* The manager, once looked for: NULL where the compositor has none. */
++static struct wl_proxy *manager = NULL;
++static gboolean         manager_looked = FALSE;
++
++/* What a window asked for: the object, and the layer surface it is for. */
++typedef struct {
++	struct wl_proxy *object;
++	struct wl_proxy *layer_surface;
++} Asked;
++
++static void
++registry_global (void               *data,
++		 struct wl_registry *registry,
++		 uint32_t            name,
++		 const char         *interface,
++		 uint32_t            version)
++{
++	if (manager == NULL && strcmp (interface, MANAGER_INTERFACE) == 0)
++		manager = wl_registry_bind (registry, name,
++					    &caminito_intellihide_manager_v1_interface, 1);
++}
++
++static void
++registry_global_remove (void               *data,
++			struct wl_registry *registry,
++			uint32_t            name)
++{
++}
++
++static const struct wl_registry_listener registry_listener = {
++	registry_global,
++	registry_global_remove,
++};
++
++/* Looks for the manager once, with a queue of its own so that GDK's events
++ * are left to GDK. */
++static void
++look_for_manager (void)
++{
++	GdkDisplay             *display;
++	struct wl_display      *wl_display;
++	struct wl_event_queue  *queue;
++	struct wl_proxy        *wrapper;
++	struct wl_registry     *registry;
++
++	if (manager_looked)
++		return;
++	manager_looked = TRUE;
++
++	display = gdk_display_get_default ();
++	if (display == NULL || !GDK_IS_WAYLAND_DISPLAY (display))
++		return;
++
++	wl_display = gdk_wayland_display_get_wl_display (display);
++	queue = wl_display_create_queue (wl_display);
++	wrapper = wl_proxy_create_wrapper (wl_display);
++	wl_proxy_set_queue (wrapper, queue);
++
++	registry = wl_display_get_registry ((struct wl_display *) wrapper);
++	wl_registry_add_listener (registry, &registry_listener, NULL);
++	wl_display_roundtrip_queue (wl_display, queue);
++
++	/* The manager has no events, so it goes to the default queue and the
++	 * private one can go. */
++	if (manager != NULL)
++		wl_proxy_set_queue (manager, NULL);
++	wl_registry_destroy (registry);
++	wl_proxy_wrapper_destroy (wrapper);
++	wl_event_queue_destroy (queue);
++}
++
++/* Whether the compositor offers intellihide: Caminito does. */
++gboolean
++wayland_intellihide_available (void)
++{
++	look_for_manager ();
++
++	return manager != NULL;
++}
++
++static void
++asked_free (gpointer data)
++{
++	Asked *asked = data;
++
++	if (asked->object != NULL)
++		wl_proxy_marshal_flags (asked->object, INTELLIHIDE_DESTROY, NULL,
++					wl_proxy_get_version (asked->object),
++					WL_MARSHAL_FLAG_DESTROY);
++	g_free (asked);
++}
++
++/* Asks for intellihide on the window's layer surface, or stops asking. The
++ * layer surface is made when the window maps, and again when it maps on
++ * another monitor, so this is called at each map, and with FALSE at each
++ * unmap, which ends the request that was for the surface that went. */
++void
++wayland_intellihide_update (GtkWindow *window,
++			    gboolean   wanted)
++{
++	Asked           *asked;
++	struct wl_proxy *layer_surface;
++
++	asked = g_object_get_data (G_OBJECT (window), "wayland-intellihide");
++	if (asked == NULL) {
++		asked = g_new0 (Asked, 1);
++		g_object_set_data_full (G_OBJECT (window), "wayland-intellihide",
++					asked, asked_free);
++	}
++
++	layer_surface = (struct wl_proxy *) gtk_layer_get_zwlr_layer_surface_v1 (window);
++	if (asked->object != NULL &&
++	    (!wanted || asked->layer_surface != layer_surface)) {
++		wl_proxy_marshal_flags (asked->object, INTELLIHIDE_DESTROY, NULL,
++					wl_proxy_get_version (asked->object),
++					WL_MARSHAL_FLAG_DESTROY);
++		asked->object = NULL;
++		asked->layer_surface = NULL;
++	}
++
++	if (!wanted || layer_surface == NULL || asked->object != NULL)
++		return;
++	if (!wayland_intellihide_available ())
++		return;
++
++	asked->object = wl_proxy_marshal_flags (manager, MANAGER_GET_INTELLIHIDE,
++						&caminito_intellihide_v1_interface,
++						wl_proxy_get_version (manager), 0,
++						NULL, layer_surface);
++	asked->layer_surface = layer_surface;
++}
+diff --git a/mate-panel/wayland-intellihide.h b/mate-panel/wayland-intellihide.h
+new file mode 100644
+index 00000000..a3856d36
+--- /dev/null
++++ b/mate-panel/wayland-intellihide.h
+@@ -0,0 +1,38 @@
++/*
++ * wayland-intellihide.h: Ask Caminito, the Wayland compositor, to hide a
++ * panel while a window overlaps it
++ *
++ * Copyright (C) 2026 Juan Pablo Lassala
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301, USA.
++ */
++
++#ifndef __WAYLAND_INTELLIHIDE_H__
++#define __WAYLAND_INTELLIHIDE_H__
++
++#include <config.h>
++
++#ifndef HAVE_WAYLAND
++#error file should only be included when HAVE_WAYLAND is enabled
++#endif
++
++#include <gtk/gtk.h>
++
++gboolean wayland_intellihide_available (void);
++void     wayland_intellihide_update    (GtkWindow *window,
++					gboolean   wanted);
++
++#endif /* __WAYLAND_INTELLIHIDE_H__ */

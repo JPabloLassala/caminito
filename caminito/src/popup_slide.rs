@@ -208,6 +208,19 @@ pub(crate) struct Motion {
 }
 
 impl Motion {
+    /// The motion of an Intellihide panel (CMN-224) from `start`: it goes `distance` into its
+    /// `edge` when `closing`, and comes back out of it otherwise. It doesn't fade.
+    pub(crate) fn across(edge: Edge, distance: i32, closing: bool, start: Duration) -> Motion {
+        Motion {
+            edge,
+            distance,
+            fades: false,
+            closing,
+            start,
+            skipped: Duration::ZERO,
+        }
+    }
+
     fn elapsed(&self, now: Duration) -> Duration {
         now.saturating_sub(self.start) + self.skipped
     }
@@ -251,7 +264,7 @@ impl Motion {
     }
 
     /// Where it's drawn at `now`, from its place.
-    fn offset(&self, now: Duration) -> Point<i32, Logical> {
+    pub(crate) fn offset(&self, now: Duration) -> Point<i32, Logical> {
         let left = (f64::from(self.distance) * (1.0 - self.done(now))).round() as i32;
         match self.edge {
             Edge::Top => (0, -left),
