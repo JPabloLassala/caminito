@@ -1,0 +1,9 @@
+{
+  "name": "camino-sandcastle",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ai-hero/sandcastle": "0.12.0",
+    "tsx": "4.23.15"
+  }
+}

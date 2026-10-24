@@ -1,0 +1,26 @@
+# The sandbox the agents build Caminito in: Arch, with every package tools/check --deps
+# installs, so the checks a ticket needs run as on the developer's machine. Built by
+# `tools/sandcastle build-image`.
+FROM docker.io/library/archlinux:base-devel
+
+# tools/check --deps's list, and mate-panel for the applets' builds.
+RUN pacman -Syu --noconfirm --needed git curl jq \
+    gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
+    pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
+    systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
+    nodejs npm desktop-file-utils python-dbusmock libnm mate-panel \
+  && pacman -Scc --noconfirm
+
+# Podman's --userns=keep-id maps the host user to this UID and GID, so the files the agent
+# writes in the bind-mounted worktree are the host user's.
+ARG AGENT_UID=1000
+ARG AGENT_GID=1000
+RUN groupadd -o -g $AGENT_GID agent && useradd -o -m -u $AGENT_UID -g $AGENT_GID -d /home/agent agent
+USER ${AGENT_UID}:${AGENT_GID}
+
+RUN rustup toolchain install stable --profile minimal --component rustfmt,clippy
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/home/agent/.local/bin:$PATH"
+
+WORKDIR /home/agent
+ENTRYPOINT ["sleep", "infinity"]
