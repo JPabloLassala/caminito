@@ -20,6 +20,7 @@ mod data_control;
 mod debug;
 mod decoration;
 mod dialogs;
+mod dock_applet;
 mod dpms;
 mod drag_icons;
 mod dynamic_workspaces;
