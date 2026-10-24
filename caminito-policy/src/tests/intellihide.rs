@@ -346,6 +346,41 @@ fn a_panel_with_a_popup_open_is_not_hidden() {
 }
 
 #[test]
+fn a_popup_closing_with_the_pointer_gone_from_the_panel_hides_it_again() {
+    let mut policy = with_a_panel_covered();
+    rest_at_the_edge(&mut policy, ms(1000));
+    policy.elapse(ms(1250));
+    policy.set_intellihide_panels(&[IntellihidePanel {
+        held: true,
+        ..bottom_panel()
+    }]);
+    // On to the panel's menu, above it.
+    policy.intellihide_pointer(at(700., 900.), ms(1400));
+    assert!(!policy.is_intellihide_hidden(PANEL));
+
+    // An item is chosen and the menu closes, with no motion after it.
+    policy.set_intellihide_panels(&[bottom_panel()]);
+
+    assert!(policy.is_intellihide_hidden(PANEL));
+}
+
+#[test]
+fn a_popup_closing_with_the_pointer_on_the_panel_leaves_it_shown() {
+    let mut policy = with_a_panel_covered();
+    rest_at_the_edge(&mut policy, ms(1000));
+    policy.elapse(ms(1250));
+    policy.set_intellihide_panels(&[IntellihidePanel {
+        held: true,
+        ..bottom_panel()
+    }]);
+    policy.intellihide_pointer(at(700., 1060.), ms(1400));
+
+    policy.set_intellihide_panels(&[bottom_panel()]);
+
+    assert!(!policy.is_intellihide_hidden(PANEL));
+}
+
+#[test]
 fn a_panel_that_stopped_asking_is_forgotten_and_never_hidden() {
     let mut policy = with_a_panel_covered();
     rest_at_the_edge(&mut policy, ms(1000));

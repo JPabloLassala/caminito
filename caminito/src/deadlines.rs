@@ -14,7 +14,8 @@ use crate::state::{Caminito, State};
 /// Everything that waits on Caminito's clock, in the order `run_due` runs what's due at one
 /// time:
 ///
-/// 1. Policy, whose auto-raise restacks the windows the rest looks at (153).
+/// 1. Policy, whose auto-raise restacks the windows the rest looks at (153), and whose rest
+///    at an intellihide panel's edge reveals it (CMN-224).
 /// 2. The pings that go with a request to close (168): one with no answer brings the "not
 ///    responding" dialog forward if it shows, which restacks the windows too.
 /// 3. Idle, which blanks and locks (128).

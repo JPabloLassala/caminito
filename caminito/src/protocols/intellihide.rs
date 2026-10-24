@@ -25,6 +25,7 @@ const VERSION: u32 = 1;
 
 /// What the compositor lends the protocol: where its state is.
 pub trait IntellihideHandler: 'static {
+    /// The protocol's state.
     fn intellihide_state(&mut self) -> &mut IntellihideState;
 }
 
@@ -75,10 +76,16 @@ impl IntellihideState {
 
     /// Whether `layer_surface` asks for intellihide now.
     pub fn asks(&self, layer_surface: &ZwlrLayerSurfaceV1) -> bool {
-        self.asking.iter().any(|asking| {
-            asking.layer_surface.upgrade().ok().as_ref() == Some(layer_surface)
-                && asking.object.upgrade().is_ok()
-        })
+        self.asking
+            .iter()
+            .any(|asking| asking.is_for(layer_surface) && asking.object.upgrade().is_ok())
+    }
+}
+
+impl Asking {
+    /// Whether it's `layer_surface` that asked.
+    fn is_for(&self, layer_surface: &ZwlrLayerSurfaceV1) -> bool {
+        self.layer_surface.upgrade().ok().as_ref() == Some(layer_surface)
     }
 }
 
@@ -123,9 +130,7 @@ where
                 asking.retain(|asking| {
                     asking.layer_surface.upgrade().is_ok() && asking.object.upgrade().is_ok()
                 });
-                if asking.iter().any(|asking| {
-                    asking.layer_surface.upgrade().ok().as_ref() == Some(&layer_surface)
-                }) {
+                if asking.iter().any(|asking| asking.is_for(&layer_surface)) {
                     resource.post_error(
                         Error::AlreadyConstructed,
                         format!("{} already has an intellihide object", layer_surface.id()),

@@ -22,9 +22,13 @@ const REST: Duration = Duration::from_millis(250);
 /// The edge of its output that a panel is on, which it hides off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelEdge {
+    /// The output's top edge.
     Top,
+    /// The output's bottom edge.
     Bottom,
+    /// The output's left edge.
     Left,
+    /// The output's right edge.
     Right,
 }
 
@@ -32,12 +36,14 @@ pub enum PanelEdge {
 /// change. Policy manages none: it only says which are hidden.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IntellihidePanel {
+    /// The layer surface.
     pub id: LayerSurfaceId,
     /// The output the panel is on.
     pub output: OutputId,
     /// Where the panel is when it's shown, globally. A panel that floats off its edge has
     /// the gap between it and the edge outside this.
     pub rect: Rectangle<i32, Logical>,
+    /// The edge it's on, and slides off.
     pub edge: PanelEdge,
     /// Whether the panel has a popup open, a menu or a tooltip, which keeps it shown.
     pub held: bool,
@@ -47,7 +53,8 @@ pub struct IntellihidePanel {
 #[derive(Debug, Default)]
 pub(super) struct Intellihide {
     panels: Vec<Tracked>,
-    /// Where the pointer was when the compositor last said.
+    /// Where the pointer was when the compositor last said, for a popup that closes with
+    /// no motion after it.
     pointer: Option<Point<f64, Logical>>,
 }
 
@@ -101,9 +108,11 @@ fn zone(
 impl<W: PolicyWindow> Policy<W> {
     /// The panels that ask for intellihide now, replacing the last list. A panel that's in
     /// both keeps what the pointer has done for it, and one that's new starts hidden if
-    /// something overlaps it.
+    /// something overlaps it. A panel whose popup closes with the pointer off it hides again,
+    /// as it would have when the pointer left it, since no motion may follow.
     pub fn set_intellihide_panels(&mut self, panels: &[IntellihidePanel]) {
         let mut old = std::mem::take(&mut self.intellihide.panels);
+        let pointer = self.intellihide.pointer;
         self.intellihide.panels = panels
             .iter()
             .map(|panel| {
@@ -113,7 +122,11 @@ impl<W: PolicyWindow> Policy<W> {
                     revealed: false,
                     resting: None,
                 });
+                let released = tracked.panel.held && !panel.held;
                 tracked.panel = *panel;
+                if released && !pointer.is_some_and(|at| self.is_on(panel, at)) {
+                    tracked.revealed = false;
+                }
                 tracked
             })
             .collect();
@@ -140,7 +153,7 @@ impl<W: PolicyWindow> Policy<W> {
             .map(|mut tracked| {
                 let panel = tracked.panel;
                 let output = self.output_rect(&panel);
-                let on_it = zone(output, panel.edge, panel.rect).contains(at);
+                let on_it = self.is_on(&panel, at);
                 if !on_it && !panel.held {
                     tracked.revealed = false;
                 } else if on_it && !self.overlapped(&panel) {
@@ -192,6 +205,11 @@ impl<W: PolicyWindow> Policy<W> {
 
     fn hides(&self, tracked: &Tracked) -> bool {
         !tracked.revealed && !tracked.panel.held && self.overlapped(&tracked.panel)
+    }
+
+    /// Whether a pointer at `at` is on the panel or in the gap between it and its edge.
+    fn is_on(&self, panel: &IntellihidePanel, at: Point<f64, Logical>) -> bool {
+        zone(self.output_rect(panel), panel.edge, panel.rect).contains(at)
     }
 
     /// The output of a panel, or its own rectangle if policy has no such output.

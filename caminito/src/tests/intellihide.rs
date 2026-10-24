@@ -2,7 +2,10 @@
 //! `caminito_intellihide_v1` is slid out of its edge while a window overlaps it, and back
 //! when none does or the pointer rests at the edge. The panel is never told, so what shows is
 //! the debug dump's account of where it is drawn, and the pixels. The policy's rules are
-//! tested in `caminito-policy`; these are about the protocol and the slide.
+//! tested in `caminito-policy`; these are about the protocol and the slide. The panel is a
+//! layer surface, which only a Wayland client has, so its client is `Kind::Xdg`; the window
+//! that hides it is one of either kind in the maximised window's test, and an Xdg one in
+//! the rest, which are about the panel.
 
 use std::time::Duration;
 
@@ -13,7 +16,9 @@ use smithay::utils::Point;
 
 use super::fixture::{
     ClientId, ClientWindow, Fixture, KEY_F10, KEY_LEFTALT, Kind, WINDOW_COLOR, WindowSpec,
+    on_both_kinds,
 };
+use super::maximise_animation::asked_size;
 use crate::input::Under;
 use crate::settings::Value as Setting;
 use crate::settings::translate::CAMINITO;
@@ -52,10 +57,16 @@ fn desk(slide: bool) -> (Fixture, ClientId) {
 fn a_window_and_a_panel_with(slide: bool) -> (Fixture, ClientId, ClientWindow, LayerId) {
     let (mut f, id) = desk(slide);
     let window = f.map(id, WindowSpec::plain((400, 300)));
+    let panel = a_panel(&mut f, id);
+    (f, id, window, panel)
+}
+
+/// A panel of `id`'s along the bottom of the output that asks for intellihide.
+fn a_panel(f: &mut Fixture, id: ClientId) -> LayerId {
     let panel = f.map_layer(id, bottom_panel(), PANEL_COLOR);
     f.client(id).ask_for_intellihide(panel);
     f.roundtrip(id);
-    (f, id, window, panel)
+    panel
 }
 
 fn a_window_and_a_panel() -> (Fixture, ClientId, ClientWindow, LayerId) {
@@ -77,10 +88,12 @@ fn panel(f: &Fixture) -> (bool, (i64, i64)) {
     )
 }
 
-/// Maximises the focused window and has its client draw at the work area's size.
+/// Maximises the focused window and has its client draw at the size it's asked: the work
+/// area's, less the title bar of an X11 window's frame.
 fn maximise(f: &mut Fixture, window: ClientWindow) {
     f.chord(&[KEY_LEFTALT, KEY_F10]);
-    f.draw_at_asked_size(window, (1920, 1080));
+    let size = asked_size(f, window);
+    f.draw_at_asked_size(window, size);
 }
 
 /// Lets the slide run its 200 ms.
@@ -103,9 +116,12 @@ fn a_panel_nothing_overlaps_is_where_it_asked_to_be() {
     assert_eq!(panel(&f), (false, (0, 1052)));
 }
 
-#[test]
-fn a_maximised_window_hides_an_intellihide_panel_and_the_edge_reveals_it() {
-    let (mut f, _, window, _) = a_window_and_a_panel();
+on_both_kinds! {
+fn a_maximised_window_hides_an_intellihide_panel_and_the_edge_reveals_it(kind: Kind) {
+    let (mut f, panel_client) = desk(true);
+    let id = f.connect(kind);
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    a_panel(&mut f, panel_client);
     f.pointer_move(960., 500.);
     f.wait_for_pixel(960, 1066, PANEL);
 
@@ -129,6 +145,7 @@ fn a_maximised_window_hides_an_intellihide_panel_and_the_edge_reveals_it() {
     assert_eq!(panel(&f), (true, (0, 1080)));
     f.wait_for_pixel(960, 1066, WINDOW);
 }
+}
 
 #[test]
 fn unmaximising_shows_the_panel_again() {
@@ -138,7 +155,12 @@ fn unmaximising_shows_the_panel_again() {
     slide(&mut f);
     assert!(panel(&f).0);
 
+    eprintln!("DBG before {:?}", f.geometry(window));
     f.chord(&[KEY_LEFTALT, KEY_F10]);
+    for _ in 0..50 {
+        f.dispatch();
+    }
+    eprintln!("DBG after {:?}", f.geometry(window));
     f.draw_at_asked_size(window, (400, 300));
     slide(&mut f);
 
@@ -175,7 +197,12 @@ fn the_panel_slides_over_200_ms_and_a_slide_turned_round_goes_back_from_where_it
     );
 
     // The window goes back before the panel is out: it turns round.
+    eprintln!("DBG before {:?}", f.geometry(window));
     f.chord(&[KEY_LEFTALT, KEY_F10]);
+    for _ in 0..50 {
+        f.dispatch();
+    }
+    eprintln!("DBG after {:?}", f.geometry(window));
     f.draw_at_asked_size(window, (400, 300));
     let (hidden, (_, turned)) = panel(&f);
     assert!(!hidden);
