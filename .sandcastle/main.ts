@@ -154,7 +154,13 @@ while (shipped < max) {
     const message = error instanceof Error ? error.message : String(error);
     result = { status: "blocked", met: [], decisions: [], note: `The agent failed: ${message.trim()}` };
   } finally {
-    await sandbox.close();
+    // Sandcastle keeps a worktree with uncommitted changes; the branch has all the work there is.
+    const { preservedWorktreePath } = await sandbox.close();
+    if (preservedWorktreePath) {
+      console.log(`Removing ${preservedWorktreePath}, with changes the agent didn't commit:`);
+      console.log(execFileSync("git", ["-C", preservedWorktreePath, "status", "--short"], { encoding: "utf8" }));
+      git("worktree", "remove", "--force", preservedWorktreePath);
+    }
   }
 
   if (!result || result.status === "blocked") {
