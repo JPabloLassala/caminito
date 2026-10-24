@@ -278,6 +278,53 @@ test_click_reported_to_the_popup_from_outside (void)
   settle ();
 }
 
+/* A slider in the popup takes GTK's grab for itself as a drag starts (gtkrange.c,
+   range_grab_add), which shadows the popup's window: the popup stays. A grab of another of
+   the panel's windows, a menu's, still closes it. */
+static void
+test_a_grab_inside_keeps_the_popup (void)
+{
+  GtkWidget *panel, *applet, *scale, *menu;
+  CaminitoAppletPopup *popup;
+
+  panel = gtk_window_new (GTK_WINDOW_POPUP);
+  gtk_window_move (GTK_WINDOW (panel), 100, 0);
+  gtk_window_set_default_size (GTK_WINDOW (panel), 200, 24);
+  applet = gtk_event_box_new ();
+  gtk_widget_set_size_request (applet, 24, 24);
+  gtk_widget_set_halign (applet, GTK_ALIGN_START);
+  gtk_container_add (GTK_CONTAINER (panel), applet);
+  popup = caminito_applet_popup_new (applet);
+  scale = gtk_scale_new_with_range (GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
+  gtk_widget_set_size_request (scale, 150, -1);
+  gtk_container_add (GTK_CONTAINER (caminito_applet_popup_get_window (popup)), scale);
+  gtk_widget_show_all (panel);
+  gtk_widget_show (scale);
+  settle ();
+  /* Past an earlier test's delay against reopening. */
+  g_usleep (300 * 1000);
+  click (applet, GDK_BUTTON_PRIMARY);
+  settle ();
+  g_assert_true (caminito_applet_popup_is_shown (popup));
+
+  gtk_grab_add (scale);
+  settle ();
+  g_assert_true (caminito_applet_popup_is_shown (popup));
+  gtk_grab_remove (scale);
+  settle ();
+  g_assert_true (caminito_applet_popup_is_shown (popup));
+
+  menu = gtk_window_new (GTK_WINDOW_POPUP);
+  gtk_widget_show (menu);
+  gtk_grab_add (menu);
+  settle ();
+  g_assert_false (caminito_applet_popup_is_shown (popup));
+
+  gtk_widget_destroy (menu);
+  gtk_widget_destroy (panel);
+  settle ();
+}
+
 /* A popup that opens upwards, from a panel at the bottom, keeps its bottom edge against the
    panel when a row opens in it and it grows. */
 static void
@@ -350,6 +397,7 @@ main (int argc, char **argv)
                        test_grows_upwards);
       g_test_add_func ("/popup/space-clicks-a-button-and-keeps-the-popup",
                        test_space_clicks_a_button_and_keeps_the_popup);
+      g_test_add_func ("/popup/a-grab-inside-it-keeps-it", test_a_grab_inside_keeps_the_popup);
     }
   else
     g_test_message ("No display: the popup's clicks aren't tested");

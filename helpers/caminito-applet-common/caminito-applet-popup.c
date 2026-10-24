@@ -266,11 +266,19 @@ on_unmap_event (GtkWidget *window G_GNUC_UNUSED, GdkEvent *event G_GNUC_UNUSED, 
 }
 
 static void
-on_grab_notify (GtkWidget *window G_GNUC_UNUSED, gboolean was_grabbed, gpointer data)
+on_grab_notify (GtkWidget *window, gboolean was_grabbed, gpointer data)
 {
+  GtkWidget *grab;
+
+  if (was_grabbed)
+    return;
+  /* A slider in the popup takes the grab for itself as it's dragged (gtkrange.c,
+     range_grab_add), which shadows the window too. */
+  grab = gtk_window_group_get_current_grab (gtk_window_get_group (GTK_WINDOW (window)));
+  if (grab != NULL && gtk_widget_is_ancestor (grab, window))
+    return;
   /* Another of the panel's windows took GTK's grab: a menu, or a dialog. */
-  if (!was_grabbed)
-    caminito_applet_popup_hide (data);
+  caminito_applet_popup_hide (data);
 }
 
 static gboolean
