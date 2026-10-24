@@ -48,6 +48,7 @@ Build-Depends:
  libpam0g-dev,
  libaudit-dev,
  dbus-daemon,
+ gvfs,
  libpixman-1-dev,
  libwayland-dev,
  xwayland,
@@ -71,7 +72,8 @@ Architecture: amd64
 # power-profiles-daemon has the power profiles of the applet's popup (264), which has none
 # without it. nm-connection-editor is the Network applet's settings window, which it also runs
 # for an Enterprise network and a hidden one (ADR 0041): without it, those buttons only log
-# that it can't run.
+# that it can't run. gvfs serves the Dock applet's Trash, trash:/// (CMN-220), as it does
+# Caja.
 # The patched packages and marco join these in ticket 205, at versions no stock one has.
 Depends:
  ${shlibs:Depends},
@@ -91,6 +93,7 @@ Depends:
  mate-desktop-common,
  bluez,
  upower,
+ gvfs,
 # The GTK module's caminito version, which installs the file the session adds the module by
 # (192, CMN-125), as caminito-git's optdepends names appmenu-gtk-module-caminito. Ubuntu's
 # binary is appmenu-gtk3-module, and its epoch puts it above every stock version.

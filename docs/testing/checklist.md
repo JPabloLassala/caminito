@@ -3723,6 +3723,26 @@ They are the developer's to run.
   window, and `gsettings get` on the instance's `prefs/` path (`dconf dump
   /org/mate/panel/objects/`) for `kept`.
 
+### The Dock applet's Trash in a real Session
+
+- **Milestone:** `dock-applet`, the developer's to run (CMN-220).
+- **Steps:**
+  1. Log into *MATE on Caminito* with the Dock on a panel. Look at the end of the row, after
+     the separator: the Trash, with the empty icon.
+  2. Drag a file from Caja onto the Trash.
+  3. Click the Trash.
+  4. Right-click the Trash and choose *Empty Trash*; choose *Cancel*. Do it again and
+     choose *Empty Trash*.
+  5. Move the panel to the left edge from its Properties, and drag a file onto the Trash
+     again. With Caja open on the Trash, delete a file from there.
+- **Expected:** in step 2 the file leaves Caja's folder and the Trash's icon turns full. In
+  step 3 Caja opens the Trash. In step 4 the menu has *Open* and *Empty Trash* (greyed out
+  while the Trash is empty), the question is Caja's, and Cancel leaves the Trash as it was;
+  confirmed, it empties and the icon turns empty. In step 5 the Trash is at the end of the
+  column, and its icon follows what Caja does to it.
+- **Debug tool:** `gio list trash:///` and `gio monitor trash:///` for what the Trash holds
+  and what it tells; `ls ~/.local/share/Trash/files`.
+
 ### A floating panel stands off its edge
 
 - **Milestone:** `dock-applet`, the developer's to run (CMN-223).

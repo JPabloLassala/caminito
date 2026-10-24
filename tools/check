@@ -26,10 +26,12 @@ if [ "${1-}" = --deps ]; then
   # caminito-network's do. libnm: the Network applet's build (CMN-193, ADR 0041).
   # libxfce4windowing: the Dock applet's build (CMN-219), which reads the windows through it.
   # gtk-layer-shell: the Dock's probe is a layer surface as the panel is, so its tests need it.
+  # gvfs: the Dock's Trash is GIO's trash:///, which gvfs's trash daemon serves (CMN-220), as
+  # it does Caja; the Dock's tests start it on a bus of their own.
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm desktop-file-utils python-dbusmock libnm libxfce4windowing gtk-layer-shell
+    nodejs npm desktop-file-utils python-dbusmock libnm libxfce4windowing gtk-layer-shell gvfs
   rustup toolchain install
 fi
 
