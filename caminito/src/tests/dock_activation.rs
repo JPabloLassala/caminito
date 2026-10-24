@@ -1,12 +1,14 @@
 //! `caminito_dock_activation_manager_v1` (CMN-245, ADR 0050): Caminito tells one Dock applet
 //! which Dock item to activate: the applet on the pointer's output, else on the focused
-//! window's output, else any one. An applet is a layer surface's, so its client is
-//! `Kind::Xdg`; mate-panel has every Dock panel in one client, as the tests have.
+//! window's output, else the oldest with a panel on an output. An applet is a layer
+//! surface's, so its client is `Kind::Xdg`; mate-panel has every Dock panel in one client,
+//! as the tests have. No key calls `activate_dock_item` until the binding (CMN-246), so the
+//! tests call it directly.
 
 use caminito_test_client::dock_activation::DockActivationId;
 use caminito_test_client::layer_shell::LayerSpec;
 
-use super::fixture::{ClientId, Fixture, Kind, WindowSpec};
+use super::fixture::{ClientId, ClientWindow, Fixture, Kind, WindowSpec};
 use super::per_output_workspaces::put_at;
 use crate::state::SEAT;
 
@@ -110,18 +112,34 @@ fn with_none_on_the_pointers_output_the_applet_on_the_focused_windows_is_told() 
 }
 
 #[test]
-fn with_none_on_the_pointers_output_or_the_focused_windows_one_applet_is_told() {
+fn with_none_on_the_pointers_output_or_the_focused_windows_the_oldest_applet_is_told() {
     let (mut f, panel) = three_outputs();
-    let left = dock_on(&mut f, panel, 0);
-    let right = dock_on(&mut f, panel, 2);
+    let older = dock_on(&mut f, panel, 2);
+    let newer = dock_on(&mut f, panel, 0);
     assert_eq!(f.state.caminito.policy.focus(SEAT), None);
 
     f.pointer_move(middle_of(1), 500.0);
     assert!(activate(&mut f, panel, 5));
 
-    let mut told = [left, right].map(|applet| f.client(panel).dock_activations(applet).to_vec());
-    told.sort();
-    assert_eq!(told, [vec![], vec![5]]);
+    assert_eq!(f.client(panel).dock_activations(older), [5]);
+    assert_eq!(f.client(panel).dock_activations(newer), [] as [u32; 0]);
+}
+
+#[test]
+fn an_applet_with_a_panel_on_an_output_is_told_before_an_older_one_without() {
+    let (mut f, panel) = three_outputs();
+    // A window's surface is no layer surface, so it is on no output.
+    let ClientWindow::Xdg(_, window) = f.map(panel, WindowSpec::plain((400, 300))) else {
+        unreachable!("the panel client is Wayland's")
+    };
+    let without = f.client(panel).bind_dock_activation_on_window(window);
+    let with = dock_on(&mut f, panel, 2);
+
+    f.pointer_move(middle_of(1), 500.0);
+    assert!(activate(&mut f, panel, 6));
+
+    assert_eq!(f.client(panel).dock_activations(with), [6]);
+    assert_eq!(f.client(panel).dock_activations(without), [] as [u32; 0]);
 }
 
 #[test]

@@ -2,12 +2,13 @@
 //! it makes an object for its panel's surface, and is told through it which Dock item to
 //! activate. The protocol is generated from the XML Caminito's own code is generated from.
 
+use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 
 use self::raw::caminito_dock_activation_manager_v1::{self, CaminitoDockActivationManagerV1};
 use self::raw::caminito_dock_activation_v1::{self, CaminitoDockActivationV1};
 use crate::layer_shell::LayerId;
-use crate::{Client, State};
+use crate::{Client, State, WindowId};
 
 /// Caminito's two interfaces, from `wayland-scanner`.
 #[allow(
@@ -62,8 +63,18 @@ impl Client {
     /// Makes an object for the panel on the layer surface, as a Dock applet in that panel
     /// does.
     pub fn bind_dock_activation(&mut self, panel: LayerId) -> DockActivationId {
+        let surface = self.layer_surface(panel).surface.clone();
+        self.bind_dock_activation_on(&surface)
+    }
+
+    /// Makes an object for the window's surface, which is no panel's, as no applet does.
+    pub fn bind_dock_activation_on_window(&mut self, window: WindowId) -> DockActivationId {
+        let surface = self.window(window).surface.clone();
+        self.bind_dock_activation_on(&surface)
+    }
+
+    fn bind_dock_activation_on(&mut self, surface: &WlSurface) -> DockActivationId {
         let manager = self.global(|state| &mut state.dock_activations.manager, 1);
-        let surface = &self.state.layer_surfaces[panel.0].surface;
         let applets = &mut self.state.dock_activations.applets;
         let object = manager.get_dock_activation(surface, &self.qh, applets.len());
         applets.push(Applet {

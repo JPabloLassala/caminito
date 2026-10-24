@@ -1,7 +1,7 @@
 //! The Dock applet's keys (CMN-245, ADR 0050): Caminito tells one Dock applet, through
 //! `caminito_dock_activation_v1`, which Dock item to activate. With a Dock panel on more than
 //! one output, the applet told is the one on the pointer's output, else the one on the
-//! focused window's, else the oldest.
+//! focused window's, else the oldest that has a panel on an output, else the oldest.
 
 use caminito_policy::OutputId;
 
@@ -9,8 +9,8 @@ use crate::output::output_id;
 use crate::state::{Caminito, SEAT};
 
 impl Caminito {
-    /// Whether a Dock applet can be told which item to activate, which the keys that
-    /// activate one are bound only while it can.
+    /// Whether Caminito can tell a Dock applet which item to activate. The keys that
+    /// activate a Dock item are bound only while it can.
     #[cfg_attr(
         not(test),
         expect(dead_code, reason = "the binding (CMN-246) will call it")
@@ -43,11 +43,12 @@ impl Caminito {
             .and_then(|id| self.policy.window(id))
             .and_then(|mapped| mapped.main_output())
             .map(output_id);
-        let on = |output: Option<OutputId>| {
+        let applet_on = |output: Option<OutputId>| {
             output.and_then(|output| applets.iter().find(|(_, on)| *on == Some(output)))
         };
-        let chosen = on(self.pointer_output())
-            .or_else(|| on(focused_output))
+        let chosen = applet_on(self.pointer_output())
+            .or_else(|| applet_on(focused_output))
+            .or_else(|| applets.iter().find(|(_, on)| on.is_some()))
             .or_else(|| applets.first());
         let Some((applet, _)) = chosen else {
             return false;

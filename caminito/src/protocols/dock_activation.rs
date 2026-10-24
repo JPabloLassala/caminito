@@ -76,11 +76,9 @@ impl DockActivationState {
         }
     }
 
-    /// The applets that can be told now, oldest first.
+    /// The applets that can be told now, oldest first. `destroyed` removes the others.
     pub fn applets(&self) -> impl Iterator<Item = &DockApplet> {
-        self.applets
-            .iter()
-            .filter(|applet| applet.object.is_alive())
+        self.applets.iter()
     }
 }
 
@@ -134,9 +132,7 @@ where
         match request {
             Request::GetDockActivation { id, surface } => {
                 let object = data_init.init(id, DockActivationData);
-                let applets = &mut state.dock_activation_state().applets;
-                applets.retain(|applet| applet.object.is_alive());
-                applets.push(DockApplet {
+                state.dock_activation_state().applets.push(DockApplet {
                     object,
                     surface: surface.downgrade(),
                 });
