@@ -6,13 +6,19 @@
 
 {{COMMENTS}}
 
+## Linked documents
+
+The Linear documents the ticket links to, such as its spec:
+
+{{DOCS}}
+
 # Task
 
 Build ticket {{ID}} above. You are in a sandbox: the repository is checked out on a branch named
 after {{ID}}, in lower case, which you commit to. The host does everything else, so:
 
-- Don't use Linear or any issue tracker. The ticket and its comments are above, and the host
-  claims and resolves it from your report.
+- Don't use Linear or any issue tracker. The ticket, its comments and the documents it links to
+  are above, and the host claims and resolves it from your report.
 - Don't create worktrees, switch branches, merge or push.
 - Don't follow the repo's `ship` or `implement` skills as a whole. Follow
   `.claude/skills/implement/SKILL.md`'s "Batch the lookups" and "Build" sections only.
@@ -21,6 +27,8 @@ Read `CLAUDE.md`, `CONTEXT.md`, `CODING_STANDARDS.md` and the ADRs the ticket na
 Build test-first with the `tdd` skill where the ticket's seams allow. Check scripts go in
 `.scratch/checks/{{ID}}/`. Run `cargo check --workspace --all-targets` and the tests relevant
 to the change, not the whole suite; `tools/check --deps` needs sudo and is not for here.
+Run every command in the foreground, under `timeout`: don't start background tasks or wait for
+them, as nothing tells you when one finishes here.
 
 Commit the work on the branch, with messages in the style of `git log --oneline -20`.
 

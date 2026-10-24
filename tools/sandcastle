@@ -3,7 +3,7 @@
 # (.sandcastle/main.ts).
 #
 #   tools/sandcastle build-image
-#   tools/sandcastle start --epic <epic> [--max <n>] [--no-merge]
+#   tools/sandcastle start --epic <epic> [--max <n>] [--parallel <n>] [--no-merge]
 #     [--implement-model <model>] [--review-model <model>]
 #
 # build-image builds the sandbox from .sandcastle/Containerfile; rerun it when tools/check's
