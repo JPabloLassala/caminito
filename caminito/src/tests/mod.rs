@@ -41,6 +41,7 @@ mod idle;
 mod image_capture;
 mod input;
 mod input_devices;
+mod intellihide;
 mod key_remaps;
 mod keybinding_manifests;
 mod keyboard_grab;

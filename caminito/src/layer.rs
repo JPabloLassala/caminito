@@ -252,7 +252,7 @@ impl Caminito {
     }
 }
 
-fn policy_name(layer: &LayerSurface) -> Option<LayerSurfaceId> {
+pub(crate) fn policy_name(layer: &LayerSurface) -> Option<LayerSurfaceId> {
     with_states(layer.wl_surface(), |data| {
         data.data_map.get::<PolicyName>().map(|name| name.0)
     })
@@ -275,7 +275,7 @@ fn takes_keyboard_on_demand(layer: &LayerSurface) -> bool {
 
 /// Whether a layer surface has content. Without it, it's still waiting for its initial
 /// configure, or it was unmapped.
-fn is_mapped(layer: &LayerSurface) -> bool {
+pub(crate) fn is_mapped(layer: &LayerSurface) -> bool {
     with_renderer_surface_state(layer.wl_surface(), |state| state.buffer().is_some())
         .unwrap_or(false)
 }

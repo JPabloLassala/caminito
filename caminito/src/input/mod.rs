@@ -871,6 +871,8 @@ impl State {
         pointer.frame(self);
         self.activate_pointer_constraint();
         self.hot_corner_motion(location);
+        let now = self.caminito.now();
+        self.caminito.policy.intellihide_pointer(location, now);
         // The cursor moved.
         self.caminito.queue_redraw_all();
     }
