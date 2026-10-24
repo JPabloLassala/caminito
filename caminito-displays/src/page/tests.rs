@@ -375,7 +375,7 @@ fn the_others_close_up_as_soon_as_a_display_is_picked_up() {
 }
 
 #[test]
-fn a_dragged_display_attaches_to_the_outline_of_the_others() {
+fn a_dragged_display_docks_to_the_outline_of_the_others() {
     let mut page = Page::new(&[laptop(0, 0), lg(1422, 0)], Some("eDP-1"));
 
     // Far off to the lower right: it stays against the laptop, sharing 100 pixels.
